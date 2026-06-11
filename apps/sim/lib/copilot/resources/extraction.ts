@@ -4,10 +4,11 @@ import {
   DeleteWorkflow,
   DownloadToWorkspaceFile,
   EditWorkflow,
+  Ffmpeg,
   FunctionExecute,
+  GenerateAudio,
   GenerateImage,
-  GenerateVisualization,
-  GetWorkflowLogs,
+  GenerateVideo,
   Knowledge,
   KnowledgeBase,
   UserTable,
@@ -28,9 +29,10 @@ const RESOURCE_TOOL_NAMES: Set<string> = new Set([
   FunctionExecute.id,
   KnowledgeBase.id,
   Knowledge.id,
-  GenerateVisualization.id,
   GenerateImage.id,
-  GetWorkflowLogs.id,
+  GenerateVideo.id,
+  GenerateAudio.id,
+  Ffmpeg.id,
 ])
 
 export function isResourceToolName(toolName: string): boolean {
@@ -145,8 +147,11 @@ export function extractResourcesFromToolResult(
     }
 
     case DownloadToWorkspaceFile.id:
-    case GenerateVisualization.id:
-    case GenerateImage.id: {
+    case GenerateImage.id:
+    case GenerateVideo.id:
+    case GenerateAudio.id:
+    case Ffmpeg.id: {
+      // ffmpeg's probe op writes no file (no fileId) → no resource/auto-open.
       if (result.fileId) {
         return [
           {
@@ -209,19 +214,6 @@ export function extractResourcesFromToolResult(
             id,
             title: (kb.name as string) || 'Knowledge Base',
           })
-        }
-      }
-      return resources
-    }
-
-    case GetWorkflowLogs.id: {
-      const entries = Array.isArray(output) ? output : Array.isArray(result.data) ? result.data : []
-      const resources: ChatResource[] = []
-      for (const entry of entries) {
-        const rec = asRecord(entry)
-        const logId = rec.id as string | undefined
-        if (logId) {
-          resources.push({ type: 'log', id: logId, title: 'Log' })
         }
       }
       return resources

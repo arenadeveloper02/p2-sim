@@ -1,11 +1,23 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
 import {
   extractBlockIdFromOutputId,
   extractPathFromOutputId,
-  traverseObjectPath,
+  parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
 import { encodeSSE } from '@/lib/core/utils/sse'
+import {
+  getInlineJsonByteLength,
+  materializeInlineExecutionValue,
+} from '@/lib/execution/payloads/inline-materialization.server'
+import {
+  assertInlineMaterializationSize,
+  type ExecutionMaterializationContext,
+  MAX_INLINE_MATERIALIZATION_BYTES,
+} from '@/lib/execution/payloads/materialization.server'
+import { compactExecutionPayload } from '@/lib/execution/payloads/serializer'
+import { isExecutionResourceLimitError } from '@/lib/execution/resource-errors'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { processStreamingBlockLogs } from '@/lib/tokenization'
 import {
@@ -13,6 +25,7 @@ import {
   hydrateUserFilesWithBase64,
 } from '@/lib/uploads/utils/user-file-base64.server'
 import type { BlockLog, ExecutionResult, StreamingExecution } from '@/executor/types'
+import { navigatePathAsync } from '@/executor/variables/resolvers/reference-async.server'
 
 /**
  * Extended streaming execution type that includes blockId on the execution.
@@ -25,8 +38,10 @@ interface StreamingExecutionWithBlockId extends Omit<StreamingExecution, 'execut
 const logger = createLogger('WorkflowStreaming')
 
 const DANGEROUS_KEYS = ['__proto__', 'constructor', 'prototype']
+const SELECTED_OUTPUT_TOO_LARGE_MESSAGE =
+  'Selected output is too large to inline; select a nested field or use pagination/preview.'
 
-export interface StreamingConfig {
+interface StreamingConfig {
   selectedOutputs?: string[]
   isSecureMode?: boolean
   workflowTriggerType?: 'api' | 'chat'
@@ -49,6 +64,13 @@ export interface StreamingResponseOptions {
   requestId: string
   streamConfig: StreamingConfig
   executionId?: string
+  largeValueExecutionIds?: string[]
+  largeValueKeys?: string[]
+  fileKeys?: string[]
+  allowLargeValueWorkflowScope?: boolean
+  workspaceId?: string
+  workflowId?: string
+  userId?: string
   executeFn: StreamingExecutorFn
 }
 
@@ -59,6 +81,16 @@ interface StreamingState {
   streamCompletionTimes: Map<string, number>
   streamedContent: Map<string, string>
   completedBlockIds: Set<string>
+  selectedOutputBytes: number
+  streamedSelectedOutputKeys: Set<string>
+  selectedOutputError?: string
+}
+
+interface SelectedOutputDescriptor {
+  outputId: string
+  blockId: string
+  path: string
+  key: string
 }
 
 function isRenderableImageUrl(value: unknown): value is string {
@@ -121,8 +153,44 @@ function resolveStreamedContent(state: StreamingState): Map<string, string> {
   return result
 }
 
-function extractOutputValue(output: unknown, path: string): unknown {
-  return traverseObjectPath(output, path)
+type OutputExtractionContext = Pick<
+  StreamingResponseOptions,
+  | 'requestId'
+  | 'workspaceId'
+  | 'workflowId'
+  | 'executionId'
+  | 'largeValueExecutionIds'
+  | 'largeValueKeys'
+  | 'fileKeys'
+  | 'allowLargeValueWorkflowScope'
+  | 'userId'
+> & { base64MaxBytes?: number }
+
+async function extractOutputValue(
+  output: unknown,
+  path: string,
+  context: OutputExtractionContext
+): Promise<unknown> {
+  const parsedOutput = parseOutputContentSafely(output)
+  const outputValue = path
+    ? await navigatePathAsync(parsedOutput, path.split('.'), {
+        executionContext: {
+          workflowId: context.workflowId ?? '',
+          workspaceId: context.workspaceId,
+          executionId: context.executionId,
+          largeValueExecutionIds: context.largeValueExecutionIds,
+          largeValueKeys: context.largeValueKeys,
+          fileKeys: context.fileKeys,
+          allowLargeValueWorkflowScope: context.allowLargeValueWorkflowScope,
+          userId: context.userId,
+          metadata: { requestId: context.requestId },
+          base64MaxBytes: context.base64MaxBytes,
+        },
+        allowLargeValueRefs: true,
+      })
+    : parsedOutput
+
+  return outputValue
 }
 
 function isDangerousKey(key: string): boolean {
@@ -146,17 +214,81 @@ function isKnowledgeResultsArray(value: unknown): value is Array<Record<string, 
   )
 }
 
+function getSelectedOutputDescriptors(
+  selectedOutputs: string[] | undefined
+): SelectedOutputDescriptor[] {
+  const descriptors: SelectedOutputDescriptor[] = []
+  const seen = new Set<string>()
+  for (const outputId of selectedOutputs ?? []) {
+    const blockId = extractBlockIdFromOutputId(outputId)
+    const path = extractPathFromOutputId(outputId, blockId)
+    const key = `${blockId}\u0000${path}`
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    descriptors.push({ outputId, blockId, path, key })
+  }
+  return descriptors
+}
+
+function getSelectedOutputErrorMessage(error: unknown): string {
+  if (isExecutionResourceLimitError(error)) {
+    return SELECTED_OUTPUT_TOO_LARGE_MESSAGE
+  }
+  return getErrorMessage(error, 'Selected output could not be materialized')
+}
+
+function buildMaterializationContext(
+  context: Omit<OutputExtractionContext, 'requestId'>
+): ExecutionMaterializationContext {
+  return {
+    workspaceId: context.workspaceId,
+    workflowId: context.workflowId,
+    executionId: context.executionId,
+    largeValueExecutionIds: context.largeValueExecutionIds,
+    largeValueKeys: context.largeValueKeys,
+    fileKeys: context.fileKeys,
+    allowLargeValueWorkflowScope: context.allowLargeValueWorkflowScope,
+    userId: context.userId,
+  }
+}
+
+function getRemainingSelectedOutputBytes(usedBytes: number): number {
+  return MAX_INLINE_MATERIALIZATION_BYTES - usedBytes
+}
+
+function getBase64DecodedByteBudget(remainingJsonBytes: number): number {
+  return Math.max(0, Math.floor(((remainingJsonBytes - 2) * 3) / 4))
+}
+
+function assertSelectedOutputBytes(value: unknown): number {
+  const bytes = getInlineJsonByteLength(value) ?? 0
+  assertInlineMaterializationSize(bytes, MAX_INLINE_MATERIALIZATION_BYTES)
+  return bytes
+}
+
 async function buildMinimalResult(
   result: ExecutionResult,
   selectedOutputs: string[] | undefined,
   streamedContent: Map<string, string>,
   streamedOutputIds: Set<string>,
   completedBlockIds: Set<string>,
+  streamedSelectedOutputKeys: Set<string>,
   requestId: string,
+  includeFileBase64: boolean,
+  base64MaxBytes: number | undefined,
   executionId?: string,
-  includeFileBase64?: boolean,
-  base64MaxBytes?: number | undefined
+  context: Omit<OutputExtractionContext, 'executionId'> = { requestId }
 ): Promise<{ success: boolean; error?: string; output: Record<string, unknown> }> {
+  const durableContext = {
+    workspaceId: context.workspaceId,
+    workflowId: context.workflowId,
+    executionId,
+    userId: context.userId,
+    requireDurable: Boolean(context.workspaceId && context.workflowId && executionId),
+  }
+
   const minimalResult = {
     success: result.success,
     error: result.error,
@@ -244,20 +376,33 @@ async function buildMinimalResult(
 
   if (result.status === 'paused') {
     minimalResult.output = result.output || {}
-    return minimalResult
+    return compactExecutionPayload(minimalResult, {
+      ...durableContext,
+      preserveUserFileBase64: includeFileBase64,
+      preserveRoot: true,
+    })
   }
 
   if (!selectedOutputs?.length) {
     minimalResult.output = result.output || {}
-    return minimalResult
+    return compactExecutionPayload(minimalResult, {
+      ...durableContext,
+      preserveUserFileBase64: includeFileBase64,
+      preserveRoot: true,
+    })
   }
 
   if (!result.output || !result.logs) {
     return minimalResult
   }
 
-  for (const outputId of selectedOutputs) {
-    const blockId = extractBlockIdFromOutputId(outputId)
+  let selectedOutputBytes = assertSelectedOutputBytes(minimalResult.output)
+  for (const descriptor of getSelectedOutputDescriptors(selectedOutputs)) {
+    const { blockId, path } = descriptor
+
+    if (streamedSelectedOutputKeys.has(descriptor.key)) {
+      continue
+    }
 
     if (!completedBlockIds.has(blockId)) {
       continue
@@ -268,13 +413,12 @@ async function buildMinimalResult(
       continue
     }
 
-    const path = extractPathFromOutputId(outputId, blockId)
     if (isDangerousKey(path)) {
       logger.warn(`[${requestId}] Blocked dangerous path: ${path}`)
       continue
     }
 
-    if (streamedOutputIds.has(outputId)) {
+    if (streamedOutputIds.has(descriptor.outputId)) {
       continue
     }
 
@@ -287,15 +431,30 @@ async function buildMinimalResult(
       continue
     }
 
-    const value = extractOutputValue(blockLog.output, path)
+    const remainingBytes = getRemainingSelectedOutputBytes(selectedOutputBytes)
+    const extractionContext = {
+      ...context,
+      executionId,
+      base64MaxBytes: Math.min(
+        base64MaxBytes ?? MAX_INLINE_MATERIALIZATION_BYTES,
+        getBase64DecodedByteBudget(remainingBytes)
+      ),
+    }
+    const value = await extractOutputValue(blockLog.output, path, extractionContext)
     if (value === undefined) {
       continue
     }
+    const materializedValue = await materializeInlineExecutionValue(
+      value,
+      buildMaterializationContext(extractionContext),
+      { maxBytes: remainingBytes }
+    )
 
     if (!minimalResult.output[blockId]) {
       minimalResult.output[blockId] = Object.create(null) as Record<string, unknown>
     }
-    ;(minimalResult.output[blockId] as Record<string, unknown>)[path] = value
+    ;(minimalResult.output[blockId] as Record<string, unknown>)[path] = materializedValue
+    selectedOutputBytes = assertSelectedOutputBytes(minimalResult.output)
   }
 
   return minimalResult
@@ -367,6 +526,13 @@ export async function createStreamingResponse(
   options: StreamingResponseOptions
 ): Promise<ReadableStream> {
   const { requestId, streamConfig, executionId, executeFn } = options
+  const durableContext = {
+    workspaceId: options.workspaceId,
+    workflowId: options.workflowId,
+    executionId,
+    userId: options.userId,
+    requireDurable: Boolean(options.workspaceId && options.workflowId && executionId),
+  }
   const timeoutController = createTimeoutAbortController(streamConfig.timeoutMs)
 
   return new ReadableStream({
@@ -378,11 +544,26 @@ export async function createStreamingResponse(
         streamedOutputIds: new Set(),
         streamCompletionTimes: new Map(),
         completedBlockIds: new Set(),
+        selectedOutputBytes: 0,
+        streamedSelectedOutputKeys: new Set(),
       }
 
-      const sendChunk = (blockId: string, content: string) => {
+      const sendChunk = (
+        blockId: string,
+        content: string,
+        options: { selectedOutputKey?: string; selectedOutputBytes?: number } = {}
+      ) => {
         const separator = state.processedOutputs.size > 0 ? '\n\n' : ''
-        controller.enqueue(encodeSSE({ blockId, chunk: separator + content }))
+        const chunk = separator + content
+        if (options.selectedOutputKey) {
+          const selectedOutputBytes =
+            options.selectedOutputBytes ?? Buffer.byteLength(chunk, 'utf8')
+          const nextSelectedOutputBytes = state.selectedOutputBytes + selectedOutputBytes
+          assertInlineMaterializationSize(nextSelectedOutputBytes, MAX_INLINE_MATERIALIZATION_BYTES)
+          state.selectedOutputBytes = nextSelectedOutputBytes
+          state.streamedSelectedOutputKeys.add(options.selectedOutputKey)
+        }
+        controller.enqueue(encodeSSE({ blockId, chunk }))
         state.processedOutputs.add(blockId)
       }
 
@@ -427,7 +608,7 @@ export async function createStreamingResponse(
             encodeSSE({
               event: 'stream_error',
               blockId,
-              error: error instanceof Error ? error.message : 'Stream reading error',
+              error: getErrorMessage(error, 'Stream reading error'),
             })
           )
         }
@@ -447,36 +628,87 @@ export async function createStreamingResponse(
           return
         }
 
-        const matchingOutputs = streamConfig.selectedOutputs.filter(
-          (outputId) => extractBlockIdFromOutputId(outputId) === blockId
+        const matchingOutputs = getSelectedOutputDescriptors(streamConfig.selectedOutputs).filter(
+          (descriptor) => descriptor.blockId === blockId
         )
 
-        for (const outputId of matchingOutputs) {
-          const path = extractPathFromOutputId(outputId, blockId)
-          const outputValue = extractOutputValue(output, path)
-
-          if (outputValue !== undefined) {
-            if (isKnowledgeResultsArray(outputValue)) {
-              continue
+        for (const descriptor of matchingOutputs) {
+          if (state.selectedOutputError) {
+            break
+          }
+          try {
+            const remainingBytes = getRemainingSelectedOutputBytes(state.selectedOutputBytes)
+            const extractionContext = {
+              requestId,
+              workspaceId: options.workspaceId,
+              workflowId: options.workflowId,
+              executionId,
+              largeValueExecutionIds: options.largeValueExecutionIds,
+              largeValueKeys: options.largeValueKeys,
+              fileKeys: options.fileKeys,
+              allowLargeValueWorkflowScope: options.allowLargeValueWorkflowScope,
+              userId: options.userId,
+              base64MaxBytes: Math.min(
+                base64MaxBytes ?? MAX_INLINE_MATERIALIZATION_BYTES,
+                getBase64DecodedByteBudget(remainingBytes)
+              ),
             }
-            const hydratedOutput = includeFileBase64
-              ? await hydrateUserFilesWithBase64(outputValue, {
-                  requestId,
-                  executionId,
-                  maxBytes: base64MaxBytes,
-                })
-              : outputValue
+            const materializationContext = buildMaterializationContext(extractionContext)
+            const outputValue = await extractOutputValue(output, descriptor.path, extractionContext)
 
-            if (containsRenderableImageOutput(hydratedOutput)) {
-              continue
+            if (outputValue !== undefined) {
+              if (isKnowledgeResultsArray(outputValue)) {
+                continue
+              }
+              const materializedOutput = await materializeInlineExecutionValue(
+                outputValue,
+                materializationContext,
+                { maxBytes: remainingBytes }
+              )
+              const shouldHydrateOutput = includeFileBase64
+              const hydratedOutput = shouldHydrateOutput
+                ? await hydrateUserFilesWithBase64(materializedOutput, {
+                    requestId,
+                    ...materializationContext,
+                    maxBytes: Math.min(
+                      base64MaxBytes ?? MAX_INLINE_MATERIALIZATION_BYTES,
+                      getBase64DecodedByteBudget(remainingBytes)
+                    ),
+                    preserveLargeValueMetadata: true,
+                  })
+                : materializedOutput
+              await materializeInlineExecutionValue(hydratedOutput, materializationContext, {
+                maxBytes: getRemainingSelectedOutputBytes(state.selectedOutputBytes),
+              })
+              const formattedOutput =
+                typeof hydratedOutput === 'string'
+                  ? hydratedOutput
+                  : JSON.stringify(hydratedOutput, null, 2)
+              const selectedOutputBytes = Math.max(
+                getInlineJsonByteLength(hydratedOutput) ?? 0,
+                Buffer.byteLength(formattedOutput, 'utf8')
+              )
+              sendChunk(blockId, formattedOutput, {
+                selectedOutputKey: descriptor.key,
+                selectedOutputBytes,
+              })
             }
-
-            const formattedOutput =
-              typeof hydratedOutput === 'string'
-                ? hydratedOutput
-                : JSON.stringify(hydratedOutput, null, 2)
-            sendChunk(blockId, formattedOutput)
-            state.streamedOutputIds.add(outputId)
+          } catch (error) {
+            logger.warn(`[${requestId}] Failed to materialize selected output`, {
+              blockId,
+              outputId: descriptor.outputId,
+              error,
+            })
+            const errorMessage = getSelectedOutputErrorMessage(error)
+            state.selectedOutputError ??= errorMessage
+            controller.enqueue(
+              encodeSSE({
+                event: 'error',
+                blockId,
+                error: errorMessage,
+              })
+            )
+            break
           }
         }
       }
@@ -546,27 +778,40 @@ export async function createStreamingResponse(
         } else {
           await completeLoggingSession(result)
 
-          const minimalResult = await buildMinimalResult(
-            result,
-            streamConfig.selectedOutputs,
-            streamedContent,
-            state.streamedOutputIds,
-            state.completedBlockIds,
-            requestId,
-            executionId,
-            streamConfig.includeFileBase64 ?? true,
-            streamConfig.base64MaxBytes
-          )
+          if (!state.selectedOutputError) {
+            const minimalResult = await buildMinimalResult(
+              result,
+              streamConfig.selectedOutputs,
+              streamedContent,
+              state.streamedOutputIds,
+              state.completedBlockIds,
+              state.streamedSelectedOutputKeys,
+              requestId,
+              streamConfig.includeFileBase64 ?? true,
+              streamConfig.base64MaxBytes,
+              executionId,
+              {
+                requestId,
+                workspaceId: options.workspaceId,
+                workflowId: options.workflowId,
+                largeValueExecutionIds: options.largeValueExecutionIds,
+                largeValueKeys: result.metadata?.largeValueKeys ?? options.largeValueKeys,
+                fileKeys: result.metadata?.fileKeys ?? options.fileKeys,
+                allowLargeValueWorkflowScope: options.allowLargeValueWorkflowScope,
+                userId: options.userId,
+              }
+            )
 
-          controller.enqueue(
-            encodeSSE({
-              event: 'final',
-              data: {
-                ...minimalResult,
-                ...(result.status === 'paused' && { status: 'paused' }),
-              },
-            })
-          )
+            controller.enqueue(
+              encodeSSE({
+                event: 'final',
+                data: {
+                  ...minimalResult,
+                  ...(result.status === 'paused' && { status: 'paused' }),
+                },
+              })
+            )
+          }
         }
 
         controller.enqueue(encodeSSE('[DONE]'))
@@ -576,11 +821,13 @@ export async function createStreamingResponse(
         }
 
         controller.close()
-      } catch (error: any) {
+      } catch (error) {
         logger.error(`[${requestId}] Stream error:`, error)
-        controller.enqueue(
-          encodeSSE({ event: 'error', error: error.message || 'Stream processing error' })
-        )
+        const errorMessage =
+          streamConfig.selectedOutputs?.length && isExecutionResourceLimitError(error)
+            ? SELECTED_OUTPUT_TOO_LARGE_MESSAGE
+            : getErrorMessage(error, 'Stream processing error')
+        controller.enqueue(encodeSSE({ event: 'error', error: errorMessage }))
 
         if (executionId) {
           await cleanupExecutionBase64Cache(executionId)

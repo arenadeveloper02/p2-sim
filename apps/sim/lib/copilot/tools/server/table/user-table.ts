@@ -14,13 +14,24 @@ import {
   type CsvHeaderMapping,
   CsvImportValidationError,
   coerceRowsForTable,
+  getWorkspaceTableLimits,
   inferSchemaFromCsv,
-  parseCsvBuffer,
-  sanitizeName,
+  parseFileRows,
   validateMapping,
 } from '@/lib/table'
 import {
+  buildIdByName,
+  buildNameById,
+  filterNamesToIds,
+  rowDataIdToName,
+  rowDataNameToId,
+  sortNamesToIds,
+} from '@/lib/table/column-keys'
+import { columnTypeForLeaf, deriveOutputColumnName } from '@/lib/table/column-naming'
+import {
   addTableColumn,
+  addWorkflowGroup,
+  addWorkflowGroupOutput,
   batchInsertRows,
   batchUpdateRows,
   createTable,
@@ -30,6 +41,8 @@ import {
   deleteRowsByFilter,
   deleteRowsByIds,
   deleteTable,
+  deleteWorkflowGroup,
+  deleteWorkflowGroupOutput,
   getRowById,
   getTableById,
   insertRow,
@@ -41,12 +54,28 @@ import {
   updateColumnType,
   updateRow,
   updateRowsByFilter,
+  updateWorkflowGroup,
 } from '@/lib/table/service'
-import type { RowData, TableDefinition } from '@/lib/table/types'
+import type {
+  ColumnDefinition,
+  RowData,
+  TableDefinition,
+  WorkflowGroup,
+  WorkflowGroupDependencies,
+  WorkflowGroupDeploymentMode,
+  WorkflowGroupInputMapping,
+  WorkflowGroupOutput,
+} from '@/lib/table/types'
+import { cancelWorkflowGroupRuns, runWorkflowColumn } from '@/lib/table/workflow-columns'
 import {
-  downloadWorkspaceFile,
+  fetchWorkspaceFileBuffer,
   resolveWorkspaceFileReference,
 } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import {
+  type FlattenedBlockOutput,
+  flattenWorkflowOutputs,
+} from '@/lib/workflows/blocks/flatten-outputs'
+import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 
 const logger = createLogger('UserTableServerTool')
 
@@ -70,80 +99,63 @@ async function resolveWorkspaceFile(
   const record = await resolveWorkspaceFileReference(workspaceId, fileReference)
   if (!record) {
     throw new Error(
-      `File not found: "${fileReference}". Use glob("files/by-id/*/meta.json") to list canonical file IDs.`
+      `File not found: "${fileReference}". Use glob("files/**") and read the canonical file path metadata to find workspace files.`
     )
   }
-  const buffer = await downloadWorkspaceFile(record)
+  const buffer = await fetchWorkspaceFileBuffer(record)
   return { buffer, name: record.name, type: record.type }
 }
 
 /**
- * Sanitizes raw JSON headers/rows so they conform to the same rules as CSV
- * imports (so `inferSchemaFromCsv` and friends can be reused).
+ * Loads the live workflow state and flattens it into pickable outputs. Used
+ * to validate `(blockId, path)` pairs the AI passes to add/update_workflow_group
+ * before they get stored as stale references — and to power `list_workflow_outputs`
+ * so the AI can discover valid picks instead of guessing.
  */
-function sanitizeJsonHeaders(
-  headers: string[],
-  rows: Record<string, unknown>[]
-): { headers: string[]; rows: Record<string, unknown>[] } {
-  const renamed = new Map<string, string>()
-  const seen = new Set<string>()
-
-  for (const raw of headers) {
-    let safe = sanitizeName(raw)
-    while (seen.has(safe)) safe = `${safe}_`
-    seen.add(safe)
-    renamed.set(raw, safe)
-  }
-
-  const noChange = headers.every((h) => renamed.get(h) === h)
-  if (noChange) return { headers, rows }
-
-  return {
-    headers: headers.map((h) => renamed.get(h)!),
-    rows: rows.map((row) => {
-      const out: Record<string, unknown> = {}
-      for (const [raw, safe] of renamed) {
-        if (raw in row) out[safe] = row[raw]
-      }
-      return out
-    }),
-  }
+async function loadFlattenedWorkflowOutputs(
+  workflowId: string
+): Promise<FlattenedBlockOutput[] | null> {
+  const normalized = await loadWorkflowFromNormalizedTables(workflowId)
+  if (!normalized) return null
+  const blocks = Object.values(normalized.blocks ?? {}).map((b) => ({
+    id: b.id,
+    type: b.type,
+    name: b.name,
+    triggerMode: (b as { triggerMode?: boolean }).triggerMode,
+    subBlocks: b.subBlocks as Record<string, unknown> | undefined,
+  }))
+  return flattenWorkflowOutputs(blocks, normalized.edges ?? [])
 }
 
-async function parseJsonRows(
-  buffer: Buffer
-): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
-  const parsed = JSON.parse(buffer.toString('utf-8'))
-  if (!Array.isArray(parsed)) {
-    throw new Error('JSON file must contain an array of objects')
-  }
-  if (parsed.length === 0) {
-    throw new Error('JSON file contains an empty array')
-  }
-  const headerSet = new Set<string>()
-  for (const row of parsed) {
-    if (typeof row !== 'object' || row === null || Array.isArray(row)) {
-      throw new Error('Each element in the JSON array must be a plain object')
-    }
-    for (const key of Object.keys(row)) headerSet.add(key)
-  }
-  return sanitizeJsonHeaders([...headerSet], parsed)
+/**
+ * Validates a list of `(blockId, path)` outputs against the live workflow.
+ * Returns `null` on success; on failure returns an error message that lists
+ * the valid options so the AI can retry without guessing again.
+ */
+function validateOutputsAgainstWorkflow(
+  outputs: Array<{ blockId: string; path: string }>,
+  flattened: FlattenedBlockOutput[],
+  workflowId: string
+): string | null {
+  const valid = new Set(flattened.map((f) => `${f.blockId}::${f.path}`))
+  const invalid = outputs.filter((o) => !valid.has(`${o.blockId}::${o.path}`))
+  if (invalid.length === 0) return null
+  const sample = flattened
+    .slice(0, 12)
+    .map((f) => `  - ${f.blockId} (${f.blockName}) → ${f.path}`)
+    .join('\n')
+  const invalidList = invalid.map((o) => `  - ${o.blockId} → ${o.path}`).join('\n')
+  return `Invalid output(s) for workflow ${workflowId}:\n${invalidList}\n\nValid options${flattened.length > 12 ? ' (first 12)' : ''}:\n${sample}\n\nCall list_workflow_outputs with workflowId="${workflowId}" to see all valid (blockId, path) picks.`
 }
 
-async function parseFileRows(
-  buffer: Buffer,
-  fileName: string,
-  contentType: string
-): Promise<{ headers: string[]; rows: Record<string, unknown>[] }> {
-  const ext = fileName.split('.').pop()?.toLowerCase()
-  if (ext === 'json' || contentType === 'application/json') {
-    return parseJsonRows(buffer)
-  }
-  if (ext === 'csv' || ext === 'tsv' || contentType === 'text/csv') {
-    const delimiter = ext === 'tsv' ? '\t' : ','
-    return parseCsvBuffer(buffer, delimiter)
-  }
-  throw new Error(`Unsupported file format: "${ext}". Supported: csv, tsv, json`)
+/**
+ * Narrows a raw `deploymentMode` arg to the `'live' | 'deployed'` union, or
+ * `undefined` when absent/invalid (leaving the group's existing value — which
+ * itself defaults to `'live'`). Lets Mothership choose whether a group's
+ * per-cell runs execute the live draft or the latest active deployment.
+ */
+function parseDeploymentMode(value: unknown): WorkflowGroupDeploymentMode | undefined {
+  return value === 'live' || value === 'deployed' ? value : undefined
 }
 
 async function batchInsertAll(
@@ -201,6 +213,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
 
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
+          const planLimits = await getWorkspaceTableLimits(workspaceId)
           const table = await createTable(
             {
               name: args.name,
@@ -208,6 +221,8 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               schema: args.schema,
               workspaceId,
               userId: context.userId,
+              maxRows: planLimits.maxRowsPerTable,
+              maxTables: planLimits.maxTables,
             },
             requestId
           )
@@ -223,9 +238,12 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           if (!args.tableId) {
             return { success: false, message: 'Table ID is required' }
           }
+          if (!workspaceId) {
+            return { success: false, message: 'Workspace ID is required' }
+          }
 
           const table = await getTableById(args.tableId)
-          if (!table) {
+          if (!table || table.workspaceId !== workspaceId) {
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
@@ -240,16 +258,23 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           if (!args.tableId) {
             return { success: false, message: 'Table ID is required' }
           }
+          if (!workspaceId) {
+            return { success: false, message: 'Workspace ID is required' }
+          }
 
           const table = await getTableById(args.tableId)
-          if (!table) {
+          if (!table || table.workspaceId !== workspaceId) {
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
           return {
             success: true,
             message: `Schema for "${table.name}"`,
-            data: { name: table.name, columns: table.schema.columns },
+            data: {
+              name: table.name,
+              columns: table.schema.columns,
+              workflowGroups: table.schema.workflowGroups ?? [],
+            },
           }
         }
 
@@ -296,14 +321,23 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           }
 
           const table = await getTableById(args.tableId)
-          if (!table) {
+          if (!table || table.workspaceId !== workspaceId) {
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
+          // The LLM authors row data by column name; storage keys by id.
+          const idByName = buildIdByName(table.schema)
+          const nameById = buildNameById(table.schema)
           const row = await insertRow(
-            { tableId: args.tableId, data: args.data, workspaceId, userId: context.userId },
+            {
+              tableId: args.tableId,
+              data: rowDataNameToId(args.data, idByName),
+              workspaceId,
+              userId: context.userId,
+              position: args.position as number | undefined,
+            },
             table,
             requestId
           )
@@ -311,7 +345,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           return {
             success: true,
             message: `Inserted row ${row.id}`,
-            data: { row },
+            data: { row: { ...row, data: rowDataIdToName(row.data, nameById) } },
           }
         }
 
@@ -326,15 +360,37 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
+          const positions = args.positions as number[] | undefined
+          if (positions !== undefined && positions.length !== args.rows.length) {
+            return {
+              success: false,
+              message: `positions length (${positions.length}) must match rows length (${args.rows.length})`,
+            }
+          }
+          if (positions !== undefined && new Set(positions).size !== positions.length) {
+            return {
+              success: false,
+              message: 'positions must not contain duplicate values',
+            }
+          }
+
           const table = await getTableById(args.tableId)
-          if (!table) {
+          if (!table || table.workspaceId !== workspaceId) {
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
+          const idByName = buildIdByName(table.schema)
+          const nameById = buildNameById(table.schema)
           const rows = await batchInsertRows(
-            { tableId: args.tableId, rows: args.rows, workspaceId, userId: context.userId },
+            {
+              tableId: args.tableId,
+              rows: args.rows.map((r: RowData) => rowDataNameToId(r, idByName)),
+              workspaceId,
+              userId: context.userId,
+              positions,
+            },
             table,
             requestId
           )
@@ -342,7 +398,10 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           return {
             success: true,
             message: `Inserted ${rows.length} rows`,
-            data: { rows, insertedCount: rows.length },
+            data: {
+              rows: rows.map((r) => ({ ...r, data: rowDataIdToName(r.data, nameById) })),
+              insertedCount: rows.length,
+            },
           }
         }
 
@@ -357,15 +416,22 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
+          const rowTable = await getTableById(args.tableId)
+          if (!rowTable || rowTable.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
           const row = await getRowById(args.tableId, args.rowId, workspaceId)
           if (!row) {
             return { success: false, message: `Row not found: ${args.rowId}` }
           }
 
+          const nameById = buildNameById(rowTable.schema)
           return {
             success: true,
             message: `Row ${row.id}`,
-            data: { row },
+            data: {
+              row: { ...row, data: rowDataIdToName(row.data, nameById) },
+            },
           }
         }
 
@@ -377,13 +443,19 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
+          const table = await getTableById(args.tableId)
+          if (!table || table.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
+
           const requestId = generateId().slice(0, 8)
+          const idByName = buildIdByName(table.schema)
+          const nameById = buildNameById(table.schema)
           const result = await queryRows(
-            args.tableId,
-            workspaceId,
+            table,
             {
-              filter: args.filter,
-              sort: args.sort,
+              filter: args.filter ? filterNamesToIds(args.filter, idByName) : undefined,
+              sort: args.sort ? sortNamesToIds(args.sort, idByName) : undefined,
               limit: args.limit,
               offset: args.offset,
             },
@@ -393,7 +465,10 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           return {
             success: true,
             message: `Returned ${result.rows.length} of ${result.totalCount} rows`,
-            data: result,
+            data: {
+              ...result,
+              rows: result.rows.map((r) => ({ ...r, data: rowDataIdToName(r.data, nameById) })),
+            },
           }
         }
 
@@ -412,22 +487,40 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           }
 
           const table = await getTableById(args.tableId)
-          if (!table) {
+          if (!table || table.workspaceId !== workspaceId) {
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
+          const idByName = buildIdByName(table.schema)
+          const nameById = buildNameById(table.schema)
           const updatedRow = await updateRow(
-            { tableId: args.tableId, rowId: args.rowId, data: args.data, workspaceId },
+            {
+              tableId: args.tableId,
+              rowId: args.rowId,
+              data: rowDataNameToId(args.data, idByName),
+              workspaceId,
+              actorUserId: context.userId,
+            },
             table,
             requestId
           )
+          if (!updatedRow) {
+            // Only the cell-task path passes a `cancellationGuard`; this caller
+            // doesn't, so the guard never trips here. Defensive narrowing.
+            return { success: false, message: 'Row update was skipped' }
+          }
+          // Auto-dispatch for user edits is handled inside `updateRow`
+          // (mode: 'new' for newly-cleared groups + cancel+rerun for in-flight
+          // downstream groups). Firing a second mode: 'incomplete' dispatch
+          // here would race with the internal one AND bulk-clear sibling-group
+          // outputs (mode: 'incomplete' wipes terminal-state cells in scope).
 
           return {
             success: true,
             message: `Updated row ${updatedRow.id}`,
-            data: { row: updatedRow },
+            data: { row: { ...updatedRow, data: rowDataIdToName(updatedRow.data, nameById) } },
           }
         }
 
@@ -467,21 +560,21 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           }
 
           const table = await getTableById(args.tableId)
-          if (!table) {
+          if (!table || table.workspaceId !== workspaceId) {
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
+          const idByName = buildIdByName(table.schema)
           const result = await updateRowsByFilter(
-            {
-              tableId: args.tableId,
-              filter: args.filter,
-              data: args.data,
-              limit: args.limit,
-              workspaceId,
-            },
             table,
+            {
+              filter: filterNamesToIds(args.filter, idByName),
+              data: rowDataNameToId(args.data, idByName),
+              limit: args.limit,
+              actorUserId: context.userId,
+            },
             requestId
           )
 
@@ -503,14 +596,19 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return { success: false, message: 'Workspace ID is required' }
           }
 
+          const table = await getTableById(args.tableId)
+          if (!table || table.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
+
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
+          const idByName = buildIdByName(table.schema)
           const result = await deleteRowsByFilter(
+            table,
             {
-              tableId: args.tableId,
-              filter: args.filter,
+              filter: filterNamesToIds(args.filter, idByName),
               limit: args.limit,
-              workspaceId,
             },
             requestId
           )
@@ -562,17 +660,22 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           }
 
           const table = await getTableById(args.tableId)
-          if (!table) {
+          if (!table || table.workspaceId !== workspaceId) {
             return { success: false, message: `Table not found: ${args.tableId}` }
           }
 
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
+          const idByName = buildIdByName(table.schema)
           const result = await batchUpdateRows(
             {
               tableId: args.tableId,
-              updates: updates as Array<{ rowId: string; data: RowData }>,
+              updates: (updates as Array<{ rowId: string; data: RowData }>).map((u) => ({
+                rowId: u.rowId,
+                data: rowDataNameToId(u.data, idByName),
+              })),
               workspaceId,
+              actorUserId: context.userId,
             },
             table,
             requestId
@@ -630,7 +733,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return {
               success: false,
               message:
-                'fileId is required for create_from_file. Read files/{name}/meta.json or files/by-id/*/meta.json to get the canonical file ID.',
+                'fileId or filePath is required for create_from_file. Use a canonical VFS path from glob("files/**") or a file ID from read("files/{path}/{name}").',
             }
           }
           if (!workspaceId) {
@@ -647,6 +750,11 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           const tableName = args.name || file.name.replace(/\.[^.]+$/, '')
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
+          const planLimits = await getWorkspaceTableLimits(workspaceId)
+
+          const droppedRows = Math.max(0, rows.length - planLimits.maxRowsPerTable)
+          const rowsToImport = droppedRows > 0 ? rows.slice(0, planLimits.maxRowsPerTable) : rows
+
           const table = await createTable(
             {
               name: tableName,
@@ -654,24 +762,61 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               schema: { columns },
               workspaceId,
               userId: context.userId,
+              maxRows: planLimits.maxRowsPerTable,
+              maxTables: planLimits.maxTables,
             },
             requestId
           )
 
-          const coerced = coerceRowsForTable(rows, { columns }, headerToColumn)
-          const inserted = await batchInsertAll(table.id, coerced, table, workspaceId, context)
+          // Coerce against the created table's schema so rows key by the ids
+          // `createTable` assigned (not the inferred, id-less columns).
+          const coerced = coerceRowsForTable(rowsToImport, table.schema, headerToColumn)
+          let inserted: number
+          try {
+            inserted = await batchInsertAll(table.id, coerced, table, workspaceId, context)
+          } catch (insertError) {
+            const cleanupRequestId = generateId().slice(0, 8)
+            await deleteTable(table.id, cleanupRequestId).catch((cleanupError) => {
+              logger.error('Failed to roll back table after import failure', {
+                tableId: table.id,
+                error: toError(cleanupError).message,
+              })
+            })
+            const reason = toError(insertError).message
+            const cause =
+              insertError instanceof Error && insertError.cause
+                ? toError(insertError.cause).message
+                : undefined
+            logger.error('Failed to import rows into new table', {
+              tableId: table.id,
+              fileName: file.name,
+              error: reason,
+              cause,
+            })
+            return {
+              success: false,
+              message: `Failed to import rows from "${file.name}" — the table was rolled back. ${cause ? `${reason} (${cause})` : reason}`,
+            }
+          }
 
           logger.info('Table created from file', {
             tableId: table.id,
             fileName: file.name,
             columns: columns.length,
             rows: inserted,
+            droppedRows,
             userId: context.userId,
           })
 
+          const createdMessage = `Created table "${table.name}" with ${columns.length} columns and ${inserted.toLocaleString()} rows from "${file.name}"`
+          const message =
+            droppedRows > 0
+              ? `${createdMessage}. Dropped ${droppedRows.toLocaleString()} row(s) that exceed this plan's limit of ${planLimits.maxRowsPerTable.toLocaleString()} rows per table.`
+              : createdMessage
+
           return {
             success: true,
-            message: `Created table "${table.name}" with ${columns.length} columns and ${inserted} rows from "${file.name}"`,
+            message,
             data: {
               tableId: table.id,
               tableName: table.name,
@@ -695,7 +840,7 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             return {
               success: false,
               message:
-                'fileId is required for import_file. Read files/{name}/meta.json or files/by-id/*/meta.json to get the canonical file ID.',
+                'fileId or filePath is required for import_file. Use a canonical VFS path from glob("files/**") or a file ID from read("files/{path}/{name}").',
             }
           }
           if (!tableId) {
@@ -816,6 +961,9 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           if (!args.tableId) {
             return { success: false, message: 'Table ID is required' }
           }
+          if (!workspaceId) {
+            return { success: false, message: 'Workspace ID is required' }
+          }
           const col = (args as Record<string, unknown>).column as
             | {
                 name: string
@@ -829,6 +977,10 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               success: false,
               message: 'column with name and type is required for add_column',
             }
+          }
+          const tableForAdd = await getTableById(args.tableId)
+          if (!tableForAdd || tableForAdd.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
           }
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
@@ -844,10 +996,17 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           if (!args.tableId) {
             return { success: false, message: 'Table ID is required' }
           }
+          if (!workspaceId) {
+            return { success: false, message: 'Workspace ID is required' }
+          }
           const colName = (args as Record<string, unknown>).columnName as string | undefined
           const newColName = (args as Record<string, unknown>).newName as string | undefined
           if (!colName || !newColName) {
             return { success: false, message: 'columnName and newName are required' }
+          }
+          const tableForRename = await getTableById(args.tableId)
+          if (!tableForRename || tableForRename.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
           }
           const requestId = generateId().slice(0, 8)
           assertNotAborted()
@@ -866,11 +1025,18 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           if (!args.tableId) {
             return { success: false, message: 'Table ID is required' }
           }
+          if (!workspaceId) {
+            return { success: false, message: 'Workspace ID is required' }
+          }
           const colName = (args as Record<string, unknown>).columnName as string | undefined
           const colNames = (args as Record<string, unknown>).columnNames as string[] | undefined
           const names = colNames ?? (colName ? [colName] : null)
           if (!names || names.length === 0) {
             return { success: false, message: 'columnName or columnNames is required' }
+          }
+          const tableForDelete = await getTableById(args.tableId)
+          if (!tableForDelete || tableForDelete.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
           }
           const requestId = generateId().slice(0, 8)
           if (names.length === 1) {
@@ -901,6 +1067,9 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           if (!args.tableId) {
             return { success: false, message: 'Table ID is required' }
           }
+          if (!workspaceId) {
+            return { success: false, message: 'Workspace ID is required' }
+          }
           const colName = (args as Record<string, unknown>).columnName as string | undefined
           if (!colName) {
             return { success: false, message: 'columnName is required' }
@@ -912,6 +1081,10 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
               success: false,
               message: 'At least one of newType or unique must be provided',
             }
+          }
+          const tableForUpdate = await getTableById(args.tableId)
+          if (!tableForUpdate || tableForUpdate.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
           }
           const requestId = generateId().slice(0, 8)
           let result: TableDefinition | undefined
@@ -959,11 +1132,8 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
           }
 
           const table = await getTableById(args.tableId)
-          if (!table) {
+          if (!table || table.workspaceId !== workspaceId) {
             return { success: false, message: `Table not found: ${args.tableId}` }
-          }
-          if (table.workspaceId !== workspaceId) {
-            return { success: false, message: 'Table not found' }
           }
 
           const requestId = generateId().slice(0, 8)
@@ -974,6 +1144,501 @@ export const userTableServerTool: BaseServerTool<UserTableArgs, UserTableResult>
             success: true,
             message: `Renamed table to "${renamed.name}"`,
             data: { table: { id: renamed.id, name: renamed.name } },
+          }
+        }
+
+        case 'list_workflow_outputs': {
+          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          const workflowId = args.workflowId as string | undefined
+          if (!workflowId) {
+            return {
+              success: false,
+              message: 'workflowId is required for list_workflow_outputs',
+            }
+          }
+          const flattened = await loadFlattenedWorkflowOutputs(workflowId)
+          if (!flattened) {
+            return {
+              success: false,
+              message: `Workflow not found or has no blocks: ${workflowId}`,
+            }
+          }
+          return {
+            success: true,
+            message: `Found ${flattened.length} output path(s) across the workflow's blocks`,
+            data: { workflowId, outputs: flattened },
+          }
+        }
+
+        case 'add_workflow_group': {
+          if (!args.tableId) return { success: false, message: 'Table ID is required' }
+          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          const workflowId = args.workflowId as string | undefined
+          if (!workflowId) {
+            return { success: false, message: 'workflowId is required for add_workflow_group' }
+          }
+          const rawOutputs = args.outputs as
+            | Array<{
+                blockId: string
+                path: string
+                columnName?: string
+                columnType?: string
+              }>
+            | undefined
+          if (!rawOutputs || rawOutputs.length === 0) {
+            return {
+              success: false,
+              message: 'outputs array (with blockId + path entries) is required',
+            }
+          }
+          const tableForGroup = await getTableById(args.tableId)
+          if (!tableForGroup || tableForGroup.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
+
+          for (const o of rawOutputs) {
+            if (!o.blockId || !o.path) {
+              return {
+                success: false,
+                message: 'Each output entry must include both blockId and path',
+              }
+            }
+          }
+
+          const flattened = await loadFlattenedWorkflowOutputs(workflowId)
+          if (!flattened) {
+            return {
+              success: false,
+              message: `Workflow not found or has no blocks: ${workflowId}`,
+            }
+          }
+          const validationError = validateOutputsAgainstWorkflow(
+            rawOutputs.map((o) => ({ blockId: o.blockId, path: o.path })),
+            flattened,
+            workflowId
+          )
+          if (validationError) {
+            return { success: false, message: validationError }
+          }
+          const leafTypeByKey = new Map(
+            flattened.map((f) => [`${f.blockId}::${f.path}`, f.leafType])
+          )
+
+          const taken = new Set(tableForGroup.schema.columns.map((c) => c.name))
+          const groupId = generateId()
+          const outputs: WorkflowGroupOutput[] = []
+          const outputColumns: ColumnDefinition[] = []
+          for (const o of rawOutputs) {
+            const colName = o.columnName ?? deriveOutputColumnName(o.path, taken)
+            taken.add(colName)
+            outputs.push({ blockId: o.blockId, path: o.path, columnName: colName })
+            const leafType = o.columnType ?? leafTypeByKey.get(`${o.blockId}::${o.path}`)
+            outputColumns.push({
+              name: colName,
+              type: columnTypeForLeaf(leafType),
+              required: false,
+              unique: false,
+              workflowGroupId: groupId,
+            })
+          }
+          const dependencies = args.dependencies as WorkflowGroupDependencies | undefined
+          const name = args.name as string | undefined
+          const deploymentMode = parseDeploymentMode(args.deploymentMode)
+          const group: WorkflowGroup = {
+            id: groupId,
+            workflowId,
+            ...(name ? { name } : {}),
+            ...(dependencies ? { dependencies } : {}),
+            ...(deploymentMode ? { deploymentMode } : {}),
+            outputs,
+          }
+          const requestId = generateId().slice(0, 8)
+          assertNotAborted()
+          // Mothership stages groups silently by default — the AI may add more
+          // columns or update deps before the user wants rows to fire. Caller
+          // can opt in by passing `autoRun: true`.
+          const autoRun = args.autoRun === true
+          const updated = await addWorkflowGroup(
+            { tableId: args.tableId, group, outputColumns, autoRun, actorUserId: context.userId },
+            requestId
+          )
+          return {
+            success: true,
+            message: `Added workflow group "${name ?? groupId}" with ${outputs.length} output column(s)`,
+            data: {
+              groupId,
+              schema: updated.schema,
+            },
+          }
+        }
+
+        case 'update_workflow_group': {
+          if (!args.tableId) return { success: false, message: 'Table ID is required' }
+          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          const groupId = args.groupId as string | undefined
+          if (!groupId) {
+            return { success: false, message: 'groupId is required for update_workflow_group' }
+          }
+          const tableForUpdate = await getTableById(args.tableId)
+          if (!tableForUpdate || tableForUpdate.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
+          const updateOutputs = args.outputs as WorkflowGroupOutput[] | undefined
+          if (updateOutputs && updateOutputs.length > 0) {
+            // Resolve which workflow these outputs apply to: explicit override
+            // wins, else the existing group's workflowId.
+            const existingGroup = tableForUpdate.schema.workflowGroups?.find(
+              (g) => g.id === groupId
+            )
+            const targetWorkflowId =
+              (args.workflowId as string | undefined) ?? existingGroup?.workflowId
+            if (!targetWorkflowId) {
+              return {
+                success: false,
+                message: `Cannot validate outputs — workflow group ${groupId} not found and no workflowId provided`,
+              }
+            }
+            const flattened = await loadFlattenedWorkflowOutputs(targetWorkflowId)
+            if (!flattened) {
+              return {
+                success: false,
+                message: `Workflow not found or has no blocks: ${targetWorkflowId}`,
+              }
+            }
+            const validationError = validateOutputsAgainstWorkflow(
+              updateOutputs.map((o) => ({ blockId: o.blockId, path: o.path })),
+              flattened,
+              targetWorkflowId
+            )
+            if (validationError) {
+              return { success: false, message: validationError }
+            }
+          }
+          const requestId = generateId().slice(0, 8)
+          assertNotAborted()
+          const updated = await updateWorkflowGroup(
+            {
+              tableId: args.tableId,
+              groupId,
+              actorUserId: context.userId,
+              workflowId: args.workflowId as string | undefined,
+              name: args.name as string | undefined,
+              dependencies: args.dependencies as WorkflowGroupDependencies | undefined,
+              outputs: updateOutputs,
+              newOutputColumns: args.newOutputColumns as ColumnDefinition[] | undefined,
+              mappingUpdates: args.mappingUpdates as
+                | Array<{ columnName: string; blockId: string; path: string }>
+                | undefined,
+              deploymentMode: parseDeploymentMode(args.deploymentMode),
+              autoRun: typeof args.autoRun === 'boolean' ? args.autoRun : undefined,
+            },
+            requestId
+          )
+          return {
+            success: true,
+            message: `Updated workflow group ${groupId}`,
+            data: { schema: updated.schema },
+          }
+        }
+
+        case 'delete_workflow_group': {
+          if (!args.tableId) return { success: false, message: 'Table ID is required' }
+          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          const groupId = args.groupId as string | undefined
+          if (!groupId) {
+            return { success: false, message: 'groupId is required for delete_workflow_group' }
+          }
+          const tableForDelete = await getTableById(args.tableId)
+          if (!tableForDelete || tableForDelete.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
+          const requestId = generateId().slice(0, 8)
+          assertNotAborted()
+          const updated = await deleteWorkflowGroup({ tableId: args.tableId, groupId }, requestId)
+          return {
+            success: true,
+            message: `Deleted workflow group ${groupId}`,
+            data: { schema: updated.schema },
+          }
+        }
+
+        case 'add_workflow_group_output': {
+          if (!args.tableId) return { success: false, message: 'Table ID is required' }
+          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          const groupId = args.groupId as string | undefined
+          const blockId = args.blockId as string | undefined
+          const path = args.path as string | undefined
+          const columnName = args.columnName as string | undefined
+          if (!groupId || !blockId || !path) {
+            return {
+              success: false,
+              message: 'groupId, blockId, and path are required for add_workflow_group_output',
+            }
+          }
+          const tableForAdd = await getTableById(args.tableId)
+          if (!tableForAdd || tableForAdd.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
+          const requestId = generateId().slice(0, 8)
+          assertNotAborted()
+          const updated = await addWorkflowGroupOutput(
+            {
+              tableId: args.tableId,
+              groupId,
+              blockId,
+              path,
+              columnName,
+              actorUserId: context.userId,
+            },
+            requestId
+          )
+          return {
+            success: true,
+            message: `Added output to workflow group ${groupId}`,
+            data: { schema: updated.schema },
+          }
+        }
+
+        case 'delete_workflow_group_output': {
+          if (!args.tableId) return { success: false, message: 'Table ID is required' }
+          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          const groupId = args.groupId as string | undefined
+          const columnName = args.columnName as string | undefined
+          if (!groupId || !columnName) {
+            return {
+              success: false,
+              message: 'groupId and columnName are required for delete_workflow_group_output',
+            }
+          }
+          const tableForRemove = await getTableById(args.tableId)
+          if (!tableForRemove || tableForRemove.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
+          const requestId = generateId().slice(0, 8)
+          assertNotAborted()
+          const updated = await deleteWorkflowGroupOutput(
+            { tableId: args.tableId, groupId, columnName },
+            requestId
+          )
+          return {
+            success: true,
+            message: `Removed output "${columnName}" from workflow group ${groupId}`,
+            data: { schema: updated.schema },
+          }
+        }
+
+        case 'run_column': {
+          if (!args.tableId) return { success: false, message: 'Table ID is required' }
+          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          const rawGroupIds = args.groupIds as unknown
+          if (
+            !Array.isArray(rawGroupIds) ||
+            rawGroupIds.length === 0 ||
+            rawGroupIds.some((id) => typeof id !== 'string' || id.length === 0)
+          ) {
+            return {
+              success: false,
+              message: 'groupIds must be a non-empty array of group id strings',
+            }
+          }
+          const groupIds = rawGroupIds as string[]
+          const runMode = (args.runMode as 'all' | 'incomplete' | undefined) ?? 'incomplete'
+          if (runMode !== 'all' && runMode !== 'incomplete') {
+            return {
+              success: false,
+              message: `Invalid runMode "${runMode}". Must be "all" or "incomplete"`,
+            }
+          }
+          const rawRowIds = args.rowIds as unknown
+          let rowIds: string[] | undefined
+          if (rawRowIds !== undefined) {
+            if (
+              !Array.isArray(rawRowIds) ||
+              rawRowIds.length === 0 ||
+              rawRowIds.some((id) => typeof id !== 'string' || id.length === 0)
+            ) {
+              return {
+                success: false,
+                message: 'rowIds must be a non-empty array of row id strings',
+              }
+            }
+            rowIds = rawRowIds as string[]
+          }
+          const requestId = generateId().slice(0, 8)
+          assertNotAborted()
+          const { dispatchId } = await runWorkflowColumn({
+            tableId: args.tableId,
+            workspaceId,
+            groupIds,
+            mode: runMode,
+            rowIds,
+            requestId,
+            triggeredByUserId: context.userId,
+          })
+          const scopeLabel = rowIds ? `${rowIds.length} row(s) by id` : runMode
+          return {
+            success: true,
+            message: `Started running ${groupIds.length} column(s) (${scopeLabel}). Cells will populate as workflows complete.`,
+            data: { dispatchId },
+          }
+        }
+
+        case 'cancel_table_runs': {
+          if (!args.tableId) return { success: false, message: 'Table ID is required' }
+          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          const scope = (args.scope as 'all' | 'row' | undefined) ?? 'all'
+          if (scope !== 'all' && scope !== 'row') {
+            return {
+              success: false,
+              message: `Invalid scope "${scope}". Must be "all" or "row"`,
+            }
+          }
+          const rowId = args.rowId as string | undefined
+          if (scope === 'row' && !rowId) {
+            return { success: false, message: 'rowId is required when scope is "row"' }
+          }
+          const tableForCancel = await getTableById(args.tableId)
+          if (!tableForCancel || tableForCancel.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
+          assertNotAborted()
+          const cancelled = await cancelWorkflowGroupRuns(
+            args.tableId,
+            scope === 'row' ? rowId : undefined
+          )
+          return {
+            success: true,
+            message: `Cancelled ${cancelled} run(s)`,
+            data: { cancelled },
+          }
+        }
+
+        case 'list_enrichments': {
+          const { ALL_ENRICHMENTS } = await import('@/enrichments/registry')
+          const enrichments = ALL_ENRICHMENTS.map((e) => ({
+            id: e.id,
+            name: e.name,
+            description: e.description,
+            inputs: e.inputs.map((i) => ({
+              id: i.id,
+              name: i.name,
+              type: i.type,
+              required: i.required ?? false,
+            })),
+            outputs: e.outputs.map((o) => ({ id: o.id, name: o.name, type: o.type })),
+          }))
+          return {
+            success: true,
+            message: `${enrichments.length} enrichment(s) available`,
+            data: { enrichments },
+          }
+        }
+
+        case 'add_enrichment': {
+          if (!args.tableId) return { success: false, message: 'Table ID is required' }
+          if (!workspaceId) return { success: false, message: 'Workspace ID is required' }
+          const enrichmentId = args.enrichmentId as string | undefined
+          if (!enrichmentId) {
+            return { success: false, message: 'enrichmentId is required for add_enrichment' }
+          }
+          const { getEnrichment } = await import('@/enrichments/registry')
+          const enrichment = getEnrichment(enrichmentId)
+          if (!enrichment) {
+            return {
+              success: false,
+              message: `Unknown enrichment "${enrichmentId}". Call list_enrichments to see available ids.`,
+            }
+          }
+          const tableForEnrichment = await getTableById(args.tableId)
+          if (!tableForEnrichment || tableForEnrichment.workspaceId !== workspaceId) {
+            return { success: false, message: `Table not found: ${args.tableId}` }
+          }
+
+          // Validate the input mapping: every required input must be mapped, and
+          // each mapped column must already exist on the table.
+          const rawMappings = args.inputMappings as
+            | Array<{ inputName: string; columnName: string }>
+            | undefined
+          const mappingByInput = new Map(
+            (Array.isArray(rawMappings) ? rawMappings : []).map((m) => [m.inputName, m.columnName])
+          )
+          const existingColumns = new Set(tableForEnrichment.schema.columns.map((c) => c.name))
+          for (const input of enrichment.inputs) {
+            const mapped = mappingByInput.get(input.id)
+            if (input.required && !mapped) {
+              return {
+                success: false,
+                message: `Enrichment "${enrichment.name}" requires input "${input.id}" to be mapped to a column`,
+              }
+            }
+            if (mapped && !existingColumns.has(mapped)) {
+              return {
+                success: false,
+                message: `Mapped column "${mapped}" for input "${input.id}" does not exist on table ${args.tableId}`,
+              }
+            }
+          }
+          const inputMappings: WorkflowGroupInputMapping[] = enrichment.inputs
+            .filter((input) => mappingByInput.has(input.id))
+            .map((input) => ({
+              inputName: input.id,
+              columnName: mappingByInput.get(input.id) as string,
+            }))
+
+          // Each enrichment output becomes a new column. Names can be overridden
+          // per output id; otherwise the enrichment's default name is used.
+          const outputNameOverrides = (args.outputColumnNames ?? {}) as Record<string, string>
+          const taken = new Set(tableForEnrichment.schema.columns.map((c) => c.name))
+          const groupId = generateId()
+          const outputs: WorkflowGroupOutput[] = []
+          const outputColumns: ColumnDefinition[] = []
+          for (const out of enrichment.outputs) {
+            const desired = (outputNameOverrides[out.id] ?? '').trim() || out.name
+            const colName = deriveOutputColumnName(desired, taken)
+            taken.add(colName)
+            outputs.push({ blockId: '', path: '', outputId: out.id, columnName: colName })
+            outputColumns.push({
+              name: colName,
+              type: out.type,
+              required: false,
+              unique: false,
+              workflowGroupId: groupId,
+            })
+          }
+
+          // Default the run dependencies to the mapped input columns so a row
+          // fires once its inputs are filled. Mothership stages groups silently
+          // by default (autoRun false) — call run_column to fire rows.
+          const dependencies =
+            (args.dependencies as WorkflowGroupDependencies | undefined) ??
+            ({
+              columns: inputMappings.map((m) => m.columnName),
+            } satisfies WorkflowGroupDependencies)
+          const name = (args.name as string | undefined) ?? enrichment.name
+          const autoRun = args.autoRun === true
+          const group: WorkflowGroup = {
+            id: groupId,
+            workflowId: '',
+            enrichmentId,
+            name,
+            type: 'enrichment',
+            dependencies,
+            outputs,
+            inputMappings,
+            autoRun,
+          }
+          const requestId = generateId().slice(0, 8)
+          assertNotAborted()
+          const updated = await addWorkflowGroup(
+            { tableId: args.tableId, group, outputColumns, autoRun, actorUserId: context.userId },
+            requestId
+          )
+          return {
+            success: true,
+            message: `Added enrichment "${name}" with ${outputs.length} output column(s)${
+              autoRun ? ' (auto-run enabled)' : ' (staged — use run_column to fire rows)'
+            }`,
+            data: { groupId, schema: updated.schema },
           }
         }
 

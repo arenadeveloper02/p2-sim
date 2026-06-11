@@ -70,6 +70,7 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'read:hierarchical-content:confluence': 'View page hierarchy (children and ancestors)',
   'read:content.metadata:confluence': 'View content metadata (required for ancestors)',
   'read:user:confluence': 'View Confluence user profiles',
+  'read:confluence-user': 'View Confluence user profiles (v1 API)',
   'read:task:confluence': 'View Confluence inline tasks',
   'write:task:confluence': 'Update Confluence inline tasks',
   'delete:blogpost:confluence': 'Delete Confluence blog posts',
@@ -200,6 +201,9 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
     'Add and remove participants from customer requests',
   'read:request.approval:jira-service-management': 'View approvals on customer requests',
   'write:request.approval:jira-service-management': 'Approve or decline customer requests',
+  'read:form:jira-service-management': 'View JSM forms and templates',
+  'write:form:jira-service-management': 'Attach, save, and submit JSM forms',
+  'delete:form:jira-service-management': 'Delete JSM forms',
 
   // Microsoft scopes
   'User.Read': 'Read Microsoft user',
@@ -273,6 +277,7 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'groups:write': 'Create and manage private channels',
   'chat:write': 'Send messages',
   'chat:write.public': 'Post to public channels',
+  'assistant:write': 'Set assistant thread status, title, and suggested prompts',
   'im:write': 'Send direct messages',
   'im:history': 'Read direct message history',
   'im:read': 'View direct message channels',
@@ -281,7 +286,8 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'users:read.email': 'View user email addresses',
   'files:write': 'Upload files',
   'files:read': 'Download and read files',
-  'canvases:write': 'Create canvas documents',
+  'canvases:read': 'Read canvas sections',
+  'canvases:write': 'Create, edit, and delete canvas documents',
   'reactions:write': 'Add emoji reactions to messages',
 
   // Webflow scopes
@@ -344,6 +350,11 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
 
   // LinkedIn scopes
   w_member_social: 'Access LinkedIn profile',
+
+  // Facebook / Meta Ads scopes
+  ads_read: 'Read Facebook Ads account and campaign data',
+  read_insights: 'Read Facebook Ads performance insights',
+  business_management: 'Access Business Manager ad accounts',
 
   // Box scopes
   root_readwrite: 'Read and write all files and folders in Box account',
@@ -507,6 +518,22 @@ export function getServiceAccountProviderForProviderId(providerId: string): stri
 export function getCanonicalScopesForProvider(providerId: string): string[] {
   const service = getServiceConfigByProviderId(providerId)
   return service?.scopes ? [...service.scopes] : []
+}
+
+/**
+ * Scopes to validate a stored credential against. Uses the credential OAuth provider
+ * (e.g. `zoom-admin`) when present; otherwise falls back to block/tool `requiredScopes`.
+ */
+export function getRequiredScopesForCredential(
+  credential: { provider?: string } | undefined,
+  fallbackScopes: string[] = []
+): string[] {
+  const providerId = credential?.provider?.trim()
+  if (providerId) {
+    const canonical = getCanonicalScopesForProvider(providerId)
+    if (canonical.length > 0) return canonical
+  }
+  return fallbackScopes
 }
 
 /**

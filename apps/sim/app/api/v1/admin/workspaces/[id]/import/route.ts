@@ -26,9 +26,15 @@
 import { db } from '@sim/db'
 import { workflow, workflowFolder } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
+import {
+  adminV1ImportWorkspaceContract,
+  adminV1WorkspaceImportBodySchema,
+} from '@/lib/api/contracts/v1/admin'
+import { parseJsonBody, parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   extractWorkflowName,
@@ -44,12 +50,11 @@ import {
   internalErrorResponse,
   notFoundResponse,
 } from '@/app/api/v1/admin/responses'
-import {
-  extractWorkflowMetadata,
-  type ImportResult,
-  type WorkflowVariable,
-  type WorkspaceImportRequest,
-  type WorkspaceImportResponse,
+import type {
+  ImportResult,
+  WorkflowVariable,
+  WorkspaceImportRequest,
+  WorkspaceImportResponse,
 } from '@/app/api/v1/admin/types'
 
 const logger = createLogger('AdminWorkspaceImportAPI')
@@ -66,10 +71,11 @@ interface ParsedWorkflow {
 
 export const POST = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: workspaceId } = await context.params
-    const url = new URL(request.url)
-    const createFolders = url.searchParams.get('createFolders') !== 'false'
-    const rootFolderName = url.searchParams.get('rootFolderName')
+    const parsed = await parseRequest(adminV1ImportWorkspaceContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId } = parsed.data.params
+    const { createFolders, rootFolderName } = parsed.data.query
 
     try {
       const workspaceData = await getWorkspaceWithOwner(workspaceId)
@@ -82,12 +88,18 @@ export const POST = withRouteHandler(
       let workflowsToImport: ParsedWorkflow[] = []
 
       if (contentType.includes('application/json')) {
-        const body = (await request.json()) as WorkspaceImportRequest
+        const rawBody = await parseJsonBody(request)
 
-        if (!body.workflows || !Array.isArray(body.workflows)) {
+        if (!rawBody.success) {
           return badRequestResponse('Invalid JSON body. Expected { workflows: [...] }')
         }
 
+        const validation = adminV1WorkspaceImportBodySchema.safeParse(rawBody.data)
+        if (!validation.success) {
+          return badRequestResponse('Invalid JSON body. Expected { workflows: [...] }')
+        }
+
+        const body = validation.data as WorkspaceImportRequest
         workflowsToImport = body.workflows.map((w) => ({
           content: typeof w.content === 'string' ? w.content : JSON.stringify(w.content),
           name: w.name || 'Imported Workflow',
@@ -230,14 +242,6 @@ async function importSingleWorkflow(
       targetFolderId = folderMap.get(fullFolderPath) || parentId
     }
 
-    const parsedContent = (() => {
-      try {
-        return JSON.parse(wf.content)
-      } catch {
-        return null
-      }
-    })()
-    const { color: workflowColor } = extractWorkflowMetadata(parsedContent)
     const workflowId = generateId()
     const now = new Date()
     const dedupedName = await deduplicateWorkflowName(workflowName, workspaceId, targetFolderId)
@@ -249,7 +253,6 @@ async function importSingleWorkflow(
       folderId: targetFolderId,
       name: dedupedName,
       description: workflowData.metadata?.description || 'Imported via Admin API',
-      color: workflowColor,
       lastSynced: now,
       createdAt: now,
       updatedAt: now,
@@ -298,7 +301,7 @@ async function importSingleWorkflow(
       workflowId: '',
       name: wf.name,
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error, 'Unknown error'),
     }
   }
 }

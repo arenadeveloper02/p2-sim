@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Home } from '@/app/workspace/[workspaceId]/home/home'
+import { HomeEmbed } from '@/app/workspace/[workspaceId]/home/home-embed'
 
 export const metadata: Metadata = {
   title: 'Task',
@@ -13,6 +13,8 @@ interface TaskEmbedPageProps {
 }
 
 export default async function TaskEmbedPage({ params }: TaskEmbedPageProps) {
-  const { taskId } = await params
-  return <Home key={taskId} chatId={taskId} />
+  const { workspaceId, taskId } = await params
+  return (
+    <HomeEmbed key={taskId} chatId={taskId} embedBackHref={`/workspace/${workspaceId}/embed`} />
+  )
 }

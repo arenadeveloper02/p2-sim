@@ -4,6 +4,7 @@ import type {
   AgiloftAttachmentInfoParams,
   AgiloftBaseParams,
   AgiloftDeleteRecordParams,
+  AgiloftGetChoiceLineIdParams,
   AgiloftLockRecordParams,
   AgiloftReadRecordParams,
   AgiloftRemoveAttachmentParams,
@@ -46,7 +47,7 @@ async function agiloftLogin(params: AgiloftBaseParams): Promise<string> {
     throw new Error(`Agiloft login failed: ${response.status} - ${errorText}`)
   }
 
-  const data = await response.json()
+  const data = (await response.json()) as { access_token?: string }
   const token = data.access_token
 
   if (!token) {
@@ -241,6 +242,15 @@ export function buildAttachFileUrl(
   const fieldName = encodeURIComponent(params.fieldName.trim())
   const encodedFileName = encodeURIComponent(fileName)
   return `${base}/ewws/EWAttach?$KB=${kb}&$table=${table}&$lang=en&id=${recordId}&field=${fieldName}&fileName=${encodedFileName}`
+}
+
+export function buildGetChoiceLineIdUrl(
+  base: string,
+  params: AgiloftGetChoiceLineIdParams
+): string {
+  const field = encodeURIComponent(params.fieldName.trim())
+  const value = encodeURIComponent(params.value.trim())
+  return `${base}/ewws/EWGetChoiceLineId/.json?${buildEwBaseQuery(params)}&field=${field}&value=${value}`
 }
 
 export function getLockHttpMethod(lockAction: string): HttpMethod {

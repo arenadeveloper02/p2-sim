@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { twilioGetRecordingContract } from '@/lib/api/contracts/tools/communication/messaging'
+import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import {
   secureFetchWithPinnedIP,
@@ -44,12 +46,6 @@ interface TwilioTranscriptionsResponse {
   transcriptions?: TwilioTranscription[]
 }
 
-const TwilioGetRecordingSchema = z.object({
-  accountSid: z.string().min(1, 'Account SID is required'),
-  authToken: z.string().min(1, 'Auth token is required'),
-  recordingSid: z.string().min(1, 'Recording SID is required'),
-})
-
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
@@ -67,10 +63,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    const body = await request.json()
-    const validatedData = TwilioGetRecordingSchema.parse(body)
-
-    const { accountSid, authToken, recordingSid } = validatedData
+    const parsed = await parseRequest(twilioGetRecordingContract, request, {})
+    if (!parsed.success) return parsed.response
+    const { accountSid, authToken, recordingSid } = parsed.data.body
 
     if (!accountSid.startsWith('AC')) {
       return NextResponse.json(
@@ -243,7 +238,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        error: getErrorMessage(error, 'Unknown error occurred'),
       },
       { status: 500 }
     )

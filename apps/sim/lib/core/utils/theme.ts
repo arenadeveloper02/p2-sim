@@ -7,7 +7,7 @@
  * This works by updating localStorage and notifying next-themes of the change.
  * @param theme - The desired theme ('light' or 'dark')
  */
-export function syncThemeToNextThemes(theme: 'light' | 'dark') {
+export function syncThemeToNextThemes(theme: 'light' | 'dark' | 'system') {
   if (typeof window === 'undefined') return
 
   localStorage.setItem('sim-theme', theme)

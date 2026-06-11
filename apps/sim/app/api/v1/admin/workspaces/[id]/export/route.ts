@@ -16,9 +16,12 @@ import { workflow, workflowFolder, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
+import { adminV1ExportWorkspaceContract } from '@/lib/api/contracts/v1/admin'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { exportWorkspaceToZip, sanitizePathSegment } from '@/lib/workflows/operations/import-export'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
+import { encodeFilenameForHeader } from '@/app/api/files/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
   internalErrorResponse,
@@ -40,9 +43,11 @@ interface RouteParams {
 
 export const GET = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: workspaceId } = await context.params
-    const url = new URL(request.url)
-    const format = url.searchParams.get('format') || 'zip'
+    const parsed = await parseRequest(adminV1ExportWorkspaceContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId } = parsed.data.params
+    const { format } = parsed.data.query
 
     try {
       const [workspaceData] = await db
@@ -89,7 +94,6 @@ export const GET = withRouteHandler(
             metadata: {
               name: wf.name,
               description: wf.description ?? undefined,
-              color: wf.color,
               exportedAt: new Date().toISOString(),
             },
             variables,
@@ -100,7 +104,6 @@ export const GET = withRouteHandler(
               id: wf.id,
               name: wf.name,
               description: wf.description,
-              color: wf.color,
               workspaceId: wf.workspaceId,
               folderId: wf.folderId,
             },
@@ -141,7 +144,6 @@ export const GET = withRouteHandler(
           id: wf.workflow.id,
           name: wf.workflow.name,
           description: wf.workflow.description ?? undefined,
-          color: wf.workflow.color ?? undefined,
           folderId: wf.workflow.folderId,
         },
         state: wf.state,
@@ -158,7 +160,7 @@ export const GET = withRouteHandler(
         status: 200,
         headers: {
           'Content-Type': 'application/zip',
-          'Content-Disposition': `attachment; filename="${filename}"`,
+          'Content-Disposition': `attachment; ${encodeFilenameForHeader(filename)}`,
           'Content-Length': arrayBuffer.byteLength.toString(),
         },
       })

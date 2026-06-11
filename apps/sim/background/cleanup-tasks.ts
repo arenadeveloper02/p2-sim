@@ -9,13 +9,12 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { task } from '@trigger.dev/sdk'
-import { and, inArray, lt, sql } from 'drizzle-orm'
-import { type CleanupJobPayload, resolveCleanupScope } from '@/lib/billing/cleanup-dispatcher'
+import { and, inArray, lt } from 'drizzle-orm'
+import type { CleanupJobPayload } from '@/lib/billing/cleanup-dispatcher'
 import {
   batchDeleteByWorkspaceAndTimestamp,
-  DEFAULT_BATCH_SIZE,
-  DEFAULT_MAX_BATCHES_PER_TABLE,
   deleteRowsById,
+  selectRowsByIdChunks,
   type TableCleanupResult,
 } from '@/lib/cleanup/batch-delete'
 import { prepareChatCleanup } from '@/lib/cleanup/chat-cleanup'
@@ -39,27 +38,6 @@ const RUN_CHILD_TABLES = [
   },
 ] as const
 
-async function deleteByRunIds(
-  table: (typeof RUN_CHILD_TABLES)[number]['table'],
-  runIdCol: (typeof RUN_CHILD_TABLES)[number]['runIdCol'],
-  runIds: string[],
-  tableName: string
-): Promise<TableCleanupResult> {
-  const result: TableCleanupResult = { table: tableName, deleted: 0, failed: 0 }
-  try {
-    const deleted = await db
-      .delete(table)
-      .where(inArray(runIdCol, runIds))
-      .returning({ id: sql`id` })
-    result.deleted = deleted.length
-    logger.info(`[${tableName}] Deleted ${deleted.length} rows`)
-  } catch (error) {
-    result.failed++
-    logger.error(`[${tableName}] Delete failed:`, { error })
-  }
-  return result
-}
-
 async function cleanupRunChildren(
   workspaceIds: string[],
   retentionDate: Date,
@@ -67,13 +45,15 @@ async function cleanupRunChildren(
 ): Promise<TableCleanupResult[]> {
   if (workspaceIds.length === 0) return []
 
-  const runIds = await db
-    .select({ id: copilotRuns.id })
-    .from(copilotRuns)
-    .where(
-      and(inArray(copilotRuns.workspaceId, workspaceIds), lt(copilotRuns.updatedAt, retentionDate))
-    )
-    .limit(DEFAULT_BATCH_SIZE * DEFAULT_MAX_BATCHES_PER_TABLE)
+  const runIds = await selectRowsByIdChunks(workspaceIds, (chunkIds, chunkLimit) =>
+    db
+      .select({ id: copilotRuns.id })
+      .from(copilotRuns)
+      .where(
+        and(inArray(copilotRuns.workspaceId, chunkIds), lt(copilotRuns.updatedAt, retentionDate))
+      )
+      .limit(chunkLimit)
+  )
 
   if (runIds.length === 0) {
     return RUN_CHILD_TABLES.map((t) => ({ table: `${label}/${t.name}`, deleted: 0, failed: 0 }))
@@ -82,20 +62,13 @@ async function cleanupRunChildren(
   const ids = runIds.map((r) => r.id)
 
   return Promise.all(
-    RUN_CHILD_TABLES.map((t) => deleteByRunIds(t.table, t.runIdCol, ids, `${label}/${t.name}`))
+    RUN_CHILD_TABLES.map((t) => deleteRowsById(t.table, t.runIdCol, ids, `${label}/${t.name}`))
   )
 }
 
 export async function runCleanupTasks(payload: CleanupJobPayload): Promise<void> {
   const startTime = Date.now()
-
-  const scope = await resolveCleanupScope('cleanup-tasks', payload)
-  if (!scope) {
-    logger.info(`[${payload.plan}] No retention configured, skipping`)
-    return
-  }
-
-  const { workspaceIds, retentionHours, label } = scope
+  const { workspaceIds, retentionHours, label } = payload
 
   if (workspaceIds.length === 0) {
     logger.info(`[${label}] No workspaces to process`)
@@ -107,17 +80,15 @@ export async function runCleanupTasks(payload: CleanupJobPayload): Promise<void>
     `[${label}] Processing ${workspaceIds.length} workspaces, cutoff: ${retentionDate.toISOString()}`
   )
 
-  // Collect chat IDs before deleting so we can clean up the copilot backend after
-  const doomedChats = await db
-    .select({ id: copilotChats.id })
-    .from(copilotChats)
-    .where(
-      and(
-        inArray(copilotChats.workspaceId, workspaceIds),
-        lt(copilotChats.updatedAt, retentionDate)
+  const doomedChats = await selectRowsByIdChunks(workspaceIds, (chunkIds, chunkLimit) =>
+    db
+      .select({ id: copilotChats.id })
+      .from(copilotChats)
+      .where(
+        and(inArray(copilotChats.workspaceId, chunkIds), lt(copilotChats.updatedAt, retentionDate))
       )
-    )
-    .limit(DEFAULT_BATCH_SIZE * DEFAULT_MAX_BATCHES_PER_TABLE)
+      .limit(chunkLimit)
+  )
 
   const doomedChatIds = doomedChats.map((c) => c.id)
 
@@ -131,26 +102,12 @@ export async function runCleanupTasks(payload: CleanupJobPayload): Promise<void>
   }
 
   // Delete feedback — no direct workspaceId, reuse chat IDs collected above
-  const feedbackResult: TableCleanupResult = {
-    table: `${label}/copilotFeedback`,
-    deleted: 0,
-    failed: 0,
-  }
-  try {
-    if (doomedChatIds.length > 0) {
-      const deleted = await db
-        .delete(copilotFeedback)
-        .where(inArray(copilotFeedback.chatId, doomedChatIds))
-        .returning({ id: copilotFeedback.feedbackId })
-      feedbackResult.deleted = deleted.length
-      logger.info(`[${feedbackResult.table}] Deleted ${deleted.length} rows`)
-    } else {
-      logger.info(`[${feedbackResult.table}] No expired rows found`)
-    }
-  } catch (error) {
-    feedbackResult.failed++
-    logger.error(`[${feedbackResult.table}] Delete failed:`, { error })
-  }
+  const feedbackResult = await deleteRowsById(
+    copilotFeedback,
+    copilotFeedback.chatId,
+    doomedChatIds,
+    `${label}/copilotFeedback`
+  )
 
   // Delete copilot runs (has workspaceId directly, cascades checkpoints)
   const runsResult = await batchDeleteByWorkspaceAndTimestamp({
@@ -199,5 +156,7 @@ export async function runCleanupTasks(payload: CleanupJobPayload): Promise<void>
 
 export const cleanupTasksTask = task({
   id: 'cleanup-tasks',
+  machine: 'large-1x',
+  queue: { concurrencyLimit: 5 },
   run: runCleanupTasks,
 })

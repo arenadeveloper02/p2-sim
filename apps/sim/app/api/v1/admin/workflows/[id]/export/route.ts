@@ -10,6 +10,8 @@ import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
+import { adminV1ExportWorkflowContract } from '@/lib/api/contracts/v1/admin'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
@@ -32,7 +34,10 @@ interface RouteParams {
 
 export const GET = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: workflowId } = await context.params
+    const parsed = await parseRequest(adminV1ExportWorkflowContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workflowId } = parsed.data.params
 
     try {
       const [workflowData] = await db
@@ -61,7 +66,6 @@ export const GET = withRouteHandler(
         metadata: {
           name: workflowData.name,
           description: workflowData.description ?? undefined,
-          color: workflowData.color,
           exportedAt: new Date().toISOString(),
         },
         variables,
@@ -74,7 +78,6 @@ export const GET = withRouteHandler(
           id: workflowData.id,
           name: workflowData.name,
           description: workflowData.description,
-          color: workflowData.color,
           workspaceId: workflowData.workspaceId,
           folderId: workflowData.folderId,
         },

@@ -1,131 +1,205 @@
+import type { Readable } from 'node:stream'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { type NextRequest, NextResponse } from 'next/server'
+import { csvExtensionSchema, csvImportFormSchema } from '@/lib/api/contracts/tables'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { isMultipartError, readMultipart } from '@/lib/core/utils/multipart'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   batchInsertRows,
   CSV_MAX_BATCH_SIZE,
   CSV_MAX_FILE_SIZE_BYTES,
+  CSV_SCHEMA_SAMPLE_SIZE,
   coerceRowsForTable,
+  createCsvParser,
   createTable,
   deleteTable,
   getWorkspaceTableLimits,
   inferSchemaFromCsv,
-  parseCsvBuffer,
   sanitizeName,
+  TABLE_LIMITS,
+  type TableDefinition,
   type TableSchema,
 } from '@/lib/table'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
-import { normalizeColumn } from '@/app/api/table/utils'
+import {
+  csvProxyBodyCapResponse,
+  multipartErrorResponse,
+  normalizeColumn,
+} from '@/app/api/table/utils'
 
 const logger = createLogger('TableImportCSV')
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300
+
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
+  let fileStream: Readable | undefined
 
   try {
     const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
+    const userId = authResult.userId
 
-    const formData = await request.formData()
-    const file = formData.get('file')
-    const workspaceId = formData.get('workspaceId') as string | null
+    const oversize = csvProxyBodyCapResponse(request)
+    if (oversize) return oversize
 
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json({ error: 'CSV file is required' }, { status: 400 })
+    let parsed: Awaited<ReturnType<typeof readMultipart>>
+    try {
+      parsed = await readMultipart(request, {
+        maxFileBytes: CSV_MAX_FILE_SIZE_BYTES,
+        requiredFieldsBeforeFile: ['workspaceId'],
+        signal: request.signal,
+      })
+    } catch (err) {
+      if (isMultipartError(err)) return multipartErrorResponse(err)
+      throw err
     }
 
-    if (file.size > CSV_MAX_FILE_SIZE_BYTES) {
+    const { fields, file } = parsed
+    if (!file) {
+      return NextResponse.json({ error: 'CSV file is required' }, { status: 400 })
+    }
+    fileStream = file.stream
+
+    const workspaceIdResult = csvImportFormSchema.shape.workspaceId.safeParse(fields.workspaceId)
+    if (!workspaceIdResult.success) {
       return NextResponse.json(
-        {
-          error: `File exceeds maximum allowed size of ${CSV_MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB`,
-        },
+        { error: getValidationErrorMessage(workspaceIdResult.error) },
         { status: 400 }
       )
     }
+    const workspaceId = workspaceIdResult.data
 
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 })
-    }
-
-    const permission = await getUserEntityPermissions(authResult.userId, 'workspace', workspaceId)
+    const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
     if (permission !== 'write' && permission !== 'admin') {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    const ext = file.name.split('.').pop()?.toLowerCase()
-    if (ext !== 'csv' && ext !== 'tsv') {
-      return NextResponse.json({ error: 'Only CSV and TSV files are supported' }, { status: 400 })
+    const ext = file.filename.split('.').pop()?.toLowerCase()
+    const extensionResult = csvExtensionSchema.safeParse(ext)
+    if (!extensionResult.success) {
+      return NextResponse.json(
+        { error: getValidationErrorMessage(extensionResult.error) },
+        { status: 400 }
+      )
+    }
+    const delimiter = extensionResult.data === 'tsv' ? '\t' : ','
+
+    const parser = createCsvParser(delimiter)
+    // `.pipe` doesn't forward source errors; forward them so the iterator throws.
+    file.stream.on('error', (err) => parser.destroy(err))
+    file.stream.pipe(parser)
+
+    interface ImportState {
+      table: TableDefinition
+      schema: TableSchema
+      headerToColumn: Map<string, string>
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const delimiter = ext === 'tsv' ? '\t' : ','
-    const { headers, rows } = await parseCsvBuffer(buffer, delimiter)
-
-    const { columns, headerToColumn } = inferSchemaFromCsv(headers, rows)
-    const tableName = sanitizeName(file.name.replace(/\.[^.]+$/, ''), 'imported_table')
-    const planLimits = await getWorkspaceTableLimits(workspaceId)
-
-    const normalizedSchema: TableSchema = {
-      columns: columns.map(normalizeColumn),
+    const insertRows = async (rows: Record<string, unknown>[], state: ImportState) => {
+      if (rows.length === 0) return 0
+      const coerced = coerceRowsForTable(rows, state.schema, state.headerToColumn)
+      const result = await batchInsertRows(
+        { tableId: state.table.id, rows: coerced, workspaceId, userId },
+        state.table,
+        generateId().slice(0, 8)
+      )
+      return result.length
     }
 
-    const table = await createTable(
-      {
-        name: tableName,
-        description: `Imported from ${file.name}`,
-        schema: normalizedSchema,
-        workspaceId,
-        userId: authResult.userId,
-        maxRows: planLimits.maxRowsPerTable,
-        maxTables: planLimits.maxTables,
-      },
-      requestId
-    )
+    /** Infer the schema from the buffered sample and create the (empty) table. */
+    const buildTable = async (sampleRows: Record<string, unknown>[]): Promise<ImportState> => {
+      const inferred = inferSchemaFromCsv(Object.keys(sampleRows[0]), sampleRows)
+      const schema: TableSchema = { columns: inferred.columns.map(normalizeColumn) }
+      const planLimits = await getWorkspaceTableLimits(workspaceId)
+      const tableName = sanitizeName(file.filename.replace(/\.[^.]+$/, ''), 'imported_table').slice(
+        0,
+        TABLE_LIMITS.MAX_TABLE_NAME_LENGTH
+      )
+      const table = await createTable(
+        {
+          name: tableName,
+          description: `Imported from ${file.filename}`,
+          schema,
+          workspaceId,
+          userId,
+          maxRows: planLimits.maxRowsPerTable,
+          maxTables: planLimits.maxTables,
+        },
+        requestId
+      )
+      // Coerce against the *created* schema so rows key by the ids `createTable`
+      // assigned (the local `schema` is the id-less inferred one).
+      return { table, schema: table.schema, headerToColumn: inferred.headerToColumn }
+    }
+
+    let state: ImportState | null = null
+    let inserted = 0
+    const sample: Record<string, unknown>[] = []
+    let batch: Record<string, unknown>[] = []
 
     try {
-      const coerced = coerceRowsForTable(rows, normalizedSchema, headerToColumn)
-      let inserted = 0
-      for (let i = 0; i < coerced.length; i += CSV_MAX_BATCH_SIZE) {
-        const batch = coerced.slice(i, i + CSV_MAX_BATCH_SIZE)
-        const batchRequestId = generateId().slice(0, 8)
-        const result = await batchInsertRows(
-          { tableId: table.id, rows: batch, workspaceId, userId: authResult.userId },
-          table,
-          batchRequestId
-        )
-        inserted += result.length
+      for await (const record of parser as AsyncIterable<Record<string, unknown>>) {
+        if (!state) {
+          sample.push(record)
+          if (sample.length >= CSV_SCHEMA_SAMPLE_SIZE) {
+            state = await buildTable(sample)
+            inserted += await insertRows(sample, state)
+          }
+          continue
+        }
+        batch.push(record)
+        if (batch.length >= CSV_MAX_BATCH_SIZE) {
+          inserted += await insertRows(batch, state)
+          batch = []
+        }
       }
 
-      logger.info(`[${requestId}] CSV imported`, {
-        tableId: table.id,
-        fileName: file.name,
-        columns: columns.length,
-        rows: inserted,
-      })
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          table: {
-            id: table.id,
-            name: table.name,
-            description: table.description,
-            schema: normalizedSchema,
-            rowCount: inserted,
-          },
-        },
-      })
-    } catch (insertError) {
-      await deleteTable(table.id, requestId).catch(() => {})
-      throw insertError
+      if (!state) {
+        if (sample.length === 0) {
+          return NextResponse.json({ error: 'CSV file has no data rows' }, { status: 400 })
+        }
+        state = await buildTable(sample)
+        inserted += await insertRows(sample, state)
+      } else {
+        inserted += await insertRows(batch, state)
+      }
+    } catch (streamError) {
+      if (state) await deleteTable(state.table.id, requestId).catch(() => {})
+      throw streamError
     }
+
+    logger.info(`[${requestId}] CSV imported`, {
+      tableId: state.table.id,
+      fileName: file.filename,
+      columns: state.schema.columns.length,
+      rows: inserted,
+    })
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        table: {
+          id: state.table.id,
+          name: state.table.name,
+          description: state.table.description,
+          schema: state.schema,
+          rowCount: inserted,
+        },
+      },
+    })
   } catch (error) {
+    if (isMultipartError(error)) return multipartErrorResponse(error)
+
     const message = toError(error).message
     logger.error(`[${requestId}] CSV import failed:`, error)
 
@@ -140,5 +214,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       { error: isClientError ? message : 'Failed to import CSV' },
       { status: isClientError ? 400 : 500 }
     )
+  } finally {
+    fileStream?.destroy()
   }
 })

@@ -5,7 +5,7 @@ import { createLogger } from '@sim/logger'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { Button } from '@/components/emcn'
-import { PanelLeft } from '@/components/emcn/icons'
+import { ArrowLeft, PanelLeft } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import {
   LandingPromptStorage,
@@ -14,7 +14,10 @@ import {
 } from '@/lib/core/utils/browser-storage'
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
-import { useChatHistory, useMarkTaskRead } from '@/hooks/queries/tasks'
+import {
+  useMarkMothershipChatRead,
+  useMothershipChatHistory,
+} from '@/hooks/queries/mothership-chats'
 import type { ChatContext } from '@/stores/panel'
 import { EmbedHtmlContent, MothershipChat, MothershipView, UserInput } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
@@ -24,9 +27,11 @@ const logger = createLogger('HomeEmbed')
 
 interface HomeEmbedProps {
   chatId?: string
+  /** When set (task embed), back navigates here instead of resetting workspace embed. */
+  embedBackHref?: string
 }
 
-export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
+export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -111,8 +116,8 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
 
   const wasSendingRef = useRef(false)
 
-  const { isPending: isChatHistoryPending } = useChatHistory(chatId)
-  const { mutate: markRead } = useMarkTaskRead(workspaceId)
+  const { isPending: isChatHistoryPending } = useMothershipChatHistory(chatId)
+  const { mutate: markRead } = useMarkMothershipChatRead(workspaceId)
 
   const { mothershipRef, handleResizePointerDown, clearWidth } = useMothershipResize()
 
@@ -301,7 +306,7 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
   // active conversation is in flight. Previously this branch only checked
   // `hasMessages` and the `chatId` prop, which let the dashboard re-flash
   // mid-request in embed mode: when the workflow path created a new chat row
-  // and `resolvedChatId` was set internally, `useChatHistory` momentarily
+  // and `resolvedChatId` was set internally, `useMothershipChatHistory` momentarily
   // returned `{ messages: [] }` and the prop `chatId` was still undefined, so
   // both predicates were `false` and the dashboard re-mounted (which also
   // restarted the rotating placeholder via `<UserInput isInitialView>`).
@@ -312,6 +317,35 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
     !activeStreamId &&
     !conversationId &&
     !showChatSkeleton
+
+  const isHighlightsPageShown = shouldShowDashboard
+
+  const handleEmbedBack = useCallback(() => {
+    if (embedBackHref) {
+      router.push(embedBackHref)
+      return
+    }
+    const query = searchParams.toString()
+    const href = query
+      ? `/workspace/${workspaceId}/embed?${query}`
+      : `/workspace/${workspaceId}/embed`
+    window.location.assign(href)
+  }, [embedBackHref, router, searchParams, workspaceId])
+
+  const embedBackButton = !isHighlightsPageShown ? (
+    <div className='absolute top-[8.5px] left-[16px] z-30'>
+      <Button
+        variant='ghost'
+        size={null}
+        type='button'
+        onClick={handleEmbedBack}
+        className='h-[30px] w-[30px] rounded-[8px] hover-hover:bg-[var(--surface-active)]'
+        aria-label='Back to highlights'
+      >
+        <ArrowLeft className='h-[16px] w-[16px] text-[var(--text-icon)]' />
+      </Button>
+    </div>
+  ) : null
 
   if (shouldShowDashboard) {
     return (
@@ -347,6 +381,7 @@ export function HomeEmbed({ chatId }: HomeEmbedProps = {}) {
 
   return (
     <div className='relative flex h-full bg-[var(--bg)]'>
+      {embedBackButton}
       <div className='flex h-full min-w-[320px] flex-1 flex-col'>
         <MothershipChat
           messages={messages}

@@ -11,9 +11,8 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
   longDescription:
     'Execute commands, transfer files, and manage remote servers via SSH. Supports password and private key authentication for secure server access.',
   docsLink: 'https://docs.sim.ai/tools/ssh',
-  category: 'tools',
-  integrationType: IntegrationType.DeveloperTools,
-  tags: ['cloud', 'automation'],
+  category: 'blocks',
+  integrationType: IntegrationType.DevOps,
   bgColor: '#000000',
   icon: SshIcon,
   subBlocks: [
@@ -83,6 +82,7 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
       password: true,
       placeholder: 'Your SSH password',
       condition: { field: 'authMethod', value: 'password' },
+      dependsOn: ['authMethod'],
     },
 
     // Private key authentication
@@ -92,6 +92,7 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
       type: 'code',
       placeholder: '-----BEGIN OPENSSH PRIVATE KEY-----\n...',
       condition: { field: 'authMethod', value: 'privateKey' },
+      dependsOn: ['authMethod'],
     },
     {
       id: 'passphrase',
@@ -100,6 +101,7 @@ export const SSHBlock: BlockConfig<SSHResponse> = {
       password: true,
       placeholder: 'Passphrase for encrypted key (optional)',
       condition: { field: 'authMethod', value: 'privateKey' },
+      dependsOn: ['authMethod'],
     },
 
     // EXECUTE COMMAND

@@ -128,7 +128,7 @@ export const {service}{Action}Tool: ToolConfig<Params, Response> = {
 ### Block Structure
 ```typescript
 import { {Service}Icon } from '@/components/icons'
-import type { BlockConfig } from '@/blocks/types'
+import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode } from '@/blocks/types'
 import { getScopesForService } from '@/lib/oauth/utils'
 
@@ -177,7 +177,31 @@ export const {Service}Block: BlockConfig = {
 
   outputs: { /* ... */ },
 }
+
+export const {Service}BlockMeta = {
+  tags: ['tag1', 'tag2'],  // IntegrationTag values matching the service's capabilities
+  templates: [
+    {
+      icon: {Service}Icon,
+      title: '{Service} use-case title',
+      prompt: 'Build a workflow that ...',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['automation'],
+      alsoIntegrations: ['slack'],  // Optional: other blocks referenced in the prompt
+    },
+  ],
+} as const satisfies BlockMeta
 ```
+
+### BlockMeta rules
+
+- **Tags**: Use `IntegrationTag` values from `@/blocks/types`. Do NOT add a `tags` field to the `BlockConfig` object — tags belong only in `BlockMeta`.
+- **`integrationType`**: Must be a valid `IntegrationType` enum value (AI, Analytics, Commerce, Communication, Databases, DevOps, Documents, Email, HR, Marketing, Observability, Productivity, Sales, Search, Security, Support). Never invent a value that doesn't exist in the enum.
+- **Templates**: Aim for 2–4 templates per integration. Prompts should be concrete enough to generate a real workflow in Mothership. Start with "Build a workflow that..." or "Create a workflow that...".
+- **`alsoIntegrations`**: List other block type IDs referenced in the template prompt (e.g. `'slack'`, `'linear'`).
+- Place `{Service}BlockMeta` at the very bottom of the file, after the main block export.
+- Register it in both the import and the `blocksMeta` object in `registry.ts`.
 
 ### Key SubBlock Patterns
 
@@ -359,13 +383,19 @@ export const tools: Record<string, ToolConfig> = {
 ### Block Registry (`apps/sim/blocks/registry.ts`)
 
 ```typescript
-// Add import (alphabetically)
-import { {Service}Block } from '@/blocks/blocks/{service}'
+// Add import (alphabetically) — include BlockMeta
+import { {Service}Block, {Service}BlockMeta } from '@/blocks/blocks/{service}'
 
-// Add to registry (alphabetically)
+// Add to blocks registry (alphabetically)
 export const registry: Record<string, BlockConfig> = {
   // ... existing blocks ...
   {service}: {Service}Block,
+}
+
+// Add to blocksMeta registry (alphabetically)
+export const blocksMeta = {
+  // ... existing entries ...
+  {service}: {Service}BlockMeta,
 }
 ```
 
@@ -433,7 +463,12 @@ If creating V2 versions (API-aligned outputs):
 - [ ] Configured tools.access with all tool IDs
 - [ ] Configured tools.config.tool selector
 - [ ] Defined outputs matching tool outputs
-- [ ] Registered block in `blocks/registry.ts`
+- [ ] `integrationType` uses a valid `IntegrationType` enum value (no invented values)
+- [ ] No `tags` field on the `BlockConfig` object (tags live only in `BlockMeta`)
+- [ ] `{Service}BlockMeta` exported at bottom of file with `tags` and `templates`
+- [ ] `BlockMeta` type imported from `@/blocks/types` alongside `BlockConfig`
+- [ ] Block registered in `blocks/registry.ts` blocks object (alphabetically)
+- [ ] Block meta registered in `blocks/registry.ts` blocksMeta object (alphabetically)
 - [ ] If triggers: set `triggers.enabled` and `triggers.available`
 - [ ] If triggers: spread trigger subBlocks with `getTrigger()`
 
@@ -578,29 +613,54 @@ tools: {
 
 #### 3. Create Internal API Route
 
-Create `apps/sim/app/api/tools/{service}/{action}/route.ts`:
+Create `apps/sim/app/api/tools/{service}/{action}/route.ts`. Internal tool routes are HTTP boundaries and follow the same contract policy as public routes — define the request/response shape in `apps/sim/lib/api/contracts/{service}-tools.ts` (or an existing `internal-tools.ts` / `communication-tools.ts` aggregate) and validate with canonical helpers from `@/lib/api/server`. Never write a route-local Zod schema.
 
 ```typescript
+// apps/sim/lib/api/contracts/{service}-tools.ts
+import { z } from 'zod'
+import { defineRouteContract } from '@/lib/api/contracts'
+import { FileInputSchema } from '@/lib/uploads/utils/file-schemas'
+
+export const {service}UploadBodySchema = z.object({
+  accessToken: z.string(),
+  file: FileInputSchema.optional().nullable(),
+  fileContent: z.string().optional().nullable(),
+  // ... other params
+})
+
+export const {service}UploadResponseSchema = z.object({
+  success: z.boolean(),
+  output: z.object({ id: z.string(), url: z.string() }).optional(),
+  error: z.string().optional(),
+})
+
+export const {service}UploadContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/tools/{service}/upload',
+  body: {service}UploadBodySchema,
+  response: { mode: 'json', schema: {service}UploadResponseSchema },
+})
+
+export type {Service}UploadBody = z.input<typeof {service}UploadBodySchema>
+export type {Service}UploadResponse = z.output<typeof {service}UploadResponseSchema>
+```
+
+```typescript
+// apps/sim/app/api/tools/{service}/upload/route.ts
 import { createLogger } from '@sim/logger'
 import { NextResponse, type NextRequest } from 'next/server'
-import { z } from 'zod'
+import { {service}UploadContract } from '@/lib/api/contracts/{service}-tools'
+import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { FileInputSchema, type RawFileInput } from '@/lib/uploads/utils/file-schemas'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { type RawFileInput } from '@/lib/uploads/utils/file-schemas'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 
 const logger = createLogger('{Service}UploadAPI')
 
-const RequestSchema = z.object({
-  accessToken: z.string(),
-  file: FileInputSchema.optional().nullable(),
-  // Legacy field for backwards compatibility
-  fileContent: z.string().optional().nullable(),
-  // ... other params
-})
-
-export async function POST(request: NextRequest) {
+export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
   const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
@@ -608,8 +668,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await request.json()
-  const data = RequestSchema.parse(body)
+  const parsed = await parseRequest({service}UploadContract, request, {})
+  if (!parsed.success) return parsed.response
+  const data = parsed.data.body
 
   let fileBuffer: Buffer
   let fileName: string
@@ -624,22 +685,20 @@ export async function POST(request: NextRequest) {
     fileBuffer = await downloadFileFromStorage(userFile, requestId, logger)
     fileName = userFile.name
   } else if (data.fileContent) {
-    // Legacy: base64 string (backwards compatibility)
     fileBuffer = Buffer.from(data.fileContent, 'base64')
     fileName = 'file'
   } else {
     return NextResponse.json({ success: false, error: 'File required' }, { status: 400 })
   }
 
-  // Now call external API with fileBuffer
   const response = await fetch('https://api.{service}.com/upload', {
     method: 'POST',
     headers: { Authorization: `Bearer ${data.accessToken}` },
-    body: new Uint8Array(fileBuffer),  // Convert Buffer for fetch
+    body: new Uint8Array(fileBuffer),
   })
 
   // ... handle response
-}
+})
 ```
 
 #### 4. Update Tool to Use Internal Route

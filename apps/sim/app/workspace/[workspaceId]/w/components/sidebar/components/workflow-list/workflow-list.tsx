@@ -380,7 +380,6 @@ export const WorkflowList = memo(function WorkflowList({
             <WorkflowItem
               workflow={workflow}
               active={isWorkflowActive(workflow.id)}
-              level={level}
               dragDisabled={dragDisabled}
               onWorkflowClick={handleWorkflowClick}
               onDragStart={() => handleDragStart(folderId)}
@@ -460,7 +459,6 @@ export const WorkflowList = memo(function WorkflowList({
           >
             <FolderItem
               folder={folder}
-              level={level}
               dragDisabled={dragDisabled}
               onFolderClick={handleFolderClick}
               onDragStart={() => handleDragStart(parentFolderId)}
@@ -569,9 +567,18 @@ export const WorkflowList = memo(function WorkflowList({
   return (
     <SidebarDragContext.Provider value={dragContextValue}>
       <div
+        role='tree'
+        aria-label='Workflows'
         className='flex min-h-full flex-col pb-2'
         onClick={handleContainerClick}
         onContextMenu={handleContainerContextMenu}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            if (e.target !== e.currentTarget) return
+            const { selectOnly, clearAllSelection } = useFolderStore.getState()
+            workflowId ? selectOnly(workflowId) : clearAllSelection()
+          }
+        }}
         data-empty-area
       >
         <div

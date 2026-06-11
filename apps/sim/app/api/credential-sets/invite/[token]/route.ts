@@ -10,15 +10,23 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import {
+  acceptCredentialSetInvitationContract,
+  getCredentialSetInvitationContract,
+} from '@/lib/api/contracts/credential-sets'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { normalizeEmail } from '@/lib/invitations/core'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 
 const logger = createLogger('CredentialSetInviteToken')
 
 export const GET = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ token: string }> }) => {
-    const { token } = await params
+  async (req: NextRequest, context: { params: Promise<{ token: string }> }) => {
+    const parsed = await parseRequest(getCredentialSetInvitationContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { token } = parsed.data.params
 
     const [invitation] = await db
       .select({
@@ -67,8 +75,10 @@ export const GET = withRouteHandler(
 )
 
 export const POST = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ token: string }> }) => {
-    const { token } = await params
+  async (req: NextRequest, context: { params: Promise<{ token: string }> }) => {
+    const parsed = await parseRequest(acceptCredentialSetInvitationContract, req, context)
+    if (!parsed.success) return parsed.response
+    const { token } = parsed.data.params
 
     const session = await getSession()
     if (!session?.user?.id) {
@@ -109,6 +119,21 @@ export const POST = withRouteHandler(
           .where(eq(credentialSetInvitation.id, invitation.id))
 
         return NextResponse.json({ error: 'Invitation has expired' }, { status: 410 })
+      }
+
+      if (invitation.email) {
+        const sessionEmail = session.user.email
+        if (!sessionEmail || normalizeEmail(sessionEmail) !== normalizeEmail(invitation.email)) {
+          logger.warn('Rejected credential set invitation accept due to email mismatch', {
+            invitationId: invitation.id,
+            credentialSetId: invitation.credentialSetId,
+            userId: session.user.id,
+          })
+          return NextResponse.json(
+            { error: 'This invitation was sent to a different email address' },
+            { status: 403 }
+          )
+        }
       }
 
       const existingMember = await db

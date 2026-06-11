@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
+import { usageLimitsRequestSchema } from '@/lib/api/contracts/usage-limits'
 import { AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { checkServerSideUsageLimits } from '@/lib/billing'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
@@ -12,6 +14,8 @@ import { createErrorResponse } from '@/app/api/workflows/utils'
 const logger = createLogger('UsageLimitsAPI')
 
 export const GET = withRouteHandler(async (request: NextRequest) => {
+  usageLimitsRequestSchema.parse({})
+
   try {
     const auth = await checkHybridAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
@@ -76,8 +80,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         percentUsed: storageLimit > 0 ? (storageUsage / storageLimit) * 100 : 0,
       },
     })
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error checking usage limits:', error)
-    return createErrorResponse(error.message || 'Failed to check usage limits', 500)
+    return createErrorResponse(getErrorMessage(error, 'Failed to check usage limits'), 500)
   }
 })

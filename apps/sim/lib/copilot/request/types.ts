@@ -56,6 +56,15 @@ export interface ContentBlock {
   calledBy?: string
   timestamp: number
   endedAt?: number
+  parentToolCallId?: string
+  /**
+   * Deterministic agent-run identity. `spanId` is the stable per-invocation id
+   * of the subagent that produced the block; `parentSpanId` links it to the run
+   * that invoked it. These are the primary nesting keys; `parentToolCallId` is
+   * retained for tool linkage and legacy back-compat.
+   */
+  spanId?: string
+  parentSpanId?: string
 }
 
 export interface StreamingContext {
@@ -65,6 +74,8 @@ export interface StreamingContext {
   runId?: string
   messageId: string
   accumulatedContent: string
+  finalAssistantContent: string
+  sawMainToolCall: boolean
   contentBlocks: ContentBlock[]
   toolCalls: Map<string, ToolCallState>
   pendingToolPromises: Map<string, Promise<AsyncCompletionSignal>>
@@ -86,6 +97,7 @@ export interface StreamingContext {
   subAgentParentStack: string[]
   subAgentContent: Record<string, string>
   subAgentToolCalls: Record<string, ToolCallState[]>
+  openSubagentParents?: Set<string>
   pendingContent: string
   streamComplete: boolean
   wasAborted: boolean
@@ -95,7 +107,7 @@ export interface StreamingContext {
   activeFileIntent?: {
     toolCallId: string
     operation: string
-    target: { kind: string; fileId?: string; fileName?: string }
+    target: { kind: string; fileId?: string; fileName?: string; path?: string }
     title?: string
     contentType?: string
     edit?: Record<string, unknown>
@@ -104,7 +116,7 @@ export interface StreamingContext {
   subAgentTraceSpans?: Map<string, RequestTraceV1Span>
 }
 
-export interface FileAttachment {
+interface FileAttachment {
   id: string
   key: string
   name: string
@@ -112,7 +124,7 @@ export interface FileAttachment {
   size: number
 }
 
-export interface OrchestratorRequest {
+interface OrchestratorRequest {
   message: string
   workflowId: string
   userId: string
@@ -134,25 +146,14 @@ export interface OrchestratorOptions {
   timeout?: number
   onEvent?: (event: StreamEvent) => void | Promise<void>
   onComplete?: (result: OrchestratorResult) => void | Promise<void>
-  onError?: (error: Error) => void | Promise<void>
+  onError?: (error: Error, result?: OrchestratorResult) => void | Promise<void>
   abortSignal?: AbortSignal
+  onAbortObserved?: (reason: string) => void
   interactive?: boolean
 }
 
 export interface OrchestratorResult {
   success: boolean
-  /**
-   * True iff the non-success outcome was a user-initiated cancel
-   * (abort signal fired or client disconnected). Lets callers treat
-   * cancels differently from actual errors — notably, `buildOnComplete`
-   * must NOT finalize the chat row on cancel, because the browser's
-   * `/api/copilot/chat/stop` POST owns writing the partial assistant
-   * content and clearing `conversationId` in one UPDATE. Finalizing
-   * here would race and clear `conversationId` first, making the stop
-   * UPDATE match zero rows and the partial content vanish on refetch.
-   *
-   * Always false when `success=true`.
-   */
   cancelled?: boolean
   content: string
   contentBlocks: ContentBlock[]

@@ -2,6 +2,10 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import {
+  type ChatOutputConfigInput,
+  parseChatOutputConfigInputs,
+} from '@/lib/workflows/default-user-workflows/chat-deploy-import'
 import { parsePostgresConnectionFromBody } from '@/lib/workflows/default-user-workflows/postgres'
 import { syncDefaultWorkflowsForSource } from '@/lib/workflows/default-user-workflows/service'
 import { authenticateCronSecretRequest } from '@/app/api/v1/admin/cron-secret-auth'
@@ -26,8 +30,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  *   {
  *     sourceWorkflowId: string,
  *     deploy?: boolean,
+ *     deployAsChat?: boolean,
+ *     chat?: { outputConfigs: Array<{ blockName?: string, blockId?: string, path: string }> },
  *     postgres?: { host, port?, database, username, password, ssl? }
  *   }
+ *
+ * `deployAsChat` defaults to true. When false, do not include `chat` in the body.
  */
 export const POST = withRouteHandler(async (request) => {
   const requestId = generateRequestId()
@@ -50,6 +58,20 @@ export const POST = withRouteHandler(async (request) => {
     }
 
     const deploy = body.deploy !== false
+    const deployAsChat = body.deployAsChat !== false
+
+    if (body.chat !== undefined && !deployAsChat) {
+      return badRequestResponse('chat must not be provided when deployAsChat is false.')
+    }
+
+    let chatOutputConfigs: ChatOutputConfigInput[] | undefined
+    if (deployAsChat) {
+      const parsedChatOutputs = parseChatOutputConfigInputs(body)
+      if (parsedChatOutputs && 'error' in parsedChatOutputs) {
+        return badRequestResponse(parsedChatOutputs.error)
+      }
+      chatOutputConfigs = parsedChatOutputs
+    }
 
     const postgresParsed = parsePostgresConnectionFromBody(body)
     if (postgresParsed && 'error' in postgresParsed) {
@@ -60,6 +82,8 @@ export const POST = withRouteHandler(async (request) => {
     const result = await syncDefaultWorkflowsForSource({
       sourceWorkflowId,
       deploy,
+      deployAsChat,
+      chatOutputConfigs,
       requestId,
       request,
       postgresConnection,

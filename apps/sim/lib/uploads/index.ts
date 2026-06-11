@@ -2,10 +2,7 @@ export {
   getStorageConfig,
   isStorageContextConfigured,
   isUsingCloudStorage,
-  type StorageConfig,
   type StorageContext,
-  UPLOAD_DIR,
-  USE_S3_STORAGE,
 } from '@/lib/uploads/config'
 export * as ChatFiles from '@/lib/uploads/contexts/chat'
 export * as CopilotFiles from '@/lib/uploads/contexts/copilot'
@@ -17,14 +14,3 @@ export {
   getStorageProvider,
 } from '@/lib/uploads/core/storage-client'
 export * as StorageService from '@/lib/uploads/core/storage-service'
-export {
-  bufferToBase64,
-  createFileContent as createAnthropicFileContent,
-  type FileAttachment,
-  getContentType as getAnthropicContentType,
-  getFileExtension,
-  getMimeTypeFromExtension,
-  isSupportedFileType,
-  type MessageContent as AnthropicMessageContent,
-  MIME_TYPE_MAPPING,
-} from '@/lib/uploads/utils/file-utils'

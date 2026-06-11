@@ -24,6 +24,7 @@ function createMockChain(finalResult: any) {
   chain.where = vi.fn().mockReturnValue(chain)
   chain.limit = vi.fn().mockReturnValue(chain)
   chain.innerJoin = vi.fn().mockReturnValue(chain)
+  chain.leftJoin = vi.fn().mockReturnValue(chain)
   chain.orderBy = vi.fn().mockReturnValue(chain)
 
   return chain
@@ -210,6 +211,7 @@ describe('Permission Utils', () => {
           name: 'Alice Smith',
           image: 'https://example.com/alice.png',
           permissionType: 'admin' as PermissionType,
+          joinedAt: new Date('2026-04-22T00:00:00.000Z'),
         },
       ]
 
@@ -225,7 +227,83 @@ describe('Permission Utils', () => {
           name: 'Alice Smith',
           image: 'https://example.com/alice.png',
           permissionType: 'admin',
+          isExternal: false,
+          joinedAt: '2026-04-22T00:00:00.000Z',
         },
+      ])
+    })
+
+    it('marks users as external when they are not members of the workspace organization', async () => {
+      const mockUsersResults = [
+        {
+          userId: 'internal-user',
+          email: 'internal@example.com',
+          name: 'Internal User',
+          image: null,
+          permissionType: 'admin' as PermissionType,
+          joinedAt: new Date('2026-04-22T00:00:00.000Z'),
+          workspaceOrganizationId: 'org-1',
+          workspaceOwnerId: 'internal-user',
+          userOrganizationId: 'org-1',
+        },
+        {
+          userId: 'external-user',
+          email: 'external@example.com',
+          name: 'External User',
+          image: null,
+          permissionType: 'write' as PermissionType,
+          joinedAt: new Date('2026-04-22T00:00:00.000Z'),
+          workspaceOrganizationId: 'org-1',
+          workspaceOwnerId: 'internal-user',
+          userOrganizationId: 'org-2',
+        },
+      ]
+
+      const usersChain = createMockChain(mockUsersResults)
+      mockDb.select.mockReturnValue(usersChain)
+
+      const result = await getUsersWithPermissions('workspace456')
+
+      expect(result.map((u) => ({ email: u.email, isExternal: u.isExternal }))).toEqual([
+        { email: 'internal@example.com', isExternal: false },
+        { email: 'external@example.com', isExternal: true },
+      ])
+    })
+
+    it('marks a non-owner member of another org as external on a personal workspace', async () => {
+      const mockUsersResults = [
+        {
+          userId: 'owner-user',
+          email: 'owner@example.com',
+          name: 'Owner',
+          image: null,
+          permissionType: 'admin' as PermissionType,
+          joinedAt: new Date('2026-04-22T00:00:00.000Z'),
+          workspaceOrganizationId: null,
+          workspaceOwnerId: 'owner-user',
+          userOrganizationId: null,
+        },
+        {
+          userId: 'guest-user',
+          email: 'guest@example.com',
+          name: 'Guest',
+          image: null,
+          permissionType: 'write' as PermissionType,
+          joinedAt: new Date('2026-04-22T00:00:00.000Z'),
+          workspaceOrganizationId: null,
+          workspaceOwnerId: 'owner-user',
+          userOrganizationId: 'org-guest',
+        },
+      ]
+
+      const usersChain = createMockChain(mockUsersResults)
+      mockDb.select.mockReturnValue(usersChain)
+
+      const result = await getUsersWithPermissions('workspace-personal')
+
+      expect(result.map((u) => ({ email: u.email, isExternal: u.isExternal }))).toEqual([
+        { email: 'owner@example.com', isExternal: false },
+        { email: 'guest@example.com', isExternal: true },
       ])
     })
 
@@ -236,18 +314,21 @@ describe('Permission Utils', () => {
           email: 'admin@example.com',
           name: 'Admin User',
           permissionType: 'admin' as PermissionType,
+          joinedAt: new Date('2026-04-22T00:00:00.000Z'),
         },
         {
           userId: 'user2',
           email: 'writer@example.com',
           name: 'Writer User',
           permissionType: 'write' as PermissionType,
+          joinedAt: new Date('2026-04-22T00:00:00.000Z'),
         },
         {
           userId: 'user3',
           email: 'reader@example.com',
           name: 'Reader User',
           permissionType: 'read' as PermissionType,
+          joinedAt: new Date('2026-04-22T00:00:00.000Z'),
         },
       ]
 
@@ -269,6 +350,7 @@ describe('Permission Utils', () => {
           email: 'test@example.com',
           name: '',
           permissionType: 'read' as PermissionType,
+          joinedAt: new Date('2026-04-22T00:00:00.000Z'),
         },
       ]
 

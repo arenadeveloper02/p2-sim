@@ -1,4 +1,7 @@
 import { createLogger } from '@sim/logger'
+import { DEFAULT_SUBBLOCK_TYPE } from '@sim/workflow-persistence/subblocks'
+import { isPlainRecord } from '@/lib/core/utils/records'
+import { sanitizeMalformedSubBlocks } from '@/lib/workflows/sanitization/subblocks'
 import {
   buildCanonicalIndex,
   buildSubBlockValues,
@@ -9,6 +12,7 @@ import { getBlock } from '@/blocks'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('SubblockMigrations')
+const ZOOM_OAUTH_CANONICAL_IDS = new Set(['oauthCredential', 'oauthCredentialAdmin'])
 
 /**
  * Maps old subblock IDs to their current equivalents per block type.
@@ -23,6 +27,13 @@ export const SUBBLOCK_ID_MIGRATIONS: Record<string, Record<string, string>> = {
   knowledge: {
     knowledgeBaseId: 'knowledgeBaseSelector',
   },
+  zoom: {
+    credentialAdmin: 'credential',
+    manualCredentialAdmin: 'manualCredential',
+  },
+  kalshi: {
+    settlementStatus: '_removed_settlementStatus',
+  },
   dynamodb: {
     key: 'getKey',
     filterExpression: 'queryFilterExpression',
@@ -34,6 +45,18 @@ export const SUBBLOCK_ID_MIGRATIONS: Record<string, Record<string, string>> = {
   ashby: {
     emailType: '_removed_emailType',
     phoneType: '_removed_phoneType',
+    expandApplicationFormDefinition: '_removed_expandApplicationFormDefinition',
+    expandSurveyFormDefinitions: '_removed_expandSurveyFormDefinitions',
+  },
+  apollo: {
+    contact_ids_bulk: 'contacts',
+    account_ids_bulk: 'accounts',
+    close_date: 'closed_date',
+    stage_id: 'opportunity_stage_id',
+    note: 'task_notes',
+    description: '_removed_description',
+    stage_ids: '_removed_stage_ids',
+    owner_ids: '_removed_owner_ids',
   },
   rippling: {
     action: '_removed_action',
@@ -66,6 +89,7 @@ export const SUBBLOCK_ID_MIGRATIONS: Record<string, Record<string, string>> = {
  * Returns a new subBlocks record if anything changed, or the original if not.
  */
 function migrateBlockSubblockIds(
+  blockType: string,
   subBlocks: Record<string, BlockState['subBlocks'][string]>,
   renames: Record<string, string>
 ): { subBlocks: Record<string, BlockState['subBlocks'][string]>; migrated: boolean } {
@@ -81,6 +105,7 @@ function migrateBlockSubblockIds(
   if (!migrated) return { subBlocks, migrated: false }
 
   const result = { ...subBlocks }
+  const blockConfig = getBlock(blockType)
 
   for (const [oldId, newId] of Object.entries(renames)) {
     if (!(oldId in result)) continue
@@ -90,8 +115,31 @@ function migrateBlockSubblockIds(
       continue
     }
 
-    const oldEntry = result[oldId]
-    result[newId] = { ...oldEntry, id: newId }
+    const oldEntry: unknown = result[oldId]
+    const configuredType = blockConfig?.subBlocks?.find((config) => config.id === newId)?.type
+    if (isPlainRecord(oldEntry)) {
+      const type =
+        configuredType ||
+        (typeof oldEntry.type === 'string' && oldEntry.type.length > 0
+          ? oldEntry.type === 'unknown'
+            ? DEFAULT_SUBBLOCK_TYPE
+            : oldEntry.type
+          : DEFAULT_SUBBLOCK_TYPE)
+      const value = Object.hasOwn(oldEntry, 'value') ? oldEntry.value : null
+
+      result[newId] = {
+        ...oldEntry,
+        id: newId,
+        type: type as BlockState['subBlocks'][string]['type'],
+        value: value as BlockState['subBlocks'][string]['value'],
+      }
+    } else {
+      result[newId] = {
+        id: newId,
+        type: configuredType || DEFAULT_SUBBLOCK_TYPE,
+        value: oldEntry as BlockState['subBlocks'][string]['value'],
+      }
+    }
     delete result[oldId]
   }
 
@@ -110,20 +158,28 @@ export function migrateSubblockIds(blocks: Record<string, BlockState>): {
   const result: Record<string, BlockState> = {}
 
   for (const [blockId, block] of Object.entries(blocks)) {
-    const renames = SUBBLOCK_ID_MIGRATIONS[block.type]
-    if (!renames || !block.subBlocks) {
+    if (!block.subBlocks) {
       result[blockId] = block
       continue
     }
 
-    const { subBlocks, migrated } = migrateBlockSubblockIds(block.subBlocks, renames)
-    if (migrated) {
-      logger.info('Migrated legacy subblock IDs', {
-        blockId: block.id,
-        blockType: block.type,
-      })
+    const renames = SUBBLOCK_ID_MIGRATIONS[block.type]
+    const renamed = renames
+      ? migrateBlockSubblockIds(block.type, block.subBlocks, renames)
+      : { subBlocks: block.subBlocks, migrated: false }
+    const renamedBlock = renamed.migrated ? { ...block, subBlocks: renamed.subBlocks } : block
+    const sanitized = sanitizeMalformedSubBlocks(renamedBlock)
+    const blockMigrated = renamed.migrated || sanitized.changed
+
+    if (blockMigrated) {
+      if (renamed.migrated) {
+        logger.info('Migrated legacy subblock IDs', {
+          blockId: block.id,
+          blockType: block.type,
+        })
+      }
       anyMigrated = true
-      result[blockId] = { ...block, subBlocks }
+      result[blockId] = { ...renamedBlock, subBlocks: sanitized.subBlocks }
     } else {
       result[blockId] = block
     }
@@ -133,7 +189,9 @@ export function migrateSubblockIds(blocks: Record<string, BlockState>): {
 }
 
 /**
- * Backfills missing `canonicalModes` entries in block data.
+ * Backfills missing `canonicalModes` entries in block data and normalizes
+ * stale Zoom OAuth pairs that were accidentally persisted in advanced mode
+ * with no manual/basic value set.
  *
  * When a canonical pair is added to a block definition, existing blocks
  * won't have the entry in `data.canonicalModes`. Without it the editor
@@ -167,7 +225,29 @@ export function backfillCanonicalModes(blocks: Record<string, BlockState>): {
     const values = buildSubBlockValues(block.subBlocks)
 
     for (const group of pairs) {
-      if (existing[group.canonicalId] != null) continue
+      const currentMode = existing[group.canonicalId]
+
+      if (
+        block.type === 'zoom' &&
+        currentMode === 'advanced' &&
+        ZOOM_OAUTH_CANONICAL_IDS.has(group.canonicalId)
+      ) {
+        const basicValue = group.basicId ? values[group.basicId] : undefined
+        const hasBasicValue =
+          basicValue !== null && basicValue !== undefined && String(basicValue).trim().length > 0
+        const hasAdvancedValue = group.advancedIds.some((advancedId) => {
+          const value = values[advancedId]
+          return value !== null && value !== undefined && String(value).trim().length > 0
+        })
+
+        if (!hasBasicValue && !hasAdvancedValue) {
+          if (!patched) patched = { ...existing }
+          patched[group.canonicalId] = 'basic'
+        }
+        continue
+      }
+
+      if (currentMode != null) continue
 
       const resolved = resolveCanonicalMode(group, values)
       if (!patched) patched = { ...existing }

@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { X } from 'lucide-react'
-import { Badge, Combobox, type ComboboxOption, Label, Skeleton } from '@/components/emcn'
+import { Badge, ChipCombobox, type ComboboxOption, Label, Skeleton } from '@/components/emcn'
 import { useWorkflows } from '@/hooks/queries/workflows'
 
 interface WorkflowSelectorProps {
@@ -84,7 +84,7 @@ export function WorkflowSelector({
             onMouseDown={(e) => handleRemove(e, w.id)}
           >
             {w.name}
-            <X className='!text-[var(--text-primary)] h-4 w-4 flex-shrink-0 opacity-50' />
+            <X className='!text-[var(--text-primary)] size-4 flex-shrink-0 opacity-50' />
           </Badge>
         ))}
         {selectedWorkflows.length > 2 && (
@@ -108,7 +108,7 @@ export function WorkflowSelector({
   return (
     <div className='flex flex-col gap-2'>
       <Label>Workflows</Label>
-      <Combobox
+      <ChipCombobox
         options={options}
         multiSelect
         multiSelectValues={currentValues}
@@ -124,5 +124,3 @@ export function WorkflowSelector({
     </div>
   )
 }
-
-export default WorkflowSelector

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { formatAbsoluteDate, formatRelativeTime } from '@sim/utils/formatting'
 import { useParams, useRouter } from 'next/navigation'
 import { Badge, DocumentAttachment, Tooltip } from '@/components/emcn'
@@ -28,6 +28,8 @@ interface BaseCardProps {
   onDelete?: (id: string) => Promise<void>
 }
 
+const EMPTY_CONNECTOR_TYPES: string[] = []
+
 /**
  * Skeleton placeholder for a knowledge base card
  */
@@ -42,7 +44,7 @@ export function BaseCardSkeleton() {
       <div className='flex flex-1 flex-col gap-2'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-1.5'>
-            <div className='h-[12px] w-[12px] animate-pulse rounded-xs bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
+            <div className='size-[12px] animate-pulse rounded-xs bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
             <div className='h-[15px] w-[45px] animate-pulse rounded-sm bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
           </div>
           <div className='h-[15px] w-[120px] animate-pulse rounded-sm bg-[var(--surface-4)] dark:bg-[var(--surface-5)]' />
@@ -82,7 +84,7 @@ export function BaseCard({
   description,
   updatedAt,
   searchQuery,
-  connectorTypes = [],
+  connectorTypes = EMPTY_CONNECTOR_TYPES,
   chunkingConfig,
   onUpdate,
   onDelete,
@@ -104,6 +106,19 @@ export function BaseCard({
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isTagsModalOpen, setIsTagsModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const connectorEntries = useMemo(
+    () =>
+      connectorTypes
+        .map((type) => ({ type, config: CONNECTOR_REGISTRY[type] }))
+        .filter((entry) => Boolean(entry.config?.icon)),
+    [connectorTypes]
+  )
+  const visibleConnectorEntries = useMemo(() => connectorEntries.slice(0, 3), [connectorEntries])
+  const hiddenConnectorLabels = useMemo(
+    () => connectorEntries.slice(3).map(({ type, config }) => config?.name ?? type),
+    [connectorEntries]
+  )
+  const hiddenConnectorCount = hiddenConnectorLabels.length
 
   const searchParams = new URLSearchParams({
     kbName: title,
@@ -112,7 +127,7 @@ export function BaseCard({
 
   const shortId = id ? `kb-${id.slice(0, 8)}` : ''
 
-  const handleClick = useCallback(
+  const navigateToKnowledgeBase = useCallback(
     (e: React.MouseEvent) => {
       clickKnowledgeBaseEvent({
         'Knowledge Base Name': title || '',
@@ -179,7 +194,7 @@ export function BaseCard({
         role='button'
         tabIndex={0}
         className='h-full cursor-pointer'
-        onClick={handleClick}
+        onClick={navigateToKnowledgeBase}
         onKeyDown={handleKeyDown}
         onContextMenu={handleContextMenu}
         data-kb-card
@@ -195,7 +210,7 @@ export function BaseCard({
           <div className='flex flex-1 flex-col gap-2'>
             <div className='flex items-center justify-between'>
               <span className='flex items-center gap-1.5 text-[var(--text-tertiary)] text-caption'>
-                <DocumentAttachment className='h-[12px] w-[12px]' />
+                <DocumentAttachment className='size-[12px]' />
                 {docCount} {docCount === 1 ? 'doc' : 'docs'}
               </span>
               {updatedAt && (
@@ -216,26 +231,31 @@ export function BaseCard({
               <p className='line-clamp-2 h-[36px] flex-1 text-[var(--text-tertiary)] text-caption leading-[18px]'>
                 {description}
               </p>
-              {connectorTypes.length > 0 && (
-                <div className='flex flex-shrink-0 items-center'>
-                  {connectorTypes.map((type, index) => {
-                    const config = CONNECTOR_REGISTRY[type]
-                    if (!config?.icon) return null
+              {connectorEntries.length > 0 && (
+                <div className='[&>*:not(:first-child)]:-ml-1 flex flex-shrink-0 items-center'>
+                  {visibleConnectorEntries.map(({ type, config }) => {
                     const Icon = config.icon
                     return (
                       <Tooltip.Root key={type}>
                         <Tooltip.Trigger asChild>
-                          <div
-                            className='flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center rounded-sm bg-[var(--surface-5)]'
-                            style={{ marginLeft: index > 0 ? '-4px' : '0' }}
-                          >
-                            <Icon className='h-[12px] w-[12px] text-[var(--text-secondary)]' />
+                          <div className='flex size-5 flex-shrink-0 items-center justify-center rounded-md border border-[var(--surface-3)] bg-[var(--surface-5)] transition-[border-color] group-hover:border-[var(--surface-4)] dark:border-[var(--surface-4)] dark:group-hover:border-[var(--surface-5)]'>
+                            <Icon className='size-[12px] text-[var(--text-secondary)]' />
                           </div>
                         </Tooltip.Trigger>
                         <Tooltip.Content>{config.name}</Tooltip.Content>
                       </Tooltip.Root>
                     )
                   })}
+                  {hiddenConnectorCount > 0 && (
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <div className='flex size-5 flex-shrink-0 items-center justify-center rounded-md border border-[var(--surface-3)] bg-[var(--surface-5)] font-medium text-[var(--text-muted)] text-micro transition-[border-color] group-hover:border-[var(--surface-4)] dark:border-[var(--surface-4)] dark:group-hover:border-[var(--surface-5)]'>
+                          +{hiddenConnectorCount}
+                        </div>
+                      </Tooltip.Trigger>
+                      <Tooltip.Content>{hiddenConnectorLabels.join(', ')}</Tooltip.Content>
+                    </Tooltip.Root>
+                  )}
                 </div>
               )}
             </div>

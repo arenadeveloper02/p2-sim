@@ -1,10 +1,14 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
+import { confluenceUploadAttachmentContract } from '@/lib/api/contracts/selectors/confluence'
+import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { validateAlphanumericId, validateJiraCloudId } from '@/lib/core/security/input-validation'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { processSingleFileToUserFile } from '@/lib/uploads/utils/file-utils'
+import { processSingleFileToUserFile, type RawFileInput } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { assertToolFileAccess } from '@/app/api/files/authorization'
 import { getConfluenceCloudId } from '@/tools/confluence/utils'
 import { parseAtlassianErrorMessage } from '@/tools/jira/utils'
 
@@ -19,8 +23,18 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { domain, accessToken, cloudId: providedCloudId, pageId, file, fileName, comment } = body
+    const parsed = await parseRequest(confluenceUploadAttachmentContract, request, {})
+    if (!parsed.success) return parsed.response
+
+    const {
+      domain,
+      accessToken,
+      cloudId: providedCloudId,
+      pageId,
+      file,
+      fileName,
+      comment,
+    } = parsed.data.body
 
     if (!domain) {
       return NextResponse.json({ error: 'Domain is required' }, { status: 400 })
@@ -50,12 +64,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: cloudIdValidation.error }, { status: 400 })
     }
 
-    let fileToProcess = file
+    let fileToProcess = file as RawFileInput
     if (Array.isArray(file)) {
       if (file.length === 0) {
         return NextResponse.json({ error: 'No file provided' }, { status: 400 })
       }
-      fileToProcess = file[0]
+      fileToProcess = file[0] as RawFileInput
     }
 
     let userFile
@@ -63,10 +77,18 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       userFile = processSingleFileToUserFile(fileToProcess, 'confluence-upload', logger)
     } catch (error) {
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to process file' },
+        { error: getErrorMessage(error, 'Failed to process file') },
         { status: 400 }
       )
     }
+
+    const denied = await assertToolFileAccess(
+      userFile.key,
+      auth.userId,
+      'confluence-upload',
+      logger
+    )
+    if (denied) return denied
 
     let fileBuffer: Buffer
     try {
@@ -75,7 +97,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       logger.error('Failed to download file from storage:', error)
       return NextResponse.json(
         {
-          error: `Failed to download file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          error: `Failed to download file: ${getErrorMessage(error, 'Unknown error')}`,
         },
         { status: 500 }
       )

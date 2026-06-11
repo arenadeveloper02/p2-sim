@@ -10,14 +10,15 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { deployedChatPostContract, goldenQueriesSchema } from '@/lib/api/contracts/chats'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
 import {
   toPersistedChatAttachment,
   updateExecutionHistoryData,
 } from '@/lib/chat/history-persistence'
-import { addCorsHeaders, validateAuthToken } from '@/lib/core/security/deployment'
+import { validateAuthToken } from '@/lib/core/security/deployment'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
@@ -119,6 +120,8 @@ interface ChatConfigSource {
   customizations: unknown
   authType: string | null
   outputConfigs: unknown
+  inputFormat?: unknown
+  userWorkspaceIds?: unknown
 }
 
 function toChatConfigResponse(deployment: ChatConfigSource) {
@@ -129,42 +132,10 @@ function toChatConfigResponse(deployment: ChatConfigSource) {
     customizations: deployment.customizations,
     authType: deployment.authType,
     outputConfigs: deployment.outputConfigs,
+    inputFormat: deployment.inputFormat,
+    userWorkspaceIds: deployment.userWorkspaceIds,
   }
 }
-
-const chatFileSchema = z
-  .object({
-    name: z.string().min(1, 'File name is required'),
-    type: z.string().min(1, 'File type is required'),
-    size: z.number().positive('File size must be positive'),
-    data: z.string().optional(),
-    url: z.string().optional(),
-    lastModified: z.number().optional(),
-  })
-  .refine((file) => Boolean(file.data?.trim() || file.url?.trim()), {
-    message: 'File data or url is required',
-  })
-
-const chatPostBodySchema = z.object({
-  input: z.string().optional(),
-  password: z.string().optional(),
-  email: z.string().email('Invalid email format').optional().or(z.literal('')),
-  conversationId: z.string().optional(),
-  chatId: z.string().optional(), // chatId for tracking conversation context
-  files: z.array(chatFileSchema).optional().default([]),
-  // Additional Start Block inputs (custom fields from inputFormat)
-  startBlockInputs: z.record(z.unknown()).optional(),
-})
-
-const goldenQueriesSchema = z.object({
-  goldenQueries: z.array(
-    z.object({
-      id: z.string().optional(),
-      query: z.string().min(1),
-    })
-  ),
-  deleteMode: z.enum(['hard', 'soft']).optional(),
-})
 
 const sanitizeGoldenQueries = (queries?: Array<{ id?: string; query: string }>) => {
   if (!Array.isArray(queries)) return []
@@ -242,31 +213,20 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ identifier: string }> }) => {
-    const { identifier } = await params
+  async (request: NextRequest, context: { params: Promise<{ identifier: string }> }) => {
+    const { identifier } = await context.params
     const requestId = generateRequestId()
 
     try {
-      let parsedBody
-      try {
-        const rawBody = await request.json()
-        const validation = chatPostBodySchema.safeParse(rawBody)
-
-        if (!validation.success) {
-          const errorMessage = validation.error.errors
-            .map((err) => `${err.path.join('.')}: ${err.message}`)
-            .join(', ')
-          logger.warn(`[${requestId}] Validation error: ${errorMessage}`)
-          return addCorsHeaders(
-            createErrorResponse(`Invalid request body: ${errorMessage}`, 400),
-            request
-          )
-        }
-
-        parsedBody = validation.data
-      } catch (_error) {
-        return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
-      }
+      const parsed = await parseRequest(deployedChatPostContract, request, context, {
+        validationErrorResponse: (err) => {
+          const message = err.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
+          return createErrorResponse(`Invalid request body: ${message}`, 400, 'VALIDATION_ERROR')
+        },
+        invalidJsonResponse: () => createErrorResponse('Invalid request body', 400),
+      })
+      if (!parsed.success) return parsed.response
+      const parsedBody = parsed.data.body
 
       const deploymentResult = await db
         .select({
@@ -288,7 +248,7 @@ export const POST = withRouteHandler(
 
       if (deploymentResult.length === 0) {
         logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
-        return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+        return createErrorResponse('Chat not found', 404)
       }
 
       const deployment = deploymentResult[0]
@@ -307,10 +267,7 @@ export const POST = withRouteHandler(
           logger.warn(
             `[${requestId}] Cannot log: workflow ${deployment.workflowId} has no workspace`
           )
-          return addCorsHeaders(
-            createErrorResponse('This chat is currently unavailable', 403),
-            request
-          )
+          return createErrorResponse('This chat is currently unavailable', 403)
         }
 
         const executionId = generateId()
@@ -335,18 +292,12 @@ export const POST = withRouteHandler(
           traceSpans: [],
         })
 
-        return addCorsHeaders(
-          createErrorResponse('This chat is currently unavailable', 403),
-          request
-        )
+        return createErrorResponse('This chat is currently unavailable', 403)
       }
 
       const authResult = await validateChatAuth(requestId, deployment, request, parsedBody)
       if (!authResult.authorized) {
-        return addCorsHeaders(
-          createErrorResponse(authResult.error || 'Authentication required', 401),
-          request
-        )
+        return createErrorResponse(authResult.error || 'Authentication required', 401)
       }
 
       // Store chat details in deployed_chat table if chatId is provided
@@ -496,9 +447,11 @@ export const POST = withRouteHandler(
       const userId = session?.user?.id || null
 
       if ((password || email) && !input) {
-        const response = addCorsHeaders(createSuccessResponse({ authenticated: true }), request)
+        const response = createSuccessResponse(toChatConfigResponse(deployment))
 
-        setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
+        if (deployment.authType !== 'sso') {
+          setChatAuthCookie(response, deployment.id, deployment.authType, deployment.password)
+        }
 
         return response
       }
@@ -515,7 +468,7 @@ export const POST = withRouteHandler(
         )
 
       if (!input && (!files || files.length === 0) && !hasStartBlockInputValues) {
-        return addCorsHeaders(createErrorResponse('No input provided', 400), request)
+        return createErrorResponse('No input provided', 400)
       }
 
       const executionId = generateId()
@@ -540,12 +493,9 @@ export const POST = withRouteHandler(
 
       if (!preprocessResult.success) {
         logger.warn(`[${requestId}] Preprocessing failed: ${preprocessResult.error?.message}`)
-        return addCorsHeaders(
-          createErrorResponse(
-            preprocessResult.error?.message || 'Failed to process request',
-            preprocessResult.error?.statusCode || 500
-          ),
-          request
+        return createErrorResponse(
+          preprocessResult.error?.message || 'Failed to process request',
+          preprocessResult.error?.statusCode || 500
         )
       }
 
@@ -554,10 +504,7 @@ export const POST = withRouteHandler(
       const workspaceId = workflowRecord?.workspaceId
       if (!workspaceId) {
         logger.error(`[${requestId}] Workflow ${deployment.workflowId} has no workspaceId`)
-        return addCorsHeaders(
-          createErrorResponse('Workflow has no associated workspace', 500),
-          request
-        )
+        return createErrorResponse('Workflow has no associated workspace', 500)
       }
 
       // Format startBlockInputs into initialInput format
@@ -685,6 +632,9 @@ export const POST = withRouteHandler(
             sessionUserId: userId ?? undefined,
           },
           executionId,
+          workspaceId,
+          workflowId: deployment.workflowId,
+          userId: workspaceOwnerId,
           executeFn: async ({ onStream, onBlockComplete, abortSignal, sessionUserId }) =>
             executeWorkflow(
               workflowForExecution,
@@ -1057,20 +1007,14 @@ export const POST = withRouteHandler(
           status: 200,
           headers: SSE_HEADERS,
         })
-        return addCorsHeaders(streamResponse, request)
+        return streamResponse
       } catch (error: any) {
         logger.error(`[${requestId}] Error processing chat request:`, error)
-        return addCorsHeaders(
-          createErrorResponse(error.message || 'Failed to process request', 500),
-          request
-        )
+        return createErrorResponse(error.message || 'Failed to process request', 500)
       }
     } catch (error: any) {
       logger.error(`[${requestId}] Error processing chat request:`, error)
-      return addCorsHeaders(
-        createErrorResponse(error.message || 'Failed to process request', 500),
-        request
-      )
+      return createErrorResponse(error.message || 'Failed to process request', 500)
     }
   }
 )
@@ -1086,17 +1030,14 @@ export const PATCH = withRouteHandler(
         const rawBody = await request.json()
         const validation = goldenQueriesSchema.safeParse(rawBody)
         if (!validation.success) {
-          const errorMessage = validation.error.errors
+          const errorMessage = validation.error.issues
             .map((err) => `${err.path.join('.')}: ${err.message}`)
             .join(', ')
-          return addCorsHeaders(
-            createErrorResponse(`Invalid request body: ${errorMessage}`, 400),
-            request
-          )
+          return createErrorResponse(`Invalid request body: ${errorMessage}`, 400)
         }
         parsedBody = validation.data
       } catch (_error) {
-        return addCorsHeaders(createErrorResponse('Invalid request body', 400), request)
+        return createErrorResponse('Invalid request body', 400)
       }
 
       const deploymentResult = await db
@@ -1115,16 +1056,13 @@ export const PATCH = withRouteHandler(
 
       if (deploymentResult.length === 0) {
         logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
-        return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+        return createErrorResponse('Chat not found', 404)
       }
 
       const deployment = deploymentResult[0]
       if (!deployment.isActive) {
         logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
-        return addCorsHeaders(
-          createErrorResponse('This chat is currently unavailable', 403),
-          request
-        )
+        return createErrorResponse('This chat is currently unavailable', 403)
       }
 
       const cookieName = `chat_auth_${deployment.id}`
@@ -1135,10 +1073,7 @@ export const PATCH = withRouteHandler(
       ) {
         const authResult = await validateChatAuth(requestId, deployment, request)
         if (!authResult.authorized) {
-          return addCorsHeaders(
-            createErrorResponse(authResult.error || 'Authentication required', 401),
-            request
-          )
+          return createErrorResponse(authResult.error || 'Authentication required', 401)
         }
       }
 
@@ -1160,13 +1095,10 @@ export const PATCH = withRouteHandler(
 
       await db.update(chat).set({ updatedAt: new Date() }).where(eq(chat.id, deployment.id))
 
-      return addCorsHeaders(createSuccessResponse({ goldenQueries: sanitizedQueries }), request)
+      return createSuccessResponse({ goldenQueries: sanitizedQueries })
     } catch (error: any) {
       logger.error(`[${requestId}] Error updating golden queries:`, error)
-      return addCorsHeaders(
-        createErrorResponse(error.message || 'Failed to update golden queries', 500),
-        request
-      )
+      return createErrorResponse(error.message || 'Failed to update golden queries', 500)
     }
   }
 )
@@ -1197,17 +1129,14 @@ export const GET = withRouteHandler(
 
       if (deploymentResult.length === 0) {
         logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
-        return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+        return createErrorResponse('Chat not found', 404)
       }
 
       const deployment = deploymentResult[0]
 
       if (!deployment.isActive) {
         logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
-        return addCorsHeaders(
-          createErrorResponse('This chat is currently unavailable', 403),
-          request
-        )
+        return createErrorResponse('This chat is currently unavailable', 403)
       }
 
       // Extract Start Block inputFormat for chat UI (before auth checks so it's available in all responses)
@@ -1253,12 +1182,12 @@ export const GET = withRouteHandler(
        * Helper function to build chat config response with inputFormat always included.
        * When userWorkspaceIds is provided (logged-in user with workspace access), KB "View in Knowledge Base" links are shown.
        */
-      const buildChatConfigResponse = (userWorkspaceIds?: string[]) => {
+      const buildChatConfigData = (userWorkspaceIds?: string[]) => {
         const departmentValue = deployment.department ?? null
         const departmentLabel =
           departmentValue != null ? (departmentLabelMap[departmentValue] ?? departmentValue) : null
 
-        return createSuccessResponse({
+        return {
           id: deployment.id,
           title: deployment.title,
           description: deployment.description,
@@ -1271,7 +1200,7 @@ export const GET = withRouteHandler(
           inputFormat, // Always included in successful responses
           department: departmentLabel, // Department in label format
           ...(userWorkspaceIds && userWorkspaceIds.length > 0 && { userWorkspaceIds }),
-        })
+        }
       }
 
       const cookieName = `chat_auth_${deployment.id}`
@@ -1279,6 +1208,7 @@ export const GET = withRouteHandler(
 
       if (
         deployment.authType !== 'public' &&
+        deployment.authType !== 'sso' &&
         authCookie &&
         validateAuthToken(authCookie.value, deployment.id, deployment.password)
       ) {
@@ -1291,7 +1221,7 @@ export const GET = withRouteHandler(
         } catch {
           // Non-fatal; proceed without userWorkspaceIds
         }
-        return addCorsHeaders(buildChatConfigResponse(userWorkspaceIds), request)
+        return createSuccessResponse(buildChatConfigData(userWorkspaceIds))
       }
 
       const authResult = await validateChatAuth(requestId, deployment, request)
@@ -1299,10 +1229,7 @@ export const GET = withRouteHandler(
         logger.info(
           `[${requestId}] Authentication required for chat: ${identifier}, type: ${deployment.authType}`
         )
-        return addCorsHeaders(
-          createErrorResponse(authResult.error || 'Authentication required', 401),
-          request
-        )
+        return createErrorResponse(authResult.error || 'Authentication required', 401)
       }
 
       let userWorkspaceIds: string[] | undefined
@@ -1315,19 +1242,17 @@ export const GET = withRouteHandler(
         // Non-fatal; proceed without userWorkspaceIds
       }
 
-      const response = buildChatConfigResponse(userWorkspaceIds)
+      const response = createSuccessResponse(buildChatConfigData(userWorkspaceIds))
 
       if (deployment.authType !== 'public') {
         setChatAuthCookie(response, deployment.id, deployment.authType)
       }
 
-      return addCorsHeaders(response, request)
+      // return addCorsHeaders(response, request)
+      return response
     } catch (error: any) {
       logger.error(`[${requestId}] Error fetching chat info:`, error)
-      return addCorsHeaders(
-        createErrorResponse(error.message || 'Failed to fetch chat information', 500),
-        request
-      )
+      return createErrorResponse(error.message || 'Failed to fetch chat information', 500)
     }
   }
 )

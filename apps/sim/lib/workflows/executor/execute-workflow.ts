@@ -15,15 +15,29 @@ export interface ExecuteWorkflowOptions {
   enabled: boolean
   selectedOutputs?: string[]
   isSecureMode?: boolean
-  workflowTriggerType?: 'api' | 'chat' | 'copilot'
+  workflowTriggerType?: 'api' | 'chat' | 'copilot' | 'table'
+  /**
+   * If set, the executor enters the workflow at this block instead of resolving a Start block.
+   * Use for trigger-originated runs (webhooks, table triggers, schedules) where the entry point
+   * is the trigger block itself.
+   */
   triggerBlockId?: string
   onStream?: (streamingExec: StreamingExecution) => Promise<void>
+  /** Fires before each block runs; lets callers track per-block lifecycle (e.g. table-cell live state). */
+  onBlockStart?: (
+    blockId: string,
+    blockName: string,
+    blockType: string,
+    executionOrder: number
+  ) => Promise<void>
   onBlockComplete?: (blockId: string, output: unknown) => Promise<void>
   skipLoggingComplete?: boolean
   includeFileBase64?: boolean
   base64MaxBytes?: number
   /** When set (e.g. deployed chat with logged-in user), Arena tools use this user's token from DB via getArenaToken. */
   sessionUserId?: string | null
+  largeValueKeys?: string[]
+  fileKeys?: string[]
   abortSignal?: AbortSignal
   /** Use the live/draft workflow state instead of the deployed state. Used by copilot. */
   useDraftState?: boolean
@@ -33,6 +47,7 @@ export interface ExecuteWorkflowOptions {
   runFromBlock?: {
     startBlockId: string
     sourceSnapshot: SerializableExecutionState
+    sourceExecutionId?: string
   }
   executionMode?: 'sync' | 'stream' | 'async'
 }
@@ -78,6 +93,9 @@ export async function executeWorkflow(
       useDraftState: streamConfig?.useDraftState ?? false,
       startTime: new Date().toISOString(),
       isClientSession: Boolean(sessionUserId),
+      largeValueExecutionIds: Array.from(new Set([executionId])),
+      largeValueKeys: streamConfig?.largeValueKeys,
+      fileKeys: streamConfig?.fileKeys,
       executionMode: streamConfig?.executionMode,
     }
 
@@ -95,6 +113,16 @@ export async function executeWorkflow(
       snapshot,
       callbacks: {
         onStream: streamConfig?.onStream,
+        onBlockStart: streamConfig?.onBlockStart
+          ? async (
+              blockId: string,
+              blockName: string,
+              blockType: string,
+              executionOrder: number
+            ) => {
+              await streamConfig.onBlockStart!(blockId, blockName, blockType, executionOrder)
+            }
+          : undefined,
         onBlockComplete: streamConfig?.onBlockComplete
           ? async (blockId: string, _blockName: string, _blockType: string, output: unknown) => {
               await streamConfig.onBlockComplete!(blockId, output)

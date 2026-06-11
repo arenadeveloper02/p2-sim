@@ -1,11 +1,13 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { truncate } from '@sim/utils/string'
 import { isEqual } from 'es-toolkit'
 import { useParams } from 'next/navigation'
 import { Handle, type NodeProps, Position, useUpdateNodeInternals } from 'reactflow'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { Badge, Tooltip } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
+import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { createMcpToolId } from '@/lib/mcp/shared'
 import { getProviderIdFromServiceId } from '@/lib/oauth'
@@ -54,6 +56,7 @@ import { useVariablesStore } from '@/stores/variables/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { wouldCreateCycle } from '@/stores/workflows/workflow/utils'
+import { formatParameterLabel } from '@/tools/params'
 
 const logger = createLogger('WorkflowBlock')
 
@@ -263,7 +266,7 @@ export const getDisplayValue = (value: unknown): string => {
     const firstMessage = parsedValue[0]
     if (!firstMessage?.content || firstMessage.content.trim() === '') return '-'
     const content = firstMessage.content.trim()
-    return content.length > 50 ? `${content.slice(0, 50)}...` : content
+    return truncate(content, 50)
   }
 
   if (isVariableAssignmentsArray(parsedValue)) {
@@ -962,6 +965,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
   const { mutate: deployChildWorkflow, isPending: isDeploying } = useDeployWorkflow()
 
   const userPermissions = useUserPermissionsContext()
+  const canEditWorkflow = userPermissions.canEdit && !data.isWorkflowLocked
 
   const currentStoreBlock = currentWorkflow.getBlockById(id)
 
@@ -1018,7 +1022,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
       {}
     )
 
-    const effectiveAdvanced = userPermissions.canEdit
+    const effectiveAdvanced = canEditWorkflow
       ? displayAdvancedMode
       : displayAdvancedMode || hasAdvancedValues(config.subBlocks, rawValues, canonicalIndex)
     const effectiveTrigger = displayTriggerMode
@@ -1093,7 +1097,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     currentWorkflow.isDiffMode,
     currentBlock,
     canonicalModeOverrides,
-    userPermissions.canEdit,
+    canEditWorkflow,
     canonicalIndex,
     hiddenByReactiveCondition,
     blockSubBlockValues,
@@ -1113,16 +1117,10 @@ export const WorkflowBlock = memo(function WorkflowBlock({
       },
       {}
     )
-    return userPermissions.canEdit
+    return canEditWorkflow
       ? displayAdvancedMode
       : displayAdvancedMode || hasAdvancedValues(config.subBlocks, rawValues, canonicalIndex)
-  }, [
-    subBlockState,
-    displayAdvancedMode,
-    config.subBlocks,
-    canonicalIndex,
-    userPermissions.canEdit,
-  ])
+  }, [subBlockState, displayAdvancedMode, config.subBlocks, canonicalIndex, canEditWorkflow])
 
   /**
    * Determine if block has content below the header (subblocks or error row).
@@ -1178,6 +1176,28 @@ export const WorkflowBlock = memo(function WorkflowBlock({
   }, [type, topologySubBlocks, id])
 
   /**
+   * Total rendered row count. `mcp-dynamic-args` expands one row per parameter
+   * in the cached tool schema, so we count those properties instead of 1.
+   */
+  const totalRenderedRowCount = useMemo(() => {
+    let count = 0
+    for (const row of subBlockRows) {
+      for (const subBlock of row) {
+        if (subBlock.type === 'mcp-dynamic-args') {
+          const schema = subBlockState._toolSchema?.value as
+            | { properties?: Record<string, unknown> }
+            | undefined
+          const properties = schema?.properties
+          count += properties && typeof properties === 'object' ? Object.keys(properties).length : 0
+        } else {
+          count += 1
+        }
+      }
+    }
+    return count
+  }, [subBlockRows, subBlockState])
+
+  /**
    * Compute and publish deterministic layout metrics for workflow blocks.
    * This avoids ResizeObserver/animation-frame jitter and prevents initial "jump".
    */
@@ -1188,7 +1208,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
         blockType: type,
         category: config.category,
         displayTriggerMode,
-        visibleSubBlockCount: subBlockRows.reduce((acc, row) => acc + row.length, 0),
+        visibleSubBlockCount: totalRenderedRowCount,
         conditionRowCount: conditionRows.length,
         routerRowCount: routerRows.length,
       })
@@ -1197,7 +1217,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
       type,
       config.category,
       displayTriggerMode,
-      subBlockRows.reduce((acc, row) => acc + row.length, 0),
+      totalRenderedRowCount,
       conditionRows.length,
       routerRows.length,
       horizontalHandles,
@@ -1223,7 +1243,10 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     <div className='group relative'>
       <div
         ref={contentRef}
+        role='button'
+        tabIndex={0}
         onClick={handleClick}
+        onKeyDown={(event) => handleKeyboardActivation(event, handleClick)}
         className={cn(
           'workflow-drag-handle relative z-[20] w-[250px] cursor-grab select-none rounded-lg border border-[var(--border-1)] bg-[var(--surface-2)] [&:active]:cursor-grabbing'
         )}
@@ -1235,7 +1258,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
         )}
 
         {!data.isPreview && !data.isEmbedded && (
-          <ActionBar blockId={id} blockType={type} disabled={!userPermissions.canEdit} />
+          <ActionBar blockId={id} blockType={type} disabled={!canEditWorkflow} />
         )}
 
         {shouldShowDefaultHandles && (
@@ -1265,12 +1288,12 @@ export const WorkflowBlock = memo(function WorkflowBlock({
         >
           <div className='relative z-10 flex min-w-0 flex-1 items-center gap-2.5'>
             <div
-              className='flex h-[24px] w-[24px] flex-shrink-0 items-center justify-center rounded-md'
+              className='flex size-[24px] flex-shrink-0 items-center justify-center rounded-md'
               style={{
                 background: isEnabled ? config.bgColor : 'gray',
               }}
             >
-              <config.icon className='h-[16px] w-[16px] text-white' />
+              <config.icon className='size-[16px] text-white' />
             </div>
             <span
               className={cn(
@@ -1383,7 +1406,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
               </Tooltip.Root>
             )}
             {/* {isActive && (
-              <div className='mr-0.5 ml-2 flex h-[16px] w-[16px] items-center justify-center'>
+              <div className='mr-0.5 ml-2 flex size-[16px] items-center justify-center'>
                 <div
                   className='h-full w-full animate-spin-slow rounded-full border-[2.5px] border-[rgba(255,102,0,0.25)] border-t-[var(--warning)]'
                   aria-hidden='true'
@@ -1416,9 +1439,28 @@ export const WorkflowBlock = memo(function WorkflowBlock({
               </>
             ) : (
               subBlockRows.map((row, rowIndex) =>
-                row.map((subBlock) => {
+                row.flatMap((subBlock) => {
                   const rawValue = subBlockState[subBlock.id]?.value
-                  return (
+                  if (subBlock.type === 'mcp-dynamic-args') {
+                    const schema = subBlockState._toolSchema?.value as
+                      | { properties?: Record<string, unknown> }
+                      | undefined
+                    const properties = schema?.properties
+                    if (properties && typeof properties === 'object') {
+                      const args = (
+                        rawValue && typeof rawValue === 'object' ? rawValue : {}
+                      ) as Record<string, unknown>
+                      return Object.keys(properties).map((paramName) => (
+                        <SubBlockRow
+                          key={`${subBlock.id}-${paramName}-${rowIndex}`}
+                          title={formatParameterLabel(paramName)}
+                          value={getDisplayValue(args[paramName])}
+                        />
+                      ))
+                    }
+                    return []
+                  }
+                  return [
                     <SubBlockRow
                       key={`${subBlock.id}-${rowIndex}`}
                       title={subBlock.title ?? subBlock.id}
@@ -1432,8 +1474,8 @@ export const WorkflowBlock = memo(function WorkflowBlock({
                       displayAdvancedOptions={effectiveAdvanced}
                       canonicalIndex={canonicalIndex}
                       canonicalModeOverrides={canonicalModeOverrides}
-                    />
-                  )
+                    />,
+                  ]
                 })
               )
             )}

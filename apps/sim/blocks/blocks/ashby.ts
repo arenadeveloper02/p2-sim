@@ -1,5 +1,5 @@
 import { AshbyIcon } from '@/components/icons'
-import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
+import { AuthMode, type BlockConfig, type BlockMeta, IntegrationType } from '@/blocks/types'
 import { getTrigger } from '@/triggers'
 
 export const AshbyBlock: BlockConfig = {
@@ -11,8 +11,8 @@ export const AshbyBlock: BlockConfig = {
   docsLink: 'https://docs.sim.ai/tools/ashby',
   category: 'tools',
   integrationType: IntegrationType.HR,
-  tags: ['hiring'],
   bgColor: '#5D4ED6',
+  iconColor: '#5D4ED6',
   icon: AshbyIcon,
   authMode: AuthMode.ApiKey,
 
@@ -113,7 +113,6 @@ export const AshbyBlock: BlockConfig = {
       id: 'email',
       title: 'Email',
       type: 'short-input',
-      required: { field: 'operation', value: 'create_candidate' },
       placeholder: 'Email address',
       condition: { field: 'operation', value: ['create_candidate', 'update_candidate'] },
     },
@@ -151,6 +150,40 @@ export const AshbyBlock: BlockConfig = {
         value: ['create_candidate', 'update_candidate', 'create_application'],
       },
       mode: 'advanced',
+    },
+    {
+      id: 'website',
+      title: 'Website URL',
+      type: 'short-input',
+      placeholder: 'https://example.com',
+      condition: { field: 'operation', value: 'create_candidate' },
+      mode: 'advanced',
+    },
+    {
+      id: 'alternateEmail',
+      title: 'Alternate Email',
+      type: 'short-input',
+      placeholder: 'Additional email address',
+      condition: { field: 'operation', value: 'update_candidate' },
+      mode: 'advanced',
+    },
+    {
+      id: 'candidateCreatedAt',
+      title: 'Created At',
+      type: 'short-input',
+      placeholder: 'e.g. 2024-01-01T00:00:00Z',
+      condition: { field: 'operation', value: ['create_candidate', 'update_candidate'] },
+      mode: 'advanced',
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate an ISO 8601 timestamp based on the user's description.
+Examples:
+- "last week" -> One week ago from today at 00:00:00Z
+- "January 1st 2024" -> 2024-01-01T00:00:00Z
+- "30 days ago" -> 30 days before today at 00:00:00Z
+Output only the ISO 8601 timestamp string, nothing else.`,
+        generationType: 'timestamp',
+      },
     },
     {
       id: 'updateName',
@@ -235,8 +268,11 @@ export const AshbyBlock: BlockConfig = {
       id: 'creditedToUserId',
       title: 'Credited To User ID',
       type: 'short-input',
-      placeholder: 'User UUID the application is credited to',
-      condition: { field: 'operation', value: 'create_application' },
+      placeholder: 'User UUID credited as the source of this record',
+      condition: {
+        field: 'operation',
+        value: ['create_application', 'create_candidate', 'update_candidate'],
+      },
       mode: 'advanced',
     },
     {
@@ -282,8 +318,32 @@ Output only the ISO 8601 timestamp string, nothing else.`,
       id: 'sendNotifications',
       title: 'Send Notifications',
       type: 'switch',
+      condition: { field: 'operation', value: ['create_note', 'update_candidate'] },
+      mode: 'advanced',
+    },
+    {
+      id: 'isPrivate',
+      title: 'Private Note',
+      type: 'switch',
       condition: { field: 'operation', value: 'create_note' },
       mode: 'advanced',
+    },
+    {
+      id: 'noteCreatedAt',
+      title: 'Created At',
+      type: 'short-input',
+      placeholder: 'e.g. 2024-01-01T00:00:00Z',
+      condition: { field: 'operation', value: 'create_note' },
+      mode: 'advanced',
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate an ISO 8601 timestamp based on the user's description.
+Examples:
+- "yesterday" -> Yesterday at 00:00:00Z
+- "January 1st 2024" -> 2024-01-01T00:00:00Z
+Output only the ISO 8601 timestamp string, nothing else.`,
+        generationType: 'timestamp',
+      },
     },
     {
       id: 'filterStatus',
@@ -321,7 +381,17 @@ Output only the ISO 8601 timestamp string, nothing else.`,
       title: 'Created After',
       type: 'short-input',
       placeholder: 'e.g. 2024-01-01T00:00:00Z',
-      condition: { field: 'operation', value: 'list_applications' },
+      condition: {
+        field: 'operation',
+        value: [
+          'list_applications',
+          'list_candidates',
+          'list_jobs',
+          'list_offers',
+          'list_openings',
+          'list_interviews',
+        ],
+      },
       mode: 'advanced',
       wandConfig: {
         enabled: true,
@@ -331,6 +401,62 @@ Examples:
 - "January 1st 2024" -> 2024-01-01T00:00:00Z
 - "30 days ago" -> 30 days before today at 00:00:00Z
 - "start of this month" -> First day of current month at 00:00:00Z
+Output only the ISO 8601 timestamp string, nothing else.`,
+        generationType: 'timestamp',
+      },
+    },
+    {
+      id: 'openedAfter',
+      title: 'Opened After',
+      type: 'short-input',
+      placeholder: 'e.g. 2024-01-01T00:00:00Z',
+      condition: { field: 'operation', value: 'list_jobs' },
+      mode: 'advanced',
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate an ISO 8601 timestamp based on the user's description.
+Output only the ISO 8601 timestamp string, nothing else.`,
+        generationType: 'timestamp',
+      },
+    },
+    {
+      id: 'openedBefore',
+      title: 'Opened Before',
+      type: 'short-input',
+      placeholder: 'e.g. 2024-12-31T23:59:59Z',
+      condition: { field: 'operation', value: 'list_jobs' },
+      mode: 'advanced',
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate an ISO 8601 timestamp based on the user's description.
+Output only the ISO 8601 timestamp string, nothing else.`,
+        generationType: 'timestamp',
+      },
+    },
+    {
+      id: 'closedAfter',
+      title: 'Closed After',
+      type: 'short-input',
+      placeholder: 'e.g. 2024-01-01T00:00:00Z',
+      condition: { field: 'operation', value: 'list_jobs' },
+      mode: 'advanced',
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate an ISO 8601 timestamp based on the user's description.
+Output only the ISO 8601 timestamp string, nothing else.`,
+        generationType: 'timestamp',
+      },
+    },
+    {
+      id: 'closedBefore',
+      title: 'Closed Before',
+      type: 'short-input',
+      placeholder: 'e.g. 2024-12-31T23:59:59Z',
+      condition: { field: 'operation', value: 'list_jobs' },
+      mode: 'advanced',
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate an ISO 8601 timestamp based on the user's description.
 Output only the ISO 8601 timestamp string, nothing else.`,
         generationType: 'timestamp',
       },
@@ -366,6 +492,10 @@ Output only the ISO 8601 timestamp string, nothing else.`,
           'list_openings',
           'list_users',
           'list_interviews',
+          'list_candidate_tags',
+          'list_locations',
+          'list_departments',
+          'list_custom_fields',
         ],
       },
       mode: 'advanced',
@@ -386,8 +516,122 @@ Output only the ISO 8601 timestamp string, nothing else.`,
           'list_openings',
           'list_users',
           'list_interviews',
+          'list_candidate_tags',
+          'list_locations',
+          'list_departments',
+          'list_custom_fields',
         ],
       },
+      mode: 'advanced',
+    },
+    {
+      id: 'syncToken',
+      title: 'Sync Token',
+      type: 'short-input',
+      placeholder: 'Sync token for incremental updates',
+      condition: {
+        field: 'operation',
+        value: [
+          'list_candidate_tags',
+          'list_locations',
+          'list_departments',
+          'list_custom_fields',
+          'list_offers',
+        ],
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'includeLocationHierarchy',
+      title: 'Include Location Hierarchy',
+      type: 'switch',
+      condition: { field: 'operation', value: 'list_locations' },
+      mode: 'advanced',
+    },
+    {
+      id: 'offerApplicationId',
+      title: 'Application ID Filter',
+      type: 'short-input',
+      placeholder: 'Filter offers by application UUID',
+      condition: { field: 'operation', value: 'list_offers' },
+      mode: 'advanced',
+    },
+    {
+      id: 'alternateEmailAddresses',
+      title: 'Alternate Email Addresses',
+      type: 'long-input',
+      placeholder: 'Comma-separated or JSON array (e.g. ["a@x.com","b@x.com"])',
+      condition: { field: 'operation', value: 'create_candidate' },
+      mode: 'advanced',
+    },
+    {
+      id: 'socialLinks',
+      title: 'Social Links',
+      type: 'long-input',
+      placeholder: 'JSON array (e.g. [{"type":"Twitter","url":"https://twitter.com/x"}])',
+      condition: { field: 'operation', value: 'update_candidate' },
+      mode: 'advanced',
+    },
+    {
+      id: 'includeArchived',
+      title: 'Include Archived',
+      type: 'switch',
+      condition: {
+        field: 'operation',
+        value: [
+          'list_candidate_tags',
+          'list_archive_reasons',
+          'list_sources',
+          'list_departments',
+          'list_custom_fields',
+          'list_locations',
+        ],
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'includeDeactivated',
+      title: 'Include Deactivated',
+      type: 'switch',
+      condition: { field: 'operation', value: 'list_users' },
+      mode: 'advanced',
+    },
+    {
+      id: 'jobBoardId',
+      title: 'Job Board ID',
+      type: 'short-input',
+      placeholder: 'Optional job board UUID (defaults to external)',
+      condition: { field: 'operation', value: ['get_job_posting', 'list_job_postings'] },
+      mode: 'advanced',
+    },
+    {
+      id: 'postingLocation',
+      title: 'Location Filter',
+      type: 'short-input',
+      placeholder: 'Filter by location name (case sensitive)',
+      condition: { field: 'operation', value: 'list_job_postings' },
+      mode: 'advanced',
+    },
+    {
+      id: 'postingDepartment',
+      title: 'Department Filter',
+      type: 'short-input',
+      placeholder: 'Filter by department name (case sensitive)',
+      condition: { field: 'operation', value: 'list_job_postings' },
+      mode: 'advanced',
+    },
+    {
+      id: 'listedOnly',
+      title: 'Listed Postings Only',
+      type: 'switch',
+      condition: { field: 'operation', value: 'list_job_postings' },
+      mode: 'advanced',
+    },
+    {
+      id: 'expandJob',
+      title: 'Include Job',
+      type: 'switch',
+      condition: { field: 'operation', value: 'get_job_posting' },
       mode: 'advanced',
     },
     {
@@ -476,14 +720,61 @@ Output only the ISO 8601 timestamp string, nothing else.`,
         if (params.searchEmail) result.email = params.searchEmail
         if (params.filterStatus) result.status = params.filterStatus
         if (params.filterJobId) result.jobId = params.filterJobId
-        if (params.filterCandidateId) result.candidateId = params.filterCandidateId
+        if (params.operation === 'list_applications' && params.filterCandidateId) {
+          result.candidateId = params.filterCandidateId
+        }
         if (params.jobStatus) result.status = params.jobStatus
         if (params.sendNotifications === 'true' || params.sendNotifications === true) {
           result.sendNotifications = true
         }
-        if (params.appCandidateId) result.candidateId = params.appCandidateId
-        if (params.appCreatedAt) result.createdAt = params.appCreatedAt
+        if (params.includeArchived === 'true' || params.includeArchived === true) {
+          result.includeArchived = true
+        }
+        if (params.includeDeactivated === 'true' || params.includeDeactivated === true) {
+          result.includeDeactivated = true
+        }
+        if (params.isPrivate === 'true' || params.isPrivate === true) {
+          result.isPrivate = true
+        }
+        if (params.listedOnly === 'true' || params.listedOnly === true) {
+          result.listedOnly = true
+        }
+        if (params.expandJob === 'true' || params.expandJob === true) {
+          result.expandJob = true
+        }
+        if (params.operation === 'create_application' && params.appCandidateId) {
+          result.candidateId = params.appCandidateId
+        }
+        if (params.operation === 'create_application' && params.appCreatedAt) {
+          result.createdAt = params.appCreatedAt
+        }
+        if (
+          (params.operation === 'create_candidate' || params.operation === 'update_candidate') &&
+          params.candidateCreatedAt
+        ) {
+          result.createdAt = params.candidateCreatedAt
+        }
+        if (params.operation === 'create_note' && params.noteCreatedAt) {
+          result.createdAt = params.noteCreatedAt
+        }
         if (params.updateName) result.name = params.updateName
+        if (params.website) result.website = params.website
+        if (params.alternateEmail) result.alternateEmail = params.alternateEmail
+        if (params.postingLocation) result.location = params.postingLocation
+        if (params.postingDepartment) result.department = params.postingDepartment
+        if (
+          params.includeLocationHierarchy === 'true' ||
+          params.includeLocationHierarchy === true
+        ) {
+          result.includeLocationHierarchy = true
+        }
+        if (params.operation === 'list_offers' && params.offerApplicationId) {
+          result.applicationId = params.offerApplicationId
+        }
+        if (params.alternateEmailAddresses) {
+          result.alternateEmailAddresses = params.alternateEmailAddresses
+        }
+        if (params.socialLinks) result.socialLinks = params.socialLinks
         return result
       },
     },
@@ -517,106 +808,259 @@ Output only the ISO 8601 timestamp string, nothing else.`,
     filterJobId: { type: 'string', description: 'Job UUID filter' },
     filterCandidateId: { type: 'string', description: 'Candidate UUID filter' },
     createdAfter: { type: 'string', description: 'Filter by creation date' },
+    openedAfter: { type: 'string', description: 'Filter jobs opened after this timestamp' },
+    openedBefore: { type: 'string', description: 'Filter jobs opened before this timestamp' },
+    closedAfter: { type: 'string', description: 'Filter jobs closed after this timestamp' },
+    closedBefore: { type: 'string', description: 'Filter jobs closed before this timestamp' },
     jobStatus: { type: 'string', description: 'Job status filter' },
     cursor: { type: 'string', description: 'Pagination cursor' },
     perPage: { type: 'number', description: 'Results per page' },
+    syncToken: { type: 'string', description: 'Sync token for incremental updates' },
+    includeArchived: { type: 'boolean', description: 'Include archived records' },
+    includeDeactivated: { type: 'boolean', description: 'Include deactivated users' },
+    website: { type: 'string', description: 'Personal website URL for new candidate' },
+    alternateEmail: { type: 'string', description: 'Additional email to add to candidate' },
+    candidateCreatedAt: { type: 'string', description: 'Candidate creation timestamp override' },
+    noteCreatedAt: { type: 'string', description: 'Note creation timestamp override' },
+    isPrivate: { type: 'boolean', description: 'Whether the note is private' },
+    postingLocation: { type: 'string', description: 'Filter job postings by location name' },
+    postingDepartment: { type: 'string', description: 'Filter job postings by department name' },
+    listedOnly: { type: 'boolean', description: 'Only return publicly listed job postings' },
+    jobBoardId: { type: 'string', description: 'Job board UUID for job posting lookup' },
+    expandJob: {
+      type: 'boolean',
+      description: 'Include the related job object in job posting response',
+    },
     tagId: { type: 'string', description: 'Tag UUID' },
     offerId: { type: 'string', description: 'Offer UUID' },
     jobPostingId: { type: 'string', description: 'Job posting UUID' },
     archiveReasonId: { type: 'string', description: 'Archive reason UUID' },
+    includeLocationHierarchy: {
+      type: 'boolean',
+      description: 'Include hierarchical location data when listing locations',
+    },
+    offerApplicationId: {
+      type: 'string',
+      description: 'Application UUID filter for list_offers',
+    },
+    alternateEmailAddresses: {
+      type: 'string',
+      description: 'Alternate email addresses (comma-separated or JSON array)',
+    },
+    socialLinks: {
+      type: 'string',
+      description: 'Social links as JSON array',
+    },
   },
 
   outputs: {
     candidates: {
       type: 'json',
       description:
-        'List of candidates (id, name, primaryEmailAddress, primaryPhoneNumber, createdAt, updatedAt)',
+        'List of candidates with rich fields (id, name, primaryEmailAddress, primaryPhoneNumber, emailAddresses[], phoneNumbers[], socialLinks[], linkedInUrl, githubUrl, profileUrl, position, company, school, timezone, location with locationComponents[], tags[], applicationIds[], customFields[], resumeFileHandle, fileHandles[], source with sourceType, creditedToUser, fraudStatus, createdAt, updatedAt)',
     },
     jobs: {
       type: 'json',
       description:
-        'List of jobs (id, title, status, employmentType, departmentId, locationId, createdAt, updatedAt)',
+        'List of jobs (id, title, confidential, status, employmentType, locationId, departmentId, defaultInterviewPlanId, interviewPlanIds[], customFields[], jobPostingIds[], customRequisitionId, brandId, hiringTeam[], author, createdAt, updatedAt, openedAt, closedAt, location with address, openings[] with latestVersion)',
     },
     applications: {
       type: 'json',
       description:
-        'List of applications (id, status, candidate, job, currentInterviewStage, source, createdAt, updatedAt)',
+        'List of applications (id, status, customFields[], candidate summary, currentInterviewStage, source with sourceType, archiveReason with customFields[], archivedAt, job summary, creditedToUser, hiringTeam[], appliedViaJobPostingId, submitterClientIp, submitterUserAgent, createdAt, updatedAt)',
     },
     notes: {
       type: 'json',
-      description: 'List of notes (id, content, author, createdAt)',
+      description: 'List of notes (id, content, author, isPrivate, createdAt)',
     },
     offers: {
       type: 'json',
       description:
-        'List of offers (id, offerStatus, acceptanceStatus, applicationId, startDate, salary, openingId)',
+        'List of offers (id, decidedAt, applicationId, acceptanceStatus, offerStatus, latestVersion with id/startDate/salary/createdAt/openingId/customFields[]/fileHandles[]/author/approvalStatus)',
     },
     archiveReasons: {
       type: 'json',
-      description: 'List of archive reasons (id, text, reasonType, isArchived)',
+      description:
+        'List of archive reasons (id, text, reasonType [RejectedByCandidate/RejectedByOrg/Other], isArchived)',
     },
     sources: {
       type: 'json',
-      description: 'List of sources (id, title, isArchived)',
+      description: 'List of sources (id, title, isArchived, sourceType {id, title, isArchived})',
     },
     customFields: {
       type: 'json',
-      description: 'List of custom fields (id, title, fieldType, objectType, isArchived)',
+      description:
+        'List of custom field definitions (id, title, isPrivate, fieldType, objectType, isArchived, isRequired, selectableValues[] {label, value, isArchived})',
     },
     departments: {
       type: 'json',
-      description: 'List of departments (id, name, isArchived, parentId)',
+      description:
+        'List of departments (id, name, externalName, isArchived, parentId, createdAt, updatedAt)',
     },
     locations: {
       type: 'json',
-      description: 'List of locations (id, name, isArchived, isRemote, address)',
+      description:
+        'List of locations (id, name, externalName, isArchived, isRemote, workplaceType, parentLocationId, type, address with addressCountry/Region/Locality/postalCode/streetAddress)',
     },
     jobPostings: {
       type: 'json',
       description:
-        'List of job postings (id, title, jobId, locationName, departmentName, employmentType, isListed, publishedDate)',
+        'List of job postings (id, title, jobId, departmentName, teamName, locationName, locationIds, workplaceType, employmentType, isListed, publishedDate, applicationDeadline, externalLink, applyLink, compensationTierSummary, shouldDisplayCompensationOnJobBoard, updatedAt)',
     },
     openings: {
       type: 'json',
-      description: 'List of openings (id, openingState, isArchived, openedAt, closedAt)',
+      description:
+        'List of openings (id, openedAt, closedAt, isArchived, archivedAt, closeReasonId, openingState, latestVersion with identifier/description/authorId/createdAt/teamId/jobIds[]/targetHireDate/targetStartDate/isBackfill/employmentType/locationIds[]/hiringTeam[]/customFields[])',
     },
     users: {
       type: 'json',
-      description: 'List of users (id, firstName, lastName, email, isEnabled, globalRole)',
+      description:
+        'List of users (id, firstName, lastName, email, globalRole, isEnabled, updatedAt)',
     },
     interviewSchedules: {
       type: 'json',
       description:
-        'List of interview schedules (id, applicationId, interviewStageId, status, createdAt)',
+        'List of interview schedules (id, applicationId, interviewStageId, interviewEvents[] with interviewerUserIds/startTime/endTime/feedbackLink/location/meetingLink/hasSubmittedFeedback, status, scheduledBy, createdAt, updatedAt)',
     },
     tags: {
       type: 'json',
       description: 'List of candidate tags (id, title, isArchived)',
     },
-    stageId: { type: 'string', description: 'Interview stage UUID after stage change' },
-    success: { type: 'boolean', description: 'Whether the operation succeeded' },
-    offerStatus: {
-      type: 'string',
-      description: 'Offer status (e.g. WaitingOnCandidateResponse, CandidateAccepted)',
-    },
-    acceptanceStatus: {
-      type: 'string',
-      description: 'Acceptance status (e.g. Accepted, Declined, Pending)',
-    },
-    applicationId: { type: 'string', description: 'Associated application UUID' },
-    openingId: { type: 'string', description: 'Opening UUID associated with the offer' },
-    salary: {
-      type: 'json',
-      description: 'Salary details from latest version (currencyCode, value)',
-    },
-    startDate: { type: 'string', description: 'Offer start date from latest version' },
     id: { type: 'string', description: 'Resource UUID' },
     name: { type: 'string', description: 'Resource name' },
-    title: { type: 'string', description: 'Job title' },
+    title: { type: 'string', description: 'Job title or job posting title' },
     status: { type: 'string', description: 'Status' },
-    noteId: { type: 'string', description: 'Created note UUID' },
+    candidate: {
+      type: 'json',
+      description:
+        'Candidate summary (id, name, primaryEmailAddress, primaryPhoneNumber). For full candidate fields use the candidates list output or the get/create/update candidate operations.',
+    },
+    job: {
+      type: 'json',
+      description:
+        'Job details (id, title, status, employmentType, locationId, departmentId, hiringTeam[], author, location, openings[], createdAt, updatedAt)',
+    },
+    application: {
+      type: 'json',
+      description:
+        'Application details (id, status, customFields[], candidate, currentInterviewStage, source, archiveReason, job, hiringTeam[], createdAt, updatedAt)',
+    },
+    offer: {
+      type: 'json',
+      description:
+        'Offer details (id, decidedAt, applicationId, acceptanceStatus, offerStatus, latestVersion)',
+    },
+    jobPosting: {
+      type: 'json',
+      description:
+        'Job posting details (id, title, descriptionPlain, descriptionHtml, descriptionSocial, descriptionParts, departmentName, teamName, teamNameHierarchy[], jobId, locationName, locationIds, address, isRemote, workplaceType, employmentType, isListed, publishedDate, applicationDeadline, externalLink, applyLink, compensation, updatedAt, job [included when expandJob=true])',
+    },
     content: { type: 'string', description: 'Note content' },
+    author: {
+      type: 'json',
+      description: 'Note author (id, firstName, lastName, email)',
+    },
+    isPrivate: { type: 'boolean', description: 'Whether the note is private' },
+    createdAt: { type: 'string', description: 'ISO 8601 creation timestamp' },
     moreDataAvailable: { type: 'boolean', description: 'Whether more pages exist' },
     nextCursor: { type: 'string', description: 'Pagination cursor for next page' },
+    syncToken: { type: 'string', description: 'Sync token for incremental updates' },
   },
 }
+
+export const AshbyBlockMeta = {
+  tags: ['hiring'],
+  templates: [
+    {
+      icon: AshbyIcon,
+      title: 'Ashby pipeline digest',
+      prompt:
+        'Build a scheduled daily workflow that lists open Ashby jobs, summarizes candidate counts per stage, flags applications stalled for more than five days, logs metrics to a tracking table, and Slacks hiring managers a personalized pipeline digest.',
+      modules: ['scheduled', 'tables', 'agent', 'workflows'],
+      category: 'operations',
+      tags: ['hr', 'recruiting', 'reporting'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: AshbyIcon,
+      title: 'Resume to Ashby candidate',
+      prompt:
+        'Create a workflow that watches a folder of inbound resumes, extracts contact info and work history, deduplicates against existing Ashby candidates, creates new candidate records when needed, and tags them with the source job they applied through.',
+      modules: ['files', 'agent', 'workflows'],
+      category: 'operations',
+      tags: ['hr', 'recruiting', 'automation'],
+    },
+    {
+      icon: AshbyIcon,
+      title: 'Interview note logger',
+      prompt:
+        'Build a workflow that runs after every interview is logged in your meeting tool, summarizes the transcript, scores the candidate against the job requirements, creates a structured note on the matching Ashby candidate, and notifies the hiring manager in Slack.',
+      modules: ['agent', 'workflows'],
+      category: 'operations',
+      tags: ['hr', 'recruiting', 'team'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: AshbyIcon,
+      title: 'Stage-change responder',
+      prompt:
+        'Create a workflow that detects when an Ashby application moves into a new stage, sends the candidate a stage-appropriate email, prepares the interviewer brief in a file, and updates a recruiting tracking table so coordinators always know who is next.',
+      modules: ['tables', 'files', 'agent', 'workflows'],
+      category: 'operations',
+      tags: ['hr', 'recruiting', 'communication'],
+      alsoIntegrations: ['gmail'],
+    },
+    {
+      icon: AshbyIcon,
+      title: 'Ashby DEI snapshot',
+      prompt:
+        'Build a scheduled monthly workflow that pulls Ashby candidates, applications, and openings, computes funnel diversity metrics by stage, role, and source, and writes a confidential report file shared with people leadership and compliance.',
+      modules: ['scheduled', 'agent', 'files', 'workflows'],
+      category: 'operations',
+      tags: ['hr', 'enterprise', 'reporting'],
+    },
+    {
+      icon: AshbyIcon,
+      title: 'Candidate research enricher',
+      prompt:
+        'Create a workflow that takes new Ashby candidates, researches each across LinkedIn and the web for relevant background, writes a structured profile summary onto the candidate as an Ashby note, and updates a recruiting table with research links.',
+      modules: ['tables', 'agent', 'workflows'],
+      category: 'operations',
+      tags: ['hr', 'recruiting', 'research'],
+      alsoIntegrations: ['linkedin'],
+    },
+    {
+      icon: AshbyIcon,
+      title: 'Offer ready brief',
+      prompt:
+        'Build a workflow that runs when an Ashby application reaches the offer stage, gathers compensation benchmarks, interview feedback, and candidate priorities, drafts an offer brief file for the hiring manager, and Slacks the people team to start the offer process.',
+      modules: ['agent', 'files', 'workflows'],
+      category: 'operations',
+      tags: ['hr', 'recruiting', 'enterprise'],
+      alsoIntegrations: ['slack'],
+    },
+  ],
+  skills: [
+    {
+      name: 'add-candidate',
+      description:
+        'Create a candidate in Ashby from an inbound application or referral and attach them to a job. Use for sourcing and referral intake.',
+      content:
+        '# Add Candidate\n\nCapture a new candidate into Ashby and link them to the right role.\n\n## Steps\n1. Gather the candidate name, email, source, and the target job.\n2. If the job is named, list jobs to resolve its ID.\n3. Create the candidate, then create an application linking them to the job with the correct source.\n4. Add a note with referral context or screening details, and apply any relevant tags.\n\n## Output\nReport the created candidate and application IDs, the linked job, and the source applied.',
+    },
+    {
+      name: 'advance-candidate-stage',
+      description:
+        'Move a candidate application to a new interview stage in Ashby and log the decision. Use to keep the pipeline moving after interviews.',
+      content:
+        '# Advance Candidate Stage\n\nProgress a candidate through the hiring pipeline.\n\n## Steps\n1. Find the application — by ID, or list applications for the candidate or job.\n2. Confirm the current stage by getting the application.\n3. Change the application stage to the target stage.\n4. Add a note capturing the rationale and any interview feedback.\n\n## Output\nConfirm the candidate, the stage moved from and to, and the note added.',
+    },
+    {
+      name: 'pipeline-status-report',
+      description:
+        'List candidates and applications by status or job in Ashby and summarize pipeline health. Use for recruiting standups and weekly reports.',
+      content:
+        '# Pipeline Status Report\n\nSummarize the state of an Ashby hiring pipeline.\n\n## Steps\n1. List the relevant jobs, or focus on one role.\n2. List applications, grouping candidates by current stage and status (active, hired, archived).\n3. Flag candidates stalled in a stage or awaiting feedback.\n4. Note new candidates added since the last report.\n\n## Output\nA pipeline summary: candidate counts per stage and status, stalled candidates called out by name and role, and recent additions.',
+    },
+  ],
+} as const satisfies BlockMeta

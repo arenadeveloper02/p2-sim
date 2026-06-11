@@ -1,8 +1,14 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
+import {
+  buildToolSubBlockId,
+  resolveToolParamSync,
+} from '@/lib/workflows/tool-input/synthetic-subblocks'
+import { parseStoredToolInputValue } from '@/lib/workflows/tool-input/types'
 import { SubBlock } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block'
 import type { SubBlockConfig as BlockSubBlockConfig } from '@/blocks/types'
+import type { ActiveSearchTarget } from '@/stores/panel/editor/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 
@@ -20,6 +26,7 @@ interface ToolSubBlockRendererProps {
     disabled?: boolean
     onToggle?: () => void
   }
+  activeSearchTarget?: ActiveSearchTarget | null
 }
 
 /**
@@ -28,6 +35,142 @@ interface ToolSubBlockRendererProps {
  * back to the store we parse them to restore the native shape.
  */
 const OBJECT_SUBBLOCK_TYPES = new Set(['file-upload', 'table', 'grouped-checkbox-list'])
+
+function preprocessSyntheticToolStoreValue(params: {
+  storeValue: unknown
+  effectiveParamId: string
+  subBlock: BlockSubBlockConfig
+  isObjectType: boolean
+}): unknown {
+  const { storeValue, effectiveParamId, subBlock, isObjectType } = params
+
+  let processed = storeValue === null ? '' : storeValue
+
+  if (
+    (subBlock.mode === 'advanced' || subBlock.mode === 'trigger-advanced') &&
+    typeof processed === 'object' &&
+    processed !== null &&
+    !Array.isArray(processed) &&
+    !isObjectType
+  ) {
+    processed = ''
+  }
+
+  return normalizeToolParamForPersistence(effectiveParamId, subBlock, processed)
+}
+
+function syncToolParamValueToSyntheticStore(params: {
+  toolParamValue: unknown
+  isObjectType: boolean
+  isAdvanced: boolean
+  effectiveParamId: string
+  subBlock: BlockSubBlockConfig
+  blockId: string
+  syntheticId: string
+  subBlockId: string
+  toolIndex: number
+  pushParamValueToStore: (rawValue: string) => void
+  onParamChange: (toolIndex: number, paramId: string, value: unknown) => void
+  syncedValue: string | null
+  setSyncedValue: (value: string | null) => void
+}): void {
+  const {
+    toolParamValue,
+    isObjectType,
+    isAdvanced,
+    effectiveParamId,
+    subBlock,
+    blockId,
+    syntheticId,
+    pushParamValueToStore,
+    onParamChange,
+    syncedValue,
+    setSyncedValue,
+  } = params
+
+  const toolParamString = toolParamValue == null ? '' : toolParamValue
+
+  if (isObjectType && typeof toolParamString === 'string' && toolParamString) {
+    try {
+      const parsed = JSON.parse(toolParamString)
+      if (typeof parsed === 'object' && parsed !== null) {
+        if (toolParamString === syncedValue) return
+        setSyncedValue(toolParamString)
+        useSubBlockStore.getState().setValue(blockId, syntheticId, parsed)
+        return
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  if (!isAdvanced && !isObjectType) {
+    const existing = useSubBlockStore.getState().getValue(blockId, syntheticId)
+    const toolEmpty = toolParamString === '' || toolParamString == null
+    const normalizedExisting = normalizeToolParamForPersistence(
+      effectiveParamId,
+      subBlock,
+      existing
+    )
+    if (
+      toolEmpty &&
+      typeof normalizedExisting === 'string' &&
+      normalizedExisting.trim().length > 0
+    ) {
+      if (normalizedExisting === syncedValue) return
+      setSyncedValue(normalizedExisting)
+      onParamChange(params.toolIndex, effectiveParamId, normalizedExisting)
+      return
+    }
+    if (
+      existing &&
+      typeof existing === 'object' &&
+      !Array.isArray(existing) &&
+      'clientId' in existing &&
+      typeof (existing as { clientId?: unknown }).clientId === 'string'
+    ) {
+      const id = (existing as { clientId: string }).clientId
+      const toolMatchesClientId = typeof toolParamString === 'string' && id === toolParamString
+      if (toolEmpty || toolMatchesClientId) {
+        // We intentionally *don't* push to onParamChange here — keep the previously persisted string.
+        // The next store->params pass will normalize via normalizeToolParamForPersistence.
+        return
+      }
+    }
+  }
+
+  if (
+    isAdvanced &&
+    toolParamValue &&
+    typeof toolParamValue === 'object' &&
+    !Array.isArray(toolParamValue) &&
+    !isObjectType
+  ) {
+    const existing = useSubBlockStore.getState().getValue(blockId, syntheticId)
+    if (typeof existing === 'string' && existing.trim().length > 0) {
+      if (existing === syncedValue) return
+      setSyncedValue(existing)
+      return
+    }
+    if (syncedValue === '') return
+    useSubBlockStore.getState().setValue(blockId, syntheticId, '')
+    setSyncedValue('')
+    return
+  }
+
+  if (typeof toolParamString === 'string') {
+    if (toolParamString === syncedValue) return
+    setSyncedValue(toolParamString)
+    pushParamValueToStore(toolParamString)
+    return
+  }
+
+  // Fallback for non-string param values (should be rare).
+  const stringified = JSON.stringify(toolParamValue ?? '')
+  if (stringified === syncedValue) return
+  setSyncedValue(stringified)
+  pushParamValueToStore(stringified)
+}
 
 /**
  * Normalizes selector/store shapes (e.g. Slack `{ channel_id }`) to a string for `tool.params`.
@@ -65,15 +208,35 @@ export function ToolSubBlockRenderer({
   onParamChange,
   disabled,
   canonicalToggle,
+  activeSearchTarget,
 }: ToolSubBlockRendererProps) {
-  // Use real subBlock id so canonical pairs (shared effectiveParamId) do not share one store cell.
-  const syntheticId = `${subBlockId}-tool-${toolIndex}-${subBlock.id}`
+  const syntheticId = buildToolSubBlockId(subBlockId, toolIndex, effectiveParamId)
   const toolParamValue = toolParams?.[effectiveParamId] ?? ''
   const isObjectType = OBJECT_SUBBLOCK_TYPES.has(subBlock.type)
 
-  const syncedRef = useRef<any>(null)
+  const syncedRef = useRef<string | null>(null)
   const onParamChangeRef = useRef(onParamChange)
   onParamChangeRef.current = onParamChange
+
+  const pushParamValueToStore = useCallback(
+    (rawValue: string) => {
+      syncedRef.current = rawValue
+      if (isObjectType && rawValue) {
+        try {
+          const parsed = JSON.parse(rawValue)
+          if (typeof parsed === 'object' && parsed !== null) {
+            useSubBlockStore.getState().setValue(blockId, syntheticId, parsed)
+            return
+          }
+        } catch {}
+      }
+      useSubBlockStore.getState().setValue(blockId, syntheticId, rawValue)
+    },
+    [blockId, syntheticId, isObjectType]
+  )
+
+  const pushParamValueToStoreRef = useRef(pushParamValueToStore)
+  pushParamValueToStoreRef.current = pushParamValueToStore
 
   useEffect(() => {
     const unsub = useSubBlockStore.subscribe((state, prevState) => {
@@ -82,24 +245,31 @@ export function ToolSubBlockRenderer({
       const newVal = state.workflowValues[wfId]?.[blockId]?.[syntheticId]
       const oldVal = prevState.workflowValues[wfId]?.[blockId]?.[syntheticId]
       if (newVal === oldVal) return
-      let processedVal = newVal == null ? '' : newVal
-      if (
-        (subBlock.mode === 'advanced' || subBlock.mode === 'trigger-advanced') &&
-        typeof processedVal === 'object' &&
-        processedVal !== null &&
-        !Array.isArray(processedVal) &&
-        !isObjectType
-      ) {
-        processedVal = ''
+      const processed = preprocessSyntheticToolStoreValue({
+        storeValue: newVal,
+        effectiveParamId,
+        subBlock,
+        isObjectType,
+      })
+      const result = resolveToolParamSync(processed, syncedRef.current)
+      if (result.action === 'noop') return
+
+      if (result.action === 'reproject') {
+        const tools = parseStoredToolInputValue(
+          useSubBlockStore.getState().getValue(blockId, subBlockId)
+        )
+        const sourceValue = tools[toolIndex]?.params?.[effectiveParamId]
+        pushParamValueToStoreRef.current(typeof sourceValue === 'string' ? sourceValue : '')
+        return
       }
-      processedVal = normalizeToolParamForPersistence(effectiveParamId, subBlock, processedVal)
-      if (processedVal === syncedRef.current) return
-      syncedRef.current = processedVal
-      onParamChangeRef.current(toolIndex, effectiveParamId, processedVal)
+
+      syncedRef.current = result.value
+      onParamChangeRef.current(toolIndex, effectiveParamId, result.value)
     })
     return unsub
   }, [
     blockId,
+    subBlockId,
     syntheticId,
     toolIndex,
     effectiveParamId,
@@ -111,80 +281,24 @@ export function ToolSubBlockRenderer({
   ])
 
   useEffect(() => {
-    if (isObjectType && toolParamValue) {
-      try {
-        const parsed = JSON.parse(toolParamValue)
-        if (typeof parsed === 'object' && parsed !== null) {
-          if (toolParamValue === syncedRef.current) return
-          syncedRef.current = toolParamValue
-          useSubBlockStore.getState().setValue(blockId, syntheticId, parsed)
-          return
-        }
-      } catch {
-        // fall through
-      }
-    }
-
     const isAdvanced = subBlock.mode === 'advanced' || subBlock.mode === 'trigger-advanced'
-    if (!isAdvanced && !isObjectType) {
-      const existing = useSubBlockStore.getState().getValue(blockId, syntheticId)
-      const toolEmpty = toolParamValue === '' || toolParamValue == null
-      const normalizedExisting = normalizeToolParamForPersistence(
-        effectiveParamId,
-        subBlock,
-        existing
-      )
-      if (
-        toolEmpty &&
-        typeof normalizedExisting === 'string' &&
-        normalizedExisting.trim().length > 0
-      ) {
-        if (normalizedExisting === syncedRef.current) return
-        syncedRef.current = normalizedExisting
-        onParamChangeRef.current(toolIndex, effectiveParamId, normalizedExisting)
-        return
-      }
-      if (
-        existing &&
-        typeof existing === 'object' &&
-        !Array.isArray(existing) &&
-        'clientId' in existing &&
-        typeof (existing as { clientId?: unknown }).clientId === 'string'
-      ) {
-        const id = (existing as { clientId: string }).clientId
-        const toolMatchesClientId = typeof toolParamValue === 'string' && id === toolParamValue
-        if (toolEmpty || toolMatchesClientId) {
-          if (existing === syncedRef.current) return
-          syncedRef.current = existing
-          return
-        }
-      }
-    }
-
-    if (
-      isAdvanced &&
-      toolParamValue &&
-      typeof toolParamValue === 'object' &&
-      !Array.isArray(toolParamValue) &&
-      !isObjectType
-    ) {
-      // Merged tool param is still the basic value (e.g. client object) while the advanced
-      // subblock has its own key — keep a previously typed string when toggling back.
-      const existing = useSubBlockStore.getState().getValue(blockId, syntheticId)
-      if (typeof existing === 'string' && existing.trim().length > 0) {
-        if (existing === syncedRef.current) return
-        syncedRef.current = existing
-        return
-      }
-      if (toolParamValue === syncedRef.current) return
-      useSubBlockStore.getState().setValue(blockId, syntheticId, '')
-      syncedRef.current = ''
-      return
-    }
-
-    if (toolParamValue === syncedRef.current) return
-    syncedRef.current = toolParamValue
-    useSubBlockStore.getState().setValue(blockId, syntheticId, toolParamValue)
+    syncToolParamValueToSyntheticStore({
+      toolParamValue,
+      isObjectType,
+      isAdvanced,
+      effectiveParamId,
+      subBlock,
+      blockId,
+      syntheticId,
+      subBlockId,
+      toolIndex,
+      pushParamValueToStore,
+      onParamChange: onParamChangeRef.current,
+      syncedValue: syncedRef.current,
+      setSyncedValue: (value) => {
+        syncedRef.current = value
+      },
+    })
   }, [
     toolParamValue,
     blockId,
@@ -194,6 +308,9 @@ export function ToolSubBlockRenderer({
     effectiveParamId,
     subBlock.type,
     subBlock.canonicalParamId,
+    pushParamValueToStore,
+    toolIndex,
+    subBlockId,
   ])
 
   const visibility = subBlock.paramVisibility ?? 'user-or-llm'
@@ -213,6 +330,7 @@ export function ToolSubBlockRenderer({
       disabled={disabled}
       canonicalToggle={canonicalToggle}
       dependencyContext={toolParams}
+      activeSearchTarget={activeSearchTarget}
     />
   )
 }

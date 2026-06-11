@@ -6,8 +6,9 @@ import { db } from '@sim/db'
 import { userTableRows } from '@sim/db/schema'
 import { and, eq, or, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
+import { getColumnId } from './column-keys'
 import { COLUMN_TYPES, NAME_PATTERN, TABLE_LIMITS } from './constants'
-import type { ColumnDefinition, RowData, TableSchema, ValidationResult } from './types'
+import type { ColumnDefinition, JsonValue, RowData, TableSchema, ValidationResult } from './types'
 
 export type { ColumnDefinition, TableSchema, ValidationResult }
 
@@ -24,7 +25,7 @@ export interface ValidateRowOptions {
 }
 
 /** Error information for a single row in batch validation. */
-export interface BatchRowError {
+interface BatchRowError {
   row: number
   errors: string[]
 }
@@ -57,7 +58,7 @@ export async function validateRowData(
     }
   }
 
-  const schemaValidation = validateRowAgainstSchema(rowData, schema)
+  const schemaValidation = coerceRowToSchema(rowData, schema)
   if (!schemaValidation.valid) {
     return {
       valid: false,
@@ -105,7 +106,7 @@ export async function validateBatchRows(
       continue
     }
 
-    const schemaValidation = validateRowAgainstSchema(rowData, schema)
+    const schemaValidation = coerceRowToSchema(rowData, schema)
     if (!schemaValidation.valid) {
       errors.push({ row: i, errors: schemaValidation.errors })
     }
@@ -207,7 +208,7 @@ export function validateRowAgainstSchema(data: RowData, schema: TableSchema): Va
   const errors: string[] = []
 
   for (const column of schema.columns) {
-    const value = data[column.name]
+    const value = data[getColumnId(column)]
 
     if (column.required && (value === undefined || value === null)) {
       errors.push(`Missing required field: ${column.name}`)
@@ -255,6 +256,97 @@ export function validateRowAgainstSchema(data: RowData, schema: TableSchema): Va
   return { valid: errors.length === 0, errors }
 }
 
+/**
+ * Attempts to coerce a non-null value to a column's declared type. Returns the
+ * coerced value when the value already matches or can be converted without
+ * ambiguity (e.g. the string `"1999"` to the number `1999`), and `ok: false`
+ * when no safe conversion exists.
+ */
+function coerceValueToColumnType(
+  value: JsonValue,
+  type: ColumnDefinition['type']
+): { ok: true; value: JsonValue } | { ok: false } {
+  switch (type) {
+    case 'string':
+      if (typeof value === 'string') return { ok: true, value }
+      if (typeof value === 'number' || typeof value === 'boolean') {
+        return { ok: true, value: String(value) }
+      }
+      return { ok: false }
+    case 'number':
+      if (typeof value === 'number') {
+        return Number.isFinite(value) ? { ok: true, value } : { ok: false }
+      }
+      if (typeof value === 'string' && value.trim() !== '') {
+        const parsed = Number(value)
+        return Number.isFinite(parsed) ? { ok: true, value: parsed } : { ok: false }
+      }
+      return { ok: false }
+    case 'boolean':
+      if (typeof value === 'boolean') return { ok: true, value }
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase()
+        if (normalized === 'true') return { ok: true, value: true }
+        if (normalized === 'false') return { ok: true, value: false }
+      }
+      return { ok: false }
+    case 'date': {
+      if (typeof value === 'string' && !Number.isNaN(Date.parse(value))) return { ok: true, value }
+      // Date instances and epoch numbers may still be out of the representable
+      // range (>±8.64e15ms) — guard `toISOString()`, which throws RangeError on
+      // an Invalid Date, so an over-range value degrades to `{ ok: false }`
+      // rather than crashing the write.
+      const date =
+        value instanceof Date ? value : typeof value === 'number' ? new Date(value) : null
+      if (date && !Number.isNaN(date.getTime())) return { ok: true, value: date.toISOString() }
+      return { ok: false }
+    }
+    default:
+      return { ok: true, value }
+  }
+}
+
+/**
+ * Coerces each present value in `data` toward its column's declared type **in
+ * place**. Values that already match are untouched; unambiguous conversions
+ * (e.g. `"1999"` → `1999`) are applied; values that cannot be coerced are set to
+ * `null` when the column is optional, or left in place when required (so a
+ * subsequent {@link validateRowAgainstSchema} reports them).
+ *
+ * Operates per-present-column, so it is safe on a partial patch (columns absent
+ * from `data` are skipped — it never invents a missing-required-field error).
+ */
+export function coerceRowValues(data: RowData, schema: TableSchema): void {
+  for (const column of schema.columns) {
+    const key = getColumnId(column)
+    const value = data[key]
+    if (value === null || value === undefined) continue
+
+    const coerced = coerceValueToColumnType(value, column.type)
+    if (coerced.ok) {
+      data[key] = coerced.value
+    } else if (!column.required) {
+      data[key] = null
+    }
+  }
+}
+
+/**
+ * Coerces a full row toward its schema **in place** (see {@link coerceRowValues})
+ * then validates the result.
+ *
+ * This is the write-path entry point — callers that persist a complete row use
+ * it instead of {@link validateRowAgainstSchema} so a single off-type field (a
+ * tool returning `"unknown"` for a numeric column, say) nulls that one cell
+ * rather than failing the entire row write. Callers persisting only a partial
+ * patch should use {@link coerceRowValues} on the patch and validate the merged
+ * row separately.
+ */
+export function coerceRowToSchema(data: RowData, schema: TableSchema): ValidationResult {
+  coerceRowValues(data, schema)
+  return validateRowAgainstSchema(data, schema)
+}
+
 /** Validates row data size is within limits. */
 export function validateRowSize(data: RowData): ValidationResult {
   const size = JSON.stringify(data).length
@@ -276,20 +368,21 @@ export function getUniqueColumns(schema: TableSchema): ColumnDefinition[] {
 export function validateUniqueConstraints(
   data: RowData,
   schema: TableSchema,
-  existingRows: { id: string; data: RowData }[],
+  existingRows: { id: string; data: RowData; position?: number }[],
   excludeRowId?: string
 ): ValidationResult {
   const errors: string[] = []
   const uniqueColumns = getUniqueColumns(schema)
 
   for (const column of uniqueColumns) {
-    const value = data[column.name]
+    const key = getColumnId(column)
+    const value = data[key]
     if (value === null || value === undefined) continue
 
     const duplicate = existingRows.find((row) => {
       if (excludeRowId && row.id === excludeRowId) return false
 
-      const existingValue = row.data[column.name]
+      const existingValue = row.data[key]
       if (typeof value === 'string' && typeof existingValue === 'string') {
         return value.toLowerCase() === existingValue.toLowerCase()
       }
@@ -297,8 +390,10 @@ export function validateUniqueConstraints(
     })
 
     if (duplicate) {
+      const rowLabel =
+        typeof duplicate.position === 'number' ? `row ${duplicate.position + 1}` : duplicate.id
       errors.push(
-        `Column "${column.name}" must be unique. Value "${value}" already exists in row ${duplicate.id}`
+        `Column "${column.name}" must be unique. Value "${value}" already exists in ${rowLabel}`
       )
     }
   }
@@ -328,25 +423,26 @@ export async function checkUniqueConstraintsDb(
   const conditions = []
 
   for (const column of uniqueColumns) {
-    if (!NAME_PATTERN.test(column.name)) {
-      throw new Error(`Invalid column name: ${column.name}`)
+    const key = getColumnId(column)
+    if (!NAME_PATTERN.test(key)) {
+      throw new Error(`Invalid column id: ${key}`)
     }
 
-    const value = data[column.name]
+    const value = data[key]
     if (value === null || value === undefined) continue
 
     if (typeof value === 'string') {
       conditions.push({
         column,
         value,
-        sql: sql`lower(${userTableRows.data}->>${sql.raw(`'${column.name}'`)}) = ${value.toLowerCase()}`,
+        sql: sql`lower(${userTableRows.data}->>${sql.raw(`'${key}'`)}) = ${value.toLowerCase()}`,
       })
     } else {
       // For other types, use direct JSONB comparison
       conditions.push({
         column,
         value,
-        sql: sql`(${userTableRows.data}->${sql.raw(`'${column.name}'`)})::jsonb = ${JSON.stringify(value)}::jsonb`,
+        sql: sql`(${userTableRows.data}->${sql.raw(`'${key}'`)})::jsonb = ${JSON.stringify(value)}::jsonb`,
       })
     }
   }
@@ -364,14 +460,14 @@ export async function checkUniqueConstraintsDb(
       : baseCondition
 
     const conflictingRow = await db
-      .select({ id: userTableRows.id })
+      .select({ id: userTableRows.id, position: userTableRows.position })
       .from(userTableRows)
       .where(whereClause)
       .limit(1)
 
     if (conflictingRow.length > 0) {
       errors.push(
-        `Column "${condition.column.name}" must be unique. Value "${condition.value}" already exists in row ${conflictingRow[0].id}`
+        `Column "${condition.column.name}" must be unique. Value "${condition.value}" already exists in row ${conflictingRow[0].position + 1}`
       )
     }
   }
@@ -380,13 +476,25 @@ export async function checkUniqueConstraintsDb(
 }
 
 /**
+ * Minimal executor surface needed by unique-constraint checks. Both `db` and a
+ * drizzle transaction (`trx`) satisfy this, letting callers run the lookup
+ * inside an open transaction so it observes uncommitted prior-batch inserts.
+ */
+type UniqueCheckExecutor = Pick<typeof db, 'select'>
+
+/**
  * Checks unique constraints for a batch of rows using targeted database queries.
  * Validates both against existing database rows and within the batch itself.
+ *
+ * Pass a transaction as `executor` when running inside an open tx so the lookup
+ * sees rows inserted by earlier batches in the same transaction; otherwise the
+ * default `db` connection only observes committed state.
  */
 export async function checkBatchUniqueConstraintsDb(
   tableId: string,
   rows: RowData[],
-  schema: TableSchema
+  schema: TableSchema,
+  executor: UniqueCheckExecutor = db
 ): Promise<{ valid: boolean; errors: Array<{ row: number; errors: string[] }> }> {
   const uniqueColumns = getUniqueColumns(schema)
   const rowErrors: Array<{ row: number; errors: string[] }> = []
@@ -395,18 +503,19 @@ export async function checkBatchUniqueConstraintsDb(
     return { valid: true, errors: [] }
   }
 
-  // Build a set of all unique values for each column to check against DB
+  // Build a set of all unique values for each column to check against DB.
+  // Keyed by the stable column id (the row-data storage key).
   const valuesByColumn = new Map<string, { values: Set<string>; column: ColumnDefinition }>()
 
   for (const column of uniqueColumns) {
-    valuesByColumn.set(column.name, { values: new Set(), column })
+    valuesByColumn.set(getColumnId(column), { values: new Set(), column })
   }
 
   // Collect all unique values from the batch and check for duplicates within the batch
-  const batchValueMap = new Map<string, Map<string, number>>() // columnName -> (normalizedValue -> firstRowIndex)
+  const batchValueMap = new Map<string, Map<string, number>>() // columnId -> (normalizedValue -> firstRowIndex)
 
   for (const column of uniqueColumns) {
-    batchValueMap.set(column.name, new Map())
+    batchValueMap.set(getColumnId(column), new Map())
   }
 
   for (let i = 0; i < rows.length; i++) {
@@ -414,14 +523,15 @@ export async function checkBatchUniqueConstraintsDb(
     const currentRowErrors: string[] = []
 
     for (const column of uniqueColumns) {
-      const value = rowData[column.name]
+      const key = getColumnId(column)
+      const value = rowData[key]
       if (value === null || value === undefined) continue
 
       const normalizedValue =
         typeof value === 'string' ? value.toLowerCase() : JSON.stringify(value)
 
       // Check for duplicate within batch
-      const columnValueMap = batchValueMap.get(column.name)!
+      const columnValueMap = batchValueMap.get(key)!
       if (columnValueMap.has(normalizedValue)) {
         const firstRowIndex = columnValueMap.get(normalizedValue)!
         currentRowErrors.push(
@@ -429,7 +539,7 @@ export async function checkBatchUniqueConstraintsDb(
         )
       } else {
         columnValueMap.set(normalizedValue, i)
-        valuesByColumn.get(column.name)!.values.add(normalizedValue)
+        valuesByColumn.get(key)!.values.add(normalizedValue)
       }
     }
 
@@ -439,11 +549,11 @@ export async function checkBatchUniqueConstraintsDb(
   }
 
   // Now check against database for all unique values at once
-  for (const [columnName, { values, column }] of valuesByColumn) {
+  for (const [columnId, { values, column }] of valuesByColumn) {
     if (values.size === 0) continue
 
-    if (!NAME_PATTERN.test(columnName)) {
-      throw new Error(`Invalid column name: ${columnName}`)
+    if (!NAME_PATTERN.test(columnId)) {
+      throw new Error(`Invalid column id: ${columnId}`)
     }
 
     const valueArray = Array.from(values)
@@ -453,15 +563,16 @@ export async function checkBatchUniqueConstraintsDb(
       const isStringColumn = column.type === 'string'
 
       if (isStringColumn) {
-        return sql`lower(${userTableRows.data}->>${sql.raw(`'${columnName}'`)}) = ${normalizedValue}`
+        return sql`lower(${userTableRows.data}->>${sql.raw(`'${columnId}'`)}) = ${normalizedValue}`
       }
-      return sql`(${userTableRows.data}->${sql.raw(`'${columnName}'`)})::jsonb = ${normalizedValue}::jsonb`
+      return sql`(${userTableRows.data}->${sql.raw(`'${columnId}'`)})::jsonb = ${normalizedValue}::jsonb`
     })
 
-    const conflictingRows = await db
+    const conflictingRows = await executor
       .select({
         id: userTableRows.id,
         data: userTableRows.data,
+        position: userTableRows.position,
       })
       .from(userTableRows)
       .where(and(eq(userTableRows.tableId, tableId), or(...valueConditions)))
@@ -470,7 +581,7 @@ export async function checkBatchUniqueConstraintsDb(
     // Map conflicts back to batch rows
     for (const conflict of conflictingRows) {
       const conflictData = conflict.data as RowData
-      const conflictValue = conflictData[columnName]
+      const conflictValue = conflictData[columnId]
       const normalizedConflictValue =
         typeof conflictValue === 'string'
           ? conflictValue.toLowerCase()
@@ -478,7 +589,7 @@ export async function checkBatchUniqueConstraintsDb(
 
       // Find which batch rows have this conflicting value
       for (let i = 0; i < rows.length; i++) {
-        const rowValue = rows[i][columnName]
+        const rowValue = rows[i][columnId]
         if (rowValue === null || rowValue === undefined) continue
 
         const normalizedRowValue =
@@ -492,7 +603,7 @@ export async function checkBatchUniqueConstraintsDb(
             rowErrors.push(rowError)
           }
 
-          const errorMsg = `Column "${columnName}" must be unique. Value "${rowValue}" already exists in row ${conflict.id}`
+          const errorMsg = `Column "${column.name}" must be unique. Value "${rowValue}" already exists in row ${conflict.position + 1}`
           if (!rowError.errors.includes(errorMsg)) {
             rowError.errors.push(errorMsg)
           }

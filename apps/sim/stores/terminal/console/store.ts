@@ -3,13 +3,14 @@ import { generateId } from '@sim/utils/id'
 import { create } from 'zustand'
 import { devtools, type PersistStorage } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
+import { toast } from '@/components/emcn'
 import { redactApiKeys } from '@/lib/core/security/redaction'
+import { sendMothershipMessage } from '@/lib/mothership/events'
 import { getQueryClient } from '@/app/_shell/providers/query-provider'
 import { truncateLargeBase64Data } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { NormalizedBlockOutput } from '@/executor/types'
 import { type GeneralSettings, generalSettingsKeys } from '@/hooks/queries/general-settings'
 import { useExecutionStore } from '@/stores/execution'
-import { useNotificationStore } from '@/stores/notifications'
 import { consolePersistence, loadConsoleData } from '@/stores/terminal/console/storage'
 import type {
   ConsoleEntry,
@@ -174,6 +175,14 @@ const matchesEntryForUpdate = (
     return false
   }
 
+  if (
+    update.childWorkflowInstanceId !== undefined &&
+    entry.childWorkflowInstanceId !== undefined &&
+    entry.childWorkflowInstanceId !== update.childWorkflowInstanceId
+  ) {
+    return false
+  }
+
   return true
 }
 
@@ -296,29 +305,53 @@ function appendWorkflowEntry(
 interface NotifyBlockErrorParams {
   error: unknown
   blockName: string
-  workflowId?: string
+  blockId: string
+  executionId?: string
   logContext: Record<string, unknown>
 }
 
-const notifyBlockError = ({ error, blockName, workflowId, logContext }: NotifyBlockErrorParams) => {
+/**
+ * A single block failure surfaces through both `addConsole` (initial entry)
+ * and `updateConsole` (streaming/finalize), so the same logical error asks to
+ * toast twice within the same tick. Collapse them inside a short window. The
+ * key is scoped to the block execution (not just block + message), so a re-run
+ * or a different execution still toasts — even within the window, and even
+ * after the stack was cleared on navigation.
+ */
+const NOTIFY_DEDUP_WINDOW_MS = 1500
+const recentErrorNotifications = new Map<string, number>()
+
+const notifyBlockError = ({
+  error,
+  blockName,
+  blockId,
+  executionId,
+  logContext,
+}: NotifyBlockErrorParams) => {
   const settings = getQueryClient().getQueryData<GeneralSettings>(generalSettingsKeys.settings())
   const isErrorNotificationsEnabled = settings?.errorNotificationsEnabled ?? true
 
   if (!isErrorNotificationsEnabled) return
 
   try {
-    const errorMessage = String(error)
+    const errorMessage = normalizeConsoleError(error) ?? String(error)
     const displayName = blockName || 'Unknown Block'
-    const displayMessage = `${displayName}: ${errorMessage}`
     const copilotMessage = `${errorMessage}\n\nError in ${displayName}.\n\nPlease fix this.`
 
-    useNotificationStore.getState().addNotification({
-      level: 'error',
-      message: displayMessage,
-      workflowId,
+    const now = Date.now()
+    for (const [key, shownAt] of recentErrorNotifications) {
+      if (now - shownAt >= NOTIFY_DEDUP_WINDOW_MS) recentErrorNotifications.delete(key)
+    }
+    const dedupKey = `${getBlockExecutionKey(blockId, executionId)}: ${errorMessage}`
+    const lastShownAt = recentErrorNotifications.get(dedupKey)
+    if (lastShownAt !== undefined && now - lastShownAt < NOTIFY_DEDUP_WINDOW_MS) return
+    recentErrorNotifications.set(dedupKey, now)
+
+    toast.error(displayName, {
+      description: errorMessage,
       action: {
-        type: 'copilot',
-        message: copilotMessage,
+        label: 'Fix in Copilot',
+        onClick: () => sendMothershipMessage(copilotMessage),
       },
     })
   } catch (notificationError) {
@@ -387,7 +420,8 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
         notifyBlockError({
           error: createdEntry.error,
           blockName: createdEntry.blockName || 'Unknown Block',
-          workflowId: entry.workflowId,
+          blockId: createdEntry.blockId,
+          executionId: createdEntry.executionId,
           logContext: { entryId: createdEntry.id },
         })
       }
@@ -398,7 +432,7 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
     clearWorkflowConsole: (workflowId: string) => {
       set((state) => replaceWorkflowEntries(state, workflowId, EMPTY_CONSOLE_ENTRIES))
       useExecutionStore.getState().clearRunPath(workflowId)
-      consolePersistence.persist()
+      consolePersistence.persist({ merge: false })
     },
 
     clearExecutionEntries: (executionId: string) =>
@@ -569,6 +603,14 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
                 : normalizeConsoleOutput(mergedOutput)
           }
 
+          if (update.blockName !== undefined) {
+            updatedEntry.blockName = update.blockName
+          }
+
+          if (update.blockType !== undefined) {
+            updatedEntry.blockType = update.blockType
+          }
+
           if (update.error !== undefined) {
             updatedEntry.error = normalizeConsoleError(update.error)
           }
@@ -667,20 +709,25 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
           .find((entry) => matchesEntryForUpdate(entry, blockId, executionId, update))
         notifyBlockError({
           error: update.error,
-          blockName: matchingEntry?.blockName || 'Unknown Block',
-          workflowId: matchingEntry?.workflowId,
+          blockName: update.blockName || matchingEntry?.blockName || 'Unknown Block',
+          blockId,
+          executionId,
           logContext: { blockId },
         })
       }
     },
 
-    cancelRunningEntries: (workflowId: string) => {
+    cancelRunningEntries: (workflowId: string, executionId?: string) => {
       set((state) => {
         const now = new Date()
         const workflowEntries = state.workflowEntries[workflowId] ?? EMPTY_CONSOLE_ENTRIES
         let didChange = false
         const updatedEntries = workflowEntries.map((entry) => {
-          if (entry.workflowId === workflowId && entry.isRunning) {
+          if (
+            entry.workflowId === workflowId &&
+            entry.isRunning &&
+            (executionId === undefined || entry.executionId === executionId)
+          ) {
             didChange = true
             const durationMs = entry.startedAt
               ? now.getTime() - new Date(entry.startedAt).getTime()
@@ -689,6 +736,38 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
               ...entry,
               isRunning: false,
               isCanceled: true,
+              endedAt: now.toISOString(),
+              durationMs,
+            }
+          }
+          return entry
+        })
+        if (!didChange) {
+          return state
+        }
+        return replaceWorkflowEntries(state, workflowId, updatedEntries)
+      })
+    },
+
+    finishRunningEntries: (workflowId: string, executionId?: string) => {
+      set((state) => {
+        const now = new Date()
+        const workflowEntries = state.workflowEntries[workflowId] ?? EMPTY_CONSOLE_ENTRIES
+        let didChange = false
+        const updatedEntries = workflowEntries.map((entry) => {
+          if (
+            entry.workflowId === workflowId &&
+            entry.isRunning &&
+            (executionId === undefined || entry.executionId === executionId)
+          ) {
+            didChange = true
+            const durationMs = entry.startedAt
+              ? now.getTime() - new Date(entry.startedAt).getTime()
+              : entry.durationMs
+            return {
+              ...entry,
+              isRunning: false,
+              isCanceled: false,
               endedAt: now.toISOString(),
               durationMs,
             }

@@ -36,6 +36,7 @@ vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
 
 vi.mock('@/lib/copilot/chat/lifecycle', () => ({
   getAccessibleCopilotChat: mockGetAccessibleCopilotChat,
+  getAccessibleCopilotChatAuth: mockGetAccessibleCopilotChat,
 }))
 
 vi.mock('@sim/db', () => ({
@@ -93,16 +94,23 @@ describe('Copilot Checkpoints Revert API Route', () => {
     vi.spyOn(Date, 'now').mockReturnValue(1640995200000)
 
     const originalDate = Date
-    vi.spyOn(global, 'Date').mockImplementation(((...args: any[]) => {
+    const buildDate = (args: any[]): Date => {
       if (args.length === 0) {
-        const mockDate = new originalDate('2024-01-01T00:00:00.000Z')
-        return mockDate
+        return new originalDate('2024-01-01T00:00:00.000Z')
       }
       if (args.length === 1) {
         return new originalDate(args[0])
       }
       return new originalDate(args[0], args[1], args[2], args[3], args[4], args[5], args[6])
-    }) as any)
+    }
+    vi.spyOn(global, 'Date').mockImplementation(
+      class {
+        constructor(...args: any[]) {
+          // biome-ignore lint/correctness/noConstructorReturn: vitest 4 constructs mocks via Reflect.construct; returning a real Date overrides the instance so `new Date(...)` yields a genuine Date the route can call .toISOString()/.getTime() on
+          return buildDate(args)
+        }
+      } as any
+    )
   })
 
   afterEach(() => {
@@ -137,7 +145,7 @@ describe('Copilot Checkpoints Revert API Route', () => {
       expect(responseData).toEqual({ error: 'Unauthorized' })
     })
 
-    it('should return 500 for invalid request body - missing checkpointId', async () => {
+    it('should return 400 for invalid request body - missing checkpointId', async () => {
       setAuthenticated()
 
       const req = new NextRequest('http://localhost:3000/api/copilot/checkpoints/revert', {
@@ -148,12 +156,12 @@ describe('Copilot Checkpoints Revert API Route', () => {
 
       const response = await POST(req)
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(400)
       const responseData = await response.json()
-      expect(responseData.error).toBe('Failed to revert to checkpoint')
+      expect(typeof responseData.error).toBe('string')
     })
 
-    it('should return 500 for empty checkpointId', async () => {
+    it('should return 400 for empty checkpointId', async () => {
       setAuthenticated()
 
       const req = new NextRequest('http://localhost:3000/api/copilot/checkpoints/revert', {
@@ -164,9 +172,9 @@ describe('Copilot Checkpoints Revert API Route', () => {
 
       const response = await POST(req)
 
-      expect(response.status).toBe(500)
+      expect(response.status).toBe(400)
       const responseData = await response.json()
-      expect(responseData.error).toBe('Failed to revert to checkpoint')
+      expect(typeof responseData.error).toBe('string')
     })
 
     it('should return 404 when checkpoint is not found', async () => {

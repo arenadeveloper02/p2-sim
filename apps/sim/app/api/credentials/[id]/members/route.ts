@@ -1,12 +1,15 @@
+import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { credential, credentialMember, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { upsertWorkspaceCredentialMemberContract } from '@/lib/api/contracts/credentials'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { captureServerEvent } from '@/lib/posthog/server'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CredentialMembersAPI')
@@ -17,7 +20,7 @@ interface RouteContext {
 
 async function requireWorkspaceAdminMembership(credentialId: string, userId: string) {
   const [cred] = await db
-    .select({ id: credential.id, workspaceId: credential.workspaceId })
+    .select({ id: credential.id, workspaceId: credential.workspaceId, type: credential.type })
     .from(credential)
     .where(eq(credential.id, credentialId))
     .limit(1)
@@ -38,7 +41,7 @@ async function requireWorkspaceAdminMembership(credentialId: string, userId: str
   if (!membership || membership.status !== 'active' || membership.role !== 'admin') {
     return null
   }
-  return membership
+  return { ...membership, credentialType: cred.type, workspaceId: cred.workspaceId }
 }
 
 export const GET = withRouteHandler(async (_request: NextRequest, context: RouteContext) => {
@@ -57,7 +60,7 @@ export const GET = withRouteHandler(async (_request: NextRequest, context: Route
       .limit(1)
 
     if (!cred) {
-      return NextResponse.json({ members: [] }, { status: 200 })
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
     const callerPerm = await getUserEntityPermissions(
@@ -66,7 +69,7 @@ export const GET = withRouteHandler(async (_request: NextRequest, context: Route
       cred.workspaceId
     )
     if (callerPerm === null) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
     const members = await db
@@ -90,11 +93,6 @@ export const GET = withRouteHandler(async (_request: NextRequest, context: Route
   }
 })
 
-const addMemberSchema = z.object({
-  userId: z.string().min(1),
-  role: z.enum(['admin', 'member']).default('member'),
-})
-
 export const POST = withRouteHandler(async (request: NextRequest, context: RouteContext) => {
   try {
     const session = await getSession()
@@ -106,16 +104,26 @@ export const POST = withRouteHandler(async (request: NextRequest, context: Route
 
     const admin = await requireWorkspaceAdminMembership(credentialId, session.user.id)
     if (!admin) {
+      logger.warn('Credential member share denied', {
+        credentialId,
+        actorId: session.user.id,
+        reason: 'not-admin',
+      })
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
-
-    const body = await request.json()
-    const parsed = addMemberSchema.safeParse(body)
-    if (!parsed.success) {
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    if (admin.credentialType === 'env_personal') {
+      logger.warn('Credential member share denied', {
+        credentialId,
+        actorId: session.user.id,
+        reason: 'env_personal-cannot-be-shared',
+      })
+      return NextResponse.json({ error: 'Personal secrets cannot be shared' }, { status: 400 })
     }
 
-    const { userId, role } = parsed.data
+    const parsed = await parseRequest(upsertWorkspaceCredentialMemberContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { userId, role } = parsed.data.body
     const now = new Date()
 
     const [existing] = await db
@@ -127,10 +135,50 @@ export const POST = withRouteHandler(async (request: NextRequest, context: Route
       .limit(1)
 
     if (existing) {
-      await db
-        .update(credentialMember)
-        .set({ role, status: 'active', updatedAt: now })
-        .where(eq(credentialMember.id, existing.id))
+      const result = await db.transaction(async (tx) => {
+        const [current] = await tx
+          .select({ role: credentialMember.role, status: credentialMember.status })
+          .from(credentialMember)
+          .where(eq(credentialMember.id, existing.id))
+          .limit(1)
+          .for('update')
+        if (current?.role === 'admin' && current?.status === 'active' && role !== 'admin') {
+          const activeAdmins = await tx
+            .select({ id: credentialMember.id })
+            .from(credentialMember)
+            .where(
+              and(
+                eq(credentialMember.credentialId, credentialId),
+                eq(credentialMember.role, 'admin'),
+                eq(credentialMember.status, 'active')
+              )
+            )
+            .for('update')
+          if (activeAdmins.length <= 1) return { ok: false as const }
+        }
+        await tx
+          .update(credentialMember)
+          .set({ role, status: 'active', updatedAt: now })
+          .where(eq(credentialMember.id, existing.id))
+        return { ok: true as const, fromRole: current?.role }
+      })
+      if (!result.ok) {
+        return NextResponse.json({ error: 'Cannot demote the last admin' }, { status: 400 })
+      }
+
+      recordAudit({
+        workspaceId: admin.workspaceId,
+        actorId: session.user.id,
+        actorName: session.user.name,
+        actorEmail: session.user.email,
+        action: AuditAction.CREDENTIAL_MEMBER_ROLE_CHANGED,
+        resourceType: AuditResourceType.CREDENTIAL,
+        resourceId: credentialId,
+        description: `Changed credential member role to "${role}"`,
+        metadata: { targetUserId: userId, fromRole: result.fromRole, toRole: role },
+        request,
+      })
+
       return NextResponse.json({ success: true })
     }
 
@@ -144,6 +192,25 @@ export const POST = withRouteHandler(async (request: NextRequest, context: Route
       invitedBy: session.user.id,
       createdAt: now,
       updatedAt: now,
+    })
+
+    captureServerEvent(session.user.id, 'credential_shared', {
+      credential_type: admin.credentialType,
+      role,
+      workspace_id: admin.workspaceId,
+    })
+
+    recordAudit({
+      workspaceId: admin.workspaceId,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
+      action: AuditAction.CREDENTIAL_MEMBER_ADDED,
+      resourceType: AuditResourceType.CREDENTIAL,
+      resourceId: credentialId,
+      description: `Shared credential with member as "${role}"`,
+      metadata: { targetUserId: userId, role },
+      request,
     })
 
     return NextResponse.json({ success: true }, { status: 201 })
@@ -168,6 +235,11 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Rou
 
     const admin = await requireWorkspaceAdminMembership(credentialId, session.user.id)
     if (!admin) {
+      logger.warn('Credential member removal denied', {
+        credentialId,
+        actorId: session.user.id,
+        reason: 'not-admin',
+      })
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
@@ -202,6 +274,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Rou
               eq(credentialMember.status, 'active')
             )
           )
+          .for('update')
 
         if (activeAdmins.length <= 1) {
           return false
@@ -219,6 +292,24 @@ export const DELETE = withRouteHandler(async (request: NextRequest, context: Rou
     if (!revoked) {
       return NextResponse.json({ error: 'Cannot remove the last admin' }, { status: 400 })
     }
+
+    captureServerEvent(session.user.id, 'credential_unshared', {
+      credential_type: admin.credentialType,
+      workspace_id: admin.workspaceId,
+    })
+
+    recordAudit({
+      workspaceId: admin.workspaceId,
+      actorId: session.user.id,
+      actorName: session.user.name,
+      actorEmail: session.user.email,
+      action: AuditAction.CREDENTIAL_MEMBER_REMOVED,
+      resourceType: AuditResourceType.CREDENTIAL,
+      resourceId: credentialId,
+      description: 'Removed credential member',
+      metadata: { targetUserId },
+      request,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

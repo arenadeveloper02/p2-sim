@@ -6,7 +6,7 @@
  *
  * Query Parameters:
  *   - action: string (optional) - Filter by action (e.g., "workflow.created")
- *   - resourceType: string (optional) - Filter by resource type (e.g., "workflow")
+ *   - resourceType: string (optional) - Filter by resource type(s), comma-separated (e.g., "workflow,api_key")
  *   - resourceId: string (optional) - Filter by resource ID
  *   - workspaceId: string (optional) - Filter by workspace ID
  *   - actorId: string (optional) - Filter by actor user ID (must be an org member)
@@ -20,15 +20,18 @@
  */
 
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { v1ListAuditLogsContract } from '@/lib/api/contracts/v1/audit-logs'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { validateEnterpriseAuditAccess } from '@/app/api/v1/audit-logs/auth'
 import { formatAuditLogEntry } from '@/app/api/v1/audit-logs/format'
 import {
   buildFilterConditions,
   buildOrgScopeCondition,
+  getOrgWorkspaceIds,
   queryAuditLogs,
 } from '@/app/api/v1/audit-logs/query'
 import { createApiResponse, getUserLimits } from '@/app/api/v1/logs/meta'
@@ -38,27 +41,6 @@ const logger = createLogger('V1AuditLogsAPI')
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const isoDateString = z.string().refine((val) => !Number.isNaN(Date.parse(val)), {
-  message: 'Invalid date format. Use ISO 8601.',
-})
-
-const QueryParamsSchema = z.object({
-  action: z.string().optional(),
-  resourceType: z.string().optional(),
-  resourceId: z.string().optional(),
-  workspaceId: z.string().optional(),
-  actorId: z.string().optional(),
-  startDate: isoDateString.optional(),
-  endDate: isoDateString.optional(),
-  includeDeparted: z
-    .enum(['true', 'false'])
-    .transform((val) => val === 'true')
-    .optional()
-    .default('false'),
-  limit: z.coerce.number().min(1).max(100).optional().default(50),
-  cursor: z.string().optional(),
-})
 
 export const GET = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateId().slice(0, 8)
@@ -76,20 +58,26 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       return authResult.response
     }
 
-    const { orgMemberIds } = authResult.context
+    const { organizationId, orgMemberIds } = authResult.context
 
-    const { searchParams } = new URL(request.url)
-    const rawParams = Object.fromEntries(searchParams.entries())
-    const validationResult = QueryParamsSchema.safeParse(rawParams)
+    const parsed = await parseRequest(
+      v1ListAuditLogsContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) =>
+          NextResponse.json(
+            {
+              error: getValidationErrorMessage(error, 'Invalid parameters'),
+              details: error.issues,
+            },
+            { status: 400 }
+          ),
+      }
+    )
+    if (!parsed.success) return parsed.response
 
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { error: 'Invalid parameters', details: validationResult.error.errors },
-        { status: 400 }
-      )
-    }
-
-    const params = validationResult.data
+    const params = parsed.data.query
 
     if (params.actorId && !orgMemberIds.includes(params.actorId)) {
       return NextResponse.json(
@@ -98,7 +86,21 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    const scopeCondition = await buildOrgScopeCondition(orgMemberIds, params.includeDeparted)
+    const orgWorkspaceIds = await getOrgWorkspaceIds(organizationId)
+
+    if (params.workspaceId && !orgWorkspaceIds.includes(params.workspaceId)) {
+      return NextResponse.json(
+        { error: 'workspaceId does not belong to your organization' },
+        { status: 400 }
+      )
+    }
+
+    const scopeCondition = buildOrgScopeCondition({
+      organizationId,
+      orgWorkspaceIds,
+      orgMemberIds,
+      includeDeparted: params.includeDeparted,
+    })
     const filterConditions = buildFilterConditions({
       action: params.action,
       resourceType: params.resourceType,
@@ -122,7 +124,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json(response.body, { headers: response.headers })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
+    const message = getErrorMessage(error, 'Unknown error')
     logger.error(`[${requestId}] Audit logs fetch error`, { error: message })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

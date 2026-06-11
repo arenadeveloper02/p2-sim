@@ -2,11 +2,72 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getFacebookAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { parseQueryWithAI } from './ai-query-generation'
-import { makeFacebookAdsRequest } from './facebook-ads-api'
+import {
+  makeFacebookAdsOAuthRequest,
+  makeFacebookAdsRequest,
+  resolveFacebookAccessToken,
+} from './facebook-ads-api'
 import type { FacebookAdsRequest, FacebookAdsResponse } from './types'
 
 const logger = createLogger('FacebookAdsAPI')
+
+function hasUserProvidedFacebookAdsCredentials(body: FacebookAdsRequest): boolean {
+  return Boolean(body.accessToken?.trim() || body.accountId?.trim() || body.adAccountId?.trim())
+}
+
+function resolveUsesAdminCredentials(body: FacebookAdsRequest): boolean {
+  if (body.workspaceId && isAdminWorkspace(body.workspaceId)) {
+    return true
+  }
+  if (hasUserProvidedFacebookAdsCredentials(body)) {
+    return false
+  }
+  return Boolean(body.account?.trim())
+}
+
+function formatAdAccountId(raw: string): string {
+  const trimmed = raw.trim()
+  if (trimmed.startsWith('act_')) {
+    return trimmed
+  }
+  return `act_${trimmed.replace(/-/g, '')}`
+}
+
+async function resolveAccountForRequest(
+  body: FacebookAdsRequest,
+  useAdminCredentials: boolean
+): Promise<{ accountId: string; accountName: string }> {
+  if (useAdminCredentials) {
+    const accountKey = body.account?.trim()
+    if (!accountKey) {
+      throw new Error('Facebook ad account is required for admin workspace queries')
+    }
+
+    const facebookAccounts = await getFacebookAdsAccounts()
+    const accountData = facebookAccounts[accountKey]
+
+    if (!accountData) {
+      throw new Error(`Account '${accountKey}' not found in database`)
+    }
+
+    return {
+      accountId: `act_${accountData.id}`,
+      accountName: accountData.name,
+    }
+  }
+
+  const rawAccountId = (body.accountId ?? body.adAccountId)?.trim()
+  if (!rawAccountId) {
+    throw new Error('Facebook ad account ID is required')
+  }
+
+  return {
+    accountId: formatAdAccountId(rawAccountId),
+    accountName: rawAccountId,
+  }
+}
 
 export async function POST(request: NextRequest) {
   const requestId = generateRequestId()
@@ -16,65 +77,90 @@ export async function POST(request: NextRequest) {
 
   try {
     const body: FacebookAdsRequest = await request.json()
-    const { query, account, date_preset = 'last_30d', time_range, fields, level = 'account' } = body
+    const workspaceId =
+      body.workspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
+    const { query, date_preset = 'last_30d', time_range, fields, level = 'account' } = body
 
-    if (!query || !account) {
+    if (!query) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Missing required fields: query and account',
+          error: 'Missing required field: query',
           requestId,
           timestamp,
         },
         { status: 400 }
       )
     }
+
+    const useAdminCredentials = resolveUsesAdminCredentials({ ...body, workspaceId })
+
+    let resolvedAccessToken: string | undefined
+
+    if (!useAdminCredentials) {
+      const accessToken = body.accessToken?.trim()
+      const adAccountId = (body.accountId ?? body.adAccountId)?.trim()
+
+      if (!accessToken || !adAccountId) {
+        const missingFields: string[] = []
+        if (!accessToken) missingFields.push('Facebook Ads account (OAuth)')
+        if (!adAccountId) missingFields.push('Ad Account ID')
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Missing required Facebook Ads fields: ${missingFields.join(', ')}. Connect your Facebook Ads account, add your ad account ID, then run again.`,
+            requestId,
+            timestamp,
+          },
+          { status: 400 }
+        )
+      }
+
+      resolvedAccessToken = resolveFacebookAccessToken(accessToken)
+    }
+
+    const { accountId, accountName } = await resolveAccountForRequest(
+      { ...body, workspaceId },
+      useAdminCredentials
+    )
 
     logger.info('Processing Facebook Ads query', {
       requestId,
-      account,
+      accountId,
+      accountName,
       query,
       date_preset,
       level,
+      useAdminCredentials,
     })
 
-    // Get account ID from database
-    const facebookAccounts = await getFacebookAdsAccounts()
-    const accountData = facebookAccounts[account as string]
-
-    if (!accountData) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Account '${account}' not found in database`,
-          requestId,
-          timestamp,
-        },
-        { status: 400 }
-      )
-    }
-
-    const accountId = `act_${accountData.id}`
-    const accountName = accountData.name
-
-    logger.info('Account details', { accountId, accountName })
-
-    // Parse natural language query with AI
     const parsedQuery = await parseQueryWithAI(query, accountName)
 
     logger.info('AI parsed query', { parsedQuery })
 
-    // Make Facebook Graph API request
-    const result = await makeFacebookAdsRequest(
+    const requestOptions = {
       accountId,
-      parsedQuery.endpoint,
-      parsedQuery.fields,
-      parsedQuery.date_preset || date_preset,
-      parsedQuery.time_range || time_range,
-      parsedQuery.level || level,
-      parsedQuery.filters,
-      parsedQuery.breakdowns
-    )
+      endpoint: parsedQuery.endpoint,
+      fields: parsedQuery.fields,
+      date_preset: parsedQuery.date_preset || date_preset,
+      time_range: parsedQuery.time_range || time_range,
+      level: parsedQuery.level || level,
+      filters: parsedQuery.filters,
+      breakdowns: parsedQuery.breakdowns,
+    }
+
+    const result = useAdminCredentials
+      ? await makeFacebookAdsRequest(
+          accountId,
+          requestOptions.endpoint,
+          requestOptions.fields,
+          requestOptions.date_preset,
+          requestOptions.time_range,
+          requestOptions.level,
+          requestOptions.filters,
+          requestOptions.breakdowns
+        )
+      : await makeFacebookAdsOAuthRequest(resolvedAccessToken as string, requestOptions)
 
     const response: FacebookAdsResponse = {
       success: true,
@@ -82,13 +168,13 @@ export async function POST(request: NextRequest) {
       requestId,
       account_id: accountId,
       account_name: accountName,
-      query: query,
+      query,
       timestamp,
     }
 
     logger.info('Facebook Ads API request successful', {
       requestId,
-      resultsCount: result.data?.length || 0,
+      resultsCount: (result as { data?: unknown[] })?.data?.length || 0,
     })
 
     return NextResponse.json(response)

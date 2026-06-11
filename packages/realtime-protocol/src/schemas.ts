@@ -5,6 +5,7 @@ import {
   EDGE_OPERATIONS,
   EDGES_OPERATIONS,
   OPERATION_TARGETS,
+  SUBBLOCK_OPERATIONS,
   SUBFLOW_OPERATIONS,
   VARIABLE_OPERATIONS,
   WORKFLOW_OPERATIONS,
@@ -41,9 +42,9 @@ export const BlockOperationSchema = z.object({
     name: z.string().optional(),
     position: PositionSchema.optional(),
     commit: z.boolean().optional(),
-    data: z.record(z.any()).optional(),
-    subBlocks: z.record(z.any()).optional(),
-    outputs: z.record(z.any()).optional(),
+    data: z.record(z.string(), z.any()).optional(),
+    subBlocks: z.record(z.string(), z.any()).optional(),
+    outputs: z.record(z.string(), z.any()).optional(),
     parentId: z.string().nullable().optional(),
     extent: z.enum(['parent']).nullable().optional(),
     enabled: z.boolean().optional(),
@@ -93,7 +94,7 @@ export const SubflowOperationSchema = z.object({
   payload: z.object({
     id: z.string(),
     type: z.enum(['loop', 'parallel']).optional(),
-    config: z.record(z.any()).optional(),
+    config: z.record(z.string(), z.any()).optional(),
   }),
   timestamp: z.number(),
   operationId: z.string().optional(),
@@ -134,15 +135,32 @@ export const WorkflowStateOperationSchema = z.object({
   operationId: z.string().optional(),
 })
 
+export const SubblockOperationSchema = z.object({
+  operation: z.literal(SUBBLOCK_OPERATIONS.BATCH_UPDATE),
+  target: z.literal(OPERATION_TARGETS.SUBBLOCK),
+  payload: z.object({
+    updates: z.array(
+      z.object({
+        blockId: z.string(),
+        subblockId: z.string(),
+        value: z.any(),
+        expectedValue: z.any().optional(),
+      })
+    ),
+  }),
+  timestamp: z.number(),
+  operationId: z.string().optional(),
+})
+
 export const BatchAddBlocksSchema = z.object({
   operation: z.literal(BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS),
   target: z.literal(OPERATION_TARGETS.BLOCKS),
   payload: z.object({
-    blocks: z.array(z.record(z.any())),
+    blocks: z.array(z.record(z.string(), z.any())),
     edges: z.array(AutoConnectEdgeSchema).optional(),
-    loops: z.record(z.any()).optional(),
-    parallels: z.record(z.any()).optional(),
-    subBlockValues: z.record(z.record(z.any())).optional(),
+    loops: z.record(z.string(), z.any()).optional(),
+    parallels: z.record(z.string(), z.any()).optional(),
+    subBlockValues: z.record(z.string(), z.record(z.string(), z.any())).optional(),
   }),
   timestamp: z.number(),
   operationId: z.string().optional(),
@@ -191,7 +209,7 @@ export const BatchToggleEnabledSchema = z.object({
   target: z.literal(OPERATION_TARGETS.BLOCKS),
   payload: z.object({
     blockIds: z.array(z.string()),
-    previousStates: z.record(z.boolean()),
+    previousStates: z.record(z.string(), z.boolean()),
   }),
   timestamp: z.number(),
   operationId: z.string().optional(),
@@ -202,7 +220,7 @@ export const BatchToggleHandlesSchema = z.object({
   target: z.literal(OPERATION_TARGETS.BLOCKS),
   payload: z.object({
     blockIds: z.array(z.string()),
-    previousStates: z.record(z.boolean()),
+    previousStates: z.record(z.string(), z.boolean()),
   }),
   timestamp: z.number(),
   operationId: z.string().optional(),
@@ -213,7 +231,7 @@ export const BatchToggleLockedSchema = z.object({
   target: z.literal(OPERATION_TARGETS.BLOCKS),
   payload: z.object({
     blockIds: z.array(z.string()),
-    previousStates: z.record(z.boolean()),
+    previousStates: z.record(z.string(), z.boolean()),
   }),
   timestamp: z.number(),
   operationId: z.string().optional(),
@@ -250,4 +268,5 @@ export const WorkflowOperationSchema = z.union([
   SubflowOperationSchema,
   VariableOperationSchema,
   WorkflowStateOperationSchema,
+  SubblockOperationSchema,
 ])

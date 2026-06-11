@@ -9,9 +9,11 @@ import {
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { executionIdParamsSchema } from '@/lib/api/contracts/logs'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
 import type { TraceSpan, WorkflowExecutionLog } from '@/lib/logs/types'
 
 const logger = createLogger('LogsByExecutionIdAPI')
@@ -21,7 +23,7 @@ export const GET = withRouteHandler(
     const requestId = generateRequestId()
 
     try {
-      const { executionId } = await params
+      const { executionId } = executionIdParamsSchema.parse(await params)
 
       const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
       if (!authResult.success || !authResult.userId) {
@@ -38,13 +40,14 @@ export const GET = withRouteHandler(
         .select({
           id: workflowExecutionLogs.id,
           workflowId: workflowExecutionLogs.workflowId,
+          workspaceId: workflowExecutionLogs.workspaceId,
           executionId: workflowExecutionLogs.executionId,
           stateSnapshotId: workflowExecutionLogs.stateSnapshotId,
           trigger: workflowExecutionLogs.trigger,
           startedAt: workflowExecutionLogs.startedAt,
           endedAt: workflowExecutionLogs.endedAt,
           totalDurationMs: workflowExecutionLogs.totalDurationMs,
-          cost: workflowExecutionLogs.cost,
+          costTotal: workflowExecutionLogs.costTotal,
           executionData: workflowExecutionLogs.executionData,
         })
         .from(workflowExecutionLogs)
@@ -118,7 +121,14 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Workflow state snapshot not found' }, { status: 404 })
       }
 
-      const executionData = workflowLog.executionData as WorkflowExecutionLog['executionData']
+      const executionData = (await materializeExecutionData(
+        workflowLog.executionData as Record<string, unknown> | null,
+        {
+          workspaceId: workflowLog.workspaceId,
+          workflowId: workflowLog.workflowId,
+          executionId: workflowLog.executionId,
+        }
+      )) as WorkflowExecutionLog['executionData']
       const traceSpans = (executionData?.traceSpans as TraceSpan[]) || []
       const childSnapshotIds = new Set<string>()
       const collectSnapshotIds = (spans: TraceSpan[]) => {
@@ -162,7 +172,7 @@ export const GET = withRouteHandler(
           startedAt: workflowLog.startedAt.toISOString(),
           endedAt: workflowLog.endedAt?.toISOString(),
           totalDurationMs: workflowLog.totalDurationMs,
-          cost: workflowLog.cost || null,
+          cost: workflowLog.costTotal != null ? { total: Number(workflowLog.costTotal) } : null,
         },
       }
 

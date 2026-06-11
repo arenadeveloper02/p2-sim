@@ -83,12 +83,14 @@ export const slackMessageReaderTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description: 'Automatically fetch all pages (max 10 pages, 1000 messages)',
+      default: true,
     },
     includeThreads: {
       type: 'boolean',
       required: false,
       visibility: 'user-or-llm',
       description: 'Include thread replies for messages that have threads',
+      default: true,
     },
     maxThreads: {
       type: 'number',
@@ -110,19 +112,22 @@ export const slackMessageReaderTool: ToolConfig<
     headers: () => ({
       'Content-Type': 'application/json',
     }),
-    body: (params: SlackMessageReaderParams) => ({
-      accessToken: params.accessToken || params.botToken,
-      channel: params.channel,
-      userId: params.userId,
-      limit: params.limit,
-      oldest: params.oldest,
-      latest: params.latest,
-      cursor: params.cursor,
-      autoPaginate: params.autoPaginate,
-      includeThreads: params.includeThreads,
-      maxThreads: params.maxThreads,
-      maxRepliesPerThread: params.maxRepliesPerThread,
-    }),
+    body: (params: SlackMessageReaderParams) => {
+      const isDM = params.destinationType === 'dm'
+      return {
+        accessToken: params.accessToken || params.botToken,
+        channel: isDM ? undefined : params.channel?.trim(),
+        userId: isDM ? params.dmUserId?.trim() : undefined,
+        limit: params.limit,
+        oldest: params.oldest,
+        latest: params.latest,
+        cursor: params.cursor,
+        autoPaginate: params.autoPaginate ?? true,
+        includeThreads: params.includeThreads ?? true,
+        maxThreads: params.maxThreads,
+        maxRepliesPerThread: params.maxRepliesPerThread,
+      }
+    },
   },
 
   transformResponse: async (response: Response) => {

@@ -6,8 +6,10 @@ import { generateId } from '@sim/utils/id'
 import clsx from 'clsx'
 import { ChevronRight, Folder, FolderOpen, MoreHorizontal } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
+import { chipVariants } from '@/components/emcn'
+import { Lock } from '@/components/emcn/icons'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { getNextWorkflowColor } from '@/lib/workflows/colors'
+import { cn } from '@/lib/core/utils/cn'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
@@ -32,8 +34,12 @@ import {
   useExportFolder,
   useExportSelection,
 } from '@/app/workspace/[workspaceId]/w/hooks'
-import { useCreateFolder, useUpdateFolder } from '@/hooks/queries/folders'
+import { useCreateFolder, useFolderMap, useUpdateFolder } from '@/hooks/queries/folders'
 import { getFolderMap } from '@/hooks/queries/utils/folder-cache'
+import {
+  isFolderEffectivelyLocked,
+  isFolderOrAncestorLocked,
+} from '@/hooks/queries/utils/folder-tree'
 import { getWorkflows } from '@/hooks/queries/utils/workflow-cache'
 import { useCreateWorkflow } from '@/hooks/queries/workflows'
 import { useFolderStore } from '@/stores/folders/store'
@@ -45,7 +51,6 @@ const logger = createLogger('FolderItem')
 
 interface FolderItemProps {
   folder: FolderTreeNode
-  level: number
   dragDisabled?: boolean
   hoverHandlers?: {
     onDragEnter?: (e: React.DragEvent<HTMLElement>) => void
@@ -58,7 +63,6 @@ interface FolderItemProps {
 
 export function FolderItem({
   folder,
-  level,
   dragDisabled = false,
   hoverHandlers,
   onFolderClick,
@@ -75,6 +79,10 @@ export function FolderItem({
   const userPermissions = useUserPermissionsContext()
   const selectedFolders = useFolderStore((state) => state.selectedFolders)
   const isSelected = selectedFolders.has(folder.id)
+
+  const { data: foldersById = {} } = useFolderMap(workspaceId)
+  const inheritedFolderLocked = isFolderOrAncestorLocked(folder.parentId, foldersById)
+  const effectiveLocked = isFolderEffectivelyLocked(folder, foldersById)
 
   const { canDeleteFolder, canDeleteWorkflows } = useCanDelete({ workspaceId })
 
@@ -144,15 +152,14 @@ export function FolderItem({
   const dragGhostRef = useRef<HTMLElement | null>(null)
 
   const handleCreateWorkflowInFolder = useCallback(() => {
+    if (effectiveLocked) return
     const name = generateCreativeWorkflowName()
-    const color = getNextWorkflowColor()
     const id = generateId()
 
     createWorkflowMutation.mutate({
       workspaceId,
       folderId: folder.id,
       name,
-      color,
       id,
     })
 
@@ -160,13 +167,14 @@ export function FolderItem({
     expandFolder()
     router.push(`/workspace/${workspaceId}/w/${id}`)
     window.dispatchEvent(new CustomEvent(SIDEBAR_SCROLL_EVENT, { detail: { itemId: id } }))
-  }, [createWorkflowMutation, workspaceId, folder.id, router, expandFolder])
+  }, [createWorkflowMutation, workspaceId, folder.id, effectiveLocked, router, expandFolder])
 
   const handleCreateFolderInFolder = useCallback(async () => {
+    if (effectiveLocked) return
     try {
       const result = await createFolderMutation.mutateAsync({
         workspaceId,
-        name: 'New Folder',
+        name: 'New folder',
         parentId: folder.id,
         id: generateId(),
       })
@@ -179,7 +187,16 @@ export function FolderItem({
     } catch (error) {
       logger.error('Failed to create folder:', error)
     }
-  }, [createFolderMutation, workspaceId, folder.id, expandFolder])
+  }, [createFolderMutation, workspaceId, folder.id, effectiveLocked, expandFolder])
+
+  const handleToggleLock = useCallback(() => {
+    if (inheritedFolderLocked) return
+    updateFolderMutation.mutate({
+      workspaceId,
+      id: folder.id,
+      updates: { locked: !folder.locked },
+    })
+  }, [folder.id, folder.locked, inheritedFolderLocked, updateFolderMutation, workspaceId])
 
   const onDragStart = useCallback(
     (e: React.DragEvent) => {
@@ -327,12 +344,14 @@ export function FolderItem({
     (e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      handleStartEdit()
+      if (!effectiveLocked) {
+        handleStartEdit()
+      }
     },
-    [handleStartEdit]
+    [effectiveLocked, handleStartEdit]
   )
 
-  const handleClick = useCallback(
+  const handleFolderSelect = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       e.stopPropagation()
 
@@ -467,38 +486,33 @@ export function FolderItem({
         data-item-id={folder.id}
         aria-expanded={isExpanded}
         aria-label={`${folder.name} folder, ${isExpanded ? 'expanded' : 'collapsed'}`}
-        className={clsx(
-          'group mx-0.5 flex h-[30px] cursor-pointer items-center gap-2 rounded-lg px-2 text-sm',
-          !isSelected &&
-            !isContextMenuOpen &&
-            !isAnyDragActive &&
-            'hover-hover:bg-[var(--surface-hover)]',
-          (isSelected || isContextMenuOpen) && 'bg-[var(--surface-active)]',
+        className={cn(
+          chipVariants({ active: isSelected || isContextMenuOpen, fullWidth: true }),
           (isDragging || (isAnyDragActive && isSelected)) && 'opacity-50'
         )}
-        onClick={handleClick}
+        onClick={handleFolderSelect}
         onKeyDown={handleKeyDown}
         onContextMenu={handleContextMenu}
-        draggable={!isEditing && !dragDisabled}
+        draggable={!isEditing && !dragDisabled && !effectiveLocked}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         {...hoverHandlers}
       >
         <ChevronRight
           className={clsx(
-            'h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)] transition-transform duration-100',
+            'size-[16px] flex-shrink-0 text-[var(--text-icon)] transition-transform duration-100',
             isExpanded && 'rotate-90'
           )}
           aria-hidden='true'
         />
         {isExpanded ? (
           <FolderOpen
-            className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]'
+            className='size-[16px] flex-shrink-0 text-[var(--text-icon)]'
             aria-hidden='true'
           />
         ) : (
           <Folder
-            className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]'
+            className='size-[16px] flex-shrink-0 text-[var(--text-icon)]'
             aria-hidden='true'
           />
         )}
@@ -509,7 +523,7 @@ export function FolderItem({
             onChange={(e) => setEditValue(e.target.value)}
             onKeyDown={handleRenameKeyDown}
             onBlur={handleInputBlur}
-            className='min-w-0 flex-1 border-0 bg-transparent p-0 font-base text-[var(--text-body)] text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+            className='min-w-0 flex-1 border-0 bg-transparent p-0 text-[var(--text-body)] text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
             maxLength={50}
             disabled={isRenaming}
             onClick={(e) => {
@@ -523,25 +537,42 @@ export function FolderItem({
           />
         ) : (
           <div className='flex min-w-0 flex-1 items-center gap-2'>
-            <span
-              className='min-w-0 flex-1 truncate font-base text-[var(--text-body)]'
-              onDoubleClick={handleDoubleClick}
-            >
-              {folder.name}
-            </span>
-            <button
-              type='button'
-              aria-label='Folder options'
-              onPointerDown={handleMorePointerDown}
-              onClick={handleMoreClick}
-              className={clsx(
-                'flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity',
-                !isAnyDragActive && 'group-hover:opacity-100',
-                isContextMenuOpen && 'opacity-100'
+            <div className='flex min-w-0 flex-1 items-center gap-1'>
+              <span
+                className='min-w-0 truncate text-[var(--text-body)]'
+                onDoubleClick={handleDoubleClick}
+              >
+                {folder.name}
+              </span>
+            </div>
+            <div className='relative size-[18px] flex-shrink-0'>
+              {folder.locked && (
+                <span
+                  role='img'
+                  aria-label='Folder is locked'
+                  className={clsx(
+                    'pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity',
+                    !isAnyDragActive && 'group-hover:opacity-0',
+                    isContextMenuOpen && 'opacity-0'
+                  )}
+                >
+                  <Lock className='size-[14px] text-[var(--text-icon)]' aria-hidden='true' />
+                </span>
               )}
-            >
-              <MoreHorizontal className='h-[16px] w-[16px] text-[var(--text-icon)]' />
-            </button>
+              <button
+                type='button'
+                aria-label='Folder options'
+                onPointerDown={handleMorePointerDown}
+                onClick={handleMoreClick}
+                className={clsx(
+                  'pointer-events-none absolute inset-0 flex items-center justify-center rounded-sm opacity-0 transition-opacity',
+                  !isAnyDragActive && 'group-hover:pointer-events-auto group-hover:opacity-100',
+                  isContextMenuOpen && 'pointer-events-auto opacity-100'
+                )}
+              >
+                <MoreHorizontal className='size-[16px] text-[var(--text-icon)]' />
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -562,14 +593,23 @@ export function FolderItem({
         showRename={!isMixedSelection && selectedFolders.size <= 1}
         showDuplicate={true}
         showExport={true}
-        disableRename={!userPermissions.canEdit}
-        disableCreate={!userPermissions.canEdit || createWorkflowMutation.isPending}
-        disableCreateFolder={!userPermissions.canEdit || createFolderMutation.isPending}
+        disableRename={!userPermissions.canEdit || effectiveLocked}
+        disableCreate={
+          !userPermissions.canEdit || effectiveLocked || createWorkflowMutation.isPending
+        }
+        disableCreateFolder={
+          !userPermissions.canEdit || effectiveLocked || createFolderMutation.isPending
+        }
         disableDuplicate={
           !userPermissions.canEdit || isDuplicatingSelection || !hasExportableContent
         }
         disableExport={!userPermissions.canEdit || isExporting || !hasExportableContent}
-        disableDelete={!userPermissions.canEdit || !canDeleteSelection}
+        showDelete={userPermissions.canEdit}
+        disableDelete={effectiveLocked || !canDeleteSelection}
+        onToggleLock={handleToggleLock}
+        showLock={!isMixedSelection && selectedFolders.size <= 1}
+        disableLock={!userPermissions.canAdmin || inheritedFolderLocked}
+        isLocked={effectiveLocked}
       />
 
       <DeleteModal

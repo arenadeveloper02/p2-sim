@@ -1,12 +1,18 @@
 import type { Edge } from 'reactflow'
+import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
+import type { PersistedChatAttachment } from '@/lib/chat/history-persistence'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import type { ParentIteration, SerializableExecutionState } from '@/executor/execution/types'
-import type { BlockLog, NormalizedBlockOutput } from '@/executor/types'
-import type { Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
+import type {
+  BlockTokens,
+  IterationToolCall,
+  NormalizedBlockOutput,
+  ProviderTimingSegment,
+} from '@/executor/types'
+import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
-export type { WorkflowState, Loop, Parallel }
+export type { WorkflowState }
 export type WorkflowEdge = Edge
-export type { NormalizedBlockOutput, BlockLog }
 
 export interface PricingInfo {
   input: number
@@ -148,7 +154,23 @@ export interface WorkflowExecutionLog {
       }
     >
     executionState?: SerializableExecutionState
+    executionStateSummary?: {
+      executedBlockCount: number
+      blockLogCount: number
+      completedLoopCount: number
+      activeExecutionPathLength: number
+      pendingQueueLength: number
+    }
+    executionDataTruncated?: boolean
+    executionDataOriginalBytes?: number
+    executionDataStoredBytes?: number
+    executionDataMaxBytes?: number
+    executionDataTruncationReason?: string
     finalOutput?: any
+    workflowInput?: unknown
+    userAttachments?: PersistedChatAttachment[]
+    generatedImages?: AssistantGeneratedImage[]
+    knowledgeRefs?: unknown[]
     errorDetails?: {
       blockId: string
       blockName: string
@@ -179,25 +201,13 @@ export interface WorkflowExecutionLog {
 export type WorkflowExecutionLogInsert = Omit<WorkflowExecutionLog, 'id' | 'createdAt'>
 export type WorkflowExecutionLogSelect = WorkflowExecutionLog
 
-export interface TokenInfo {
-  input?: number
-  output?: number
-  total?: number
-  prompt?: number
-  completion?: number
-}
+export type TokenInfo = BlockTokens
 
 export interface ProviderTiming {
   duration: number
   startTime: string
   endTime: string
-  segments: Array<{
-    type: string
-    name?: string
-    startTime: string | number
-    endTime: string | number
-    duration: number
-  }>
+  segments: ProviderTimingSegment[]
 }
 
 export interface TraceSpan {
@@ -208,13 +218,18 @@ export interface TraceSpan {
   startTime: string
   endTime: string
   children?: TraceSpan[]
+  /**
+   * @deprecated Tool invocations are emitted as `children` with `type: 'tool'`.
+   * This field only appears on legacy trace spans persisted before the unification.
+   */
   toolCalls?: ToolCall[]
   status?: 'success' | 'error'
   /** Whether this block's error was handled by an error handler path */
   errorHandled?: boolean
-  tokens?: number | TokenInfo
+  tokens?: TokenInfo
   relativeStartMs?: number
   blockId?: string
+  executionOrder?: number
   input?: Record<string, unknown>
   output?: Record<string, unknown>
   childWorkflowSnapshotId?: string
@@ -224,12 +239,50 @@ export interface TraceSpan {
     input?: number
     output?: number
     total?: number
+    toolCost?: number
   }
   providerTiming?: ProviderTiming
   loopId?: string
   parallelId?: string
   iterationIndex?: number
   parentIterations?: ParentIteration[]
+  /**
+   * For model child spans: the assistant's thinking/reasoning blocks from this
+   * iteration, stringified. Surfaces Anthropic extended thinking and equivalents.
+   */
+  thinking?: string
+  /**
+   * For model child spans: the tool calls the assistant requested in this
+   * iteration. `id` is the provider-assigned `tool_call.id`, used to correlate
+   * the following tool child span via its `toolCallId` field.
+   */
+  modelToolCalls?: IterationToolCall[]
+  /**
+   * For model child spans: the provider-reported stop reason
+   * (`stop`, `tool_use`, `length`, …).
+   */
+  finishReason?: string
+  /**
+   * For tool child spans: the `tool_call.id` this tool invocation satisfies.
+   * Matches one of the preceding model child's `modelToolCalls[i].id`.
+   */
+  toolCallId?: string
+  /**
+   * For model child spans: time-to-first-token in ms (streaming runs only).
+   */
+  ttft?: number
+  /**
+   * For model child spans: the provider system identifier
+   * (`anthropic`, `openai`, `gemini`, …) — aligns with OTel `gen_ai.system`.
+   */
+  provider?: string
+  /**
+   * For failed child spans: structured error class
+   * (e.g. `rate_limit`, `context_length`).
+   */
+  errorType?: string
+  /** For failed child spans: human-readable error message. */
+  errorMessage?: string
 }
 
 export interface WorkflowExecutionSummary {
@@ -399,21 +452,35 @@ export interface ExecutionLoggerService {
     executionId: string
     endedAt: string
     totalDurationMs: number
-
     costSummary: {
       totalCost: number
       totalInputCost: number
       totalOutputCost: number
       totalTokens: number
+      totalPromptTokens: number
+      totalCompletionTokens: number
+      baseExecutionCharge: number
+      modelCost: number
+      models: Record<
+        string,
+        {
+          input: number
+          output: number
+          total: number
+          toolCost?: number
+          tokens: { input: number; output: number; total: number }
+        }
+      >
     }
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
     workflowInput?: any
+    finalChatOutput?: string
     executionState?: SerializableExecutionState
     finalizationPath?: ExecutionFinalizationPath
     completionFailure?: string
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
   }): Promise<WorkflowExecutionLog>
 }

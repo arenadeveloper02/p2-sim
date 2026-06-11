@@ -1,146 +1,18 @@
-import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { generateId } from '@sim/utils/id'
-import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { COPILOT_REQUEST_MODES } from '@/lib/copilot/constants'
-import { runHeadlessCopilotLifecycle } from '@/lib/copilot/request/lifecycle/headless'
+import { NextResponse } from 'next/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getWorkflowById, resolveWorkflowIdForUser } from '@/lib/workflows/utils'
-import { authenticateV1Request } from '@/app/api/v1/auth'
-
-export const maxDuration = 3600
-
-const logger = createLogger('CopilotHeadlessAPI')
-const DEFAULT_COPILOT_MODEL = 'claude-opus-4-6'
-
-const RequestSchema = z.object({
-  message: z.string().min(1, 'message is required'),
-  workflowId: z.string().optional(),
-  workflowName: z.string().optional(),
-  chatId: z.string().optional(),
-  mode: z.enum(COPILOT_REQUEST_MODES).optional().default('agent'),
-  model: z.string().optional(),
-  autoExecuteTools: z.boolean().optional().default(true),
-  timeout: z.number().optional().default(3_600_000),
-})
 
 /**
  * POST /api/v1/copilot/chat
- * Headless copilot endpoint for server-side orchestration.
  *
- * workflowId is optional - if not provided:
- * - If workflowName is provided, finds that workflow
- * - If exactly one workflow is available, uses that workflow as context
- * - Otherwise requires workflowId or workflowName to disambiguate
+ * Deprecated: the v1 headless copilot chat API has been removed. The endpoint
+ * returns 410 Gone for all callers.
  */
-export const POST = withRouteHandler(async (req: NextRequest) => {
-  let messageId: string | undefined
-  const auth = await authenticateV1Request(req)
-  if (!auth.authenticated || !auth.userId) {
-    return NextResponse.json(
-      { success: false, error: auth.error || 'Unauthorized' },
-      { status: 401 }
-    )
-  }
-
-  try {
-    const body = await req.json()
-    const parsed = RequestSchema.parse(body)
-    const selectedModel = parsed.model || DEFAULT_COPILOT_MODEL
-
-    // Resolve workflow ID
-    const resolved = await resolveWorkflowIdForUser(
-      auth.userId,
-      parsed.workflowId,
-      parsed.workflowName,
-      auth.keyType === 'workspace' ? auth.workspaceId : undefined
-    )
-    if (resolved.status !== 'resolved') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: resolved.message,
-        },
-        { status: 400 }
-      )
-    }
-
-    if (auth.keyType === 'workspace' && auth.workspaceId) {
-      const workflow = await getWorkflowById(resolved.workflowId)
-      if (!workflow?.workspaceId || workflow.workspaceId !== auth.workspaceId) {
-        return NextResponse.json(
-          { success: false, error: 'API key is not authorized for this workspace' },
-          { status: 403 }
-        )
-      }
-    }
-
-    // Transform mode to transport mode (same as client API)
-    // build and agent both map to 'agent' on the backend
-    const effectiveMode = parsed.mode === 'agent' ? 'build' : parsed.mode
-    const transportMode = effectiveMode === 'build' ? 'agent' : effectiveMode
-
-    // Always generate a chatId - required for artifacts system to work with subagents
-    const chatId = parsed.chatId || generateId()
-
-    messageId = generateId()
-    logger.info(
-      messageId
-        ? `Received headless copilot chat start request [messageId:${messageId}]`
-        : 'Received headless copilot chat start request',
-      {
-        workflowId: resolved.workflowId,
-        workflowName: parsed.workflowName,
-        chatId,
-        mode: transportMode,
-        autoExecuteTools: parsed.autoExecuteTools,
-        timeout: parsed.timeout,
-      }
-    )
-    const requestPayload = {
-      message: parsed.message,
-      workflowId: resolved.workflowId,
-      userId: auth.userId,
-      model: selectedModel,
-      mode: transportMode,
-      messageId,
-      chatId,
-    }
-
-    const result = await runHeadlessCopilotLifecycle(requestPayload, {
-      userId: auth.userId,
-      workflowId: resolved.workflowId,
-      chatId,
-      goRoute: '/api/mcp',
-      autoExecuteTools: parsed.autoExecuteTools,
-      timeout: parsed.timeout,
-      interactive: false,
-    })
-
-    return NextResponse.json({
-      success: result.success,
-      content: result.content,
-      toolCalls: result.toolCalls,
-      chatId: result.chatId || chatId,
-      error: result.error,
-    })
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid request', details: error.errors },
-        { status: 400 }
-      )
-    }
-
-    logger.error(
-      messageId
-        ? `Headless copilot request failed [messageId:${messageId}]`
-        : 'Headless copilot request failed',
-      {
-        error: toError(error).message,
-      }
-    )
-    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
-  }
-})
+export const POST = withRouteHandler(async () =>
+  NextResponse.json(
+    {
+      success: false,
+      error: 'The v1 copilot chat API has been deprecated and is no longer available.',
+    },
+    { status: 410, headers: { 'Cache-Control': 'no-store' } }
+  )
+)

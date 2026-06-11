@@ -1,10 +1,16 @@
-import { db } from '@sim/db'
-import { userTableRows } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import {
+  type BatchInsertTableRowsBodyInput,
+  batchUpdateTableRowsBodySchema,
+  deleteTableRowsBodySchema,
+  insertTableRowsContract,
+  tableRowsQuerySchema,
+  updateRowsByFilterBodySchema,
+} from '@/lib/api/contracts/tables'
+import { parseRequest } from '@/lib/api/server'
+import { isZodError, validationErrorResponse } from '@/lib/api/server/validation'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -15,112 +21,16 @@ import {
   deleteRowsByFilter,
   deleteRowsByIds,
   insertRow,
-  TABLE_LIMITS,
-  USER_TABLE_ROWS_SQL_NAME,
   updateRowsByFilter,
   validateBatchRows,
   validateRowData,
   validateRowSize,
 } from '@/lib/table'
-import { buildFilterClause, buildSortClause } from '@/lib/table/sql'
+import { queryRows } from '@/lib/table/service'
+import { TableQueryValidationError } from '@/lib/table/sql'
 import { accessError, checkAccess } from '@/app/api/table/utils'
 
 const logger = createLogger('TableRowsAPI')
-
-const InsertRowSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  data: z.record(z.unknown(), { required_error: 'Row data is required' }),
-  position: z.number().int().min(0).optional(),
-})
-
-const BatchInsertRowsSchema = z
-  .object({
-    workspaceId: z.string().min(1, 'Workspace ID is required'),
-    rows: z
-      .array(z.record(z.unknown()), { required_error: 'Rows array is required' })
-      .min(1, 'At least one row is required')
-      .max(1000, 'Cannot insert more than 1000 rows per batch'),
-    positions: z.array(z.number().int().min(0)).max(1000).optional(),
-  })
-  .refine((d) => !d.positions || d.positions.length === d.rows.length, {
-    message: 'positions array length must match rows array length',
-  })
-  .refine((d) => !d.positions || new Set(d.positions).size === d.positions.length, {
-    message: 'positions must not contain duplicates',
-  })
-
-const QueryRowsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  filter: z.record(z.unknown()).optional(),
-  sort: z.record(z.enum(['asc', 'desc'])).optional(),
-  limit: z.coerce
-    .number({ required_error: 'Limit must be a number' })
-    .int('Limit must be an integer')
-    .min(1, 'Limit must be at least 1')
-    .max(TABLE_LIMITS.MAX_QUERY_LIMIT, `Limit cannot exceed ${TABLE_LIMITS.MAX_QUERY_LIMIT}`)
-    .optional()
-    .default(100),
-  offset: z.coerce
-    .number({ required_error: 'Offset must be a number' })
-    .int('Offset must be an integer')
-    .min(0, 'Offset must be 0 or greater')
-    .optional()
-    .default(0),
-})
-
-const nonEmptyFilter = z
-  .record(z.unknown(), { required_error: 'Filter criteria is required' })
-  .refine((f) => Object.keys(f).length > 0, { message: 'Filter must not be empty' })
-
-const optionalPositiveLimit = (max: number, label: string) =>
-  z.preprocess(
-    (val) => (val === null || val === undefined || val === '' ? undefined : Number(val)),
-    z
-      .number()
-      .int(`${label} must be an integer`)
-      .min(1, `${label} must be at least 1`)
-      .max(max, `Cannot ${label.toLowerCase()} more than ${max} rows per operation`)
-      .optional()
-  )
-
-const UpdateRowsByFilterSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  filter: nonEmptyFilter,
-  data: z.record(z.unknown(), { required_error: 'Update data is required' }),
-  limit: optionalPositiveLimit(1000, 'Limit'),
-})
-
-const DeleteRowsByFilterSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  filter: nonEmptyFilter,
-  limit: optionalPositiveLimit(1000, 'Limit'),
-})
-
-const DeleteRowsByIdsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  rowIds: z
-    .array(z.string().min(1), { required_error: 'Row IDs are required' })
-    .min(1, 'At least one row ID is required')
-    .max(1000, 'Cannot delete more than 1000 rows per operation'),
-})
-
-const DeleteRowsRequestSchema = z.union([DeleteRowsByFilterSchema, DeleteRowsByIdsSchema])
-
-const BatchUpdateByIdsSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  updates: z
-    .array(
-      z.object({
-        rowId: z.string().min(1),
-        data: z.record(z.unknown()),
-      })
-    )
-    .min(1, 'At least one update is required')
-    .max(1000, 'Cannot update more than 1000 rows per batch')
-    .refine((d) => new Set(d.map((u) => u.rowId)).size === d.length, {
-      message: 'updates must not contain duplicate rowId values',
-    }),
-})
 
 interface TableRowsRouteParams {
   params: Promise<{ tableId: string }>
@@ -129,11 +39,9 @@ interface TableRowsRouteParams {
 async function handleBatchInsert(
   requestId: string,
   tableId: string,
-  body: z.infer<typeof BatchInsertRowsSchema>,
+  validated: BatchInsertTableRowsBodyInput,
   userId: string
 ): Promise<NextResponse> {
-  const validated = BatchInsertRowsSchema.parse(body)
-
   const accessResult = await checkAccess(tableId, userId, 'write')
   if (!accessResult.ok) return accessError(accessResult, requestId, tableId)
 
@@ -163,6 +71,7 @@ async function handleBatchInsert(
         workspaceId: validated.workspaceId,
         userId,
         positions: validated.positions,
+        orderKeys: validated.orderKeys,
       },
       table,
       requestId
@@ -175,6 +84,7 @@ async function handleBatchInsert(
           id: r.id,
           data: r.data,
           position: r.position,
+          orderKey: r.orderKey ?? undefined,
           createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
           updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
         })),
@@ -203,9 +113,8 @@ async function handleBatchInsert(
 
 /** POST /api/table/[tableId]/rows - Inserts row(s). Supports single or batch insert. */
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: TableRowsRouteParams) => {
+  async (request: NextRequest, context: TableRowsRouteParams) => {
     const requestId = generateRequestId()
-    const { tableId } = await params
 
     try {
       const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
@@ -213,28 +122,17 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
       }
 
-      let body: unknown
-      try {
-        body = await request.json()
-      } catch {
-        return NextResponse.json({ error: 'Request body must be valid JSON' }, { status: 400 })
+      const parsed = await parseRequest(insertTableRowsContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { tableId } = parsed.data.params
+      const body = parsed.data.body
+
+      if ('rows' in body) {
+        return handleBatchInsert(requestId, tableId, body, authResult.userId)
       }
 
-      if (
-        typeof body === 'object' &&
-        body !== null &&
-        'rows' in body &&
-        Array.isArray((body as Record<string, unknown>).rows)
-      ) {
-        return handleBatchInsert(
-          requestId,
-          tableId,
-          body as z.infer<typeof BatchInsertRowsSchema>,
-          authResult.userId
-        )
-      }
-
-      const validated = InsertRowSchema.parse(body)
+      const validated = body
 
       const accessResult = await checkAccess(tableId, authResult.userId, 'write')
       if (!accessResult.ok) return accessError(accessResult, requestId, tableId)
@@ -266,6 +164,8 @@ export const POST = withRouteHandler(
           workspaceId: validated.workspaceId,
           userId: authResult.userId,
           position: validated.position,
+          afterRowId: validated.afterRowId,
+          beforeRowId: validated.beforeRowId,
         },
         table,
         requestId
@@ -278,18 +178,17 @@ export const POST = withRouteHandler(
             id: row.id,
             data: row.data,
             position: row.position,
+            orderKey: row.orderKey ?? undefined,
             createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
             updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
           },
+
           message: 'Row inserted successfully',
         },
       })
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return NextResponse.json(
-          { error: 'Validation error', details: error.errors },
-          { status: 400 }
-        )
+      if (isZodError(error)) {
+        return validationErrorResponse(error)
       }
 
       const errorMessage = toError(error).message
@@ -328,6 +227,7 @@ export const GET = withRouteHandler(
       const sortParam = searchParams.get('sort')
       const limit = searchParams.get('limit')
       const offset = searchParams.get('offset')
+      const includeTotalParam = searchParams.get('includeTotal')
 
       let filter: Record<string, unknown> | undefined
       let sort: Sort | undefined
@@ -343,12 +243,13 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Invalid filter or sort JSON' }, { status: 400 })
       }
 
-      const validated = QueryRowsSchema.parse({
+      const validated = tableRowsQuerySchema.parse({
         workspaceId,
         filter,
         sort,
         limit,
         offset,
+        includeTotal: includeTotalParam,
       })
 
       const accessResult = await checkAccess(tableId, authResult.userId, 'read')
@@ -363,78 +264,45 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
       }
 
-      const baseConditions = [
-        eq(userTableRows.tableId, tableId),
-        eq(userTableRows.workspaceId, validated.workspaceId),
-      ]
-
-      if (validated.filter) {
-        const filterClause = buildFilterClause(validated.filter as Filter, USER_TABLE_ROWS_SQL_NAME)
-        if (filterClause) {
-          baseConditions.push(filterClause)
-        }
-      }
-
-      let query = db
-        .select({
-          id: userTableRows.id,
-          data: userTableRows.data,
-          position: userTableRows.position,
-          createdAt: userTableRows.createdAt,
-          updatedAt: userTableRows.updatedAt,
-        })
-        .from(userTableRows)
-        .where(and(...baseConditions))
-
-      if (validated.sort) {
-        const schema = table.schema as TableSchema
-        const sortClause = buildSortClause(validated.sort, USER_TABLE_ROWS_SQL_NAME, schema.columns)
-        if (sortClause) {
-          query = query.orderBy(sortClause) as typeof query
-        } else {
-          query = query.orderBy(userTableRows.position) as typeof query
-        }
-      } else {
-        query = query.orderBy(userTableRows.position) as typeof query
-      }
-
-      const countQuery = db
-        .select({ count: sql<number>`count(*)` })
-        .from(userTableRows)
-        .where(and(...baseConditions))
-
-      const [{ count: totalCount }] = await countQuery
-
-      const rows = await query.limit(validated.limit).offset(validated.offset)
-
-      logger.info(
-        `[${requestId}] Queried ${rows.length} rows from table ${tableId} (total: ${totalCount})`
+      const result = await queryRows(
+        table,
+        {
+          filter: validated.filter as Filter | undefined,
+          sort: validated.sort,
+          limit: validated.limit,
+          offset: validated.offset,
+          includeTotal: validated.includeTotal,
+        },
+        requestId
       )
 
       return NextResponse.json({
         success: true,
         data: {
-          rows: rows.map((r) => ({
+          rows: result.rows.map((r) => ({
             id: r.id,
             data: r.data,
+            executions: r.executions,
             position: r.position,
+            orderKey: r.orderKey ?? undefined,
             createdAt:
               r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
             updatedAt:
               r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
           })),
-          rowCount: rows.length,
-          totalCount: Number(totalCount),
-          limit: validated.limit,
-          offset: validated.offset,
+          rowCount: result.rowCount,
+          totalCount: result.totalCount,
+          limit: result.limit,
+          offset: result.offset,
         },
       })
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return NextResponse.json(
-          { error: 'Validation error', details: error.errors },
-          { status: 400 }
-        )
+      if (isZodError(error)) {
+        return validationErrorResponse(error)
+      }
+
+      if (error instanceof TableQueryValidationError) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
       }
 
       logger.error(`[${requestId}] Error querying rows:`, error)
@@ -462,7 +330,7 @@ export const PUT = withRouteHandler(
         return NextResponse.json({ error: 'Request body must be valid JSON' }, { status: 400 })
       }
 
-      const validated = UpdateRowsByFilterSchema.parse(body)
+      const validated = updateRowsByFilterBodySchema.parse(body)
 
       const accessResult = await checkAccess(tableId, authResult.userId, 'write')
       if (!accessResult.ok) return accessError(accessResult, requestId, tableId)
@@ -485,14 +353,13 @@ export const PUT = withRouteHandler(
       }
 
       const result = await updateRowsByFilter(
+        table,
         {
-          tableId,
           filter: validated.filter as Filter,
           data: validated.data as RowData,
           limit: validated.limit,
-          workspaceId: validated.workspaceId,
+          actorUserId: authResult.userId,
         },
-        table,
         requestId
       )
 
@@ -518,11 +385,12 @@ export const PUT = withRouteHandler(
         },
       })
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return NextResponse.json(
-          { error: 'Validation error', details: error.errors },
-          { status: 400 }
-        )
+      if (isZodError(error)) {
+        return validationErrorResponse(error)
+      }
+
+      if (error instanceof TableQueryValidationError) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
       }
 
       const errorMessage = toError(error).message
@@ -563,7 +431,7 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Request body must be valid JSON' }, { status: 400 })
       }
 
-      const validated = DeleteRowsRequestSchema.parse(body)
+      const validated = deleteTableRowsBodySchema.parse(body)
 
       const accessResult = await checkAccess(tableId, authResult.userId, 'write')
       if (!accessResult.ok) return accessError(accessResult, requestId, tableId)
@@ -577,7 +445,7 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
       }
 
-      if ('rowIds' in validated) {
+      if (validated.rowIds) {
         const result = await deleteRowsByIds(
           { tableId, rowIds: validated.rowIds, workspaceId: validated.workspaceId },
           requestId
@@ -599,11 +467,10 @@ export const DELETE = withRouteHandler(
       }
 
       const result = await deleteRowsByFilter(
+        table,
         {
-          tableId,
           filter: validated.filter as Filter,
           limit: validated.limit,
-          workspaceId: validated.workspaceId,
         },
         requestId
       )
@@ -620,11 +487,12 @@ export const DELETE = withRouteHandler(
         },
       })
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return NextResponse.json(
-          { error: 'Validation error', details: error.errors },
-          { status: 400 }
-        )
+      if (isZodError(error)) {
+        return validationErrorResponse(error)
+      }
+
+      if (error instanceof TableQueryValidationError) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
       }
 
       const errorMessage = toError(error).message
@@ -658,7 +526,7 @@ export const PATCH = withRouteHandler(
         return NextResponse.json({ error: 'Request body must be valid JSON' }, { status: 400 })
       }
 
-      const validated = BatchUpdateByIdsSchema.parse(body)
+      const validated = batchUpdateTableRowsBodySchema.parse(body)
 
       const accessResult = await checkAccess(tableId, authResult.userId, 'write')
       if (!accessResult.ok) return accessError(accessResult, requestId, tableId)
@@ -677,6 +545,7 @@ export const PATCH = withRouteHandler(
           tableId,
           updates: validated.updates as Array<{ rowId: string; data: RowData }>,
           workspaceId: validated.workspaceId,
+          actorUserId: authResult.userId,
         },
         table,
         requestId
@@ -691,11 +560,8 @@ export const PATCH = withRouteHandler(
         },
       })
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return NextResponse.json(
-          { error: 'Validation error', details: error.errors },
-          { status: 400 }
-        )
+      if (isZodError(error)) {
+        return validationErrorResponse(error)
       }
 
       const errorMessage = toError(error).message

@@ -49,6 +49,8 @@ export function createMockSqlOperators() {
     isNotNull: vi.fn((column) => ({ type: 'isNotNull', column })),
     inArray: vi.fn((column, values) => ({ type: 'inArray', column, values })),
     notInArray: vi.fn((column, values) => ({ type: 'notInArray', column, values })),
+    exists: vi.fn((subquery) => ({ type: 'exists', subquery })),
+    notExists: vi.fn((subquery) => ({ type: 'notExists', subquery })),
     like: vi.fn((column, pattern) => ({ type: 'like', column, pattern })),
     ilike: vi.fn((column, pattern) => ({ type: 'ilike', column, pattern })),
     desc: vi.fn((column) => ({ type: 'desc', column })),
@@ -95,25 +97,44 @@ export function createMockSqlOperators() {
  * ```
  */
 const limit = vi.fn(() => Promise.resolve([] as unknown[]))
-const orderBy = vi.fn(() => Promise.resolve([] as unknown[]))
 const returning = vi.fn(() => Promise.resolve([] as unknown[]))
-const groupBy = vi.fn(() => Promise.resolve([] as unknown[]))
 const execute = vi.fn(() => Promise.resolve([] as unknown[]))
 
-const forBuilder = () => {
+const terminalBuilder = () => {
   const thenable: any = Promise.resolve([] as unknown[])
   thenable.limit = limit
   thenable.orderBy = orderBy
   thenable.returning = returning
   thenable.groupBy = groupBy
+  thenable.for = forClause
   return thenable
 }
+
+const orderBy = vi.fn(terminalBuilder)
+const having = vi.fn(terminalBuilder)
+const groupBy = vi.fn(() => {
+  const builder = terminalBuilder()
+  builder.having = having
+  return builder
+})
+const forBuilder = terminalBuilder
 const forClause = vi.fn(forBuilder)
 
 const onConflictDoUpdate = vi.fn(() => ({ returning }) as unknown as Promise<void>)
 const onConflictDoNothing = vi.fn(() => ({ returning }) as unknown as Promise<void>)
 
-const whereBuilder = () => ({ limit, orderBy, returning, groupBy, for: forClause })
+const whereBuilder = () => {
+  // Some call sites (e.g. `db.select().from(t).where(eq(...))` with no
+  // limit/orderBy) await the where directly. Make the builder a thenable so
+  // those calls resolve to the default empty array.
+  const thenable: any = Promise.resolve([] as unknown[])
+  thenable.limit = limit
+  thenable.orderBy = orderBy
+  thenable.returning = returning
+  thenable.groupBy = groupBy
+  thenable.for = forClause
+  return thenable
+}
 const where = vi.fn(whereBuilder)
 
 const joinBuilder = (): { where: typeof where; innerJoin: any; leftJoin: any } => ({
@@ -134,7 +155,7 @@ const set = vi.fn(() => ({ where }))
 const update = vi.fn(() => ({ set }))
 const del = vi.fn(() => ({ where }))
 const transaction: ReturnType<typeof vi.fn> = vi.fn(
-  async (cb: (tx: typeof dbChainMock.db) => unknown) => cb(dbChainMock.db)
+  async (cb: (tx: any) => unknown): Promise<unknown> => cb(dbChainMock.db)
 )
 
 export const dbChainMockFns = {
@@ -149,6 +170,7 @@ export const dbChainMockFns = {
   innerJoin,
   leftJoin,
   groupBy,
+  having,
   execute,
   for: forClause,
   insert,
@@ -186,9 +208,14 @@ export function resetDbChainMock(): void {
   set.mockImplementation(() => ({ where }))
   del.mockImplementation(() => ({ where }))
   limit.mockImplementation(() => Promise.resolve([] as unknown[]))
-  orderBy.mockImplementation(() => Promise.resolve([] as unknown[]))
+  orderBy.mockImplementation(terminalBuilder)
   returning.mockImplementation(() => Promise.resolve([] as unknown[]))
-  groupBy.mockImplementation(() => Promise.resolve([] as unknown[]))
+  having.mockImplementation(terminalBuilder)
+  groupBy.mockImplementation(() => {
+    const builder = terminalBuilder()
+    builder.having = having
+    return builder
+  })
   execute.mockImplementation(() => Promise.resolve([] as unknown[]))
   forClause.mockImplementation(forBuilder)
   transaction.mockImplementation(async (cb: (tx: typeof dbChainMock.db) => unknown) =>
@@ -221,20 +248,25 @@ export const dbChainMock = {
  * Creates a mock database connection.
  */
 export function createMockDb() {
+  const fromBuilder = () => ({
+    where: vi.fn(() => ({
+      limit: vi.fn(() => Promise.resolve([])),
+      orderBy: vi.fn(() => Promise.resolve([])),
+    })),
+    leftJoin: vi.fn(() => ({
+      where: vi.fn(() => Promise.resolve([])),
+    })),
+    innerJoin: vi.fn(() => ({
+      where: vi.fn(() => Promise.resolve([])),
+    })),
+  })
+
   return {
     select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn(() => Promise.resolve([])),
-          orderBy: vi.fn(() => Promise.resolve([])),
-        })),
-        leftJoin: vi.fn(() => ({
-          where: vi.fn(() => Promise.resolve([])),
-        })),
-        innerJoin: vi.fn(() => ({
-          where: vi.fn(() => Promise.resolve([])),
-        })),
-      })),
+      from: vi.fn(fromBuilder),
+    })),
+    selectDistinct: vi.fn(() => ({
+      from: vi.fn(fromBuilder),
     })),
     insert: vi.fn(() => ({
       values: vi.fn(() => ({

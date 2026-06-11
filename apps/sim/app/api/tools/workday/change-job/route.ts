@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { workdayChangeJobContract } from '@/lib/api/contracts/tools/workday'
+import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -9,20 +11,6 @@ import { createWorkdaySoapClient, extractRefId, wdRef } from '@/tools/workday/so
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('WorkdayChangeJobAPI')
-
-const RequestSchema = z.object({
-  tenantUrl: z.string().min(1),
-  tenant: z.string().min(1),
-  username: z.string().min(1),
-  password: z.string().min(1),
-  workerId: z.string().min(1),
-  effectiveDate: z.string().min(1),
-  newPositionId: z.string().optional(),
-  newJobProfileId: z.string().optional(),
-  newLocationId: z.string().optional(),
-  newSupervisoryOrgId: z.string().optional(),
-  reason: z.string().min(1, 'Reason is required for job changes'),
-})
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
@@ -33,26 +21,31 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const data = RequestSchema.parse(body)
+    const parsed = await parseRequest(workdayChangeJobContract, request, {})
+    if (!parsed.success) return parsed.response
+    const data = parsed.data.body
 
     const changeJobDetailData: Record<string, unknown> = {
       Reason_Reference: wdRef('Change_Job_Subcategory_ID', data.reason),
     }
-    if (data.newPositionId) {
-      changeJobDetailData.Position_Reference = wdRef('Position_ID', data.newPositionId)
-    }
-    if (data.newJobProfileId) {
-      changeJobDetailData.Job_Profile_Reference = wdRef('Job_Profile_ID', data.newJobProfileId)
-    }
-    if (data.newLocationId) {
-      changeJobDetailData.Location_Reference = wdRef('Location_ID', data.newLocationId)
-    }
     if (data.newSupervisoryOrgId) {
       changeJobDetailData.Supervisory_Organization_Reference = wdRef(
-        'Supervisory_Organization_ID',
+        'Organization_Reference_ID',
         data.newSupervisoryOrgId
       )
+    }
+    if (data.newPositionId) {
+      changeJobDetailData.Proposed_Position_Reference = wdRef('Position_ID', data.newPositionId)
+    }
+    const jobDetailsData: Record<string, unknown> = {}
+    if (data.newJobProfileId) {
+      jobDetailsData.Job_Profile_Reference = wdRef('Job_Profile_ID', data.newJobProfileId)
+    }
+    if (data.newLocationId) {
+      jobDetailsData.Location_Reference = wdRef('Location_ID', data.newLocationId)
+    }
+    if (Object.keys(jobDetailsData).length > 0) {
+      changeJobDetailData.Job_Details_Data = jobDetailsData
     }
 
     const client = await createWorkdaySoapClient(
@@ -88,7 +81,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   } catch (error) {
     logger.error(`[${requestId}] Workday change job failed`, { error })
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      { success: false, error: getErrorMessage(error, 'Unknown error') },
       { status: 500 }
     )
   }

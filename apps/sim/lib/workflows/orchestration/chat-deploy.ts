@@ -6,7 +6,10 @@ import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { performFullDeploy } from '@/lib/workflows/orchestration/deploy'
+import {
+  type PerformFullDeployParams,
+  performFullDeploy,
+} from '@/lib/workflows/orchestration/deploy'
 
 const logger = createLogger('ChatDeployOrchestration')
 
@@ -18,12 +21,20 @@ export interface ChatDeployPayload {
   description?: string
   remarks?: string | null
   department?: string | null
+  /** Summary of what changed in this deployment version (distinct from the chat-facing `description`). */
+  versionDescription?: string
+  /** Short name/label for this deployment version. */
+  versionName?: string
   customizations?: { primaryColor?: string; welcomeMessage?: string; imageUrl?: string }
   authType?: 'public' | 'password' | 'email' | 'sso'
   password?: string | null
   allowedEmails?: string[]
   outputConfigs?: Array<{ blockId: string; path: string }>
   workspaceId?: string | null
+  deployOptions?: Pick<
+    PerformFullDeployParams,
+    'workflowName' | 'requestId' | 'request' | 'actorId'
+  >
 }
 
 export interface PerformChatDeployResult {
@@ -67,7 +78,16 @@ export async function performChatDeploy(
     ...(params.customizations?.imageUrl ? { imageUrl: params.customizations.imageUrl } : {}),
   }
 
-  const deployResult = await performFullDeploy({ workflowId, userId })
+  const deployResult = await performFullDeploy({
+    workflowId,
+    userId,
+    workflowName: params.deployOptions?.workflowName,
+    requestId: params.deployOptions?.requestId,
+    request: params.deployOptions?.request,
+    actorId: params.deployOptions?.actorId,
+    versionDescription: params.versionDescription,
+    versionName: params.versionName,
+  })
   if (!deployResult.success) {
     return { success: false, error: deployResult.error || 'Failed to deploy workflow' }
   }
@@ -228,7 +248,16 @@ export async function performChatUndeploy(
 ): Promise<PerformChatUndeployResult> {
   const { chatId, userId, workspaceId } = params
 
-  const [chatRecord] = await db.select().from(chat).where(eq(chat.id, chatId)).limit(1)
+  const [chatRecord] = await db
+    .select({
+      title: chat.title,
+      workflowId: chat.workflowId,
+      identifier: chat.identifier,
+      authType: chat.authType,
+    })
+    .from(chat)
+    .where(eq(chat.id, chatId))
+    .limit(1)
 
   if (!chatRecord) {
     return { success: false, error: 'Chat not found' }

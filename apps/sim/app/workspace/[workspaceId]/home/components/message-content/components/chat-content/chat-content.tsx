@@ -1,6 +1,6 @@
 'use client'
 
-import { type ComponentPropsWithoutRef, useEffect, useMemo, useRef } from 'react'
+import { type ComponentPropsWithoutRef, memo, useEffect, useMemo, useRef } from 'react'
 import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
 import 'prismjs/components/prism-typescript'
@@ -18,6 +18,8 @@ import {
   SpecialTags,
 } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
 import type { MothershipResource } from '@/app/workspace/[workspaceId]/home/types'
+import { useSmoothText } from '@/hooks/use-smooth-text'
+import { sanitizeChatDisplayContent } from './chat-sanitize'
 
 const LANG_ALIASES: Record<string, string> = {
   js: 'javascript',
@@ -47,6 +49,19 @@ const PROSE_CLASSES = cn(
   'prose-table:my-0'
 )
 
+/**
+ * Soft fade for newly revealed text. Paired with {@link useSmoothText}, which
+ * paces the reveal: `sep: 'char'` fades each character as the pacer exposes it
+ * (so a growing trailing word never re-animates), and `stagger: 0` keeps the
+ * cadence driven by the pacer rather than an overlapping per-token delay ramp.
+ */
+const STREAM_ANIMATION = {
+  animation: 'fadeIn',
+  duration: 220,
+  stagger: 0,
+  sep: 'char',
+} as const
+
 function startsInlineWord(value: string): boolean {
   return /^[A-Za-z0-9_(]/.test(value)
 }
@@ -58,7 +73,7 @@ function endsInlineWord(value: string): boolean {
 function nextInlineSegmentLabel(segment?: ContentSegment): string {
   if (!segment) return ''
   if (segment.type === 'text' || segment.type === 'thinking') return segment.content
-  if (segment.type === 'workspace_resource') return segment.data.title || segment.data.id
+  if (segment.type === 'workspace_resource') return segment.data.title || segment.data.id || ''
   return ''
 }
 
@@ -159,6 +174,36 @@ const MARKDOWN_COMPONENTS = {
     )
   },
   a({ children, href }: { children?: React.ReactNode; href?: string }) {
+    const isQuickChartUrl = (() => {
+      if (!href) return false
+      try {
+        const parsed = new URL(href)
+        return parsed.hostname === 'quickchart.io' && parsed.pathname.startsWith('/chart')
+      } catch {
+        return false
+      }
+    })()
+
+    if (isQuickChartUrl && href) {
+      const imageAlt = extractTextContent(children) || 'Chart preview'
+      return (
+        <a
+          href={href}
+          className='not-prose my-4 block'
+          target='_blank'
+          rel='noopener noreferrer'
+          aria-label={imageAlt}
+        >
+          <img
+            src={href}
+            alt={imageAlt}
+            className='h-auto max-w-full rounded-md border border-[var(--divider)] bg-white'
+            loading='lazy'
+          />
+        </a>
+      )
+    }
+
     if (href?.startsWith('#wsres-')) {
       return (
         <a
@@ -168,10 +213,15 @@ const MARKDOWN_COMPONENTS = {
             e.preventDefault()
             const match = href.match(/^#wsres-(\w+)-(.+)$/)
             if (match) {
-              const linkText = e.currentTarget.textContent || match[2]
+              const type = match[1]
+              const ref = match[2]
+              const linkText = e.currentTarget.textContent || ref
               window.dispatchEvent(
                 new CustomEvent('wsres-click', {
-                  detail: { type: match[1], id: match[2], title: linkText },
+                  detail:
+                    type === 'file'
+                      ? { type, path: ref, title: linkText }
+                      : { type, id: ref, title: linkText },
                 })
               )
             }
@@ -217,9 +267,16 @@ const MARKDOWN_COMPONENTS = {
   },
   inlineCode({ children }: { children?: React.ReactNode }) {
     return (
-      <code className='rounded bg-[var(--surface-5)] px-1.5 py-0.5 font-[400] font-mono text-[var(--text-primary)] text-small before:content-none after:content-none'>
+      <code className='whitespace-normal rounded bg-[var(--surface-5)] px-1.5 py-0.5 font-[400] font-mono text-[var(--text-primary)] not-italic before:content-none after:content-none'>
         {children}
       </code>
+    )
+  },
+  blockquote({ children }: { children?: React.ReactNode }) {
+    return (
+      <blockquote className='my-4 break-words border-[var(--divider)] border-l-2 pl-4 text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
+        {children}
+      </blockquote>
     )
   },
   input({ type, checked }: { type?: string; checked?: boolean }) {
@@ -227,6 +284,23 @@ const MARKDOWN_COMPONENTS = {
       return <Checkbox checked={checked || false} disabled size='sm' className='mt-1.5 shrink-0' />
     }
     return <input type={type} checked={checked} readOnly />
+  },
+  em({ children }: { children?: React.ReactNode }) {
+    return <em className='text-[var(--text-primary)] italic'>{children}</em>
+  },
+  del({ children }: { children?: React.ReactNode }) {
+    return <del className='text-[var(--text-tertiary)] line-through'>{children}</del>
+  },
+  img({ src, alt }: ComponentPropsWithoutRef<'img'>) {
+    if (typeof src !== 'string' || !src) return null
+    return (
+      <img
+        src={src}
+        alt={alt ?? ''}
+        loading='lazy'
+        className='my-4 h-auto max-w-full rounded-lg border border-[var(--divider)]'
+      />
+    )
   },
 }
 
@@ -237,7 +311,7 @@ interface ChatContentProps {
   onWorkspaceResourceSelect?: (resource: MothershipResource) => void
 }
 
-export function ChatContent({
+function ChatContentInner({
   content,
   isStreaming = false,
   onOptionSelect,
@@ -246,16 +320,27 @@ export function ChatContent({
   const onWorkspaceResourceSelectRef = useRef(onWorkspaceResourceSelect)
   onWorkspaceResourceSelectRef.current = onWorkspaceResourceSelect
 
+  const displayContent = useMemo(() => sanitizeChatDisplayContent(content), [content])
+  const streamedContent = useSmoothText(displayContent, isStreaming)
+
   useEffect(() => {
     const handler = (e: Event) => {
-      const { type, id, title } = (e as CustomEvent).detail
-      onWorkspaceResourceSelectRef.current?.({ type, id, title: title || id })
+      const { type, id, path, title } = (e as CustomEvent).detail
+      onWorkspaceResourceSelectRef.current?.({
+        type,
+        id: id ?? '',
+        path,
+        title: title || id || path || '',
+      })
     }
     window.addEventListener('wsres-click', handler)
     return () => window.removeEventListener('wsres-click', handler)
   }, [])
 
-  const parsed = useMemo(() => parseSpecialTags(content, isStreaming), [content, isStreaming])
+  const parsed = useMemo(
+    () => parseSpecialTags(streamedContent, isStreaming),
+    [streamedContent, isStreaming]
+  )
   const hasSpecialContent = parsed.hasPendingTag || parsed.segments.some((s) => s.type !== 'text')
 
   if (hasSpecialContent) {
@@ -281,10 +366,14 @@ export function ChatContent({
       const s = parsed.segments[i]
       const nextSegment = parsed.segments[i + 1]
       if (s.type === 'workspace_resource') {
-        const label = s.data.title || s.data.id
+        // Files are addressed by their encoded VFS path (copied verbatim from the tag);
+        // workflows/tables/KBs by id. The angle-bracket link destination keeps the path
+        // intact through markdown parsing (tolerates parens) without re-encoding it.
+        const ref = s.data.type === 'file' ? (s.data.path ?? s.data.id ?? '') : (s.data.id ?? '')
+        const label = s.data.title || ref
         pendingMarkdown = appendInlineReferenceMarkdown(
           pendingMarkdown,
-          `[${label}](#wsres-${s.data.type}-${s.data.id})`,
+          `[${label}](<#wsres-${s.data.type}-${ref}>)`,
           nextSegment
         )
       } else if (s.type === 'text' || s.type === 'thinking') {
@@ -307,6 +396,8 @@ export function ChatContent({
               >
                 <Streamdown
                   mode={isStreaming ? undefined : 'static'}
+                  animated={isStreaming ? STREAM_ANIMATION : false}
+                  isAnimating={isStreaming}
                   components={MARKDOWN_COMPONENTS}
                 >
                   {group.markdown}
@@ -329,9 +420,16 @@ export function ChatContent({
 
   return (
     <div className={cn(PROSE_CLASSES, '[&>:first-child]:mt-0 [&>:last-child]:mb-0')}>
-      <Streamdown mode={isStreaming ? undefined : 'static'} components={MARKDOWN_COMPONENTS}>
-        {content}
+      <Streamdown
+        mode={isStreaming ? undefined : 'static'}
+        animated={isStreaming ? STREAM_ANIMATION : false}
+        isAnimating={isStreaming}
+        components={MARKDOWN_COMPONENTS}
+      >
+        {streamedContent}
       </Streamdown>
     </div>
   )
 }
+
+export const ChatContent = memo(ChatContentInner)

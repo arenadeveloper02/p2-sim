@@ -1,5 +1,5 @@
 import { asyncJobs, db } from '@sim/db'
-import { workflowExecutionLogs } from '@sim/db/schema'
+import { userTableDefinitions, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
@@ -8,6 +8,7 @@ import { verifyCronAuth } from '@/lib/auth/internal'
 import { JOB_RETENTION_HOURS, JOB_STATUS } from '@/lib/core/async-jobs'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { extractScheduleId, unlockStaleSchedule } from '@/lib/execution/schedule-unlock'
 
 const logger = createLogger('CleanupStaleExecutions')
 
@@ -32,6 +33,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         executionId: workflowExecutionLogs.executionId,
         workflowId: workflowExecutionLogs.workflowId,
         startedAt: workflowExecutionLogs.startedAt,
+        trigger: workflowExecutionLogs.trigger,
+        executionData: workflowExecutionLogs.executionData,
       })
       .from(workflowExecutionLogs)
       .where(
@@ -46,6 +49,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     let cleaned = 0
     let failed = 0
+    let schedulesUnlocked = 0
 
     for (const execution of staleExecutions) {
       try {
@@ -73,6 +77,14 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         })
 
         cleaned++
+
+        if (execution.trigger === 'schedule') {
+          const scheduleId = extractScheduleId(execution.executionData)
+          if (scheduleId) {
+            const unlocked = await unlockStaleSchedule(scheduleId, execution.executionId)
+            if (unlocked) schedulesUnlocked++
+          }
+        }
       } catch (error) {
         logger.error(`Failed to clean up execution ${execution.executionId}:`, {
           error: toError(error).message,
@@ -81,7 +93,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       }
     }
 
-    logger.info(`Stale execution cleanup completed. Cleaned: ${cleaned}, Failed: ${failed}`)
+    logger.info(
+      `Stale execution cleanup completed. Cleaned: ${cleaned}, Failed: ${failed}, Schedules unlocked: ${schedulesUnlocked}`
+    )
 
     // Clean up stale async jobs (stuck in processing)
     let asyncJobsMarkedFailed = 0
@@ -106,6 +120,37 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       }
     } catch (error) {
       logger.error('Failed to clean up stale async jobs:', {
+        error: toError(error).message,
+      })
+    }
+
+    // Mark stale table imports as failed. Imports run detached on the web container and
+    // are lost if the pod is killed mid-load. `updatedAt` is bumped by progress updates, so
+    // an `importing` table with no recent update has stalled (not merely slow). Rows are
+    // left in place (no rollback); the user re-imports.
+    let staleImportsMarkedFailed = 0
+    try {
+      const staleImports = await db
+        .update(userTableDefinitions)
+        .set({
+          importStatus: 'failed',
+          importError: `Import terminated: no progress for more than ${STALE_THRESHOLD_MINUTES} minutes (worker timeout or crash)`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(userTableDefinitions.importStatus, 'importing'),
+            lt(userTableDefinitions.updatedAt, staleThreshold)
+          )
+        )
+        .returning({ id: userTableDefinitions.id })
+
+      staleImportsMarkedFailed = staleImports.length
+      if (staleImportsMarkedFailed > 0) {
+        logger.info(`Marked ${staleImportsMarkedFailed} stale table imports as failed`)
+      }
+    } catch (error) {
+      logger.error('Failed to clean up stale table imports:', {
         error: toError(error).message,
       })
     }
@@ -170,6 +215,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         found: staleExecutions.length,
         cleaned,
         failed,
+        schedulesUnlocked,
         thresholdMinutes: STALE_THRESHOLD_MINUTES,
       },
       asyncJobs: {
@@ -178,6 +224,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         oldDeleted: asyncJobsDeleted,
         staleThresholdMinutes: STALE_THRESHOLD_MINUTES,
         retentionHours: JOB_RETENTION_HOURS,
+      },
+      tableImports: {
+        staleMarkedFailed: staleImportsMarkedFailed,
       },
     })
   } catch (error) {

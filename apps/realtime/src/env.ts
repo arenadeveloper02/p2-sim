@@ -3,17 +3,10 @@ import { z } from 'zod'
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().url(),
-  REDIS_URL: z
-    .string()
-    .url()
-    .optional()
-    .refine(
-      (value) =>
-        value === undefined || value.startsWith('redis://') || value.startsWith('rediss://'),
-      {
-        message: 'Must start with redis:// or rediss://',
-      }
-    ),
+  REDIS_URL: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().url().optional()
+  ),
   BETTER_AUTH_URL: z.string().url(),
   BETTER_AUTH_SECRET: z.string().min(32),
   INTERNAL_API_SECRET: z.string().min(32),
@@ -29,7 +22,7 @@ const EnvSchema = z.object({
 function parseEnv() {
   const parsed = EnvSchema.safeParse(process.env)
   if (!parsed.success) {
-    const formatted = parsed.error.format()
+    const formatted = z.treeifyError(parsed.error)
     throw new Error(`Invalid realtime server environment: ${JSON.stringify(formatted, null, 2)}`)
   }
   return parsed.data

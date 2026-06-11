@@ -11,9 +11,8 @@ export const SftpBlock: BlockConfig<SftpUploadResult> = {
   longDescription:
     'Upload, download, list, and manage files on remote servers via SFTP. Supports both password and private key authentication for secure file transfers.',
   docsLink: 'https://docs.sim.ai/tools/sftp',
-  category: 'tools',
-  integrationType: IntegrationType.FileStorage,
-  tags: ['cloud', 'automation'],
+  category: 'blocks',
+  integrationType: IntegrationType.Documents,
   bgColor: '#2D3748',
   icon: SftpIcon,
   authMode: AuthMode.ApiKey,
@@ -74,6 +73,7 @@ export const SftpBlock: BlockConfig<SftpUploadResult> = {
       password: true,
       placeholder: 'Your SFTP password',
       condition: { field: 'authMethod', value: 'password' },
+      dependsOn: ['authMethod'],
     },
 
     {
@@ -82,6 +82,7 @@ export const SftpBlock: BlockConfig<SftpUploadResult> = {
       type: 'code',
       placeholder: '-----BEGIN OPENSSH PRIVATE KEY-----\n...',
       condition: { field: 'authMethod', value: 'privateKey' },
+      dependsOn: ['authMethod'],
     },
     {
       id: 'passphrase',
@@ -90,6 +91,7 @@ export const SftpBlock: BlockConfig<SftpUploadResult> = {
       password: true,
       placeholder: 'Passphrase for encrypted key (optional)',
       condition: { field: 'authMethod', value: 'privateKey' },
+      dependsOn: ['authMethod'],
     },
 
     {
