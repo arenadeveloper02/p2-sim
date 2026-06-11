@@ -1990,7 +1990,7 @@ async function executeToolRequest(
     }
 
     const contentType = response.headers.get('content-type') || ''
-    const hasTransformResponse = Boolean(tool.transformResponse)
+    const hasTransformResponse = Boolean(tool?.transformResponse)
     const prefersTextTransform =
       hasTransformResponse &&
       (toolId === 'semrush_query' || !contentType.toLowerCase().includes('application/json'))
