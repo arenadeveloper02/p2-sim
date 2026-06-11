@@ -30,6 +30,7 @@ export interface ImageGenerationResponse extends ToolResponse {
   output: {
     content: string
     image: unknown
+    images: unknown[]
     imageUrl: string
     provider: string
     model: string
@@ -41,7 +42,13 @@ export interface ImageGenerationResponse extends ToolResponse {
       seed?: number
       jobId?: string
       contentType?: string
+      count?: number
+      requested?: number
+      failed?: number
+      warnings?: string[]
+      s3UploadFailed?: boolean
     }
+    s3UploadFailed?: boolean
     __falaiCostDollars?: number
     __falaiBilling?: {
       endpointId: string

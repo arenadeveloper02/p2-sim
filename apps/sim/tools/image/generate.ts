@@ -12,6 +12,48 @@ interface ImageGenerationRuntimeParams extends ImageGenerationParams {
   executionId?: string
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function extractImageUrl(image: unknown): string {
+  if (typeof image === 'string') {
+    return image
+  }
+
+  if (isRecord(image) && typeof image.url === 'string') {
+    return image.url
+  }
+
+  return ''
+}
+
+function toImageFile(image: unknown, contentType = 'image/png') {
+  const imageUrl = extractImageUrl(image)
+  if (!imageUrl) {
+    return ''
+  }
+
+  if (isRecord(image)) {
+    return image
+  }
+
+  return {
+    name: 'generated-image.png',
+    url: imageUrl,
+    mimeType: contentType,
+  }
+}
+
+function normalizeImagesOutput(images: unknown[] | undefined, primaryImage: unknown, contentType?: string) {
+  if (Array.isArray(images) && images.length > 0) {
+    return images.map((image) => toImageFile(image, contentType))
+  }
+
+  const primary = toImageFile(primaryImage, contentType)
+  return primary ? [primary] : []
+}
+
 export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGenerationResponse> = {
   id: 'image_generate',
   name: 'Image Generator',
@@ -29,8 +71,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description:
-        'Provider API key. Only required for Fal.ai BYOK; OpenAI and Gemini use hosted keys.',
+      description: 'Provider API key. Only required for Fal.ai BYOK; OpenAI and Gemini use hosted keys.',
     },
     model: {
       type: 'string',
@@ -122,6 +163,42 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       required: false,
       visibility: 'user-or-llm',
       description: 'Fal.ai thinking level when supported: minimal or high',
+    },
+    inputImage: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Reference image for editing',
+    },
+    inputImages: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Multiple reference images for fusion',
+    },
+    inputImageUrl: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Reference image URLs or refs',
+    },
+    inputImageUrls: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Multiple reference image URLs or refs',
+    },
+    inputImageMimeType: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'MIME type of input image',
+    },
+    inputImageWarning: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'Warning emitted when multiple input images were provided and the latest one was used',
     },
   },
 
@@ -244,6 +321,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         output: {
           content: '',
           image: '',
+          images: [],
           imageUrl: '',
           provider: data.provider || '',
           model: data.model || '',
@@ -257,28 +335,21 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
 
     if (data.success === true && data.output) {
       const output = data.output
-      const image =
-        output.image ||
-        (typeof output.imageUrl === 'string' && output.imageUrl.length > 0
-          ? {
-              name: 'generated-image.png',
-              url: output.imageUrl,
-              mimeType: output.metadata?.contentType || 'image/png',
-            }
-          : '')
+      const contentType = output.metadata?.contentType || 'image/png'
       const imageUrl =
         typeof output.imageUrl === 'string'
           ? output.imageUrl
-          : typeof output.image === 'string'
-            ? output.image
-            : ''
+          : extractImageUrl(output.image) || extractImageUrl(output.images?.[0])
+      const image = toImageFile(output.image ?? imageUrl, contentType)
+      const images = normalizeImagesOutput(output.images, image, contentType)
       const metadata = output.metadata ?? { provider: '', model: '' }
 
       return {
         success: true,
         output: {
           content: output.content || imageUrl || 'direct-image',
-          image,
+          image: image || images[0] || '',
+          images,
           imageUrl,
           provider: output.provider || metadata.provider || '',
           model: output.model || metadata.model || '',
@@ -287,6 +358,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
             provider: output.provider || metadata.provider || '',
             model: output.model || metadata.model || '',
           },
+          s3UploadFailed: output.s3UploadFailed,
           __falaiCostDollars: output.__falaiCostDollars,
           __falaiBilling: output.__falaiBilling,
         },
@@ -304,12 +376,16 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
           }
         : '')
 
+    const imageUrl = data.imageUrl || extractImageUrl(image)
+    const images = normalizeImagesOutput(undefined, image, data.contentType || 'image/png')
+
     return {
       success: true,
       output: {
-        content: data.content || data.imageUrl || 'direct-image',
-        image,
-        imageUrl: data.imageUrl || '',
+        content: data.content || imageUrl || 'direct-image',
+        image: image || images[0] || '',
+        images,
+        imageUrl,
         provider: data.provider || data.metadata?.provider || '',
         model: data.model || data.metadata?.model || '',
         metadata: {
@@ -326,6 +402,11 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
   outputs: {
     content: { type: 'string', description: 'Generated image URL or identifier' },
     image: { type: 'file', description: 'Generated image file' },
+    images: {
+      type: 'array',
+      description: 'All generated image files when multiple images were requested',
+      items: { type: 'file', description: 'Generated image file' },
+    },
     imageUrl: { type: 'string', description: 'Generated image URL' },
     provider: { type: 'string', description: 'Provider used' },
     model: { type: 'string', description: 'Model used' },
@@ -340,6 +421,20 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         seed: { type: 'number', description: 'Seed used for generation', optional: true },
         jobId: { type: 'string', description: 'Provider job ID', optional: true },
         contentType: { type: 'string', description: 'Image MIME type', optional: true },
+        count: { type: 'number', description: 'Number of images returned', optional: true },
+        requested: { type: 'number', description: 'Number of images requested', optional: true },
+        failed: { type: 'number', description: 'Number of failed generations', optional: true },
+        warnings: {
+          type: 'array',
+          description: 'Warnings emitted during generation',
+          items: { type: 'string', description: 'Warning message' },
+          optional: true,
+        },
+        s3UploadFailed: {
+          type: 'boolean',
+          description: 'Whether storage upload failed for any image',
+          optional: true,
+        },
       },
     },
   },

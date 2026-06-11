@@ -856,39 +856,46 @@ describe.concurrent('Blocks Module', () => {
     })
 
     it('should hide generator API keys on hosted only for Fal.ai providers', () => {
-      for (const blockType of ['video_generator_v3']) {
-        const block = getBlock(blockType)
-        const apiKeySubBlocks = block?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
-
-        const falApiKeySubBlock = apiKeySubBlocks.find(
-          (sb) => sb.condition?.field === 'provider' && sb.condition.value === 'falai'
-        )
-        const nonFalApiKeySubBlock = apiKeySubBlocks.find(
-          (sb) =>
-            sb.condition?.field === 'provider' &&
-            sb.condition.value === 'falai' &&
-            sb.condition.not === true
-        )
-
-        expect(falApiKeySubBlock?.hideWhenHosted).toBe(true)
-        expect(nonFalApiKeySubBlock).toBeDefined()
-        expect(nonFalApiKeySubBlock?.hideWhenHosted).not.toBe(true)
-      }
-
       const imageBlock = getBlock('image_generator_v2')
       const imageApiKeySubBlocks = imageBlock?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
       const imageFalApiKeySubBlock = imageApiKeySubBlocks.find(
         (sb) => sb.condition?.field === 'provider' && sb.condition.value === 'falai'
       )
-      const imageNonFalApiKeySubBlock = imageApiKeySubBlocks.find(
+
+      expect(imageApiKeySubBlocks).toHaveLength(1)
+      expect(imageFalApiKeySubBlock?.hideWhenHosted).toBe(true)
+
+      const videoBlock = getBlock('video_generator_v3')
+      const videoApiKeySubBlocks = videoBlock?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
+      const videoFalApiKeySubBlock = videoApiKeySubBlocks.find(
+        (sb) => sb.condition?.field === 'provider' && sb.condition.value === 'falai'
+      )
+      const videoNonFalApiKeySubBlock = videoApiKeySubBlocks.find(
         (sb) =>
           sb.condition?.field === 'provider' &&
           sb.condition.value === 'falai' &&
           sb.condition.not === true
       )
 
-      expect(imageFalApiKeySubBlock?.hideWhenHosted).toBe(true)
-      expect(imageNonFalApiKeySubBlock).toBeUndefined()
+      expect(videoFalApiKeySubBlock?.hideWhenHosted).toBe(true)
+      expect(videoNonFalApiKeySubBlock).toBeDefined()
+      expect(videoNonFalApiKeySubBlock?.hideWhenHosted).not.toBe(true)
+    })
+
+    it('should expose reference image inputs and images output on image generator v2', () => {
+      const block = getBlock('image_generator_v2')
+      const referenceImages = block?.subBlocks.find((sb) => sb.id === 'inputImage')
+      const referenceImageUrls = block?.subBlocks.find((sb) => sb.id === 'inputImageUrl')
+
+      expect(referenceImages?.allowStartFilesReference).toBe(true)
+      expect(referenceImages?.condition?.value).toEqual(['openai', 'gemini'])
+      expect(referenceImageUrls?.condition?.value).toEqual(['openai', 'gemini'])
+      expect(block?.outputs.images).toBeDefined()
+      expect(
+        block?.subBlocks
+          .find((sb) => sb.id === 'model' && sb.condition?.value === 'openai')
+          ?.options?.map((option) => option.id)
+      ).toContain('gpt-image-2')
     })
   })
 

@@ -131,17 +131,12 @@ export function resolveNanoBananaReferences({
   }
 }
 
-export function applyNanoBananaPromptImageParams({
-  baseToolId,
-  baseParams,
-  inputImageUrl,
-  inputImages,
-  promptImageUrl,
-}: ApplyNanoBananaPromptImageInput): Record<string, unknown> {
-  if (baseToolId !== 'google_nano_banana') {
-    return baseParams
-  }
-
+function applySingleReferenceImageParams(
+  baseParams: Record<string, unknown>,
+  inputImageUrl: unknown,
+  inputImages: unknown,
+  promptImageUrl?: string
+): Record<string, unknown> {
   const blockInputImageUrl = normalizeOptionalString(inputImageUrl)
   const resolvedPromptImageUrl = normalizeOptionalString(promptImageUrl)
   const resolvedInputImage = resolvedPromptImageUrl ?? blockInputImageUrl
@@ -154,4 +149,22 @@ export function applyNanoBananaPromptImageParams({
   const nextParams: Record<string, unknown> = { ...baseParams, inputImage: resolvedInputImage }
   nextParams.inputImageMimeType = undefined
   return nextParams
+}
+
+export function applyNanoBananaPromptImageParams({
+  baseToolId,
+  baseParams,
+  inputImageUrl,
+  inputImages,
+  promptImageUrl,
+}: ApplyNanoBananaPromptImageInput): Record<string, unknown> {
+  if (baseToolId === 'openai_image') {
+    return applySingleReferenceImageParams(baseParams, inputImageUrl, inputImages, promptImageUrl)
+  }
+
+  if (baseToolId !== 'google_nano_banana') {
+    return baseParams
+  }
+
+  return applySingleReferenceImageParams(baseParams, inputImageUrl, inputImages, promptImageUrl)
 }

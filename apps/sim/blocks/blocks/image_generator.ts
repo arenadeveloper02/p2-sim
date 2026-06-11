@@ -999,7 +999,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       uploadContext: 'image-fusion',
       allowStartFilesReference: true,
       defaultValue: '<start.files>',
-      condition: { field: 'provider', value: 'gemini' },
+      condition: { field: 'provider', value: ['openai', 'gemini'] },
       dependsOn: ['provider', 'model'],
     },
     {
@@ -1009,7 +1009,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       placeholder:
         'Optional: add one or more image URLs or references. One image edits, multiple images fuse.',
       mode: 'advanced',
-      condition: { field: 'provider', value: 'gemini' },
+      condition: { field: 'provider', value: ['openai', 'gemini'] },
       dependsOn: ['provider', 'model'],
     },
     {
@@ -1139,8 +1139,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
               ? 'nano-banana-2'
               : 'gpt-image-1.5'
 
-        const nanoBananaReferences =
-          provider === 'gemini'
+        const referenceInputs =
+          provider === 'openai' || provider === 'gemini'
             ? resolveNanoBananaReferences({
                 model: params.model,
                 uploadedReferences: [
@@ -1167,13 +1167,13 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
           ...(params.safetyTolerance && { safetyTolerance: params.safetyTolerance }),
           ...(params.thinkingLevel && { thinkingLevel: params.thinkingLevel }),
           ...(params.inputImageMimeType && { inputImageMimeType: params.inputImageMimeType }),
-          ...(nanoBananaReferences.inputImageWarning && {
-            inputImageWarning: nanoBananaReferences.inputImageWarning,
+          ...(referenceInputs.inputImageWarning && {
+            inputImageWarning: referenceInputs.inputImageWarning,
           }),
-          ...(nanoBananaReferences.inputImages
-            ? { inputImages: nanoBananaReferences.inputImages }
-            : nanoBananaReferences.inputImage
-              ? { inputImage: nanoBananaReferences.inputImage }
+          ...(referenceInputs.inputImages
+            ? { inputImages: referenceInputs.inputImages }
+            : referenceInputs.inputImage
+              ? { inputImage: referenceInputs.inputImage }
               : {}),
           ...(params.enableWebSearch !== undefined && {
             enableWebSearch: parseOptionalBooleanInput(params.enableWebSearch),
@@ -1203,11 +1203,11 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     inputImage: {
       type: 'json',
       description:
-        'Reference images for Gemini Nano Banana as uploaded files, Start block files, or file references.',
+        'Reference images as uploaded files, Start block files, or file references. One image edits; multiple images fuse on supported models.',
     },
     inputImageUrl: {
       type: 'string',
-      description: 'Reference image URLs or refs for Gemini Nano Banana.',
+      description: 'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
     },
     inputImages: {
       type: 'json',
@@ -1228,6 +1228,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   outputs: {
     content: { type: 'string', description: 'Generated image URL or identifier' },
     image: { type: 'file', description: 'Generated image file' },
+    images: {
+      type: 'array',
+      description: 'All generated image files when multiple images were requested',
+    },
     imageUrl: { type: 'string', description: 'Generated image URL' },
     provider: { type: 'string', description: 'Provider used' },
     model: { type: 'string', description: 'Model used' },

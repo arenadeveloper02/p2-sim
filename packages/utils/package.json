@@ -19,8 +19,9 @@
       "default": "./src/random.ts"
     },
     "./errors": {
-      "types": "./src/errors.ts",
-      "default": "./src/errors.ts"
+      "types": "./errors.ts",
+      "import": "./errors.ts",
+      "default": "./errors.ts"
     },
     "./helpers": {
       "types": "./src/helpers.ts",

@@ -70,18 +70,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function extractImageUrl(image: unknown): string | undefined {
+  if (typeof image === 'string' && image.length > 0) {
+    return image
+  }
+
+  if (isRecord(image) && typeof image.url === 'string' && image.url.length > 0) {
+    return image.url
+  }
+
+  return undefined
+}
+
 function extractImagesFromOutput(output: Record<string, unknown>): string[] {
   const images = output.images
   if (Array.isArray(images)) {
-    return images.filter((image): image is string => typeof image === 'string' && image.length > 0)
+    return images
+      .map((image) => extractImageUrl(image))
+      .filter((image): image is string => typeof image === 'string' && image.length > 0)
   }
 
-  const image = output.image
-  if (typeof image === 'string' && image.length > 0) {
+  const image = extractImageUrl(output.image)
+  if (image) {
     return [image]
   }
 
-  return []
+  const imageUrl = extractImageUrl(output.imageUrl)
+  return imageUrl ? [imageUrl] : []
 }
 
 function getOutputMetadata(output: Record<string, unknown>): Record<string, unknown> {
@@ -93,6 +108,15 @@ function getStringParam(params: Record<string, unknown>, key: string): string | 
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined
 }
 
+function hasReferenceImages(params: Record<string, unknown>): boolean {
+  const inputImages = params.inputImages
+  const inputImage = params.inputImage
+  return (
+    (Array.isArray(inputImages) && inputImages.length > 0) ||
+    (inputImage !== undefined && inputImage !== null && inputImage !== '')
+  )
+}
+
 function resolveExecutionToolId(
   baseToolId: z.infer<typeof ImageGenerationWrapperSchema>['baseToolId'],
   params: Record<string, unknown>
@@ -102,6 +126,9 @@ function resolveExecutionToolId(
   }
 
   const provider = getStringParam(params, 'provider') ?? 'openai'
+  if (provider === 'openai' && hasReferenceImages(params)) {
+    return 'image_generate'
+  }
   if (provider === 'openai') {
     return 'openai_image'
   }
@@ -130,7 +157,8 @@ function buildExecutionParams(
     }
   }
 
-  return params
+  const { provider: _provider, ...openAIParams } = params
+  return openAIParams
 }
 
 function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
@@ -261,13 +289,10 @@ export async function POST(request: NextRequest) {
         try {
           const promptForImage =
             normalizeOptionalString(singleImagePrompts?.[index]) ?? promptToExecute
-          const result = await executeTool(
-            executionToolId,
-            buildExecutionParams(executionToolId, {
-              ...resolvedBaseParams,
-              ...(promptForImage ? { prompt: promptForImage } : {}),
-            })
-          )
+          const result = await executeTool(executionToolId, {
+            ...buildExecutionParams(executionToolId, resolvedBaseParams),
+            ...(promptForImage ? { prompt: promptForImage } : {}),
+          })
           return { status: 'fulfilled' as const, value: result }
         } catch (err) {
           return {
@@ -339,8 +364,7 @@ export async function POST(request: NextRequest) {
     const outputMetadata = getOutputMetadata(firstOutput)
     const provider =
       getStringParam(firstOutput, 'provider') || getStringParam(outputMetadata, 'provider') || ''
-    const model =
-      getStringParam(firstOutput, 'model') || getStringParam(outputMetadata, 'model') || ''
+    const model = getStringParam(firstOutput, 'model') || getStringParam(outputMetadata, 'model') || ''
     const falaiCostDollars = successfulResults.reduce((total, result) => {
       if (!isRecord(result.output)) return total
       const cost = result.output.__falaiCostDollars

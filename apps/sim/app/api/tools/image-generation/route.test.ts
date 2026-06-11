@@ -288,4 +288,74 @@ describe('Image Generation Wrapper API Route', () => {
     expect(mockResolveImageGenerationCount).not.toHaveBeenCalled()
     expect(mockExecuteTool).not.toHaveBeenCalled()
   })
+
+  it('should route image_generate OpenAI requests without references to openai_image', async () => {
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'openai',
+        model: 'gpt-image-2',
+        prompt: 'A red sports car',
+      },
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'openai_image',
+      expect.objectContaining({
+        model: 'gpt-image-2',
+        prompt: 'A red sports car',
+      })
+    )
+  })
+
+  it('should route image_generate OpenAI requests with references to direct image_generate', async () => {
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'openai',
+        model: 'gpt-image-2',
+        prompt: 'Edit this image',
+        inputImage: 'https://example.com/source.png',
+      },
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'image_generate',
+      expect.objectContaining({
+        model: 'gpt-image-2',
+        prompt: 'Edit this image',
+        inputImage: 'https://example.com/source.png',
+        __skipSmartWrapper: true,
+        __skipHostedKeyHandling: true,
+      })
+    )
+  })
+
+  it('should route image_generate Gemini requests to google_nano_banana', async () => {
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'gemini',
+        model: 'gemini-3.1-flash-image-preview',
+        prompt: 'A blue bird',
+      },
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'google_nano_banana',
+      expect.objectContaining({
+        model: 'gemini-3.1-flash-image-preview',
+        prompt: 'A blue bird',
+      })
+    )
+  })
 })
