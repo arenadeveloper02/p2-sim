@@ -1369,7 +1369,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
             onCut={handleCut}
             onSelect={handleSelectAdjust}
             onMouseUp={handleSelectAdjust}
-            placeholder='Ask Sim to '
+            placeholder='Ask Arena AI to '
             rows={1}
             className={TEXTAREA_BASE_CLASSES}
           />
