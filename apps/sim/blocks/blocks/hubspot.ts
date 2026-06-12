@@ -1,9 +1,5 @@
 import { HubspotIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import {
-  isAdminWorkspace,
-  resolveWorkspaceIdForAdminCheck,
-} from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { HubSpotResponse } from '@/tools/hubspot/types'
@@ -17,26 +13,6 @@ const campaignCache = new Map<
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 // Track in-flight requests to deduplicate concurrent calls
 const campaignInFlightRequests = new Map<string, Promise<Array<{ label: string; id: string }>>>()
-
-const HUBSPOT_COND_NEVER = '__hubspot_cond_never__'
-
-/** Show Accounts dropdown (admin workspaces only). */
-function hubspotAdminOnlyCondition(values?: Record<string, unknown>) {
-  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
-  if (isAdmin) {
-    return { field: 'operation', value: HUBSPOT_COND_NEVER, not: true as const }
-  }
-  return { field: 'operation', value: HUBSPOT_COND_NEVER }
-}
-
-/** Show OAuth / manual credential fields (non-admin workspaces only). */
-function hubspotNonAdminOnlyCondition(values?: Record<string, unknown>) {
-  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
-  if (isAdmin) {
-    return { field: 'operation', value: HUBSPOT_COND_NEVER }
-  }
-  return { field: 'operation', value: HUBSPOT_COND_NEVER, not: true as const }
-}
 
 const fetchCampaignOptions = async (
   blockId: string
@@ -53,8 +29,8 @@ const fetchCampaignOptions = async (
     const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
     const blockValues = workflowValues?.[blockId]
 
-    const credentialId = (blockValues?.accounts ??
-      blockValues?.credential ??
+    const credentialId = (blockValues?.credential ??
+      blockValues?.accounts ??
       blockValues?.oauthCredential) as string
 
     if (!credentialId) {
@@ -225,19 +201,6 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       value: () => 'get_contacts',
     },
     {
-      id: 'accounts',
-      title: 'Accounts',
-      type: 'dropdown',
-      required: true,
-      condition: hubspotAdminOnlyCondition,
-      options: [
-        { label: 'Position2', id: 'position2' },
-        { label: 'Northstar Anesthesia', id: 'northstar_anesthesia' },
-        { label: 'Covalent Metrology', id: 'covalent_metrology' },
-      ],
-      value: () => 'northstar_anesthesia',
-    },
-    {
       id: 'credential',
       title: 'HubSpot Account',
       type: 'oauth-input',
@@ -245,9 +208,10 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       mode: 'basic',
       serviceId: 'hubspot',
       requiredScopes: getScopesForService('hubspot'),
-      placeholder: 'Select HubSpot account',
+      placeholder: 'Connect or select HubSpot account',
       required: true,
-      condition: hubspotNonAdminOnlyCondition,
+      description:
+        'Shared workspaces include public HubSpot portals plus your personal connections (`GET /api/hubspot/accounts`). Connect through OAuth for personal accounts.',
     },
     {
       id: 'manualCredential',
@@ -255,9 +219,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'short-input',
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
-      placeholder: 'Enter credential ID',
+      placeholder: 'Credential ID or shared portal alias',
       required: true,
-      condition: hubspotNonAdminOnlyCondition,
     },
     {
       id: 'contactId',
@@ -295,7 +258,7 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'dropdown',
       placeholder: 'Select a campaign...',
       options: [], // Fallback empty array to prevent undefined errors
-      dependsOn: { any: ['credential', 'accounts'] },
+      dependsOn: { any: ['credential'] },
       multiSelect: false,
       condition: {
         field: 'operation',
@@ -316,7 +279,7 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'dropdown',
       placeholder: 'Select campaigns...',
       options: [], // Fallback empty array to prevent undefined errors
-      dependsOn: { any: ['credential', 'accounts'] },
+      dependsOn: { any: ['credential'] },
       multiSelect: true,
       selectAllOption: true,
       condition: {
@@ -1736,10 +1699,10 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           ...rest
         } = params
 
-        const oauthCredential = (accounts ??
-          params.credential ??
+        const oauthCredential = (params.credential ??
           params.oauthCredential ??
-          params.manualCredential) as string
+          params.manualCredential ??
+          accounts) as string
 
         const cleanParams: Record<string, any> = {
           oauthCredential,

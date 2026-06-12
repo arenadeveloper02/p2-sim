@@ -29,6 +29,7 @@ import type { SubBlockConfig } from '@/blocks/types'
 import { CREDENTIAL_SET } from '@/executor/constants'
 import { useCredentialSets } from '@/hooks/queries/credential-sets'
 import { useWorkspaceCredential, useWorkspaceCredentials } from '@/hooks/queries/credentials'
+import { useHubSpotAccountOptions } from '@/hooks/queries/hubspot-accounts'
 import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
 import { useOrganizations } from '@/hooks/queries/organization'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
@@ -109,6 +110,8 @@ export function CredentialSelector({
   const provider = effectiveProviderId
 
   const isTriggerMode = subBlock.mode === 'trigger' || subBlock.mode === 'trigger-advanced'
+  const isSharedHubspotWorkspace =
+    isAdminWorkspace(workspaceId) && effectiveProviderId === 'hubspot'
 
   const {
     data: rawCredentials = [],
@@ -132,7 +135,15 @@ export function CredentialSelector({
     enabled: additionalConnectOptions.length > 0,
   })
 
-  const credentialsLoading = isAllCredentials ? allCredentialsLoading : oauthCredentialsLoading
+  const {
+    data: hubspotAccountOptions = [],
+    isFetching: hubspotAccountOptionsLoading,
+    refetch: refetchHubspotAccounts,
+  } = useHubSpotAccountOptions(isSharedHubspotWorkspace ? workspaceId : undefined)
+
+  const credentialsLoading = isAllCredentials
+    ? allCredentialsLoading
+    : oauthCredentialsLoading || (isSharedHubspotWorkspace && hubspotAccountOptionsLoading)
 
   const selectionPool = useMemo(
     () =>
@@ -177,13 +188,25 @@ export function CredentialSelector({
   )
   const inaccessibleCredentialName = inaccessibleCredential?.displayName ?? null
 
+  const matchedHubspotOption = useMemo(
+    () => hubspotAccountOptions.find((option) => option.id === selectedId) ?? null,
+    [hubspotAccountOptions, selectedId]
+  )
+
   const resolvedLabel = useMemo(() => {
     if (selectedCredentialSet) return selectedCredentialSet.name
     if (selectedAllCredential) return selectedAllCredential.displayName
     if (selectedCredential) return selectedCredential.name
+    if (matchedHubspotOption) return matchedHubspotOption.label
     if (inaccessibleCredentialName) return inaccessibleCredentialName
     return ''
-  }, [selectedCredentialSet, selectedAllCredential, selectedCredential, inaccessibleCredentialName])
+  }, [
+    selectedCredentialSet,
+    selectedAllCredential,
+    selectedCredential,
+    matchedHubspotOption,
+    inaccessibleCredentialName,
+  ])
 
   const displayValue = isEditing ? editingValue : resolvedLabel
 
@@ -196,9 +219,11 @@ export function CredentialSelector({
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
-      if (isOpen) void refetch()
+      if (!isOpen) return
+      void refetch()
+      if (isSharedHubspotWorkspace) void refetchHubspotAccounts()
     },
-    [refetch]
+    [refetch, isSharedHubspotWorkspace, refetchHubspotAccounts]
   )
 
   const hasOAuthSelection = Boolean(selectedCredential)
@@ -297,6 +322,28 @@ export function CredentialSelector({
       return { comboboxOptions: options, comboboxGroups: undefined }
     }
 
+    if (isSharedHubspotWorkspace) {
+      const personalAccountCount = hubspotAccountOptions.filter(
+        (option) => option.source === 'personal'
+      ).length
+
+      const options = hubspotAccountOptions.map((option) => ({
+        label: option.label,
+        value: option.id,
+        iconElement: getProviderIcon(provider),
+      }))
+
+      options.push({
+        label:
+          personalAccountCount > 0 ? 'Connect another HubSpot account' : 'Connect HubSpot account',
+        value: '__connect_account__',
+        iconElement: <ExternalLink className='size-3' />,
+      })
+      options.push(...additionalConnectItems)
+
+      return { comboboxOptions: options, comboboxGroups: undefined }
+    }
+
     const pollingProviderId = getPollingProviderFromOAuth(effectiveProviderId)
     // Handle both old ('gmail') and new ('google-email') provider IDs for backwards compatibility
     const matchesProvider = (csProviderId: string | null) => {
@@ -364,6 +411,8 @@ export function CredentialSelector({
   }, [
     isAllCredentials,
     allWorkspaceCredentials,
+    isSharedHubspotWorkspace,
+    hubspotAccountOptions,
     credentials,
     provider,
     effectiveProviderId,
@@ -477,6 +526,12 @@ export function CredentialSelector({
         return
       }
 
+      const matchedHubspotOption = hubspotAccountOptions.find((option) => option.id === value)
+      if (matchedHubspotOption) {
+        handleSelect(value)
+        return
+      }
+
       setIsEditing(true)
       setEditingValue(value)
     },
@@ -485,6 +540,7 @@ export function CredentialSelector({
       allWorkspaceCredentials,
       credentials,
       credentialSets,
+      hubspotAccountOptions,
       handleAddCredential,
       handleSelect,
       handleCredentialSetSelect,
