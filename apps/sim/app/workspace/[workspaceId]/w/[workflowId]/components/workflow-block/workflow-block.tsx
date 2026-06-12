@@ -56,6 +56,7 @@ import { useCredentialName } from '@/hooks/queries/oauth/oauth-credentials'
 import { useReactivateSchedule, useScheduleInfo } from '@/hooks/queries/schedules'
 import { useSkills } from '@/hooks/queries/skills'
 import { useTablesList } from '@/hooks/queries/tables'
+import { useUnipileAccountDisplayName } from '@/hooks/queries/unipile-accounts'
 import { useWorkflowMap } from '@/hooks/queries/workflows'
 import { useReactiveConditions } from '@/hooks/use-reactive-conditions'
 import { useSelectorDisplayName } from '@/hooks/use-selector-display-name'
@@ -186,6 +187,20 @@ const SubBlockRow = memo(function SubBlockRow({
     credentialProviderId,
     workflowId,
     workspaceId
+  )
+
+  const shouldHydrateUnipileAccount =
+    typeof rawValue === 'string' &&
+    rawValue.length > 0 &&
+    !rawValue.startsWith('<') &&
+    !rawValue.includes('{{') &&
+    ((subBlock?.type === 'oauth-input' && subBlock.serviceId === 'unipile_linkedin') ||
+      Boolean(subBlock?.fetchOptionById))
+
+  const { data: unipileAccountLabel } = useUnipileAccountDisplayName(
+    shouldHydrateUnipileAccount ? rawValue : undefined,
+    workspaceId,
+    shouldHydrateUnipileAccount
   )
 
   const knowledgeBaseId = dependencyValues.knowledgeBaseId
@@ -391,6 +406,7 @@ const SubBlockRow = memo(function SubBlockRow({
   const isSelectorType = subBlock?.type && SELECTOR_TYPES_HYDRATION_REQUIRED.includes(subBlock.type)
   const hydratedName =
     credentialName ||
+    unipileAccountLabel ||
     dropdownLabel ||
     fetchOptionByIdLabel ||
     variablesDisplayValue ||
@@ -600,7 +616,7 @@ export const WorkflowBlock = memo(function WorkflowBlock({
 
       if (!block.condition) return true
 
-      return evaluateSubBlockCondition(block.condition, rawValues)
+      return evaluateSubBlockCondition(block.condition, rawValues, workspaceId)
     })
 
     visibleSubBlocks.forEach((block) => {
