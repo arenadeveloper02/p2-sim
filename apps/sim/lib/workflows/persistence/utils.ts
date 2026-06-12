@@ -15,6 +15,7 @@ import type { InferSelectModel } from 'drizzle-orm'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { Edge } from 'reactflow'
 import { remapConditionBlockIds, remapConditionEdgeHandle } from '@/lib/workflows/condition-ids'
+import { migrateBlockTypes } from '@/lib/workflows/migrations/block-type-migrations'
 import {
   backfillCanonicalModes,
   migrateSubblockIds,
@@ -187,6 +188,11 @@ const applyBlockMigrations = createMigrationPipeline([
     ...ctx,
     blocks: migrateAgentBlocksToMessagesFormat(ctx.blocks),
   }),
+
+  (ctx) => {
+    const { blocks, migrated } = migrateBlockTypes(ctx.blocks)
+    return { ...ctx, blocks, migrated: ctx.migrated || migrated }
+  },
 
   (ctx) => {
     const { blocks, migrated } = migrateSubblockIds(ctx.blocks)

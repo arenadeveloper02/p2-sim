@@ -238,7 +238,7 @@ export class Serializer {
     }
 
     // Extract parameters from UI state
-    const params = extractBlockParams(block)
+    const params = extractBlockParams(block, options.workspaceId)
 
     const isTriggerCategory = blockConfig.category === 'triggers'
     if (block.triggerMode === true || isTriggerCategory) {
@@ -250,7 +250,12 @@ export class Serializer {
 
     // Validate required fields that only users can provide (before execution starts)
     if (options.validateRequired) {
-      const { missingRequiredFields } = collectBlockFieldIssues(block, blockConfig, params)
+      const { missingRequiredFields } = collectBlockFieldIssues(
+        block,
+        blockConfig,
+        params,
+        options.workspaceId
+      )
       if (missingRequiredFields.length > 0) {
         const blockName = block.name || blockConfig.name || 'Block'
         throw new Error(
@@ -440,7 +445,7 @@ export function selectToolId(blockConfig: any, params: Record<string, any>): str
  * Exported as the single source of truth so the copilot workflow lint resolves
  * params exactly the way execution (serializeBlock) does.
  */
-export function extractBlockParams(block: BlockState): Record<string, any> {
+export function extractBlockParams(block: BlockState, workspaceId?: string): Record<string, any> {
   if (block.type === 'loop' || block.type === 'parallel') {
     return {}
   }
@@ -482,7 +487,8 @@ export function extractBlockParams(block: BlockState): Record<string, any> {
           isTriggerContext,
           isTriggerCategory,
           canonicalIndex,
-          canonicalModeOverrides
+          canonicalModeOverrides,
+          workspaceId
         )
       )
 
@@ -507,12 +513,24 @@ export function extractBlockParams(block: BlockState): Record<string, any> {
         isTriggerContext,
         isTriggerCategory,
         canonicalIndex,
-        canonicalModeOverrides
+        canonicalModeOverrides,
+        workspaceId
       )
     ) {
       params[id] = subBlockConfig.value(params)
     }
   })
+
+  if (block.type === 'unipile') {
+    const legacyAccountId = params.account_id
+    if (
+      !params.unipileCredential &&
+      typeof legacyAccountId === 'string' &&
+      legacyAccountId.trim() !== ''
+    ) {
+      params.unipileCredential = legacyAccountId.trim()
+    }
+  }
 
   Object.values(canonicalIndex.groupsById).forEach((group) => {
     const { basicValue, advancedValue } = getCanonicalValues(group, params)
@@ -561,7 +579,8 @@ function classifyCanonicalKind(
 export function collectBlockFieldIssues(
   block: BlockState,
   blockConfig: any,
-  params: Record<string, any>
+  params: Record<string, any>,
+  workspaceId?: string
 ): BlockFieldIssues {
   // Disabled blocks and trigger-mode blocks are not validated (mirrors runtime).
   if (block.enabled === false) {
@@ -610,13 +629,14 @@ export function collectBlockFieldIssues(
               isTriggerContext,
               isTriggerCategory,
               canonicalIndex,
-              canonicalModeOverrides
+              canonicalModeOverrides,
+              workspaceId
             )
 
             const isRequired = (() => {
               if (!subBlockConfig.required) return false
               if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
-              return evaluateSubBlockCondition(subBlockConfig.required, params)
+              return evaluateSubBlockCondition(subBlockConfig.required, params, workspaceId)
             })()
 
             return includedByMode && isRequired
@@ -637,7 +657,8 @@ export function collectBlockFieldIssues(
               isTriggerContext,
               isTriggerCategory,
               canonicalIndex,
-              canonicalModeOverrides
+              canonicalModeOverrides,
+              workspaceId
             )
           )
           const displayName = activeConfig?.title || paramId
@@ -665,7 +686,8 @@ export function collectBlockFieldIssues(
       isTriggerContext,
       isTriggerCategory,
       canonicalIndex,
-      canonicalModeOverrides
+      canonicalModeOverrides,
+      workspaceId
     )
 
     if (!isVisible) {
@@ -675,7 +697,7 @@ export function collectBlockFieldIssues(
     const isRequired = (() => {
       if (!subBlockConfig.required) return false
       if (typeof subBlockConfig.required === 'boolean') return subBlockConfig.required
-      return evaluateSubBlockCondition(subBlockConfig.required, params)
+      return evaluateSubBlockCondition(subBlockConfig.required, params, workspaceId)
     })()
 
     if (!isRequired) {
