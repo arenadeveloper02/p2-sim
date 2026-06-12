@@ -29,11 +29,16 @@ import type { SubBlockConfig } from '@/blocks/types'
 import { CREDENTIAL_SET } from '@/executor/constants'
 import { useCredentialSets } from '@/hooks/queries/credential-sets'
 import { useWorkspaceCredential, useWorkspaceCredentials } from '@/hooks/queries/credentials'
+import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
 import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
 import { useOrganizations } from '@/hooks/queries/organization'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
+import { useUnipileAccountOptions } from '@/hooks/queries/unipile'
 import { useCredentialRefreshTriggers } from '@/hooks/use-credential-refresh-triggers'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+
+const UNIPILE_LINKEDIN_PROVIDER_ID = 'unipile_linkedin' as const
+const UNIPILE_RECONNECT_PREFIX = '__reconnect__:' as const
 
 interface CredentialSelectorProps {
   blockId: string
@@ -107,6 +112,8 @@ export function CredentialSelector({
     [serviceId]
   )
   const provider = effectiveProviderId
+  const isSharedUnipileWorkspace =
+    effectiveProviderId === UNIPILE_LINKEDIN_PROVIDER_ID && isAdminWorkspace(workspaceId)
 
   const isTriggerMode = subBlock.mode === 'trigger' || subBlock.mode === 'trigger-advanced'
 
@@ -121,6 +128,14 @@ export function CredentialSelector({
   })
 
   const {
+    data: unipileAccountOptions = [],
+    isFetching: unipileAccountOptionsLoading,
+    refetch: refetchUnipileAccountOptions,
+  } = useUnipileAccountOptions(isSharedUnipileWorkspace ? workspaceId : undefined)
+
+  const connectOAuthService = useConnectOAuthService()
+
+  const {
     data: allWorkspaceCredentials = [],
     isFetching: allCredentialsLoading,
     refetch: refetchAllCredentials,
@@ -132,7 +147,9 @@ export function CredentialSelector({
     enabled: additionalConnectOptions.length > 0,
   })
 
-  const credentialsLoading = isAllCredentials ? allCredentialsLoading : oauthCredentialsLoading
+  const credentialsLoading = isAllCredentials
+    ? allCredentialsLoading
+    : oauthCredentialsLoading || (isSharedUnipileWorkspace && unipileAccountOptionsLoading)
 
   const selectionPool = useMemo(
     () =>
@@ -177,20 +194,44 @@ export function CredentialSelector({
   )
   const inaccessibleCredentialName = inaccessibleCredential?.displayName ?? null
 
+  const selectedUnipileAccountOption = useMemo(
+    () => unipileAccountOptions.find((option) => option.id === selectedId) ?? null,
+    [unipileAccountOptions, selectedId]
+  )
+
   const resolvedLabel = useMemo(() => {
     if (selectedCredentialSet) return selectedCredentialSet.name
     if (selectedAllCredential) return selectedAllCredential.displayName
     if (selectedCredential) return selectedCredential.name
+    if (selectedUnipileAccountOption) return selectedUnipileAccountOption.label
     if (inaccessibleCredentialName) return inaccessibleCredentialName
     return ''
-  }, [selectedCredentialSet, selectedAllCredential, selectedCredential, inaccessibleCredentialName])
+  }, [
+    selectedCredentialSet,
+    selectedAllCredential,
+    selectedCredential,
+    selectedUnipileAccountOption,
+    inaccessibleCredentialName,
+  ])
 
   const displayValue = isEditing ? editingValue : resolvedLabel
 
-  const refetch = useCallback(
-    () => (isAllCredentials ? refetchAllCredentials() : refetchCredentials()),
-    [isAllCredentials, refetchAllCredentials, refetchCredentials]
-  )
+  const refetch = useCallback(async () => {
+    if (isAllCredentials) {
+      await refetchAllCredentials()
+      return
+    }
+    await refetchCredentials()
+    if (isSharedUnipileWorkspace) {
+      await refetchUnipileAccountOptions()
+    }
+  }, [
+    isAllCredentials,
+    isSharedUnipileWorkspace,
+    refetchAllCredentials,
+    refetchCredentials,
+    refetchUnipileAccountOptions,
+  ])
 
   useCredentialRefreshTriggers(refetch, effectiveProviderId, workspaceId)
 
@@ -239,6 +280,42 @@ export function CredentialSelector({
   const handleAddCredential = useCallback(() => {
     setShowConnectModal(true)
   }, [])
+
+  const handleUnipileReconnect = useCallback(
+    async (credentialId: string) => {
+      if (isPreview) return
+
+      const matchedUnipileOption = unipileAccountOptions.find(
+        (option) => option.credentialId === credentialId
+      )
+      const matchedCredential = credentials.find((cred) => cred.id === credentialId)
+
+      writeOAuthReturnContext({
+        origin: 'workflow',
+        workflowId: activeWorkflowId || '',
+        displayName: matchedUnipileOption?.label ?? matchedCredential?.name ?? 'LinkedIn account',
+        providerId: UNIPILE_LINKEDIN_PROVIDER_ID,
+        preCount: credentials.length,
+        workspaceId,
+        reconnect: true,
+        credentialId,
+        requestedAt: Date.now(),
+      })
+
+      await connectOAuthService.mutateAsync({
+        providerId: UNIPILE_LINKEDIN_PROVIDER_ID,
+        callbackURL: window.location.href,
+      })
+    },
+    [
+      activeWorkflowId,
+      connectOAuthService,
+      credentials,
+      isPreview,
+      unipileAccountOptions,
+      workspaceId,
+    ]
+  )
 
   const getProviderIcon = useCallback((providerName: OAuthProvider) => {
     const { baseProvider } = parseProvider(providerName)
@@ -295,6 +372,57 @@ export function CredentialSelector({
       const oauthCredentials = allWorkspaceCredentials.filter((c) => c.type === 'oauth')
       const options = oauthCredentials.map((cred) => ({ label: cred.displayName, value: cred.id }))
       return { comboboxOptions: options, comboboxGroups: undefined }
+    }
+
+    if (isSharedUnipileWorkspace) {
+      const groups = []
+      const publicAccounts = unipileAccountOptions.filter((option) => option.source === 'public')
+      if (publicAccounts.length > 0) {
+        groups.push({
+          section: 'Shared accounts',
+          items: publicAccounts.map((option) => ({
+            label: option.label,
+            value: option.id,
+            iconElement: getProviderIcon(provider),
+          })),
+        })
+      }
+
+      const personalAccounts = unipileAccountOptions.filter(
+        (option) => option.source === 'personal'
+      )
+      const personalItems = personalAccounts.map((option) => ({
+        label: option.label,
+        value: option.id,
+        iconElement: getProviderIcon(provider),
+      }))
+
+      personalItems.push({
+        label:
+          personalAccounts.length > 0
+            ? 'Connect another LinkedIn account'
+            : 'Connect LinkedIn account',
+        value: '__connect_account__',
+        iconElement: <ExternalLink className='size-3' />,
+      })
+
+      for (const option of personalAccounts) {
+        if (!option.credentialId || !option.canReconnect) continue
+        personalItems.push({
+          label: `Reconnect ${option.label}`,
+          value: `${UNIPILE_RECONNECT_PREFIX}${option.credentialId}`,
+          iconElement: <ExternalLink className='size-3' />,
+        })
+      }
+
+      personalItems.push(...additionalConnectItems)
+
+      groups.push({
+        section: 'Your accounts',
+        items: personalItems,
+      })
+
+      return { comboboxOptions: [], comboboxGroups: groups }
     }
 
     const pollingProviderId = getPollingProviderFromOAuth(effectiveProviderId)
@@ -363,6 +491,8 @@ export function CredentialSelector({
     return { comboboxOptions: options, comboboxGroups: undefined }
   }, [
     isAllCredentials,
+    isSharedUnipileWorkspace,
+    unipileAccountOptions,
     allWorkspaceCredentials,
     credentials,
     provider,
@@ -438,6 +568,14 @@ export function CredentialSelector({
 
   const handleComboboxChange = useCallback(
     (value: string) => {
+      if (value.startsWith(UNIPILE_RECONNECT_PREFIX)) {
+        const credentialId = value.slice(UNIPILE_RECONNECT_PREFIX.length)
+        if (credentialId) {
+          void handleUnipileReconnect(credentialId)
+        }
+        return
+      }
+
       if (value === '__connect_account__') {
         handleAddCredential()
         return
@@ -469,6 +607,12 @@ export function CredentialSelector({
         }
       }
 
+      const matchedUnipileOption = unipileAccountOptions.find((option) => option.id === value)
+      if (matchedUnipileOption) {
+        handleSelect(value)
+        return
+      }
+
       const matchedCred = (
         isAllCredentials ? allWorkspaceCredentials.filter((c) => c.type === 'oauth') : credentials
       ).find((c) => c.id === value)
@@ -485,9 +629,11 @@ export function CredentialSelector({
       allWorkspaceCredentials,
       credentials,
       credentialSets,
+      unipileAccountOptions,
       handleAddCredential,
       handleSelect,
       handleCredentialSetSelect,
+      handleUnipileReconnect,
       additionalConnectItems,
     ]
   )
