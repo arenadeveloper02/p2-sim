@@ -1509,6 +1509,7 @@ import {
   identityCenterListInstancesTool,
   identityCenterListPermissionSetsTool,
 } from '@/tools/identity_center'
+import { ideogramPromptBuildTool } from '@/tools/ideogram'
 import { imageGenerateTool } from '@/tools/image'
 import {
   googleImagenV2Tool,
@@ -5772,6 +5773,7 @@ export const tools: Record<string, ToolConfig> = {
   datadog_create_downtime: datadogCreateDowntimeTool,
   datadog_list_downtimes: datadogListDowntimesTool,
   datadog_cancel_downtime: datadogCancelDowntimeTool,
+  ideogram_prompt_build: ideogramPromptBuildTool,
   image_generate: imageGenerateTool,
   openai_image: openAIImageTool,
   openai_image_v2: openAIImageV2Tool,

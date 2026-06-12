@@ -11,6 +11,7 @@ import {
 import { useParams } from 'next/navigation'
 import { Button, Input, Label, Tooltip } from '@/components/emcn/components'
 import { cn } from '@/lib/core/utils/cn'
+import type { IdeogramPromptBuilderValue } from '@/lib/ideogram/types'
 import type { FilterRule, SortRule } from '@/lib/table/query-builder/constants'
 import {
   CheckboxList,
@@ -24,6 +25,7 @@ import {
   EvalInput,
   FileUpload,
   FilterBuilder,
+  IdeogramPromptBuilder,
   GroupedCheckboxList,
   InputFormat,
   InputMapping,
@@ -1188,6 +1190,17 @@ function SubBlockComponent({
             subBlockId={config.id}
             isPreview={isPreview}
             previewValue={previewValue as FilterRule[] | null | undefined}
+            disabled={isDisabled}
+          />
+        )
+
+      case 'ideogram-prompt-builder':
+        return (
+          <IdeogramPromptBuilder
+            blockId={blockId}
+            subBlockId={config.id}
+            isPreview={isPreview}
+            previewValue={previewValue as IdeogramPromptBuilderValue | null | undefined}
             disabled={isDisabled}
           />
         )

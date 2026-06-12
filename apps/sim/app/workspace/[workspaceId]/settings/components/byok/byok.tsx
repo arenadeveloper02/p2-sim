@@ -103,6 +103,13 @@ const PROVIDERS: (BYOKManagerProvider & { id: BYOKProviderId })[] = [
     placeholder: 'Enter your Fal.ai API key',
   },
   {
+    id: 'ideogram',
+    name: 'Ideogram',
+    icon: FalIcon,
+    description: 'Ideogram 4 image generation',
+    placeholder: 'Enter your Ideogram API key',
+  },
+  {
     id: 'firecrawl',
     name: 'Firecrawl',
     icon: FirecrawlIcon,
@@ -241,6 +248,7 @@ const PROVIDER_SECTIONS: BYOKProviderSection[] = [
       'baseten',
       'ollama-cloud',
       'falai',
+      'ideogram',
     ],
   },
   {

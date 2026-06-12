@@ -337,6 +337,50 @@ describe('Image Generation Wrapper API Route', () => {
     )
   })
 
+  it('should route Ideogram image_generate requests through direct image_generate execution', async () => {
+    mockExecuteTool.mockResolvedValue({
+      success: true,
+      output: {
+        image: 'https://example.com/ideogram.png',
+        provider: 'ideogram',
+        model: 'ideogram-v4',
+        metadata: { provider: 'ideogram', model: 'ideogram-v4', seed: 12 },
+      },
+    })
+
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'ideogram',
+        apiKey: 'ideogram-key',
+        model: 'ideogram-v4',
+        prompt: 'Typography poster',
+        resolution: '2048x2048',
+        renderingSpeed: 'QUALITY',
+      },
+    })
+
+    const response = await POST(request)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'image_generate',
+      expect.objectContaining({
+        provider: 'ideogram',
+        apiKey: 'ideogram-key',
+        model: 'ideogram-v4',
+        __skipSmartWrapper: true,
+        __skipHostedKeyHandling: true,
+      })
+    )
+    expect(data.output).toMatchObject({
+      image: 'https://example.com/ideogram.png',
+      provider: 'ideogram',
+      model: 'ideogram-v4',
+    })
+  })
+
   it('should route image_generate Gemini requests to google_nano_banana', async () => {
     const request = createMockRequest('POST', {
       baseToolId: 'image_generate',

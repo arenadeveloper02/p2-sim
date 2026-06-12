@@ -134,6 +134,10 @@ import { IAMBlock, IAMBlockMeta } from '@/blocks/blocks/iam'
 import { IdentityCenterBlock, IdentityCenterBlockMeta } from '@/blocks/blocks/identity_center'
 import { ImageFusionBlock } from '@/blocks/blocks/image_fusion'
 import { ImageGeneratorBlock, ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
+import {
+  IdeogramPromptBuilderBlock,
+  IdeogramPromptBuilderBlockMeta,
+} from '@/blocks/blocks/ideogram_prompt_builder'
 import { ImapBlock, ImapBlockMeta } from '@/blocks/blocks/imap'
 import { IncidentioBlock, IncidentioBlockMeta } from '@/blocks/blocks/incidentio'
 import { InfisicalBlock, InfisicalBlockMeta } from '@/blocks/blocks/infisical'
@@ -455,6 +459,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   identity_center: IdentityCenterBlock,
   image_generator: ImageGeneratorBlock,
   image_generator_v2: ImageGeneratorV2Block,
+  ideogram_prompt_builder: IdeogramPromptBuilderBlock,
   imap: ImapBlock,
   incidentio: IncidentioBlock,
   infisical: InfisicalBlock,
@@ -730,6 +735,7 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   hunter: HunterBlockMeta,
   iam: IAMBlockMeta,
   identity_center: IdentityCenterBlockMeta,
+  ideogram_prompt_builder: IdeogramPromptBuilderBlockMeta,
   imap: ImapBlockMeta,
   incidentio: IncidentioBlockMeta,
   infisical: InfisicalBlockMeta,

@@ -12,6 +12,7 @@ export type BYOKProviderId =
   | 'baseten'
   | 'ollama-cloud'
   | 'falai'
+  | 'ideogram'
   | 'firecrawl'
   | 'exa'
   | 'serper'

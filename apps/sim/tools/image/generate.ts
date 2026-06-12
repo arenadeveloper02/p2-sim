@@ -57,7 +57,8 @@ function normalizeImagesOutput(images: unknown[] | undefined, primaryImage: unkn
 export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGenerationResponse> = {
   id: 'image_generate',
   name: 'Image Generator',
-  description: 'Generate images with OpenAI GPT Image, Google Nano Banana, or Fal.ai image models',
+  description:
+    'Generate images with OpenAI GPT Image, Google Nano Banana, Fal.ai, or Ideogram 4 image models',
   version: '1.0.0',
 
   params: {
@@ -65,13 +66,14 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: true,
       visibility: 'user-only',
-      description: 'Image generation provider: openai, gemini, or falai',
+      description: 'Image generation provider: openai, gemini, falai, or ideogram',
     },
     apiKey: {
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'Provider API key. Only required for Fal.ai BYOK; OpenAI and Gemini use hosted keys.',
+      description:
+        'Provider API key. Required for Fal.ai BYOK; Ideogram uses IDEOGRAM_API_KEY when unset; OpenAI and Gemini use hosted keys.',
     },
     model: {
       type: 'string',
@@ -82,9 +84,28 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     },
     prompt: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description: 'Text prompt describing the image to generate',
+      description:
+        'Text prompt describing the image to generate. For Ideogram, use either prompt or jsonPrompt.',
+    },
+    jsonPrompt: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Ideogram v4 structured json_prompt object (mutually exclusive with prompt)',
+    },
+    renderingSpeed: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Ideogram rendering speed: TURBO, DEFAULT, or QUALITY',
+    },
+    enableCopyrightDetection: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Enable Ideogram copyright detection when supported',
     },
     size: {
       type: 'string',
@@ -252,6 +273,9 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         apiKey: params.apiKey,
         model: params.model,
         prompt: params.prompt,
+        jsonPrompt: params.jsonPrompt,
+        renderingSpeed: params.renderingSpeed,
+        enableCopyrightDetection: params.enableCopyrightDetection,
         size: params.size,
         aspectRatio: params.aspectRatio,
         resolution: params.resolution,

@@ -577,6 +577,7 @@ describe.concurrent('Blocks Module', () => {
         'router-input',
         'table-selector',
         'filter-builder',
+        'ideogram-prompt-builder',
         'sort-builder',
         'skill-input',
         'modal',

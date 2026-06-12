@@ -16,6 +16,8 @@ import {
 } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { env } from '@/lib/core/config/env'
+import { generateWithIdeogram } from '@/lib/image-generation/ideogram.server'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
@@ -108,6 +110,16 @@ function resolveImageProviderApiKey(provider: ImageProvider, apiKey: string | un
     return getRotatingApiKey('google')
   }
 
+  if (provider === 'ideogram') {
+    const serverKey = env.IDEOGRAM_API_KEY?.trim()
+    if (serverKey) {
+      return serverKey
+    }
+    throw new Error(
+      'API key is required. Set IDEOGRAM_API_KEY on the server or provide an Ideogram API key in the block.'
+    )
+  }
+
   throw new Error('API key is required')
 }
 
@@ -139,9 +151,16 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const body = parsed.data.body
     const provider = body.provider as ImageProvider
-    const { model, prompt } = body
+    const { model } = body
+    const prompt = body.prompt?.trim() ?? ''
+    const jsonPromptProvided =
+      provider === 'ideogram' &&
+      (body as Record<string, unknown>).jsonPrompt !== undefined &&
+      (body as Record<string, unknown>).jsonPrompt !== null &&
+      (typeof (body as Record<string, unknown>).jsonPrompt !== 'string' ||
+        String((body as Record<string, unknown>).jsonPrompt).trim().length > 0)
 
-    if (prompt.length < 3 || prompt.length > 4000) {
+    if (!jsonPromptProvided && (prompt.length < 3 || prompt.length > 4000)) {
       return NextResponse.json(
         { error: 'Prompt must be between 3 and 4000 characters' },
         { status: 400 }
@@ -159,6 +178,24 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         imageResult = await generateWithGemini(apiKey, body, requestId, logger)
       } else if (provider === 'falai') {
         imageResult = await generateWithFalAI(apiKey, body, requestId, logger)
+      } else if (provider === 'ideogram') {
+        const ideogramResult = await generateWithIdeogram(
+          apiKey,
+          body,
+          requestId,
+          logger,
+          bufferFromImageUrl
+        )
+        imageResult = {
+          buffer: ideogramResult.buffer,
+          contentType: ideogramResult.contentType,
+          fileName: ideogramResult.fileName,
+          provider: ideogramResult.provider,
+          model: ideogramResult.model,
+          sourceUrl: ideogramResult.sourceUrl,
+          revisedPrompt: ideogramResult.revisedPrompt,
+          seed: ideogramResult.seed,
+        }
       } else {
         return NextResponse.json({ error: `Unknown provider: ${provider}` }, { status: 400 })
       }

@@ -1,5 +1,10 @@
 import { ImageIcon } from '@/components/icons'
 import {
+  IDEOGRAM_RENDERING_SPEEDS,
+  IDEOGRAM_V4_MODEL,
+  IDEOGRAM_V4_RESOLUTIONS,
+} from '@/lib/ideogram/constants'
+import {
   NANO_BANANA_MODELS,
   NANO_BANANA_PRO_MODEL,
   resolveNanoBananaReferences,
@@ -11,6 +16,30 @@ import {
   parseOptionalBooleanInput,
 } from '@/blocks/utils'
 import type { ImageGenerationResponse } from '@/tools/image/types'
+
+function parseIdeogramJsonPromptParam(value: unknown): unknown | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return undefined
+    try {
+      return JSON.parse(trimmed)
+    } catch {
+      throw new Error('jsonPrompt must be valid JSON')
+    }
+  }
+  return value
+}
+
+const IDEOGRAM_RESOLUTION_OPTIONS = IDEOGRAM_V4_RESOLUTIONS.map((resolution) => ({
+  label: resolution,
+  id: resolution,
+}))
+
+const IDEOGRAM_RENDERING_SPEED_OPTIONS = IDEOGRAM_RENDERING_SPEEDS.map((speed) => ({
+  label: speed,
+  id: speed,
+}))
 
 function normalizeReferenceFiles(input: unknown): unknown[] {
   const normalizedFiles = normalizeFileInput(input)
@@ -532,13 +561,60 @@ export const ImageGeneratorBlockV2: BlockConfig = {
 
 export const ImageGeneratorBlock = ImageGeneratorBlockV2
 
+const IMAGE_GENERATOR_V2_INPUTS = {
+  provider: { type: 'string', description: 'Image generation provider' },
+  prompt: { type: 'string', description: 'Image description prompt' },
+  jsonPrompt: { type: 'json', description: 'Ideogram v4 structured json_prompt' },
+  renderingSpeed: { type: 'string', description: 'Ideogram rendering speed' },
+  enableCopyrightDetection: {
+    type: 'boolean',
+    description: 'Enable Ideogram copyright detection',
+  },
+  model: { type: 'string', description: 'Image generation model' },
+  size: { type: 'string', description: 'Image size' },
+  aspectRatio: { type: 'string', description: 'Image aspect ratio' },
+  resolution: { type: 'string', description: 'Image resolution' },
+  quality: { type: 'string', description: 'Image quality level' },
+  background: { type: 'string', description: 'Background type' },
+  outputFormat: { type: 'string', description: 'Output image format' },
+  moderation: { type: 'string', description: 'Moderation level' },
+  safetyTolerance: { type: 'string', description: 'Fal.ai safety tolerance' },
+  thinkingLevel: { type: 'string', description: 'Fal.ai thinking level' },
+  enableWebSearch: { type: 'boolean', description: 'Enable Fal.ai web search grounding' },
+  enableSafetyChecker: { type: 'boolean', description: 'Enable Fal.ai safety checker' },
+  inputImage: {
+    type: 'json',
+    description:
+      'Reference images as uploaded files, Start block files, or file references. One image edits; multiple images fuse on supported models.',
+  },
+  inputImageUrl: {
+    type: 'string',
+    description: 'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
+  },
+  inputImages: {
+    type: 'json',
+    description: 'Multiple input images for Gemini Nano Banana Pro fusion.',
+  },
+  inputImageUrls: {
+    type: 'string',
+    description: 'Multiple image URLs or references for Gemini Nano Banana Pro fusion.',
+  },
+  inputImageMimeType: { type: 'string', description: 'MIME type of input image' },
+  inputImageWarning: {
+    type: 'string',
+    description:
+      'Warning emitted when multiple input images were provided and the latest one was used.',
+  },
+  apiKey: { type: 'string', description: 'Provider API key' },
+} as const
+
 export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   type: 'image_generator_v2',
   name: 'Image Generator',
   description: 'Generate images',
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Generate images using OpenAI GPT Image, Google Nano Banana, or Fal.ai image models.',
+    'Generate images using OpenAI GPT Image, Google Nano Banana, Fal.ai, or Ideogram 4 image models.',
   docsLink: 'https://docs.sim.ai/integrations/image_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
@@ -553,6 +629,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'OpenAI', id: 'openai' },
         { label: 'Google Gemini', id: 'gemini' },
         { label: 'Fal.ai (Multi-Model)', id: 'falai' },
+        { label: 'Ideogram', id: 'ideogram' },
       ],
       commandSearchable: true,
       value: () => 'falai',
@@ -585,11 +662,29 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       dependsOn: ['provider'],
     },
     {
+      id: 'model',
+      title: 'Model',
+      type: 'dropdown',
+      options: [{ label: 'Ideogram 4', id: IDEOGRAM_V4_MODEL }],
+      value: () => IDEOGRAM_V4_MODEL,
+      condition: { field: 'provider', value: 'ideogram' },
+      dependsOn: ['provider'],
+    },
+    {
       id: 'prompt',
       title: 'Prompt',
       type: 'long-input',
-      required: true,
+      required: { field: 'provider', value: 'ideogram', not: true },
       placeholder: 'Describe the image you want to generate...',
+    },
+    {
+      id: 'jsonPrompt',
+      title: 'JSON Prompt',
+      type: 'long-input',
+      placeholder: 'Connect Ideogram Prompt Builder jsonPrompt output or paste structured JSON',
+      connectionDroppable: true,
+      condition: { field: 'provider', value: 'ideogram' },
+      dependsOn: ['provider'],
     },
     {
       id: 'size',
@@ -1120,7 +1215,33 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       password: true,
       connectionDroppable: false,
       hideWhenHosted: true,
-      condition: { field: 'provider', value: 'falai' },
+      condition: { field: 'provider', value: ['falai', 'ideogram'] },
+    },
+    {
+      id: 'resolution',
+      title: 'Resolution',
+      type: 'dropdown',
+      options: IDEOGRAM_RESOLUTION_OPTIONS,
+      value: () => '2048x2048',
+      condition: { field: 'provider', value: 'ideogram' },
+      dependsOn: ['provider'],
+    },
+    {
+      id: 'renderingSpeed',
+      title: 'Rendering Speed',
+      type: 'dropdown',
+      options: IDEOGRAM_RENDERING_SPEED_OPTIONS,
+      value: () => 'DEFAULT',
+      condition: { field: 'provider', value: 'ideogram' },
+      dependsOn: ['provider'],
+    },
+    {
+      id: 'enableCopyrightDetection',
+      title: 'Copyright Detection',
+      type: 'switch',
+      defaultValue: false,
+      condition: { field: 'provider', value: 'ideogram' },
+      dependsOn: ['provider'],
     },
   ],
   tools: {
@@ -1129,15 +1250,41 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       tool: () => 'image_generate',
       params: (params) => {
         const provider = params.provider || 'openai'
-        if (!params.prompt) {
-          throw new Error('Prompt is required')
-        }
         const defaultModel =
           provider === 'gemini'
             ? 'gemini-3.1-flash-image-preview'
             : provider === 'falai'
               ? 'nano-banana-2'
-              : 'gpt-image-1.5'
+              : provider === 'ideogram'
+                ? IDEOGRAM_V4_MODEL
+                : 'gpt-image-1.5'
+
+        if (provider === 'ideogram') {
+          const jsonPrompt = parseIdeogramJsonPromptParam(params.jsonPrompt)
+          const prompt = typeof params.prompt === 'string' ? params.prompt.trim() : ''
+          if (!prompt && !jsonPrompt) {
+            throw new Error('Either prompt or jsonPrompt is required for Ideogram generation')
+          }
+          if (prompt && jsonPrompt) {
+            throw new Error('Provide either prompt or jsonPrompt for Ideogram, not both')
+          }
+
+          return {
+            provider,
+            model: params.model || defaultModel,
+            apiKey: params.apiKey,
+            ...(jsonPrompt ? { jsonPrompt } : { prompt }),
+            ...(params.resolution && { resolution: params.resolution }),
+            ...(params.renderingSpeed && { renderingSpeed: params.renderingSpeed }),
+            ...(params.enableCopyrightDetection !== undefined && {
+              enableCopyrightDetection: parseOptionalBooleanInput(params.enableCopyrightDetection),
+            }),
+          }
+        }
+
+        if (!params.prompt) {
+          throw new Error('Prompt is required')
+        }
 
         const referenceInputs =
           provider === 'openai' || provider === 'gemini'
@@ -1185,46 +1332,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       },
     },
   },
-  inputs: {
-    provider: { type: 'string', description: 'Image generation provider' },
-    prompt: { type: 'string', description: 'Image description prompt' },
-    model: { type: 'string', description: 'Image generation model' },
-    size: { type: 'string', description: 'Image size' },
-    aspectRatio: { type: 'string', description: 'Image aspect ratio' },
-    resolution: { type: 'string', description: 'Image resolution' },
-    quality: { type: 'string', description: 'Image quality level' },
-    background: { type: 'string', description: 'Background type' },
-    outputFormat: { type: 'string', description: 'Output image format' },
-    moderation: { type: 'string', description: 'Moderation level' },
-    safetyTolerance: { type: 'string', description: 'Fal.ai safety tolerance' },
-    thinkingLevel: { type: 'string', description: 'Fal.ai thinking level' },
-    enableWebSearch: { type: 'boolean', description: 'Enable Fal.ai web search grounding' },
-    enableSafetyChecker: { type: 'boolean', description: 'Enable Fal.ai safety checker' },
-    inputImage: {
-      type: 'json',
-      description:
-        'Reference images as uploaded files, Start block files, or file references. One image edits; multiple images fuse on supported models.',
-    },
-    inputImageUrl: {
-      type: 'string',
-      description: 'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
-    },
-    inputImages: {
-      type: 'json',
-      description: 'Multiple input images for Gemini Nano Banana Pro fusion.',
-    },
-    inputImageUrls: {
-      type: 'string',
-      description: 'Multiple image URLs or references for Gemini Nano Banana Pro fusion.',
-    },
-    inputImageMimeType: { type: 'string', description: 'MIME type of input image' },
-    inputImageWarning: {
-      type: 'string',
-      description:
-        'Warning emitted when multiple input images were provided and the latest one was used.',
-    },
-    apiKey: { type: 'string', description: 'Provider API key' },
-  },
+  inputs: IMAGE_GENERATOR_V2_INPUTS,
   outputs: {
     content: { type: 'string', description: 'Generated image URL or identifier' },
     image: { type: 'file', description: 'Generated image file' },

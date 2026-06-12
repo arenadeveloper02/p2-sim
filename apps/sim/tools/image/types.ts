@@ -1,10 +1,13 @@
 import type { ToolResponse } from '@/tools/types'
 
 export interface ImageGenerationParams {
-  provider: 'openai' | 'gemini' | 'falai'
+  provider: 'openai' | 'gemini' | 'falai' | 'ideogram'
   apiKey?: string
   model?: string
-  prompt: string
+  prompt?: string
+  jsonPrompt?: unknown
+  renderingSpeed?: 'TURBO' | 'DEFAULT' | 'QUALITY'
+  enableCopyrightDetection?: boolean
   size?: string
   aspectRatio?: string
   resolution?: string

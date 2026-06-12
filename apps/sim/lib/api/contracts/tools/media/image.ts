@@ -2,12 +2,19 @@ import { z } from 'zod'
 import { toolBooleanSchema, toolJsonResponseSchema } from '@/lib/api/contracts/tools/media/shared'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
-export const imageProviders = ['openai', 'gemini', 'falai'] as const
+export const imageProviders = ['openai', 'gemini', 'falai', 'ideogram'] as const
 const MISSING_IMAGE_FIELDS_ERROR = 'Missing required fields: provider, apiKey, and prompt'
 
 export const imageProxyQuerySchema = z.object({
   url: z.string({ error: 'Missing URL parameter' }).min(1, 'Missing URL parameter'),
 })
+
+function hasJsonPrompt(body: Record<string, unknown>): boolean {
+  const value = body.jsonPrompt
+  if (value === undefined || value === null) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  return true
+}
 
 export const imageToolBodySchema = z
   .object({
@@ -19,7 +26,10 @@ export const imageToolBodySchema = z
       }),
     apiKey: z.string().optional(),
     model: z.string().optional(),
-    prompt: z.string({ error: MISSING_IMAGE_FIELDS_ERROR }).min(1, MISSING_IMAGE_FIELDS_ERROR),
+    prompt: z.string().optional(),
+    jsonPrompt: z.unknown().optional(),
+    renderingSpeed: z.enum(['TURBO', 'DEFAULT', 'QUALITY']).optional(),
+    enableCopyrightDetection: toolBooleanSchema.optional(),
     size: z.string().optional(),
     aspectRatio: z.string().optional(),
     resolution: z.string().optional(),
@@ -45,6 +55,34 @@ export const imageToolBodySchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['apiKey'],
+        message: MISSING_IMAGE_FIELDS_ERROR,
+      })
+    }
+
+    if (body.provider === 'ideogram') {
+      const prompt = body.prompt?.trim() ?? ''
+      const jsonPromptProvided = hasJsonPrompt(body as Record<string, unknown>)
+      if (!prompt && !jsonPromptProvided) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['prompt'],
+          message: 'Either prompt or jsonPrompt is required for Ideogram generation',
+        })
+      }
+      if (prompt && jsonPromptProvided) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['jsonPrompt'],
+          message: 'Provide either prompt (text_prompt) or jsonPrompt, not both',
+        })
+      }
+      return
+    }
+
+    if (!body.prompt?.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['prompt'],
         message: MISSING_IMAGE_FIELDS_ERROR,
       })
     }

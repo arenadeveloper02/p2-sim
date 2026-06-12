@@ -44,6 +44,7 @@ export type SubBlockType =
   | 'input-format'
   | 'response-format'
   | 'filter-builder'
+  | 'ideogram-prompt-builder'
   | 'sort-builder'
   | 'file-upload'
   | 'input-mapping'
