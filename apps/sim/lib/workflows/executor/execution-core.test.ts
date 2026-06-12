@@ -968,6 +968,40 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     expect(getPersonalAndWorkspaceEnvMock).toHaveBeenCalledWith('session-user', 'workspace-1')
   })
 
+  it('uses workflowUserId for env resolution on deployed chat even when sessionUserId is set', async () => {
+    const snapshot = {
+      ...createSnapshot(),
+      metadata: {
+        ...createSnapshot().metadata,
+        triggerType: 'chat',
+        isClientSession: true,
+        sessionUserId: 'session-user',
+        workflowUserId: 'workflow-owner',
+      },
+    }
+
+    getPersonalAndWorkspaceEnvMock.mockResolvedValue({
+      personalEncrypted: {},
+      workspaceEncrypted: {},
+      personalDecrypted: {},
+      workspaceDecrypted: {},
+    })
+    safeStartMock.mockResolvedValue(true)
+    executorExecuteMock.mockResolvedValue({
+      output: { done: true },
+      logs: [],
+      metadata: { duration: 123, startTime: 'start', endTime: 'end' },
+    })
+
+    await executeWorkflowCore({
+      snapshot: snapshot as any,
+      callbacks: {},
+      loggingSession: loggingSession as any,
+    })
+
+    expect(getPersonalAndWorkspaceEnvMock).toHaveBeenCalledWith('workflow-owner', 'workspace-1')
+  })
+
   it('uses workflowUserId for env resolution in server-side execution', async () => {
     const snapshot = {
       ...createSnapshot(),
