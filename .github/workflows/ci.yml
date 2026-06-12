@@ -89,6 +89,29 @@ jobs:
             echo "ℹ️ Not a release commit"
           fi
 
+  # Run database migrations before images are pushed: the ECR push triggers
+  # CodePipeline, so migrating first guarantees the schema is in place before
+  # the new app version deploys (replaces the removed ECS migration sidecar)
+  migrate:
+    name: Migrate DB
+    needs: [test-build]
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+    uses: ./.github/workflows/migrations.yml
+    with:
+      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    secrets: inherit
+
+  # Same ordering for dev (schema push before the dev image lands in ECR)
+  migrate-dev:
+    name: Migrate Dev DB
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    uses: ./.github/workflows/migrations.yml
+    with:
+      environment: dev
+    secrets: inherit
+
   # Non-main branches: build all 3 images for GHCR with auto-increment tag
   build-ghcr-branch:
     name: Build GHCR Branch Images
@@ -161,7 +184,7 @@ jobs:
   # Dev: build all 3 images for ECR only (no ARM64)
   build-dev:
     name: Build Dev ECR
-    needs: [secret-scan, detect-version]
+    needs: [secret-scan, detect-version, migrate-dev]
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
@@ -245,7 +268,7 @@ jobs:
   # Main/staging: build AMD64 images and push to ECR + GHCR
   build-amd64:
     name: Build AMD64
-    needs: [secret-scan, test-build, detect-version]
+    needs: [secret-scan, test-build, detect-version, migrate]
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
@@ -489,14 +512,6 @@ jobs:
               "${IMAGE_BASE}:${VERSION}-arm64"
             docker manifest push "${IMAGE_BASE}:${VERSION}"
           fi
-
-  # Run database migrations for dev
-  migrate-dev:
-    name: Migrate Dev DB
-    needs: [build-dev]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    uses: ./.github/workflows/migrations.yml
-    secrets: inherit
 
   # Check if docs changed
   check-docs-changes:

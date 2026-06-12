@@ -77,8 +77,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
   description: 'Generate, edit, or fuse images',
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Integrate Image Generator into the workflow. Generate new images, edit a single reference image, or fuse multiple images in one Nano Banana Pro request. The block can return up to five images per run based on the finalized prompt.',
-  docsLink: 'https://docs.sim.ai/tools/image_generator',
+    'Integrate Image Generator into the workflow. Can generate images using DALL-E 3 and GPT Image models.',
+  docsLink: 'https://docs.sim.ai/integrations/image_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
   bgColor: '#4D5FFF',
@@ -537,7 +537,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   authMode: AuthMode.ApiKey,
   longDescription:
     'Generate images using OpenAI GPT Image, Google Nano Banana, or Fal.ai image models.',
-  docsLink: 'https://docs.sim.ai/tools/image_generator',
+  docsLink: 'https://docs.sim.ai/integrations/image_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
   bgColor: '#4D5FFF',
