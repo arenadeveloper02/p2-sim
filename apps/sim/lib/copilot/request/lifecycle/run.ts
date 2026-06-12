@@ -3,7 +3,9 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
+import { checkSelfHostedMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing/core/subscription'
+import { isBillingEnabled, isHosted } from '@/lib/core/config/feature-flags'
 import { createRunSegment, updateRunStatus } from '@/lib/copilot/async-runs/repository'
 import { SIM_AGENT_VERSION } from '@/lib/copilot/constants'
 import {
@@ -146,6 +148,13 @@ export async function runCopilotLifecycle(
   let onCompleteStarted = false
 
   try {
+    if (!isHosted && isBillingEnabled && execContext.userId) {
+      const mothershipLimit = await checkSelfHostedMothershipUsageLimits(execContext.userId)
+      if (mothershipLimit.isExceeded) {
+        throw new BillingLimitError(execContext.userId)
+      }
+    }
+
     await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
 
     const result: OrchestratorResult = {
@@ -175,6 +184,27 @@ export async function runCopilotLifecycle(
     }
     return result
   } catch (error) {
+    if (error instanceof BillingLimitError) {
+      await handleBillingLimitResponse(error.userId, context, execContext, lifecycleOptions)
+      const result: OrchestratorResult = {
+        success: context.errors.length === 0 && !context.wasAborted,
+        cancelled: false,
+        content: resultContent(context, lifecycleOptions),
+        contentBlocks: context.contentBlocks,
+        toolCalls: buildToolCallSummaries(context),
+        chatId: context.chatId,
+        requestId: context.requestId,
+        errors: context.errors.length ? context.errors : undefined,
+        usage: context.usage,
+        cost: context.cost,
+      }
+      if (lifecycleOptions.onComplete) {
+        onCompleteStarted = true
+        await lifecycleOptions.onComplete(result)
+      }
+      return result
+    }
+
     const err = toError(error)
     // A CopilotBackendError carries the upstream HTTP status + body (e.g. a 5xx
     // from /api/tools/resume when an oversized tool result — a rendered-doc
