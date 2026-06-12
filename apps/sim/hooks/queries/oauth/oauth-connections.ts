@@ -256,6 +256,8 @@ export function useConnectOAuthService() {
           body: JSON.stringify({
             callbackURL,
             workspaceId: returnCtx?.workspaceId,
+            credentialId:
+              returnCtx?.reconnect && returnCtx.credentialId ? returnCtx.credentialId : undefined,
           }),
         })
         const data = (await response.json().catch(() => ({}))) as {
