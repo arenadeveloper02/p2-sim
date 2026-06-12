@@ -128,12 +128,19 @@ export async function runCopilotLifecycle(
       abortSignal: lifecycleOptions.abortSignal,
     }))
 
+  const billingModel =
+    typeof requestPayload.model === 'string' && requestPayload.model.trim().length > 0
+      ? requestPayload.model
+      : 'mothership'
+
   const context = createStreamingContext({
     chatId,
     requestId: lifecycleOptions.simRequestId,
     executionId: resolvedExecutionId,
     runId: resolvedRunId,
     messageId: payloadMsgId,
+    billingGoRoute: goRoute,
+    billingModel,
     ...(lifecycleOptions.trace ? { trace: lifecycleOptions.trace } : {}),
   })
   let onCompleteStarted = false

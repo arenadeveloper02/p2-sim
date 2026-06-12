@@ -104,6 +104,10 @@ export interface StreamingContext {
   errors: string[]
   usage?: { prompt: number; completion: number }
   cost?: { input: number; output: number; total: number }
+  /** Go route for this lifecycle (`/api/mothership`, `/api/copilot`, etc.). */
+  billingGoRoute?: string
+  /** Model name stamped on billing rows for this stream. */
+  billingModel?: string
   activeFileIntent?: {
     toolCallId: string
     operation: string
