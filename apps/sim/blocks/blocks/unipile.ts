@@ -177,7 +177,6 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     'Shared workspaces list public LinkedIn accounts from `outreach_user_connections_v1` plus your personal connections via Unipile hosted authentication (`GET /api/unipile/accounts`). Other workspaces connect LinkedIn via hosted authentication only. Uses `UNIPILE_API_KEY` from the deployment environment. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
   category: 'tools',
   integrationType: IntegrationType.Communication,
-  tags: ['messaging', 'sales-engagement'],
   bgColor: '#0F2736',
   icon: UnipileIcon,
   subBlocks: [
@@ -1788,3 +1787,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     comment_id: { type: 'string', description: 'Comment id (comment on post)' },
   },
 }
+
+export const UnipileBlockMeta = {
+  tags: ['messaging', 'sales-engagement'],
+} as const
