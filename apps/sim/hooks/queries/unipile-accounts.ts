@@ -1,40 +1,38 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import type { UnipileAccountOption } from '@/lib/api/contracts/unipile'
+import { useUnipileAccountOptions } from '@/hooks/queries/unipile'
 
-export const unipileAccountLabelKeys = {
-  all: ['unipileAccountLabel'] as const,
-  detail: (accountId?: string) => [...unipileAccountLabelKeys.all, accountId ?? ''] as const,
-}
-
-async function fetchUnipileAccountLabel(
+/**
+ * Resolves a stored credential id or Unipile external account id to a picker label.
+ */
+export function resolveUnipileAccountLabel(
   accountId: string,
-  signal?: AbortSignal
-): Promise<string | null> {
-  // boundary-raw-fetch: read-only label hydration for canvas rows; no contract yet
-  const response = await fetch('/api/unipile/accounts', {
-    credentials: 'include',
-    signal,
-  })
-  if (!response.ok) return null
-
-  const data = (await response.json()) as {
-    success?: boolean
-    items?: Array<{ id: string; label: string }>
-  }
-  if (!data?.success || !Array.isArray(data.items)) return null
-
-  const match = data.items.find((item) => item.id === accountId)
+  options: UnipileAccountOption[]
+): string | null {
+  const match = options.find(
+    (option) =>
+      option.id === accountId ||
+      option.externalAccountId === accountId ||
+      option.credentialId === accountId
+  )
   return match?.label ?? null
 }
 
 /**
- * Resolves a Unipile public account id (or matching picker value) to its display label
- * for canvas block rows and other read-only surfaces.
+ * Resolves a Unipile account picker value to its display label for canvas block rows.
  */
-export function useUnipileAccountDisplayName(accountId?: string, enabled = true) {
-  return useQuery({
-    queryKey: unipileAccountLabelKeys.detail(accountId),
-    queryFn: ({ signal }) => fetchUnipileAccountLabel(accountId as string, signal),
-    enabled: enabled && Boolean(accountId),
-    staleTime: 60 * 1000,
-  })
+export function useUnipileAccountDisplayName(
+  accountId?: string,
+  workspaceId?: string,
+  enabled = true
+) {
+  const shouldFetch = enabled && Boolean(accountId) && Boolean(workspaceId)
+  const { data: options = [] } = useUnipileAccountOptions(shouldFetch ? workspaceId : undefined)
+
+  const label = useMemo(() => {
+    if (!accountId) return null
+    return resolveUnipileAccountLabel(accountId, options)
+  }, [accountId, options])
+
+  return { data: label }
 }

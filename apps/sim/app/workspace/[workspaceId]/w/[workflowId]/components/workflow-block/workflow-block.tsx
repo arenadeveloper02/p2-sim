@@ -199,6 +199,7 @@ const SubBlockRow = memo(function SubBlockRow({
 
   const { data: unipileAccountLabel } = useUnipileAccountDisplayName(
     shouldHydrateUnipileAccount ? rawValue : undefined,
+    workspaceId,
     shouldHydrateUnipileAccount
   )
 
