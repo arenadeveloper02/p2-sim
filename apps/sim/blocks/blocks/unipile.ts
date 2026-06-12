@@ -230,6 +230,7 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     'Admin workspaces pick a LinkedIn account from deployment-connected Unipile accounts (`GET /api/unipile/accounts`). Other workspaces connect LinkedIn via Unipile hosted authentication. Uses `UNIPILE_API_KEY` from the deployment environment. Covers LinkedIn company and user profiles, posts, comments, reactions, search, messaging, relations, and attachments.',
   category: 'tools',
   integrationType: IntegrationType.Communication,
+  tags: ['messaging', 'sales-engagement'],
   bgColor: '#0F2736',
   icon: UnipileIcon,
   subBlocks: [
@@ -1866,7 +1867,3 @@ export const UnipileBlock: BlockConfig<UnipileResponse> = {
     comment_id: { type: 'string', description: 'Comment id (comment on post)' },
   },
 }
-
-export const UnipileBlockMeta = {
-  tags: ['messaging', 'sales-engagement'],
-} as const

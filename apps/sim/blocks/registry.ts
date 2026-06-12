@@ -289,7 +289,7 @@ import { TtsBlock } from '@/blocks/blocks/tts'
 import { TwilioSMSBlock, TwilioSMSBlockMeta } from '@/blocks/blocks/twilio'
 import { TwilioVoiceBlock, TwilioVoiceBlockMeta } from '@/blocks/blocks/twilio_voice'
 import { TypeformBlock, TypeformBlockMeta } from '@/blocks/blocks/typeform'
-import { UnipileBlock, UnipileBlockMeta } from '@/blocks/blocks/unipile'
+import { UnipileBlock } from '@/blocks/blocks/unipile'
 import { UpstashBlock, UpstashBlockMeta } from '@/blocks/blocks/upstash'
 import { VariablesBlock } from '@/blocks/blocks/variables'
 import { VercelBlock, VercelBlockMeta } from '@/blocks/blocks/vercel'
@@ -830,7 +830,6 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   twilio_sms: TwilioSMSBlockMeta,
   twilio_voice: TwilioVoiceBlockMeta,
   typeform: TypeformBlockMeta,
-  unipile: UnipileBlockMeta,
   upstash: UpstashBlockMeta,
   vercel: VercelBlockMeta,
   wealthbox: WealthboxBlockMeta,
