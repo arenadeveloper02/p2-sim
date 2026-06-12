@@ -375,54 +375,37 @@ export function CredentialSelector({
     }
 
     if (isSharedUnipileWorkspace) {
-      const groups = []
-      const publicAccounts = unipileAccountOptions.filter((option) => option.source === 'public')
-      if (publicAccounts.length > 0) {
-        groups.push({
-          section: 'Shared accounts',
-          items: publicAccounts.map((option) => ({
-            label: option.label,
-            value: option.id,
-            iconElement: getProviderIcon(provider),
-          })),
-        })
-      }
-
-      const personalAccounts = unipileAccountOptions.filter(
+      const personalAccountCount = unipileAccountOptions.filter(
         (option) => option.source === 'personal'
-      )
-      const personalItems = personalAccounts.map((option) => ({
+      ).length
+
+      const options = unipileAccountOptions.map((option) => ({
         label: option.label,
         value: option.id,
         iconElement: getProviderIcon(provider),
       }))
 
-      personalItems.push({
+      options.push({
         label:
-          personalAccounts.length > 0
+          personalAccountCount > 0
             ? 'Connect another LinkedIn account'
             : 'Connect LinkedIn account',
         value: '__connect_account__',
         iconElement: <ExternalLink className='size-3' />,
       })
 
-      for (const option of personalAccounts) {
+      for (const option of unipileAccountOptions) {
         if (!option.credentialId || !option.canReconnect) continue
-        personalItems.push({
+        options.push({
           label: `Reconnect ${option.label}`,
           value: `${UNIPILE_RECONNECT_PREFIX}${option.credentialId}`,
           iconElement: <ExternalLink className='size-3' />,
         })
       }
 
-      personalItems.push(...additionalConnectItems)
+      options.push(...additionalConnectItems)
 
-      groups.push({
-        section: 'Your accounts',
-        items: personalItems,
-      })
-
-      return { comboboxOptions: [], comboboxGroups: groups }
+      return { comboboxOptions: options, comboboxGroups: undefined }
     }
 
     const pollingProviderId = getPollingProviderFromOAuth(effectiveProviderId)
