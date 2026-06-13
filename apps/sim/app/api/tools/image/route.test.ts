@@ -4,13 +4,19 @@
 import { createMockRequest } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCheckInternalAuth, mockUploadExecutionFile, mockSecureFetch, mockValidateUrl } =
-  vi.hoisted(() => ({
-    mockCheckInternalAuth: vi.fn(),
-    mockUploadExecutionFile: vi.fn(),
-    mockSecureFetch: vi.fn(),
-    mockValidateUrl: vi.fn(),
-  }))
+const {
+  mockCheckInternalAuth,
+  mockUploadExecutionFile,
+  mockSecureFetch,
+  mockValidateUrl,
+  mockEnv,
+} = vi.hoisted(() => ({
+  mockCheckInternalAuth: vi.fn(),
+  mockUploadExecutionFile: vi.fn(),
+  mockSecureFetch: vi.fn(),
+  mockValidateUrl: vi.fn(),
+  mockEnv: { IDEOGRAM_API_KEY: undefined as string | undefined },
+}))
 
 vi.mock('@/lib/auth/hybrid', () => ({
   checkInternalAuth: mockCheckInternalAuth,
@@ -23,6 +29,26 @@ vi.mock('@/lib/uploads/contexts/execution', () => ({
 vi.mock('@/lib/core/security/input-validation.server', () => ({
   validateUrlWithDNS: mockValidateUrl,
   secureFetchWithPinnedIP: mockSecureFetch,
+}))
+
+vi.mock('@/lib/core/config/env', () => ({
+  env: mockEnv,
+  getEnv: (key: string) => mockEnv[key as keyof typeof mockEnv],
+  isTruthy: (value: string | boolean | number | undefined) =>
+    value === true || value === 'true' || value === '1' || value === 1,
+  isFalsy: (value: string | boolean | number | undefined) =>
+    value === false || value === 'false' || value === '0' || value === 0,
+  envBoolean: (value: boolean | string | undefined | null) => {
+    if (value === undefined || value === null || value === '') return undefined
+    if (value === true || value === 'true' || value === '1') return true
+    if (value === false || value === 'false' || value === '0') return false
+    return undefined
+  },
+  envNumber: (value: string | number | undefined | null) => {
+    if (value === undefined || value === null || value === '') return undefined
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  },
 }))
 
 import { POST } from '@/app/api/tools/image/route'
@@ -81,6 +107,7 @@ describe('Image API Route - Ideogram', () => {
       url: 'https://sim.test/files/generated.png',
       name: 'generated.png',
     })
+    mockEnv.IDEOGRAM_API_KEY = undefined
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createIdeogramApiResponse()))
   })
 
@@ -136,8 +163,62 @@ describe('Image API Route - Ideogram', () => {
     expect(fetchMock).toHaveBeenCalled()
   })
 
+  it('remixes with Ideogram v4 when a source image URL is provided', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://api.ideogram.ai/v1/ideogram-v4/remix')
+      const body = init?.body as FormData
+      expect(body.get('image')).toBeTruthy()
+      expect(body.get('text_prompt')).toBe('Make it a cinematic poster')
+      expect(body.get('image_weight')).toBe('70')
+      return createIdeogramApiResponse()
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const request = createMockRequest('POST', {
+      provider: 'ideogram',
+      apiKey: 'ideogram-key',
+      prompt: 'Make it a cinematic poster',
+      remixImageUrl: 'https://example.com/source.png',
+      imageWeight: 70,
+      workspaceId: 'ws-1',
+      workflowId: 'wf-1',
+      executionId: 'exec-1',
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalled()
+  })
+
+  it('generates with Ideogram v4 when only legacy inputImage is present', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://api.ideogram.ai/v1/ideogram-v4/generate')
+      const body = init?.body as FormData
+      expect(body.get('image')).toBeNull()
+      expect(body.get('text_prompt')).toBe('Generate a clean product photo')
+      return createIdeogramApiResponse()
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const request = createMockRequest('POST', {
+      provider: 'ideogram',
+      apiKey: 'ideogram-key',
+      prompt: 'Generate a clean product photo',
+      inputImage: 'https://example.com/source.png',
+      workspaceId: 'ws-1',
+      workflowId: 'wf-1',
+      executionId: 'exec-1',
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalled()
+  })
+
   it('uses IDEOGRAM_API_KEY from the server when block apiKey is omitted', async () => {
-    process.env.IDEOGRAM_API_KEY = 'server-ideogram-key'
+    mockEnv.IDEOGRAM_API_KEY = 'server-ideogram-key'
 
     const request = createMockRequest('POST', {
       provider: 'ideogram',
@@ -152,8 +233,7 @@ describe('Image API Route - Ideogram', () => {
   })
 
   it('rejects Ideogram requests without an API key when server key is unset', async () => {
-    const previousKey = process.env.IDEOGRAM_API_KEY
-    process.env.IDEOGRAM_API_KEY = ''
+    mockEnv.IDEOGRAM_API_KEY = undefined
 
     const request = createMockRequest('POST', {
       provider: 'ideogram',
@@ -162,7 +242,5 @@ describe('Image API Route - Ideogram', () => {
 
     const response = await POST(request)
     expect(response.status).toBe(500)
-
-    process.env.IDEOGRAM_API_KEY = previousKey
   })
 })

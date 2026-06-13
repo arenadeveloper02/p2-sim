@@ -95,11 +95,36 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       visibility: 'user-or-llm',
       description: 'Ideogram v4 structured json_prompt object (mutually exclusive with prompt)',
     },
+    magicPrompt: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Use Ideogram text_prompt path so Ideogram can apply Magic Prompt. Ignored when jsonPrompt is used.',
+    },
+    remixImage: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Source image file for Ideogram Remix',
+    },
+    remixImageUrl: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Source image URL for Ideogram Remix',
+    },
+    imageWeight: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Ideogram Remix image weight. Higher values preserve source structure more.',
+    },
     renderingSpeed: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Ideogram rendering speed: TURBO, DEFAULT, or QUALITY',
+      description: 'Ideogram rendering speed: FLASH, TURBO, DEFAULT, or QUALITY',
     },
     enableCopyrightDetection: {
       type: 'boolean',
@@ -274,6 +299,10 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         model: params.model,
         prompt: params.prompt,
         jsonPrompt: params.jsonPrompt,
+        magicPrompt: params.magicPrompt,
+        remixImage: params.remixImage,
+        remixImageUrl: params.remixImageUrl,
+        imageWeight: params.imageWeight,
         renderingSpeed: params.renderingSpeed,
         enableCopyrightDetection: params.enableCopyrightDetection,
         size: params.size,

@@ -41,6 +41,11 @@ export const ideogramPromptBuildTool: ToolConfig<IdeogramPromptBuildParams, Ideo
       type: 'string',
       description: 'Human-readable preview of the structured prompt',
     },
+    magicPrompt: {
+      type: 'string',
+      description:
+        'Plain text prompt generated from the builder for Ideogram text_prompt Magic Prompt workflows',
+    },
     elements: {
       type: 'json',
       description: 'Ordered compositional elements from the builder',

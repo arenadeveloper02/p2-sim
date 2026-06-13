@@ -27,8 +27,8 @@ export const IDEOGRAM_V4_RESOLUTIONS = [
 
 export type IdeogramV4Resolution = (typeof IDEOGRAM_V4_RESOLUTIONS)[number]
 
-/** Rendering speeds exposed in Sim (FLASH returns 400 from the API). */
-export const IDEOGRAM_RENDERING_SPEEDS = ['TURBO', 'DEFAULT', 'QUALITY'] as const
+/** Rendering speeds exposed by the Ideogram v4 API. */
+export const IDEOGRAM_RENDERING_SPEEDS = ['FLASH', 'TURBO', 'DEFAULT', 'QUALITY'] as const
 
 export type IdeogramRenderingSpeed = (typeof IDEOGRAM_RENDERING_SPEEDS)[number]
 

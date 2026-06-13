@@ -6,7 +6,11 @@ export interface ImageGenerationParams {
   model?: string
   prompt?: string
   jsonPrompt?: unknown
-  renderingSpeed?: 'TURBO' | 'DEFAULT' | 'QUALITY'
+  magicPrompt?: boolean
+  remixImage?: unknown
+  remixImageUrl?: string
+  imageWeight?: number
+  renderingSpeed?: 'FLASH' | 'TURBO' | 'DEFAULT' | 'QUALITY'
   enableCopyrightDetection?: boolean
   size?: string
   aspectRatio?: string

@@ -20,6 +20,7 @@ export const ideogramPromptBuildContract = defineRouteContract({
         z.object({
           jsonPrompt: z.record(z.string(), z.unknown()),
           promptPreview: z.string(),
+          magicPrompt: z.string(),
           elements: z.array(z.record(z.string(), z.unknown())),
           metadata: z.object({
             elementCount: z.number(),
@@ -27,6 +28,8 @@ export const ideogramPromptBuildContract = defineRouteContract({
             renderingSpeed: z.string().optional(),
             hasStyleDescription: z.boolean(),
             bboxElementCount: z.number(),
+            hiddenElementCount: z.number(),
+            magicPromptEnabled: z.boolean(),
           }),
         })
       ),

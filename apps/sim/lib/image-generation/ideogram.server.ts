@@ -1,19 +1,23 @@
 import type { createLogger } from '@sim/logger'
 import type { ImageToolBody } from '@/lib/api/contracts/tools/media/image'
 import {
-  IDEOGRAM_DEFAULT_RENDERING_SPEED,
-  IDEOGRAM_DEFAULT_RESOLUTION,
-  IDEOGRAM_V4_MODEL,
-} from '@/lib/ideogram/constants'
-import { isIdeogramRenderingSpeed, isIdeogramV4Resolution } from '@/lib/ideogram/validation'
-import type { IdeogramV4JsonPrompt } from '@/lib/ideogram/types'
-import {
+  assertKnownSizeWithinLimit,
   DEFAULT_MAX_ERROR_BODY_BYTES,
   readResponseJsonWithLimit,
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
+import {
+  IDEOGRAM_DEFAULT_RENDERING_SPEED,
+  IDEOGRAM_DEFAULT_RESOLUTION,
+  IDEOGRAM_V4_MODEL,
+} from '@/lib/ideogram/constants'
+import type { IdeogramV4JsonPrompt } from '@/lib/ideogram/types'
+import { isIdeogramRenderingSpeed, isIdeogramV4Resolution } from '@/lib/ideogram/validation'
+import { processSingleFileToUserFile, type RawFileInput } from '@/lib/uploads/utils/file-utils'
+import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 
 const MAX_IDEOGRAM_JSON_BYTES = 2 * 1024 * 1024
+const MAX_IDEOGRAM_REMIX_IMAGE_BYTES = 10 * 1024 * 1024
 
 export interface IdeogramGeneratedImageResult {
   buffer: Buffer
@@ -46,6 +50,14 @@ function extensionFromContentType(contentType: string): string {
   return 'png'
 }
 
+function contentTypeFromFileName(fileName: string | undefined, fallback = 'image/png'): string {
+  const normalized = fileName?.toLowerCase() ?? ''
+  if (normalized.endsWith('.jpg') || normalized.endsWith('.jpeg')) return 'image/jpeg'
+  if (normalized.endsWith('.webp')) return 'image/webp'
+  if (normalized.endsWith('.png')) return 'image/png'
+  return fallback
+}
+
 function parseJsonPrompt(body: ImageToolBody): IdeogramV4JsonPrompt | null {
   const raw = (body as Record<string, unknown>).jsonPrompt
   if (raw === undefined || raw === null || raw === '') return null
@@ -73,6 +85,83 @@ async function bufferFromImageUrl(
   return bufferFromUrl(url)
 }
 
+function firstValue(value: unknown): unknown {
+  return Array.isArray(value) ? value[0] : value
+}
+
+async function resolveRemixImage(
+  body: ImageToolBody,
+  requestId: string,
+  logger: ReturnType<typeof createLogger>,
+  bufferFromUrl: (url: string) => Promise<{ buffer: Buffer; contentType: string }>
+): Promise<{ buffer: Buffer; contentType: string; fileName: string } | null> {
+  const bodyRecord = body as Record<string, unknown>
+  const remixImage = firstValue(bodyRecord.remixImage)
+  const remixImageUrl = bodyRecord.remixImageUrl
+
+  if (typeof remixImageUrl === 'string' && remixImageUrl.trim().length > 0) {
+    const downloaded = await bufferFromImageUrl(remixImageUrl.trim(), bufferFromUrl)
+    assertKnownSizeWithinLimit(
+      downloaded.buffer.length,
+      MAX_IDEOGRAM_REMIX_IMAGE_BYTES,
+      'Ideogram remix image'
+    )
+    return {
+      buffer: downloaded.buffer,
+      contentType: downloaded.contentType || 'image/png',
+      fileName: `remix-source.${extensionFromContentType(downloaded.contentType || 'image/png')}`,
+    }
+  }
+
+  if (!remixImage) {
+    return null
+  }
+
+  const userFile = processSingleFileToUserFile(remixImage as RawFileInput, requestId, logger)
+  const buffer = await downloadFileFromStorage(userFile, requestId, logger, {
+    maxBytes: MAX_IDEOGRAM_REMIX_IMAGE_BYTES,
+  })
+  return {
+    buffer,
+    contentType: userFile.type || contentTypeFromFileName(userFile.name),
+    fileName: userFile.name || 'remix-source.png',
+  }
+}
+
+async function readIdeogramResponse(
+  response: Response,
+  label: string
+): Promise<Record<string, unknown>> {
+  if (!response.ok) {
+    const errorText = await readResponseTextWithLimit(response, {
+      maxBytes: DEFAULT_MAX_ERROR_BODY_BYTES,
+      label: `${label} error response`,
+    }).catch(() => '')
+
+    if (response.status === 422) {
+      let safetyMessage = 'Ideogram rejected the prompt or image for safety reasons'
+      try {
+        const parsed = JSON.parse(errorText) as { error?: string }
+        if (parsed.error) safetyMessage = parsed.error
+      } catch {}
+      throw new Error(safetyMessage)
+    }
+
+    throw new Error(`Ideogram API error: ${response.status} - ${errorText || 'Unknown error'}`)
+  }
+
+  const responseData = await readResponseJsonWithLimit(response, {
+    maxBytes: MAX_IDEOGRAM_JSON_BYTES,
+    label: `${label} response`,
+  })
+
+  if (!isRecord(responseData)) {
+    throw new Error('Invalid Ideogram API response')
+  }
+
+  return responseData
+}
+
 export async function generateWithIdeogram(
   apiKey: string,
   body: ImageToolBody,
@@ -83,9 +172,13 @@ export async function generateWithIdeogram(
   const model = body.model || IDEOGRAM_V4_MODEL
   const jsonPrompt = parseJsonPrompt(body)
   const textPrompt = body.prompt?.trim() ?? ''
+  const remixImage = await resolveRemixImage(body, requestId, logger, bufferFromUrl)
 
   if (jsonPrompt && textPrompt) {
     throw new Error('Provide either prompt (text_prompt) or jsonPrompt, not both')
+  }
+  if (remixImage && jsonPrompt) {
+    throw new Error('Ideogram Remix supports text prompts only. Use prompt instead of jsonPrompt.')
   }
   if (!jsonPrompt && !textPrompt) {
     throw new Error('Either prompt or jsonPrompt is required for Ideogram generation')
@@ -103,9 +196,20 @@ export async function generateWithIdeogram(
       : IDEOGRAM_DEFAULT_RENDERING_SPEED
 
   const enableCopyrightDetection = (body as Record<string, unknown>).enableCopyrightDetection
+  const imageWeight = (body as Record<string, unknown>).imageWeight
 
   const formData = new FormData()
-  if (jsonPrompt) {
+  if (remixImage) {
+    formData.append(
+      'image',
+      new Blob([new Uint8Array(remixImage.buffer)], { type: remixImage.contentType }),
+      remixImage.fileName
+    )
+    formData.append('text_prompt', textPrompt)
+    if (typeof imageWeight === 'number' && Number.isFinite(imageWeight)) {
+      formData.append('image_weight', String(Math.round(imageWeight)))
+    }
+  } else if (jsonPrompt) {
     formData.append('json_prompt', JSON.stringify(jsonPrompt))
   } else {
     formData.append('text_prompt', textPrompt)
@@ -121,42 +225,26 @@ export async function generateWithIdeogram(
     resolution,
     renderingSpeed,
     usesJsonPrompt: Boolean(jsonPrompt),
+    operation: remixImage ? 'remix' : 'generate',
   })
 
-  const response = await fetch('https://api.ideogram.ai/v1/ideogram-v4/generate', {
-    method: 'POST',
-    headers: {
-      'Api-Key': apiKey,
-    },
-    body: formData,
-  })
-
-  if (!response.ok) {
-    const errorText = await readResponseTextWithLimit(response, {
-      maxBytes: DEFAULT_MAX_ERROR_BODY_BYTES,
-      label: 'Ideogram error response',
-    }).catch(() => '')
-
-    if (response.status === 422) {
-      try {
-        const parsed = JSON.parse(errorText) as { error?: string }
-        throw new Error(parsed.error || 'Ideogram rejected the prompt for safety reasons')
-      } catch {
-        throw new Error('Ideogram rejected the prompt for safety reasons')
-      }
+  const response = await fetch(
+    remixImage
+      ? 'https://api.ideogram.ai/v1/ideogram-v4/remix'
+      : 'https://api.ideogram.ai/v1/ideogram-v4/generate',
+    {
+      method: 'POST',
+      headers: {
+        'Api-Key': apiKey,
+      },
+      body: formData,
     }
+  )
 
-    throw new Error(`Ideogram API error: ${response.status} - ${errorText || 'Unknown error'}`)
-  }
-
-  const responseData = await readResponseJsonWithLimit(response, {
-    maxBytes: MAX_IDEOGRAM_JSON_BYTES,
-    label: 'Ideogram generate response',
-  })
-
-  if (!isRecord(responseData)) {
-    throw new Error('Invalid Ideogram API response')
-  }
+  const responseData = await readIdeogramResponse(
+    response,
+    remixImage ? 'Ideogram remix' : 'Ideogram generate'
+  )
 
   const data = responseData.data
   if (!Array.isArray(data) || data.length === 0 || !isRecord(data[0])) {

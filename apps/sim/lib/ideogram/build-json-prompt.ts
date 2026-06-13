@@ -22,6 +22,8 @@ export function createDefaultIdeogramPromptBuilderValue(): IdeogramPromptBuilder
     elements: [],
     resolution: IDEOGRAM_DEFAULT_RESOLUTION,
     renderingSpeed: IDEOGRAM_DEFAULT_RENDERING_SPEED,
+    magicPromptEnabled: false,
+    referenceImageOpacity: 0.35,
   }
 }
 
@@ -36,13 +38,19 @@ function toBuilderElement(raw: Record<string, unknown>, fallbackId?: string): Id
     Array.isArray(raw.bbox) && raw.bbox.length === 4
       ? clampIdeogramBbox(raw.bbox as [number, number, number, number])
       : undefined
+  const color = typeof raw.color === 'string' ? raw.color : undefined
+  const hidden = raw.hidden === true
+  const shape =
+    raw.shape === 'ellipse' || raw.shape === 'freehand' || raw.shape === 'line'
+      ? raw.shape
+      : 'rectangle'
 
   if (type === 'obj' && typeof raw.desc === 'string') {
-    return { id, type: 'obj', desc: raw.desc, bbox }
+    return { id, type: 'obj', desc: raw.desc, bbox, color, hidden, shape }
   }
 
   if (type === 'text' && typeof raw.text === 'string' && typeof raw.desc === 'string') {
-    return { id, type: 'text', text: raw.text, desc: raw.desc, bbox }
+    return { id, type: 'text', text: raw.text, desc: raw.desc, bbox, color, hidden, shape }
   }
 
   return null
@@ -88,14 +96,23 @@ export function parseIdeogramPromptBuilderValue(value: unknown): IdeogramPromptB
       typeof value.renderingSpeed === 'string'
         ? (value.renderingSpeed as IdeogramPromptBuilderValue['renderingSpeed'])
         : IDEOGRAM_DEFAULT_RENDERING_SPEED,
+    magicPromptEnabled: value.magicPromptEnabled === true,
+    referenceImageUrl:
+      typeof value.referenceImageUrl === 'string' ? value.referenceImageUrl : undefined,
+    referenceImageOpacity:
+      typeof value.referenceImageOpacity === 'number' ? value.referenceImageOpacity : 0.35,
   }
 }
 
 function toWireElement(element: IdeogramBuilderElement): IdeogramV4Element {
   const bbox = element.bbox ? clampIdeogramBbox(element.bbox) : undefined
+  const colorPrefix = element.color?.trim() ? `Color guidance: ${element.color.trim()}. ` : ''
+  const shapePrefix =
+    element.shape && element.shape !== 'rectangle' ? `Region shape hint: ${element.shape}. ` : ''
+  const desc = `${shapePrefix}${colorPrefix}${element.desc.trim()}`
 
   if (element.type === 'obj') {
-    const wire: IdeogramV4ObjElement = { type: 'obj', desc: element.desc.trim() }
+    const wire: IdeogramV4ObjElement = { type: 'obj', desc }
     if (bbox) wire.bbox = bbox
     return wire
   }
@@ -103,7 +120,7 @@ function toWireElement(element: IdeogramBuilderElement): IdeogramV4Element {
   const wire: IdeogramV4TextElement = {
     type: 'text',
     text: element.text.trim(),
-    desc: element.desc.trim(),
+    desc,
   }
   if (bbox) wire.bbox = bbox
   return wire
@@ -118,7 +135,9 @@ export function buildIdeogramPromptPreview(value: IdeogramPromptBuilderValue): s
     )
   }
   lines.push(`Background: ${value.background.trim()}`)
-  value.elements.forEach((element, index) => {
+  value.elements
+    .filter((element) => !element.hidden)
+    .forEach((element, index) => {
     if (element.type === 'text') {
       lines.push(`Text ${index + 1}: "${element.text.trim()}" — ${element.desc.trim()}`)
     } else {
@@ -128,9 +147,15 @@ export function buildIdeogramPromptPreview(value: IdeogramPromptBuilderValue): s
   return lines.filter((line) => line.length > 0).join('\n')
 }
 
+/** Build the plain text prompt used with Ideogram's text_prompt Magic Prompt path. */
+export function buildIdeogramMagicPrompt(value: IdeogramPromptBuilderValue): string {
+  return buildIdeogramPromptPreview(value)
+}
+
 export interface BuildIdeogramJsonPromptResult {
   jsonPrompt: IdeogramV4JsonPrompt
   promptPreview: string
+  magicPrompt: string
   elements: IdeogramV4Element[]
   metadata: IdeogramPromptBuildMetadata
 }
@@ -145,7 +170,8 @@ export function buildIdeogramJsonPrompt(value: IdeogramPromptBuilderValue): Buil
     throw new Error(errors.join('; '))
   }
 
-  const elements = value.elements.map(toWireElement)
+  const visibleElements = value.elements.filter((element) => !element.hidden)
+  const elements = visibleElements.map(toWireElement)
   const jsonPrompt: IdeogramV4JsonPrompt = {
     high_level_description: value.highLevelDescription.trim(),
     compositional_deconstruction: {
@@ -185,11 +211,14 @@ export function buildIdeogramJsonPrompt(value: IdeogramPromptBuilderValue): Buil
     renderingSpeed: value.renderingSpeed,
     hasStyleDescription: Boolean(jsonPrompt.style_description),
     bboxElementCount: elements.filter((element) => element.bbox).length,
+    hiddenElementCount: value.elements.length - visibleElements.length,
+    magicPromptEnabled: value.magicPromptEnabled === true,
   }
 
   return {
     jsonPrompt,
     promptPreview: buildIdeogramPromptPreview(value),
+    magicPrompt: buildIdeogramMagicPrompt(value),
     elements,
     metadata,
   }
@@ -230,5 +259,7 @@ export function ideogramV4JsonPromptToBuilderValue(
     elements,
     resolution,
     renderingSpeed: IDEOGRAM_DEFAULT_RENDERING_SPEED,
+    magicPromptEnabled: false,
+    referenceImageOpacity: 0.35,
   }
 }

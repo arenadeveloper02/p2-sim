@@ -16,6 +16,12 @@ function hasJsonPrompt(body: Record<string, unknown>): boolean {
   return true
 }
 
+function hasRemixImageValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return false
+  if (Array.isArray(value)) return value.length > 0
+  return true
+}
+
 export const imageToolBodySchema = z
   .object({
     provider: z
@@ -28,7 +34,11 @@ export const imageToolBodySchema = z
     model: z.string().optional(),
     prompt: z.string().optional(),
     jsonPrompt: z.unknown().optional(),
-    renderingSpeed: z.enum(['TURBO', 'DEFAULT', 'QUALITY']).optional(),
+    magicPrompt: toolBooleanSchema.optional(),
+    remixImage: z.unknown().optional(),
+    remixImageUrl: z.string().optional(),
+    imageWeight: z.coerce.number().int().optional(),
+    renderingSpeed: z.enum(['FLASH', 'TURBO', 'DEFAULT', 'QUALITY']).optional(),
     enableCopyrightDetection: toolBooleanSchema.optional(),
     size: z.string().optional(),
     aspectRatio: z.string().optional(),
@@ -62,6 +72,8 @@ export const imageToolBodySchema = z
     if (body.provider === 'ideogram') {
       const prompt = body.prompt?.trim() ?? ''
       const jsonPromptProvided = hasJsonPrompt(body as Record<string, unknown>)
+      const hasRemixImage =
+        hasRemixImageValue(body.remixImage) || Boolean(body.remixImageUrl?.trim())
       if (!prompt && !jsonPromptProvided) {
         ctx.addIssue({
           code: 'custom',
@@ -74,6 +86,13 @@ export const imageToolBodySchema = z
           code: 'custom',
           path: ['jsonPrompt'],
           message: 'Provide either prompt (text_prompt) or jsonPrompt, not both',
+        })
+      }
+      if (hasRemixImage && jsonPromptProvided) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['jsonPrompt'],
+          message: 'Ideogram Remix supports text prompts only. Use prompt instead of jsonPrompt.',
         })
       }
       return

@@ -11,12 +11,15 @@ export interface IdeogramPromptBuildMetadata {
   renderingSpeed?: string
   hasStyleDescription: boolean
   bboxElementCount: number
+  hiddenElementCount: number
+  magicPromptEnabled: boolean
 }
 
 export interface IdeogramPromptBuildResponse extends ToolResponse {
   output: {
     jsonPrompt: IdeogramV4JsonPrompt
     promptPreview: string
+    magicPrompt: string
     elements: IdeogramV4Element[]
     metadata: IdeogramPromptBuildMetadata
   }

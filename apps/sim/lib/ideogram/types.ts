@@ -42,6 +42,9 @@ export interface IdeogramV4JsonPrompt {
 export interface IdeogramBuilderElementBase {
   id: string
   bbox?: IdeogramBbox
+  color?: string
+  hidden?: boolean
+  shape?: 'rectangle' | 'ellipse' | 'freehand' | 'line'
 }
 
 export interface IdeogramBuilderObjElement extends IdeogramBuilderElementBase {
@@ -73,6 +76,9 @@ export interface IdeogramPromptBuilderValue {
   elements: IdeogramBuilderElement[]
   resolution: IdeogramV4Resolution
   renderingSpeed?: IdeogramRenderingSpeed
+  magicPromptEnabled?: boolean
+  referenceImageUrl?: string
+  referenceImageOpacity?: number
 }
 
 export interface IdeogramPromptBuildMetadata {
@@ -81,4 +87,6 @@ export interface IdeogramPromptBuildMetadata {
   renderingSpeed?: IdeogramRenderingSpeed
   hasStyleDescription: boolean
   bboxElementCount: number
+  hiddenElementCount: number
+  magicPromptEnabled: boolean
 }

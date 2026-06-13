@@ -565,6 +565,13 @@ const IMAGE_GENERATOR_V2_INPUTS = {
   provider: { type: 'string', description: 'Image generation provider' },
   prompt: { type: 'string', description: 'Image description prompt' },
   jsonPrompt: { type: 'json', description: 'Ideogram v4 structured json_prompt' },
+  magicPrompt: {
+    type: 'boolean',
+    description: 'Use Ideogram text_prompt path so Ideogram can apply Magic Prompt',
+  },
+  remixImage: { type: 'json', description: 'Source image file for Ideogram Remix' },
+  remixImageUrl: { type: 'string', description: 'Source image URL for Ideogram Remix' },
+  imageWeight: { type: 'number', description: 'Ideogram Remix image weight' },
   renderingSpeed: { type: 'string', description: 'Ideogram rendering speed' },
   enableCopyrightDetection: {
     type: 'boolean',
@@ -589,7 +596,8 @@ const IMAGE_GENERATOR_V2_INPUTS = {
   },
   inputImageUrl: {
     type: 'string',
-    description: 'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
+    description:
+      'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
   },
   inputImages: {
     type: 'json',
@@ -683,6 +691,14 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       type: 'long-input',
       placeholder: 'Connect Ideogram Prompt Builder jsonPrompt output or paste structured JSON',
       connectionDroppable: true,
+      condition: { field: 'provider', value: 'ideogram' },
+      dependsOn: ['provider'],
+    },
+    {
+      id: 'magicPrompt',
+      title: 'Magic Prompt',
+      type: 'switch',
+      defaultValue: true,
       condition: { field: 'provider', value: 'ideogram' },
       dependsOn: ['provider'],
     },
@@ -1210,12 +1226,41 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       id: 'apiKey',
       title: 'API Key',
       type: 'short-input',
-      required: true,
+      required: { field: 'provider', value: 'falai' },
       placeholder: 'Enter your provider API key',
       password: true,
       connectionDroppable: false,
       hideWhenHosted: true,
       condition: { field: 'provider', value: ['falai', 'ideogram'] },
+    },
+    {
+      id: 'remixImage',
+      title: 'Remix Source Image',
+      type: 'file-upload',
+      acceptedTypes: 'image/png,image/jpeg,image/webp',
+      multiple: false,
+      uploadContext: 'image-fusion',
+      allowStartFilesReference: true,
+      condition: { field: 'provider', value: 'ideogram' },
+      dependsOn: ['provider'],
+    },
+    {
+      id: 'remixImageUrl',
+      title: 'Remix Source Image URL',
+      type: 'long-input',
+      placeholder: 'Optional: source image URL for Ideogram Remix',
+      mode: 'advanced',
+      condition: { field: 'provider', value: 'ideogram' },
+      dependsOn: ['provider'],
+    },
+    {
+      id: 'imageWeight',
+      title: 'Image Weight',
+      type: 'short-input',
+      placeholder: 'Optional: leave blank for automatic',
+      mode: 'advanced',
+      condition: { field: 'provider', value: 'ideogram' },
+      dependsOn: ['provider'],
     },
     {
       id: 'resolution',
@@ -1262,11 +1307,25 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         if (provider === 'ideogram') {
           const jsonPrompt = parseIdeogramJsonPromptParam(params.jsonPrompt)
           const prompt = typeof params.prompt === 'string' ? params.prompt.trim() : ''
+          const remixImage = normalizeFileInput(params.remixImage, {
+            single: true,
+            errorMessage: 'Ideogram Remix supports one source image at a time',
+          })
+          const remixImageUrl =
+            typeof params.remixImageUrl === 'string' && params.remixImageUrl.trim()
+              ? params.remixImageUrl.trim()
+              : undefined
+          const hasRemixSource = Boolean(remixImage || remixImageUrl)
           if (!prompt && !jsonPrompt) {
             throw new Error('Either prompt or jsonPrompt is required for Ideogram generation')
           }
           if (prompt && jsonPrompt) {
             throw new Error('Provide either prompt or jsonPrompt for Ideogram, not both')
+          }
+          if (hasRemixSource && jsonPrompt) {
+            throw new Error(
+              'Ideogram Remix supports prompt text only. Use Prompt instead of JSON Prompt.'
+            )
           }
 
           return {
@@ -1274,6 +1333,13 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
             model: params.model || defaultModel,
             apiKey: params.apiKey,
             ...(jsonPrompt ? { jsonPrompt } : { prompt }),
+            ...(params.magicPrompt !== undefined && {
+              magicPrompt: parseOptionalBooleanInput(params.magicPrompt),
+            }),
+            ...(remixImage && { remixImage }),
+            ...(remixImageUrl && { remixImageUrl }),
+            ...(params.imageWeight !== undefined &&
+              params.imageWeight !== '' && { imageWeight: Number(params.imageWeight) }),
             ...(params.resolution && { resolution: params.resolution }),
             ...(params.renderingSpeed && { renderingSpeed: params.renderingSpeed }),
             ...(params.enableCopyrightDetection !== undefined && {

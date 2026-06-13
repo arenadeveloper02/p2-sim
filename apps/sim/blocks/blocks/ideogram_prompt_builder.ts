@@ -8,7 +8,7 @@ export const IdeogramPromptBuilderBlock: BlockConfig<IdeogramPromptBuildResponse
   description: 'Build Ideogram 4 structured prompts',
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Compose Ideogram v4 json_prompt structures visually with regions, text layers, style notes, and JSON import/export. Connect the output to Image Generator (Ideogram provider) instead of writing JSON by hand.',
+    'Compose Ideogram v4 json_prompt structures visually with regions, text layers, style notes, Magic Prompt text output, reference tracing, and JSON import/export. Connect the output to Image Generator (Ideogram provider) instead of writing JSON by hand.',
   docsLink: 'https://docs.sim.ai/integrations/image_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
@@ -40,6 +40,10 @@ export const IdeogramPromptBuilderBlock: BlockConfig<IdeogramPromptBuildResponse
   outputs: {
     jsonPrompt: { type: 'json', description: 'Ideogram v4 json_prompt object for image generation' },
     promptPreview: { type: 'string', description: 'Human-readable preview of the structured prompt' },
+    magicPrompt: {
+      type: 'string',
+      description: 'Plain prompt for Ideogram text_prompt Magic Prompt workflows',
+    },
     elements: { type: 'json', description: 'Ordered compositional elements' },
     metadata: { type: 'json', description: 'Builder metadata (counts, resolution, rendering speed)' },
   },

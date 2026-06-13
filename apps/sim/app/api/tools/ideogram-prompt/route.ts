@@ -33,6 +33,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       output: {
         jsonPrompt: built.jsonPrompt,
         promptPreview: built.promptPreview,
+        magicPrompt: built.magicPrompt,
         elements: built.elements,
         metadata: built.metadata,
       },

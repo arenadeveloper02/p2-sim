@@ -58,6 +58,44 @@ describe('buildIdeogramJsonPrompt', () => {
     expect(() => buildIdeogramJsonPrompt(value)).toThrow('lighting is required')
   })
 
+  it('excludes hidden elements and folds color guidance into descriptions', () => {
+    const value = {
+      ...createDefaultIdeogramPromptBuilderValue(),
+      highLevelDescription: 'A layered poster',
+      background: 'Dark studio',
+      elements: [
+        {
+          id: 'visible',
+          type: 'obj' as const,
+          desc: 'Main product centered',
+          color: '#FF3366',
+          shape: 'ellipse' as const,
+          bbox: [200, 300, 700, 800],
+        },
+        {
+          id: 'hidden',
+          type: 'text' as const,
+          text: 'DRAFT',
+          desc: 'Draft label',
+          hidden: true,
+        },
+      ],
+    }
+
+    const result = buildIdeogramJsonPrompt(value)
+
+    expect(result.jsonPrompt.compositional_deconstruction.elements).toEqual([
+      {
+        type: 'obj',
+        desc: 'Region shape hint: ellipse. Color guidance: #FF3366. Main product centered',
+        bbox: [200, 300, 700, 800],
+      },
+    ])
+    expect(result.metadata.hiddenElementCount).toBe(1)
+    expect(result.promptPreview).not.toContain('DRAFT')
+    expect(result.magicPrompt).toContain('Main product centered')
+  })
+
   it('round-trips imported wire JSON', () => {
     const wire = {
       high_level_description: 'Layered ad',
