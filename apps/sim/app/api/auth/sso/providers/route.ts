@@ -2,7 +2,10 @@ import { db, member, ssoProvider } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { listSsoProvidersContract } from '@/lib/api/contracts/auth'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import { enforceIpRateLimit } from '@/lib/core/rate-limiter'
 import { REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
@@ -11,8 +14,17 @@ const logger = createLogger('SSOProvidersRoute')
 export const GET = withRouteHandler(async (request: NextRequest) => {
   try {
     const session = await getSession()
-    const { searchParams } = new URL(request.url)
-    const organizationId = searchParams.get('organizationId')
+    if (!session?.user?.id) {
+      const rateLimited = await enforceIpRateLimit('sso-providers', request, {
+        maxTokens: 20,
+        refillRate: 20,
+        refillIntervalMs: 60_000,
+      })
+      if (rateLimited) return rateLimited
+    }
+    const parsed = await parseRequest(listSsoProvidersContract, request, {})
+    if (!parsed.success) return parsed.response
+    const { organizationId } = parsed.data.query
 
     let providers
     if (session?.user?.id) {

@@ -8,13 +8,53 @@ import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
+import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import type { ChatMessage } from '@/app/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
 import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 
 const logger = createLogger('UseChatStreaming')
 
-export interface VoiceSettings {
+function extractFilesFromData(
+  data: any,
+  files: ChatFile[] = [],
+  seenIds = new Set<string>()
+): ChatFile[] {
+  if (!data || typeof data !== 'object') {
+    return files
+  }
+
+  if (isUserFileWithMetadata(data)) {
+    if (!seenIds.has(data.id)) {
+      seenIds.add(data.id)
+      files.push({
+        id: data.id,
+        name: data.name,
+        url: data.url,
+        key: data.key,
+        size: data.size,
+        type: data.type,
+        context: data.context,
+      })
+    }
+    return files
+  }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      extractFilesFromData(item, files, seenIds)
+    }
+    return files
+  }
+
+  for (const value of Object.values(data)) {
+    extractFilesFromData(value, files, seenIds)
+  }
+
+  return files
+}
+
+interface VoiceSettings {
   isVoiceEnabled: boolean
   voiceId: string
   autoPlayResponses: boolean
@@ -455,7 +495,9 @@ export function useChatStreaming() {
                           liked: null,
                           files: extractedFiles.length > 0 ? extractedFiles : undefined,
                           generatedImages:
-                            resolvedGeneratedImages.length > 0 ? resolvedGeneratedImages : undefined,
+                            resolvedGeneratedImages.length > 0
+                              ? resolvedGeneratedImages
+                              : undefined,
                           knowledgeResults: pendingKnowledgeResults,
                         }
                       : msg

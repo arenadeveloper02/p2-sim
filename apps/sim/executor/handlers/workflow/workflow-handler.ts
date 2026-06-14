@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { buildNextCallChain, validateCallChain } from '@/lib/execution/call-chain'
 import { snapshotService } from '@/lib/logs/execution/snapshot/service'
@@ -101,8 +102,8 @@ export class WorkflowBlockHandler implements BlockHandler {
       }
 
       const childWorkflow = ctx.isDeployedContext
-        ? await this.loadChildWorkflowDeployed(workflowId, ctx.userId)
-        : await this.loadChildWorkflow(workflowId, ctx.userId)
+        ? await this.loadChildWorkflowDeployed(workflowId, ctx.userId, ctx.workspaceId)
+        : await this.loadChildWorkflow(workflowId, ctx.userId, ctx.workspaceId)
 
       if (!childWorkflow) {
         throw new Error(`Child workflow ${workflowId} not found`)
@@ -156,11 +157,12 @@ export class WorkflowBlockHandler implements BlockHandler {
           ? (nodeMetadata.originalBlockId ?? nodeMetadata.nodeId)
           : block.id
         const iterationContext = nodeMetadata ? getIterationContext(ctx, nodeMetadata) : undefined
-        ctx.onChildWorkflowInstanceReady?.(
+        await ctx.onChildWorkflowInstanceReady?.(
           effectiveBlockId,
           instanceId,
           iterationContext,
-          nodeMetadata?.executionOrder
+          nodeMetadata?.executionOrder,
+          ctx.childWorkflowContext
         )
       }
 
@@ -259,7 +261,7 @@ export class WorkflowBlockHandler implements BlockHandler {
    * Parses nested error messages to extract workflow chain and root error.
    */
   private buildNestedWorkflowErrorMessage(childWorkflowName: string, error: unknown): string {
-    const originalError = error instanceof Error ? error.message : 'Unknown error'
+    const originalError = getErrorMessage(error, 'Unknown error')
 
     // Extract any nested workflow names from the error message
     const { chain, rootError } = this.parseNestedWorkflowError(originalError)
@@ -320,7 +322,7 @@ export class WorkflowBlockHandler implements BlockHandler {
     return { chain, rootError: rootError.trim() || 'Unknown error' }
   }
 
-  private async loadChildWorkflow(workflowId: string, userId?: string) {
+  private async loadChildWorkflow(workflowId: string, userId?: string, workspaceId?: string) {
     const headers = await buildAuthHeaders(userId)
     const url = buildAPIUrl(`/api/workflows/${workflowId}`)
 
@@ -353,7 +355,8 @@ export class WorkflowBlockHandler implements BlockHandler {
       workflowState.edges || [],
       workflowState.loops || {},
       workflowState.parallels || {},
-      true
+      true,
+      workspaceId
     )
 
     const workflowVariables = (workflowData.variables as Record<string, any>) || {}
@@ -401,7 +404,11 @@ export class WorkflowBlockHandler implements BlockHandler {
     }
   }
 
-  private async loadChildWorkflowDeployed(workflowId: string, userId?: string) {
+  private async loadChildWorkflowDeployed(
+    workflowId: string,
+    userId?: string,
+    workspaceId?: string
+  ) {
     const headers = await buildAuthHeaders(userId)
     const deployedUrl = buildAPIUrl(`/api/workflows/${workflowId}/deployed`)
 
@@ -441,7 +448,8 @@ export class WorkflowBlockHandler implements BlockHandler {
       deployedState.edges || [],
       deployedState.loops || {},
       deployedState.parallels || {},
-      true
+      true,
+      workspaceId
     )
 
     const workflowVariables = (wfData?.variables as Record<string, any>) || {}
@@ -580,7 +588,7 @@ export class WorkflowBlockHandler implements BlockHandler {
       })
     }
 
-    return {
+    const output: BlockOutput = {
       success: true,
       childWorkflowName,
       childWorkflowId,
@@ -588,6 +596,7 @@ export class WorkflowBlockHandler implements BlockHandler {
       result,
       childTraceSpans: childTraceSpans || [],
       _childWorkflowInstanceId: instanceId,
-    } as unknown as BlockOutput
+    }
+    return output
   }
 }

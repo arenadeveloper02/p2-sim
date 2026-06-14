@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { ArrowDown, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { Button } from '@/components/emcn'
+import { Button, Loader } from '@/components/emcn'
+import { Download } from '@/components/emcn/icons'
 import { extractWorkspaceIdFromExecutionKey, getViewerUrl } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('FileCards')
@@ -16,8 +16,6 @@ interface FileData {
   type: string
   key: string
   url: string
-  uploadedAt: string
-  expiresAt: string
   storageProvider?: 's3' | 'blob' | 'local'
   bucketName?: string
 }
@@ -118,9 +116,9 @@ function FileCard({ file, isExecutionFile = false, workspaceId }: FileCardProps)
           disabled={isDownloading}
         >
           {isDownloading ? (
-            <Loader2 className='mr-1 h-[10px] w-[10px] animate-spin' />
+            <Loader className='mr-1 size-[10px]' animate />
           ) : (
-            <ArrowDown className='mr-1 h-[10px] w-[10px]' />
+            <Download className='mr-1 size-[10px]' />
           )}
           {isDownloading ? 'Opening...' : 'Download'}
         </Button>
@@ -224,11 +222,7 @@ export function FileDownload({
       onClick={handleDownload}
       disabled={isDownloading}
     >
-      {isDownloading ? (
-        <Loader2 className='h-3 w-3 animate-spin' />
-      ) : (
-        <ArrowDown className='h-[14px] w-[14px]' />
-      )}
+      {isDownloading ? <Loader className='size-3' animate /> : <Download className='size-[14px]' />}
       {isDownloading ? 'Downloading...' : 'Download'}
     </Button>
   )

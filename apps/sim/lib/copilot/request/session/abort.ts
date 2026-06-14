@@ -5,7 +5,7 @@ import { AbortBackend } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
 import { withCopilotSpan } from '@/lib/copilot/request/otel'
-import { acquireLock, getRedisClient, releaseLock } from '@/lib/core/config/redis'
+import { acquireLock, extendLock, getRedisClient, releaseLock } from '@/lib/core/config/redis'
 import { AbortReason } from './abort-reason'
 import { clearAbortMarker, hasAbortMarker, writeAbortMarker } from './buffer'
 
@@ -17,8 +17,28 @@ const pendingChatStreams = new Map<
   { promise: Promise<void>; resolve: () => void; streamId: string }
 >()
 
-const DEFAULT_ABORT_POLL_MS = 1000
-const CHAT_STREAM_LOCK_TTL_SECONDS = 2 * 60 * 60
+const DEFAULT_ABORT_POLL_MS = 250
+
+/**
+ * TTL for the per-chat stream lock. Kept short so that if the Sim pod
+ * holding the lock dies (SIGKILL, OOM, a SIGTERM drain that doesn't
+ * reach the release path), the lock self-heals inside a minute rather
+ * than stranding the chat for hours. A live stream keeps the lock alive
+ * via `CHAT_STREAM_LOCK_HEARTBEAT_INTERVAL_MS` heartbeats.
+ */
+const CHAT_STREAM_LOCK_TTL_SECONDS = 60
+
+/**
+ * Heartbeat cadence for extending the per-chat stream lock. Set to a
+ * third of the TTL so one missed beat still leaves room for recovery
+ * before the lock expires under a still-live stream.
+ */
+const CHAT_STREAM_LOCK_HEARTBEAT_INTERVAL_MS = 20_000
+
+export interface ChatStreamLockOwnersResult {
+  status: 'verified' | 'unknown'
+  ownersByChatId: Map<string, string>
+}
 
 function registerPendingChatStream(chatId: string, streamId: string): void {
   let resolve!: () => void
@@ -105,6 +125,50 @@ export async function getPendingChatStreamId(chatId: string): Promise<string | n
       error: toError(error).message,
     })
     return null
+  }
+}
+
+/**
+ * Loads canonical stream lock owners for chat IDs.
+ *
+ * `status: 'verified'` means Redis was queried successfully, so a missing
+ * owner is authoritative. `status: 'unknown'` means only the process-local
+ * pending map is known, which is not enough to declare remote streams inactive
+ * in a multi-pod deployment.
+ */
+export async function getChatStreamLockOwners(
+  chatIds: string[]
+): Promise<ChatStreamLockOwnersResult> {
+  const localOwnersByChatId = new Map<string, string>()
+  if (chatIds.length === 0) {
+    return { status: 'verified', ownersByChatId: localOwnersByChatId }
+  }
+
+  for (const chatId of chatIds) {
+    const entry = pendingChatStreams.get(chatId)
+    if (entry?.streamId) localOwnersByChatId.set(chatId, entry.streamId)
+  }
+
+  const redis = getRedisClient()
+  if (!redis) {
+    return { status: 'unknown', ownersByChatId: localOwnersByChatId }
+  }
+
+  try {
+    const keys = chatIds.map(getChatStreamLockKey)
+    const values = await redis.mget(keys)
+    const redisOwnersByChatId = new Map<string, string>()
+    for (let i = 0; i < chatIds.length; i++) {
+      const owner = values[i]
+      if (owner) redisOwnersByChatId.set(chatIds[i], owner)
+    }
+    return { status: 'verified', ownersByChatId: redisOwnersByChatId }
+  } catch (error) {
+    logger.warn('Failed to load chat stream lock owners (batch)', {
+      count: chatIds.length,
+      error: toError(error).message,
+    })
+    return { status: 'unknown', ownersByChatId: localOwnersByChatId }
   }
 }
 
@@ -262,10 +326,14 @@ const pollingStreams = new Set<string>()
 export function startAbortPoller(
   streamId: string,
   abortController: AbortController,
-  options?: { pollMs?: number; requestId?: string }
+  options?: { pollMs?: number; requestId?: string; chatId?: string }
 ): ReturnType<typeof setInterval> {
   const pollMs = options?.pollMs ?? DEFAULT_ABORT_POLL_MS
   const requestId = options?.requestId
+  const chatId = options?.chatId
+
+  let lastHeartbeatAt = Date.now()
+  let heartbeatOwnershipLost = false
 
   return setInterval(() => {
     if (pollingStreams.has(streamId)) return
@@ -286,6 +354,33 @@ export function startAbortPoller(
         })
       } finally {
         pollingStreams.delete(streamId)
+      }
+
+      if (!chatId || heartbeatOwnershipLost) return
+      if (Date.now() - lastHeartbeatAt < CHAT_STREAM_LOCK_HEARTBEAT_INTERVAL_MS) return
+
+      try {
+        const owned = await extendLock(
+          getChatStreamLockKey(chatId),
+          streamId,
+          CHAT_STREAM_LOCK_TTL_SECONDS
+        )
+        lastHeartbeatAt = Date.now()
+        if (!owned) {
+          heartbeatOwnershipLost = true
+          logger.warn('Lost ownership of chat stream lock — stopping heartbeat', {
+            chatId,
+            streamId,
+            ...(requestId ? { requestId } : {}),
+          })
+        }
+      } catch (error) {
+        logger.warn('Failed to extend chat stream lock TTL', {
+          chatId,
+          streamId,
+          ...(requestId ? { requestId } : {}),
+          error: toError(error).message,
+        })
       }
     })()
   }, pollMs)

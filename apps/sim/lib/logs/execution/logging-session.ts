@@ -1,9 +1,10 @@
 import { db } from '@sim/db'
 import { workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { eq, sql } from 'drizzle-orm'
-import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
+import { describeError, toError } from '@sim/utils/errors'
+import { and, eq, sql } from 'drizzle-orm'
+import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
+import { isRetryableInfrastructureError } from '@/lib/core/errors/retryable-infrastructure'
 import { executionLogger } from '@/lib/logs/execution/logger'
 import {
   calculateCostSummary,
@@ -29,6 +30,7 @@ type TriggerData = Record<string, unknown> & {
 
 function buildStartedMarkerPersistenceQuery(params: {
   executionId: string
+  workflowId: string
   marker: ExecutionLastStartedBlock
 }) {
   const markerJson = JSON.stringify(params.marker)
@@ -41,6 +43,7 @@ function buildStartedMarkerPersistenceQuery(params: {
       true
     )
     WHERE execution_id = ${params.executionId}
+      AND workflow_id = ${params.workflowId}
       AND COALESCE(
         jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastStartedBlock', 'startedAt'),
         ''
@@ -49,6 +52,7 @@ function buildStartedMarkerPersistenceQuery(params: {
 
 function buildCompletedMarkerPersistenceQuery(params: {
   executionId: string
+  workflowId: string
   marker: ExecutionLastCompletedBlock
 }) {
   const markerJson = JSON.stringify(params.marker)
@@ -61,6 +65,7 @@ function buildCompletedMarkerPersistenceQuery(params: {
       true
     )
     WHERE execution_id = ${params.executionId}
+      AND workflow_id = ${params.workflowId}
       AND COALESCE(
         jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastCompletedBlock', 'endedAt'),
         ''
@@ -82,6 +87,7 @@ export interface SessionStartParams {
   conversationId?: string
   initialInput?: string
   deploymentVersionId?: string // ID of the deployment version used (null for manual/editor executions)
+  workflowState?: WorkflowState
 }
 
 export interface SessionCompleteParams {
@@ -127,22 +133,6 @@ export interface SessionSkippedParams {
   finalChatOutput?: string
 }
 
-interface AccumulatedCost {
-  total: number
-  input: number
-  output: number
-  tokens: { input: number; output: number; total: number }
-  models: Record<
-    string,
-    {
-      input: number
-      output: number
-      total: number
-      tokens: { input: number; output: number; total: number }
-    }
-  >
-}
-
 export class LoggingSession {
   private workflowId: string
   private executionId: string
@@ -167,15 +157,7 @@ export class LoggingSession {
   private completionPromise: Promise<void> | null = null
   private completionAttempt: CompletionAttempt | null = null
   private completionAttemptFailed = false
-  private accumulatedCost: AccumulatedCost = {
-    total: BASE_EXECUTION_CHARGE,
-    input: 0,
-    output: 0,
-    tokens: { input: 0, output: 0, total: 0 },
-    models: {},
-  }
   private pendingProgressWrites = new Set<Promise<void>>()
-  private costFlushed = false
   private postExecutionPromise: Promise<void> | null = null
 
   constructor(
@@ -211,12 +193,15 @@ export class LoggingSession {
       await db.execute(
         buildStartedMarkerPersistenceQuery({
           executionId: this.executionId,
+          workflowId: this.workflowId,
           marker,
         })
       )
     } catch (error) {
       logger.error(`Failed to persist last started block for execution ${this.executionId}:`, {
         error: toError(error).message,
+        cause: describeError(error),
+        retryable: isRetryableInfrastructureError(error),
       })
     }
   }
@@ -226,12 +211,15 @@ export class LoggingSession {
       await db.execute(
         buildCompletedMarkerPersistenceQuery({
           executionId: this.executionId,
+          workflowId: this.workflowId,
           marker,
         })
       )
     } catch (error) {
       logger.error(`Failed to persist last completed block for execution ${this.executionId}:`, {
         error: toError(error).message,
+        cause: describeError(error),
+        retryable: isRetryableInfrastructureError(error),
       })
     }
   }
@@ -263,7 +251,6 @@ export class LoggingSession {
       totalPromptTokens: number
       totalCompletionTokens: number
       baseExecutionCharge: number
-      modelCost: number
       models: Record<
         string,
         {
@@ -273,10 +260,14 @@ export class LoggingSession {
           tokens: { input: number; output: number; total: number }
         }
       >
+      // Non-model billable charges (standalone tool/integration costs). Carried
+      // through so the partition can't be silently dropped at this boundary.
+      charges?: Record<string, { total: number }>
     }
     finalOutput: Record<string, unknown>
     traceSpans: TraceSpan[]
     workflowInput?: unknown
+    finalChatOutput?: string
     executionState?: SerializableExecutionState
     finalizationPath: ExecutionFinalizationPath
     completionFailure?: string
@@ -291,6 +282,7 @@ export class LoggingSession {
       finalOutput: params.finalOutput,
       traceSpans: params.traceSpans,
       workflowInput: params.workflowInput,
+      finalChatOutput: params.finalChatOutput,
       executionState: params.executionState,
       finalizationPath: params.finalizationPath,
       completionFailure: params.completionFailure,
@@ -298,6 +290,18 @@ export class LoggingSession {
       level: params.level,
       status: params.status,
     })
+
+    // Release the admission reservation from preprocessing. Skipped on pause: a
+    // paused execution keeps its slot until it terminates (or the TTL expires).
+    if (params.finalizationPath !== 'paused') {
+      try {
+        await releaseExecutionSlot(this.executionId)
+      } catch (error) {
+        logger.warn(`Failed to release admission reservation for ${this.executionId}:`, {
+          error: toError(error).message,
+        })
+      }
+    }
   }
 
   async onBlockComplete(
@@ -306,6 +310,9 @@ export class LoggingSession {
     blockType: string,
     output: any
   ): Promise<void> {
+    // Cost is recorded into the usage_log ledger and reconciled at completion
+    // boundaries (see recordExecutionUsage); onBlockComplete only persists the
+    // last-completed-block progress marker.
     await this.trackProgressWrite(
       this.persistLastCompletedBlock({
         blockId,
@@ -315,100 +322,6 @@ export class LoggingSession {
         success: !output?.output?.error,
       })
     )
-
-    const blockOutput = output?.output
-    if (
-      !blockOutput?.cost ||
-      typeof blockOutput.cost.total !== 'number' ||
-      blockOutput.cost.total <= 0
-    ) {
-      return
-    }
-
-    const { cost, tokens, model } = blockOutput
-
-    this.accumulatedCost.total += cost.total || 0
-    this.accumulatedCost.input += cost.input || 0
-    this.accumulatedCost.output += cost.output || 0
-
-    if (tokens) {
-      this.accumulatedCost.tokens.input += tokens.input || 0
-      this.accumulatedCost.tokens.output += tokens.output || 0
-      this.accumulatedCost.tokens.total += tokens.total || 0
-    }
-
-    if (model) {
-      if (!this.accumulatedCost.models[model]) {
-        this.accumulatedCost.models[model] = {
-          input: 0,
-          output: 0,
-          total: 0,
-          tokens: { input: 0, output: 0, total: 0 },
-        }
-      }
-      this.accumulatedCost.models[model].input += cost.input || 0
-      this.accumulatedCost.models[model].output += cost.output || 0
-      this.accumulatedCost.models[model].total += cost.total || 0
-      if (tokens) {
-        this.accumulatedCost.models[model].tokens.input += tokens.input || 0
-        this.accumulatedCost.models[model].tokens.output += tokens.output || 0
-        this.accumulatedCost.models[model].tokens.total += tokens.total || 0
-      }
-    }
-
-    void this.trackProgressWrite(this.flushAccumulatedCost())
-  }
-
-  private async flushAccumulatedCost(): Promise<void> {
-    try {
-      await db
-        .update(workflowExecutionLogs)
-        .set({
-          cost: {
-            total: this.accumulatedCost.total,
-            input: this.accumulatedCost.input,
-            output: this.accumulatedCost.output,
-            tokens: this.accumulatedCost.tokens,
-            models: this.accumulatedCost.models,
-          },
-        })
-        .where(eq(workflowExecutionLogs.executionId, this.executionId))
-
-      this.costFlushed = true
-    } catch (error) {
-      logger.error(`Failed to flush accumulated cost for execution ${this.executionId}:`, {
-        error: toError(error).message,
-      })
-    }
-  }
-
-  private async loadExistingCost(): Promise<void> {
-    try {
-      const [existing] = await db
-        .select({ cost: workflowExecutionLogs.cost })
-        .from(workflowExecutionLogs)
-        .where(eq(workflowExecutionLogs.executionId, this.executionId))
-        .limit(1)
-
-      if (existing?.cost) {
-        const cost = existing.cost as AccumulatedCost
-        this.accumulatedCost = {
-          total: cost.total || BASE_EXECUTION_CHARGE,
-          input: cost.input || 0,
-          output: cost.output || 0,
-          tokens: {
-            input: cost.tokens?.input || 0,
-            output: cost.tokens?.output || 0,
-            total: cost.tokens?.total || 0,
-          },
-          models: cost.models || {},
-        }
-      }
-    } catch (error) {
-      logger.error(`Failed to load existing cost for execution ${this.executionId}:`, {
-        error: toError(error).message,
-      })
-    }
   }
 
   async start(params: SessionStartParams): Promise<void> {
@@ -423,6 +336,7 @@ export class LoggingSession {
       conversationId,
       initialInput,
       deploymentVersionId,
+      workflowState,
     } = params
 
     try {
@@ -435,11 +349,11 @@ export class LoggingSession {
         workspaceId,
         variables
       )
-      // Use deployed state if deploymentVersionId is provided (non-manual execution)
-      // Otherwise fall back to loading from normalized tables (manual/draft execution)
-      this.workflowState = deploymentVersionId
-        ? await loadDeployedWorkflowStateForLogging(this.workflowId)
-        : await loadWorkflowStateForExecution(this.workflowId)
+      this.workflowState =
+        workflowState ??
+        (deploymentVersionId
+          ? await loadDeployedWorkflowStateForLogging(this.workflowId)
+          : await loadWorkflowStateForExecution(this.workflowId))
 
       // Store chat metadata for later use
       this.chatMetadata = {
@@ -467,8 +381,9 @@ export class LoggingSession {
           deploymentVersionId,
         })
       } else {
+        // Resume: no cost reload needed. Billing reconciles from the usage_log
+        // ledger (pre-pause rows already exist) plus the live cost summary.
         this.isResume = true
-        await this.loadExistingCost()
       }
     } catch (error) {
       if (this.requestId) {
@@ -506,7 +421,7 @@ export class LoggingSession {
         finalOutput: finalOutput || {},
         traceSpans: traceSpans || [],
         workflowInput,
-        isResume: this.isResume,
+        // isResume: this.isResume,
         finalChatOutput,
         executionState,
         finalizationPath: 'completed',
@@ -565,6 +480,8 @@ export class LoggingSession {
         executionId: this.executionId,
         error: toError(error).message,
         stack: error instanceof Error ? error.stack : undefined,
+        cause: describeError(error),
+        retryable: isRetryableInfrastructureError(error),
       })
       throw error
     }
@@ -577,6 +494,23 @@ export class LoggingSession {
     this.completing = true
 
     try {
+      const currentLog = await db
+        .select({ status: workflowExecutionLogs.status })
+        .from(workflowExecutionLogs)
+        .where(
+          and(
+            eq(workflowExecutionLogs.workflowId, this.workflowId),
+            eq(workflowExecutionLogs.executionId, this.executionId)
+          )
+        )
+        .limit(1)
+        .then((rows) => rows[0])
+
+      if (currentLog?.status === 'cancelled') {
+        this.completed = true
+        return
+      }
+
       const { endedAt, totalDurationMs, error, traceSpans, skipCost } = params
 
       const endTime = endedAt ? new Date(endedAt) : new Date()
@@ -585,6 +519,8 @@ export class LoggingSession {
 
       const hasProvidedSpans = Array.isArray(traceSpans) && traceSpans.length > 0
 
+      // calculateCostSummary([]) / (undefined) already returns the base-charge
+      // summary, so the no-spans branch needs no separate literal.
       const costSummary = skipCost
         ? {
             totalCost: 0,
@@ -594,22 +530,10 @@ export class LoggingSession {
             totalPromptTokens: 0,
             totalCompletionTokens: 0,
             baseExecutionCharge: 0,
-            modelCost: 0,
             models: {},
+            charges: {},
           }
-        : hasProvidedSpans
-          ? calculateCostSummary(traceSpans)
-          : {
-              totalCost: BASE_EXECUTION_CHARGE,
-              totalInputCost: 0,
-              totalOutputCost: 0,
-              totalTokens: 0,
-              totalPromptTokens: 0,
-              totalCompletionTokens: 0,
-              baseExecutionCharge: BASE_EXECUTION_CHARGE,
-              modelCost: 0,
-              models: {},
-            }
+        : calculateCostSummary(traceSpans)
 
       const message = error?.message || 'Run failed before starting blocks'
 
@@ -701,19 +625,26 @@ export class LoggingSession {
       const endTime = endedAt ? new Date(endedAt) : new Date()
       const durationMs = typeof totalDurationMs === 'number' ? totalDurationMs : 0
 
-      const costSummary = traceSpans?.length
-        ? calculateCostSummary(traceSpans)
-        : {
-            totalCost: BASE_EXECUTION_CHARGE,
-            totalInputCost: 0,
-            totalOutputCost: 0,
-            totalTokens: 0,
-            totalPromptTokens: 0,
-            totalCompletionTokens: 0,
-            baseExecutionCharge: BASE_EXECUTION_CHARGE,
-            modelCost: 0,
-            models: {},
-          }
+      const currentLog = await db
+        .select({ status: workflowExecutionLogs.status })
+        .from(workflowExecutionLogs)
+        .where(
+          and(
+            eq(workflowExecutionLogs.workflowId, this.workflowId),
+            eq(workflowExecutionLogs.executionId, this.executionId)
+          )
+        )
+        .limit(1)
+        .then((rows) => rows[0])
+
+      if (currentLog?.status === 'cancelled') {
+        this.completed = true
+        return
+      }
+
+      // calculateCostSummary handles empty/undefined spans by returning the
+      // base-charge summary, so no separate no-spans literal is needed.
+      const costSummary = calculateCostSummary(traceSpans)
 
       await this.completeExecutionWithFinalization({
         endedAt: endTime.toISOString(),
@@ -788,19 +719,26 @@ export class LoggingSession {
       const endTime = endedAt ? new Date(endedAt) : new Date()
       const durationMs = typeof totalDurationMs === 'number' ? totalDurationMs : 0
 
-      const costSummary = traceSpans?.length
-        ? calculateCostSummary(traceSpans)
-        : {
-            totalCost: BASE_EXECUTION_CHARGE,
-            totalInputCost: 0,
-            totalOutputCost: 0,
-            totalTokens: 0,
-            totalPromptTokens: 0,
-            totalCompletionTokens: 0,
-            baseExecutionCharge: BASE_EXECUTION_CHARGE,
-            modelCost: 0,
-            models: {},
-          }
+      const currentLog = await db
+        .select({ status: workflowExecutionLogs.status })
+        .from(workflowExecutionLogs)
+        .where(
+          and(
+            eq(workflowExecutionLogs.workflowId, this.workflowId),
+            eq(workflowExecutionLogs.executionId, this.executionId)
+          )
+        )
+        .limit(1)
+        .then((rows) => rows[0])
+
+      if (currentLog?.status === 'cancelled') {
+        this.completed = true
+        return
+      }
+
+      // calculateCostSummary handles empty/undefined spans by returning the
+      // base-charge summary, so no separate no-spans literal is needed.
+      const costSummary = calculateCostSummary(traceSpans)
 
       await this.completeExecutionWithFinalization({
         endedAt: endTime.toISOString(),
@@ -957,6 +895,7 @@ export class LoggingSession {
           chatId,
           initialInput,
           deploymentVersionId,
+          workflowState,
         } = params
         this.trigger = createTriggerObject(this.triggerType, triggerData)
         this.correlation = triggerData?.correlation
@@ -967,13 +906,13 @@ export class LoggingSession {
           workspaceId,
           variables
         )
-        // Minimal workflow state when normalized/deployed data is unavailable
-        this.workflowState = {
+        const fallbackWorkflowState: WorkflowState = workflowState ?? {
           blocks: {},
           edges: [],
           loops: {},
           parallels: {},
-        } as unknown as WorkflowState
+        }
+        this.workflowState = fallbackWorkflowState
 
         await executionLogger.startWorkflowExecution({
           workflowId: this.workflowId,
@@ -1186,6 +1125,8 @@ export class LoggingSession {
         totalDurationMs: params?.totalDurationMs,
         errorMessage: 'Execution skipped by intent analyzer',
         isError: false,
+        finalizationPath: 'fallback_completed',
+        finalOutput: { skipped: true },
         status: 'skipped',
       })
     }
@@ -1193,13 +1134,19 @@ export class LoggingSession {
 
   async markAsFailed(errorMessage?: string): Promise<void> {
     await this.waitForCompletion()
-    await LoggingSession.markExecutionAsFailed(this.executionId, errorMessage, this.requestId)
+    await LoggingSession.markExecutionAsFailed(
+      this.executionId,
+      errorMessage,
+      this.requestId,
+      this.workflowId
+    )
   }
 
   static async markExecutionAsFailed(
     executionId: string,
-    errorMessage?: string,
-    requestId?: string
+    errorMessage: string | undefined,
+    requestId: string | undefined,
+    workflowId: string
   ): Promise<void> {
     try {
       const message = errorMessage || 'Run failed'
@@ -1222,7 +1169,12 @@ export class LoggingSession {
             to_jsonb('force_failed'::text)
           )`,
         })
-        .where(eq(workflowExecutionLogs.executionId, executionId))
+        .where(
+          and(
+            eq(workflowExecutionLogs.executionId, executionId),
+            eq(workflowExecutionLogs.workflowId, workflowId)
+          )
+        )
 
       logger.info(`[${requestId || 'unknown'}] Marked execution ${executionId} as failed`)
     } catch (error) {
@@ -1252,37 +1204,12 @@ export class LoggingSession {
     )
 
     try {
-      const hasAccumulatedCost =
-        this.costFlushed ||
-        this.accumulatedCost.total > BASE_EXECUTION_CHARGE ||
-        this.accumulatedCost.tokens.total > 0 ||
-        Object.keys(this.accumulatedCost.models).length > 0
-
-      const costSummary = hasAccumulatedCost
-        ? {
-            totalCost: this.accumulatedCost.total,
-            totalInputCost: this.accumulatedCost.input,
-            totalOutputCost: this.accumulatedCost.output,
-            totalTokens: this.accumulatedCost.tokens.total,
-            totalPromptTokens: this.accumulatedCost.tokens.input,
-            totalCompletionTokens: this.accumulatedCost.tokens.output,
-            baseExecutionCharge: BASE_EXECUTION_CHARGE,
-            modelCost: Math.max(0, this.accumulatedCost.total - BASE_EXECUTION_CHARGE),
-            models: this.accumulatedCost.models,
-          }
-        : params.traceSpans?.length
-          ? calculateCostSummary(params.traceSpans)
-          : {
-              totalCost: BASE_EXECUTION_CHARGE,
-              totalInputCost: 0,
-              totalOutputCost: 0,
-              totalTokens: 0,
-              totalPromptTokens: 0,
-              totalCompletionTokens: 0,
-              baseExecutionCharge: BASE_EXECUTION_CHARGE,
-              modelCost: 0,
-              models: {},
-            }
+      // Billing is reconciled from the usage_log ledger in recordExecutionUsage;
+      // here we only need a cost summary to compute the run total. Derive it
+      // from the in-memory trace spans when available (this fallback fires when
+      // persisting spans failed, not when computing them did), else just the
+      // base execution charge.
+      const costSummary = calculateCostSummary(params.traceSpans)
 
       const finalOutput = params.finalOutput || { _fallback: true, error: params.errorMessage }
 
@@ -1308,7 +1235,11 @@ export class LoggingSession {
       this.completionAttemptFailed = true
       logger.error(
         `[${this.requestId || 'unknown'}] Cost-only fallback also failed for execution ${this.executionId}:`,
-        { error: toError(fallbackError).message }
+        {
+          error: toError(fallbackError).message,
+          cause: describeError(fallbackError),
+          retryable: isRetryableInfrastructureError(fallbackError),
+        }
       )
     }
   }

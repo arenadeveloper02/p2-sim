@@ -1,6 +1,7 @@
-import { SlackIcon } from '@/components/icons'
+import { BookOpen, ClipboardList, File, Table, Users } from '@/components/emcn/icons'
+import { GoogleTranslateIcon, GreptileIcon, LinearIcon, SlackIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import type { BlockConfig } from '@/blocks/types'
+import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
 import type { SlackResponse } from '@/tools/slack/types'
@@ -14,10 +15,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
   authMode: AuthMode.OAuth,
   longDescription:
     'Integrate Slack into the workflow. Can send, update, and delete messages, send ephemeral messages visible only to a specific user, open/update/push modal views, publish Home tab views, create canvases, read messages, and add or remove reactions. Requires Bot Token instead of OAuth in advanced mode. Can be used in trigger mode to trigger a workflow when a message is sent to a channel.',
-  docsLink: 'https://docs.sim.ai/tools/slack',
+  docsLink: 'https://docs.sim.ai/integrations/slack',
   category: 'tools',
   integrationType: IntegrationType.Communication,
-  tags: ['messaging', 'webhooks', 'automation'],
   bgColor: '#611f69',
   icon: SlackIcon,
   triggerAllowed: true,
@@ -33,6 +33,12 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Read Messages', id: 'read' },
         { label: 'Get Message', id: 'get_message' },
         { label: 'Get Thread', id: 'get_thread' },
+        { label: 'Get Thread Replies', id: 'get_thread_replies' },
+        { label: 'Get Channel History', id: 'get_channel_history' },
+        { label: 'Get Message Permalink', id: 'get_permalink' },
+        { label: 'Set Assistant Status', id: 'set_status' },
+        { label: 'Set Assistant Title', id: 'set_title' },
+        { label: 'Set Suggested Prompts', id: 'set_suggested_prompts' },
         { label: 'List Channels', id: 'list_channels' },
         { label: 'Get My Channels & DMs', id: 'get_user_channels' },
         { label: 'List Channel Members', id: 'list_members' },
@@ -49,6 +55,10 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
         { label: 'Get User Presence', id: 'get_user_presence' },
         { label: 'Edit Canvas', id: 'edit_canvas' },
         { label: 'Create Channel Canvas', id: 'create_channel_canvas' },
+        { label: 'Get Canvas Info', id: 'get_canvas' },
+        { label: 'List Canvases', id: 'list_canvases' },
+        { label: 'Lookup Canvas Sections', id: 'lookup_canvas_sections' },
+        { label: 'Delete Canvas', id: 'delete_canvas' },
         { label: 'Create Conversation', id: 'create_conversation' },
         { label: 'Invite to Conversation', id: 'invite_to_conversation' },
         { label: 'Open View', id: 'open_view' },
@@ -131,6 +141,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             'search_all',
             'get_user_presence',
             'edit_canvas',
+            'get_canvas',
+            'lookup_canvas_sections',
+            'delete_canvas',
             'create_conversation',
             'open_view',
             'update_view',
@@ -145,7 +158,11 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           },
         }
       },
-      required: true,
+      required: {
+        field: 'operation',
+        value: 'list_canvases',
+        not: true,
+      },
     },
     {
       id: 'manualChannel',
@@ -153,6 +170,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'channel',
       placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: (values?: Record<string, unknown>) => {
         const op = values?.operation as string
@@ -170,6 +188,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
             'search_all',
             'get_user_presence',
             'edit_canvas',
+            'get_canvas',
+            'lookup_canvas_sections',
+            'delete_canvas',
             'create_conversation',
             'open_view',
             'update_view',
@@ -184,7 +205,11 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
           },
         }
       },
-      required: true,
+      required: {
+        field: 'operation',
+        value: 'list_canvases',
+        not: true,
+      },
     },
     {
       id: 'dmUserId',
@@ -208,6 +233,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'dmUserId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'destinationType',
@@ -237,6 +263,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'ephemeralUser',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -659,17 +686,17 @@ Do not include any explanations, markdown formatting, or other text outside the 
         value: 'list_users',
       },
     },
-    {
-      id: 'listUsersCursor',
-      title: 'Cursor',
-      type: 'short-input',
-      placeholder: 'Pagination cursor from previous List Users response',
-      description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
-      condition: {
-        field: 'operation',
-        value: 'list_users',
-      },
-    },
+    // {
+    //   id: 'listUsersCursor',
+    //   title: 'Cursor',
+    //   type: 'short-input',
+    //   placeholder: 'Pagination cursor from previous List Users response',
+    //   description: 'Optional. Pass output.cursor from a prior run to fetch the next page',
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'list_users',
+    //   },
+    // },
     {
       id: 'listUsersAutoPaginate',
       title: 'Auto Paginate',
@@ -685,6 +712,18 @@ Do not include any explanations, markdown formatting, or other text outside the 
         field: 'operation',
         value: 'list_users',
       },
+    },
+    // Pagination cursor (shared across list_channels, list_members, list_users)
+    {
+      id: 'paginationCursor',
+      title: 'Pagination Cursor',
+      type: 'short-input',
+      placeholder: 'next_cursor from a previous response',
+      condition: {
+        field: 'operation',
+        value: ['list_channels', 'list_members', 'list_users'],
+      },
+      mode: 'advanced',
     },
     // Get User specific fields
     {
@@ -709,6 +748,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'short-input',
       canonicalParamId: 'userId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -724,7 +764,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       placeholder: 'Message timestamp (e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
-        value: 'get_message',
+        value: ['get_message', 'get_permalink'],
       },
       required: true,
       wandConfig: {
@@ -750,7 +790,13 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       placeholder: 'Thread timestamp (thread_ts, e.g., 1405894322.002768)',
       condition: {
         field: 'operation',
-        value: 'get_thread',
+        value: [
+          'get_thread',
+          'get_thread_replies',
+          'set_status',
+          'set_title',
+          'set_suggested_prompts',
+        ],
       },
       required: true,
       wandConfig: {
@@ -777,6 +823,152 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         field: 'operation',
         value: 'get_thread',
       },
+    },
+    // Set Assistant Status specific fields
+    {
+      id: 'status',
+      title: 'Status Text',
+      type: 'short-input',
+      placeholder: 'e.g., Working on it… (leave empty to clear)',
+      condition: {
+        field: 'operation',
+        value: 'set_status',
+      },
+      required: false,
+    },
+    {
+      id: 'loadingMessages',
+      title: 'Loading Messages',
+      type: 'long-input',
+      placeholder: 'Optional JSON array of phrases to animate (max 10)',
+      condition: {
+        field: 'operation',
+        value: 'set_status',
+      },
+      required: false,
+    },
+    // Set Assistant Title specific fields
+    {
+      id: 'assistantTitle',
+      title: 'Thread Title',
+      type: 'short-input',
+      placeholder: 'Title to display for the assistant thread',
+      condition: {
+        field: 'operation',
+        value: 'set_title',
+      },
+      required: true,
+    },
+    // Set Suggested Prompts specific fields
+    {
+      id: 'suggestedPrompts',
+      title: 'Suggested Prompts',
+      type: 'long-input',
+      placeholder: '[{"title": "Summarize", "message": "Summarize this thread"}]',
+      condition: {
+        field: 'operation',
+        value: 'set_suggested_prompts',
+      },
+      required: true,
+      wandConfig: {
+        enabled: true,
+        prompt: `Generate a JSON array of Slack assistant suggested prompts from the user's description.
+Each entry must be an object with exactly two string fields:
+- "title": the short label shown on the clickable chip
+- "message": the full message sent into the thread when the chip is clicked
+Return at most 4 prompts.
+Example:
+[{"title": "Summarize", "message": "Summarize the key points of this thread"}, {"title": "Next steps", "message": "What are the next steps?"}]
+
+Return ONLY the JSON array - no explanations, no quotes around the array, no extra text.`,
+        placeholder: 'Describe the prompts you want (e.g., "summarize and list action items")...',
+        generationType: 'json-object',
+      },
+    },
+    {
+      id: 'promptsTitle',
+      title: 'Prompts Heading',
+      type: 'short-input',
+      placeholder: 'e.g., Suggested Prompts (optional)',
+      condition: {
+        field: 'operation',
+        value: 'set_suggested_prompts',
+      },
+      mode: 'advanced',
+      required: false,
+    },
+    // Get Channel History / Get Thread Replies shared pagination fields
+    {
+      id: 'historyOldest',
+      title: 'Oldest Timestamp',
+      type: 'short-input',
+      placeholder: 'Unix seconds, e.g., 1700000000 (only messages after)',
+      condition: {
+        field: 'operation',
+        value: ['get_channel_history', 'get_thread_replies'],
+      },
+      required: false,
+    },
+    {
+      id: 'historyLatest',
+      title: 'Latest Timestamp',
+      type: 'short-input',
+      placeholder: 'Unix seconds, e.g., 1700000000 (only messages before)',
+      condition: {
+        field: 'operation',
+        value: ['get_channel_history', 'get_thread_replies'],
+      },
+      required: false,
+    },
+    {
+      id: 'historyLimit',
+      title: 'Page Size',
+      type: 'short-input',
+      placeholder: '200 (max 999)',
+      condition: {
+        field: 'operation',
+        value: ['get_channel_history', 'get_thread_replies'],
+      },
+      required: false,
+    },
+    {
+      id: 'historyMaxPages',
+      title: 'Max Pages',
+      type: 'short-input',
+      placeholder: '10',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: ['get_channel_history', 'get_thread_replies'],
+      },
+      required: false,
+    },
+    {
+      id: 'historyCursor',
+      title: 'Start Cursor',
+      type: 'short-input',
+      placeholder: 'Resume from a previous nextCursor',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: ['get_channel_history', 'get_thread_replies'],
+      },
+      required: false,
+    },
+    {
+      id: 'historyInclusive',
+      title: 'Inclusive',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      condition: {
+        field: 'operation',
+        value: ['get_channel_history', 'get_thread_replies'],
+      },
+      required: false,
     },
     {
       id: 'getThreadCursor',
@@ -1037,6 +1229,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       canonicalParamId: 'presenceUserId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1138,6 +1331,121 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
         field: 'operation',
         value: 'create_channel_canvas',
       },
+    },
+    // Get Canvas specific fields
+    {
+      id: 'getCanvasId',
+      title: 'Canvas ID',
+      type: 'short-input',
+      placeholder: 'Enter canvas ID (e.g., F1234ABCD)',
+      condition: {
+        field: 'operation',
+        value: 'get_canvas',
+      },
+      required: true,
+    },
+    // List Canvases specific fields
+    {
+      id: 'canvasListCount',
+      title: 'Canvas Limit',
+      type: 'short-input',
+      placeholder: '100',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListPage',
+      title: 'Page',
+      type: 'short-input',
+      placeholder: '1',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListUser',
+      title: 'User ID',
+      type: 'short-input',
+      placeholder: 'Optional creator filter (e.g., U1234567890)',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListTsFrom',
+      title: 'Created After',
+      type: 'short-input',
+      placeholder: 'Unix timestamp (e.g., 123456789)',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListTsTo',
+      title: 'Created Before',
+      type: 'short-input',
+      placeholder: 'Unix timestamp (e.g., 123456789)',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    {
+      id: 'canvasListTeamId',
+      title: 'Team ID',
+      type: 'short-input',
+      placeholder: 'Encoded team ID (org tokens only)',
+      condition: {
+        field: 'operation',
+        value: 'list_canvases',
+      },
+      mode: 'advanced',
+    },
+    // Lookup Canvas Sections specific fields
+    {
+      id: 'lookupCanvasId',
+      title: 'Canvas ID',
+      type: 'short-input',
+      placeholder: 'Enter canvas ID (e.g., F1234ABCD)',
+      condition: {
+        field: 'operation',
+        value: 'lookup_canvas_sections',
+      },
+      required: true,
+    },
+    {
+      id: 'sectionCriteria',
+      title: 'Section Criteria',
+      type: 'code',
+      language: 'json',
+      placeholder: '{"section_types":["h1"],"contains_text":"Roadmap"}',
+      condition: {
+        field: 'operation',
+        value: 'lookup_canvas_sections',
+      },
+      required: true,
+    },
+    // Delete Canvas specific fields
+    {
+      id: 'deleteCanvasId',
+      title: 'Canvas ID',
+      type: 'short-input',
+      placeholder: 'Enter canvas ID (e.g., F1234ABCD)',
+      condition: {
+        field: 'operation',
+        value: 'delete_canvas',
+      },
+      required: true,
     },
     // Create Conversation specific fields
     {
@@ -1282,6 +1590,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       canonicalParamId: 'publishUserId',
       placeholder: 'Enter Slack user ID (e.g., U0BPQUNTA)',
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1364,6 +1673,12 @@ Do not include any explanations, markdown formatting, or other text outside the 
       'slack_message_reader',
       'slack_get_message',
       'slack_get_thread',
+      'slack_get_thread_replies',
+      'slack_get_channel_history',
+      'slack_get_permalink',
+      'slack_set_status',
+      'slack_set_title',
+      'slack_set_suggested_prompts',
       'slack_list_channels',
       'slack_get_user_channels',
       'slack_list_members',
@@ -1379,6 +1694,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
       'slack_get_user_presence',
       'slack_edit_canvas',
       'slack_create_channel_canvas',
+      'slack_get_canvas',
+      'slack_list_canvases',
+      'slack_lookup_canvas_sections',
+      'slack_delete_canvas',
       'slack_create_conversation',
       'slack_invite_to_conversation',
       'slack_open_view',
@@ -1402,6 +1721,18 @@ Do not include any explanations, markdown formatting, or other text outside the 
             return 'slack_get_message'
           case 'get_thread':
             return 'slack_get_thread'
+          case 'get_thread_replies':
+            return 'slack_get_thread_replies'
+          case 'get_channel_history':
+            return 'slack_get_channel_history'
+          case 'get_permalink':
+            return 'slack_get_permalink'
+          case 'set_status':
+            return 'slack_set_status'
+          case 'set_title':
+            return 'slack_set_title'
+          case 'set_suggested_prompts':
+            return 'slack_set_suggested_prompts'
           case 'list_channels':
             return 'slack_list_channels'
           case 'get_user_channels':
@@ -1434,6 +1765,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
             return 'slack_edit_canvas'
           case 'create_channel_canvas':
             return 'slack_create_channel_canvas'
+          case 'get_canvas':
+            return 'slack_get_canvas'
+          case 'list_canvases':
+            return 'slack_list_canvases'
+          case 'lookup_canvas_sections':
+            return 'slack_lookup_canvas_sections'
+          case 'delete_canvas':
+            return 'slack_delete_canvas'
           case 'create_conversation':
             return 'slack_create_conversation'
           case 'invite_to_conversation':
@@ -1493,7 +1832,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
           listMembersCursor,
           includeDeleted,
           userLimit,
-          listUsersCursor,
+          // listUsersCursor,
           userId,
           clientId,
           channelId,
@@ -1507,6 +1846,17 @@ Do not include any explanations, markdown formatting, or other text outside the 
           getThreadTimestamp,
           threadLimit,
           getThreadCursor,
+          status,
+          loadingMessages,
+          assistantTitle,
+          suggestedPrompts,
+          promptsTitle,
+          historyOldest,
+          historyLatest,
+          historyLimit,
+          historyMaxPages,
+          historyCursor,
+          historyInclusive,
           includeNumMembers,
           presenceUserId,
           editCanvasId,
@@ -1516,6 +1866,16 @@ Do not include any explanations, markdown formatting, or other text outside the 
           canvasTitle,
           channelCanvasTitle,
           channelCanvasContent,
+          getCanvasId,
+          canvasListCount,
+          canvasListPage,
+          canvasListUser,
+          canvasListTsFrom,
+          canvasListTsTo,
+          canvasListTeamId,
+          lookupCanvasId,
+          sectionCriteria,
+          deleteCanvasId,
           conversationName,
           isPrivate,
           teamId,
@@ -1528,6 +1888,9 @@ Do not include any explanations, markdown formatting, or other text outside the 
           viewHash,
           publishUserId,
           viewPayload,
+          fileId,
+          fileName,
+          paginationCursor,
           ...rest
         } = params
 
@@ -1761,6 +2124,64 @@ Do not include any explanations, markdown formatting, or other text outside the 
             break
           }
 
+          case 'set_status': {
+            baseParams.threadTs = getThreadTimestamp
+            baseParams.status = status ?? ''
+            if (loadingMessages) {
+              baseParams.loadingMessages = loadingMessages
+            }
+            break
+          }
+
+          case 'set_title': {
+            baseParams.threadTs = getThreadTimestamp
+            baseParams.title = assistantTitle
+            break
+          }
+
+          case 'set_suggested_prompts': {
+            baseParams.threadTs = getThreadTimestamp
+            baseParams.prompts = suggestedPrompts
+            if (promptsTitle) {
+              baseParams.promptsTitle = promptsTitle
+            }
+            break
+          }
+
+          case 'get_permalink': {
+            baseParams.messageTs = getMessageTimestamp
+            break
+          }
+
+          case 'get_channel_history':
+          case 'get_thread_replies': {
+            if (operation === 'get_thread_replies') {
+              baseParams.threadTs = getThreadTimestamp
+            }
+            if (historyOldest) {
+              baseParams.oldest = String(historyOldest).trim()
+            }
+            if (historyLatest) {
+              baseParams.latest = String(historyLatest).trim()
+            }
+            if (historyLimit) {
+              const parsedLimit = Number.parseInt(historyLimit, 10)
+              if (!Number.isNaN(parsedLimit) && parsedLimit > 0) {
+                baseParams.limit = parsedLimit
+              }
+            }
+            if (historyMaxPages) {
+              const parsedMaxPages = Number.parseInt(historyMaxPages, 10)
+              if (!Number.isNaN(parsedMaxPages) && parsedMaxPages > 0) {
+                baseParams.maxPages = parsedMaxPages
+              }
+            }
+            if (historyCursor) {
+              baseParams.cursor = String(historyCursor).trim()
+            }
+            baseParams.inclusive = historyInclusive === 'true'
+            break
+          }
           case 'list_channels':
           case 'get_user_channels': {
             // includePublic is only exposed in the UI for get_user_channels;
@@ -1768,6 +2189,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
             // dropdown for it there, so includePublic is undefined and the
             // tool falls back to its default "include").
             baseParams.includePublic = includePublic !== 'false'
+
             baseParams.includePrivate = includePrivate !== 'false'
             if (includeDMs === 'true' || includeDMs === 'false') {
               baseParams.includeDMs = includeDMs === 'true'
@@ -1776,23 +2198,17 @@ Do not include any explanations, markdown formatting, or other text outside the 
               baseParams.includeGroupDMs = includeGroupDMs === 'true'
             }
             baseParams.excludeArchived = true
-            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 200
-            if (operation === 'get_user_channels' && getUserChannelsCursor?.trim()) {
-              baseParams.cursor = getUserChannelsCursor.trim()
-            }
-            if (operation === 'list_channels' && listChannelsCursor?.trim()) {
-              baseParams.cursor = listChannelsCursor.trim()
-            }
-            if (operation === 'get_user_channels') {
-              baseParams.autoPaginate = true
+            baseParams.limit = channelLimit ? Number.parseInt(channelLimit, 10) : 100
+            if (paginationCursor) {
+              baseParams.cursor = String(paginationCursor).trim()
             }
             break
           }
 
           case 'list_members': {
             baseParams.limit = memberLimit ? Number.parseInt(memberLimit, 10) : 100
-            if (listMembersCursor?.trim()) {
-              baseParams.cursor = listMembersCursor.trim()
+            if (paginationCursor) {
+              baseParams.cursor = String(paginationCursor).trim()
             }
             break
           }
@@ -1800,9 +2216,8 @@ Do not include any explanations, markdown formatting, or other text outside the 
           case 'list_users': {
             baseParams.includeDeleted = includeDeleted === 'true'
             baseParams.limit = userLimit ? Number.parseInt(userLimit, 10) : 100
-            baseParams.autoPaginate = true
-            if (listUsersCursor?.trim()) {
-              baseParams.cursor = listUsersCursor.trim()
+            if (paginationCursor) {
+              baseParams.cursor = String(paginationCursor).trim()
             }
             break
           }
@@ -1816,8 +2231,6 @@ Do not include any explanations, markdown formatting, or other text outside the 
             break
 
           case 'download': {
-            const fileId = (rest as any).fileId
-            const fileName = (rest as any).fileName
             baseParams.fileId = fileId
             if (fileName) {
               baseParams.fileName = fileName
@@ -1944,6 +2357,46 @@ Do not include any explanations, markdown formatting, or other text outside the 
             }
             break
 
+          case 'get_canvas':
+            baseParams.canvasId = getCanvasId
+            break
+
+          case 'list_canvases':
+            if (canvasListCount) {
+              const parsedCount = Number.parseInt(canvasListCount, 10)
+              if (!Number.isNaN(parsedCount) && parsedCount > 0) {
+                baseParams.count = parsedCount
+              }
+            }
+            if (canvasListPage) {
+              const parsedPage = Number.parseInt(canvasListPage, 10)
+              if (!Number.isNaN(parsedPage) && parsedPage > 0) {
+                baseParams.page = parsedPage
+              }
+            }
+            if (canvasListUser) {
+              baseParams.user = String(canvasListUser).trim()
+            }
+            if (canvasListTsFrom) {
+              baseParams.tsFrom = String(canvasListTsFrom).trim()
+            }
+            if (canvasListTsTo) {
+              baseParams.tsTo = String(canvasListTsTo).trim()
+            }
+            if (canvasListTeamId) {
+              baseParams.teamId = String(canvasListTeamId).trim()
+            }
+            break
+
+          case 'lookup_canvas_sections':
+            baseParams.canvasId = lookupCanvasId
+            baseParams.criteria = sectionCriteria
+            break
+
+          case 'delete_canvas':
+            baseParams.canvasId = deleteCanvasId
+            break
+
           case 'create_conversation':
             baseParams.name = conversationName
             baseParams.isPrivate = isPrivate === 'true'
@@ -1967,18 +2420,24 @@ Do not include any explanations, markdown formatting, or other text outside the 
             baseParams.view = viewPayload
             break
 
-          case 'update_view':
-            if (viewId) {
-              baseParams.viewId = viewId
+          case 'update_view': {
+            const trimmedViewId = viewId ? String(viewId).trim() : ''
+            const trimmedExternalId = viewExternalId ? String(viewExternalId).trim() : ''
+            if (!trimmedViewId && !trimmedExternalId) {
+              throw new Error('update_view requires either View ID or External ID')
             }
-            if (viewExternalId) {
-              baseParams.externalId = viewExternalId
+            if (trimmedViewId) {
+              baseParams.viewId = trimmedViewId
+            }
+            if (trimmedExternalId) {
+              baseParams.externalId = trimmedExternalId
             }
             if (viewHash) {
               baseParams.hash = viewHash
             }
             baseParams.view = viewPayload
             break
+          }
 
           case 'push_view':
             baseParams.triggerId = viewTriggerId
@@ -2091,9 +2550,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
     // List Users inputs
     includeDeleted: { type: 'string', description: 'Include deactivated users (true/false)' },
     userLimit: { type: 'string', description: 'Maximum number of users to return' },
-    listUsersCursor: {
+    // Shared pagination input
+    paginationCursor: {
       type: 'string',
-      description: 'Optional pagination cursor for List Users (users.list)',
+      description: 'Pagination cursor (next_cursor) for list_channels/list_members/list_users',
     },
     // Ephemeral message inputs
     ephemeralUser: { type: 'string', description: 'User ID who will see the ephemeral message' },
@@ -2112,6 +2572,36 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'string',
       description: 'Optional pagination cursor for Get Thread (conversations.replies)',
     },
+    // Set Assistant Status inputs
+    status: { type: 'string', description: 'Status text to display (empty clears the status)' },
+    loadingMessages: {
+      type: 'json',
+      description: 'Optional array of phrases to animate as a loading indicator (max 10)',
+    },
+    // Set Assistant Title inputs
+    assistantTitle: { type: 'string', description: 'Title to display for the assistant thread' },
+    // Set Suggested Prompts inputs
+    suggestedPrompts: {
+      type: 'json',
+      description: 'Array of { title, message } prompt objects (max 4)',
+    },
+    promptsTitle: { type: 'string', description: 'Optional heading for the prompt list' },
+    // Get Channel History / Get Thread Replies inputs
+    historyOldest: {
+      type: 'string',
+      description: 'Only include messages after this Unix timestamp',
+    },
+    historyLatest: {
+      type: 'string',
+      description: 'Only include messages before this Unix timestamp',
+    },
+    historyLimit: { type: 'string', description: 'Messages to request per page (max 999)' },
+    historyMaxPages: { type: 'string', description: 'Maximum number of pages to fetch' },
+    historyCursor: { type: 'string', description: 'Pagination cursor to resume from' },
+    historyInclusive: {
+      type: 'string',
+      description: 'Include messages matching oldest/latest (true/false)',
+    },
     // Get Channel Info inputs
     includeNumMembers: { type: 'string', description: 'Include member count (true/false)' },
     // Get User Presence inputs
@@ -2125,6 +2615,23 @@ Do not include any explanations, markdown formatting, or other text outside the 
     // Create Channel Canvas inputs
     channelCanvasTitle: { type: 'string', description: 'Title for channel canvas' },
     channelCanvasContent: { type: 'string', description: 'Content for channel canvas' },
+    // Canvas management inputs
+    getCanvasId: { type: 'string', description: 'Canvas ID to retrieve' },
+    canvasListCount: { type: 'string', description: 'Maximum number of canvases to return' },
+    canvasListPage: { type: 'string', description: 'Canvas list page number' },
+    canvasListUser: { type: 'string', description: 'Optional canvas creator user filter' },
+    canvasListTsFrom: {
+      type: 'string',
+      description: 'Filter canvases created after this timestamp',
+    },
+    canvasListTsTo: {
+      type: 'string',
+      description: 'Filter canvases created before this timestamp',
+    },
+    canvasListTeamId: { type: 'string', description: 'Encoded team ID for org tokens' },
+    lookupCanvasId: { type: 'string', description: 'Canvas ID to search for sections' },
+    sectionCriteria: { type: 'json', description: 'Canvas section lookup criteria' },
+    deleteCanvasId: { type: 'string', description: 'Canvas ID to delete' },
     // Create Conversation inputs
     conversationName: { type: 'string', description: 'Name for the new channel' },
     isPrivate: { type: 'string', description: 'Create as private channel (true/false)' },
@@ -2175,20 +2682,32 @@ Do not include any explanations, markdown formatting, or other text outside the 
     // slack_canvas outputs
     canvas_id: { type: 'string', description: 'Canvas identifier for created canvases' },
     title: { type: 'string', description: 'Canvas title' },
+    canvas: {
+      type: 'json',
+      description: 'Canvas file metadata returned by Slack',
+    },
+    canvases: {
+      type: 'json',
+      description: 'Array of canvas file objects returned by Slack',
+    },
+    paging: {
+      type: 'json',
+      description: 'Pagination information for listed canvases',
+    },
+    sections: {
+      type: 'json',
+      description: 'Canvas section IDs returned by Slack section lookup',
+    },
+    ok: {
+      type: 'boolean',
+      description: 'Whether Slack completed the canvas operation successfully',
+    },
 
     // slack_message_reader outputs (read operation)
     messages: {
       type: 'json',
       description:
         'Array of message objects with comprehensive properties: text, user, timestamp, reactions, threads, files, attachments, blocks, stars, pins, and edit history',
-      condition: {
-        field: 'operation',
-        value: 'read',
-      },
-    },
-    nextCursor: {
-      type: 'string',
-      description: 'Pagination cursor for next page of results',
       condition: {
         field: 'operation',
         value: 'read',
@@ -2237,6 +2756,22 @@ Do not include any explanations, markdown formatting, or other text outside the 
       description: 'Whether there are more messages in the thread',
     },
 
+    // slack_get_channel_history / slack_get_thread_replies pagination outputs
+    pages: {
+      type: 'number',
+      description: 'Number of pages fetched during a paginated history/replies read',
+    },
+    threadTs: {
+      type: 'string',
+      description: 'Thread timestamp an assistant status/title/prompts op was set on',
+    },
+
+    // slack_get_permalink outputs (get_permalink operation)
+    permalink: {
+      type: 'string',
+      description: 'Permalink URL to the message',
+    },
+
     // slack_list_channels outputs (list_channels operation)
     channels: {
       type: 'json',
@@ -2247,14 +2782,9 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'number',
       description: 'Total number of items returned (channels, members, or users)',
     },
-    cursor: {
+    nextCursor: {
       type: 'string',
-      description:
-        'Pagination cursor for the next page (Slack response_metadata.next_cursor) for List Channels, Get User Channels, List Members, List Users, or Get Thread; null or empty when there are no more results',
-      condition: {
-        field: 'operation',
-        value: ['list_channels', 'get_user_channels', 'list_members', 'list_users', 'get_thread'],
-      },
+      description: 'Cursor for the next page (null when there are no more pages)',
     },
 
     // slack_list_members outputs (list_members operation)
@@ -2422,3 +2952,155 @@ Do not include any explanations, markdown formatting, or other text outside the 
     available: ['slack_webhook'],
   },
 }
+
+export const SlackBlockMeta = {
+  tags: ['messaging', 'webhooks', 'automation'],
+  templates: [
+    {
+      icon: SlackIcon,
+      title: 'Slack Q&A bot',
+      prompt:
+        'Create a knowledge base connected to my Notion workspace so it stays synced with my company wiki. Then build a workflow that monitors Slack channels for questions and answers them using the knowledge base with source citations.',
+      modules: ['knowledge-base', 'agent', 'workflows'],
+      category: 'support',
+      tags: ['support', 'communication', 'team'],
+      alsoIntegrations: ['notion'],
+    },
+    {
+      icon: Table,
+      title: 'Churn risk detector',
+      prompt:
+        'Create a workflow that monitors customer activity — support ticket frequency, response sentiment, usage patterns — scores each account for churn risk in a table, and triggers a Slack alert to the account team when a customer crosses the risk threshold.',
+      modules: ['tables', 'scheduled', 'agent', 'workflows'],
+      category: 'support',
+      tags: ['support', 'sales', 'monitoring', 'analysis'],
+    },
+    {
+      icon: LinearIcon,
+      title: 'Incident postmortem writer',
+      prompt:
+        'Create a workflow that when triggered after an incident, pulls the Slack thread from the incident channel, gathers relevant Sentry errors and deployment logs, and drafts a structured postmortem with timeline, root cause, and action items.',
+      modules: ['agent', 'files', 'workflows'],
+      category: 'engineering',
+      tags: ['engineering', 'devops', 'analysis'],
+      alsoIntegrations: ['sentry'],
+    },
+    {
+      icon: GreptileIcon,
+      title: 'Slack code Q&A bot',
+      prompt:
+        'Build a workflow that monitors a Slack channel for code questions, routes them to Greptile against the relevant repository, and replies in-thread with the answer and the cited files so the team gets quick, sourced engineering answers.',
+      modules: ['agent', 'workflows'],
+      category: 'engineering',
+      tags: ['engineering', 'communication', 'team'],
+      alsoIntegrations: ['greptile'],
+    },
+    {
+      icon: SlackIcon,
+      title: 'Slack knowledge search',
+      prompt:
+        'Create a knowledge base connected to my Slack workspace so all channel conversations and threads are automatically synced and searchable. Then build an agent I can ask things like "what did the team decide about the launch date?" or "what was the outcome of the design review?" and get answers with links to the original messages.',
+      modules: ['knowledge-base', 'agent'],
+      category: 'productivity',
+      tags: ['team', 'research', 'communication'],
+    },
+    {
+      icon: File,
+      title: 'Automated narrative report',
+      prompt:
+        'Build a scheduled workflow that pulls key data from my tables every week, analyzes trends and anomalies, and writes a narrative report — not just charts and numbers, but written insights explaining what changed, why it matters, and what to do next. Save it as a document and send a summary to Slack.',
+      modules: ['tables', 'scheduled', 'agent', 'files', 'workflows'],
+      category: 'productivity',
+      tags: ['founder', 'reporting', 'analysis'],
+    },
+    {
+      icon: BookOpen,
+      title: 'Email digest curator',
+      prompt:
+        'Create a scheduled daily workflow that searches the web for the latest articles, papers, and news on topics I care about, picks the top 5 most relevant pieces, writes a one-paragraph summary for each, and delivers a curated reading digest to my inbox or Slack.',
+      modules: ['scheduled', 'agent', 'files', 'workflows'],
+      category: 'productivity',
+      tags: ['individual', 'research', 'content'],
+    },
+    {
+      icon: ClipboardList,
+      title: 'Daily standup summary',
+      prompt:
+        'Create a scheduled workflow that reads the #standup Slack channel each morning, summarizes what everyone is working on, identifies blockers, and posts a structured recap to a Google Docs document.',
+      modules: ['scheduled', 'agent', 'files', 'workflows'],
+      category: 'productivity',
+      tags: ['team', 'reporting', 'communication'],
+      alsoIntegrations: ['google_docs'],
+    },
+    {
+      icon: Users,
+      title: 'New hire onboarding automation',
+      prompt:
+        "Build a workflow that when triggered with a new hire's info, creates their accounts, sends a personalized welcome message in Slack, schedules 1:1s with their team on Google Calendar, shares relevant onboarding docs from the knowledge base, and tracks completion in a table.",
+      modules: ['knowledge-base', 'tables', 'agent', 'workflows'],
+      category: 'operations',
+      tags: ['hr', 'automation', 'team'],
+      alsoIntegrations: ['google_calendar'],
+    },
+    {
+      icon: Table,
+      title: 'Customer 360 view',
+      prompt:
+        'Create a comprehensive customer table that aggregates data from my CRM, support tickets, billing history, and product usage into a single unified view per customer. Schedule it to sync daily and send a Slack alert when any customer shows signs of trouble across multiple signals.',
+      modules: ['tables', 'scheduled', 'agent', 'workflows'],
+      category: 'operations',
+      tags: ['founder', 'sales', 'support', 'enterprise', 'sync'],
+    },
+    {
+      icon: GoogleTranslateIcon,
+      title: 'Slack thread translator',
+      prompt:
+        'Build a workflow that watches international Slack channels, detects non-English messages, translates them with Google Translate, and posts the English version in a thread so the wider team stays in the loop.',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['team', 'communication'],
+      alsoIntegrations: ['google_translate'],
+    },
+
+    {
+      icon: SlackIcon,
+      title: 'Archive Slack conversations to Notion',
+      prompt:
+        'Build a workflow that captures important Slack messages and threads and saves them as Notion pages or database entries, so meeting notes and decisions are always documented.',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['automation', 'communication'],
+      featured: true,
+      alsoIntegrations: ['notion'],
+    },
+  ],
+  skills: [
+    {
+      name: 'daily-standup-summary',
+      description:
+        'Read a standup channel and post a structured recap of progress, plans, and blockers.',
+      content:
+        '# Daily Standup Summary\n\nRead the messages posted in the standup channel since the last working day and produce a concise team recap.\n\n## Steps\n1. Collect every standup update in the channel from the relevant window (skip bot and off-topic messages).\n2. Group the content into three sections:\n   - **Done** — what was completed.\n   - **Today** — what each person plans to work on.\n   - **Blockers** — anything waiting on someone else, with the owner @-mentioned.\n3. Call out anyone who did not post an update.\n\n## Output\nPost a single threaded message with the three sections as bullet lists. Keep each bullet to one line. Lead with blockers if any exist so they are not missed.',
+    },
+    {
+      name: 'channel-catch-up',
+      description: 'Summarize what happened in a busy Slack channel so you can catch up fast.',
+      content:
+        '# Channel Catch-Up\n\nSummarize recent activity in a Slack channel for someone who has been away.\n\n## Steps\n1. Pull messages from the requested time range (default: since the user was last active, or the last 24 hours).\n2. Cluster the conversation into topics or threads rather than listing messages chronologically.\n3. For each topic, capture: the gist, any decision reached, and open questions still unanswered.\n\n## Output\n- A 1-sentence TL;DR.\n- A bulleted list of topics, each with **Decision:** and **Open:** lines where relevant.\n- A final "Needs your input" list of items where the user was @-mentioned or a question is unresolved.\nLink to the source thread for each topic.',
+    },
+    {
+      name: 'slack-question-responder',
+      description:
+        'Watch a channel for questions and draft sourced, in-thread answers from your knowledge base.',
+      content:
+        '# Slack Question Responder\n\nMonitor a support or help channel and answer incoming questions.\n\n## Steps\n1. Detect when a message is a genuine question (ends in a question mark, asks "how/where/can someone", or is a help request).\n2. Search the connected knowledge base for the answer.\n3. If a confident answer exists, draft a concise reply in the thread with the answer and a citation/link to the source.\n4. If no confident answer exists, do not guess — post a short note that a human should help, and @-mention the channel owner.\n\n## Guidance\n- Always reply in-thread, never in the main channel.\n- Keep answers to 2–4 sentences plus the source link.\n- Never fabricate links or policy.',
+    },
+    {
+      name: 'escalate-urgent-messages',
+      description:
+        'Scan a channel for urgent or at-risk messages and surface them to the right owner.',
+      content:
+        '# Escalate Urgent Messages\n\nTriage a channel for messages that need fast attention.\n\n## Steps\n1. Review recent messages and classify each as **Urgent**, **Today**, or **FYI** based on signals like "blocked", "down", "ASAP", customer impact, or an unanswered direct ask.\n2. For Urgent items, identify the most likely owner from the channel topic or message context.\n3. Skip resolved threads (those with a ✅ reaction or a clear answer).\n\n## Output\nPost a short escalation summary listing only Urgent and Today items: each as a one-line description, an @-mention of the owner, and a link to the message. If nothing is urgent, say so in one line.',
+    },
+  ],
+} as const satisfies BlockMeta

@@ -4,7 +4,14 @@ import { invitation, member, organization, user, workspace } from '@sim/db/schem
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import {
+  inviteOrganizationMembersContract,
+  organizationParamsSchema,
+} from '@/lib/api/contracts/organization'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import { getOrganizationSubscription } from '@/lib/billing/core/billing'
+import { isEnterprise } from '@/lib/billing/plan-helpers'
 import {
   validateBulkInvitations,
   validateSeatAvailability,
@@ -38,7 +45,15 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: organizationId } = await params
+      const paramsResult = organizationParamsSchema.safeParse(await params)
+      if (!paramsResult.success) {
+        return NextResponse.json(
+          { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
+          { status: 400 }
+        )
+      }
+
+      const { id: organizationId } = paramsResult.data
 
       const [memberEntry] = await db
         .select()
@@ -87,31 +102,28 @@ export const GET = withRouteHandler(
 )
 
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: organizationId } = await params
+      const parsed = await parseRequest(inviteOrganizationMembersContract, request, context)
+      if (!parsed.success) return parsed.response
+
+      const { id: organizationId } = parsed.data.params
 
       await validateInvitationsAllowed(session.user.id, { organizationId })
 
-      const url = new URL(request.url)
-      const validateOnly = url.searchParams.get('validate') === 'true'
-      const isBatch = url.searchParams.get('batch') === 'true'
+      const validateOnly = parsed.data.query.validate === true
+      const isBatch = parsed.data.query.batch === true
 
-      const body = await request.json()
-      const { email, emails, role = 'member', workspaceInvitations } = body
+      const { email, emails, role = 'member', workspaceInvitations } = parsed.data.body
       const invitationEmails = email ? [email] : emails
 
       if (!invitationEmails || !Array.isArray(invitationEmails) || invitationEmails.length === 0) {
         return NextResponse.json({ error: 'Email or emails array is required' }, { status: 400 })
-      }
-
-      if (!['member', 'admin'].includes(role)) {
-        return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
       }
 
       const [memberEntry] = await db
@@ -154,7 +166,7 @@ export const POST = withRouteHandler(
       const processedEmails = Array.from(
         new Set(
           invitationEmails
-            .map((raw: string) => {
+            .map((raw) => {
               const normalized = raw.trim().toLowerCase()
               return quickValidateEmail(normalized).isValid ? normalized : null
             })
@@ -277,8 +289,12 @@ export const POST = withRouteHandler(
         )
       }
 
-      const seatValidation = await validateSeatAvailability(organizationId, emailsToInvite.length)
-      if (!seatValidation.canInvite) {
+      const orgSubscription = await getOrganizationSubscription(organizationId)
+      const enforceFixedSeats = !!orgSubscription && isEnterprise(orgSubscription.plan)
+      const seatValidation = enforceFixedSeats
+        ? await validateSeatAvailability(organizationId, emailsToInvite.length)
+        : null
+      if (seatValidation && !seatValidation.canInvite) {
         return NextResponse.json(
           {
             error: seatValidation.reason,
@@ -310,7 +326,7 @@ export const POST = withRouteHandler(
             email,
             inviterId: session.user.id,
             organizationId,
-            role: role as 'admin' | 'member',
+            role,
             grants: validGrants,
           })
 
@@ -321,7 +337,7 @@ export const POST = withRouteHandler(
             email,
             inviterName,
             organizationId,
-            organizationRole: role as 'admin' | 'member',
+            organizationRole: role,
             grants: validGrants,
           })
 
@@ -368,6 +384,8 @@ export const POST = withRouteHandler(
             targetRole: role,
             isBatch,
             workspaceGrantCount: validGrants.length,
+            enforcedFixedSeats: enforceFixedSeats,
+            plan: orgSubscription?.plan ?? null,
           },
           request,
         })
@@ -381,14 +399,18 @@ export const POST = withRouteHandler(
         existingMembers: processedEmails.filter((email) => existingEmails.includes(email)),
         pendingInvitations: processedEmails.filter((email) => pendingEmails.includes(email)),
         invalidEmails: invitationEmails.filter(
-          (email: string) => !quickValidateEmail(email.trim().toLowerCase()).isValid
+          (email) => !quickValidateEmail(email.trim().toLowerCase()).isValid
         ),
         workspaceGrantsPerInvite: validGrants.length,
-        seatInfo: {
-          seatsUsed: seatValidation.currentSeats + sentInvitations.length,
-          maxSeats: seatValidation.maxSeats,
-          availableSeats: seatValidation.availableSeats - sentInvitations.length,
-        },
+        ...(seatValidation
+          ? {
+              seatInfo: {
+                seatsUsed: seatValidation.currentSeats + sentInvitations.length,
+                maxSeats: seatValidation.maxSeats,
+                availableSeats: seatValidation.availableSeats - sentInvitations.length,
+              },
+            }
+          : {}),
       }
 
       if (failedInvitations.length > 0 && sentInvitations.length === 0) {

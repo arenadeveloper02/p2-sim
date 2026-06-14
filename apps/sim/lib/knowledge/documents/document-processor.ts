@@ -1,5 +1,6 @@
+import { randomBytes } from 'crypto'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { PDFDocument } from 'pdf-lib'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import {
@@ -13,8 +14,8 @@ import {
   TokenChunker,
 } from '@/lib/chunkers'
 import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
-import { env } from '@/lib/core/config/env'
-import { parseBuffer, parseFile } from '@/lib/file-parsers'
+import { env, envNumber } from '@/lib/core/config/env'
+import { parseBuffer } from '@/lib/file-parsers'
 import type { FileParseMetadata } from '@/lib/file-parsers/types'
 import { resolveParserExtension } from '@/lib/knowledge/documents/parser-extension'
 import { retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
@@ -30,7 +31,7 @@ const TIMEOUTS = {
   MISTRAL_OCR_API: 120000,
 } as const
 
-const MAX_CONCURRENT_CHUNKS = env.KB_CONFIG_CHUNK_CONCURRENCY
+const MAX_CONCURRENT_CHUNKS = envNumber(env.KB_CONFIG_CHUNK_CONCURRENCY, 10)
 
 type OCRResult = {
   success: boolean
@@ -154,6 +155,7 @@ async function applyStrategy(
       const chunker = new RegexChunker({
         ...baseOptions,
         pattern: strategyOptions.pattern,
+        strictBoundaries: strategyOptions.strictBoundaries,
       })
       return chunker.chunk(content)
     }
@@ -313,7 +315,7 @@ async function handleFileForOCR(
   userId?: string,
   workspaceId?: string | null
 ) {
-  const isExternalHttps = fileUrl.startsWith('https://') && !isInternalFileUrl(fileUrl)
+  const isExternalHttps = /^https:\/\//i.test(fileUrl) && !isInternalFileUrl(fileUrl)
 
   if (isExternalHttps) {
     if (mimeType === 'application/pdf') {
@@ -352,7 +354,7 @@ async function handleFileForOCR(
     }
 
     const timestamp = Date.now()
-    const uniqueId = Math.random().toString(36).substring(2, 9)
+    const uniqueId = randomBytes(8).toString('hex')
     const safeFileName = filename.replace(/[^a-zA-Z0-9.-]/g, '_')
     const customKey = `kb/${timestamp}-${uniqueId}-${safeFileName}`
 
@@ -373,7 +375,7 @@ async function handleFileForOCR(
 
     return { httpsUrl, cloudUrl: httpsUrl, buffer }
   } catch (uploadError) {
-    const message = uploadError instanceof Error ? uploadError.message : 'Unknown error'
+    const message = getErrorMessage(uploadError, 'Unknown error')
     throw new Error(`Cloud upload failed: ${message}. Cloud upload is required for OCR.`)
   }
 }
@@ -383,18 +385,17 @@ async function downloadFileWithTimeout(fileUrl: string): Promise<Buffer> {
 }
 
 async function downloadFileForBase64(fileUrl: string): Promise<Buffer> {
-  if (fileUrl.startsWith('data:')) {
+  if (/^data:/i.test(fileUrl)) {
     const [, base64Data] = fileUrl.split(',')
     if (!base64Data) {
       throw new Error('Invalid data URI format')
     }
     return Buffer.from(base64Data, 'base64')
   }
-  if (fileUrl.startsWith('http')) {
+  if (/^https?:\/\//i.test(fileUrl)) {
     return downloadFileWithTimeout(fileUrl)
   }
-  const fs = await import('fs/promises')
-  return fs.readFile(fileUrl)
+  throw new Error('Unsupported fileUrl scheme: only data: URIs and http(s):// URLs are allowed')
 }
 
 function processOCRContent(result: OCRResult, filename: string): string {
@@ -649,24 +650,20 @@ async function processChunk(
 
   try {
     const timestamp = Date.now()
-    const uniqueId = Math.random().toString(36).substring(2, 9)
+    const uniqueId = randomBytes(8).toString('hex')
     const safeFileName = filename.replace(/[^a-zA-Z0-9.-]/g, '_')
     const chunkKey = `kb/${timestamp}-${uniqueId}-chunk${chunkIndex + 1}-${safeFileName}`
 
-    const metadata: Record<string, string> = {
-      originalName: `${filename}_chunk${chunkIndex + 1}`,
-      uploadedAt: new Date().toISOString(),
-      purpose: 'knowledge-base',
-      ...(userId && { userId }),
-    }
-
+    // No metadata: these chunks are ephemeral OCR artifacts (deleted in the
+    // finally below) that are fetched via a direct presigned URL, never through
+    // verifyKBFileAccess. Omitting metadata avoids writing an orphan ownership
+    // binding row per chunk.
     const uploadResult = await StorageService.uploadFile({
       file: chunk.buffer,
       fileName: `${filename}_chunk${chunkIndex + 1}`,
       contentType: 'application/pdf',
       context: 'knowledge-base',
       customKey: chunkKey,
-      metadata,
     })
 
     uploadedKey = uploadResult.key
@@ -781,16 +778,14 @@ async function parseWithFileParser(fileUrl: string, filename: string, mimeType: 
     let content: string
     let metadata: FileParseMetadata = {}
 
-    if (fileUrl.startsWith('data:')) {
+    if (/^data:/i.test(fileUrl)) {
       content = await parseDataURI(fileUrl, filename, mimeType)
-    } else if (fileUrl.startsWith('http')) {
+    } else if (/^https?:\/\//i.test(fileUrl)) {
       const result = await parseHttpFile(fileUrl, filename, mimeType)
       content = result.content
       metadata = result.metadata || {}
     } else {
-      const result = await parseFile(fileUrl)
-      content = result.content
-      metadata = result.metadata || {}
+      throw new Error('Unsupported fileUrl scheme: only data: URIs and http(s):// URLs are allowed')
     }
 
     if (!content.trim()) {

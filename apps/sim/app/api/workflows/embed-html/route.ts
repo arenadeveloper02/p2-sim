@@ -170,9 +170,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
 
     const resolvePayload = resolveResult.data
-    const resolved = parseEmbedCredentials(
-      resolvePayload.output?.result ?? resolvePayload.result
-    )
+    const resolved = parseEmbedCredentials(resolvePayload.output?.result ?? resolvePayload.result)
 
     logger.info('Embed HTML resolved credentials', {
       workflowId: resolved.workflowId,
@@ -217,8 +215,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
 
     const htmlPayload = htmlResult.data
-    const html =
-      htmlPayload.output?.result?.html ?? htmlPayload.result?.html
+    const html = htmlPayload.output?.result?.html ?? htmlPayload.result?.html
     if (typeof html !== 'string' || html.trim().length === 0) {
       return NextResponse.json(
         { error: 'Workflow response did not include result.html' },

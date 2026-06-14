@@ -2,8 +2,10 @@ import { db } from '@sim/db'
 import { mcpServers, workflow, workflowBlocks } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { mcpServerIdParamsSchema } from '@/lib/api/contracts/mcp'
+import { validationErrorResponse } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { withMcpAuth } from '@/lib/mcp/middleware'
 import { mcpService } from '@/lib/mcp/service'
@@ -75,13 +77,11 @@ async function syncToolSchemasToWorkflows(
       subBlocks: workflowBlocks.subBlocks,
     })
     .from(workflowBlocks)
-    .where(eq(workflowBlocks.type, 'agent'))
+    .where(and(eq(workflowBlocks.type, 'agent'), inArray(workflowBlocks.workflowId, workflowIds)))
 
   const updatedWorkflowIds = new Set<string>()
 
   for (const block of agentBlocks) {
-    if (!workflowIds.includes(block.workflowId)) continue
-
     const subBlocks = block.subBlocks as Record<string, unknown> | null
     if (!subBlocks) continue
 
@@ -158,9 +158,10 @@ async function syncToolSchemasToWorkflows(
 export const POST = withRouteHandler(
   withMcpAuth<{ id: string }>('read')(
     async (request: NextRequest, { userId, workspaceId, requestId }, { params }) => {
-      const { id: serverId } = await params
-
       try {
+        const paramsValidation = mcpServerIdParamsSchema.safeParse(await params)
+        if (!paramsValidation.success) return validationErrorResponse(paramsValidation.error)
+        const { id: serverId } = paramsValidation.data
         logger.info(`[${requestId}] Refreshing MCP server: ${serverId}`)
 
         const [server] = await db
@@ -196,7 +197,12 @@ export const POST = withRouteHandler(
           }
 
         try {
-          discoveredTools = await mcpService.discoverServerTools(userId, serverId, workspaceId)
+          discoveredTools = await mcpService.discoverServerTools(
+            userId,
+            serverId,
+            workspaceId,
+            true
+          )
           connectionStatus = 'connected'
           toolCount = discoveredTools.length
           logger.info(`[${requestId}] Discovered ${toolCount} tools from server ${serverId}`)

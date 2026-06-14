@@ -2,6 +2,37 @@ import { GoogleIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
 
+/** In-flight promise cache keyed by workspaceId — deduplicates concurrent fetchOptions + fetchOptionById calls */
+let _inflightFetch: {
+  workspaceId: string
+  promise: Promise<Record<string, { id: string; name: string }>>
+} | null = null
+
+async function fetchGoogleAdsAccounts(
+  workspaceId: string
+): Promise<Record<string, { id: string; name: string }>> {
+  if (_inflightFetch?.workspaceId === workspaceId) {
+    return _inflightFetch.promise
+  }
+
+  const promise = fetch(`/api/google-ads/accounts?workspaceId=${encodeURIComponent(workspaceId)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      _inflightFetch = null
+      if (data?.success && data.accounts && typeof data.accounts === 'object') {
+        return data.accounts as Record<string, { id: string; name: string }>
+      }
+      return {}
+    })
+    .catch(() => {
+      _inflightFetch = null
+      return {}
+    })
+
+  _inflightFetch = { workspaceId, promise }
+  return promise
+}
+
 export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
   type: 'google_ads_v1',
   name: 'Google Ads V1',
@@ -21,44 +52,32 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       options: [],
       fetchOptions: async () => {
         try {
-          const response = await fetch('/api/google-ads/accounts')
-          const data = await response.json()
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+          const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+          if (!workspaceId) return []
 
-          console.log('Google Ads V1 API response:', data)
-
-          if (data?.success && data.accounts && typeof data.accounts === 'object') {
-            const accounts = data.accounts as Record<string, { id: string; name: string }>
-            const options = Object.entries(accounts).map(([key, account]) => ({
-              id: key,
-              label: account.name,
-              value: key,
-            }))
-            console.log('Google Ads V1 options:', options)
-            return Array.isArray(options) ? options : []
-          }
-          console.log('Google Ads V1: Invalid response format')
-          return []
-        } catch (error) {
-          console.error('Failed to fetch Google Ads V1 accounts:', error)
+          const accounts = await fetchGoogleAdsAccounts(workspaceId)
+          return Object.entries(accounts).map(([key, account]) => ({
+            id: key,
+            label: account.name,
+            value: key,
+          }))
+        } catch {
           return []
         }
       },
-      fetchOptionById: async (optionId: string) => {
+      fetchOptionById: async (_blockId: string, optionId: string) => {
         try {
-          const response = await fetch('/api/google-ads/accounts')
-          const data = await response.json()
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+          const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+          if (!workspaceId) return null
 
-          if (data.success && data.accounts[optionId]) {
-            const account = data.accounts[optionId] as { id: string; name: string }
-            return {
-              id: optionId,
-              label: account.name,
-              value: optionId,
-            }
-          }
-          return null
-        } catch (error) {
-          console.error('Failed to fetch Google Ads V1 account:', error)
+          const accounts = await fetchGoogleAdsAccounts(workspaceId)
+          const account = accounts[optionId]
+          if (!account) return null
+
+          return { id: optionId, label: account.name }
+        } catch {
           return null
         }
       },

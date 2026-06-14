@@ -14,8 +14,11 @@ import {
   type OAuthService,
   parseProvider,
 } from '@/lib/oauth'
-import { getMissingRequiredScopes } from '@/lib/oauth/utils'
-import { OAuthModal } from '@/app/workspace/[workspaceId]/components/oauth-modal'
+import { getMissingRequiredScopes, getRequiredScopesForCredential } from '@/lib/oauth/utils'
+import { ConnectOAuthModal } from '@/app/workspace/[workspaceId]/components/connect-oauth-modal'
+import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
+import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
+import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { useWorkspaceCredential } from '@/hooks/queries/credentials'
 import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
 import { useWorkflowMap } from '@/hooks/queries/workflows'
@@ -27,9 +30,9 @@ const getProviderIcon = (providerName: OAuthProvider) => {
   const baseProviderConfig = OAUTH_PROVIDERS[baseProvider]
 
   if (!baseProviderConfig) {
-    return <ExternalLink className='h-3 w-3' />
+    return <ExternalLink className='size-3' />
   }
-  return createElement(baseProviderConfig.icon, { className: 'h-3 w-3' })
+  return createElement(baseProviderConfig.icon, { className: 'size-3' })
 }
 
 const getProviderName = (providerName: OAuthProvider) => {
@@ -52,6 +55,8 @@ const getProviderName = (providerName: OAuthProvider) => {
 }
 
 interface ToolCredentialSelectorProps {
+  blockId: string
+  subBlockId: string
   value: string
   onChange: (value: string) => void
   provider: OAuthProvider
@@ -61,15 +66,20 @@ interface ToolCredentialSelectorProps {
   disabled?: boolean
 }
 
+const EMPTY_SCOPES: string[] = []
+
 export function ToolCredentialSelector({
+  blockId,
+  subBlockId,
   value,
   onChange,
   provider,
-  requiredScopes = [],
+  requiredScopes = EMPTY_SCOPES,
   label,
   serviceId,
   disabled = false,
 }: ToolCredentialSelectorProps) {
+  const activeSearchTarget = useActiveSearchTarget()
   const params = useParams()
   const workspaceId = (params?.workspaceId as string) || ''
   const onChangeRef = useRef(onChange)
@@ -89,7 +99,7 @@ export function ToolCredentialSelector({
   const effectiveProviderId = useMemo(() => getProviderIdFromServiceId(serviceId), [serviceId])
 
   const {
-    data: credentials = [],
+    data: rawCredentials = [],
     isFetching: credentialsLoading,
     refetch: refetchCredentials,
   } = useOAuthCredentials(effectiveProviderId, {
@@ -98,9 +108,11 @@ export function ToolCredentialSelector({
     workflowId: effectiveWorkflowId,
   })
 
+  const credentials = useMemo(() => rawCredentials, [rawCredentials])
+
   const selectedCredential = useMemo(
-    () => credentials.find((cred) => cred.id === selectedId),
-    [credentials, selectedId]
+    () => rawCredentials.find((cred) => cred.id === selectedId),
+    [rawCredentials, selectedId]
   )
 
   const { data: inaccessibleCredential } = useWorkspaceCredential(
@@ -129,8 +141,12 @@ export function ToolCredentialSelector({
   )
 
   const hasSelection = Boolean(selectedCredential)
+  const scopesForValidation = useMemo(
+    () => getRequiredScopesForCredential(selectedCredential, requiredScopes),
+    [selectedCredential, requiredScopes]
+  )
   const missingRequiredScopes = hasSelection
-    ? getMissingRequiredScopes(selectedCredential!, requiredScopes || [])
+    ? getMissingRequiredScopes(selectedCredential!, scopesForValidation)
     : []
 
   const needsUpdate =
@@ -166,6 +182,16 @@ export function ToolCredentialSelector({
   }, [credentials, provider])
 
   const selectedCredentialProvider = selectedCredential?.provider ?? provider
+  const reauthorizeProvider = selectedCredentialProvider
+  const reauthorizeServiceId = selectedCredential?.provider ?? serviceId
+  const reauthorizeRequiredScopes = getCanonicalScopesForProvider(reauthorizeProvider)
+  const workflowSearchHighlight = getWorkflowSearchLabelHighlight({
+    activeSearchTarget,
+    blockId,
+    subBlockId,
+    valuePath: [],
+    label: inputValue,
+  })
 
   const overlayContent = useMemo(() => {
     if (!inputValue) return null
@@ -175,10 +201,12 @@ export function ToolCredentialSelector({
         <div className='mr-2 flex-shrink-0 opacity-90'>
           {getProviderIcon(selectedCredentialProvider)}
         </div>
-        <span className='truncate'>{inputValue}</span>
+        <span className='truncate'>
+          {formatDisplayText(inputValue, { workflowSearchHighlight })}
+        </span>
       </div>
     )
-  }, [inputValue, selectedCredentialProvider])
+  }, [inputValue, selectedCredentialProvider, workflowSearchHighlight])
 
   const handleComboboxChange = useCallback(
     (newValue: string) => {
@@ -219,7 +247,7 @@ export function ToolCredentialSelector({
       {needsUpdate && (
         <div className='mt-2 flex flex-col gap-1 rounded-sm border bg-[var(--surface-2)] px-2 py-1.5'>
           <div className='flex items-center font-medium text-caption'>
-            <span className='mr-1.5 inline-block h-[6px] w-[6px] rounded-xs bg-amber-500' />
+            <span className='mr-1.5 inline-block size-[6px] rounded-xs bg-amber-500' />
             Additional permissions required
           </div>
           <Button
@@ -228,8 +256,8 @@ export function ToolCredentialSelector({
               writeOAuthReturnContext({
                 origin: 'workflow',
                 workflowId: effectiveWorkflowId || '',
-                displayName: selectedCredential?.name ?? getProviderName(provider),
-                providerId: effectiveProviderId,
+                displayName: selectedCredential?.name ?? getProviderName(reauthorizeProvider),
+                providerId: reauthorizeProvider,
                 preCount: credentials.length,
                 workspaceId,
                 requestedAt: Date.now(),
@@ -244,31 +272,35 @@ export function ToolCredentialSelector({
       )}
 
       {showConnectModal && (
-        <OAuthModal
+        <ConnectOAuthModal
           mode='connect'
-          isOpen={showConnectModal}
-          onClose={() => setShowConnectModal(false)}
+          origin='workflow'
+          open={showConnectModal}
+          onOpenChange={(open) => !open && setShowConnectModal(false)}
           provider={provider}
           serviceId={serviceId}
+          providerId={effectiveProviderId}
+          requiredScopes={getCanonicalScopesForProvider(effectiveProviderId)}
           workspaceId={workspaceId}
           workflowId={effectiveWorkflowId || ''}
-          credentialCount={credentials.length}
         />
       )}
 
       {showOAuthModal && (
-        <OAuthModal
+        <ConnectOAuthModal
           mode='reauthorize'
-          isOpen={showOAuthModal}
-          onClose={() => {
-            consumeOAuthReturnContext()
-            setShowOAuthModal(false)
+          open={showOAuthModal}
+          onOpenChange={(open) => {
+            if (!open) {
+              consumeOAuthReturnContext()
+              setShowOAuthModal(false)
+            }
           }}
-          provider={provider}
-          toolName={getProviderName(provider)}
-          requiredScopes={getCanonicalScopesForProvider(effectiveProviderId)}
+          provider={reauthorizeProvider}
+          toolName={getProviderName(reauthorizeProvider)}
+          requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
-          serviceId={serviceId}
+          serviceId={reauthorizeServiceId}
         />
       )}
     </div>

@@ -192,7 +192,7 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
     ),
 
     blockquote: ({ children }: React.HTMLAttributes<HTMLQuoteElement>) => (
-      <blockquote className='my-4 border-gray-300 border-l-4 py-1 pl-4 font-sans text-gray-700 italic dark:border-gray-600 dark:text-gray-300'>
+      <blockquote className='my-4 break-words border-[var(--divider)] border-l-2 pl-4 font-sans text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
         {children}
       </blockquote>
     ),
@@ -200,9 +200,9 @@ function createCustomComponents(LinkComponent: typeof LinkWithPreview) {
     hr: () => <hr className='my-8 border-gray-500/[.07] border-t dark:border-gray-400/[.07]' />,
 
     a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-      <LinkComponent href={href || '#'} {...props}>
+      <LinkWithPreview href={href || '#'} {...props}>
         {children}
-      </LinkComponent>
+      </LinkWithPreview>
     ),
 
     table: ({ children }: React.TableHTMLAttributes<HTMLTableElement>) => (

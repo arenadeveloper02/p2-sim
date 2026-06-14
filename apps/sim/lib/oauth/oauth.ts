@@ -27,6 +27,7 @@ import {
   JiraIcon,
   LinearIcon,
   LinkedInIcon,
+  MetaIcon,
   MicrosoftDataverseIcon,
   MicrosoftExcelIcon,
   MicrosoftIcon,
@@ -44,6 +45,7 @@ import {
   SlackIcon,
   SpotifyIcon,
   TrelloIcon,
+  UnipileIcon,
   VertexIcon,
   WealthboxIcon,
   WebflowIcon,
@@ -427,6 +429,23 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'x',
   },
+  atlassian: {
+    name: 'Atlassian',
+    icon: JiraIcon,
+    services: {
+      'atlassian-service-account': {
+        name: 'Atlassian Service Account',
+        description:
+          'Authenticate as an Atlassian service account using a scoped API token from admin.atlassian.com.',
+        providerId: 'atlassian-service-account',
+        icon: JiraIcon,
+        baseProviderIcon: JiraIcon,
+        scopes: [],
+        authType: 'service_account',
+      },
+    },
+    defaultService: 'atlassian-service-account',
+  },
   confluence: {
     name: 'Confluence',
     icon: ConfluenceIcon,
@@ -437,11 +456,11 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'confluence',
         icon: ConfluenceIcon,
         baseProviderIcon: ConfluenceIcon,
+        serviceAccountProviderId: 'atlassian-service-account',
         scopes: [
           'read:confluence-content.all',
           'read:confluence-space.summary',
           'read:space:confluence',
-          'read:space-details:confluence',
           'write:confluence-content',
           'write:confluence-space',
           'write:confluence-file',
@@ -451,7 +470,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'write:comment:confluence',
           'delete:comment:confluence',
           'delete:attachment:confluence',
-          'read:content:confluence',
           'delete:page:confluence',
           'read:label:confluence',
           'write:label:confluence',
@@ -460,18 +478,19 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'search:confluence',
           'read:me',
           'offline_access',
+          'read:hierarchical-content:confluence',
+          'read:content.metadata:confluence',
+          'read:user:confluence',
+          'read:confluence-user',
+          'read:task:confluence',
+          'write:task:confluence',
+          'write:space:confluence',
+          'delete:space:confluence',
           'read:blogpost:confluence',
           'write:blogpost:confluence',
           'delete:blogpost:confluence',
           'read:content.property:confluence',
           'write:content.property:confluence',
-          'read:hierarchical-content:confluence',
-          'read:content.metadata:confluence',
-          'read:user:confluence',
-          'read:task:confluence',
-          'write:task:confluence',
-          'write:space:confluence',
-          'delete:space:confluence',
           'read:space.property:confluence',
           'write:space.property:confluence',
           'read:space.permission:confluence',
@@ -490,46 +509,19 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'jira',
         icon: JiraIcon,
         baseProviderIcon: JiraIcon,
+        serviceAccountProviderId: 'atlassian-service-account',
         scopes: [
           'read:jira-user',
           'read:jira-work',
           'write:jira-work',
-          'write:issue:jira',
-          'read:project:jira',
-          'read:issue-type:jira',
           'read:me',
           'offline_access',
-          'read:issue-meta:jira',
-          'read:issue-security-level:jira',
           'read:issue.vote:jira',
-          'read:issue.changelog:jira',
-          'read:avatar:jira',
-          'read:issue:jira',
-          'read:status:jira',
-          'read:user:jira',
-          'read:field-configuration:jira',
-          'read:issue-details:jira',
-          'read:issue-event:jira',
           'delete:issue:jira',
-          'write:comment:jira',
-          'read:comment:jira',
           'delete:comment:jira',
-          'read:attachment:jira',
-          'write:attachment:jira',
           'delete:attachment:jira',
-          'write:issue-worklog:jira',
-          'read:issue-worklog:jira',
           'delete:issue-worklog:jira',
-          'write:issue-link:jira',
           'delete:issue-link:jira',
-          'manage:jira-webhook',
-          'read:webhook:jira',
-          'write:webhook:jira',
-          'delete:webhook:jira',
-          'read:issue.property:jira',
-          'read:comment.property:jira',
-          'read:jql:jira',
-          'read:field:jira',
           // Jira Service Management scopes
           'read:servicedesk:jira-service-management',
           'read:requesttype:jira-service-management',
@@ -537,20 +529,12 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'write:request:jira-service-management',
           'read:request.comment:jira-service-management',
           'write:request.comment:jira-service-management',
-          'read:customer:jira-service-management',
-          'write:customer:jira-service-management',
           'read:servicedesk.customer:jira-service-management',
           'write:servicedesk.customer:jira-service-management',
           'read:organization:jira-service-management',
           'write:organization:jira-service-management',
           'read:servicedesk.organization:jira-service-management',
           'write:servicedesk.organization:jira-service-management',
-          'read:organization.user:jira-service-management',
-          'write:organization.user:jira-service-management',
-          'read:organization.property:jira-service-management',
-          'write:organization.property:jira-service-management',
-          'read:organization.profile:jira-service-management',
-          'write:organization.profile:jira-service-management',
           'read:queue:jira-service-management',
           'read:request.sla:jira-service-management',
           'read:request.status:jira-service-management',
@@ -704,13 +688,14 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     services: {
       slack: {
         name: 'Slack',
-        description: 'Send messages using a bot for Slack.',
+        description: 'Use Slack messaging, files, reactions, views, and canvases.',
         providerId: 'slack',
         icon: SlackIcon,
         baseProviderIcon: SlackIcon,
         scopes: [
           'channels:read',
           'channels:history',
+          'channels:manage',
           'groups:read',
           'groups:history',
           'groups:write',
@@ -719,15 +704,17 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'mpim:write',
           'chat:write',
           'chat:write.public',
+          'assistant:write',
           'im:write',
-          'im:history',
           'im:read',
           'users:read',
           // TODO: Add 'users:read.email' once Slack app review is approved
           'files:write',
           'files:read',
+          'canvases:read',
           'canvases:write',
           'reactions:write',
+          'reactions:read',
         ],
       },
     },
@@ -922,18 +909,13 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'crm.objects.deals.write',
           'crm.objects.owners.read',
           'crm.objects.users.read',
-          'crm.objects.users.write',
           'crm.objects.marketing_events.read',
-          'crm.objects.marketing_events.write',
           'crm.objects.line_items.read',
           'crm.objects.line_items.write',
           'crm.objects.quotes.read',
-          'crm.objects.quotes.write',
           'crm.objects.appointments.read',
           'crm.objects.appointments.write',
           'crm.objects.carts.read',
-          'crm.objects.carts.write',
-          'crm.import',
           'crm.lists.read',
           'crm.lists.write',
           'tickets',
@@ -1074,6 +1056,37 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'linkedin',
   },
+  'facebook-ads': {
+    name: 'Facebook',
+    icon: MetaIcon,
+    services: {
+      'facebook-ads': {
+        name: 'Facebook Ads',
+        description: 'Query Facebook Ads campaign and performance data.',
+        providerId: 'facebook-ads',
+        icon: MetaIcon,
+        baseProviderIcon: MetaIcon,
+        scopes: ['ads_read', 'read_insights', 'business_management'],
+      },
+    },
+    defaultService: 'facebook-ads',
+  },
+  unipile_linkedin: {
+    name: 'LinkedIn (Unipile)',
+    icon: UnipileIcon,
+    services: {
+      unipile_linkedin: {
+        name: 'LinkedIn (Unipile)',
+        description:
+          'Connect a LinkedIn account via Unipile for messaging, search, posts, and profiles in workflows.',
+        providerId: 'unipile_linkedin',
+        icon: UnipileIcon,
+        baseProviderIcon: UnipileIcon,
+        scopes: [],
+      },
+    },
+    defaultService: 'unipile_linkedin',
+  },
   salesforce: {
     name: 'Salesforce',
     icon: SalesforceIcon,
@@ -1093,10 +1106,34 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     name: 'Zoom',
     icon: ZoomIcon,
     services: {
-      zoom: {
+      /** User OAuth app — meetings and user-scoped recordings (default for workflows). */
+      'zoom-client': {
         name: 'Zoom',
-        description: 'Create and manage Zoom meetings, users, and recordings.',
+        description:
+          'Connect with a user-managed Zoom Marketplace app — create meetings and manage recordings for the signed-in Zoom user.',
         providerId: 'zoom',
+        icon: ZoomIcon,
+        baseProviderIcon: ZoomIcon,
+        scopes: [
+          'user:read:user',
+          'meeting:write:meeting',
+          'meeting:read:meeting',
+          'meeting:read:list_meetings',
+          'meeting:update:meeting',
+          'meeting:delete:meeting',
+          'meeting:read:invitation',
+          'meeting:read:list_past_participants',
+          'cloud_recording:read:list_user_recordings',
+          'cloud_recording:read:list_recording_files',
+          'cloud_recording:delete:recording_file',
+        ],
+      },
+      /** Admin/account OAuth app — account-wide listing and transcripts. */
+      'zoom-admin': {
+        name: 'Zoom (Admin)',
+        description:
+          'Connect with an admin-level Zoom Marketplace app for account-wide cloud recordings (requires admin approval in Zoom).',
+        providerId: 'zoom-admin',
         icon: ZoomIcon,
         baseProviderIcon: ZoomIcon,
         scopes: [
@@ -1106,7 +1143,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'user:read:list_schedulers:admin',
           'user:read:email:admin',
 
-          //admin Meeting registrants, polls & participants (account-wide)
           'meeting:read:list_meetings:admin',
           'meeting:read:meeting:admin',
           'meeting:read:list_registrants:admin',
@@ -1114,7 +1150,6 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'meeting:read:list_polls:admin',
           'meeting:read:participant:admin',
 
-          //admin Cloud recording – advanced / account-level
           'cloud_recording:read:list_recording_registrants:admin',
           'cloud_recording:read:list_recording_files:admin',
           'cloud_recording:read:list_user_recordings:admin',
@@ -1124,7 +1159,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         ],
       },
     },
-    defaultService: 'zoom',
+    defaultService: 'zoom-client',
   },
   wordpress: {
     name: 'WordPress',
@@ -1211,6 +1246,18 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       const { clientId, clientSecret } = getCredentials(
         env.GOOGLE_CLIENT_ID,
         env.GOOGLE_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://oauth2.googleapis.com/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+      }
+    }
+    case 'google-ads': {
+      const { clientId, clientSecret } = getCredentials(
+        env.GOOGLE_ADS_CLIENT_ID,
+        env.GOOGLE_ADS_CLIENT_SECRET
       )
       return {
         tokenEndpoint: 'https://oauth2.googleapis.com/token',
@@ -1307,6 +1354,7 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientId,
         clientSecret,
         useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
       }
     }
     case 'linear': {
@@ -1353,7 +1401,7 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientId,
         clientSecret,
         useBasicAuth: true,
-        supportsRefreshTokenRotation: false,
+        supportsRefreshTokenRotation: true,
       }
     }
     case 'dropbox': {
@@ -1484,6 +1532,16 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         supportsRefreshTokenRotation: false,
       }
     }
+    case 'facebook-ads': {
+      const { clientId, clientSecret } = getCredentials(env.FB_CLIENT_ID, env.FB_CLIENT_SECRET)
+      return {
+        tokenEndpoint: 'https://graph.facebook.com/v22.0/oauth/access_token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: false,
+      }
+    }
     case 'salesforce': {
       const { clientId, clientSecret } = getCredentials(
         env.SALESFORCE_CLIENT_ID,
@@ -1514,6 +1572,19 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
     }
     case 'zoom': {
       const { clientId, clientSecret } = getCredentials(env.ZOOM_CLIENT_ID, env.ZOOM_CLIENT_SECRET)
+      return {
+        tokenEndpoint: 'https://zoom.us/oauth/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: true,
+        supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'zoom-admin': {
+      const { clientId, clientSecret } = getCredentials(
+        env.ZOOM_ADMIN_CLIENT_ID,
+        env.ZOOM_ADMIN_CLIENT_SECRET
+      )
       return {
         tokenEndpoint: 'https://zoom.us/oauth/token',
         clientId,
@@ -1608,13 +1679,6 @@ function buildAuthRequest(
   return { headers, bodyParams, useJsonBody: config.useJsonBody }
 }
 
-/**
- * Refresh an OAuth token
- * This is a server-side utility function to refresh OAuth tokens
- * @param providerId The provider ID (e.g., 'google-drive')
- * @param refreshToken The refresh token to use
- * @returns Object containing the new access token and expiration time in seconds, or null if refresh failed
- */
 function getBaseProviderForService(providerId: string): string {
   if (providerId in OAUTH_PROVIDERS) {
     return providerId
@@ -1631,13 +1695,43 @@ function getBaseProviderForService(providerId: string): string {
   throw new Error(`Unknown OAuth provider: ${providerId}`)
 }
 
+export interface RefreshTokenSuccess {
+  ok: true
+  accessToken: string
+  expiresIn: number
+  refreshToken: string
+}
+
+export interface RefreshTokenFailure {
+  ok: false
+  errorCode?: string
+  message?: string
+}
+
+export type RefreshTokenResult = RefreshTokenSuccess | RefreshTokenFailure
+
+function extractErrorCode(value: unknown): string | undefined {
+  if (value && typeof value === 'object' && 'error' in value) {
+    const code = (value as { error: unknown }).error
+    if (typeof code === 'string') return code
+  }
+  return undefined
+}
+
 export async function refreshOAuthToken(
   providerId: string,
   refreshToken: string,
   alias?: string
-): Promise<{ accessToken: string; expiresIn: number; refreshToken: string } | null> {
+): Promise<RefreshTokenResult> {
   try {
-    const provider = getBaseProviderForService(providerId)
+    const provider =
+      providerId === 'zoom-admin'
+        ? 'zoom-admin'
+        : providerId === 'google-ads'
+          ? 'google-ads'
+          : providerId === 'facebook-ads'
+            ? 'facebook-ads'
+            : getBaseProviderForService(providerId)
 
     const config = getProviderAuthConfig(provider, alias)
 
@@ -1655,7 +1749,7 @@ export async function refreshOAuthToken(
 
     if (!response.ok) {
       const errorText = await response.text()
-      let errorData = errorText
+      let errorData: unknown = errorText
 
       try {
         errorData = JSON.parse(errorText)
@@ -1675,10 +1769,33 @@ export async function refreshOAuthToken(
         hasRefreshToken: !!refreshToken,
         refreshTokenPrefix: refreshToken ? `${refreshToken.substring(0, 10)}...` : 'none',
       })
-      throw new Error(`Failed to refresh token: ${response.status} ${errorText}`)
+      return {
+        ok: false,
+        errorCode: extractErrorCode(errorData),
+        message: `Failed to refresh token: ${response.status} ${errorText}`,
+      }
     }
 
     const data = await response.json()
+
+    if (data && typeof data === 'object' && data.ok === false) {
+      logger.error('Token refresh failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: data.error,
+        parsedError: data,
+        providerId,
+        tokenEndpoint: config.tokenEndpoint,
+        hasClientId: !!config.clientId,
+        hasClientSecret: !!config.clientSecret,
+        hasRefreshToken: !!refreshToken,
+      })
+      return {
+        ok: false,
+        errorCode: typeof data.error === 'string' ? data.error : undefined,
+        message: `Failed to refresh token: ${data.error ?? 'unknown'}`,
+      }
+    }
 
     const accessToken = data.access_token
 
@@ -1691,8 +1808,8 @@ export async function refreshOAuthToken(
     const expiresIn = data.expires_in || data.expiresIn || 3600
 
     if (!accessToken) {
-      logger.warn('No access token found in refresh response', data)
-      return null
+      logger.warn('No access token found in refresh response', { providerId, response: data })
+      return { ok: false, message: 'No access token in refresh response' }
     }
 
     logger.info('Token refreshed successfully with expiration', {
@@ -1702,14 +1819,14 @@ export async function refreshOAuthToken(
     })
 
     return {
+      ok: true,
       accessToken,
       expiresIn,
       refreshToken: newRefreshToken || refreshToken, // Return new refresh token if available
     }
   } catch (error) {
-    logger.error('Error refreshing token:', {
-      error: toError(error).message,
-    })
-    return null
+    const message = toError(error).message
+    logger.error('Error refreshing token:', { error: message })
+    return { ok: false, message }
   }
 }

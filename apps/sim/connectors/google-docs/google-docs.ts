@@ -84,14 +84,22 @@ function extractTextFromDocsBody(doc: DocsDocument): string {
     if (!paragraph?.elements) continue
 
     const prefix = headingPrefix(paragraph.paragraphStyle?.namedStyleType)
-    const text = paragraph.elements.map((el) => el.textRun?.content ?? '').join('')
+    /**
+     * Each paragraph's final `textRun.content` already ends with `\n`. Strip
+     * it before joining with `\n` so a heading followed by a body paragraph
+     * is separated by a single newline, not two.
+     */
+    const text = paragraph.elements
+      .map((el) => el.textRun?.content ?? '')
+      .join('')
+      .replace(/\n+$/, '')
 
     if (text.trim()) {
       parts.push(`${prefix}${text}`)
     }
   }
 
-  return parts.join('').trim()
+  return parts.join('\n').trim()
 }
 
 /**
@@ -155,7 +163,7 @@ function buildQuery(sourceConfig: Record<string, unknown>): string {
 export const googleDocsConnector: ConnectorConfig = {
   id: 'google_docs',
   name: 'Google Docs',
-  description: 'Sync Google Docs documents into your knowledge base',
+  description: 'Sync Google Docs documents',
   version: '1.0.0',
   icon: GoogleDocsIcon,
 
@@ -227,13 +235,23 @@ export const googleDocsConnector: ConnectorConfig = {
     const data = await response.json()
     const files = (data.files || []) as DriveFile[]
 
+    /**
+     * Drive sets `incompleteSearch` when it could not search every corpus (it
+     * arises with the `allDrives` scope enabled by `includeItemsFromAllDrives`).
+     * A partial listing drops still-existing docs, so reconciliation must be
+     * suppressed to avoid hard-deleting valid documents.
+     */
+    const incompleteSearch = data.incompleteSearch === true
+
     const maxDocs = sourceConfig.maxDocs ? Number(sourceConfig.maxDocs) : 0
     const previouslyFetched = (syncContext?.totalDocsFetched as number) ?? 0
 
     let documents = files.map(fileToStub)
+    let slicedSome = false
     if (maxDocs > 0) {
       const remaining = maxDocs - previouslyFetched
       if (documents.length > remaining) {
+        slicedSome = true
         documents = documents.slice(0, remaining)
       }
     }
@@ -243,6 +261,19 @@ export const googleDocsConnector: ConnectorConfig = {
     const hitLimit = maxDocs > 0 && totalFetched >= maxDocs
 
     const nextPageToken = data.nextPageToken as string | undefined
+
+    /**
+     * Mark the listing as incomplete so the sync engine skips deletion
+     * reconciliation when this page does not represent the full source set:
+     * - `slicedSome`: the page held more docs than the `maxDocs` cap allowed.
+     * - `hitLimit` with a next page: the cap was reached while more pages remain.
+     * - `incompleteSearch`: Drive could not search every corpus, so the page is
+     *   partial and may omit still-existing docs.
+     * Reconciliation against any of these would hard-delete valid documents.
+     */
+    if (syncContext && (slicedSome || (hitLimit && Boolean(nextPageToken)) || incompleteSearch)) {
+      syncContext.listingCapped = true
+    }
 
     return {
       documents,
@@ -349,8 +380,7 @@ export const googleDocsConnector: ConnectorConfig = {
 
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
-      return { valid: false, error: message }
+      return { valid: false, error: toError(error).message || 'Failed to validate configuration' }
     }
   },
 

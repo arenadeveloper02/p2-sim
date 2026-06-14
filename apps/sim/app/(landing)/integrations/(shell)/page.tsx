@@ -1,15 +1,17 @@
 import type { Metadata } from 'next'
 import { Badge } from '@/components/emcn'
 import { SITE_URL } from '@/lib/core/utils/urls'
+import {
+  blockTypeToIconMap,
+  INTEGRATIONS,
+  type Integration,
+  POPULAR_WORKFLOWS,
+} from '@/lib/integrations'
 import { IntegrationCard } from '@/app/(landing)/integrations/components/integration-card'
 import { IntegrationGrid } from '@/app/(landing)/integrations/components/integration-grid'
 import { RequestIntegrationModal } from '@/app/(landing)/integrations/components/request-integration-modal'
-import { blockTypeToIconMap } from '@/app/(landing)/integrations/data/icon-mapping'
-import integrations from '@/app/(landing)/integrations/data/integrations.json'
-import { POPULAR_WORKFLOWS } from '@/app/(landing)/integrations/data/popular-workflows'
-import type { Integration } from '@/app/(landing)/integrations/data/types'
 
-const allIntegrations = integrations as Integration[]
+const allIntegrations = INTEGRATIONS
 const INTEGRATION_COUNT = allIntegrations.length
 
 /**
@@ -170,7 +172,7 @@ export default function IntegrationsPage() {
         </section>
 
         {/* Integration request */}
-        <div className='flex flex-col items-start gap-3 px-6 py-6 sm:flex-row sm:items-center sm:justify-between'>
+        <div className='flex flex-col items-start gap-3 p-6 sm:flex-row sm:items-center sm:justify-between'>
           <div>
             <p className='text-[15px] text-white tracking-[-0.02em]'>
               Don&apos;t see the integration you need?

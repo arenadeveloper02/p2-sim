@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
-import { Input, Label } from '@/components/emcn'
+import { Eye, EyeOff } from 'lucide-react'
+import { Input, Label, Loader } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import AuthBackground from '@/app/(auth)/components/auth-background'
 import { AUTH_SUBMIT_BTN } from '@/app/(auth)/components/auth-button-classes'
@@ -97,7 +97,6 @@ export default function PasswordAuth({ identifier }: PasswordAuthProps) {
                             passwordErrors.length > 0 &&
                             'border-red-500 focus:border-red-500'
                         )}
-                        autoFocus
                       />
                       <button
                         type='button'
@@ -119,8 +118,8 @@ export default function PasswordAuth({ identifier }: PasswordAuthProps) {
                     >
                       <div className='overflow-hidden'>
                         <div className='mt-1 space-y-1 text-red-400 text-xs'>
-                          {passwordErrors.map((error, index) => (
-                            <p key={index}>{error}</p>
+                          {passwordErrors.map((error) => (
+                            <p key={error}>{error}</p>
                           ))}
                         </div>
                       </div>
@@ -135,8 +134,8 @@ export default function PasswordAuth({ identifier }: PasswordAuthProps) {
                 >
                   {authenticate.isPending ? (
                     <span className='flex items-center gap-2'>
-                      <Loader2 className='h-4 w-4 animate-spin' />
-                      Authenticating...
+                      <Loader className='size-4' animate />
+                      Authenticating…
                     </span>
                   ) : (
                     'Continue'

@@ -4,6 +4,7 @@ import remarkBreaks from 'remark-breaks'
 import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
 import { cn } from '@/lib/core/utils/cn'
+import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { BLOCK_DIMENSIONS } from '@/lib/workflows/blocks/block-dimensions'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { ActionBar } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/action-bar/action-bar'
@@ -429,7 +430,7 @@ const NOTE_COMPONENTS = {
     <em className='break-words text-[var(--text-tertiary)]'>{children}</em>
   ),
   blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className='my-4 break-words border-[var(--border-1)] border-l-4 py-1 pl-4 text-[var(--text-tertiary)] italic'>
+    <blockquote className='my-4 break-words border-[var(--divider)] border-l-2 pl-4 text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
       {children}
     </blockquote>
   ),
@@ -495,6 +496,7 @@ export const NoteBlock = memo(function NoteBlock({
   const isEmpty = content.trim().length === 0
 
   const userPermissions = useUserPermissionsContext()
+  const canEditWorkflow = userPermissions.canEdit && !data.isWorkflowLocked
 
   /**
    * Calculate deterministic dimensions based on content structure.
@@ -517,12 +519,15 @@ export const NoteBlock = memo(function NoteBlock({
   return (
     <div className='group relative'>
       <div
+        role='button'
+        tabIndex={0}
         className={cn(
           'note-drag-handle relative z-[20] w-[250px] cursor-grab select-none rounded-lg border border-[var(--border)] bg-[var(--surface-2)] [&:active]:cursor-grabbing'
         )}
         onClick={handleClick}
+        onKeyDown={(event) => handleKeyboardActivation(event, handleClick)}
       >
-        <ActionBar blockId={id} blockType={type} disabled={!userPermissions.canEdit} />
+        <ActionBar blockId={id} blockType={type} disabled={!canEditWorkflow} />
 
         <div className='flex items-center justify-between border-[var(--divider)] border-b p-2'>
           <div className='flex min-w-0 flex-1 items-center'>
@@ -541,7 +546,7 @@ export const NoteBlock = memo(function NoteBlock({
         <div className='relative overflow-hidden p-2'>
           <div className='relative max-w-full break-all'>
             {isEmpty ? (
-              <p className='text-[var(--text-placeholder)] text-sm'>Add note...</p>
+              <p className='text-[var(--text-placeholder)] text-sm'>Add note…</p>
             ) : (
               <NoteMarkdown content={content} />
             )}

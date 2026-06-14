@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
+import { requestJson } from '@/lib/api/client/request'
+import { updateUserSettingsContract } from '@/lib/api/contracts'
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
 import { useLeaveWorkspace } from '@/hooks/queries/invitations'
 import {
@@ -80,10 +82,8 @@ export function useWorkspaceManagement({
 
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
     syncTimerRef.current = setTimeout(() => {
-      fetch('/api/users/me/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lastActiveWorkspaceId: id }),
+      requestJson(updateUserSettingsContract, {
+        body: { lastActiveWorkspaceId: id },
       }).catch(() => {})
     }, 1000)
   }, [])
@@ -133,7 +133,7 @@ export function useWorkspaceManagement({
   const updateWorkspace = useCallback(
     async (
       workspaceId: string,
-      updates: { name?: string; color?: string; logoUrl?: string | null }
+      updates: { name?: string; logoUrl?: string | null; color?: string }
     ): Promise<boolean> => {
       try {
         await updateWorkspaceMutation.mutateAsync({ workspaceId, ...updates })
@@ -183,15 +183,12 @@ export function useWorkspaceManagement({
   )
 
   const confirmDeleteWorkspace = useCallback(
-    async (workspaceToDelete: Workspace, templateAction?: 'keep' | 'delete') => {
+    async (workspaceToDelete: Workspace) => {
       try {
         logger.info('Deleting workspace:', workspaceToDelete.id)
 
-        const deleteTemplates = templateAction === 'delete'
-
         await deleteWorkspaceMutation.mutateAsync({
           workspaceId: workspaceToDelete.id,
-          deleteTemplates,
         })
 
         WorkspaceRecencyStorage.remove(workspaceToDelete.id)

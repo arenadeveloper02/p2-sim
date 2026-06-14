@@ -1,5 +1,6 @@
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { isHosted } from '@/lib/core/config/feature-flags'
+import { WORKSPACE_ID_CONDITION_KEY } from '@/lib/workspaces/is-admin-workspace'
 import type { SubBlockConfig } from '@/blocks/types'
 
 export type CanonicalMode = 'basic' | 'advanced'
@@ -30,6 +31,54 @@ export interface CanonicalValueSelection {
   basicValue: unknown
   advancedValue: unknown
   advancedSourceId?: string
+}
+
+interface TriggerVisibilityBlockConfig {
+  category?: string
+  triggers?: {
+    enabled?: boolean
+  }
+}
+
+export function parseDependsOn(dependsOn: SubBlockConfig['dependsOn']): {
+  allFields: string[]
+  anyFields: string[]
+  allDependsOnFields: string[]
+} {
+  if (!dependsOn) {
+    return { allFields: [], anyFields: [], allDependsOnFields: [] }
+  }
+
+  if (Array.isArray(dependsOn)) {
+    return { allFields: dependsOn, anyFields: [], allDependsOnFields: dependsOn }
+  }
+
+  const allFields = dependsOn.all || []
+  const anyFields = dependsOn.any || []
+  return {
+    allFields,
+    anyFields,
+    allDependsOnFields: [...allFields, ...anyFields],
+  }
+}
+
+export function normalizeDependencyValue(rawValue: unknown): unknown {
+  if (rawValue === null || rawValue === undefined) return null
+
+  if (typeof rawValue === 'object') {
+    if (Array.isArray(rawValue)) {
+      if (rawValue.length === 0) return null
+      return rawValue.map((item) => normalizeDependencyValue(item))
+    }
+
+    const record = rawValue as Record<string, unknown>
+    if ('value' in record) return normalizeDependencyValue(record.value)
+    if ('id' in record) return record.id
+
+    return record
+  }
+
+  return rawValue
 }
 
 /**
@@ -129,10 +178,13 @@ export function evaluateSubBlockCondition(
     | SubBlockCondition
     | ((values?: Record<string, unknown>) => SubBlockCondition)
     | undefined,
-  values: Record<string, unknown>
+  values: Record<string, unknown>,
+  workspaceId?: string
 ): boolean {
   if (!condition) return true
-  const actual = typeof condition === 'function' ? condition(values) : condition
+  const conditionValues =
+    workspaceId != null ? { ...values, [WORKSPACE_ID_CONDITION_KEY]: workspaceId } : values
+  const actual = typeof condition === 'function' ? condition(conditionValues) : condition
   const fieldValue = values[actual.field]
   const valueMatch = Array.isArray(actual.value)
     ? fieldValue != null &&
@@ -259,6 +311,38 @@ export function isSubBlockVisibleForMode(
 
   if (subBlock.mode === 'basic' && displayAdvancedOptions) return false
   if (subBlock.mode === 'advanced' && !displayAdvancedOptions) return false
+  return true
+}
+
+export function isTriggerModeSubBlock(subBlock: Pick<SubBlockConfig, 'mode'>): boolean {
+  return subBlock.mode === 'trigger' || subBlock.mode === 'trigger-advanced'
+}
+
+export function isTriggerConfigSubBlock(subBlock: Pick<SubBlockConfig, 'type'>): boolean {
+  return String(subBlock.type) === 'trigger-config'
+}
+
+export function shouldUseSubBlockForTriggerModeCanonicalIndex(
+  subBlock: Pick<SubBlockConfig, 'mode' | 'type'>
+): boolean {
+  return isTriggerModeSubBlock(subBlock) || isTriggerConfigSubBlock(subBlock)
+}
+
+export function isPureTriggerBlockConfig(blockConfig?: TriggerVisibilityBlockConfig): boolean {
+  return Boolean(blockConfig?.triggers?.enabled && blockConfig.category === 'triggers')
+}
+
+export function isSubBlockVisibleForTriggerMode(
+  subBlock: Pick<SubBlockConfig, 'mode' | 'type'>,
+  displayTriggerMode: boolean,
+  blockConfig?: TriggerVisibilityBlockConfig
+): boolean {
+  if (isTriggerConfigSubBlock(subBlock)) {
+    return displayTriggerMode || isPureTriggerBlockConfig(blockConfig)
+  }
+
+  if (isTriggerModeSubBlock(subBlock)) return displayTriggerMode
+  if (displayTriggerMode) return false
   return true
 }
 

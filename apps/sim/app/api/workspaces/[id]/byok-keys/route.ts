@@ -2,10 +2,12 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { workspaceBYOKKeys } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateShortId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { deleteByokKeyContract, upsertByokKeyContract } from '@/lib/api/contracts/byok-keys'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { decryptSecret, encryptSecret } from '@/lib/core/security/encryption'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -14,32 +16,6 @@ import { captureServerEvent } from '@/lib/posthog/server'
 import { getUserEntityPermissions, getWorkspaceById } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceBYOKKeysAPI')
-
-const VALID_PROVIDERS = [
-  'openai',
-  'anthropic',
-  'google',
-  'mistral',
-  'fireworks',
-  'firecrawl',
-  'exa',
-  'serper',
-  'linkup',
-  'perplexity',
-  'jina',
-  'google_cloud',
-  'parallel_ai',
-  'brandfetch',
-] as const
-
-const UpsertKeySchema = z.object({
-  providerId: z.enum(VALID_PROVIDERS),
-  apiKey: z.string().min(1, 'API key is required'),
-})
-
-const DeleteKeySchema = z.object({
-  providerId: z.enum(VALID_PROVIDERS),
-})
 
 function maskApiKey(key: string): string {
   if (key.length <= 8) {
@@ -123,7 +99,7 @@ export const GET = withRouteHandler(
     } catch (error: unknown) {
       logger.error(`[${requestId}] BYOK keys GET error`, error)
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to load BYOK keys' },
+        { error: getErrorMessage(error, 'Failed to load BYOK keys') },
         { status: 500 }
       )
     }
@@ -131,9 +107,9 @@ export const GET = withRouteHandler(
 )
 
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await params).id
+    const workspaceId = (await context.params).id
 
     try {
       const session = await getSession()
@@ -152,8 +128,9 @@ export const POST = withRouteHandler(
         )
       }
 
-      const body = await request.json()
-      const { providerId, apiKey } = UpsertKeySchema.parse(body)
+      const parsed = await parseRequest(upsertByokKeyContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { providerId, apiKey } = parsed.data.body
 
       const { encrypted } = await encryptSecret(apiKey)
 
@@ -256,11 +233,8 @@ export const POST = withRouteHandler(
       })
     } catch (error: unknown) {
       logger.error(`[${requestId}] BYOK key POST error`, error)
-      if (error instanceof z.ZodError) {
-        return NextResponse.json({ error: error.errors[0].message }, { status: 400 })
-      }
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to save BYOK key' },
+        { error: getErrorMessage(error, 'Failed to save BYOK key') },
         { status: 500 }
       )
     }
@@ -268,9 +242,9 @@ export const POST = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const workspaceId = (await params).id
+    const workspaceId = (await context.params).id
 
     try {
       const session = await getSession()
@@ -289,8 +263,9 @@ export const DELETE = withRouteHandler(
         )
       }
 
-      const body = await request.json()
-      const { providerId } = DeleteKeySchema.parse(body)
+      const parsed = await parseRequest(deleteByokKeyContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { providerId } = parsed.data.body
 
       const result = await db
         .delete(workspaceBYOKKeys)
@@ -326,11 +301,8 @@ export const DELETE = withRouteHandler(
       return NextResponse.json({ success: true })
     } catch (error: unknown) {
       logger.error(`[${requestId}] BYOK key DELETE error`, error)
-      if (error instanceof z.ZodError) {
-        return NextResponse.json({ error: error.errors[0].message }, { status: 400 })
-      }
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to delete BYOK key' },
+        { error: getErrorMessage(error, 'Failed to delete BYOK key') },
         { status: 500 }
       )
     }

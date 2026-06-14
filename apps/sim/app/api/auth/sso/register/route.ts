@@ -1,9 +1,12 @@
 import { db, member, ssoProvider } from '@sim/db'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { getErrorMessage } from '@sim/utils/errors'
+import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { ssoRegistrationContract } from '@/lib/api/contracts/auth'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { auth, getSession } from '@/lib/auth'
+import { normalizeSSODomain } from '@/lib/auth/sso/domain'
 import { hasSSOAccess } from '@/lib/billing'
 import { env } from '@/lib/core/config/env'
 import {
@@ -15,66 +18,6 @@ import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('SSORegisterRoute')
-
-const mappingSchema = z
-  .object({
-    id: z.string().default('sub'),
-    email: z.string().default('email'),
-    name: z.string().default('name'),
-    image: z.string().default('picture'),
-  })
-  .default({
-    id: 'sub',
-    email: 'email',
-    name: 'name',
-    image: 'picture',
-  })
-
-const ssoRegistrationSchema = z.discriminatedUnion('providerType', [
-  z.object({
-    providerType: z.literal('oidc').default('oidc'),
-    providerId: z.string().min(1, 'Provider ID is required'),
-    issuer: z.string().url('Issuer must be a valid URL'),
-    domain: z.string().min(1, 'Domain is required'),
-    orgId: z.string().optional(),
-    mapping: mappingSchema,
-    clientId: z.string().min(1, 'Client ID is required for OIDC'),
-    clientSecret: z.string().min(1, 'Client Secret is required for OIDC'),
-    scopes: z
-      .union([
-        z.string().transform((s) =>
-          s
-            .split(',')
-            .map((s) => s.trim())
-            .filter((s) => s !== '')
-        ),
-        z.array(z.string()),
-      ])
-      .default(['openid', 'profile', 'email']),
-    pkce: z.boolean().default(true),
-    authorizationEndpoint: z.string().url().optional(),
-    tokenEndpoint: z.string().url().optional(),
-    userInfoEndpoint: z.string().url().optional(),
-    jwksEndpoint: z.string().url().optional(),
-  }),
-  z.object({
-    providerType: z.literal('saml'),
-    providerId: z.string().min(1, 'Provider ID is required'),
-    issuer: z.string().url('Issuer must be a valid URL'),
-    domain: z.string().min(1, 'Domain is required'),
-    orgId: z.string().optional(),
-    mapping: mappingSchema,
-    entryPoint: z.string().url('Entry point must be a valid URL for SAML'),
-    cert: z.string().min(1, 'Certificate is required for SAML'),
-    callbackUrl: z.string().url().optional(),
-    audience: z.string().optional(),
-    wantAssertionsSigned: z.boolean().optional(),
-    signatureAlgorithm: z.string().optional(),
-    digestAlgorithm: z.string().optional(),
-    identifierFormat: z.string().optional(),
-    idpMetadata: z.string().optional(),
-  }),
-])
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
@@ -92,28 +35,24 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'SSO requires an Enterprise plan' }, { status: 403 })
     }
 
-    const rawBody = await request.json()
-
-    const parseResult = ssoRegistrationSchema.safeParse(rawBody)
-
-    if (!parseResult.success) {
-      const firstError = parseResult.error.errors[0]
-      const errorMessage = firstError?.message || 'Validation failed'
-
-      logger.warn('Invalid SSO registration request', {
-        errors: parseResult.error.errors,
-      })
-
-      return NextResponse.json(
-        {
-          error: errorMessage,
+    const parsed = await parseRequest(
+      ssoRegistrationContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn('Invalid SSO registration request', { errors: error.issues })
+          return NextResponse.json(
+            { error: getValidationErrorMessage(error, 'Validation failed') },
+            { status: 400 }
+          )
         },
-        { status: 400 }
-      )
-    }
+      }
+    )
+    if (!parsed.success) return parsed.response
 
-    const body = parseResult.data
-    const { providerId, issuer, domain, providerType, mapping, orgId } = body
+    const body = parsed.data.body
+    const { providerId, issuer, providerType, mapping, orgId } = body
 
     if (orgId) {
       const [membership] = await db
@@ -127,6 +66,48 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       if (membership.role !== 'owner' && membership.role !== 'admin') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
+    }
+
+    const domain = normalizeSSODomain(body.domain)
+    if (!domain) {
+      return NextResponse.json({ error: 'Enter a valid domain like company.com' }, { status: 400 })
+    }
+
+    const isOwnedByCaller = (provider: {
+      userId: string | null
+      organizationId: string | null
+    }): boolean => {
+      if (provider.userId === session.user.id && !provider.organizationId) return true
+      return orgId ? provider.organizationId === orgId : false
+    }
+
+    const findDomainConflict = async () =>
+      (
+        await db
+          .select({
+            userId: ssoProvider.userId,
+            organizationId: ssoProvider.organizationId,
+          })
+          .from(ssoProvider)
+          .where(sql`lower(${ssoProvider.domain}) = ${domain}`)
+      ).find((provider) => !isOwnedByCaller(provider))
+
+    const domainConflictResponse = () =>
+      NextResponse.json(
+        {
+          error: 'This domain is already registered for SSO by another organization.',
+          code: 'SSO_DOMAIN_ALREADY_REGISTERED',
+        },
+        { status: 409 }
+      )
+
+    if (await findDomainConflict()) {
+      logger.warn('Rejected SSO registration for domain owned by another tenant', {
+        domain,
+        orgId,
+        userId: session.user.id,
+      })
+      return domainConflictResponse()
     }
 
     const headers: Record<string, string> = {}
@@ -312,7 +293,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           })
         } catch (error) {
           logger.error('Error fetching OIDC discovery document', {
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: getErrorMessage(error, 'Unknown error'),
             discoveryUrl,
           })
           return NextResponse.json(
@@ -470,6 +451,15 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       ),
     })
 
+    if (await findDomainConflict()) {
+      logger.warn('Rejected SSO registration: domain was claimed during registration', {
+        domain,
+        orgId,
+        userId: session.user.id,
+      })
+      return domainConflictResponse()
+    }
+
     const registration = await auth.api.registerSSOProvider({
       body: providerConfig,
       headers,
@@ -490,7 +480,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   } catch (error) {
     logger.error('Failed to register SSO provider', {
       error,
-      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorMessage: getErrorMessage(error, 'Unknown error'),
       errorStack: error instanceof Error ? error.stack : undefined,
       errorDetails: JSON.stringify(error),
     })
@@ -498,7 +488,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json(
       {
         error: 'Failed to register SSO provider',
-        details: error instanceof Error ? error.message : 'Unknown error',
+        details: getErrorMessage(error, 'Unknown error'),
       },
       { status: 500 }
     )

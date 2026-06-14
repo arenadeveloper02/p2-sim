@@ -1,9 +1,80 @@
 import { ZoomIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import type { BlockConfig } from '@/blocks/types'
+import type { SubBlockCondition } from '@/lib/workflows/subblocks/visibility'
+import {
+  ADMIN_WORKSPACE_ONLY_TOOL_IDS,
+  isAdminWorkspace,
+  resolveWorkspaceIdForAdminCheck,
+} from '@/lib/workspaces/is-admin-workspace'
+import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { ZoomResponse } from '@/tools/zoom/types'
 import { getTrigger } from '@/triggers'
+
+const ZOOM_MEETING_SUBBLOCK_OPS = [
+  'zoom_get_meeting',
+  'zoom_update_meeting',
+  'zoom_delete_meeting',
+  'zoom_get_meeting_invitation',
+  'zoom_get_meeting_recordings',
+  'zoom_delete_recording',
+  'zoom_list_past_participants',
+] as const
+
+const ZOOM_MEETING_OPS_LIST = [...ZOOM_MEETING_SUBBLOCK_OPS]
+
+/** Account-level recording tools; require admin workspace + zoom-admin OAuth. */
+const ZOOM_ADMIN_ACCOUNT_OPERATIONS = ADMIN_WORKSPACE_ONLY_TOOL_IDS
+
+const ZOOM_OPERATION_OPTIONS = [
+  { label: 'Create Meeting', id: 'zoom_create_meeting' },
+  { label: 'List Meetings', id: 'zoom_list_meetings' },
+  { label: 'Get Meeting', id: 'zoom_get_meeting' },
+  { label: 'Update Meeting', id: 'zoom_update_meeting' },
+  { label: 'Delete Meeting', id: 'zoom_delete_meeting' },
+  { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
+  { label: 'List Recordings', id: 'zoom_list_recordings' },
+  { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
+  {
+    label: 'Get Account Recordings with Transcript',
+    id: 'zoom_get_account_recordings_with_transcript',
+  },
+  { label: 'Get Meeting Recordings', id: 'zoom_get_meeting_recordings' },
+  { label: 'Download Transcript/File', id: 'zoom_download_transcript' },
+  { label: 'Delete Recording', id: 'zoom_delete_recording' },
+  { label: 'List Past Participants', id: 'zoom_list_past_participants' },
+] as const
+
+function getZoomOperationOptions(): Array<{ label: string; id: string }> {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck())
+  if (isAdmin) {
+    return [...ZOOM_OPERATION_OPTIONS]
+  }
+  return ZOOM_OPERATION_OPTIONS.filter(
+    (option) => !(ZOOM_ADMIN_ACCOUNT_OPERATIONS as readonly string[]).includes(option.id)
+  )
+}
+
+function hasZoomAuth(values: Record<string, unknown> | undefined): boolean {
+  if (!values) return false
+  return (
+    String(values.credential ?? values.manualCredential ?? values.oauthCredential ?? '').trim()
+      .length > 0
+  )
+}
+
+/**
+ * Show Zoom meeting picker / ID when the operation needs a meeting and a credential exists.
+ */
+function personalZoomMeetingSubblockCondition(values: Record<string, unknown> | undefined) {
+  const op = values?.operation
+  const needsMeeting =
+    typeof op === 'string' && (ZOOM_MEETING_SUBBLOCK_OPS as readonly string[]).includes(op)
+  if (!needsMeeting || !hasZoomAuth(values)) {
+    return { field: 'operation', value: [] } satisfies SubBlockCondition
+  }
+  return { field: 'operation', value: ZOOM_MEETING_OPS_LIST } satisfies SubBlockCondition
+}
 
 export const ZoomBlock: BlockConfig<ZoomResponse> = {
   type: 'zoom',
@@ -12,11 +83,11 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
   authMode: AuthMode.OAuth,
   longDescription:
     'Integrate Zoom into workflows. Create, list, update, and delete Zoom meetings. Get meeting details, invitations, recordings, and participants. Manage cloud recordings programmatically.',
-  docsLink: 'https://docs.sim.ai/tools/zoom',
+  docsLink: 'https://docs.sim.ai/integrations/zoom',
   category: 'tools',
   integrationType: IntegrationType.Communication,
-  tags: ['meeting', 'calendar', 'scheduling'],
   bgColor: '#2D8CFF',
+  iconColor: '#2D8CFF',
   icon: ZoomIcon,
   triggers: {
     enabled: true,
@@ -34,44 +105,33 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       id: 'operation',
       title: 'Operation',
       type: 'dropdown',
-      options: [
-        { label: 'Create Meeting', id: 'zoom_create_meeting' },
-        { label: 'List Meetings', id: 'zoom_list_meetings' },
-        { label: 'Get Meeting', id: 'zoom_get_meeting' },
-        { label: 'Update Meeting', id: 'zoom_update_meeting' },
-        { label: 'Delete Meeting', id: 'zoom_delete_meeting' },
-        { label: 'Get Meeting Invitation', id: 'zoom_get_meeting_invitation' },
-        { label: 'List Recordings', id: 'zoom_list_recordings' },
-        { label: 'Get All (Account) Recordings', id: 'zoom_list_account_recordings' },
-        {
-          label: 'Get Account Recordings with Transcript',
-          id: 'zoom_get_account_recordings_with_transcript',
-        },
-        { label: 'Get Meeting Recordings', id: 'zoom_get_meeting_recordings' },
-        { label: 'Download Transcript/File', id: 'zoom_download_transcript' },
-        { label: 'Delete Recording', id: 'zoom_delete_recording' },
-        { label: 'List Past Participants', id: 'zoom_list_past_participants' },
-      ],
+      options: () => getZoomOperationOptions(),
       value: () => 'zoom_create_meeting',
     },
     {
       id: 'credential',
-      title: 'Zoom Account',
+      title: 'Zoom account',
       type: 'oauth-input',
-      serviceId: 'zoom',
+      serviceId: 'zoom-client',
       canonicalParamId: 'oauthCredential',
       mode: 'basic',
-      requiredScopes: getScopesForService('zoom'),
-      placeholder: 'Select Zoom account',
+      requiredScopes: getScopesForService('zoom-client'),
+      additionalConnectOptions: [
+        {
+          label: 'Connect Zoom admin account',
+          serviceId: 'zoom-admin',
+        },
+      ],
+      placeholder: 'Select or connect Zoom account',
       required: true,
     },
     {
       id: 'manualCredential',
-      title: 'Zoom Account',
+      title: 'Zoom account',
       type: 'short-input',
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
-      placeholder: 'Enter credential ID',
+      placeholder: 'Zoom credential ID',
       required: true,
     },
     // User ID for create/list operations
@@ -92,46 +152,25 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       title: 'Meeting',
       type: 'project-selector',
       canonicalParamId: 'meetingId',
-      serviceId: 'zoom',
+      serviceId: 'zoom-client',
       selectorKey: 'zoom.meetings',
       selectorAllowSearch: true,
       placeholder: 'Select Zoom meeting',
-      dependsOn: ['credential'],
+      dependsOn: ['credential', 'manualCredential'],
       mode: 'basic',
       required: true,
-      condition: {
-        field: 'operation',
-        value: [
-          'zoom_get_meeting',
-          'zoom_update_meeting',
-          'zoom_delete_meeting',
-          'zoom_get_meeting_invitation',
-          'zoom_get_meeting_recordings',
-          'zoom_delete_recording',
-          'zoom_list_past_participants',
-        ],
-      },
+      condition: (values) => personalZoomMeetingSubblockCondition(values),
     },
     {
-      id: 'meetingId',
+      id: 'meetingIdClient',
       title: 'Meeting ID',
       type: 'short-input',
       canonicalParamId: 'meetingId',
       placeholder: 'Enter meeting ID',
       mode: 'advanced',
       required: true,
-      condition: {
-        field: 'operation',
-        value: [
-          'zoom_get_meeting',
-          'zoom_update_meeting',
-          'zoom_delete_meeting',
-          'zoom_get_meeting_invitation',
-          'zoom_get_meeting_recordings',
-          'zoom_delete_recording',
-          'zoom_list_past_participants',
-        ],
-      },
+      dependsOn: ['credential', 'manualCredential'],
+      condition: (values) => personalZoomMeetingSubblockCondition(values),
     },
     // Topic for create/update
     {
@@ -524,14 +563,22 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     ],
     config: {
       tool: (params) => {
-        return params.operation || 'zoom_create_meeting'
+        const operation = params.operation || 'zoom_create_meeting'
+        return operation
       },
       params: (params) => {
-        const baseParams: Record<string, any> = {
-          credential: params.oauthCredential,
+        const credential = String(params.oauthCredential ?? '').trim()
+
+        if (!credential) {
+          throw new Error('Connect a Zoom account for this operation.')
         }
 
-        switch (params.operation) {
+        const operation = params.operation || 'zoom_create_meeting'
+        const baseParams: Record<string, unknown> = {
+          credential,
+        }
+
+        switch (operation) {
           case 'zoom_create_meeting':
             if (!params.userId?.trim()) {
               throw new Error('User ID is required.')
@@ -701,7 +748,7 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    oauthCredential: { type: 'string', description: 'Zoom access token' },
+    oauthCredential: { type: 'string', description: 'OAuth credential for Zoom' },
     userId: { type: 'string', description: 'User ID or email (use "me" for authenticated user)' },
     meetingId: { type: 'string', description: 'Meeting ID' },
     topic: { type: 'string', description: 'Meeting topic' },
@@ -748,3 +795,102 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     content: { type: 'string', description: 'The downloaded content' },
   },
 }
+
+export const ZoomBlockMeta = {
+  tags: ['meeting', 'calendar', 'scheduling'],
+  templates: [
+    {
+      icon: ZoomIcon,
+      title: 'Zoom recording recap',
+      prompt:
+        'Build a workflow that runs after a Zoom meeting ends, pulls the cloud recording transcript, summarizes decisions and action items, and posts the recap to the linked Slack channel.',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['team', 'reporting'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: ZoomIcon,
+      title: 'Zoom meeting prep brief',
+      prompt:
+        'Create a scheduled workflow that runs each morning, lists today’s Zoom meetings, researches attendees with Apollo and the web, and emails a prep brief 30 minutes before each meeting.',
+      modules: ['scheduled', 'agent', 'workflows'],
+      category: 'productivity',
+      tags: ['research', 'sales'],
+      alsoIntegrations: ['apollo', 'gmail'],
+    },
+    {
+      icon: ZoomIcon,
+      title: 'Zoom webinar follow-up',
+      prompt:
+        'Build a workflow that runs after a Zoom webinar, pulls the registrant and attendee lists, sends a follow-up email with the recording link, and writes attendance into HubSpot for marketing scoring.',
+      modules: ['agent', 'workflows'],
+      category: 'marketing',
+      tags: ['marketing', 'crm'],
+      alsoIntegrations: ['hubspot', 'gmail'],
+    },
+    {
+      icon: ZoomIcon,
+      title: 'Zoom + Notion meeting notes',
+      prompt:
+        'Create a workflow that watches for Zoom recordings, transcribes, and writes a structured meeting-notes page to Notion under the right team space, with action items linked to owners.',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['team', 'content'],
+      alsoIntegrations: ['notion'],
+    },
+    {
+      icon: ZoomIcon,
+      title: 'Zoom sales-call deal updater',
+      prompt:
+        'Build a workflow that runs after a Zoom sales call, summarizes objections, next steps, and stage signals from the transcript, and updates the linked Salesforce or HubSpot opportunity.',
+      modules: ['agent', 'workflows'],
+      category: 'sales',
+      tags: ['sales', 'crm'],
+      alsoIntegrations: ['salesforce', 'hubspot'],
+    },
+    {
+      icon: ZoomIcon,
+      title: 'Zoom recurring 1:1 logger',
+      prompt:
+        'Create a workflow that captures Zoom 1:1 meeting recaps, appends them to a per-employee log file, and surfaces talking points for the next 1:1 to the manager in Slack.',
+      modules: ['agent', 'files', 'workflows'],
+      category: 'productivity',
+      tags: ['team', 'individual'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: ZoomIcon,
+      title: 'Zoom + Telegram recap pusher',
+      prompt:
+        'Create a workflow that runs after a Zoom meeting, summarizes the transcript, and pushes the recap to a chosen Telegram channel for asynchronous review.',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['team', 'communication'],
+      alsoIntegrations: ['telegram'],
+    },
+  ],
+  skills: [
+    {
+      name: 'schedule-meeting',
+      description:
+        'Create a Zoom meeting with a topic, time, and settings, and return the join details.',
+      content:
+        '# Schedule a Zoom Meeting\n\nBook a meeting and capture its join link.\n\n## Steps\n1. Gather the host user ID, meeting topic, start time, duration, and timezone.\n2. Choose the meeting type, typically scheduled, and set options like recording and waiting room.\n3. Call the create-meeting operation.\n4. Capture the meeting ID, join URL, and passcode returned.\n\n## Output\nReturn the meeting ID, join URL, passcode, and start time. If you need formatted invite text, fetch the meeting invitation.',
+    },
+    {
+      name: 'reschedule-meeting',
+      description:
+        'Find a Zoom meeting and update its time, topic, or settings without recreating it.',
+      content:
+        '# Reschedule a Zoom Meeting\n\nMove or adjust an existing meeting.\n\n## Steps\n1. Locate the meeting by ID, or list meetings for the host and match on topic.\n2. Get the meeting to read its current settings.\n3. Call update-meeting with only the fields that change, such as start time or duration.\n4. Confirm the update and re-fetch the join details if they changed.\n\n## Output\nReport the meeting ID, the old and new time, and confirm the join URL is unchanged or updated. Note who should be re-notified.',
+    },
+    {
+      name: 'fetch-meeting-recordings',
+      description:
+        'Retrieve cloud recordings for a past Zoom meeting and return the download links.',
+      content:
+        '# Fetch Zoom Meeting Recordings\n\nCollect the recordings from a completed meeting.\n\n## Steps\n1. Identify the meeting ID, or use list-recordings to find recent recorded meetings.\n2. Call get-meeting-recordings for the chosen meeting.\n3. Collect the recording files, their types (video, audio, transcript), and download URLs.\n\n## Output\nReturn each recording file with its type, size, and download URL, plus the meeting topic and date. Note if no recordings exist for the meeting.',
+    },
+  ],
+} as const satisfies BlockMeta

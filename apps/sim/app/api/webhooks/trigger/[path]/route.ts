@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { webhookTriggerGetContract, webhookTriggerPostContract } from '@/lib/api/contracts/webhooks'
+import { parseRequest } from '@/lib/api/server'
 import { admissionRejectedResponse, tryAdmit } from '@/lib/core/admission/gate'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -16,6 +18,7 @@ import {
   verifyProviderAuth,
 } from '@/lib/webhooks/processor'
 import { blockExistsInDeployment } from '@/lib/workflows/persistence/utils'
+import { isInternalTriggerProvider } from '@/triggers/constants'
 
 const logger = createLogger('WebhookTriggerAPI')
 
@@ -24,9 +27,11 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ path: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ path: string }> }) => {
     const requestId = generateRequestId()
-    const { path } = await params
+    const parsed = await parseRequest(webhookTriggerGetContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { path } = parsed.data.params
 
     // Handle provider-specific GET verifications (Microsoft Graph, WhatsApp, etc.)
     const challengeResponse = await handleProviderChallenges({}, request, requestId, path)
@@ -42,14 +47,14 @@ export const GET = withRouteHandler(
 )
 
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ path: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ path: string }> }) => {
     const ticket = tryAdmit()
     if (!ticket) {
       return admissionRejectedResponse()
     }
 
     try {
-      return await handleWebhookPost(request, params)
+      return await handleWebhookPost(request, context)
     } finally {
       ticket.release()
     }
@@ -58,10 +63,12 @@ export const POST = withRouteHandler(
 
 async function handleWebhookPost(
   request: NextRequest,
-  params: Promise<{ path: string }>
+  context: { params: Promise<{ path: string }> }
 ): Promise<NextResponse> {
   const requestId = generateRequestId()
-  const { path } = await params
+  const parsed = await parseRequest(webhookTriggerPostContract, request, context)
+  if (!parsed.success) return parsed.response
+  const { path } = parsed.data.params
 
   const earlyChallenge = await handleProviderChallenges({}, request, requestId, path)
   if (earlyChallenge) {
@@ -83,7 +90,19 @@ async function handleWebhookPost(
   }
 
   // Find all webhooks for this path (supports credential set fan-out where multiple webhooks share a path)
-  const webhooksForPath = await findAllWebhooksForPath({ requestId, path })
+  const allWebhooksForPath = await findAllWebhooksForPath({ requestId, path })
+
+  // Internal trigger providers (sim, table) are fired in-process, never over
+  // HTTP. Their rows still register a path, so reject deliveries here to keep
+  // forged events out.
+  const webhooksForPath = allWebhooksForPath.filter(
+    ({ webhook: foundWebhook }) => !isInternalTriggerProvider(foundWebhook.provider)
+  )
+
+  if (allWebhooksForPath.length > 0 && webhooksForPath.length === 0) {
+    logger.warn(`[${requestId}] Rejected HTTP delivery to internal trigger path: ${path}`)
+    return new NextResponse('Not Found', { status: 404 })
+  }
 
   if (webhooksForPath.length === 0) {
     const verificationResponse = await handlePreLookupWebhookVerification(

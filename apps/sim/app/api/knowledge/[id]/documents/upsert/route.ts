@@ -2,51 +2,41 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { document } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { upsertKnowledgeDocumentContract } from '@/lib/api/contracts/knowledge'
+import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   createDocumentRecords,
   deleteDocument,
   getProcessingConfig,
+  KnowledgeBaseFileOwnershipError,
   processDocumentsWithQueue,
 } from '@/lib/knowledge/documents/service'
 import { checkKnowledgeBaseWriteAccess } from '@/app/api/knowledge/utils'
 
 const logger = createLogger('DocumentUpsertAPI')
 
-const UpsertDocumentSchema = z.object({
-  documentId: z.string().optional(),
-  filename: z.string().min(1, 'Filename is required'),
-  fileUrl: z.string().min(1, 'File URL is required'),
-  fileSize: z.number().min(1, 'File size must be greater than 0'),
-  mimeType: z.string().min(1, 'MIME type is required'),
-  documentTagsData: z.string().optional(),
-  processingOptions: z
-    .object({
-      recipe: z.string().optional(),
-      lang: z.string().optional(),
-    })
-    .optional(),
-  workflowId: z.string().optional(),
-})
-
 export const POST = withRouteHandler(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateId().slice(0, 8)
-    const { id: knowledgeBaseId } = await params
+    const { id: knowledgeBaseId } = await context.params
 
     try {
-      const body = await req.json()
+      const parsed = await parseRequest(upsertKnowledgeDocumentContract, req, context)
+      if (!parsed.success) return parsed.response
+      const validatedData = parsed.data.body
 
       logger.info(`[${requestId}] Knowledge base document upsert request`, {
         knowledgeBaseId,
-        hasDocumentId: !!body.documentId,
-        filename: body.filename,
+        hasDocumentId: !!validatedData.documentId,
+        filename: validatedData.filename,
       })
 
       const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
@@ -55,8 +45,6 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       const userId = auth.userId
-
-      const validatedData = UpsertDocumentSchema.parse(body)
 
       if (validatedData.workflowId) {
         const authorization = await authorizeWorkflowByWorkspacePermission({
@@ -83,6 +71,21 @@ export const POST = withRouteHandler(
           `[${requestId}] User ${userId} attempted to upsert document in unauthorized knowledge base ${knowledgeBaseId}`
         )
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      // Gate usage before any create/delete so an over-limit upsert is rejected up
+      // front and never deletes the existing (already-indexed) document. Runs even
+      // for legacy KBs with no workspace — the uploader's pooled/frozen status is
+      // still enforced (per-member is skipped when there's no org workspace).
+      const kbWorkspaceId = accessCheck.knowledgeBase?.workspaceId
+      const usage = await checkActorUsageLimits(userId, kbWorkspaceId)
+      if (usage.isExceeded) {
+        return NextResponse.json(
+          {
+            error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
+          },
+          { status: 402 }
+        )
       }
 
       let existingDocumentId: string | null = null
@@ -142,7 +145,8 @@ export const POST = withRouteHandler(
           },
         ],
         knowledgeBaseId,
-        requestId
+        requestId,
+        userId
       )
 
       const firstDocument = createdDocuments[0]
@@ -231,17 +235,16 @@ export const POST = withRouteHandler(
         },
       })
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        logger.warn(`[${requestId}] Invalid upsert request data`, { errors: error.errors })
+      logger.error(`[${requestId}] Error upserting document`, error)
+
+      if (error instanceof KnowledgeBaseFileOwnershipError) {
         return NextResponse.json(
-          { error: 'Invalid request data', details: error.errors },
-          { status: 400 }
+          { error: 'File URL does not reference a file owned by this knowledge base' },
+          { status: 403 }
         )
       }
 
-      logger.error(`[${requestId}] Error upserting document`, error)
-
-      const errorMessage = error instanceof Error ? error.message : 'Failed to upsert document'
+      const errorMessage = getErrorMessage(error, 'Failed to upsert document')
       const isStorageLimitError =
         errorMessage.includes('Storage limit exceeded') || errorMessage.includes('storage limit')
       const isMissingKnowledgeBase = errorMessage === 'Knowledge base not found'

@@ -1,10 +1,16 @@
+import type { Readable } from 'node:stream'
+import { randomBytes } from 'crypto'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
+import { assertKnownSizeWithinLimit } from '@/lib/core/utils/stream-limits'
 import {
   getStorageConfig,
   S3_AGENT_GENERATED_IMAGES_CONFIG,
   S3_CONFIG,
+  USE_BLOB_STORAGE,
   USE_S3_STORAGE,
 } from '@/lib/uploads/config'
+import type { BlobConfig } from '@/lib/uploads/providers/blob/types'
 import type { S3Config } from '@/lib/uploads/providers/s3/types'
 import type {
   DeleteFileOptions,
@@ -23,6 +29,29 @@ import {
 } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('StorageService')
+
+/**
+ * Create a Blob config from StorageConfig
+ * @throws Error if required properties are missing
+ */
+function createBlobConfig(config: StorageConfig): BlobConfig {
+  if (!config.containerName || !config.accountName) {
+    throw new Error('Blob configuration missing required properties: containerName and accountName')
+  }
+
+  if (!config.connectionString && !config.accountKey) {
+    throw new Error(
+      'Blob configuration missing authentication: either connectionString or accountKey must be provided'
+    )
+  }
+
+  return {
+    containerName: config.containerName,
+    accountName: config.accountName,
+    accountKey: config.accountKey,
+    connectionString: config.connectionString,
+  }
+}
 
 /**
  * Create an S3 config from StorageConfig
@@ -55,6 +84,7 @@ async function insertFileMetadataHelper(
     key,
     userId: metadata.userId,
     workspaceId: metadata.workspaceId || null,
+    folderId: metadata.folderId || null,
     context,
     originalName: metadata.originalName || fileName,
     contentType,
@@ -206,7 +236,7 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
  * Download a file from the configured storage provider
  */
 export async function downloadFile(options: DownloadFileOptions): Promise<Buffer> {
-  const { key, context } = options
+  const { key, context, maxBytes } = options
 
   if (
     context === 'agent-generated-images' &&
@@ -227,20 +257,64 @@ export async function downloadFile(options: DownloadFileOptions): Promise<Buffer
     const useS3ForThisDownload =
       USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
 
+    if (USE_BLOB_STORAGE) {
+      const { downloadFromBlob } = await import('@/lib/uploads/providers/blob/client')
+      const blobConfig = createBlobConfig(config)
+      return maxBytes === undefined
+        ? downloadFromBlob(key, blobConfig)
+        : downloadFromBlob(key, blobConfig, maxBytes)
+    }
+
     if (useS3ForThisDownload && config.bucket && config.region) {
       const { downloadFromS3 } = await import('@/lib/uploads/providers/s3/client')
-      return downloadFromS3(key, createS3Config(config))
+      const s3Config = createS3Config(config)
+      return maxBytes === undefined
+        ? downloadFromS3(key, s3Config)
+        : downloadFromS3(key, s3Config, maxBytes)
     }
   }
 
-  const { readFile } = await import('fs/promises')
+  const { readFile, stat } = await import('fs/promises')
   const { join } = await import('path')
   const { UPLOAD_DIR_SERVER } = await import('./setup.server')
 
   const safeKey = sanitizeFileKey(key)
   const filePath = join(UPLOAD_DIR_SERVER, safeKey)
 
+  if (maxBytes !== undefined) {
+    const fileStats = await stat(filePath)
+    assertKnownSizeWithinLimit(fileStats.size, maxBytes, 'storage download')
+  }
+
   return readFile(filePath)
+}
+
+/**
+ * Stream a file out of the configured storage provider without buffering it in memory.
+ * The caller MUST fully consume or `destroy()` the returned stream. Used by the large-CSV
+ * import worker so a multi-hundred-MB file is never held resident.
+ */
+export async function downloadFileStream(options: {
+  key: string
+  context: StorageContext
+}): Promise<Readable> {
+  const { key, context } = options
+  const config = getStorageConfig(context)
+
+  if (USE_BLOB_STORAGE) {
+    const { downloadFromBlobStream } = await import('@/lib/uploads/providers/blob/client')
+    return downloadFromBlobStream(key, createBlobConfig(config))
+  }
+
+  if (USE_S3_STORAGE) {
+    const { downloadFromS3Stream } = await import('@/lib/uploads/providers/s3/client')
+    return downloadFromS3Stream(key, createS3Config(config))
+  }
+
+  const { createReadStream } = await import('fs')
+  const { join } = await import('path')
+  const { UPLOAD_DIR_SERVER } = await import('./setup.server')
+  return createReadStream(join(UPLOAD_DIR_SERVER, sanitizeFileKey(key)))
 }
 
 /**
@@ -284,6 +358,72 @@ export async function deleteFile(options: DeleteFileOptions): Promise<void> {
   await unlink(filePath)
 }
 
+/** AWS SDK v3 silently caps HTTP connections at 50/endpoint — stay well under. */
+const PER_FILE_DELETE_CONCURRENCY = 25
+
+/**
+ * Bulk delete via the provider's native multi-object API when available
+ * (S3 `DeleteObjects`), else bounded-concurrency per-file. All keys must
+ * share `context`. Idempotent on missing keys.
+ */
+export async function deleteFiles(
+  keys: string[],
+  context: StorageContext
+): Promise<{ deleted: number; failed: Array<{ key: string; error: string }> }> {
+  if (keys.length === 0) return { deleted: 0, failed: [] }
+
+  const config = getStorageConfig(context)
+
+  if (USE_S3_STORAGE) {
+    const { deleteManyFromS3 } = await import('@/lib/uploads/providers/s3/client')
+    const { failed } = await deleteManyFromS3(keys, createS3Config(config))
+    return { deleted: keys.length - failed.length, failed }
+  }
+
+  const failed: Array<{ key: string; error: string }> = []
+  let cursor = 0
+  const runWorker = async (): Promise<void> => {
+    while (cursor < keys.length) {
+      const idx = cursor++
+      const key = keys[idx]
+      try {
+        await deleteFile({ key, context })
+      } catch (error) {
+        failed.push({ key, error: getErrorMessage(error) })
+      }
+    }
+  }
+
+  const workerCount = Math.min(PER_FILE_DELETE_CONCURRENCY, keys.length)
+  await Promise.all(Array.from({ length: workerCount }, runWorker))
+
+  return { deleted: keys.length - failed.length, failed }
+}
+
+/**
+ * Check whether an object exists in the configured cloud storage provider.
+ * Returns object size and content-type when present, or null when missing.
+ * Throws on errors other than "not found". For local filesystem, returns null.
+ */
+export async function headObject(
+  key: string,
+  context: StorageContext
+): Promise<{ size: number; contentType?: string } | null> {
+  const config = getStorageConfig(context)
+
+  if (USE_BLOB_STORAGE) {
+    const { headBlobObject } = await import('@/lib/uploads/providers/blob/client')
+    return headBlobObject(key, createBlobConfig(config))
+  }
+
+  if (USE_S3_STORAGE) {
+    const { headS3Object } = await import('@/lib/uploads/providers/s3/client')
+    return headS3Object(key, createS3Config(config))
+  }
+
+  return null
+}
+
 /**
  * Generate a presigned URL for direct file upload
  */
@@ -298,6 +438,7 @@ export async function generatePresignedUploadUrl(
     userId,
     expirationSeconds = 3600,
     metadata = {},
+    customKey,
   } = options
 
   const allMetadata = {
@@ -310,10 +451,15 @@ export async function generatePresignedUploadUrl(
 
   const config = getStorageConfig(context)
 
-  const timestamp = Date.now()
-  const uniqueId = Math.random().toString(36).substring(2, 9)
-  const safeFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_')
-  const key = `${context}/${timestamp}-${uniqueId}-${safeFileName}`
+  let key: string
+  if (customKey) {
+    key = customKey
+  } else {
+    const timestamp = Date.now()
+    const uniqueId = randomBytes(8).toString('hex')
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_')
+    key = `${context}/${timestamp}-${uniqueId}-${safeFileName}`
+  }
 
   if (USE_S3_STORAGE) {
     return generateS3PresignedUrl(

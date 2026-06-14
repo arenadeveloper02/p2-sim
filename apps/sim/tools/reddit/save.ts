@@ -56,13 +56,12 @@ export const saveTool: ToolConfig<RedditSaveParams, RedditWriteResponse> = {
         formData.append('category', params.category)
       }
 
-      return formData.toString() as unknown as Record<string, any>
+      return formData.toString()
     },
   },
 
   transformResponse: async (response: Response, requestParams?: RedditSaveParams) => {
-    // Reddit save API returns empty JSON {} on success
-    await response.json()
+    await response.json().catch(() => ({}))
 
     if (response.ok) {
       return {
@@ -140,13 +139,12 @@ export const unsaveTool: ToolConfig<RedditSaveParams, RedditWriteResponse> = {
         id: params.id,
       })
 
-      return formData.toString() as unknown as Record<string, any>
+      return formData.toString()
     },
   },
 
   transformResponse: async (response: Response, requestParams?: RedditSaveParams) => {
-    // Reddit unsave API returns empty JSON {} on success
-    await response.json()
+    await response.json().catch(() => ({}))
 
     if (response.ok) {
       return {

@@ -2,7 +2,8 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { ObsidianIcon } from '@/components/icons'
 import { validateExternalUrl } from '@/lib/core/security/input-validation'
-import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { secureFetchWithRetry } from '@/lib/knowledge/documents/secure-fetch.server'
+import { VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { joinTagArray, parseTagDate } from '@/connectors/utils'
 
@@ -24,18 +25,15 @@ interface NoteJson {
 }
 
 /**
- * Normalizes the vault URL and validates it against SSRF protections.
+ * Normalizes the vault URL and runs an early structural SSRF check via the
+ * shared `validateExternalUrl` policy (hosted Sim blocks localhost/private/HTTP;
+ * self-hosted allows http://localhost only).
  *
- * The Obsidian Local REST API plugin runs on the user's own machine, so there
- * is no SaaS domain to allowlist — the vault URL is fully user-controlled. We
- * defer to the shared `validateExternalUrl` policy:
- *   - hosted Sim: blocks localhost, private IPs, HTTP (forces HTTPS)
- *   - self-hosted Sim: allows http://localhost (built-in carve-out), still
- *     blocks non-loopback private IPs and dangerous ports (22, 25, 3306,
- *     5432, 6379, 27017, 9200)
- *
- * This does not defend against DNS rebinding; for hosted deployments the user
- * must expose the plugin through a public URL (tunnel, port-forward).
+ * The authoritative SSRF boundary is enforced at request time: every vault
+ * request goes through {@link secureFetchWithRetry}, which resolves DNS,
+ * re-checks the resolved IP, and pins the connection to it — closing the
+ * DNS-rebinding gap a synchronous string check cannot. On hosted Sim the plugin
+ * must be exposed through a public URL.
  */
 function resolveVaultEndpoint(rawUrl: string | undefined): string {
   let url = (rawUrl || DEFAULT_VAULT_URL).trim().replace(/\/+$/, '')
@@ -57,12 +55,12 @@ async function listDirectory(
   baseUrl: string,
   accessToken: string,
   dirPath: string,
-  retryOptions?: Parameters<typeof fetchWithRetry>[2]
+  retryOptions?: Parameters<typeof secureFetchWithRetry>[2]
 ): Promise<string[]> {
   const encodedDir = dirPath ? dirPath.split('/').map(encodeURIComponent).join('/') : ''
   const endpoint = encodedDir ? `${baseUrl}/vault/${encodedDir}/` : `${baseUrl}/vault/`
 
-  const response = await fetchWithRetry(
+  const response = await secureFetchWithRetry(
     endpoint,
     {
       method: 'GET',
@@ -88,7 +86,7 @@ async function listVaultFiles(
   baseUrl: string,
   accessToken: string,
   folderPath?: string,
-  retryOptions?: Parameters<typeof fetchWithRetry>[2],
+  retryOptions?: Parameters<typeof secureFetchWithRetry>[2],
   depth = 0
 ): Promise<string[]> {
   if (depth > MAX_RECURSION_DEPTH) {
@@ -134,9 +132,9 @@ async function fetchNote(
   baseUrl: string,
   accessToken: string,
   filePath: string,
-  retryOptions?: Parameters<typeof fetchWithRetry>[2]
+  retryOptions?: Parameters<typeof secureFetchWithRetry>[2]
 ): Promise<NoteJson> {
-  const response = await fetchWithRetry(
+  const response = await secureFetchWithRetry(
     `${baseUrl}/vault/${filePath.split('/').map(encodeURIComponent).join('/')}`,
     {
       method: 'GET',
@@ -215,8 +213,15 @@ export const obsidianConnector: ConnectorConfig = {
     const offset = cursor ? Number(cursor) : 0
     const pageFiles = allFiles.slice(offset, offset + DOCS_PER_PAGE)
 
-    const syncRunId = (syncContext?.syncRunId as string) ?? ''
-
+    /**
+     * The Obsidian Local REST API directory listing returns just
+     * `{ files: string[] }` — no `stat`/`mtime` and no `HEAD` support to read
+     * `Last-Modified`, so the stub cannot encode change-detection state. Every
+     * file is therefore re-hydrated via `getDocument` on every sync. The
+     * post-hydration hash compare in the sync engine
+     * (`existing.contentHash === hydratedHash`) prevents redundant DB writes
+     * when `mtime` is unchanged.
+     */
     const documents: ExternalDocument[] = pageFiles.map((filePath) => ({
       externalId: filePath,
       title: titleFromPath(filePath),
@@ -224,7 +229,7 @@ export const obsidianConnector: ConnectorConfig = {
       contentDeferred: true,
       mimeType: 'text/plain' as const,
       sourceUrl: `${baseUrl}/vault/${filePath.split('/').map(encodeURIComponent).join('/')}`,
-      contentHash: `obsidian:stub:${filePath}:${syncRunId}`,
+      contentHash: `obsidian:${filePath}`,
       metadata: {
         folder: filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '',
       },
@@ -297,7 +302,7 @@ export const obsidianConnector: ConnectorConfig = {
     }
 
     try {
-      const response = await fetchWithRetry(
+      const response = await secureFetchWithRetry(
         `${baseUrl}/`,
         {
           method: 'GET',
@@ -306,15 +311,21 @@ export const obsidianConnector: ConnectorConfig = {
         VALIDATE_RETRY_OPTIONS
       )
 
-      if (response.status === 401 || response.status === 403) {
+      if (!response.ok) {
+        return { valid: false, error: `Obsidian API returned status ${response.status}` }
+      }
+
+      /**
+       * `GET /` is the only public endpoint and returns 200 regardless of auth;
+       * the response body's `authenticated` field is the actual auth signal.
+       * See https://coddingtonbear.github.io/obsidian-local-rest-api/.
+       */
+      const data = (await response.json()) as { authenticated?: boolean }
+      if (!data?.authenticated) {
         return {
           valid: false,
           error: 'Invalid API key — check your Obsidian Local REST API settings',
         }
-      }
-
-      if (!response.ok) {
-        return { valid: false, error: `Obsidian API returned status ${response.status}` }
       }
 
       const folderPath = (sourceConfig.folderPath as string) || ''

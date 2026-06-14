@@ -29,9 +29,12 @@ function createMockNextRequest(
     ...headers,
   })
 
+  const parsedUrl = new URL(url)
+
   return {
     method,
     headers: headersObj,
+    nextUrl: parsedUrl,
     cookies: {
       get: vi.fn().mockReturnValue(undefined),
     },
@@ -60,13 +63,11 @@ const createMockStream = () => {
   })
 }
 
-const { mockAddCorsHeaders, mockValidateChatAuth, mockSetChatAuthCookie, mockValidateAuthToken } =
-  vi.hoisted(() => ({
-    mockAddCorsHeaders: vi.fn().mockImplementation((response: Response) => response),
-    mockValidateChatAuth: vi.fn().mockResolvedValue({ authorized: true }),
-    mockSetChatAuthCookie: vi.fn(),
-    mockValidateAuthToken: vi.fn().mockReturnValue(false),
-  }))
+const { mockValidateChatAuth, mockSetChatAuthCookie, mockValidateAuthToken } = vi.hoisted(() => ({
+  mockValidateChatAuth: vi.fn().mockResolvedValue({ authorized: true }),
+  mockSetChatAuthCookie: vi.fn(),
+  mockValidateAuthToken: vi.fn().mockReturnValue(false),
+}))
 
 const mockCreateErrorResponse = workflowsApiUtilsMockFns.mockCreateErrorResponse
 const mockCreateSuccessResponse = workflowsApiUtilsMockFns.mockCreateSuccessResponse
@@ -78,7 +79,6 @@ vi.mock('@sim/db', () => ({
 }))
 
 vi.mock('@/lib/core/security/deployment', () => ({
-  addCorsHeaders: mockAddCorsHeaders,
   validateAuthToken: mockValidateAuthToken,
   setDeploymentAuthCookie: vi.fn(),
   isEmailAllowed: vi.fn().mockReturnValue(false),
@@ -178,7 +178,6 @@ describe('Chat Identifier API Route', () => {
       },
     })
 
-    mockAddCorsHeaders.mockImplementation((response: Response) => response)
     mockValidateChatAuth.mockResolvedValue({ authorized: true })
     mockValidateAuthToken.mockReturnValue(false)
     mockCreateErrorResponse.mockImplementation((message: string, status: number, code?: string) => {
@@ -441,6 +440,8 @@ describe('Chat Identifier API Route', () => {
       const req = {
         method: 'POST',
         headers: new Headers(),
+        nextUrl: new URL('http://localhost:3000/api/test'),
+        cookies: { get: vi.fn().mockReturnValue(undefined) },
         json: vi.fn().mockRejectedValue(new Error('Invalid JSON')),
       } as any
 

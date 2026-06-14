@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { RefreshCw } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -29,6 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { requestJson } from '@/lib/api/client/request'
+import { resumeWorkflowExecutionContract } from '@/lib/api/contracts/workflows'
 import Navbar from '@/app/(landing)/components/navbar/navbar'
 import { useBrandConfig } from '@/ee/whitelabeling'
 import type { ResumeStatus } from '@/executor/types'
@@ -86,6 +88,8 @@ interface PausePointWithQueue {
   latestResumeEntry?: ResumeQueueEntrySummary | null
   parallelScope?: any
   loopScope?: any
+  pauseKind?: 'human' | 'time'
+  resumeAt?: string
 }
 
 interface PausedExecutionSummary {
@@ -187,22 +191,7 @@ function renderStructuredValuePreview(value: unknown) {
 
   const stringValue = String(value)
   return (
-    <div
-      style={{
-        display: 'inline-flex',
-        maxWidth: '100%',
-        borderRadius: '6px',
-        border: '1px solid var(--border)',
-        background: 'var(--surface-5)',
-        padding: '4px 8px',
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-        fontFamily: 'var(--font-mono, monospace)',
-        fontSize: '12px',
-        lineHeight: '16px',
-        color: 'var(--text-primary)',
-      }}
-    >
+    <div className='inline-flex max-w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface-5)] px-2 py-1 font-mono text-[12px] text-[var(--text-primary)] leading-4 [white-space:pre-wrap] [word-break:break-word]'>
       {stringValue}
     </div>
   )
@@ -237,7 +226,7 @@ export default function ResumeExecutionPage({
   const [selectedStatus, setSelectedStatus] =
     useState<PausePointWithQueue['resumeStatus']>('paused')
   const [queuePosition, setQueuePosition] = useState<number | null | undefined>(undefined)
-  const [resumeInputs, setResumeInputs] = useState<Record<string, string>>({})
+  const resumeInputsRef = useRef<Record<string, string>>({})
   const [resumeInput, setResumeInput] = useState('')
   const [formValuesByContext, setFormValuesByContext] = useState<
     Record<string, Record<string, string>>
@@ -533,6 +522,7 @@ export default function ResumeExecutionPage({
     const loadDetail = async () => {
       setLoadingDetail(true)
       try {
+        // boundary-raw-fetch: GET /api/resume/[workflowId]/[executionId]/[contextId] has no contract (server route only models POST resume submission)
         const response = await fetch(
           `/api/resume/${workflowId}/${executionId}/${selectedContextId}`,
           {
@@ -569,28 +559,24 @@ export default function ResumeExecutionPage({
           })
           setFormValues(mergedValues)
           setFormErrors({})
-          setResumeInputs((prev) => {
-            if (prev[data.pausePoint.contextId] !== undefined) {
-              const next = { ...prev }
-              delete next[data.pausePoint.contextId]
-              return next
-            }
-            return prev
-          })
+          if (resumeInputsRef.current[data.pausePoint.contextId] !== undefined) {
+            delete resumeInputsRef.current[data.pausePoint.contextId]
+          }
           setResumeInput('')
         } else {
           const initialValue =
             typeof responseData === 'string'
               ? responseData
               : JSON.stringify(responseData ?? {}, null, 2)
-          setResumeInputs((prev) => {
-            if (prev[data.pausePoint.contextId] !== undefined) {
-              setResumeInput(prev[data.pausePoint.contextId])
-              return prev
-            }
+          if (resumeInputsRef.current[data.pausePoint.contextId] !== undefined) {
+            setResumeInput(resumeInputsRef.current[data.pausePoint.contextId])
+          } else {
             setResumeInput(initialValue)
-            return { ...prev, [data.pausePoint.contextId]: initialValue }
-          })
+            resumeInputsRef.current = {
+              ...resumeInputsRef.current,
+              [data.pausePoint.contextId]: initialValue,
+            }
+          }
           setFormValues({})
           setFormErrors({})
         }
@@ -615,13 +601,11 @@ export default function ResumeExecutionPage({
   const refreshExecutionDetail = useCallback(async () => {
     setRefreshingExecution(true)
     try {
-      const response = await fetch(`/api/resume/${workflowId}/${executionId}`, {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store',
+      const raw = await requestJson(resumeWorkflowExecutionContract, {
+        params: { workflowId, executionId },
       })
-      if (!response.ok) return
-      const data: PausedExecutionDetail = await response.json()
+      // double-cast-allowed: contract pause-point shape is z.record(z.string(), z.unknown()) but the page works against the more specific local PausedExecutionDetail / PausePointWithQueue interfaces
+      const data = raw as unknown as PausedExecutionDetail
       setExecutionDetail(data)
       if (!selectedContextId) {
         const first =
@@ -640,6 +624,7 @@ export default function ResumeExecutionPage({
     async (contextId: string, showLoader = true) => {
       try {
         if (showLoader) setLoadingDetail(true)
+        // boundary-raw-fetch: GET /api/resume/[workflowId]/[executionId]/[contextId] has no contract (server route only models POST resume submission)
         const response = await fetch(`/api/resume/${workflowId}/${executionId}/${contextId}`, {
           method: 'GET',
           credentials: 'include',
@@ -669,28 +654,24 @@ export default function ResumeExecutionPage({
           })
           setFormValues(mergedValues)
           setFormErrors({})
-          setResumeInputs((prev) => {
-            if (prev[data.pausePoint.contextId] !== undefined) {
-              const next = { ...prev }
-              delete next[data.pausePoint.contextId]
-              return next
-            }
-            return prev
-          })
+          if (resumeInputsRef.current[data.pausePoint.contextId] !== undefined) {
+            delete resumeInputsRef.current[data.pausePoint.contextId]
+          }
           setResumeInput('')
         } else {
           const initialValue =
             typeof responseData === 'string'
               ? responseData
               : JSON.stringify(responseData ?? {}, null, 2)
-          setResumeInputs((prev) => {
-            if (prev[data.pausePoint.contextId] !== undefined) {
-              setResumeInput(prev[data.pausePoint.contextId])
-              return prev
-            }
+          if (resumeInputsRef.current[data.pausePoint.contextId] !== undefined) {
+            setResumeInput(resumeInputsRef.current[data.pausePoint.contextId])
+          } else {
             setResumeInput(initialValue)
-            return { ...prev, [data.pausePoint.contextId]: initialValue }
-          })
+            resumeInputsRef.current = {
+              ...resumeInputsRef.current,
+              [data.pausePoint.contextId]: initialValue,
+            }
+          }
           setFormValues({})
           setFormErrors({})
         }
@@ -750,6 +731,7 @@ export default function ResumeExecutionPage({
       resumePayload = parsedInput
     }
     try {
+      // boundary-raw-fetch: resume-context POST contract has no body schema (route uses tolerant raw JSON parse for resume input forwarded to PauseResumeManager)
       const response = await fetch(
         `/api/resume/${workflowId}/${executionId}/${selectedContextId}`,
         {
@@ -1004,9 +986,7 @@ export default function ResumeExecutionPage({
                     borderRadius: '8px',
                   }}
                 >
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-                    Loading...
-                  </span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Loading…</span>
                 </div>
               ) : !selectedContextId ? (
                 <div
@@ -1280,11 +1260,12 @@ export default function ResumeExecutionPage({
                               value={resumeInput}
                               onChange={(e) => {
                                 setResumeInput(e.target.value)
-                                if (selectedContextId)
-                                  setResumeInputs((prev) => ({
-                                    ...prev,
+                                if (selectedContextId) {
+                                  resumeInputsRef.current = {
+                                    ...resumeInputsRef.current,
                                     [selectedContextId]: e.target.value,
-                                  }))
+                                  }
+                                }
                               }}
                               placeholder='{"example": "value"}'
                               rows={6}

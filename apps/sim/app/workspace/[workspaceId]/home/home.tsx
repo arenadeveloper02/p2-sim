@@ -1,22 +1,49 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { Button } from '@/components/emcn'
 import { PanelLeft } from '@/components/emcn/icons'
-import { useSession } from '@/lib/auth/auth-client'
+import { requestJson } from '@/lib/api/client/request'
+import { createWorkflowContract } from '@/lib/api/contracts'
+import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
+import {
+  buildWorkflowAliasWorkflowEntries,
+  resolveWorkflowAliasPath,
+  resolveWorkspacePlanAliasPath,
+} from '@/lib/copilot/vfs/workflow-aliases'
 import {
   LandingPromptStorage,
   type LandingWorkflowSeed,
   LandingWorkflowSeedStorage,
 } from '@/lib/core/utils/browser-storage'
+import {
+  MOTHERSHIP_SEND_MESSAGE_EVENT,
+  type MothershipSendMessageDetail,
+} from '@/lib/mothership/events'
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
-import { useChatHistory, useMarkTaskRead } from '@/hooks/queries/tasks'
+import { useFolders } from '@/hooks/queries/folders'
+import {
+  useMarkMothershipChatRead,
+  useMothershipChatHistory,
+} from '@/hooks/queries/mothership-chats'
+import { useWorkflows } from '@/hooks/queries/workflows'
+import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
+import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import type { ChatContext } from '@/stores/panel'
-import { MothershipChat, MothershipView, TemplatePrompts, UserInput } from './components'
+import {
+  ChatSurfaceProvider,
+  CreditsChip,
+  MothershipChat,
+  MothershipResourcesProvider,
+  MothershipView,
+  SuggestedActions,
+  UserInput,
+  type UserInputHandle,
+} from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
 import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
 
@@ -24,22 +51,26 @@ const logger = createLogger('Home')
 
 interface HomeProps {
   chatId?: string
+  userName?: string
+  userId?: string
+  initialResourceId?: string | null
 }
 
-export function Home({ chatId }: HomeProps = {}) {
+export function Home({ chatId, userName, userId, initialResourceId = null }: HomeProps) {
+  useOAuthReturnRouter()
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const initialResourceId = searchParams.get('resource')
-  const { data: session } = useSession()
+  const firstName = userName?.split(' ')[0] ?? ''
+  const { data: workspaceFiles = [] } = useWorkspaceFiles(workspaceId)
+  const { data: workflows = [] } = useWorkflows(workspaceId)
+  const { data: folders = [] } = useFolders(workspaceId)
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
   posthogRef.current = posthog
   const [initialPrompt, setInitialPrompt] = useState('')
   const hasCheckedLandingStorageRef = useRef(false)
   const initialViewInputRef = useRef<HTMLDivElement>(null)
-  const templateRef = useRef<HTMLDivElement>(null)
-  const baseInputHeightRef = useRef<number | null>(null)
+  const initialViewUserInputRef = useRef<UserInputHandle>(null)
 
   const [isInputEntering, setIsInputEntering] = useState(false)
 
@@ -52,26 +83,15 @@ export function Home({ chatId }: HomeProps = {}) {
           workspaceId,
           nameOverride: seed.workflowName,
           descriptionOverride: seed.workflowDescription || 'Imported from landing template',
-          colorOverride: seed.color,
-          createWorkflow: async ({ name, description, color, workspaceId }) => {
-            const response = await fetch('/api/workflows', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
+          createWorkflow: async ({ name, description, workspaceId }) => {
+            return requestJson(createWorkflowContract, {
+              body: {
                 name,
                 description,
-                color,
                 workspaceId,
                 deduplicate: true,
-              }),
+              },
             })
-
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}))
-              throw new Error(errorData.error || 'Failed to create workflow')
-            }
-
-            return response.json()
           },
         })
 
@@ -110,8 +130,8 @@ export function Home({ chatId }: HomeProps = {}) {
 
   const wasSendingRef = useRef(false)
 
-  const { isPending: isChatHistoryPending } = useChatHistory(chatId)
-  const { mutate: markRead } = useMarkTaskRead(workspaceId)
+  const { isPending: isChatHistoryPending } = useMothershipChatHistory(chatId)
+  const { mutate: markRead } = useMarkMothershipChatRead(workspaceId)
 
   const { mothershipRef, handleResizePointerDown, clearWidth } = useMothershipResize()
 
@@ -125,11 +145,11 @@ export function Home({ chatId }: HomeProps = {}) {
     setIsResourceCollapsed(true)
   }, [clearWidth])
 
-  const handleResourceEvent = useCallback(() => {
+  function handleResourceEvent() {
     if (isResourceCollapsedRef.current) {
       setIsResourceCollapsed(false)
     }
-  }, [])
+  }
 
   const {
     messages,
@@ -148,8 +168,12 @@ export function Home({ chatId }: HomeProps = {}) {
     removeFromQueue,
     sendNow,
     editQueuedMessage,
+    cancelQueueEdit,
+    editingQueuedId,
+    dispatchingHeadId,
     previewSession,
     genericResourceData,
+    getCurrentRequestId,
   } = useChat(
     workspaceId,
     chatId,
@@ -157,6 +181,14 @@ export function Home({ chatId }: HomeProps = {}) {
       onResourceEvent: handleResourceEvent,
       initialActiveResourceId: initialResourceId,
       resolveWorkspaceBeforeSend: false,
+      onRequestStarted: ({ requestId, userMessageId }) => {
+        captureEvent(posthogRef.current, 'task_request_started', {
+          workspace_id: workspaceId,
+          view: 'mothership',
+          request_id: requestId,
+          user_message_id: userMessageId,
+        })
+      },
     })
   )
 
@@ -202,142 +234,176 @@ export function Home({ chatId }: HomeProps = {}) {
     }
   }, [resources, collapseResource])
 
-  const handleStopGeneration = useCallback(() => {
+  function handleStopGeneration() {
     captureEvent(posthogRef.current, 'task_generation_aborted', {
       workspace_id: workspaceId,
       view: 'mothership',
+      request_id: getCurrentRequestId(),
     })
     void stopGeneration().catch(() => {})
-  }, [stopGeneration, workspaceId])
+  }
 
-  const handleSubmit = useCallback(
-    (text: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
-      const trimmed = text.trim()
-      if (!trimmed && !(fileAttachments && fileAttachments.length > 0)) return
+  function handleSubmit(
+    text: string,
+    fileAttachments?: FileAttachmentForApi[],
+    contexts?: ChatContext[]
+  ) {
+    const trimmed = text.trim()
+    if (!trimmed && !(fileAttachments && fileAttachments.length > 0)) return
 
-      captureEvent(posthogRef.current, 'task_message_sent', {
-        workspace_id: workspaceId,
-        has_attachments: !!(fileAttachments && fileAttachments.length > 0),
-        has_contexts: !!(contexts && contexts.length > 0),
-        is_new_task: !chatId,
-      })
+    captureEvent(posthogRef.current, 'task_message_sent', {
+      workspace_id: workspaceId,
+      has_attachments: !!(fileAttachments && fileAttachments.length > 0),
+      has_contexts: !!(contexts && contexts.length > 0),
+      is_new_task: !chatId,
+    })
 
-      if (initialViewInputRef.current) {
-        setIsInputEntering(true)
-      }
+    if (initialViewInputRef.current) {
+      setIsInputEntering(true)
+    }
 
-      sendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts)
-    },
-    [sendMessage, workspaceId, chatId]
-  )
+    sendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts)
+  }
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const message = (e as CustomEvent<{ message: string }>).detail?.message
+      const message = (e as CustomEvent<MothershipSendMessageDetail>).detail?.message
       if (message) sendMessage(message)
     }
-    window.addEventListener('mothership-send-message', handler)
-    return () => window.removeEventListener('mothership-send-message', handler)
+    window.addEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
+    return () => window.removeEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
   }, [sendMessage])
 
-  const resolveResourceFromContext = useCallback(
-    (context: ChatContext): { type: MothershipResourceType; id: string } | null => {
-      switch (context.kind) {
-        case 'workflow':
-        case 'current_workflow':
-          return context.workflowId ? { type: 'workflow', id: context.workflowId } : null
-        case 'knowledge':
-          return context.knowledgeId ? { type: 'knowledgebase', id: context.knowledgeId } : null
-        case 'table':
-          return context.tableId ? { type: 'table', id: context.tableId } : null
-        case 'file':
-          return context.fileId ? { type: 'file', id: context.fileId } : null
-        default:
-          return null
-      }
-    },
-    []
-  )
+  function resolveResourceFromContext(
+    context: ChatContext
+  ): { type: MothershipResourceType; id: string } | null {
+    switch (context.kind) {
+      case 'workflow':
+      case 'current_workflow':
+        return context.workflowId ? { type: 'workflow', id: context.workflowId } : null
+      case 'knowledge':
+        return context.knowledgeId ? { type: 'knowledgebase', id: context.knowledgeId } : null
+      case 'table':
+        return context.tableId ? { type: 'table', id: context.tableId } : null
+      case 'file':
+        return context.fileId ? { type: 'file', id: context.fileId } : null
+      default:
+        return null
+    }
+  }
 
-  const handleContextAdd = useCallback(
-    (context: ChatContext) => {
-      const resolved = resolveResourceFromContext(context)
-      if (resolved) {
-        addResource({ ...resolved, title: context.label })
-        handleResourceEvent()
-      }
-    },
-    [resolveResourceFromContext, addResource, handleResourceEvent]
-  )
-
-  const handleInitialContextRemove = useCallback(
-    (context: ChatContext) => {
-      const resolved = resolveResourceFromContext(context)
-      if (!resolved) return
-      removeResource(resolved.type, resolved.id)
-    },
-    [resolveResourceFromContext, removeResource]
-  )
-
-  const handleWorkspaceResourceSelect = useCallback(
-    (resource: MothershipResource) => {
-      const wasAdded = addResource(resource)
-      if (!wasAdded) {
-        setActiveResourceId(resource.id)
-      }
+  function handleContextAdd(context: ChatContext) {
+    const resolved = resolveResourceFromContext(context)
+    if (resolved) {
+      addResource({ ...resolved, title: context.label })
       handleResourceEvent()
-    },
-    [addResource, handleResourceEvent, setActiveResourceId]
+    }
+  }
+
+  function handleInitialContextRemove(context: ChatContext) {
+    const resolved = resolveResourceFromContext(context)
+    if (!resolved) return
+    removeResource(resolved.type, resolved.id)
+  }
+
+  const workflowAliasEntries = useMemo(
+    () =>
+      buildWorkflowAliasWorkflowEntries(
+        workflows.map((workflow) => ({
+          id: workflow.id,
+          name: workflow.name,
+          folderId: workflow.folderId ?? null,
+        })),
+        folders.map((folder) => ({
+          folderId: folder.id,
+          folderName: folder.name,
+          parentId: folder.parentId ?? null,
+        }))
+      ),
+    [folders, workflows]
   )
+
+  const resolveFileResource = useCallback(
+    (resource: MothershipResource): MothershipResource => {
+      if (resource.type !== 'file') return resource
+
+      const reference = (resource.path || resource.id).trim()
+      const workspacePlanAlias = resolveWorkspacePlanAliasPath(reference)
+      const workflowAlias = workspacePlanAlias
+        ? null
+        : resolveWorkflowAliasPath(reference, workflowAliasEntries)
+      const alias = workspacePlanAlias || workflowAlias
+      const targetPath = alias && alias.kind !== 'plans_dir' ? alias.backingPath : reference
+
+      const file = workspaceFiles.find((candidate) => {
+        const candidatePath = canonicalWorkspaceFilePath({
+          folderPath: candidate.folderPath,
+          name: candidate.name,
+        })
+        return (
+          candidate.id === reference || candidatePath === reference || candidatePath === targetPath
+        )
+      })
+
+      if (!file) return resource
+      return {
+        ...resource,
+        id: file.id,
+        title: resource.title || file.name,
+        path: alias ? reference : resource.path,
+      }
+    },
+    [workflowAliasEntries, workspaceFiles]
+  )
+
+  function handleWorkspaceResourceSelect(resource: MothershipResource) {
+    const resolvedResource = resolveFileResource(resource)
+    const wasAdded = addResource(resolvedResource)
+    if (!wasAdded) {
+      setActiveResourceId(resolvedResource.id)
+    }
+    handleResourceEvent()
+  }
 
   const hasMessages = messages.length > 0
   const showChatSkeleton = Boolean(chatId) && !hasMessages && isChatHistoryPending
+  const draftScopeKey = `${workspaceId}:${chatId ?? 'new'}`
 
-  useEffect(() => {
-    if (hasMessages) return
-    const input = initialViewInputRef.current
-    const templates = templateRef.current
-    if (!input || !templates) return
-
-    const ro = new ResizeObserver((entries) => {
-      const height = entries[0].contentRect.height
-      if (baseInputHeightRef.current === null) baseInputHeightRef.current = height
-      const delta = Math.max(0, (height - baseInputHeightRef.current) / 2)
-      templates.style.marginTop = delta > 0 ? `calc(-30vh + ${delta}px)` : ''
-    })
-    ro.observe(input)
-    return () => ro.disconnect()
-  }, [hasMessages])
-
-  if (!hasMessages && !chatId) {
+  if (!hasMessages && !showChatSkeleton) {
     return (
-      <div className='h-full overflow-y-auto bg-[var(--bg)] [scrollbar-gutter:stable_both-edges]'>
-        <div className='flex min-h-full flex-col items-center justify-center px-6 pb-[2vh]'>
-          <h1
-            data-tour='home-greeting'
-            className='mb-6 max-w-[42rem] text-balance font-[430] font-season text-[32px] text-[var(--text-primary)] tracking-[-0.02em]'
-          >
-            What should we get done
-            {session?.user?.name ? `, ${session.user.name.split(' ')[0]}` : ''}?
+      <div className='relative h-full overflow-y-auto bg-[var(--bg)] [scrollbar-gutter:stable_both-edges]'>
+        {false && (
+          <div className='absolute top-[8.5px] right-[16px] z-10'>
+            <CreditsChip />
+          </div>
+        )}
+        {/* Asymmetric padding biases the group up so the full cluster (heading + input + suggestions) sits at the optical center */}
+        <div className='flex min-h-full flex-col items-center justify-center px-6 pt-[2vh] pb-[22vh]'>
+          <h1 className='mb-7 max-w-[48rem] text-balance font-season text-[30px] text-[var(--text-primary)]'>
+            What should we get done{firstName ? `, ${firstName}` : ''}?
           </h1>
-          <div ref={initialViewInputRef} className='w-full' data-tour='home-chat-input'>
-            <UserInput
-              defaultValue={initialPrompt}
-              onSubmit={handleSubmit}
-              isSending={isSending}
-              onStopGeneration={handleStopGeneration}
-              userId={session?.user?.id}
+          <div ref={initialViewInputRef} className='relative w-full max-w-[48rem]'>
+            <ChatSurfaceProvider
+              userId={userId}
               onContextAdd={handleContextAdd}
               onContextRemove={handleInitialContextRemove}
-            />
+            >
+              <UserInput
+                ref={initialViewUserInputRef}
+                defaultValue={initialPrompt}
+                draftScopeKey={draftScopeKey}
+                onSubmit={handleSubmit}
+                isSending={isSending}
+                onStopGeneration={handleStopGeneration}
+              />
+            </ChatSurfaceProvider>
+            {/* Anchored out of flow so expanding/collapsing never shifts the centered input */}
+            <div className='absolute inset-x-0 top-full'>
+              <SuggestedActions
+                onSelectPrompt={(prompt) => initialViewUserInputRef.current?.populatePrompt(prompt)}
+              />
+            </div>
           </div>
-        </div>
-        <div
-          ref={templateRef}
-          data-tour='home-templates'
-          className='-mt-[30vh] mx-auto w-full max-w-[68rem] px-4 pb-8 sm:px-6 lg:px-10'
-        >
-          <TemplatePrompts onSelect={handleSubmit} />
         </div>
       </div>
     )
@@ -354,13 +420,17 @@ export function Home({ chatId }: HomeProps = {}) {
           onSubmit={handleSubmit}
           onStopGeneration={handleStopGeneration}
           messageQueue={messageQueue}
+          editingQueuedId={editingQueuedId}
+          dispatchingHeadId={dispatchingHeadId}
           onRemoveQueuedMessage={removeFromQueue}
           onSendQueuedMessage={sendNow}
           onEditQueuedMessage={editQueuedMessage}
-          userId={session?.user?.id}
+          onCancelQueueEdit={cancelQueueEdit}
+          userId={userId}
           chatId={resolvedChatId}
           onContextAdd={handleContextAdd}
           onWorkspaceResourceSelect={handleWorkspaceResourceSelect}
+          draftScopeKey={draftScopeKey}
           animateInput={isInputEntering}
           onInputAnimationEnd={isInputEntering ? () => setIsInputEntering(false) : undefined}
           initialScrollBlocked={resources.length > 0 && isResourceCollapsed}
@@ -380,22 +450,25 @@ export function Home({ chatId }: HomeProps = {}) {
         </div>
       )}
 
-      <MothershipView
-        ref={mothershipRef}
-        workspaceId={workspaceId}
-        chatId={resolvedChatId}
-        resources={resources}
-        activeResourceId={activeResourceId}
-        onSelectResource={setActiveResourceId}
-        onAddResource={addResource}
-        onRemoveResource={removeResource}
-        onReorderResources={reorderResources}
-        onCollapse={collapseResource}
-        isCollapsed={isResourceCollapsed}
-        previewSession={previewSession}
-        genericResourceData={genericResourceData ?? undefined}
-        className={skipResourceTransition ? '!transition-none' : undefined}
-      />
+      <MothershipResourcesProvider
+        selectResource={setActiveResourceId}
+        addResource={addResource}
+        removeResource={removeResource}
+        reorderResources={reorderResources}
+        collapseResource={collapseResource}
+      >
+        <MothershipView
+          ref={mothershipRef}
+          workspaceId={workspaceId}
+          chatId={resolvedChatId}
+          resources={resources}
+          activeResourceId={activeResourceId}
+          isCollapsed={isResourceCollapsed}
+          previewSession={previewSession}
+          genericResourceData={genericResourceData ?? undefined}
+          className={skipResourceTransition ? '!transition-none' : undefined}
+        />
+      </MothershipResourcesProvider>
 
       {isResourceCollapsed && (
         <div className='absolute top-[8.5px] right-[16px]'>
@@ -404,10 +477,10 @@ export function Home({ chatId }: HomeProps = {}) {
             size={null}
             type='button'
             onClick={() => setIsResourceCollapsed(false)}
-            className='h-[30px] w-[30px] rounded-[8px] hover-hover:bg-[var(--surface-active)]'
+            className='size-[30px] rounded-[8px] hover-hover:bg-[var(--surface-active)]'
             aria-label='Expand resource view'
           >
-            <PanelLeft className='h-[16px] w-[16px] text-[var(--text-icon)]' />
+            <PanelLeft className='size-[16px] text-[var(--text-icon)]' />
           </Button>
         </div>
       )}

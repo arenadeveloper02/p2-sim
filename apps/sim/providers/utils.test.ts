@@ -38,6 +38,7 @@ import {
   supportsThinking,
   supportsToolUsageControl,
   supportsVerbosity,
+  transformBlockTool,
   updateOllamaProviderModels,
 } from '@/providers/utils'
 
@@ -168,6 +169,19 @@ describe('getApiKey', () => {
       expect(key2).toBe('user-key')
     }
   )
+
+  it.concurrent(
+    'should return empty or user-provided key for litellm provider without requiring API key',
+    () => {
+      isHostedSpy.mockReturnValue(false)
+
+      const key = getApiKey('litellm', 'litellm/anthropic/claude-sonnet-4-6')
+      expect(key).toBe('empty')
+
+      const key2 = getApiKey('litellm', 'litellm/openai/gpt-4', 'user-key')
+      expect(key2).toBe('user-key')
+    }
+  )
 })
 
 describe('Model Capabilities', () => {
@@ -198,6 +212,7 @@ describe('Model Capabilities', () => {
         'unsupported-model',
         'cerebras/llama-3.3-70b',
         'groq/meta-llama/llama-4-scout-17b-16e-instruct',
+        'claude-opus-4-7',
         'o1',
         'o3',
         'o4-mini',
@@ -272,6 +287,7 @@ describe('Model Capabilities', () => {
       expect(getMaxTemperature('unsupported-model')).toBeUndefined()
       expect(getMaxTemperature('cerebras/llama-3.3-70b')).toBeUndefined()
       expect(getMaxTemperature('groq/meta-llama/llama-4-scout-17b-16e-instruct')).toBeUndefined()
+      expect(getMaxTemperature('claude-opus-4-7')).toBeUndefined()
       expect(getMaxTemperature('o1')).toBeUndefined()
       expect(getMaxTemperature('o3')).toBeUndefined()
       expect(getMaxTemperature('o4-mini')).toBeUndefined()
@@ -1499,5 +1515,132 @@ describe('Provider/Model Blacklist', () => {
       expect(getProviderFromModel('GPT-4O')).toBe('openai')
       expect(getProviderFromModel('CLAUDE-SONNET-4-5')).toBe('anthropic')
     })
+  })
+})
+
+describe('transformBlockTool multi-instance unique IDs', () => {
+  const tableBlockDef = {
+    type: 'table',
+    inputs: {},
+    subBlocks: [
+      { id: 'operation', type: 'dropdown' },
+      { id: 'tableSelector', type: 'table-selector', canonicalParamId: 'tableId', mode: 'basic' },
+      {
+        id: 'manualTableId',
+        type: 'short-input',
+        canonicalParamId: 'tableId',
+        mode: 'advanced',
+      },
+    ],
+    tools: {
+      access: ['table_query_rows', 'table_insert_row'],
+      config: { tool: () => 'table_query_rows' },
+    },
+  }
+
+  const getAllBlocks = () => [tableBlockDef]
+  const getTool = (id: string) => ({
+    id,
+    name: 'Query Rows',
+    description: 'Query table rows',
+    params: {},
+  })
+
+  const transformTable = (
+    params: Record<string, unknown>,
+    canonicalModes?: Record<string, 'basic' | 'advanced'>
+  ) =>
+    transformBlockTool(
+      { type: 'table', operation: 'query_rows', params },
+      { selectedOperation: 'query_rows', getAllBlocks, getTool, canonicalModes }
+    )
+
+  it('appends the table id when stored under the basic selector subblock key', async () => {
+    const result = await transformTable({ tableSelector: 'tbl_abc' })
+    expect(result?.id).toBe('table_query_rows_tbl_abc')
+  })
+
+  it('appends the table id resolved from the advanced manual input', async () => {
+    const result = await transformTable(
+      { manualTableId: 'tbl_xyz' },
+      { 'table:tableId': 'advanced' }
+    )
+    expect(result?.id).toBe('table_query_rows_tbl_xyz')
+  })
+
+  it('appends the canonical table id when already present in params', async () => {
+    const result = await transformTable({ tableId: 'tbl_direct' })
+    expect(result?.id).toBe('table_query_rows_tbl_direct')
+  })
+
+  it('falls back to the base tool id when no table is selected', async () => {
+    const result = await transformTable({})
+    expect(result?.id).toBe('table_query_rows')
+  })
+})
+
+describe('transformBlockTool knowledge-base multi-instance unique IDs', () => {
+  const knowledgeBlockDef = {
+    type: 'knowledge',
+    inputs: {},
+    subBlocks: [
+      { id: 'operation', type: 'dropdown' },
+      {
+        id: 'knowledgeBaseSelector',
+        type: 'knowledge-base-selector',
+        canonicalParamId: 'knowledgeBaseId',
+        mode: 'basic',
+      },
+      {
+        id: 'manualKnowledgeBaseId',
+        type: 'short-input',
+        canonicalParamId: 'knowledgeBaseId',
+        mode: 'advanced',
+      },
+    ],
+    tools: {
+      access: ['knowledge_search', 'knowledge_upload_chunk'],
+      config: { tool: () => 'knowledge_search' },
+    },
+  }
+
+  const getAllBlocks = () => [knowledgeBlockDef]
+  const getTool = (id: string) => ({
+    id,
+    name: 'Search',
+    description: 'Search the knowledge base',
+    params: {},
+  })
+
+  const transformKb = (
+    params: Record<string, unknown>,
+    canonicalModes?: Record<string, 'basic' | 'advanced'>
+  ) =>
+    transformBlockTool(
+      { type: 'knowledge', operation: 'search', params },
+      { selectedOperation: 'search', getAllBlocks, getTool, canonicalModes }
+    )
+
+  it('appends the knowledge base id when stored under the basic selector subblock key', async () => {
+    const result = await transformKb({ knowledgeBaseSelector: 'kb_abc' })
+    expect(result?.id).toBe('knowledge_search_kb_abc')
+  })
+
+  it('appends the knowledge base id resolved from the advanced manual input', async () => {
+    const result = await transformKb(
+      { manualKnowledgeBaseId: 'kb_xyz' },
+      { 'knowledge:knowledgeBaseId': 'advanced' }
+    )
+    expect(result?.id).toBe('knowledge_search_kb_xyz')
+  })
+
+  it('appends the canonical knowledge base id when already present in params', async () => {
+    const result = await transformKb({ knowledgeBaseId: 'kb_direct' })
+    expect(result?.id).toBe('knowledge_search_kb_direct')
+  })
+
+  it('falls back to the base tool id when no knowledge base is selected', async () => {
+    const result = await transformKb({})
+    expect(result?.id).toBe('knowledge_search')
   })
 })

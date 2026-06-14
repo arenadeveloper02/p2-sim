@@ -1,27 +1,24 @@
 import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, gt, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { v1ListWorkflowsContract } from '@/lib/api/contracts/v1/workflows'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { createApiResponse, getUserLimits } from '@/app/api/v1/logs/meta'
-import { checkRateLimit, createRateLimitResponse } from '@/app/api/v1/middleware'
+import {
+  checkRateLimit,
+  createRateLimitResponse,
+  validateWorkspaceAccess,
+} from '@/app/api/v1/middleware'
 
 const logger = createLogger('V1WorkflowsAPI')
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const QueryParamsSchema = z.object({
-  workspaceId: z.string(),
-  folderId: z.string().optional(),
-  deployedOnly: z.coerce.boolean().optional().default(false),
-  limit: z.coerce.number().min(1).max(100).optional().default(50),
-  cursor: z.string().optional(),
-})
 
 interface CursorData {
   sortOrder: number
@@ -51,18 +48,24 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     const userId = rateLimit.userId!
-    const { searchParams } = new URL(request.url)
-    const rawParams = Object.fromEntries(searchParams.entries())
+    const parsed = await parseRequest(
+      v1ListWorkflowsContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) =>
+          NextResponse.json(
+            {
+              error: getValidationErrorMessage(error, 'Invalid parameters'),
+              details: error.issues,
+            },
+            { status: 400 }
+          ),
+      }
+    )
+    if (!parsed.success) return parsed.response
 
-    const validationResult = QueryParamsSchema.safeParse(rawParams)
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { error: 'Invalid parameters', details: validationResult.error.errors },
-        { status: 400 }
-      )
-    }
-
-    const params = validationResult.data
+    const params = parsed.data.query
 
     logger.info(`[${requestId}] Fetching workflows for workspace ${params.workspaceId}`, {
       userId,
@@ -72,10 +75,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       },
     })
 
-    const permission = await getUserEntityPermissions(userId, 'workspace', params.workspaceId)
-    if (!permission) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
+    const accessError = await validateWorkspaceAccess(rateLimit, userId, params.workspaceId)
+    if (accessError) return accessError
 
     const conditions = [eq(workflow.workspaceId, params.workspaceId), isNull(workflow.archivedAt)]
 
@@ -115,7 +116,6 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         id: workflow.id,
         name: workflow.name,
         description: workflow.description,
-        color: workflow.color,
         folderId: workflow.folderId,
         workspaceId: workflow.workspaceId,
         isDeployed: workflow.isDeployed,
@@ -148,7 +148,6 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       id: w.id,
       name: w.name,
       description: w.description,
-      color: w.color,
       folderId: w.folderId,
       workspaceId: w.workspaceId,
       isDeployed: w.isDeployed,
@@ -172,7 +171,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json(response.body, { headers: response.headers })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
+    const message = getErrorMessage(error, 'Unknown error')
     logger.error(`[${requestId}] Workflows fetch error`, { error: message })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

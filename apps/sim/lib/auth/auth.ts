@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import { cache } from 'react'
 import { sso } from '@better-auth/sso'
 import { stripe } from '@better-auth/stripe'
@@ -6,18 +7,16 @@ import * as schema from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { betterAuth } from 'better-auth'
+import { betterAuth, type User } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { APIError, createAuthMiddleware } from 'better-auth/api'
 import { nextCookies } from 'better-auth/next-js'
 import {
   admin,
   captcha,
-  createAuthMiddleware,
   customSession,
   emailOTP,
   genericOAuth,
-  jwt,
-  oidcProvider,
   oneTimeToken,
   organization,
 } from 'better-auth/plugins'
@@ -27,16 +26,12 @@ import { headers } from 'next/headers'
 import Stripe from 'stripe'
 import {
   getEmailSubject,
+  renderExistingAccountEmail,
   renderOTPEmail,
   renderPasswordResetEmail,
   renderWelcomeEmail,
 } from '@/components/emails'
-import {
-  evictCachedMetadata,
-  isMetadataUrl,
-  resolveClientMetadata,
-  upsertCimdClient,
-} from '@/lib/auth/cimd'
+import { getAccessControlConfig } from '@/lib/auth/access-control'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
 import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
 import {
@@ -77,13 +72,16 @@ import {
   isOrganizationsEnabled,
   isRegistrationDisabled,
   isSignupEmailValidationEnabled,
+  isSignupMxValidationEnabled,
+  isSsoEnabled,
 } from '@/lib/core/config/feature-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getBaseUrl, isLocalhostUrl, parseOriginList } from '@/lib/core/utils/urls'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
+import { validateSignupEmailMx } from '@/lib/messaging/email/validation.server'
 import { scheduleLifecycleEmail } from '@/lib/messaging/lifecycle'
 import { captureServerEvent, getPostHogClient } from '@/lib/posthog/server'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
@@ -142,9 +140,43 @@ function getMicrosoftUserInfoFromIdToken(tokens: { accessToken?: string }, provi
   }
 }
 
-const blockedSignupDomains = env.BLOCKED_SIGNUP_DOMAINS
-  ? new Set(env.BLOCKED_SIGNUP_DOMAINS.split(',').map((d) => d.trim().toLowerCase()))
-  : null
+export function isEmailInDenylist(
+  email: string | undefined | null,
+  denylist: readonly string[] | null
+): boolean {
+  if (!denylist || denylist.length === 0 || !email) return false
+  const domain = email.split('@')[1]?.toLowerCase()
+  if (!domain) return false
+  return denylist.some((entry) => domain === entry || domain.endsWith(`.${entry}`))
+}
+
+const additionalTrustedOrigins = parseOriginList(env.TRUSTED_ORIGINS, (value) =>
+  logger.warn('Ignoring invalid entry in TRUSTED_ORIGINS', { value })
+)
+
+/**
+ * SSO provider IDs to trust for automatic account linking when an SSO sign-in
+ * matches an existing account's email. Includes `SSO_PROVIDER_ID` when it is set
+ * in the app environment, plus any IDs from `SSO_TRUSTED_PROVIDER_IDS`. Empty when
+ * SSO is disabled, so `trustedProviders` is unchanged for non-SSO deployments.
+ * Resolved once at startup; `trustEmailVerified` on the SSO plugin handles IdPs
+ * that assert `email_verified` live, so this is only needed for IdPs that omit it.
+ */
+const additionalTrustedSsoProviders = isSsoEnabled
+  ? [env.SSO_PROVIDER_ID, ...(env.SSO_TRUSTED_PROVIDER_IDS?.split(',') ?? [])]
+      .map((id) => id?.trim())
+      .filter((id): id is string => Boolean(id))
+  : []
+
+if (env.NODE_ENV === 'production') {
+  const baseUrl = getBaseUrl()
+  if (isLocalhostUrl(baseUrl)) {
+    logger.warn(
+      'NEXT_PUBLIC_APP_URL points to localhost in production. Self-hosted deployments must set NEXT_PUBLIC_APP_URL to the public URL users access (e.g. https://sim.example.com), otherwise auth POST requests from any non-localhost origin will be rejected by trustedOrigins. Set TRUSTED_ORIGINS to allow additional public origins.',
+      { baseUrl }
+    )
+  }
+}
 
 const validStripeKey = env.STRIPE_SECRET_KEY
 
@@ -215,8 +247,7 @@ export const auth = betterAuth({
     ...arenaV3OAuthCallbackTrustedOrigins,
     ...devArenaEmbedCallbackOrigins,
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
-    'https://claude.ai',
-    'https://claude.com',
+    ...additionalTrustedOrigins,
   ].filter(Boolean),
   ...(betterAuthCrossSubdomainCookieDomain
     ? {
@@ -239,7 +270,7 @@ export const auth = betterAuth({
     },
     expiresIn: 30 * 24 * 60 * 60, // 30 days (how long a session can last overall)
     updateAge: 24 * 60 * 60, // 24 hours (how often to refresh the expiry)
-    freshAge: 60 * 60, // 1 hour (or set to 0 to disable completely)
+    freshAge: 0,
   },
   user: {
     deleteUser: {
@@ -269,11 +300,9 @@ export const auth = betterAuth({
     user: {
       create: {
         before: async (user) => {
-          if (blockedSignupDomains) {
-            const emailDomain = user.email?.split('@')[1]?.toLowerCase()
-            if (emailDomain && blockedSignupDomains.has(emailDomain)) {
-              throw new Error('Sign-ups from this email domain are not allowed.')
-            }
+          const accessControl = await getAccessControlConfig()
+          if (isEmailInDenylist(user.email, accessControl.blockedSignupDomains)) {
+            throw new Error('Sign-ups from this email domain are not allowed.')
           }
           return { data: user }
         },
@@ -670,6 +699,7 @@ export const auth = betterAuth({
     accountLinking: {
       enabled: true,
       allowDifferentEmails: true,
+      requireLocalEmailVerified: false,
       trustedProviders: [
         'google',
         'github',
@@ -685,6 +715,7 @@ export const auth = betterAuth({
         'pipedrive',
         'hubspot',
         'linkedin',
+        'facebook-ads',
         'spotify',
         'google-email',
         'google-calendar',
@@ -716,6 +747,7 @@ export const auth = betterAuth({
         'salesforce',
         'wealthbox',
         'zoom',
+        'zoom-admin',
         'wordpress',
         'linear',
         'monday',
@@ -725,6 +757,7 @@ export const auth = betterAuth({
         'calcom',
         'docusign',
         ...SSO_TRUSTED_PROVIDERS,
+        ...additionalTrustedSsoProviders,
       ],
     },
   },
@@ -749,7 +782,7 @@ export const auth = betterAuth({
   },
   emailVerification: {
     autoSignInAfterVerification: true,
-    onEmailVerification: async (user) => {
+    afterEmailVerification: async (user) => {
       if (isHosted && user.email) {
         try {
           const html = await renderWelcomeEmail(user.name || undefined)
@@ -764,11 +797,11 @@ export const auth = betterAuth({
             emailType: 'transactional',
           })
 
-          logger.info('[emailVerification.onEmailVerification] Welcome email sent', {
+          logger.info('[emailVerification.afterEmailVerification] Welcome email sent', {
             userId: user.id,
           })
         } catch (error) {
-          logger.error('[emailVerification.onEmailVerification] Failed to send welcome email', {
+          logger.error('[emailVerification.afterEmailVerification] Failed to send welcome email', {
             userId: user.id,
             error,
           })
@@ -782,7 +815,7 @@ export const auth = betterAuth({
           })
         } catch (error) {
           logger.error(
-            '[emailVerification.onEmailVerification] Failed to schedule onboarding followup email',
+            '[emailVerification.afterEmailVerification] Failed to schedule onboarding followup email',
             { userId: user.id, error }
           )
         }
@@ -792,8 +825,65 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: isEmailVerificationEnabled,
-    throwOnMissingCredentials: true,
-    throwOnInvalidCredentials: true,
+    /**
+     * When someone signs up with an already-registered email, better-auth returns a
+     * generic success response (OWASP enumeration protection) instead of leaking that
+     * the account exists. This callback notifies the real account owner out-of-band,
+     * mirroring the privacy-preserving forget-password flow. Errors are swallowed so the
+     * response is indistinguishable from a genuine new sign-up.
+     */
+    onExistingUserSignUp: async ({ user }: { user: User }) => {
+      try {
+        const html = await renderExistingAccountEmail(user.name || '')
+        const result = await sendEmail({
+          to: user.email,
+          subject: getEmailSubject('existing-account'),
+          html,
+          from: getFromEmailAddress(),
+          emailType: 'transactional',
+        })
+        if (!result.success) {
+          logger.warn('[onExistingUserSignUp] Failed to send existing-account email', {
+            message: result.message,
+          })
+        }
+      } catch (error) {
+        logger.error('[onExistingUserSignUp] Error sending existing-account email', { error })
+      }
+    },
+    /**
+     * The synthetic user returned for the generic duplicate-sign-up response must carry
+     * the exact same set of returned fields a real freshly-created user would, otherwise
+     * the differing response shape re-opens the enumeration oracle. The admin plugin
+     * (always loaded) adds role/banned/banReason/banExpires, and the Stripe plugin — loaded
+     * only when billing is enabled — adds stripeCustomerId (null on a new user). The
+     * harmony plugin's normalizedEmail is `returned: false`, so it is intentionally omitted.
+     */
+    customSyntheticUser: ({
+      coreFields,
+      additionalFields,
+      id,
+    }: {
+      coreFields: {
+        name: string
+        email: string
+        emailVerified: boolean
+        image: string | null
+        createdAt: Date
+        updatedAt: Date
+      }
+      additionalFields: Record<string, unknown>
+      id: string
+    }) => ({
+      ...coreFields,
+      role: 'user',
+      banned: false,
+      banReason: null,
+      banExpires: null,
+      ...(isBillingEnabled && stripeClient ? { stripeCustomerId: null } : {}),
+      ...additionalFields,
+      id,
+    }),
     sendResetPassword: async ({ user, url, token }, request) => {
       const username = user.name || ''
 
@@ -827,71 +917,61 @@ export const auth = betterAuth({
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
       if (ctx.path.startsWith('/sign-up') && isRegistrationDisabled)
-        throw new Error('Registration is disabled, please contact your admin.')
+        throw new APIError('FORBIDDEN', {
+          message: 'Registration is disabled, please contact your admin.',
+        })
 
       if (!isEmailPasswordEnabled) {
         const emailPasswordPaths = ['/sign-in/email', '/sign-up/email', '/email-otp']
         if (emailPasswordPaths.some((path) => ctx.path.startsWith(path)))
-          throw new Error('Email/password authentication is disabled. Please use SSO to sign in.')
+          throw new APIError('FORBIDDEN', {
+            message: 'Email/password authentication is disabled. Please use SSO to sign in.',
+          })
       }
 
-      if (
-        (ctx.path.startsWith('/sign-in') || ctx.path.startsWith('/sign-up')) &&
-        (env.ALLOWED_LOGIN_EMAILS || env.ALLOWED_LOGIN_DOMAINS)
-      ) {
+      const isSignIn = ctx.path.startsWith('/sign-in')
+      const isSignUp = ctx.path.startsWith('/sign-up')
+
+      if (isSignIn || isSignUp) {
+        const accessControl = await getAccessControlConfig()
         const requestEmail = ctx.body?.email?.toLowerCase()
 
-        if (requestEmail) {
-          let isAllowed = false
-
-          if (env.ALLOWED_LOGIN_EMAILS) {
-            const allowedEmails = env.ALLOWED_LOGIN_EMAILS.split(',').map((email) =>
-              email.trim().toLowerCase()
-            )
-            isAllowed = allowedEmails.includes(requestEmail)
-          }
-
-          if (!isAllowed && env.ALLOWED_LOGIN_DOMAINS) {
-            const allowedDomains = env.ALLOWED_LOGIN_DOMAINS.split(',').map((domain) =>
-              domain.trim().toLowerCase()
-            )
-            const emailDomain = requestEmail.split('@')[1]
-            isAllowed = emailDomain && allowedDomains.includes(emailDomain)
-          }
-
-          if (!isAllowed) {
-            throw new Error('Access restricted. Please contact your administrator.')
-          }
-        }
-      }
-
-      if (ctx.path.startsWith('/sign-up') && blockedSignupDomains) {
-        const requestEmail = ctx.body?.email?.toLowerCase()
-        if (requestEmail) {
+        // Banning an existing account is owned by better-auth's admin plugin (a
+        // `session.create.before` hook that blocks banned users at sign-in across
+        // all providers), so it is not re-checked here.
+        const hasAllowlist =
+          accessControl.allowedLoginEmails.length > 0 ||
+          accessControl.allowedLoginDomains.length > 0
+        if (hasAllowlist && requestEmail) {
           const emailDomain = requestEmail.split('@')[1]
-          if (emailDomain && blockedSignupDomains.has(emailDomain)) {
-            throw new Error('Sign-ups from this email domain are not allowed.')
+          const isAllowed =
+            accessControl.allowedLoginEmails.includes(requestEmail) ||
+            (!!emailDomain && accessControl.allowedLoginDomains.includes(emailDomain))
+          if (!isAllowed) {
+            throw new APIError('FORBIDDEN', {
+              message: 'Access restricted. Please contact your administrator.',
+            })
           }
         }
-      }
 
-      if (ctx.path === '/oauth2/authorize' || ctx.path === '/oauth2/token') {
-        const clientId = (ctx.query?.client_id ?? ctx.body?.client_id) as string | undefined
-        if (clientId && isMetadataUrl(clientId)) {
-          try {
-            const { metadata, fromCache } = await resolveClientMetadata(clientId)
-            if (!fromCache) {
-              try {
-                await upsertCimdClient(metadata)
-              } catch (upsertErr) {
-                evictCachedMetadata(clientId)
-                throw upsertErr
-              }
-            }
-          } catch (err) {
-            logger.warn('CIMD resolution failed', {
-              clientId,
-              error: toError(err).message,
+        if (isSignUp && isEmailInDenylist(ctx.body?.email, accessControl.blockedSignupDomains)) {
+          throw new APIError('FORBIDDEN', {
+            message: 'Sign-ups from this email domain are not allowed.',
+          })
+        }
+
+        if (
+          isSignupMxValidationEnabled &&
+          ctx.path.startsWith('/sign-up/email') &&
+          ctx.body?.email
+        ) {
+          const mxCheck = await validateSignupEmailMx(
+            ctx.body.email,
+            accessControl.blockedEmailMxHosts
+          )
+          if (!mxCheck.allowed) {
+            throw new APIError('FORBIDDEN', {
+              message: 'Sign-ups from this email domain are not allowed.',
             })
           }
         }
@@ -901,7 +981,6 @@ export const auth = betterAuth({
     }),
   },
   plugins: [
-    nextCookies(),
     ...(isSignupEmailValidationEnabled ? [emailHarmony()] : []),
     ...(env.TURNSTILE_SECRET_KEY
       ? [
@@ -913,37 +992,15 @@ export const auth = betterAuth({
         ]
       : []),
     admin(),
-    jwt({
-      jwks: {
-        keyPairConfig: { alg: 'RS256' },
-      },
-      disableSettingJwtHeader: true,
-    }),
-    oidcProvider({
-      loginPage: '/login',
-      consentPage: '/oauth/consent',
-      requirePKCE: true,
-      allowPlainCodeChallengeMethod: false,
-      allowDynamicClientRegistration: true,
-      useJWTPlugin: true,
-      scopes: ['openid', 'profile', 'email', 'offline_access', 'mcp:tools'],
-      metadata: {
-        client_id_metadata_document_supported: true,
-      } as Record<string, unknown>,
-    }),
     oneTimeToken({
-      expiresIn: 24 * 60 * 60, // 24 hours - Socket.IO handles connection persistence with heartbeats
+      expiresIn: 24 * 60, // 24 hours in minutes (better-auth's expiresIn unit)
     }),
     customSession(async ({ user, session }) => ({
       user,
       session,
     })),
     emailOTP({
-      sendVerificationOTP: async (data: {
-        email: string
-        otp: string
-        type: 'sign-in' | 'email-verification' | 'forget-password'
-      }) => {
+      sendVerificationOTP: async (data) => {
         if (!isEmailVerificationEnabled) {
           logger.info('Skipping email verification')
           return
@@ -1004,7 +1061,6 @@ export const auth = betterAuth({
     }),
     genericOAuth({
       config: [
-        // Google providers
         {
           providerId: 'google-email',
           clientId: env.GOOGLE_CLIENT_ID as string,
@@ -1260,8 +1316,8 @@ export const auth = betterAuth({
         },
         {
           providerId: 'google-ads',
-          clientId: env.GOOGLE_CLIENT_ID as string,
-          clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          clientId: env.GOOGLE_ADS_CLIENT_ID as string,
+          clientSecret: env.GOOGLE_ADS_CLIENT_SECRET as string,
           discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
           accessType: 'offline',
           scopes: getCanonicalScopesForProvider('google-ads'),
@@ -1662,27 +1718,71 @@ export const auth = betterAuth({
           clientSecret: env.WEALTHBOX_CLIENT_SECRET as string,
           authorizationUrl: 'https://app.crmworkspace.com/oauth/authorize',
           tokenUrl: 'https://app.crmworkspace.com/oauth/token',
-          userInfoUrl: 'https://dummy-not-used.wealthbox.com', // Dummy URL since no user info endpoint exists
+          userInfoUrl: 'https://api.crmworkspace.com/v1/me',
           scopes: getCanonicalScopesForProvider('wealthbox'),
           responseType: 'code',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/wealthbox`,
-          getUserInfo: async (_tokens) => {
+          getUserInfo: async (tokens) => {
             try {
-              logger.info('Creating Wealthbox user profile from token data')
+              logger.info('Fetching Wealthbox user profile')
 
-              const uniqueId = 'wealthbox-user'
+              const response = await fetch('https://api.crmworkspace.com/v1/me', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                },
+              })
+
               const now = new Date()
 
+              if (response.ok) {
+                const data = await response.json()
+                const userId = data.id?.toString()
+                if (!userId) {
+                  return null
+                }
+                const email =
+                  data.email && typeof data.email === 'string'
+                    ? data.email
+                    : `wealthbox-${userId}@wealthbox.user`
+                const name = data.name || data.full_name || data.username || 'Wealthbox User'
+
+                return {
+                  id: `wealthbox-${userId}-${generateId()}`,
+                  name,
+                  email,
+                  emailVerified: false,
+                  createdAt: now,
+                  updatedAt: now,
+                }
+              }
+
+              // Fallback: derive a stable identifier from the refresh token (long-lived)
+              // rather than the access token (rotates every ~2 hours) to avoid creating
+              // duplicate accounts on token refresh.
+              logger.warn(
+                'Wealthbox user info fetch failed, falling back to token-derived identity',
+                {
+                  status: response.status,
+                }
+              )
+              const stableToken = tokens.refreshToken ?? tokens.accessToken
+              if (!stableToken) {
+                logger.error('Wealthbox fallback identity: no refresh or access token available')
+                return null
+              }
+              const tokenHash = createHash('sha256').update(stableToken).digest('hex').slice(0, 24)
               return {
-                id: `${uniqueId}-${generateId()}`,
+                id: `wealthbox-${tokenHash}-${generateId()}`,
                 name: 'Wealthbox User',
-                email: `${uniqueId}@wealthbox.user`,
+                email: `wealthbox-${tokenHash}@wealthbox.user`,
                 emailVerified: false,
                 createdAt: now,
                 updatedAt: now,
               }
             } catch (error) {
-              logger.error('Error creating Wealthbox user profile:', { error })
+              logger.error('Error creating Wealthbox user profile:', {
+                error: toError(error).message,
+              })
               return null
             }
           },
@@ -1736,7 +1836,6 @@ export const auth = betterAuth({
           },
         },
 
-        // HubSpot provider
         {
           providerId: 'hubspot',
           clientId: env.HUBSPOT_CLIENT_ID as string,
@@ -1781,11 +1880,12 @@ export const auth = betterAuth({
               }
 
               logger.info('HubSpot token metadata response:', {
+                hubId: data.hub_id,
+                hubDomain: data.hub_domain,
+                userId: data.user_id,
                 hasScopes: !!data.scopes,
                 scopesType: typeof data.scopes,
                 scopesIsArray: Array.isArray(data.scopes),
-                scopesValue: data.scopes,
-                fullResponse: data,
               })
 
               return {
@@ -1809,7 +1909,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Salesforce provider
         {
           providerId: 'salesforce',
           clientId: env.SALESFORCE_CLIENT_ID as string,
@@ -1859,7 +1958,6 @@ export const auth = betterAuth({
           },
         },
 
-        // X provider
         {
           providerId: 'x',
           clientId: env.X_CLIENT_ID as string,
@@ -1919,7 +2017,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Confluence provider
         {
           providerId: 'confluence',
           clientId: env.CONFLUENCE_CLIENT_ID as string,
@@ -1971,7 +2068,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Jira provider
         {
           providerId: 'jira',
           clientId: env.JIRA_CLIENT_ID as string,
@@ -2023,7 +2119,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Airtable provider
         {
           providerId: 'airtable',
           clientId: env.AIRTABLE_CLIENT_ID as string,
@@ -2073,7 +2168,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Notion provider
         {
           providerId: 'notion',
           clientId: env.NOTION_CLIENT_ID as string,
@@ -2123,7 +2217,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Monday.com provider
         {
           providerId: 'monday',
           clientId: env.MONDAY_CLIENT_ID as string,
@@ -2176,7 +2269,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Reddit provider
         {
           providerId: 'reddit',
           clientId: env.REDDIT_CLIENT_ID as string,
@@ -2505,7 +2597,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Slack provider
         {
           providerId: 'slack',
           clientId: env.SLACK_CLIENT_ID as string,
@@ -2576,14 +2667,35 @@ export const auth = betterAuth({
               const teamName = data.team || 'Slack Workspace'
               const userId = data.user_id || 'unknown'
 
-              const uniqueId = `slack-bot-${Date.now()}`
+              /**
+               * Tag the accountId with the installing user's Slack id (from the OAuth
+               * v2 `authed_user.id`, preserved on `tokens.raw`) behind a `usr_` marker.
+               * The channels selector uses it to scope private-channel visibility to
+               * the installer's own Slack membership, per Slack Marketplace rules. The
+               * marker disambiguates it from a legacy bot id (same `U.../B...` shape);
+               * absent it, we keep the legacy format and today's behavior.
+               */
+              const rawTokens = (tokens as typeof tokens & { raw?: Record<string, unknown> }).raw
+              const authedUser = rawTokens?.authed_user as { id?: string } | undefined
+              const installerUserId = authedUser?.id
+              const userSegment = installerUserId
+                ? `usr_${installerUserId}`
+                : data.user_id || data.bot_id || 'bot'
 
-              logger.info('Slack credential identifier', { teamId, userId, uniqueId, teamName })
+              const uniqueId = `${teamId}-${userSegment}`
+
+              logger.info('Slack credential identifier', {
+                teamId,
+                userSegment,
+                uniqueId,
+                teamName,
+                hasInstallerId: !!installerUserId,
+              })
 
               return {
                 id: `${uniqueId}-${generateId()}`,
                 name: teamName,
-                email: `${teamId}-${userId}@slack.bot`,
+                email: `${uniqueId}@slack.bot`,
                 emailVerified: false,
                 createdAt: new Date(),
                 updatedAt: new Date(),
@@ -2595,7 +2707,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Webflow provider
         {
           providerId: 'webflow',
           clientId: env.WEBFLOW_CLIENT_ID as string,
@@ -2641,6 +2752,48 @@ export const auth = betterAuth({
               }
             } catch (error) {
               logger.error('Error in Webflow getUserInfo:', { error })
+              return null
+            }
+          },
+        },
+        // Facebook Ads provider
+        {
+          providerId: 'facebook-ads',
+          clientId: env.FB_CLIENT_ID as string,
+          clientSecret: env.FB_CLIENT_SECRET as string,
+          authorizationUrl: 'https://www.facebook.com/v22.0/dialog/oauth',
+          tokenUrl: 'https://graph.facebook.com/v22.0/oauth/access_token',
+          scopes: getCanonicalScopesForProvider('facebook-ads'),
+          responseType: 'code',
+          accessType: 'offline',
+          prompt: 'consent',
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/facebook-ads`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch(
+                `https://graph.facebook.com/v22.0/me?fields=id,name,email&access_token=${encodeURIComponent(tokens.accessToken ?? '')}`
+              )
+              if (!response.ok) {
+                logger.error('Failed to fetch Facebook user info', { status: response.status })
+                throw new Error('Failed to fetch Facebook user info')
+              }
+              const profile = (await response.json()) as {
+                id?: string
+                name?: string
+                email?: string
+              }
+              const now = new Date()
+              const fbId = profile.id ?? generateId()
+              return {
+                id: `${fbId}-${generateId()}`,
+                name: profile.name || 'Facebook User',
+                email: profile.email || `${fbId}@facebook.user`,
+                emailVerified: Boolean(profile.email),
+                createdAt: now,
+                updatedAt: now,
+              }
+            } catch (error) {
+              logger.error('Error in Facebook getUserInfo', { error })
               return null
             }
           },
@@ -2695,7 +2848,6 @@ export const auth = betterAuth({
           },
         },
 
-        // Zoom provider
         {
           providerId: 'zoom',
           clientId: env.ZOOM_CLIENT_ID as string,
@@ -2747,6 +2899,63 @@ export const auth = betterAuth({
           },
         },
 
+        // Zoom admin (account-wide) provider — optional; requires ZOOM_ADMIN_* env vars
+        ...(env.ZOOM_ADMIN_CLIENT_ID?.trim() && env.ZOOM_ADMIN_CLIENT_SECRET?.trim()
+          ? [
+              {
+                providerId: 'zoom-admin',
+                clientId: env.ZOOM_ADMIN_CLIENT_ID as string,
+                clientSecret: env.ZOOM_ADMIN_CLIENT_SECRET as string,
+                authorizationUrl: 'https://zoom.us/oauth/authorize',
+                tokenUrl: 'https://zoom.us/oauth/token',
+                userInfoUrl: 'https://api.zoom.us/v2/users/me',
+                scopes: getCanonicalScopesForProvider('zoom-admin'),
+                responseType: 'code',
+                accessType: 'offline',
+                authentication: 'basic',
+                prompt: 'consent',
+                redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/zoom-admin`,
+                getUserInfo: async (tokens) => {
+                  try {
+                    logger.info('Fetching Zoom admin OAuth user profile')
+
+                    const response = await fetch('https://api.zoom.us/v2/users/me', {
+                      headers: {
+                        Authorization: `Bearer ${tokens.accessToken}`,
+                      },
+                    })
+
+                    if (!response.ok) {
+                      await response.text().catch(() => {})
+                      logger.error('Failed to fetch Zoom admin OAuth user info', {
+                        status: response.status,
+                        statusText: response.statusText,
+                      })
+                      throw new Error('Failed to fetch user info')
+                    }
+
+                    const profile = await response.json()
+
+                    return {
+                      id: `${profile.id.toString()}-${generateId()}`,
+                      name:
+                        `${profile.first_name || ''} ${profile.last_name || ''}`.trim() ||
+                        'Zoom User',
+                      email: profile.email || `${profile.id}@zoom.user`,
+                      emailVerified: profile.verified === 1,
+                      image: profile.pic_url || undefined,
+                      createdAt: new Date(),
+                      updatedAt: new Date(),
+                    }
+                  } catch (error) {
+                    logger.error('Error in Zoom admin getUserInfo:', { error })
+                    return null
+                  }
+                },
+              },
+            ]
+          : []),
+
         // Spotify provider
         {
           providerId: 'spotify',
@@ -2796,7 +3005,6 @@ export const auth = betterAuth({
           },
         },
 
-        // WordPress.com provider
         {
           providerId: 'wordpress',
           clientId: env.WORDPRESS_CLIENT_ID as string,
@@ -2958,6 +3166,12 @@ export const auth = betterAuth({
     ...(env.SSO_ENABLED
       ? [
           sso({
+            /**
+             * Honor the IdP's verified-email claim. Without this the SSO plugin
+             * forces `emailVerified: false`, blocking automatic linking of an SSO
+             * login to an existing same-email account (Better Auth "account not linked").
+             */
+            trustEmailVerified: true,
             organizationProvisioning: {
               disabled: false,
               defaultRole: 'member',
@@ -2984,32 +3198,9 @@ export const auth = betterAuth({
               authorizeReference: async ({ user, referenceId, action }) => {
                 return await authorizeSubscriptionReference(user.id, referenceId, action)
               },
-              getCheckoutSessionParams: async ({ plan, subscription }) => {
-                if (isTeam(plan.name)) {
-                  return {
-                    params: {
-                      allow_promotion_codes: true,
-                      line_items: [
-                        {
-                          price: plan.priceId,
-                          quantity: subscription?.seats || 1,
-                          adjustable_quantity: {
-                            enabled: true,
-                            minimum: 1,
-                            maximum: 50,
-                          },
-                        },
-                      ],
-                    },
-                  }
-                }
-
-                return {
-                  params: {
-                    allow_promotion_codes: true,
-                  },
-                }
-              },
+              getCheckoutSessionParams: async () => ({
+                params: { allow_promotion_codes: true },
+              }),
               onSubscriptionComplete: async ({
                 stripeSubscription,
                 subscription,
@@ -3303,9 +3494,10 @@ export const auth = betterAuth({
           organization({
             allowUserToCreateOrganization: async () => false,
             disableOrganizationDeletion: true,
-            organizationCreation: {
-              afterCreate: async ({ organization, user }) => {
-                logger.info('[organizationCreation.afterCreate] Organization created', {
+            requireEmailVerificationOnInvitation: isEmailVerificationEnabled,
+            organizationHooks: {
+              afterCreateOrganization: async ({ organization, user }) => {
+                logger.info('[organizationHooks.afterCreateOrganization] Organization created', {
                   organizationId: organization.id,
                   creatorId: user.id,
                 })
@@ -3314,13 +3506,8 @@ export const auth = betterAuth({
           }),
         ]
       : []),
+    nextCookies(),
   ],
-  pages: {
-    signIn: '/login',
-    signUp: '/signup',
-    error: '/error',
-    verify: '/verify',
-  },
 })
 
 async function getSessionImpl() {
@@ -3336,6 +3523,3 @@ async function getSessionImpl() {
 }
 
 export const getSession = cache(getSessionImpl)
-
-export const signIn = auth.api.signInEmail
-export const signUp = auth.api.signUpEmail

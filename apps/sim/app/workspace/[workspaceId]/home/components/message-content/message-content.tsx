@@ -1,13 +1,13 @@
 'use client'
 
-import {
-  Read as ReadTool,
-  ToolSearchToolRegex,
-  WorkspaceFile,
-} from '@/lib/copilot/generated/tool-catalog-v1'
+import { memo, useMemo } from 'react'
+import { stripVersionSuffix } from '@sim/utils/string'
+import { Read as ReadTool, WorkspaceFile } from '@/lib/copilot/generated/tool-catalog-v1'
+import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
 import { resolveToolDisplay } from '@/lib/copilot/tools/client/store-utils'
 import { ClientToolCallState } from '@/lib/copilot/tools/client/tool-call-state'
-import type { ContentBlock, MothershipResource, OptionItem, ToolCallData } from '../../types'
+import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
+import type { ContentBlock, OptionItem, ToolCallData } from '../../types'
 import { SUBAGENT_LABELS, TOOL_UI_METADATA } from '../../types'
 import type { AgentGroupItem } from './components'
 import {
@@ -196,9 +196,12 @@ function isToolResultRead(params?: Record<string, unknown>): boolean {
   return typeof path === 'string' && path.startsWith('internal/tool-results/')
 }
 
+function isHiddenToolCall(toolName: string | undefined): boolean {
+  return isToolHiddenInUi(toolName)
+}
+
 function formatToolName(name: string): string {
-  return name
-    .replace(/_v\d+$/, '')
+  return stripVersionSuffix(name)
     .split('_')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
@@ -214,7 +217,8 @@ function isToolDone(status: ToolCallData['status']): boolean {
     status === 'error' ||
     status === 'cancelled' ||
     status === 'skipped' ||
-    status === 'rejected'
+    status === 'rejected' ||
+    status === 'interrupted'
   )
 }
 
@@ -267,44 +271,137 @@ function toToolData(tc: NonNullable<ContentBlock['toolCall']>): ToolCallData {
   }
 }
 
+const SPAN_ROOT = 'main'
+
+function createAgentGroupSegment(name: string, idKey: string, ordinal: number): AgentGroupSegment {
+  return {
+    type: 'agent_group',
+    id: `agent-${idKey}-${ordinal}`,
+    agentName: name,
+    agentLabel: resolveAgentLabel(name),
+    items: [],
+    isDelegating: false,
+    isOpen: false,
+  }
+}
+
+function appendTextItem(group: AgentGroupSegment, content: string): void {
+  const lastItem = group.items[group.items.length - 1]
+  if (lastItem?.type === 'text') {
+    lastItem.content += content
+  } else {
+    group.items.push({ type: 'text', content })
+  }
+}
+
 /**
- * Groups content blocks into agent-scoped segments.
- * Dispatch tool_calls (name matches a subagent key, no calledBy) are absorbed
- * into the agent header. Inner tool_calls are nested underneath their agent.
- * Orphan tool_calls (no calledBy, not a dispatch) group under "Mothership".
+ * Deterministic span-identity grouping. Every subagent-scoped block carries the
+ * stable `spanId` of the run that produced it and a `parentSpanId` linking it to
+ * its caller. Groups are keyed by `spanId` and nested under their parent's group
+ * via `parentSpanId`, producing a real tree (e.g. Deploy inside Workflow) with
+ * no name/tool-call reverse lookups. Delegation tool_calls are absorbed — the
+ * subagent span is the canonical representation of the nested agent.
  */
-function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
+function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
   const segments: MessageSegment[] = []
-  let group: AgentGroupSegment | null = null
-  const pushGroup = (nextGroup: AgentGroupSegment, isOpen = false) => {
-    segments.push({ ...nextGroup, isOpen })
+  const groupsBySpanId = new Map<string, AgentGroupSegment>()
+
+  const tailMothershipGroup = (): AgentGroupSegment | null => {
+    const last = segments[segments.length - 1]
+    return last?.type === 'agent_group' && last.agentName === 'mothership' ? last : null
+  }
+
+  // Top-level (mothership) tool calls render in a collapsible group. Reuse that
+  // group only while it is still the most recent segment so consecutive tools
+  // stay together; once any other segment (main text, a spawned subagent,
+  // thinking, etc.) breaks the run, the next tool opens a fresh group below it
+  // instead of jumping back up into the original one. This keeps the mothership's
+  // tools and prose interleaved in the order they actually happened.
+  const ensureMothership = (): AgentGroupSegment => {
+    const existing = tailMothershipGroup()
+    if (existing) return existing
+    const group = createAgentGroupSegment('mothership', 'mothership', segments.length)
+    segments.push(group)
+    return group
+  }
+
+  // When a subagent spawns, drop the dispatch tool that triggered it (e.g.
+  // workspace_file -> file) from whichever container it landed in so it does not
+  // render as a separate entry beside the agent group.
+  const absorbDispatchTool = (toolName: string, parentSpanId: string | undefined): void => {
+    const container =
+      parentSpanId && parentSpanId !== SPAN_ROOT
+        ? groupsBySpanId.get(parentSpanId)
+        : tailMothershipGroup()
+    if (!container) return
+    const last = container.items[container.items.length - 1]
+    if (last?.type === 'tool' && last.data.toolName === toolName) {
+      container.items.pop()
+    }
+  }
+
+  const attachSpanGroup = (group: AgentGroupSegment, parentSpanId: string | undefined): void => {
+    if (parentSpanId && parentSpanId !== SPAN_ROOT) {
+      const parent = groupsBySpanId.get(parentSpanId)
+      if (parent) {
+        parent.items.push({ type: 'agent_group', group })
+        return
+      }
+    }
+    segments.push(group)
+  }
+
+  const ensureSpanGroup = (
+    name: string,
+    spanId: string,
+    parentSpanId: string | undefined,
+    ordinal: number
+  ): AgentGroupSegment => {
+    const existing = groupsBySpanId.get(spanId)
+    if (existing) return existing
+    const group = createAgentGroupSegment(name, spanId, ordinal)
+    groupsBySpanId.set(spanId, group)
+    attachSpanGroup(group, parentSpanId)
+    return group
+  }
+
+  const flushMainText = (content: string) => {
+    const last = segments[segments.length - 1]
+    if (last?.type === 'text') {
+      last.content += content
+    } else {
+      segments.push({ type: 'text', content })
+    }
   }
 
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
 
-    if (block.type === 'subagent_text') {
-      if (!block.content || !group) continue
-      group.isDelegating = false
-      const lastItem = group.items[group.items.length - 1]
-      if (lastItem?.type === 'text') {
-        lastItem.content += block.content
-      } else {
-        group.items.push({ type: 'text', content: block.content })
+    if (block.type === 'subagent_text' || block.type === 'subagent_thinking') {
+      if (!block.content || !block.spanId) continue
+      let g = groupsBySpanId.get(block.spanId)
+      // Out-of-order safety: content can arrive before its subagent-start block
+      // (live streaming across resume legs). Create the span group on demand,
+      // nested via parentSpanId, instead of dropping the content.
+      if (!g && block.subagent) {
+        g = ensureSpanGroup(block.subagent, block.spanId, block.parentSpanId, i)
       }
+      if (!g) continue
+      g.isDelegating = false
+      appendTextItem(g, block.content)
       continue
     }
 
-    if (block.type === 'subagent_thinking') {
-      if (!block.content || !group) continue
-      group.isDelegating = false
-      const lastItem = group.items[group.items.length - 1]
-      if (lastItem?.type === 'thinking' && lastItem.endedAt === undefined) {
-        lastItem.content += block.content
-        if (block.endedAt !== undefined) lastItem.endedAt = block.endedAt
+    if (block.type === 'thinking') {
+      if (!block.content?.trim()) continue
+      const last = segments[segments.length - 1]
+      if (last?.type === 'thinking' && last.endedAt === undefined) {
+        last.content += block.content
+        if (block.endedAt !== undefined) last.endedAt = block.endedAt
       } else {
-        group.items.push({
+        segments.push({
           type: 'thinking',
+          id: `thinking-${i}`,
           content: block.content,
           startedAt: block.timestamp,
           endedAt: block.endedAt,
@@ -313,12 +410,212 @@ function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
       continue
     }
 
+    if (block.type === 'text') {
+      if (!block.content) continue
+      if (block.subagent && block.spanId) {
+        let g = groupsBySpanId.get(block.spanId)
+        // Out-of-order safety: see subagent_text branch above.
+        if (!g) g = ensureSpanGroup(block.subagent, block.spanId, block.parentSpanId, i)
+        if (g) {
+          g.isDelegating = false
+          appendTextItem(g, block.content)
+          continue
+        }
+      }
+      flushMainText(block.content)
+      continue
+    }
+
+    if (block.type === 'subagent') {
+      if (!block.content || !block.spanId) continue
+      // Absorb a trailing dispatch tool (e.g. workspace_file -> file) so it does
+      // not render as a separate entry alongside the agent group.
+      const dispatchToolName = SUBAGENT_DISPATCH_TOOLS[block.content]
+      if (dispatchToolName) absorbDispatchTool(dispatchToolName, block.parentSpanId)
+      const g = ensureSpanGroup(block.content, block.spanId, block.parentSpanId, i)
+      // Show the working/delegating spinner from span open until the agent
+      // emits its first content or tool (or ends). The legacy path derived this
+      // from the dispatch tool_call, which the span path absorbs, so we set it
+      // here. It is cleared in the subagent_text/subagent_thinking, scoped text,
+      // tool_call, and subagent_end branches.
+      g.isDelegating = true
+      g.isOpen = true
+      continue
+    }
+
+    if (block.type === 'tool_call') {
+      if (!block.toolCall) continue
+      const tc = block.toolCall
+      if (isHiddenToolCall(tc.name)) continue
+      if (tc.name === ReadTool.id && isToolResultRead(tc.params)) continue
+      // Delegation tools are represented by their subagent span group; absorb.
+      if (SUBAGENT_KEYS.has(tc.name)) continue
+      const tool = toToolData(tc)
+      if (block.spanId) {
+        let g = groupsBySpanId.get(block.spanId)
+        // Out-of-order safety: a subagent's tool can stream before its
+        // subagent-start block (live streaming across resume legs). Create the
+        // span group on demand (nested via parentSpanId) so the tool nests
+        // under its agent instead of leaking to the top-level mothership flow.
+        if (!g && tc.calledBy) {
+          g = ensureSpanGroup(tc.calledBy, block.spanId, block.parentSpanId, i)
+        }
+        if (g) {
+          g.isDelegating = false
+          g.items.push({ type: 'tool', data: tool })
+          continue
+        }
+      }
+      ensureMothership().items.push({ type: 'tool', data: tool })
+      continue
+    }
+
+    if (block.type === 'options') {
+      if (!block.options?.length) continue
+      segments.push({ type: 'options', items: block.options })
+      continue
+    }
+
+    if (block.type === 'subagent_end') {
+      if (block.spanId) {
+        const g = groupsBySpanId.get(block.spanId)
+        if (g) {
+          g.isOpen = false
+          g.isDelegating = false
+        }
+      }
+      continue
+    }
+
+    if (block.type === 'stopped') {
+      segments.push({ type: 'stopped' })
+    }
+  }
+
+  // Recursively drop empty, closed, non-delegating nested groups so a subagent
+  // that started and ended without emitting anything does not leave a stray
+  // header row. The top-level filter below covers top-level groups.
+  const pruneEmptyNested = (items: AgentGroupItem[]): AgentGroupItem[] =>
+    items.filter((item) => {
+      if (item.type !== 'agent_group') return true
+      item.group.items = pruneEmptyNested(item.group.items)
+      return item.group.items.length > 0 || item.group.isOpen || item.group.isDelegating
+    })
+  for (const segment of segments) {
+    if (segment.type === 'agent_group') {
+      segment.items = pruneEmptyNested(segment.items)
+    }
+  }
+
+  return segments.filter(
+    (segment) =>
+      segment.type !== 'agent_group' ||
+      segment.items.length > 0 ||
+      segment.isDelegating ||
+      segment.isOpen
+  )
+}
+
+/**
+ * Groups content blocks into agent-scoped segments.
+ * Dispatch tool_calls (name matches a subagent key, no calledBy) are absorbed
+ * into the agent header. Inner tool_calls are nested underneath their agent.
+ * Orphan tool_calls (no calledBy, not a dispatch) group under "Mothership".
+ *
+ * New backends stamp every subagent block with deterministic span identity; in
+ * that case {@link parseBlocksWithSpanTree} builds a real nested tree. The
+ * legacy flat heuristics below are retained for transcripts persisted before
+ * span identity existed.
+ */
+export function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
+  if (blocks.some((block) => Boolean(block.spanId))) {
+    return parseBlocksWithSpanTree(blocks)
+  }
+  return parseBlocksLegacy(blocks)
+}
+
+function parseBlocksLegacy(blocks: ContentBlock[]): MessageSegment[] {
+  const segments: MessageSegment[] = []
+  const groupsByKey = new Map<string, AgentGroupSegment>()
+  let activeGroupKey: string | null = null
+
+  const groupKey = (name: string, parentToolCallId: string | undefined) =>
+    parentToolCallId ? `${name}:${parentToolCallId}` : `${name}:legacy`
+
+  const resolveGroupKey = (name: string, parentToolCallId: string | undefined) => {
+    if (parentToolCallId) return groupKey(name, parentToolCallId)
+    if (activeGroupKey && groupsByKey.get(activeGroupKey)?.agentName === name) {
+      return activeGroupKey
+    }
+    for (const [key, g] of groupsByKey) {
+      if (g.agentName === name && g.isOpen) return key
+    }
+    return groupKey(name, undefined)
+  }
+
+  const ensureGroup = (
+    name: string,
+    parentToolCallId: string | undefined
+  ): { group: AgentGroupSegment; created: boolean } => {
+    const key = resolveGroupKey(name, parentToolCallId)
+    const existing = groupsByKey.get(key)
+    if (existing) return { group: existing, created: false }
+    const group: AgentGroupSegment = {
+      type: 'agent_group',
+      id: `agent-${key}-${segments.length}`,
+      agentName: name,
+      agentLabel: resolveAgentLabel(name),
+      items: [],
+      isDelegating: false,
+      isOpen: false,
+    }
+    segments.push(group)
+    groupsByKey.set(key, group)
+    return { group, created: true }
+  }
+
+  const findGroupForSubagentChunk = (
+    parentToolCallId: string | undefined
+  ): AgentGroupSegment | undefined => {
+    if (parentToolCallId) {
+      for (const [key, g] of groupsByKey) {
+        if (key.endsWith(`:${parentToolCallId}`)) return g
+      }
+      return undefined
+    }
+    if (activeGroupKey) return groupsByKey.get(activeGroupKey)
+    return undefined
+  }
+
+  const flushLanes = () => {
+    for (const g of groupsByKey.values()) {
+      g.isOpen = false
+      g.isDelegating = false
+    }
+    groupsByKey.clear()
+    activeGroupKey = null
+  }
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]
+
+    if (block.type === 'subagent_text' || block.type === 'subagent_thinking') {
+      if (!block.content) continue
+      const g = findGroupForSubagentChunk(block.parentToolCallId)
+      if (!g) continue
+      g.isDelegating = false
+      const lastItem = g.items[g.items.length - 1]
+      if (lastItem?.type === 'text') {
+        lastItem.content += block.content
+      } else {
+        g.items.push({ type: 'text', content: block.content })
+      }
+      continue
+    }
+
     if (block.type === 'thinking') {
       if (!block.content?.trim()) continue
-      if (group) {
-        pushGroup(group)
-        group = null
-      }
+      flushLanes()
       const last = segments[segments.length - 1]
       if (last?.type === 'thinking' && last.endedAt === undefined) {
         last.content += block.content
@@ -338,21 +635,19 @@ function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
     if (block.type === 'text') {
       if (!block.content) continue
       if (block.subagent) {
-        if (group && group.agentName === block.subagent) {
-          group.isDelegating = false
-          const lastItem = group.items[group.items.length - 1]
+        const g = groupsByKey.get(resolveGroupKey(block.subagent, block.parentToolCallId))
+        if (g) {
+          g.isDelegating = false
+          const lastItem = g.items[g.items.length - 1]
           if (lastItem?.type === 'text') {
             lastItem.content += block.content
           } else {
-            group.items.push({ type: 'text', content: block.content })
+            g.items.push({ type: 'text', content: block.content })
           }
           continue
         }
       }
-      if (group) {
-        pushGroup(group)
-        group = null
-      }
+      flushLanes()
       const last = segments[segments.length - 1]
       if (last?.type === 'text') {
         last.content += block.content
@@ -365,134 +660,103 @@ function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
     if (block.type === 'subagent') {
       if (!block.content) continue
       const key = block.content
-      if (group && group.agentName === key) continue
-
-      const dispatchToolName = SUBAGENT_DISPATCH_TOOLS[key]
       let inheritedDelegation = false
-      if (group && dispatchToolName) {
-        const last: AgentGroupItem | undefined = group.items[group.items.length - 1]
-        if (last?.type === 'tool' && last.data.toolName === dispatchToolName) {
-          inheritedDelegation = !isToolDone(last.data.status) && Boolean(last.data.streamingArgs)
-          group.items.pop()
+      const dispatchToolName = SUBAGENT_DISPATCH_TOOLS[key]
+      if (dispatchToolName) {
+        const mship = groupsByKey.get(groupKey('mothership', undefined))
+        if (mship) {
+          const last = mship.items[mship.items.length - 1]
+          if (last?.type === 'tool' && last.data.toolName === dispatchToolName) {
+            inheritedDelegation = !isToolDone(last.data.status) && Boolean(last.data.streamingArgs)
+            mship.items.pop()
+          }
         }
-        if (group.items.length > 0) {
-          pushGroup(group)
-        }
-        group = null
-      } else if (group) {
-        pushGroup(group)
-        group = null
       }
-
-      group = {
-        type: 'agent_group',
-        id: `agent-${key}-${i}`,
-        agentName: key,
-        agentLabel: resolveAgentLabel(key),
-        items: [],
-        isDelegating: inheritedDelegation,
-        isOpen: false,
-      }
+      groupsByKey.delete(groupKey('mothership', undefined))
+      const { group: g } = ensureGroup(key, block.parentToolCallId)
+      if (inheritedDelegation) g.isDelegating = true
+      g.isOpen = true
+      activeGroupKey = resolveGroupKey(key, block.parentToolCallId)
       continue
     }
 
     if (block.type === 'tool_call') {
       if (!block.toolCall) continue
       const tc = block.toolCall
-      if (tc.name === ToolSearchToolRegex.id) continue
+      if (isToolHiddenInUi(tc.name)) continue
       if (tc.name === ReadTool.id && isToolResultRead(tc.params)) continue
       const isDispatch = SUBAGENT_KEYS.has(tc.name) && !tc.calledBy
 
       if (isDispatch) {
-        if (!group || group.agentName !== tc.name) {
-          if (group) {
-            pushGroup(group)
-            group = null
-          }
-          group = {
-            type: 'agent_group',
-            id: `agent-${tc.name}-${i}`,
-            agentName: tc.name,
-            agentLabel: resolveAgentLabel(tc.name),
-            items: [],
-            isDelegating: false,
-            isOpen: false,
-          }
-        }
-        group.isDelegating = isDelegatingTool(tc)
+        groupsByKey.delete(groupKey('mothership', undefined))
+        const { group: g } = ensureGroup(tc.name, tc.id)
+        g.isDelegating = isDelegatingTool(tc)
+        g.isOpen = g.isDelegating
         continue
       }
 
       const tool = toToolData(tc)
 
-      if (tc.calledBy && group && group.agentName === tc.calledBy) {
-        group.isDelegating = false
-        group.items.push({ type: 'tool', data: tool })
-      } else if (tc.calledBy) {
-        if (group) {
-          pushGroup(group)
-          group = null
-        }
-        group = {
-          type: 'agent_group',
-          id: `agent-${tc.calledBy}-${i}`,
-          agentName: tc.calledBy,
-          agentLabel: resolveAgentLabel(tc.calledBy),
-          items: [{ type: 'tool', data: tool }],
-          isDelegating: false,
-          isOpen: false,
-        }
+      if (tc.calledBy) {
+        const { group: g, created } = ensureGroup(tc.calledBy, block.parentToolCallId)
+        g.isDelegating = false
+        if (created && block.parentToolCallId) g.isOpen = true
+        g.items.push({ type: 'tool', data: tool })
+        activeGroupKey = resolveGroupKey(tc.calledBy, block.parentToolCallId)
       } else {
-        if (group && group.agentName === 'mothership') {
-          group.items.push({ type: 'tool', data: tool })
-        } else {
-          if (group) {
-            pushGroup(group)
-            group = null
-          }
-          group = {
-            type: 'agent_group',
-            id: `agent-mothership-${i}`,
-            agentName: 'mothership',
-            agentLabel: 'Mothership',
-            items: [{ type: 'tool', data: tool }],
-            isDelegating: false,
-            isOpen: false,
-          }
-        }
+        const { group: g } = ensureGroup('mothership', undefined)
+        g.items.push({ type: 'tool', data: tool })
       }
       continue
     }
 
     if (block.type === 'options') {
       if (!block.options?.length) continue
-      if (group) {
-        pushGroup(group)
-        group = null
-      }
+      flushLanes()
       segments.push({ type: 'options', items: block.options })
       continue
     }
 
     if (block.type === 'subagent_end') {
-      if (group) {
-        pushGroup(group)
-        group = null
+      if (block.parentToolCallId) {
+        for (const [key, g] of groupsByKey) {
+          if (key.endsWith(`:${block.parentToolCallId}`)) {
+            g.isOpen = false
+            g.isDelegating = false
+          }
+        }
+        if (activeGroupKey?.endsWith(`:${block.parentToolCallId}`)) {
+          activeGroupKey = null
+        }
+      } else {
+        for (const [key, g] of groupsByKey) {
+          if (key.endsWith(':legacy') && g.agentName !== 'mothership') {
+            g.isOpen = false
+            g.isDelegating = false
+          }
+        }
+        if (activeGroupKey?.endsWith(':legacy')) {
+          activeGroupKey = null
+        }
       }
       continue
     }
 
     if (block.type === 'stopped') {
-      if (group) {
-        pushGroup(group)
-        group = null
-      }
+      flushLanes()
       segments.push({ type: 'stopped' })
     }
   }
 
-  if (group) pushGroup(group, true)
-  return segments
+  const visibleSegments = segments.filter(
+    (segment) =>
+      segment.type !== 'agent_group' ||
+      segment.items.length > 0 ||
+      segment.isDelegating ||
+      segment.isOpen
+  )
+
+  return visibleSegments
 }
 
 /**
@@ -515,22 +779,33 @@ export function assistantMessageHasRenderableContent(
   return segments.length > 0
 }
 
+export function shouldSmoothTextSegment({
+  isStreaming,
+  segmentIndex,
+  segmentCount,
+}: {
+  isStreaming: boolean
+  segmentIndex: number
+  segmentCount: number
+}): boolean {
+  return isStreaming && segmentIndex === segmentCount - 1
+}
+
 interface MessageContentProps {
   blocks: ContentBlock[]
   fallbackContent: string
   isStreaming: boolean
   onOptionSelect?: (id: string) => void
-  onWorkspaceResourceSelect?: (resource: MothershipResource) => void
 }
 
-export function MessageContent({
+function MessageContentInner({
   blocks,
   fallbackContent,
   isStreaming = false,
   onOptionSelect,
-  onWorkspaceResourceSelect,
 }: MessageContentProps) {
-  const parsed = blocks.length > 0 ? parseBlocks(blocks) : []
+  const { onWorkspaceResourceSelect } = useChatSurface()
+  const parsed = useMemo(() => (blocks.length > 0 ? parseBlocks(blocks) : []), [blocks])
 
   const segments: MessageSegment[] =
     parsed.length > 0
@@ -565,12 +840,6 @@ export function MessageContent({
     isStreaming &&
     !hasTrailingContent &&
     (lastSegment.type === 'thinking' || hasSubagentEnded || allLastGroupToolsDone)
-  const lastOpenSubagentGroupId = [...segments]
-    .reverse()
-    .find(
-      (segment): segment is AgentGroupSegment =>
-        segment.type === 'agent_group' && segment.agentName !== 'mothership' && segment.isOpen
-    )?.id
 
   return (
     <div className='space-y-[10px]'>
@@ -581,7 +850,11 @@ export function MessageContent({
               <ChatContent
                 key={`text-${i}`}
                 content={prepareChatMarkdownForRender(segment.content)}
-                isStreaming={isStreaming}
+                isStreaming={shouldSmoothTextSegment({
+                  isStreaming,
+                  segmentIndex: i,
+                  segmentCount: segments.length,
+                })}
                 onOptionSelect={onOptionSelect}
                 onWorkspaceResourceSelect={onWorkspaceResourceSelect}
               />
@@ -603,19 +876,13 @@ export function MessageContent({
                 <ThinkingBlock
                   content={segment.content}
                   isActive={isActive}
-                  isStreaming={isStreaming}
                   startedAt={segment.startedAt}
-                  endedAt={segment.endedAt}
+                  isStreaming={isStreaming}
                 />
               </div>
             )
           }
           case 'agent_group': {
-            const toolItems = segment.items.filter((item) => item.type === 'tool')
-            const allToolsDone =
-              toolItems.length === 0 ||
-              toolItems.every((t) => t.type === 'tool' && isToolDone(t.data.status))
-            const hasFollowingText = segments.slice(i + 1).some((s) => s.type === 'text')
             return (
               <div key={segment.id} className={isStreaming ? 'animate-stream-fade-in' : undefined}>
                 <AgentGroup
@@ -625,8 +892,7 @@ export function MessageContent({
                   items={segment.items}
                   isDelegating={segment.isDelegating}
                   isStreaming={isStreaming}
-                  autoCollapse={allToolsDone && hasFollowingText}
-                  defaultExpanded={segment.id === lastOpenSubagentGroupId}
+                  defaultExpanded={segment.isOpen}
                 />
               </div>
             )
@@ -643,10 +909,8 @@ export function MessageContent({
           case 'stopped':
             return (
               <div key={`stopped-${i}`} className='flex items-center gap-[8px]'>
-                <CircleStop className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
-                <span className='font-base text-[14px] text-[var(--text-body)]'>
-                  Stopped by user
-                </span>
+                <CircleStop className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+                <span className='text-[14px] text-[var(--text-body)]'>Stopped by user</span>
               </div>
             )
         }
@@ -659,3 +923,5 @@ export function MessageContent({
     </div>
   )
 }
+
+export const MessageContent = memo(MessageContentInner)

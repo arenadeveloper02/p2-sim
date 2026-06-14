@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { isApiClientError } from '@/lib/api/client/errors'
+import { requestJson } from '@/lib/api/client/request'
+import { getVoiceSettingsContract } from '@/lib/api/contracts/common'
+import { speechTokenContract } from '@/lib/api/contracts/media/speech'
 import { arrayBufferToBase64, floatTo16BitPCM } from '@/lib/speech/audio'
 import {
   CHUNK_SEND_INTERVAL_MS,
@@ -12,14 +16,18 @@ import {
 
 const logger = createLogger('useSpeechToText')
 
-export { MAX_SESSION_MS } from '@/lib/speech/config'
-
 export type PermissionState = 'prompt' | 'granted' | 'denied'
 
 interface UseSpeechToTextProps {
   onTranscript: (text: string) => void
-  onUsageLimitExceeded?: () => void
+  /**
+   * Called on a 402 from the token endpoint, with the server's limit message and
+   * whether it was a per-member cap (which only an org admin can raise).
+   */
+  onUsageLimitExceeded?: (message?: string, isMemberLimit?: boolean) => void
   language?: string
+  /** Attributes the voice-input cost to this workspace for per-member usage. */
+  workspaceId?: string
 }
 
 interface UseSpeechToTextReturn {
@@ -34,6 +42,7 @@ export function useSpeechToText({
   onTranscript,
   onUsageLimitExceeded,
   language,
+  workspaceId,
 }: UseSpeechToTextProps): UseSpeechToTextReturn {
   const [isListening, setIsListening] = useState(false)
   const [isSupported, setIsSupported] = useState(false)
@@ -42,6 +51,7 @@ export function useSpeechToText({
   const onTranscriptRef = useRef(onTranscript)
   const onUsageLimitExceededRef = useRef(onUsageLimitExceeded)
   const languageRef = useRef(language)
+  const workspaceIdRef = useRef(workspaceId)
   const mountedRef = useRef(true)
   const startingRef = useRef(false)
 
@@ -60,6 +70,7 @@ export function useSpeechToText({
   onTranscriptRef.current = onTranscript
   onUsageLimitExceededRef.current = onUsageLimitExceeded
   languageRef.current = language
+  workspaceIdRef.current = workspaceId
 
   useEffect(() => {
     const browserOk =
@@ -73,8 +84,7 @@ export function useSpeechToText({
       return
     }
 
-    fetch('/api/settings/voice', { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : { sttAvailable: false }))
+    requestJson(getVoiceSettingsContract, {})
       .then((data) => {
         if (mountedRef.current) setIsSupported(data.sttAvailable === true)
       })
@@ -163,21 +173,22 @@ export function useSpeechToText({
     startingRef.current = true
 
     try {
-      const tokenResponse = await fetch('/api/speech/token', {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      if (!tokenResponse.ok) {
-        if (tokenResponse.status === 402) {
-          onUsageLimitExceededRef.current?.()
+      let tokenData: Awaited<ReturnType<typeof requestJson<typeof speechTokenContract>>>
+      try {
+        tokenData = await requestJson(speechTokenContract, {
+          body: workspaceIdRef.current ? { workspaceId: workspaceIdRef.current } : {},
+        })
+      } catch (err) {
+        if (isApiClientError(err) && err.status === 402) {
+          const isMemberLimit = (err.body as { scope?: string } | null)?.scope === 'member'
+          onUsageLimitExceededRef.current?.(err.message, isMemberLimit)
           return false
         }
-        const body = await tokenResponse.json().catch(() => ({}))
-        throw new Error(body.error || 'Failed to get speech token')
+        throw err instanceof Error ? err : new Error('Failed to get speech token')
       }
 
-      const { token } = await tokenResponse.json()
+      const token = typeof tokenData.token === 'string' ? tokenData.token : undefined
+      if (!token) throw new Error('Failed to get speech token')
       if (!mountedRef.current) return false
 
       const stream = await navigator.mediaDevices.getUserMedia({
