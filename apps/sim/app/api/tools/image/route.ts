@@ -15,6 +15,7 @@ import {
   validationErrorResponse,
 } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
   secureFetchWithPinnedIP,
@@ -32,6 +33,7 @@ import {
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
 
 const logger = createLogger('ImageProxyAPI')
@@ -62,6 +64,15 @@ interface GeneratedImageResult {
   falaiCost?: FalAICostMetadata
 }
 
+function hasReferenceImage(body: ImageToolBody): boolean {
+  const inputImage = (body as Record<string, unknown>).inputImage
+  const inputImages = (body as Record<string, unknown>).inputImages
+  return (
+    (inputImage !== undefined && inputImage !== null && inputImage !== '') ||
+    (Array.isArray(inputImages) && inputImages.length > 0)
+  )
+}
+
 interface StoredImageResponse {
   content: string
   imageUrl: string
@@ -81,6 +92,23 @@ interface StoredImageResponse {
   }
   __falaiCostDollars?: number
   __falaiBilling?: FalAICostMetadata
+}
+
+function resolveImageProviderApiKey(provider: ImageProvider, apiKey: string | undefined): string {
+  const trimmedKey = apiKey?.trim()
+  if (trimmedKey) {
+    return trimmedKey
+  }
+
+  if (provider === 'openai') {
+    return getRotatingApiKey('openai')
+  }
+
+  if (provider === 'gemini') {
+    return getRotatingApiKey('google')
+  }
+
+  throw new Error('API key is required')
 }
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
@@ -111,7 +139,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const body = parsed.data.body
     const provider = body.provider as ImageProvider
-    const { apiKey, model, prompt } = body
+    const { model, prompt } = body
 
     if (prompt.length < 3 || prompt.length > 4000) {
       return NextResponse.json(
@@ -124,6 +152,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     let imageResult: GeneratedImageResult
     try {
+      const apiKey = resolveImageProviderApiKey(provider, body.apiKey)
       if (provider === 'openai') {
         imageResult = await generateWithOpenAI(apiKey, body, requestId, logger)
       } else if (provider === 'gemini') {
@@ -529,6 +558,40 @@ async function generateWithOpenAI(
   logger: ReturnType<typeof createLogger>
 ): Promise<GeneratedImageResult> {
   const model = pickAllowed(body.model, OPENAI_IMAGE_MODELS, 'gpt-image-1.5')
+  const inputImage = (body as Record<string, unknown>).inputImage
+  const inputImageMimeType = (body as Record<string, unknown>).inputImageMimeType
+
+  if (hasReferenceImage(body) && inputImage) {
+    const editResult = await generateOpenAIImageEdit(apiKey, {
+      model,
+      prompt: body.prompt,
+      size:
+        model === 'gpt-image-2'
+          ? pickAllowed(body.size, OPENAI_IMAGE_2_SIZES, 'auto')
+          : pickAllowed(body.size, OPENAI_IMAGE_SIZES, 'auto'),
+      quality: body.quality ? pickAllowed(body.quality, OPENAI_IMAGE_QUALITIES, 'auto') : undefined,
+      background: body.background
+        ? pickAllowed(body.background, OPENAI_IMAGE_BACKGROUNDS, 'auto')
+        : undefined,
+      outputFormat: body.outputFormat
+        ? pickAllowed(body.outputFormat, IMAGE_OUTPUT_FORMATS, 'png')
+        : undefined,
+      moderation: body.moderation
+        ? pickAllowed(body.moderation, OPENAI_MODERATION_LEVELS, 'auto')
+        : undefined,
+      inputImage,
+      inputImageMimeType: typeof inputImageMimeType === 'string' ? inputImageMimeType : undefined,
+    })
+
+    return {
+      buffer: editResult.buffer,
+      contentType: editResult.contentType,
+      fileName: `openai-${model}.${extensionFromContentType(editResult.contentType)}`,
+      provider: 'openai',
+      model,
+      revisedPrompt: editResult.revisedPrompt,
+    }
+  }
   const size =
     model === 'gpt-image-2'
       ? pickAllowed(body.size, OPENAI_IMAGE_2_SIZES, 'auto')

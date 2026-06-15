@@ -3,6 +3,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
+import { checkSelfHostedMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { createRunSegment, updateRunStatus } from '@/lib/copilot/async-runs/repository'
 import { SIM_AGENT_VERSION } from '@/lib/copilot/constants'
@@ -37,6 +38,7 @@ import type {
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
+import { isBillingEnabled, isHosted } from '@/lib/core/config/feature-flags'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 
 const logger = createLogger('CopilotLifecycle')
@@ -128,17 +130,31 @@ export async function runCopilotLifecycle(
       abortSignal: lifecycleOptions.abortSignal,
     }))
 
+  const billingModel =
+    typeof requestPayload.model === 'string' && requestPayload.model.trim().length > 0
+      ? requestPayload.model
+      : 'mothership'
+
   const context = createStreamingContext({
     chatId,
     requestId: lifecycleOptions.simRequestId,
     executionId: resolvedExecutionId,
     runId: resolvedRunId,
     messageId: payloadMsgId,
+    billingGoRoute: goRoute,
+    billingModel,
     ...(lifecycleOptions.trace ? { trace: lifecycleOptions.trace } : {}),
   })
   let onCompleteStarted = false
 
   try {
+    if (!isHosted && isBillingEnabled && execContext.userId) {
+      const mothershipLimit = await checkSelfHostedMothershipUsageLimits(execContext.userId)
+      if (mothershipLimit.isExceeded) {
+        throw new BillingLimitError(execContext.userId)
+      }
+    }
+
     await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
 
     const result: OrchestratorResult = {
@@ -168,6 +184,27 @@ export async function runCopilotLifecycle(
     }
     return result
   } catch (error) {
+    if (error instanceof BillingLimitError) {
+      await handleBillingLimitResponse(error.userId, context, execContext, lifecycleOptions)
+      const result: OrchestratorResult = {
+        success: context.errors.length === 0 && !context.wasAborted,
+        cancelled: false,
+        content: resultContent(context, lifecycleOptions),
+        contentBlocks: context.contentBlocks,
+        toolCalls: buildToolCallSummaries(context),
+        chatId: context.chatId,
+        requestId: context.requestId,
+        errors: context.errors.length ? context.errors : undefined,
+        usage: context.usage,
+        cost: context.cost,
+      }
+      if (lifecycleOptions.onComplete) {
+        onCompleteStarted = true
+        await lifecycleOptions.onComplete(result)
+      }
+      return result
+    }
+
     const err = toError(error)
     // A CopilotBackendError carries the upstream HTTP status + body (e.g. a 5xx
     // from /api/tools/resume when an oversized tool result — a rendered-doc

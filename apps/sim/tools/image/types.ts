@@ -2,7 +2,7 @@ import type { ToolResponse } from '@/tools/types'
 
 export interface ImageGenerationParams {
   provider: 'openai' | 'gemini' | 'falai'
-  apiKey: string
+  apiKey?: string
   model?: string
   prompt: string
   size?: string
@@ -18,12 +18,19 @@ export interface ImageGenerationParams {
   enableSafetyChecker?: boolean
   enableWebSearch?: boolean
   thinkingLevel?: string
+  inputImage?: unknown
+  inputImages?: unknown[]
+  inputImageUrl?: string
+  inputImageUrls?: string
+  inputImageMimeType?: string
+  inputImageWarning?: string
 }
 
 export interface ImageGenerationResponse extends ToolResponse {
   output: {
     content: string
     image: unknown
+    images: unknown[]
     imageUrl: string
     provider: string
     model: string
@@ -35,7 +42,13 @@ export interface ImageGenerationResponse extends ToolResponse {
       seed?: number
       jobId?: string
       contentType?: string
+      count?: number
+      requested?: number
+      failed?: number
+      warnings?: string[]
+      s3UploadFailed?: boolean
     }
+    s3UploadFailed?: boolean
     __falaiCostDollars?: number
     __falaiBilling?: {
       endpointId: string

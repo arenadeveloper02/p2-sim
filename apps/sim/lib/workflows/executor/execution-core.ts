@@ -444,9 +444,7 @@ export async function executeWorkflowCore(
     // Keep sessionUserId on metadata for Arena token resolution, but resolve env vars
     // from the workflow owner who has workspace access.
     const personalEnvUserId =
-      metadata.isClientSession &&
-      metadata.sessionUserId &&
-      metadata.triggerType !== 'chat'
+      metadata.isClientSession && metadata.sessionUserId && metadata.triggerType !== 'chat'
         ? metadata.sessionUserId
         : metadata.workflowUserId
 
