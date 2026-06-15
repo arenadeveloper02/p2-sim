@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-query'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
-import type { ContractBodyInput } from '@/lib/api/contracts'
+import type { ContractBodyInput, ContractJsonResponse } from '@/lib/api/contracts'
 import {
   cancelInvitationContract,
   resendInvitationContract,
@@ -17,6 +17,7 @@ import {
 import {
   createOrganizationContract,
   getMyMemberCreditsContract,
+  getOrganizationContract,
   getOrganizationMemberUsageLimitContract,
   getOrganizationRosterContract,
   inviteOrganizationMembersContract,
@@ -35,6 +36,7 @@ import {
   updateOrganizationMemberUsageLimitContract,
   updateOrganizationUsageLimitContract,
 } from '@/lib/api/contracts/organization'
+import { listCreatorOrganizationsContract } from '@/lib/api/contracts/organizations'
 import {
   getOrganizationBillingContract,
   type OrganizationBillingApiResponse,
@@ -60,6 +62,13 @@ type OrganizationSubscriptionCandidate = {
 }
 
 type OrganizationBillingQueryResult = UseQueryResult<OrganizationBillingApiResponse | null, Error>
+type GetOrganizationResponse = ContractJsonResponse<typeof getOrganizationContract>
+type SessionUser = {
+  id?: string
+  name?: string | null
+  email?: string | null
+  image?: string | null
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -91,6 +100,43 @@ function readNumber(value: unknown): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined
   }
   return undefined
+}
+
+function getActiveOrganizationId(sessionData: unknown): string | undefined {
+  if (!isRecord(sessionData)) return undefined
+  const session = sessionData.session
+  if (!isRecord(session)) return undefined
+  return typeof session.activeOrganizationId === 'string' ? session.activeOrganizationId : undefined
+}
+
+function getSessionUser(sessionData: unknown): SessionUser | undefined {
+  if (!isRecord(sessionData)) return undefined
+  const user = sessionData.user
+  if (!isRecord(user)) return undefined
+
+  return {
+    id: typeof user.id === 'string' ? user.id : undefined,
+    name: typeof user.name === 'string' ? user.name : null,
+    email: typeof user.email === 'string' ? user.email : null,
+    image: typeof user.image === 'string' ? user.image : null,
+  }
+}
+
+function normalizeOrganizationDetail(response: GetOrganizationResponse, user?: SessionUser) {
+  return {
+    ...response.data,
+    members: user
+      ? [
+          {
+            id: user.id ?? response.data.id,
+            role: response.userRole,
+            user,
+          },
+        ]
+      : [],
+    userRole: response.userRole,
+    hasAdminAccess: response.hasAdminAccess,
+  }
 }
 
 /**
@@ -148,17 +194,21 @@ export function useOrganizationRoster(orgId: string | undefined | null) {
 /**
  * Fetch all organizations for the current user
  * Note: Billing data is fetched separately via useSubscriptionData() to avoid duplicate calls
- * Note: better-auth client does not support AbortSignal, so signal is accepted but not forwarded
  */
-async function fetchOrganizations(_signal?: AbortSignal) {
-  const [orgsResponse, activeOrgResponse] = await Promise.all([
-    client.organization.list(),
-    client.organization.getFullOrganization(),
+async function fetchOrganizations(signal?: AbortSignal) {
+  const [organizationsResponse, sessionResponse] = await Promise.all([
+    requestJson(listCreatorOrganizationsContract, { signal }),
+    client.getSession(),
   ])
+  const activeOrganizationId = getActiveOrganizationId(sessionResponse.data)
+  const sessionUser = getSessionUser(sessionResponse.data)
+  const activeOrganization = activeOrganizationId
+    ? await fetchOrganization(activeOrganizationId, signal, sessionUser)
+    : null
 
   return {
-    organizations: orgsResponse.data || [],
-    activeOrganization: activeOrgResponse.data,
+    organizations: organizationsResponse.organizations,
+    activeOrganization,
   }
 }
 
@@ -176,9 +226,28 @@ export function useOrganizations() {
 /**
  * Fetch a specific organization by ID
  */
-async function fetchOrganization(_signal?: AbortSignal) {
-  const response = await client.organization.getFullOrganization()
-  return response.data
+async function fetchOrganization(orgId: string, signal?: AbortSignal, sessionUser?: SessionUser) {
+  if (!orgId) return null
+
+  try {
+    const [response, sessionResponse] = await Promise.all([
+      requestJson(getOrganizationContract, {
+        params: { id: orgId },
+        query: { include: 'seats' },
+        signal,
+      }),
+      sessionUser ? Promise.resolve(null) : client.getSession(),
+    ])
+    return normalizeOrganizationDetail(
+      response,
+      sessionUser ?? getSessionUser(sessionResponse?.data)
+    )
+  } catch (error) {
+    if (error instanceof ApiClientError && (error.status === 403 || error.status === 404)) {
+      return null
+    }
+    throw error
+  }
 }
 
 /**
@@ -187,7 +256,7 @@ async function fetchOrganization(_signal?: AbortSignal) {
 export function useOrganization(orgId: string) {
   return useQuery({
     queryKey: organizationKeys.detail(orgId),
-    queryFn: ({ signal }) => fetchOrganization(signal),
+    queryFn: ({ signal }) => fetchOrganization(orgId, signal),
     enabled: !!orgId,
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,

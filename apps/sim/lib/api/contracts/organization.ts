@@ -481,6 +481,40 @@ export const updateOrganizationContract = defineRouteContract({
   },
 })
 
+export const getOrganizationContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/organizations/[id]',
+  params: organizationParamsSchema,
+  query: z
+    .object({
+      include: z.enum(['seats']).optional(),
+    })
+    .optional(),
+  response: {
+    mode: 'json',
+    schema: z
+      .object({
+        success: z.literal(true),
+        data: z
+          .object({
+            id: z.string(),
+            name: z.string(),
+            slug: z.string().nullable(),
+            logo: z.string().nullable(),
+            metadata: z.unknown(),
+            createdAt: z.string(),
+            updatedAt: z.string(),
+            seats: z.unknown().optional(),
+            seatAnalytics: z.unknown().optional(),
+          })
+          .passthrough(),
+        userRole: z.string(),
+        hasAdminAccess: z.boolean(),
+      })
+      .passthrough(),
+  },
+})
+
 export const getOrganizationDataRetentionContract = defineRouteContract({
   method: 'GET',
   path: '/api/organizations/[id]/data-retention',

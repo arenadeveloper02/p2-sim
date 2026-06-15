@@ -134,6 +134,12 @@ export function IdeogramPromptBuilder({
     : builderValue.elements[0]?.id
   const activeElement = builderValue.elements.find((element) => element.id === activeElementId)
 
+  useEffect(() => {
+    if (!selectedElementId) return
+    if (builderValue.elements.some((element) => element.id === selectedElementId)) return
+    setSelectedElementId(undefined)
+  }, [builderValue.elements, selectedElementId])
+
   const buildResult = useMemo(() => {
     try {
       const result = buildIdeogramJsonPrompt(builderValue)

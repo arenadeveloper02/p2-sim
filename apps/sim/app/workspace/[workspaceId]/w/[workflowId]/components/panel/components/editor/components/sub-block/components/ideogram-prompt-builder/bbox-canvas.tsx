@@ -132,7 +132,7 @@ export function BboxCanvas({
     return elements
       .map((element, index) => {
         const displayRect =
-          element.id === draftRect?.elementId
+          draftRect && element.id === draftRect.elementId
             ? draftRect.mode === 'pending-move' && draftRect.originalRect
               ? draftRect.originalRect
               : draftRect
@@ -158,7 +158,7 @@ export function BboxCanvas({
   }, [canvasHeight, canvasWidth, draftRect, elements])
 
   const activeDisplayRect = useMemo(() => {
-    if (draftRect?.elementId === activeElementId) {
+    if (draftRect && draftRect.elementId === activeElementId) {
       return draftRect.mode === 'pending-move' && draftRect.originalRect
         ? draftRect.originalRect
         : draftRect
