@@ -1,6 +1,14 @@
 'use client'
 
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type ChangeEvent,
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import Cookies from 'js-cookie'
@@ -26,28 +34,21 @@ import {
   Textarea,
   Tooltip,
 } from '@/components/emcn'
-import { Input as UiInput } from '@/components/ui'
 import { client, useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
-import {
-  clearPendingCredentialCreateRequest,
-  PENDING_CREDENTIAL_CREATE_REQUEST_EVENT,
-  type PendingCredentialCreateRequest,
-  readPendingCredentialCreateRequest,
-  writeOAuthReturnContext,
-} from '@/lib/credentials/client-state'
+import { writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import { getCanonicalScopesForProvider, getServiceConfigByProviderId } from '@/lib/oauth'
 import { ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID } from '@/lib/oauth/types'
 import { getScopeDescription } from '@/lib/oauth/utils'
 import { getUserColor } from '@/lib/workspaces/colors'
 import { filterOAuthItemsForWorkspace } from '@/lib/workspaces/is-admin-workspace'
-import { AtlassianServiceAccountForm } from '@/app/workspace/[workspaceId]/settings/components/integrations/atlassian-service-account-form'
-import { CredentialSkeleton } from '@/app/workspace/[workspaceId]/settings/components/integrations/credential-skeleton'
-import { ServiceAccountForm } from '@/app/workspace/[workspaceId]/settings/components/integrations/service-account-form'
+import {
+  ConnectServiceAccountModal,
+  type ServiceAccountProviderId,
+} from '@/app/workspace/[workspaceId]/integrations/components/connect-service-account-modal'
 import { useBrandConfig } from '@/ee/whitelabeling'
 import {
   useCreateCredentialDraft,
-  useCreateWorkspaceCredential,
   useDeleteWorkspaceCredential,
   useRemoveWorkspaceCredentialMember,
   useUpdateWorkspaceCredential,
@@ -67,6 +68,42 @@ import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
 const logger = createLogger('IntegrationsManager')
+
+const GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID = 'google-service-account' as const
+
+function CredentialSkeleton() {
+  return (
+    <div className='flex items-center justify-between gap-3'>
+      <div className='flex min-w-0 items-center gap-2.5'>
+        <Skeleton className='size-8 flex-shrink-0 rounded-md' />
+        <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
+          <Skeleton className='h-4 w-32' />
+          <Skeleton className='h-3 w-48' />
+        </div>
+      </div>
+      <Skeleton className='h-8 w-20 rounded-md' />
+    </div>
+  )
+}
+
+function resolveServiceAccountProviderId(providerId: string): ServiceAccountProviderId | null {
+  if (providerId === ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID) {
+    return ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID
+  }
+  if (providerId === GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID) {
+    return GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID
+  }
+  return null
+}
+
+function openServiceAccountConnect(
+  providerId: string,
+  setCreateOAuthProviderId: (id: string) => void,
+  setShowServiceAccountConnectModal: (open: boolean) => void
+) {
+  setCreateOAuthProviderId(providerId)
+  setShowServiceAccountConnectModal(true)
+}
 
 const ROLE_OPTIONS = [
   { value: 'member', label: 'Member' },
@@ -155,6 +192,7 @@ export function IntegrationsManager() {
   const [memberRole, setMemberRole] = useState<WorkspaceCredentialRole>('admin')
   const [memberUserId, setMemberUserId] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showServiceAccountConnectModal, setShowServiceAccountConnectModal] = useState(false)
   const [createDisplayName, setCreateDisplayName] = useState('')
   const [createDescription, setCreateDescription] = useState('')
   const [createOAuthProviderId, setCreateOAuthProviderId] = useState('')
@@ -222,7 +260,6 @@ export function IntegrationsManager() {
   )
 
   const createDraft = useCreateCredentialDraft()
-  const createCredential = useCreateWorkspaceCredential()
   const updateCredential = useUpdateWorkspaceCredential()
   const deleteCredential = useDeleteWorkspaceCredential()
   const upsertMember = useUpsertWorkspaceCredentialMember()
@@ -390,61 +427,6 @@ export function IntegrationsManager() {
     }
     return () => window.removeEventListener('beforeunload', handler)
   }, [selectedCredentialId, isDetailsDirty])
-
-  const applyPendingCredentialCreateRequest = useCallback(
-    (request: PendingCredentialCreateRequest) => {
-      if (request.workspaceId !== workspaceId) {
-        return
-      }
-
-      if (Date.now() - request.requestedAt > 15 * 60 * 1000) {
-        clearPendingCredentialCreateRequest()
-        return
-      }
-
-      if (request.type !== 'oauth') return
-
-      pendingReturnOriginRef.current = request.returnOrigin
-
-      setShowCreateModal(true)
-      setCreateError(null)
-      setCreateDescription('')
-      setCreateOAuthProviderId(request.providerId)
-      setCreateDisplayName(request.displayName)
-
-      clearPendingCredentialCreateRequest()
-    },
-    [workspaceId]
-  )
-
-  useEffect(() => {
-    if (!workspaceId) return
-    const request = readPendingCredentialCreateRequest()
-    if (!request) return
-    applyPendingCredentialCreateRequest(request)
-  }, [workspaceId, applyPendingCredentialCreateRequest])
-
-  useEffect(() => {
-    if (!workspaceId) return
-
-    const handlePendingCreateRequest = (event: Event) => {
-      const request = (event as CustomEvent<PendingCredentialCreateRequest>).detail
-      if (!request) return
-      applyPendingCredentialCreateRequest(request)
-    }
-
-    window.addEventListener(
-      PENDING_CREDENTIAL_CREATE_REQUEST_EVENT,
-      handlePendingCreateRequest as EventListener
-    )
-
-    return () => {
-      window.removeEventListener(
-        PENDING_CREDENTIAL_CREATE_REQUEST_EVENT,
-        handlePendingCreateRequest as EventListener
-      )
-    }
-  }, [workspaceId, applyPendingCredentialCreateRequest])
 
   const isSelectedAdmin = selectedCredential?.role === 'admin'
   const selectedOAuthServiceConfig = useMemo(() => {
@@ -717,13 +699,47 @@ export function IntegrationsManager() {
     filteredAvailableIntegrations.length === 0
 
   const handleAddForProvider = useCallback((providerId: string) => {
-    setCreateOAuthProviderId(providerId)
-    setCreateStep(2)
+    const serviceConfig = getServiceConfigByProviderId(providerId)
     setCreateDisplayName('')
     setCreateDescription('')
     setCreateError(null)
+
+    if (serviceConfig?.authType === 'service_account') {
+      openServiceAccountConnect(
+        providerId,
+        setCreateOAuthProviderId,
+        setShowServiceAccountConnectModal
+      )
+      return
+    }
+
+    setCreateOAuthProviderId(providerId)
+    setCreateStep(2)
     setShowCreateModal(true)
   }, [])
+
+  const serviceAccountProviderId = useMemo(
+    () => resolveServiceAccountProviderId(createOAuthProviderId),
+    [createOAuthProviderId]
+  )
+
+  const serviceAccountConnectConfig = useMemo(() => {
+    if (!serviceAccountProviderId) return null
+    const config = getServiceConfigByProviderId(createOAuthProviderId)
+    const icon = selectedOAuthService?.icon ?? config?.icon
+    if (!icon) return null
+    return {
+      providerId: serviceAccountProviderId,
+      serviceName:
+        selectedOAuthService?.name || config?.name || resolveProviderLabel(createOAuthProviderId),
+      icon,
+    }
+  }, [
+    serviceAccountProviderId,
+    createOAuthProviderId,
+    selectedOAuthService,
+    oauthServiceNameByProviderId,
+  ])
 
   const filteredServices = useMemo(() => {
     if (!serviceSearch.trim()) return oauthServiceOptions
@@ -753,10 +769,12 @@ export function IntegrationsManager() {
                     className='size-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
                     strokeWidth={2}
                   />
-                  <UiInput
+                  <Input
                     placeholder='Search services...'
                     value={serviceSearch}
-                    onChange={(e) => setServiceSearch(e.target.value)}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                      setServiceSearch(event.target.value)
+                    }
                     className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
                   />
                 </div>
@@ -769,6 +787,16 @@ export function IntegrationsManager() {
                         type='button'
                         variant='ghost'
                         onClick={() => {
+                          if (config?.authType === 'service_account') {
+                            setShowCreateModal(false)
+                            openServiceAccountConnect(
+                              service.value,
+                              setCreateOAuthProviderId,
+                              setShowServiceAccountConnectModal
+                            )
+                            setServiceSearch('')
+                            return
+                          }
                           setCreateOAuthProviderId(service.value)
                           setCreateStep(2)
                           setServiceSearch('')
@@ -804,7 +832,7 @@ export function IntegrationsManager() {
               </Button>
             </ModalFooter>
           </>
-        ) : selectedOAuthService?.authType !== 'service_account' ? (
+        ) : (
           <>
             <ModalHeader>
               <div className='flex items-center gap-2.5'>
@@ -934,35 +962,27 @@ export function IntegrationsManager() {
               </Button>
             </ModalFooter>
           </>
-        ) : selectedOAuthService?.providerId === ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID ? (
-          <AtlassianServiceAccountForm
-            service={selectedOAuthService}
-            serviceLabel={selectedOAuthService.name || resolveProviderLabel(createOAuthProviderId)}
-            workspaceId={workspaceId}
-            onBack={() => setCreateStep(1)}
-            onCreate={(input) => createCredential.mutateAsync(input)}
-            onCreated={() => {
-              setShowCreateModal(false)
-              resetCreateForm()
-            }}
-          />
-        ) : (
-          <ServiceAccountForm
-            service={selectedOAuthService}
-            serviceLabel={selectedOAuthService?.name || resolveProviderLabel(createOAuthProviderId)}
-            workspaceId={workspaceId}
-            setupGuideHref='https://docs.sim.ai/integrations/google-service-account'
-            onBack={() => setCreateStep(1)}
-            onCreate={(input) => createCredential.mutateAsync(input)}
-            onCreated={() => {
-              setShowCreateModal(false)
-              resetCreateForm()
-            }}
-          />
         )}
       </ModalContent>
     </Modal>
   )
+
+  const serviceAccountConnectModalJsx =
+    serviceAccountConnectConfig && showServiceAccountConnectModal ? (
+      <ConnectServiceAccountModal
+        open={showServiceAccountConnectModal}
+        onOpenChange={(open) => {
+          setShowServiceAccountConnectModal(open)
+          if (!open) {
+            setCreateOAuthProviderId('')
+          }
+        }}
+        workspaceId={workspaceId}
+        serviceAccountProviderId={serviceAccountConnectConfig.providerId}
+        serviceName={serviceAccountConnectConfig.serviceName}
+        serviceIcon={serviceAccountConnectConfig.icon}
+      />
+    ) : null
 
   const handleCloseDeleteDialog = () => {
     setShowDeleteConfirmDialog(false)
@@ -1429,6 +1449,7 @@ export function IntegrationsManager() {
           )}
         </div>
         {createModalJsx}
+        {serviceAccountConnectModalJsx}
         {deleteConfirmDialogJsx}
       </>
     )
@@ -1443,10 +1464,10 @@ export function IntegrationsManager() {
               className='size-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
               strokeWidth={2}
             />
-            <UiInput
+            <Input
               placeholder='Search integrations...'
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setSearchTerm(event.target.value)}
               disabled={credentialsLoading}
               className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
             />
@@ -1562,6 +1583,7 @@ export function IntegrationsManager() {
       </div>
 
       {createModalJsx}
+      {serviceAccountConnectModalJsx}
       {deleteConfirmDialogJsx}
     </>
   )
