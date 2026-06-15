@@ -1371,7 +1371,7 @@ export function IntegrationsManager() {
           {/* Connect your core tools to unlock its full potential. It keeps a continuous pulse on your
           work and surfaces the most important updates in one place—so nothing critical slips
           through the cracks. */}
-          Arena's AI and Vimi, works by syncing with the tools you already use. Connect them now so
+          Arena's AI and VIMI, works by syncing with the tools you already use. Connect them now so
           VIMI can keep a continuous pulse on your work and surface what matters from the moment you
           start.
         </p>
