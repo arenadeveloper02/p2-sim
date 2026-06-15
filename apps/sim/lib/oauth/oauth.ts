@@ -1590,7 +1590,7 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientId,
         clientSecret,
         useBasicAuth: true,
-        supportsRefreshTokenRotation: false,
+        supportsRefreshTokenRotation: true,
       }
     }
     case 'wordpress': {

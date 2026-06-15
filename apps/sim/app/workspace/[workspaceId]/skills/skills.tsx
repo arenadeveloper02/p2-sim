@@ -121,7 +121,7 @@ export function Skills() {
       disabled={isLoading}
       leftIcon={Plus}
     >
-      Add to Sim
+      Add to Arena
     </Chip>
   )
 
