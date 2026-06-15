@@ -29,11 +29,11 @@ const blackIcons: IconSchema[] = [
     },
     {
         id: 'company-growth-generic',
-        label: 'Company Growth',
+        label: 'company growth',
         category: 'generic',
         color: 'black',
         tags: ['growth', 'company', 'expansion', 'scale', 'business', 'success', 'progress'],
-        pngUrl: `${BASE}/black/generic/Company+growth.png`,
+        pngUrl: `${BASE}/black/generic/company+growth.png`,
     },
     {
         id: 'creative-content-generic',
@@ -41,7 +41,7 @@ const blackIcons: IconSchema[] = [
         category: 'generic',
         color: 'black',
         tags: ['creative', 'content', 'design', 'media', 'storytelling', 'writing', 'copy'],
-        pngUrl: `${BASE}/black/generic/Creative+content.png`,
+        pngUrl: `${BASE}/black/generic/creative+content.png`,
     },
     {
         id: 'creative-process-generic',
@@ -57,7 +57,7 @@ const blackIcons: IconSchema[] = [
         category: 'generic',
         color: 'black',
         tags: ['deploy', 'launch', 'release', 'ship', 'publish', 'go-live', 'production'],
-        pngUrl: `${BASE}/black/generic/Deploy.png`,
+        pngUrl: `${BASE}/black/generic/deploy.png`,
     },
     {
         id: 'laptop-settings-generic',
@@ -73,7 +73,7 @@ const blackIcons: IconSchema[] = [
         category: 'generic',
         color: 'black',
         tags: ['leadership', 'change', 'management', 'transition', 'strategy', 'direction', 'vision'],
-        pngUrl: `${BASE}/black/generic/Leadership+Change.png`,
+        pngUrl: `${BASE}/black/generic/leadership+change.png`,
     },
     {
         id: 'partnership-generic',
@@ -89,7 +89,7 @@ const blackIcons: IconSchema[] = [
         category: 'generic',
         color: 'black',
         tags: ['revenue', 'income', 'sales', 'profit', 'money', 'earnings', 'roi'],
-        pngUrl: `${BASE}/black/generic/Revenue.png`,
+        pngUrl: `${BASE}/black/generic/revenue.png`,
     },
     {
         id: 'user-experience-generic',
@@ -113,7 +113,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['customer', 'support', 'service', 'help', 'assistance', 'care', 'helpdesk'],
-        pngUrl: `${BASE}/black/marketing/Customer+Support.png`,
+        pngUrl: `${BASE}/black/marketing/customer+support.png`,
     },
     {
         id: 'global-campaign-marketing',
@@ -121,7 +121,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['global', 'campaign', 'international', 'worldwide', 'reach', 'market', 'expansion'],
-        pngUrl: `${BASE}/black/marketing/Global+Campaign.png`,
+        pngUrl: `${BASE}/black/marketing/global+campaign.png`,
     },
     {
         id: 'keyword-search-marketing',
@@ -129,7 +129,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['keyword', 'search', 'seo', 'query', 'terms', 'discovery', 'targeting'],
-        pngUrl: `${BASE}/black/marketing/Keyword+search.png`,
+        pngUrl: `${BASE}/black/marketing/keyword+search.png`,
     },
     {
         id: 'marketing-automation-marketing',
@@ -137,7 +137,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['automation', 'marketing', 'workflow', 'trigger', 'sequence', 'nurture', 'pipeline'],
-        pngUrl: `${BASE}/black/marketing/Marketing+Automation.png`,
+        pngUrl: `${BASE}/black/marketing/marketing+automation.png`,
     },
     {
         id: 'network-option1-marketing',
@@ -145,7 +145,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['network', 'connection', 'infrastructure', 'nodes', 'web', 'ecosystem', 'platform'],
-        pngUrl: `${BASE}/black/marketing/Network+Option+1.png`,
+        pngUrl: `${BASE}/black/marketing/network+option+1.png`,
     },
     {
         id: 'network-option2-marketing',
@@ -153,7 +153,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['network', 'connection', 'infrastructure', 'nodes', 'web', 'ecosystem', 'platform'],
-        pngUrl: `${BASE}/black/marketing/Network+Option+2.png`,
+        pngUrl: `${BASE}/black/marketing/network+option+2.png`,
     },
     {
         id: 'responsive-marketing',
@@ -161,7 +161,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['responsive', 'mobile', 'adaptive', 'design', 'device', 'screen', 'layout'],
-        pngUrl: `${BASE}/black/marketing/Responsive.png`,
+        pngUrl: `${BASE}/black/marketing/responsive.png`,
     },
     {
         id: 'sitemap-marketing',
@@ -169,7 +169,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['sitemap', 'structure', 'navigation', 'architecture', 'pages', 'crawl', 'index'],
-        pngUrl: `${BASE}/black/marketing/Sitemap.png`,
+        pngUrl: `${BASE}/black/marketing/sitemap.png`,
     },
     {
         id: 'social-network-marketing',
@@ -177,7 +177,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['social', 'network', 'media', 'community', 'platform', 'engagement', 'followers'],
-        pngUrl: `${BASE}/black/marketing/Social+Network.png`,
+        pngUrl: `${BASE}/black/marketing/social+setwork.png`,
     },
     {
         id: 'team-building-marketing',
@@ -185,7 +185,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['team', 'building', 'people', 'culture', 'collaboration', 'hiring', 'talent'],
-        pngUrl: `${BASE}/black/marketing/TeamBuilding.png`,
+        pngUrl: `${BASE}/black/marketing/teambuilding.png`,
     },
     {
         id: 'active-search-seo',
@@ -193,7 +193,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['search', 'find', 'lookup', 'discovery', 'research', 'query', 'seo'],
-        pngUrl: `${BASE}/black/seo/Active+Search.png`,
+        pngUrl: `${BASE}/black/seo/active+search.png`,
     },
     {
         id: 'calendar-seo',
@@ -201,7 +201,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['calendar', 'schedule', 'planning', 'time', 'date', 'events', 'meeting'],
-        pngUrl: `${BASE}/black/seo/Calendar.png`,
+        pngUrl: `${BASE}/black/seo/calendar.png`,
     },
     {
         id: 'chat-seo',
@@ -209,7 +209,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['chat', 'message', 'conversation', 'communication', 'support', 'dialogue'],
-        pngUrl: `${BASE}/black/seo/Chat.png`,
+        pngUrl: `${BASE}/black/seo/chat.png`,
     },
     {
         id: 'cloud-sync-seo',
@@ -217,7 +217,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['cloud', 'sync', 'backup', 'storage', 'integration', 'data', 'upload'],
-        pngUrl: `${BASE}/black/seo/Cloud+Sync.png`,
+        pngUrl: `${BASE}/black/seo/cloud+sync.png`,
     },
     {
         id: 'coding-seo',
@@ -225,7 +225,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['coding', 'programming', 'development', 'engineering', 'software', 'code'],
-        pngUrl: `${BASE}/black/seo/Coding.png`,
+        pngUrl: `${BASE}/black/seo/coding.png`,
     },
     {
         id: 'data-analytics-seo',
@@ -241,7 +241,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['data', 'download', 'export', 'transfer', 'extract', 'retrieve'],
-        pngUrl: `${BASE}/black/seo/Data+Download.png`,
+        pngUrl: `${BASE}/black/seo/data+download.png`,
     },
     {
         id: 'email-marketing-option1-seo',
@@ -249,7 +249,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['email', 'marketing', 'newsletter', 'outreach', 'campaign', 'inbox'],
-        pngUrl: `${BASE}/black/seo/Email+Marketing+Option+1.png`,
+        pngUrl: `${BASE}/black/seo/email+marketing+option+1.png`,
     },
     {
         id: 'email-marketing-option2-seo',
@@ -257,7 +257,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['email', 'marketing', 'newsletter', 'outreach', 'campaign', 'inbox'],
-        pngUrl: `${BASE}/black/seo/Email+Marketing+Option+2.png`,
+        pngUrl: `${BASE}/black/seo/email+marketing+option+2.png`,
     },
     {
         id: 'increased-performance-seo',
@@ -265,7 +265,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['performance', 'increase', 'improve', 'optimize', 'boost', 'efficiency', 'results'],
-        pngUrl: `${BASE}/black/seo/Increased+Performance.png`,
+        pngUrl: `${BASE}/black/seo/increased+performance.png`,
     },
     {
         id: 'link-seo',
@@ -273,7 +273,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['link', 'connect', 'integration', 'url', 'backlink', 'reference', 'chain'],
-        pngUrl: `${BASE}/black/seo/Link.png`,
+        pngUrl: `${BASE}/black/seo/link.png`,
     },
     {
         id: 'online-support-seo',
@@ -281,7 +281,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['online', 'support', 'helpdesk', 'service', 'chat', 'remote', 'assistance'],
-        pngUrl: `${BASE}/black/seo/Online+Support.png`,
+        pngUrl: `${BASE}/black/seo/online+support.png`,
     },
     {
         id: 'seo-location-seo',
@@ -289,7 +289,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['seo', 'location', 'local', 'geo', 'map', 'targeting', 'search'],
-        pngUrl: `${BASE}/black/seo/SEO+Location.png`,
+        pngUrl: `${BASE}/black/seo/seo+location.png`,
     },
     {
         id: 'seo-option1-seo',
@@ -297,7 +297,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['seo', 'optimization', 'search', 'ranking', 'organic', 'visibility', 'engine'],
-        pngUrl: `${BASE}/black/seo/SEO+Option+1.png`,
+        pngUrl: `${BASE}/black/seo/seo+option+1.png`,
     },
     {
         id: 'seo-option2-seo',
@@ -305,7 +305,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['seo', 'optimization', 'search', 'ranking', 'organic', 'visibility', 'engine'],
-        pngUrl: `${BASE}/black/seo/SEO+option+2.png`,
+        pngUrl: `${BASE}/black/seo/seo+option+2.png`,
     },
     {
         id: 'seo-plugin-option2-seo',
@@ -313,7 +313,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['seo', 'plugin', 'tool', 'optimization', 'search', 'ranking', 'engine'],
-        pngUrl: `${BASE}/black/seo/SEO+Plugin+option+2.png`,
+        pngUrl: `${BASE}/black/seo/seo+plugin+option+2.png`,
     },
     {
         id: 'seo-plugin-seo',
@@ -321,7 +321,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['seo', 'plugin', 'tool', 'optimization', 'search', 'ranking', 'engine'],
-        pngUrl: `${BASE}/black/seo/Seo+Plugin.png`,
+        pngUrl: `${BASE}/black/seo/seo+plugin.png`,
     },
     {
         id: 'seo-seo',
@@ -329,7 +329,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['seo', 'search engine optimization', 'ranking', 'organic', 'visibility', 'traffic'],
-        pngUrl: `${BASE}/black/seo/SEO.png`,
+        pngUrl: `${BASE}/black/seo/seo.png`,
     },
     {
         id: 'target-seo',
@@ -337,7 +337,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['target', 'audience', 'goal', 'focus', 'aim', 'precision', 'segment'],
-        pngUrl: `${BASE}/black/seo/Target.png`,
+        pngUrl: `${BASE}/black/seo/target.png`,
     },
     {
         id: 'time-management-seo',
@@ -345,7 +345,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['time', 'management', 'efficiency', 'planning', 'deadline', 'schedule', 'productivity'],
-        pngUrl: `${BASE}/black/seo/Time+management.png`,
+        pngUrl: `${BASE}/black/seo/time+management.png`,
     },
     {
         id: 'traffic-seo',
@@ -353,7 +353,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['traffic', 'visits', 'sessions', 'users', 'web', 'inbound', 'acquisition'],
-        pngUrl: `${BASE}/black/seo/Traffic.png`,
+        pngUrl: `${BASE}/black/seo/traffic.png`,
     },
     {
         id: 'video-marketing-seo',
@@ -361,7 +361,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['video', 'marketing', 'content', 'media', 'youtube', 'visual', 'campaign'],
-        pngUrl: `${BASE}/black/seo/Video+marketing.png`,
+        pngUrl: `${BASE}/black/seo/video+marketing.png`,
     },
     {
         id: 'web-optimisation-seo',
@@ -369,7 +369,7 @@ const blackIcons: IconSchema[] = [
         category: 'seo',
         color: 'black',
         tags: ['web', 'optimisation', 'performance', 'speed', 'core web vitals', 'loading', 'site'],
-        pngUrl: `${BASE}/black/seo/Web+Optimisation.png`,
+        pngUrl: `${BASE}/black/seo/web+optimisation.png`,
     },
 ]
 
@@ -404,7 +404,7 @@ const whiteIcons: IconSchema[] = [
         category: 'generic',
         color: 'white',
         tags: ['growth', 'company', 'expansion', 'scale', 'business', 'success', 'progress'],
-        pngUrl: `${BASE}/white/generic/Company+growth+white.png`,
+        pngUrl: `${BASE}/white/generic/company+growth+white.png`,
     },
     {
         id: 'creative-content-generic-white',
@@ -444,7 +444,7 @@ const whiteIcons: IconSchema[] = [
         category: 'generic',
         color: 'white',
         tags: ['leadership', 'change', 'management', 'transition', 'strategy', 'direction', 'vision'],
-        pngUrl: `${BASE}/white/generic/Leadership+change+white.png`,
+        pngUrl: `${BASE}/white/generic/leadership+change+white.png`,
     },
     {
         id: 'partnership-generic-white',
@@ -460,7 +460,7 @@ const whiteIcons: IconSchema[] = [
         category: 'generic',
         color: 'white',
         tags: ['revenue', 'income', 'sales', 'profit', 'money', 'earnings', 'roi'],
-        pngUrl: `${BASE}/white/generic/Revenue+white.png`,
+        pngUrl: `${BASE}/white/generic/revenue+white.png`,
     },
     {
         id: 'user-experience-generic-white',
@@ -484,7 +484,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['customer', 'support', 'service', 'help', 'assistance', 'care', 'helpdesk'],
-        pngUrl: `${BASE}/white/marketing/Customer+Support+white.png`,
+        pngUrl: `${BASE}/white/marketing/customer+support+white.png`,
     },
     {
         id: 'global-campaign-marketing-white',
@@ -492,7 +492,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['global', 'campaign', 'international', 'worldwide', 'reach', 'market', 'expansion'],
-        pngUrl: `${BASE}/white/marketing/Global+Campaign+white.png`,
+        pngUrl: `${BASE}/white/marketing/global+campaign+white.png`,
     },
     {
         id: 'keyword-search-marketing-white',
@@ -500,7 +500,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['keyword', 'search', 'seo', 'query', 'terms', 'discovery', 'targeting'],
-        pngUrl: `${BASE}/white/marketing/Keyword+search+white.png`,
+        pngUrl: `${BASE}/white/marketing/keyword+search+white.png`,
     },
     {
         id: 'marketing-automation-marketing-white',
@@ -508,7 +508,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['automation', 'marketing', 'workflow', 'trigger', 'sequence', 'nurture', 'pipeline'],
-        pngUrl: `${BASE}/white/marketing/Marketing+Automation+white.png`,
+        pngUrl: `${BASE}/white/marketing/marketing+automation+white.png`,
     },
     {
         id: 'network-option1-marketing-white',
@@ -516,7 +516,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['network', 'connection', 'infrastructure', 'nodes', 'web', 'ecosystem', 'platform'],
-        pngUrl: `${BASE}/white/marketing/Network+Option+1+white.png`,
+        pngUrl: `${BASE}/white/marketing/network+option+1+white.png`,
     },
     {
         id: 'network-option2-marketing-white',
@@ -524,7 +524,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['network', 'connection', 'infrastructure', 'nodes', 'web', 'ecosystem', 'platform'],
-        pngUrl: `${BASE}/white/marketing/Network+Option+2+white.png`,
+        pngUrl: `${BASE}/white/marketing/network+option+2+white.png`,
     },
     {
         id: 'responsive-marketing-white',
@@ -532,7 +532,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['responsive', 'mobile', 'adaptive', 'design', 'device', 'screen', 'layout'],
-        pngUrl: `${BASE}/white/marketing/Responsive+White.png`,
+        pngUrl: `${BASE}/white/marketing/responsive+white.png`,
     },
     {
         id: 'sitemap-marketing-white',
@@ -540,7 +540,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['sitemap', 'structure', 'navigation', 'architecture', 'pages', 'crawl', 'index'],
-        pngUrl: `${BASE}/white/marketing/Sitemap+white.png`,
+        pngUrl: `${BASE}/white/marketing/sitemap+white.png`,
     },
     {
         id: 'social-network-marketing-white',
@@ -548,7 +548,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['social', 'network', 'media', 'community', 'platform', 'engagement', 'followers'],
-        pngUrl: `${BASE}/white/marketing/Social+Network+white.png`,
+        pngUrl: `${BASE}/white/marketing/social+network+white.png`,
     },
     {
         id: 'team-building-marketing-white',
@@ -556,7 +556,7 @@ const whiteIcons: IconSchema[] = [
         category: 'marketing',
         color: 'white',
         tags: ['team', 'building', 'people', 'culture', 'collaboration', 'hiring', 'talent'],
-        pngUrl: `${BASE}/white/marketing/TeamBuilding+white.png`,
+        pngUrl: `${BASE}/white/marketing/teambuilding+white.png`,
     },
     {
         id: 'active-search-seo-white',
@@ -564,7 +564,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['search', 'find', 'lookup', 'discovery', 'research', 'query', 'seo'],
-        pngUrl: `${BASE}/white/seo/Active+Search+white.png`,
+        pngUrl: `${BASE}/white/seo/active+search+white.png`,
     },
     {
         id: 'calendar-seo-white',
@@ -572,7 +572,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['calendar', 'schedule', 'planning', 'time', 'date', 'events', 'meeting'],
-        pngUrl: `${BASE}/white/seo/Calendar+white.png`,
+        pngUrl: `${BASE}/white/seo/calendar+white.png`,
     },
     {
         id: 'chat-seo-white',
@@ -580,7 +580,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['chat', 'message', 'conversation', 'communication', 'support', 'dialogue'],
-        pngUrl: `${BASE}/white/seo/Chat+White.png`,
+        pngUrl: `${BASE}/white/seo/chat+white.png`,
     },
     {
         id: 'cloud-sync-seo-white',
@@ -588,7 +588,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['cloud', 'sync', 'backup', 'storage', 'integration', 'data', 'upload'],
-        pngUrl: `${BASE}/white/seo/Cloud+Sync+white.png`,
+        pngUrl: `${BASE}/white/seo/cloud+sync+white.png`,
     },
     {
         id: 'coding-seo-white',
@@ -596,7 +596,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['coding', 'programming', 'development', 'engineering', 'software', 'code'],
-        pngUrl: `${BASE}/white/seo/Coding+white.png`,
+        pngUrl: `${BASE}/white/seo/coding+white.png`,
     },
     {
         id: 'data-analytics-seo-white',
@@ -612,7 +612,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['data', 'download', 'export', 'transfer', 'extract', 'retrieve'],
-        pngUrl: `${BASE}/white/seo/Data+Download+White.png`,
+        pngUrl: `${BASE}/white/seo/data+download+white.png`,
     },
     {
         id: 'email-marketing-option1-seo-white',
@@ -620,7 +620,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['email', 'marketing', 'newsletter', 'outreach', 'campaign', 'inbox'],
-        pngUrl: `${BASE}/white/seo/Email+Marketing+Option+1+white.png`,
+        pngUrl: `${BASE}/white/seo/email+marketing+option+1+white.png`,
     },
     {
         id: 'email-marketing-option2-seo-white',
@@ -628,7 +628,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['email', 'marketing', 'newsletter', 'outreach', 'campaign', 'inbox'],
-        pngUrl: `${BASE}/white/seo/Email+Marketing+Option+2+White.png`,
+        pngUrl: `${BASE}/white/seo/email+marketing+option+2+white.png`,
     },
     {
         id: 'increased-performance-seo-white',
@@ -636,7 +636,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['performance', 'increase', 'improve', 'optimize', 'boost', 'efficiency', 'results'],
-        pngUrl: `${BASE}/white/seo/Increased+Performance+white.png`,
+        pngUrl: `${BASE}/white/seo/increased+performance+white.png`,
     },
     {
         id: 'link-seo-white',
@@ -644,7 +644,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['link', 'connect', 'integration', 'url', 'backlink', 'reference', 'chain'],
-        pngUrl: `${BASE}/white/seo/Link+white.png`,
+        pngUrl: `${BASE}/white/seo/link+white.png`,
     },
     {
         id: 'online-support-seo-white',
@@ -652,7 +652,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['online', 'support', 'helpdesk', 'service', 'chat', 'remote', 'assistance'],
-        pngUrl: `${BASE}/white/seo/Online+Support+White.png`,
+        pngUrl: `${BASE}/white/seo/online+support+white.png`,
     },
     {
         id: 'seo-location-seo-white',
@@ -660,7 +660,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['seo', 'location', 'local', 'geo', 'map', 'targeting', 'search'],
-        pngUrl: `${BASE}/white/seo/SEO+Location+White.png`,
+        pngUrl: `${BASE}/white/seo/seo+location+white.png`,
     },
     {
         id: 'seo-option1-seo-white',
@@ -668,7 +668,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['seo', 'optimization', 'search', 'ranking', 'organic', 'visibility', 'engine'],
-        pngUrl: `${BASE}/white/seo/SEO+Option+1+White.png`,
+        pngUrl: `${BASE}/white/seo/seo+option+1+white.png`,
     },
     {
         id: 'seo-option2-seo-white',
@@ -676,7 +676,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['seo', 'optimization', 'search', 'ranking', 'organic', 'visibility', 'engine'],
-        pngUrl: `${BASE}/white/seo/SEO+option+2+white.png`,
+        pngUrl: `${BASE}/white/seo/seo+option+2+white.png`,
     },
     {
         id: 'seo-plugin-option2-seo-white',
@@ -684,7 +684,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['seo', 'plugin', 'tool', 'optimization', 'search', 'ranking', 'engine'],
-        pngUrl: `${BASE}/white/seo/SEO+Plugin+option+2+white.png`,
+        pngUrl: `${BASE}/white/seo/seo+plugin+option+2+white.png`,
     },
     {
         id: 'seo-plugin-seo-white',
@@ -692,7 +692,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['seo', 'plugin', 'tool', 'optimization', 'search', 'ranking', 'engine'],
-        pngUrl: `${BASE}/white/seo/Seo+Plugin+White.png`,
+        pngUrl: `${BASE}/white/seo/seo+plugin+white.png`,
     },
     {
         id: 'seo-seo-white',
@@ -700,7 +700,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['seo', 'search engine optimization', 'ranking', 'organic', 'visibility', 'traffic'],
-        pngUrl: `${BASE}/white/seo/SEO+white.png`,
+        pngUrl: `${BASE}/white/seo/seo+white.png`,
     },
     {
         id: 'target-seo-white',
@@ -708,7 +708,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['target', 'audience', 'goal', 'focus', 'aim', 'precision', 'segment'],
-        pngUrl: `${BASE}/white/seo/Target+white.png`,
+        pngUrl: `${BASE}/white/seo/target+white.png`,
     },
     {
         id: 'time-management-seo-white',
@@ -716,7 +716,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['time', 'management', 'efficiency', 'planning', 'deadline', 'schedule', 'productivity'],
-        pngUrl: `${BASE}/white/seo/Time+management+white.png`,
+        pngUrl: `${BASE}/white/seo/time+management+white.png`,
     },
     {
         id: 'traffic-seo-white',
@@ -724,7 +724,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['traffic', 'visits', 'sessions', 'users', 'web', 'inbound', 'acquisition'],
-        pngUrl: `${BASE}/white/seo/Traffic+white.png`,
+        pngUrl: `${BASE}/white/seo/traffic+white.png`,
     },
     {
         id: 'video-marketing-seo-white',
@@ -732,7 +732,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['video', 'marketing', 'content', 'media', 'youtube', 'visual', 'campaign'],
-        pngUrl: `${BASE}/white/seo/Video+marketing+White.png`,
+        pngUrl: `${BASE}/white/seo/video+marketing+white.png`,
     },
     {
         id: 'web-optimisation-seo-white',
@@ -740,7 +740,7 @@ const whiteIcons: IconSchema[] = [
         category: 'seo',
         color: 'white',
         tags: ['web', 'optimisation', 'performance', 'speed', 'core web vitals', 'loading', 'site'],
-        pngUrl: `${BASE}/white/seo/Web+Optimisation+white.png`,
+        pngUrl: `${BASE}/white/seo/web+optimisation+white.png`,
     },
 ]
 
