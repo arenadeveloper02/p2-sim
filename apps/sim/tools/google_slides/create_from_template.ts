@@ -45,6 +45,26 @@ interface SlideLike {
   blocks: BlockLike[]
 }
 
+// --- Image URL Pre-flight Check ---
+async function isImageUrlAccessible(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: 'HEAD' })
+    if (res.ok) return true
+    // Some servers don't support HEAD; fall back to a byte-range GET
+    const getRes = await fetch(url, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+    })
+    return getRes.ok || getRes.status === 206
+  } catch (err) {
+    logger.warn('Image URL accessibility check threw', {
+      url,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return false
+  }
+}
+
 // --- Exponential Backoff Wrapper ---
 async function fetchWithRetry(
   url: string,
@@ -369,7 +389,10 @@ export const createFromTemplateTool: ToolConfig<
     }
     const textEndIndexMap = buildTextEndIndexMap(presData)
 
-    // 4. Build a single massive batch of requests for ALL content replacements
+    // 4. Build a single massive batch of requests for ALL content replacements.
+    //    Image blocks require an async URL accessibility check first, so we
+    //    collect them separately and resolve all checks in parallel before
+    //    merging into the final batch.
     logger.info('Preparing batch content replacements', {
       presentationId,
       slideCount: slidesOrdered.length,
@@ -377,6 +400,9 @@ export const createFromTemplateTool: ToolConfig<
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const batchRequests: any[] = []
+
+    // Collect pending image checks: { objectId, imageUrl }
+    const imageCheckQueue: { objectId: string; imageUrl: string }[] = []
 
     for (let s = 0; s < slidesOrdered.length; s++) {
       const slideSchema = slidesOrdered[s] as SlideLike
@@ -399,7 +425,8 @@ export const createFromTemplateTool: ToolConfig<
         } else if (block.type === 'IMAGE' && content) {
           const imageUrl = typeof content === 'string' ? content : ''
           if (imageUrl) {
-            batchRequests.push({ replaceImage: { imageObjectId: objectId, url: imageUrl } })
+            // Queue for parallel pre-flight check instead of adding directly
+            imageCheckQueue.push({ objectId, imageUrl })
           }
         } else if (isList && Array.isArray(content) && content.length > 0) {
           const listText = content.join('\n')
@@ -412,6 +439,27 @@ export const createFromTemplateTool: ToolConfig<
             },
           })
           batchRequests.push({ insertText: { objectId, insertionIndex: 0, text: listText } })
+        }
+      }
+    }
+
+    // Run all image URL checks in parallel, then add only the passing ones to the batch
+    if (imageCheckQueue.length > 0) {
+      logger.info('Running image URL pre-flight checks', { count: imageCheckQueue.length })
+
+      const checkResults = await Promise.all(
+        imageCheckQueue.map(async ({ objectId, imageUrl }) => ({
+          objectId,
+          imageUrl,
+          accessible: await isImageUrlAccessible(imageUrl),
+        }))
+      )
+
+      for (const { objectId, imageUrl, accessible } of checkResults) {
+        if (accessible) {
+          batchRequests.push({ replaceImage: { imageObjectId: objectId, url: imageUrl } })
+        } else {
+          logger.warn('Skipping image replacement — URL not accessible', { objectId, imageUrl })
         }
       }
     }

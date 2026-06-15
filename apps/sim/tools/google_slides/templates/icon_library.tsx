@@ -177,7 +177,7 @@ const blackIcons: IconSchema[] = [
         category: 'marketing',
         color: 'black',
         tags: ['social', 'network', 'media', 'community', 'platform', 'engagement', 'followers'],
-        pngUrl: `${BASE}/black/marketing/social+setwork.png`,
+        pngUrl: `${BASE}/black/marketing/social+network.png`,
     },
     {
         id: 'team-building-marketing',
@@ -380,7 +380,7 @@ const whiteIcons: IconSchema[] = [
         category: 'generic',
         color: 'white',
         tags: ['ai', 'artificial intelligence', 'adaptation', 'machine learning', 'smart', 'automation'],
-        pngUrl: `${BASE}/white/generic/adaptation+-+white.png`,
+        pngUrl: `${BASE}/white/generic/ai+adaptation+-+white.png`,
     },
     {
         id: 'app-development-generic-white',
