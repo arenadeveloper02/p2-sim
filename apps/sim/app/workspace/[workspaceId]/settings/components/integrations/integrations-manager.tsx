@@ -1365,12 +1365,15 @@ export function IntegrationsManager() {
           />
         </div>
         <h1 className='font-semibold text-heading-darker text-lg'>
-          VIMI is your always-on AI assistant that listens across your work ecosystem.
+          Let's set up Arena, connect your core tools to get started.
         </h1>
         <p className='mb-3 font-normal text-heading-darker text-sm'>
-          Connect your core tools to unlock its full potential. It keeps a continuous pulse on your
+          {/* Connect your core tools to unlock its full potential. It keeps a continuous pulse on your
           work and surfaces the most important updates in one place—so nothing critical slips
-          through the cracks.
+          through the cracks. */}
+          Arena's AI and Vimi, works by syncing with the tools you already use. Connect them now so
+          VIMI can keep a continuous pulse on your work and surface what matters from the moment you
+          start.
         </p>
 
         {requestedIntegrationsToConnect.length > 0 && (

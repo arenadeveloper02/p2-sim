@@ -16,7 +16,6 @@ import {
 } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
   secureFetchWithPinnedIP,
@@ -34,6 +33,7 @@ import {
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
 
 const logger = createLogger('ImageProxyAPI')
@@ -580,8 +580,7 @@ async function generateWithOpenAI(
         ? pickAllowed(body.moderation, OPENAI_MODERATION_LEVELS, 'auto')
         : undefined,
       inputImage,
-      inputImageMimeType:
-        typeof inputImageMimeType === 'string' ? inputImageMimeType : undefined,
+      inputImageMimeType: typeof inputImageMimeType === 'string' ? inputImageMimeType : undefined,
     })
 
     return {

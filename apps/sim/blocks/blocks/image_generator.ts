@@ -1207,7 +1207,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     },
     inputImageUrl: {
       type: 'string',
-      description: 'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
+      description:
+        'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
     },
     inputImages: {
       type: 'json',

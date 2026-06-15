@@ -12,7 +12,9 @@ export type CopilotStreamBillingSource = BillingUpdateCostBody['source']
  * Maps the Go route for this mothership request to the `source` field on
  * `POST /api/billing/update-cost`.
  */
-export function resolveCopilotBillingSourceFromGoRoute(goRoute: string): CopilotStreamBillingSource {
+export function resolveCopilotBillingSourceFromGoRoute(
+  goRoute: string
+): CopilotStreamBillingSource {
   if (goRoute.startsWith('/api/mothership/execute')) {
     return 'mothership_block'
   }
