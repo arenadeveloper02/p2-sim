@@ -10,7 +10,6 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
-import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
 import { captureServerEvent } from '@/lib/posthog/server'
 import {
   checkWorkspaceAccess,
@@ -161,8 +160,6 @@ export const PATCH = withRouteHandler(
 
       await db.transaction(async (tx) => {
         for (const update of body.updates) {
-          const isNew = !permLookup.has(update.userId)
-
           await tx
             .delete(permissions)
             .where(
@@ -182,10 +179,6 @@ export const PATCH = withRouteHandler(
             createdAt: new Date(),
             updatedAt: new Date(),
           })
-
-          if (isNew) {
-            await applyWorkspaceAutoAddGroup(tx, workspaceId, update.userId)
-          }
         }
       })
 

@@ -6,7 +6,7 @@ import { getTrigger } from '@/triggers'
 
 export const CalComBlock: BlockConfig<ToolResponse> = {
   type: 'calcom',
-  name: 'Cal Com',
+  name: 'Cal.com',
   description: 'Manage Cal.com bookings, event types, schedules, and availability',
   authMode: AuthMode.OAuth,
   triggerAllowed: true,
@@ -920,6 +920,7 @@ Return ONLY valid JSON - no explanations.`,
 
 export const CalComBlockMeta = {
   tags: ['scheduling', 'calendar', 'meeting'],
+  url: 'https://cal.com',
   templates: [
     {
       icon: CalComIcon,

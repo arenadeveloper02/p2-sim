@@ -19,7 +19,7 @@ export const NotionBlock: BlockConfig<NotionResponse> = {
   docsLink: 'https://docs.sim.ai/integrations/notion',
   category: 'tools',
   integrationType: IntegrationType.Documents,
-  bgColor: '#181C1E',
+  bgColor: '#FFFFFF',
   icon: NotionIcon,
   subBlocks: [
     {
@@ -430,7 +430,7 @@ export const NotionV2Block: BlockConfig<any> = {
   docsLink: 'https://docs.sim.ai/integrations/notion',
   category: 'tools',
   integrationType: IntegrationType.Documents,
-  bgColor: '#181C1E',
+  bgColor: '#FFFFFF',
   icon: NotionIcon,
   hideFromToolbar: false,
   subBlocks: [
@@ -558,6 +558,7 @@ export const NotionV2Block: BlockConfig<any> = {
 
 export const NotionBlockMeta = {
   tags: ['note-taking', 'knowledge-base', 'content-management'],
+  url: 'https://www.notion.com',
   templates: [
     {
       icon: Send,
@@ -661,4 +662,5 @@ export const NotionBlockMeta = {
 
 export const NotionV2BlockMeta = {
   tags: ['note-taking', 'knowledge-base', 'content-management'],
+  url: 'https://www.notion.com',
 } as const satisfies BlockMeta

@@ -14,7 +14,7 @@ const {
   mockSetActiveOrganizationForCurrentSession,
   mockSyncUsageLimitsFromSubscription,
   mockSyncWorkspaceEnvCredentials,
-  mockApplyWorkspaceAutoAddGroup,
+  mockIsWorkspaceOnEnterprisePlan,
   mockFeatureFlags,
 } = vi.hoisted(() => ({
   mockEnsureUserInOrganization: vi.fn(),
@@ -26,7 +26,7 @@ const {
   mockSetActiveOrganizationForCurrentSession: vi.fn(),
   mockSyncUsageLimitsFromSubscription: vi.fn(),
   mockSyncWorkspaceEnvCredentials: vi.fn(),
-  mockApplyWorkspaceAutoAddGroup: vi.fn(),
+  mockIsWorkspaceOnEnterprisePlan: vi.fn(async () => true),
   mockFeatureFlags: { isBillingEnabled: true },
 }))
 
@@ -60,16 +60,16 @@ vi.mock('@/lib/auth/active-organization', () => ({
   setActiveOrganizationForCurrentSession: mockSetActiveOrganizationForCurrentSession,
 }))
 
+vi.mock('@/lib/billing/core/subscription', () => ({
+  isWorkspaceOnEnterprisePlan: mockIsWorkspaceOnEnterprisePlan,
+}))
+
 vi.mock('@/lib/billing/core/usage', () => ({
   syncUsageLimitsFromSubscription: mockSyncUsageLimitsFromSubscription,
 }))
 
 vi.mock('@/lib/credentials/environment', () => ({
   syncWorkspaceEnvCredentials: mockSyncWorkspaceEnvCredentials,
-}))
-
-vi.mock('@/lib/permission-groups/auto-add', () => ({
-  applyWorkspaceAutoAddGroup: mockApplyWorkspaceAutoAddGroup,
 }))
 
 import { acceptInvitation } from '@/lib/invitations/core'
@@ -165,7 +165,6 @@ describe('acceptInvitation', () => {
     expect(mockEnsureUserInOrganization).not.toHaveBeenCalled()
     expect(mockSetActiveOrganizationForCurrentSession).not.toHaveBeenCalled()
     expect(mockSyncUsageLimitsFromSubscription).not.toHaveBeenCalled()
-    expect(mockApplyWorkspaceAutoAddGroup).toHaveBeenCalled()
     expect(dbChainMockFns.values).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'external-user',
@@ -497,7 +496,6 @@ describe('acceptInvitation', () => {
       expect(result.kind).toBe('already-processed')
     }
     // Aborted before granting workspace access — no zombie permission write.
-    expect(mockApplyWorkspaceAutoAddGroup).not.toHaveBeenCalled()
     expect(mockSetActiveOrganizationForCurrentSession).not.toHaveBeenCalled()
   })
 })
