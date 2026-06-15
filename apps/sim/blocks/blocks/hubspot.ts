@@ -208,6 +208,15 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Create Ticket', id: 'create_ticket' },
         { label: 'Update Ticket', id: 'update_ticket' },
         { label: 'Search Tickets', id: 'search_tickets' },
+        { label: 'Get Notes', id: 'get_notes' },
+        { label: 'Create Note', id: 'create_note' },
+        { label: 'Search Notes', id: 'search_notes' },
+        { label: 'Get Emails', id: 'get_emails' },
+        { label: 'Create Email', id: 'create_email' },
+        { label: 'Search Emails', id: 'search_emails' },
+        { label: 'Get Properties', id: 'get_properties' },
+        { label: 'List Associations', id: 'list_associations' },
+        { label: 'Create Association', id: 'create_association' },
         { label: 'Get Line Items', id: 'get_line_items' },
         { label: 'Create Line Item', id: 'create_line_item' },
         { label: 'Update Line Item', id: 'update_line_item' },
@@ -615,6 +624,95 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       required: true,
     },
     {
+      id: 'noteId',
+      title: 'Note ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all notes',
+      condition: { field: 'operation', value: 'get_notes' },
+    },
+    {
+      id: 'emailId',
+      title: 'Email ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all emails',
+      condition: { field: 'operation', value: 'get_emails' },
+    },
+    {
+      id: 'objectType',
+      title: 'Object Type',
+      type: 'short-input',
+      placeholder: 'e.g., "contacts", "companies", "deals", "tickets"',
+      condition: {
+        field: 'operation',
+        value: ['get_properties', 'list_associations', 'create_association'],
+      },
+      required: true,
+    },
+    {
+      id: 'propertyName',
+      title: 'Property Name',
+      type: 'short-input',
+      placeholder: 'Leave empty to return all properties (e.g., "hs_lead_status")',
+      condition: { field: 'operation', value: 'get_properties' },
+    },
+    {
+      id: 'archived',
+      title: 'Archived Only',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'get_properties' },
+    },
+    {
+      id: 'objectId',
+      title: 'Record ID',
+      type: 'short-input',
+      placeholder: 'ID of the source record',
+      condition: { field: 'operation', value: ['list_associations', 'create_association'] },
+      required: true,
+    },
+    {
+      id: 'toObjectType',
+      title: 'To Object Type',
+      type: 'short-input',
+      placeholder: 'e.g., "emails", "notes", "contacts"',
+      condition: { field: 'operation', value: ['list_associations', 'create_association'] },
+      required: true,
+    },
+    {
+      id: 'toObjectId',
+      title: 'To Record ID',
+      type: 'short-input',
+      placeholder: 'ID of the target record',
+      condition: { field: 'operation', value: 'create_association' },
+      required: true,
+    },
+    {
+      id: 'associationCategory',
+      title: 'Association Category',
+      type: 'dropdown',
+      options: [
+        { label: 'HubSpot Defined', id: 'HUBSPOT_DEFINED' },
+        { label: 'User Defined', id: 'USER_DEFINED' },
+        { label: 'Integrator Defined', id: 'INTEGRATOR_DEFINED' },
+      ],
+      value: () => 'HUBSPOT_DEFINED',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'create_association' },
+    },
+    {
+      id: 'associationTypeId',
+      title: 'Association Type ID',
+      type: 'short-input',
+      placeholder: 'Leave empty for the default association (e.g., 198 = email→contact)',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'create_association' },
+    },
+    {
       id: 'lineItemId',
       title: 'Line Item ID',
       type: 'short-input',
@@ -806,6 +904,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
           'update_line_item',
           'create_appointment',
           'update_appointment',
+          'create_note',
+          'create_email',
         ],
       },
       wandConfig: {
@@ -947,10 +1047,13 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_commerce_payments',
           'get_subscriptions',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
           'get_carts',
+          'get_users',
         ],
       },
     },
@@ -971,6 +1074,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_commerce_payments',
           'get_subscriptions',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
@@ -981,6 +1086,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'create_ticket',
           'create_line_item',
           'create_appointment',
+          'create_note',
+          'create_email',
         ],
       },
     },
@@ -998,11 +1105,14 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_companies',
           'get_deals',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
           'get_carts',
           'list_owners',
+          'list_associations',
           'get_marketing_events',
           'get_lists',
           'search_contacts',
@@ -1016,6 +1126,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'list_imports',
           'search_deals',
           'search_tickets',
+          'search_notes',
+          'search_emails',
         ],
       },
     },
@@ -1032,11 +1144,14 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_companies',
           'get_deals',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
           'get_carts',
           'list_owners',
+          'list_associations',
           'get_users',
           'get_marketing_events',
           'get_lists',
@@ -1053,6 +1168,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'list_imports',
           'search_deals',
           'search_tickets',
+          'search_notes',
+          'search_emails',
         ],
       },
     },
@@ -1068,6 +1185,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'search_companies',
           'search_deals',
           'search_tickets',
+          'search_notes',
+          'search_emails',
           'get_lists',
         ],
       },
@@ -1080,7 +1199,14 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
         'JSON array of filter groups (e.g., [{"filters":[{"propertyName":"email","operator":"EQ","value":"test@example.com"}]}])',
       condition: {
         field: 'operation',
-        value: ['search_contacts', 'search_companies', 'search_deals', 'search_tickets'],
+        value: [
+          'search_contacts',
+          'search_companies',
+          'search_deals',
+          'search_tickets',
+          'search_notes',
+          'search_emails',
+        ],
       },
       wandConfig: {
         enabled: true,
@@ -1284,7 +1410,14 @@ Return ONLY the JSON array of filter groups - no explanations, no markdown, no e
       mode: 'advanced',
       condition: {
         field: 'operation',
-        value: ['search_contacts', 'search_companies', 'search_deals', 'search_tickets'],
+        value: [
+          'search_contacts',
+          'search_companies',
+          'search_deals',
+          'search_tickets',
+          'search_notes',
+          'search_emails',
+        ],
       },
       wandConfig: {
         enabled: true,
@@ -1409,7 +1542,14 @@ Return ONLY the JSON array of sort objects - no explanations, no markdown, no ex
       mode: 'advanced',
       condition: {
         field: 'operation',
-        value: ['search_contacts', 'search_companies', 'search_deals', 'search_tickets'],
+        value: [
+          'search_contacts',
+          'search_companies',
+          'search_deals',
+          'search_tickets',
+          'search_notes',
+          'search_emails',
+        ],
       },
       wandConfig: {
         enabled: true,
@@ -1590,6 +1730,17 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       'hubspot_create_ticket',
       'hubspot_update_ticket',
       'hubspot_search_tickets',
+      'hubspot_list_notes',
+      'hubspot_get_note',
+      'hubspot_create_note',
+      'hubspot_search_notes',
+      'hubspot_list_emails',
+      'hubspot_get_email',
+      'hubspot_create_email',
+      'hubspot_search_emails',
+      'hubspot_get_properties',
+      'hubspot_list_associations',
+      'hubspot_create_association',
       'hubspot_list_line_items',
       'hubspot_get_line_item',
       'hubspot_create_line_item',
@@ -1660,8 +1811,6 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_get_object'
           case 'list_association_types':
             return 'hubspot_list_association_types'
-          case 'list_associations':
-            return 'hubspot_list_associations'
           case 'get_commerce_payments':
             return params.commercePaymentId
               ? 'hubspot_get_commerce_payment'
@@ -1694,6 +1843,24 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_update_ticket'
           case 'search_tickets':
             return 'hubspot_search_tickets'
+          case 'get_notes':
+            return params.noteId ? 'hubspot_get_note' : 'hubspot_list_notes'
+          case 'create_note':
+            return 'hubspot_create_note'
+          case 'search_notes':
+            return 'hubspot_search_notes'
+          case 'get_emails':
+            return params.emailId ? 'hubspot_get_email' : 'hubspot_list_emails'
+          case 'create_email':
+            return 'hubspot_create_email'
+          case 'search_emails':
+            return 'hubspot_search_emails'
+          case 'get_properties':
+            return 'hubspot_get_properties'
+          case 'list_associations':
+            return 'hubspot_list_associations'
+          case 'create_association':
+            return 'hubspot_create_association'
           case 'get_line_items':
             return params.lineItemId ? 'hubspot_get_line_item' : 'hubspot_list_line_items'
           case 'create_line_item':
@@ -1733,6 +1900,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           sorts,
           associations,
           listName,
+          associationTypeId,
+          archived,
           ...rest
         } = params
 
@@ -1758,6 +1927,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'update_line_item',
           'create_appointment',
           'update_appointment',
+          'create_note',
+          'create_email',
         ]
         if (propertiesToSet && createUpdateOps.includes(operation as string)) {
           cleanParams.properties = propertiesToSet
@@ -1772,16 +1943,26 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'get_commerce_payments',
           'get_subscriptions',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
           'get_carts',
+          'get_users',
         ]
         if (properties && !searchProperties && getListOps.includes(operation as string)) {
           cleanParams.properties = properties
         }
 
-        const searchOps = ['search_contacts', 'search_companies', 'search_deals', 'search_tickets']
+        const searchOps = [
+          'search_contacts',
+          'search_companies',
+          'search_deals',
+          'search_tickets',
+          'search_notes',
+          'search_emails',
+        ]
         if (searchProperties && searchOps.includes(operation as string)) {
           cleanParams.properties = searchProperties
         }
@@ -1802,6 +1983,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'create_ticket',
           'create_line_item',
           'create_appointment',
+          'create_note',
+          'create_email',
         ]
         if (associations && associationOps.includes(operation as string)) {
           cleanParams.associations = associations
@@ -1809,6 +1992,18 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
 
         if (listName && operation === 'create_list') {
           cleanParams.name = listName
+        }
+
+        if (
+          operation === 'create_association' &&
+          associationTypeId !== undefined &&
+          associationTypeId !== ''
+        ) {
+          cleanParams.associationTypeId = Number(associationTypeId)
+        }
+
+        if (operation === 'get_properties' && archived !== undefined && archived !== '') {
+          cleanParams.archived = archived === true || archived === 'true'
         }
 
         if (operation === 'get_lists') {
@@ -1870,11 +2065,6 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
         'Interval for email statistics histogram (DAY, HOUR, MINUTE, MONTH, QUARTER, QUARTER_HOUR, SECOND, WEEK, YEAR)',
     },
     emailIds: { type: 'string', description: 'Comma-separated list of email IDs (numbers only)' },
-    emailId: { type: 'string', description: 'Email ID to retrieve' },
-    archived: {
-      type: 'string',
-      description: 'Specifies whether to return archived emails (true/false)',
-    },
     createdAfter: {
       type: 'string',
       description: 'Only return emails created after the specified time (ISO8601 format)',
@@ -1910,6 +2100,12 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     cartId: { type: 'string', description: 'Cart ID' },
     eventId: { type: 'string', description: 'Marketing event ID' },
     listId: { type: 'string', description: 'List ID' },
+    noteId: { type: 'string', description: 'Note ID' },
+    emailId: { type: 'string', description: 'Email engagement ID' },
+    archived: { type: 'boolean', description: 'Whether to return only archived properties' },
+    toObjectId: { type: 'string', description: 'Target record ID for associations' },
+    associationCategory: { type: 'string', description: 'Association category for a labeled link' },
+    associationTypeId: { type: 'number', description: 'Association type ID for a labeled link' },
     idProperty: { type: 'string', description: 'Property name to use as unique identifier' },
     propertiesToSet: { type: 'json', description: 'Properties to create/update (JSON object)' },
     properties: {
@@ -1969,8 +2165,6 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     budgetItem: { type: 'json', description: 'Campaign budget item' },
     assets: { type: 'json', description: 'Campaign assets' },
     histogram: { type: 'json', description: 'Email statistics histogram data' },
-    email: { type: 'json', description: 'Email object with all properties' },
-    emails: { type: 'json', description: 'Array of email objects' },
     deal: { type: 'json', description: 'Single deal object' },
     tickets: { type: 'json', description: 'Array of ticket objects' },
     ticket: { type: 'json', description: 'Single ticket object' },
@@ -1987,6 +2181,24 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     event: { type: 'json', description: 'Single marketing event object' },
     lists: { type: 'json', description: 'Array of list objects' },
     list: { type: 'json', description: 'Single list object' },
+    notes: { type: 'json', description: 'Array of note objects' },
+    note: { type: 'json', description: 'Single note object' },
+    emails: { type: 'json', description: 'Array of email engagement objects' },
+    email: { type: 'json', description: 'Single email engagement object' },
+    properties: {
+      type: 'json',
+      description: 'Array of property definitions (name, label, type, fieldType, options)',
+    },
+    results: {
+      type: 'json',
+      description: 'Array of associated records (toObjectId, associationTypes)',
+    },
+    fromObjectId: { type: 'string', description: 'Source record ID (for create association)' },
+    toObjectId: {
+      type: 'string',
+      description: 'Associated target record ID (for create association)',
+    },
+    labels: { type: 'json', description: 'Association labels (for create association)' },
     total: { type: 'number', description: 'Total number of matching results (for search)' },
     paging: { type: 'json', description: 'Pagination info with next/prev cursors' },
     metadata: { type: 'json', description: 'Operation metadata' },
@@ -2001,6 +2213,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
 
 export const HubSpotBlockMeta = {
   tags: ['marketing', 'sales-engagement', 'customer-support'],
+  url: 'https://www.hubspot.com',
   templates: [
     {
       icon: HubspotIcon,
@@ -2072,6 +2285,16 @@ export const HubSpotBlockMeta = {
       tags: ['support', 'automation', 'crm'],
       alsoIntegrations: ['slack'],
     },
+    {
+      icon: HubspotIcon,
+      title: 'Backfill HubSpot contact email history from Gmail',
+      prompt:
+        'Build a workflow that finds HubSpot contacts in the lead stage with no logged email activity, searches my Gmail for each person’s thread, and logs it back to HubSpot as an email engagement associated with the contact.',
+      modules: ['agent', 'workflows'],
+      category: 'sales',
+      tags: ['sales', 'crm', 'automation'],
+      alsoIntegrations: ['gmail'],
+    },
   ],
   skills: [
     {
@@ -2105,6 +2328,24 @@ export const HubSpotBlockMeta = {
       description: 'Gather a HubSpot deal and its line items to assemble a quote summary.',
       content:
         '# Build Quote From Deal\n\nCompile the commercial details needed to quote a deal.\n\n## Steps\n1. Get the deal by ID for its name, amount, and stage.\n2. List line items and get details to capture product, quantity, and price for each.\n3. Get the associated quote if one exists, or summarize the line items into a draft quote.\n4. Total the line items and compare against the deal amount, flagging mismatches.\n\n## Output\nReturn the deal summary, an itemized line-item list with totals, and any existing quote reference. Flag discrepancies between the line-item total and the deal amount.',
+    },
+    {
+      name: 'log-email-to-contact',
+      description: 'Log an email engagement in HubSpot and associate it with a contact.',
+      content:
+        '# Log Email To Contact\n\nRecord an email activity on a contact’s timeline.\n\n## Steps\n1. Search contacts by email to resolve the contact ID.\n2. Create an email engagement with hs_timestamp, subject, body, and direction.\n3. Associate the email with the contact (associationTypeId 198, or the default association).\n4. List associations from the contact to emails to confirm the link.\n\n## Output\nReturn the email engagement ID and the associated contact ID.',
+    },
+    {
+      name: 'audit-contacts-missing-activity',
+      description: 'Find contacts in a lead stage that have no logged email activity.',
+      content:
+        '# Audit Contacts Missing Activity\n\nSurface leads with no recorded email history.\n\n## Steps\n1. Get properties for contacts to read the hs_lead_status options and confirm the target stage value.\n2. Search contacts filtered to that lead status, paginating through all results.\n3. For each contact, list associations to emails and flag those with zero associated emails.\n4. Collect the contacts that need follow-up.\n\n## Output\nReturn the list of contact IDs with no logged email activity, ready for backfill.',
+    },
+    {
+      name: 'inspect-property-options',
+      description: 'Read the enumeration (picklist) values for a HubSpot property.',
+      content:
+        '# Inspect Property Options\n\nList the allowed values for a dropdown property.\n\n## Steps\n1. Get properties for the object type (e.g., contacts).\n2. Find the property by name (e.g., lifecyclestage or hs_lead_status).\n3. Read its options array for label/value pairs.\n\n## Output\nReturn the property label and its enumeration options as label/value pairs.',
     },
   ],
 } as const satisfies BlockMeta

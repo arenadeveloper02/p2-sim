@@ -137,7 +137,7 @@ export function setupSubblocksHandlers(socket: AuthenticatedSocket, roomManager:
           socket.emit('operation-failed', {
             operationId,
             error: 'User session not found',
-            retryable: false,
+            retryable: true,
           })
         }
         return
@@ -257,7 +257,7 @@ async function flushSubblockUpdate(
         io.to(socketId).emit('operation-failed', {
           operationId: opId,
           error: 'Workflow not found',
-          retryable: false,
+          retryable: true,
         })
       })
       return
@@ -374,7 +374,7 @@ async function flushSubblockUpdate(
         io.to(socketId).emit('operation-failed', {
           operationId: opId,
           error: 'Block no longer exists',
-          retryable: false,
+          retryable: true,
         })
       })
     }

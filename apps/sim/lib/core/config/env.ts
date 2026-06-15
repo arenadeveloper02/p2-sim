@@ -31,6 +31,7 @@ export const env = createEnv({
     INTERNAL_USER_DOMAINS:                 z.string().optional(),                  // Comma-separated internal employee email domains (e.g. "thearena.ai"); used for isClientUser email fallback
     ADMIN_WORKSPACE_IDS:                   z.array(z.string()).optional(),         // Workspace IDs treated as admin workspaces (JSON array or comma-separated; used by isAdminWorkspace)
     BLOCKED_SIGNUP_DOMAINS:                z.string().optional(),                  // Comma-separated list of email domains blocked from signing up (e.g., "gmail.com,yahoo.com")
+    BLOCKED_EMAILS:                        z.string().optional(),                  // Comma-separated list of specific email addresses banned from the platform (signup, sign-in, executions)
     SIGNUP_MX_VALIDATION_ENABLED:          z.boolean().optional(),                 // Opt-in: validate the email's MX backend at signup (blocks no-MX domains and denylisted shared spam backends). Off by default; enable on hosted/abuse-targeted deployments.
     BLOCKED_EMAIL_MX_HOSTS:                z.string().optional(),                  // Comma-separated MX-host substrings blocked from signing up; matched against the domain's resolved MX backend to catch throwaway domains that share a mail backend. No defaults — operators supply their own list. Only used when SIGNUP_MX_VALIDATION_ENABLED is set.
     TRUSTED_ORIGINS:                       z.string().optional(),                  // Comma-separated additional origins to trust for auth (e.g., "https://app.example.com,https://www.example.com"). Merged into Better Auth trustedOrigins.
@@ -74,6 +75,7 @@ export const env = createEnv({
     ENTERPRISE_TIER_COST_LIMIT:            z.number().optional(),                  // Cost limit for enterprise tier users
     ENTERPRISE_STORAGE_LIMIT_GB:           z.number().optional().default(500),     // Default storage limit in GB for enterprise tier (can be overridden per org)
     BILLING_ENABLED:                       z.boolean().optional(),                 // Enable billing enforcement and usage tracking
+    FREE_API_DEPLOYMENT_GATE_ENABLED:      z.boolean().optional(),                 // Block free-plan accounts from programmatic execution (API/MCP/A2A/generic webhooks/chat embeds). Requires BILLING_ENABLED. Off by default for dark rollout
     TABLES_FRACTIONAL_ORDERING:            z.boolean().optional(),                 // Order table rows by fractional order_key (O(1) insert/delete) instead of integer position
 
     // Table feature limits (per plan). Apply when billing is disabled (free tier defaults) or for billed plans.

@@ -27,7 +27,6 @@ import { ensureTeamOrganizationForAcceptance } from '@/lib/billing/organizations
 import { reconcileOrganizationSeats } from '@/lib/billing/organizations/seats'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
-import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { getWorkspaceWithOwner } from '@/lib/workspaces/permissions/utils'
 
@@ -501,8 +500,6 @@ export async function acceptInvitation(
             updatedAt: new Date(),
           })
         }
-
-        await applyWorkspaceAutoAddGroup(tx, grant.workspaceId, input.userId)
 
         acceptedWorkspaceIds.push(grant.workspaceId)
       }

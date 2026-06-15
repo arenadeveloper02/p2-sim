@@ -20,8 +20,11 @@ import type {
   SelectableConfig,
   SortConfig,
 } from '@/app/workspace/[workspaceId]/components'
-import { EMPTY_CELL_PLACEHOLDER, Resource } from '@/app/workspace/[workspaceId]/components'
-import { FloatingOverflowText } from '@/app/workspace/[workspaceId]/components/resource/components/floating-overflow-text'
+import {
+  EMPTY_CELL_PLACEHOLDER,
+  FloatingOverflowText,
+  Resource,
+} from '@/app/workspace/[workspaceId]/components'
 import {
   ChunkContextMenu,
   ChunkEditor,
@@ -62,7 +65,7 @@ function UnsavedChangesModal({ open, onOpenChange, onDiscard }: UnsavedChangesMo
       onOpenChange={onOpenChange}
       srTitle='Unsaved Changes'
       title='Unsaved Changes'
-      description='You have unsaved changes. Are you sure you want to discard them?'
+      text='You have unsaved changes. Are you sure you want to discard them?'
       dismissLabel='Keep editing'
       confirm={{ label: 'Discard Changes', onClick: onDiscard }}
     />
@@ -128,11 +131,7 @@ export function Document({
   const userPermissions = useUserPermissionsContext()
 
   const { knowledgeBase } = useKnowledgeBase(knowledgeBaseId)
-  const {
-    document: documentData,
-    isLoading: isLoadingDocument,
-    error: documentError,
-  } = useDocument(knowledgeBaseId, documentId)
+  const { document: documentData, error: documentError } = useDocument(knowledgeBaseId, documentId)
 
   const [showTagsModal, setShowTagsModal] = useState(false)
 
@@ -156,7 +155,6 @@ export function Document({
     goToPage: initialGoToPage,
     error: initialError,
     updateChunk: initialUpdateChunk,
-    isFetching: isFetchingChunks,
   } = useDocumentChunks(
     knowledgeBaseId,
     documentId,
@@ -343,11 +341,15 @@ export function Document({
 
   const combinedError = documentError || searchError || initialError
 
-  const isConnectorDocument = Boolean(
-    documentData && 'connectorId' in documentData && documentData.connectorId
-  )
-  const effectiveKnowledgeBaseName = knowledgeBase?.name || knowledgeBaseName || 'Knowledge Base'
+  const isConnectorDocument = Boolean(documentData?.connectorId)
   const effectiveDocumentName = documentData?.filename || documentName || 'Document'
+  /**
+   * Breadcrumb labels. Fall back to the canonical '…' placeholder while names
+   * load (mirroring loading.tsx) instead of the generic "Knowledge Base" /
+   * "Document" labels used elsewhere.
+   */
+  const knowledgeBaseCrumbLabel = knowledgeBase?.name || knowledgeBaseName || '…'
+  const documentCrumbLabel = documentData?.filename || documentName || '…'
   const ConnectorIcon = documentData?.connectorType
     ? CONNECTOR_REGISTRY[documentData.connectorType]?.icon
     : null
@@ -524,7 +526,7 @@ export function Document({
         ? [
             { label: 'Knowledge Base', icon: Database, onClick: handleNavToKB },
             {
-              label: effectiveKnowledgeBaseName,
+              label: knowledgeBaseCrumbLabel,
               icon: Database,
               onClick: handleNavToKBDetail,
             },
@@ -533,12 +535,12 @@ export function Document({
         : [
             { label: 'Knowledge Base', icon: Database, onClick: handleNavToKB },
             {
-              label: effectiveKnowledgeBaseName,
+              label: knowledgeBaseCrumbLabel,
               icon: Database,
               onClick: handleNavToKBDetail,
             },
             {
-              label: effectiveDocumentName,
+              label: documentCrumbLabel,
               icon: DocumentIcon,
               editing: docRename.editingId
                 ? {
@@ -565,8 +567,8 @@ export function Document({
       combinedError,
       handleNavToKB,
       handleNavToKBDetail,
-      effectiveKnowledgeBaseName,
-      effectiveDocumentName,
+      knowledgeBaseCrumbLabel,
+      documentCrumbLabel,
       DocumentIcon,
       docRename.editingId,
       docRename.editValue,
@@ -897,17 +899,6 @@ export function Document({
     setContextMenuChunk(null)
   }, [closeContextMenu])
 
-  const prevDocumentIdRef = useRef<string>(documentId)
-  const isNavigatingToNewDoc = prevDocumentIdRef.current !== documentId
-
-  useEffect(() => {
-    if (documentData && documentData.id === documentId) {
-      prevDocumentIdRef.current = documentId
-    }
-  }, [documentData, documentId])
-
-  const isFetchingNewDoc = isNavigatingToNewDoc && isFetchingChunks
-
   const selectableConfig: SelectableConfig | undefined = isCompleted
     ? {
         selectedIds: selectedChunks,
@@ -1015,8 +1006,6 @@ export function Document({
     })
   }, [isCompleted, documentData?.processingStatus, displayChunks, searchQuery])
 
-  const emptyMessage = combinedError ? 'Error loading document' : undefined
-
   const saveLabel =
     saveStatus === 'saving'
       ? isCreatingNewChunk
@@ -1038,17 +1027,17 @@ export function Document({
     () => [
       { label: 'Knowledge Base', icon: Database, onClick: handleNavToKB },
       {
-        label: effectiveKnowledgeBaseName,
+        label: knowledgeBaseCrumbLabel,
         icon: Database,
         onClick: handleNavToKBDetail,
       },
-      { label: effectiveDocumentName, icon: DocumentIcon, onClick: handleBackAttempt },
+      { label: documentCrumbLabel, icon: DocumentIcon, onClick: handleBackAttempt },
     ],
     [
       handleNavToKB,
       handleNavToKBDetail,
-      effectiveKnowledgeBaseName,
-      effectiveDocumentName,
+      knowledgeBaseCrumbLabel,
+      documentCrumbLabel,
       DocumentIcon,
       handleBackAttempt,
     ]
@@ -1071,18 +1060,18 @@ export function Document({
     () => [
       { label: 'Knowledge Base', icon: Database, onClick: handleNavToKB },
       {
-        label: effectiveKnowledgeBaseName,
+        label: knowledgeBaseCrumbLabel,
         icon: Database,
         onClick: handleNavToKBDetail,
       },
-      { label: effectiveDocumentName, icon: DocumentIcon, onClick: handleClearSelectedChunk },
-      { label: 'Loading...', terminal: true },
+      { label: documentCrumbLabel, icon: DocumentIcon, onClick: handleClearSelectedChunk },
+      { label: '…', terminal: true },
     ],
     [
       handleNavToKB,
       handleNavToKBDetail,
-      effectiveKnowledgeBaseName,
-      effectiveDocumentName,
+      knowledgeBaseCrumbLabel,
+      documentCrumbLabel,
       DocumentIcon,
       handleClearSelectedChunk,
     ]
@@ -1149,7 +1138,7 @@ export function Document({
   if (isCreatingNewChunk && documentData) {
     return (
       <>
-        <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
+        <Resource>
           <Resource.Header
             icon={FileText}
             breadcrumbs={newChunkBreadcrumbs}
@@ -1167,7 +1156,7 @@ export function Document({
             saveRef={saveRef}
             onCreated={handleChunkCreated}
           />
-        </div>
+        </Resource>
 
         <UnsavedChangesModal
           open={showUnsavedChangesAlert}
@@ -1181,18 +1170,18 @@ export function Document({
   if (selectedChunkId) {
     if (!selectedChunk || !documentData) {
       return (
-        <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
+        <Resource>
           <Resource.Header icon={FileText} breadcrumbs={loadingBreadcrumbs} />
           <div className='flex flex-1 items-center justify-center'>
             <span className='text-[var(--text-muted)] text-sm'>Loading chunk…</span>
           </div>
-        </div>
+        </Resource>
       )
     }
 
     return (
       <>
-        <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
+        <Resource>
           <Resource.Header
             icon={FileText}
             breadcrumbs={editChunkBreadcrumbs}
@@ -1209,7 +1198,7 @@ export function Document({
             onSaveStatusChange={setSaveStatus}
             saveRef={saveRef}
           />
-        </div>
+        </Resource>
 
         <UnsavedChangesModal
           open={showUnsavedChangesAlert}
@@ -1246,13 +1235,10 @@ export function Document({
         <Resource.Table
           columns={CHUNK_COLUMNS}
           rows={combinedError ? [] : chunkRows}
-          sort={combinedError ? undefined : sortConfig}
           selectable={combinedError ? undefined : selectableConfig}
           onRowClick={isCompleted ? handleChunkClick : undefined}
           onRowContextMenu={isCompleted ? handleChunkContextMenu : undefined}
-          isLoading={isLoadingDocument || isFetchingNewDoc}
           pagination={paginationConfig}
-          emptyMessage={emptyMessage}
         />
       </Resource>
 
@@ -1289,25 +1275,22 @@ export function Document({
         onOpenChange={setShowDeleteDocumentDialog}
         srTitle='Delete Document'
         title='Delete Document'
-        description={
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>{effectiveDocumentName}</span>?{' '}
-            <span className='text-[var(--text-error)]'>
-              This will permanently delete the document and all {documentData?.chunkCount ?? 0}{' '}
-              chunk
-              {documentData?.chunkCount === 1 ? '' : 's'} within it.
-            </span>{' '}
-            {documentData?.connectorId ? (
-              <span className='text-[var(--text-error)]'>
-                This document is synced from a connector. Deleting it will permanently exclude it
-                from future syncs. To temporarily hide it from search, disable it instead.
-              </span>
-            ) : (
-              <>This action cannot be undone.</>
-            )}
-          </>
-        }
+        text={[
+          'Are you sure you want to delete ',
+          { text: effectiveDocumentName, bold: true },
+          '? ',
+          {
+            text: `This will permanently delete the document and all ${documentData?.chunkCount ?? 0} chunk${documentData?.chunkCount === 1 ? '' : 's'} within it.`,
+            error: true,
+          },
+          ' ',
+          documentData?.connectorId
+            ? {
+                text: 'This document is synced from a connector. Deleting it will permanently exclude it from future syncs. To temporarily hide it from search, disable it instead.',
+                error: true,
+              }
+            : 'This action cannot be undone.',
+        ]}
         confirm={{
           label: 'Delete Document',
           onClick: handleDeleteDocument,

@@ -1,4 +1,4 @@
-import { db } from '@sim/db'
+import { dbReplica } from '@sim/db'
 import {
   knowledgeBase,
   knowledgeConnector,
@@ -345,7 +345,7 @@ export async function generateWorkspaceContext(
     ] = await Promise.all([
       getUsersWithPermissions(workspaceId),
 
-      db
+      dbReplica
         .select({
           id: workflow.id,
           name: workflow.name,
@@ -357,7 +357,7 @@ export async function generateWorkspaceContext(
         .from(workflow)
         .where(and(eq(workflow.workspaceId, workspaceId), isNull(workflow.archivedAt))),
 
-      db
+      dbReplica
         .select({
           id: workflowFolder.id,
           name: workflowFolder.name,
@@ -366,7 +366,7 @@ export async function generateWorkspaceContext(
         .from(workflowFolder)
         .where(and(eq(workflowFolder.workspaceId, workspaceId), isNull(workflowFolder.archivedAt))),
 
-      db
+      dbReplica
         .select({
           id: knowledgeBase.id,
           name: knowledgeBase.name,
@@ -375,7 +375,7 @@ export async function generateWorkspaceContext(
         .from(knowledgeBase)
         .where(and(eq(knowledgeBase.workspaceId, workspaceId), isNull(knowledgeBase.deletedAt))),
 
-      db
+      dbReplica
         .select({
           id: userTableDefinitions.id,
           name: userTableDefinitions.name,
@@ -397,7 +397,7 @@ export async function generateWorkspaceContext(
 
       listCustomTools({ userId, workspaceId }),
 
-      db
+      dbReplica
         .select({
           id: mcpServers.id,
           name: mcpServers.name,
@@ -409,7 +409,7 @@ export async function generateWorkspaceContext(
 
       listSkills({ workspaceId, includeBuiltins: false }),
 
-      db
+      dbReplica
         .select({
           id: workflowSchedule.id,
           jobTitle: workflowSchedule.jobTitle,
@@ -433,7 +433,7 @@ export async function generateWorkspaceContext(
       tables.length > 0
         ? await Promise.all(
             tables.map(async (t) => {
-              const [row] = await db
+              const [row] = await dbReplica
                 .select({ count: count() })
                 .from(userTableRows)
                 .where(eq(userTableRows.tableId, t.id))
@@ -445,7 +445,7 @@ export async function generateWorkspaceContext(
     const kbIds = kbs.map((kb) => kb.id)
     const connectorRows =
       kbIds.length > 0
-        ? await db
+        ? await dbReplica
             .select({
               knowledgeBaseId: knowledgeConnector.knowledgeBaseId,
               connectorType: knowledgeConnector.connectorType,

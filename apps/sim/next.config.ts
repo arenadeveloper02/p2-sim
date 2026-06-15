@@ -374,6 +374,15 @@ const nextConfig: NextConfig = {
       permanent: true,
     })
 
+    // Legacy integration slug: the incident.io block's display name was fixed
+    // from `incidentio` to `incident.io`, which moved its catalog slug.
+    // Preserve the previously indexed landing URL.
+    redirects.push({
+      source: '/integrations/incidentio',
+      destination: '/integrations/incident-io',
+      permanent: true,
+    })
+
     return redirects
   },
   async rewrites() {

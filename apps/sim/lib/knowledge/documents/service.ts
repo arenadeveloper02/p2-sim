@@ -1895,8 +1895,6 @@ export async function updateDocument(
   })
 
   await db.transaction(async (tx) => {
-    await tx.update(document).set(dbUpdateData).where(eq(document.id, documentId))
-
     const hasTagUpdates = ALL_TAG_SLOTS.some((field) => typedUpdateData[field] !== undefined)
 
     if (hasTagUpdates) {
@@ -1914,6 +1912,8 @@ export async function updateDocument(
         .set(embeddingUpdateData)
         .where(eq(embedding.documentId, documentId))
     }
+
+    await tx.update(document).set(dbUpdateData).where(eq(document.id, documentId))
   })
 
   const updatedDocument = await db

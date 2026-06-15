@@ -621,12 +621,13 @@ export const workspaceBYOKKeys = pgTable(
       .references(() => workspace.id, { onDelete: 'cascade' }),
     providerId: text('provider_id').notNull(),
     encryptedApiKey: text('encrypted_api_key').notNull(),
+    name: text('name'),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
-    workspaceProviderUnique: uniqueIndex('workspace_byok_provider_unique').on(
+    workspaceProviderIdx: index('workspace_byok_workspace_provider_idx').on(
       table.workspaceId,
       table.providerId
     ),
@@ -667,6 +668,8 @@ export const settings = pgTable('settings', {
   // Canvas preferences
   snapToGridSize: integer('snap_to_grid_size').notNull().default(0), // 0 = off, 10-50 = grid size
   showActionBar: boolean('show_action_bar').notNull().default(true),
+
+  timezone: text('timezone'),
 
   // Copilot preferences - maps model_id to enabled/disabled boolean
   copilotEnabledModels: jsonb('copilot_enabled_models').notNull().default('{}'),
@@ -714,6 +717,12 @@ export const workflowSchedule = pgTable(
       onDelete: 'cascade',
     }),
     jobHistory: jsonb('job_history').$type<Array<{ timestamp: string; summary: string }>>(),
+    /** `@`-mentioned resources / `/`-invoked skills captured with the prompt, resolved into the agent run at fire time. */
+    contexts: jsonb('contexts').$type<Array<Record<string, unknown>>>(),
+    /** ISO timestamps of recurring occurrences the user deleted individually (EXDATE); the executor skips them. */
+    excludedDates: jsonb('excluded_dates').$type<string[]>(),
+    /** Recurrence end boundary: the schedule completes once its next run would fall after this instant. */
+    endsAt: timestamp('ends_at'),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -3337,9 +3346,9 @@ export const permissionGroup = pgTable(
   'permission_group',
   {
     id: text('id').primaryKey(),
-    workspaceId: text('workspace_id')
+    organizationId: text('organization_id')
       .notNull()
-      .references(() => workspace.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
     config: jsonb('config').notNull().default('{}'),
@@ -3349,16 +3358,17 @@ export const permissionGroup = pgTable(
     autoAddNewMembers: boolean('auto_add_new_members').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    isDefault: boolean('is_default').notNull().default(false),
   },
   (table) => ({
     createdByIdx: index('permission_group_created_by_idx').on(table.createdBy),
-    workspaceNameUnique: uniqueIndex('permission_group_workspace_name_unique').on(
-      table.workspaceId,
+    organizationNameUnique: uniqueIndex('permission_group_organization_name_unique').on(
+      table.organizationId,
       table.name
     ),
-    autoAddNewMembersUnique: uniqueIndex('permission_group_workspace_auto_add_unique')
-      .on(table.workspaceId)
-      .where(sql`auto_add_new_members = true`),
+    defaultGroupUnique: uniqueIndex('permission_group_organization_default_unique')
+      .on(table.organizationId)
+      .where(sql`is_default = true`),
   })
 )
 
@@ -3369,9 +3379,9 @@ export const permissionGroupMember = pgTable(
     permissionGroupId: text('permission_group_id')
       .notNull()
       .references(() => permissionGroup.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id')
+    organizationId: text('organization_id')
       .notNull()
-      .references(() => workspace.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -3384,8 +3394,8 @@ export const permissionGroupMember = pgTable(
       table.permissionGroupId,
       table.userId
     ),
-    workspaceUserUnique: uniqueIndex('permission_group_member_workspace_user_unique').on(
-      table.workspaceId,
+    organizationUserUnique: uniqueIndex('permission_group_member_organization_user_unique').on(
+      table.organizationId,
       table.userId
     ),
   })
@@ -3534,16 +3544,6 @@ export const userTableDefinitions = pgTable(
     maxRows: integer('max_rows').notNull().default(10000),
     rowCount: integer('row_count').notNull().default(0),
     archivedAt: timestamp('archived_at'),
-    /**
-     * Async-import state. NULL = a normal table (never imported in the background).
-     * `'importing'` hides rows until the load completes; `'ready'` reveals them;
-     * `'failed'` surfaces a partial import. See `apps/sim/lib/table/import-runner.ts`.
-     */
-    importStatus: text('import_status'),
-    importId: text('import_id'),
-    importError: text('import_error'),
-    importRowsProcessed: integer('import_rows_processed').notNull().default(0),
-    importStartedAt: timestamp('import_started_at'),
     createdBy: text('created_by')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -3594,7 +3594,20 @@ export const userTableRows = pgTable(
   },
   (table) => ({
     tableIdIdx: index('user_table_rows_table_id_idx').on(table.tableId),
-    dataGinIdx: index('user_table_rows_data_gin_idx').using('gin', table.data),
+    /**
+     * Tenant-scoped containment index (requires the `btree_gin` extension,
+     * created in migration 0232). A plain GIN on `data` matches `@>` candidates
+     * across every tenant sharing this relation — a hot value in someone else's
+     * table inflates everyone's scans (measured 1.07M candidates fetched for a
+     * 33k-row match). Leading with `table_id` intersects inside the index, and
+     * `jsonb_path_ops` indexes only containment paths: rare-equality probe
+     * 326ms → 17ms, and the index is smaller than the one it replaces.
+     */
+    dataGinIdx: index('user_table_rows_tenant_data_gin_idx').using(
+      'gin',
+      table.tableId,
+      sql`${table.data} jsonb_path_ops`
+    ),
     workspaceTableIdx: index('user_table_rows_workspace_table_idx').on(
       table.workspaceId,
       table.tableId
@@ -3605,6 +3618,56 @@ export const userTableRows = pgTable(
       table.orderKey,
       table.id
     ),
+    /**
+     * Keyset pagination by id within one table (the delete-job worker's page walk). Without it
+     * the planner scans the global pkey in id order, filtering out every other table's rows —
+     * O(all rows) per page.
+     */
+    tableIdIdIdx: index('user_table_rows_table_id_id_idx').on(table.tableId, table.id),
+  })
+)
+
+/**
+ * Background data-mutation jobs on a user table (CSV import, bulk filtered delete). One row per
+ * job. A detached worker streams progress into `rows_processed` and flips `status` to a terminal
+ * state; cancel flips `status` to `'canceled'` and the worker bails at its next ownership check.
+ *
+ * The partial-unique index on `table_id WHERE status = 'running'` is the concurrency gate: at most
+ * one running job per table, so a second import, or an import + delete, can't write into the same
+ * table at once. Distinct from `table_run_dispatches` — that fans workflow runs across rows via
+ * trigger.dev; this mutates row data directly.
+ */
+export const tableJobs = pgTable(
+  'table_jobs',
+  {
+    id: text('id').primaryKey(),
+    tableId: text('table_id')
+      .notNull()
+      .references(() => userTableDefinitions.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    /** `'import'` | `'delete'`. */
+    type: text('type').notNull(),
+    /** `'running'` → `'ready'` | `'failed'` | `'canceled'`. */
+    status: text('status').notNull().default('running'),
+    /** Type-specific descriptor (e.g. delete filter/exclusions). Nullable; reserved for future
+     *  resumability — today's workers carry their payload in-process via `runDetached`. */
+    payload: jsonb('payload'),
+    rowsProcessed: integer('rows_processed').notNull().default(0),
+    error: text('error'),
+    startedAt: timestamp('started_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    completedAt: timestamp('completed_at'),
+  },
+  (table) => ({
+    /** One running write-job (import/delete/backfill) per table. Exports are read-only and
+     *  excluded, so they can run alongside any other job. */
+    oneActivePerTable: uniqueIndex('table_jobs_one_active_per_table')
+      .on(table.tableId)
+      .where(sql`${table.status} = 'running' AND ${table.type} <> 'export'`),
+    watchdogIdx: index('table_jobs_watchdog_idx').on(table.status, table.updatedAt),
+    tableStartedIdx: index('table_jobs_table_started_idx').on(table.tableId, table.startedAt),
   })
 )
 
