@@ -382,7 +382,12 @@ export class DAGExecutor {
       loopOrchestrator as unknown as LoopOrchestrator,
       parallelOrchestrator
     )
-    return new ExecutionEngine(context, dag, edgeManager as unknown as EdgeManager, nodeOrchestrator)
+    return new ExecutionEngine(
+      context,
+      dag,
+      edgeManager as unknown as EdgeManager,
+      nodeOrchestrator
+    )
   }
 
   private createExecutionContext(
