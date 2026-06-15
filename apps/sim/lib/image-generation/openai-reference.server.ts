@@ -1,9 +1,9 @@
-import { resolveInlineImageData } from '@/app/api/google/api-service'
 import {
   DEFAULT_MAX_ERROR_BODY_BYTES,
   readResponseJsonWithLimit,
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
+import { resolveInlineImageData } from '@/app/api/google/api-service'
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024
 const MAX_IMAGE_JSON_BYTES = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 256 * 1024
@@ -37,7 +37,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function getStringProperty(record: Record<string, unknown> | undefined, key: string): string | undefined {
+function getStringProperty(
+  record: Record<string, unknown> | undefined,
+  key: string
+): string | undefined {
   if (!record) return undefined
   const value = record[key]
   return typeof value === 'string' && value.length > 0 ? value : undefined
@@ -70,7 +73,11 @@ export async function generateOpenAIImageEdit(
 
   const form = new FormData()
   const buffer = Buffer.from(inline.data, 'base64')
-  form.append('image', new Blob([buffer], { type: inline.mimeType }), `reference.${extensionFromContentType(inline.mimeType)}`)
+  form.append(
+    'image',
+    new Blob([buffer], { type: inline.mimeType }),
+    `reference.${extensionFromContentType(inline.mimeType)}`
+  )
   form.append('prompt', params.prompt)
   form.append('model', model)
   form.append('n', '1')

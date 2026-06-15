@@ -133,7 +133,7 @@ export function IntegrationBlockDetail({ integration, workspaceId }: Integration
               <ChipDropdown
                 variant='primary'
                 leftIcon={Plus}
-                placeholder='Add to Sim'
+                placeholder='Add to Arena'
                 showSelectedCheck={false}
                 options={connectOptions}
                 onChange={handleSelectConnectOption}
@@ -141,12 +141,12 @@ export function IntegrationBlockDetail({ integration, workspaceId }: Integration
               />
             ) : (
               <Chip variant='primary' leftIcon={Plus} onClick={() => setOAuthOpen(true)}>
-                Add to Sim
+                Add to Arena
               </Chip>
             )
           ) : (
             <Chip variant='primary' leftIcon={Plus} onClick={handleAddInChat}>
-              Add to Sim
+              Add to Arena
             </Chip>
           )}
         </div>

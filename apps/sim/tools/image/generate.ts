@@ -45,7 +45,11 @@ function toImageFile(image: unknown, contentType = 'image/png') {
   }
 }
 
-function normalizeImagesOutput(images: unknown[] | undefined, primaryImage: unknown, contentType?: string) {
+function normalizeImagesOutput(
+  images: unknown[] | undefined,
+  primaryImage: unknown,
+  contentType?: string
+) {
   if (Array.isArray(images) && images.length > 0) {
     return images.map((image) => toImageFile(image, contentType))
   }
@@ -71,7 +75,8 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'Provider API key. Only required for Fal.ai BYOK; OpenAI and Gemini use hosted keys.',
+      description:
+        'Provider API key. Only required for Fal.ai BYOK; OpenAI and Gemini use hosted keys.',
     },
     model: {
       type: 'string',
@@ -198,7 +203,8 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: false,
       visibility: 'hidden',
-      description: 'Warning emitted when multiple input images were provided and the latest one was used',
+      description:
+        'Warning emitted when multiple input images were provided and the latest one was used',
     },
   },
 
