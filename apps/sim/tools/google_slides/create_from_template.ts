@@ -319,7 +319,6 @@ export const createFromTemplateTool: ToolConfig<
       const objectIds: Record<string, string> = {}
       const newSlideId = generateObjectId()
 
-      // Map the slide's own object ID so we know exactly what its new ID is going to be.
       objectIds[templateSlideId] = newSlideId
 
       for (const b of blocks) {
@@ -328,7 +327,6 @@ export const createFromTemplateTool: ToolConfig<
         }
       }
 
-      // 1. Add the duplication request (inserts right after the template slide)
       duplicateRequests.push({
         duplicateObject: {
           objectId: templateSlideId,
@@ -336,12 +334,10 @@ export const createFromTemplateTool: ToolConfig<
         },
       })
 
-      // 2. Immediately move this newly created slide to the absolute end of the presentation
-      // Because this executes sequentially in the batch, the total length increases by 1 each time.
       duplicateRequests.push({
         updateSlidesPosition: {
           slideObjectIds: [newSlideId],
-          insertionIndex: originalSlidesToDelete.length + i + 1, // original length + loop index + 1
+          insertionIndex: originalSlidesToDelete.length + i + 1,
         },
       })
 
@@ -376,7 +372,7 @@ export const createFromTemplateTool: ToolConfig<
 
     logger.info('Fetching presentation state to build list maps', { presentationId })
 
-    // 3. Fetch the presentation EXACTLY ONCE to get text endIndexes for lists
+    // 3. Fetch presentation ONCE to get text endIndexes AND shape geometry
     const presRes = await fetchWithRetry(
       `https://slides.googleapis.com/v1/presentations/${presentationId}`,
       {
@@ -389,10 +385,19 @@ export const createFromTemplateTool: ToolConfig<
     }
     const textEndIndexMap = buildTextEndIndexMap(presData)
 
-    // 4. Build a single massive batch of requests for ALL content replacements.
-    //    Image blocks require an async URL accessibility check first, so we
-    //    collect them separately and resolve all checks in parallel before
-    //    merging into the final batch.
+    // Build shape geometry map for image size restoration
+    const shapeGeometryMap: Record<string, { size: any; transform: any }> = {}
+    for (const slide of presData.slides || []) {
+      for (const el of slide.pageElements || []) {
+        if (el.size && el.transform) {
+          shapeGeometryMap[el.objectId] = {
+            size: el.size,
+            transform: el.transform,
+          }
+        }
+      }
+    }
+
     logger.info('Preparing batch content replacements', {
       presentationId,
       slideCount: slidesOrdered.length,
@@ -425,12 +430,11 @@ export const createFromTemplateTool: ToolConfig<
         } else if (block.type === 'IMAGE' && content) {
           const imageUrl = typeof content === 'string' ? content : ''
           if (imageUrl) {
-            // Queue for parallel pre-flight check instead of adding directly
             imageCheckQueue.push({ objectId, imageUrl })
           }
         } else if (isList && Array.isArray(content) && content.length > 0) {
           const listText = content.join('\n')
-          const endIndex = textEndIndexMap[objectId] || 1 // Fallback to 1 if not found
+          const endIndex = textEndIndexMap[objectId] || 1
 
           batchRequests.push({
             deleteText: {
@@ -443,7 +447,7 @@ export const createFromTemplateTool: ToolConfig<
       }
     }
 
-    // Run all image URL checks in parallel, then add only the passing ones to the batch
+    // Run all image URL checks in parallel, then add only passing ones to the batch
     if (imageCheckQueue.length > 0) {
       logger.info('Running image URL pre-flight checks', { count: imageCheckQueue.length })
 
@@ -457,7 +461,45 @@ export const createFromTemplateTool: ToolConfig<
 
       for (const { objectId, imageUrl, accessible } of checkResults) {
         if (accessible) {
-          batchRequests.push({ replaceImage: { imageObjectId: objectId, url: imageUrl } })
+          // Replace the image content
+          batchRequests.push({
+            replaceImage: {
+              imageObjectId: objectId,
+              url: imageUrl,
+              imageReplaceMethod: 'CENTER_CROP',
+            },
+          })
+
+          // Reset crop properties so the new image is shown in full
+          batchRequests.push({
+            updateImageProperties: {
+              objectId,
+              imageProperties: {
+                cropProperties: {},
+              },
+              fields: 'cropProperties',
+            },
+          })
+
+          // Restore the original shape's size and position so the element
+          // doesn't shrink/expand after the image swap
+          const geo = shapeGeometryMap[objectId]
+          if (geo) {
+            batchRequests.push({
+              updatePageElementTransform: {
+                objectId,
+                transform: {
+                  ...geo.transform,
+                  unit: 'EMU',
+                },
+                applyMode: 'ABSOLUTE',
+              },
+            })
+          } else {
+            logger.warn('No geometry found for image shape — size may not be preserved', {
+              objectId,
+            })
+          }
         } else {
           logger.warn('Skipping image replacement — URL not accessible', { objectId, imageUrl })
         }
