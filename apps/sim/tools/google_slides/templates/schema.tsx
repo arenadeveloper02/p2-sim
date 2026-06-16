@@ -48,9 +48,15 @@ export interface ListBlock extends BaseBlock {
 export interface ImageBlock extends BaseBlock {
   type: 'IMAGE'
   role: 'PRIMARY_VISUAL' | 'SUPPORTING_VISUAL'
-  usage: string[] // Hints for image generation
-  width?: number // Optional guidance only
+  source?: 'icon_library' | 'stock_photo' | 'generated' | 'p2_users'
+  usage: string[]        // for icon_library: semantic hints for AI matching
+  // for stock_photo/generated: visual style hints
+  iconLibraryId?: string // filled by AI — matched icon id from IconLibrary
+  /** When source is 'icon_library', constrains selection to icons of this color variant. */
+  iconLibraryColor?: IconColor
+  width?: number
   height?: number
+  replaceable: boolean
 }
 
 /* ---------- Union Block ---------- */
@@ -67,6 +73,24 @@ export interface SlideSchema {
   templateSlideObjectId: string // Slide ID from TEMPLATE presentation
 
   blocks: Block[]
+}
+
+export type IconColor = 'black' | 'white'
+
+export interface IconSchema {
+  id: string
+  label: string
+  category: string
+  tags: string[]
+  pngUrl: string
+  svgUrl?: string
+  color: IconColor
+}
+
+export interface IconLibrary {
+  version: string
+  baseUrl: string
+  icons: IconSchema[]
 }
 
 /* ---------- Presentation Schema ---------- */

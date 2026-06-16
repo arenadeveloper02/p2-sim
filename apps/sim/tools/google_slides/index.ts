@@ -18,7 +18,9 @@ import { deleteTextTool } from '@/tools/google_slides/delete_text'
 import { duplicateTool } from '@/tools/google_slides/duplicate'
 import { duplicateObjectTool } from '@/tools/google_slides/duplicate_object'
 import { exportPresentationTool } from '@/tools/google_slides/export_presentation'
+import { getP2UsersTool } from '@/tools/google_slides/get_p2_users'
 import { getPageTool } from '@/tools/google_slides/get_page'
+import { getPresentationIconsTool } from '@/tools/google_slides/get_presentation_icons'
 import { getTemplateSchemaTool } from '@/tools/google_slides/get_template_schema'
 import { getThumbnailTool } from '@/tools/google_slides/get_thumbnail'
 import { groupObjectsTool } from '@/tools/google_slides/group_objects'
@@ -68,6 +70,8 @@ export const googleSlidesAddSlideTool = addSlideTool
 export const googleSlidesGetThumbnailTool = getThumbnailTool
 export const googleSlidesAddImageTool = addImageTool
 export const googleSlidesGetPageTool = getPageTool
+export const googleSlidesGetP2UsersTool = getP2UsersTool
+export const googleSlidesGetPresentationIconsTool = getPresentationIconsTool
 export const googleSlidesGetTemplateSchemaTool = getTemplateSchemaTool
 export const googleSlidesDeleteObjectTool = deleteObjectTool
 export const googleSlidesDuplicateObjectTool = duplicateObjectTool
