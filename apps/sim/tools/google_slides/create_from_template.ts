@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
-import { getTemplateMasterSchema } from './templates'
+import { P2_TEAM_MEMBERS } from '@/tools/google_slides/get_p2_users'
+import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
 
 const logger = createLogger('GoogleSlidesCreateFromTemplate')
@@ -37,12 +38,80 @@ interface BlockLike {
   role?: string
   shapeId: string
   content?: string | string[]
+  source?: 'icon_library' | 'stock_photo' | 'generated' | 'p2_users'
 }
 
 interface SlideLike {
   order: number
   templateSlideObjectId: string
   blocks: BlockLike[]
+}
+
+const KNOWN_IMAGE_HOST = 'arenav2image.s3.us-west-1.amazonaws.com'
+const ICON_LIBRARY_PATH_PREFIX = '/presentation-icons/'
+const P2_USERS_PATH_PREFIX = '/presentation-profile-images/'
+
+type KnownImageSource = 'icon_library' | 'p2_users'
+
+function normalizeImagePathForLookup(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    return decodeURIComponent(parsed.pathname).toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function getKnownImageSourceFromUrl(url: string): KnownImageSource | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname !== KNOWN_IMAGE_HOST) return null
+    if (parsed.pathname.startsWith(ICON_LIBRARY_PATH_PREFIX)) return 'icon_library'
+    if (parsed.pathname.startsWith(P2_USERS_PATH_PREFIX)) return 'p2_users'
+  } catch {
+    // ignore invalid URLs
+  }
+  return null
+}
+
+function isKnownCatalogImage(
+  blockSource: BlockLike['source'],
+  imageUrl: string
+): boolean {
+  if (blockSource === 'icon_library' || blockSource === 'p2_users') return true
+  return getKnownImageSourceFromUrl(imageUrl) !== null
+}
+
+let knownImageUrlIndex: Map<string, string> | null = null
+
+function getKnownImageUrlIndex(): Map<string, string> {
+  if (knownImageUrlIndex) return knownImageUrlIndex
+
+  const index = new Map<string, string>()
+  const addUrl = (url: string) => {
+    const key = normalizeImagePathForLookup(url)
+    if (key && !index.has(key)) {
+      index.set(key, url)
+    }
+  }
+
+  for (const icon of getPresentationIconLibrary().icons) {
+    addUrl(icon.pngUrl)
+    if (icon.svgUrl) addUrl(icon.svgUrl)
+  }
+  for (const member of P2_TEAM_MEMBERS) {
+    addUrl(member.url)
+  }
+
+  knownImageUrlIndex = index
+  return index
+}
+
+function resolveKnownCatalogImageUrl(imageUrl: string): string | null {
+  const key = normalizeImagePathForLookup(imageUrl)
+  if (!key) return null
+  const canonical = getKnownImageUrlIndex().get(key)
+  return canonical && canonical !== imageUrl ? canonical : null
 }
 
 // --- Image URL Pre-flight Check ---
@@ -63,6 +132,30 @@ async function isImageUrlAccessible(url: string): Promise<boolean> {
     })
     return false
   }
+}
+
+/**
+ * Returns an accessible image URL, correcting case for icon-library and P2-user assets when needed.
+ */
+async function resolveAccessibleImageUrl(
+  imageUrl: string,
+  blockSource?: BlockLike['source']
+): Promise<string | null> {
+  if (await isImageUrlAccessible(imageUrl)) return imageUrl
+
+  if (!isKnownCatalogImage(blockSource, imageUrl)) return null
+
+  const correctedUrl = resolveKnownCatalogImageUrl(imageUrl)
+  if (correctedUrl && (await isImageUrlAccessible(correctedUrl))) {
+    logger.info('Resolved image URL via case-insensitive catalog lookup', {
+      original: imageUrl,
+      resolved: correctedUrl,
+      source: blockSource ?? getKnownImageSourceFromUrl(imageUrl),
+    })
+    return correctedUrl
+  }
+
+  return null
 }
 
 // --- Exponential Backoff Wrapper ---
@@ -406,8 +499,12 @@ export const createFromTemplateTool: ToolConfig<
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const batchRequests: any[] = []
 
-    // Collect pending image checks: { objectId, imageUrl }
-    const imageCheckQueue: { objectId: string; imageUrl: string }[] = []
+    // Collect pending image checks: { objectId, imageUrl, source }
+    const imageCheckQueue: {
+      objectId: string
+      imageUrl: string
+      source?: BlockLike['source']
+    }[] = []
 
     for (let s = 0; s < slidesOrdered.length; s++) {
       const slideSchema = slidesOrdered[s] as SlideLike
@@ -430,7 +527,7 @@ export const createFromTemplateTool: ToolConfig<
         } else if (block.type === 'IMAGE' && content) {
           const imageUrl = typeof content === 'string' ? content : ''
           if (imageUrl) {
-            imageCheckQueue.push({ objectId, imageUrl })
+            imageCheckQueue.push({ objectId, imageUrl, source: block.source })
           }
         } else if (isList && Array.isArray(content) && content.length > 0) {
           const listText = content.join('\n')
@@ -452,15 +549,18 @@ export const createFromTemplateTool: ToolConfig<
       logger.info('Running image URL pre-flight checks', { count: imageCheckQueue.length })
 
       const checkResults = await Promise.all(
-        imageCheckQueue.map(async ({ objectId, imageUrl }) => ({
-          objectId,
-          imageUrl,
-          accessible: await isImageUrlAccessible(imageUrl),
-        }))
+        imageCheckQueue.map(async ({ objectId, imageUrl, source }) => {
+          const resolvedUrl = await resolveAccessibleImageUrl(imageUrl, source)
+          return {
+            objectId,
+            imageUrl: resolvedUrl,
+            accessible: resolvedUrl !== null,
+          }
+        })
       )
 
       for (const { objectId, imageUrl, accessible } of checkResults) {
-        if (accessible) {
+        if (accessible && imageUrl) {
           // Replace the image content
           batchRequests.push({
             replaceImage: {

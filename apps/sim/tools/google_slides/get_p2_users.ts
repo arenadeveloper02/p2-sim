@@ -20,7 +20,7 @@ interface GetP2UsersResponse {
 
 const BASE_URL = 'https://arenav2image.s3.us-west-1.amazonaws.com/presentation-profile-images'
 
-const TEAM_MEMBERS: P2User[] = [
+export const P2_TEAM_MEMBERS: P2User[] = [
   {
     name: 'Rajiv Parikh',
     designation: 'CEO',
@@ -42,7 +42,7 @@ const TEAM_MEMBERS: P2User[] = [
     url: `${BASE_URL}/Sanjiv%20Parikh.jpg`,
   },
   {
-    name: 'Kumar G.',
+    name: 'Kumar G',
     designation: 'Board Member, Founder, Vxtel & Virident',
     url: `${BASE_URL}/Kumar%20G.jpg`,
   },
@@ -87,9 +87,9 @@ const TEAM_MEMBERS: P2User[] = [
     url: `${BASE_URL}/Niketh.jpg`,
   },
   {
-    name: 'Rajesh',
+    name: 'Rajesh M',
     designation: 'Senior Director, Experience Design',
-    url: `${BASE_URL}/RajeshM.jpg`,
+    url: `${BASE_URL}/Rajesh%20M.jpg`,
   },
   {
     name: 'Seetha',
@@ -155,12 +155,12 @@ export const getP2UsersTool: ToolConfig<GetP2UsersParams, GetP2UsersResponse> = 
     const keyword = params.filter?.trim().toLowerCase()
 
     const users = keyword
-      ? TEAM_MEMBERS.filter(
+      ? P2_TEAM_MEMBERS.filter(
           (m) =>
             m.name.toLowerCase().includes(keyword) ||
             m.designation.toLowerCase().includes(keyword)
         )
-      : TEAM_MEMBERS
+      : P2_TEAM_MEMBERS
 
     return {
       success: true,
