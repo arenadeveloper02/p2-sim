@@ -16,6 +16,25 @@ const KEYS = {
 const SOCKET_KEY_TTL = 3600
 const SOCKET_PRESENCE_WORKFLOW_KEY_TTL = 24 * 60 * 60
 
+type RedisKeyType = 'hash' | 'string'
+
+function isWrongTypeError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('WRONGTYPE')
+}
+
+async function ensureKeyType(
+  redis: RedisClientType,
+  key: string,
+  expected: RedisKeyType
+): Promise<void> {
+  const type = await redis.type(key)
+  if (type === 'none') return
+  if (type !== expected) {
+    logger.warn('Deleting Redis key with unexpected type', { key, type, expected })
+    await redis.del(key)
+  }
+}
+
 /**
  * Lua script for atomic user removal from room.
  * Returns workflowId if user was removed, null otherwise.
@@ -171,8 +190,20 @@ export class RedisRoomManager implements IRoomManager {
     }
   }
 
+  private async ensureRoomKeys(workflowId: string, socketId: string): Promise<void> {
+    await Promise.all([
+      ensureKeyType(this.redis, KEYS.workflowUsers(workflowId), 'hash'),
+      ensureKeyType(this.redis, KEYS.workflowMeta(workflowId), 'hash'),
+      ensureKeyType(this.redis, KEYS.socketWorkflow(socketId), 'string'),
+      ensureKeyType(this.redis, KEYS.socketPresenceWorkflow(socketId), 'string'),
+      ensureKeyType(this.redis, KEYS.socketSession(socketId), 'hash'),
+    ])
+  }
+
   async addUserToRoom(workflowId: string, socketId: string, presence: UserPresence): Promise<void> {
     try {
+      await this.ensureRoomKeys(workflowId, socketId)
+
       const pipeline = this.redis.multi()
 
       pipeline.hSet(KEYS.workflowUsers(workflowId), socketId, JSON.stringify(presence))
@@ -236,6 +267,22 @@ export class RedisRoomManager implements IRoomManager {
         this.removeUserScriptSha = await this.redis.scriptLoad(REMOVE_USER_SCRIPT)
         return this.removeUserFromRoom(socketId, workflowIdHint, true)
       }
+      if (isWrongTypeError(error) && !retried) {
+        logger.warn('Corrupted realtime room keys detected during remove, clearing and retrying', {
+          socketId,
+          workflowIdHint,
+        })
+        const keysToDelete = [
+          KEYS.socketWorkflow(socketId),
+          KEYS.socketSession(socketId),
+          KEYS.socketPresenceWorkflow(socketId),
+        ]
+        if (workflowIdHint) {
+          keysToDelete.push(KEYS.workflowUsers(workflowIdHint), KEYS.workflowMeta(workflowIdHint))
+        }
+        await this.redis.del(keysToDelete)
+        return this.removeUserFromRoom(socketId, workflowIdHint, true)
+      }
       logger.error(`Failed to remove user from room: ${socketId}`, error)
       return null
     }
@@ -271,6 +318,7 @@ export class RedisRoomManager implements IRoomManager {
 
   async getWorkflowUsers(workflowId: string): Promise<UserPresence[]> {
     try {
+      await ensureKeyType(this.redis, KEYS.workflowUsers(workflowId), 'hash')
       const users = await this.redis.hGetAll(KEYS.workflowUsers(workflowId))
       return Object.entries(users)
         .map(([socketId, json]) => {

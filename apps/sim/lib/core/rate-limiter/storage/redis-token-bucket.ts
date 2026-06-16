@@ -76,6 +76,13 @@ return {tokens, maxTokens, lastRefillAt, nextRefillAt}
 export class RedisTokenBucket implements RateLimitStorageAdapter {
   constructor(private redis: Redis) {}
 
+  private isWrongTypeError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false
+    return error.message.includes(
+      'WRONGTYPE Operation against a key holding the wrong kind of value'
+    )
+  }
+
   async consumeTokens(
     key: string,
     tokens: number,
@@ -83,18 +90,28 @@ export class RedisTokenBucket implements RateLimitStorageAdapter {
   ): Promise<ConsumeResult> {
     const now = Date.now()
     const ttl = Math.ceil((config.refillIntervalMs * 2) / 1000)
+    const redisKey = `ratelimit:tb:${key}`
 
-    const result = (await this.redis.eval(
-      CONSUME_SCRIPT,
-      1,
-      `ratelimit:tb:${key}`,
-      now,
-      tokens,
-      config.maxTokens,
-      config.refillRate,
-      config.refillIntervalMs,
-      ttl
-    )) as [number, number, number, number]
+    const run = async () =>
+      (await this.redis.eval(
+        CONSUME_SCRIPT,
+        1,
+        redisKey,
+        now,
+        tokens,
+        config.maxTokens,
+        config.refillRate,
+        config.refillIntervalMs,
+        ttl
+      )) as [number, number, number, number]
+
+    const result = await run().catch(async (error: unknown) => {
+      if (!this.isWrongTypeError(error)) throw error
+      // Self-heal: a previous deploy may have stored this key as a non-hash (e.g. string).
+      // Delete and retry once so the new hash-based bucket can be created.
+      await this.redis.del(redisKey)
+      return await run()
+    })
 
     const [allowed, remaining, , nextRefill] = result
 
@@ -108,16 +125,24 @@ export class RedisTokenBucket implements RateLimitStorageAdapter {
 
   async getTokenStatus(key: string, config: TokenBucketConfig): Promise<TokenStatus> {
     const now = Date.now()
+    const redisKey = `ratelimit:tb:${key}`
 
-    const result = (await this.redis.eval(
-      STATUS_SCRIPT,
-      1,
-      `ratelimit:tb:${key}`,
-      now,
-      config.maxTokens,
-      config.refillRate,
-      config.refillIntervalMs
-    )) as [number, number, number, number]
+    const run = async () =>
+      (await this.redis.eval(
+        STATUS_SCRIPT,
+        1,
+        redisKey,
+        now,
+        config.maxTokens,
+        config.refillRate,
+        config.refillIntervalMs
+      )) as [number, number, number, number]
+
+    const result = await run().catch(async (error: unknown) => {
+      if (!this.isWrongTypeError(error)) throw error
+      await this.redis.del(redisKey)
+      return await run()
+    })
 
     const [tokensAvailable, maxTokens, lastRefillAt, nextRefillAt] = result
 
