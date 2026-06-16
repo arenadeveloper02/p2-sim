@@ -14,7 +14,7 @@ import { SettingsPage } from './settings'
  * section renderer has no matching branch and shows an empty panel.
  */
 const SETTINGS_REDIRECTS: Record<string, (workspaceId: string) => string> = {
-  integrations: (id) => `/workspace/${id}/integrations`,
+  // integrations: (id) => `/workspace/${id}/integrations`,
   skills: (id) => `/workspace/${id}/skills`,
 }
 

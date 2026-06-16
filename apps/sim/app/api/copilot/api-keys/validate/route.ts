@@ -8,7 +8,6 @@ import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import {
   checkOrgMemberUsageLimit,
   checkSelfHostedMothershipUsageLimits,
-  checkServerSideUsageLimits,
 } from '@/lib/billing/calculations/usage-monitor'
 import { CopilotValidateOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
@@ -89,7 +88,8 @@ export const POST = withRouteHandler((req: NextRequest) =>
 
         logger.info('[API VALIDATION] Validating usage limit', { userId })
         // const { isExceeded, currentUsage, limit } = await checkServerSideUsageLimits(userId)
-        const { isExceeded, currentUsage, limit } = await checkSelfHostedMothershipUsageLimits(userId)
+        const { isExceeded, currentUsage, limit } =
+          await checkSelfHostedMothershipUsageLimits(userId)
         span.setAttributes({
           [TraceAttr.BillingUsageCurrent]: currentUsage,
           [TraceAttr.BillingUsageLimit]: limit,
