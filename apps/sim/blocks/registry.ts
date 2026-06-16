@@ -215,6 +215,7 @@ import { OneDriveBlock, OneDriveBlockMeta } from '@/blocks/blocks/onedrive'
 import { OnePasswordBlock, OnePasswordBlockMeta } from '@/blocks/blocks/onepassword'
 import { OpenAIBlock, OpenAIBlockMeta } from '@/blocks/blocks/openai'
 import { OutlookBlock, OutlookBlockMeta } from '@/blocks/blocks/outlook'
+import { P2DocsBlock, P2DocsBlockMeta } from '@/blocks/blocks/p2_docs'
 import { PagerDutyBlock, PagerDutyBlockMeta } from '@/blocks/blocks/pagerduty'
 import { ParallelBlock, ParallelBlockMeta } from '@/blocks/blocks/parallel'
 import { PeopleDataLabsBlock, PeopleDataLabsBlockMeta } from '@/blocks/blocks/peopledatalabs'
@@ -512,6 +513,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   onepassword: OnePasswordBlock,
   openai: OpenAIBlock,
   outlook: OutlookBlock,
+  p2_docs: P2DocsBlock,
   pagerduty: PagerDutyBlock,
   parallel_ai: ParallelBlock,
   peopledatalabs: PeopleDataLabsBlock,
@@ -775,6 +777,7 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   onepassword: OnePasswordBlockMeta,
   openai: OpenAIBlockMeta,
   outlook: OutlookBlockMeta,
+  p2_docs: P2DocsBlockMeta,
   pagerduty: PagerDutyBlockMeta,
   parallel_ai: ParallelBlockMeta,
   peopledatalabs: PeopleDataLabsBlockMeta,

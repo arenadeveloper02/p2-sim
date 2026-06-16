@@ -1268,10 +1268,7 @@ import {
   googleSlidesDuplicateObjectTool,
   googleSlidesDuplicateTool,
   googleSlidesExportPresentationTool,
-  googleSlidesGetP2UsersTool,
   googleSlidesGetPageTool,
-  googleSlidesGetPresentationIconsTool,
-  googleSlidesGetTemplateSchemaTool,
   googleSlidesGetThumbnailTool,
   googleSlidesGroupObjectsTool,
   googleSlidesInsertTableColumnsTool,
@@ -2235,6 +2232,11 @@ import {
   outlookReadTool,
   outlookSendTool,
 } from '@/tools/outlook'
+import {
+  p2DocsGetP2UsersTool,
+  p2DocsGetPresentationIconsTool,
+  p2DocsGetTemplateSchemaTool,
+} from '@/tools/p2_docs'
 import {
   pagerdutyAddNoteTool,
   pagerdutyCreateIncidentTool,
@@ -4860,6 +4862,9 @@ export const tools: Record<string, ToolConfig> = {
   parallel_search: parallelSearchTool,
   parallel_extract: parallelExtractTool,
   parallel_deep_research: parallelDeepResearchTool,
+  p2_docs_get_p2_users: p2DocsGetP2UsersTool,
+  p2_docs_get_presentation_icons: p2DocsGetPresentationIconsTool,
+  p2_docs_get_template_schema: p2DocsGetTemplateSchemaTool,
   rb2b_credit_check: rb2bCreditCheckTool,
   rb2b_ip_to_hem: rb2bIpToHemTool,
   rb2b_ip_to_maid: rb2bIpToMaidTool,
@@ -5157,9 +5162,6 @@ export const tools: Record<string, ToolConfig> = {
   google_slides_get_thumbnail: googleSlidesGetThumbnailTool,
   google_slides_add_image: googleSlidesAddImageTool,
   google_slides_get_page: googleSlidesGetPageTool,
-  google_slides_get_p2_users: googleSlidesGetP2UsersTool,
-  google_slides_get_presentation_icons: googleSlidesGetPresentationIconsTool,
-  google_slides_get_template_schema: googleSlidesGetTemplateSchemaTool,
   google_slides_delete_object: googleSlidesDeleteObjectTool,
   google_slides_duplicate_object: googleSlidesDuplicateObjectTool,
   google_slides_update_slides_position: googleSlidesUpdateSlidesPositionTool,

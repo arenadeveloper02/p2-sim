@@ -42,7 +42,7 @@ export const P2_TEAM_MEMBERS: P2User[] = [
     url: `${BASE_URL}/Sanjiv%20Parikh.jpg`,
   },
   {
-    name: 'Kumar G',
+    name: 'Kumar G.',
     designation: 'Board Member, Founder, Vxtel & Virident',
     url: `${BASE_URL}/Kumar%20G.jpg`,
   },
@@ -87,9 +87,9 @@ export const P2_TEAM_MEMBERS: P2User[] = [
     url: `${BASE_URL}/Niketh.jpg`,
   },
   {
-    name: 'Rajesh M',
+    name: 'Rajesh',
     designation: 'Senior Director, Experience Design',
-    url: `${BASE_URL}/Rajesh%20M.jpg`,
+    url: `${BASE_URL}/RajeshM.jpg`,
   },
   {
     name: 'Seetha',
@@ -129,7 +129,7 @@ export const P2_TEAM_MEMBERS: P2User[] = [
 ]
 
 export const getP2UsersTool: ToolConfig<GetP2UsersParams, GetP2UsersResponse> = {
-  id: 'google_slides_get_p2_users',
+  id: 'p2_docs_get_p2_users',
   name: 'Get P2 Team Members',
   description:
     'Returns the list of Position2 (P2) team members — name, designation, and profile image URL — for use when populating team or speaker slides. Optionally filter by name or designation keyword.',
@@ -146,7 +146,7 @@ export const getP2UsersTool: ToolConfig<GetP2UsersParams, GetP2UsersResponse> = 
   },
 
   request: {
-    url: '/api/tools/google_slides/get_p2_users',
+    url: '/api/tools/p2_docs/get_p2_users',
     method: 'GET',
     headers: () => ({}),
   },

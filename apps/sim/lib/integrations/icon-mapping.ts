@@ -368,6 +368,7 @@ export const blockTypeToIconMap: Record<string, IconComponent> = {
   onepassword: OnePasswordIcon,
   openai: OpenAIIcon,
   outlook: OutlookIcon,
+  p2_docs: PresentationIcon,
   pagerduty: PagerDutyIcon,
   parallel_ai: ParallelIcon,
   peopledatalabs: PeopleDataLabsIcon,

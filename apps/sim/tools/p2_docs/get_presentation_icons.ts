@@ -1,5 +1,5 @@
-import type { IconLibrary } from '@/tools/google_slides/templates/schema'
 import { getPresentationIconLibrary } from '@/tools/google_slides/templates'
+import type { IconLibrary } from '@/tools/google_slides/templates/schema'
 import type { ToolConfig } from '@/tools/types'
 
 interface GetPresentationIconsParams {
@@ -21,10 +21,10 @@ export const getPresentationIconsTool: ToolConfig<
   GetPresentationIconsParams,
   GetPresentationIconsResponse
 > = {
-  id: 'google_slides_get_presentation_icons',
-  name: 'Get Presentation Icons',
+  id: 'p2_docs_get_presentation_icons',
+  name: 'Get P2 Presentation Icons',
   description:
-    'Return the presentation icon catalog (ids, labels, categories, tags, and image URLs) for template slides',
+    'Return the Position2 presentation icon catalog (ids, labels, categories, tags, and image URLs) for template slides',
   version: '1.0',
 
   params: {
@@ -38,12 +38,13 @@ export const getPresentationIconsTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Icon color variant to return: "black" or "white". When a slide block specifies iconLibraryColor, pass that value here to receive only matching icons.',
+      description:
+        'Icon color variant to return: "black" or "white". When a slide block specifies iconLibraryColor, pass that value here to receive only matching icons.',
     },
   },
 
   request: {
-    url: '/api/tools/google_slides/get_presentation_icons',
+    url: '/api/tools/p2_docs/get_presentation_icons',
     method: 'GET',
     headers: () => ({}),
   },
