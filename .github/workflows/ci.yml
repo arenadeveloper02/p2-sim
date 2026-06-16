@@ -39,11 +39,11 @@ jobs:
     uses: ./.github/workflows/test-build.yml
     secrets: inherit
 
-  # Resolve auto-incrementing GHCR tag for non-main branches (<branch>-0.0.N)
+  # Resolve auto-incrementing GHCR tag for the production image branch (0.0.N)
   resolve-ghcr-tag:
     name: Resolve GHCR Tag
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/version-4.2-prod'
     permissions:
       contents: read
       packages: read
@@ -59,7 +59,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
-          TAG="$(bash scripts/ci/ghcr-next-branch-tag.sh "${{ github.ref_name }}")"
+          TAG="$(bash scripts/ci/ghcr-next-branch-tag.sh)"
           echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Computed GHCR tag: ${TAG}"
 
@@ -112,11 +112,11 @@ jobs:
       environment: dev
     secrets: inherit
 
-  # Non-main branches: build all 3 images for GHCR with auto-increment tag
+  # version-4.2-prod: build all 3 images for GHCR with auto-increment tag
   build-ghcr-branch:
     name: Build GHCR Branch Images
     needs: [secret-scan, resolve-ghcr-tag]
-    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/version-4.2-prod'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -150,7 +150,7 @@ jobs:
         run: |
           IMAGE_TAG="${{ needs.resolve-ghcr-tag.outputs.image_tag }}"
           GHCR_IMAGE="${{ matrix.ghcr_image }}"
-          echo "tags=${GHCR_IMAGE}:${IMAGE_TAG},${GHCR_IMAGE}:${IMAGE_TAG}-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "tags=${GHCR_IMAGE}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Add swap
         run: |

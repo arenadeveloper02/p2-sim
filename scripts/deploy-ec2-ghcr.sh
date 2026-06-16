@@ -16,7 +16,7 @@ fi
 if [ -z "$DEPLOY_ROOT" ]; then
   if [ -f "$PWD/docker-compose.test-env.yml" ]; then
     DEPLOY_ROOT="$PWD"
-  elif [ -f /root/git/p2-sim/docker-compose.{environment}-env.yml ]; then
+  elif [ -f /root/git/p2-sim/docker-compose.test-env.yml ]; then
     DEPLOY_ROOT=/root/git/p2-sim
   else
     DEPLOY_ROOT="$DEFAULT_DEPLOY_ROOT"
