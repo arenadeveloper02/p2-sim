@@ -12,7 +12,7 @@ import {
   isBillingEnabled,
   isDev,
   isFreeApiDeploymentGateEnabled,
-} from '@/lib/core/config/feature-flags'
+} from '@/lib/core/config/env-flags'
 import type { TokenBucketConfig } from '@/lib/core/rate-limiter'
 import { RateLimiter } from '@/lib/core/rate-limiter'
 import {
