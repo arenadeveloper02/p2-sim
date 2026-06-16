@@ -2262,7 +2262,7 @@ function buildTemplateSchema(): PresentationSchema {
             maxItems: 3,
             itemConstraints: {
               minChars: 40,
-              maxChars: 100,
+              maxChars: 80,
               description: 'Bullet point (12pt regular, dark, Poppins) — listId localListEntityId478 auto-applies bullet formatting',
             },
             description: 'Column 1 bulleted list — single shape with real listId, 3 bullets joined with \\n',
@@ -2299,7 +2299,7 @@ function buildTemplateSchema(): PresentationSchema {
             maxItems: 3,
             itemConstraints: {
               minChars: 40,
-              maxChars: 100,
+              maxChars: 80,
               description: 'Bullet point (12pt regular, dark, Poppins) — listId localListEntityId480 auto-applies bullet formatting',
             },
             description: 'Column 2 bulleted list — single shape with real listId, 3 bullets joined with \\n',
@@ -2336,7 +2336,7 @@ function buildTemplateSchema(): PresentationSchema {
             maxItems: 3,
             itemConstraints: {
               minChars: 40,
-              maxChars: 100,
+              maxChars: 80,
               description: 'Bullet point (12pt regular, dark, Poppins) — listId localListEntityId482 auto-applies bullet formatting',
             },
             description: 'Column 3 bulleted list — single shape with real listId, 3 bullets joined with \\n',
