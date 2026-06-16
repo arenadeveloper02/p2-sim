@@ -10,7 +10,8 @@ import { DAGBuilder } from '@/executor/dag/builder'
 import { BlockExecutor } from '@/executor/execution/block-executor'
 import type { EdgeManager } from '@/executor/execution/edge-manager'
 import { EdgeManagerV2 } from '@/executor/execution/edge-manager-v2'
-import { ExecutionEngine } from '@/executor/execution/engine'
+import type { ExecutionEngine } from '@/executor/execution/engine'
+import { ExecutionEngineV2 } from '@/executor/execution/engine-v2'
 import { ExecutionState } from '@/executor/execution/state'
 import type {
   ContextExtensions,
@@ -382,12 +383,12 @@ export class DAGExecutor {
       loopOrchestrator as unknown as LoopOrchestrator,
       parallelOrchestrator
     )
-    return new ExecutionEngine(
+    return new ExecutionEngineV2(
       context,
       dag,
       edgeManager as unknown as EdgeManager,
       nodeOrchestrator
-    )
+    ) as unknown as ExecutionEngine
   }
 
   private createExecutionContext(
