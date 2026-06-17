@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getEnv } from '@/lib/core/config/env'
-import { isDev } from '@/lib/core/config/feature-flags'
+import { isDev } from '@/lib/core/config/env-flags'
 
 const ALLOW_HEADERS =
   'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key, Authorization'

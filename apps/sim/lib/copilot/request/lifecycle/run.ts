@@ -42,7 +42,7 @@ import type {
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
-import { isBillingEnabled, isHosted } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 
 const logger = createLogger('CopilotLifecycle')
