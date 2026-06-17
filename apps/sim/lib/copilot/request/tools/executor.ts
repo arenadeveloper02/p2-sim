@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
 import type {
   AsyncCompletionEnvelope,
   AsyncCompletionSignal,
@@ -9,6 +10,7 @@ import {
   markAsyncToolRunning,
   upsertAsyncToolCall,
 } from '@/lib/copilot/async-runs/repository'
+import { TOOL_WATCHDOG_DEFAULT_MS, TOOL_WATCHDOG_LONG_RUNNING_MS } from '@/lib/copilot/constants'
 import {
   MothershipStreamV1AsyncToolRecordStatus,
   MothershipStreamV1EventType,
@@ -17,9 +19,31 @@ import {
   MothershipStreamV1ToolOutcome,
   MothershipStreamV1ToolPhase,
 } from '@/lib/copilot/generated/mothership-stream-v1'
-import { CreateWorkflow } from '@/lib/copilot/generated/tool-catalog-v1'
+import {
+  CrawlWebsite,
+  CreateFile,
+  CreateWorkflow,
+  DownloadToWorkspaceFile,
+  EditContent,
+  Ffmpeg,
+  FunctionExecute,
+  GenerateAudio,
+  GenerateImage,
+  GenerateVideo,
+  KnowledgeBase,
+  MaterializeFile,
+  Media,
+  Research,
+  Run,
+  RunBlock,
+  RunFromBlock,
+  RunWorkflow,
+  RunWorkflowUntilBlock,
+  WorkspaceFile,
+} from '@/lib/copilot/generated/tool-catalog-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { publishToolConfirmation } from '@/lib/copilot/persistence/tool-confirm'
+import { recordSimToolMetric } from '@/lib/copilot/request/metrics'
 import { withCopilotToolSpan } from '@/lib/copilot/request/otel'
 import { markToolResultSeen } from '@/lib/copilot/request/sse-utils'
 import {
@@ -47,10 +71,6 @@ import { ensureHandlersRegistered, executeTool } from '@/lib/copilot/tool-execut
 export { waitForToolCompletion } from '@/lib/copilot/request/tools/client'
 
 const logger = createLogger('CopilotSseToolExecution')
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
 
 function hasOutputValue(result: { output?: unknown } | undefined): result is { output: unknown } {
   return result !== undefined && Object.hasOwn(result, 'output')
@@ -111,11 +131,11 @@ function summarizeToolResultForSpan(result: {
 function extractAttachmentShape(
   output: unknown
 ): { imageCount: number; imageBytes: number; mediaType?: string } | null {
-  if (!isRecord(output)) return null
+  if (!isRecordLike(output)) return null
   const candidate = (output as Record<string, unknown>).attachment
-  if (!isRecord(candidate)) return null
+  if (!isRecordLike(candidate)) return null
   const source = (candidate as Record<string, unknown>).source
-  if (!isRecord(source)) return null
+  if (!isRecordLike(source)) return null
   const type =
     typeof (candidate as Record<string, unknown>).type === 'string'
       ? ((candidate as Record<string, unknown>).type as string)
@@ -146,7 +166,7 @@ function buildCompletionSignal(input: {
 function getCreateWorkflowOutput(
   output: unknown
 ): { workflowId?: string; workspaceId?: string } | undefined {
-  if (!isRecord(output)) {
+  if (!isRecordLike(output)) {
     return undefined
   }
 
@@ -187,6 +207,124 @@ function abortRequested(
   return Boolean(
     options?.abortSignal?.aborted || execContext.abortSignal?.aborted || context.wasAborted
   )
+}
+
+/**
+ * Tool classes whose legitimate runtime can far exceed the default watchdog:
+ * workflow executions, sandboxed code, media/image/audio generation, deep
+ * research, large downloads, knowledge-base indexing, and file-content
+ * producers (create/edit/materialize hit the E2B doc compile/recalc/render
+ * pipeline on doc-backed files). They get the long watchdog cap; everything
+ * else (read/glob/grep/metadata CRUD/...) must settle within the strict
+ * default or be failed so the run can continue.
+ */
+const LONG_RUNNING_TOOL_IDS: ReadonlySet<string> = new Set([
+  Run.id,
+  RunBlock.id,
+  RunFromBlock.id,
+  RunWorkflow.id,
+  RunWorkflowUntilBlock.id,
+  FunctionExecute.id,
+  GenerateImage.id,
+  GenerateAudio.id,
+  GenerateVideo.id,
+  Ffmpeg.id,
+  Media.id,
+  Research.id,
+  CrawlWebsite.id,
+  KnowledgeBase.id,
+  DownloadToWorkspaceFile.id,
+  CreateFile.id,
+  EditContent.id,
+  MaterializeFile.id,
+  WorkspaceFile.id,
+])
+
+export function toolWatchdogTimeoutMs(toolName: string | undefined): number {
+  return toolName && LONG_RUNNING_TOOL_IDS.has(toolName)
+    ? TOOL_WATCHDOG_LONG_RUNNING_MS
+    : TOOL_WATCHDOG_DEFAULT_MS
+}
+
+class ToolExecutionTimeoutError extends Error {
+  constructor(toolName: string, timeoutMs: number) {
+    super(
+      `Tool '${toolName}' timed out after ${Math.round(timeoutMs / 1000)}s on the Sim executor and was abandoned.`
+    )
+    this.name = 'ToolExecutionTimeoutError'
+  }
+}
+
+/**
+ * Execute a tool with a hard settlement guarantee. If the handler neither
+ * resolves nor rejects within the tool's watchdog cap, throw a timeout error
+ * so the standard failure path (persist failed row, publish terminal
+ * confirmation, resume Go with an error result) runs and the chat never
+ * wedges behind a hung await. The losing promise keeps running detached; its
+ * eventual settlement is ignored.
+ */
+async function executeToolWithWatchdog(toolCall: ToolCallState, execContext: ExecutionContext) {
+  const timeoutMs = toolWatchdogTimeoutMs(toolCall.name)
+  const execution = executeTool(toolCall.name, toolCall.params || {}, execContext)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      execution,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new ToolExecutionTimeoutError(toolCall.name, timeoutMs)),
+          timeoutMs
+        )
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+    // Swallow the abandoned promise's eventual rejection so it can't surface
+    // as an unhandled rejection after a watchdog loss.
+    execution.catch(() => {})
+  }
+}
+
+/**
+ * Last-resort settlement for a tool whose promise never settled (a hang the
+ * per-tool watchdog could not see, e.g. in post-processing or persistence).
+ * Records a terminal error state + failed async row so the checkpoint loop
+ * can resume Go with an error result instead of waiting forever.
+ */
+export async function forceFailHungToolCall(
+  toolCallId: string,
+  context: StreamingContext,
+  message: string
+): Promise<void> {
+  const toolCall = context.toolCalls.get(toolCallId)
+  if (!toolCall || toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) return
+  setTerminalToolCallState(toolCall, {
+    status: MothershipStreamV1ToolOutcome.error,
+    error: message,
+  })
+  logger.error('Force-failed hung tool call', {
+    toolCallId,
+    toolName: toolCall.name,
+    message,
+  })
+  markToolResultSeen(toolCallId)
+  await completeAsyncToolCall({
+    toolCallId,
+    status: MothershipStreamV1AsyncToolRecordStatus.failed,
+    result: { error: message },
+    error: message,
+  }).catch((err) => {
+    logger.warn('Failed to persist force-failed async tool status', {
+      toolCallId,
+      error: toError(err).message,
+    })
+  })
+  publishTerminalToolConfirmation({
+    toolCallId,
+    status: MothershipStreamV1ToolOutcome.error,
+    message,
+    data: { error: message },
+  })
 }
 
 function cancelledCompletion(message: string): AsyncToolCompletion {
@@ -260,15 +398,32 @@ export async function executeToolAndReport(
       argsPreview: argsPayload?.slice(0, 200),
     },
     async (otelSpan) => {
-      const completion = await executeToolAndReportInner(toolCall, context, execContext, options)
-      otelSpan.setAttribute(TraceAttr.ToolOutcome, completion.status)
-      if (completion.message) {
-        otelSpan.setAttribute(
-          TraceAttr.ToolOutcomeMessage,
-          String(completion.message).slice(0, 500)
-        )
+      const startedAt = Date.now()
+      try {
+        const completion = await executeToolAndReportInner(toolCall, context, execContext, options)
+        const durationMs = Date.now() - startedAt
+        otelSpan.setAttribute(TraceAttr.ToolOutcome, completion.status)
+        otelSpan.setAttribute(TraceAttr.ToolDurationMs, durationMs)
+        if (completion.message) {
+          otelSpan.setAttribute(
+            TraceAttr.ToolOutcomeMessage,
+            String(completion.message).slice(0, 500)
+          )
+        }
+        // Durable Grafana signal for "which Sim tool is slowest" (executor=sim);
+        // pairs with the Go executor-boundary metric (U15) as one series set.
+        recordSimToolMetric(toolCall.name, completion.status, durationMs)
+        return completion
+      } catch (err) {
+        // executeToolAndReportInner threw (infra/unexpected error, not a normal
+        // 'error' completion). Still stamp the span + record the dispatch so
+        // copilot.tool.* isn't silently biased toward successful calls.
+        const durationMs = Date.now() - startedAt
+        otelSpan.setAttribute(TraceAttr.ToolOutcome, 'error')
+        otelSpan.setAttribute(TraceAttr.ToolDurationMs, durationMs)
+        recordSimToolMetric(toolCall.name, 'error', durationMs)
+        throw err
       }
-      return completion
     }
   )
 }
@@ -389,7 +544,7 @@ async function executeToolAndReportInner(
 
   try {
     ensureHandlersRegistered()
-    let result = await executeTool(toolCall.name, toolCall.params || {}, execContext)
+    let result = await executeToolWithWatchdog(toolCall, execContext)
     if (toolCall.endTime || isTerminalToolCallStatus(toolCall.status)) {
       endToolSpanFromTerminalState()
       return terminalCompletionFromToolCall(toolCall)

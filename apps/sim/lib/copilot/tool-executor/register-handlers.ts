@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import {
   CheckDeploymentStatus,
-  CompleteJob,
+  CompleteScheduledTask,
   CreateFolder,
   CreateWorkflow,
   CreateWorkspaceMcpServer,
@@ -24,13 +24,14 @@ import {
   Glob as GlobTool,
   Grep as GrepTool,
   ListFolders,
+  ListIntegrationTools,
   ListUserWorkspaces,
   ListWorkspaceMcpServers,
   LoadDeployment,
   ManageCredential,
   ManageCustomTool,
-  ManageJob,
   ManageMcpTool,
+  ManageScheduledTask,
   ManageSkill,
   MaterializeFile,
   MoveFolder,
@@ -50,7 +51,7 @@ import {
   SetBlockEnabled,
   SetGlobalWorkflowVariables,
   UpdateDeploymentVersion,
-  UpdateJobHistory,
+  UpdateScheduledTaskHistory,
   UpdateWorkspaceMcpServer,
 } from '@/lib/copilot/generated/tool-catalog-v1'
 import { createServerToolHandler } from '@/lib/copilot/tools/registry/server-tool-adapter'
@@ -74,6 +75,7 @@ import {
   executeUpdateWorkspaceMcpServer,
 } from '../tools/handlers/deployment/manage'
 import { executeFunctionExecute } from '../tools/handlers/function-execute'
+import { executeListIntegrationTools } from '../tools/handlers/integration-tools'
 import {
   executeCompleteJob,
   executeManageJob,
@@ -175,9 +177,9 @@ function buildHandlerMap(): Record<string, ToolHandler> {
     [PromoteToLive.id]: h(executePromoteToLive),
     [UpdateDeploymentVersion.id]: h(executeUpdateDeploymentVersion),
 
-    [ManageJob.id]: h(executeManageJob),
-    [CompleteJob.id]: h(executeCompleteJob),
-    [UpdateJobHistory.id]: h(executeUpdateJobHistory),
+    [ManageScheduledTask.id]: h(executeManageJob),
+    [CompleteScheduledTask.id]: h(executeCompleteJob),
+    [UpdateScheduledTaskHistory.id]: h(executeUpdateJobHistory),
 
     [GrepTool.id]: h(executeVfsGrep),
     [GlobTool.id]: h(executeVfsGlob),
@@ -192,6 +194,7 @@ function buildHandlerMap(): Record<string, ToolHandler> {
     [OpenResource.id]: h(executeOpenResource),
     [RestoreResource.id]: h(executeRestoreResource),
     [GetPlatformActions.id]: h(executeGetPlatformActions),
+    [ListIntegrationTools.id]: h(executeListIntegrationTools),
     [MaterializeFile.id]: h(executeMaterializeFile),
     [FunctionExecute.id]: h(executeFunctionExecute),
 

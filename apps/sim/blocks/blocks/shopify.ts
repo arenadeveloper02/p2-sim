@@ -1283,6 +1283,7 @@ export const ShopifyBlock: BlockConfig<ShopifyResponse> = {
 
 export const ShopifyBlockMeta = {
   tags: ['payments', 'automation'],
+  url: 'https://www.shopify.com',
   templates: [
     {
       icon: ShopifyIcon,

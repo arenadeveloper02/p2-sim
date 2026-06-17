@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from './schema'
+import { instrumentPoolClient } from './tx-tripwire'
 
 const connectionString = process.env.DATABASE_URL!
 if (!connectionString) {
@@ -14,7 +15,10 @@ const poolOptions = {
   onnotice: () => {},
 }
 
-const postgresClient = postgres(connectionString, { ...poolOptions, max: 15 })
+const postgresClient = instrumentPoolClient(
+  postgres(connectionString, { ...poolOptions, max: 15 }),
+  'db'
+)
 
 export const db = drizzle(postgresClient, { schema })
 
@@ -27,10 +31,12 @@ export const db = drizzle(postgresClient, { schema })
 const replicaUrl = process.env.DATABASE_REPLICA_URL
 if (replicaUrl && !/^postgres(ql)?:\/\//.test(replicaUrl)) {
   throw new Error(
-    'DATABASE_REPLICA_URL is set but is not a postgres:// DSN — fix or unset it (reads fall back to the primary when unset)'
+    'DATABASE_REPLICA_URL is set but is not a postgres:// DSN — fix the URL or unset the variable'
   )
 }
 
 export const dbReplica: typeof db = replicaUrl
-  ? drizzle(postgres(replicaUrl, { ...poolOptions, max: 10 }), { schema })
+  ? drizzle(instrumentPoolClient(postgres(replicaUrl, { ...poolOptions, max: 10 }), 'dbReplica'), {
+      schema,
+    })
   : db
