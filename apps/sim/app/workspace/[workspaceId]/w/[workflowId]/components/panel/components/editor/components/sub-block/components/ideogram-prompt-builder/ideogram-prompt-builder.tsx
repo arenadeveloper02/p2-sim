@@ -23,12 +23,21 @@ import {
   createDefaultIdeogramPromptBuilderValue,
   ideogramV4JsonPromptToBuilderValue,
   parseIdeogramPromptBuilderValue,
+  parseImportedIdeogramJsonText,
+  resolveElementPalette,
 } from '@/lib/ideogram/build-json-prompt'
-import { IDEOGRAM_RENDERING_SPEEDS, IDEOGRAM_V4_RESOLUTIONS } from '@/lib/ideogram/constants'
+import {
+  IDEOGRAM_CANVAS_GUIDES,
+  IDEOGRAM_MAX_ELEMENT_PALETTE_COLORS,
+  IDEOGRAM_MAX_STYLE_PALETTE_COLORS,
+  IDEOGRAM_RENDERING_SPEEDS,
+  IDEOGRAM_STYLE_MODES,
+  IDEOGRAM_TOKEN_ESTIMATE_LIMIT,
+  IDEOGRAM_V4_RESOLUTIONS,
+} from '@/lib/ideogram/constants'
 import type {
   IdeogramBuilderElement,
   IdeogramPromptBuilderValue,
-  IdeogramV4JsonPrompt,
 } from '@/lib/ideogram/types'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { BboxCanvas } from './bbox-canvas'
@@ -54,6 +63,67 @@ function createObjElement(): IdeogramBuilderElement {
 
 function createTextElement(): IdeogramBuilderElement {
   return { id: generateId(), type: 'text', text: '', desc: '', shape: 'rectangle' }
+}
+
+interface PaletteEditorProps {
+  title: string
+  palette: string[]
+  maxColors: number
+  disabled?: boolean
+  onChange: (palette: string[]) => void
+}
+
+function PaletteEditor({ title, palette, maxColors, disabled, onChange }: PaletteEditorProps) {
+  return (
+    <div className='space-y-2'>
+      <div className='flex items-center justify-between gap-2'>
+        <p className='text-[11px] text-[var(--text-body-secondary)]'>{title}</p>
+        {!disabled && palette.length < maxColors ? (
+          <Button
+            type='button'
+            size='sm'
+            variant='ghost'
+            onClick={() => onChange([...palette, ''])}
+          >
+            <Plus className='size-[14px]' />
+            Add color
+          </Button>
+        ) : null}
+      </div>
+      {palette.length === 0 ? (
+        <p className='text-[11px] text-[var(--text-body-secondary)]'>No palette colors yet.</p>
+      ) : (
+        palette.map((color, index) => (
+          <div key={`${title}-${index}`} className='flex items-center gap-2'>
+            <span
+              className='size-4 flex-shrink-0 rounded-full border border-[var(--border-subtle)]'
+              style={{ backgroundColor: color || 'transparent' }}
+            />
+            <Input
+              value={color}
+              onChange={(event) => {
+                const next = [...palette]
+                next[index] = event.target.value
+                onChange(next)
+              }}
+              placeholder='#FF3366 or warm red'
+              disabled={disabled}
+            />
+            {!disabled ? (
+              <Button
+                type='button'
+                size='icon'
+                variant='ghost'
+                onClick={() => onChange(palette.filter((_, itemIndex) => itemIndex !== index))}
+              >
+                <Trash2 className='size-[14px] text-[var(--text-icon)]' />
+              </Button>
+            ) : null}
+          </div>
+        ))
+      )}
+    </div>
+  )
 }
 
 function copyDocumentStyles(targetDocument: Document) {
@@ -121,6 +191,7 @@ export function IdeogramPromptBuilder({
   )
   const [importError, setImportError] = useState<string | null>(null)
   const [selectedElementId, setSelectedElementId] = useState<string | undefined>(undefined)
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([])
   const [isExpandedEditorOpen, setIsExpandedEditorOpen] = useState(false)
   const [expandedEditorWindow, setExpandedEditorWindow] = useState<Window | null>(null)
 
@@ -145,14 +216,16 @@ export function IdeogramPromptBuilder({
       const result = buildIdeogramJsonPrompt(builderValue)
       return {
         error: null as string | null,
-        preview: JSON.stringify(result.jsonPrompt, null, 2),
+        preview: result.serializedJsonPrompt,
         magicPrompt: result.magicPrompt,
+        metadata: result.metadata,
       }
     } catch (error) {
       return {
         error: error instanceof Error ? error.message : 'Invalid prompt',
         preview: '',
         magicPrompt: '',
+        metadata: null,
       }
     }
   }, [builderValue])
@@ -165,6 +238,23 @@ export function IdeogramPromptBuilder({
     () => IDEOGRAM_RENDERING_SPEEDS.map((speed) => ({ value: speed, label: speed })),
     []
   )
+  const styleModeOptions = useMemo(
+    () =>
+      IDEOGRAM_STYLE_MODES.map((mode) => ({
+        value: mode,
+        label: mode === 'art_style' ? 'Art style' : mode.charAt(0).toUpperCase() + mode.slice(1),
+      })),
+    []
+  )
+  const guideModeOptions = useMemo(
+    () =>
+      IDEOGRAM_CANVAS_GUIDES.map((guide) => ({
+        value: guide,
+        label: guide.charAt(0).toUpperCase() + guide.slice(1),
+      })),
+    []
+  )
+
   const shapeOptions = useMemo(
     () => [
       { value: 'rectangle', label: 'Rectangle' },
@@ -183,6 +273,19 @@ export function IdeogramPromptBuilder({
     [builderValue, isReadOnly, setStoreValue]
   )
 
+  const updateCanvasSettings = useCallback(
+    (patch: NonNullable<IdeogramPromptBuilderValue['canvasSettings']>) => {
+      updateValue({
+        canvasSettings: {
+          ...createDefaultIdeogramPromptBuilderValue().canvasSettings,
+          ...builderValue.canvasSettings,
+          ...patch,
+        },
+      })
+    },
+    [builderValue.canvasSettings, updateValue]
+  )
+
   const updateElement = useCallback(
     (id: string, patch: Partial<IdeogramBuilderElement>) => {
       if (isReadOnly) return
@@ -193,6 +296,15 @@ export function IdeogramPromptBuilder({
       })
     },
     [builderValue.elements, isReadOnly, updateValue]
+  )
+
+  const toggleElementLock = useCallback(
+    (id: string) => {
+      const element = builderValue.elements.find((item) => item.id === id)
+      if (!element) return
+      updateElement(id, { locked: !element.locked })
+    },
+    [builderValue.elements, updateElement]
   )
 
   const removeElement = useCallback(
@@ -254,14 +366,23 @@ export function IdeogramPromptBuilder({
     if (!raw?.trim()) return
 
     try {
-      const parsed = JSON.parse(raw) as IdeogramV4JsonPrompt
+      const parsed = parseImportedIdeogramJsonText(raw)
       const imported = ideogramV4JsonPromptToBuilderValue(parsed, builderValue.resolution)
-      setStoreValue(imported)
+      setStoreValue({
+        ...imported,
+        outputFormat: builderValue.outputFormat,
+        renderingSpeed: builderValue.renderingSpeed,
+        magicPromptEnabled: builderValue.magicPromptEnabled,
+        referenceImageUrl: builderValue.referenceImageUrl,
+        referenceImageOpacity: builderValue.referenceImageOpacity,
+        canvasSettings: builderValue.canvasSettings,
+      })
       setSelectedElementId(imported.elements[0]?.id)
+      setSelectedElementIds([])
     } catch (error) {
       setImportError(error instanceof Error ? error.message : 'Invalid JSON')
     }
-  }, [builderValue.resolution, isReadOnly, setStoreValue])
+  }, [builderValue, isReadOnly, setStoreValue])
 
   const handleExport = useCallback(() => {
     if (!buildResult.preview) return
@@ -304,7 +425,7 @@ export function IdeogramPromptBuilder({
           <Textarea
             value={builderValue.highLevelDescription}
             onChange={(event) => updateValue({ highLevelDescription: event.target.value })}
-            placeholder='Overall scene description'
+            placeholder='Optional overall scene description'
             disabled={isReadOnly}
             rows={3}
           />
@@ -373,80 +494,189 @@ export function IdeogramPromptBuilder({
       </div>
 
       <div className='space-y-2 rounded-md border border-[var(--border-subtle)] p-3'>
-        <p className='text-[12px] font-medium text-[var(--text-body)]'>
-          Style description (optional)
-        </p>
-        <div className='grid gap-2'>
-          <Input
-            value={builderValue.styleDescription?.aesthetics ?? ''}
-            onChange={(event) =>
-              updateValue({
-                styleDescription: {
-                  aesthetics: event.target.value,
-                  lighting: builderValue.styleDescription?.lighting ?? '',
-                  medium: builderValue.styleDescription?.medium ?? '',
-                  artStyle: builderValue.styleDescription?.artStyle,
-                  photo: builderValue.styleDescription?.photo,
-                },
-              })
-            }
-            placeholder='Aesthetics (color, mood, tone)'
-            disabled={isReadOnly}
-          />
-          <Input
-            value={builderValue.styleDescription?.lighting ?? ''}
-            onChange={(event) =>
-              updateValue({
-                styleDescription: {
-                  aesthetics: builderValue.styleDescription?.aesthetics ?? '',
-                  lighting: event.target.value,
-                  medium: builderValue.styleDescription?.medium ?? '',
-                  artStyle: builderValue.styleDescription?.artStyle,
-                  photo: builderValue.styleDescription?.photo,
-                },
-              })
-            }
-            placeholder='Lighting'
-            disabled={isReadOnly}
-          />
-          <Input
-            value={builderValue.styleDescription?.medium ?? ''}
-            onChange={(event) =>
-              updateValue({
-                styleDescription: {
-                  aesthetics: builderValue.styleDescription?.aesthetics ?? '',
-                  lighting: builderValue.styleDescription?.lighting ?? '',
-                  medium: event.target.value,
-                  artStyle: builderValue.styleDescription?.artStyle,
-                  photo: builderValue.styleDescription?.photo,
-                },
-              })
-            }
-            placeholder='Medium (photo, illustration, 3D)'
-            disabled={isReadOnly}
-          />
-        </div>
+        <p className='text-[12px] font-medium text-[var(--text-body)]'>Style description</p>
+        <Combobox
+          options={styleModeOptions}
+          value={builderValue.styleMode ?? 'none'}
+          onChange={(next) =>
+            updateValue({ styleMode: next as IdeogramPromptBuilderValue['styleMode'] })
+          }
+          disabled={isReadOnly}
+        />
+        {(builderValue.styleMode ?? 'none') !== 'none' ? (
+          <div className='grid gap-2'>
+            <Input
+              value={builderValue.styleDescription?.aesthetics ?? ''}
+              onChange={(event) =>
+                updateValue({
+                  styleDescription: {
+                    aesthetics: event.target.value,
+                    lighting: builderValue.styleDescription?.lighting ?? '',
+                    medium: builderValue.styleDescription?.medium ?? '',
+                    artStyle: builderValue.styleDescription?.artStyle,
+                    photo: builderValue.styleDescription?.photo,
+                  },
+                })
+              }
+              placeholder='Aesthetics (color, mood, tone)'
+              disabled={isReadOnly}
+            />
+            <Input
+              value={builderValue.styleDescription?.lighting ?? ''}
+              onChange={(event) =>
+                updateValue({
+                  styleDescription: {
+                    aesthetics: builderValue.styleDescription?.aesthetics ?? '',
+                    lighting: event.target.value,
+                    medium: builderValue.styleDescription?.medium ?? '',
+                    artStyle: builderValue.styleDescription?.artStyle,
+                    photo: builderValue.styleDescription?.photo,
+                  },
+                })
+              }
+              placeholder='Lighting'
+              disabled={isReadOnly}
+            />
+            <Input
+              value={builderValue.styleDescription?.medium ?? ''}
+              onChange={(event) =>
+                updateValue({
+                  styleDescription: {
+                    aesthetics: builderValue.styleDescription?.aesthetics ?? '',
+                    lighting: builderValue.styleDescription?.lighting ?? '',
+                    medium: event.target.value,
+                    artStyle: builderValue.styleDescription?.artStyle,
+                    photo: builderValue.styleDescription?.photo,
+                  },
+                })
+              }
+              placeholder='Medium (photo, illustration, 3D)'
+              disabled={isReadOnly}
+            />
+            {builderValue.styleMode === 'photo' ? (
+              <Input
+                value={builderValue.styleDescription?.photo ?? ''}
+                onChange={(event) =>
+                  updateValue({
+                    styleDescription: {
+                      aesthetics: builderValue.styleDescription?.aesthetics ?? '',
+                      lighting: builderValue.styleDescription?.lighting ?? '',
+                      medium: builderValue.styleDescription?.medium ?? '',
+                      artStyle: builderValue.styleDescription?.artStyle,
+                      photo: event.target.value,
+                    },
+                  })
+                }
+                placeholder='Photographic style notes (lens, film stock)'
+                disabled={isReadOnly}
+              />
+            ) : null}
+            {builderValue.styleMode === 'art_style' ? (
+              <Input
+                value={builderValue.styleDescription?.artStyle ?? ''}
+                onChange={(event) =>
+                  updateValue({
+                    styleDescription: {
+                      aesthetics: builderValue.styleDescription?.aesthetics ?? '',
+                      lighting: builderValue.styleDescription?.lighting ?? '',
+                      medium: builderValue.styleDescription?.medium ?? '',
+                      artStyle: event.target.value,
+                      photo: builderValue.styleDescription?.photo,
+                    },
+                  })
+                }
+                placeholder='Art style (illustration, oil painting)'
+                disabled={isReadOnly}
+              />
+            ) : null}
+            <PaletteEditor
+              title={`Style palette (max ${IDEOGRAM_MAX_STYLE_PALETTE_COLORS})`}
+              palette={builderValue.stylePalette ?? []}
+              maxColors={IDEOGRAM_MAX_STYLE_PALETTE_COLORS}
+              disabled={isReadOnly}
+              onChange={(stylePalette) => updateValue({ stylePalette })}
+            />
+          </div>
+        ) : (
+          <p className='text-[11px] text-[var(--text-body-secondary)]'>
+            Choose Photo or Art style to expose the full style_description fields and palette.
+          </p>
+        )}
       </div>
 
       <div className='space-y-2'>
-        <div className='flex items-center justify-between gap-2'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
           <p className='text-[12px] font-medium text-[var(--text-body)]'>Composition frame</p>
           <Button type='button' size='sm' variant='outline' onClick={openExpandedEditorWindow}>
             <Maximize2 className='size-[14px]' />
             Open in window
           </Button>
         </div>
+        <div className='flex flex-wrap gap-2'>
+          <Button
+            type='button'
+            size='sm'
+            variant={builderValue.canvasSettings?.showGuides ? 'default' : 'outline'}
+            onClick={() =>
+              updateCanvasSettings({ showGuides: !builderValue.canvasSettings?.showGuides })
+            }
+            disabled={isReadOnly}
+          >
+            Guides
+          </Button>
+          <Button
+            type='button'
+            size='sm'
+            variant={builderValue.canvasSettings?.snapToGrid ? 'default' : 'outline'}
+            onClick={() =>
+              updateCanvasSettings({ snapToGrid: !builderValue.canvasSettings?.snapToGrid })
+            }
+            disabled={isReadOnly}
+          >
+            Snap
+          </Button>
+          <Button
+            type='button'
+            size='sm'
+            variant={builderValue.canvasSettings?.hideBoxes ? 'default' : 'outline'}
+            onClick={() =>
+              updateCanvasSettings({ hideBoxes: !builderValue.canvasSettings?.hideBoxes })
+            }
+            disabled={isReadOnly}
+          >
+            Hide boxes
+          </Button>
+          <Combobox
+            options={guideModeOptions}
+            value={builderValue.canvasSettings?.guideMode ?? 'thirds'}
+            onChange={(next) =>
+              updateCanvasSettings({
+                guideMode: next as NonNullable<
+                  IdeogramPromptBuilderValue['canvasSettings']
+                >['guideMode'],
+              })
+            }
+            disabled={isReadOnly || !builderValue.canvasSettings?.showGuides}
+          />
+        </div>
         <div className='overflow-x-auto'>
           <BboxCanvas
             resolution={builderValue.resolution}
             elements={builderValue.elements}
             activeElementId={activeElementId}
+            selectedElementIds={selectedElementIds}
             referenceImageUrl={builderValue.referenceImageUrl}
             referenceImageOpacity={builderValue.referenceImageOpacity}
+            canvasSettings={builderValue.canvasSettings}
             disabled={isReadOnly || builderValue.elements.length === 0}
-            onSelectElement={setSelectedElementId}
+            onSelectElement={(id) => {
+              setSelectedElementId(id)
+              setSelectedElementIds([id])
+            }}
+            onSelectElements={setSelectedElementIds}
             onChangeElementBbox={(id, bbox) => updateElement(id, { bbox })}
             onDeleteElement={removeElement}
+            onToggleElementLock={toggleElementLock}
           />
         </div>
       </div>
@@ -561,11 +791,17 @@ export function IdeogramPromptBuilder({
               />
 
               <div className='grid gap-2 sm:grid-cols-2'>
-                <Input
-                  value={element.color ?? ''}
-                  onChange={(event) => updateElement(element.id, { color: event.target.value })}
-                  placeholder='Color guidance, e.g. #FF3366 or warm red'
+                <PaletteEditor
+                  title={`Palette (max ${IDEOGRAM_MAX_ELEMENT_PALETTE_COLORS})`}
+                  palette={element.palette ?? (element.color ? [element.color] : [])}
+                  maxColors={IDEOGRAM_MAX_ELEMENT_PALETTE_COLORS}
                   disabled={isReadOnly}
+                  onChange={(palette) =>
+                    updateElement(element.id, {
+                      palette,
+                      color: undefined,
+                    })
+                  }
                 />
                 <Combobox
                   options={shapeOptions}
@@ -579,10 +815,20 @@ export function IdeogramPromptBuilder({
                 />
               </div>
 
-              <p className='text-[11px] text-[var(--text-body-secondary)]'>
-                Region: {element.bbox ? element.bbox.join(', ') : 'not set'}. Select this row, then
-                drag in the composition frame above.
-              </p>
+              <div className='flex flex-wrap items-center gap-2'>
+                <Button
+                  type='button'
+                  size='sm'
+                  variant={element.locked ? 'default' : 'outline'}
+                  onClick={() => toggleElementLock(element.id)}
+                  disabled={isReadOnly}
+                >
+                  {element.locked ? 'Locked' : 'Lock'}
+                </Button>
+                <p className='text-[11px] text-[var(--text-body-secondary)]'>
+                  Region: {element.bbox ? element.bbox.join(', ') : 'not set'}.
+                </p>
+              </div>
             </div>
           ))
         )}
@@ -591,6 +837,19 @@ export function IdeogramPromptBuilder({
       <div className='space-y-2'>
         <div className='flex flex-wrap items-center gap-2'>
           <p className='text-[12px] font-medium text-[var(--text-body)]'>JSON preview</p>
+          <Button
+            type='button'
+            size='sm'
+            variant={builderValue.outputFormat === 'compact' ? 'default' : 'outline'}
+            onClick={() =>
+              updateValue({
+                outputFormat: builderValue.outputFormat === 'compact' ? 'pretty' : 'compact',
+              })
+            }
+            disabled={isReadOnly}
+          >
+            {builderValue.outputFormat === 'compact' ? 'Compact' : 'Pretty'}
+          </Button>
           <Button
             type='button'
             size='sm'
@@ -622,6 +881,19 @@ export function IdeogramPromptBuilder({
             Copy
           </Button>
         </div>
+        {buildResult.metadata ? (
+          <p
+            className={cn(
+              'text-[11px]',
+              buildResult.metadata.tokenEstimateOverLimit
+                ? 'text-[var(--text-danger)]'
+                : 'text-[var(--text-body-secondary)]'
+            )}
+          >
+            Token estimate: ~{buildResult.metadata.tokenEstimate} / {IDEOGRAM_TOKEN_ESTIMATE_LIMIT}
+            {buildResult.metadata.tokenEstimateOverLimit ? ' (may truncate)' : ''}
+          </p>
+        ) : null}
         {importError ? (
           <p className='text-[12px] text-[var(--text-danger)]'>{importError}</p>
         ) : null}
@@ -703,13 +975,20 @@ export function IdeogramPromptBuilder({
                   resolution={builderValue.resolution}
                   elements={builderValue.elements}
                   activeElementId={activeElementId}
+                  selectedElementIds={selectedElementIds}
                   referenceImageUrl={builderValue.referenceImageUrl}
                   referenceImageOpacity={builderValue.referenceImageOpacity}
+                  canvasSettings={builderValue.canvasSettings}
                   canvasWidth={840}
                   disabled={isReadOnly || builderValue.elements.length === 0}
-                  onSelectElement={setSelectedElementId}
+                  onSelectElement={(id) => {
+                    setSelectedElementId(id)
+                    setSelectedElementIds([id])
+                  }}
+                  onSelectElements={setSelectedElementIds}
                   onChangeElementBbox={(id, bbox) => updateElement(id, { bbox })}
                   onDeleteElement={removeElement}
+                  onToggleElementLock={toggleElementLock}
                 />
               </div>
 
@@ -776,26 +1055,18 @@ export function IdeogramPromptBuilder({
                       disabled={isReadOnly}
                       rows={3}
                     />
-                    <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-1'>
-                      <Input
-                        value={activeElement.color ?? ''}
-                        onChange={(event) =>
-                          updateElement(activeElement.id, { color: event.target.value })
-                        }
-                        placeholder='Color guidance'
-                        disabled={isReadOnly}
-                      />
-                      <Combobox
-                        options={shapeOptions}
-                        value={activeElement.shape ?? 'rectangle'}
-                        onChange={(next) =>
-                          updateElement(activeElement.id, {
-                            shape: next as NonNullable<IdeogramBuilderElement['shape']>,
-                          })
-                        }
-                        disabled={isReadOnly}
-                      />
-                    </div>
+                    <PaletteEditor
+                      title={`Palette (max ${IDEOGRAM_MAX_ELEMENT_PALETTE_COLORS})`}
+                      palette={
+                        activeElement.palette ??
+                        (activeElement.color ? [activeElement.color] : [])
+                      }
+                      maxColors={IDEOGRAM_MAX_ELEMENT_PALETTE_COLORS}
+                      disabled={isReadOnly}
+                      onChange={(palette) =>
+                        updateElement(activeElement.id, { palette, color: undefined })
+                      }
+                    />
                     <p className='text-[11px] text-[var(--text-body-secondary)]'>
                       Region: {activeElement.bbox ? activeElement.bbox.join(', ') : 'not set'}.
                     </p>
@@ -826,7 +1097,10 @@ export function IdeogramPromptBuilder({
                       </button>
                       <span
                         className='size-[10px] flex-shrink-0 rounded-full border border-[var(--border-subtle)]'
-                        style={{ backgroundColor: element.color || 'transparent' }}
+                        style={{
+                          backgroundColor:
+                            resolveElementPalette(element)?.[0] || element.color || 'transparent',
+                        }}
                       />
                       {!isReadOnly ? (
                         <Button

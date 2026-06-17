@@ -2,7 +2,14 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { clampIdeogramBbox, ideogramBboxToPixelRect, pixelRectToIdeogramBbox } from '@/lib/ideogram/bbox'
+import {
+  clampIdeogramBbox,
+  ideogramBboxToPixelRect,
+  parseIdeogramBboxCoordinate,
+  pixelRectToIdeogramBbox,
+  snapIdeogramBbox,
+  updateIdeogramBboxCoordinate,
+} from '@/lib/ideogram/bbox'
 
 describe('ideogram bbox helpers', () => {
   it('clamps coordinates to the 0-1000 grid', () => {
@@ -17,5 +24,14 @@ describe('ideogram bbox helpers', () => {
     expect(bbox[3]).toBeLessThanOrEqual(1000)
     expect(rect.width).toBeGreaterThan(0)
     expect(rect.height).toBeGreaterThan(0)
+  })
+
+  it('parses and updates bbox coordinates', () => {
+    expect(parseIdeogramBboxCoordinate('250')).toBe(250)
+    expect(updateIdeogramBboxCoordinate([10, 20, 300, 400], 2, '350')).toEqual([10, 20, 350, 400])
+  })
+
+  it('snaps bbox coordinates to grid steps', () => {
+    expect(snapIdeogramBbox([12, 37, 488, 501], 50)).toEqual([0, 50, 500, 500])
   })
 })

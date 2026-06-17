@@ -1316,13 +1316,14 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
               ? params.remixImageUrl.trim()
               : undefined
           const hasRemixSource = Boolean(remixImage || remixImageUrl)
+          const magicPromptEnabled = parseOptionalBooleanInput(params.magicPrompt) === true
           if (!prompt && !jsonPrompt) {
             throw new Error('Either prompt or jsonPrompt is required for Ideogram generation')
           }
-          if (prompt && jsonPrompt) {
+          if (prompt && jsonPrompt && !magicPromptEnabled) {
             throw new Error('Provide either prompt or jsonPrompt for Ideogram, not both')
           }
-          if (hasRemixSource && jsonPrompt) {
+          if (hasRemixSource && jsonPrompt && !magicPromptEnabled) {
             throw new Error(
               'Ideogram Remix supports prompt text only. Use Prompt instead of JSON Prompt.'
             )
@@ -1332,7 +1333,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
             provider,
             model: params.model || defaultModel,
             apiKey: params.apiKey,
-            ...(jsonPrompt ? { jsonPrompt } : { prompt }),
+            ...(jsonPrompt && !magicPromptEnabled ? { jsonPrompt } : {}),
+            ...(prompt || magicPromptEnabled ? { prompt: prompt || JSON.stringify(jsonPrompt) } : {}),
             ...(params.magicPrompt !== undefined && {
               magicPrompt: parseOptionalBooleanInput(params.magicPrompt),
             }),

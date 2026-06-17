@@ -170,17 +170,23 @@ export async function generateWithIdeogram(
   bufferFromUrl: (url: string) => Promise<{ buffer: Buffer; contentType: string }>
 ): Promise<IdeogramGeneratedImageResult> {
   const model = body.model || IDEOGRAM_V4_MODEL
-  const jsonPrompt = parseJsonPrompt(body)
+  const jsonPromptRaw = parseJsonPrompt(body)
   const textPrompt = body.prompt?.trim() ?? ''
   const remixImage = await resolveRemixImage(body, requestId, logger, bufferFromUrl)
+  const magicPromptEnabled = (body as Record<string, unknown>).magicPrompt === true
 
-  if (jsonPrompt && textPrompt) {
+  const jsonPrompt = magicPromptEnabled ? null : jsonPromptRaw
+  const effectiveTextPrompt = magicPromptEnabled && jsonPromptRaw && !textPrompt
+    ? JSON.stringify(jsonPromptRaw)
+    : textPrompt
+
+  if (jsonPrompt && effectiveTextPrompt) {
     throw new Error('Provide either prompt (text_prompt) or jsonPrompt, not both')
   }
   if (remixImage && jsonPrompt) {
     throw new Error('Ideogram Remix supports text prompts only. Use prompt instead of jsonPrompt.')
   }
-  if (!jsonPrompt && !textPrompt) {
+  if (!jsonPrompt && !effectiveTextPrompt) {
     throw new Error('Either prompt or jsonPrompt is required for Ideogram generation')
   }
 
@@ -205,14 +211,14 @@ export async function generateWithIdeogram(
       new Blob([new Uint8Array(remixImage.buffer)], { type: remixImage.contentType }),
       remixImage.fileName
     )
-    formData.append('text_prompt', textPrompt)
+    formData.append('text_prompt', effectiveTextPrompt)
     if (typeof imageWeight === 'number' && Number.isFinite(imageWeight)) {
       formData.append('image_weight', String(Math.round(imageWeight)))
     }
   } else if (jsonPrompt) {
     formData.append('json_prompt', JSON.stringify(jsonPrompt))
   } else {
-    formData.append('text_prompt', textPrompt)
+    formData.append('text_prompt', effectiveTextPrompt)
   }
   formData.append('resolution', resolution)
   formData.append('rendering_speed', renderingSpeed)
@@ -225,6 +231,7 @@ export async function generateWithIdeogram(
     resolution,
     renderingSpeed,
     usesJsonPrompt: Boolean(jsonPrompt),
+    magicPromptEnabled,
     operation: remixImage ? 'remix' : 'generate',
   })
 

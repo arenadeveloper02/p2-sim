@@ -44,6 +44,14 @@ export const IdeogramPromptBuilderBlock: BlockConfig<IdeogramPromptBuildResponse
       type: 'string',
       description: 'Plain prompt for Ideogram text_prompt Magic Prompt workflows',
     },
+    resolution: {
+      type: 'string',
+      description: 'Canvas resolution for direct wiring into Image Generator',
+    },
+    renderingSpeed: {
+      type: 'string',
+      description: 'Rendering speed for direct wiring into Image Generator',
+    },
     elements: { type: 'json', description: 'Ordered compositional elements' },
     metadata: { type: 'json', description: 'Builder metadata (counts, resolution, rendering speed)' },
   },

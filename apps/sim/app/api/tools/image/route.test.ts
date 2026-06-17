@@ -9,17 +9,23 @@ const {
   mockUploadExecutionFile,
   mockSecureFetch,
   mockValidateUrl,
+  mockGetBYOKKey,
   mockEnv,
 } = vi.hoisted(() => ({
   mockCheckInternalAuth: vi.fn(),
   mockUploadExecutionFile: vi.fn(),
   mockSecureFetch: vi.fn(),
   mockValidateUrl: vi.fn(),
+  mockGetBYOKKey: vi.fn(),
   mockEnv: { IDEOGRAM_API_KEY: undefined as string | undefined },
 }))
 
 vi.mock('@/lib/auth/hybrid', () => ({
   checkInternalAuth: mockCheckInternalAuth,
+}))
+
+vi.mock('@/lib/api-key/byok', () => ({
+  getBYOKKey: mockGetBYOKKey,
 }))
 
 vi.mock('@/lib/uploads/contexts/execution', () => ({
@@ -108,6 +114,7 @@ describe('Image API Route - Ideogram', () => {
       name: 'generated.png',
     })
     mockEnv.IDEOGRAM_API_KEY = undefined
+    mockGetBYOKKey.mockResolvedValue(null)
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(createIdeogramApiResponse()))
   })
 
@@ -230,6 +237,52 @@ describe('Image API Route - Ideogram', () => {
 
     const response = await POST(request)
     expect(response.status).toBe(200)
+  })
+
+  it('uses workspace BYOK key when block apiKey is omitted', async () => {
+    mockGetBYOKKey.mockResolvedValue({ apiKey: 'workspace-ideogram-key', isBYOK: true })
+
+    const request = createMockRequest('POST', {
+      provider: 'ideogram',
+      prompt: 'Use workspace key',
+      workspaceId: 'ws-1',
+      workflowId: 'wf-1',
+      executionId: 'exec-1',
+    })
+
+    const response = await POST(request)
+    expect(response.status).toBe(200)
+    expect(mockGetBYOKKey).toHaveBeenCalledWith('ws-1', 'ideogram')
+  })
+
+  it('uses text_prompt when magicPrompt is enabled even if jsonPrompt is provided', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      const body = init?.body as FormData
+      expect(body.get('json_prompt')).toBeNull()
+      expect(body.get('text_prompt')).toBe('Magic path prompt')
+      return createIdeogramApiResponse()
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const request = createMockRequest('POST', {
+      provider: 'ideogram',
+      apiKey: 'ideogram-key',
+      prompt: 'Magic path prompt',
+      magicPrompt: true,
+      jsonPrompt: {
+        compositional_deconstruction: {
+          background: 'Gradient',
+          elements: [],
+        },
+      },
+      workspaceId: 'ws-1',
+      workflowId: 'wf-1',
+      executionId: 'exec-1',
+    })
+
+    const response = await POST(request)
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalled()
   })
 
   it('rejects Ideogram requests without an API key when server key is unset', async () => {

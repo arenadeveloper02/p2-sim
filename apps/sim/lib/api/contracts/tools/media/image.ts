@@ -72,6 +72,7 @@ export const imageToolBodySchema = z
     if (body.provider === 'ideogram') {
       const prompt = body.prompt?.trim() ?? ''
       const jsonPromptProvided = hasJsonPrompt(body as Record<string, unknown>)
+      const magicPromptEnabled = body.magicPrompt === true
       const hasRemixImage =
         hasRemixImageValue(body.remixImage) || Boolean(body.remixImageUrl?.trim())
       if (!prompt && !jsonPromptProvided) {
@@ -81,14 +82,14 @@ export const imageToolBodySchema = z
           message: 'Either prompt or jsonPrompt is required for Ideogram generation',
         })
       }
-      if (prompt && jsonPromptProvided) {
+      if (prompt && jsonPromptProvided && !magicPromptEnabled) {
         ctx.addIssue({
           code: 'custom',
           path: ['jsonPrompt'],
           message: 'Provide either prompt (text_prompt) or jsonPrompt, not both',
         })
       }
-      if (hasRemixImage && jsonPromptProvided) {
+      if (hasRemixImage && jsonPromptProvided && !magicPromptEnabled) {
         ctx.addIssue({
           code: 'custom',
           path: ['jsonPrompt'],

@@ -14,6 +14,7 @@ import {
   searchParamsToObject,
   validationErrorResponse,
 } from '@/lib/api/server'
+import { getBYOKKey } from '@/lib/api-key/byok'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
@@ -96,10 +97,19 @@ interface StoredImageResponse {
   __falaiBilling?: FalAICostMetadata
 }
 
-function resolveImageProviderApiKey(provider: ImageProvider, apiKey: string | undefined): string {
+function resolveImageProviderApiKey(
+  provider: ImageProvider,
+  apiKey: string | undefined,
+  workspaceApiKey?: string
+): string {
   const trimmedKey = apiKey?.trim()
   if (trimmedKey) {
     return trimmedKey
+  }
+
+  const trimmedWorkspaceKey = workspaceApiKey?.trim()
+  if (trimmedWorkspaceKey) {
+    return trimmedWorkspaceKey
   }
 
   if (provider === 'openai') {
@@ -116,7 +126,7 @@ function resolveImageProviderApiKey(provider: ImageProvider, apiKey: string | un
       return serverKey
     }
     throw new Error(
-      'API key is required. Set IDEOGRAM_API_KEY on the server or provide an Ideogram API key in the block.'
+      'API key is required. Set IDEOGRAM_API_KEY on the server, add a workspace BYOK key, or provide an Ideogram API key in the block.'
     )
   }
 
@@ -171,7 +181,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     let imageResult: GeneratedImageResult
     try {
-      const apiKey = resolveImageProviderApiKey(provider, body.apiKey)
+      let workspaceIdeogramKey: string | undefined
+      if (provider === 'ideogram' && body.workspaceId) {
+        const byokResult = await getBYOKKey(body.workspaceId, 'ideogram')
+        workspaceIdeogramKey = byokResult?.apiKey
+      }
+
+      const apiKey = resolveImageProviderApiKey(provider, body.apiKey, workspaceIdeogramKey)
       if (provider === 'openai') {
         imageResult = await generateWithOpenAI(apiKey, body, requestId, logger)
       } else if (provider === 'gemini') {

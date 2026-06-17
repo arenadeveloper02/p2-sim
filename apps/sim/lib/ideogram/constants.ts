@@ -40,6 +40,27 @@ export const IDEOGRAM_DEFAULT_RESOLUTION: IdeogramV4Resolution = '2048x2048'
 
 export const IDEOGRAM_DEFAULT_RENDERING_SPEED: IdeogramRenderingSpeed = 'DEFAULT'
 
+/** Maximum palette colors per compositional element (KJ / Ideogram 4 builder parity). */
+export const IDEOGRAM_MAX_ELEMENT_PALETTE_COLORS = 5
+
+/** Maximum palette colors on global style description. */
+export const IDEOGRAM_MAX_STYLE_PALETTE_COLORS = 16
+
+/** Approximate json_prompt token budget before Ideogram may truncate. */
+export const IDEOGRAM_TOKEN_ESTIMATE_LIMIT = 2048
+
+export const IDEOGRAM_STYLE_MODES = ['none', 'photo', 'art_style'] as const
+
+export type IdeogramStyleMode = (typeof IDEOGRAM_STYLE_MODES)[number]
+
+export const IDEOGRAM_OUTPUT_FORMATS = ['compact', 'pretty'] as const
+
+export type IdeogramOutputFormat = (typeof IDEOGRAM_OUTPUT_FORMATS)[number]
+
+export const IDEOGRAM_CANVAS_GUIDES = ['thirds', 'grid', 'golden', 'spiral'] as const
+
+export type IdeogramCanvasGuide = (typeof IDEOGRAM_CANVAS_GUIDES)[number]
+
 /** Parse `WIDTHxHEIGHT` into numeric dimensions. */
 export function parseIdeogramResolution(resolution: string): { width: number; height: number } {
   const [widthText, heightText] = resolution.split('x')

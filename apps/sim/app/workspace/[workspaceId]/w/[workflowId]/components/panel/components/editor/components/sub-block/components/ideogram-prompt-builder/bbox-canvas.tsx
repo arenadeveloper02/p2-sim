@@ -10,27 +10,41 @@ import {
   useState,
 } from 'react'
 import { cn } from '@/lib/core/utils/cn'
-import { ideogramBboxToPixelRect, pixelRectToIdeogramBbox } from '@/lib/ideogram/bbox'
+import {
+  BBOX_COORDINATE_LABELS,
+  ideogramBboxToPixelRect,
+  pixelRectToIdeogramBbox,
+  snapIdeogramBbox,
+  updateIdeogramBboxCoordinate,
+} from '@/lib/ideogram/bbox'
 import { parseIdeogramResolution } from '@/lib/ideogram/constants'
-import type { IdeogramBbox, IdeogramBuilderElement } from '@/lib/ideogram/types'
+import type { IdeogramBbox, IdeogramBuilderElement, IdeogramCanvasSettings } from '@/lib/ideogram/types'
+import { resolveElementPalette } from '@/lib/ideogram/build-json-prompt'
+import { Input } from '@/components/emcn'
 
 interface BboxCanvasProps {
   resolution: string
   elements: IdeogramBuilderElement[]
   activeElementId?: string
+  selectedElementIds?: string[]
   label?: string
   referenceImageUrl?: string
   referenceImageOpacity?: number
   canvasWidth?: number
+  canvasSettings?: IdeogramCanvasSettings
   disabled?: boolean
+  showNumericEditors?: boolean
   onSelectElement: (id: string) => void
+  onSelectElements?: (ids: string[]) => void
   onChangeElementBbox: (id: string, bbox: IdeogramBbox | undefined) => void
   onDeleteElement?: (id: string) => void
+  onToggleElementLock?: (id: string) => void
 }
 
 const DEFAULT_CANVAS_WIDTH = 320
 const HOLD_TO_MOVE_MS = 250
 const DRAW_START_THRESHOLD_PX = 4
+const SNAP_GRID_STEP = 50
 
 type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 
@@ -107,29 +121,120 @@ function movePixelRect(
   }
 }
 
+function pointInRect(x: number, y: number, rect: PixelRect): boolean {
+  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height
+}
+
+function elementAccentColor(element: IdeogramBuilderElement): string | undefined {
+  const palette = resolveElementPalette(element)
+  return palette?.[0] ?? element.color
+}
+
+function CompositionGuides({
+  guideMode,
+  canvasWidth,
+  canvasHeight,
+}: {
+  guideMode: NonNullable<IdeogramCanvasSettings['guideMode']>
+  canvasWidth: number
+  canvasHeight: number
+}) {
+  const lines: Array<{ key: string; style: React.CSSProperties }> = []
+
+  if (guideMode === 'thirds' || guideMode === 'golden' || guideMode === 'spiral') {
+    for (const fraction of [1 / 3, 2 / 3]) {
+      lines.push({
+        key: `v-${fraction}`,
+        style: {
+          left: canvasWidth * fraction,
+          top: 0,
+          width: 1,
+          height: canvasHeight,
+        },
+      })
+      lines.push({
+        key: `h-${fraction}`,
+        style: {
+          left: 0,
+          top: canvasHeight * fraction,
+          width: canvasWidth,
+          height: 1,
+        },
+      })
+    }
+  }
+
+  if (guideMode === 'grid') {
+    const stepX = canvasWidth / 10
+    const stepY = canvasHeight / 10
+    for (let index = 1; index < 10; index += 1) {
+      lines.push({
+        key: `grid-v-${index}`,
+        style: { left: stepX * index, top: 0, width: 1, height: canvasHeight },
+      })
+      lines.push({
+        key: `grid-h-${index}`,
+        style: { left: 0, top: stepY * index, width: canvasWidth, height: 1 },
+      })
+    }
+  }
+
+  return (
+    <>
+      {lines.map((line) => (
+        <span
+          key={line.key}
+          className='pointer-events-none absolute bg-[var(--text-body-secondary)]/35'
+          style={line.style}
+        />
+      ))}
+    </>
+  )
+}
+
 export function BboxCanvas({
   resolution,
   elements,
   activeElementId,
+  selectedElementIds,
   label,
   referenceImageUrl,
   referenceImageOpacity = 0.35,
   canvasWidth = DEFAULT_CANVAS_WIDTH,
+  canvasSettings,
   disabled = false,
+  showNumericEditors = true,
   onSelectElement,
+  onSelectElements,
   onChangeElementBbox,
   onDeleteElement,
+  onToggleElementLock,
 }: BboxCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const holdToMoveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [draftRect, setDraftRect] = useState<DraftRect | null>(null)
+  const [overlapCycleIndex, setOverlapCycleIndex] = useState(0)
 
   const { width: resolutionWidth, height: resolutionHeight } = parseIdeogramResolution(resolution)
   const canvasHeight = Math.max(120, Math.round((canvasWidth * resolutionHeight) / resolutionWidth))
   const activeElement = elements.find((element) => element.id === activeElementId)
+  const showGuides = canvasSettings?.showGuides === true
+  const snapToGrid = canvasSettings?.snapToGrid === true
+  const hideBoxes = canvasSettings?.hideBoxes === true
+  const guideMode = canvasSettings?.guideMode ?? 'thirds'
+
+  const selectedIds = useMemo(() => {
+    if (selectedElementIds && selectedElementIds.length > 0) return selectedElementIds
+    return activeElementId ? [activeElementId] : []
+  }, [activeElementId, selectedElementIds])
+
+  const visibleElements = useMemo(
+    () => elements.filter((element) => !element.hidden && (!hideBoxes || element.id === activeElementId)),
+    [activeElementId, elements, hideBoxes]
+  )
 
   const displayedElements = useMemo(() => {
-    return elements
+    return visibleElements
       .map((element, index) => {
         const displayRect =
           draftRect && element.id === draftRect.elementId
@@ -147,15 +252,10 @@ export function BboxCanvas({
         ): item is {
           element: IdeogramBuilderElement
           index: number
-          displayRect: {
-            x: number
-            y: number
-            width: number
-            height: number
-          }
+          displayRect: PixelRect
         } => item !== null
       )
-  }, [canvasHeight, canvasWidth, draftRect, elements])
+  }, [canvasHeight, canvasWidth, draftRect, visibleElements])
 
   const activeDisplayRect = useMemo(() => {
     if (draftRect && draftRect.elementId === activeElementId) {
@@ -174,6 +274,23 @@ export function BboxCanvas({
   }, [])
 
   useEffect(() => clearHoldToMoveTimeout, [clearHoldToMoveTimeout])
+
+  const finalizeBbox = useCallback(
+    (rect: PixelRect): IdeogramBbox => {
+      const bbox = pixelRectToIdeogramBbox(rect, canvasWidth, canvasHeight)
+      return snapToGrid ? snapIdeogramBbox(bbox, SNAP_GRID_STEP) : bbox
+    },
+    [canvasHeight, canvasWidth, snapToGrid]
+  )
+
+  const findElementsAtPoint = useCallback(
+    (x: number, y: number) => {
+      return displayedElements
+        .filter(({ displayRect }) => pointInRect(x, y, displayRect))
+        .map(({ element }) => element.id)
+    },
+    [displayedElements]
+  )
 
   const beginDraft = useCallback(
     (event: PointerEvent<HTMLElement>, elementId: string, selectionCandidateId?: string) => {
@@ -209,6 +326,9 @@ export function BboxCanvas({
       rect: PixelRect
     ) => {
       if (disabled) return
+      const element = elements.find((item) => item.id === elementId)
+      if (element?.locked) return
+
       clearHoldToMoveTimeout()
       const bounds = canvasRef.current?.getBoundingClientRect()
       if (!bounds) return
@@ -228,7 +348,7 @@ export function BboxCanvas({
         ...resizePixelRect(rect, handle, startX, startY),
       })
     },
-    [canvasHeight, canvasWidth, clearHoldToMoveTimeout, disabled, onSelectElement]
+    [canvasHeight, canvasWidth, clearHoldToMoveTimeout, disabled, elements, onSelectElement]
   )
 
   const beginPendingMove = useCallback(
@@ -239,6 +359,12 @@ export function BboxCanvas({
       rect: PixelRect
     ) => {
       if (disabled) return
+      const element = elements.find((item) => item.id === elementId)
+      if (element?.locked) {
+        onSelectElement(elementId)
+        return
+      }
+
       clearHoldToMoveTimeout()
       const bounds = canvasRef.current?.getBoundingClientRect()
       if (!bounds) return
@@ -268,15 +394,99 @@ export function BboxCanvas({
         )
       }, HOLD_TO_MOVE_MS)
     },
-    [canvasHeight, canvasWidth, clearHoldToMoveTimeout, disabled, onSelectElement]
+    [canvasHeight, canvasWidth, clearHoldToMoveTimeout, disabled, elements, onSelectElement]
   )
 
-  const handlePointerDown = useCallback(
+  const handleCanvasPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (disabled || !activeElementId) return
+
+      const bounds = canvasRef.current?.getBoundingClientRect()
+      if (!bounds) return
+
+      const x = Math.min(canvasWidth, Math.max(0, event.clientX - bounds.left))
+      const y = Math.min(canvasHeight, Math.max(0, event.clientY - bounds.top))
+      const hits = findElementsAtPoint(x, y)
+
+      if (event.altKey && hits.length > 0) {
+        const nextIndex = (overlapCycleIndex + 1) % hits.length
+        setOverlapCycleIndex(nextIndex)
+        onSelectElement(hits[nextIndex] ?? hits[0])
+        return
+      }
+
+      if (!event.shiftKey && hits.length > 0 && !event.altKey) {
+        return
+      }
+
       beginDraft(event, activeElementId)
     },
-    [activeElementId, beginDraft, disabled]
+    [
+      activeElementId,
+      beginDraft,
+      canvasHeight,
+      canvasWidth,
+      disabled,
+      findElementsAtPoint,
+      onSelectElement,
+      overlapCycleIndex,
+    ]
+  )
+
+  const handleElementPointerDown = useCallback(
+    (
+      event: PointerEvent<HTMLElement>,
+      elementId: string,
+      drawElementId: string,
+      rect: PixelRect
+    ) => {
+      if (disabled) return
+      event.preventDefault()
+      event.stopPropagation()
+
+      const bounds = canvasRef.current?.getBoundingClientRect()
+      if (!bounds) return
+
+      const x = Math.min(canvasWidth, Math.max(0, event.clientX - bounds.left))
+      const y = Math.min(canvasHeight, Math.max(0, event.clientY - bounds.top))
+
+      if (event.altKey) {
+        const hits = findElementsAtPoint(x, y)
+        const nextIndex = (overlapCycleIndex + 1) % Math.max(hits.length, 1)
+        setOverlapCycleIndex(nextIndex)
+        onSelectElement(hits[nextIndex] ?? elementId)
+        return
+      }
+
+      if (event.shiftKey && onSelectElements) {
+        const next = selectedIds.includes(elementId)
+          ? selectedIds.filter((id) => id !== elementId)
+          : [...selectedIds, elementId]
+        onSelectElements(next)
+        onSelectElement(elementId)
+        return
+      }
+
+      if (event.shiftKey) {
+        onSelectElement(elementId)
+        beginDraft(event, drawElementId, elementId)
+        return
+      }
+
+      beginPendingMove(event, elementId, drawElementId, rect)
+    },
+    [
+      beginDraft,
+      beginPendingMove,
+      canvasHeight,
+      canvasWidth,
+      disabled,
+      findElementsAtPoint,
+      onSelectElement,
+      onSelectElements,
+      overlapCycleIndex,
+      selectedIds,
+    ]
   )
 
   const handlePointerMove = useCallback(
@@ -356,18 +566,14 @@ export function BboxCanvas({
       return
     }
 
-    onChangeElementBbox(
-      draftRect.elementId,
-      pixelRectToIdeogramBbox(draftRect, canvasWidth, canvasHeight)
-    )
+    onChangeElementBbox(draftRect.elementId, finalizeBbox(draftRect))
     onSelectElement(draftRect.elementId)
     setDraftRect(null)
   }, [
-    canvasHeight,
-    canvasWidth,
     clearHoldToMoveTimeout,
     disabled,
     draftRect,
+    finalizeBbox,
     onChangeElementBbox,
     onSelectElement,
   ])
@@ -379,18 +585,35 @@ export function BboxCanvas({
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
-      if (disabled || !activeElementId || !onDeleteElement) return
-      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      if (disabled || !activeElementId) return
 
-      event.preventDefault()
-      setDraftRect(null)
-      onDeleteElement(activeElementId)
+      if ((event.key === 'Delete' || event.key === 'Backspace') && onDeleteElement) {
+        event.preventDefault()
+        setDraftRect(null)
+        onDeleteElement(activeElementId)
+        return
+      }
+
+      if (event.key.toLowerCase() === 'l' && onToggleElementLock) {
+        event.preventDefault()
+        onToggleElementLock(activeElementId)
+      }
     },
-    [activeElementId, disabled, onDeleteElement]
+    [activeElementId, disabled, onDeleteElement, onToggleElementLock]
+  )
+
+  const handleCoordinateChange = useCallback(
+    (index: 0 | 1 | 2 | 3, value: string) => {
+      if (!activeElement?.bbox) return
+      const next = updateIdeogramBboxCoordinate(activeElement.bbox, index, value)
+      if (!next) return
+      onChangeElementBbox(activeElement.id, snapToGrid ? snapIdeogramBbox(next, SNAP_GRID_STEP) : next)
+    },
+    [activeElement, onChangeElementBbox, snapToGrid]
   )
 
   return (
-    <div className='space-y-1'>
+    <div className='space-y-2'>
       {label ? <p className='text-[12px] text-[var(--text-body-secondary)]'>{label}</p> : null}
       <div
         ref={canvasRef}
@@ -401,7 +624,7 @@ export function BboxCanvas({
         style={{ width: canvasWidth, height: canvasHeight }}
         tabIndex={disabled ? undefined : 0}
         aria-label='Ideogram composition frame'
-        onPointerDown={handlePointerDown}
+        onPointerDown={handleCanvasPointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
@@ -415,8 +638,18 @@ export function BboxCanvas({
             style={{ opacity: referenceImageOpacity }}
           />
         ) : null}
+        {showGuides ? (
+          <CompositionGuides
+            guideMode={guideMode}
+            canvasWidth={canvasWidth}
+            canvasHeight={canvasHeight}
+          />
+        ) : null}
         {displayedElements.map(({ element, index, displayRect }) => {
-          const isActive = element.id === activeElementId
+          const isActive = selectedIds.includes(element.id)
+          const accentColor = elementAccentColor(element)
+          const palette = resolveElementPalette(element) ?? []
+
           return (
             <div
               key={element.id}
@@ -428,26 +661,41 @@ export function BboxCanvas({
                 element.shape === 'freehand' && 'rounded-[35%]',
                 element.shape === 'line' && 'h-1',
                 isActive ? 'ring-2 ring-[var(--accent-primary)]' : 'opacity-70',
+                element.locked && 'border-dashed',
                 element.hidden && 'opacity-30'
               )}
               style={{
-                borderColor: element.color || 'var(--accent-primary)',
-                backgroundColor: element.color ? `${element.color}24` : undefined,
-                color: element.color || 'var(--text-body)',
+                borderColor: accentColor || 'var(--accent-primary)',
+                backgroundColor: accentColor ? `${accentColor}24` : undefined,
+                color: accentColor || 'var(--text-body)',
                 left: displayRect.x,
                 top: displayRect.y,
                 width: displayRect.width,
                 height: displayRect.height,
               }}
-              onPointerDown={(event) => {
-                if (disabled) return
-                event.preventDefault()
-                event.stopPropagation()
-                beginPendingMove(event, element.id, activeElementId ?? element.id, displayRect)
-              }}
+              onPointerDown={(event) =>
+                handleElementPointerDown(
+                  event,
+                  element.id,
+                  activeElementId ?? element.id,
+                  displayRect
+                )
+              }
             >
-              {element.shape === 'line' ? null : index + 1}
-              {isActive
+              {element.shape === 'line' ? null : (
+                <span className='px-1'>
+                  {index + 1}
+                  {element.locked ? ' 🔒' : ''}
+                </span>
+              )}
+              {palette.length > 1 ? (
+                <div className='absolute right-0 bottom-0 left-0 flex h-1.5 overflow-hidden'>
+                  {palette.map((color) => (
+                    <span key={color} className='flex-1' style={{ backgroundColor: color }} />
+                  ))}
+                </div>
+              ) : null}
+              {isActive && !element.locked
                 ? RESIZE_HANDLES.map((handle) => (
                     <span
                       key={handle.id}
@@ -469,8 +717,8 @@ export function BboxCanvas({
         })}
       </div>
       <p className='text-[11px] text-[var(--text-body-secondary)]'>
-        Select an element, drag in the frame to define its region, hold a box to move it, or use the
-        handles to resize it. Bboxes serialize to Ideogram&apos;s 1000×1000 grid.
+        Select an element, drag to define a region, hold a box to move, Shift+drag to draw over
+        boxes, Alt+click to cycle overlaps, and press L to lock the active region.
       </p>
       {activeDisplayRect ? (
         <p className='text-[11px] text-[var(--text-body-secondary)]'>
@@ -478,6 +726,22 @@ export function BboxCanvas({
           {Math.round(activeDisplayRect.height)}
           px preview.
         </p>
+      ) : null}
+      {showNumericEditors && activeElement?.bbox ? (
+        <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
+          {BBOX_COORDINATE_LABELS.map((coordinateLabel, index) => (
+            <div key={coordinateLabel} className='space-y-1'>
+              <p className='text-[10px] text-[var(--text-body-secondary)]'>{coordinateLabel}</p>
+              <Input
+                value={String(activeElement.bbox?.[index] ?? '')}
+                onChange={(event) =>
+                  handleCoordinateChange(index as 0 | 1 | 2 | 3, event.target.value)
+                }
+                disabled={disabled || activeElement.locked}
+              />
+            </div>
+          ))}
+        </div>
       ) : null}
     </div>
   )

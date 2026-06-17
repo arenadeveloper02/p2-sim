@@ -55,3 +55,43 @@ export function ideogramBboxToPixelRect(
 
   return { x, y, width, height }
 }
+
+const BBOX_COORDINATE_LABELS = ['y_min', 'x_min', 'y_max', 'x_max'] as const
+
+/** Parse a single bbox coordinate from user input (Ideogram 0–1000 grid). */
+export function parseIdeogramBboxCoordinate(value: string): number | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed)) return undefined
+  return clampInteger(parsed, 0, IDEOGRAM_BBOX_GRID_SIZE)
+}
+
+/** Update one coordinate on an Ideogram bbox. */
+export function updateIdeogramBboxCoordinate(
+  bbox: IdeogramBbox,
+  index: 0 | 1 | 2 | 3,
+  value: string
+): IdeogramBbox | undefined {
+  const coordinate = parseIdeogramBboxCoordinate(value)
+  if (coordinate === undefined) return undefined
+
+  const next: IdeogramBbox = [...bbox] as IdeogramBbox
+  next[index] = coordinate
+  return clampIdeogramBbox(next)
+}
+
+/** Snap a grid coordinate to the nearest step (e.g. 50 for a 20×20 grid). */
+export function snapIdeogramCoordinate(value: number, step: number): number {
+  if (step <= 1) return clampInteger(value, 0, IDEOGRAM_BBOX_GRID_SIZE)
+  return clampInteger(Math.round(value / step) * step, 0, IDEOGRAM_BBOX_GRID_SIZE)
+}
+
+/** Snap all bbox coordinates to the Ideogram grid step. */
+export function snapIdeogramBbox(bbox: IdeogramBbox, step = 50): IdeogramBbox {
+  return clampIdeogramBbox(
+    bbox.map((coordinate) => snapIdeogramCoordinate(coordinate, step)) as IdeogramBbox
+  )
+}
+
+export { BBOX_COORDINATE_LABELS }

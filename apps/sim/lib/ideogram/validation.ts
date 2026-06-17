@@ -1,7 +1,11 @@
 import {
+  IDEOGRAM_MAX_ELEMENT_PALETTE_COLORS,
+  IDEOGRAM_MAX_STYLE_PALETTE_COLORS,
   IDEOGRAM_RENDERING_SPEEDS,
+  IDEOGRAM_STYLE_MODES,
   IDEOGRAM_V4_RESOLUTIONS,
   type IdeogramRenderingSpeed,
+  type IdeogramStyleMode,
   type IdeogramV4Resolution,
 } from '@/lib/ideogram/constants'
 import type {
@@ -29,8 +33,36 @@ export function isIdeogramRenderingSpeed(value: string): value is IdeogramRender
   return (IDEOGRAM_RENDERING_SPEEDS as readonly string[]).includes(value)
 }
 
+export function isIdeogramStyleMode(value: string): value is IdeogramStyleMode {
+  return (IDEOGRAM_STYLE_MODES as readonly string[]).includes(value)
+}
+
+function validatePalette(
+  palette: string[] | undefined,
+  maxColors: number,
+  pathPrefix: string
+): string[] {
+  if (!palette) return []
+
+  const errors: string[] = []
+  if (!Array.isArray(palette)) {
+    errors.push(`${pathPrefix} must be an array of color strings`)
+    return errors
+  }
+  if (palette.length > maxColors) {
+    errors.push(`${pathPrefix} supports at most ${maxColors} colors`)
+  }
+  palette.forEach((color, index) => {
+    if (!isNonEmptyString(color)) {
+      errors.push(`${pathPrefix}[${index}] must be a non-empty color string`)
+    }
+  })
+  return errors
+}
+
 function validateStyleDescription(
   style: IdeogramPromptBuilderStyleDescription | undefined,
+  styleMode: IdeogramStyleMode | undefined,
   pathPrefix: string
 ): string[] {
   if (!style) return []
@@ -44,6 +76,25 @@ function validateStyleDescription(
     isNonEmptyString(style.photo)
 
   if (!hasAnyField) return []
+
+  if (styleMode !== 'none' && styleMode !== undefined) {
+    if (!isNonEmptyString(style.aesthetics)) {
+      errors.push(`${pathPrefix}.aesthetics is required when style mode is ${styleMode}`)
+    }
+    if (!isNonEmptyString(style.lighting)) {
+      errors.push(`${pathPrefix}.lighting is required when style mode is ${styleMode}`)
+    }
+    if (!isNonEmptyString(style.medium)) {
+      errors.push(`${pathPrefix}.medium is required when style mode is ${styleMode}`)
+    }
+    if (styleMode === 'photo' && !isNonEmptyString(style.photo)) {
+      errors.push(`${pathPrefix}.photo is required when style mode is photo`)
+    }
+    if (styleMode === 'art_style' && !isNonEmptyString(style.artStyle)) {
+      errors.push(`${pathPrefix}.artStyle is required when style mode is art_style`)
+    }
+    return errors
+  }
 
   if (!isNonEmptyString(style.aesthetics)) {
     errors.push(`${pathPrefix}.aesthetics is required when style description is provided`)
@@ -66,6 +117,10 @@ function validateBuilderElement(element: IdeogramBuilderElement, index: number):
     errors.push(`${prefix}.bbox must be four integers [y_min, x_min, y_max, x_max]`)
   }
 
+  errors.push(
+    ...validatePalette(element.palette, IDEOGRAM_MAX_ELEMENT_PALETTE_COLORS, `${prefix}.palette`)
+  )
+
   if (element.type === 'obj') {
     if (!isNonEmptyString(element.desc)) {
       errors.push(`${prefix}.desc is required for object elements`)
@@ -87,9 +142,6 @@ function validateBuilderElement(element: IdeogramBuilderElement, index: number):
 export function validateIdeogramPromptBuilderValue(value: IdeogramPromptBuilderValue): string[] {
   const errors: string[] = []
 
-  if (!isNonEmptyString(value.highLevelDescription)) {
-    errors.push('highLevelDescription is required')
-  }
   if (!isNonEmptyString(value.background)) {
     errors.push('background is required')
   }
@@ -99,8 +151,20 @@ export function validateIdeogramPromptBuilderValue(value: IdeogramPromptBuilderV
   if (value.renderingSpeed && !isIdeogramRenderingSpeed(value.renderingSpeed)) {
     errors.push(`renderingSpeed must be one of: ${IDEOGRAM_RENDERING_SPEEDS.join(', ')}`)
   }
+  if (value.styleMode && !isIdeogramStyleMode(value.styleMode)) {
+    errors.push(`styleMode must be one of: ${IDEOGRAM_STYLE_MODES.join(', ')}`)
+  }
 
-  errors.push(...validateStyleDescription(value.styleDescription, 'styleDescription'))
+  errors.push(
+    ...validatePalette(
+      value.stylePalette,
+      IDEOGRAM_MAX_STYLE_PALETTE_COLORS,
+      'stylePalette'
+    )
+  )
+  errors.push(
+    ...validateStyleDescription(value.styleDescription, value.styleMode, 'styleDescription')
+  )
   value.elements.forEach((element, index) => {
     errors.push(...validateBuilderElement(element, index))
   })
@@ -115,6 +179,14 @@ function validateWireElement(element: IdeogramV4Element, index: number): string[
   if (element.bbox && !isIdeogramBbox(element.bbox)) {
     errors.push(`${prefix}.bbox must be four integers`)
   }
+
+  errors.push(
+    ...validatePalette(
+      element.color_palette,
+      IDEOGRAM_MAX_ELEMENT_PALETTE_COLORS,
+      `${prefix}.color_palette`
+    )
+  )
 
   if (element.type === 'obj') {
     if (!isNonEmptyString(element.desc)) {
@@ -137,10 +209,6 @@ function validateWireElement(element: IdeogramV4Element, index: number): string[
 export function validateIdeogramV4JsonPrompt(prompt: IdeogramV4JsonPrompt): string[] {
   const errors: string[] = []
 
-  if (!isNonEmptyString(prompt.high_level_description)) {
-    errors.push('high_level_description is required')
-  }
-
   const style = prompt.style_description
   if (style) {
     if (!isNonEmptyString(style.aesthetics)) {
@@ -152,6 +220,13 @@ export function validateIdeogramV4JsonPrompt(prompt: IdeogramV4JsonPrompt): stri
     if (!isNonEmptyString(style.medium)) {
       errors.push('style_description.medium is required when style_description is present')
     }
+    errors.push(
+      ...validatePalette(
+        style.color_palette,
+        IDEOGRAM_MAX_STYLE_PALETTE_COLORS,
+        'style_description.color_palette'
+      )
+    )
   }
 
   if (!isNonEmptyString(prompt.compositional_deconstruction?.background)) {
