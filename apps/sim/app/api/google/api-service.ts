@@ -609,7 +609,7 @@ export const buildNanoBananaRequestBody = async (params: {
 }
 
 /** Timeout for the outgoing request to Google – fail before route maxDuration on stuck generations. */
-const GOOGLE_API_TIMEOUT_MS = 3 * 60 * 1000
+const GOOGLE_API_TIMEOUT_MS = 6 * 60 * 1000
 
 export interface NanoBananaGenerationParams {
   model: string

@@ -92,7 +92,7 @@ export function createImageGenerationWrapperTool(
     request: {
       url: '/api/tools/image-generation',
       method: 'POST',
-      timeout: 300000,
+      timeout: 600000,
       headers: () => ({
         'Content-Type': 'application/json',
       }),

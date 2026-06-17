@@ -12,7 +12,7 @@ import { executeTool } from '@/tools'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300
+export const maxDuration = 1200
 
 const logger = createLogger('ImageGenerationWrapperApi')
 
@@ -241,18 +241,16 @@ export async function POST(request: NextRequest) {
       )
     }
     const validated = ImageGenerationWrapperSchema.parse(body)
-    const { imageCount, promptImageUrl, singleImagePrompt, singleImagePrompts } =
-      await resolveRequestedImageCount(validated.params)
+    const { imageCount, promptImageUrl } = await resolveRequestedImageCount(validated.params)
     const { imageCount: _imageCount, inputImageUrl, ...baseParams } = validated.params
     const inputImageWarning = normalizeOptionalString(validated.params.inputImageWarning)
-    const promptToExecute =
-      normalizeOptionalString(singleImagePrompt) ?? String(baseParams.prompt ?? '')
+    const originalPrompt = String(baseParams.prompt ?? '')
     const executionToolId = resolveExecutionToolId(validated.baseToolId, validated.params)
     const resolvedBaseParams = applyNanoBananaPromptImageParams({
       baseToolId: executionToolId,
       baseParams: {
         ...baseParams,
-        ...(promptToExecute ? { prompt: promptToExecute } : {}),
+        ...(originalPrompt ? { prompt: originalPrompt } : {}),
       },
       inputImageUrl,
       inputImages: validated.params.inputImages,
@@ -273,7 +271,6 @@ export async function POST(request: NextRequest) {
       requestedBaseToolId: validated.baseToolId,
       imageCount,
       hasPromptImageUrl: Boolean(promptImageUrl),
-      singleImagePromptsCount: singleImagePrompts?.length ?? 0,
       workflowId: resolvedContext?.workflowId,
       concurrency: Math.min(MAX_CONCURRENT_GENERATIONS, imageCount),
     })
@@ -287,11 +284,9 @@ export async function POST(request: NextRequest) {
       MAX_CONCURRENT_GENERATIONS,
       async (index) => {
         try {
-          const promptForImage =
-            normalizeOptionalString(singleImagePrompts?.[index]) ?? promptToExecute
           const result = await executeTool(executionToolId, {
             ...buildExecutionParams(executionToolId, resolvedBaseParams),
-            ...(promptForImage ? { prompt: promptForImage } : {}),
+            ...(originalPrompt ? { prompt: originalPrompt } : {}),
           })
           return { status: 'fulfilled' as const, value: result }
         } catch (err) {

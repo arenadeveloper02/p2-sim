@@ -12,16 +12,14 @@ const SLM_MODEL = 'gemini-3.1-flash-lite'
 /** Hard timeout for the SLM call so a hung Gemini request never blocks generation. */
 const SLM_TIMEOUT_MS = 8000
 
-/** JSON count/prompt rewrite needs only a small response; large values slow the SLM call. */
-const SLM_MAX_OUTPUT_TOKENS = 2048
+/** JSON count extraction needs only a small response; large values slow the SLM call. */
+const SLM_MAX_OUTPUT_TOKENS = 256
 
 const PROMPT_IMAGE_URL_REGEX = /https?:\/\/[^\s"'<>`]+/i
 
 const SlmResponseSchema = z.object({
   imageCount: z.number().int().min(1).max(MAX_IMAGES_TO_GENERATE),
   imageUrl: z.string().nullish(),
-  singleImagePrompt: z.string().nullish(),
-  singleImagePrompts: z.array(z.string()).nullish(),
 })
 
 const NUMBER_WORDS = {
@@ -93,43 +91,15 @@ function extractPromptImageUrl(prompt: string): string | undefined {
 interface ParsedSlmFields {
   imageCount: number
   imageUrl?: string
-  singleImagePrompt?: string
-  singleImagePrompts?: string[]
 }
 
-function normalizePromptList(value: string[] | null | undefined): string[] | undefined {
-  const prompts = value
-    ?.map((item) => item.trim())
-    .filter((item) => item.length > 0)
-    .slice(0, MAX_IMAGES_TO_GENERATE)
-
-  return prompts && prompts.length > 0 ? prompts : undefined
-}
-
-function buildSingleImagePrompts(
-  basePrompt: string,
-  imageCount: number,
-  suggestedPrompts?: string[]
-): string[] {
+function buildPromptsForCount(basePrompt: string, imageCount: number): string[] {
   const count = clampCount(imageCount)
-  const normalizedSuggested = normalizePromptList(suggestedPrompts) ?? []
-
-  if (count === 1) {
-    return [normalizedSuggested[0] ?? basePrompt]
-  }
-
-  const prompts = normalizedSuggested.slice(0, count)
-  for (let index = prompts.length; index < count; index++) {
-    prompts.push(
-      `${basePrompt}\nVariation ${index + 1} of ${count}: make this output visually distinct from the other variations while preserving the user's requested subject.`
-    )
-  }
-
-  return prompts
+  return Array.from({ length: count }, () => basePrompt)
 }
 
 /**
- * Parses SLM output for a suggested image count, image URL, and per-image prompt.
+ * Parses SLM output for a suggested image count and optional image URL.
  * Tries strict JSON first (we request `responseMimeType: application/json`),
  * then falls back to extracting an embedded JSON object, and finally to a digit heuristic.
  */
@@ -149,13 +119,10 @@ function parseSuggestedFieldsFromSlmText(text: string): ParsedSlmFields {
     try {
       const parsed = SlmResponseSchema.safeParse(JSON.parse(candidate))
       if (parsed.success) {
-        const { imageCount, imageUrl, singleImagePrompt, singleImagePrompts } = parsed.data
-        const trimmedSingle = singleImagePrompt?.trim()
+        const { imageCount, imageUrl } = parsed.data
         return {
           imageCount: clampCount(imageCount),
           imageUrl: imageUrl ? normalizePromptImageUrl(imageUrl) : undefined,
-          singleImagePrompt: trimmedSingle && trimmedSingle.length > 0 ? trimmedSingle : undefined,
-          singleImagePrompts: normalizePromptList(singleImagePrompts),
         }
       }
     } catch {
@@ -181,15 +148,15 @@ export interface ResolveImageGenerationCountResult {
   slmSuggested: number
   /** Image URL extracted from the prompt, if any. */
   promptImageUrl?: string
-  /** Prompt rewritten to describe one output image when multiple outputs are needed. */
+  /** Original user prompt, preserved for provider calls. */
   singleImagePrompt: string
-  /** Per-output prompts to send for each generation call, when multiple images are requested. */
+  /** Same original prompt repeated once per requested output image. */
   singleImagePrompts?: string[]
 }
 
 /**
- * Uses a small Gemini model to estimate how many distinct images the prompt implies,
- * then returns the finalized prompt and capped image count inferred from the user's text.
+ * Uses a small Gemini model to estimate how many distinct images the prompt implies.
+ * The original prompt is always preserved for provider calls.
  */
 export async function resolveImageGenerationCount(
   input: ResolveImageGenerationCountInput
@@ -201,25 +168,20 @@ export async function resolveImageGenerationCount(
     return { imageCount: 1, slmSuggested: 1, singleImagePrompt: '', singleImagePrompts: [''] }
   }
 
-  const systemInstruction = `You estimate how many distinct image files the user wants generated and rewrite the prompt for one output image file.
+  const systemInstruction = `You estimate how many distinct image files the user wants generated.
 Count output files, not concepts inside one file.
-Reply with only a JSON object: {"imageCount":N,"imageUrl":"...","singleImagePrompt":"...","singleImagePrompts":["..."]}.
+Reply with only a JSON object: {"imageCount":N,"imageUrl":"..."}.
 "imageCount" must be an integer from 1 to ${MAX_IMAGES_TO_GENERATE}.
 "imageUrl" must be the first explicit http/https image URL present in the prompt, or null if none is present.
-"singleImagePrompt" must be the prompt that should be sent for one generated output image file.
-"singleImagePrompts" must contain exactly imageCount prompts, one for each separate generated image.
-When imageCount is greater than 1, make every singleImagePrompts entry meaningfully different and concrete. Vary the requested attributes across entries instead of repeating the same generic wording.
 If the prompt explicitly asks for a numbered count of variations, versions, options, alternatives, images, pictures, renders, or outputs, imageCount must be that exact number unless the prompt says to combine them into one image.
 If the prompt asks for N variations, versions, options, angles, or alternatives, assume that means N separate output images by default.
 Only count 1 when the prompt explicitly says those variations should be combined into one image, one collage, one grid, one sheet, or shown side by side in a single image.
 If the prompt asks for a single-image comparison/composition and then asks for that whole image multiple times, count the repeats.
-When imageCount is greater than 1, rewrite each prompt so each run requests just one output image. Remove only the count/repetition wording that applies across runs, while preserving the user's intent.
-When imageCount is 1, keep the prompt meaning the same and usually return the original prompt in both singleImagePrompt and singleImagePrompts.
 Examples:
-- "Give me three variations of this image" => {"imageCount":3,"singleImagePrompt":"Give me a variation of this image","singleImagePrompts":["Give me variation 1 of this image with a distinct visual direction","Give me variation 2 of this image with a distinct visual direction","Give me variation 3 of this image with a distinct visual direction"]}
-- "Give me three variations side by side in a single image" => {"imageCount":1,"singleImagePrompt":"Give me three variations side by side in a single image"}
-- "Give me three variations side by side in a single image three times" => {"imageCount":3,"singleImagePrompt":"Give me three variations side by side in a single image"}
-- "Generate 4 separate images of this product" => {"imageCount":4,"singleImagePrompt":"Generate an image of this product","singleImagePrompts":["Generate one image of this product with variation 1","Generate one image of this product with variation 2","Generate one image of this product with variation 3","Generate one image of this product with variation 4"]}`
+- "Give me three variations of this image" => {"imageCount":3,"imageUrl":null}
+- "Give me three variations side by side in a single image" => {"imageCount":1,"imageUrl":null}
+- "Give me three variations side by side in a single image three times" => {"imageCount":3,"imageUrl":null}
+- "Generate 4 separate images of this product" => {"imageCount":4,"imageUrl":null}`
 
   const userText = `Prompt:\n${prompt.slice(0, 8000)}`
 
@@ -232,8 +194,6 @@ Examples:
 
   let slmSuggested = 1
   let resolvedPromptImageUrl = promptImageUrl
-  let singleImagePrompt = prompt
-  let singleImagePrompts: string[] | undefined
 
   const controller = new AbortController()
   const timeoutHandle = setTimeout(() => controller.abort(), SLM_TIMEOUT_MS)
@@ -271,7 +231,7 @@ Examples:
         slmSuggested: fallbackCount,
         promptImageUrl,
         singleImagePrompt: prompt,
-        singleImagePrompts: buildSingleImagePrompts(prompt, fallbackCount),
+        singleImagePrompts: buildPromptsForCount(prompt, fallbackCount),
       }
     }
 
@@ -292,20 +252,17 @@ Examples:
         slmSuggested: fallbackCount,
         promptImageUrl,
         singleImagePrompt: prompt,
-        singleImagePrompts: buildSingleImagePrompts(prompt, fallbackCount),
+        singleImagePrompts: buildPromptsForCount(prompt, fallbackCount),
       }
     }
 
     const parsed = parseSuggestedFieldsFromSlmText(text)
     slmSuggested = parsed.imageCount
     resolvedPromptImageUrl = parsed.imageUrl ?? promptImageUrl
-    singleImagePrompt = parsed.singleImagePrompt ?? prompt
-    singleImagePrompts = parsed.singleImagePrompts
     logger.info('SLM image-count output', {
       parsedSlmSuggested: slmSuggested,
       hasPromptImageUrl: Boolean(resolvedPromptImageUrl),
       explicitOutputCount,
-      singleImagePromptsCount: singleImagePrompts?.length ?? 0,
     })
   } catch (error) {
     const isAbort =
@@ -321,7 +278,7 @@ Examples:
       slmSuggested: fallbackCount,
       promptImageUrl,
       singleImagePrompt: prompt,
-      singleImagePrompts: buildSingleImagePrompts(prompt, fallbackCount),
+      singleImagePrompts: buildPromptsForCount(prompt, fallbackCount),
     }
   } finally {
     clearTimeout(timeoutHandle)
@@ -338,7 +295,7 @@ Examples:
     imageCount,
     slmSuggested,
     promptImageUrl: resolvedPromptImageUrl,
-    singleImagePrompt,
-    singleImagePrompts: buildSingleImagePrompts(singleImagePrompt, imageCount, singleImagePrompts),
+    singleImagePrompt: prompt,
+    singleImagePrompts: buildPromptsForCount(prompt, imageCount),
   }
 }
