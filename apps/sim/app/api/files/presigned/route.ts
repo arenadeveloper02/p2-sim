@@ -8,6 +8,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { generateExecutionFileKey } from '@/lib/uploads/contexts/execution/utils'
+import { generateKnowledgeBaseFileKey } from '@/lib/uploads/contexts/knowledge-base/knowledge-base-file-manager'
 import { generateWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/storage-service'
 import { insertFileMetadata, recordKnowledgeBaseFileOwnership } from '@/lib/uploads/server/metadata'
@@ -267,12 +268,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
+      const customKey = generateKnowledgeBaseFileKey(fileName)
       presignedUrlResponse = await generatePresignedUploadUrl({
         fileName,
         contentType,
         fileSize,
         context: 'knowledge-base',
         userId: sessionUserId,
+        customKey,
         expirationSeconds: 3600,
         metadata: { workspaceId },
       })
