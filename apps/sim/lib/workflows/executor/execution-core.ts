@@ -6,6 +6,7 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { filterUndefined } from '@sim/utils/object'
+import { DEPLOYED_CHAT_MEMORY_RESERVED_INPUT_KEYS } from '@/lib/chat/deployed-chat-memory'
 import { mergeSubblockStateWithValues } from '@sim/workflow-persistence/subblocks'
 import type { Edge } from 'reactflow'
 import { z } from 'zod'
@@ -564,7 +565,14 @@ export async function executeWorkflowCore(
 
       // Extract custom fields (excluding reserved fields)
       for (const [key, value] of Object.entries(input)) {
-        if (key === 'input' || key === 'conversationId' || key === 'files') {
+        if (
+          key === 'input' ||
+          key === 'conversationId' ||
+          key === 'files' ||
+          DEPLOYED_CHAT_MEMORY_RESERVED_INPUT_KEYS.includes(
+            key as (typeof DEPLOYED_CHAT_MEMORY_RESERVED_INPUT_KEYS)[number]
+          )
+        ) {
           continue
         }
         if (value !== null && value !== undefined && value !== '') {

@@ -69,6 +69,14 @@ const { mockValidateChatAuth, mockSetChatAuthCookie, mockValidateAuthToken } = v
   mockValidateAuthToken: vi.fn().mockReturnValue(false),
 }))
 
+const {
+  mockLoadActiveDeploymentVersionMeta,
+  mockLoadDeployedChatMemoryContext,
+} = vi.hoisted(() => ({
+  mockLoadActiveDeploymentVersionMeta: vi.fn(),
+  mockLoadDeployedChatMemoryContext: vi.fn(),
+}))
+
 const mockCreateErrorResponse = workflowsApiUtilsMockFns.mockCreateErrorResponse
 const mockCreateSuccessResponse = workflowsApiUtilsMockFns.mockCreateSuccessResponse
 
@@ -114,8 +122,15 @@ vi.mock('@/lib/core/utils/sse', () => ({
 
 vi.mock('@/lib/core/security/encryption', () => encryptionMock)
 
+vi.mock('@/lib/chat/deployed-chat-memory', () => ({
+  DEPLOYED_CHAT_MEMORY_RESERVED_INPUT_KEYS: ['chatHistory', 'chatHistoryMeta'],
+  loadActiveDeploymentVersionMeta: mockLoadActiveDeploymentVersionMeta,
+  loadDeployedChatMemoryContext: mockLoadDeployedChatMemoryContext,
+}))
+
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { createStreamingResponse } from '@/lib/workflows/streaming/streaming'
+import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
 import { GET, POST } from '@/app/api/chat/[identifier]/route'
 
 describe('Chat Identifier API Route', () => {
@@ -180,6 +195,23 @@ describe('Chat Identifier API Route', () => {
 
     mockValidateChatAuth.mockResolvedValue({ authorized: true })
     mockValidateAuthToken.mockReturnValue(false)
+    mockLoadActiveDeploymentVersionMeta.mockResolvedValue({
+      deploymentVersionId: 'dep-current',
+      version: 2,
+      versionName: 'Current',
+      versionCreatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    mockLoadDeployedChatMemoryContext.mockResolvedValue({
+      turns: [],
+      summary: '',
+      currentDeploymentVersion: {
+        deploymentVersionId: 'dep-current',
+        version: 2,
+        versionName: 'Current',
+        versionCreatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      versionChangedFromHistory: false,
+    })
     mockCreateErrorResponse.mockImplementation((message: string, status: number, code?: string) => {
       return new Response(
         JSON.stringify({
@@ -394,6 +426,78 @@ describe('Chat Identifier API Route', () => {
             workflowTriggerType: 'chat',
           }),
         })
+      )
+    }, 10000)
+
+    it('should inject prior chat history into workflow execution input', async () => {
+      mockLoadDeployedChatMemoryContext.mockResolvedValueOnce({
+        turns: [
+          {
+            executionId: 'exec-1',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            userInput: 'Earlier question',
+            assistantOutput: 'Earlier answer',
+            deploymentVersion: {
+              deploymentVersionId: 'dep-1',
+              version: 1,
+              versionName: null,
+              versionCreatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          },
+        ],
+        summary: 'Prior conversation history:\nUser: Earlier question',
+        currentDeploymentVersion: {
+          deploymentVersionId: 'dep-current',
+          version: 2,
+          versionName: 'Current',
+          versionCreatedAt: '2026-01-02T00:00:00.000Z',
+        },
+        versionChangedFromHistory: true,
+      })
+
+      const req = createMockNextRequest('POST', {
+        input: 'Follow up',
+        conversationId: 'conv-123',
+        chatId: 'thread-1',
+      })
+      const params = Promise.resolve({ identifier: 'test-chat' })
+
+      const response = await POST(req, { params })
+      expect(response.status).toBe(200)
+
+      const executeArgs = vi.mocked(createStreamingResponse).mock.calls.at(-1)?.[0]
+      const executeFn = executeArgs?.executeFn
+      expect(executeFn).toBeTypeOf('function')
+
+      await executeFn?.({
+        onStream: vi.fn(),
+        onBlockComplete: vi.fn(),
+        abortSignal: new AbortController().signal,
+        sessionUserId: 'test-user-id',
+      })
+
+      expect(mockLoadDeployedChatMemoryContext).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: 'thread-1',
+          conversationId: 'conv-123',
+          excludeExecutionId: expect.any(String),
+        })
+      )
+      expect(executeWorkflow).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.objectContaining({
+          input: 'Follow up',
+          chatHistory: expect.arrayContaining([
+            expect.objectContaining({ userInput: 'Earlier question' }),
+          ]),
+          chatHistoryMeta: expect.objectContaining({
+            versionChangedFromHistory: true,
+          }),
+        }),
+        expect.any(String),
+        expect.anything(),
+        expect.any(String)
       )
     }, 10000)
 

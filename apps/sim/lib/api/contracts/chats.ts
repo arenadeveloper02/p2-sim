@@ -311,3 +311,91 @@ export const deleteChatContract = defineRouteContract({
     schema: deleteChatResponseSchema,
   },
 })
+
+export const deployedChatDeploymentVersionSchema = z.object({
+  deploymentVersionId: z.string().nullable(),
+  version: z.number().nullable(),
+  versionName: z.string().nullable(),
+  versionCreatedAt: z.string().nullable(),
+})
+export type DeployedChatDeploymentVersion = z.output<typeof deployedChatDeploymentVersionSchema>
+
+export const deployedChatHistoryLogSchema = z.object({
+  id: z.string(),
+  executionId: z.string(),
+  level: z.string(),
+  trigger: z.string(),
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+  totalDurationMs: z.number().nullable(),
+  conversationId: z.string().nullable(),
+  userInput: z.string().nullable(),
+  attachments: z.array(
+    z.object({
+      id: z.string(),
+      key: z.string(),
+      name: z.string(),
+      type: z.string(),
+      size: z.number(),
+      dataUrl: z.string(),
+    })
+  ),
+  modelOutput: z.string().nullable(),
+  generatedImages: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      url: z.string(),
+      type: z.string(),
+    })
+  ),
+  knowledgeRefs: z
+    .array(
+      z.object({
+        documentId: z.string(),
+        documentName: z.string(),
+        chunkId: z.string(),
+        chunkIndex: z.number().optional(),
+        knowledgeBaseId: z.string(),
+        workspaceId: z.string().nullable(),
+      })
+    )
+    .nullable(),
+  liked: z.boolean().nullable(),
+  createdAt: z.string(),
+  deploymentVersion: deployedChatDeploymentVersionSchema,
+})
+export type DeployedChatHistoryLog = z.output<typeof deployedChatHistoryLogSchema>
+
+export const deployedChatHistoryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  conversationId: z.string().optional(),
+  chatId: z.string().optional(),
+  level: z.enum(['info', 'error']).optional(),
+})
+export type DeployedChatHistoryQuery = z.input<typeof deployedChatHistoryQuerySchema>
+
+export const deployedChatHistoryResponseSchema = z.object({
+  logs: z.array(deployedChatHistoryLogSchema),
+  pagination: z.object({
+    limit: z.number(),
+    offset: z.number(),
+    total: z.union([z.number(), z.string()]),
+    hasMore: z.boolean(),
+  }),
+})
+export type DeployedChatHistoryResponse = z.output<typeof deployedChatHistoryResponseSchema>
+
+export const getDeployedChatHistoryContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/chat/[identifier]/history',
+  params: chatIdentifierParamsSchema,
+  query: deployedChatHistoryQuerySchema,
+  response: {
+    mode: 'json',
+    schema: deployedChatHistoryResponseSchema,
+  },
+})

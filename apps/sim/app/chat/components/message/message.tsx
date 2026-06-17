@@ -51,6 +51,13 @@ export interface KnowledgeRef {
   workspaceId: string | null
 }
 
+export interface ChatDeploymentVersionMeta {
+  deploymentVersionId: string | null
+  version: number | null
+  versionName: string | null
+  versionCreatedAt: string | null
+}
+
 export interface ChatMessage {
   id: string
   content: string | Record<string, unknown>
@@ -66,6 +73,8 @@ export interface ChatMessage {
   knowledgeResults?: KnowledgeResultChunk[]
   /** Persisted refs for history: document name + chunk link only; no chunks */
   knowledgeRefs?: KnowledgeRef[]
+  /** Deployment version used when this assistant message was generated */
+  deploymentVersion?: ChatDeploymentVersionMeta
 }
 
 const HTML_ESCAPES: Record<string, string> = {

@@ -7,6 +7,7 @@ import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
+import type { DeployedChatHistoryLog } from '@/lib/api/contracts/chats'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
@@ -265,8 +266,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                     },
                   ]
                 : []),
-              ...data.logs.flatMap((log: any) => {
-                const messages = []
+              ...data.logs.flatMap((log: DeployedChatHistoryLog) => {
+                const messages: ChatMessage[] = []
                 if (log.userInput) {
                   messages.push({
                     id: `${log.id}-user`,
@@ -282,9 +283,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                     type: 'assistant',
                     timestamp: new Date(log.endedAt || log.startedAt),
                     isStreaming: false,
-                    executionId: log?.executionId || '',
+                    executionId: log.executionId,
                     liked: log.liked,
                     knowledgeRefs: Array.isArray(log.knowledgeRefs) ? log.knowledgeRefs : undefined,
+                    deploymentVersion: log.deploymentVersion,
                   })
                 }
                 return messages
@@ -546,9 +548,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         completeInputKeys: Object.keys(completeInput),
       })
 
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         input: completeInput.input,
         conversationId: completeInput.conversationId,
+        chatId: currentChatId ?? undefined,
         // Always include startBlockInputs if there are any custom fields in inputFormat
         // This ensures all Start Block fields are passed to execution, even if empty
         startBlockInputs: customFields.length > 0 ? startBlockInputsPayload : undefined,

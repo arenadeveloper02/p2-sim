@@ -19,6 +19,11 @@ import {
   toPersistedChatAttachment,
   updateExecutionHistoryData,
 } from '@/lib/chat/history-persistence'
+import {
+  DEPLOYED_CHAT_MEMORY_RESERVED_INPUT_KEYS,
+  loadActiveDeploymentVersionMeta,
+  loadDeployedChatMemoryContext,
+} from '@/lib/chat/deployed-chat-memory'
 import { admissionRejectedResponse, tryAdmit } from '@/lib/core/admission/gate'
 import { env } from '@/lib/core/config/env'
 import { validateAuthToken } from '@/lib/core/security/deployment'
@@ -538,6 +543,9 @@ export const POST = withRouteHandler(
           if (key === 'input' || key === 'conversationId' || key === 'files') {
             continue
           }
+          if (DEPLOYED_CHAT_MEMORY_RESERVED_INPUT_KEYS.includes(key as (typeof DEPLOYED_CHAT_MEMORY_RESERVED_INPUT_KEYS)[number])) {
+            continue
+          }
           if (value !== null && value !== undefined && value !== '') {
             const formattedValue = typeof value === 'string' ? value : String(value)
             startBlockInputLines.push(`${key}: ${formattedValue}`)
@@ -577,7 +585,27 @@ export const POST = withRouteHandler(
         const { executeWorkflow } = await import('@/lib/workflows/executor/execute-workflow')
         const { SSE_HEADERS } = await import('@/lib/core/utils/sse')
 
-        const workflowInput: any = { input, conversationId }
+        const currentDeploymentVersion = await loadActiveDeploymentVersionMeta(deployment.workflowId)
+        const chatMemoryContext = await loadDeployedChatMemoryContext({
+          workflowId: deployment.workflowId,
+          chatId: payload || undefined,
+          conversationId: conversationId || undefined,
+          userId: userId || workspaceOwnerId,
+          excludeExecutionId: executionId,
+          currentDeploymentVersion,
+        })
+
+        const workflowInput: Record<string, unknown> = { input, conversationId }
+
+        if (chatMemoryContext.turns.length > 0) {
+          workflowInput.chatHistory = chatMemoryContext.turns
+          workflowInput.chatHistoryMeta = {
+            summary: chatMemoryContext.summary,
+            currentDeploymentVersion: chatMemoryContext.currentDeploymentVersion,
+            versionChangedFromHistory: chatMemoryContext.versionChangedFromHistory,
+          }
+          logger.debug(`[${requestId}] Injected ${chatMemoryContext.turns.length} prior chat turns`)
+        }
 
         // Merge additional Start Block inputs (custom fields from inputFormat)
         // Always merge to ensure all Start Block fields are included, even if empty

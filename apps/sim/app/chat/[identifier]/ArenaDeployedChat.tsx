@@ -7,6 +7,7 @@ import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
+import type { DeployedChatHistoryLog } from '@/lib/api/contracts/chats'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
@@ -363,8 +364,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             setMessages([
               ...initialMessages,
               // Flatten and process logs as before
-              ...data.logs.flatMap((log: any) => {
-                const messages = []
+              ...data.logs.flatMap((log: DeployedChatHistoryLog) => {
+                const messages: ChatMessage[] = []
                 if (
                   log.userInput ||
                   (Array.isArray(log.attachments) && log.attachments.length > 0)
@@ -384,12 +385,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                     type: 'assistant',
                     timestamp: new Date(log.endedAt || log.startedAt),
                     isStreaming: false,
-                    executionId: log?.executionId || '',
+                    executionId: log.executionId,
                     liked: log.liked,
                     generatedImages: Array.isArray(log.generatedImages)
                       ? log.generatedImages
                       : undefined,
                     knowledgeRefs: Array.isArray(log.knowledgeRefs) ? log.knowledgeRefs : undefined,
+                    deploymentVersion: log.deploymentVersion,
                   })
                 }
                 return messages
