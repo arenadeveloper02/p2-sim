@@ -4177,7 +4177,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FOUR_NODE_3D_PERSPECTIVE',
         order: 39,
         templateSlideObjectId: 'g3f14351dc08_0_1119',
-        description: 'A four-node 3D block diagram radiating from a central point. Each of the four nodes (Green, Light Blue, Dark Blue, Grey) includes a bold title and a descriptive body paragraph.',
+        description:
+          'A four-node 3D block diagram radiating from a central point. Each of the four nodes (Green, Light Blue, Dark Blue, Grey) includes a replaceable white icon from the icon library on the 3D block face, a bold title, and a descriptive body paragraph. AI picks white icons based on each node topic.',
         blocks: [
           {
             key: 'title',
@@ -4191,6 +4192,18 @@ function buildTemplateSchema(): PresentationSchema {
           },
 
           // ── Node 1 (Top Left - Green) ──
+          {
+            key: 'node1_icon',
+            type: 'IMAGE',
+            role: 'SUPPORTING_VISUAL',
+            source: 'icon_library',
+            iconLibraryColor: 'white',
+            replaceable: true,
+            usage: ['node_icon', 'topic_icon', 'pillar_icon'],
+            shapeId: 'g3f14351dc08_0_1180',
+            description: 'White icon on top-left green 3D block face (node 1)',
+            content: '',
+          },
           {
             key: 'node1_title',
             type: 'TEXT',
@@ -4214,6 +4227,18 @@ function buildTemplateSchema(): PresentationSchema {
 
           // ── Node 2 (Top Right - Light Blue) ──
           {
+            key: 'node2_icon',
+            type: 'IMAGE',
+            role: 'SUPPORTING_VISUAL',
+            source: 'icon_library',
+            iconLibraryColor: 'white',
+            replaceable: true,
+            usage: ['node_icon', 'topic_icon', 'pillar_icon'],
+            shapeId: 'g3f14351dc08_0_1181',
+            description: 'White icon on top-right light blue 3D block face (node 2)',
+            content: '',
+          },
+          {
             key: 'node2_title',
             type: 'TEXT',
             role: 'SECTION_HEADER',
@@ -4236,6 +4261,18 @@ function buildTemplateSchema(): PresentationSchema {
 
           // ── Node 3 (Bottom Right - Dark Blue) ──
           {
+            key: 'node3_icon',
+            type: 'IMAGE',
+            role: 'SUPPORTING_VISUAL',
+            source: 'icon_library',
+            iconLibraryColor: 'white',
+            replaceable: true,
+            usage: ['node_icon', 'topic_icon', 'pillar_icon'],
+            shapeId: 'g3f14351dc08_0_1182',
+            description: 'White icon on bottom-right dark blue 3D block face (node 3)',
+            content: '',
+          },
+          {
             key: 'node3_title',
             type: 'TEXT',
             role: 'SECTION_HEADER',
@@ -4257,6 +4294,18 @@ function buildTemplateSchema(): PresentationSchema {
           },
 
           // ── Node 4 (Bottom Left - Grey) ──
+          {
+            key: 'node4_icon',
+            type: 'IMAGE',
+            role: 'SUPPORTING_VISUAL',
+            source: 'icon_library',
+            iconLibraryColor: 'white',
+            replaceable: true,
+            usage: ['node_icon', 'topic_icon', 'pillar_icon'],
+            shapeId: 'g3f14351dc08_0_1183',
+            description: 'White icon on bottom-left grey 3D block face (node 4)',
+            content: '',
+          },
           {
             key: 'node4_title',
             type: 'TEXT',
