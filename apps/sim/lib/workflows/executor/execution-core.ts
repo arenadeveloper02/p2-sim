@@ -440,8 +440,11 @@ export async function executeWorkflowCore(
 
     const mergedStates = mergeSubblockStateWithValues(blocks)
 
+    // Deployed chat auth is workflow-scoped (validateChatAuth), not workspace membership.
+    // Keep sessionUserId on metadata for Arena token resolution, but resolve env vars
+    // from the workflow owner who has workspace access.
     const personalEnvUserId =
-      metadata.isClientSession && metadata.sessionUserId
+      metadata.isClientSession && metadata.sessionUserId && metadata.triggerType !== 'chat'
         ? metadata.sessionUserId
         : metadata.workflowUserId
 
