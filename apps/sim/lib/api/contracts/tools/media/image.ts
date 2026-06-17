@@ -17,7 +17,7 @@ export const imageToolBodySchema = z
       .refine((provider) => imageProviders.includes(provider as (typeof imageProviders)[number]), {
         message: `Invalid provider. Must be one of: ${imageProviders.join(', ')}`,
       }),
-    apiKey: z.string({ error: MISSING_IMAGE_FIELDS_ERROR }).min(1, MISSING_IMAGE_FIELDS_ERROR),
+    apiKey: z.string().optional(),
     model: z.string().optional(),
     prompt: z.string({ error: MISSING_IMAGE_FIELDS_ERROR }).min(1, MISSING_IMAGE_FIELDS_ERROR),
     size: z.string().optional(),
@@ -40,6 +40,15 @@ export const imageToolBodySchema = z
     useHostedCostTracking: z.boolean().optional(),
   })
   .passthrough()
+  .superRefine((body, ctx) => {
+    if (body.provider === 'falai' && !body.apiKey?.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['apiKey'],
+        message: MISSING_IMAGE_FIELDS_ERROR,
+      })
+    }
+  })
 
 export type ImageToolBody = z.infer<typeof imageToolBodySchema>
 

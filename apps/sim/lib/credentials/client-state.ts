@@ -80,6 +80,7 @@ interface OAuthReturnBase {
   preCount: number
   workspaceId: string
   reconnect?: boolean
+  credentialId?: string
   requestedAt: number
 }
 
