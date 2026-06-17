@@ -560,6 +560,7 @@ export function CredentialSelector({
       }
 
       if (value === '__connect_account__') {
+        setConnectModalConfig(null)
         handleAddCredential()
         return
       }
@@ -627,6 +628,16 @@ export function CredentialSelector({
     credentialCount: number
   } | null>(null)
 
+  const connectServiceId = connectModalConfig?.serviceId ?? serviceId
+  const connectProviderId = useMemo(
+    () => getProviderIdFromServiceId(connectServiceId),
+    [connectServiceId]
+  )
+  const connectRequiredScopes = useMemo(
+    () => getCanonicalScopesForProvider(connectProviderId),
+    [connectProviderId]
+  )
+
   return (
     <div>
       <Combobox
@@ -686,9 +697,9 @@ export function CredentialSelector({
             }
           }}
           provider={connectModalConfig?.provider ?? provider}
-          serviceId={connectModalConfig?.serviceId ?? serviceId}
-          providerId={effectiveProviderId}
-          requiredScopes={getCanonicalScopesForProvider(effectiveProviderId)}
+          serviceId={connectServiceId}
+          providerId={connectProviderId}
+          requiredScopes={connectRequiredScopes}
           workspaceId={workspaceId}
           workflowId={activeWorkflowId || ''}
         />
