@@ -195,16 +195,6 @@ export function CredentialSelector({
     [credentialSets, selectedCredentialSetId]
   )
 
-  const { data: inaccessibleCredential } = useWorkspaceCredential(
-    selectedId || undefined,
-    Boolean(selectedId) &&
-      !selectedCredential &&
-      !selectedAllCredential &&
-      !credentialsLoading &&
-      Boolean(workspaceId)
-  )
-  const inaccessibleCredentialName = inaccessibleCredential?.displayName ?? null
-
   const matchedHubspotOption = useMemo(
     () => hubspotAccountOptions.find((option) => option.id === selectedId) ?? null,
     [hubspotAccountOptions, selectedId]
@@ -214,6 +204,18 @@ export function CredentialSelector({
     () => unipileAccountOptions.find((option) => option.id === selectedId) ?? null,
     [unipileAccountOptions, selectedId]
   )
+
+  const { data: inaccessibleCredential } = useWorkspaceCredential(
+    selectedId || undefined,
+    Boolean(selectedId) &&
+      !selectedCredential &&
+      !selectedAllCredential &&
+      !matchedHubspotOption &&
+      !selectedUnipileAccountOption &&
+      !credentialsLoading &&
+      Boolean(workspaceId)
+  )
+  const inaccessibleCredentialName = inaccessibleCredential?.displayName ?? null
 
   const resolvedLabel = useMemo(() => {
     if (selectedCredentialSet) return selectedCredentialSet.name

@@ -4,14 +4,14 @@
  * matches runtime reality when tokens live in env vars instead of OAuth rows.
  */
 
-import { HUBSPOT_SHARED_ACCOUNT_ALIASES } from '@/lib/hubspot/list-account-options'
+import { listHubSpotSharedAccountAliases } from '@/lib/hubspot/env-aliases'
 
 /**
  * HubSpot shared portal aliases from `account_tokens` (see `list-account-options.ts`).
  * Mothership treats HubSpot as available when these exist, even without per-user OAuth rows.
  */
 export function getHubSpotSharedAccountOptionIds(): string[] {
-  return [...HUBSPOT_SHARED_ACCOUNT_ALIASES]
+  return listHubSpotSharedAccountAliases()
 }
 
 /**

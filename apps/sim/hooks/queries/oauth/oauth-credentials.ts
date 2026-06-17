@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import { listOAuthCredentialsContract } from '@/lib/api/contracts'
+import { isHubSpotSharedAccountAlias } from '@/lib/hubspot/env-aliases'
 import type { Credential } from '@/lib/oauth'
 import { CREDENTIAL_SET } from '@/executor/constants'
 import { useCredentialSetDetail } from '@/hooks/queries/credential-sets'
@@ -151,8 +152,18 @@ export function useCredentialName(
 
   const selectedCredential = credentials.find((cred) => cred.id === credentialId)
 
+  const isHubSpotAlias =
+    providerId === 'hubspot' &&
+    typeof credentialId === 'string' &&
+    isHubSpotSharedAccountAlias(credentialId)
+
   const shouldFetchDetail = Boolean(
-    credentialId && !selectedCredential && providerId && workflowId && !isCredentialSet
+    credentialId &&
+      !selectedCredential &&
+      providerId &&
+      workflowId &&
+      !isCredentialSet &&
+      !isHubSpotAlias
   )
 
   const { data: foreignCredentials = [], isFetching: foreignLoading } = useOAuthCredentialDetail(
@@ -163,7 +174,9 @@ export function useCredentialName(
 
   // Fallback for credential blocks that have no serviceId/providerId — look up by ID directly
   const { data: workspaceCredential, isFetching: workspaceCredentialLoading } =
-    useWorkspaceCredential(!providerId && !isCredentialSet ? credentialId : undefined)
+    useWorkspaceCredential(
+      !providerId && !isCredentialSet && !isHubSpotAlias ? credentialId : undefined
+    )
 
   const detailCredential = foreignCredentials[0]
   const hasForeignMeta = foreignCredentials.length > 0
