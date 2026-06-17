@@ -8,6 +8,7 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { normalizeEmail } from '@sim/utils/string'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
@@ -17,7 +18,6 @@ import {
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { normalizeEmail } from '@/lib/invitations/core'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 
 const logger = createLogger('CredentialSetInviteToken')
@@ -194,17 +194,27 @@ export const POST = withRouteHandler(
               )
             )
         }
+      })
 
+      // Runs after the membership commits: the sync performs external HTTP
+      // (OAuth refresh, provider unsubscribe) and must not hold a pooled
+      // connection. A sync failure must not fail the committed mutation —
+      // it self-heals on the next membership change/deploy.
+      try {
         const syncResult = await syncAllWebhooksForCredentialSet(
           invitation.credentialSetId,
-          requestId,
-          tx
+          requestId
         )
         logger.info('Synced webhooks after member joined', {
           credentialSetId: invitation.credentialSetId,
           ...syncResult,
         })
-      })
+      } catch (syncError) {
+        logger.error('Webhook sync failed after invitation accept', {
+          credentialSetId: invitation.credentialSetId,
+          error: syncError,
+        })
+      }
 
       logger.info('Accepted credential set invitation', {
         invitationId: invitation.id,

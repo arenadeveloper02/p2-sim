@@ -47,7 +47,14 @@ const HANDWRITTEN_INTEGRATION_DOCS = new Set([
  * integration page. The writer's filter and the stale-doc cleanup must both
  * honor this set, or cleanup deletes what the writer emits (losing manual content).
  */
-const NATIVE_RESOURCE_BLOCK_TYPES = new Set(['memory', 'knowledge', 'table', 'enrichment', 'logs'])
+const NATIVE_RESOURCE_BLOCK_TYPES = new Set([
+  'memory',
+  'knowledge',
+  'table',
+  'enrichment',
+  'logs',
+  'deployments',
+])
 
 /** Trigger doc pages that are hand-written and must never be overwritten. */
 const HANDWRITTEN_TRIGGER_DOCS = new Set([
@@ -222,6 +229,7 @@ interface IntegrationEntry {
   triggers: TriggerInfo[]
   triggerCount: number
   authType: 'oauth' | 'api-key' | 'none'
+  oauthServiceId?: string
   category: BlockCategory
   integrationType: IntegrationType
   tags?: string[]
@@ -571,6 +579,52 @@ function extractAuthType(blockContent: string): 'oauth' | 'api-key' | 'none' {
 }
 
 /**
+ * Length-preserving copy of `content` with string-literal and comment
+ * interiors blanked out, so delimiter scans cannot be tripped by braces or
+ * quotes inside them. Indices into the result line up with indices into
+ * `content`.
+ */
+function blankStringsAndComments(content: string): string {
+  return content.replace(
+    /(['"`])(?:\\[\s\S]|(?!\1)[^\\])*\1|\/\/[^\n]*|\/\*[\s\S]*?\*\//g,
+    (match) => match[0] + match.slice(1, -1).replace(/[^\n]/g, ' ') + match[match.length - 1]
+  )
+}
+
+/**
+ * Extract the OAuth service id from the block's `oauth-input` credential
+ * subBlock. Scoped to that subBlock's object literal so `serviceId` fields on
+ * other subBlocks (e.g. file selectors) are never picked up. Brace matching
+ * runs on a blanked copy of the content so string literals and comments
+ * containing braces cannot skew it.
+ */
+function extractOAuthServiceId(blockContent: string): string | undefined {
+  const typeMatch = /type\s*:\s*['"]oauth-input['"]/.exec(blockContent)
+  if (!typeMatch) return undefined
+
+  const scannable = blankStringsAndComments(blockContent)
+  let depth = 0
+  let objectStart = -1
+  for (let i = typeMatch.index; i >= 0; i--) {
+    const char = scannable[i]
+    if (char === '}') depth++
+    else if (char === '{') {
+      if (depth === 0) {
+        objectStart = i
+        break
+      }
+      depth--
+    }
+  }
+  if (objectStart === -1) return undefined
+
+  const objectEnd = findMatchingClose(scannable, objectStart)
+  if (objectEnd === -1) return undefined
+  const subBlockContent = blockContent.substring(objectStart, objectEnd)
+  return /serviceId\s*:\s*['"]([^'"]+)['"]/.exec(subBlockContent)?.[1]
+}
+
+/**
  * Extract the list of trigger IDs from the block's `triggers.available` array.
  * Handles blocks that declare `triggers: { enabled: true, available: [...] }`.
  */
@@ -820,6 +874,16 @@ async function writeIntegrationsJson(iconMapping: Record<string, string>): Promi
           .replace(/^-|-$/g, '')
 
         const authType = extractAuthType(fileContent)
+        const oauthServiceId = authType === 'oauth' ? extractOAuthServiceId(fileContent) : undefined
+        // OAuth integrations resolve their connect UI through the service id
+        // (see `resolveOAuthServiceForIntegration`), so fail loudly rather than
+        // shipping a catalog entry that silently falls back to the API-key path.
+        if (authType === 'oauth' && !oauthServiceId) {
+          throw new Error(
+            `Block "${blockType}" is an OAuth integration but no \`serviceId\` could be ` +
+              `extracted from its \`oauth-input\` subBlock.`
+          )
+        }
 
         integrations.push({
           type: blockType,
@@ -835,6 +899,7 @@ async function writeIntegrationsJson(iconMapping: Record<string, string>): Promi
           triggers,
           triggerCount: triggers.length,
           authType,
+          ...(oauthServiceId ? { oauthServiceId } : {}),
           category: 'tools',
           integrationType,
           ...(config.tags ? { tags: config.tags } : {}),
@@ -851,14 +916,27 @@ async function writeIntegrationsJson(iconMapping: Record<string, string>): Promi
     // JSON formatter inlines short arrays of primitive strings. Pre-collapse those
     // arrays here so the emitted file is already in Biome's canonical shape and
     // `bun run check` does not churn it on every commit.
-    const json = JSON.stringify(integrations, null, 2).replace(
-      /\[\n(\s+"[^"\n]*"(?:,\n\s+"[^"\n]*")*)\n\s+\]/g,
-      (_match, inner) => {
-        const items = (inner as string).split(',\n').map((s: string) => s.trim())
-        return `[${items.join(', ')}]`
-      }
-    )
-    fs.writeFileSync(jsonPath, `${json}\n`)
+    const serialize = (value: unknown) =>
+      JSON.stringify(value, null, 2).replace(
+        /\[\n(\s+"[^"\n]*"(?:,\n\s+"[^"\n]*")*)\n\s+\]/g,
+        (_match, inner) => {
+          const items = (inner as string).split(',\n').map((s: string) => s.trim())
+          return `[${items.join(', ')}]`
+        }
+      )
+
+    // `updatedAt` is re-stamped only when the integrations content actually
+    // changes, so sitemap/JSON-LD freshness never churns on no-op regens.
+    const previous = fs.existsSync(jsonPath)
+      ? (JSON.parse(fs.readFileSync(jsonPath, 'utf-8')) as { integrations?: unknown })
+      : null
+    if (previous?.integrations && serialize(previous.integrations) === serialize(integrations)) {
+      console.log(`✓ Integration data unchanged: ${integrations.length} integrations → ${jsonPath}`)
+      return
+    }
+
+    const updatedAt = new Date().toISOString().slice(0, 10)
+    fs.writeFileSync(jsonPath, `${serialize({ updatedAt, integrations })}\n`)
     console.log(`✓ Integration data written: ${integrations.length} integrations → ${jsonPath}`)
   } catch (error) {
     // Surface taxonomy violations (missing/invalid `integrationType`) loudly —

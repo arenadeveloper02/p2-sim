@@ -614,20 +614,16 @@ export function ChatDeploy({
         onOpenChange={setShowDeleteConfirmation}
         srTitle='Delete Chat'
         title='Delete Chat'
-        description={
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>
-              {existingChat?.title || 'this chat'}
-            </span>
-            ?{' '}
-            <span className='text-[var(--text-error)]'>
-              This will remove the chat at "{getEmailDomain()}/chat/{existingChat?.identifier}" and
-              make it unavailable to all users.
-            </span>{' '}
-            This action cannot be undone.
-          </>
-        }
+        text={[
+          'Are you sure you want to delete ',
+          { text: existingChat?.title || 'this chat', bold: true },
+          '? ',
+          {
+            text: `This will remove the chat at "${getEmailDomain()}/chat/${existingChat?.identifier ?? ''}" and make it unavailable to all users.`,
+            error: true,
+          },
+          ' This action cannot be undone.',
+        ]}
         confirm={{
           label: 'Delete',
           onClick: handleDelete,
@@ -642,7 +638,7 @@ export function ChatDeploy({
         }}
         srTitle='Unselect knowledge base results'
         title='Unselect knowledge base results'
-        description='Knowledge base reference will not be shown for the generated output.'
+        // description='Knowledge base reference will not be shown for the generated output.'
         confirm={{
           label: 'Continue',
           variant: 'primary',
@@ -839,6 +835,13 @@ function AuthSelector({
   const [invalidEmailItems, setInvalidEmailItems] = useState<TagItem[]>([])
   const hasPrefilledSessionEmailRef = useRef(false)
 
+  const emailsRef = useRef(emails)
+  const invalidEmailItemsRef = useRef(invalidEmailItems)
+
+  useEffect(() => {
+    emailsRef.current = emails
+  }, [emails])
+
   useEffect(() => {
     onInvalidEmailsChange?.(invalidEmailItems.length > 0)
   }, [invalidEmailItems, onInvalidEmailsChange])
@@ -907,17 +910,22 @@ function AuthSelector({
     const isValid = validation.isValid || isDomainPattern
 
     if (
-      emails.includes(normalized) ||
-      invalidEmailItems.some((item) => item.value === normalized)
+      emailsRef.current.includes(normalized) ||
+      invalidEmailItemsRef.current.some((item) => item.value === normalized)
     ) {
       return false
     }
 
     if (isValid) {
       setEmailError('')
-      onEmailsChange([...emails, normalized])
+      emailsRef.current = [...emailsRef.current, normalized]
+      onEmailsChange(emailsRef.current)
     } else {
-      setInvalidEmailItems((prev) => [...prev, { value: normalized, isValid }])
+      invalidEmailItemsRef.current = [
+        ...invalidEmailItemsRef.current,
+        { value: normalized, isValid, error: validation.reason ?? 'Invalid email format' },
+      ]
+      setInvalidEmailItems(invalidEmailItemsRef.current)
     }
 
     // Skip validation for domain emails (starting with @)
@@ -1034,15 +1042,15 @@ function AuthSelector({
     const itemToRemove = emailItems[index]
     if (!itemToRemove) return
 
-    const normalizedValue = itemToRemove.value.toLowerCase().trim()
-
     if (itemToRemove.isValid) {
-      onEmailsChange(emails.filter((e) => e.toLowerCase().trim() !== normalizedValue))
+      emailsRef.current = emailsRef.current.filter((e) => e !== itemToRemove.value)
+      onEmailsChange(emailsRef.current)
+    } else {
+      invalidEmailItemsRef.current = invalidEmailItemsRef.current.filter(
+        (item) => item.value !== itemToRemove.value
+      )
+      setInvalidEmailItems(invalidEmailItemsRef.current)
     }
-
-    setInvalidEmailItems((prev) =>
-      prev.filter((item) => item.value.toLowerCase().trim() !== normalizedValue)
-    )
   }
 
   const handleRemoveEmail = (emailToRemove: string) => {

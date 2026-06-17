@@ -3,6 +3,7 @@ import type {
   HubSpotListAssociationsParams,
   HubSpotListAssociationsResponse,
 } from '@/tools/hubspot/types'
+import { ASSOCIATIONS_ARRAY_OUTPUT, METADATA_OUTPUT, PAGING_OUTPUT } from '@/tools/hubspot/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('HubSpotListAssociations')
@@ -15,9 +16,9 @@ export const hubspotListAssociationsTool: ToolConfig<
   HubSpotListAssociationsResponse
 > = {
   id: 'hubspot_list_associations',
-  name: 'List Associations from HubSpot',
+  name: 'List Associations in HubSpot',
   description:
-    'List associations from one CRM object to another object type (e.g. contact to companies)',
+    'List records of one object type associated with a given record, e.g. all emails or notes logged on a contact',
   version: '1.0.0',
 
   oauth: {
@@ -35,47 +36,56 @@ export const hubspotListAssociationsTool: ToolConfig<
     objectType: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'Object type of the source record (e.g. contacts, companies)',
+      visibility: 'user-or-llm',
+      description: 'Source object type (e.g., "contacts", "companies", "deals")',
     },
     objectId: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'ID of the source CRM object',
+      visibility: 'user-or-llm',
+      description: 'ID of the source record',
     },
     toObjectType: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
-      description: 'Object type to list associations to (e.g. companies, deals)',
+      visibility: 'user-or-llm',
+      description: 'Target object type to list associations to (e.g., "emails", "notes", "deals")',
     },
     limit: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Maximum number of results (default 500)',
+      visibility: 'user-or-llm',
+      description: 'Maximum number of associated records per page (default 500)',
     },
     after: {
       type: 'string',
       required: false,
-      visibility: 'user-only',
-      description: 'Pagination cursor for next page',
+      visibility: 'user-or-llm',
+      description: 'Pagination cursor for next page (from previous response)',
     },
   },
 
   request: {
     url: (params) => {
-      const baseUrl = `https://api.hubapi.com/crm/v4/objects/${params.objectType}/${params.objectId}/associations/${params.toObjectType}`
+      const baseUrl = `https://api.hubapi.com/crm/v4/objects/${encodeURIComponent(params.objectType.trim())}/${encodeURIComponent(params.objectId.trim())}/associations/${encodeURIComponent(params.toObjectType.trim())}`
       const queryParams = new URLSearchParams()
-      if (params.limit) queryParams.append('limit', params.limit)
-      if (params.after) queryParams.append('after', params.after)
+
+      if (params.limit) {
+        queryParams.append('limit', params.limit)
+      }
+      if (params.after) {
+        queryParams.append('after', params.after)
+      }
+
       const queryString = queryParams.toString()
       return queryString ? `${baseUrl}?${queryString}` : baseUrl
     },
     method: 'GET',
     headers: (params) => {
-      if (!params.accessToken) throw new Error('Access token is required')
+      if (!params.accessToken) {
+        throw new Error('Access token is required')
+      }
+
       return {
         Authorization: `Bearer ${params.accessToken}`,
         'Content-Type': 'application/json',
@@ -104,9 +114,9 @@ export const hubspotListAssociationsTool: ToolConfig<
   },
 
   outputs: {
-    results: { type: 'array', description: 'Association records with toObjectId and types' },
-    paging: { type: 'object', description: 'Pagination information', optional: true },
-    metadata: { type: 'object', description: 'Metadata with totalReturned and hasMore' },
+    results: ASSOCIATIONS_ARRAY_OUTPUT,
+    paging: PAGING_OUTPUT,
+    metadata: METADATA_OUTPUT,
     success: { type: 'boolean', description: 'Operation success status' },
   },
 }

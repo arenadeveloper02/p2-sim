@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
@@ -31,6 +31,7 @@ import {
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { CreateApiKeyModal } from '@/app/workspace/[workspaceId]/settings/components/api-keys/components'
+import { isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
 import {
   releaseDeployAction,
   tryAcquireDeployAction,
@@ -38,7 +39,7 @@ import {
 import { syncLocalDraftFromServer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft'
 import type { DeployReadiness } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/use-deploy-readiness'
 import { runPreDeployChecks } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/use-predeploy-checks'
-import { startsWithUuid } from '@/executor/constants'
+import { normalizeName, startsWithUuid } from '@/executor/constants'
 import { useA2AAgentByWorkflow } from '@/hooks/queries/a2a/agents'
 import { useApiKeys } from '@/hooks/queries/api-keys'
 import {
@@ -52,7 +53,7 @@ import {
 } from '@/hooks/queries/deployments'
 import { useWorkflowMcpServers } from '@/hooks/queries/workflow-mcp-servers'
 import { useWorkflowMap } from '@/hooks/queries/workflows'
-import { useWorkspaceSettings } from '@/hooks/queries/workspace'
+import { useWorkspaceOwnerBilling, useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -63,6 +64,7 @@ import {
   A2aDeploy,
   ApiDeploy,
   ChatDeploy,
+  DeployUpgradeGate,
   type ExistingChat,
   GeneralDeploy,
   McpDeploy,
@@ -70,6 +72,19 @@ import {
 import { ApiInfoModal } from './components/general/components/api-info-modal'
 
 const logger = createLogger('DeployModal')
+
+/** Renders the upgrade prompt in place of a programmatic-deploy tab when gated. */
+function GatedTabContent({
+  gated,
+  feature,
+  children,
+}: {
+  gated: boolean
+  feature: 'API' | 'MCP' | 'A2A'
+  children: ReactNode
+}) {
+  return gated ? <DeployUpgradeGate feature={feature} /> : <>{children}</>
+}
 
 interface DeployModalProps {
   open: boolean
@@ -150,6 +165,16 @@ export function DeployModal({
   const userPermissions = useUserPermissionsContext()
   const canManageWorkspaceKeys = userPermissions.canAdmin
   const { config: permissionConfig, isPublicApiDisabled } = usePermissionConfig()
+  // Gate on the WORKSPACE owner's plan (billed account, rolled up), not the
+  // viewer's individual plan, so a free member of a paid workspace isn't shown
+  // the upgrade wall. Keyed on the URL `workspaceId` (available on mount). Uses
+  // `isPaid` — the same check the server gate runs (any paid plan in an entitled
+  // status, incl. `past_due`) — rather than `hasUsablePaidAccess`, which would
+  // reject `past_due`/billing-blocked owners the API still allows. While loading
+  // the data is undefined → gate stays closed (no flash); only a resolved,
+  // non-paid owner gates.
+  const { data: ownerBilling } = useWorkspaceOwnerBilling(workspaceId ?? undefined)
+  const gateProgrammaticDeploy = isBillingEnabled && !!ownerBilling && !ownerBilling.isPaid
   const { data: apiKeysData, isLoading: isLoadingKeys } = useApiKeys(workflowWorkspaceId || '')
   const { data: workspaceSettingsData, isLoading: isLoadingSettings } = useWorkspaceSettings(
     workflowWorkspaceId || ''
@@ -282,9 +307,7 @@ export function DeployModal({
           const parts = outputId.split('.')
           if (parts.length >= 2) {
             const blockName = parts[0]
-            return blocks.some(
-              (b) => b.name?.toLowerCase().replace(/\s+/g, '') === blockName.toLowerCase()
-            )
+            return blocks.some((b) => b.name && normalizeName(b.name) === blockName.toLowerCase())
           }
           return true
         })
@@ -645,16 +668,18 @@ export function DeployModal({
                 />
               </ModalTabsContent>
 
-              <ModalTabsContent value='api'>
-                <ApiDeploy
-                  workflowId={workflowId}
-                  deploymentInfo={deploymentInfo}
-                  isLoading={isLoadingDeploymentInfo}
-                  needsRedeployment={needsRedeployment}
-                  getInputFormatExample={getInputFormatExample}
-                  selectedStreamingOutputs={selectedStreamingOutputs}
-                  onSelectedStreamingOutputsChange={setSelectedStreamingOutputs}
-                />
+              <ModalTabsContent value='api' className='h-full'>
+                <GatedTabContent gated={gateProgrammaticDeploy} feature='API'>
+                  <ApiDeploy
+                    workflowId={workflowId}
+                    deploymentInfo={deploymentInfo}
+                    isLoading={isLoadingDeploymentInfo}
+                    needsRedeployment={needsRedeployment}
+                    getInputFormatExample={getInputFormatExample}
+                    selectedStreamingOutputs={selectedStreamingOutputs}
+                    onSelectedStreamingOutputsChange={setSelectedStreamingOutputs}
+                  />
+                </GatedTabContent>
               </ModalTabsContent>
 
               <ModalTabsContent value='chat'>
@@ -676,32 +701,36 @@ export function DeployModal({
               </ModalTabsContent>
 
               <ModalTabsContent value='mcp' className='h-full'>
-                {workflowId && (
-                  <McpDeploy
-                    workflowId={workflowId}
-                    workflowName={workflowMetadata?.name || 'Workflow'}
-                    workflowDescription={workflowMetadata?.description}
-                    isDeployed={isDeployed}
-                    onSubmittingChange={setMcpToolSubmitting}
-                    onCanSaveChange={setMcpToolCanSave}
-                  />
-                )}
+                <GatedTabContent gated={gateProgrammaticDeploy} feature='MCP'>
+                  {workflowId && (
+                    <McpDeploy
+                      workflowId={workflowId}
+                      workflowName={workflowMetadata?.name || 'Workflow'}
+                      workflowDescription={workflowMetadata?.description}
+                      isDeployed={isDeployed}
+                      onSubmittingChange={setMcpToolSubmitting}
+                      onCanSaveChange={setMcpToolCanSave}
+                    />
+                  )}
+                </GatedTabContent>
               </ModalTabsContent>
 
               <ModalTabsContent value='a2a' className='h-full'>
-                {workflowId && (
-                  <A2aDeploy
-                    workflowId={workflowId}
-                    workflowName={workflowMetadata?.name || 'Workflow'}
-                    workflowDescription={workflowMetadata?.description}
-                    isDeployed={isDeployed}
-                    workflowNeedsRedeployment={needsRedeployment}
-                    onSubmittingChange={setA2aSubmitting}
-                    onCanSaveChange={setA2aCanSave}
-                    onNeedsRepublishChange={setA2aNeedsRepublish}
-                    onDeployWorkflow={onDeploy}
-                  />
-                )}
+                <GatedTabContent gated={gateProgrammaticDeploy} feature='A2A'>
+                  {workflowId && (
+                    <A2aDeploy
+                      workflowId={workflowId}
+                      workflowName={workflowMetadata?.name || 'Workflow'}
+                      workflowDescription={workflowMetadata?.description}
+                      isDeployed={isDeployed}
+                      workflowNeedsRedeployment={needsRedeployment}
+                      onSubmittingChange={setA2aSubmitting}
+                      onCanSaveChange={setA2aCanSave}
+                      onNeedsRepublishChange={setA2aNeedsRepublish}
+                      onDeployWorkflow={onDeploy}
+                    />
+                  )}
+                </GatedTabContent>
               </ModalTabsContent>
             </ModalBody>
           </ModalTabs>
@@ -721,7 +750,7 @@ export function DeployModal({
               }}
             />
           )}
-          {activeTab === 'api' && (
+          {activeTab === 'api' && !gateProgrammaticDeploy && (
             <ModalFooter className='items-center justify-between'>
               <div />
               <div className='flex items-center gap-2'>
@@ -773,7 +802,7 @@ export function DeployModal({
               </div>
             </ModalFooter>
           )}
-          {activeTab === 'mcp' && isDeployed && hasMcpServers && (
+          {activeTab === 'mcp' && !gateProgrammaticDeploy && isDeployed && hasMcpServers && (
             <ModalFooter className='items-center justify-between'>
               <div />
               <div className='flex items-center gap-2'>
@@ -795,7 +824,7 @@ export function DeployModal({
               </div>
             </ModalFooter>
           )}
-          {activeTab === 'a2a' && (
+          {activeTab === 'a2a' && !gateProgrammaticDeploy && (
             <ModalFooter className='items-center justify-between'>
               {hasA2aAgent ? (
                 isA2aPublished ? (
@@ -876,14 +905,13 @@ export function DeployModal({
         }}
         srTitle='Undeploy API'
         title='Undeploy API'
-        description={
-          <>
-            Are you sure you want to undeploy this workflow?{' '}
-            <span className='text-[var(--text-error)]'>
-              This will remove the API endpoint and make it unavailable to external users.
-            </span>
-          </>
-        }
+        text={[
+          'Are you sure you want to undeploy this workflow? ',
+          {
+            text: 'This will remove the API endpoint and make it unavailable to external users.',
+            error: true,
+          },
+        ]}
         confirm={{
           label: 'Undeploy',
           onClick: handleUndeploy,
@@ -897,19 +925,13 @@ export function DeployModal({
         onOpenChange={setShowA2aDeleteConfirm}
         srTitle='Delete A2A Agent'
         title='Delete A2A Agent'
-        description={
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>
-              {existingA2aAgent?.name || 'this agent'}
-            </span>
-            ?{' '}
-            <span className='text-[var(--text-error)]'>
-              This will permanently remove the agent configuration.
-            </span>{' '}
-            This action cannot be undone.
-          </>
-        }
+        text={[
+          'Are you sure you want to delete ',
+          { text: existingA2aAgent?.name || 'this agent', bold: true },
+          '? ',
+          { text: 'This will permanently remove the agent configuration.', error: true },
+          ' This action cannot be undone.',
+        ]}
         confirm={{
           label: 'Delete',
           onClick: handleA2aDelete,

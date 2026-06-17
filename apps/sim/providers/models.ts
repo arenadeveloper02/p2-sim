@@ -82,6 +82,34 @@ export interface ProviderDefinition {
   isReseller?: boolean
   capabilities?: ModelCapabilities
   contextInformationAvailable?: boolean
+  /** Agent-block file attachment limit and large-file delivery for this provider. */
+  fileAttachment?: ProviderFileAttachment
+}
+
+/**
+ * How a provider accepts agent-block attachments larger than the inline base64 threshold:
+ * `files-api` uploads to the provider Files API, `remote-url` passes a signed URL the
+ * provider fetches itself, `inline` means base64-only (no large-file path).
+ */
+export type ProviderFileAttachmentStrategy = 'inline' | 'files-api' | 'remote-url'
+
+export interface ProviderFileAttachment {
+  /** Maximum attachment size the provider accepts, in bytes. */
+  maxBytes: number
+  strategy: ProviderFileAttachmentStrategy
+}
+
+/** Inline base64 attachment cap, also the fallback limit for providers without a large-file path. */
+export const INLINE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+
+const DEFAULT_FILE_ATTACHMENT: ProviderFileAttachment = {
+  maxBytes: INLINE_ATTACHMENT_MAX_BYTES,
+  strategy: 'inline',
+}
+
+/** Provider-level attachment limit + strategy, keyed on the granular provider id. */
+export function getProviderFileAttachment(providerId: string): ProviderFileAttachment {
+  return PROVIDER_DEFINITIONS[providerId]?.fileAttachment ?? DEFAULT_FILE_ATTACHMENT
 }
 
 export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
@@ -103,6 +131,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
   },
   together: {
     id: 'together',
+    fileAttachment: { maxBytes: 50 * 1024 * 1024, strategy: 'remote-url' },
     name: 'Together AI',
     description: 'Fast inference for open-source models via Together AI',
     defaultModel: '',
@@ -111,7 +140,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     color: '#EF2CC1',
     isReseller: true,
     capabilities: {
-      temperature: { min: 0, max: 2 },
+      temperature: { min: 0, max: 1 },
       toolUsageControl: true,
     },
     contextInformationAvailable: false,
@@ -119,6 +148,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
   },
   baseten: {
     id: 'baseten',
+    fileAttachment: { maxBytes: 25 * 1024 * 1024, strategy: 'remote-url' },
     name: 'Baseten',
     description: 'Fast inference for open-source models via Baseten Model APIs',
     defaultModel: '',
@@ -135,6 +165,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
   },
   openrouter: {
     id: 'openrouter',
+    fileAttachment: { maxBytes: 50 * 1024 * 1024, strategy: 'remote-url' },
     name: 'OpenRouter',
     description: 'Unified access to many models via OpenRouter',
     defaultModel: '',
@@ -158,13 +189,14 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     isReseller: true,
     capabilities: {
       temperature: { min: 0, max: 2 },
-      toolUsageControl: true,
+      toolUsageControl: false,
     },
     contextInformationAvailable: false,
     models: [],
   },
   vllm: {
     id: 'vllm',
+    fileAttachment: { maxBytes: 25 * 1024 * 1024, strategy: 'remote-url' },
     name: 'vLLM',
     icon: VllmIcon,
     description: 'Self-hosted vLLM with an OpenAI-compatible API',
@@ -192,6 +224,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
   },
   openai: {
     id: 'openai',
+    fileAttachment: { maxBytes: 50 * 1024 * 1024, strategy: 'files-api' },
     name: 'OpenAI',
     description: "OpenAI's models",
     defaultModel: 'gpt-4.1',
@@ -209,7 +242,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 2.0,
           cachedInput: 0.5,
           output: 8.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -224,7 +257,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.4,
           cachedInput: 0.1,
           output: 1.6,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -239,7 +272,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.1,
           cachedInput: 0.025,
           output: 0.4,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -247,6 +280,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1047576,
         releaseDate: '2025-04-14',
+        deprecated: true,
       },
       // GPT-5.5 family
       {
@@ -254,15 +288,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         pricing: {
           input: 30.0,
           output: 180.0,
-          updatedAt: '2026-04-23',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           nativeStructuredOutputs: true,
           reasoningEffort: {
-            values: ['none', 'low', 'medium', 'high', 'xhigh'],
-          },
-          verbosity: {
-            values: ['low', 'medium', 'high'],
+            values: ['medium', 'high', 'xhigh'],
           },
           maxOutputTokens: 128000,
         },
@@ -275,7 +306,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 5.0,
           cachedInput: 0.5,
           output: 30.0,
-          updatedAt: '2026-04-23',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           nativeStructuredOutputs: true,
@@ -297,7 +328,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         pricing: {
           input: 30.0,
           output: 180.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -314,7 +345,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 2.5,
           cachedInput: 0.25,
           output: 15.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -334,7 +365,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.75,
           cachedInput: 0.075,
           output: 4.5,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -354,7 +385,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.2,
           cachedInput: 0.02,
           output: 1.25,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -375,7 +406,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         pricing: {
           input: 21.0,
           output: 168.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -392,7 +423,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.75,
           cachedInput: 0.175,
           output: 14.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -413,7 +444,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.25,
           cachedInput: 0.125,
           output: 10.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -425,7 +456,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           maxOutputTokens: 128000,
         },
         contextWindow: 400000,
-        releaseDate: '2025-11-12',
+        releaseDate: '2025-11-13',
       },
       // GPT-5 family
       {
@@ -433,7 +464,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         pricing: {
           input: 15.0,
           output: 120.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -442,7 +473,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           maxOutputTokens: 272000,
         },
         contextWindow: 400000,
-        releaseDate: '2025-08-07',
+        releaseDate: '2025-10-06',
       },
       {
         id: 'gpt-5',
@@ -450,7 +481,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.25,
           cachedInput: 0.125,
           output: 10.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -470,7 +501,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.25,
           cachedInput: 0.025,
           output: 2.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -490,7 +521,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.05,
           cachedInput: 0.005,
           output: 0.4,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -510,7 +541,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.25,
           cachedInput: 0.125,
           output: 10.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -518,6 +549,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 128000,
         releaseDate: '2025-08-07',
+        deprecated: true,
       },
       // o-series reasoning models
       {
@@ -539,7 +571,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.1,
           cachedInput: 0.275,
           output: 4.4,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -549,13 +581,14 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2025-04-16',
+        deprecated: true,
       },
       {
         id: 'o3-pro',
         pricing: {
           input: 20.0,
           output: 80.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           maxOutputTokens: 100000,
@@ -569,7 +602,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 2,
           cachedInput: 0.5,
           output: 8,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -579,6 +612,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2025-04-16',
+        deprecated: true,
       },
       {
         id: 'o3-mini',
@@ -586,7 +620,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.1,
           cachedInput: 0.55,
           output: 4.4,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -596,6 +630,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2025-01-31',
+        deprecated: true,
       },
       {
         id: 'o1',
@@ -603,7 +638,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 15.0,
           cachedInput: 7.5,
           output: 60,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           reasoningEffort: {
@@ -612,7 +647,8 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           maxOutputTokens: 100000,
         },
         contextWindow: 200000,
-        releaseDate: '2024-12-05',
+        releaseDate: '2024-12-17',
+        deprecated: true,
       },
       // Legacy
       {
@@ -621,7 +657,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 2.5,
           cachedInput: 1.25,
           output: 10.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -635,6 +671,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
   },
   anthropic: {
     id: 'anthropic',
+    fileAttachment: { maxBytes: 50 * 1024 * 1024, strategy: 'remote-url' },
     name: 'Anthropic',
     description: "Anthropic's Claude models",
     defaultModel: 'claude-sonnet-4-6',
@@ -645,24 +682,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: true,
     },
     models: [
-      {
-        id: 'claude-fable-5',
-        pricing: {
-          input: 10.0,
-          cachedInput: 1.0,
-          output: 50.0,
-          updatedAt: '2026-06-09',
-        },
-        capabilities: {
-          maxOutputTokens: 128000,
-          thinking: {
-            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
-            default: 'high',
-          },
-        },
-        contextWindow: 1000000,
-        releaseDate: '2026-06-09',
-      },
       {
         id: 'claude-opus-4-8',
         pricing: {
@@ -680,7 +699,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           },
         },
         contextWindow: 1000000,
-        releaseDate: '2026-05-27',
+        releaseDate: '2026-05-28',
         recommended: true,
       },
       {
@@ -708,7 +727,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 5.0,
           cachedInput: 0.5,
           output: 25.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -728,7 +747,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 3.0,
           cachedInput: 0.3,
           output: 15.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -749,7 +768,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 5.0,
           cachedInput: 0.5,
           output: 25.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -769,11 +788,10 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 15.0,
           cachedInput: 1.5,
           output: 75.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
-          nativeStructuredOutputs: true,
           maxOutputTokens: 32000,
           thinking: {
             levels: ['low', 'medium', 'high'],
@@ -782,6 +800,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2025-08-05',
+        deprecated: true,
       },
       {
         id: 'claude-opus-4-0',
@@ -789,7 +808,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 15.0,
           cachedInput: 1.5,
           output: 75.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -801,6 +820,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2025-05-22',
+        deprecated: true,
       },
       {
         id: 'claude-sonnet-4-5',
@@ -808,7 +828,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 3.0,
           cachedInput: 0.3,
           output: 15.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -819,7 +839,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
             default: 'high',
           },
         },
-        contextWindow: 1000000,
+        contextWindow: 200000,
         releaseDate: '2025-09-29',
       },
       {
@@ -828,7 +848,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 3.0,
           cachedInput: 0.3,
           output: 15.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -838,8 +858,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
             default: 'high',
           },
         },
-        contextWindow: 1000000,
+        contextWindow: 200000,
         releaseDate: '2025-05-22',
+        deprecated: true,
       },
       {
         id: 'claude-haiku-4-5',
@@ -847,7 +868,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.0,
           cachedInput: 0.1,
           output: 5.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -875,7 +896,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           maxOutputTokens: 4096,
         },
         contextWindow: 200000,
-        releaseDate: '2024-03-07',
+        releaseDate: '2024-03-13',
         deprecated: true,
       },
     ],
@@ -884,7 +905,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     id: 'azure-openai',
     name: 'Azure OpenAI',
     description: 'Microsoft Azure OpenAI Service models',
-    defaultModel: 'azure/gpt-4o',
+    defaultModel: 'azure/gpt-5.4',
     modelPatterns: [/^azure\//],
     capabilities: {
       toolUsageControl: true,
@@ -1211,7 +1232,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 5.0,
           cachedInput: 0.5,
           output: 25.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -1222,7 +1243,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
             default: 'high',
           },
         },
-        contextWindow: 200000,
+        contextWindow: 1000000,
         releaseDate: '2026-02-05',
       },
       {
@@ -1231,7 +1252,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 5.0,
           cachedInput: 0.5,
           output: 25.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -1251,7 +1272,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 3.0,
           cachedInput: 0.3,
           output: 15.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -1271,11 +1292,10 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 15.0,
           cachedInput: 1.5,
           output: 75.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
-          nativeStructuredOutputs: true,
           maxOutputTokens: 32000,
           thinking: {
             levels: ['low', 'medium', 'high'],
@@ -1284,6 +1304,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2025-08-05',
+        deprecated: true,
       },
       {
         id: 'azure-anthropic/claude-haiku-4-5',
@@ -1291,7 +1312,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.0,
           cachedInput: 0.1,
           output: 5.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -1309,6 +1330,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
   },
   google: {
     id: 'google',
+    fileAttachment: { maxBytes: 50 * 1024 * 1024, strategy: 'files-api' },
     name: 'Google',
     description: "Google's Gemini models",
     defaultModel: 'gemini-2.5-pro',
@@ -1345,12 +1367,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 2.0,
           cachedInput: 0.2,
           output: 12.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
           thinking: {
-            levels: ['minimal', 'low', 'medium', 'high'],
+            levels: ['low', 'medium', 'high'],
             default: 'high',
           },
           maxOutputTokens: 65536,
@@ -1359,12 +1381,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2026-02-19',
       },
       {
-        id: 'gemini-3.1-flash-lite-preview',
+        id: 'gemini-3.1-flash-lite',
         pricing: {
           input: 0.25,
           cachedInput: 0.025,
           output: 1.5,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1375,7 +1397,8 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           maxOutputTokens: 65536,
         },
         contextWindow: 1048576,
-        releaseDate: '2026-03-03',
+        releaseDate: '2026-05-07',
+        speedOptimized: true,
       },
       {
         id: 'gemini-3-flash-preview',
@@ -1383,7 +1406,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.5,
           cachedInput: 0.05,
           output: 3.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1393,8 +1416,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           },
           maxOutputTokens: 65536,
         },
-        contextWindow: 1000000,
+        contextWindow: 1048576,
         releaseDate: '2025-12-17',
+        deprecated: true,
       },
       {
         id: 'gemini-2.5-pro',
@@ -1402,7 +1426,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.25,
           cachedInput: 0.125,
           output: 10.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1417,7 +1441,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.3,
           cachedInput: 0.03,
           output: 2.5,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1432,7 +1456,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.1,
           cachedInput: 0.01,
           output: 0.4,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1448,7 +1472,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.1,
           cachedInput: 0.025,
           output: 0.4,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1456,6 +1480,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1048576,
         releaseDate: '2025-02-05',
+        deprecated: true,
       },
       // Retired models (as of September 24, 2025) - commented out to prevent 404 errors
       // {
@@ -1515,7 +1540,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         pricing: {
           input: 0.075,
           output: 0.3,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1523,20 +1548,22 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1048576,
         releaseDate: '2025-02-25',
+        deprecated: true,
       },
       {
         id: 'deep-research-pro-preview-12-2025',
         pricing: {
           input: 2.0,
-          output: 2.0,
-          updatedAt: '2026-04-01',
+          cachedInput: 0.2,
+          output: 12.0,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           deepResearch: true,
           memory: false,
           maxOutputTokens: 65536,
         },
-        contextWindow: 1000000,
+        contextWindow: 1048576,
         releaseDate: '2025-12-11',
       },
     ],
@@ -1567,9 +1594,11 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
             levels: ['minimal', 'low', 'medium', 'high'],
             default: 'medium',
           },
+          maxOutputTokens: 65536,
         },
         contextWindow: 1048576,
         releaseDate: '2026-05-19',
+        recommended: true,
       },
       {
         id: 'vertex/gemini-3.1-pro-preview',
@@ -1577,25 +1606,26 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 2.0,
           cachedInput: 0.2,
           output: 12.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
           thinking: {
-            levels: ['minimal', 'low', 'medium', 'high'],
+            levels: ['low', 'medium', 'high'],
             default: 'high',
           },
+          maxOutputTokens: 65536,
         },
         contextWindow: 1048576,
         releaseDate: '2026-02-19',
       },
       {
-        id: 'vertex/gemini-3.1-flash-lite-preview',
+        id: 'vertex/gemini-3.1-flash-lite',
         pricing: {
           input: 0.25,
           cachedInput: 0.025,
           output: 1.5,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1603,9 +1633,11 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
             levels: ['minimal', 'low', 'medium', 'high'],
             default: 'minimal',
           },
+          maxOutputTokens: 65536,
         },
         contextWindow: 1048576,
-        releaseDate: '2026-03-03',
+        releaseDate: '2026-05-07',
+        speedOptimized: true,
       },
       {
         id: 'vertex/gemini-3-pro-preview',
@@ -1624,6 +1656,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
         releaseDate: '2025-11-18',
+        deprecated: true,
       },
       {
         id: 'vertex/gemini-3-flash-preview',
@@ -1631,7 +1664,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.5,
           cachedInput: 0.05,
           output: 3.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
@@ -1639,8 +1672,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
             levels: ['minimal', 'low', 'medium', 'high'],
             default: 'high',
           },
+          maxOutputTokens: 65536,
         },
-        contextWindow: 1000000,
+        contextWindow: 1048576,
         releaseDate: '2025-12-17',
       },
       {
@@ -1649,10 +1683,11 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 1.25,
           cachedInput: 0.125,
           output: 10.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
+          maxOutputTokens: 65535,
         },
         contextWindow: 1048576,
         releaseDate: '2025-03-25',
@@ -1663,10 +1698,11 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.3,
           cachedInput: 0.03,
           output: 2.5,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
+          maxOutputTokens: 65535,
         },
         contextWindow: 1048576,
         releaseDate: '2025-05-20',
@@ -1677,27 +1713,30 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           input: 0.1,
           cachedInput: 0.01,
           output: 0.4,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
+          maxOutputTokens: 65535,
         },
         contextWindow: 1048576,
         releaseDate: '2025-06-17',
+        speedOptimized: true,
       },
       {
         id: 'vertex/gemini-2.0-flash',
         pricing: {
-          input: 0.1,
+          input: 0.15,
           cachedInput: 0.025,
-          output: 0.4,
-          updatedAt: '2026-04-01',
+          output: 0.6,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
         },
         contextWindow: 1048576,
         releaseDate: '2025-02-05',
+        deprecated: true,
       },
       {
         id: 'vertex/gemini-2.0-flash-lite',
@@ -1711,19 +1750,22 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1048576,
         releaseDate: '2025-02-25',
+        deprecated: true,
       },
       {
         id: 'vertex/deep-research-pro-preview-12-2025',
         pricing: {
           input: 2.0,
-          output: 2.0,
-          updatedAt: '2026-04-01',
+          cachedInput: 0.2,
+          output: 12.0,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           deepResearch: true,
           memory: false,
+          maxOutputTokens: 65536,
         },
-        contextWindow: 1000000,
+        contextWindow: 1048576,
         releaseDate: '2025-12-11',
       },
     ],
@@ -1794,9 +1836,10 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
   },
   xai: {
     id: 'xai',
+    fileAttachment: { maxBytes: 20 * 1024 * 1024, strategy: 'remote-url' },
     name: 'xAI',
     description: "xAI's Grok models",
-    defaultModel: 'grok-4-latest',
+    defaultModel: 'grok-4.3',
     modelPatterns: [/^grok/],
     icon: xAIIcon,
     color: '#555555',
@@ -1813,7 +1856,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2026-05-05',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
         contextWindow: 1000000,
         releaseDate: '2026-04-30',
@@ -1822,170 +1865,179 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       {
         id: 'grok-4-latest',
         pricing: {
-          input: 3.0,
-          cachedInput: 0.75,
-          output: 15.0,
-          updatedAt: '2026-04-01',
+          input: 1.25,
+          cachedInput: 0.2,
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 256000,
+        contextWindow: 1000000,
         releaseDate: '2025-07-09',
+        deprecated: true,
       },
       {
         id: 'grok-4-0709',
         pricing: {
-          input: 3.0,
-          cachedInput: 0.75,
-          output: 15.0,
-          updatedAt: '2026-04-01',
+          input: 1.25,
+          cachedInput: 0.2,
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 256000,
+        contextWindow: 1000000,
         releaseDate: '2025-07-09',
+        deprecated: true,
       },
       {
         id: 'grok-4-1-fast-reasoning',
         pricing: {
-          input: 0.2,
-          cachedInput: 0.05,
-          output: 0.5,
-          updatedAt: '2026-04-01',
+          input: 1.25,
+          cachedInput: 0.2,
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 2000000,
+        contextWindow: 1000000,
         releaseDate: '2025-11-19',
+        deprecated: true,
       },
       {
         id: 'grok-4-1-fast-non-reasoning',
         pricing: {
-          input: 0.2,
-          cachedInput: 0.05,
-          output: 0.5,
-          updatedAt: '2026-04-01',
+          input: 1.25,
+          cachedInput: 0.2,
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 2000000,
+        contextWindow: 1000000,
         releaseDate: '2025-11-19',
+        deprecated: true,
       },
       {
         id: 'grok-4-fast-reasoning',
         pricing: {
-          input: 0.2,
-          cachedInput: 0.05,
-          output: 0.5,
-          updatedAt: '2026-04-01',
+          input: 1.25,
+          cachedInput: 0.2,
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 2000000,
+        contextWindow: 1000000,
         releaseDate: '2025-09-19',
+        deprecated: true,
       },
       {
         id: 'grok-4-fast-non-reasoning',
         pricing: {
-          input: 0.2,
-          cachedInput: 0.05,
-          output: 0.5,
-          updatedAt: '2026-04-01',
+          input: 1.25,
+          cachedInput: 0.2,
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 2000000,
+        contextWindow: 1000000,
         releaseDate: '2025-09-19',
+        deprecated: true,
       },
       {
         id: 'grok-code-fast-1',
         pricing: {
-          input: 0.2,
-          cachedInput: 0.02,
-          output: 1.5,
-          updatedAt: '2026-04-01',
+          input: 1.0,
+          cachedInput: 0.2,
+          output: 2.0,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
         contextWindow: 256000,
         releaseDate: '2025-08-28',
+        deprecated: true,
       },
       {
         id: 'grok-4.20-0309-reasoning',
         pricing: {
-          input: 2.0,
+          input: 1.25,
           cachedInput: 0.2,
-          output: 6.0,
-          updatedAt: '2026-04-01',
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 2000000,
+        contextWindow: 1000000,
         releaseDate: '2026-03-10',
       },
       {
         id: 'grok-4.20-0309-non-reasoning',
         pricing: {
-          input: 2.0,
+          input: 1.25,
           cachedInput: 0.2,
-          output: 6.0,
-          updatedAt: '2026-04-01',
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 2000000,
+        contextWindow: 1000000,
         releaseDate: '2026-03-10',
       },
       {
         id: 'grok-4.20-multi-agent-0309',
         pricing: {
-          input: 2.0,
+          input: 1.25,
           cachedInput: 0.2,
-          output: 6.0,
-          updatedAt: '2026-04-01',
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 2000000,
+        contextWindow: 1000000,
         releaseDate: '2026-03-10',
       },
       {
         id: 'grok-3-latest',
         pricing: {
-          input: 3.0,
-          cachedInput: 0.75,
-          output: 15.0,
-          updatedAt: '2026-04-01',
+          input: 1.25,
+          cachedInput: 0.2,
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 131072,
+        contextWindow: 1000000,
         releaseDate: '2025-02-17',
+        deprecated: true,
       },
       {
         id: 'grok-3-fast-latest',
         pricing: {
-          input: 5.0,
-          cachedInput: 0.75,
-          output: 25.0,
-          updatedAt: '2026-04-01',
+          input: 1.25,
+          cachedInput: 0.2,
+          output: 2.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
+          temperature: { min: 0, max: 2 },
         },
-        contextWindow: 131072,
+        contextWindow: 1000000,
         releaseDate: '2025-02-17',
+        deprecated: true,
       },
     ],
   },
@@ -2006,9 +2058,12 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         pricing: {
           input: 0.35,
           output: 0.75,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
-        capabilities: {},
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          maxOutputTokens: 40000,
+        },
         contextWindow: 131072,
         releaseDate: '2025-08-05',
       },
@@ -2022,6 +2077,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {},
         contextWindow: 32768,
         releaseDate: '2024-08-27',
+        deprecated: true,
       },
       {
         id: 'cerebras/qwen-3-235b-a22b-instruct-2507',
@@ -2033,15 +2089,19 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         capabilities: {},
         contextWindow: 131072,
         releaseDate: '2025-07-29',
+        deprecated: true,
       },
       {
         id: 'cerebras/zai-glm-4.7',
         pricing: {
           input: 2.25,
           output: 2.75,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
-        capabilities: {},
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          maxOutputTokens: 40000,
+        },
         contextWindow: 131072,
         releaseDate: '2025-12-22',
       },
@@ -2049,6 +2109,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
   },
   groq: {
     id: 'groq',
+    fileAttachment: { maxBytes: 20 * 1024 * 1024, strategy: 'remote-url' },
     name: 'Groq',
     description: "Groq's LLM models with high-performance inference",
     defaultModel: 'groq/llama-3.3-70b-versatile',
@@ -2056,6 +2117,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     icon: GroqIcon,
     color: '#F55036',
     capabilities: {
+      temperature: { min: 0, max: 2 },
       toolUsageControl: true,
     },
     models: [
@@ -2617,8 +2679,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         id: 'bedrock/anthropic.claude-opus-4-5-20251101-v1:0',
         pricing: {
           input: 5.0,
+          cachedInput: 0.5,
           output: 25.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -2632,8 +2695,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         id: 'bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0',
         pricing: {
           input: 3.0,
+          cachedInput: 0.3,
           output: 15.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -2642,13 +2706,15 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2025-09-29',
+        recommended: true,
       },
       {
         id: 'bedrock/anthropic.claude-haiku-4-5-20251001-v1:0',
         pricing: {
           input: 1.0,
+          cachedInput: 0.1,
           output: 5.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -2657,18 +2723,20 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2025-10-15',
+        speedOptimized: true,
       },
       {
         id: 'bedrock/anthropic.claude-opus-4-1-20250805-v1:0',
         pricing: {
           input: 15.0,
+          cachedInput: 1.5,
           output: 75.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
-          maxOutputTokens: 64000,
+          maxOutputTokens: 32000,
         },
         contextWindow: 200000,
         releaseDate: '2025-08-05',
@@ -2676,25 +2744,28 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       {
         id: 'bedrock/amazon.nova-2-pro-v1:0',
         pricing: {
-          input: 1.0,
-          output: 4.0,
-          updatedAt: '2026-04-01',
+          input: 1.375,
+          output: 11.0,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 1000000,
         releaseDate: '2025-12-02',
+        deprecated: true,
       },
       {
         id: 'bedrock/amazon.nova-2-lite-v1:0',
         pricing: {
-          input: 0.08,
-          output: 0.32,
-          updatedAt: '2026-04-01',
+          input: 0.33,
+          cachedInput: 0.0825,
+          output: 2.75,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 64000,
         },
         contextWindow: 1000000,
         releaseDate: '2025-12-02',
@@ -2703,24 +2774,28 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         id: 'bedrock/amazon.nova-premier-v1:0',
         pricing: {
           input: 2.5,
-          output: 10.0,
-          updatedAt: '2026-04-01',
+          cachedInput: 0.625,
+          output: 12.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 1000000,
         releaseDate: '2025-04-30',
+        deprecated: true,
       },
       {
         id: 'bedrock/amazon.nova-pro-v1:0',
         pricing: {
           input: 0.8,
+          cachedInput: 0.2,
           output: 3.2,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 5120,
         },
         contextWindow: 300000,
         releaseDate: '2024-12-03',
@@ -2729,11 +2804,13 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         id: 'bedrock/amazon.nova-lite-v1:0',
         pricing: {
           input: 0.06,
+          cachedInput: 0.015,
           output: 0.24,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 5120,
         },
         contextWindow: 300000,
         releaseDate: '2024-12-03',
@@ -2742,24 +2819,28 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         id: 'bedrock/amazon.nova-micro-v1:0',
         pricing: {
           input: 0.035,
+          cachedInput: 0.00875,
           output: 0.14,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 5120,
         },
         contextWindow: 128000,
         releaseDate: '2024-12-03',
+        speedOptimized: true,
       },
       {
         id: 'bedrock/meta.llama4-maverick-17b-instruct-v1:0',
         pricing: {
           input: 0.24,
           output: 0.97,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 8192,
         },
         contextWindow: 1000000,
         releaseDate: '2025-04-05',
@@ -2767,14 +2848,15 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       {
         id: 'bedrock/meta.llama4-scout-17b-instruct-v1:0',
         pricing: {
-          input: 0.18,
-          output: 0.72,
-          updatedAt: '2026-04-01',
+          input: 0.17,
+          output: 0.66,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 8192,
         },
-        contextWindow: 3500000,
+        contextWindow: 10000000,
         releaseDate: '2025-04-05',
       },
       {
@@ -2782,10 +2864,11 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         pricing: {
           input: 0.72,
           output: 0.72,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 4096,
         },
         contextWindow: 128000,
         releaseDate: '2024-12-06',
@@ -2793,103 +2876,113 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       {
         id: 'bedrock/meta.llama3-2-90b-instruct-v1:0',
         pricing: {
-          input: 2.0,
-          output: 2.0,
-          updatedAt: '2026-04-01',
+          input: 0.72,
+          output: 0.72,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 128000,
         releaseDate: '2024-09-25',
+        deprecated: true,
       },
       {
         id: 'bedrock/meta.llama3-2-11b-instruct-v1:0',
         pricing: {
           input: 0.16,
           output: 0.16,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 128000,
         releaseDate: '2024-09-25',
+        deprecated: true,
       },
       {
         id: 'bedrock/meta.llama3-2-3b-instruct-v1:0',
         pricing: {
           input: 0.15,
           output: 0.15,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 128000,
         releaseDate: '2024-09-25',
+        deprecated: true,
       },
       {
         id: 'bedrock/meta.llama3-2-1b-instruct-v1:0',
         pricing: {
           input: 0.1,
           output: 0.1,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 128000,
         releaseDate: '2024-09-25',
+        deprecated: true,
       },
       {
         id: 'bedrock/meta.llama3-1-405b-instruct-v1:0',
         pricing: {
-          input: 5.32,
-          output: 16.0,
-          updatedAt: '2026-04-01',
+          input: 2.4,
+          output: 2.4,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 128000,
+        deprecated: true,
       },
       {
         id: 'bedrock/meta.llama3-1-70b-instruct-v1:0',
         pricing: {
-          input: 2.65,
-          output: 3.5,
-          updatedAt: '2026-04-01',
+          input: 0.72,
+          output: 0.72,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 4096,
         },
         contextWindow: 128000,
+        releaseDate: '2024-07-23',
       },
       {
         id: 'bedrock/meta.llama3-1-8b-instruct-v1:0',
         pricing: {
-          input: 0.3,
-          output: 0.6,
-          updatedAt: '2026-04-01',
+          input: 0.22,
+          output: 0.22,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 4096,
         },
         contextWindow: 128000,
+        releaseDate: '2024-07-23',
       },
       {
         id: 'bedrock/mistral.mistral-large-3-675b-instruct',
         pricing: {
-          input: 2.0,
-          output: 6.0,
-          updatedAt: '2026-04-01',
+          input: 0.5,
+          output: 1.5,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
           maxOutputTokens: 32768,
         },
-        contextWindow: 128000,
+        contextWindow: 256000,
+        releaseDate: '2025-12-02',
       },
       {
         id: 'bedrock/mistral.mistral-large-2411-v1:0',
@@ -2902,25 +2995,27 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 128000,
+        deprecated: true,
       },
       {
         id: 'bedrock/mistral.mistral-large-2407-v1:0',
         pricing: {
-          input: 4.0,
-          output: 12.0,
-          updatedAt: '2026-04-01',
+          input: 2.0,
+          output: 6.0,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 128000,
+        deprecated: true,
       },
       {
         id: 'bedrock/mistral.pixtral-large-2502-v1:0',
         pricing: {
           input: 2.0,
           output: 6.0,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -2933,7 +3028,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         pricing: {
           input: 0.5,
           output: 1.5,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
@@ -2946,49 +3041,53 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         pricing: {
           input: 0.2,
           output: 0.2,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
           maxOutputTokens: 8192,
         },
         contextWindow: 128000,
+        releaseDate: '2025-12-02',
       },
       {
         id: 'bedrock/mistral.ministral-3-8b-instruct',
         pricing: {
-          input: 0.1,
-          output: 0.1,
-          updatedAt: '2026-04-01',
+          input: 0.15,
+          output: 0.15,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
           maxOutputTokens: 8192,
         },
         contextWindow: 128000,
+        releaseDate: '2025-12-02',
       },
       {
         id: 'bedrock/mistral.ministral-3-3b-instruct',
         pricing: {
-          input: 0.04,
-          output: 0.04,
-          updatedAt: '2026-04-01',
+          input: 0.1,
+          output: 0.1,
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
           maxOutputTokens: 8192,
         },
         contextWindow: 128000,
+        releaseDate: '2025-12-02',
       },
       {
         id: 'bedrock/mistral.mixtral-8x7b-instruct-v0:1',
         pricing: {
           input: 0.45,
           output: 0.7,
-          updatedAt: '2026-04-01',
+          updatedAt: '2026-06-11',
         },
         capabilities: {
           temperature: { min: 0, max: 1 },
+          maxOutputTokens: 4096,
         },
         contextWindow: 32000,
       },
@@ -3003,6 +3102,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 32000,
+        deprecated: true,
       },
       {
         id: 'bedrock/cohere.command-r-plus-v1:0',
@@ -3015,6 +3115,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 128000,
+        deprecated: true,
       },
       {
         id: 'bedrock/cohere.command-r-v1:0',
@@ -3027,6 +3128,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           temperature: { min: 0, max: 1 },
         },
         contextWindow: 128000,
+        deprecated: true,
       },
     ],
   },
@@ -3196,23 +3298,11 @@ export function getModelsWithTemperatureSupport(): string[] {
   return models
 }
 
-export function getModelsWithTempRange01(): string[] {
+export function getModelsWithTemperatureRange(max: number): string[] {
   const models: string[] = []
   for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
     for (const model of provider.models) {
-      if (model.capabilities.temperature?.max === 1) {
-        models.push(model.id)
-      }
-    }
-  }
-  return models
-}
-
-export function getModelsWithTempRange02(): string[] {
-  const models: string[] = []
-  for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
-    for (const model of provider.models) {
-      if (model.capabilities.temperature?.max === 2) {
+      if (model.capabilities.temperature?.max === max) {
         models.push(model.id)
       }
     }
