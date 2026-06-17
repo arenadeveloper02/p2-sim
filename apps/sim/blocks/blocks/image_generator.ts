@@ -24,6 +24,7 @@ function normalizeReferenceFiles(input: unknown): unknown[] {
 }
 
 const OPENAI_GPT_IMAGE_MODELS = [
+  { label: 'GPT Image 2', id: 'gpt-image-2' },
   { label: 'GPT Image 1.5', id: 'gpt-image-1.5' },
   { label: 'GPT Image 1', id: 'gpt-image-1' },
   { label: 'GPT Image 1 Mini', id: 'gpt-image-1-mini' },
@@ -75,6 +76,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
   type: 'image_generator',
   name: 'Image Generator',
   description: 'Generate, edit, or fuse images',
+  hideFromToolbar: true,
   authMode: AuthMode.ApiKey,
   longDescription:
     'Integrate Image Generator into the workflow. Can generate images using DALL-E 3 and GPT Image models.',
@@ -600,7 +602,31 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Portrait (1024x1536)', id: '1024x1536' },
       ],
       value: () => 'auto',
-      condition: { field: 'provider', value: 'openai' },
+      condition: {
+        field: 'provider',
+        value: 'openai',
+        and: { field: 'model', value: ['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'] },
+      },
+      dependsOn: ['provider', 'model'],
+    },
+    {
+      id: 'size',
+      title: 'Size',
+      type: 'dropdown',
+      options: [
+        { label: 'Auto', id: 'auto' },
+        { label: 'Square (1024x1024)', id: '1024x1024' },
+        { label: 'Landscape (1536x1024)', id: '1536x1024' },
+        { label: 'Portrait (1024x1536)', id: '1024x1536' },
+        { label: '2K (2560x1440)', id: '2560x1440' },
+        { label: '4K (3840x2160)', id: '3840x2160' },
+      ],
+      value: () => 'auto',
+      condition: {
+        field: 'provider',
+        value: 'openai',
+        and: { field: 'model', value: 'gpt-image-2' },
+      },
       dependsOn: ['provider', 'model'],
     },
     {
@@ -896,6 +922,22 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       dependsOn: ['provider', 'model'],
     },
     {
+      id: 'background',
+      title: 'Background',
+      type: 'dropdown',
+      options: [
+        { label: 'Auto', id: 'auto' },
+        { label: 'Opaque', id: 'opaque' },
+      ],
+      value: () => 'auto',
+      condition: {
+        field: 'provider',
+        value: 'openai',
+        and: { field: 'model', value: 'gpt-image-2' },
+      },
+      dependsOn: ['provider', 'model'],
+    },
+    {
       id: 'outputFormat',
       title: 'Output Format',
       type: 'dropdown',
@@ -907,6 +949,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         and: {
           field: 'model',
           value: [
+            'gpt-image-2',
             'gpt-image-1.5',
             'gpt-image-1',
             'gpt-image-1-mini',
@@ -945,6 +988,50 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       ],
       value: () => 'auto',
       condition: { field: 'provider', value: 'openai' },
+      dependsOn: ['provider', 'model'],
+    },
+    {
+      id: 'inputImage',
+      title: 'Reference Images',
+      type: 'file-upload',
+      acceptedTypes: 'image/*',
+      multiple: true,
+      uploadContext: 'image-fusion',
+      allowStartFilesReference: true,
+      defaultValue: '<start.files>',
+      condition: { field: 'provider', value: ['openai', 'gemini'] },
+      dependsOn: ['provider', 'model'],
+    },
+    {
+      id: 'inputImageUrl',
+      title: 'Reference Image URLs',
+      type: 'long-input',
+      placeholder:
+        'Optional: add one or more image URLs or references. One image edits, multiple images fuse.',
+      mode: 'advanced',
+      condition: { field: 'provider', value: ['openai', 'gemini'] },
+      dependsOn: ['provider', 'model'],
+    },
+    {
+      id: 'inputImages',
+      title: 'Legacy Fusion Images',
+      type: 'file-upload',
+      acceptedTypes: 'image/*',
+      multiple: true,
+      uploadContext: 'image-fusion',
+      allowStartFilesReference: true,
+      hidden: true,
+      condition: { field: 'provider', value: 'gemini' },
+      dependsOn: ['provider', 'model'],
+    },
+    {
+      id: 'inputImageUrls',
+      title: 'Legacy Fusion Image URLs',
+      type: 'long-input',
+      placeholder:
+        'Optional: enter fusion image URLs (one per line or comma-separated), or use a reference like <agent1.urls>.',
+      hidden: true,
+      condition: { field: 'provider', value: 'gemini' },
       dependsOn: ['provider', 'model'],
     },
     {
@@ -1035,16 +1122,6 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       hideWhenHosted: true,
       condition: { field: 'provider', value: 'falai' },
     },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      required: true,
-      placeholder: 'Enter your provider API key',
-      password: true,
-      connectionDroppable: false,
-      condition: { field: 'provider', value: 'falai', not: true },
-    },
   ],
   tools: {
     access: ['image_generate'],
@@ -1052,9 +1129,6 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       tool: () => 'image_generate',
       params: (params) => {
         const provider = params.provider || 'openai'
-        if (provider !== 'falai' && !params.apiKey) {
-          throw new Error('API key is required')
-        }
         if (!params.prompt) {
           throw new Error('Prompt is required')
         }
@@ -1064,6 +1138,19 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
             : provider === 'falai'
               ? 'nano-banana-2'
               : 'gpt-image-1.5'
+
+        const referenceInputs =
+          provider === 'openai' || provider === 'gemini'
+            ? resolveNanoBananaReferences({
+                model: params.model,
+                uploadedReferences: [
+                  ...normalizeReferenceFiles(params.inputImage),
+                  ...normalizeReferenceFiles(params.inputImages),
+                ],
+                inputImageUrl: params.inputImageUrl,
+                inputImageUrls: params.inputImageUrls,
+              })
+            : {}
 
         return {
           provider,
@@ -1079,6 +1166,15 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
           ...(params.moderation && { moderation: params.moderation }),
           ...(params.safetyTolerance && { safetyTolerance: params.safetyTolerance }),
           ...(params.thinkingLevel && { thinkingLevel: params.thinkingLevel }),
+          ...(params.inputImageMimeType && { inputImageMimeType: params.inputImageMimeType }),
+          ...(referenceInputs.inputImageWarning && {
+            inputImageWarning: referenceInputs.inputImageWarning,
+          }),
+          ...(referenceInputs.inputImages
+            ? { inputImages: referenceInputs.inputImages }
+            : referenceInputs.inputImage
+              ? { inputImage: referenceInputs.inputImage }
+              : {}),
           ...(params.enableWebSearch !== undefined && {
             enableWebSearch: parseOptionalBooleanInput(params.enableWebSearch),
           }),
@@ -1104,11 +1200,39 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     thinkingLevel: { type: 'string', description: 'Fal.ai thinking level' },
     enableWebSearch: { type: 'boolean', description: 'Enable Fal.ai web search grounding' },
     enableSafetyChecker: { type: 'boolean', description: 'Enable Fal.ai safety checker' },
+    inputImage: {
+      type: 'json',
+      description:
+        'Reference images as uploaded files, Start block files, or file references. One image edits; multiple images fuse on supported models.',
+    },
+    inputImageUrl: {
+      type: 'string',
+      description:
+        'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
+    },
+    inputImages: {
+      type: 'json',
+      description: 'Multiple input images for Gemini Nano Banana Pro fusion.',
+    },
+    inputImageUrls: {
+      type: 'string',
+      description: 'Multiple image URLs or references for Gemini Nano Banana Pro fusion.',
+    },
+    inputImageMimeType: { type: 'string', description: 'MIME type of input image' },
+    inputImageWarning: {
+      type: 'string',
+      description:
+        'Warning emitted when multiple input images were provided and the latest one was used.',
+    },
     apiKey: { type: 'string', description: 'Provider API key' },
   },
   outputs: {
     content: { type: 'string', description: 'Generated image URL or identifier' },
     image: { type: 'file', description: 'Generated image file' },
+    images: {
+      type: 'array',
+      description: 'All generated image files when multiple images were requested',
+    },
     imageUrl: { type: 'string', description: 'Generated image URL' },
     provider: { type: 'string', description: 'Provider used' },
     model: { type: 'string', description: 'Model used' },
