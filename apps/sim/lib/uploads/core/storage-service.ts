@@ -3,13 +3,7 @@ import { randomBytes } from 'crypto'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { assertKnownSizeWithinLimit } from '@/lib/core/utils/stream-limits'
-import {
-  getStorageConfig,
-  S3_AGENT_GENERATED_IMAGES_CONFIG,
-  S3_CONFIG,
-  USE_BLOB_STORAGE,
-  USE_S3_STORAGE,
-} from '@/lib/uploads/config'
+import { getStorageConfig, USE_BLOB_STORAGE, USE_S3_STORAGE, S3_AGENT_GENERATED_IMAGES_CONFIG, S3_CONFIG } from '@/lib/uploads/config'
 import type { BlobConfig } from '@/lib/uploads/providers/blob/types'
 import type { S3Config } from '@/lib/uploads/providers/s3/types'
 import type {
@@ -29,6 +23,7 @@ import {
 } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('StorageService')
+
 
 /**
  * Create a Blob config from StorageConfig
@@ -52,6 +47,7 @@ function createBlobConfig(config: StorageConfig): BlobConfig {
     connectionString: config.connectionString,
   }
 }
+
 
 /**
  * Create an S3 config from StorageConfig

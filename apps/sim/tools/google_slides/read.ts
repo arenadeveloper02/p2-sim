@@ -52,7 +52,7 @@ export const readTool: ToolConfig<GoogleSlidesToolParams, GoogleSlidesReadRespon
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
-    debugger
+
     // Extract slides from the response
     const slides = data.slides || []
 

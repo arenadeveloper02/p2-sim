@@ -52,8 +52,6 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Create Line', id: 'create_line' },
         { label: 'Insert Text', id: 'insert_text' },
         { label: 'Get Template Schema', id: 'get_template_schema' },
-        { label: 'Get Presentation Icons', id: 'get_presentation_icons' },
-        { label: 'Get P2 Team Members', id: 'get_p2_users' },
         { label: 'Delete Text', id: 'delete_text' },
         { label: 'Update Text Style', id: 'update_text_style' },
         { label: 'Update Paragraph Style', id: 'update_paragraph_style' },
@@ -943,16 +941,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       canonicalParamId: 'template',
       condition: { field: 'operation', value: 'get_template_schema' },
       required: true,
-    },
-    // Get P2 Team Members operation
-    {
-      id: 'p2UsersFilter',
-      title: 'Filter',
-      type: 'short-input',
-      placeholder: 'Optional: filter by name or designation (e.g. "VP", "Board")',
-      canonicalParamId: 'filter',
-      condition: { field: 'operation', value: 'get_p2_users' },
-      required: false,
     },
 
     // ========== Copy Presentation Operation Fields ==========
@@ -2580,9 +2568,7 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       'google_slides_create_shape',
       'google_slides_insert_text',
       'google_slides_get_template_schema',
-      'google_slides_get_presentation_icons',
       'google_slides_create_from_template',
-      'google_slides_get_p2_users',
       'google_slides_update_text_style',
       'google_slides_update_paragraph_style',
       'google_slides_delete_text',
@@ -2665,10 +2651,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_insert_text'
           case 'get_template_schema':
             return 'google_slides_get_template_schema'
-          case 'get_presentation_icons':
-            return 'google_slides_get_presentation_icons'
-          case 'get_p2_users':
-            return 'google_slides_get_p2_users'
           case 'update_text_style':
             return 'google_slides_update_text_style'
           case 'update_paragraph_style':
@@ -2768,7 +2750,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           templateSchemaTemplate,
           createFromTemplatePresentationName,
           createFromTemplateSchemaJson,
-          p2UsersFilter,
           ...rest
         } = params
 
@@ -2836,11 +2817,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             ''
           ).trim()
           result.template = effectiveTemplate || undefined
-        }
-
-        if (params.operation === 'get_p2_users') {
-          const filter = ((params.p2UsersFilter as string) || '').trim()
-          if (filter) result.filter = filter
         }
 
         // Replace Text operation
@@ -3732,14 +3708,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       type: 'json',
       description: 'Full presentation template schema (slides, blocks, shapeIds)',
     },
-    // Get presentation icons operation
-    icons: {
-      type: 'json',
-      description: 'Presentation icon catalog entries (id, label, category, tags, pngUrl)',
-    },
-    count: { type: 'number', description: 'Number of icons returned' },
-    baseUrl: { type: 'string', description: 'Base URL for presentation icon assets' },
-    version: { type: 'string', description: 'Icon library version' },
     // Create from template operation
     slidesCreated: { type: 'number', description: 'Number of slides created' },
 
