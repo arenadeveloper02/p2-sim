@@ -38,7 +38,7 @@ interface BlockLike {
   role?: string
   shapeId: string
   content?: string | string[]
-  source?: 'icon_library' | 'stock_photo' | 'generated' | 'p2_users'
+  source?: 'icon_library' | 'stock_photo' | 'ai_photo' | 'generated' | 'p2_users'
 }
 
 interface SlideLike {
