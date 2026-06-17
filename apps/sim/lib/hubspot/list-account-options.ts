@@ -1,7 +1,13 @@
 import { db } from '@sim/db'
-import { accountTokens, credential, credentialMember } from '@sim/db/schema'
+import { credential, credentialMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, isNotNull } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
+import {
+  formatHubSpotAliasLabel,
+  isHubSpotSharedAccountAlias,
+  listHubSpotEnvConfiguredAliases,
+  listHubSpotSharedAccountAliases,
+} from '@/lib/hubspot/env-aliases'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 
 const logger = createLogger('HubSpotListAccountOptions')
@@ -16,31 +22,16 @@ export interface HubSpotAccountOption {
   credentialId?: string
 }
 
-/** Known shared HubSpot portal aliases and display labels (legacy static picker). */
-export const HUBSPOT_SHARED_ACCOUNT_LABELS: Record<string, string> = {
-  position2: 'Position2',
-  northstar_anesthesia: 'Northstar Anesthesia',
-  covalent_metrology: 'Covalent Metrology',
-}
-
-export const HUBSPOT_SHARED_ACCOUNT_ALIASES = Object.keys(HUBSPOT_SHARED_ACCOUNT_LABELS)
-
-export function formatHubSpotAliasLabel(alias: string): string {
-  const trimmed = alias.trim()
-  if (!trimmed) return 'HubSpot account'
-  return (
-    HUBSPOT_SHARED_ACCOUNT_LABELS[trimmed] ??
-    trimmed
-      .split('_')
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ')
-  )
+export {
+  formatHubSpotAliasLabel,
+  isHubSpotSharedAccountAlias,
+  listHubSpotEnvConfiguredAliases,
+  listHubSpotSharedAccountAliases,
 }
 
 /**
  * Lists HubSpot account picker options for a workspace.
- * Admin/shared workspaces receive public `account_tokens` aliases plus the caller's personal connections.
+ * Admin workspaces receive default shared portals, env-configured aliases, and the caller's personal connections only.
  */
 export async function listHubSpotAccountOptions(params: {
   workspaceId: string
@@ -53,7 +44,6 @@ export async function listHubSpotAccountOptions(params: {
   }
 
   const includePublicCatalog = isAdminWorkspace(workspaceId)
-  const personalCredentialIds = new Set<string>()
   const items: HubSpotAccountOption[] = []
 
   try {
@@ -83,7 +73,6 @@ export async function listHubSpotAccountOptions(params: {
       const credentialId = typeof row.credentialId === 'string' ? row.credentialId.trim() : ''
       if (!credentialId) continue
 
-      personalCredentialIds.add(credentialId)
       const displayName =
         typeof row.displayName === 'string' && row.displayName.trim() !== ''
           ? row.displayName.trim()
@@ -98,26 +87,7 @@ export async function listHubSpotAccountOptions(params: {
     }
 
     if (includePublicCatalog) {
-      const publicRows = await db
-        .select({ alias: accountTokens.alias })
-        .from(accountTokens)
-        .where(and(eq(accountTokens.providerId, 'hubspot'), isNotNull(accountTokens.alias)))
-
-      const seenAliases = new Set<string>()
-      for (const row of publicRows) {
-        const alias = typeof row.alias === 'string' ? row.alias.trim() : ''
-        if (!alias || seenAliases.has(alias)) continue
-        seenAliases.add(alias)
-        items.push({
-          id: alias,
-          label: formatHubSpotAliasLabel(alias),
-          source: 'public',
-          alias,
-        })
-      }
-
-      for (const alias of HUBSPOT_SHARED_ACCOUNT_ALIASES) {
-        if (seenAliases.has(alias)) continue
+      for (const alias of listHubSpotSharedAccountAliases()) {
         items.push({
           id: alias,
           label: formatHubSpotAliasLabel(alias),
