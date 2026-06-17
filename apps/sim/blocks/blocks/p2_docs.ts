@@ -32,6 +32,7 @@ export const P2DocsBlock: BlockConfig = {
       type: 'dropdown',
       options: [{ label: 'Position2 2026', id: 'position2_2026' }],
       canonicalParamId: 'template',
+      value: () => 'position2_2026',
       condition: { field: 'operation', value: 'get_template_schema' },
       required: true,
     },
@@ -85,29 +86,38 @@ export const P2DocsBlock: BlockConfig = {
         }
       },
       params: (params) => {
-        const { templateSchemaTemplate, iconsCategory, iconsColor, p2UsersFilter, ...rest } = params
-
         if (params.operation === 'get_template_schema') {
-          const template = ((templateSchemaTemplate as string) || '').trim()
-          return { ...rest, template: template || undefined }
+          const template = (
+            (params.templateSchemaTemplate as string) ||
+            (params.template as string) ||
+            'position2_2026'
+          ).trim()
+          return { template }
         }
 
         if (params.operation === 'get_presentation_icons') {
-          const category = ((iconsCategory as string) || '').trim()
-          const color = ((iconsColor as string) || '').trim()
+          const category = (
+            (params.iconsCategory as string) ||
+            (params.category as string) ||
+            ''
+          ).trim()
+          const color = ((params.iconsColor as string) || (params.color as string) || '').trim()
           return {
-            ...rest,
             category: category || undefined,
             color: color === 'black' || color === 'white' ? color : undefined,
           }
         }
 
         if (params.operation === 'get_p2_users') {
-          const filter = ((p2UsersFilter as string) || '').trim()
-          return { ...rest, filter: filter || undefined }
+          const filter = (
+            (params.p2UsersFilter as string) ||
+            (params.filter as string) ||
+            ''
+          ).trim()
+          return { filter: filter || undefined }
         }
 
-        return rest
+        return {}
       },
     },
   },

@@ -2,7 +2,7 @@ import { getTemplateMasterSchema } from '@/tools/google_slides/templates'
 import type { ToolConfig } from '@/tools/types'
 
 interface GetTemplateSchemaParams {
-  template: string
+  template?: string
 }
 
 interface GetTemplateSchemaResponse {
@@ -22,9 +22,10 @@ export const getTemplateSchemaTool: ToolConfig<GetTemplateSchemaParams, GetTempl
     params: {
       template: {
         type: 'string',
-        required: true,
+        required: false,
         visibility: 'user-or-llm',
-        description: 'Template id (e.g. position2_2026). Use TEMPLATE_OPTIONS for dropdown values.',
+        description:
+          'Template id (e.g. position2_2026). Defaults to position2_2026 when omitted.',
       },
     },
 
@@ -37,7 +38,8 @@ export const getTemplateSchemaTool: ToolConfig<GetTemplateSchemaParams, GetTempl
     directExecution: async (
       params: GetTemplateSchemaParams
     ): Promise<GetTemplateSchemaResponse> => {
-      const schema = getTemplateMasterSchema(params.template.trim())
+      const templateId = (params.template?.trim() || 'position2_2026')
+      const schema = getTemplateMasterSchema(templateId)
       return {
         success: true,
         output: {
