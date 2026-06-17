@@ -1,5 +1,5 @@
+import { getTemplateMasterSchema } from '@/tools/google_slides/templates'
 import type { ToolConfig } from '@/tools/types'
-import { getTemplateMasterSchema } from './templates'
 
 interface GetTemplateSchemaParams {
   template: string
@@ -14,8 +14,8 @@ interface GetTemplateSchemaResponse {
 
 export const getTemplateSchemaTool: ToolConfig<GetTemplateSchemaParams, GetTemplateSchemaResponse> =
   {
-    id: 'google_slides_get_template_schema',
-    name: 'Get Google Slides Template Schema',
+    id: 'p2_docs_get_template_schema',
+    name: 'Get Template Schema',
     description: 'Return the JSON schema for a presentation template (e.g. position2_2026)',
     version: '1.0',
 
@@ -29,7 +29,7 @@ export const getTemplateSchemaTool: ToolConfig<GetTemplateSchemaParams, GetTempl
     },
 
     request: {
-      url: '/api/tools/google_slides/get_template_schema',
+      url: '/api/tools/p2_docs/get_template_schema',
       method: 'GET',
       headers: () => ({}),
     },

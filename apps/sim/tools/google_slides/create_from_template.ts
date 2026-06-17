@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
-import { P2_TEAM_MEMBERS } from '@/tools/google_slides/get_p2_users'
+import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
 import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
 

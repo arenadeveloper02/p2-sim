@@ -7,7 +7,10 @@ import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
 import { getAllowedIntegrationsContract } from '@/lib/api/contracts/common'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
-import { isBlockTypeAccessControlExempt } from '@/lib/permission-groups/block-access'
+import {
+  isBlockTypeAccessControlExempt,
+  isBlockVisibleForWorkspace,
+} from '@/lib/permission-groups/block-access'
 import {
   DEFAULT_PERMISSION_GROUP_CONFIG,
   type PermissionGroupConfig,
@@ -115,14 +118,17 @@ export function usePermissionConfig(): PermissionConfigResult {
 
   const filterBlocks = useMemo(() => {
     return <T extends { type: string }>(blocks: T[]): T[] => {
-      if (mergedAllowedIntegrations === null) return blocks
-      return blocks.filter(
+      const workspaceVisible = blocks.filter((block) =>
+        isBlockVisibleForWorkspace(block.type, workspaceId)
+      )
+      if (mergedAllowedIntegrations === null) return workspaceVisible
+      return workspaceVisible.filter(
         (block) =>
           isBlockTypeAccessControlExempt(block.type) ||
           mergedAllowedIntegrations.includes(block.type.toLowerCase())
       )
     }
-  }, [mergedAllowedIntegrations])
+  }, [mergedAllowedIntegrations, workspaceId])
 
   const filterProviders = useMemo(() => {
     return (providerIds: string[]): string[] => {

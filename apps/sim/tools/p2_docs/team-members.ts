@@ -1,21 +1,7 @@
-import type { ToolConfig } from '@/tools/types'
-
-interface P2User {
+export interface P2User {
   name: string
   designation: string
   url: string
-}
-
-interface GetP2UsersParams {
-  filter?: string
-}
-
-interface GetP2UsersResponse {
-  success: boolean
-  output: {
-    users: P2User[]
-    total: number
-  }
 }
 
 const BASE_URL = 'https://arenav2image.s3.us-west-1.amazonaws.com/presentation-profile-images'
@@ -127,61 +113,3 @@ export const P2_TEAM_MEMBERS: P2User[] = [
     url: `${BASE_URL}/Mohan%20A.jpg`,
   },
 ]
-
-export const getP2UsersTool: ToolConfig<GetP2UsersParams, GetP2UsersResponse> = {
-  id: 'google_slides_get_p2_users',
-  name: 'Get P2 Team Members',
-  description:
-    'Returns the list of Position2 (P2) team members — name, designation, and profile image URL — for use when populating team or speaker slides. Optionally filter by name or designation keyword.',
-  version: '1.0.0',
-
-  params: {
-    filter: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description:
-        'Optional case-insensitive keyword to filter members by name or designation (e.g. "VP", "Board", "Rajiv").',
-    },
-  },
-
-  request: {
-    url: '/api/tools/google_slides/get_p2_users',
-    method: 'GET',
-    headers: () => ({}),
-  },
-
-  directExecution: async (params: GetP2UsersParams): Promise<GetP2UsersResponse> => {
-    const keyword = params.filter?.trim().toLowerCase()
-
-    const users = keyword
-      ? P2_TEAM_MEMBERS.filter(
-          (m) =>
-            m.name.toLowerCase().includes(keyword) ||
-            m.designation.toLowerCase().includes(keyword)
-        )
-      : P2_TEAM_MEMBERS
-
-    return {
-      success: true,
-      output: {
-        users,
-        total: users.length,
-      },
-    }
-  },
-
-  outputs: {
-    users: {
-      type: 'array',
-      description: 'List of matched P2 team members.',
-      items: {
-        type: 'json',
-      },
-    },
-    total: {
-      type: 'number',
-      description: 'Total number of users returned.',
-    },
-  },
-}
