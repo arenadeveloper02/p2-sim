@@ -54,6 +54,11 @@ export const env = createEnv({
     COPILOT_STREAM_TTL_SECONDS:            z.number().optional(),                  // Redis TTL for copilot SSE buffer
     COPILOT_STREAM_EVENT_LIMIT:            z.number().optional(),                  // Max events retained per stream
 
+    // P2 Copilot (parallel workflow-native copilot brain; separate from mothership)
+    P2_COPILOT_BRAIN_URL:                  z.string().url().optional(),            // Base URL of the p2-copilot-brain service (default http://localhost:3010)
+    P2_COPILOT_MODEL:                      z.string().optional(),                  // Override default model (e.g. gpt-4o, claude-sonnet-4-20250514)
+    P2_COPILOT_PROVIDER:                   z.enum(['openai', 'anthropic']).optional(), // Override provider auto-selection
+
     // Database & Storage
     REDIS_URL:                             z.string().url().optional(),            // Redis connection string for caching/sessions
     REDIS_TLS_SERVERNAME:                  z.string().min(1).optional(),           // TLS SNI override; required when REDIS_URL targets an IP over rediss:// (e.g. trigger.dev PrivateLink VPCE IP) so cert hostname verification matches the ElastiCache cert's CN

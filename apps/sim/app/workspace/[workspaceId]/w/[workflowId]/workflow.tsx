@@ -110,6 +110,14 @@ const LazyChat = lazy(() =>
   }))
 )
 
+const LazyP2Copilot = lazy(() =>
+  import('@/app/workspace/[workspaceId]/w/[workflowId]/components/p2-copilot-floating').then(
+    (mod) => ({
+      default: mod.P2CopilotFloating,
+    })
+  )
+)
+
 const logger = createLogger('Workflow')
 
 const DEFAULT_PASTE_OFFSET = { x: 50, y: 50 }
@@ -4207,6 +4215,9 @@ const WorkflowContent = React.memo(
                     <WorkflowControls />
                     <Suspense fallback={null}>
                       <LazyChat />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <LazyP2Copilot />
                     </Suspense>
 
                     <BlockMenu

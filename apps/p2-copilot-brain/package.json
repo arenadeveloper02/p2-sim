@@ -1,0 +1,29 @@
+{
+  "name": "@sim/p2-copilot-brain",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "bun": ">=1.2.13",
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "type-check": "tsc --noEmit",
+    "lint": "biome check --write --unsafe .",
+    "lint:check": "biome check .",
+    "format": "biome format --write .",
+    "format:check": "biome format ."
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.71.2",
+    "openai": "^4.91.1"
+  },
+  "devDependencies": {
+    "@sim/tsconfig": "workspace:*",
+    "@types/node": "24.2.1",
+    "typescript": "^5.7.3"
+  }
+}
