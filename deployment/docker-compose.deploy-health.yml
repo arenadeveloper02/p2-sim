@@ -1,0 +1,17 @@
+# Faster healthchecks for deploy cutover. Merge with the base compose file + deploy.sh --wait.
+services:
+  simstudio:
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3000/api/health']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  realtime:
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3002/health']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s

@@ -1,0 +1,7 @@
+# Strips host port bindings so simstudio/realtime can boot while maintenance owns 3000/3002.
+services:
+  simstudio:
+    ports: !reset []
+
+  realtime:
+    ports: !reset []

@@ -1,0 +1,10 @@
+FROM node:22-alpine
+
+WORKDIR /app
+
+COPY maintenance-server.js .
+COPY maintenance.html .
+
+EXPOSE 80
+
+CMD ["node", "maintenance-server.js"]
