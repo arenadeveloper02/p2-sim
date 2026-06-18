@@ -45,6 +45,36 @@ export async function getWorkspaceBilledAccountUserId(workspaceId: string): Prom
   return settings?.billedAccountUserId ?? null
 }
 
+export async function getWorkspaceOwnerId(workspaceId: string): Promise<string | null> {
+  if (!workspaceId) {
+    return null
+  }
+
+  const rows = await db
+    .select({ ownerId: workspaceTable.ownerId })
+    .from(workspaceTable)
+    .where(and(eq(workspaceTable.id, workspaceId), isNull(workspaceTable.archivedAt)))
+    .limit(1)
+
+  return rows[0]?.ownerId ?? null
+}
+
+/**
+ * Resolves the execution actor for scheduled workflow runs.
+ * Prefers the workflow owner (who typically connects block credentials), then
+ * falls back to the workspace owner when the workflow record has no user.
+ */
+export async function getScheduleExecutionActorUserId(
+  workspaceId: string,
+  workflowUserId?: string | null
+): Promise<string | null> {
+  if (workflowUserId) {
+    return workflowUserId
+  }
+
+  return getWorkspaceOwnerId(workspaceId)
+}
+
 export async function listUserWorkspaces(userId: string, scope: WorkspaceScope = 'active') {
   const workspaces = await db
     .select({
