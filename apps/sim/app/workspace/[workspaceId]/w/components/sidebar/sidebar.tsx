@@ -27,7 +27,7 @@ import {
 import {
   ArrowLeft,
   BookOpen,
-  Clock,
+  Calendar,
   Database,
   Files,
   HelpCircle,
@@ -766,7 +766,7 @@ export const Sidebar = memo(function Sidebar() {
         {
           id: 'scheduled-tasks',
           label: 'Scheduled tasks',
-          icon: Clock,
+          icon: Calendar,
           href: `/workspace/${workspaceId}/scheduled-tasks`,
         },
         {

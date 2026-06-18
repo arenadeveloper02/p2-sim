@@ -1,3 +1,4 @@
+import { isRecordLike } from '@sim/utils/object'
 import {
   inferContextFromKey,
   isInternalFileUrl,
@@ -108,10 +109,6 @@ export function buildResolutionFromBlock(block: SerializedBlock): ExecutorStartR
   }
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 function readMetadataSubBlockValue(block: SerializedBlock, key: string): unknown {
   const metadata = block.metadata
   if (!metadata || typeof metadata !== 'object') {
@@ -140,7 +137,7 @@ export function extractInputFormat(block: SerializedBlock): InputFormatField[] {
   }
 
   return source
-    .filter((field): field is InputFormatField => isPlainObject(field))
+    .filter((field): field is InputFormatField => isRecordLike(field))
     .map((field) => field)
 }
 
@@ -291,11 +288,11 @@ function deriveInputFromFormat(
     if (!fieldName) continue
 
     let fieldValue: unknown
-    const workflowRecord = isPlainObject(workflowInput) ? workflowInput : undefined
+    const workflowRecord = isRecordLike(workflowInput) ? workflowInput : undefined
 
     if (workflowRecord) {
       const inputContainer = workflowRecord.input
-      if (isPlainObject(inputContainer) && Object.hasOwn(inputContainer, fieldName)) {
+      if (isRecordLike(inputContainer) && Object.hasOwn(inputContainer, fieldName)) {
         fieldValue = inputContainer[fieldName]
       } else if (Object.hasOwn(workflowRecord, fieldName)) {
         fieldValue = workflowRecord[fieldName]
@@ -321,14 +318,14 @@ function deriveInputFromFormat(
 }
 
 function getRawInputCandidate(workflowInput: unknown): unknown {
-  if (isPlainObject(workflowInput) && Object.hasOwn(workflowInput, 'input')) {
+  if (isRecordLike(workflowInput) && Object.hasOwn(workflowInput, 'input')) {
     return workflowInput.input
   }
   return workflowInput
 }
 
 function normalizeStartFile(file: unknown): UserFile | null {
-  if (!isPlainObject(file)) {
+  if (!isRecordLike(file)) {
     return null
   }
 
@@ -378,7 +375,7 @@ function normalizeStartFile(file: unknown): UserFile | null {
 }
 
 function getFilesFromWorkflowInput(workflowInput: unknown): UserFile[] | undefined {
-  if (!isPlainObject(workflowInput)) {
+  if (!isRecordLike(workflowInput)) {
     return undefined
   }
   const files = workflowInput.files
@@ -400,7 +397,7 @@ function mergeFilesIntoOutput(
   const files = getFilesFromWorkflowInput(workflowInput)
   if (files) {
     output.files = files
-  } else if (isPlainObject(workflowInput) && Object.hasOwn(workflowInput, 'files')) {
+  } else if (isRecordLike(workflowInput) && Object.hasOwn(workflowInput, 'files')) {
     output.files = undefined
   }
   return output
@@ -426,8 +423,7 @@ function buildUnifiedStartOutput(
     }
   }
 
-  // Then, merge runtime values from workflowInput (runtime values override defaults)
-  if (isPlainObject(workflowInput)) {
+  if (isRecordLike(workflowInput)) {
     for (const [key, value] of Object.entries(workflowInput)) {
       if (key === 'onUploadError') continue
       // Skip keys already set by schema-coerced structuredInput to
@@ -467,7 +463,7 @@ function buildUnifiedStartOutput(
   // Don't remove empty strings - they should be preserved in output
   if (!Object.hasOwn(output, 'input')) {
     const fallbackInput =
-      isPlainObject(workflowInput) && typeof workflowInput.input !== 'undefined'
+      isRecordLike(workflowInput) && typeof workflowInput.input !== 'undefined'
         ? ensureString(workflowInput.input)
         : ''
     // Always include input field, even if empty string
@@ -479,7 +475,7 @@ function buildUnifiedStartOutput(
   // Ensure conversationId is present if it exists, but allow empty string
   if (!Object.hasOwn(output, 'conversationId')) {
     const conversationId =
-      isPlainObject(workflowInput) && workflowInput.conversationId
+      isRecordLike(workflowInput) && workflowInput.conversationId
         ? ensureString(workflowInput.conversationId)
         : undefined
     if (conversationId) {
@@ -492,7 +488,7 @@ function buildUnifiedStartOutput(
 }
 
 function buildApiOrInputOutput(finalInput: unknown, workflowInput: unknown): NormalizedBlockOutput {
-  const isObjectInput = isPlainObject(finalInput)
+  const isObjectInput = isRecordLike(finalInput)
 
   const output: NormalizedBlockOutput = isObjectInput
     ? {
@@ -505,7 +501,7 @@ function buildApiOrInputOutput(finalInput: unknown, workflowInput: unknown): Nor
 }
 
 function buildChatOutput(workflowInput: unknown): NormalizedBlockOutput {
-  const source = isPlainObject(workflowInput) ? workflowInput : undefined
+  const source = isRecordLike(workflowInput) ? workflowInput : undefined
 
   const output: NormalizedBlockOutput = {
     input: ensureString(source?.input),
@@ -529,7 +525,7 @@ function buildLegacyStarterOutput(
   }
 
   const output: NormalizedBlockOutput = {}
-  const finalObject = isPlainObject(finalInput) ? finalInput : undefined
+  const finalObject = isRecordLike(finalInput) ? finalInput : undefined
 
   if (finalObject) {
     safeAssign(output, finalObject)
@@ -538,7 +534,7 @@ function buildLegacyStarterOutput(
     output.input = finalInput
   }
 
-  const conversationId = isPlainObject(workflowInput) ? workflowInput.conversationId : undefined
+  const conversationId = isRecordLike(workflowInput) ? workflowInput.conversationId : undefined
   if (conversationId) {
     output.conversationId = ensureString(conversationId)
   }
@@ -550,9 +546,7 @@ function buildManualTriggerOutput(
   finalInput: unknown,
   workflowInput: unknown
 ): NormalizedBlockOutput {
-  const finalObject = isPlainObject(finalInput)
-    ? (finalInput as Record<string, unknown>)
-    : undefined
+  const finalObject = isRecordLike(finalInput) ? (finalInput as Record<string, unknown>) : undefined
 
   const output: NormalizedBlockOutput = finalObject ? { ...finalObject } : { input: finalInput }
 
@@ -577,7 +571,7 @@ function buildIntegrationTriggerOutput(
     }
   }
 
-  if (isPlainObject(workflowInput)) {
+  if (isRecordLike(workflowInput)) {
     for (const [key, value] of Object.entries(workflowInput)) {
       if (structuredKeys?.has(key)) continue
       if (value !== undefined && value !== null) {

@@ -30,7 +30,7 @@ import { ChatFiles } from '@/lib/uploads'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getWorkspaceIdsForUser } from '@/lib/workspaces/permissions/utils'
-import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
+import { assertChatEmbedAllowed, setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatIdentifierAPI')
@@ -305,6 +305,9 @@ export const POST = withRouteHandler(
 
         return createErrorResponse('This chat is currently unavailable', 403)
       }
+
+      const embedBlock = await assertChatEmbedAllowed(request, deployment.workflowId, requestId)
+      if (embedBlock) return embedBlock
 
       const authResult = await validateChatAuth(requestId, deployment, request, parsedBody)
       if (!authResult.authorized) {
@@ -1228,6 +1231,8 @@ export const GET = withRouteHandler(
           ...(userWorkspaceIds && userWorkspaceIds.length > 0 && { userWorkspaceIds }),
         }
       }
+      const embedBlock = await assertChatEmbedAllowed(request, deployment.workflowId, requestId)
+      if (embedBlock) return embedBlock
 
       const cookieName = `chat_auth_${deployment.id}`
       const authCookie = request.cookies.get(cookieName)

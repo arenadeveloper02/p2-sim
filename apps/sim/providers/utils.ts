@@ -5,7 +5,7 @@ import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
 import { formatCreditCost } from '@/lib/billing/credits/conversion'
 import { env } from '@/lib/core/config/env'
-import { getBlacklistedProvidersFromEnv, isHosted } from '@/lib/core/config/feature-flags'
+import { getBlacklistedProvidersFromEnv, isHosted } from '@/lib/core/config/env-flags'
 import {
   normalizeRecord,
   normalizeStringRecord,
@@ -29,9 +29,8 @@ import {
   getModelsWithDeepResearch,
   getModelsWithoutMemory,
   getModelsWithReasoningEffort,
+  getModelsWithTemperatureRange,
   getModelsWithTemperatureSupport,
-  getModelsWithTempRange01,
-  getModelsWithTempRange02,
   getModelsWithThinking,
   getModelsWithVerbosity,
   getProviderDefaultModel as getProviderDefaultModelFromDefinitions,
@@ -1381,8 +1380,9 @@ export function trackForcedToolUsage(
   }
 }
 
-export const MODELS_TEMP_RANGE_0_2 = getModelsWithTempRange02()
-export const MODELS_TEMP_RANGE_0_1 = getModelsWithTempRange01()
+export const MODELS_TEMP_RANGE_0_2 = getModelsWithTemperatureRange(2)
+export const MODELS_TEMP_RANGE_0_15 = getModelsWithTemperatureRange(1.5)
+export const MODELS_TEMP_RANGE_0_1 = getModelsWithTemperatureRange(1)
 export const MODELS_WITH_TEMPERATURE_SUPPORT = getModelsWithTemperatureSupport()
 export const MODELS_WITH_REASONING_EFFORT = getModelsWithReasoningEffort()
 export const MODELS_WITH_VERBOSITY = getModelsWithVerbosity()

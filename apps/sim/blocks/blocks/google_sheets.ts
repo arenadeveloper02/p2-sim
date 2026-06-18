@@ -1132,6 +1132,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
 
 export const GoogleSheetsBlockMeta = {
   tags: ['spreadsheet', 'google-workspace', 'data-analytics'],
+  url: 'https://workspace.google.com/products/sheets',
   templates: [
     {
       icon: GoogleSheetsIcon,
@@ -1247,4 +1248,5 @@ export const GoogleSheetsBlockMeta = {
 
 export const GoogleSheetsV2BlockMeta = {
   tags: ['spreadsheet', 'google-workspace', 'data-analytics'],
+  url: 'https://workspace.google.com/products/sheets',
 } as const satisfies BlockMeta

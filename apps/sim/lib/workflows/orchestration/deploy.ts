@@ -22,7 +22,10 @@ import {
   undeployWorkflow,
 } from '@/lib/workflows/persistence/utils'
 import { validateWorkflowSchedules } from '@/lib/workflows/schedules'
-import { emitWorkflowDeployedEvent } from '@/lib/workspace-events/emitter'
+import {
+  emitWorkflowDeployedEvent,
+  emitWorkflowUndeployedEvent,
+} from '@/lib/workspace-events/emitter'
 import type { BlockState, WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('DeployOrchestration')
@@ -122,7 +125,7 @@ export async function performFullDeploy(
     workflowName: workflowName || workflowRecord.name || undefined,
     description: params.versionDescription,
     name: params.versionName,
-    validateWorkflowState: async (workflowState) => {
+    validateWorkflowState: async (workflowState, executor) => {
       const scheduleValidation = validateWorkflowSchedules(workflowState.blocks)
       if (!scheduleValidation.isValid) {
         return {
@@ -131,7 +134,10 @@ export async function performFullDeploy(
           errorCode: 'validation',
         }
       }
-      const triggerValidation = await validateTriggerWebhookConfigForDeploy(workflowState.blocks)
+      const triggerValidation = await validateTriggerWebhookConfigForDeploy(
+        workflowState.blocks,
+        executor
+      )
       if (!triggerValidation.success) {
         return {
           success: false,
@@ -284,6 +290,15 @@ export async function performFullUndeploy(
 
   await notifySocketDeploymentChanged(workflowId)
   const sideEffectWarning = await processDeploymentSideEffectsNow(outboxEventId, requestId)
+
+  const undeployWorkspaceId = workflowData.workspaceId as string | null
+  if (undeployWorkspaceId) {
+    void emitWorkflowUndeployedEvent({
+      workflowId,
+      workflowName: (workflowData.name as string) || workflowId,
+      workspaceId: undeployWorkspaceId,
+    })
+  }
 
   return { success: true, warnings: sideEffectWarning ? [sideEffectWarning] : undefined }
 }

@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next'
 import { env, isTruthy } from './lib/core/config/env'
-import { isDev } from './lib/core/config/feature-flags'
+import { isDev } from './lib/core/config/env-flags'
 import {
   getChatEmbedCSPPolicy,
   getMainCSPPolicy,
@@ -104,53 +104,6 @@ const nextConfig: NextConfig = {
       './node_modules/@img/**/*',
       './lib/execution/sandbox/bundles/*.cjs',
     ],
-  },
-  webpack: (config, { webpack }) => {
-    // Ignore native modules and optional dependencies that shouldn't be bundled
-    config.plugins = config.plugins || []
-    config.plugins.push(
-      new webpack.IgnorePlugin({
-        resourceRegExp: /^(cpu-features|chromium-bidi)$/,
-      }),
-      new webpack.IgnorePlugin({
-        resourceRegExp: /thread-stream\/(test|bench\.js|LICENSE)/,
-      })
-    )
-
-    // Exclude these modules from resolution to prevent bundling errors
-    config.resolve.fallback = {
-      ...config.resolve.fallback,
-      'cpu-features': false,
-      'chromium-bidi': false,
-      'thread-stream/test': false,
-      'thread-stream/bench': false,
-      'thread-stream/LICENSE': false,
-      desm: false,
-      fastbench: false,
-      tap: false,
-      'pino-elasticsearch': false,
-    }
-
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      'thread-stream/test': false,
-      'thread-stream/bench': false,
-      'thread-stream/LICENSE': false,
-    }
-
-    return config
-  },
-
-  turbopack: {
-    resolveAlias: {
-      // `dns/promises` has no browser shim. Server-only connector fetch logic
-      // (which imports `input-validation.server`) is statically reachable from
-      // the client bundle via the connector registry, but never runs there.
-      // Stub it for the browser only; the server keeps the real module so SSRF
-      // validation is unaffected.
-      'dns/promises': { browser: './lib/core/security/empty-node-fallback.browser.ts' },
-      dns: { browser: './lib/core/security/empty-node-fallback.browser.ts' },
-    },
   },
   experimental: {
     optimizeCss: true,
@@ -371,6 +324,15 @@ const nextConfig: NextConfig = {
     redirects.push({
       source: '/workspace/:workspaceId/task/:chatId',
       destination: '/workspace/:workspaceId/chat/:chatId',
+      permanent: true,
+    })
+
+    // Legacy integration slug: the incident.io block's display name was fixed
+    // from `incidentio` to `incident.io`, which moved its catalog slug.
+    // Preserve the previously indexed landing URL.
+    redirects.push({
+      source: '/integrations/incidentio',
+      destination: '/integrations/incident-io',
       permanent: true,
     })
 

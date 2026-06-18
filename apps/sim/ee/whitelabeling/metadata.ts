@@ -153,7 +153,7 @@ export function generateStructuredData() {
     },
     featureList: [
       'AI Workspace for Teams',
-      'Mothership — Natural Language Agent Creation',
+      'Chat — Natural Language Agent Creation',
       'Visual Workflow Builder',
       '1,000+ Integrations',
       'LLM Orchestration',
