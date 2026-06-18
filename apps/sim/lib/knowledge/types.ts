@@ -40,7 +40,7 @@ export interface CreateKnowledgeBaseData {
   name: string
   description?: string
   workspaceId: string
-  embeddingModel: 'text-embedding-3-small'
+  embeddingModel: string
   embeddingDimension: 1536
   chunkingConfig: ChunkingConfig
   userId: string
@@ -99,7 +99,7 @@ export interface ProcessedDocumentTags {
 
 /** These types use string dates for JSON serialization */
 
-export interface ExtendedChunkingConfig extends ChunkingConfig {
+interface ExtendedChunkingConfig extends ChunkingConfig {
   chunkSize?: number
   minCharactersPerChunk?: number
   recipe?: string
@@ -111,15 +111,16 @@ export interface KnowledgeBaseData {
   id: string
   userId: string
   name: string
-  description?: string
+  description: string | null
   tokenCount: number
   embeddingModel: string
   embeddingDimension: number
   chunkingConfig: ExtendedChunkingConfig
   createdAt: string
   updatedAt: string
-  deletedAt?: string | null
-  workspaceId?: string
+  deletedAt: string | null
+  workspaceId: string | null
+  docCount?: number
   connectorTypes?: string[]
 }
 
@@ -191,14 +192,14 @@ export interface ChunkData {
   updatedAt: string
 }
 
-export interface ChunksPagination {
+interface ChunksPagination {
   total: number
   limit: number
   offset: number
   hasMore: boolean
 }
 
-export interface DocumentsPagination {
+interface DocumentsPagination {
   total: number
   limit: number
   offset: number

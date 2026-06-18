@@ -1,5 +1,4 @@
 import type { AgiloftDeleteRecordParams, AgiloftDeleteResponse } from '@/tools/agiloft/types'
-import { buildDeleteRecordUrl, executeAgiloftRequest } from '@/tools/agiloft/utils'
 import type { ToolConfig } from '@/tools/types'
 
 export const agiloftDeleteRecordTool: ToolConfig<AgiloftDeleteRecordParams, AgiloftDeleteResponse> =
@@ -49,37 +48,26 @@ export const agiloftDeleteRecordTool: ToolConfig<AgiloftDeleteRecordParams, Agil
     },
 
     request: {
-      url: 'https://placeholder.agiloft.com',
-      method: 'DELETE',
-      headers: () => ({}),
+      url: () => '/api/tools/agiloft/delete_record',
+      method: 'POST',
+      headers: () => ({ 'Content-Type': 'application/json' }),
+      body: (params) => ({
+        instanceUrl: params.instanceUrl,
+        knowledgeBase: params.knowledgeBase,
+        login: params.login,
+        password: params.password,
+        table: params.table,
+        recordId: params.recordId,
+      }),
     },
 
-    directExecution: async (params) => {
-      return executeAgiloftRequest<AgiloftDeleteResponse>(
-        params,
-        (base) => ({
-          url: buildDeleteRecordUrl(base, params),
-          method: 'DELETE',
-        }),
-        async (response) => {
-          if (!response.ok) {
-            const errorText = await response.text()
-            return {
-              success: false,
-              output: { id: params.recordId?.trim() ?? '', deleted: false },
-              error: `Agiloft error: ${response.status} - ${errorText}`,
-            }
-          }
-
-          return {
-            success: true,
-            output: {
-              id: params.recordId?.trim() ?? '',
-              deleted: true,
-            },
-          }
-        }
-      )
+    transformResponse: async (response: Response) => {
+      const data = await response.json()
+      return {
+        success: data.success ?? true,
+        output: data.output,
+        ...(data.error ? { error: data.error } : {}),
+      }
     },
 
     outputs: {

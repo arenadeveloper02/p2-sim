@@ -2,9 +2,10 @@ import { db } from '@sim/db'
 import { account, credential, credentialMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { oauthCredentialsQuerySchema } from '@/lib/api/contracts/credentials'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -19,21 +20,13 @@ export const dynamic = 'force-dynamic'
 
 const logger = createLogger('OAuthCredentialsAPI')
 
-const credentialsQuerySchema = z
-  .object({
-    provider: z.string().nullish(),
-    workflowId: z.string().uuid('Workflow ID must be a valid UUID').nullish(),
-    workspaceId: z.string().uuid('Workspace ID must be a valid UUID').nullish(),
-    credentialId: z
-      .string()
-      .min(1, 'Credential ID must not be empty')
-      .max(255, 'Credential ID is too long')
-      .nullish(),
-  })
-  .refine((data) => data.provider || data.credentialId, {
-    message: 'Provider or credentialId is required',
-    path: ['provider'],
-  })
+function getProviderIdsForQuery(providerId: string): string[] {
+  if (providerId === 'zoom') {
+    return ['zoom', 'zoom-admin']
+  }
+
+  return [providerId]
+}
 
 function toCredentialResponse(
   id: string,
@@ -79,31 +72,21 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       credentialId: searchParams.get('credentialId'),
     }
 
-    const parseResult = credentialsQuerySchema.safeParse(rawQuery)
+    const parseResult = oauthCredentialsQuerySchema.safeParse(rawQuery)
 
     if (!parseResult.success) {
-      const refinementError = parseResult.error.errors.find((err) => err.code === 'custom')
+      const refinementError = parseResult.error.issues.find((err) => err.code === 'custom')
       if (refinementError) {
         logger.warn(`[${requestId}] Invalid query parameters: ${refinementError.message}`)
-        return NextResponse.json(
-          {
-            error: refinementError.message,
-          },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: refinementError.message }, { status: 400 })
       }
 
-      const firstError = parseResult.error.errors[0]
-      const errorMessage = firstError?.message || 'Validation failed'
-
       logger.warn(`[${requestId}] Invalid query parameters`, {
-        errors: parseResult.error.errors,
+        errors: parseResult.error.issues,
       })
 
       return NextResponse.json(
-        {
-          error: errorMessage,
-        },
+        { error: getValidationErrorMessage(parseResult.error, 'Validation failed') },
         { status: 400 }
       )
     }
@@ -257,6 +240,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     if (effectiveWorkspaceId && providerParam) {
+      const providerIds = getProviderIdsForQuery(providerParam)
+
       await syncWorkspaceOAuthCredentialsForUser({
         workspaceId: effectiveWorkspaceId,
         userId: requesterUserId,
@@ -266,7 +251,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         .select({
           id: credential.id,
           displayName: credential.displayName,
-          providerId: account.providerId,
+          providerId: credential.providerId,
+          accountProviderId: account.providerId,
           scope: account.scope,
           updatedAt: account.updatedAt,
         })
@@ -284,12 +270,20 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           and(
             eq(credential.workspaceId, effectiveWorkspaceId),
             eq(credential.type, 'oauth'),
-            eq(account.providerId, providerParam)
+            providerIds.length === 1
+              ? eq(credential.providerId, providerParam)
+              : inArray(credential.providerId, providerIds)
           )
         )
 
       const results = credentialsData.map((row) =>
-        toCredentialResponse(row.id, row.displayName, row.providerId, row.updatedAt, row.scope)
+        toCredentialResponse(
+          row.id,
+          row.displayName,
+          row.providerId ?? row.accountProviderId ?? providerParam,
+          row.updatedAt,
+          row.scope
+        )
       )
 
       const saProviderId = getServiceAccountProviderForProviderId(providerParam)

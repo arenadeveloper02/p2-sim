@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
+import { mondayBoardsSelectorContract } from '@/lib/api/contracts/selectors'
+import { parseRequest } from '@/lib/api/server'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -9,18 +11,40 @@ export const dynamic = 'force-dynamic'
 
 const logger = createLogger('MondayBoardsAPI')
 
-export const POST = withRouteHandler(async (request: Request) => {
+/**
+ * Monday's GraphQL `boards(limit: N, page: P, state: active)` has no cursor:
+ * `page` starts at 1 and you stop once a page returns fewer than `limit` items
+ * (or an empty page). We request the largest page (`MONDAY_BOARDS_LIMIT`) and
+ * bound the drain with `MAX_MONDAY_PAGES`.
+ */
+const MONDAY_BOARDS_LIMIT = 100
+const MAX_MONDAY_PAGES = 50
+
+interface MondayGraphQLError {
+  message?: string
+}
+
+interface MondayBoard {
+  id: string
+  name: string
+}
+
+interface MondayBoardsResponse {
+  errors?: MondayGraphQLError[]
+  error_message?: string
+  data?: {
+    boards?: MondayBoard[]
+  }
+}
+
+export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
     const requestId = generateRequestId()
-    const body = await request.json()
-    const { credential, workflowId } = body
+    const parsed = await parseRequest(mondayBoardsSelectorContract, request, {})
+    if (!parsed.success) return parsed.response
+    const { credential, workflowId } = parsed.data.body
 
-    if (!credential) {
-      logger.error('Missing credential in request')
-      return NextResponse.json({ error: 'Credential is required' }, { status: 400 })
-    }
-
-    const authz = await authorizeCredentialUse(request as any, {
+    const authz = await authorizeCredentialUse(request, {
       credentialId: credential,
       workflowId,
     })
@@ -44,34 +68,68 @@ export const POST = withRouteHandler(async (request: Request) => {
       )
     }
 
-    const response = await fetch('https://api.monday.com/v2', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: accessToken,
-        'API-Version': '2024-10',
-      },
-      body: JSON.stringify({
-        query: '{ boards(limit: 100, state: active) { id name } }',
-      }),
-    })
+    const allBoards: MondayBoard[] = []
+    let page = 1
 
-    const data = await response.json()
+    for (; page <= MAX_MONDAY_PAGES; page++) {
+      const response = await fetch('https://api.monday.com/v2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: accessToken,
+          'API-Version': '2024-10',
+        },
+        body: JSON.stringify({
+          query: `{ boards(limit: ${MONDAY_BOARDS_LIMIT}, page: ${page}, state: active) { id name } }`,
+        }),
+      })
 
-    if (data.errors?.length) {
-      logger.error('Monday.com API error', { errors: data.errors })
-      return NextResponse.json(
-        { error: data.errors[0].message || 'Monday.com API error' },
-        { status: 500 }
-      )
+      if (!response.ok) {
+        const details = await response.text().catch(() => '')
+        logger.error('Monday.com API HTTP error', {
+          status: response.status,
+          statusText: response.statusText,
+          details,
+        })
+        return NextResponse.json(
+          { error: `Monday.com API error: ${response.status} ${response.statusText}` },
+          { status: 500 }
+        )
+      }
+
+      const data = (await response.json()) as MondayBoardsResponse
+
+      if (data.errors?.length) {
+        logger.error('Monday.com API error', { errors: data.errors })
+        return NextResponse.json(
+          { error: data.errors[0].message || 'Monday.com API error' },
+          { status: 500 }
+        )
+      }
+
+      if (data.error_message) {
+        logger.error('Monday.com API error', { error_message: data.error_message })
+        return NextResponse.json({ error: data.error_message }, { status: 500 })
+      }
+
+      const pageBoards = data.data?.boards || []
+      allBoards.push(...pageBoards)
+
+      if (pageBoards.length < MONDAY_BOARDS_LIMIT) {
+        break
+      }
+
+      if (page === MAX_MONDAY_PAGES) {
+        logger.warn(
+          'Monday boards pagination hit MAX_MONDAY_PAGES cap; board list may be incomplete',
+          {
+            maxPages: MAX_MONDAY_PAGES,
+          }
+        )
+      }
     }
 
-    if (data.error_message) {
-      logger.error('Monday.com API error', { error_message: data.error_message })
-      return NextResponse.json({ error: data.error_message }, { status: 500 })
-    }
-
-    const boards = (data.data?.boards || []).map((board: { id: string; name: string }) => ({
+    const boards = allBoards.map((board) => ({
       id: board.id,
       name: board.name,
     }))

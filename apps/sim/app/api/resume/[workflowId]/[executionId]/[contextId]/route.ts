@@ -2,13 +2,17 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { type NextRequest, NextResponse } from 'next/server'
+import {
+  getPauseContextDetailContract,
+  resumeWorkflowExecutionContextContract,
+} from '@/lib/api/contracts/workflows'
+import { parseRequest } from '@/lib/api/server'
 import { AuthType } from '@/lib/auth/hybrid'
 import { getJobQueue } from '@/lib/core/async-jobs'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { SSE_HEADERS } from '@/lib/core/utils/sse'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { setExecutionMeta } from '@/lib/execution/event-buffer'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { PauseResumeManager } from '@/lib/workflows/executor/human-in-the-loop-manager'
 import { createStreamingResponse } from '@/lib/workflows/streaming/streaming'
@@ -42,13 +46,13 @@ function getStoredSnapshotConfig(pausedExecution: { executionSnapshot: unknown }
 export const POST = withRouteHandler(
   async (
     request: NextRequest,
-    {
-      params,
-    }: {
+    context: {
       params: Promise<{ workflowId: string; executionId: string; contextId: string }>
     }
   ) => {
-    const { workflowId, executionId, contextId } = await params
+    const parsed = await parseRequest(resumeWorkflowExecutionContextContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { workflowId, executionId, contextId } = parsed.data.params
 
     const access = await validateWorkflowAccess(request, workflowId, false)
     if (access.error) {
@@ -57,14 +61,17 @@ export const POST = withRouteHandler(
 
     const workflow = access.workflow
 
-    let payload: Record<string, unknown> = {}
+    let payload: unknown = {}
     try {
       payload = await request.json()
     } catch {
       payload = {}
     }
 
-    const resumeInput = payload?.input ?? payload ?? {}
+    const resumeInput =
+      typeof payload === 'object' && payload !== null && 'input' in payload
+        ? payload.input
+        : (payload ?? {})
     const isPersonalApiKeyCaller =
       access.auth?.authType === AuthType.API_KEY && access.auth?.apiKeyType === 'personal'
 
@@ -137,9 +144,11 @@ export const POST = withRouteHandler(
     try {
       const enqueueResult = await PauseResumeManager.enqueueOrStartResume({
         executionId,
+        workflowId,
         contextId,
         resumeInput,
         userId,
+        allowedPauseKinds: ['human'],
       })
 
       if (enqueueResult.status === 'queued') {
@@ -150,12 +159,6 @@ export const POST = withRouteHandler(
           message: 'Resume queued. It will run after current resumes finish.',
         })
       }
-
-      await setExecutionMeta(enqueueResult.resumeExecutionId, {
-        status: 'active',
-        userId,
-        workflowId,
-      })
 
       const resumeArgs = {
         resumeEntryId: enqueueResult.resumeEntryId,
@@ -180,6 +183,10 @@ export const POST = withRouteHandler(
             timeoutMs: preprocessResult.executionTimeout?.sync,
           },
           executionId: enqueueResult.resumeExecutionId,
+          workspaceId: workflow.workspaceId || undefined,
+          workflowId,
+          userId: enqueueResult.userId,
+          allowLargeValueWorkflowScope: true,
           executeFn: async ({ onStream, onBlockComplete, abortSignal }) =>
             PauseResumeManager.startResumeExecution({
               ...resumeArgs,
@@ -243,6 +250,14 @@ export const POST = withRouteHandler(
             error: toError(dispatchError).message,
             resumeExecutionId: enqueueResult.resumeExecutionId,
           })
+          await PauseResumeManager.markResumeAttemptFailed({
+            resumeEntryId: enqueueResult.resumeEntryId,
+            pausedExecutionId: enqueueResult.pausedExecution.id,
+            parentExecutionId: executionId,
+            contextId: enqueueResult.contextId,
+            failureReason: 'Failed to queue async resume execution',
+          })
+          await PauseResumeManager.processQueuedResumes(executionId, workflowId)
           return NextResponse.json(
             { error: 'Failed to queue resume execution. Please try again.' },
             { status: 503 }
@@ -276,7 +291,7 @@ export const POST = withRouteHandler(
         executionId: enqueueResult.resumeExecutionId,
         message: 'Resume execution started.',
       })
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Resume request failed', {
         workflowId,
         executionId,
@@ -284,7 +299,7 @@ export const POST = withRouteHandler(
         error,
       })
       return NextResponse.json(
-        { error: error.message || 'Failed to queue resume request' },
+        { error: toError(error).message || 'Failed to queue resume request' },
         { status: 400 }
       )
     }
@@ -294,13 +309,13 @@ export const POST = withRouteHandler(
 export const GET = withRouteHandler(
   async (
     request: NextRequest,
-    {
-      params,
-    }: {
+    context: {
       params: Promise<{ workflowId: string; executionId: string; contextId: string }>
     }
   ) => {
-    const { workflowId, executionId, contextId } = await params
+    const parsed = await parseRequest(getPauseContextDetailContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { workflowId, executionId, contextId } = parsed.data.params
 
     const access = await validateWorkflowAccess(request, workflowId, false)
     if (access.error) {

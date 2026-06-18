@@ -1,9 +1,15 @@
 import { useCallback, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
+import { useParams } from 'next/navigation'
+import { toast } from '@/components/emcn'
+import { requestRaw } from '@/lib/api/client'
+import { isApiClientError } from '@/lib/api/client/errors'
+import { wandGenerateStreamContract } from '@/lib/api/contracts'
 import { readSSEStream } from '@/lib/core/utils/sse'
 import type { GenerationType } from '@/blocks/types'
 import { subscriptionKeys } from '@/hooks/queries/subscription'
+import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
 const logger = createLogger('useWand')
@@ -92,6 +98,8 @@ export function useWand({
   onGenerationComplete,
 }: UseWandProps) {
   const queryClient = useQueryClient()
+  const { navigateToSettings } = useSettingsNavigation()
+  const { workspaceId } = useParams<{ workspaceId: string }>()
   const workflowId = useWorkflowRegistry((state) => state.hydration.workflowId)
   const [isLoading, setIsLoading] = useState(false)
   const [isPromptVisible, setIsPromptVisible] = useState(false)
@@ -177,29 +185,28 @@ export function useWand({
 
         const currentPrompt = prompt
 
-        const response = await fetch('/api/wand', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache, no-transform',
+        const response = await requestRaw(
+          wandGenerateStreamContract,
+          {
+            body: {
+              prompt: userMessage,
+              systemPrompt: systemPrompt,
+              stream: true,
+              history: wandConfig?.maintainHistory ? conversationHistory : [],
+              generationType: wandConfig?.generationType,
+              workflowId: workflowId ?? undefined,
+              workspaceId: workspaceId ?? undefined,
+              wandContext: contextParams?.tableId ? { tableId: contextParams.tableId } : undefined,
+            },
+            signal: abortControllerRef.current.signal,
           },
-          body: JSON.stringify({
-            prompt: userMessage,
-            systemPrompt: systemPrompt,
-            stream: true,
-            history: wandConfig?.maintainHistory ? conversationHistory : [],
-            generationType: wandConfig?.generationType,
-            workflowId,
-            wandContext: contextParams?.tableId ? { tableId: contextParams.tableId } : undefined,
-          }),
-          signal: abortControllerRef.current.signal,
-          cache: 'no-store',
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(errorText || `HTTP error! status: ${response.status}`)
-        }
+          {
+            headers: {
+              'Cache-Control': 'no-cache, no-transform',
+            },
+            cache: 'no-store',
+          }
+        )
 
         if (!response.body) {
           throw new Error('Response body is null')
@@ -232,11 +239,26 @@ export function useWand({
         })
 
         setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: subscriptionKeys.all })
+          queryClient.invalidateQueries({ queryKey: subscriptionKeys.users() })
         }, 1000)
       } catch (error: any) {
         if (error.name === 'AbortError') {
           logger.debug('Wand generation cancelled')
+        } else if (isApiClientError(error) && error.status === 402) {
+          // A per-member cap is only raisable by an org admin, so skip the Upgrade
+          // affordance the member can't act on.
+          const isMemberLimit = (error.body as { scope?: string } | null)?.scope === 'member'
+          toast.error(
+            error.message || 'Usage limit reached',
+            isMemberLimit
+              ? undefined
+              : {
+                  action: {
+                    label: 'Upgrade',
+                    onClick: () => navigateToSettings({ section: 'billing' }),
+                  },
+                }
+          )
         } else {
           logger.error('Wand generation failed', { error })
           setError(error.message || 'Generation failed')
@@ -257,6 +279,8 @@ export function useWand({
       queryClient,
       contextParams?.tableId,
       workflowId,
+      workspaceId,
+      navigateToSettings,
     ]
   )
 

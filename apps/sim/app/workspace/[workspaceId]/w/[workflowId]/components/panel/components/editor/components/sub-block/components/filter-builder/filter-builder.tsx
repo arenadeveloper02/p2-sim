@@ -6,8 +6,10 @@ import type { ComboboxOption } from '@/components/emcn'
 import { useTableColumns } from '@/lib/table/hooks'
 import type { FilterRule } from '@/lib/table/query-builder/constants'
 import { useFilterBuilder } from '@/lib/table/query-builder/use-query-builder'
+import { useCanonicalSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-canonical-sub-block-value'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { FilterRuleRow } from './components/filter-rule-row'
 
 interface FilterBuilderProps {
@@ -39,8 +41,9 @@ export function FilterBuilder({
   columns: propColumns,
   tableIdSubBlockId = 'tableId',
 }: FilterBuilderProps) {
+  const activeSearchTarget = useActiveSearchTarget()
   const [storeValue, setStoreValue] = useSubBlockValue<FilterRule[]>(blockId, subBlockId)
-  const [tableIdValue] = useSubBlockValue<string>(blockId, tableIdSubBlockId)
+  const tableIdValue = useCanonicalSubBlockValue<string>(blockId, tableIdSubBlockId)
 
   const dynamicColumns = useTableColumns({ tableId: tableIdValue })
   const columns = useMemo(() => {
@@ -94,26 +97,31 @@ export function FilterBuilder({
 
   return (
     <div className='space-y-2'>
-      {rules.map((rule, index) => (
-        <FilterRuleRow
-          key={rule.id}
-          blockId={blockId}
-          subBlockId={subBlockId}
-          rule={rule}
-          index={index}
-          columns={columns}
-          comparisonOptions={comparisonOptions}
-          logicalOptions={logicalOptions}
-          isReadOnly={isReadOnly}
-          isPreview={isPreview}
-          disabled={disabled}
-          onAdd={addRule}
-          onRemove={handleRemoveRule}
-          onUpdate={updateRule}
-          onToggleCollapse={toggleCollapse}
-          inputController={inputController}
-        />
-      ))}
+      {rules.map((rule, index) => {
+        const isSearchExpanded =
+          activeSearchTarget?.subBlockId === subBlockId && activeSearchTarget.valuePath[0] === index
+        const displayRule = isSearchExpanded ? { ...rule, collapsed: false } : rule
+        return (
+          <FilterRuleRow
+            key={rule.id}
+            blockId={blockId}
+            subBlockId={subBlockId}
+            rule={displayRule}
+            index={index}
+            columns={columns}
+            comparisonOptions={comparisonOptions}
+            logicalOptions={logicalOptions}
+            isReadOnly={isReadOnly}
+            isPreview={isPreview}
+            disabled={disabled}
+            onAdd={addRule}
+            onRemove={handleRemoveRule}
+            onUpdate={updateRule}
+            onToggleCollapse={toggleCollapse}
+            inputController={inputController}
+          />
+        )
+      })}
     </div>
   )
 }

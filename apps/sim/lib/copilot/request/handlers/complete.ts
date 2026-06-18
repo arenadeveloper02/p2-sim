@@ -1,7 +1,8 @@
+import { postStreamBillingUpdateCost } from '@/lib/copilot/request/billing/post-stream-update-cost'
 import type { StreamHandler } from './types'
 import { flushSubagentThinkingBlock, flushThinkingBlock } from './types'
 
-export const handleCompleteEvent: StreamHandler = (event, context) => {
+export const handleCompleteEvent: StreamHandler = async (event, context, execContext) => {
   flushSubagentThinkingBlock(context)
   flushThinkingBlock(context)
   if (event.type !== 'complete') {
@@ -25,4 +26,18 @@ export const handleCompleteEvent: StreamHandler = (event, context) => {
   }
 
   context.streamComplete = true
+
+  const cumulativeCost = context.cost?.total ?? 0
+  if (cumulativeCost > 0 && execContext.userId) {
+    await postStreamBillingUpdateCost({
+      userId: execContext.userId,
+      workspaceId: execContext.workspaceId,
+      messageId: context.messageId,
+      goRoute: context.billingGoRoute ?? '/api/copilot',
+      model: context.billingModel,
+      cost: cumulativeCost,
+      inputTokens: context.usage?.prompt,
+      outputTokens: context.usage?.completion,
+    })
+  }
 }

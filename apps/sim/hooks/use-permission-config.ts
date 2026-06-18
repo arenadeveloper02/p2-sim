@@ -3,7 +3,11 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
+import { ApiClientError } from '@/lib/api/client/errors'
+import { requestJson } from '@/lib/api/client/request'
+import { getAllowedIntegrationsContract } from '@/lib/api/contracts/common'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
+import { isBlockTypeAccessControlExempt } from '@/lib/permission-groups/block-access'
 import {
   DEFAULT_PERMISSION_GROUP_CONFIG,
   type PermissionGroupConfig,
@@ -18,6 +22,7 @@ export interface PermissionConfigResult {
   filterProviders: (providerIds: string[]) => string[]
   isBlockAllowed: (blockType: string) => boolean
   isProviderAllowed: (providerId: string) => boolean
+  isModelAllowed: (model: string) => boolean
   isInvitationsDisabled: boolean
   isPublicApiDisabled: boolean
 }
@@ -26,13 +31,25 @@ interface AllowedIntegrationsResponse {
   allowedIntegrations: string[] | null
 }
 
+const allowedIntegrationsKeys = {
+  all: ['allowedIntegrations'] as const,
+  env: () => [...allowedIntegrationsKeys.all, 'env'] as const,
+}
+
 function useAllowedIntegrationsFromEnv() {
   return useQuery<AllowedIntegrationsResponse>({
-    queryKey: ['allowedIntegrations', 'env'],
+    queryKey: allowedIntegrationsKeys.env(),
     queryFn: async ({ signal }) => {
-      const response = await fetch('/api/settings/allowed-integrations', { signal })
-      if (!response.ok) return { allowedIntegrations: null }
-      return response.json()
+      try {
+        return await requestJson(getAllowedIntegrationsContract, { signal })
+      } catch (error) {
+        // Treat any auth/server failure as "no env allowlist configured"
+        // so the UI falls back to the permission-group-driven allowlist.
+        if (error instanceof ApiClientError) {
+          return { allowedIntegrations: null }
+        }
+        throw error
+      }
     },
     staleTime: 5 * 60 * 1000,
   })
@@ -75,7 +92,7 @@ export function usePermissionConfig(): PermissionConfigResult {
 
   const isBlockAllowed = useMemo(() => {
     return (blockType: string) => {
-      if (blockType === 'start_trigger') return true
+      if (isBlockTypeAccessControlExempt(blockType)) return true
       if (mergedAllowedIntegrations === null) return true
       return mergedAllowedIntegrations.includes(blockType.toLowerCase())
     }
@@ -88,12 +105,20 @@ export function usePermissionConfig(): PermissionConfigResult {
     }
   }, [config.allowedModelProviders])
 
+  const isModelAllowed = useMemo(() => {
+    return (model: string) => {
+      if (config.deniedModels.length === 0) return true
+      const normalized = model.toLowerCase()
+      return !config.deniedModels.some((denied) => denied.toLowerCase() === normalized)
+    }
+  }, [config.deniedModels])
+
   const filterBlocks = useMemo(() => {
     return <T extends { type: string }>(blocks: T[]): T[] => {
       if (mergedAllowedIntegrations === null) return blocks
       return blocks.filter(
         (block) =>
-          block.type === 'start_trigger' ||
+          isBlockTypeAccessControlExempt(block.type) ||
           mergedAllowedIntegrations.includes(block.type.toLowerCase())
       )
     }
@@ -130,6 +155,7 @@ export function usePermissionConfig(): PermissionConfigResult {
       filterProviders,
       isBlockAllowed,
       isProviderAllowed,
+      isModelAllowed,
       isInvitationsDisabled,
       isPublicApiDisabled,
     }),
@@ -141,6 +167,7 @@ export function usePermissionConfig(): PermissionConfigResult {
       filterProviders,
       isBlockAllowed,
       isProviderAllowed,
+      isModelAllowed,
       isInvitationsDisabled,
       isPublicApiDisabled,
     ]

@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { FirefliesIcon } from '@/components/icons'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { firefliesConnectorMeta } from '@/connectors/fireflies/meta'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { parseTagDate } from '@/connectors/utils'
 
@@ -121,35 +121,7 @@ function formatTranscriptContent(transcript: FirefliesTranscript): string {
 }
 
 export const firefliesConnector: ConnectorConfig = {
-  id: 'fireflies',
-  name: 'Fireflies',
-  description: 'Sync meeting transcripts from Fireflies.ai into your knowledge base',
-  version: '1.0.0',
-  icon: FirefliesIcon,
-
-  auth: {
-    mode: 'apiKey',
-    label: 'API Key',
-    placeholder: 'Enter your Fireflies API key',
-  },
-
-  configFields: [
-    {
-      id: 'hostEmail',
-      title: 'Filter by Host Email',
-      type: 'short-input',
-      placeholder: 'e.g. john@example.com',
-      required: false,
-      description: 'Only sync transcripts hosted by this email',
-    },
-    {
-      id: 'maxTranscripts',
-      title: 'Max Transcripts',
-      type: 'short-input',
-      required: false,
-      placeholder: 'e.g. 100 (default: unlimited)',
-    },
-  ],
+  ...firefliesConnectorMeta,
 
   listDocuments: async (
     accessToken: string,
@@ -337,17 +309,10 @@ export const firefliesConnector: ConnectorConfig = {
 
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
+      const message = getErrorMessage(error, 'Failed to validate configuration')
       return { valid: false, error: message }
     }
   },
-
-  tagDefinitions: [
-    { id: 'hostEmail', displayName: 'Host Email', fieldType: 'text' },
-    { id: 'speakers', displayName: 'Speakers', fieldType: 'text' },
-    { id: 'duration', displayName: 'Duration (seconds)', fieldType: 'number' },
-    { id: 'meetingDate', displayName: 'Meeting Date', fieldType: 'date' },
-  ],
 
   mapTags: (metadata: Record<string, unknown>): Record<string, unknown> => {
     const result: Record<string, unknown> = {}

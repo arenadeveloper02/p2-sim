@@ -20,6 +20,8 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
+import { adminV1ImportWorkflowContract } from '@/lib/api/contracts/v1/admin'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
@@ -32,6 +34,7 @@ import {
 } from '@/app/api/v1/admin/responses'
 import {
   extractWorkflowMetadata,
+  type VariableType,
   type WorkflowImportRequest,
   type WorkflowVariable,
 } from '@/app/api/v1/admin/types'
@@ -47,16 +50,10 @@ interface ImportSuccessResponse {
 export const POST = withRouteHandler(
   withAdminAuth(async (request) => {
     try {
-      const body = (await request.json()) as WorkflowImportRequest
+      const parsed = await parseRequest(adminV1ImportWorkflowContract, request, {})
+      if (!parsed.success) return parsed.response
 
-      if (!body.workspaceId) {
-        return badRequestResponse('workspaceId is required')
-      }
-
-      if (!body.workflow) {
-        return badRequestResponse('workflow is required')
-      }
-
+      const body = parsed.data.body as WorkflowImportRequest
       const { workspaceId, folderId, name: overrideName } = body
 
       const [workspaceData] = await db
@@ -89,11 +86,10 @@ export const POST = withRouteHandler(
             })()
           : body.workflow
 
-      const {
-        name: workflowName,
-        color: workflowColor,
-        description: workflowDescription,
-      } = extractWorkflowMetadata(parsedWorkflow, overrideName)
+      const { name: workflowName, description: workflowDescription } = extractWorkflowMetadata(
+        parsedWorkflow,
+        overrideName
+      )
 
       const workflowId = generateId()
       const now = new Date()
@@ -106,7 +102,6 @@ export const POST = withRouteHandler(
         folderId: folderId || null,
         name: dedupedName,
         description: workflowDescription,
-        color: workflowColor,
         lastSynced: now,
         createdAt: now,
         updatedAt: now,
@@ -122,14 +117,38 @@ export const POST = withRouteHandler(
         return internalErrorResponse(`Failed to save workflow state: ${saveResult.error}`)
       }
 
-      if (workflowData.variables && Array.isArray(workflowData.variables)) {
+      if (
+        workflowData.variables &&
+        typeof workflowData.variables === 'object' &&
+        !Array.isArray(workflowData.variables)
+      ) {
+        const variablesRecord: Record<string, WorkflowVariable> = {}
+        const vars = workflowData.variables as Record<
+          string,
+          { id?: string; name: string; type?: VariableType; value: unknown }
+        >
+        Object.entries(vars).forEach(([key, v]) => {
+          const varId = v.id || key
+          variablesRecord[varId] = {
+            id: varId,
+            name: v.name,
+            type: v.type ?? 'string',
+            value: v.value,
+          }
+        })
+
+        await db
+          .update(workflow)
+          .set({ variables: variablesRecord, updatedAt: new Date() })
+          .where(eq(workflow.id, workflowId))
+      } else if (workflowData.variables && Array.isArray(workflowData.variables)) {
         const variablesRecord: Record<string, WorkflowVariable> = {}
         workflowData.variables.forEach((v) => {
           const varId = v.id || generateId()
           variablesRecord[varId] = {
             id: varId,
             name: v.name,
-            type: v.type || 'string',
+            type: (v.type as VariableType) ?? 'string',
             value: v.value,
           }
         })

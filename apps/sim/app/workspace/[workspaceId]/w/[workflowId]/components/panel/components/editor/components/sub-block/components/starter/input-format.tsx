@@ -16,14 +16,17 @@ import {
   getCodeEditorProps,
   highlight,
   Input,
+  Label,
   languages,
 } from '@/components/emcn'
-import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/core/utils/cn'
+import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
+import { getActiveWorkflowSearchHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-accessible-reference-prefixes'
 import {
   getLinkedinProfileSectionComboboxOptions,
@@ -64,20 +67,7 @@ interface FieldFormatProps {
   showDescription?: boolean
   valuePlaceholder?: string
   descriptionPlaceholder?: string
-  config?: {
-    inputFormatConfig?: {
-      title?: string
-      fieldNameLabel?: string
-      fieldNamePlaceholder?: string
-      fieldValueLabel?: string
-      fieldValuePlaceholder?: string
-      mentionTargetLabel?: string
-      mentionTargetPlaceholder?: string
-      mentionTargetOptions?: ComboboxOption[]
-      profileSectionPlaceholder?: string
-      searchFilterPlaceholder?: string
-    }
-  }
+  config?: any
 }
 
 /**
@@ -160,6 +150,8 @@ export function FieldFormat({
   const linkedinSearchFilterOptions = useMemo(() => getLinkedinSearchFilterComboboxOptions(), [])
   const mentionTargetOptions =
     inputFormatConfig?.mentionTargetOptions ?? DEFAULT_MENTION_TARGET_OPTIONS
+
+  const activeSearchTarget = useActiveSearchTarget()
   const [storeValue, setStoreValue] = useSubBlockValue<Field[]>(blockId, subBlockId)
 
   /**
@@ -189,6 +181,8 @@ export function FieldFormat({
   const fields: Field[] = Array.isArray(value) && value.length > 0 ? value : stableEmptyRowTemplate
 
   const isReadOnly = isPreview || disabled
+
+  const renderFieldLabel = (label: string) => <Label>{label}</Label>
 
   /**
    * Adds a new field to the list
@@ -294,6 +288,13 @@ export function FieldFormat({
   const renderNameInput = (field: Field) => {
     const nameFieldKey = getNameFieldKey(field.id)
     const fieldValue = field.name ?? ''
+    const fieldIndex = fields.findIndex((candidate) => candidate.id === field.id)
+    const workflowSearchHighlight = getActiveWorkflowSearchHighlight({
+      activeSearchTarget,
+      blockId,
+      subBlockId,
+      valuePath: [fieldIndex, 'name'],
+    })
     const fieldState = inputController.fieldHelpers.getFieldState(nameFieldKey)
     const handlers = inputController.fieldHelpers.createFieldHandlers(
       nameFieldKey,
@@ -349,7 +350,9 @@ export function FieldFormat({
           >
             {formatDisplayText(
               fieldValue,
-              accessiblePrefixes ? { accessiblePrefixes } : { highlightAll: true }
+              accessiblePrefixes
+                ? { accessiblePrefixes, workflowSearchHighlight }
+                : { highlightAll: true, workflowSearchHighlight }
             )}
           </div>
         </div>
@@ -374,8 +377,14 @@ export function FieldFormat({
    */
   const renderFieldHeader = (field: Field, index: number) => (
     <div
+      role='group'
+      aria-label={`${title} ${index + 1}`}
       className='flex cursor-pointer items-center justify-between rounded-t-[3px] bg-[var(--surface-4)] px-2.5 py-[5px]'
       onClick={() => toggleCollapse(field.id)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return
+        handleKeyboardActivation(event, () => toggleCollapse(field.id))
+      }}
     >
       <div className='flex min-w-0 flex-1 items-center gap-2'>
         <span className='block truncate font-medium text-[var(--text-tertiary)] text-sm'>
@@ -395,9 +404,13 @@ export function FieldFormat({
           </Badge>
         )}
       </div>
-      <div className='flex items-center gap-2 pl-2' onClick={(e) => e.stopPropagation()}>
+      <div
+        role='presentation'
+        className='flex items-center gap-2 pl-2'
+        onClick={(e) => e.stopPropagation()}
+      >
         <Button variant='ghost' onClick={addField} disabled={isReadOnly} className='h-auto p-0'>
-          <Plus className='h-[14px] w-[14px]' />
+          <Plus className='size-[14px]' />
           <span className='sr-only'>Add {title}</span>
         </Button>
         <Button
@@ -406,7 +419,7 @@ export function FieldFormat({
           disabled={isReadOnly}
           className='h-auto p-0 text-[var(--text-error)] hover-hover:text-[var(--text-error)] hover-hover:opacity-90'
         >
-          <Trash className='h-[14px] w-[14px]' />
+          <Trash className='size-[14px]' />
           <span className='sr-only'>Delete Field</span>
         </Button>
       </div>
@@ -441,6 +454,13 @@ export function FieldFormat({
     }
 
     const fieldValue = field.value ?? ''
+    const fieldIndex = fields.findIndex((candidate) => candidate.id === field.id)
+    const workflowSearchHighlight = getActiveWorkflowSearchHighlight({
+      activeSearchTarget,
+      blockId,
+      subBlockId,
+      valuePath: [fieldIndex, 'value'],
+    })
     const fieldState = inputController.fieldHelpers.getFieldState(field.id)
     const handlers = inputController.fieldHelpers.createFieldHandlers(
       field.id,
@@ -616,7 +636,9 @@ export function FieldFormat({
           >
             {formatDisplayText(
               fieldValue,
-              accessiblePrefixes ? { accessiblePrefixes } : { highlightAll: true }
+              accessiblePrefixes
+                ? { accessiblePrefixes, workflowSearchHighlight }
+                : { highlightAll: true, workflowSearchHighlight }
             )}
           </div>
         </div>
@@ -624,6 +646,20 @@ export function FieldFormat({
       </>
     )
   }
+
+  const valueLabelName = isLinkedinMentions
+    ? 'Profile ID'
+    : isLinkedinSearchFilters
+      ? 'ID or value'
+      : 'Value'
+
+  const displayNameLabelName = isLinkedinMentions
+    ? 'Display name'
+    : isLinkedinProfileSections
+      ? 'Profile section'
+      : isLinkedinSearchFilters
+        ? 'Filter'
+        : 'Name'
 
   return (
     <div className='space-y-2'>
@@ -639,16 +675,7 @@ export function FieldFormat({
             <ExpandableContent>
               <div className='flex flex-col gap-2 rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-2.5 pt-1.5 pb-2.5'>
                 <div className='flex flex-col gap-1.5'>
-                  <Label className='text-small'>
-                    {inputFormatConfig?.fieldNameLabel ??
-                      (isLinkedinMentions
-                        ? 'Display name'
-                        : isLinkedinProfileSections
-                          ? 'Profile section'
-                          : isLinkedinSearchFilters
-                            ? 'Filter'
-                            : 'Name')}
-                  </Label>
+                  {renderFieldLabel(displayNameLabelName)}
                   <div className='relative'>
                     {isLinkedinProfileSections ? (
                       <Combobox
@@ -680,7 +707,7 @@ export function FieldFormat({
 
                 {showTypeEffective && (
                   <div className='flex flex-col gap-1.5'>
-                    <Label className='text-small'>Type</Label>
+                    {renderFieldLabel('Type')}
                     <Combobox
                       options={TYPE_OPTIONS}
                       value={field.type}
@@ -711,26 +738,53 @@ export function FieldFormat({
                     </div>
                   ) : (
                     <div className='flex flex-col gap-1.5'>
-                      <Label className='text-small'>Description</Label>
-                      <Input
-                        value={field.description ?? ''}
-                        onChange={(e) => updateField(field.id, 'description', e.target.value)}
-                        placeholder={descriptionPlaceholder}
-                        disabled={isReadOnly}
-                      />
+                      {renderFieldLabel('Description')}
+                      <div className='relative'>
+                        <Input
+                          value={field.description ?? ''}
+                          onChange={(e) => updateField(field.id, 'description', e.target.value)}
+                          placeholder={descriptionPlaceholder}
+                          disabled={isReadOnly}
+                          className='text-transparent caret-foreground placeholder:text-muted-foreground/50'
+                        />
+                        <div
+                          className={cn(
+                            'pointer-events-none absolute inset-0 flex items-center overflow-hidden px-3 text-sm',
+                            isReadOnly && 'opacity-50'
+                          )}
+                        >
+                          <span className='truncate'>
+                            {formatDisplayText(
+                              field.description ?? '',
+                              accessiblePrefixes
+                                ? {
+                                    accessiblePrefixes,
+                                    workflowSearchHighlight: getActiveWorkflowSearchHighlight({
+                                      activeSearchTarget,
+                                      blockId,
+                                      subBlockId,
+                                      valuePath: [index, 'description'],
+                                    }),
+                                  }
+                                : {
+                                    highlightAll: true,
+                                    workflowSearchHighlight: getActiveWorkflowSearchHighlight({
+                                      activeSearchTarget,
+                                      blockId,
+                                      subBlockId,
+                                      valuePath: [index, 'description'],
+                                    }),
+                                  }
+                            )}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   ))}
 
                 {showValueEffective && (
                   <div className='flex flex-col gap-1.5'>
-                    <Label className='text-small'>
-                      {inputFormatConfig?.fieldValueLabel ??
-                        (isLinkedinMentions
-                          ? 'Profile ID'
-                          : isLinkedinSearchFilters
-                            ? 'ID or value'
-                            : 'Value')}
-                    </Label>
+                    {renderFieldLabel(valueLabelName)}
                     <div className='relative'>{renderValueInput(field)}</div>
                   </div>
                 )}

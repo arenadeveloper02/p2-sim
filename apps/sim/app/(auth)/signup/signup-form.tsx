@@ -3,11 +3,11 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 import { createLogger } from '@sim/logger'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
-import { Input, Label } from '@/components/emcn'
+import { Input, Label, Loader } from '@/components/emcn'
 import { client, useSession } from '@/lib/auth/auth-client'
 import { getEnv, isFalsy, isTruthy } from '@/lib/core/config/env'
 import { validateCallbackUrl } from '@/lib/core/security/input-validation'
@@ -75,10 +75,18 @@ const validateEmailField = (emailValue: string): string[] => {
 interface SignupFormProps {
   githubAvailable: boolean
   googleAvailable: boolean
+  microsoftAvailable: boolean
   isProduction: boolean
+  emailSignupEnabled: boolean
 }
 
-function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: SignupFormProps) {
+function SignupFormContent({
+  githubAvailable,
+  googleAvailable,
+  microsoftAvailable,
+  isProduction,
+  emailSignupEnabled,
+}: SignupFormProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { refetch: refetchSession } = useSession()
@@ -98,11 +106,7 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
   const [showEmailValidationError, setShowEmailValidationError] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const turnstileRef = useRef<TurnstileInstance>(null)
-  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | undefined>()
-
-  useEffect(() => {
-    setTurnstileSiteKey(getEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY'))
-  }, [])
+  const [turnstileSiteKey] = useState(() => getEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY'))
   const rawRedirectUrl = searchParams.get('redirect') || searchParams.get('callbackUrl') || ''
   const isValidRedirectUrl = rawRedirectUrl ? validateCallbackUrl(rawRedirectUrl) : false
   const invalidCallbackRef = useRef(false)
@@ -275,7 +279,7 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
             ...(token ? { 'x-captcha-response': token } : {}),
           },
           onError: (ctx) => {
-            logger.error('Signup error:', ctx.error)
+            logger.warn('Signup error:', ctx.error)
             const errorMessage: string[] = ['Failed to create account']
 
             let errorCode = 'unknown'
@@ -350,6 +354,14 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
     }
   }
 
+  const ssoEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
+  const emailEnabled =
+    !isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED')) && emailSignupEnabled
+  const hasSocial = githubAvailable || googleAvailable || microsoftAvailable
+  const hasOnlySSO = ssoEnabled && !emailEnabled && !hasSocial
+  const showBottomSection = hasSocial || (ssoEnabled && !hasOnlySSO)
+  const showDivider = (emailEnabled || hasOnlySSO) && showBottomSection
+
   return (
     <>
       <div className='space-y-1 text-center'>
@@ -361,21 +373,13 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
         </p>
       </div>
 
-      {/* SSO Login Button (primary top-only when it is the only method) */}
-      {(() => {
-        const ssoEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
-        const emailEnabled = !isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED'))
-        const hasSocial = githubAvailable || googleAvailable
-        const hasOnlySSO = ssoEnabled && !emailEnabled && !hasSocial
-        return hasOnlySSO
-      })() && (
+      {hasOnlySSO && (
         <div className='mt-8'>
           <SSOLoginButton callbackURL={redirectUrl || '/workspace'} variant='primary' />
         </div>
       )}
 
-      {/* Email/Password Form - show unless explicitly disabled */}
-      {!isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED')) && (
+      {emailEnabled && (
         <form onSubmit={onSubmit} className='mt-8 space-y-10'>
           <div className='space-y-6'>
             <div className='space-y-2'>
@@ -410,8 +414,8 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
                 >
                   <div className='overflow-hidden'>
                     <div className='mt-1 space-y-1 text-red-400 text-xs'>
-                      {nameErrors.map((error, index) => (
-                        <p key={index}>{error}</p>
+                      {nameErrors.map((error) => (
+                        <p key={error}>{error}</p>
                       ))}
                     </div>
                   </div>
@@ -455,7 +459,7 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
                   <div className='overflow-hidden'>
                     <div className='mt-1 space-y-1 text-red-400 text-xs'>
                       {showEmailValidationError && emailErrors.length > 0 ? (
-                        emailErrors.map((error, index) => <p key={index}>{error}</p>)
+                        emailErrors.map((error) => <p key={error}>{error}</p>)
                       ) : emailError && !showEmailValidationError ? (
                         <p>{emailError}</p>
                       ) : null}
@@ -507,8 +511,8 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
                 >
                   <div className='overflow-hidden'>
                     <div className='mt-1 space-y-1 text-red-400 text-xs'>
-                      {passwordErrors.map((error, index) => (
-                        <p key={index}>{error}</p>
+                      {passwordErrors.map((error) => (
+                        <p key={error}>{error}</p>
                       ))}
                     </div>
                   </div>
@@ -534,8 +538,8 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
           <button type='submit' disabled={isLoading} className={cn('!mt-6', AUTH_SUBMIT_BTN)}>
             {isLoading ? (
               <span className='flex items-center gap-2'>
-                <Loader2 className='h-4 w-4 animate-spin' />
-                Creating account...
+                <Loader className='size-4' animate />
+                Creating account…
               </span>
             ) : (
               'Create account'
@@ -544,16 +548,7 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
         </form>
       )}
 
-      {/* Divider - show when we have multiple auth methods */}
-      {(() => {
-        const ssoEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
-        const emailEnabled = !isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED'))
-        const hasSocial = githubAvailable || googleAvailable
-        const hasOnlySSO = ssoEnabled && !emailEnabled && !hasSocial
-        const showBottomSection = hasSocial || (ssoEnabled && !hasOnlySSO)
-        const showDivider = (emailEnabled || hasOnlySSO) && showBottomSection
-        return showDivider
-      })() && (
+      {showDivider && (
         <div className='relative my-6 font-light'>
           <div className='absolute inset-0 flex items-center'>
             <div className='w-full border-[var(--landing-bg-elevated)] border-t' />
@@ -566,26 +561,16 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
         </div>
       )}
 
-      {(() => {
-        const ssoEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
-        const emailEnabled = !isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED'))
-        const hasSocial = githubAvailable || googleAvailable
-        const hasOnlySSO = ssoEnabled && !emailEnabled && !hasSocial
-        const showBottomSection = hasSocial || (ssoEnabled && !hasOnlySSO)
-        return showBottomSection
-      })() && (
-        <div
-          className={cn(
-            isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED')) ? 'mt-8' : undefined
-          )}
-        >
+      {showBottomSection && (
+        <div className={cn(!emailEnabled ? 'mt-8' : undefined)}>
           <SocialLoginButtons
             githubAvailable={githubAvailable}
             googleAvailable={googleAvailable}
+            microsoftAvailable={microsoftAvailable}
             callbackURL={redirectUrl || '/workspace'}
             isProduction={isProduction}
           >
-            {isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED')) && (
+            {ssoEnabled && !hasOnlySSO && (
               <SSOLoginButton callbackURL={redirectUrl || '/workspace'} variant='outline' />
             )}
           </SocialLoginButtons>
@@ -629,16 +614,18 @@ function SignupFormContent({ githubAvailable, googleAvailable, isProduction }: S
 export default function SignupPage({
   githubAvailable,
   googleAvailable,
+  microsoftAvailable,
   isProduction,
+  emailSignupEnabled,
 }: SignupFormProps) {
   return (
-    <Suspense
-      fallback={<div className='flex h-screen items-center justify-center'>Loading...</div>}
-    >
+    <Suspense fallback={<div className='flex h-screen items-center justify-center'>Loading…</div>}>
       <SignupFormContent
         githubAvailable={githubAvailable}
         googleAvailable={googleAvailable}
+        microsoftAvailable={microsoftAvailable}
         isProduction={isProduction}
+        emailSignupEnabled={emailSignupEnabled}
       />
     </Suspense>
   )

@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { GoogleSheetsIcon } from '@/components/icons'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { googleSheetsConnectorMeta } from '@/connectors/google-sheets/meta'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { parseTagDate } from '@/connectors/utils'
 
@@ -197,38 +197,7 @@ async function sheetToDocument(
 }
 
 export const googleSheetsConnector: ConnectorConfig = {
-  id: 'google_sheets',
-  name: 'Google Sheets',
-  description: 'Sync spreadsheet data from Google Sheets into your knowledge base',
-  version: '1.0.0',
-  icon: GoogleSheetsIcon,
-
-  auth: {
-    mode: 'oauth',
-    provider: 'google-sheets',
-    requiredScopes: ['https://www.googleapis.com/auth/drive'],
-  },
-
-  configFields: [
-    {
-      id: 'spreadsheetId',
-      title: 'Spreadsheet ID',
-      type: 'short-input',
-      placeholder: 'e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms',
-      required: true,
-      description: 'The ID from the spreadsheet URL: docs.google.com/spreadsheets/d/{ID}/edit',
-    },
-    {
-      id: 'sheetFilter',
-      title: 'Sheets to Sync',
-      type: 'dropdown',
-      required: false,
-      options: [
-        { label: 'All sheets', id: 'all' },
-        { label: 'First sheet only', id: 'first' },
-      ],
-    },
-  ],
+  ...googleSheetsConnectorMeta,
 
   listDocuments: async (
     accessToken: string,
@@ -380,17 +349,10 @@ export const googleSheetsConnector: ConnectorConfig = {
 
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
+      const message = getErrorMessage(error, 'Failed to validate configuration')
       return { valid: false, error: message }
     }
   },
-
-  tagDefinitions: [
-    { id: 'sheetTitle', displayName: 'Sheet Name', fieldType: 'text' },
-    { id: 'rowCount', displayName: 'Row Count', fieldType: 'number' },
-    { id: 'columnCount', displayName: 'Column Count', fieldType: 'number' },
-    { id: 'lastModified', displayName: 'Last Modified', fieldType: 'date' },
-  ],
 
   mapTags: (metadata: Record<string, unknown>): Record<string, unknown> => {
     const result: Record<string, unknown> = {}

@@ -1,57 +1,42 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { DEFAULTS, LOOP, PARALLEL, REFERENCE } from '@/executor/constants'
+import { DEFAULTS } from '@/executor/constants'
 import type { ContextExtensions } from '@/executor/execution/types'
 import { type BlockLog, type ExecutionContext, getNextExecutionOrder } from '@/executor/types'
 import { buildContainerIterationContext } from '@/executor/utils/iteration-context'
-import type { VariableResolver } from '@/executor/variables/resolver'
+import { SubflowNodeIdCodec } from '@/executor/utils/subflow-node-id-codec'
+import type { SerializedWorkflow } from '@/serializer/types'
 
 const logger = createLogger('SubflowUtils')
 
-const BRANCH_PATTERN = new RegExp(`${PARALLEL.BRANCH.PREFIX}\\d+${PARALLEL.BRANCH.SUFFIX}$`)
-const BRANCH_INDEX_PATTERN = new RegExp(`${PARALLEL.BRANCH.PREFIX}(\\d+)${PARALLEL.BRANCH.SUFFIX}$`)
-const LOOP_SENTINEL_START_PATTERN = new RegExp(
-  `${LOOP.SENTINEL.PREFIX}(.+)${LOOP.SENTINEL.START_SUFFIX}`
-)
-const LOOP_SENTINEL_END_PATTERN = new RegExp(
-  `${LOOP.SENTINEL.PREFIX}(.+)${LOOP.SENTINEL.END_SUFFIX}`
-)
-const PARALLEL_SENTINEL_START_PATTERN = new RegExp(
-  `${PARALLEL.SENTINEL.PREFIX}(.+)${PARALLEL.SENTINEL.START_SUFFIX}`
-)
-const PARALLEL_SENTINEL_END_PATTERN = new RegExp(
-  `${PARALLEL.SENTINEL.PREFIX}(.+)${PARALLEL.SENTINEL.END_SUFFIX}`
-)
-
+/**
+ * Builds the loop sentinel-start node ID for a container.
+ */
 export function buildSentinelStartId(loopId: string): string {
-  return `${LOOP.SENTINEL.PREFIX}${loopId}${LOOP.SENTINEL.START_SUFFIX}`
+  return SubflowNodeIdCodec.buildLoopSentinelStartId(loopId)
 }
 
+/**
+ * Builds the loop sentinel-end node ID for a container.
+ */
 export function buildSentinelEndId(loopId: string): string {
-  return `${LOOP.SENTINEL.PREFIX}${loopId}${LOOP.SENTINEL.END_SUFFIX}`
+  return SubflowNodeIdCodec.buildLoopSentinelEndId(loopId)
 }
 
 export function buildParallelSentinelStartId(parallelId: string): string {
-  return `${PARALLEL.SENTINEL.PREFIX}${parallelId}${PARALLEL.SENTINEL.START_SUFFIX}`
+  return SubflowNodeIdCodec.buildParallelSentinelStartId(parallelId)
 }
 
 export function buildParallelSentinelEndId(parallelId: string): string {
-  return `${PARALLEL.SENTINEL.PREFIX}${parallelId}${PARALLEL.SENTINEL.END_SUFFIX}`
+  return SubflowNodeIdCodec.buildParallelSentinelEndId(parallelId)
 }
 
 export function isLoopSentinelNodeId(nodeId: string): boolean {
-  return (
-    nodeId.startsWith(LOOP.SENTINEL.PREFIX) &&
-    (nodeId.endsWith(LOOP.SENTINEL.START_SUFFIX) || nodeId.endsWith(LOOP.SENTINEL.END_SUFFIX))
-  )
+  return SubflowNodeIdCodec.isLoopSentinelNodeId(nodeId)
 }
 
 export function isParallelSentinelNodeId(nodeId: string): boolean {
-  return (
-    nodeId.startsWith(PARALLEL.SENTINEL.PREFIX) &&
-    (nodeId.endsWith(PARALLEL.SENTINEL.START_SUFFIX) ||
-      nodeId.endsWith(PARALLEL.SENTINEL.END_SUFFIX))
-  )
+  return SubflowNodeIdCodec.isParallelSentinelNodeId(nodeId)
 }
 
 export function isSentinelNodeId(nodeId: string): boolean {
@@ -59,19 +44,11 @@ export function isSentinelNodeId(nodeId: string): boolean {
 }
 
 export function extractLoopIdFromSentinel(sentinelId: string): string | null {
-  const startMatch = sentinelId.match(LOOP_SENTINEL_START_PATTERN)
-  if (startMatch) return startMatch[1]
-  const endMatch = sentinelId.match(LOOP_SENTINEL_END_PATTERN)
-  if (endMatch) return endMatch[1]
-  return null
+  return SubflowNodeIdCodec.extractLoopIdFromSentinel(sentinelId)
 }
 
 export function extractParallelIdFromSentinel(sentinelId: string): string | null {
-  const startMatch = sentinelId.match(PARALLEL_SENTINEL_START_PATTERN)
-  if (startMatch) return startMatch[1]
-  const endMatch = sentinelId.match(PARALLEL_SENTINEL_END_PATTERN)
-  if (endMatch) return endMatch[1]
-  return null
+  return SubflowNodeIdCodec.extractParallelIdFromSentinel(sentinelId)
 }
 
 /**
@@ -79,24 +56,20 @@ export function extractParallelIdFromSentinel(sentinelId: string): string | null
  * Example: ("blockId", 2) → "blockId₍2₎"
  */
 export function buildBranchNodeId(baseId: string, branchIndex: number): string {
-  return `${baseId}${PARALLEL.BRANCH.PREFIX}${branchIndex}${PARALLEL.BRANCH.SUFFIX}`
+  return SubflowNodeIdCodec.buildBranchNodeId(baseId, branchIndex)
 }
+
 export function extractBaseBlockId(branchNodeId: string): string {
-  return branchNodeId.replace(BRANCH_PATTERN, '')
+  return SubflowNodeIdCodec.extractBaseBlockId(branchNodeId)
 }
 
 export function extractBranchIndex(branchNodeId: string): number | null {
-  const match = branchNodeId.match(BRANCH_INDEX_PATTERN)
-  return match ? Number.parseInt(match[1], 10) : null
+  return SubflowNodeIdCodec.extractBranchIndex(branchNodeId)
 }
 
 export function isBranchNodeId(nodeId: string): boolean {
-  return BRANCH_PATTERN.test(nodeId)
+  return SubflowNodeIdCodec.isBranchNodeId(nodeId)
 }
-
-const OUTER_BRANCH_PATTERN = /__obranch-(\d+)/
-const OUTER_BRANCH_STRIP_PATTERN = /__obranch-\d+/g
-const CLONE_SEQ_STRIP_PATTERN = /__clone\d+/g
 
 /**
  * Extracts the outer branch index from a cloned subflow ID.
@@ -104,8 +77,11 @@ const CLONE_SEQ_STRIP_PATTERN = /__clone\d+/g
  * Returns undefined if the ID is not a clone.
  */
 export function extractOuterBranchIndex(clonedId: string): number | undefined {
-  const match = clonedId.match(OUTER_BRANCH_PATTERN)
-  return match ? Number.parseInt(match[1], 10) : undefined
+  return SubflowNodeIdCodec.extractOuterBranchIndex(clonedId)
+}
+
+export function extractInnermostOuterBranchIndex(clonedId: string): number | undefined {
+  return SubflowNodeIdCodec.extractInnermostOuterBranchIndex(clonedId)
 }
 
 /**
@@ -113,16 +89,21 @@ export function extractOuterBranchIndex(clonedId: string): number | undefined {
  * from a node ID, returning the original workflow-level block ID.
  */
 export function stripCloneSuffixes(nodeId: string): string {
-  return extractBaseBlockId(
-    nodeId.replace(OUTER_BRANCH_STRIP_PATTERN, '').replace(CLONE_SEQ_STRIP_PATTERN, '')
-  )
+  return SubflowNodeIdCodec.stripCloneSuffixes(nodeId)
+}
+
+/**
+ * Builds a stable ID for an output scoped to a global outer parallel branch.
+ */
+export function buildOuterBranchScopedId(originalId: string, branchIndex: number): string {
+  return SubflowNodeIdCodec.buildOuterBranchScopedId(originalId, branchIndex)
 }
 
 /**
  * Builds a cloned subflow ID from an original ID and outer branch index.
  */
 export function buildClonedSubflowId(originalId: string, branchIndex: number): string {
-  return `${originalId}__obranch-${branchIndex}`
+  return SubflowNodeIdCodec.buildOuterBranchScopedId(originalId, branchIndex)
 }
 
 /**
@@ -130,7 +111,7 @@ export function buildClonedSubflowId(originalId: string, branchIndex: number): s
  * returning the original workflow-level subflow ID.
  */
 export function stripOuterBranchSuffix(id: string): string {
-  return id.replace(OUTER_BRANCH_STRIP_PATTERN, '').replace(CLONE_SEQ_STRIP_PATTERN, '')
+  return SubflowNodeIdCodec.stripOuterBranchSuffix(id)
 }
 
 /**
@@ -147,122 +128,89 @@ export function stripOuterBranchSuffix(id: string): string {
 export function findEffectiveContainerId(
   originalId: string,
   currentNodeId: string,
-  executionMap: Map<string, unknown>
+  executionMap: Map<string, unknown>,
+  mappedBranchIndex?: number
 ): string {
-  // Prefer the cloned variant when currentNodeId carries an __obranch-N suffix.
-  // During concurrent parallel-in-loop execution both the original (branch 0)
-  // and cloned variants coexist in the map; the clone is the correct scope.
-  const match = currentNodeId.match(OUTER_BRANCH_PATTERN)
-  if (match) {
-    const candidateId = buildClonedSubflowId(originalId, Number.parseInt(match[1], 10))
-    if (executionMap.has(candidateId)) {
-      return candidateId
-    }
-  }
-
-  // Return original ID — for branch-0 (non-cloned) or when scope is missing.
-  // Callers handle the missing-scope case gracefully.
-  return originalId
+  return SubflowNodeIdCodec.findEffectiveContainerId(
+    originalId,
+    currentNodeId,
+    executionMap,
+    mappedBranchIndex
+  )
 }
 
 export function normalizeNodeId(nodeId: string): string {
-  if (isBranchNodeId(nodeId)) {
-    return extractBaseBlockId(nodeId)
-  }
-  if (isLoopSentinelNodeId(nodeId)) {
-    return extractLoopIdFromSentinel(nodeId) || nodeId
-  }
-  if (isParallelSentinelNodeId(nodeId)) {
-    return extractParallelIdFromSentinel(nodeId) || nodeId
-  }
-  return nodeId
+  return SubflowNodeIdCodec.normalizeNodeId(nodeId)
 }
 
-/**
- * Validates that a count doesn't exceed a maximum limit.
- * Returns an error message if validation fails, undefined otherwise.
- */
-export function validateMaxCount(count: number, max: number, itemType: string): string | undefined {
-  if (count > max) {
-    return `${itemType} (${count}) exceeds maximum allowed (${max}). Execution blocked.`
-  }
-  return undefined
+type SubflowContainerType = 'loop' | 'parallel'
+
+function getSubflowNodes(
+  workflow: Pick<SerializedWorkflow, 'loops' | 'parallels'>,
+  type: SubflowContainerType,
+  id: string
+): string[] | undefined {
+  return type === 'loop' ? workflow.loops?.[id]?.nodes : workflow.parallels?.[id]?.nodes
 }
 
-/**
- * Resolves array input at runtime. Handles arrays, objects, references, and JSON strings.
- * Used by both loop forEach and parallel distribution resolution.
- * Throws an error if resolution fails.
- */
-export function resolveArrayInput(
-  ctx: ExecutionContext,
-  items: any,
-  resolver: VariableResolver | null
-): any[] {
-  if (Array.isArray(items)) {
-    return items
-  }
+export function subflowContainsBlock(
+  workflow: Pick<SerializedWorkflow, 'loops' | 'parallels'>,
+  containerType: SubflowContainerType,
+  containerId: string,
+  baseBlockId: string,
+  visited = new Set<string>()
+): boolean {
+  const visitKey = `${containerType}:${containerId}`
+  if (visited.has(visitKey)) return false
+  visited.add(visitKey)
 
-  if (typeof items === 'object' && items !== null) {
-    return Object.entries(items)
-  }
+  const nodes = getSubflowNodes(workflow, containerType, containerId)
+  if (!nodes) return false
 
-  if (typeof items === 'string') {
-    if (items.startsWith(REFERENCE.START) && items.endsWith(REFERENCE.END) && resolver) {
-      try {
-        const resolved = resolver.resolveSingleReference(ctx, '', items)
-        if (Array.isArray(resolved)) {
-          return resolved
-        }
-        if (typeof resolved === 'object' && resolved !== null) {
-          return Object.entries(resolved)
-        }
-        if (resolved === null) {
-          return []
-        }
-        throw new Error(`Reference "${items}" did not resolve to an array or object`)
-      } catch (error) {
-        if (error instanceof Error && error.message.startsWith('Reference "')) {
-          throw error
-        }
-        throw new Error(`Failed to resolve reference "${items}": ${toError(error).message}`)
-      }
-    }
-
-    try {
-      const normalized = items.replace(/'/g, '"')
-      const parsed = JSON.parse(normalized)
-      if (Array.isArray(parsed)) {
-        return parsed
-      }
-      if (typeof parsed === 'object' && parsed !== null) {
-        return Object.entries(parsed)
-      }
-      throw new Error(`Parsed value is not an array or object`)
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('Parsed value')) {
-        throw error
-      }
-      throw new Error(`Failed to parse items as JSON: "${items}"`)
+  for (const nodeId of nodes) {
+    if (nodeId === baseBlockId) return true
+    if (workflow.loops?.[nodeId]) {
+      if (subflowContainsBlock(workflow, 'loop', nodeId, baseBlockId, visited)) return true
+    } else if (workflow.parallels?.[nodeId]) {
+      if (subflowContainsBlock(workflow, 'parallel', nodeId, baseBlockId, visited)) return true
     }
   }
+  return false
+}
 
-  if (resolver) {
-    try {
-      const resolved = resolver.resolveInputs(ctx, 'subflow_items', { items }).items
-      if (Array.isArray(resolved)) {
-        return resolved
+export function isSubflowNestedInside(
+  workflow: Pick<SerializedWorkflow, 'loops' | 'parallels'>,
+  childType: SubflowContainerType,
+  childId: string,
+  ancestorType: SubflowContainerType,
+  ancestorId: string,
+  visited = new Set<string>()
+): boolean {
+  const visitKey = `${ancestorType}:${ancestorId}`
+  if (visited.has(visitKey)) return false
+  visited.add(visitKey)
+
+  const nodes = getSubflowNodes(workflow, ancestorType, ancestorId)
+  if (!nodes) return false
+
+  for (const nodeId of nodes) {
+    if (
+      nodeId === childId &&
+      (childType === 'loop' ? workflow.loops?.[childId] : workflow.parallels?.[childId])
+    ) {
+      return true
+    }
+    if (workflow.loops?.[nodeId]) {
+      if (isSubflowNestedInside(workflow, childType, childId, 'loop', nodeId, visited)) {
+        return true
       }
-      throw new Error(`Resolved items is not an array`)
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('Resolved items')) {
-        throw error
+    } else if (workflow.parallels?.[nodeId]) {
+      if (isSubflowNestedInside(workflow, childType, childId, 'parallel', nodeId, visited)) {
+        return true
       }
-      throw new Error(`Failed to resolve items: ${toError(error).message}`)
     }
   }
-
-  return []
+  return false
 }
 
 /**
@@ -331,76 +279,9 @@ export async function addSubflowErrorLog(
 }
 
 /**
- * Emits block log + SSE events for a loop/parallel that was skipped due to an
- * empty collection or false initial condition. This ensures the container block
- * appears in terminal logs, execution snapshots, and edge highlighting.
- */
-export async function emitEmptySubflowEvents(
-  ctx: ExecutionContext,
-  blockId: string,
-  blockType: 'loop' | 'parallel',
-  contextExtensions: ContextExtensions | null
-): Promise<void> {
-  const now = new Date().toISOString()
-  const executionOrder = getNextExecutionOrder(ctx)
-  const output = { results: [] }
-  const block = ctx.workflow?.blocks.find((b) => b.id === blockId)
-  const blockName = block?.metadata?.name ?? blockType
-  const iterationContext = buildContainerIterationContext(ctx, blockId)
-
-  ctx.blockLogs.push({
-    blockId,
-    blockName,
-    blockType,
-    startedAt: now,
-    endedAt: now,
-    durationMs: DEFAULTS.EXECUTION_TIME,
-    success: true,
-    output,
-    executionOrder,
-  })
-
-  if (contextExtensions?.onBlockStart) {
-    try {
-      await contextExtensions.onBlockStart(blockId, blockName, blockType, executionOrder)
-    } catch (error) {
-      logger.warn('Empty subflow start callback failed', {
-        blockId,
-        blockType,
-        error: toError(error).message,
-      })
-    }
-  }
-
-  if (contextExtensions?.onBlockComplete) {
-    try {
-      await contextExtensions.onBlockComplete(
-        blockId,
-        blockName,
-        blockType,
-        {
-          output,
-          executionTime: DEFAULTS.EXECUTION_TIME,
-          startedAt: now,
-          executionOrder,
-          endedAt: now,
-        },
-        iterationContext
-      )
-    } catch (error) {
-      logger.warn('Empty subflow completion callback failed', {
-        blockId,
-        blockType,
-        error: toError(error).message,
-      })
-    }
-  }
-}
-
-/**
  * Emits the BlockLog + onBlockComplete callback for a loop/parallel container that
- * finished successfully with at least one iteration. Without this, successful container
- * runs produce no top-level BlockLog, which forces the trace-span builder to fall back
+ * finished successfully. Without this, successful container runs produce no top-level BlockLog,
+ * which forces the trace-span builder to fall back
  * to generic counter-based names ("Loop 1", "Parallel 1") instead of the user-configured
  * block name.
  */
@@ -408,7 +289,7 @@ export async function emitSubflowSuccessEvents(
   ctx: ExecutionContext,
   blockId: string,
   blockType: 'loop' | 'parallel',
-  output: { results: any[] },
+  output: { results: unknown },
   contextExtensions: ContextExtensions | null
 ): Promise<void> {
   const now = new Date().toISOString()

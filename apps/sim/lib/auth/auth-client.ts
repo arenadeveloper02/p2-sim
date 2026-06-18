@@ -11,17 +11,12 @@ import {
 import { createAuthClient } from 'better-auth/react'
 import type { auth } from '@/lib/auth'
 import { env } from '@/lib/core/config/env'
-import { isBillingEnabled, isOrganizationsEnabled } from '@/lib/core/config/feature-flags'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { isBillingEnabled, isOrganizationsEnabled } from '@/lib/core/config/env-flags'
+import { getBaseUrl, getBrowserOrigin } from '@/lib/core/utils/urls'
 import { SessionContext, type SessionHookResult } from '@/app/_shell/providers/session-provider'
 
 function getAuthBaseUrl(): string {
-  try {
-    return getBaseUrl()
-  } catch (e) {
-    if (typeof window !== 'undefined') return window.location.origin
-    throw e
-  }
+  return getBrowserOrigin() ?? getBaseUrl()
 }
 
 export const client = createAuthClient({
@@ -66,4 +61,5 @@ export const useSubscription = () => {
   }
 }
 
-export const { signIn, signUp, signOut } = client
+const { signIn, signUp, signOut } = client
+export { signOut }

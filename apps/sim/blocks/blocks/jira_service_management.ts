@@ -1,9 +1,41 @@
 import { JiraServiceManagementIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import type { BlockConfig } from '@/blocks/types'
+import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { JsmResponse } from '@/tools/jsm/types'
 import { getTrigger } from '@/triggers'
+
+/**
+ * Coerce an optional numeric block input into an integer, returning undefined for
+ * empty or non-numeric values so no `NaN` reaches the API query string.
+ */
+function toOptionalInt(value: string | undefined): number | undefined {
+  if (!value) return undefined
+  const parsed = Number.parseInt(value, 10)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
+
+/**
+ * Parse the Assets attributes input into the API payload array. Accepts either a
+ * JSON string (from the block input) or an already-parsed array (from a dynamic
+ * reference). Throws a clear error when the value is not a valid array.
+ */
+function parseAssetAttributes(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(value)
+    } catch {
+      throw new Error('Attributes must be a valid JSON array')
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error('Attributes must be a JSON array')
+    }
+    return parsed
+  }
+  throw new Error('Attributes are required')
+}
 
 export const JiraServiceManagementBlock: BlockConfig<JsmResponse> = {
   type: 'jira_service_management',
@@ -12,11 +44,10 @@ export const JiraServiceManagementBlock: BlockConfig<JsmResponse> = {
   authMode: AuthMode.OAuth,
   longDescription:
     'Integrate with Jira Service Management for IT service management. Create and manage service requests, handle customers and organizations, track SLAs, and manage queues.',
-  docsLink: 'https://docs.sim.ai/tools/jira-service-management',
+  docsLink: 'https://docs.sim.ai/integrations/jira_service_management',
   category: 'tools',
-  integrationType: IntegrationType.CustomerSupport,
-  tags: ['customer-support', 'ticketing', 'incident-management'],
-  bgColor: '#E0E0E0',
+  integrationType: IntegrationType.Support,
+  bgColor: '#FFFFFF',
   icon: JiraServiceManagementIcon,
   subBlocks: [
     {
@@ -58,6 +89,15 @@ export const JiraServiceManagementBlock: BlockConfig<JsmResponse> = {
         { label: 'Externalise Form', id: 'externalise_form' },
         { label: 'Internalise Form', id: 'internalise_form' },
         { label: 'Copy Forms', id: 'copy_forms' },
+        { label: 'List Asset Schemas', id: 'list_object_schemas' },
+        { label: 'Get Asset Schema', id: 'get_object_schema' },
+        { label: 'List Asset Object Types', id: 'list_object_types' },
+        { label: 'Get Asset Object Type Attributes', id: 'get_object_type_attributes' },
+        { label: 'Search Assets (AQL)', id: 'search_objects_aql' },
+        { label: 'Get Asset Object', id: 'get_object' },
+        { label: 'Create Asset Object', id: 'create_object' },
+        { label: 'Update Asset Object', id: 'update_object' },
+        { label: 'Delete Asset Object', id: 'delete_object' },
       ],
       value: () => 'get_service_desks',
     },
@@ -132,6 +172,7 @@ export const JiraServiceManagementBlock: BlockConfig<JsmResponse> = {
       type: 'short-input',
       canonicalParamId: 'serviceDeskId',
       placeholder: 'Enter service desk ID',
+      dependsOn: ['credential', 'domain'],
       mode: 'advanced',
       required: {
         field: 'operation',
@@ -181,6 +222,7 @@ export const JiraServiceManagementBlock: BlockConfig<JsmResponse> = {
       canonicalParamId: 'requestTypeId',
       required: true,
       placeholder: 'Enter request type ID',
+      dependsOn: ['credential', 'domain', 'serviceDeskId'],
       mode: 'advanced',
       condition: { field: 'operation', value: ['create_request', 'get_request_type_fields'] },
     },
@@ -563,6 +605,185 @@ Return ONLY the comment text - no explanations.`,
         ],
       },
     },
+    {
+      id: 'assetSchemaId',
+      title: 'Schema ID',
+      type: 'short-input',
+      placeholder: 'e.g., 1',
+      required: { field: 'operation', value: ['get_object_schema', 'list_object_types'] },
+      condition: { field: 'operation', value: ['get_object_schema', 'list_object_types'] },
+    },
+    {
+      id: 'assetObjectTypeId',
+      title: 'Object Type ID',
+      type: 'short-input',
+      placeholder: 'e.g., 23',
+      required: { field: 'operation', value: ['get_object_type_attributes', 'create_object'] },
+      condition: {
+        field: 'operation',
+        value: [
+          'get_object_type_attributes',
+          'create_object',
+          'update_object',
+          'search_objects_aql',
+        ],
+      },
+    },
+    {
+      id: 'assetObjectId',
+      title: 'Object ID',
+      type: 'short-input',
+      placeholder: 'e.g., 1234',
+      required: { field: 'operation', value: ['get_object', 'update_object', 'delete_object'] },
+      condition: { field: 'operation', value: ['get_object', 'update_object', 'delete_object'] },
+    },
+    {
+      id: 'assetQlQuery',
+      title: 'AQL Query',
+      type: 'long-input',
+      placeholder: 'objectType = "Host" AND "Operating System" = "Ubuntu"',
+      required: { field: 'operation', value: 'search_objects_aql' },
+      condition: { field: 'operation', value: 'search_objects_aql' },
+      wandConfig: {
+        enabled: true,
+        placeholder: 'Describe which assets to find',
+        prompt:
+          'Generate an Atlassian Assets AQL (Assets Query Language) query for the user request. Use attribute = "value" comparisons, AND/OR, IN, LIKE, and objectType filters. Example: objectType = "Host" AND Status = "Running". Return ONLY the AQL query - no explanations, no extra text.',
+      },
+    },
+    {
+      id: 'assetAttributes',
+      title: 'Attributes',
+      type: 'long-input',
+      placeholder:
+        '[{ "objectTypeAttributeId": "135", "objectAttributeValues": [{ "value": "Server-1" }] }]',
+      required: { field: 'operation', value: ['create_object', 'update_object'] },
+      condition: { field: 'operation', value: ['create_object', 'update_object'] },
+      wandConfig: {
+        enabled: true,
+        generationType: 'json-object',
+        placeholder: 'Describe the attribute values to set',
+        prompt:
+          'Generate a JSON array of Atlassian Assets object attributes. Each element is { "objectTypeAttributeId": "<id>", "objectAttributeValues": [{ "value": "<value>" }] }. Use objectTypeAttributeId values from the object type attribute definitions. Return ONLY the JSON array - no explanations, no extra text.',
+      },
+    },
+    {
+      id: 'assetStartAt',
+      title: 'Start At',
+      type: 'short-input',
+      placeholder: 'Pagination start index (default: 0)',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'list_object_schemas' },
+    },
+    {
+      id: 'assetMaxResults',
+      title: 'Max Results',
+      type: 'short-input',
+      placeholder: 'Maximum schemas to return (default: 25)',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'list_object_schemas' },
+    },
+    {
+      id: 'assetIncludeCounts',
+      title: 'Include Counts',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'list_object_schemas' },
+    },
+    {
+      id: 'assetExcludeAbstract',
+      title: 'Exclude Abstract Types',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'list_object_types' },
+    },
+    {
+      id: 'assetOnlyValueEditable',
+      title: 'Only Editable Attributes',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'get_object_type_attributes' },
+    },
+    {
+      id: 'assetAttributeQuery',
+      title: 'Attribute Filter',
+      type: 'short-input',
+      placeholder: 'Filter attributes by name',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'get_object_type_attributes' },
+    },
+    {
+      id: 'assetPage',
+      title: 'Page',
+      type: 'short-input',
+      placeholder: 'Page number (default: 1)',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'search_objects_aql' },
+    },
+    {
+      id: 'assetResultsPerPage',
+      title: 'Results Per Page',
+      type: 'short-input',
+      placeholder: 'Results per page (default: 25)',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'search_objects_aql' },
+    },
+    {
+      id: 'assetIncludeAttributes',
+      title: 'Include Attributes',
+      type: 'dropdown',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'search_objects_aql' },
+    },
+    {
+      id: 'assetObjectSchemaId',
+      title: 'Object Schema ID',
+      type: 'short-input',
+      placeholder: 'Scope the search to a schema ID',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'search_objects_aql' },
+    },
+    {
+      id: 'assetWorkspaceId',
+      title: 'Assets Workspace ID',
+      type: 'short-input',
+      placeholder: 'Override the auto-resolved Assets workspace',
+      mode: 'advanced',
+      condition: {
+        field: 'operation',
+        value: [
+          'list_object_schemas',
+          'get_object_schema',
+          'list_object_types',
+          'get_object_type_attributes',
+          'search_objects_aql',
+          'get_object',
+          'create_object',
+          'update_object',
+          'delete_object',
+        ],
+      },
+    },
     ...getTrigger('jsm_request_created').subBlocks,
     ...getTrigger('jsm_request_updated').subBlocks,
     ...getTrigger('jsm_request_commented').subBlocks,
@@ -605,6 +826,15 @@ Return ONLY the comment text - no explanations.`,
       'jsm_externalise_form',
       'jsm_internalise_form',
       'jsm_copy_forms',
+      'jsm_list_object_schemas',
+      'jsm_get_object_schema',
+      'jsm_list_object_types',
+      'jsm_get_object_type_attributes',
+      'jsm_search_objects_aql',
+      'jsm_get_object',
+      'jsm_create_object',
+      'jsm_update_object',
+      'jsm_delete_object',
     ],
     config: {
       tool: (params) => {
@@ -677,6 +907,24 @@ Return ONLY the comment text - no explanations.`,
             return 'jsm_internalise_form'
           case 'copy_forms':
             return 'jsm_copy_forms'
+          case 'list_object_schemas':
+            return 'jsm_list_object_schemas'
+          case 'get_object_schema':
+            return 'jsm_get_object_schema'
+          case 'list_object_types':
+            return 'jsm_list_object_types'
+          case 'get_object_type_attributes':
+            return 'jsm_get_object_type_attributes'
+          case 'search_objects_aql':
+            return 'jsm_search_objects_aql'
+          case 'get_object':
+            return 'jsm_get_object'
+          case 'create_object':
+            return 'jsm_create_object'
+          case 'update_object':
+            return 'jsm_update_object'
+          case 'delete_object':
+            return 'jsm_delete_object'
           default:
             return 'jsm_get_service_desks'
         }
@@ -685,6 +933,13 @@ Return ONLY the comment text - no explanations.`,
         const baseParams = {
           oauthCredential: params.oauthCredential,
           domain: params.domain,
+        }
+
+        // Assets tools accept an optional workspaceId override; when omitted the
+        // route resolves the site's single Assets workspace automatically.
+        const assetBaseParams = {
+          ...baseParams,
+          workspaceId: params.assetWorkspaceId || undefined,
         }
 
         switch (params.operation) {
@@ -798,14 +1053,13 @@ Return ONLY the comment text - no explanations.`,
             if (!params.serviceDeskId) {
               throw new Error('Service Desk ID is required')
             }
-            if (!params.accountIds && !params.emails) {
-              throw new Error('Account IDs or emails are required')
+            if (!params.accountIds) {
+              throw new Error('Account IDs are required')
             }
             return {
               ...baseParams,
               serviceDeskId: params.serviceDeskId,
               accountIds: params.accountIds,
-              emails: params.emails,
             }
           }
           case 'get_organizations':
@@ -1109,6 +1363,79 @@ Return ONLY the comment text - no explanations.`,
                   })()
                 : undefined,
             }
+          case 'list_object_schemas':
+            return {
+              ...assetBaseParams,
+              startAt: toOptionalInt(params.assetStartAt),
+              maxResults: toOptionalInt(params.assetMaxResults),
+              includeCounts: params.assetIncludeCounts === 'true' ? true : undefined,
+            }
+          case 'get_object_schema':
+            if (!params.assetSchemaId) {
+              throw new Error('Schema ID is required')
+            }
+            return { ...assetBaseParams, schemaId: params.assetSchemaId }
+          case 'list_object_types':
+            if (!params.assetSchemaId) {
+              throw new Error('Schema ID is required')
+            }
+            return {
+              ...assetBaseParams,
+              schemaId: params.assetSchemaId,
+              excludeAbstract: params.assetExcludeAbstract === 'true' ? true : undefined,
+            }
+          case 'get_object_type_attributes':
+            if (!params.assetObjectTypeId) {
+              throw new Error('Object type ID is required')
+            }
+            return {
+              ...assetBaseParams,
+              objectTypeId: params.assetObjectTypeId,
+              onlyValueEditable: params.assetOnlyValueEditable === 'true' ? true : undefined,
+              query: params.assetAttributeQuery || undefined,
+            }
+          case 'search_objects_aql':
+            if (!params.assetQlQuery) {
+              throw new Error('AQL query is required')
+            }
+            return {
+              ...assetBaseParams,
+              qlQuery: params.assetQlQuery,
+              page: toOptionalInt(params.assetPage),
+              resultsPerPage: toOptionalInt(params.assetResultsPerPage),
+              includeAttributes: params.assetIncludeAttributes === 'false' ? false : undefined,
+              objectTypeId: params.assetObjectTypeId || undefined,
+              objectSchemaId: params.assetObjectSchemaId || undefined,
+            }
+          case 'get_object':
+            if (!params.assetObjectId) {
+              throw new Error('Object ID is required')
+            }
+            return { ...assetBaseParams, objectId: params.assetObjectId }
+          case 'create_object':
+            if (!params.assetObjectTypeId) {
+              throw new Error('Object type ID is required')
+            }
+            return {
+              ...assetBaseParams,
+              objectTypeId: params.assetObjectTypeId,
+              attributes: parseAssetAttributes(params.assetAttributes),
+            }
+          case 'update_object':
+            if (!params.assetObjectId) {
+              throw new Error('Object ID is required')
+            }
+            return {
+              ...assetBaseParams,
+              objectId: params.assetObjectId,
+              attributes: parseAssetAttributes(params.assetAttributes),
+              objectTypeId: params.assetObjectTypeId || undefined,
+            }
+          case 'delete_object':
+            if (!params.assetObjectId) {
+              throw new Error('Object ID is required')
+            }
+            return { ...assetBaseParams, objectId: params.assetObjectId }
           default:
             return baseParams
         }
@@ -1167,6 +1494,25 @@ Return ONLY the comment text - no explanations.`,
     searchQuery: { type: 'string', description: 'Filter request types by name' },
     groupId: { type: 'string', description: 'Filter by request type group ID' },
     expand: { type: 'string', description: 'Comma-separated fields to expand' },
+    assetSchemaId: { type: 'string', description: 'Assets object schema ID' },
+    assetObjectTypeId: { type: 'string', description: 'Assets object type ID' },
+    assetObjectId: { type: 'string', description: 'Assets object ID' },
+    assetQlQuery: { type: 'string', description: 'AQL query string' },
+    assetAttributes: { type: 'string', description: 'JSON array of Assets object attributes' },
+    assetStartAt: { type: 'string', description: 'Schema pagination start index' },
+    assetMaxResults: { type: 'string', description: 'Maximum schemas to return' },
+    assetIncludeCounts: { type: 'string', description: 'Include object/type counts per schema' },
+    assetExcludeAbstract: { type: 'string', description: 'Exclude abstract object types' },
+    assetOnlyValueEditable: { type: 'string', description: 'Return only editable attributes' },
+    assetAttributeQuery: { type: 'string', description: 'Filter attributes by name' },
+    assetPage: { type: 'string', description: 'AQL search page number' },
+    assetResultsPerPage: { type: 'string', description: 'AQL search results per page' },
+    assetIncludeAttributes: { type: 'string', description: 'Include attribute values in results' },
+    assetObjectSchemaId: { type: 'string', description: 'Scope AQL search to a schema ID' },
+    assetWorkspaceId: {
+      type: 'string',
+      description: 'Override the auto-resolved Assets workspace ID',
+    },
   },
   outputs: {
     ts: { type: 'string', description: 'Timestamp of the operation' },
@@ -1238,7 +1584,8 @@ Return ONLY the comment text - no explanations.`,
     status: { type: 'string', description: 'Form status (open, submitted, locked)' },
     answers: {
       type: 'json',
-      description: 'Form answers as key-value pairs (question ID to answer)',
+      description:
+        'Array of simplified form answers, each with label, answer, fieldKey, and choice',
     },
     deleted: { type: 'boolean', description: 'Whether the form was successfully deleted' },
     visibility: {
@@ -1249,6 +1596,30 @@ Return ONLY the comment text - no explanations.`,
     errors: { type: 'json', description: 'Array of errors from copy forms operation' },
     sourceIssueIdOrKey: { type: 'string', description: 'Source issue ID or key' },
     targetIssueIdOrKey: { type: 'string', description: 'Target issue ID or key' },
+    schemas: {
+      type: 'json',
+      description: 'Array of Assets object schemas (id, name, objectSchemaKey, status)',
+    },
+    schema: { type: 'json', description: 'Single Assets object schema' },
+    objectTypes: {
+      type: 'json',
+      description: 'Array of Assets object types (id, name, objectSchemaId, objectCount)',
+    },
+    attributes: {
+      type: 'json',
+      description:
+        'Array of object type attribute definitions (id, name, type, minimumCardinality)',
+    },
+    objects: {
+      type: 'json',
+      description: 'Array of Assets objects from an AQL search (id, label, objectKey, attributes)',
+    },
+    object: {
+      type: 'json',
+      description: 'Single Assets object (id, label, objectKey, objectType, attributes)',
+    },
+    objectId: { type: 'string', description: 'Assets object ID (delete operation)' },
+    isLast: { type: 'boolean', description: 'Whether this is the last page of schemas' },
   },
   triggers: {
     enabled: true,
@@ -1261,3 +1632,98 @@ Return ONLY the comment text - no explanations.`,
     ],
   },
 }
+
+export const JiraServiceManagementBlockMeta = {
+  tags: ['customer-support', 'ticketing', 'incident-management'],
+  url: 'https://www.atlassian.com/software/jira/service-management',
+  templates: [
+    {
+      icon: JiraServiceManagementIcon,
+      title: 'JSM major incident broadcaster',
+      prompt:
+        'Build a workflow triggered when a major-incident request is created in Jira Service Management that pulls the affected service from PagerDuty, identifies the current on-call, posts a structured incident brief to a Slack war-room channel, and adds the responders as JSM request participants.',
+      modules: ['agent', 'workflows'],
+      category: 'operations',
+      tags: ['devops', 'engineering', 'automation'],
+      alsoIntegrations: ['slack', 'pagerduty'],
+    },
+    {
+      icon: JiraServiceManagementIcon,
+      title: 'JSM request auto-triage',
+      prompt:
+        'Create a workflow triggered by new Jira Service Management requests that classifies the request type, sets the correct priority based on impact and urgency, transitions it to the right initial status, and adds the assignment-group customer organization as a participant.',
+      modules: ['agent', 'workflows'],
+      category: 'operations',
+      tags: ['support', 'automation', 'enterprise'],
+    },
+    {
+      icon: JiraServiceManagementIcon,
+      title: 'JSM approval router',
+      prompt:
+        'Build a workflow that watches Jira Service Management requests for new approval steps, posts a Slack DM to each approver with request context and quick-action buttons, and answers the approval in JSM based on their response while keeping the request in sync.',
+      modules: ['agent', 'workflows'],
+      category: 'operations',
+      tags: ['enterprise', 'automation', 'team'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: JiraServiceManagementIcon,
+      title: 'JSM form auto-completer',
+      prompt:
+        'Create a workflow that when a Jira Service Management request is created with an attached ProForma form, pre-fills the answers from the requester profile, attached email, and CMDB lookup, and saves the answers so agents only review rather than retype.',
+      modules: ['agent', 'workflows'],
+      category: 'operations',
+      tags: ['automation', 'enterprise'],
+    },
+    {
+      icon: JiraServiceManagementIcon,
+      title: 'JSM weekly service desk report',
+      prompt:
+        'Build a scheduled weekly workflow that pulls Jira Service Management request volume by queue, SLA performance, top request types, and bottleneck assignees, and generates a service desk health report file for the operations review.',
+      modules: ['scheduled', 'agent', 'files', 'workflows'],
+      category: 'operations',
+      tags: ['reporting', 'analysis', 'enterprise'],
+    },
+    {
+      icon: JiraServiceManagementIcon,
+      title: 'JSM-to-ServiceNow bridge',
+      prompt:
+        'Create a workflow that mirrors Jira Service Management incident requests into ServiceNow incident records and vice versa, keeping status, assignment, and comments in sync so teams on either side see the same truth.',
+      modules: ['tables', 'agent', 'workflows'],
+      category: 'operations',
+      tags: ['enterprise', 'sync', 'automation'],
+      alsoIntegrations: ['servicenow'],
+    },
+    {
+      icon: JiraServiceManagementIcon,
+      title: 'JSM self-service deflection bot',
+      prompt:
+        "Create a knowledge base from internal IT docs, then build a Slack agent that answers employee help requests with cited steps and, when it can't resolve the issue, creates a Jira Service Management request with the right request type so nothing falls through.",
+      modules: ['knowledge-base', 'agent', 'workflows'],
+      category: 'support',
+      tags: ['support', 'automation', 'team'],
+      alsoIntegrations: ['slack'],
+    },
+  ],
+  skills: [
+    {
+      name: 'raise-service-request',
+      description:
+        'Create a customer request on the right service desk with the correct request type.',
+      content:
+        '# Raise a Service Request\n\nLog an inbound customer request into the correct Jira Service Management queue.\n\n## Steps\n1. Get service desks and identify the right one for the request.\n2. Get request types for that service desk and choose the matching type.\n3. Create the request with a clear summary, description, and any required request-type fields.\n4. Capture the request key and reporter.\n\n## Output\nReturn the request key, the service desk and request type used, and the reporter. Confirm required fields were filled.',
+    },
+    {
+      name: 'respond-and-update-request',
+      description: 'Add a public reply to a customer request and move it to the right status.',
+      content:
+        '# Respond and Update a Request\n\nReply to a customer on their request and advance it.\n\n## Steps\n1. Get the request and read its history and current status.\n2. Add a comment with the response (public to the customer).\n3. Get available transitions and move the request to the appropriate status.\n\n## Output\nReturn the request key, the comment added, and the new status.',
+    },
+    {
+      name: 'sla-breach-watch',
+      description: 'Scan open requests on a queue and flag ones at risk of breaching SLA.',
+      content:
+        '# SLA Breach Watch\n\nSurface requests that are about to miss their SLA so the team can act.\n\n## Steps\n1. Get the service desk and its queues, then get requests in the target queue.\n2. For each request, get its SLA information and time remaining.\n3. Flag requests that are breached or close to breaching their target.\n\n## Output\nReturn a prioritized list of at-risk requests with key, summary, SLA metric, and time remaining, worst first.',
+    },
+  ],
+} as const satisfies BlockMeta

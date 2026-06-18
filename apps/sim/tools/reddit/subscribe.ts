@@ -50,7 +50,6 @@ export const subscribeTool: ToolConfig<RedditSubscribeParams, RedditWriteRespons
       }
     },
     body: (params: RedditSubscribeParams) => {
-      // Validate action
       if (!['sub', 'unsub'].includes(params.action)) {
         throw new Error('action must be "sub" or "unsub"')
       }
@@ -62,13 +61,12 @@ export const subscribeTool: ToolConfig<RedditSubscribeParams, RedditWriteRespons
         sr_name: subreddit,
       })
 
-      return formData.toString() as unknown as Record<string, any>
+      return formData.toString()
     },
   },
 
   transformResponse: async (response: Response, requestParams?: RedditSubscribeParams) => {
-    // Reddit subscribe API returns empty JSON {} on success
-    await response.json()
+    await response.json().catch(() => ({}))
 
     if (response.ok) {
       const actionText =

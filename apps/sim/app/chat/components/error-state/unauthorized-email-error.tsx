@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { inter } from '@/app/_styles/fonts/inter/inter'
-import { soehne } from '@/app/_styles/fonts/soehne/soehne'
+import { season } from '@/app/_styles/fonts/season/season'
 import { useBrandConfig } from '@/ee/whitelabeling/branding'
 
 interface UnauthorizedEmailErrorProps {
@@ -95,7 +95,7 @@ export function UnauthorizedEmailError({
             {/* Error content */}
             <div className='space-y-1 text-center'>
               <h1
-                className={`${soehne.className} font-medium text-[32px] text-black tracking-tight`}
+                className={`${season.className} font-medium text-[32px] text-black tracking-tight`}
               >
                 Access Denied
               </h1>

@@ -8,6 +8,7 @@ import {
   workspace,
 } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
+import { HttpError } from '@/lib/core/utils/http-error'
 
 export type PermissionType = (typeof permissionTypeEnum.enumValues)[number]
 export interface WorkspaceBasic {
@@ -147,13 +148,34 @@ export async function checkWorkspaceAccess(
   return { exists: true, hasAccess: true, canWrite, workspace: ws }
 }
 
+/**
+ * Thrown when a user attempts to access a workspace they don't have access to,
+ * or that doesn't exist / has been archived. Carries `statusCode = 403` so the
+ * centralized route wrapper maps it to HTTP 403 instead of defaulting to 500.
+ * The `message` is intentionally client-safe and is exposed to API responses.
+ */
+export class WorkspaceAccessDeniedError extends HttpError {
+  readonly statusCode = 403
+  readonly workspaceId: string
+
+  constructor(workspaceId: string) {
+    super(`Workspace access denied: ${workspaceId}`)
+    this.name = 'WorkspaceAccessDeniedError'
+    this.workspaceId = workspaceId
+  }
+}
+
+export function isWorkspaceAccessDeniedError(error: unknown): error is WorkspaceAccessDeniedError {
+  return error instanceof WorkspaceAccessDeniedError
+}
+
 export async function assertActiveWorkspaceAccess(
   workspaceId: string,
   userId: string
 ): Promise<WorkspaceAccess> {
   const access = await checkWorkspaceAccess(workspaceId, userId)
   if (!access.exists || !access.hasAccess) {
-    throw new Error(`Active workspace access denied: ${workspaceId}`)
+    throw new WorkspaceAccessDeniedError(workspaceId)
   }
   return access
 }
@@ -230,6 +252,12 @@ export async function hasAdminPermission(userId: string, workspaceId: string): P
 /**
  * Retrieves a list of users with their associated permissions for a given workspace.
  *
+ * A member is `isExternal` when they hold workspace access but belong to a
+ * different organization than the workspace (or to any organization when the
+ * workspace is personal/grandfathered and has none). The workspace owner is
+ * never external. This mirrors the accept-time `external` membership intent so
+ * the UI tag matches how the member actually joined.
+ *
  * @param workspaceId - The ID of the workspace to retrieve user permissions for.
  * @returns A promise that resolves to an array of user objects, each containing user details and their permission type.
  */
@@ -240,6 +268,8 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
     name: string
     image: string | null
     permissionType: PermissionType
+    isExternal: boolean
+    joinedAt: string
   }>
 > {
   const usersWithPermissions = await db
@@ -249,10 +279,15 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
       name: user.name,
       image: user.image,
       permissionType: permissions.permissionType,
+      joinedAt: permissions.createdAt,
+      workspaceOrganizationId: workspace.organizationId,
+      workspaceOwnerId: workspace.ownerId,
+      userOrganizationId: member.organizationId,
     })
     .from(permissions)
     .innerJoin(user, eq(permissions.userId, user.id))
     .innerJoin(workspace, eq(permissions.entityId, workspace.id))
+    .leftJoin(member, eq(member.userId, user.id))
     .where(
       and(
         eq(permissions.entityType, 'workspace'),
@@ -268,6 +303,9 @@ export async function getUsersWithPermissions(workspaceId: string): Promise<
     name: row.name,
     image: row.image ?? null,
     permissionType: row.permissionType,
+    isExternal:
+      row.userId !== row.workspaceOwnerId && row.userOrganizationId !== row.workspaceOrganizationId,
+    joinedAt: row.joinedAt.toISOString(),
   }))
 }
 
@@ -333,17 +371,50 @@ export async function hasWorkspaceAdminAccess(
   return await isOrganizationAdminOrOwnerOfWorkspace(userId, ws)
 }
 
-export async function isOrganizationAdminOrOwnerOfWorkspace(
+/**
+ * Check whether a user is an owner or admin of a specific organization.
+ *
+ * @param userId - The ID of the user to check
+ * @param organizationId - The ID of the organization to check
+ * @returns Promise<boolean> - True when the user is the organization owner or an admin
+ */
+export async function isOrganizationAdminOrOwner(
+  userId: string,
+  organizationId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ role: member.role })
+    .from(member)
+    .where(and(eq(member.userId, userId), eq(member.organizationId, organizationId)))
+    .limit(1)
+  return row?.role === 'owner' || row?.role === 'admin'
+}
+
+/**
+ * Check whether a user is a member (any role) of a specific organization.
+ *
+ * @param userId - The ID of the user to check
+ * @param organizationId - The ID of the organization to check
+ * @returns Promise<boolean> - True when the user has an organization membership row
+ */
+export async function isOrganizationMember(
+  userId: string,
+  organizationId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: member.id })
+    .from(member)
+    .where(and(eq(member.userId, userId), eq(member.organizationId, organizationId)))
+    .limit(1)
+  return !!row
+}
+
+async function isOrganizationAdminOrOwnerOfWorkspace(
   userId: string,
   ws: Pick<WorkspaceWithOwner, 'organizationId'>
 ): Promise<boolean> {
   if (!ws.organizationId) return false
-  const [row] = await db
-    .select({ role: member.role })
-    .from(member)
-    .where(and(eq(member.userId, userId), eq(member.organizationId, ws.organizationId)))
-    .limit(1)
-  return row?.role === 'owner' || row?.role === 'admin'
+  return isOrganizationAdminOrOwner(userId, ws.organizationId)
 }
 
 /**

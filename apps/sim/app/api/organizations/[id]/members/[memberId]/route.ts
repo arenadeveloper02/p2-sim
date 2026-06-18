@@ -1,23 +1,24 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
-import { db } from '@sim/db'
+import { db, dbReplica } from '@sim/db'
 import { member, user, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { updateOrganizationMemberRoleContract } from '@/lib/api/contracts/organization'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { setActiveOrganizationForCurrentSession } from '@/lib/auth/active-organization'
+import { getOrgMemberLedgerByUser } from '@/lib/billing/core/organization'
 import { getUserUsageData } from '@/lib/billing/core/usage'
-import { removeUserFromOrganization } from '@/lib/billing/organizations/membership'
+import {
+  removeExternalUserFromOrganizationWorkspaces,
+  removeUserFromOrganization,
+  WORKSPACE_BILLING_ACCOUNT_REMOVAL_ERROR,
+} from '@/lib/billing/organizations/membership'
+import { reconcileOrganizationSeats } from '@/lib/billing/organizations/seats'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('OrganizationMemberAPI')
-
-const updateMemberSchema = z.object({
-  role: z.enum(['owner', 'admin', 'member'], {
-    errorMap: () => ({ message: 'Invalid role' }),
-  }),
-})
 
 /**
  * GET /api/organizations/[id]/members/[memberId]
@@ -96,13 +97,29 @@ export const GET = withRouteHandler(
           .where(eq(userStats.userId, memberId))
           .limit(1)
 
-        const computed = await getUserUsageData(memberId)
+        const computed = await getUserUsageData(memberId, dbReplica)
 
         if (usageData.length > 0) {
+          // currentPeriodCost is only a baseline; add this member's attributed
+          // usage_log for the period. (getUserUsageData returns the org POOL for
+          // org-scoped members, so it can't supply the per-member figure.)
+          const memberLedger =
+            (
+              await getOrgMemberLedgerByUser(
+                organizationId,
+                computed.billingPeriodStart && computed.billingPeriodEnd
+                  ? { start: computed.billingPeriodStart, end: computed.billingPeriodEnd }
+                  : null,
+                dbReplica
+              )
+            ).get(memberId) ?? 0
           memberData = {
             ...memberData,
             usage: {
               ...usageData[0],
+              currentPeriodCost: (
+                Number(usageData[0].currentPeriodCost ?? 0) + memberLedger
+              ).toString(),
               billingPeriodStart: computed.billingPeriodStart,
               billingPeriodEnd: computed.billingPeriodEnd,
             },
@@ -138,10 +155,7 @@ export const GET = withRouteHandler(
  * Update organization member role
  */
 export const PUT = withRouteHandler(
-  async (
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string; memberId: string }> }
-  ) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string; memberId: string }> }) => {
     try {
       const session = await getSession()
 
@@ -149,16 +163,11 @@ export const PUT = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: organizationId, memberId } = await params
-      const body = await request.json()
+      const parsed = await parseRequest(updateOrganizationMemberRoleContract, request, context)
+      if (!parsed.success) return parsed.response
 
-      const validation = updateMemberSchema.safeParse(body)
-      if (!validation.success) {
-        const firstError = validation.error.errors[0]
-        return NextResponse.json({ error: firstError.message }, { status: 400 })
-      }
-
-      const { role } = validation.data
+      const { id: organizationId, memberId } = parsed.data.params
+      const { role } = parsed.data.body
 
       const userMember = await db
         .select()
@@ -255,8 +264,8 @@ export const PUT = withRouteHandler(
       })
     } catch (error) {
       logger.error('Failed to update organization member role', {
-        organizationId: (await params).id,
-        memberId: (await params).memberId,
+        organizationId: (await context.params).id,
+        memberId: (await context.params).memberId,
         error,
       })
 
@@ -311,7 +320,81 @@ export const DELETE = withRouteHandler(
         .limit(1)
 
       if (targetMember.length === 0) {
-        return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+        const [targetUser] = await db
+          .select({ id: user.id, email: user.email, name: user.name })
+          .from(user)
+          .where(eq(user.id, targetUserId))
+          .limit(1)
+
+        if (!targetUser) {
+          return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+        }
+
+        const externalResult = await removeExternalUserFromOrganizationWorkspaces({
+          userId: targetUserId,
+          organizationId,
+        })
+
+        if (!externalResult.success) {
+          const error = externalResult.error || 'External workspace member not found'
+          const status =
+            error === 'External workspace member not found'
+              ? 404
+              : error === 'User is an organization member'
+                ? 409
+                : error === WORKSPACE_BILLING_ACCOUNT_REMOVAL_ERROR
+                  ? 400
+                  : 500
+
+          return NextResponse.json({ error }, { status })
+        }
+
+        logger.info('External workspace member removed from organization workspaces', {
+          organizationId,
+          removedMemberId: targetUserId,
+          removedBy: session.user.id,
+          workspaceAccessRevoked: externalResult.workspaceAccessRevoked,
+          permissionGroupsRevoked: externalResult.permissionGroupsRevoked,
+          credentialMembershipsRevoked: externalResult.credentialMembershipsRevoked,
+          pendingInvitationsCancelled: externalResult.pendingInvitationsCancelled,
+        })
+
+        recordAudit({
+          workspaceId: null,
+          actorId: session.user.id,
+          action: AuditAction.ORG_MEMBER_REMOVED,
+          resourceType: AuditResourceType.ORGANIZATION,
+          resourceId: organizationId,
+          actorName: session.user.name ?? undefined,
+          actorEmail: session.user.email ?? undefined,
+          description: `Removed external workspace member ${targetUserId} from organization`,
+          metadata: {
+            targetUserId,
+            targetEmail: targetUser.email ?? undefined,
+            targetName: targetUser.name ?? undefined,
+            membershipType: 'external',
+            workspaceAccessRevoked: externalResult.workspaceAccessRevoked,
+            permissionGroupsRevoked: externalResult.permissionGroupsRevoked,
+            credentialMembershipsRevoked: externalResult.credentialMembershipsRevoked,
+            pendingInvitationsCancelled: externalResult.pendingInvitationsCancelled,
+          },
+          request,
+        })
+
+        return NextResponse.json({
+          success: true,
+          message: 'External member removed successfully',
+          data: {
+            removedMemberId: targetUserId,
+            removedBy: session.user.id,
+            removedAt: new Date().toISOString(),
+            membershipType: 'external',
+            workspaceAccessRevoked: externalResult.workspaceAccessRevoked,
+            permissionGroupsRevoked: externalResult.permissionGroupsRevoked,
+            credentialMembershipsRevoked: externalResult.credentialMembershipsRevoked,
+            pendingInvitationsCancelled: externalResult.pendingInvitationsCancelled,
+          },
+        })
       }
 
       const result = await removeUserFromOrganization({
@@ -327,7 +410,29 @@ export const DELETE = withRouteHandler(
         if (result.error === 'Member not found') {
           return NextResponse.json({ error: result.error }, { status: 404 })
         }
+        if (result.error === WORKSPACE_BILLING_ACCOUNT_REMOVAL_ERROR) {
+          return NextResponse.json({ error: result.error }, { status: 400 })
+        }
         return NextResponse.json({ error: result.error }, { status: 500 })
+      }
+
+      let seatReduction: Awaited<ReturnType<typeof reconcileOrganizationSeats>> | null = null
+      try {
+        seatReduction = await reconcileOrganizationSeats({
+          organizationId,
+          reason: 'member-removed',
+        })
+      } catch (seatError) {
+        logger.error('Failed to reduce seats after member removal', {
+          organizationId,
+          removedMemberId: targetUserId,
+          removedBy: session.user.id,
+          error: seatError,
+        })
+        seatReduction = {
+          changed: false,
+          reason: 'Failed to reduce seats after member removal',
+        }
       }
 
       if (session.user.id === targetUserId) {
@@ -348,6 +453,7 @@ export const DELETE = withRouteHandler(
         removedBy: session.user.id,
         wasSelfRemoval: session.user.id === targetUserId,
         billingActions: result.billingActions,
+        seatReduction,
       })
 
       recordAudit({
@@ -367,6 +473,7 @@ export const DELETE = withRouteHandler(
           targetEmail: targetMember[0].email ?? undefined,
           targetName: targetMember[0].name ?? undefined,
           wasSelfRemoval: session.user.id === targetUserId,
+          seatReduction,
         },
         request,
       })
@@ -381,6 +488,7 @@ export const DELETE = withRouteHandler(
           removedMemberId: targetUserId,
           removedBy: session.user.id,
           removedAt: new Date().toISOString(),
+          seatReduction,
         },
       })
     } catch (error) {

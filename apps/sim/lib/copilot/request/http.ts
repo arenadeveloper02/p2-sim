@@ -22,8 +22,21 @@ export function createUnauthorizedResponse(): NextResponse {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 }
 
+/**
+ * Creates a 400 Bad Request response for non-validation errors (business rule
+ * failures, missing entities, semantic mismatches).
+ *
+ * For Zod validation failures, use `validationErrorResponse` from
+ * `@/lib/api/server` instead — it returns the canonical
+ * `{ error, details: ZodIssue[] }` shape that lets clients introspect which
+ * field failed.
+ */
 export function createBadRequestResponse(message: string): NextResponse {
   return NextResponse.json({ error: message }, { status: 400 })
+}
+
+export function createForbiddenResponse(message: string): NextResponse {
+  return NextResponse.json({ error: message }, { status: 403 })
 }
 
 export function createNotFoundResponse(message: string): NextResponse {

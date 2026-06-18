@@ -1,7 +1,7 @@
 import type { Edge } from 'reactflow'
 import type { BlockState, Loop, Parallel } from '@/stores/workflows/workflow/types'
 
-export interface ClipboardData {
+interface ClipboardData {
   blocks: Record<string, BlockState>
   edges: Edge[]
   subBlockValues: Record<string, Record<string, unknown>>
@@ -16,11 +16,11 @@ export interface WorkflowMetadata {
   lastModified: Date
   createdAt: Date
   description?: string
-  color: string
   workspaceId?: string
   folderId?: string | null
   sortOrder: number
   archivedAt?: Date | null
+  locked?: boolean
   /** True for sandbox exercises (Sim Academy). Skips real API calls. */
   isSandbox?: boolean
 }
@@ -35,7 +35,7 @@ export interface HydrationState {
   error: string | null
 }
 
-export interface WorkflowRegistryState {
+interface WorkflowRegistryState {
   activeWorkflowId: string | null
   error: string | null
   hydration: HydrationState
@@ -43,7 +43,7 @@ export interface WorkflowRegistryState {
   pendingSelection: string[] | null
 }
 
-export interface WorkflowRegistryActions {
+interface WorkflowRegistryActions {
   setActiveWorkflow: (id: string) => Promise<void>
   loadWorkflowState: (workflowId: string) => Promise<void>
   switchToWorkspace: (id: string) => void

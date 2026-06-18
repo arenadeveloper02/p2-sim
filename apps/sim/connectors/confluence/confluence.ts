@@ -1,10 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { ConfluenceIcon } from '@/components/icons'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { confluenceConnectorMeta } from '@/connectors/confluence/meta'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
-import { htmlToPlainText, joinTagArray, parseTagDate } from '@/connectors/utils'
-import { getConfluenceCloudId } from '@/tools/confluence/utils'
+import { htmlToPlainText, joinTagArray, parseMultiValue, parseTagDate } from '@/connectors/utils'
+import { getConfluenceCloudId, normalizeConfluenceDomainHost } from '@/tools/confluence/utils'
 
 const logger = createLogger('ConfluenceConnector')
 
@@ -13,6 +13,18 @@ const logger = createLogger('ConfluenceConnector')
  */
 export function escapeCql(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+/**
+ * Builds a CQL clause restricting content to the given space keys.
+ * Single key uses `space = "X"`; multiple keys use `space in ("X","Y")`.
+ */
+function buildSpaceClause(spaceKeys: string[]): string {
+  if (spaceKeys.length === 1) {
+    return `space="${escapeCql(spaceKeys[0])}"`
+  }
+  const list = spaceKeys.map((k) => `"${escapeCql(k)}"`).join(',')
+  return `space in (${list})`
 }
 
 /**
@@ -80,102 +92,59 @@ async function fetchLabelsForPages(
 }
 
 /**
+ * Produces a canonical metadata stub with a deterministic contentHash that
+ * does not depend on which API surface (v1 CQL or v2) returned the page.
+ */
+function pageToStub(
+  page: Record<string, unknown>,
+  options: {
+    spaceId?: unknown
+    labels?: string[]
+    sourceUrl?: string
+  } = {}
+): ExternalDocument {
+  const version = page.version as Record<string, unknown> | undefined
+  const versionNumber = version?.number as number | undefined
+  const lastModified = (version?.createdAt ?? version?.when ?? '') as string
+  const versionKey = versionNumber ?? lastModified
+
+  return {
+    externalId: String(page.id),
+    title: (page.title as string) || 'Untitled',
+    content: '',
+    contentDeferred: true,
+    mimeType: 'text/plain',
+    sourceUrl: options.sourceUrl,
+    contentHash: `confluence:${page.id}:${versionKey}`,
+    metadata: {
+      spaceId: options.spaceId,
+      status: page.status,
+      version: versionNumber,
+      labels: options.labels ?? [],
+      lastModified,
+    },
+  }
+}
+
+/**
  * Converts a v1 CQL search result item to a lightweight metadata stub.
  */
 function cqlResultToStub(item: Record<string, unknown>, domain: string): ExternalDocument {
-  const version = item.version as Record<string, unknown> | undefined
   const links = item._links as Record<string, string> | undefined
   const metadata = item.metadata as Record<string, unknown> | undefined
   const labelsWrapper = metadata?.labels as Record<string, unknown> | undefined
   const labelResults = (labelsWrapper?.results || []) as Record<string, unknown>[]
   const labels = labelResults.map((l) => l.name as string)
-  const versionNumber = version?.number
 
-  return {
-    externalId: String(item.id),
-    title: (item.title as string) || 'Untitled',
-    content: '',
-    contentDeferred: true,
-    mimeType: 'text/plain',
+  return pageToStub(item, {
+    spaceId: (item.space as Record<string, unknown>)?.key,
+    labels,
     sourceUrl: links?.webui ? `https://${domain}/wiki${links.webui}` : undefined,
-    contentHash: `confluence:${item.id}:${versionNumber ?? ''}`,
-    metadata: {
-      spaceId: (item.space as Record<string, unknown>)?.key,
-      status: item.status,
-      version: versionNumber,
-      labels,
-      lastModified: version?.when,
-    },
-  }
+  })
 }
 
 export const confluenceConnector: ConnectorConfig = {
-  id: 'confluence',
-  name: 'Confluence',
-  description: 'Sync pages from a Confluence space into your knowledge base',
-  version: '1.1.0',
-  icon: ConfluenceIcon,
-
-  auth: {
-    mode: 'oauth',
-    provider: 'confluence',
-    requiredScopes: ['read:confluence-content.all', 'read:page:confluence', 'offline_access'],
-  },
-
-  configFields: [
-    {
-      id: 'domain',
-      title: 'Confluence Domain',
-      type: 'short-input',
-      placeholder: 'yoursite.atlassian.net',
-      required: true,
-    },
-    {
-      id: 'spaceSelector',
-      title: 'Space',
-      type: 'selector',
-      selectorKey: 'confluence.spaces',
-      canonicalParamId: 'spaceKey',
-      mode: 'basic',
-      dependsOn: ['domain'],
-      placeholder: 'Select a space',
-      required: true,
-    },
-    {
-      id: 'spaceKey',
-      title: 'Space Key',
-      type: 'short-input',
-      canonicalParamId: 'spaceKey',
-      mode: 'advanced',
-      placeholder: 'e.g. ENG, PRODUCT',
-      required: true,
-    },
-    {
-      id: 'contentType',
-      title: 'Content Type',
-      type: 'dropdown',
-      required: false,
-      options: [
-        { label: 'Pages only', id: 'page' },
-        { label: 'Blog posts only', id: 'blogpost' },
-        { label: 'All content', id: 'all' },
-      ],
-    },
-    {
-      id: 'labelFilter',
-      title: 'Filter by Label',
-      type: 'short-input',
-      required: false,
-      placeholder: 'e.g. published, engineering',
-    },
-    {
-      id: 'maxPages',
-      title: 'Max Pages',
-      type: 'short-input',
-      required: false,
-      placeholder: 'e.g. 500 (default: unlimited)',
-    },
-  ],
+  ...confluenceConnectorMeta,
 
   listDocuments: async (
     accessToken: string,
@@ -183,11 +152,15 @@ export const confluenceConnector: ConnectorConfig = {
     cursor?: string,
     syncContext?: Record<string, unknown>
   ): Promise<ExternalDocumentList> => {
-    const domain = sourceConfig.domain as string
-    const spaceKey = sourceConfig.spaceKey as string
+    const domain = normalizeConfluenceDomainHost(sourceConfig.domain as string)
+    const spaceKeys = parseMultiValue(sourceConfig.spaceKey)
     const contentType = (sourceConfig.contentType as string) || 'page'
     const labelFilter = (sourceConfig.labelFilter as string) || ''
     const maxPages = sourceConfig.maxPages ? Number(sourceConfig.maxPages) : 0
+
+    if (spaceKeys.length === 0) {
+      throw new Error('At least one space key is required')
+    }
 
     let cloudId = syncContext?.cloudId as string | undefined
     if (!cloudId) {
@@ -195,12 +168,17 @@ export const confluenceConnector: ConnectorConfig = {
       if (syncContext) syncContext.cloudId = cloudId
     }
 
-    if (labelFilter.trim()) {
+    /**
+     * Route through CQL when a label filter is set or when multiple spaces are
+     * selected — the v2 `/spaces/{spaceId}/pages` endpoint is single-space only,
+     * but CQL natively supports `space in (...)`.
+     */
+    if (labelFilter.trim() || spaceKeys.length > 1) {
       return listDocumentsViaCql(
         cloudId,
         accessToken,
         domain,
-        spaceKey,
+        spaceKeys,
         contentType,
         labelFilter,
         maxPages,
@@ -209,6 +187,7 @@ export const confluenceConnector: ConnectorConfig = {
       )
     }
 
+    const spaceKey = spaceKeys[0]
     let spaceId = syncContext?.spaceId as string | undefined
     if (!spaceId) {
       spaceId = await resolveSpaceId(cloudId, accessToken, spaceKey)
@@ -247,7 +226,7 @@ export const confluenceConnector: ConnectorConfig = {
     externalId: string,
     syncContext?: Record<string, unknown>
   ): Promise<ExternalDocument | null> => {
-    const domain = sourceConfig.domain as string
+    const domain = normalizeConfluenceDomainHost(sourceConfig.domain as string)
     let cloudId = syncContext?.cloudId as string | undefined
     if (!cloudId) {
       cloudId = await getConfluenceCloudId(domain, accessToken)
@@ -285,24 +264,16 @@ export const confluenceConnector: ConnectorConfig = {
     const labels = labelMap.get(String(page.id)) ?? []
 
     const links = page._links as Record<string, unknown> | undefined
-    const version = page.version as Record<string, unknown> | undefined
-    const versionNumber = version?.number
+    const stub = pageToStub(page, {
+      spaceId: page.spaceId,
+      labels,
+      sourceUrl: links?.webui ? `https://${domain}/wiki${links.webui}` : undefined,
+    })
 
     return {
-      externalId: String(page.id),
-      title: (page.title as string) || 'Untitled',
+      ...stub,
       content: plainText,
       contentDeferred: false,
-      mimeType: 'text/plain',
-      sourceUrl: links?.webui ? `https://${domain}/wiki${links.webui}` : undefined,
-      contentHash: `confluence:${page.id}:${versionNumber ?? ''}`,
-      metadata: {
-        spaceId: page.spaceId,
-        status: page.status,
-        version: versionNumber,
-        labels,
-        lastModified: version?.createdAt,
-      },
     }
   },
 
@@ -311,10 +282,10 @@ export const confluenceConnector: ConnectorConfig = {
     sourceConfig: Record<string, unknown>
   ): Promise<{ valid: boolean; error?: string }> => {
     const domain = sourceConfig.domain as string
-    const spaceKey = sourceConfig.spaceKey as string
+    const spaceKeys = parseMultiValue(sourceConfig.spaceKey)
 
-    if (!domain || !spaceKey) {
-      return { valid: false, error: 'Domain and space key are required' }
+    if (!domain || spaceKeys.length === 0) {
+      return { valid: false, error: 'Domain and at least one space key are required' }
     }
 
     const maxPages = sourceConfig.maxPages as string | undefined
@@ -323,8 +294,11 @@ export const confluenceConnector: ConnectorConfig = {
     }
 
     try {
-      const cloudId = await getConfluenceCloudId(domain, accessToken)
-      const spaceUrl = `https://api.atlassian.com/ex/confluence/${cloudId}/wiki/api/v2/spaces?keys=${encodeURIComponent(spaceKey)}&limit=1`
+      const cloudId = await getConfluenceCloudId(domain, accessToken, VALIDATE_RETRY_OPTIONS)
+      const params = new URLSearchParams()
+      for (const key of spaceKeys) params.append('keys', key)
+      params.append('limit', String(Math.max(spaceKeys.length, 1)))
+      const spaceUrl = `https://api.atlassian.com/ex/confluence/${cloudId}/wiki/api/v2/spaces?${params.toString()}`
       const response = await fetchWithRetry(
         spaceUrl,
         {
@@ -337,24 +311,23 @@ export const confluenceConnector: ConnectorConfig = {
         VALIDATE_RETRY_OPTIONS
       )
       if (!response.ok) {
-        return { valid: false, error: `Failed to validate space: ${response.status}` }
+        return { valid: false, error: `Failed to validate spaces: ${response.status}` }
       }
       const data = await response.json()
-      if (!data.results?.length) {
-        return { valid: false, error: `Space "${spaceKey}" not found` }
+      const results = (data.results as Array<Record<string, unknown>> | undefined) ?? []
+      const foundKeys = new Set(results.map((r) => String(r.key)))
+      const missing = spaceKeys.filter((k) => !foundKeys.has(k))
+      if (missing.length > 0) {
+        return {
+          valid: false,
+          error: `Space${missing.length > 1 ? 's' : ''} not found: ${missing.join(', ')}`,
+        }
       }
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
-      return { valid: false, error: message }
+      return { valid: false, error: toError(error).message || 'Failed to validate configuration' }
     }
   },
-
-  tagDefinitions: [
-    { id: 'labels', displayName: 'Labels', fieldType: 'text' },
-    { id: 'version', displayName: 'Version', fieldType: 'number' },
-    { id: 'lastModified', displayName: 'Last Modified', fieldType: 'date' },
-  ],
 
   mapTags: (metadata: Record<string, unknown>): Record<string, unknown> => {
     const result: Record<string, unknown> = {}
@@ -420,28 +393,11 @@ async function listDocumentsV2(
   const results = data.results || []
 
   const documents: ExternalDocument[] = results.map((page: Record<string, unknown>) => {
-    const pageId = String(page.id)
-    const version = page.version as Record<string, unknown> | undefined
-    const versionNumber = version?.number
-
-    return {
-      externalId: pageId,
-      title: (page.title as string) || 'Untitled',
-      content: '',
-      contentDeferred: true,
-      mimeType: 'text/plain',
-      sourceUrl: (page._links as Record<string, string>)?.webui
-        ? `https://${domain}/wiki${(page._links as Record<string, string>).webui}`
-        : undefined,
-      contentHash: `confluence:${pageId}:${versionNumber ?? ''}`,
-      metadata: {
-        spaceId: page.spaceId,
-        status: page.status,
-        version: versionNumber,
-        labels: [],
-        lastModified: version?.createdAt,
-      },
-    }
+    const links = page._links as Record<string, string> | undefined
+    return pageToStub(page, {
+      spaceId: page.spaceId,
+      sourceUrl: links?.webui ? `https://${domain}/wiki${links.webui}` : undefined,
+    })
   })
 
   let nextCursor: string | undefined
@@ -493,7 +449,11 @@ async function listAllContentTypes(
       pagesDone = parsed.pagesDone === true
       blogsDone = parsed.blogsDone === true
     } catch {
-      pageCursor = cursor
+      /**
+       * Older bare-string cursors are no longer emitted; fall through and
+       * restart instead of silently re-listing blogposts from page 0.
+       */
+      logger.warn('Ignoring unparseable Confluence cursor; restarting listing')
     }
   }
 
@@ -554,7 +514,7 @@ async function listDocumentsViaCql(
   cloudId: string,
   accessToken: string,
   domain: string,
-  spaceKey: string,
+  spaceKeys: string[],
   contentType: string,
   labelFilter: string,
   maxPages: number,
@@ -567,7 +527,7 @@ async function listDocumentsViaCql(
     .filter(Boolean)
 
   // Build CQL query
-  let cql = `space="${escapeCql(spaceKey)}"`
+  let cql = buildSpaceClause(spaceKeys)
 
   if (contentType === 'blogpost') {
     cql += ' AND type="blogpost"'

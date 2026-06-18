@@ -1,17 +1,26 @@
 import { createLogger } from '@sim/logger'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ApiClientError } from '@/lib/api/client/errors'
+import { requestJson } from '@/lib/api/client/request'
+import {
+  createWorkflowMcpServerContract,
+  createWorkflowMcpToolContract,
+  type DeployedWorkflow,
+  deleteWorkflowMcpServerContract,
+  deleteWorkflowMcpToolContract,
+  getWorkflowMcpServerContract,
+  listWorkflowMcpDeployedWorkflowsContract,
+  listWorkflowMcpServersContract,
+  listWorkflowMcpToolsContract,
+  updateWorkflowMcpServerContract,
+  updateWorkflowMcpToolContract,
+  type WorkflowMcpServer,
+  type WorkflowMcpTool,
+} from '@/lib/api/contracts/workflow-mcp-servers'
 
 const logger = createLogger('WorkflowMcpServerQueries')
 
-/**
- * Deployed Workflow type for adding to MCP servers
- */
-export interface DeployedWorkflow {
-  id: string
-  name: string
-  description: string | null
-  isDeployed: boolean
-}
+export type { DeployedWorkflow }
 
 /**
  * Query key factories for Workflow MCP Server queries
@@ -27,35 +36,7 @@ export const workflowMcpServerKeys = {
     [...workflowMcpServerKeys.all, 'deployed-workflows', workspaceId] as const,
 }
 
-/**
- * Workflow MCP Server Types
- */
-export interface WorkflowMcpServer {
-  id: string
-  workspaceId: string
-  createdBy: string
-  name: string
-  description: string | null
-  isPublic: boolean
-  createdAt: string
-  updatedAt: string
-  toolCount?: number
-  toolNames?: string[]
-}
-
-export interface WorkflowMcpTool {
-  id: string
-  serverId: string
-  workflowId: string
-  toolName: string
-  toolDescription: string | null
-  parameterSchema: Record<string, unknown>
-  createdAt: string
-  updatedAt: string
-  workflowName?: string
-  workflowDescription?: string | null
-  isDeployed?: boolean
-}
+export type { WorkflowMcpServer, WorkflowMcpTool }
 
 /**
  * Fetch workflow MCP servers for a workspace
@@ -64,19 +45,18 @@ async function fetchWorkflowMcpServers(
   workspaceId: string,
   signal?: AbortSignal
 ): Promise<WorkflowMcpServer[]> {
-  const response = await fetch(`/api/mcp/workflow-servers?workspaceId=${workspaceId}`, { signal })
-
-  if (response.status === 404) {
-    return []
+  try {
+    const data = await requestJson(listWorkflowMcpServersContract, {
+      query: { workspaceId },
+      signal,
+    })
+    return data.data.servers
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) {
+      return []
+    }
+    throw error
   }
-
-  const data = await response.json()
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Failed to fetch workflow MCP servers')
-  }
-
-  return data.data?.servers || []
 }
 
 /**
@@ -101,19 +81,15 @@ async function fetchWorkflowMcpServer(
   serverId: string,
   signal?: AbortSignal
 ): Promise<{ server: WorkflowMcpServer; tools: WorkflowMcpTool[] }> {
-  const response = await fetch(`/api/mcp/workflow-servers/${serverId}?workspaceId=${workspaceId}`, {
+  const data = await requestJson(getWorkflowMcpServerContract, {
+    params: { id: serverId },
+    query: { workspaceId },
     signal,
   })
 
-  const data = await response.json()
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Failed to fetch workflow MCP server')
-  }
-
   return {
-    server: data.data?.server,
-    tools: data.data?.tools || [],
+    server: data.data.server,
+    tools: data.data.tools,
   }
 }
 
@@ -138,22 +114,19 @@ async function fetchWorkflowMcpTools(
   serverId: string,
   signal?: AbortSignal
 ): Promise<WorkflowMcpTool[]> {
-  const response = await fetch(
-    `/api/mcp/workflow-servers/${serverId}/tools?workspaceId=${workspaceId}`,
-    { signal }
-  )
-
-  if (response.status === 404) {
-    return []
+  try {
+    const data = await requestJson(listWorkflowMcpToolsContract, {
+      params: { id: serverId },
+      query: { workspaceId },
+      signal,
+    })
+    return data.data.tools
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) {
+      return []
+    }
+    throw error
   }
-
-  const data = await response.json()
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Failed to fetch workflow MCP tools')
-  }
-
-  return data.data?.tools || []
 }
 
 /**
@@ -192,23 +165,15 @@ export function useCreateWorkflowMcpServer() {
       isPublic,
       workflowIds,
     }: CreateWorkflowMcpServerParams) => {
-      const response = await fetch('/api/mcp/workflow-servers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspaceId, name, description, isPublic, workflowIds }),
+      const data = await requestJson(createWorkflowMcpServerContract, {
+        body: { workspaceId, name, description, isPublic, workflowIds },
       })
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create workflow MCP server')
-      }
-
       logger.info(`Created workflow MCP server: ${name}`)
-      return data.data?.server as WorkflowMcpServer
+      return data.data.server
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
+    onSettled: (_data, _error, variables) => {
+      return queryClient.invalidateQueries({
         queryKey: workflowMcpServerKeys.servers(variables.workspaceId),
       })
     },
@@ -237,31 +202,24 @@ export function useUpdateWorkflowMcpServer() {
       description,
       isPublic,
     }: UpdateWorkflowMcpServerParams) => {
-      const response = await fetch(
-        `/api/mcp/workflow-servers/${serverId}?workspaceId=${workspaceId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, description, isPublic }),
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update workflow MCP server')
-      }
+      const data = await requestJson(updateWorkflowMcpServerContract, {
+        params: { id: serverId },
+        query: { workspaceId },
+        body: { name, description, isPublic },
+      })
 
       logger.info(`Updated workflow MCP server: ${serverId}`)
-      return data.data?.server as WorkflowMcpServer
+      return data.data.server
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: workflowMcpServerKeys.servers(variables.workspaceId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: workflowMcpServerKeys.server(variables.workspaceId, variables.serverId),
-      })
+    onSettled: (_data, _error, variables) => {
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: workflowMcpServerKeys.servers(variables.workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: workflowMcpServerKeys.server(variables.workspaceId, variables.serverId),
+        }),
+      ])
     },
   })
 }
@@ -279,24 +237,16 @@ export function useDeleteWorkflowMcpServer() {
 
   return useMutation({
     mutationFn: async ({ workspaceId, serverId }: DeleteWorkflowMcpServerParams) => {
-      const response = await fetch(
-        `/api/mcp/workflow-servers/${serverId}?workspaceId=${workspaceId}`,
-        {
-          method: 'DELETE',
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to delete workflow MCP server')
-      }
+      const data = await requestJson(deleteWorkflowMcpServerContract, {
+        params: { id: serverId },
+        query: { workspaceId },
+      })
 
       logger.info(`Deleted workflow MCP server: ${serverId}`)
       return data
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
+    onSettled: (_data, _error, variables) => {
+      return queryClient.invalidateQueries({
         queryKey: workflowMcpServerKeys.servers(variables.workspaceId),
       })
     },
@@ -327,34 +277,27 @@ export function useAddWorkflowMcpTool() {
       toolDescription,
       parameterSchema,
     }: AddWorkflowMcpToolParams) => {
-      const response = await fetch(
-        `/api/mcp/workflow-servers/${serverId}/tools?workspaceId=${workspaceId}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workflowId, toolName, toolDescription, parameterSchema }),
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to add tool to workflow MCP server')
-      }
+      const data = await requestJson(createWorkflowMcpToolContract, {
+        params: { id: serverId },
+        query: { workspaceId },
+        body: { workflowId, toolName, toolDescription, parameterSchema },
+      })
 
       logger.info(`Added tool to workflow MCP server: ${serverId}`)
-      return data.data?.tool as WorkflowMcpTool
+      return data.data.tool
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: workflowMcpServerKeys.servers(variables.workspaceId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: workflowMcpServerKeys.server(variables.workspaceId, variables.serverId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: workflowMcpServerKeys.tools(variables.workspaceId, variables.serverId),
-      })
+    onSettled: (_data, _error, variables) => {
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: workflowMcpServerKeys.servers(variables.workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: workflowMcpServerKeys.server(variables.workspaceId, variables.serverId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: workflowMcpServerKeys.tools(variables.workspaceId, variables.serverId),
+        }),
+      ])
     },
   })
 }
@@ -381,26 +324,17 @@ export function useUpdateWorkflowMcpTool() {
       toolId,
       ...updates
     }: UpdateWorkflowMcpToolParams) => {
-      const response = await fetch(
-        `/api/mcp/workflow-servers/${serverId}/tools/${toolId}?workspaceId=${workspaceId}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updates),
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update tool')
-      }
+      const data = await requestJson(updateWorkflowMcpToolContract, {
+        params: { id: serverId, toolId },
+        query: { workspaceId },
+        body: updates,
+      })
 
       logger.info(`Updated tool ${toolId} in workflow MCP server: ${serverId}`)
-      return data.data?.tool as WorkflowMcpTool
+      return data.data.tool
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
+    onSettled: (_data, _error, variables) => {
+      return queryClient.invalidateQueries({
         queryKey: workflowMcpServerKeys.tools(variables.workspaceId, variables.serverId),
       })
     },
@@ -421,32 +355,26 @@ export function useDeleteWorkflowMcpTool() {
 
   return useMutation({
     mutationFn: async ({ workspaceId, serverId, toolId }: DeleteWorkflowMcpToolParams) => {
-      const response = await fetch(
-        `/api/mcp/workflow-servers/${serverId}/tools/${toolId}?workspaceId=${workspaceId}`,
-        {
-          method: 'DELETE',
-        }
-      )
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to delete tool')
-      }
+      const data = await requestJson(deleteWorkflowMcpToolContract, {
+        params: { id: serverId, toolId },
+        query: { workspaceId },
+      })
 
       logger.info(`Deleted tool ${toolId} from workflow MCP server: ${serverId}`)
       return data
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: workflowMcpServerKeys.servers(variables.workspaceId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: workflowMcpServerKeys.server(variables.workspaceId, variables.serverId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: workflowMcpServerKeys.tools(variables.workspaceId, variables.serverId),
-      })
+    onSettled: (_data, _error, variables) => {
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: workflowMcpServerKeys.servers(variables.workspaceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: workflowMcpServerKeys.server(variables.workspaceId, variables.serverId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: workflowMcpServerKeys.tools(variables.workspaceId, variables.serverId),
+        }),
+      ])
     },
   })
 }
@@ -458,20 +386,17 @@ async function fetchDeployedWorkflows(
   workspaceId: string,
   signal?: AbortSignal
 ): Promise<DeployedWorkflow[]> {
-  const response = await fetch(`/api/workflows?workspaceId=${workspaceId}`, { signal })
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch workflows')
-  }
-
-  const { data }: { data: any[] } = await response.json()
+  const { data } = await requestJson(listWorkflowMcpDeployedWorkflowsContract, {
+    query: { workspaceId },
+    signal,
+  })
 
   return data
     .filter((w) => w.isDeployed)
     .map((w) => ({
       id: w.id,
       name: w.name,
-      description: w.description,
+      description: w.description ?? null,
       isDeployed: w.isDeployed,
     }))
 }

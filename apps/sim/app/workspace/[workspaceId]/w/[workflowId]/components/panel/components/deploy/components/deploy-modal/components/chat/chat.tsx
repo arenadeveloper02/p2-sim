@@ -2,16 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { AlertTriangle, Check, Clipboard, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react'
+import { getErrorMessage } from '@sim/utils/errors'
+import { AlertTriangle, Check, Clipboard, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import {
   Button,
+  ChipConfirmModal,
+  ChipInput,
   Input,
   Label,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
+  Loader,
   Skeleton,
   TagInput,
   type TagItem,
@@ -33,6 +32,7 @@ import {
   useDeleteChat,
   useUpdateChat,
 } from '@/hooks/queries/chats'
+import type { ChatDetail } from '@/hooks/queries/deployments'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { useIdentifierValidation } from './hooks'
 import {
@@ -43,6 +43,27 @@ import {
 } from './utils'
 
 const logger = createLogger('ChatDeploy')
+
+function dedupeStrings(values: readonly string[]): string[] {
+  const seen: Record<string, true> = {}
+  const result: string[] = []
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i]
+    if (!seen[value]) {
+      seen[value] = true
+      result.push(value)
+    }
+  }
+  return result
+}
+
+function stringLookup(values: readonly string[]): Record<string, true> {
+  const lookup: Record<string, true> = {}
+  for (let i = 0; i < values.length; i++) {
+    lookup[values[i]] = true
+  }
+  return lookup
+}
 
 const IDENTIFIER_PATTERN = /^[a-z0-9-]+$/
 
@@ -66,23 +87,7 @@ interface ChatDeployProps {
   chatAlreadyExists?: boolean | any
 }
 
-export interface ExistingChat {
-  id: string
-  identifier: string
-  title: string
-  description: string
-  department?: string
-  authType: 'public' | 'password' | 'email' | 'sso'
-  allowedEmails: string[]
-  outputConfigs: Array<{ blockId: string; path: string }>
-  customizations?: {
-    welcomeMessage?: string
-    imageUrl?: string
-    goldenQueries?: string[]
-  }
-  hasPassword: boolean
-  isActive: boolean
-}
+export type ExistingChat = ChatDetail
 
 interface FormErrors {
   identifier?: string
@@ -169,7 +174,7 @@ export function ChatDeploy({
   const deleteChatMutation = useDeleteChat()
   const [isIdentifierValid, setIsIdentifierValid] = useState(false)
   const [hasInvalidEmails, setHasInvalidEmails] = useState(false)
-  const [hasInitializedForm, setHasInitializedForm] = useState(false)
+  const hasInitializedFormRef = useRef(false)
   const existingPassword = hasExistingPassword(existingChat)
 
   /** When switching workflows, clear form + init flags so we never show the previous workflow's chat/API-derived fields. */
@@ -181,7 +186,7 @@ export function ChatDeploy({
     ) {
       setFormData({ ...initialFormData, identifier: workflowId || '' })
       setImageUrl(null)
-      setHasInitializedForm(false)
+      hasInitializedFormRef.current = false
       hasSetDefaultKnowledgeOutputs.current = false
       setErrors({})
     }
@@ -232,7 +237,7 @@ export function ChatDeploy({
     }
 
     if (!formData.department?.trim()) {
-      newErrors.general = 'Department is required'
+      newErrors.general = 'Category is required'
     }
 
     setErrors(newErrors)
@@ -262,14 +267,13 @@ export function ChatDeploy({
   }, [workflowId])
 
   useEffect(() => {
-    if (existingChat && !hasInitializedForm) {
+    if (existingChat && !hasInitializedFormRef.current) {
       // Deduplicate emails when initializing from existingChat
       const allowedEmails = Array.isArray(existingChat.allowedEmails)
         ? existingChat.allowedEmails
         : []
       const normalizedEmails = allowedEmails.map((e) => e.toLowerCase().trim())
-      const uniqueEmails = Array.from(new Set(normalizedEmails))
-
+      const uniqueEmails = dedupeStrings(normalizedEmails)
       setFormData({
         identifier: existingChat.identifier || workflowId || '',
         title: existingChat.title || '',
@@ -296,14 +300,14 @@ export function ChatDeploy({
         setImageUrl(existingChat.customizations.imageUrl)
       }
 
-      setHasInitializedForm(true)
+      hasInitializedFormRef.current = true
     } else if (!existingChat && !isLoadingChat) {
       setFormData(initialFormData)
       setImageUrl(null)
-      setHasInitializedForm(false)
+      hasInitializedFormRef.current = false
       hasSetDefaultKnowledgeOutputs.current = false
     }
-  }, [existingChat, isLoadingChat, hasInitializedForm])
+  }, [existingChat, isLoadingChat])
 
   useEffect(() => {
     if (
@@ -385,7 +389,6 @@ export function ChatDeploy({
         const result = await createChatMutation.mutateAsync({
           workflowId,
           formData,
-          apiKey: deploymentInfo?.apiKey,
           imageUrl,
         })
         chatUrl = result.chatUrl
@@ -399,14 +402,15 @@ export function ChatDeploy({
         window.open(url, '_blank', 'noopener,noreferrer')
       }
 
+      hasInitializedFormRef.current = false
       await onRefetchChat()
-      setHasInitializedForm(false)
       setFormInitCounter((c) => c + 1)
-    } catch (error: any) {
-      if (error.message?.includes('identifier')) {
-        setError('identifier', error.message)
+    } catch (error: unknown) {
+      const message = getErrorMessage(error)
+      if (message.includes('identifier')) {
+        setError('identifier', message)
       } else {
-        setError('general', error.message)
+        setError('general', message)
       }
     } finally {
       setChatSubmitting(false)
@@ -423,14 +427,14 @@ export function ChatDeploy({
       })
 
       setImageUrl(null)
-      setHasInitializedForm(false)
+      hasInitializedFormRef.current = false
       setFormInitCounter((c) => c + 1)
       await onRefetchChat()
 
       onDeploymentComplete?.()
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Failed to delete chat:', error)
-      setError('general', error.message || 'An unexpected error occurred while deleting')
+      setError('general', getErrorMessage(error) || 'An unexpected error occurred while deleting')
     } finally {
       setShowDeleteConfirmation(false)
     }
@@ -449,8 +453,8 @@ export function ChatDeploy({
         className='-mx-1 space-y-4 overflow-y-auto px-1'
       >
         {errors.general && (
-          <div className='flex items-center gap-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-red-400 text-small'>
-            <AlertTriangle className='h-4 w-4 flex-shrink-0' />
+          <div className='flex items-center gap-2 rounded-md border border-[color-mix(in_srgb,var(--text-error)_20%,transparent)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] px-3 py-2 text-[var(--text-error)] text-small'>
+            <AlertTriangle className='size-4 flex-shrink-0' />
             <span>{errors.general}</span>
           </div>
         )}
@@ -471,7 +475,7 @@ export function ChatDeploy({
           >
             Title
           </Label>
-          <Input
+          <ChipInput
             id='title'
             placeholder='Customer Support Assistant'
             value={formData.title}
@@ -485,13 +489,13 @@ export function ChatDeploy({
         <div className='space-y-[12px]'>
           <div>
             <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
-              Department
+              Category
             </Label>
             <CustomSelect
               value={formData.department || ''}
               onChange={(value) => updateField('department', value)}
               disabled={chatSubmitting}
-              placeholder='Select department'
+              placeholder='Select category'
               options={CATEGORIES.map((cat) => ({ value: cat.value, label: cat.label }))}
             />
           </div>
@@ -526,9 +530,12 @@ export function ChatDeploy({
               onOutputSelect={handleOutputSelect}
               placeholder='Select which block outputs to use'
               disabled={chatSubmitting}
+              className='w-full'
             />
             {errors.outputBlocks && (
-              <p className='mt-1 text-destructive text-sm'>{errors.outputBlocks}</p>
+              <p className='mt-[6.5px] text-[var(--text-error)] text-caption'>
+                {errors.outputBlocks}
+              </p>
             )}
           </div>
 
@@ -597,70 +604,47 @@ export function ChatDeploy({
             type='button'
             data-delete-trigger
             onClick={() => setShowDeleteConfirmation(true)}
-            style={{ display: 'none' }}
+            className='hidden'
           />
         </div>
       </form>
 
-      <Modal open={showDeleteConfirmation} onOpenChange={setShowDeleteConfirmation}>
-        <ModalContent size='sm'>
-          <ModalHeader>Delete Chat</ModalHeader>
-          <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
-              Are you sure you want to delete{' '}
-              <span className='font-medium text-[var(--text-primary)]'>
-                {existingChat?.title || 'this chat'}
-              </span>
-              ?{' '}
-              <span className='text-[var(--text-error)]'>
-                This will remove the chat at "{getEmailDomain()}/chat/{existingChat?.identifier}"
-                and make it unavailable to all users.
-              </span>{' '}
-              This action cannot be undone.
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant='default'
-              onClick={() => setShowDeleteConfirmation(false)}
-              disabled={deleteChatMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant='destructive'
-              onClick={handleDelete}
-              disabled={deleteChatMutation.isPending}
-            >
-              {deleteChatMutation.isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      <Modal
+      <ChipConfirmModal
+        open={showDeleteConfirmation}
+        onOpenChange={setShowDeleteConfirmation}
+        srTitle='Delete Chat'
+        title='Delete Chat'
+        text={[
+          'Are you sure you want to delete ',
+          { text: existingChat?.title || 'this chat', bold: true },
+          '? ',
+          {
+            text: `This will remove the chat at "${getEmailDomain()}/chat/${existingChat?.identifier ?? ''}" and make it unavailable to all users.`,
+            error: true,
+          },
+          ' This action cannot be undone.',
+        ]}
+        confirm={{
+          label: 'Delete',
+          onClick: handleDelete,
+          pending: deleteChatMutation.isPending,
+          pendingLabel: 'Deleting...',
+        }}
+      />
+      <ChipConfirmModal
         open={showUnselectKnowledgeConfirm}
         onOpenChange={(open) => {
           if (!open) handleCancelUnselectKnowledge()
         }}
-      >
-        <ModalContent size='sm'>
-          <ModalHeader>Unselect knowledge base results</ModalHeader>
-          <ModalBody>
-            <p className='text-[12px] text-[var(--text-secondary)]'>
-              Knowledge base reference will not be shown for the generated output.
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant='tertiary' onClick={handleCancelUnselectKnowledge}>
-              Cancel
-            </Button>
-            <Button variant='default' onClick={handleConfirmUnselectKnowledge}>
-              Continue
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+        srTitle='Unselect knowledge base results'
+        title='Unselect knowledge base results'
+        // description='Knowledge base reference will not be shown for the generated output.'
+        confirm={{
+          label: 'Continue',
+          variant: 'primary',
+          onClick: handleConfirmUnselectKnowledge,
+        }}
+      />
     </>
   )
 }
@@ -746,11 +730,11 @@ function IdentifierInput({
       </Label>
       <div
         className={cn(
-          'relative flex items-stretch overflow-hidden rounded-sm border border-[var(--border-1)]',
+          'relative flex items-stretch overflow-hidden rounded-sm border border-[var(--border-1)] bg-[var(--surface-5)]',
           error && 'border-[var(--text-error)]'
         )}
       >
-        <div className='flex items-center whitespace-nowrap bg-[var(--surface-5)] pr-1.5 pl-2 font-medium text-[var(--text-secondary)] text-sm dark:bg-[var(--surface-5)]'>
+        <div className='flex items-center whitespace-nowrap bg-[var(--surface-5)] pr-1.5 pl-2 font-medium text-[var(--text-secondary)] text-sm'>
           {getDomainPrefix()}
         </div>
         <div className='relative flex-1'>
@@ -762,13 +746,13 @@ function IdentifierInput({
             required
             disabled={disabled}
             className={cn(
-              'rounded-none border-0 pl-0 shadow-none disabled:bg-transparent disabled:opacity-100',
+              'rounded-none border-0 bg-transparent pl-0 shadow-none disabled:bg-transparent disabled:opacity-100',
               (isChecking || (isValid && value)) && 'pr-8'
             )}
           />
           {isChecking ? (
             <div className='-translate-y-1/2 absolute top-1/2 right-2'>
-              <Loader2 className='h-4 w-4 animate-spin text-[var(--text-tertiary)]' />
+              <Loader className='size-4 text-[var(--text-tertiary)]' animate />
             </div>
           ) : (
             isValid &&
@@ -777,7 +761,7 @@ function IdentifierInput({
               <Tooltip.Root>
                 <Tooltip.Trigger asChild>
                   <div className='-translate-y-1/2 absolute top-1/2 right-2'>
-                    <Check className='h-4 w-4 text-[var(--brand-accent)]' />
+                    <Check className='size-4 text-[var(--brand-accent)]' />
                   </div>
                 </Tooltip.Trigger>
                 <Tooltip.Content>
@@ -848,14 +832,20 @@ function AuthSelector({
   const [showPassword, setShowPassword] = useState(false)
   const [emailError, setEmailError] = useState('')
   const [copySuccess, setCopySuccess] = useState(false)
-  const [invalidEmails, setInvalidEmails] = useState<string[]>([])
-  const [emailValidationErrors, setEmailValidationErrors] = useState<Map<string, string>>(new Map())
-  /** Tracks if we already prefilled session email once; prevents re-adding when user clears the list (create mode). */
+  const [invalidEmailItems, setInvalidEmailItems] = useState<TagItem[]>([])
   const hasPrefilledSessionEmailRef = useRef(false)
 
+  const emailsRef = useRef(emails)
+  const invalidEmailItemsRef = useRef(invalidEmailItems)
+
   useEffect(() => {
-    onInvalidEmailsChange?.(invalidEmails.length > 0)
-  }, [invalidEmails, onInvalidEmailsChange])
+    emailsRef.current = emails
+  }, [emails])
+
+  useEffect(() => {
+    onInvalidEmailsChange?.(invalidEmailItems.length > 0)
+  }, [invalidEmailItems, onInvalidEmailsChange])
+
   const [emailItems, setEmailItems] = useState<TagItem[]>(() =>
     emails.map((email) => ({ value: email, isValid: true }))
   )
@@ -864,37 +854,37 @@ function AuthSelector({
   // Keep invalid items in emailItems even if not in emails (to show red badges)
   useEffect(() => {
     const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
-    const uniqueEmails = Array.from(new Set(normalizedEmails))
-    const currentValues = new Set(emailItems.map((item) => item.value.toLowerCase().trim()))
+    const uniqueEmails = dedupeStrings(normalizedEmails)
+    const currentValues = stringLookup(emailItems.map((item) => item.value.toLowerCase().trim()))
 
-    // Create a map of existing items to preserve isValid state
-    const existingItemsMap = new Map(
-      emailItems.map((item) => [item.value.toLowerCase().trim(), item])
-    )
+    const existingItemsMap: Record<string, TagItem> = {}
+    for (let i = 0; i < emailItems.length; i++) {
+      const item = emailItems[i]
+      existingItemsMap[item.value.toLowerCase().trim()] = item
+    }
 
-    // Include invalid emails in the items to display (for red badges)
-    const invalidEmailValues = new Set(invalidEmails.map((e) => e.toLowerCase().trim()))
-    const allEmailValues = new Set([...uniqueEmails, ...invalidEmailValues])
+    const invalidEmailNormalized = invalidEmailItems.map((item) => item.value.toLowerCase().trim())
+    const invalidEmailValues = stringLookup(invalidEmailNormalized)
+    const allEmailValues = dedupeStrings(uniqueEmails.concat(invalidEmailNormalized))
+    const allEmailValuesLookup = stringLookup(allEmailValues)
 
-    // Only update if there's a mismatch
     const needsUpdate =
-      allEmailValues.size !== emailItems.length ||
-      !Array.from(allEmailValues).every((email) => currentValues.has(email)) ||
-      !emailItems.every((item) => allEmailValues.has(item.value.toLowerCase().trim()))
+      allEmailValues.length !== emailItems.length ||
+      !allEmailValues.every((email) => currentValues[email]) ||
+      !emailItems.every((item) => allEmailValuesLookup[item.value.toLowerCase().trim()])
 
     if (needsUpdate) {
       setEmailItems(
-        Array.from(allEmailValues).map((email) => {
-          const existing = existingItemsMap.get(email)
-          // If email is in invalidEmails, mark as invalid
-          const isInvalid = invalidEmailValues.has(email)
+        allEmailValues.map((email) => {
+          const existing = existingItemsMap[email]
+          const isInvalid = Boolean(invalidEmailValues[email])
           return existing
             ? { ...existing, isValid: isInvalid ? false : existing.isValid }
             : { value: email, isValid: !isInvalid }
         })
       )
     }
-  }, [emails, invalidEmails])
+  }, [emails, invalidEmailItems])
   useEffect(() => {
     if (!copySuccess) return
     const timer = setTimeout(() => setCopySuccess(false), 2000)
@@ -919,15 +909,23 @@ function AuthSelector({
     const validation = quickValidateEmail(normalized)
     const isValid = validation.isValid || isDomainPattern
 
-    if (emailItems.some((item) => item.value === normalized)) {
+    if (
+      emailsRef.current.includes(normalized) ||
+      invalidEmailItemsRef.current.some((item) => item.value === normalized)
+    ) {
       return false
     }
 
-    setEmailItems((prev) => [...prev, { value: normalized, isValid }])
-
     if (isValid) {
       setEmailError('')
-      onEmailsChange([...emails, normalized])
+      emailsRef.current = [...emailsRef.current, normalized]
+      onEmailsChange(emailsRef.current)
+    } else {
+      invalidEmailItemsRef.current = [
+        ...invalidEmailItemsRef.current,
+        { value: normalized, isValid, error: validation.reason ?? 'Invalid email format' },
+      ]
+      setInvalidEmailItems(invalidEmailItemsRef.current)
     }
 
     // Skip validation for domain emails (starting with @)
@@ -971,16 +969,11 @@ function AuthSelector({
             : `The user "${normalized}" does not have access to Agentic AI.`
 
         setEmailError(errorMessage)
-        setEmailValidationErrors((prev) => {
-          const next = new Map(prev)
-          next.set(normalized, errorMessage)
-          return next
-        })
-        setInvalidEmails((prev) => {
-          if (!prev.includes(normalized)) {
-            return [...prev, normalized]
+        setInvalidEmailItems((prev) => {
+          if (prev.some((item) => item.value === normalized)) {
+            return prev
           }
-          return prev
+          return [...prev, { value: normalized, isValid: false }]
         })
         return false
       }
@@ -988,13 +981,8 @@ function AuthSelector({
       // Email is valid and exists
       if (data.valid && data.existingEmails.includes(normalized)) {
         setEmailError('')
-        setEmailValidationErrors((prev) => {
-          const next = new Map(prev)
-          next.delete(normalized)
-          return next
-        })
         // Remove from invalidEmails if it was there
-        setInvalidEmails((prev) => prev.filter((e) => e !== normalized))
+        setInvalidEmailItems((prev) => prev.filter((item) => item.value !== normalized))
         // Update emailItems to mark as valid
         setEmailItems((prev) =>
           prev.map((item) => (item.value === normalized ? { ...item, isValid: true } : item))
@@ -1006,12 +994,7 @@ function AuthSelector({
       // If valid is true but email not in existingEmails, still keep it
       if (data.valid) {
         setEmailError('')
-        setEmailValidationErrors((prev) => {
-          const next = new Map(prev)
-          next.delete(normalized)
-          return next
-        })
-        setInvalidEmails((prev) => prev.filter((e) => e !== normalized))
+        setInvalidEmailItems((prev) => prev.filter((item) => item.value !== normalized))
         setEmailItems((prev) =>
           prev.map((item) => (item.value === normalized ? { ...item, isValid: true } : item))
         )
@@ -1027,11 +1010,11 @@ function AuthSelector({
       setEmailError(
         `The user "${normalized}" does not exist in the system. Please add a user that exists.`
       )
-      setInvalidEmails((prev) => {
-        if (!prev.includes(normalized)) {
-          return [...prev, normalized]
+      setInvalidEmailItems((prev) => {
+        if (prev.some((item) => item.value === normalized)) {
+          return prev
         }
-        return prev
+        return [...prev, { value: normalized, isValid: false }]
       })
       return false
     } catch (error) {
@@ -1044,43 +1027,30 @@ function AuthSelector({
       setEmailError(
         `Failed to validate "${normalized}". Please verify the email exists and try again.`
       )
-      setInvalidEmails((prev) => {
-        if (!prev.includes(normalized)) {
-          return [...prev, normalized]
+      setInvalidEmailItems((prev) => {
+        if (prev.some((item) => item.value === normalized)) {
+          return prev
         }
-        return prev
+        return [...prev, { value: normalized, isValid: false }]
       })
       return false
     }
   }
 
-  const handleRemoveEmailItem = (_value: string, index: number, isValid: boolean) => {
+  const handleRemoveEmailItem = (_value: string, index: number) => {
     setEmailError('')
     const itemToRemove = emailItems[index]
     if (!itemToRemove) return
 
-    const emailToRemove = itemToRemove.value.toLowerCase().trim()
-
-    // Remove from emailItems
-    setEmailItems((prev) => prev.filter((_, i) => i !== index))
-
-    // Remove from emails if it was valid
-    if (isValid) {
-      onEmailsChange(emails.filter((e) => e.toLowerCase().trim() !== emailToRemove))
+    if (itemToRemove.isValid) {
+      emailsRef.current = emailsRef.current.filter((e) => e !== itemToRemove.value)
+      onEmailsChange(emailsRef.current)
+    } else {
+      invalidEmailItemsRef.current = invalidEmailItemsRef.current.filter(
+        (item) => item.value !== itemToRemove.value
+      )
+      setInvalidEmailItems(invalidEmailItemsRef.current)
     }
-
-    // Also remove from invalidEmails and emailValidationErrors to prevent re-adding
-    setInvalidEmails((prev) => prev.filter((e) => e.toLowerCase().trim() !== emailToRemove))
-    setEmailValidationErrors((prev) => {
-      const next = new Map(prev)
-      // Remove any entries that match this email (case-insensitive)
-      for (const [key] of Array.from(next.entries())) {
-        if (typeof key === 'string' && key.toLowerCase().trim() === emailToRemove) {
-          next.delete(key)
-        }
-      }
-      return next
-    })
   }
 
   const handleRemoveEmail = (emailToRemove: string) => {
@@ -1090,16 +1060,6 @@ function AuthSelector({
       return
     }
     onEmailsChange(emails.filter((e) => e !== emailToRemove))
-  }
-
-  const handleRemoveInvalidEmail = (index: number) => {
-    const emailToRemove = invalidEmails[index]
-    setInvalidEmails((prev) => prev.filter((_, i) => i !== index))
-    setEmailValidationErrors((prev) => {
-      const next = new Map(prev)
-      next.delete(emailToRemove)
-      return next
-    })
   }
 
   /** Reset prefill ref when in edit mode so create mode can prefill again on next open. */
@@ -1118,7 +1078,7 @@ function AuthSelector({
 
     const sessionEmail = session.user.email.toLowerCase().trim()
     const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
-    const normalizedInvalidEmails = invalidEmails.map((e) => e.toLowerCase().trim())
+    const normalizedInvalidEmails = invalidEmailItems.map((item) => item.value.toLowerCase().trim())
     const normalizedEmailItems = emailItems.map((item) => item.value.toLowerCase().trim())
 
     const alreadyInList =
@@ -1166,75 +1126,74 @@ function AuthSelector({
           <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
             Password
           </Label>
-          <div className='relative'>
-            <Input
-              type={showPassword ? 'text' : 'password'}
-              placeholder={getPasswordPlaceholder(hasExistingPassword)}
-              value={password}
-              onChange={(e) => onPasswordChange(e.target.value)}
-              disabled={disabled}
-              className='pr-[88px]'
-              required={!hasExistingPassword}
-              autoComplete='new-password'
-            />
-            <div className='-translate-y-1/2 absolute top-1/2 right-[4px] flex items-center'>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <Button
-                    type='button'
-                    variant='ghost'
-                    onClick={handleGeneratePassword}
-                    disabled={disabled}
-                    aria-label='Generate password'
-                    className='!p-1.5'
-                  >
-                    <RefreshCw className='h-3 w-3' />
-                  </Button>
-                </Tooltip.Trigger>
-                <Tooltip.Content>
-                  <span>Generate</span>
-                </Tooltip.Content>
-              </Tooltip.Root>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <Button
-                    type='button'
-                    variant='ghost'
-                    onClick={() => copyToClipboard(password)}
-                    disabled={!password || disabled}
-                    aria-label='Copy password'
-                    className='!p-1.5'
-                  >
-                    {copySuccess ? (
-                      <Check className='h-3 w-3' />
-                    ) : (
-                      <Clipboard className='h-3 w-3' />
-                    )}
-                  </Button>
-                </Tooltip.Trigger>
-                <Tooltip.Content>
-                  <span>{copySuccess ? 'Copied' : 'Copy'}</span>
-                </Tooltip.Content>
-              </Tooltip.Root>
-              <Tooltip.Root>
-                <Tooltip.Trigger asChild>
-                  <Button
-                    type='button'
-                    variant='ghost'
-                    onClick={() => setShowPassword(!showPassword)}
-                    disabled={disabled}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    className='!p-1.5'
-                  >
-                    {showPassword ? <EyeOff className='h-3 w-3' /> : <Eye className='h-3 w-3' />}
-                  </Button>
-                </Tooltip.Trigger>
-                <Tooltip.Content>
-                  <span>{showPassword ? 'Hide' : 'Show'}</span>
-                </Tooltip.Content>
-              </Tooltip.Root>
-            </div>
-          </div>
+          <ChipInput
+            type={showPassword ? 'text' : 'password'}
+            placeholder={getPasswordPlaceholder(hasExistingPassword)}
+            value={password}
+            onChange={(e) => onPasswordChange(e.target.value)}
+            disabled={disabled}
+            required={!hasExistingPassword}
+            autoComplete='new-password'
+            endAdornment={
+              <div className='flex items-center'>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      onClick={handleGeneratePassword}
+                      disabled={disabled}
+                      aria-label='Generate password'
+                      className='!p-1.5'
+                    >
+                      <RefreshCw className='size-3' />
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>
+                    <span>Generate</span>
+                  </Tooltip.Content>
+                </Tooltip.Root>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      onClick={() => copyToClipboard(password)}
+                      disabled={!password || disabled}
+                      aria-label='Copy password'
+                      className='!p-1.5'
+                    >
+                      {copySuccess ? (
+                        <Check className='size-3' />
+                      ) : (
+                        <Clipboard className='size-3' />
+                      )}
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>
+                    <span>{copySuccess ? 'Copied' : 'Copy'}</span>
+                  </Tooltip.Content>
+                </Tooltip.Root>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      onClick={() => setShowPassword(!showPassword)}
+                      disabled={disabled}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      className='!p-1.5'
+                    >
+                      {showPassword ? <EyeOff className='size-3' /> : <Eye className='size-3' />}
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>
+                    <span>{showPassword ? 'Hide' : 'Show'}</span>
+                  </Tooltip.Content>
+                </Tooltip.Root>
+              </div>
+            }
+          />
           <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
             {getPasswordHelperText(hasExistingPassword)}
           </p>
@@ -1254,7 +1213,7 @@ function AuthSelector({
             }}
             onRemove={handleRemoveEmailItem}
             placeholder={
-              emails.length > 0 || invalidEmails.length > 0
+              emails.length > 0 || invalidEmailItems.length > 0
                 ? 'Add another email'
                 : 'Enter emails or domains (@example.com)'
             }

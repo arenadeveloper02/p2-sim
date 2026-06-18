@@ -1,4 +1,4 @@
-import { createEnvMock, featureFlagsMock } from '@sim/testing'
+import { createEnvMock, envFlagsMock } from '@sim/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/core/config/env', () =>
@@ -34,7 +34,7 @@ vi.mock('../config/env', () =>
   })
 )
 
-vi.mock('@/lib/core/config/feature-flags', () => featureFlagsMock)
+vi.mock('@/lib/core/config/env-flags', () => envFlagsMock)
 
 import {
   addCSPSource,
@@ -248,7 +248,7 @@ describe('generateRuntimeCSP', () => {
 })
 
 describe('addCSPSource', () => {
-  const originalDirectives = JSON.parse(JSON.stringify(buildTimeCSPDirectives))
+  const originalDirectives = structuredClone(buildTimeCSPDirectives)
 
   afterEach(() => {
     Object.keys(buildTimeCSPDirectives).forEach((key) => {
@@ -285,7 +285,7 @@ describe('addCSPSource', () => {
 })
 
 describe('removeCSPSource', () => {
-  const originalDirectives = JSON.parse(JSON.stringify(buildTimeCSPDirectives))
+  const originalDirectives = structuredClone(buildTimeCSPDirectives)
 
   afterEach(() => {
     Object.keys(buildTimeCSPDirectives).forEach((key) => {
@@ -344,5 +344,23 @@ describe('buildTimeCSPDirectives', () => {
 
   it('should allow QuickChart chart image previews', () => {
     expect(buildTimeCSPDirectives['img-src']).toContain('https://quickchart.io')
+  })
+})
+
+describe('getChatEmbedCSPPolicy', () => {
+  it('allows iframe embedding from any origin', () => {
+    expect(getChatEmbedCSPPolicy()).toContain('frame-ancestors *')
+  })
+
+  it('allows Office.js to load from Microsoft for Excel/Word add-in embedding', () => {
+    const policy = getChatEmbedCSPPolicy()
+    expect(policy).toMatch(/script-src[^;]*https:\/\/appsforoffice\.microsoft\.com/)
+    expect(policy).toMatch(/connect-src[^;]*https:\/\/appsforoffice\.microsoft\.com/)
+  })
+
+  it('does not regress object-src or base-uri restrictions', () => {
+    const policy = getChatEmbedCSPPolicy()
+    expect(policy).toContain("object-src 'none'")
+    expect(policy).toContain("base-uri 'self'")
   })
 })

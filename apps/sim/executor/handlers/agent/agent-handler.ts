@@ -4,10 +4,14 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { normalizeStringRecord, normalizeWorkflowVariables } from '@/lib/core/utils/records'
 import { createMcpToolId } from '@/lib/mcp/utils'
+import { processFilesToUserFiles, type RawFileInput } from '@/lib/uploads/utils/file-utils'
+import { hydrateUserFilesWithBase64 } from '@/lib/uploads/utils/user-file-base64.server'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import {
   validateBlockType,
   validateCustomToolsAllowed,
@@ -35,9 +39,14 @@ import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
 import { stringifyJSON } from '@/executor/utils/json'
 import { resolveVertexCredential } from '@/executor/utils/vertex-credential'
 import { executeProviderRequest } from '@/providers'
+import {
+  INLINE_ATTACHMENT_THRESHOLD_BYTES,
+  shouldUseLargeFilePath,
+  supportsFileAttachments,
+} from '@/providers/attachments'
 import { getProviderFromModel, transformBlockTool } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
-import { filterSchemaForLLM } from '@/tools/params'
+import { filterSchemaForLLM, type ToolSchema } from '@/tools/params'
 import { getTool } from '@/tools/utils'
 import { getToolAsync } from '@/tools/utils.server'
 
@@ -178,12 +187,22 @@ export class AgentBlockHandler implements BlockHandler {
     const lastUserMessage: Message | null = originalUserPrompt
       ? { role: 'user', content: originalUserPrompt }
       : messages?.filter((m) => m.role === 'user').slice(-1)[0] || null
+    const messagesWithInputFiles = this.attachFilesToLastUserMessage(
+      ctx,
+      messages,
+      filteredInputs.files
+    )
+    const messagesWithFiles = await this.hydrateMessageFilesForProvider(
+      ctx,
+      messagesWithInputFiles,
+      providerId
+    )
 
     const providerRequest = this.buildProviderRequest({
       ctx,
       providerId,
       model,
-      messages,
+      messages: messagesWithFiles,
       inputs: filteredInputs,
       formattedTools,
       responseFormat,
@@ -677,15 +696,11 @@ export class AgentBlockHandler implements BlockHandler {
     serverId: string
     toolName: string
     description: string
-    schema: Record<string, unknown>
+    schema: ToolSchema
     userProvidedParams: Record<string, unknown>
     usageControl?: 'auto' | 'force' | 'none'
   }) {
-    const { filterSchemaForLLM } = await import('@/tools/params')
-    const filteredSchema = filterSchemaForLLM(
-      config.schema as unknown as Parameters<typeof filterSchemaForLLM>[0],
-      config.userProvidedParams as Record<string, unknown>
-    )
+    const filteredSchema = filterSchemaForLLM(config.schema, config.userProvidedParams)
     const toolId = createMcpToolId(config.serverId, config.toolName)
 
     return {
@@ -851,6 +866,101 @@ export class AgentBlockHandler implements BlockHandler {
     return messages.length > 0 ? messages : undefined
   }
 
+  private attachFilesToLastUserMessage(
+    ctx: ExecutionContext,
+    messages: Message[] | undefined,
+    filesInput: unknown
+  ): Message[] | undefined {
+    const normalizedFiles = normalizeFileInput(filesInput)
+    if (!normalizedFiles || normalizedFiles.length === 0) {
+      return messages
+    }
+
+    if (!messages || messages.length === 0) {
+      throw new Error('Files require at least one user message in the agent prompt')
+    }
+
+    let lastUserMessageIndex = -1
+    for (let index = messages.length - 1; index >= 0; index--) {
+      if (messages[index].role === 'user') {
+        lastUserMessageIndex = index
+        break
+      }
+    }
+    if (lastUserMessageIndex === -1) {
+      throw new Error('Files require at least one user message in the agent prompt')
+    }
+
+    const requestId = ctx.executionId || ctx.workflowId || 'agent-files'
+    const userFiles = processFilesToUserFiles(normalizedFiles as RawFileInput[], requestId, logger)
+    if (userFiles.length === 0) {
+      throw new Error('Files must include at least one valid file object')
+    }
+
+    const lastUserMessage = messages[lastUserMessageIndex]
+    const nextMessages = [...messages]
+    nextMessages[lastUserMessageIndex] = {
+      ...lastUserMessage,
+      files: [...(lastUserMessage.files ?? []), ...userFiles],
+    }
+
+    return nextMessages
+  }
+
+  private async hydrateMessageFilesForProvider(
+    ctx: ExecutionContext,
+    messages: Message[] | undefined,
+    providerId: string
+  ): Promise<Message[] | undefined> {
+    if (!messages?.some((message) => message.files?.length)) {
+      return messages
+    }
+
+    if (!supportsFileAttachments(providerId)) {
+      throw new Error(`File attachments are not supported for provider "${providerId}"`)
+    }
+
+    const requestId = ctx.executionId || ctx.workflowId || 'agent-files'
+    const nextMessages = [...messages]
+
+    for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
+      const message = messages[messageIndex]
+      if (!message.files?.length) {
+        continue
+      }
+
+      const hydratedFiles = await hydrateUserFilesWithBase64(message.files, {
+        requestId,
+        workspaceId: ctx.workspaceId,
+        workflowId: ctx.workflowId,
+        executionId: ctx.executionId,
+        largeValueExecutionIds: ctx.largeValueExecutionIds,
+        largeValueKeys: ctx.largeValueKeys,
+        fileKeys: ctx.fileKeys,
+        allowLargeValueWorkflowScope: ctx.allowLargeValueWorkflowScope,
+        userId: ctx.userId,
+        logger,
+        maxBytes: INLINE_ATTACHMENT_THRESHOLD_BYTES,
+      })
+
+      const missingFile = hydratedFiles.find(
+        (file) => !file.base64 && !shouldUseLargeFilePath(file, providerId)
+      )
+      if (missingFile) {
+        throw new Error(
+          `File "${missingFile.name}" could not be read for provider "${providerId}". The file may exceed the attachment size limit or may no longer be accessible.`
+        )
+      }
+
+      nextMessages[messageIndex] = {
+        ...message,
+        files: hydratedFiles,
+      }
+    }
+
+    return nextMessages
+  }
+
   private extractValidMessages(messages?: Message[]): Message[] {
     if (!messages || !Array.isArray(messages)) return []
 
@@ -1003,8 +1113,8 @@ export class AgentBlockHandler implements BlockHandler {
       userId: ctx.userId,
       stream: streaming,
       messages: messages?.map(({ executionId, ...msg }) => msg),
-      environmentVariables: ctx.environmentVariables || {},
-      workflowVariables: ctx.workflowVariables || {},
+      environmentVariables: normalizeStringRecord(ctx.environmentVariables),
+      workflowVariables: normalizeWorkflowVariables(ctx.workflowVariables),
       blockData,
       blockNameMapping,
       reasoningEffort: inputs.reasoningEffort,
@@ -1073,8 +1183,8 @@ export class AgentBlockHandler implements BlockHandler {
         userId: ctx.userId,
         stream: providerRequest.stream,
         messages: 'messages' in providerRequest ? providerRequest.messages : undefined,
-        environmentVariables: ctx.environmentVariables || {},
-        workflowVariables: ctx.workflowVariables || {},
+        environmentVariables: normalizeStringRecord(ctx.environmentVariables),
+        workflowVariables: normalizeWorkflowVariables(ctx.workflowVariables),
         blockData,
         blockNameMapping,
         isDeployedContext: ctx.isDeployedContext,
@@ -1144,14 +1254,16 @@ export class AgentBlockHandler implements BlockHandler {
     lastUserMessage: Message | null
   ): StreamingExecution {
     return {
-      stream: memoryService.wrapStreamForPersistence(
-        streamingExec.stream,
-        ctx,
-        inputs,
-        blockId,
-        lastUserMessage
-      ),
+      stream: streamingExec.stream,
       execution: streamingExec.execution,
+      onFullContent: async (content: string) => {
+        if (!content.trim()) return
+        try {
+          await memoryService.appendToMemory(ctx, inputs, { role: 'assistant', content })
+        } catch (error) {
+          logger.error('Failed to persist streaming response:', error)
+        }
+      },
     }
   }
 

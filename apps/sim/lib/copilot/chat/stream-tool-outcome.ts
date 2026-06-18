@@ -1,3 +1,4 @@
+import { isRecordLike } from '@sim/utils/object'
 import { MothershipStreamV1ToolOutcome } from '@/lib/copilot/generated/mothership-stream-v1'
 
 type TerminalToolOutcome =
@@ -13,16 +14,12 @@ interface ResolveStreamToolOutcomeParams {
   success?: boolean
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
 export function resolveStreamToolOutcome({
   output,
   status,
   success,
 }: ResolveStreamToolOutcomeParams): TerminalToolOutcome {
-  const outputRecord = isRecord(output) ? output : undefined
+  const outputRecord = isRecordLike(output) ? output : undefined
   const isCancelled =
     outputRecord?.reason === 'user_cancelled' ||
     outputRecord?.cancelledByUser === true ||
@@ -38,6 +35,10 @@ export function resolveStreamToolOutcome({
     case MothershipStreamV1ToolOutcome.skipped:
     case MothershipStreamV1ToolOutcome.rejected:
       return status
+    case 'aborted':
+      return MothershipStreamV1ToolOutcome.cancelled
+    case 'failed':
+      return MothershipStreamV1ToolOutcome.error
     default:
       return success === true
         ? MothershipStreamV1ToolOutcome.success

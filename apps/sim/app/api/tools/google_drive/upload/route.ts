@@ -1,12 +1,15 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
+import { generateShortId } from '@sim/utils/id'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { googleDriveUploadContract } from '@/lib/api/contracts/tools/google'
+import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { RawFileInputSchema } from '@/lib/uploads/utils/file-schemas'
 import { processSingleFileToUserFile } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { assertToolFileAccess } from '@/app/api/files/authorization'
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
   handleSheetsFormat,
@@ -18,15 +21,6 @@ export const dynamic = 'force-dynamic'
 const logger = createLogger('GoogleDriveUploadAPI')
 
 const GOOGLE_DRIVE_API_BASE = 'https://www.googleapis.com/upload/drive/v3/files'
-
-const GoogleDriveUploadSchema = z.object({
-  accessToken: z.string().min(1, 'Access token is required'),
-  fileName: z.string().min(1, 'File name is required'),
-  file: RawFileInputSchema.optional().nullable(),
-  mimeType: z.string().optional().nullable(),
-  folderId: z.string().optional().nullable(),
-  folderSelector: z.string().optional().nullable(),
-})
 
 /**
  * Build multipart upload body for Google Drive API
@@ -61,7 +55,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
     const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
 
-    if (!authResult.success) {
+    if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthorized Google Drive upload attempt: ${authResult.error}`)
       return NextResponse.json(
         {
@@ -79,8 +73,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       }
     )
 
-    const body = await request.json()
-    const validatedData = GoogleDriveUploadSchema.parse(body)
+    const parsed = await parseRequest(googleDriveUploadContract, request, {})
+    if (!parsed.success) return parsed.response
+    const validatedData = parsed.data.body
 
     logger.info(`[${requestId}] Uploading file to Google Drive`, {
       fileName: validatedData.fileName,
@@ -101,6 +96,29 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     // Process file - handle both UserFile (with key) and raw file data (with data)
     const fileData = validatedData.file
+
+    let userFile
+    try {
+      userFile = processSingleFileToUserFile(fileData, requestId, logger)
+    } catch (error) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: getErrorMessage(error, 'Failed to process file'),
+        },
+        { status: 400 }
+      )
+    }
+
+    logger.info(`[${requestId}] Downloading file from storage`, {
+      fileName: userFile.name,
+      key: userFile.key,
+      size: userFile.size,
+    })
+
+    const denied = await assertToolFileAccess(userFile.key, authResult.userId, requestId, logger)
+    if (denied) return denied
+
     let fileBuffer: Buffer
     let requestedMimeType: string
     let finalFileName: string
@@ -146,9 +164,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           )
         }
 
-        // Determine MIME type - prioritize provided mimeType, then file metadata
-        requestedMimeType =
-          validatedData.mimeType || fileData.mimeType || 'application/octet-stream'
+        const rawFileMimeType =
+          typeof fileData.type === 'string'
+            ? fileData.type
+            : typeof fileData.mimeType === 'string'
+              ? fileData.mimeType
+              : undefined
+
+        requestedMimeType = validatedData.mimeType ?? rawFileMimeType ?? 'application/octet-stream'
 
         // Prefer user-entered fileName when provided; fall back to file's own name
         finalFileName = validatedData.fileName || fileData.name || 'file'
@@ -245,7 +268,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       metadata.parents = [parentFolderId]
     }
 
-    const boundary = `boundary_${Date.now()}_${Math.random().toString(36).substring(7)}`
+    const boundary = `boundary_${Date.now()}_${generateShortId(7)}`
 
     const multipartBody = buildMultipartBody(metadata, fileBuffer, uploadMimeType, boundary)
 
@@ -349,24 +372,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       },
     })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid request data`, { errors: error.errors })
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid request data',
-          details: error.errors,
-        },
-        { status: 400 }
-      )
-    }
-
     logger.error(`[${requestId}] Error uploading file to Google Drive:`, error)
 
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
+        error: getErrorMessage(error, 'Internal server error'),
       },
       { status: 500 }
     )

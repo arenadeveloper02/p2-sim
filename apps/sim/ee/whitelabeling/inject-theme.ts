@@ -41,6 +41,7 @@ export function generateThemeCSS(): string {
   if (process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR) {
     // cssVars.push(`--brand: ${process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR};`)
     // cssVars.push(`--brand-accent: ${process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR};`)
+    cssVars.push(`--brand-agent: ${process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR};`)
     cssVars.push(`--auth-primary-btn-bg: ${process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR};`)
     cssVars.push(`--auth-primary-btn-border: ${process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR};`)
     cssVars.push(`--auth-primary-btn-hover-bg: ${process.env.NEXT_PUBLIC_BRAND_PRIMARY_COLOR};`)
@@ -70,10 +71,16 @@ export function generateThemeCSS(): string {
 
   if (accentColor) {
     cssVars.push(`--brand-link: ${accentColor};`)
+    // cssVars.push(`--brand-accent: ${accentColor};`)
   }
 
   if (accentHoverColor) {
     cssVars.push(`--brand-link-hover: ${accentHoverColor};`)
+    // cssVars.push(`--brand-accent-hover: ${accentHoverColor};`)
+  }
+
+  if (process.env.NEXT_PUBLIC_CUSTOM_CSS_URL) {
+    cssVars.push('--brand-agent: var(--brand);')
   }
 
   if (process.env.NEXT_PUBLIC_BRAND_BACKGROUND_COLOR) {

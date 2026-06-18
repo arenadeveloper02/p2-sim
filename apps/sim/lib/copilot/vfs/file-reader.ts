@@ -9,9 +9,10 @@ import {
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceEvent } from '@/lib/copilot/generated/trace-events-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
+import { recordFileRead } from '@/lib/copilot/request/metrics'
 import { markSpanForError } from '@/lib/copilot/request/otel'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
-import { downloadWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { fetchWorkspaceFileBuffer } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { isImageFileType } from '@/lib/uploads/utils/file-utils'
 
 // Lazy tracer (same pattern as lib/copilot/request/otel.ts).
@@ -42,6 +43,9 @@ const TEXT_TYPES = new Set([
   'text/html',
   'text/xml',
   'text/x-pptxgenjs',
+  'text/x-docxjs',
+  'text/x-python-pdf',
+  'text/x-python-xlsx',
   'application/json',
   'application/xml',
   'application/javascript',
@@ -261,6 +265,7 @@ export interface FileReadResult {
   totalLines: number
   attachment?: {
     type: string
+    name?: string
     source: {
       type: 'base64'
       media_type: string
@@ -280,7 +285,8 @@ export interface FileReadResult {
  * nests underneath for the image-resize path.
  */
 export async function readFileRecord(record: WorkspaceFileRecord): Promise<FileReadResult | null> {
-  return getVfsTracer().startActiveSpan(
+  const startedAt = Date.now()
+  const result = await getVfsTracer().startActiveSpan(
     TraceSpan.CopilotVfsReadFile,
     {
       attributes: {
@@ -294,7 +300,7 @@ export async function readFileRecord(record: WorkspaceFileRecord): Promise<FileR
       try {
         if (isImageFileType(record.type)) {
           span.setAttribute(TraceAttr.CopilotVfsReadPath, CopilotVfsReadPath.Image)
-          const originalBuffer = await downloadWorkspaceFile(record)
+          const originalBuffer = await fetchWorkspaceFileBuffer(record)
           const prepared = await prepareImageForVision(originalBuffer, record.type)
           if (!prepared) {
             span.setAttribute(TraceAttr.CopilotVfsReadOutcome, CopilotVfsReadOutcome.ImageTooLarge)
@@ -316,6 +322,7 @@ export async function readFileRecord(record: WorkspaceFileRecord): Promise<FileR
             totalLines: 1,
             attachment: {
               type: 'image',
+              name: record.name,
               source: {
                 type: 'base64' as const,
                 media_type: prepared.mediaType,
@@ -335,7 +342,7 @@ export async function readFileRecord(record: WorkspaceFileRecord): Promise<FileR
             }
           }
 
-          const buffer = await downloadWorkspaceFile(record)
+          const buffer = await fetchWorkspaceFileBuffer(record)
           const content = buffer.toString('utf-8')
           const lines = content.split('\n').length
           span.setAttributes({
@@ -359,7 +366,7 @@ export async function readFileRecord(record: WorkspaceFileRecord): Promise<FileR
               totalLines: 1,
             }
           }
-          const buffer = await downloadWorkspaceFile(record)
+          const buffer = await fetchWorkspaceFileBuffer(record)
           try {
             const { parseBuffer } = await import('@/lib/file-parsers')
             const result = await parseBuffer(buffer, ext)
@@ -409,4 +416,9 @@ export async function readFileRecord(record: WorkspaceFileRecord): Promise<FileR
       }
     }
   )
+  // Durable read duration + size by coarse outcome (the fine-grained outcome —
+  // ImageTooLarge / ParseFailed / etc. — stays on the Tempo span). readFileRecord
+  // returns null on failure rather than throwing.
+  recordFileRead(result ? 'success' : 'read_failed', Date.now() - startedAt, record.size ?? 0)
+  return result
 }

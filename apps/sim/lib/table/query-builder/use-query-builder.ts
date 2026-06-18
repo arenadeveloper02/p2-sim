@@ -4,16 +4,14 @@
 
 import { useCallback } from 'react'
 import { generateShortId } from '@sim/utils/id'
-import type { ColumnOption } from '../types'
 import {
   COMPARISON_OPERATORS,
   type FilterRule,
   LOGICAL_OPERATORS,
   SORT_DIRECTIONS,
   type SortRule,
-} from './constants'
-
-export type { ColumnOption }
+} from '@/lib/table/query-builder/constants'
+import type { ColumnOption } from '@/lib/table/types'
 
 const comparisonOptions: ColumnOption[] = COMPARISON_OPERATORS.map((op) => ({
   value: op.value,
@@ -141,13 +139,13 @@ export interface UseFilterBuilderReturn {
   createDefaultRule: () => FilterRule
 }
 
-export interface UseSortBuilderProps {
+interface UseSortBuilderProps {
   columns: ColumnOption[]
   sortRule: SortRule | null
   setSortRule: (sort: SortRule | null) => void
 }
 
-export interface UseSortBuilderReturn {
+interface UseSortBuilderReturn {
   sortDirectionOptions: ColumnOption[]
   addSort: () => void
   removeSort: () => void

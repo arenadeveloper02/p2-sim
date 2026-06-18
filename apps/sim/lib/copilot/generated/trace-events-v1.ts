@@ -10,7 +10,7 @@
 // become compile errors.
 
 export const TraceEvent = {
-  BedrockInvokeRetryWithoutImages: 'bedrock.invoke.retry_without_images',
+  ContextTransform: 'context.transform',
   CopilotOutputFileError: 'copilot.output_file.error',
   CopilotSseFirstEvent: 'copilot.sse.first_event',
   CopilotSseIdleGapExceeded: 'copilot.sse.idle_gap_exceeded',
@@ -19,6 +19,7 @@ export const TraceEvent = {
   CopilotVfsParseFailed: 'copilot.vfs.parse_failed',
   CopilotVfsResizeAttempt: 'copilot.vfs.resize_attempt',
   CopilotVfsResizeAttemptFailed: 'copilot.vfs.resize_attempt_failed',
+  GenAiPromptCacheBreakpoint: 'gen_ai.prompt_cache.breakpoint',
   LlmInvokeSent: 'llm.invoke.sent',
   LlmStreamFirstChunk: 'llm.stream.first_chunk',
   LlmStreamOpened: 'llm.stream.opened',
@@ -32,7 +33,7 @@ export type TraceEventValue = (typeof TraceEvent)[TraceEventKey]
 
 /** Readonly sorted list of every canonical event name. */
 export const TraceEventValues: readonly TraceEventValue[] = [
-  'bedrock.invoke.retry_without_images',
+  'context.transform',
   'copilot.output_file.error',
   'copilot.sse.first_event',
   'copilot.sse.idle_gap_exceeded',
@@ -41,6 +42,7 @@ export const TraceEventValues: readonly TraceEventValue[] = [
   'copilot.vfs.parse_failed',
   'copilot.vfs.resize_attempt',
   'copilot.vfs.resize_attempt_failed',
+  'gen_ai.prompt_cache.breakpoint',
   'llm.invoke.sent',
   'llm.stream.first_chunk',
   'llm.stream.opened',

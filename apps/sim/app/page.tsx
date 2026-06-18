@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     locale: 'en_US',
     images: [
       {
-        url: '/logo/426-240/primary/small.png',
+        url: '/logo/426-240/reverse/small.png',
         width: 2130,
         height: 1200,
         alt: 'Arena — The AI Workspace for Teams',
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
     description:
       'Arena is the  AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work.',
     images: {
-      url: '/logo/426-240/primary/small.png',
+      url: '/logo/426-240/reverse/small.png',
       alt: 'Arena — The AI Workspace for Teams',
     },
   },

@@ -1,10 +1,13 @@
 import { HubspotIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import type { BlockConfig } from '@/blocks/types'
+import {
+  isAdminWorkspace,
+  resolveWorkspaceIdForAdminCheck,
+} from '@/lib/workspaces/is-admin-workspace'
+import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { HubSpotResponse } from '@/tools/hubspot/types'
 import { getTrigger } from '@/triggers'
-import { hubspotAllTriggerOptions } from '@/triggers/hubspot/utils'
 
 // Cache to prevent multiple API calls for the same credential
 const campaignCache = new Map<
@@ -14,6 +17,26 @@ const campaignCache = new Map<
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 // Track in-flight requests to deduplicate concurrent calls
 const campaignInFlightRequests = new Map<string, Promise<Array<{ label: string; id: string }>>>()
+
+const HUBSPOT_COND_NEVER = '__hubspot_cond_never__'
+
+/** Show Accounts dropdown (admin workspaces only). */
+function hubspotAdminOnlyCondition(values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
+  if (isAdmin) {
+    return { field: 'operation', value: HUBSPOT_COND_NEVER, not: true as const }
+  }
+  return { field: 'operation', value: HUBSPOT_COND_NEVER }
+}
+
+/** Show OAuth / manual credential fields (non-admin workspaces only). */
+function hubspotNonAdminOnlyCondition(values?: Record<string, unknown>) {
+  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck(values))
+  if (isAdmin) {
+    return { field: 'operation', value: HUBSPOT_COND_NEVER }
+  }
+  return { field: 'operation', value: HUBSPOT_COND_NEVER, not: true as const }
+}
 
 const fetchCampaignOptions = async (
   blockId: string
@@ -30,7 +53,9 @@ const fetchCampaignOptions = async (
     const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
     const blockValues = workflowValues?.[blockId]
 
-    const credentialId = blockValues?.accounts as string
+    const credentialId = (blockValues?.accounts ??
+      blockValues?.credential ??
+      blockValues?.oauthCredential) as string
 
     if (!credentialId) {
       return []
@@ -100,7 +125,9 @@ const fetchCampaignOptions = async (
       if (activeWorkflowId) {
         const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
         const blockValues = workflowValues?.[blockId]
-        const credentialId = blockValues?.accounts as string
+        const credentialId = (blockValues?.accounts ??
+          blockValues?.credential ??
+          blockValues?.oauthCredential) as string
 
         if (credentialId) {
           const cached = campaignCache.get(credentialId)
@@ -128,12 +155,12 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
   description: 'Interact with HubSpot CRM or trigger workflows from HubSpot events',
   authMode: AuthMode.OAuth,
   longDescription:
-    'Integrate HubSpot into your workflow. Manage contacts, companies, deals, tickets, and other CRM objects with powerful automation capabilities. Can be used in trigger mode to start workflows when contacts are created, deleted, or updated.',
-  docsLink: 'https://docs.sim.ai/tools/hubspot',
+    'Integrate HubSpot into your workflow. Manage contacts, companies, deals, tickets, and other CRM objects with powerful automation capabilities. Can be used in trigger mode to start workflows when records are created, updated, a specific property changes, or a contact joins a list.',
+  docsLink: 'https://docs.sim.ai/integrations/hubspot',
   category: 'tools',
-  integrationType: IntegrationType.CRM,
-  tags: ['marketing', 'sales-engagement', 'customer-support'],
+  integrationType: IntegrationType.Sales,
   bgColor: '#FF7A59',
+  iconColor: '#FF7A59',
   icon: HubspotIcon,
   subBlocks: [
     {
@@ -181,6 +208,15 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Create Ticket', id: 'create_ticket' },
         { label: 'Update Ticket', id: 'update_ticket' },
         { label: 'Search Tickets', id: 'search_tickets' },
+        { label: 'Get Notes', id: 'get_notes' },
+        { label: 'Create Note', id: 'create_note' },
+        { label: 'Search Notes', id: 'search_notes' },
+        { label: 'Get Emails', id: 'get_emails' },
+        { label: 'Create Email', id: 'create_email' },
+        { label: 'Search Emails', id: 'search_emails' },
+        { label: 'Get Properties', id: 'get_properties' },
+        { label: 'List Associations', id: 'list_associations' },
+        { label: 'Create Association', id: 'create_association' },
         { label: 'Get Line Items', id: 'get_line_items' },
         { label: 'Create Line Item', id: 'create_line_item' },
         { label: 'Update Line Item', id: 'update_line_item' },
@@ -201,6 +237,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       id: 'accounts',
       title: 'Accounts',
       type: 'dropdown',
+      required: true,
+      condition: hubspotAdminOnlyCondition,
       options: [
         { label: 'Position2', id: 'position2' },
         { label: 'Northstar Anesthesia', id: 'northstar_anesthesia' },
@@ -217,9 +255,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       serviceId: 'hubspot',
       requiredScopes: getScopesForService('hubspot'),
       placeholder: 'Select HubSpot account',
-      /** Auth is resolved from `accounts` only; this field is not user-edited. */
-      required: false,
-      hidden: true,
+      required: true,
+      condition: hubspotNonAdminOnlyCondition,
     },
     {
       id: 'manualCredential',
@@ -228,8 +265,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
       placeholder: 'Enter credential ID',
-      /** Not used when only shared `accounts` options are supported. */
-      required: false,
+      required: true,
+      condition: hubspotNonAdminOnlyCondition,
     },
     {
       id: 'contactId',
@@ -587,6 +624,95 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       required: true,
     },
     {
+      id: 'noteId',
+      title: 'Note ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all notes',
+      condition: { field: 'operation', value: 'get_notes' },
+    },
+    {
+      id: 'emailId',
+      title: 'Email ID',
+      type: 'short-input',
+      placeholder: 'Leave empty to list all emails',
+      condition: { field: 'operation', value: 'get_emails' },
+    },
+    {
+      id: 'objectType',
+      title: 'Object Type',
+      type: 'short-input',
+      placeholder: 'e.g., "contacts", "companies", "deals", "tickets"',
+      condition: {
+        field: 'operation',
+        value: ['get_properties', 'list_associations', 'create_association'],
+      },
+      required: true,
+    },
+    {
+      id: 'propertyName',
+      title: 'Property Name',
+      type: 'short-input',
+      placeholder: 'Leave empty to return all properties (e.g., "hs_lead_status")',
+      condition: { field: 'operation', value: 'get_properties' },
+    },
+    {
+      id: 'archived',
+      title: 'Archived Only',
+      type: 'dropdown',
+      options: [
+        { label: 'No', id: 'false' },
+        { label: 'Yes', id: 'true' },
+      ],
+      value: () => 'false',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'get_properties' },
+    },
+    {
+      id: 'objectId',
+      title: 'Record ID',
+      type: 'short-input',
+      placeholder: 'ID of the source record',
+      condition: { field: 'operation', value: ['list_associations', 'create_association'] },
+      required: true,
+    },
+    {
+      id: 'toObjectType',
+      title: 'To Object Type',
+      type: 'short-input',
+      placeholder: 'e.g., "emails", "notes", "contacts"',
+      condition: { field: 'operation', value: ['list_associations', 'create_association'] },
+      required: true,
+    },
+    {
+      id: 'toObjectId',
+      title: 'To Record ID',
+      type: 'short-input',
+      placeholder: 'ID of the target record',
+      condition: { field: 'operation', value: 'create_association' },
+      required: true,
+    },
+    {
+      id: 'associationCategory',
+      title: 'Association Category',
+      type: 'dropdown',
+      options: [
+        { label: 'HubSpot Defined', id: 'HUBSPOT_DEFINED' },
+        { label: 'User Defined', id: 'USER_DEFINED' },
+        { label: 'Integrator Defined', id: 'INTEGRATOR_DEFINED' },
+      ],
+      value: () => 'HUBSPOT_DEFINED',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'create_association' },
+    },
+    {
+      id: 'associationTypeId',
+      title: 'Association Type ID',
+      type: 'short-input',
+      placeholder: 'Leave empty for the default association (e.g., 198 = email→contact)',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'create_association' },
+    },
+    {
       id: 'lineItemId',
       title: 'Line Item ID',
       type: 'short-input',
@@ -778,6 +904,8 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
           'update_line_item',
           'create_appointment',
           'update_appointment',
+          'create_note',
+          'create_email',
         ],
       },
       wandConfig: {
@@ -919,10 +1047,13 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_commerce_payments',
           'get_subscriptions',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
           'get_carts',
+          'get_users',
         ],
       },
     },
@@ -943,6 +1074,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_commerce_payments',
           'get_subscriptions',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
@@ -953,6 +1086,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'create_ticket',
           'create_line_item',
           'create_appointment',
+          'create_note',
+          'create_email',
         ],
       },
     },
@@ -970,11 +1105,14 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_companies',
           'get_deals',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
           'get_carts',
           'list_owners',
+          'list_associations',
           'get_marketing_events',
           'get_lists',
           'search_contacts',
@@ -988,6 +1126,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'list_imports',
           'search_deals',
           'search_tickets',
+          'search_notes',
+          'search_emails',
         ],
       },
     },
@@ -1004,11 +1144,14 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_companies',
           'get_deals',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
           'get_carts',
           'list_owners',
+          'list_associations',
           'get_users',
           'get_marketing_events',
           'get_lists',
@@ -1025,6 +1168,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'list_imports',
           'search_deals',
           'search_tickets',
+          'search_notes',
+          'search_emails',
         ],
       },
     },
@@ -1040,6 +1185,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'search_companies',
           'search_deals',
           'search_tickets',
+          'search_notes',
+          'search_emails',
           'get_lists',
         ],
       },
@@ -1052,7 +1199,14 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
         'JSON array of filter groups (e.g., [{"filters":[{"propertyName":"email","operator":"EQ","value":"test@example.com"}]}])',
       condition: {
         field: 'operation',
-        value: ['search_contacts', 'search_companies', 'search_deals', 'search_tickets'],
+        value: [
+          'search_contacts',
+          'search_companies',
+          'search_deals',
+          'search_tickets',
+          'search_notes',
+          'search_emails',
+        ],
       },
       wandConfig: {
         enabled: true,
@@ -1256,7 +1410,14 @@ Return ONLY the JSON array of filter groups - no explanations, no markdown, no e
       mode: 'advanced',
       condition: {
         field: 'operation',
-        value: ['search_contacts', 'search_companies', 'search_deals', 'search_tickets'],
+        value: [
+          'search_contacts',
+          'search_companies',
+          'search_deals',
+          'search_tickets',
+          'search_notes',
+          'search_emails',
+        ],
       },
       wandConfig: {
         enabled: true,
@@ -1381,7 +1542,14 @@ Return ONLY the JSON array of sort objects - no explanations, no markdown, no ex
       mode: 'advanced',
       condition: {
         field: 'operation',
-        value: ['search_contacts', 'search_companies', 'search_deals', 'search_tickets'],
+        value: [
+          'search_contacts',
+          'search_companies',
+          'search_deals',
+          'search_tickets',
+          'search_notes',
+          'search_emails',
+        ],
       },
       wandConfig: {
         enabled: true,
@@ -1509,42 +1677,7 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
         generationType: 'json-object',
       },
     },
-    {
-      id: 'selectedTriggerId',
-      title: 'Trigger Type',
-      type: 'dropdown',
-      mode: 'trigger',
-      options: hubspotAllTriggerOptions,
-      value: () => 'hubspot_contact_created',
-      required: true,
-    },
-    ...getTrigger('hubspot_contact_created').subBlocks.slice(1),
-    ...getTrigger('hubspot_contact_deleted').subBlocks.slice(1),
-    ...getTrigger('hubspot_contact_merged').subBlocks.slice(1),
-    ...getTrigger('hubspot_contact_privacy_deleted').subBlocks.slice(1),
-    ...getTrigger('hubspot_contact_property_changed').subBlocks.slice(1),
-    ...getTrigger('hubspot_contact_restored').subBlocks.slice(1),
-    ...getTrigger('hubspot_company_created').subBlocks.slice(1),
-    ...getTrigger('hubspot_company_deleted').subBlocks.slice(1),
-    ...getTrigger('hubspot_company_merged').subBlocks.slice(1),
-    ...getTrigger('hubspot_company_property_changed').subBlocks.slice(1),
-    ...getTrigger('hubspot_company_restored').subBlocks.slice(1),
-    ...getTrigger('hubspot_conversation_creation').subBlocks.slice(1),
-    ...getTrigger('hubspot_conversation_deletion').subBlocks.slice(1),
-    ...getTrigger('hubspot_conversation_new_message').subBlocks.slice(1),
-    ...getTrigger('hubspot_conversation_privacy_deletion').subBlocks.slice(1),
-    ...getTrigger('hubspot_conversation_property_changed').subBlocks.slice(1),
-    ...getTrigger('hubspot_deal_created').subBlocks.slice(1),
-    ...getTrigger('hubspot_deal_deleted').subBlocks.slice(1),
-    ...getTrigger('hubspot_deal_merged').subBlocks.slice(1),
-    ...getTrigger('hubspot_deal_property_changed').subBlocks.slice(1),
-    ...getTrigger('hubspot_deal_restored').subBlocks.slice(1),
-    ...getTrigger('hubspot_ticket_created').subBlocks.slice(1),
-    ...getTrigger('hubspot_ticket_deleted').subBlocks.slice(1),
-    ...getTrigger('hubspot_ticket_merged').subBlocks.slice(1),
-    ...getTrigger('hubspot_ticket_property_changed').subBlocks.slice(1),
-    ...getTrigger('hubspot_ticket_restored').subBlocks.slice(1),
-    ...getTrigger('hubspot_webhook').subBlocks.slice(1),
+    ...getTrigger('hubspot_poller').subBlocks,
   ],
   tools: {
     access: [
@@ -1597,6 +1730,17 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       'hubspot_create_ticket',
       'hubspot_update_ticket',
       'hubspot_search_tickets',
+      'hubspot_list_notes',
+      'hubspot_get_note',
+      'hubspot_create_note',
+      'hubspot_search_notes',
+      'hubspot_list_emails',
+      'hubspot_get_email',
+      'hubspot_create_email',
+      'hubspot_search_emails',
+      'hubspot_get_properties',
+      'hubspot_list_associations',
+      'hubspot_create_association',
       'hubspot_list_line_items',
       'hubspot_get_line_item',
       'hubspot_create_line_item',
@@ -1667,8 +1811,6 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_get_object'
           case 'list_association_types':
             return 'hubspot_list_association_types'
-          case 'list_associations':
-            return 'hubspot_list_associations'
           case 'get_commerce_payments':
             return params.commercePaymentId
               ? 'hubspot_get_commerce_payment'
@@ -1701,6 +1843,24 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_update_ticket'
           case 'search_tickets':
             return 'hubspot_search_tickets'
+          case 'get_notes':
+            return params.noteId ? 'hubspot_get_note' : 'hubspot_list_notes'
+          case 'create_note':
+            return 'hubspot_create_note'
+          case 'search_notes':
+            return 'hubspot_search_notes'
+          case 'get_emails':
+            return params.emailId ? 'hubspot_get_email' : 'hubspot_list_emails'
+          case 'create_email':
+            return 'hubspot_create_email'
+          case 'search_emails':
+            return 'hubspot_search_emails'
+          case 'get_properties':
+            return 'hubspot_get_properties'
+          case 'list_associations':
+            return 'hubspot_list_associations'
+          case 'create_association':
+            return 'hubspot_create_association'
           case 'get_line_items':
             return params.lineItemId ? 'hubspot_get_line_item' : 'hubspot_list_line_items'
           case 'create_line_item':
@@ -1740,11 +1900,18 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           sorts,
           associations,
           listName,
+          associationTypeId,
+          archived,
           ...rest
         } = params
 
+        const oauthCredential = (accounts ??
+          params.credential ??
+          params.oauthCredential ??
+          params.manualCredential) as string
+
         const cleanParams: Record<string, any> = {
-          oauthCredential: accounts as string,
+          oauthCredential,
         }
 
         const createUpdateOps = [
@@ -1760,6 +1927,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'update_line_item',
           'create_appointment',
           'update_appointment',
+          'create_note',
+          'create_email',
         ]
         if (propertiesToSet && createUpdateOps.includes(operation as string)) {
           cleanParams.properties = propertiesToSet
@@ -1774,16 +1943,26 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'get_commerce_payments',
           'get_subscriptions',
           'get_tickets',
+          'get_notes',
+          'get_emails',
           'get_line_items',
           'get_quotes',
           'get_appointments',
           'get_carts',
+          'get_users',
         ]
         if (properties && !searchProperties && getListOps.includes(operation as string)) {
           cleanParams.properties = properties
         }
 
-        const searchOps = ['search_contacts', 'search_companies', 'search_deals', 'search_tickets']
+        const searchOps = [
+          'search_contacts',
+          'search_companies',
+          'search_deals',
+          'search_tickets',
+          'search_notes',
+          'search_emails',
+        ]
         if (searchProperties && searchOps.includes(operation as string)) {
           cleanParams.properties = searchProperties
         }
@@ -1804,6 +1983,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'create_ticket',
           'create_line_item',
           'create_appointment',
+          'create_note',
+          'create_email',
         ]
         if (associations && associationOps.includes(operation as string)) {
           cleanParams.associations = associations
@@ -1811,6 +1992,18 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
 
         if (listName && operation === 'create_list') {
           cleanParams.name = listName
+        }
+
+        if (
+          operation === 'create_association' &&
+          associationTypeId !== undefined &&
+          associationTypeId !== ''
+        ) {
+          cleanParams.associationTypeId = Number(associationTypeId)
+        }
+
+        if (operation === 'get_properties' && archived !== undefined && archived !== '') {
+          cleanParams.archived = archived === true || archived === 'true'
         }
 
         if (operation === 'get_lists') {
@@ -1872,11 +2065,6 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
         'Interval for email statistics histogram (DAY, HOUR, MINUTE, MONTH, QUARTER, QUARTER_HOUR, SECOND, WEEK, YEAR)',
     },
     emailIds: { type: 'string', description: 'Comma-separated list of email IDs (numbers only)' },
-    emailId: { type: 'string', description: 'Email ID to retrieve' },
-    archived: {
-      type: 'string',
-      description: 'Specifies whether to return archived emails (true/false)',
-    },
     createdAfter: {
       type: 'string',
       description: 'Only return emails created after the specified time (ISO8601 format)',
@@ -1912,6 +2100,12 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     cartId: { type: 'string', description: 'Cart ID' },
     eventId: { type: 'string', description: 'Marketing event ID' },
     listId: { type: 'string', description: 'List ID' },
+    noteId: { type: 'string', description: 'Note ID' },
+    emailId: { type: 'string', description: 'Email engagement ID' },
+    archived: { type: 'boolean', description: 'Whether to return only archived properties' },
+    toObjectId: { type: 'string', description: 'Target record ID for associations' },
+    associationCategory: { type: 'string', description: 'Association category for a labeled link' },
+    associationTypeId: { type: 'number', description: 'Association type ID for a labeled link' },
     idProperty: { type: 'string', description: 'Property name to use as unique identifier' },
     propertiesToSet: { type: 'json', description: 'Properties to create/update (JSON object)' },
     properties: {
@@ -1971,8 +2165,6 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     budgetItem: { type: 'json', description: 'Campaign budget item' },
     assets: { type: 'json', description: 'Campaign assets' },
     histogram: { type: 'json', description: 'Email statistics histogram data' },
-    email: { type: 'json', description: 'Email object with all properties' },
-    emails: { type: 'json', description: 'Array of email objects' },
     deal: { type: 'json', description: 'Single deal object' },
     tickets: { type: 'json', description: 'Array of ticket objects' },
     ticket: { type: 'json', description: 'Single ticket object' },
@@ -1989,88 +2181,171 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     event: { type: 'json', description: 'Single marketing event object' },
     lists: { type: 'json', description: 'Array of list objects' },
     list: { type: 'json', description: 'Single list object' },
+    notes: { type: 'json', description: 'Array of note objects' },
+    note: { type: 'json', description: 'Single note object' },
+    emails: { type: 'json', description: 'Array of email engagement objects' },
+    email: { type: 'json', description: 'Single email engagement object' },
+    properties: {
+      type: 'json',
+      description: 'Array of property definitions (name, label, type, fieldType, options)',
+    },
+    results: {
+      type: 'json',
+      description: 'Array of associated records (toObjectId, associationTypes)',
+    },
+    fromObjectId: { type: 'string', description: 'Source record ID (for create association)' },
+    toObjectId: {
+      type: 'string',
+      description: 'Associated target record ID (for create association)',
+    },
+    labels: { type: 'json', description: 'Association labels (for create association)' },
     total: { type: 'number', description: 'Total number of matching results (for search)' },
     paging: { type: 'json', description: 'Pagination info with next/prev cursors' },
     metadata: { type: 'json', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
-    payload: {
-      type: 'json',
-      description: 'Full webhook payload array from HubSpot containing event details',
-    },
-    provider: {
-      type: 'string',
-      description: 'Provider name (hubspot)',
-    },
-    providerConfig: {
-      appId: {
-        type: 'string',
-        description: 'HubSpot App ID',
-      },
-      clientId: {
-        type: 'string',
-        description: 'HubSpot Client ID',
-      },
-      triggerId: {
-        type: 'string',
-        description: 'Trigger ID (e.g., hubspot_company_created)',
-      },
-      clientSecret: {
-        type: 'string',
-        description: 'HubSpot Client Secret',
-      },
-      developerApiKey: {
-        type: 'string',
-        description: 'HubSpot Developer API Key',
-      },
-      curlSetWebhookUrl: {
-        type: 'string',
-        description: 'curl command to set webhook URL',
-      },
-      curlCreateSubscription: {
-        type: 'string',
-        description: 'curl command to create subscription',
-      },
-      webhookUrlDisplay: {
-        type: 'string',
-        description: 'Webhook URL display value',
-      },
-      propertyName: {
-        type: 'string',
-        description: 'Optional property name filter (for property change triggers)',
-      },
-    },
   } as any,
   triggerAllowed: true,
   triggers: {
     enabled: true,
-    available: [
-      'hubspot_contact_created',
-      'hubspot_contact_deleted',
-      'hubspot_contact_merged',
-      'hubspot_contact_privacy_deleted',
-      'hubspot_contact_property_changed',
-      'hubspot_contact_restored',
-      'hubspot_company_created',
-      'hubspot_company_deleted',
-      'hubspot_company_merged',
-      'hubspot_company_property_changed',
-      'hubspot_company_restored',
-      'hubspot_conversation_creation',
-      'hubspot_conversation_deletion',
-      'hubspot_conversation_new_message',
-      'hubspot_conversation_privacy_deletion',
-      'hubspot_conversation_property_changed',
-      'hubspot_deal_created',
-      'hubspot_deal_deleted',
-      'hubspot_deal_merged',
-      'hubspot_deal_property_changed',
-      'hubspot_deal_restored',
-      'hubspot_ticket_created',
-      'hubspot_ticket_deleted',
-      'hubspot_ticket_merged',
-      'hubspot_ticket_property_changed',
-      'hubspot_ticket_restored',
-      'hubspot_webhook',
-    ],
+    available: ['hubspot_poller'],
   },
 }
+
+export const HubSpotBlockMeta = {
+  tags: ['marketing', 'sales-engagement', 'customer-support'],
+  url: 'https://www.hubspot.com',
+  templates: [
+    {
+      icon: HubspotIcon,
+      title: 'HubSpot deal search',
+      prompt:
+        'Create a knowledge base connected to my HubSpot account so all deals, contacts, and activity history are automatically synced and searchable. Then build an agent I can ask things like "what happened with the Stripe integration deal?" or "which deals closed last quarter over $50k?" and get answers with HubSpot record links.',
+      modules: ['knowledge-base', 'agent'],
+      category: 'sales',
+      tags: ['sales', 'crm', 'research'],
+    },
+    {
+      icon: HubspotIcon,
+      title: 'Win/loss analyzer',
+      prompt:
+        'Build a workflow that pulls closed deals from HubSpot each week, analyzes patterns in wins vs losses — deal size, industry, sales cycle length, objections — and generates a report file with actionable insights on what to change. Schedule it to run every Monday.',
+      modules: ['agent', 'files', 'scheduled', 'workflows'],
+      category: 'sales',
+      tags: ['sales', 'crm', 'analysis', 'reporting'],
+    },
+
+    {
+      icon: HubspotIcon,
+      title: 'Get HubSpot deal alerts in Slack',
+      prompt:
+        'Build a workflow that watches HubSpot for deal stage changes, new contacts, and revenue milestones, then posts instant Slack notifications to your sales team.',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['automation', 'communication'],
+      featured: true,
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: HubspotIcon,
+      title: 'Send personalised emails from HubSpot events',
+      prompt:
+        'Build a workflow that triggers whenever a HubSpot contact enters a new lifecycle stage and sends a personalised Gmail message tailored to that stage.',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['automation', 'communication'],
+      featured: true,
+      alsoIntegrations: ['gmail'],
+    },
+    {
+      icon: HubspotIcon,
+      title: 'HubSpot lead enrichment and dedupe',
+      prompt:
+        'Build a workflow that on a new HubSpot contact searches for existing duplicates, enriches the record with company size, industry, and verified email, and updates the contact and its associated company with the cleaned data.',
+      modules: ['agent', 'workflows'],
+      category: 'sales',
+      tags: ['sales', 'crm', 'automation', 'enrichment'],
+    },
+    {
+      icon: HubspotIcon,
+      title: 'HubSpot pipeline weekly digest',
+      prompt:
+        'Create a scheduled weekly workflow that lists HubSpot deals by stage, computes movement and at-risk deals with an agent, logs the snapshot to a table, and emails a pipeline summary to the sales leadership team.',
+      modules: ['scheduled', 'tables', 'agent', 'workflows'],
+      category: 'sales',
+      tags: ['sales', 'reporting', 'crm'],
+      alsoIntegrations: ['gmail'],
+    },
+    {
+      icon: HubspotIcon,
+      title: 'HubSpot ticket triage',
+      prompt:
+        'Build a workflow that on a new HubSpot support ticket classifies priority and topic, adds a triage note, associates it with the right company, and posts an alert to the support Slack channel for high-priority cases.',
+      modules: ['agent', 'workflows'],
+      category: 'support',
+      tags: ['support', 'automation', 'crm'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: HubspotIcon,
+      title: 'Backfill HubSpot contact email history from Gmail',
+      prompt:
+        'Build a workflow that finds HubSpot contacts in the lead stage with no logged email activity, searches my Gmail for each person’s thread, and logs it back to HubSpot as an email engagement associated with the contact.',
+      modules: ['agent', 'workflows'],
+      category: 'sales',
+      tags: ['sales', 'crm', 'automation'],
+      alsoIntegrations: ['gmail'],
+    },
+  ],
+  skills: [
+    {
+      name: 'upsert-contact',
+      description:
+        'Find a HubSpot contact by email and update it, or create it if it does not exist.',
+      content:
+        '# Upsert Contact\n\nKeep a contact record current without creating duplicates.\n\n## Steps\n1. Search contacts by the email address to check if the person already exists.\n2. If a match is found, update the contact with the new property values.\n3. If no match exists, create a new contact with the email and known properties.\n4. Read the contact back to confirm the final property values.\n\n## Output\nReturn the contact ID and whether it was created or updated, along with the properties that were set.',
+    },
+    {
+      name: 'create-deal-for-account',
+      description: 'Create a HubSpot deal and associate it with the right company and contact.',
+      content:
+        '# Create Deal For Account\n\nLog a new opportunity tied to the correct account.\n\n## Steps\n1. Search companies to resolve the company by name or domain; create it if missing.\n2. Search contacts to find the primary contact for the deal.\n3. Create the deal with name, amount, pipeline, and stage, associating it with the company and contact.\n4. Read the deal back to confirm associations and stage.\n\n## Output\nReturn the deal ID, its stage and amount, and the associated company and contact IDs.',
+    },
+    {
+      name: 'triage-support-ticket',
+      description:
+        'Classify a HubSpot ticket, set priority, and associate it with the correct company.',
+      content:
+        '# Triage Support Ticket\n\nRoute and prioritize an incoming support ticket.\n\n## Steps\n1. Get the ticket to read its subject and content.\n2. Classify topic and priority from the content.\n3. Update the ticket with the priority and any pipeline stage change.\n4. Search companies to find the requesting account and associate the ticket with it.\n\n## Output\nReturn the ticket ID, assigned priority and topic, and the associated company. Flag high-priority tickets for escalation.',
+    },
+    {
+      name: 'summarize-open-deals',
+      description: 'Search HubSpot deals by stage and produce a pipeline summary with totals.',
+      content:
+        '# Summarize Open Deals\n\nReport on the active sales pipeline.\n\n## Steps\n1. Search deals filtered to open stages, paginating through all results.\n2. Group deals by pipeline stage and capture amount and close date.\n3. Sum amounts per stage and overall, and flag deals with a close date in the past.\n4. Identify the largest deals and any missing key properties.\n\n## Output\nReturn a per-stage breakdown with deal counts and total value, a grand total, and a flagged list of overdue or incomplete deals. Suitable for a sales pipeline review.',
+    },
+    {
+      name: 'build-quote-from-deal',
+      description: 'Gather a HubSpot deal and its line items to assemble a quote summary.',
+      content:
+        '# Build Quote From Deal\n\nCompile the commercial details needed to quote a deal.\n\n## Steps\n1. Get the deal by ID for its name, amount, and stage.\n2. List line items and get details to capture product, quantity, and price for each.\n3. Get the associated quote if one exists, or summarize the line items into a draft quote.\n4. Total the line items and compare against the deal amount, flagging mismatches.\n\n## Output\nReturn the deal summary, an itemized line-item list with totals, and any existing quote reference. Flag discrepancies between the line-item total and the deal amount.',
+    },
+    {
+      name: 'log-email-to-contact',
+      description: 'Log an email engagement in HubSpot and associate it with a contact.',
+      content:
+        '# Log Email To Contact\n\nRecord an email activity on a contact’s timeline.\n\n## Steps\n1. Search contacts by email to resolve the contact ID.\n2. Create an email engagement with hs_timestamp, subject, body, and direction.\n3. Associate the email with the contact (associationTypeId 198, or the default association).\n4. List associations from the contact to emails to confirm the link.\n\n## Output\nReturn the email engagement ID and the associated contact ID.',
+    },
+    {
+      name: 'audit-contacts-missing-activity',
+      description: 'Find contacts in a lead stage that have no logged email activity.',
+      content:
+        '# Audit Contacts Missing Activity\n\nSurface leads with no recorded email history.\n\n## Steps\n1. Get properties for contacts to read the hs_lead_status options and confirm the target stage value.\n2. Search contacts filtered to that lead status, paginating through all results.\n3. For each contact, list associations to emails and flag those with zero associated emails.\n4. Collect the contacts that need follow-up.\n\n## Output\nReturn the list of contact IDs with no logged email activity, ready for backfill.',
+    },
+    {
+      name: 'inspect-property-options',
+      description: 'Read the enumeration (picklist) values for a HubSpot property.',
+      content:
+        '# Inspect Property Options\n\nList the allowed values for a dropdown property.\n\n## Steps\n1. Get properties for the object type (e.g., contacts).\n2. Find the property by name (e.g., lifecyclestage or hs_lead_status).\n3. Read its options array for label/value pairs.\n\n## Output\nReturn the property label and its enumeration options as label/value pairs.',
+    },
+  ],
+} as const satisfies BlockMeta

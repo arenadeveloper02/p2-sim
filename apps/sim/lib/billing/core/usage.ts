@@ -2,7 +2,7 @@ import { db } from '@sim/db'
 import { member, organization, settings, user, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import {
   getEmailSubject,
   renderCreditsExhaustedEmail,
@@ -10,10 +10,12 @@ import {
   renderUsageThresholdEmail,
 } from '@/components/emails'
 import { getEffectiveBillingStatus } from '@/lib/billing/core/access'
+import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import {
   getHighestPrioritySubscription,
   type HighestPrioritySubscription,
 } from '@/lib/billing/core/plan'
+import { getBillingPeriodUsageCost } from '@/lib/billing/core/usage-log'
 import {
   computeDailyRefreshConsumed,
   getOrgMemberRefreshBounds,
@@ -30,8 +32,9 @@ import {
 } from '@/lib/billing/subscriptions/utils'
 import type { BillingData, UsageData, UsageLimitInfo } from '@/lib/billing/types'
 import { Decimal, toDecimal, toNumber } from '@/lib/billing/utils/decimal'
-import { isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import type { DbClient } from '@/lib/db/types'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getEmailPreferences } from '@/lib/messaging/email/unsubscribe'
 
@@ -55,25 +58,33 @@ export interface OrgUsageLimitResult {
  * downstream refresh / bounds computations.
  */
 export async function getPooledOrgCurrentPeriodCost(
-  organizationId: string
-): Promise<{ memberIds: string[]; currentPeriodCost: number }> {
-  const rows = await db
+  organizationId: string,
+  executor: DbClient = db
+): Promise<{ memberIds: string[]; currentPeriodCost: number; lastPeriodCost: number }> {
+  const rows = await executor
     .select({
       userId: member.userId,
       currentPeriodCost: userStats.currentPeriodCost,
+      lastPeriodCost: userStats.lastPeriodCost,
     })
     .from(member)
     .leftJoin(userStats, eq(member.userId, userStats.userId))
     .where(eq(member.organizationId, organizationId))
 
   let pooled = new Decimal(0)
+  let lastPeriodCost = new Decimal(0)
   const memberIds: string[] = []
   for (const row of rows) {
     memberIds.push(row.userId)
     pooled = pooled.plus(toDecimal(row.currentPeriodCost))
+    lastPeriodCost = lastPeriodCost.plus(toDecimal(row.lastPeriodCost))
   }
 
-  return { memberIds, currentPeriodCost: toNumber(pooled) }
+  return {
+    memberIds,
+    currentPeriodCost: toNumber(pooled),
+    lastPeriodCost: toNumber(lastPeriodCost),
+  }
 }
 
 /**
@@ -85,9 +96,10 @@ export async function getPooledOrgCurrentPeriodCost(
 export async function getOrgUsageLimit(
   organizationId: string,
   plan: string,
-  seats: number | null
+  seats: number | null,
+  executor: DbClient = db
 ): Promise<OrgUsageLimitResult> {
-  const orgData = await db
+  const orgData = await executor
     .select({ orgUsageLimit: organization.orgUsageLimit })
     .from(organization)
     .where(eq(organization.id, organizationId))
@@ -154,6 +166,7 @@ export async function handleNewUser(userId: string): Promise<void> {
  * This is a fallback for cases where the user.create.after hook didn't fire
  * (e.g., OAuth account linking to existing users).
  *
+ * Always writes to the primary — never takes a read-routing executor.
  */
 export async function ensureUserStatsExists(userId: string): Promise<void> {
   await db
@@ -170,13 +183,24 @@ export async function ensureUserStatsExists(userId: string): Promise<void> {
 /**
  * Get comprehensive usage data for a user
  */
-export async function getUserUsageData(userId: string): Promise<UsageData> {
+export async function getUserUsageData(
+  userId: string,
+  executor: DbClient = db
+): Promise<UsageData> {
   try {
+    // Write — always on the primary regardless of executor routing.
     await ensureUserStatsExists(userId)
 
     const [userStatsData, subscription] = await Promise.all([
-      db.select().from(userStats).where(eq(userStats.userId, userId)).limit(1),
-      getHighestPrioritySubscription(userId),
+      // Read-your-write: must see the row ensureUserStatsExists may have just
+      // inserted, which a lagging replica can miss (this path throws on a
+      // missing row). Stays on the primary deliberately.
+      db
+        .select()
+        .from(userStats)
+        .where(eq(userStats.userId, userId))
+        .limit(1),
+      getHighestPrioritySubscription(userId, { executor }),
     ])
 
     if (userStatsData.length === 0) {
@@ -186,8 +210,22 @@ export async function getUserUsageData(userId: string): Promise<UsageData> {
 
     const stats = userStatsData[0]
     const orgScoped = isOrgScopedSubscription(subscription, userId)
+    const billingPeriod =
+      subscription?.periodStart && subscription.periodEnd
+        ? { start: subscription.periodStart, end: subscription.periodEnd }
+        : defaultBillingPeriod()
 
     let currentUsageDecimal = toDecimal(stats.currentPeriodCost)
+    if (!orgScoped) {
+      currentUsageDecimal = currentUsageDecimal.plus(
+        await getBillingPeriodUsageCost(
+          { type: 'user', id: userId },
+          billingPeriod,
+          undefined,
+          executor
+        )
+      )
+    }
 
     // For personally-scoped Pro users, include any snapshotted usage from
     // a prior org-join so the display reflects their total Pro usage.
@@ -204,6 +242,7 @@ export async function getUserUsageData(userId: string): Promise<UsageData> {
       }
     }
     let currentUsage = toNumber(currentUsageDecimal)
+    let lastPeriodCost = toNumber(toDecimal(stats.lastPeriodCost))
 
     let limit: number
     // Shared between the pooled-usage and pooled-refresh blocks so we
@@ -214,13 +253,21 @@ export async function getUserUsageData(userId: string): Promise<UsageData> {
       const orgLimit = await getOrgUsageLimit(
         subscription.referenceId,
         subscription.plan,
-        subscription.seats
+        subscription.seats,
+        executor
       )
       limit = orgLimit.limit
 
-      const pooled = await getPooledOrgCurrentPeriodCost(subscription.referenceId)
+      const pooled = await getPooledOrgCurrentPeriodCost(subscription.referenceId, executor)
       orgMemberIds = pooled.memberIds
-      currentUsage = pooled.currentPeriodCost
+      lastPeriodCost = pooled.lastPeriodCost
+      const ledgerUsage = await getBillingPeriodUsageCost(
+        { type: 'organization', id: subscription.referenceId },
+        billingPeriod,
+        undefined,
+        executor
+      )
+      currentUsage = pooled.currentPeriodCost + ledgerUsage
     } else {
       limit = stats.currentUsageLimit
         ? toNumber(toDecimal(stats.currentUsageLimit))
@@ -238,24 +285,33 @@ export async function getUserUsageData(userId: string): Promise<UsageData> {
           if (orgMemberIds.length > 0) {
             const userBounds = await getOrgMemberRefreshBounds(
               subscription.referenceId,
-              billingPeriodStart
+              billingPeriodStart,
+              executor
             )
-            dailyRefreshConsumed = await computeDailyRefreshConsumed({
-              userIds: orgMemberIds,
+            dailyRefreshConsumed = await computeDailyRefreshConsumed(
+              {
+                userIds: orgMemberIds,
+                periodStart: billingPeriodStart,
+                periodEnd: billingPeriodEnd,
+                planDollars,
+                seats: subscription.seats || 1,
+                userBounds: Object.keys(userBounds).length > 0 ? userBounds : undefined,
+                billingEntity: { type: 'organization', id: subscription.referenceId },
+              },
+              executor
+            )
+          }
+        } else {
+          dailyRefreshConsumed = await computeDailyRefreshConsumed(
+            {
+              userIds: [userId],
               periodStart: billingPeriodStart,
               periodEnd: billingPeriodEnd,
               planDollars,
-              seats: subscription.seats || 1,
-              userBounds: Object.keys(userBounds).length > 0 ? userBounds : undefined,
-            })
-          }
-        } else {
-          dailyRefreshConsumed = await computeDailyRefreshConsumed({
-            userIds: [userId],
-            periodStart: billingPeriodStart,
-            periodEnd: billingPeriodEnd,
-            planDollars,
-          })
+              billingEntity: { type: 'user', id: userId },
+            },
+            executor
+          )
         }
       }
     }
@@ -273,7 +329,7 @@ export async function getUserUsageData(userId: string): Promise<UsageData> {
       isExceeded,
       billingPeriodStart,
       billingPeriodEnd,
-      lastPeriodCost: toNumber(toDecimal(stats.lastPeriodCost)),
+      lastPeriodCost,
     }
   } catch (error) {
     logger.error('Failed to get user usage data', { userId, error })
@@ -337,7 +393,7 @@ export async function getUserUsageLimitInfo(userId: string): Promise<UsageLimitI
 /**
  * Initialize usage limits for a new user
  */
-export async function initializeUserUsageLimit(userId: string): Promise<void> {
+async function initializeUserUsageLimit(userId: string): Promise<void> {
   // Check if user already has usage stats
   const existingStats = await db
     .select()
@@ -439,6 +495,13 @@ export async function updateUserUsageLimit(
  * Get usage limit for a user (used by checkUsageStatus for server-side
  * checks). Org-scoped subs return the organization limit;
  * personally-scoped subs return the individual user limit from userStats.
+ *
+ * Org-scoped members carry a null `currentUsageLimit` by design (see
+ * `syncUsageLimitsFromSubscription`). A user whose subscription stops being
+ * org-scoped without a resync would otherwise stay null and fail closed on
+ * every execution, so a null limit self-heals to the plan default here. The
+ * write-back is best-effort: a limit written concurrently wins, and a failed
+ * write still resolves to the fallback instead of blocking execution.
  */
 export async function getUserUsageLimit(
   userId: string,
@@ -481,9 +544,43 @@ export async function getUserUsageLimit(
   }
 
   if (!userStatsQuery[0].currentUsageLimit) {
-    throw new Error(
-      `Invalid null usage limit for ${subscription?.plan || 'free'} user: ${userId}. User stats must be properly initialized.`
-    )
+    const fallbackLimit =
+      subscription && hasPaidSubscriptionStatus(subscription.status)
+        ? getPerUserMinimumLimit(subscription)
+        : getFreeTierLimit()
+
+    try {
+      const healed = await db
+        .update(userStats)
+        .set({
+          currentUsageLimit: fallbackLimit.toString(),
+          usageLimitUpdatedAt: new Date(),
+        })
+        .where(and(eq(userStats.userId, userId), isNull(userStats.currentUsageLimit)))
+        .returning({ currentUsageLimit: userStats.currentUsageLimit })
+
+      if (healed.length === 0) {
+        const concurrent = await db
+          .select({ currentUsageLimit: userStats.currentUsageLimit })
+          .from(userStats)
+          .where(eq(userStats.userId, userId))
+          .limit(1)
+
+        if (concurrent[0]?.currentUsageLimit) {
+          return toNumber(toDecimal(concurrent[0].currentUsageLimit))
+        }
+      }
+
+      logger.warn('Healed null usage limit to plan default', {
+        userId,
+        plan: subscription?.plan || 'free',
+        fallbackLimit,
+      })
+    } catch (error) {
+      logger.error('Failed to heal null usage limit', { userId, fallbackLimit, error })
+    }
+
+    return fallbackLimit
   }
 
   return toNumber(toDecimal(userStatsQuery[0].currentUsageLimit))
@@ -582,76 +679,56 @@ export async function syncUsageLimitsFromSubscription(userId: string): Promise<v
 }
 
 /**
- * Get usage limit information for team members (for admin dashboard)
- */
-export async function getTeamUsageLimits(organizationId: string): Promise<
-  Array<{
-    userId: string
-    userName: string
-    userEmail: string
-    currentLimit: number
-    currentUsage: number
-    totalCost: number
-    lastActive: Date | null
-  }>
-> {
-  try {
-    const teamMembers = await db
-      .select({
-        userId: member.userId,
-        userName: user.name,
-        userEmail: user.email,
-        currentLimit: userStats.currentUsageLimit,
-        currentPeriodCost: userStats.currentPeriodCost,
-        totalCost: userStats.totalCost,
-        lastActive: userStats.lastActive,
-      })
-      .from(member)
-      .innerJoin(user, eq(member.userId, user.id))
-      .leftJoin(userStats, eq(member.userId, userStats.userId))
-      .where(eq(member.organizationId, organizationId))
-
-    return teamMembers.map((memberData) => ({
-      userId: memberData.userId,
-      userName: memberData.userName,
-      userEmail: memberData.userEmail,
-      currentLimit: toNumber(toDecimal(memberData.currentLimit || getFreeTierLimit().toString())),
-      currentUsage: toNumber(toDecimal(memberData.currentPeriodCost)),
-      totalCost: toNumber(toDecimal(memberData.totalCost)),
-      lastActive: memberData.lastActive,
-    }))
-  } catch (error) {
-    logger.error('Failed to get team usage limits', { organizationId, error })
-    return []
-  }
-}
-
-/**
  * Returns the effective current period usage cost for a user, with daily
  * refresh credits deducted. Org-scoped subs return the pooled sum across
  * all org members; personally-scoped subs return this user's own cost.
  */
-export async function getEffectiveCurrentPeriodCost(userId: string): Promise<number> {
-  const subscription = await getHighestPrioritySubscription(userId)
+export async function getEffectiveCurrentPeriodCost(
+  userId: string,
+  executor: DbClient = db
+): Promise<number> {
+  const subscription = await getHighestPrioritySubscription(userId, { executor })
   const orgScoped = isOrgScopedSubscription(subscription, userId)
 
   let rawCost: number
   let refreshUserIds: string[] = [userId]
 
   if (orgScoped && subscription) {
-    const pooled = await getPooledOrgCurrentPeriodCost(subscription.referenceId)
+    const pooled = await getPooledOrgCurrentPeriodCost(subscription.referenceId, executor)
     if (pooled.memberIds.length === 0) return 0
     refreshUserIds = pooled.memberIds
-    rawCost = pooled.currentPeriodCost
+    const billingPeriod =
+      subscription.periodStart && subscription.periodEnd
+        ? { start: subscription.periodStart, end: subscription.periodEnd }
+        : defaultBillingPeriod()
+    rawCost =
+      pooled.currentPeriodCost +
+      (await getBillingPeriodUsageCost(
+        { type: 'organization', id: subscription.referenceId },
+        billingPeriod,
+        undefined,
+        executor
+      ))
   } else {
-    const rows = await db
+    const rows = await executor
       .select({ current: userStats.currentPeriodCost })
       .from(userStats)
       .where(eq(userStats.userId, userId))
       .limit(1)
 
     if (rows.length === 0) return 0
-    rawCost = toNumber(toDecimal(rows[0].current))
+    const billingPeriod =
+      subscription?.periodStart && subscription.periodEnd
+        ? { start: subscription.periodStart, end: subscription.periodEnd }
+        : defaultBillingPeriod()
+    rawCost =
+      toNumber(toDecimal(rows[0].current)) +
+      (await getBillingPeriodUsageCost(
+        { type: 'user', id: userId },
+        billingPeriod,
+        undefined,
+        executor
+      ))
   }
 
   if (!subscription || !isPaid(subscription.plan) || !subscription.periodStart) {
@@ -663,17 +740,28 @@ export async function getEffectiveCurrentPeriodCost(userId: string): Promise<num
 
   const userBounds =
     orgScoped && subscription.periodStart
-      ? await getOrgMemberRefreshBounds(subscription.referenceId, subscription.periodStart)
+      ? await getOrgMemberRefreshBounds(
+          subscription.referenceId,
+          subscription.periodStart,
+          executor
+        )
       : {}
 
-  const refreshConsumed = await computeDailyRefreshConsumed({
-    userIds: refreshUserIds,
-    periodStart: subscription.periodStart,
-    periodEnd: subscription.periodEnd ?? null,
-    planDollars,
-    seats: subscription.seats || 1,
-    userBounds: Object.keys(userBounds).length > 0 ? userBounds : undefined,
-  })
+  const refreshConsumed = await computeDailyRefreshConsumed(
+    {
+      userIds: refreshUserIds,
+      periodStart: subscription.periodStart,
+      periodEnd: subscription.periodEnd ?? null,
+      planDollars,
+      seats: subscription.seats || 1,
+      userBounds: Object.keys(userBounds).length > 0 ? userBounds : undefined,
+      billingEntity:
+        orgScoped && subscription
+          ? { type: 'organization', id: subscription.referenceId }
+          : { type: 'user', id: userId },
+    },
+    executor
+  )
 
   return Math.max(0, rawCost - refreshConsumed)
 }
@@ -681,7 +769,7 @@ export async function getEffectiveCurrentPeriodCost(userId: string): Promise<num
 /**
  * Calculate billing projection based on current usage
  */
-export async function calculateBillingProjection(userId: string): Promise<BillingData> {
+async function calculateBillingProjection(userId: string): Promise<BillingData> {
   try {
     const usageData = await getUserUsageData(userId)
 

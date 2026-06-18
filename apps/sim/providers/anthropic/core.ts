@@ -2,19 +2,23 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import type { RawMessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages'
 import type { Logger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import type { StreamingExecution } from '@/executor/types'
+import { getErrorMessage, toError } from '@sim/utils/errors'
+import type { BlockTokens, IterationToolCall, StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import {
   checkForForcedToolUsage,
   createReadableStreamFromAnthropicStream,
 } from '@/providers/anthropic/utils'
+import { buildAnthropicMessageContent } from '@/providers/attachments'
 import {
   getMaxOutputTokensForModel,
   getThinkingCapability,
   supportsNativeStructuredOutputs,
   supportsTemperature,
 } from '@/providers/models'
+import { createStreamingExecution } from '@/providers/streaming-execution'
+import { adaptAnthropicToolSchema } from '@/providers/tool-schema-adapter'
+import { enrichLastModelSegment } from '@/providers/trace-enrichment'
 import type { ProviderRequest, ProviderResponse, TimeSegment } from '@/providers/types'
 import { ProviderError } from '@/providers/types'
 import {
@@ -80,13 +84,15 @@ const THINKING_BUDGET_TOKENS: Record<string, number> = {
 
 /**
  * Checks if a model supports adaptive thinking (thinking.type: "adaptive").
- * Opus 4.7 supports ONLY adaptive thinking (no extended thinking / budget_tokens).
+ * Opus 4.8 and Opus 4.7 support ONLY adaptive thinking (no extended thinking / budget_tokens).
  * Opus 4.6 and Sonnet 4.6 support both extended and adaptive thinking — use adaptive.
  * Opus 4.5 supports effort but NOT adaptive thinking — it uses budget_tokens with type: "enabled".
  */
 function supportsAdaptiveThinking(modelId: string): boolean {
   const normalizedModel = modelId.toLowerCase()
   return (
+    normalizedModel.includes('opus-4-8') ||
+    normalizedModel.includes('opus-4.8') ||
     normalizedModel.includes('opus-4-7') ||
     normalizedModel.includes('opus-4.7') ||
     normalizedModel.includes('opus-4-6') ||
@@ -99,7 +105,7 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 /**
  * Builds the thinking configuration for the Anthropic API based on model capabilities and level.
  *
- * - Opus 4.7: Uses adaptive thinking only (no extended thinking support)
+ * - Opus 4.8, Opus 4.7: Uses adaptive thinking only (no extended thinking support)
  * - Opus 4.6, Sonnet 4.6: Uses adaptive thinking with effort parameter
  * - Other models: Uses budget_tokens-based extended thinking
  *
@@ -228,9 +234,11 @@ export async function executeAnthropicProviderRequest(
           ],
         })
       } else {
+        const content = buildAnthropicMessageContent(msg.content, msg.files, config.providerId)
         messages.push({
           role: msg.role === 'assistant' ? 'assistant' : 'user',
-          content: msg.content ? [{ type: 'text', text: msg.content }] : [],
+          // double-cast-allowed: shared attachment builder returns Anthropic-compatible content blocks but avoids importing SDK-only union types
+          content: content as unknown as Anthropic.Messages.ContentBlockParam[],
         })
       }
     })
@@ -245,15 +253,7 @@ export async function executeAnthropicProviderRequest(
   }
 
   let anthropicTools: Anthropic.Messages.Tool[] | undefined = request.tools?.length
-    ? request.tools.map((tool) => ({
-        name: tool.id,
-        description: tool.description,
-        input_schema: {
-          type: 'object' as const,
-          properties: tool.parameters.properties,
-          required: tool.parameters.required,
-        },
-      }))
+    ? request.tools.map((tool) => adaptAnthropicToolSchema(tool))
     : undefined
 
   let toolChoice: 'none' | 'auto' | { type: 'tool'; name: string } = 'auto'
@@ -397,79 +397,38 @@ export async function executeAnthropicProviderRequest(
       request.abortSignal ? { signal: request.abortSignal } : undefined
     )
 
-    const streamingResult = {
-      stream: createReadableStreamFromAnthropicStream(
-        streamResponse as AsyncIterable<RawMessageStreamEvent>,
-        (content, usage) => {
-          streamingResult.execution.output.content = content
-          streamingResult.execution.output.tokens = {
-            input: usage.input_tokens,
-            output: usage.output_tokens,
-            total: usage.input_tokens + usage.output_tokens,
-          }
-
-          const costResult = calculateCost(request.model, usage.input_tokens, usage.output_tokens)
-          streamingResult.execution.output.cost = {
-            input: costResult.input,
-            output: costResult.output,
-            total: costResult.total,
-          }
-
-          const streamEndTime = Date.now()
-          const streamEndTimeISO = new Date(streamEndTime).toISOString()
-
-          if (streamingResult.execution.output.providerTiming) {
-            streamingResult.execution.output.providerTiming.endTime = streamEndTimeISO
-            streamingResult.execution.output.providerTiming.duration =
-              streamEndTime - providerStartTime
-
-            if (streamingResult.execution.output.providerTiming.timeSegments?.[0]) {
-              streamingResult.execution.output.providerTiming.timeSegments[0].endTime =
-                streamEndTime
-              streamingResult.execution.output.providerTiming.timeSegments[0].duration =
-                streamEndTime - providerStartTime
+    const streamingResult = createStreamingExecution({
+      model: request.model,
+      providerStartTime,
+      providerStartTimeISO,
+      timing: { kind: 'simple', segmentName: request.model },
+      initialTokens: { input: 0, output: 0, total: 0 },
+      initialCost: { total: 0.0, input: 0.0, output: 0.0 },
+      isStreaming: true,
+      createStream: ({ output, finalizeTiming }) =>
+        createReadableStreamFromAnthropicStream(
+          streamResponse as AsyncIterable<RawMessageStreamEvent>,
+          (content, usage) => {
+            output.content = content
+            output.tokens = {
+              input: usage.input_tokens,
+              output: usage.output_tokens,
+              total: usage.input_tokens + usage.output_tokens,
             }
-          }
-        }
-      ),
-      execution: {
-        success: true,
-        output: {
-          content: '',
-          model: request.model,
-          tokens: { input: 0, output: 0, total: 0 },
-          toolCalls: undefined,
-          providerTiming: {
-            startTime: providerStartTimeISO,
-            endTime: new Date().toISOString(),
-            duration: Date.now() - providerStartTime,
-            timeSegments: [
-              {
-                type: 'model',
-                name: 'Streaming response',
-                startTime: providerStartTime,
-                endTime: Date.now(),
-                duration: Date.now() - providerStartTime,
-              },
-            ],
-          },
-          cost: {
-            total: 0.0,
-            input: 0.0,
-            output: 0.0,
-          },
-        },
-        logs: [],
-        metadata: {
-          startTime: providerStartTimeISO,
-          endTime: new Date().toISOString(),
-          duration: Date.now() - providerStartTime,
-        },
-        isStreaming: true,
-      },
-    }
 
-    return streamingResult as StreamingExecution
+            const costResult = calculateCost(request.model, usage.input_tokens, usage.output_tokens)
+            output.cost = {
+              input: costResult.input,
+              output: costResult.output,
+              total: costResult.total,
+            }
+
+            finalizeTiming()
+          }
+        ),
+    })
+
+    return streamingResult
   }
 
   if (request.stream && !shouldStreamToolCalls) {
@@ -516,7 +475,7 @@ export async function executeAnthropicProviderRequest(
       const timeSegments: TimeSegment[] = [
         {
           type: 'model',
-          name: 'Initial response',
+          name: request.model,
           startTime: initialCallTime,
           endTime: initialCallTime + firstResponseTime,
           duration: firstResponseTime,
@@ -546,6 +505,11 @@ export async function executeAnthropicProviderRequest(
           }
 
           const toolUses = currentResponse.content.filter((item) => item.type === 'tool_use')
+
+          enrichLastModelSegmentFromAnthropicResponse(timeSegments, currentResponse, textContent, {
+            model: request.model,
+          })
+
           if (!toolUses || toolUses.length === 0) {
             break
           }
@@ -562,7 +526,9 @@ export async function executeAnthropicProviderRequest(
               if (!tool) return null
 
               const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-              const result = await executeTool(toolName, executionParams)
+              const result = await executeTool(toolName, executionParams, {
+                signal: request.abortSignal,
+              })
               const toolCallEndTime = Date.now()
 
               return {
@@ -587,7 +553,7 @@ export async function executeAnthropicProviderRequest(
                 result: {
                   success: false,
                   output: undefined,
-                  error: error instanceof Error ? error.message : 'Tool execution failed',
+                  error: getErrorMessage(error, 'Tool execution failed'),
                 },
                 startTime: toolCallStartTime,
                 endTime: toolCallEndTime,
@@ -622,6 +588,7 @@ export async function executeAnthropicProviderRequest(
               startTime: startTime,
               endTime: endTime,
               duration: duration,
+              toolCallId: toolUse.id,
             })
 
             let resultContent: unknown
@@ -751,7 +718,7 @@ export async function executeAnthropicProviderRequest(
 
           timeSegments.push({
             type: 'model',
-            name: `Model response (iteration ${iterationCount + 1})`,
+            name: request.model,
             startTime: nextModelStartTime,
             endTime: nextModelEndTime,
             duration: thisModelTime,
@@ -767,6 +734,16 @@ export async function executeAnthropicProviderRequest(
           }
 
           iterationCount++
+        }
+
+        if (iterationCount === MAX_TOOL_ITERATIONS) {
+          const trailingText = currentResponse.content
+            .filter((item) => item.type === 'text')
+            .map((item) => item.text)
+            .join('\n')
+          enrichLastModelSegmentFromAnthropicResponse(timeSegments, currentResponse, trailingText, {
+            model: request.model,
+          })
         }
       } catch (error) {
         logger.error(`Error in ${providerLabel} request:`, { error })
@@ -787,81 +764,57 @@ export async function executeAnthropicProviderRequest(
         request.abortSignal ? { signal: request.abortSignal } : undefined
       )
 
-      const streamingResult = {
-        stream: createReadableStreamFromAnthropicStream(
-          streamResponse as AsyncIterable<RawMessageStreamEvent>,
-          (streamContent, usage) => {
-            streamingResult.execution.output.content = streamContent
-            streamingResult.execution.output.tokens = {
-              input: tokens.input + usage.input_tokens,
-              output: tokens.output + usage.output_tokens,
-              total: tokens.total + usage.input_tokens + usage.output_tokens,
-            }
-
-            const streamCost = calculateCost(request.model, usage.input_tokens, usage.output_tokens)
-            const tc = sumToolCosts(toolResults)
-            streamingResult.execution.output.cost = {
-              input: accumulatedCost.input + streamCost.input,
-              output: accumulatedCost.output + streamCost.output,
-              toolCost: tc || undefined,
-              total: accumulatedCost.total + streamCost.total + tc,
-            }
-
-            const streamEndTime = Date.now()
-            const streamEndTimeISO = new Date(streamEndTime).toISOString()
-
-            if (streamingResult.execution.output.providerTiming) {
-              streamingResult.execution.output.providerTiming.endTime = streamEndTimeISO
-              streamingResult.execution.output.providerTiming.duration =
-                streamEndTime - providerStartTime
-            }
-          }
-        ),
-        execution: {
-          success: true,
-          output: {
-            content: '',
-            model: request.model,
-            tokens: {
-              input: tokens.input,
-              output: tokens.output,
-              total: tokens.total,
-            },
-            toolCalls:
-              toolCalls.length > 0
-                ? {
-                    list: toolCalls,
-                    count: toolCalls.length,
-                  }
-                : undefined,
-            providerTiming: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-              modelTime: modelTime,
-              toolsTime: toolsTime,
-              firstResponseTime: firstResponseTime,
-              iterations: iterationCount + 1,
-              timeSegments: timeSegments,
-            },
-            cost: {
-              input: accumulatedCost.input,
-              output: accumulatedCost.output,
-              toolCost: undefined as number | undefined,
-              total: accumulatedCost.total,
-            },
-          },
-          logs: [],
-          metadata: {
-            startTime: providerStartTimeISO,
-            endTime: new Date().toISOString(),
-            duration: Date.now() - providerStartTime,
-          },
-          isStreaming: true,
+      const streamingResult = createStreamingExecution({
+        model: request.model,
+        providerStartTime,
+        providerStartTimeISO,
+        timing: {
+          kind: 'accumulated',
+          modelTime,
+          toolsTime,
+          firstResponseTime,
+          iterations: iterationCount + 1,
+          timeSegments,
         },
-      }
+        initialTokens: { input: tokens.input, output: tokens.output, total: tokens.total },
+        initialCost: {
+          input: accumulatedCost.input,
+          output: accumulatedCost.output,
+          toolCost: undefined as number | undefined,
+          total: accumulatedCost.total,
+        },
+        toolCalls: toolCalls.length > 0 ? { list: toolCalls, count: toolCalls.length } : undefined,
+        isStreaming: true,
+        createStream: ({ output, finalizeTiming }) =>
+          createReadableStreamFromAnthropicStream(
+            streamResponse as AsyncIterable<RawMessageStreamEvent>,
+            (streamContent, usage) => {
+              output.content = streamContent
+              output.tokens = {
+                input: tokens.input + usage.input_tokens,
+                output: tokens.output + usage.output_tokens,
+                total: tokens.total + usage.input_tokens + usage.output_tokens,
+              }
 
-      return streamingResult as StreamingExecution
+              const streamCost = calculateCost(
+                request.model,
+                usage.input_tokens,
+                usage.output_tokens
+              )
+              const tc = sumToolCosts(toolResults)
+              output.cost = {
+                input: accumulatedCost.input + streamCost.input,
+                output: accumulatedCost.output + streamCost.output,
+                toolCost: tc || undefined,
+                total: accumulatedCost.total + streamCost.total + tc,
+              }
+
+              finalizeTiming()
+            }
+          ),
+      })
+
+      return streamingResult
     } catch (error) {
       const providerEndTime = Date.now()
       const providerEndTimeISO = new Date(providerEndTime).toISOString()
@@ -930,7 +883,7 @@ export async function executeAnthropicProviderRequest(
     const timeSegments: TimeSegment[] = [
       {
         type: 'model',
-        name: 'Initial response',
+        name: request.model,
         startTime: initialCallTime,
         endTime: initialCallTime + firstResponseTime,
         duration: firstResponseTime,
@@ -960,6 +913,11 @@ export async function executeAnthropicProviderRequest(
         }
 
         const toolUses = currentResponse.content.filter((item) => item.type === 'tool_use')
+
+        enrichLastModelSegmentFromAnthropicResponse(timeSegments, currentResponse, textContent, {
+          model: request.model,
+        })
+
         if (!toolUses || toolUses.length === 0) {
           break
         }
@@ -978,7 +936,10 @@ export async function executeAnthropicProviderRequest(
             if (!tool) return null
 
             const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-            const result = await executeTool(toolName, executionParams, true)
+            const result = await executeTool(toolName, executionParams, {
+              skipPostProcess: true,
+              signal: request.abortSignal,
+            })
             const toolCallEndTime = Date.now()
 
             return {
@@ -1003,7 +964,7 @@ export async function executeAnthropicProviderRequest(
               result: {
                 success: false,
                 output: undefined,
-                error: error instanceof Error ? error.message : 'Tool execution failed',
+                error: getErrorMessage(error, 'Tool execution failed'),
               },
               startTime: toolCallStartTime,
               endTime: toolCallEndTime,
@@ -1038,6 +999,7 @@ export async function executeAnthropicProviderRequest(
             startTime: startTime,
             endTime: endTime,
             duration: duration,
+            toolCallId: toolUseId,
           })
 
           let resultContent: unknown
@@ -1165,7 +1127,7 @@ export async function executeAnthropicProviderRequest(
 
         timeSegments.push({
           type: 'model',
-          name: `Model response (iteration ${iterationCount + 1})`,
+          name: request.model,
           startTime: nextModelStartTime,
           endTime: nextModelEndTime,
           duration: thisModelTime,
@@ -1191,6 +1153,16 @@ export async function executeAnthropicProviderRequest(
 
         iterationCount++
       }
+
+      if (iterationCount === MAX_TOOL_ITERATIONS) {
+        const trailingText = currentResponse.content
+          .filter((item) => item.type === 'text')
+          .map((item) => item.text)
+          .join('\n')
+        enrichLastModelSegmentFromAnthropicResponse(timeSegments, currentResponse, trailingText, {
+          model: request.model,
+        })
+      }
     } catch (error) {
       logger.error(`Error in ${providerLabel} request:`, { error })
       throw error
@@ -1215,81 +1187,57 @@ export async function executeAnthropicProviderRequest(
         request.abortSignal ? { signal: request.abortSignal } : undefined
       )
 
-      const streamingResult = {
-        stream: createReadableStreamFromAnthropicStream(
-          streamResponse as AsyncIterable<RawMessageStreamEvent>,
-          (streamContent, usage) => {
-            streamingResult.execution.output.content = streamContent
-            streamingResult.execution.output.tokens = {
-              input: tokens.input + usage.input_tokens,
-              output: tokens.output + usage.output_tokens,
-              total: tokens.total + usage.input_tokens + usage.output_tokens,
-            }
-
-            const streamCost = calculateCost(request.model, usage.input_tokens, usage.output_tokens)
-            const tc2 = sumToolCosts(toolResults)
-            streamingResult.execution.output.cost = {
-              input: cost.input + streamCost.input,
-              output: cost.output + streamCost.output,
-              toolCost: tc2 || undefined,
-              total: cost.total + streamCost.total + tc2,
-            }
-
-            const streamEndTime = Date.now()
-            const streamEndTimeISO = new Date(streamEndTime).toISOString()
-
-            if (streamingResult.execution.output.providerTiming) {
-              streamingResult.execution.output.providerTiming.endTime = streamEndTimeISO
-              streamingResult.execution.output.providerTiming.duration =
-                streamEndTime - providerStartTime
-            }
-          }
-        ),
-        execution: {
-          success: true,
-          output: {
-            content: '',
-            model: request.model,
-            tokens: {
-              input: tokens.input,
-              output: tokens.output,
-              total: tokens.total,
-            },
-            toolCalls:
-              toolCalls.length > 0
-                ? {
-                    list: toolCalls,
-                    count: toolCalls.length,
-                  }
-                : undefined,
-            providerTiming: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-              modelTime: modelTime,
-              toolsTime: toolsTime,
-              firstResponseTime: firstResponseTime,
-              iterations: iterationCount + 1,
-              timeSegments: timeSegments,
-            },
-            cost: {
-              input: cost.input,
-              output: cost.output,
-              toolCost: undefined as number | undefined,
-              total: cost.total,
-            },
-          },
-          logs: [],
-          metadata: {
-            startTime: providerStartTimeISO,
-            endTime: new Date().toISOString(),
-            duration: Date.now() - providerStartTime,
-          },
-          isStreaming: true,
+      const streamingResult = createStreamingExecution({
+        model: request.model,
+        providerStartTime,
+        providerStartTimeISO,
+        timing: {
+          kind: 'accumulated',
+          modelTime,
+          toolsTime,
+          firstResponseTime,
+          iterations: iterationCount + 1,
+          timeSegments,
         },
-      }
+        initialTokens: { input: tokens.input, output: tokens.output, total: tokens.total },
+        initialCost: {
+          input: cost.input,
+          output: cost.output,
+          toolCost: undefined as number | undefined,
+          total: cost.total,
+        },
+        toolCalls: toolCalls.length > 0 ? { list: toolCalls, count: toolCalls.length } : undefined,
+        isStreaming: true,
+        createStream: ({ output, finalizeTiming }) =>
+          createReadableStreamFromAnthropicStream(
+            streamResponse as AsyncIterable<RawMessageStreamEvent>,
+            (streamContent, usage) => {
+              output.content = streamContent
+              output.tokens = {
+                input: tokens.input + usage.input_tokens,
+                output: tokens.output + usage.output_tokens,
+                total: tokens.total + usage.input_tokens + usage.output_tokens,
+              }
 
-      return streamingResult as StreamingExecution
+              const streamCost = calculateCost(
+                request.model,
+                usage.input_tokens,
+                usage.output_tokens
+              )
+              const tc2 = sumToolCosts(toolResults)
+              output.cost = {
+                input: cost.input + streamCost.input,
+                output: cost.output + streamCost.output,
+                toolCost: tc2 || undefined,
+                total: cost.total + streamCost.total + tc2,
+              }
+
+              finalizeTiming()
+            }
+          ),
+      })
+
+      return streamingResult
     }
 
     return {
@@ -1334,5 +1282,89 @@ export async function executeAnthropicProviderRequest(
       endTime: providerEndTimeISO,
       duration: totalDuration,
     })
+  }
+}
+
+/**
+ * Enriches the last model segment with content from an Anthropic `Message`:
+ * assistant text, thinking/redacted_thinking blocks, tool_use calls (with IDs),
+ * stop_reason, and per-iteration tokens.
+ */
+function enrichLastModelSegmentFromAnthropicResponse(
+  timeSegments: TimeSegment[],
+  response: Anthropic.Messages.Message,
+  textContent: string,
+  extras?: {
+    model?: string
+    ttft?: number
+    errorType?: string
+    errorMessage?: string
+  }
+): void {
+  const thinkingBlocks = response.content.filter(
+    (item): item is Anthropic.Messages.ThinkingBlock | Anthropic.Messages.RedactedThinkingBlock =>
+      item.type === 'thinking' || item.type === 'redacted_thinking'
+  )
+  const thinkingContent = thinkingBlocks
+    .map((b) => (b.type === 'thinking' ? b.thinking : '[redacted]'))
+    .join('\n\n')
+
+  const toolUseBlocks = response.content.filter(
+    (item): item is Anthropic.Messages.ToolUseBlock => item.type === 'tool_use'
+  )
+  const toolCalls: IterationToolCall[] = toolUseBlocks.map((t) => ({
+    id: t.id,
+    name: t.name,
+    arguments:
+      t.input && typeof t.input === 'object' && !Array.isArray(t.input)
+        ? (t.input as Record<string, unknown>)
+        : {},
+  }))
+
+  const segmentTokens = response.usage ? buildAnthropicSegmentTokens(response.usage) : undefined
+
+  let cost: { input: number; output: number; total: number } | undefined
+  if (
+    extras?.model &&
+    segmentTokens &&
+    typeof segmentTokens.input === 'number' &&
+    typeof segmentTokens.output === 'number'
+  ) {
+    const useCached = (segmentTokens.cacheRead ?? 0) > 0
+    const full = calculateCost(extras.model, segmentTokens.input, segmentTokens.output, useCached)
+    cost = { input: full.input, output: full.output, total: full.total }
+  }
+
+  enrichLastModelSegment(timeSegments, {
+    assistantContent: textContent || undefined,
+    thinkingContent: thinkingContent || undefined,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    finishReason: response.stop_reason ?? undefined,
+    tokens: segmentTokens,
+    cost,
+    provider: 'anthropic',
+    ttft: extras?.ttft,
+    errorType: extras?.errorType,
+    errorMessage: extras?.errorMessage,
+  })
+}
+
+/**
+ * Builds a segment token breakdown from Anthropic usage data, surfacing prompt
+ * cache reads/writes separately and producing a corrected `total` that includes
+ * cache_creation tokens (which Anthropic bills as input tokens but omits from
+ * `input_tokens`).
+ */
+function buildAnthropicSegmentTokens(usage: Anthropic.Messages.Message['usage']): BlockTokens {
+  const input = usage.input_tokens ?? 0
+  const output = usage.output_tokens ?? 0
+  const cacheRead = usage.cache_read_input_tokens ?? 0
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0
+  return {
+    input,
+    output,
+    total: input + output + cacheRead + cacheWrite,
+    ...(cacheRead > 0 && { cacheRead }),
+    ...(cacheWrite > 0 && { cacheWrite }),
   }
 }

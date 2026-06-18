@@ -145,7 +145,12 @@ export function buildToolOperationsIndex(): ToolOperationItem[] {
 
     if (!options) continue
 
+    const seenOperationIds = new Set<string>()
+
     for (const option of options) {
+      if (seenOperationIds.has(option.id)) continue
+      seenOperationIds.add(option.id)
+
       if (!resolveToolId(block, option.id)) continue
 
       const operationName = option.label

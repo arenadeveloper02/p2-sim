@@ -1,15 +1,17 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { ZendeskIcon } from '@/components/icons'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { htmlToPlainText, joinTagArray, parseTagDate } from '@/connectors/utils'
+import { DEFAULT_MAX_TICKETS, zendeskConnectorMeta } from '@/connectors/zendesk/meta'
 
 const logger = createLogger('ZendeskConnector')
 
 const ARTICLES_PER_PAGE = 30
 const TICKETS_PER_PAGE = 100
-const DEFAULT_MAX_TICKETS = 500
+const SEARCH_API_RESULT_CAP = 1000
+
+const VALID_TICKET_STATUSES = new Set(['new', 'open', 'pending', 'hold', 'solved', 'closed'])
 
 interface ZendeskArticle {
   id: number
@@ -97,7 +99,7 @@ async function fetchArticles(
 ): Promise<ZendeskArticle[]> {
   const allArticles: ZendeskArticle[] = []
   const baseUrl = buildBaseUrl(subdomain)
-  const localePath = locale ? `/${locale}` : ''
+  const localePath = locale ? `/${encodeURIComponent(locale)}` : ''
   let page = 1
 
   while (true) {
@@ -132,7 +134,22 @@ async function fetchTickets(
   let url: string | null = `${baseUrl}/api/v2/tickets.json?per_page=${TICKETS_PER_PAGE}`
 
   if (statusFilter && statusFilter !== 'all') {
-    url = `${baseUrl}/api/v2/search.json?query=type:ticket status:${statusFilter}&per_page=${TICKETS_PER_PAGE}`
+    if (VALID_TICKET_STATUSES.has(statusFilter)) {
+      if (limit > SEARCH_API_RESULT_CAP) {
+        logger.warn(
+          `Zendesk Search API caps at ${SEARCH_API_RESULT_CAP} results; requested limit ${limit} will be truncated. Remove status filter to use the unbounded tickets endpoint.`
+        )
+      }
+      const params = new URLSearchParams({
+        query: `type:ticket status:${statusFilter}`,
+        per_page: String(TICKETS_PER_PAGE),
+      })
+      url = `${baseUrl}/api/v2/search.json?${params.toString()}`
+    } else {
+      logger.warn(
+        `Invalid Zendesk statusFilter "${statusFilter}"; falling back to all tickets. Valid values: ${[...VALID_TICKET_STATUSES].join(', ')}.`
+      )
+    }
   }
 
   while (url && allTickets.length < limit) {
@@ -294,79 +311,7 @@ function ticketToDocument(
 }
 
 export const zendeskConnector: ConnectorConfig = {
-  id: 'zendesk',
-  name: 'Zendesk',
-  description:
-    'Sync Help Center articles and support tickets from Zendesk into your knowledge base',
-  version: '1.0.0',
-  icon: ZendeskIcon,
-
-  auth: {
-    mode: 'apiKey',
-    label: 'API Token',
-    placeholder: 'Enter your Zendesk API token',
-  },
-
-  configFields: [
-    {
-      id: 'subdomain',
-      title: 'Subdomain',
-      type: 'short-input',
-      placeholder: 'yourcompany (from yourcompany.zendesk.com)',
-      required: true,
-      description: 'Your Zendesk subdomain',
-    },
-    {
-      id: 'email',
-      title: 'Email',
-      type: 'short-input',
-      placeholder: 'agent@yourcompany.com',
-      required: true,
-      description: 'Email address of the Zendesk user for API authentication',
-    },
-    {
-      id: 'contentType',
-      title: 'Content Type',
-      type: 'dropdown',
-      required: true,
-      description: 'What content to sync from Zendesk',
-      options: [
-        { label: 'Articles & Tickets', id: 'both' },
-        { label: 'Help Center Articles Only', id: 'articles' },
-        { label: 'Support Tickets Only', id: 'tickets' },
-      ],
-    },
-    {
-      id: 'ticketStatus',
-      title: 'Ticket Status Filter',
-      type: 'dropdown',
-      required: false,
-      description: 'Filter tickets by status (applies only when syncing tickets)',
-      options: [
-        { label: 'All Statuses', id: 'all' },
-        { label: 'Open', id: 'open' },
-        { label: 'Pending', id: 'pending' },
-        { label: 'Solved', id: 'solved' },
-        { label: 'Closed', id: 'closed' },
-      ],
-    },
-    {
-      id: 'locale',
-      title: 'Article Locale',
-      type: 'short-input',
-      required: false,
-      placeholder: 'e.g. en-us (default: all locales)',
-      description: 'Locale for Help Center articles',
-    },
-    {
-      id: 'maxTickets',
-      title: 'Max Tickets',
-      type: 'short-input',
-      required: false,
-      placeholder: `e.g. 200 (default: ${DEFAULT_MAX_TICKETS})`,
-      description: 'Maximum number of tickets to sync',
-    },
-  ],
+  ...zendeskConnectorMeta,
 
   listDocuments: async (
     accessToken: string,
@@ -496,19 +441,9 @@ export const zendeskConnector: ConnectorConfig = {
       await zendeskApiGet(url, accessToken, sourceConfig, VALIDATE_RETRY_OPTIONS)
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
-      return { valid: false, error: message }
+      return { valid: false, error: toError(error).message || 'Failed to validate configuration' }
     }
   },
-
-  tagDefinitions: [
-    { id: 'contentType', displayName: 'Content Type', fieldType: 'text' },
-    { id: 'status', displayName: 'Status', fieldType: 'text' },
-    { id: 'labels', displayName: 'Labels', fieldType: 'text' },
-    { id: 'tags', displayName: 'Tags', fieldType: 'text' },
-    { id: 'updatedAt', displayName: 'Last Updated', fieldType: 'date' },
-    { id: 'commentCount', displayName: 'Comment Count', fieldType: 'number' },
-  ],
 
   mapTags: (metadata: Record<string, unknown>): Record<string, unknown> => {
     const result: Record<string, unknown> = {}
@@ -519,6 +454,10 @@ export const zendeskConnector: ConnectorConfig = {
 
     if (typeof metadata.status === 'string') {
       result.status = metadata.status
+    }
+
+    if (typeof metadata.priority === 'string') {
+      result.priority = metadata.priority
     }
 
     const labels = joinTagArray(metadata.labels)

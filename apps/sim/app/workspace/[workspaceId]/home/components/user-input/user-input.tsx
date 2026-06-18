@@ -3,104 +3,50 @@
 import type React from 'react'
 import {
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
-  useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from 'react'
+import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
-import { useSession } from '@/lib/auth/auth-client'
+import { Button, Paperclip, Plus, Slash, Tooltip, toast } from '@/components/emcn'
+import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { cn } from '@/lib/core/utils/cn'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
-import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
-import { useAvailableResources } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/add-resource-dropdown'
-import type { PlusMenuHandle } from '@/app/workspace/[workspaceId]/home/components/user-input/components'
+import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
 import {
   AnimatedPlaceholderEffect,
   AttachedFilesList,
-  autoResizeTextarea,
   DropOverlay,
-  MAX_CHAT_TEXTAREA_HEIGHT,
   MicButton,
-  mapResourceToContext,
-  OVERLAY_CLASSES,
-  PlusMenuDropdown,
+  PromptEditor,
   SendButton,
-  TEXTAREA_BASE_CLASSES,
+  usePromptEditor,
 } from '@/app/workspace/[workspaceId]/home/components/user-input/components'
 import type {
   FileAttachmentForApi,
   MothershipResource,
   QueuedMessage,
 } from '@/app/workspace/[workspaceId]/home/types'
-import {
-  useContextManagement,
-  useFileAttachments,
-  useMentionMenu,
-  useMentionTokens,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks'
+import { useFileAttachments } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks'
 import type { AttachedFile } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks/use-file-attachments'
-import {
-  computeMentionHighlightRanges,
-  extractContextTokens,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/utils'
-import { useWorkflowMap } from '@/hooks/queries/workflows'
+import { mentionifyIntegrations } from '@/blocks/integration-matcher'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useSpeechToText } from '@/hooks/use-speech-to-text'
+import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext } from '@/stores/panel'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 
-function getCaretAnchor(
-  textarea: HTMLTextAreaElement,
-  caretPos: number
-): { left: number; top: number } {
-  const textareaRect = textarea.getBoundingClientRect()
-  const style = window.getComputedStyle(textarea)
-
-  const mirror = document.createElement('div')
-  mirror.style.position = 'absolute'
-  mirror.style.top = '0'
-  mirror.style.left = '0'
-  mirror.style.visibility = 'hidden'
-  mirror.style.whiteSpace = 'pre-wrap'
-  mirror.style.overflowWrap = 'break-word'
-  mirror.style.font = style.font
-  mirror.style.padding = style.padding
-  mirror.style.border = style.border
-  mirror.style.width = style.width
-  mirror.style.lineHeight = style.lineHeight
-  mirror.style.boxSizing = style.boxSizing
-  mirror.style.letterSpacing = style.letterSpacing
-  mirror.style.textTransform = style.textTransform
-  mirror.style.textIndent = style.textIndent
-  mirror.style.textAlign = style.textAlign
-  mirror.textContent = textarea.value.substring(0, caretPos)
-
-  const marker = document.createElement('span')
-  marker.style.display = 'inline-block'
-  marker.style.width = '0px'
-  marker.style.padding = '0'
-  marker.style.border = '0'
-  mirror.appendChild(marker)
-
-  document.body.appendChild(mirror)
-  const markerRect = marker.getBoundingClientRect()
-  const mirrorRect = mirror.getBoundingClientRect()
-  document.body.removeChild(mirror)
-
-  return {
-    left: textareaRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft,
-    top: textareaRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop,
-  }
-}
+const logger = createLogger('UserInput')
 
 interface UserInputProps {
   defaultValue?: string
+  draftScopeKey?: string
   onSubmit: (
     text: string,
     fileAttachments?: FileAttachmentForApi[],
@@ -109,27 +55,33 @@ interface UserInputProps {
   isSending: boolean
   onStopGeneration: () => void
   isInitialView?: boolean
-  userId?: string
-  onContextAdd?: (context: ChatContext) => void
-  onContextRemove?: (context: ChatContext) => void
   onSendQueuedHead?: () => void
   onEditQueuedTail?: () => void
 }
 
 export interface UserInputHandle {
   loadQueuedMessage: (msg: QueuedMessage) => void
+  /** Populates the textarea with a CURATED prompt (suggested action, template,
+   * etc. — never free-form user prose), running it through `mentionifyIntegrations`
+   * (bare `Slack` → `@Slack`) and then auto-mention chipification so integration
+   * names chip with brand icons. Focuses the input and places the caret at the
+   * end. Does NOT submit. Safe to call with the same text twice in a row. */
+  populatePrompt: (text: string) => void
 }
 
-export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function UserInput(
+/**
+ * The chat input: the {@link PromptEditor} editing core wrapped with the
+ * chat-specific chrome — file attachments (browse, drag-drop, paste), voice
+ * input, draft persistence, queued-message recall, and the send/stop button.
+ */
+const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserInput(
   {
     defaultValue = '',
+    draftScopeKey,
     onSubmit,
     isSending,
     onStopGeneration,
     isInitialView = true,
-    userId,
-    onContextAdd,
-    onContextRemove,
     onSendQueuedHead,
     onEditQueuedTail,
   },
@@ -137,22 +89,19 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
 ) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { navigateToSettings } = useSettingsNavigation()
-  const { data: workflowsById = {} } = useWorkflowMap(workspaceId)
-  const { data: session } = useSession()
-  const [value, setValue] = useState(defaultValue)
-  const overlayRef = useRef<HTMLDivElement>(null)
-  const plusMenuRef = useRef<PlusMenuHandle>(null)
+  const { userId, onContextAdd, onContextRemove } = useChatSurface()
 
-  const [prevDefaultValue, setPrevDefaultValue] = useState(defaultValue)
-  if (defaultValue && defaultValue !== prevDefaultValue) {
-    setPrevDefaultValue(defaultValue)
-    setValue(defaultValue)
-  } else if (!defaultValue && prevDefaultValue) {
-    setPrevDefaultValue(defaultValue)
-  }
+  const [initialValue] = useState(() => {
+    if (defaultValue) return defaultValue
+    if (!draftScopeKey) return ''
+    const text = useMothershipDraftsStore.getState().drafts[draftScopeKey]?.text
+    return typeof text === 'string' ? text : ''
+  })
+
+  const prevDefaultValueRef = useRef(defaultValue)
 
   const files = useFileAttachments({
-    userId: userId || session?.user?.id,
+    userId,
     workspaceId,
     disabled: false,
     isLoading: isSending,
@@ -160,17 +109,93 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
   const hasFiles = files.attachedFiles.some((f) => !f.uploading && f.key)
   const hasUploadingFiles = files.attachedFiles.some((f) => f.uploading)
 
-  const contextManagement = useContextManagement({ message: value })
+  const filesRef = useRef(files)
+  filesRef.current = files
 
-  const { addContext } = contextManagement
+  const handlePasteFiles = useCallback((pasted: FileList) => {
+    filesRef.current.processFiles(pasted)
+  }, [])
 
-  const handleContextAdd = useCallback(
-    (context: ChatContext) => {
-      addContext(context)
-      onContextAdd?.(context)
-    },
-    [addContext, onContextAdd]
-  )
+  const editor = usePromptEditor({
+    workspaceId,
+    initialValue,
+    onContextAdd,
+    onPasteFiles: handlePasteFiles,
+  })
+  const editorRef = useRef(editor)
+  editorRef.current = editor
+  const textareaRef = editor.textareaRef
+
+  const draftScopeKeyRef = useRef(draftScopeKey)
+  draftScopeKeyRef.current = draftScopeKey
+
+  const hasRestoredDraftRef = useRef(false)
+  useEffect(() => {
+    if (hasRestoredDraftRef.current || !draftScopeKey) return
+    hasRestoredDraftRef.current = true
+    let restoredContexts: ChatContext[] | null = null
+    let restoredFiles: AttachedFile[] | null = null
+    let caretText: string | null = null
+    try {
+      const draft = useMothershipDraftsStore.getState().drafts[draftScopeKey]
+      if (!draft) return
+      if (draft.contexts?.length) {
+        restoredContexts = draft.contexts
+      }
+      if (draft.fileAttachments?.length) {
+        restoredFiles = draft.fileAttachments.map((a) => ({
+          id: a.id,
+          name: a.filename,
+          size: a.size,
+          type: a.media_type,
+          path: a.path ?? '',
+          key: a.key,
+          uploading: false,
+          previewUrl: getMothershipAttachmentPreviewUrl(a),
+        }))
+      }
+      if (typeof draft.text === 'string' && draft.text.length > 0) {
+        caretText = draft.text
+      }
+    } catch (err) {
+      logger.error('Failed to read draft, clearing', { err })
+      useMothershipDraftsStore.getState().clearDraft(draftScopeKey)
+      return
+    }
+    if (restoredContexts) editor.setContexts(restoredContexts)
+    if (restoredFiles) files.restoreAttachedFiles(restoredFiles)
+    if (caretText !== null) {
+      const textarea = textareaRef.current
+      if (textarea) {
+        textarea.focus()
+        textarea.setSelectionRange(caretText.length, caretText.length)
+      }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only restore
+
+  const isFirstSaveRef = useRef(true)
+  useEffect(() => {
+    if (isFirstSaveRef.current) {
+      isFirstSaveRef.current = false
+      return
+    }
+    if (!draftScopeKeyRef.current) return
+    const fileAttachments = files.attachedFiles
+      .filter((f) => !f.uploading && f.key)
+      .map((f) => ({
+        id: f.id,
+        key: f.key!,
+        filename: f.name,
+        media_type: f.type,
+        size: f.size,
+        ...(f.path ? { path: f.path } : {}),
+      }))
+    useMothershipDraftsStore.getState().setDraft(draftScopeKeyRef.current, {
+      text: editor.value,
+      fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
+      contexts: editor.contexts.length > 0 ? editor.contexts : undefined,
+    })
+  }, [editor.value, files.attachedFiles, editor.contexts])
 
   const onContextRemoveRef = useRef(onContextRemove)
   onContextRemoveRef.current = onContextRemove
@@ -178,7 +203,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
   const prevSelectedContextsRef = useRef<ChatContext[]>([])
   useEffect(() => {
     const prev = prevSelectedContextsRef.current
-    const curr = contextManagement.selectedContexts
+    const curr = editor.contexts
     const contextId = (ctx: ChatContext): string => {
       switch (ctx.kind) {
         case 'workflow':
@@ -201,54 +226,51 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     const removed = prev.filter((p) => !curr.some((c) => contextId(c) === contextId(p)))
     if (removed.length > 0) removed.forEach((ctx) => onContextRemoveRef.current?.(ctx))
     prevSelectedContextsRef.current = curr
-  }, [contextManagement.selectedContexts])
+  }, [editor.contexts])
 
-  const existingResourceKeys = useMemo(() => {
-    const keys = new Set<string>()
-    for (const ctx of contextManagement.selectedContexts) {
-      if (ctx.kind === 'workflow' && ctx.workflowId) keys.add(`workflow:${ctx.workflowId}`)
-      if (ctx.kind === 'knowledge' && ctx.knowledgeId) keys.add(`knowledgebase:${ctx.knowledgeId}`)
-      if (ctx.kind === 'table' && ctx.tableId) keys.add(`table:${ctx.tableId}`)
-      if (ctx.kind === 'file' && ctx.fileId) keys.add(`file:${ctx.fileId}`)
-      if (ctx.kind === 'folder' && ctx.folderId) keys.add(`folder:${ctx.folderId}`)
-      if (ctx.kind === 'past_chat' && ctx.chatId) keys.add(`task:${ctx.chatId}`)
-    }
-    return keys
-  }, [contextManagement.selectedContexts])
+  const canSubmit = (editor.value.trim().length > 0 || hasFiles) && !isSending && !hasUploadingFiles
 
-  const availableResources = useAvailableResources(workspaceId, existingResourceKeys)
+  /**
+   * Sync the editor when the `defaultValue` prop changes post-mount — e.g.
+   * the user clicks a different template while UserInput is already mounted.
+   * `setValue` chipifies integration `@`-mentions consistently with the
+   * paste / draft restore flows.
+   *
+   * Deliberately does NOT run `mentionifyIntegrations` here: `defaultValue` is
+   * seeded from `LandingPromptStorage`, whose producers include the free-form
+   * landing prompt panel as well as curated CTAs. Curated producers opt their
+   * bare names in at the store seam (`storeCuratedPrompt`), so prose seeded here
+   * is never bare-chipped (the scunthorpe constraint).
+   */
+  useEffect(() => {
+    if (defaultValue === prevDefaultValueRef.current) return
+    prevDefaultValueRef.current = defaultValue
+    if (defaultValue) editorRef.current.setValue(defaultValue)
+  }, [defaultValue])
 
-  const mentionMenu = useMentionMenu({
-    message: value,
-    selectedContexts: contextManagement.selectedContexts,
-    onContextSelect: handleContextAdd,
-    onMessageChange: setValue,
-  })
-
-  const mentionTokensWithContext = useMentionTokens({
-    message: value,
-    selectedContexts: contextManagement.selectedContexts,
-    mentionMenu,
-    setMessage: setValue,
-    setSelectedContexts: contextManagement.setSelectedContexts,
-  })
-
-  const canSubmit = (value.trim().length > 0 || hasFiles) && !isSending && !hasUploadingFiles
-
-  const valueRef = useRef(value)
-  valueRef.current = value
   const sttPrefixRef = useRef('')
 
-  const handleTranscript = useCallback((text: string) => {
+  function handleTranscript(text: string) {
     const prefix = sttPrefixRef.current
     const newVal = prefix ? `${prefix} ${text}` : text
-    setValue(newVal)
-    valueRef.current = newVal
-  }, [])
+    editorRef.current.setValue(newVal)
+  }
 
-  const handleUsageLimitExceeded = useCallback(() => {
-    navigateToSettings({ section: 'subscription' })
-  }, [navigateToSettings])
+  function handleUsageLimitExceeded(message?: string, isMemberLimit?: boolean) {
+    // A per-member cap can only be raised by an org admin, so don't offer Upgrade
+    // (the member can't act on it) — the message already tells them to ask an admin.
+    toast.error(
+      message || 'You are out of credits.',
+      isMemberLimit
+        ? undefined
+        : {
+            action: {
+              label: 'Upgrade',
+              onClick: () => navigateToSettings({ section: 'billing' }),
+            },
+          }
+    )
+  }
 
   const {
     isListening,
@@ -258,36 +280,30 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
   } = useSpeechToText({
     onTranscript: handleTranscript,
     onUsageLimitExceeded: handleUsageLimitExceeded,
+    workspaceId,
   })
 
   const toggleListening = useCallback(() => {
     if (!isListening) {
-      sttPrefixRef.current = valueRef.current
+      sttPrefixRef.current = editorRef.current.getValue()
     }
     rawToggle()
   }, [isListening, rawToggle])
 
-  const filesRef = useRef(files)
-  filesRef.current = files
-  const contextRef = useRef(contextManagement)
-  contextRef.current = contextManagement
   const onSendQueuedHeadRef = useRef(onSendQueuedHead)
   onSendQueuedHeadRef.current = onSendQueuedHead
   const onEditQueuedTailRef = useRef(onEditQueuedTail)
   onEditQueuedTailRef.current = onEditQueuedTail
   const isSendingRef = useRef(isSending)
   isSendingRef.current = isSending
-
-  const textareaRef = mentionMenu.textareaRef
   const wasSendingRef = useRef(false)
-  const atInsertPosRef = useRef<number | null>(null)
-  const pendingCursorRef = useRef<number | null>(null)
 
   useImperativeHandle(
     ref,
     () => ({
       loadQueuedMessage: (msg: QueuedMessage) => {
-        setValue(msg.content)
+        const currentEditor = editorRef.current
+        currentEditor.setValue(msg.content)
         const restored: AttachedFile[] = (msg.fileAttachments ?? []).map((a) => ({
           id: a.id,
           name: a.filename,
@@ -296,60 +312,24 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
           path: a.path ?? '',
           key: a.key,
           uploading: false,
+          previewUrl: getMothershipAttachmentPreviewUrl(a),
         }))
-        files.restoreAttachedFiles(restored)
-        contextManagement.setSelectedContexts(msg.contexts ?? [])
-        requestAnimationFrame(() => {
-          const textarea = textareaRef.current
-          if (!textarea) return
-          textarea.focus()
-          const end = textarea.value.length
-          textarea.setSelectionRange(end, end)
-        })
+        filesRef.current.restoreAttachedFiles(restored)
+        currentEditor.setContexts(msg.contexts ?? [])
+        currentEditor.focusAtEnd()
+      },
+      populatePrompt: (text: string) => {
+        // `text` is a curated prompt, so opt its bare integration names into
+        // `@`-mention form before chipification (the auto-mention pipeline only
+        // chips already-`@`-prefixed names). Curated prompts arriving via the
+        // `defaultValue` seed are mentionified at their producer instead, since
+        // that path is also reused for free-form landing prose.
+        editorRef.current.setValue(mentionifyIntegrations(text))
+        editorRef.current.focusAtEnd()
       },
     }),
-    [files.restoreAttachedFiles, contextManagement.setSelectedContexts, textareaRef]
+    []
   )
-
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-    const maxHeight = isInitialView ? window.innerHeight * 0.3 : MAX_CHAT_TEXTAREA_HEIGHT
-    textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
-    if (overlayRef.current) {
-      overlayRef.current.scrollTop = textarea.scrollTop
-    }
-  }, [value, isInitialView, textareaRef])
-
-  const handleResourceSelect = useCallback(
-    (resource: MothershipResource) => {
-      const textarea = textareaRef.current
-      if (textarea) {
-        const currentValue = valueRef.current
-        const insertAt = atInsertPosRef.current ?? textarea.selectionStart ?? currentValue.length
-        const needsSpaceBefore = insertAt > 0 && !/\s/.test(currentValue.charAt(insertAt - 1))
-        const insertText = `${needsSpaceBefore ? ' ' : ''}@${resource.title} `
-        const before = currentValue.slice(0, insertAt)
-        const after = currentValue.slice(insertAt)
-        const newValue = `${before}${insertText}${after}`
-        const newPos = before.length + insertText.length
-        pendingCursorRef.current = newPos
-        // Eagerly sync refs so successive drop-handler iterations see the updated position
-        valueRef.current = newValue
-        atInsertPosRef.current = newPos
-        setValue(newValue)
-      }
-
-      const context = mapResourceToContext(resource)
-      handleContextAdd(context)
-    },
-    [textareaRef, handleContextAdd]
-  )
-
-  const handlePlusMenuClose = useCallback(() => {
-    atInsertPosRef.current = null
-  }, [])
 
   const handleFileSelectStable = useCallback(() => {
     filesRef.current.handleFileSelect()
@@ -384,11 +364,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
         e.stopPropagation()
         try {
           const resources = JSON.parse(resourcesJson) as MothershipResource[]
-          for (const resource of resources) {
-            handleResourceSelect(resource)
-          }
-          // Reset after batch so the next non-drop insert uses the cursor position
-          atInsertPosRef.current = null
+          editorRef.current.insertResources(resources)
         } catch {}
         textareaRef.current?.focus()
         return
@@ -399,8 +375,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
         e.stopPropagation()
         try {
           const resource = JSON.parse(resourceJson) as MothershipResource
-          handleResourceSelect(resource)
-          atInsertPosRef.current = null
+          editorRef.current.insertResources([resource])
         } catch {}
         textareaRef.current?.focus()
         return
@@ -408,7 +383,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
       filesRef.current.handleDrop(e)
       requestAnimationFrame(() => textareaRef.current?.focus())
     },
-    [handleResourceSelect, textareaRef]
+    [textareaRef]
   )
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -463,8 +438,7 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
 
   const handleSubmit = useCallback(() => {
     const currentFiles = filesRef.current
-    const currentContext = contextRef.current
-    const currentValue = valueRef.current
+    const currentEditor = editorRef.current
 
     const fileAttachmentsForApi: FileAttachmentForApi[] = currentFiles.attachedFiles
       .filter((f) => !f.uploading && f.key)
@@ -477,272 +451,69 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
         ...(f.path ? { path: f.path } : {}),
       }))
 
+    // getPlainValue restores skill chips' EM SPACE sentinel to a literal '/'
+    // so the message reads as clean `/skill-name` (skills travel via contexts
+    // regardless). Only the submitted copy is converted; the live input is not.
     onSubmit(
-      currentValue,
+      currentEditor.getPlainValue(),
       fileAttachmentsForApi.length > 0 ? fileAttachmentsForApi : undefined,
-      currentContext.selectedContexts.length > 0 ? currentContext.selectedContexts : undefined
+      currentEditor.contexts.length > 0 ? currentEditor.contexts : undefined
     )
-    setValue('')
-    valueRef.current = ''
+    currentEditor.clear()
     sttPrefixRef.current = ''
+    if (draftScopeKeyRef.current) {
+      useMothershipDraftsStore.getState().clearDraft(draftScopeKeyRef.current)
+    }
     resetTranscript()
     currentFiles.clearAttachedFiles()
     prevSelectedContextsRef.current = []
-    currentContext.clearContexts()
+  }, [onSubmit, resetTranscript])
 
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-    }
-  }, [onSubmit, textareaRef, resetTranscript])
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'ArrowUp' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const isEmpty = valueRef.current.length === 0 && filesRef.current.attachedFiles.length === 0
-        if (isEmpty && onEditQueuedTailRef.current) {
-          e.preventDefault()
-          onEditQueuedTailRef.current()
-          return
-        }
+  /**
+   * Enter policy for the editor: mirror canSubmit's uploading guard (Enter
+   * reads refs, not rendered state), queue the head message when Enter lands
+   * on an empty input mid-stream, and otherwise submit.
+   */
+  const handleEnterSubmit = useCallback(() => {
+    if (filesRef.current.attachedFiles.some((f) => f.uploading)) return
+    const hasSubmitPayload =
+      editorRef.current.getValue().trim().length > 0 ||
+      filesRef.current.attachedFiles.some((file) => !file.uploading && file.key)
+    if (!hasSubmitPayload) {
+      if (isSendingRef.current) {
+        onSendQueuedHeadRef.current?.()
       }
-
-      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-        e.preventDefault()
-        // Mirror canSubmit's uploading guard; Enter reads refs, not rendered state.
-        if (filesRef.current.attachedFiles.some((f) => f.uploading)) return
-        const hasSubmitPayload =
-          valueRef.current.trim().length > 0 ||
-          filesRef.current.attachedFiles.some((file) => !file.uploading && file.key)
-        if (!hasSubmitPayload) {
-          if (isSendingRef.current) {
-            onSendQueuedHeadRef.current?.()
-          }
-          return
-        }
-        handleSubmit()
-        return
-      }
-
-      const textarea = textareaRef.current
-      const selStart = textarea?.selectionStart ?? 0
-      const selEnd = textarea?.selectionEnd ?? selStart
-      const selectionLength = Math.abs(selEnd - selStart)
-
-      if (e.key === 'Backspace' || e.key === 'Delete') {
-        if (selectionLength > 0) {
-          mentionTokensWithContext.removeContextsInSelection(selStart, selEnd)
-        } else {
-          const ranges = mentionTokensWithContext.computeMentionRanges()
-          const target =
-            e.key === 'Backspace'
-              ? ranges.find((r) => selStart > r.start && selStart <= r.end)
-              : ranges.find((r) => selStart >= r.start && selStart < r.end)
-
-          if (target) {
-            e.preventDefault()
-            mentionTokensWithContext.deleteRange(target)
-            return
-          }
-        }
-      }
-
-      if (selectionLength === 0 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-        if (textarea) {
-          if (e.key === 'ArrowLeft') {
-            const nextPos = Math.max(0, selStart - 1)
-            const r = mentionTokensWithContext.findRangeContaining(nextPos)
-            if (r) {
-              e.preventDefault()
-              const target = r.start
-              setTimeout(() => textarea.setSelectionRange(target, target), 0)
-              return
-            }
-          } else if (e.key === 'ArrowRight') {
-            const nextPos = Math.min(value.length, selStart + 1)
-            const r = mentionTokensWithContext.findRangeContaining(nextPos)
-            if (r) {
-              e.preventDefault()
-              const target = r.end
-              setTimeout(() => textarea.setSelectionRange(target, target), 0)
-              return
-            }
-          }
-        }
-      }
-
-      if (e.key.length === 1 || e.key === 'Space') {
-        const blocked =
-          selectionLength === 0 && !!mentionTokensWithContext.findRangeContaining(selStart)
-        if (blocked) {
-          e.preventDefault()
-          const r = mentionTokensWithContext.findRangeContaining(selStart)
-          if (r && textarea) {
-            setTimeout(() => {
-              textarea.setSelectionRange(r.end, r.end)
-            }, 0)
-          }
-          return
-        }
-      }
-    },
-    [handleSubmit, mentionTokensWithContext, value, textareaRef]
-  )
-
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value
-    const caret = e.target.selectionStart ?? newValue.length
-
-    if (
-      caret > 0 &&
-      newValue.charAt(caret - 1) === '@' &&
-      (caret === 1 || /\s/.test(newValue.charAt(caret - 2)))
-    ) {
-      const before = newValue.slice(0, caret - 1)
-      const after = newValue.slice(caret)
-      const adjusted = `${before}${after}`
-      setValue(adjusted)
-      atInsertPosRef.current = caret - 1
-      const anchor = getCaretAnchor(e.target, caret - 1)
-      plusMenuRef.current?.open(anchor)
       return
     }
+    handleSubmit()
+  }, [handleSubmit])
 
-    setValue(newValue)
+  /**
+   * ArrowUp-on-empty policy: recall the queued tail message for editing. Only
+   * claims the key when there are no attachments and a queue handler exists.
+   */
+  const handleArrowUpOnEmpty = useCallback((): boolean => {
+    if (filesRef.current.attachedFiles.length > 0) return false
+    const onEditQueuedTail = onEditQueuedTailRef.current
+    if (!onEditQueuedTail) return false
+    onEditQueuedTail()
+    return true
   }, [])
 
-  const handleSelectAdjust = useCallback(() => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-    const pos = textarea.selectionStart ?? 0
-    const r = mentionTokensWithContext.findRangeContaining(pos)
-    if (r) {
-      const snapPos = pos - r.start < r.end - pos ? r.start : r.end
-      setTimeout(() => {
-        textarea.setSelectionRange(snapPos, snapPos)
-      }, 0)
-    }
-  }, [textareaRef, mentionTokensWithContext])
-
-  const handleInput = useCallback(
-    (e: React.FormEvent<HTMLTextAreaElement>) => {
-      const maxHeight = isInitialView ? window.innerHeight * 0.3 : MAX_CHAT_TEXTAREA_HEIGHT
-      autoResizeTextarea(e, maxHeight)
-
-      if (overlayRef.current) {
-        overlayRef.current.scrollTop = (e.target as HTMLTextAreaElement).scrollTop
-      }
-    },
-    [isInitialView]
-  )
-
-  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData?.items
-    if (!items) return
-
-    const pastedFiles: File[] = []
-    for (const item of Array.from(items)) {
-      if (item.kind === 'file') {
-        const file = item.getAsFile()
-        if (file) pastedFiles.push(file)
-      }
-    }
-
-    if (pastedFiles.length === 0) return
-
-    e.preventDefault()
-    const dt = new DataTransfer()
-    for (const file of pastedFiles) {
-      dt.items.add(file)
-    }
-    filesRef.current.processFiles(dt.files)
+  const handlePlusClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    editorRef.current.openResourceMenu({ left: rect.left, top: rect.top })
   }, [])
 
-  const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
-    if (overlayRef.current) {
-      overlayRef.current.scrollTop = e.currentTarget.scrollTop
-    }
+  const handleSlashTriggerClick = useCallback(() => {
+    editorRef.current.insertSlashTrigger()
   }, [])
-
-  const overlayContent = useMemo(() => {
-    const contexts = contextManagement.selectedContexts
-
-    if (!value) {
-      return <span>{'\u00A0'}</span>
-    }
-
-    if (contexts.length === 0) {
-      const displayText = value.endsWith('\n') ? `${value}\u200B` : value
-      return <span>{displayText}</span>
-    }
-
-    const tokens = extractContextTokens(contexts)
-    const ranges = computeMentionHighlightRanges(value, tokens)
-
-    if (ranges.length === 0) {
-      const displayText = value.endsWith('\n') ? `${value}\u200B` : value
-      return <span>{displayText}</span>
-    }
-
-    const elements: React.ReactNode[] = []
-    let lastIndex = 0
-    for (let i = 0; i < ranges.length; i++) {
-      const range = ranges[i]
-
-      if (range.start > lastIndex) {
-        const before = value.slice(lastIndex, range.start)
-        elements.push(<span key={`text-${i}-${lastIndex}-${range.start}`}>{before}</span>)
-      }
-
-      const mentionLabel =
-        range.token.startsWith('@') || range.token.startsWith('/')
-          ? range.token.slice(1)
-          : range.token
-      const matchingCtx = contexts.find((c) => c.label === mentionLabel)
-
-      const wfId =
-        matchingCtx?.kind === 'workflow' || matchingCtx?.kind === 'current_workflow'
-          ? matchingCtx.workflowId
-          : undefined
-      const mentionIconNode = matchingCtx ? (
-        <ContextMentionIcon
-          context={matchingCtx}
-          workflowColor={wfId ? (workflowsById[wfId]?.color ?? null) : null}
-          className='absolute inset-0 m-auto h-[12px] w-[12px] text-[var(--text-icon)]'
-        />
-      ) : null
-
-      elements.push(
-        <span
-          key={`mention-${i}-${range.start}-${range.end}`}
-          className='rounded-[5px] bg-[var(--surface-5)] py-0.5'
-          style={{
-            boxShadow: '-2px 0 0 var(--surface-5), 2px 0 0 var(--surface-5)',
-          }}
-        >
-          <span className='relative'>
-            <span className='invisible'>{range.token.charAt(0)}</span>
-            {mentionIconNode}
-          </span>
-          {mentionLabel}
-        </span>
-      )
-      lastIndex = range.end
-    }
-
-    const tail = value.slice(lastIndex)
-    if (tail) {
-      const displayTail = tail.endsWith('\n') ? `${tail}\u200B` : tail
-      elements.push(<span key={`tail-${lastIndex}`}>{displayTail}</span>)
-    }
-
-    return elements.length > 0 ? elements : <span>{'\u00A0'}</span>
-  }, [value, contextManagement.selectedContexts, workflowsById])
 
   return (
     <div
       onClick={handleContainerClick}
       className={cn(
-        'relative z-10 mx-auto w-full max-w-[42rem] cursor-text rounded-[20px] border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-2 dark:bg-[var(--surface-4)]',
+        'relative z-10 mx-auto w-full max-w-[48rem] cursor-text rounded-2xl border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-2 dark:bg-[var(--surface-4)]',
         isInitialView && 'shadow-sm'
       )}
       onDragEnter={handleDragEnter}
@@ -762,43 +533,58 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
         onRemoveFile={handleRemoveFile}
       />
 
-      <div className='relative'>
-        <div
-          ref={overlayRef}
-          className={cn(OVERLAY_CLASSES, isInitialView ? 'max-h-[30vh]' : 'max-h-[200px]')}
-          aria-hidden='true'
-        >
-          {overlayContent}
-        </div>
-
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          onPaste={handlePaste}
-          onCut={mentionTokensWithContext.handleCut}
-          onSelect={handleSelectAdjust}
-          onMouseUp={handleSelectAdjust}
-          onScroll={handleScroll}
-          placeholder=''
-          rows={1}
-          className={cn(TEXTAREA_BASE_CLASSES, isInitialView ? 'max-h-[30vh]' : 'max-h-[200px]')}
-        />
-      </div>
+      <PromptEditor
+        editor={editor}
+        placeholder='Ask Arena to '
+        onSubmit={handleEnterSubmit}
+        onArrowUpOnEmpty={handleArrowUpOnEmpty}
+        className={isInitialView ? 'max-h-[30vh]' : 'max-h-[200px]'}
+      />
 
       <div className='flex items-center justify-between'>
-        <div className='flex items-center gap-1.5'>
-          <PlusMenuDropdown
-            ref={plusMenuRef}
-            availableResources={availableResources}
-            onResourceSelect={handleResourceSelect}
-            onFileSelect={handleFileSelectStable}
-            onClose={handlePlusMenuClose}
-            textareaRef={textareaRef}
-            pendingCursorRef={pendingCursorRef}
-          />
+        <div className='flex items-center gap-1'>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <Button
+                type='button'
+                variant='ghost'
+                onClick={handlePlusClick}
+                aria-label='Add resources'
+                className='size-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
+              >
+                <Plus className='size-[16px] text-[var(--text-icon)]' />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>Add resources</Tooltip.Content>
+          </Tooltip.Root>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <Button
+                type='button'
+                variant='ghost'
+                onClick={handleFileSelectStable}
+                aria-label='Attach file'
+                className='size-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
+              >
+                <Paperclip className='size-[16px] text-[var(--text-icon)]' />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>Attach file</Tooltip.Content>
+          </Tooltip.Root>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <Button
+                type='button'
+                variant='ghost'
+                onClick={handleSlashTriggerClick}
+                aria-label='Skills'
+                className='size-[28px] rounded-full p-0 hover-hover:bg-[var(--surface-hover)]'
+              >
+                <Slash className='size-[16px] text-[var(--text-icon)]' />
+              </Button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>Skills</Tooltip.Content>
+          </Tooltip.Root>
         </div>
         <div className='flex items-center gap-1.5'>
           {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}
@@ -824,3 +610,10 @@ export const UserInput = forwardRef<UserInputHandle, UserInputProps>(function Us
     </div>
   )
 })
+
+/**
+ * Memoized so streaming ticks in the parent transcript — which re-render
+ * {@link MothershipChat} on every chunk — do not re-render the entire input
+ * toolbar. Relies on callers passing stable callbacks (see `MothershipChat`).
+ */
+export const UserInput = memo(UserInputImpl)

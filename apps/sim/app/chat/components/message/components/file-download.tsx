@@ -3,10 +3,13 @@
 import { useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { sleep } from '@sim/utils/helpers'
-import { ArrowDown, Download, Loader2, Music } from 'lucide-react'
-import { Button } from '@/components/emcn'
+import { Music } from 'lucide-react'
+import { Button, Download, Loader } from '@/components/emcn'
 import { DefaultFileIcon, getDocumentIcon } from '@/components/icons/document-icons'
 import type { AssistantChatFile as ChatFile } from '@/lib/chat/assistant-assets'
+import { getBrowserOrigin } from '@/lib/core/utils/urls'
+
+// import type { ChatFile } from '@/app/chat/components/message/message'
 
 const logger = createLogger('ChatFileDownload')
 
@@ -53,6 +56,21 @@ function getFileUrl(file: ChatFile): string {
   return `/api/files/serve/${encodeURIComponent(file.key)}?context=${file.context || 'execution'}`
 }
 
+/**
+ * Validates that a URL uses an http(s) scheme before it is opened in a new window.
+ * Rejects `javascript:`, `data:`, `blob:`, `vbscript:`, and other schemes that could
+ * execute script in the chat origin, since `file.url` originates from untrusted
+ * workflow/agent output.
+ */
+export function isSafeHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, getBrowserOrigin() ?? undefined)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 async function triggerDownload(url: string, filename: string): Promise<void> {
   const response = await fetch(url)
   if (!response.ok) {
@@ -88,8 +106,8 @@ export function ChatFileDownload({ file }: ChatFileDownloadProps) {
       await triggerDownload(url, file.name)
     } catch (error) {
       logger.error(`Failed to download file ${file.name}:`, error)
-      if (file.url) {
-        window.open(file.url, '_blank')
+      if (file.url && isSafeHttpUrl(file.url)) {
+        window.open(file.url, '_blank', 'noopener,noreferrer')
       }
     } finally {
       setIsDownloading(false)
@@ -126,9 +144,9 @@ export function ChatFileDownload({ file }: ChatFileDownloadProps) {
       </div>
       <div className='flex-shrink-0'>
         {isDownloading ? (
-          <Loader2 className='h-3.5 w-3.5 animate-spin' />
+          <Loader className='h-3.5 w-3.5' animate />
         ) : (
-          <ArrowDown
+          <Download
             className={`h-3.5 w-3.5 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}
           />
         )}
@@ -176,7 +194,7 @@ export function ChatFileDownloadAll({ files }: ChatFileDownloadAllProps) {
       className='text-[var(--landing-text-muted)] transition-colors hover:bg-[var(--landing-bg-elevated)] disabled:opacity-50'
     >
       {isDownloading ? (
-        <Loader2 className='h-3 w-3 animate-spin' strokeWidth={2} />
+        <Loader className='h-3 w-3' animate />
       ) : (
         <Download className='h-3 w-3' strokeWidth={2} />
       )}

@@ -8,28 +8,43 @@ const mockAzurePollUntilDone = vi.fn()
 
 vi.mock('resend', () => {
   return {
-    Resend: vi.fn().mockImplementation(() => ({
-      emails: {
-        send: (...args: any[]) => mockSend(...args),
-      },
-      batch: {
-        send: (...args: any[]) => mockBatchSend(...args),
-      },
-    })),
+    Resend: vi.fn().mockImplementation(
+      class {
+        emails = {
+          send: (...args: any[]) => mockSend(...args),
+        }
+        batch = {
+          send: (...args: any[]) => mockBatchSend(...args),
+        }
+      }
+    ),
   }
 })
 
 vi.mock('@azure/communication-email', () => {
   return {
-    EmailClient: vi.fn().mockImplementation(() => ({
-      beginSend: (...args: any[]) => mockAzureBeginSend(...args),
-    })),
+    EmailClient: vi.fn().mockImplementation(
+      class {
+        beginSend = (...args: any[]) => mockAzureBeginSend(...args)
+      }
+    ),
   }
 })
 
 vi.mock('@/lib/messaging/email/unsubscribe', () => ({
   isUnsubscribed: vi.fn(),
   generateUnsubscribeToken: vi.fn(),
+}))
+
+vi.mock('@/lib/auth/access-control', () => ({
+  getAccessControlConfig: vi.fn().mockResolvedValue({
+    blockedSignupDomains: [],
+    blockedEmails: [],
+    allowedLoginEmails: [],
+    allowedLoginDomains: [],
+    blockedEmailMxHosts: [],
+  }),
+  isEmailBlockedByAccessControl: vi.fn().mockReturnValue(false),
 }))
 
 vi.mock('@/lib/core/config/env', () =>
@@ -55,6 +70,7 @@ vi.mock('@/lib/messaging/email/utils', () => ({
   NO_EMAIL_HEADER_CONTROL_CHARS_REGEX: /^[^\r\n]*$/,
 }))
 
+import { isEmailBlockedByAccessControl } from '@/lib/auth/access-control'
 import { type EmailType, hasEmailService, sendBatchEmails, sendEmail } from './mailer'
 import { generateUnsubscribeToken, isUnsubscribed } from './unsubscribe'
 
@@ -67,6 +83,7 @@ describe('mailer', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    ;(isEmailBlockedByAccessControl as Mock).mockReturnValue(false)
     ;(isUnsubscribed as Mock).mockResolvedValue(false)
     ;(generateUnsubscribeToken as Mock).mockReturnValue('mock-token-123')
 
@@ -191,6 +208,36 @@ describe('mailer', () => {
       expect(isUnsubscribed).toHaveBeenCalledWith('user1@example.com', 'marketing')
     })
 
+    it('should skip sending when the recipient is on the ban list', async () => {
+      ;(isEmailBlockedByAccessControl as Mock).mockReturnValue(true)
+
+      const result = await sendEmail({
+        ...testEmailOptions,
+        emailType: 'transactional',
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.message).toBe('Email skipped (recipient on access-control ban list)')
+      expect(result.data).toEqual({ id: 'skipped-banned' })
+      expect(mockSend).not.toHaveBeenCalled()
+      expect(isUnsubscribed).not.toHaveBeenCalled()
+    })
+
+    it('should drop only the banned recipients from a multi-recipient send', async () => {
+      ;(isEmailBlockedByAccessControl as Mock).mockImplementation(
+        (email: string) => email === 'banned@example.com'
+      )
+
+      const result = await sendEmail({
+        ...testEmailOptions,
+        to: ['good@example.com', 'banned@example.com'],
+        emailType: 'transactional',
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({ to: 'good@example.com' }))
+    })
+
     it('should handle general exceptions gracefully', async () => {
       ;(isUnsubscribed as Mock).mockRejectedValue(new Error('Database connection failed'))
 
@@ -250,6 +297,34 @@ describe('mailer', () => {
       await sendBatchEmails({ emails: batchEmails })
 
       expect(isUnsubscribed).not.toHaveBeenCalled()
+    })
+
+    it('should skip banned recipients in a batch', async () => {
+      ;(isEmailBlockedByAccessControl as Mock).mockImplementation(
+        (email: string) => email === 'user2@example.com'
+      )
+
+      const result = await sendBatchEmails({ emails: testBatchEmails })
+
+      expect(result.results).toHaveLength(2)
+      const bannedEntry = result.results.find(
+        (r) => r.message === 'Email skipped (recipient on access-control ban list)'
+      )
+      expect(bannedEntry).toBeDefined()
+    })
+
+    it('should degrade isUnsubscribed rejections to per-entry failures', async () => {
+      ;(isUnsubscribed as Mock).mockRejectedValue(new Error('Database connection failed'))
+
+      const result = await sendBatchEmails({
+        emails: [
+          { ...testEmailOptions, to: 'user1@example.com', emailType: 'marketing' as EmailType },
+          { ...testEmailOptions, to: 'user2@example.com', emailType: 'marketing' as EmailType },
+        ],
+      })
+
+      expect(result.results).toHaveLength(2)
+      expect(result.results.every((r) => r.success === false)).toBe(true)
     })
   })
 })

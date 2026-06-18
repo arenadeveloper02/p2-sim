@@ -1,11 +1,16 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import OpenAI from 'openai'
 import type { ChatCompletionCreateParamsStreaming } from 'openai/resources/chat/completions'
 import { env } from '@/lib/core/config/env'
+import { createPinnedFetch, validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
 import type { StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
+import { formatMessagesForProvider } from '@/providers/attachments'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
+import { createStreamingExecution } from '@/providers/streaming-execution'
+import { adaptOpenAIChatToolSchema } from '@/providers/tool-schema-adapter'
+import { enrichLastModelSegmentFromChatCompletions } from '@/providers/trace-enrichment'
 import type {
   Message,
   ProviderConfig,
@@ -19,9 +24,8 @@ import {
   prepareToolExecution,
   prepareToolsWithUsageControl,
   sumToolCosts,
-  trackForcedToolUsage,
 } from '@/providers/utils'
-import { createReadableStreamFromVLLMStream } from '@/providers/vllm/utils'
+import { checkForForcedToolUsage, createReadableStreamFromVLLMStream } from '@/providers/vllm/utils'
 import { useProvidersStore } from '@/stores/providers'
 import { executeTool } from '@/tools'
 
@@ -74,7 +78,7 @@ export const vllmProvider: ProviderConfig = {
       logger.info(`Discovered ${models.length} vLLM model(s):`, { models })
     } catch (error) {
       logger.warn('vLLM model instantiation failed. The provider will be disabled.', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: getErrorMessage(error, 'Unknown error'),
       })
     }
   },
@@ -92,15 +96,46 @@ export const vllmProvider: ProviderConfig = {
       stream: !!request.stream,
     })
 
-    const baseUrl = (request.azureEndpoint || env.VLLM_BASE_URL || '').replace(/\/$/, '')
+    const userProvidedEndpoint = request.azureEndpoint
+
+    const baseUrl = (userProvidedEndpoint || env.VLLM_BASE_URL || '').replace(/\/$/, '')
     if (!baseUrl) {
       throw new Error('VLLM_BASE_URL is required for vLLM provider')
+    }
+
+    /**
+     * A user-supplied endpoint is attacker-controlled: validate it against the
+     * central SSRF guard and pin the connection to the resolved IP to defeat DNS
+     * rebinding. The operator-configured `VLLM_BASE_URL` is trusted and left
+     * unvalidated, mirroring the Azure providers.
+     *
+     * `allowHttp` is enabled because self-hosted vLLM is frequently served over
+     * plain HTTP; this only relaxes the protocol requirement — the private/reserved
+     * IP blocklist and blocked-port checks still apply, so SSRF protection is intact.
+     */
+    let pinnedFetch: typeof fetch | undefined
+    if (userProvidedEndpoint) {
+      const validation = await validateUrlWithDNS(userProvidedEndpoint, 'vLLM endpoint', {
+        allowHttp: true,
+      })
+      if (!validation.isValid) {
+        logger.warn('Blocked SSRF attempt via vLLM endpoint', {
+          endpoint: userProvidedEndpoint,
+          error: validation.error,
+        })
+        throw new Error(`Invalid vLLM endpoint: ${validation.error}`)
+      }
+      if (!validation.resolvedIP) {
+        throw new Error('Invalid vLLM endpoint: could not resolve a pinnable IP address')
+      }
+      pinnedFetch = createPinnedFetch(validation.resolvedIP)
     }
 
     const apiKey = request.apiKey || env.VLLM_API_KEY || 'empty'
     const vllm = new OpenAI({
       apiKey,
       baseURL: `${baseUrl}/v1`,
+      ...(pinnedFetch ? { fetch: pinnedFetch } : {}),
     })
 
     const allMessages: Message[] = []
@@ -122,21 +157,15 @@ export const vllmProvider: ProviderConfig = {
     if (request.messages) {
       allMessages.push(...request.messages)
     }
+    const formattedMessages = formatMessagesForProvider(allMessages, 'vllm') as Message[]
 
     const tools = request.tools?.length
-      ? request.tools.map((tool) => ({
-          type: 'function',
-          function: {
-            name: tool.id,
-            description: tool.description,
-            parameters: tool.parameters,
-          },
-        }))
+      ? request.tools.map((tool) => adaptOpenAIChatToolSchema(tool))
       : undefined
 
     const payload: any = {
       model: request.model.replace(/^vllm\//, ''),
-      messages: allMessages,
+      messages: formattedMessages,
     }
 
     if (request.temperature !== undefined) payload.temperature = request.temperature
@@ -197,80 +226,43 @@ export const vllmProvider: ProviderConfig = {
           request.abortSignal ? { signal: request.abortSignal } : undefined
         )
 
-        const streamingResult = {
-          stream: createReadableStreamFromVLLMStream(streamResponse, (content, usage) => {
-            let cleanContent = content
-            if (cleanContent && request.responseFormat) {
-              cleanContent = cleanContent.replace(/```json\n?|\n?```/g, '').trim()
-            }
-
-            streamingResult.execution.output.content = cleanContent
-            streamingResult.execution.output.tokens = {
-              input: usage.prompt_tokens,
-              output: usage.completion_tokens,
-              total: usage.total_tokens,
-            }
-
-            const costResult = calculateCost(
-              request.model,
-              usage.prompt_tokens,
-              usage.completion_tokens
-            )
-            streamingResult.execution.output.cost = {
-              input: costResult.input,
-              output: costResult.output,
-              total: costResult.total,
-            }
-
-            const streamEndTime = Date.now()
-            const streamEndTimeISO = new Date(streamEndTime).toISOString()
-
-            if (streamingResult.execution.output.providerTiming) {
-              streamingResult.execution.output.providerTiming.endTime = streamEndTimeISO
-              streamingResult.execution.output.providerTiming.duration =
-                streamEndTime - providerStartTime
-
-              if (streamingResult.execution.output.providerTiming.timeSegments?.[0]) {
-                streamingResult.execution.output.providerTiming.timeSegments[0].endTime =
-                  streamEndTime
-                streamingResult.execution.output.providerTiming.timeSegments[0].duration =
-                  streamEndTime - providerStartTime
+        const streamingResult = createStreamingExecution({
+          model: request.model,
+          providerStartTime,
+          providerStartTimeISO,
+          timing: { kind: 'simple', segmentName: request.model },
+          initialTokens: { input: 0, output: 0, total: 0 },
+          initialCost: { input: 0, output: 0, total: 0 },
+          createStream: ({ output, finalizeTiming }) =>
+            createReadableStreamFromVLLMStream(streamResponse, (content, usage) => {
+              let cleanContent = content
+              if (cleanContent && request.responseFormat) {
+                cleanContent = cleanContent.replace(/```json\n?|\n?```/g, '').trim()
               }
-            }
-          }),
-          execution: {
-            success: true,
-            output: {
-              content: '',
-              model: request.model,
-              tokens: { input: 0, output: 0, total: 0 },
-              toolCalls: undefined,
-              providerTiming: {
-                startTime: providerStartTimeISO,
-                endTime: new Date().toISOString(),
-                duration: Date.now() - providerStartTime,
-                timeSegments: [
-                  {
-                    type: 'model',
-                    name: 'Streaming response',
-                    startTime: providerStartTime,
-                    endTime: Date.now(),
-                    duration: Date.now() - providerStartTime,
-                  },
-                ],
-              },
-              cost: { input: 0, output: 0, total: 0 },
-            },
-            logs: [],
-            metadata: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-            },
-          },
-        } as StreamingExecution
 
-        return streamingResult as StreamingExecution
+              output.content = cleanContent
+              output.tokens = {
+                input: usage.prompt_tokens,
+                output: usage.completion_tokens,
+                total: usage.total_tokens,
+              }
+
+              const costResult = calculateCost(
+                request.model,
+                usage.prompt_tokens,
+                usage.completion_tokens
+              )
+              output.cost = {
+                input: costResult.input,
+                output: costResult.output,
+                total: costResult.total,
+              }
+
+              finalizeTiming()
+            }),
+        })
+
+        return streamingResult
       }
 
       const initialCallTime = Date.now()
@@ -279,25 +271,7 @@ export const vllmProvider: ProviderConfig = {
 
       const forcedTools = preparedTools?.forcedTools || []
       let usedForcedTools: string[] = []
-
-      const checkForForcedToolUsage = (
-        response: any,
-        toolChoice: string | { type: string; function?: { name: string }; name?: string; any?: any }
-      ) => {
-        if (typeof toolChoice === 'object' && response.choices[0]?.message?.tool_calls) {
-          const toolCallsResponse = response.choices[0].message.tool_calls
-          const result = trackForcedToolUsage(
-            toolCallsResponse,
-            toolChoice,
-            logger,
-            'vllm',
-            forcedTools,
-            usedForcedTools
-          )
-          hasUsedForcedTool = result.hasUsedForcedTool
-          usedForcedTools = result.usedForcedTools
-        }
-      }
+      let hasUsedForcedTool = false
 
       let currentResponse = await vllm.chat.completions.create(
         payload,
@@ -318,25 +292,32 @@ export const vllmProvider: ProviderConfig = {
       }
       const toolCalls = []
       const toolResults: Record<string, unknown>[] = []
-      const currentMessages = [...allMessages]
+      const currentMessages = [...formattedMessages]
       let iterationCount = 0
 
       let modelTime = firstResponseTime
       let toolsTime = 0
 
-      let hasUsedForcedTool = false
-
       const timeSegments: TimeSegment[] = [
         {
           type: 'model',
-          name: 'Initial response',
+          name: request.model,
           startTime: initialCallTime,
           endTime: initialCallTime + firstResponseTime,
           duration: firstResponseTime,
         },
       ]
 
-      checkForForcedToolUsage(currentResponse, originalToolChoice)
+      if (originalToolChoice) {
+        const forcedResult = checkForForcedToolUsage(
+          currentResponse,
+          originalToolChoice,
+          forcedTools,
+          usedForcedTools
+        )
+        hasUsedForcedTool = forcedResult.hasUsedForcedTool
+        usedForcedTools = forcedResult.usedForcedTools
+      }
 
       while (iterationCount < MAX_TOOL_ITERATIONS) {
         if (currentResponse.choices[0]?.message?.content) {
@@ -347,6 +328,14 @@ export const vllmProvider: ProviderConfig = {
         }
 
         const toolCallsInResponse = currentResponse.choices[0]?.message?.tool_calls
+
+        enrichLastModelSegmentFromChatCompletions(
+          timeSegments,
+          currentResponse,
+          toolCallsInResponse,
+          { model: request.model, provider: 'vllm' }
+        )
+
         if (!toolCallsInResponse || toolCallsInResponse.length === 0) {
           break
         }
@@ -368,7 +357,9 @@ export const vllmProvider: ProviderConfig = {
             if (!tool) return null
 
             const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-            const result = await executeTool(toolName, executionParams)
+            const result = await executeTool(toolName, executionParams, {
+              signal: request.abortSignal,
+            })
             const toolCallEndTime = Date.now()
 
             return {
@@ -391,7 +382,7 @@ export const vllmProvider: ProviderConfig = {
               result: {
                 success: false,
                 output: undefined,
-                error: error instanceof Error ? error.message : 'Tool execution failed',
+                error: getErrorMessage(error, 'Tool execution failed'),
               },
               startTime: toolCallStartTime,
               endTime: toolCallEndTime,
@@ -427,6 +418,7 @@ export const vllmProvider: ProviderConfig = {
             startTime: startTime,
             endTime: endTime,
             duration: duration,
+            toolCallId: toolCall.id,
           })
 
           let resultContent: any
@@ -488,14 +480,23 @@ export const vllmProvider: ProviderConfig = {
           request.abortSignal ? { signal: request.abortSignal } : undefined
         )
 
-        checkForForcedToolUsage(currentResponse, nextPayload.tool_choice)
+        if (nextPayload.tool_choice && typeof nextPayload.tool_choice === 'object') {
+          const forcedResult = checkForForcedToolUsage(
+            currentResponse,
+            nextPayload.tool_choice,
+            forcedTools,
+            usedForcedTools
+          )
+          hasUsedForcedTool = forcedResult.hasUsedForcedTool
+          usedForcedTools = forcedResult.usedForcedTools
+        }
 
         const nextModelEndTime = Date.now()
         const thisModelTime = nextModelEndTime - nextModelStartTime
 
         timeSegments.push({
           type: 'model',
-          name: `Model response (iteration ${iterationCount + 1})`,
+          name: request.model,
           startTime: nextModelStartTime,
           endTime: nextModelEndTime,
           duration: thisModelTime,
@@ -519,6 +520,15 @@ export const vllmProvider: ProviderConfig = {
         iterationCount++
       }
 
+      if (iterationCount === MAX_TOOL_ITERATIONS) {
+        enrichLastModelSegmentFromChatCompletions(
+          timeSegments,
+          currentResponse,
+          currentResponse.choices[0]?.message?.tool_calls,
+          { model: request.model, provider: 'vllm' }
+        )
+      }
+
       if (request.stream) {
         logger.info('Using streaming for final response after tool processing')
 
@@ -527,7 +537,7 @@ export const vllmProvider: ProviderConfig = {
         const streamingParams: ChatCompletionCreateParamsStreaming = {
           ...payload,
           messages: currentMessages,
-          tool_choice: 'auto',
+          tool_choice: 'none',
           stream: true,
           stream_options: { include_usage: true },
         }
@@ -536,76 +546,65 @@ export const vllmProvider: ProviderConfig = {
           request.abortSignal ? { signal: request.abortSignal } : undefined
         )
 
-        const streamingResult = {
-          stream: createReadableStreamFromVLLMStream(streamResponse, (content, usage) => {
-            let cleanContent = content
-            if (cleanContent && request.responseFormat) {
-              cleanContent = cleanContent.replace(/```json\n?|\n?```/g, '').trim()
-            }
-
-            streamingResult.execution.output.content = cleanContent
-            streamingResult.execution.output.tokens = {
-              input: tokens.input + usage.prompt_tokens,
-              output: tokens.output + usage.completion_tokens,
-              total: tokens.total + usage.total_tokens,
-            }
-
-            const streamCost = calculateCost(
-              request.model,
-              usage.prompt_tokens,
-              usage.completion_tokens
-            )
-            const tc = sumToolCosts(toolResults)
-            streamingResult.execution.output.cost = {
-              input: accumulatedCost.input + streamCost.input,
-              output: accumulatedCost.output + streamCost.output,
-              toolCost: tc || undefined,
-              total: accumulatedCost.total + streamCost.total + tc,
-            }
-          }),
-          execution: {
-            success: true,
-            output: {
-              content: '',
-              model: request.model,
-              tokens: {
-                input: tokens.input,
-                output: tokens.output,
-                total: tokens.total,
-              },
-              toolCalls:
-                toolCalls.length > 0
-                  ? {
-                      list: toolCalls,
-                      count: toolCalls.length,
-                    }
-                  : undefined,
-              providerTiming: {
-                startTime: providerStartTimeISO,
-                endTime: new Date().toISOString(),
-                duration: Date.now() - providerStartTime,
-                modelTime: modelTime,
-                toolsTime: toolsTime,
-                firstResponseTime: firstResponseTime,
-                iterations: iterationCount + 1,
-                timeSegments: timeSegments,
-              },
-              cost: {
-                input: accumulatedCost.input,
-                output: accumulatedCost.output,
-                total: accumulatedCost.total,
-              },
-            },
-            logs: [],
-            metadata: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-            },
+        const streamingResult = createStreamingExecution({
+          model: request.model,
+          providerStartTime,
+          providerStartTimeISO,
+          timing: {
+            kind: 'accumulated',
+            modelTime,
+            toolsTime,
+            firstResponseTime,
+            iterations: iterationCount + 1,
+            timeSegments,
           },
-        } as StreamingExecution
+          initialTokens: {
+            input: tokens.input,
+            output: tokens.output,
+            total: tokens.total,
+          },
+          initialCost: {
+            input: accumulatedCost.input,
+            output: accumulatedCost.output,
+            total: accumulatedCost.total,
+          },
+          toolCalls:
+            toolCalls.length > 0
+              ? {
+                  list: toolCalls,
+                  count: toolCalls.length,
+                }
+              : undefined,
+          createStream: ({ output }) =>
+            createReadableStreamFromVLLMStream(streamResponse, (content, usage) => {
+              let cleanContent = content
+              if (cleanContent && request.responseFormat) {
+                cleanContent = cleanContent.replace(/```json\n?|\n?```/g, '').trim()
+              }
 
-        return streamingResult as StreamingExecution
+              output.content = cleanContent
+              output.tokens = {
+                input: tokens.input + usage.prompt_tokens,
+                output: tokens.output + usage.completion_tokens,
+                total: tokens.total + usage.total_tokens,
+              }
+
+              const streamCost = calculateCost(
+                request.model,
+                usage.prompt_tokens,
+                usage.completion_tokens
+              )
+              const tc = sumToolCosts(toolResults)
+              output.cost = {
+                input: accumulatedCost.input + streamCost.input,
+                output: accumulatedCost.output + streamCost.output,
+                toolCost: tc || undefined,
+                total: accumulatedCost.total + streamCost.total + tc,
+              }
+            }),
+        })
+
+        return streamingResult
       }
 
       const providerEndTime = Date.now()

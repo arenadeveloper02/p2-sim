@@ -1,18 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { useParams } from 'next/navigation'
-import { Button, Combobox, toast } from '@/components/emcn'
-import { isBillingEnabled } from '@/lib/core/config/feature-flags'
-import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { Chip, ChipSelect, toast } from '@/components/emcn'
+import { useSession } from '@/lib/auth/auth-client'
+import { isBillingEnabled } from '@/lib/core/config/env-flags'
+import { getUserRole } from '@/lib/workspaces/organization/utils'
+import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
+import { InfoNote } from '@/ee/components/info-note'
 import { SettingRow } from '@/ee/components/setting-row'
-import { DataRetentionSkeleton } from '@/ee/data-retention/components/data-retention-skeleton'
 import {
-  useUpdateWorkspaceRetention,
-  useWorkspaceRetention,
+  useOrganizationRetention,
+  useUpdateOrganizationRetention,
 } from '@/ee/data-retention/hooks/data-retention'
+import { useOrganizations } from '@/hooks/queries/organization'
 
 const logger = createLogger('DataRetentionSettings')
 
@@ -54,26 +56,22 @@ function RetentionSelect({ value, onChange }: RetentionSelectProps) {
         { value, label: `${value} days (custom)` },
       ]
 
-  return (
-    <div className='w-[200px]'>
-      <Combobox
-        value={value}
-        onChange={onChange}
-        options={options}
-        dropdownWidth='trigger'
-        className='h-[36px] text-[13px]'
-      />
-    </div>
-  )
+  return <ChipSelect value={value} onChange={onChange} options={options} align='start' />
 }
 
 export function DataRetentionSettings() {
-  const params = useParams<{ workspaceId: string }>()
-  const workspaceId = params.workspaceId
+  const { data: session, isPending: sessionPending } = useSession()
+  const { data: orgsData, isLoading: orgsLoading } = useOrganizations()
 
-  const { data, isLoading } = useWorkspaceRetention(workspaceId)
-  const { canAdmin } = useUserPermissionsContext()
-  const updateMutation = useUpdateWorkspaceRetention()
+  const activeOrganization = orgsData?.activeOrganization
+  const orgId = activeOrganization?.id
+
+  const { data, isLoading: retentionLoading } = useOrganizationRetention(orgId)
+  const updateMutation = useUpdateOrganizationRetention()
+
+  const userEmail = session?.user?.email
+  const userRole = getUserRole(activeOrganization, userEmail)
+  const canManage = userRole === 'owner' || userRole === 'admin'
 
   const [logDays, setLogDays] = useState('')
   const [softDeleteDays, setSoftDeleteDays] = useState('')
@@ -81,10 +79,10 @@ export function DataRetentionSettings() {
   const [savedLogDays, setSavedLogDays] = useState('')
   const [savedSoftDeleteDays, setSavedSoftDeleteDays] = useState('')
   const [savedTaskCleanupDays, setSavedTaskCleanupDays] = useState('')
-  const [formInitialized, setFormInitialized] = useState(false)
+  const formInitializedRef = useRef(false)
 
   useEffect(() => {
-    if (!data || formInitialized) return
+    if (!data || formInitializedRef.current) return
     const log = hoursToDisplayDays(data.effective.logRetentionHours)
     const soft = hoursToDisplayDays(data.effective.softDeleteRetentionHours)
     const task = hoursToDisplayDays(data.effective.taskCleanupHours)
@@ -94,8 +92,8 @@ export function DataRetentionSettings() {
     setSavedLogDays(log)
     setSavedSoftDeleteDays(soft)
     setSavedTaskCleanupDays(task)
-    setFormInitialized(true)
-  }, [data, formInitialized])
+    formInitializedRef.current = true
+  }, [data])
 
   const hasChanges =
     logDays !== savedLogDays ||
@@ -103,9 +101,10 @@ export function DataRetentionSettings() {
     taskCleanupDays !== savedTaskCleanupDays
 
   async function handleSave() {
+    if (!orgId) return
     try {
       await updateMutation.mutateAsync({
-        workspaceId,
+        orgId,
         settings: {
           logRetentionHours: daysToHours(logDays),
           softDeleteRetentionHours: daysToHours(softDeleteDays),
@@ -123,7 +122,17 @@ export function DataRetentionSettings() {
     }
   }
 
-  if (isLoading) return <DataRetentionSkeleton />
+  if (sessionPending || orgsLoading || (orgId && retentionLoading)) {
+    return null
+  }
+
+  if (!orgId) {
+    return (
+      <div className='flex h-full items-center justify-center text-[var(--text-muted)] text-sm'>
+        Data retention is configured per organization. Join or create an organization to continue.
+      </div>
+    )
+  }
 
   if (!data) {
     return (
@@ -141,50 +150,54 @@ export function DataRetentionSettings() {
     )
   }
 
-  if (!canAdmin) {
+  if (!canManage) {
     return (
       <div className='flex h-full items-center justify-center text-[var(--text-muted)] text-sm'>
-        Only workspace admins can configure data retention settings.
+        Only organization owners and admins can configure data retention settings.
       </div>
     )
   }
 
   return (
-    <div className='flex flex-col gap-8'>
-      <section>
-        <h3 className='mb-4 font-medium text-[15px] text-[var(--text-primary)]'>
-          Retention Periods
-        </h3>
-        <div className='flex flex-col gap-5'>
-          <SettingRow
-            label='Log retention'
-            description='How long execution logs are kept before they are permanently deleted.'
+    <div className='flex h-full flex-col bg-[var(--bg)]'>
+      <div className='flex flex-shrink-0 items-center justify-between bg-[var(--bg)] px-[16px] pt-[8.5px] pb-[8.5px]'>
+        <div />
+        <div className='flex items-center'>
+          <Chip
+            variant='primary'
+            onClick={handleSave}
+            disabled={updateMutation.isPending || !hasChanges}
           >
-            <RetentionSelect value={logDays} onChange={setLogDays} />
-          </SettingRow>
-          <SettingRow
-            label='Soft deletion cleanup'
-            description='How long deleted resources remain recoverable before they are permanently removed.'
-          >
-            <RetentionSelect value={softDeleteDays} onChange={setSoftDeleteDays} />
-          </SettingRow>
-          <SettingRow
-            label='Task cleanup'
-            description='How long copilot chats, runs, and inbox tasks are kept before they are permanently deleted.'
-          >
-            <RetentionSelect value={taskCleanupDays} onChange={setTaskCleanupDays} />
-          </SettingRow>
+            {updateMutation.isPending ? 'Saving...' : 'Save'}
+          </Chip>
         </div>
-      </section>
-
-      <div className='flex items-center justify-end'>
-        <Button
-          variant='primary'
-          onClick={handleSave}
-          disabled={updateMutation.isPending || !hasChanges}
-        >
-          {updateMutation.isPending ? 'Saving...' : 'Save'}
-        </Button>
+      </div>
+      <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
+        <div className='mx-auto flex max-w-[48rem] flex-col gap-8 pt-6 pb-6'>
+          <InfoNote>Applies organization-wide</InfoNote>
+          <SettingsSection label='Data Retention'>
+            <div className='flex flex-col gap-5'>
+              <SettingRow
+                label='Log retention'
+                description='How long execution logs are kept before they are permanently deleted.'
+              >
+                <RetentionSelect value={logDays} onChange={setLogDays} />
+              </SettingRow>
+              <SettingRow
+                label='Soft deletion cleanup'
+                description='How long deleted resources remain recoverable before they are permanently removed.'
+              >
+                <RetentionSelect value={softDeleteDays} onChange={setSoftDeleteDays} />
+              </SettingRow>
+              <SettingRow
+                label='Task cleanup'
+                description='How long copilot chats, runs, and inbox tasks are kept before they are permanently deleted.'
+              >
+                <RetentionSelect value={taskCleanupDays} onChange={setTaskCleanupDays} />
+              </SettingRow>
+            </div>
+          </SettingsSection>
+        </div>
       </div>
     </div>
   )

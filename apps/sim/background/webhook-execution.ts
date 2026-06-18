@@ -1,8 +1,10 @@
+import { trace } from '@opentelemetry/api'
 import { db } from '@sim/db'
 import { account, webhook } from '@sim/db/schema'
 import { createLogger, runWithRequestContext } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { isRecordLike } from '@sim/utils/object'
 import { task } from '@trigger.dev/sdk'
 import { eq } from 'drizzle-orm'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
@@ -11,7 +13,10 @@ import { IdempotencyService, webhookIdempotency } from '@/lib/core/idempotency'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
-import { WebhookAttachmentProcessor } from '@/lib/webhooks/attachment-processor'
+import {
+  type WebhookAttachment,
+  WebhookAttachmentProcessor,
+} from '@/lib/webhooks/attachment-processor'
 import { resolveWebhookRecordProviderConfig } from '@/lib/webhooks/env-resolver'
 import { getProviderHandler } from '@/lib/webhooks/providers'
 import {
@@ -30,6 +35,95 @@ import { safeAssign } from '@/tools/safe-assign'
 import { getTrigger, isTriggerValid } from '@/triggers'
 
 const logger = createLogger('TriggerWebhookExecution')
+
+type WebhookAttachmentInput = Omit<WebhookAttachment, 'data'> & { data: unknown }
+
+function isSerializedBuffer(value: unknown): value is { type: 'Buffer'; data: number[] } {
+  return isRecordLike(value) && value.type === 'Buffer' && Array.isArray(value.data)
+}
+
+function hasSupportedAttachmentData(value: unknown): boolean {
+  return (
+    Buffer.isBuffer(value) ||
+    typeof value === 'string' ||
+    value instanceof ArrayBuffer ||
+    ArrayBuffer.isView(value) ||
+    Array.isArray(value) ||
+    isSerializedBuffer(value)
+  )
+}
+
+function toAttachmentBuffer(data: unknown, name: string): Buffer {
+  if (Buffer.isBuffer(data)) {
+    return data
+  }
+
+  if (isSerializedBuffer(data)) {
+    return Buffer.from(data.data)
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data)
+  }
+
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+  }
+
+  if (Array.isArray(data)) {
+    return Buffer.from(data)
+  }
+
+  if (typeof data === 'string') {
+    const trimmed = data.trim()
+    if (trimmed.startsWith('data:')) {
+      const [, base64Data] = trimmed.split(',')
+      return Buffer.from(base64Data ?? '', 'base64')
+    }
+    return Buffer.from(trimmed, 'base64')
+  }
+
+  throw new Error(`Attachment '${name}' has unsupported data format`)
+}
+
+function isWebhookAttachmentInput(value: unknown): value is WebhookAttachmentInput {
+  if (!isRecordLike(value)) {
+    return false
+  }
+
+  return (
+    typeof value.name === 'string' &&
+    typeof value.size === 'number' &&
+    hasSupportedAttachmentData(value.data) &&
+    (value.contentType === undefined || typeof value.contentType === 'string') &&
+    (value.mimeType === undefined || typeof value.mimeType === 'string')
+  )
+}
+
+function normalizeWebhookAttachment(value: unknown): WebhookAttachment | null {
+  if (!isWebhookAttachmentInput(value)) {
+    return null
+  }
+
+  return {
+    name: value.name,
+    data: toAttachmentBuffer(value.data, value.name),
+    contentType: value.contentType,
+    mimeType: value.mimeType,
+    size: value.size,
+  }
+}
+
+function normalizeWebhookAttachments(value: unknown): WebhookAttachment[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.flatMap((attachment) => {
+    const normalized = normalizeWebhookAttachment(attachment)
+    return normalized ? [normalized] : []
+  })
+}
 
 export function buildWebhookCorrelation(
   payload: WebhookExecutionPayload
@@ -74,27 +168,32 @@ async function processTriggerFileOutputs(
   for (const [key, value] of Object.entries(input)) {
     const currentPath = path ? `${path}.${key}` : key
     const outputDef = triggerOutputs[key] as Record<string, unknown> | undefined
-    const val = value as Record<string, unknown>
 
-    if (outputDef?.type === 'file[]' && Array.isArray(val)) {
+    if (outputDef?.type === 'file[]' && Array.isArray(value)) {
       try {
         processed[key] = await WebhookAttachmentProcessor.processAttachments(
-          val as unknown as Parameters<typeof WebhookAttachmentProcessor.processAttachments>[0],
+          normalizeWebhookAttachments(value),
           context
         )
       } catch (error) {
         processed[key] = []
       }
-    } else if (outputDef?.type === 'file' && val) {
+    } else if (outputDef?.type === 'file' && value) {
+      const attachment = normalizeWebhookAttachment(value)
+      if (!attachment) {
+        processed[key] = value
+        continue
+      }
+
       try {
         const [processedFile] = await WebhookAttachmentProcessor.processAttachments(
-          [val] as unknown as Parameters<typeof WebhookAttachmentProcessor.processAttachments>[0],
+          [attachment],
           context
         )
         processed[key] = processedFile
       } catch (error) {
         logger.error(`[${context.requestId}] Error processing ${currentPath}:`, error)
-        processed[key] = val
+        processed[key] = value
       }
     } else if (
       outputDef &&
@@ -103,20 +202,20 @@ async function processTriggerFileOutputs(
       outputDef.properties
     ) {
       processed[key] = await processTriggerFileOutputs(
-        val,
+        value,
         outputDef.properties as Record<string, unknown>,
         context,
         currentPath
       )
     } else if (outputDef && typeof outputDef === 'object' && !outputDef.type) {
       processed[key] = await processTriggerFileOutputs(
-        val,
+        value,
         outputDef as Record<string, unknown>,
         context,
         currentPath
       )
     } else {
-      processed[key] = val
+      processed[key] = value
     }
   }
 
@@ -478,7 +577,7 @@ async function executeWebhookJobInternal(
       snapshot,
       callbacks: {},
       loggingSession,
-      includeFileBase64: true,
+      includeFileBase64: false,
       base64MaxBytes: undefined,
       abortSignal: timeoutController.signal,
     })
@@ -516,8 +615,27 @@ async function executeWebhookJobInternal(
       provider: payload.provider,
     })
 
+    // The finalized flag is set inside a fire-and-forget post-execution promise; await it so the
+    // signal is reliable and the failure is fully persisted before we decide fault vs error.
+    await loggingSession.waitForPostExecution()
+
+    // A failure inside workflow execution (block error, provider 4xx, missing required field, etc.)
+    // is finalized by core and already recorded in the execution logs. That is a user/workflow error,
+    // not a trigger.dev job fault — complete the run normally so we don't fire a false alert. Errors
+    // that were not finalized came from the webhook pipeline itself, so we re-throw to fault below.
     if (wasExecutionFinalizedByCore(error, executionId)) {
-      throw error
+      // Record the exception on the run span so it stays visible in traces without
+      // marking the span as ERROR — that status is what faults the trigger.dev run.
+      trace.getActiveSpan()?.recordException(toError(error))
+
+      return {
+        success: false,
+        workflowId: payload.workflowId,
+        executionId,
+        output: hasExecutionResult(error) ? error.executionResult.output : {},
+        executedAt: new Date().toISOString(),
+        provider: payload.provider,
+      }
     }
 
     try {

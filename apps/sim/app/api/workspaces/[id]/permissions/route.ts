@@ -5,11 +5,11 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { updateWorkspacePermissionsContract } from '@/lib/api/contracts/workspaces'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
-import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
 import { captureServerEvent } from '@/lib/posthog/server'
 import {
   checkWorkspaceAccess,
@@ -20,15 +20,6 @@ import {
 } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspacesPermissionsAPI')
-
-const updatePermissionsSchema = z.object({
-  updates: z.array(
-    z.object({
-      userId: z.string(),
-      permissions: z.enum(['admin', 'write', 'read']),
-    })
-  ),
-})
 
 /**
  * GET /api/workspaces/[id]/permissions
@@ -98,9 +89,9 @@ export const GET = withRouteHandler(
  * @returns Success message or error
  */
 export const PATCH = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
-      const { id: workspaceId } = await params
+      const { id: workspaceId } = await context.params
       const session = await getSession()
 
       if (!session?.user?.id) {
@@ -116,7 +107,9 @@ export const PATCH = withRouteHandler(
         )
       }
 
-      const body = updatePermissionsSchema.parse(await request.json())
+      const parsed = await parseRequest(updateWorkspacePermissionsContract, request, context)
+      if (!parsed.success) return parsed.response
+      const body = parsed.data.body
 
       const workspaceRow = await db
         .select({ billedAccountUserId: workspace.billedAccountUserId })
@@ -167,8 +160,6 @@ export const PATCH = withRouteHandler(
 
       await db.transaction(async (tx) => {
         for (const update of body.updates) {
-          const isNew = !permLookup.has(update.userId)
-
           await tx
             .delete(permissions)
             .where(
@@ -188,10 +179,6 @@ export const PATCH = withRouteHandler(
             createdAt: new Date(),
             updatedAt: new Date(),
           })
-
-          if (isNew) {
-            await applyWorkspaceAutoAddGroup(tx, workspaceId, update.userId)
-          }
         }
       })
 

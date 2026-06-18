@@ -21,10 +21,12 @@ When the user asks you to validate a connector:
 Read **every** file for the connector — do not skip any:
 
 ```
-apps/sim/connectors/{service}/{service}.ts   # Connector implementation
+apps/sim/connectors/{service}/meta.ts        # ConnectorMeta — client-safe metadata (icon, name, auth, configFields, tagDefinitions)
+apps/sim/connectors/{service}/{service}.ts   # Connector implementation — spreads the meta + runtime functions
 apps/sim/connectors/{service}/index.ts       # Barrel export
-apps/sim/connectors/registry.ts              # Connector registry entry
-apps/sim/connectors/types.ts                 # ConnectorConfig interface, ExternalDocument, etc.
+apps/sim/connectors/registry.server.ts       # Server-only full registry entry (CONNECTOR_REGISTRY; full connector)
+apps/sim/connectors/registry.ts              # Client-safe meta registry entry (CONNECTOR_META_REGISTRY)
+apps/sim/connectors/types.ts                 # ConnectorMeta / ConnectorConfig interfaces, ExternalDocument, etc.
 apps/sim/connectors/utils.ts                 # Shared utilities (computeContentHash, htmlToPlainText, etc.)
 apps/sim/lib/oauth/oauth.ts                  # OAUTH_PROVIDERS — single source of truth for scopes
 apps/sim/lib/oauth/utils.ts                  # getCanonicalScopesForProvider, getScopesForService, SCOPE_DESCRIPTIONS
@@ -135,6 +137,13 @@ For each API endpoint the connector calls:
 - [ ] No off-by-one errors in pagination tracking
 - [ ] The connector does NOT hit known API pagination limits silently (e.g., HubSpot search 10k cap)
 
+### Deletion-Reconciliation Safety (`listingCapped`) — CRITICAL
+The sync engine hard-deletes any stored document absent from a full listing. Audit every path where `listDocuments` can return less than the full source set:
+- [ ] `syncContext.listingCapped = true` is set when a `maxItems`-style cap truncates the listing while more documents exist
+- [ ] `listingCapped` is set when a transient per-item error drops a still-existing document from the listing
+- [ ] `listingCapped` is NOT set when the source is genuinely exhausted (deleted documents must reconcile) or for intentional scope filters (date cutoffs)
+This is the most common connector bug class — verify it explicitly against `sync-engine.ts`'s reconciliation gate.
+
 ### Pagination State Across Pages
 - [ ] `syncContext` is used to cache state across pages (user names, field maps, instance URLs, portal IDs, etc.)
 - [ ] Cached state in `syncContext` is correctly initialized on first page and reused on subsequent pages
@@ -146,7 +155,7 @@ For each API endpoint the connector calls:
 - [ ] `title` is extracted from the correct field and has a sensible fallback (e.g., `'Untitled'`)
 - [ ] `content` is plain text — HTML content is stripped using `htmlToPlainText` from `@/connectors/utils`
 - [ ] `mimeType` is `'text/plain'`
-- [ ] `contentHash` is computed using `computeContentHash` from `@/connectors/utils`
+- [ ] `contentHash` is metadata-based for contentDeferred connectors (a string template like `service:${id}:${changeIndicator}`, identical between the `listDocuments` stub and `getDocument`); content-based via `computeContentHash` from `@/connectors/utils` ONLY when `listDocuments` returns full content inline
 - [ ] `sourceUrl` is a valid, complete URL back to the original resource (not relative)
 - [ ] `metadata` contains all fields referenced by `mapTags` and `tagDefinitions`
 
@@ -233,10 +242,18 @@ For each API endpoint the connector calls:
 - [ ] Logs sync progress at `info` level
 - [ ] Logs errors at `warn` or `error` level with context
 
+### Meta / Runtime Split
+- [ ] `connectors/{service}/meta.ts` exports `{service}ConnectorMeta: ConnectorMeta` (id, name, description, version, icon, auth, configFields, and any `tagDefinitions` / `supportsIncrementalSync`)
+- [ ] `meta.ts` imports ONLY the icon from `@/components/icons`, `ConnectorMeta` (type-only), and pure-data constants — NO server/runtime imports (`@/lib/knowledge/...`, `input-validation.server`, `fetchWithRetry`, etc.); any such import in `meta.ts` is **critical** (breaks the client bundle)
+- [ ] `connectors/{service}/{service}.ts` spreads `...{service}ConnectorMeta` as the first property and adds the runtime functions (`listDocuments`, `getDocument`, `validateConfig`, `mapTags?`)
+- [ ] Metadata fields (id, name, auth, configFields, etc.) live ONLY in `meta.ts`, not duplicated in `{service}.ts`
+
 ### Registry
 - [ ] Connector is exported from `connectors/{service}/index.ts`
-- [ ] Connector is registered in `connectors/registry.ts`
-- [ ] Registry key matches the connector's `id` field
+- [ ] Full connector is registered in `connectors/registry.server.ts` (server-only registry, `CONNECTOR_REGISTRY`)
+- [ ] Meta is registered in `connectors/registry.ts` (client-safe registry, `CONNECTOR_META_REGISTRY`), importing `@/connectors/{service}/meta`
+- [ ] Both registries use the same key and it matches the connector's `id` field
+- [ ] Both registries keep the same alphabetical-by-id ordering
 
 ## Step 11: Report and Fix
 
@@ -253,6 +270,8 @@ Group findings by severity:
 - Missing error handling that would crash the sync
 - `requiredScopes` not a subset of OAuth provider scopes
 - Query/filter injection: user-controlled values interpolated into OData `$filter`, SOQL, or query strings without escaping
+- Server/runtime import in `meta.ts` (e.g. `@/lib/knowledge/...`, `input-validation.server`, `fetchWithRetry`) — pulls server-only code into the client bundle and breaks the build
+- Connector missing from `connectors/registry.ts` (the client-safe meta registry) — or its entry there imports the runtime module instead of `meta.ts` — the knowledge UI can't render it
 
 **Warning** (incorrect behavior, data quality issues, or convention violations):
 - HTML content not stripped via `htmlToPlainText`
@@ -263,6 +282,7 @@ Group findings by severity:
 - Invalid scope names that the API doesn't recognize (even if silently ignored)
 - Private resources excluded from name-based lookup despite scopes being available
 - Silent data truncation without logging
+- `contentHash` uses the wrong basis: a content-based `computeContentHash` on a contentDeferred connector (breaks the stub/getDocument-identical invariant), or a metadata template when `listDocuments` returns full content inline
 - Size checks using `text.length` (character count) instead of `Buffer.byteLength` (byte count) for byte-based limits
 - URL-type config fields not normalized (protocol prefix, trailing slashes cause API failures)
 - `VALIDATE_RETRY_OPTIONS` not threaded through helper functions called by `validateConfig`
@@ -291,7 +311,7 @@ After fixing, confirm:
 
 ## Checklist Summary
 
-- [ ] Read connector implementation, types, utils, registry, and OAuth config
+- [ ] Read connector meta.ts, implementation, types, utils, both registries, and OAuth config
 - [ ] Pulled and read official API documentation for the service
 - [ ] Validated every API endpoint URL, method, headers, and body against API docs
 - [ ] Validated input sanitization: no query/filter injection, URL fields normalized
@@ -309,7 +329,8 @@ After fixing, confirm:
 - [ ] Validated API efficiency: field selection used, no redundant calls, sequential fetches batched
 - [ ] Validated error handling: graceful failures, no unhandled rejections
 - [ ] Validated logging: createLogger, no console.log
-- [ ] Validated registry: correct export, correct key
+- [ ] Validated meta/runtime split: `meta.ts` holds metadata with no server/runtime imports, `{service}.ts` spreads the meta + adds runtime functions
+- [ ] Validated registry: exported from index.ts, full connector in `registry.server.ts`, meta in `registry.ts`, matching keys and alphabetical-by-id ordering in both
 - [ ] Reported all issues grouped by severity
 - [ ] Fixed all critical and warning issues
 - [ ] Ran `bun run lint` after fixes

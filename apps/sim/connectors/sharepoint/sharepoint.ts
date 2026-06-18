@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { MicrosoftSharepointIcon } from '@/components/icons'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { sharepointConnectorMeta } from '@/connectors/sharepoint/meta'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { htmlToPlainText, parseTagDate } from '@/connectors/utils'
 
@@ -277,37 +277,7 @@ function decodeCursor(cursor: string): PaginationState {
 }
 
 export const sharepointConnector: ConnectorConfig = {
-  id: 'sharepoint',
-  name: 'SharePoint',
-  description: 'Sync documents from a SharePoint site into your knowledge base',
-  version: '1.0.0',
-  icon: MicrosoftSharepointIcon,
-
-  auth: { mode: 'oauth', provider: 'sharepoint', requiredScopes: ['Sites.Read.All'] },
-
-  configFields: [
-    {
-      id: 'siteUrl',
-      title: 'Site URL',
-      type: 'short-input',
-      placeholder: 'e.g. contoso.sharepoint.com/sites/mysite',
-      required: true,
-    },
-    {
-      id: 'folderPath',
-      title: 'Folder Path',
-      type: 'short-input',
-      placeholder: 'e.g. Documents/Reports (optional, defaults to root)',
-      required: false,
-    },
-    {
-      id: 'maxFiles',
-      title: 'Max Files',
-      type: 'short-input',
-      placeholder: 'e.g. 500 (default: unlimited)',
-      required: false,
-    },
-  ],
+  ...sharepointConnectorMeta,
 
   listDocuments: async (
     accessToken: string,
@@ -534,18 +504,10 @@ export const sharepointConnector: ConnectorConfig = {
 
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
+      const message = getErrorMessage(error, 'Failed to validate configuration')
       return { valid: false, error: message }
     }
   },
-
-  tagDefinitions: [
-    { id: 'path', displayName: 'Path', fieldType: 'text' },
-    { id: 'lastModified', displayName: 'Last Modified', fieldType: 'date' },
-    { id: 'fileSize', displayName: 'File Size', fieldType: 'number' },
-    { id: 'createdBy', displayName: 'Created By', fieldType: 'text' },
-    { id: 'siteName', displayName: 'Site Name', fieldType: 'text' },
-  ],
 
   mapTags: (metadata: Record<string, unknown>): Record<string, unknown> => {
     const result: Record<string, unknown> = {}

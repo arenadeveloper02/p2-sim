@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
 import { getBlock } from '@/blocks/registry'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import type { BlockState, WorkflowState } from '@/stores/workflows/workflow/types'
@@ -7,44 +8,24 @@ import { getTool } from '@/tools/utils'
 
 const logger = createLogger('WorkflowValidation')
 
-/** Tool structure for validation */
-interface AgentTool {
-  type: string
-  customToolId?: string
-  schema?: {
-    type?: string
-    function?: {
-      name?: string
-      parameters?: {
-        type?: string
-        properties?: Record<string, unknown>
-      }
-    }
-  }
-  code?: string
-  usageControl?: string
-  [key: string]: unknown
-}
-
 /**
  * Checks if a custom tool has a valid inline schema
  */
 function isValidCustomToolSchema(tool: unknown): boolean {
   try {
-    if (!tool || typeof tool !== 'object') return false
-    const t = tool as AgentTool
-    if (t.type !== 'custom-tool') return true // non-custom tools are validated elsewhere
+    if (!isRecordLike(tool)) return false
+    if (tool.type !== 'custom-tool') return true // non-custom tools are validated elsewhere
 
-    const schema = t.schema
-    if (!schema || typeof schema !== 'object') return false
+    const schema = tool.schema
+    if (!isRecordLike(schema)) return false
     const fn = schema.function
-    if (!fn || typeof fn !== 'object') return false
+    if (!isRecordLike(fn)) return false
     if (!fn.name || typeof fn.name !== 'string') return false
 
     const params = fn.parameters
-    if (!params || typeof params !== 'object') return false
+    if (!isRecordLike(params)) return false
     if (params.type !== 'object') return false
-    if (!params.properties || typeof params.properties !== 'object') return false
+    if (!isRecordLike(params.properties)) return false
 
     return true
   } catch (_err) {
@@ -57,13 +38,12 @@ function isValidCustomToolSchema(tool: unknown): boolean {
  */
 function isValidCustomToolReference(tool: unknown): boolean {
   try {
-    if (!tool || typeof tool !== 'object') return false
-    const t = tool as AgentTool
-    if (t.type !== 'custom-tool') return false
+    if (!isRecordLike(tool)) return false
+    if (tool.type !== 'custom-tool') return false
 
     // Reference format: has customToolId but no inline schema/code
     // This is valid - the tool will be loaded dynamically during execution
-    if (t.customToolId && typeof t.customToolId === 'string') {
+    if (tool.customToolId && typeof tool.customToolId === 'string') {
       return true
     }
 
@@ -114,9 +94,8 @@ export function sanitizeAgentToolsInBlocks(blocks: Record<string, BlockState>): 
       const cleaned = value
         .filter((tool: unknown) => {
           // Allow non-custom tools to pass through as-is
-          if (!tool || typeof tool !== 'object') return false
-          const t = tool as AgentTool
-          if (t.type !== 'custom-tool') return true
+          if (!isRecordLike(tool)) return false
+          if (tool.type !== 'custom-tool') return true
 
           // Check if it's a valid reference-only format (new format)
           if (isValidCustomToolReference(tool)) {
@@ -129,22 +108,21 @@ export function sanitizeAgentToolsInBlocks(blocks: Record<string, BlockState>): 
             logger.warn('Removing invalid custom tool from workflow', {
               blockId,
               blockName: block.name,
-              hasCustomToolId: !!t.customToolId,
-              hasSchema: !!t.schema,
+              hasCustomToolId: !!tool.customToolId,
+              hasSchema: !!tool.schema,
             })
           }
           return ok
         })
         .map((tool: unknown) => {
-          const t = tool as AgentTool
-          if (t.type === 'custom-tool') {
+          if (isRecordLike(tool) && tool.type === 'custom-tool') {
             // For reference-only tools, ensure usageControl default
-            if (!t.usageControl) {
-              t.usageControl = 'auto'
+            if (!tool.usageControl) {
+              tool.usageControl = 'auto'
             }
             // For inline tools (legacy), also ensure code default
-            if (!t.customToolId && (!t.code || typeof t.code !== 'string')) {
-              t.code = ''
+            if (!tool.customToolId && (!tool.code || typeof tool.code !== 'string')) {
+              tool.code = ''
             }
           }
           return tool
@@ -156,9 +134,9 @@ export function sanitizeAgentToolsInBlocks(blocks: Record<string, BlockState>): 
         )
       }
 
-      // Cast cleaned to the expected SubBlockState value type
-      // The value is a tools array but SubBlockState.value is typed narrowly
-      toolsSubBlock.value = cleaned as unknown as typeof toolsSubBlock.value
+      // Persisted agent tools can be arrays even though SubBlockState.value is typed narrowly.
+      const toolsValueTarget: { value: unknown } = toolsSubBlock
+      toolsValueTarget.value = cleaned
       // Reassign in case caller uses object identity
       sanitizedBlocks[blockId] = { ...block, subBlocks: { ...subBlocks, tools: toolsSubBlock } }
     } catch (err: unknown) {

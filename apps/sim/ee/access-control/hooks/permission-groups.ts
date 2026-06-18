@@ -1,87 +1,92 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { requestJson } from '@/lib/api/client/request'
+import {
+  bulkAddPermissionGroupMembersContract,
+  createPermissionGroupContract,
+  deletePermissionGroupContract,
+  getUserPermissionConfigContract,
+  listOrganizationWorkspacesContract,
+  listPermissionGroupMembersContract,
+  listPermissionGroupsContract,
+  type PermissionGroup,
+  type PermissionGroupMember,
+  type PermissionGroupWorkspaceRef,
+  removePermissionGroupMemberContract,
+  type UserPermissionConfig,
+  updatePermissionGroupContract,
+} from '@/lib/api/contracts'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
-import { fetchJson } from '@/hooks/selectors/helpers'
 
-export interface PermissionGroup {
-  id: string
-  name: string
-  description: string | null
-  config: PermissionGroupConfig
-  createdBy: string
-  createdAt: string
-  updatedAt: string
-  creatorName: string | null
-  creatorEmail: string | null
-  memberCount: number
-  autoAddNewMembers: boolean
-}
-
-export interface PermissionGroupMember {
-  id: string
-  userId: string
-  assignedAt: string
-  userName: string | null
-  userEmail: string | null
-  userImage: string | null
-}
-
-export interface UserPermissionConfig {
-  permissionGroupId: string | null
-  groupName: string | null
-  config: PermissionGroupConfig | null
-  entitled: boolean
+export type {
+  PermissionGroup,
+  PermissionGroupMember,
+  PermissionGroupWorkspaceRef,
+  UserPermissionConfig,
 }
 
 export const permissionGroupKeys = {
   all: ['permissionGroups'] as const,
   lists: () => [...permissionGroupKeys.all, 'list'] as const,
-  list: (workspaceId?: string) => [...permissionGroupKeys.lists(), workspaceId ?? ''] as const,
+  list: (organizationId?: string) =>
+    [...permissionGroupKeys.lists(), organizationId ?? ''] as const,
   details: () => [...permissionGroupKeys.all, 'detail'] as const,
-  detail: (workspaceId?: string, id?: string) =>
-    [...permissionGroupKeys.details(), workspaceId ?? '', id ?? ''] as const,
-  members: (workspaceId?: string, id?: string) =>
-    [...permissionGroupKeys.detail(workspaceId, id), 'members'] as const,
+  detail: (organizationId?: string, id?: string) =>
+    [...permissionGroupKeys.details(), organizationId ?? '', id ?? ''] as const,
+  members: (organizationId?: string, id?: string) =>
+    [...permissionGroupKeys.detail(organizationId, id), 'members'] as const,
   userConfig: (workspaceId?: string) =>
     [...permissionGroupKeys.all, 'userConfig', workspaceId ?? ''] as const,
+  orgWorkspaces: (organizationId?: string) =>
+    [...permissionGroupKeys.all, 'orgWorkspaces', organizationId ?? ''] as const,
 }
 
-interface PermissionGroupsResponse {
-  permissionGroups?: PermissionGroup[]
-}
-
-export function usePermissionGroups(workspaceId?: string, enabled = true) {
+export function usePermissionGroups(organizationId?: string, enabled = true) {
   return useQuery<PermissionGroup[]>({
-    queryKey: permissionGroupKeys.list(workspaceId),
+    queryKey: permissionGroupKeys.list(organizationId),
     queryFn: async ({ signal }) => {
-      const data = await fetchJson<PermissionGroupsResponse>(
-        `/api/workspaces/${workspaceId}/permission-groups`,
-        { signal }
-      )
+      if (!organizationId) return []
+      const data = await requestJson(listPermissionGroupsContract, {
+        params: { id: organizationId },
+        signal,
+      })
       return data.permissionGroups ?? []
     },
-    enabled: Boolean(workspaceId) && enabled,
+    enabled: Boolean(organizationId) && enabled,
     staleTime: 60 * 1000,
   })
 }
 
-interface MembersResponse {
-  members?: PermissionGroupMember[]
-}
-
-export function usePermissionGroupMembers(workspaceId?: string, permissionGroupId?: string) {
+export function usePermissionGroupMembers(organizationId?: string, permissionGroupId?: string) {
   return useQuery<PermissionGroupMember[]>({
-    queryKey: permissionGroupKeys.members(workspaceId, permissionGroupId),
+    queryKey: permissionGroupKeys.members(organizationId, permissionGroupId),
     queryFn: async ({ signal }) => {
-      const data = await fetchJson<MembersResponse>(
-        `/api/workspaces/${workspaceId}/permission-groups/${permissionGroupId}/members`,
-        { signal }
-      )
+      if (!organizationId || !permissionGroupId) return []
+      const data = await requestJson(listPermissionGroupMembersContract, {
+        params: { id: organizationId, groupId: permissionGroupId },
+        signal,
+      })
       return data.members ?? []
     },
-    enabled: Boolean(workspaceId) && Boolean(permissionGroupId),
+    enabled: Boolean(organizationId) && Boolean(permissionGroupId),
     staleTime: 30 * 1000,
+  })
+}
+
+export function useOrganizationWorkspaces(organizationId?: string, enabled = true) {
+  return useQuery<PermissionGroupWorkspaceRef[]>({
+    queryKey: permissionGroupKeys.orgWorkspaces(organizationId),
+    queryFn: async ({ signal }) => {
+      if (!organizationId) return []
+      const data = await requestJson(listOrganizationWorkspacesContract, {
+        params: { id: organizationId },
+        signal,
+      })
+      return data.workspaces
+    },
+    enabled: Boolean(organizationId) && enabled,
+    staleTime: 60 * 1000,
   })
 }
 
@@ -89,8 +94,8 @@ export function useUserPermissionConfig(workspaceId?: string) {
   return useQuery<UserPermissionConfig>({
     queryKey: permissionGroupKeys.userConfig(workspaceId),
     queryFn: async ({ signal }) => {
-      const data = await fetchJson<UserPermissionConfig>('/api/permission-groups/user', {
-        searchParams: { workspaceId: workspaceId ?? '' },
+      const data = await requestJson(getUserPermissionConfigContract, {
+        query: { workspaceId: workspaceId ?? '' },
         signal,
       })
       return data
@@ -101,32 +106,28 @@ export function useUserPermissionConfig(workspaceId?: string) {
 }
 
 export interface CreatePermissionGroupData {
-  workspaceId: string
+  organizationId: string
   name: string
   description?: string
   config?: Partial<PermissionGroupConfig>
-  autoAddNewMembers?: boolean
+  isDefault?: boolean
+  appliesToAllWorkspaces?: boolean
+  workspaceIds?: string[]
 }
 
 export function useCreatePermissionGroup() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ workspaceId, ...data }: CreatePermissionGroupData) => {
-      const response = await fetch(`/api/workspaces/${workspaceId}/permission-groups`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+    mutationFn: async ({ organizationId, ...data }: CreatePermissionGroupData) => {
+      return requestJson(createPermissionGroupContract, {
+        params: { id: organizationId },
+        body: data,
       })
-      if (!response.ok) {
-        const result = await response.json()
-        throw new Error(result.error || 'Failed to create permission group')
-      }
-      return response.json()
     },
-    onSuccess: (_data, variables) => {
+    onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.list(variables.workspaceId),
+        queryKey: permissionGroupKeys.list(variables.organizationId),
       })
     },
   })
@@ -134,70 +135,50 @@ export function useCreatePermissionGroup() {
 
 export interface UpdatePermissionGroupData {
   id: string
-  workspaceId: string
+  organizationId: string
   name?: string
   description?: string | null
   config?: Partial<PermissionGroupConfig>
-  autoAddNewMembers?: boolean
+  isDefault?: boolean
+  appliesToAllWorkspaces?: boolean
+  workspaceIds?: string[]
 }
 
 export function useUpdatePermissionGroup() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ id, workspaceId, ...data }: UpdatePermissionGroupData) => {
-      const response = await fetch(`/api/workspaces/${workspaceId}/permission-groups/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+    mutationFn: async ({ id, organizationId, ...data }: UpdatePermissionGroupData) => {
+      return requestJson(updatePermissionGroupContract, {
+        params: { id: organizationId, groupId: id },
+        body: data,
       })
-      if (!response.ok) {
-        const result = await response.json()
-        throw new Error(result.error || 'Failed to update permission group')
-      }
-      return response.json()
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.list(variables.workspaceId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.detail(variables.workspaceId, variables.id),
-      })
-      queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.userConfig(variables.workspaceId),
-      })
+    onSettled: () => {
+      // `all` is the prefix of every key in the factory (list/detail/members/userConfig),
+      // so a single invalidation covers them — including the workspace-keyed userConfig
+      // entries a mutation that only knows organizationId cannot target directly.
+      queryClient.invalidateQueries({ queryKey: permissionGroupKeys.all })
     },
   })
 }
 
 export interface DeletePermissionGroupParams {
   permissionGroupId: string
-  workspaceId: string
+  organizationId: string
 }
 
 export function useDeletePermissionGroup() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ permissionGroupId, workspaceId }: DeletePermissionGroupParams) => {
-      const response = await fetch(
-        `/api/workspaces/${workspaceId}/permission-groups/${permissionGroupId}`,
-        { method: 'DELETE' }
-      )
-      if (!response.ok) {
-        const result = await response.json()
-        throw new Error(result.error || 'Failed to delete permission group')
-      }
-      return response.json()
+    mutationFn: async ({ permissionGroupId, organizationId }: DeletePermissionGroupParams) => {
+      return requestJson(deletePermissionGroupContract, {
+        params: { id: organizationId, groupId: permissionGroupId },
+      })
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.list(variables.workspaceId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.userConfig(variables.workspaceId),
-      })
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: permissionGroupKeys.all })
     },
   })
 }
@@ -207,66 +188,40 @@ export function useRemovePermissionGroupMember() {
 
   return useMutation({
     mutationFn: async (data: {
-      workspaceId: string
+      organizationId: string
       permissionGroupId: string
       memberId: string
     }) => {
-      const response = await fetch(
-        `/api/workspaces/${data.workspaceId}/permission-groups/${data.permissionGroupId}/members?memberId=${data.memberId}`,
-        { method: 'DELETE' }
-      )
-      if (!response.ok) {
-        const result = await response.json()
-        throw new Error(result.error || 'Failed to remove member')
-      }
-      return response.json()
+      return requestJson(removePermissionGroupMemberContract, {
+        params: { id: data.organizationId, groupId: data.permissionGroupId },
+        query: { memberId: data.memberId },
+      })
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.members(variables.workspaceId, variables.permissionGroupId),
-      })
-      queryClient.invalidateQueries({ queryKey: permissionGroupKeys.list(variables.workspaceId) })
-      queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.userConfig(variables.workspaceId),
-      })
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: permissionGroupKeys.all })
     },
   })
 }
 
 export interface BulkAddMembersData {
-  workspaceId: string
+  organizationId: string
   permissionGroupId: string
   userIds?: string[]
-  addAllWorkspaceMembers?: boolean
+  addAllOrganizationMembers?: boolean
 }
 
 export function useBulkAddPermissionGroupMembers() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ workspaceId, permissionGroupId, ...data }: BulkAddMembersData) => {
-      const response = await fetch(
-        `/api/workspaces/${workspaceId}/permission-groups/${permissionGroupId}/members/bulk`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        }
-      )
-      if (!response.ok) {
-        const result = await response.json()
-        throw new Error(result.error || 'Failed to add members')
-      }
-      return response.json() as Promise<{ added: number; moved: number }>
+    mutationFn: async ({ organizationId, permissionGroupId, ...data }: BulkAddMembersData) => {
+      return requestJson(bulkAddPermissionGroupMembersContract, {
+        params: { id: organizationId, groupId: permissionGroupId },
+        body: data,
+      })
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.members(variables.workspaceId, variables.permissionGroupId),
-      })
-      queryClient.invalidateQueries({ queryKey: permissionGroupKeys.list(variables.workspaceId) })
-      queryClient.invalidateQueries({
-        queryKey: permissionGroupKeys.userConfig(variables.workspaceId),
-      })
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: permissionGroupKeys.all })
     },
   })
 }

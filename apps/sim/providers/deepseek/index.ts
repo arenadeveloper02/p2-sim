@@ -1,10 +1,14 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import OpenAI from 'openai'
 import type { StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
+import { formatMessagesForProvider } from '@/providers/attachments'
 import { createReadableStreamFromDeepseekStream } from '@/providers/deepseek/utils'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
+import { createStreamingExecution } from '@/providers/streaming-execution'
+import { adaptOpenAIChatToolSchema } from '@/providers/tool-schema-adapter'
+import { enrichLastModelSegmentFromChatCompletions } from '@/providers/trace-enrichment'
 import type {
   ProviderConfig,
   ProviderRequest,
@@ -66,21 +70,15 @@ export const deepseekProvider: ProviderConfig = {
       if (request.messages) {
         allMessages.push(...request.messages)
       }
+      const formattedMessages = formatMessagesForProvider(allMessages, 'deepseek')
 
       const tools = request.tools?.length
-        ? request.tools.map((tool) => ({
-            type: 'function',
-            function: {
-              name: tool.id,
-              description: tool.description,
-              parameters: tool.parameters,
-            },
-          }))
+        ? request.tools.map((tool) => adaptOpenAIChatToolSchema(tool))
         : undefined
 
       const payload: any = {
         model: request.model || 'deepseek-chat',
-        messages: allMessages,
+        messages: formattedMessages,
       }
 
       if (request.temperature !== undefined) payload.temperature = request.temperature
@@ -124,12 +122,18 @@ export const deepseekProvider: ProviderConfig = {
           request.abortSignal ? { signal: request.abortSignal } : undefined
         )
 
-        const streamingResult = {
-          stream: createReadableStreamFromDeepseekStream(
-            streamResponse as any,
-            (content, usage) => {
-              streamingResult.execution.output.content = content
-              streamingResult.execution.output.tokens = {
+        const streamingResult = createStreamingExecution({
+          model: request.model,
+          providerStartTime,
+          providerStartTimeISO,
+          timing: { kind: 'simple', segmentName: request.model },
+          initialTokens: { input: 0, output: 0, total: 0 },
+          initialCost: { input: 0, output: 0, total: 0 },
+          isStreaming: true,
+          createStream: ({ output }) =>
+            createReadableStreamFromDeepseekStream(streamResponse as any, (content, usage) => {
+              output.content = content
+              output.tokens = {
                 input: usage.prompt_tokens,
                 output: usage.completion_tokens,
                 total: usage.total_tokens,
@@ -140,47 +144,15 @@ export const deepseekProvider: ProviderConfig = {
                 usage.prompt_tokens,
                 usage.completion_tokens
               )
-              streamingResult.execution.output.cost = {
+              output.cost = {
                 input: costResult.input,
                 output: costResult.output,
                 total: costResult.total,
               }
-            }
-          ),
-          execution: {
-            success: true,
-            output: {
-              content: '',
-              model: request.model,
-              tokens: { input: 0, output: 0, total: 0 },
-              toolCalls: undefined,
-              providerTiming: {
-                startTime: providerStartTimeISO,
-                endTime: new Date().toISOString(),
-                duration: Date.now() - providerStartTime,
-                timeSegments: [
-                  {
-                    type: 'model',
-                    name: 'Streaming response',
-                    startTime: providerStartTime,
-                    endTime: Date.now(),
-                    duration: Date.now() - providerStartTime,
-                  },
-                ],
-              },
-              cost: { input: 0, output: 0, total: 0 },
-            },
-            logs: [],
-            metadata: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-            },
-            isStreaming: true,
-          },
-        }
+            }),
+        })
 
-        return streamingResult as StreamingExecution
+        return streamingResult
       }
 
       const initialCallTime = Date.now()
@@ -208,7 +180,7 @@ export const deepseekProvider: ProviderConfig = {
       }
       const toolCalls = []
       const toolResults: Record<string, unknown>[] = []
-      const currentMessages = [...allMessages]
+      const currentMessages = [...formattedMessages]
       let iterationCount = 0
       let hasUsedForcedTool = false
       let modelTime = firstResponseTime
@@ -217,7 +189,7 @@ export const deepseekProvider: ProviderConfig = {
       const timeSegments: TimeSegment[] = [
         {
           type: 'model',
-          name: 'Initial response',
+          name: request.model,
           startTime: initialCallTime,
           endTime: initialCallTime + firstResponseTime,
           duration: firstResponseTime,
@@ -248,6 +220,14 @@ export const deepseekProvider: ProviderConfig = {
           }
 
           const toolCallsInResponse = currentResponse.choices[0]?.message?.tool_calls
+
+          enrichLastModelSegmentFromChatCompletions(
+            timeSegments,
+            currentResponse,
+            toolCallsInResponse,
+            { model: request.model, provider: 'deepseek' }
+          )
+
           if (!toolCallsInResponse || toolCallsInResponse.length === 0) {
             break
           }
@@ -265,7 +245,9 @@ export const deepseekProvider: ProviderConfig = {
               if (!tool) return null
 
               const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-              const result = await executeTool(toolName, executionParams)
+              const result = await executeTool(toolName, executionParams, {
+                signal: request.abortSignal,
+              })
               const toolCallEndTime = Date.now()
 
               return {
@@ -288,7 +270,7 @@ export const deepseekProvider: ProviderConfig = {
                 result: {
                   success: false,
                   output: undefined,
-                  error: error instanceof Error ? error.message : 'Tool execution failed',
+                  error: getErrorMessage(error, 'Tool execution failed'),
                 },
                 startTime: toolCallStartTime,
                 endTime: toolCallEndTime,
@@ -324,6 +306,7 @@ export const deepseekProvider: ProviderConfig = {
               startTime: startTime,
               endTime: endTime,
               duration: duration,
+              toolCallId: toolCall.id,
             })
 
             let resultContent: any
@@ -410,7 +393,7 @@ export const deepseekProvider: ProviderConfig = {
 
           timeSegments.push({
             type: 'model',
-            name: `Model response (iteration ${iterationCount + 1})`,
+            name: request.model,
             startTime: nextModelStartTime,
             endTime: nextModelEndTime,
             duration: thisModelTime,
@@ -431,6 +414,15 @@ export const deepseekProvider: ProviderConfig = {
           }
 
           iterationCount++
+        }
+
+        if (iterationCount === MAX_TOOL_ITERATIONS) {
+          enrichLastModelSegmentFromChatCompletions(
+            timeSegments,
+            currentResponse,
+            currentResponse.choices[0]?.message?.tool_calls,
+            { model: request.model, provider: 'deepseek' }
+          )
         }
       } catch (error) {
         logger.error('Error in Deepseek request:', { error })
@@ -457,12 +449,41 @@ export const deepseekProvider: ProviderConfig = {
 
         const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
 
-        const streamingResult = {
-          stream: createReadableStreamFromDeepseekStream(
-            streamResponse as any,
-            (content, usage) => {
-              streamingResult.execution.output.content = content
-              streamingResult.execution.output.tokens = {
+        const streamingResult = createStreamingExecution({
+          model: request.model,
+          providerStartTime,
+          providerStartTimeISO,
+          timing: {
+            kind: 'accumulated',
+            modelTime,
+            toolsTime,
+            firstResponseTime,
+            iterations: iterationCount + 1,
+            timeSegments,
+          },
+          initialTokens: {
+            input: tokens.input,
+            output: tokens.output,
+            total: tokens.total,
+          },
+          initialCost: {
+            input: accumulatedCost.input,
+            output: accumulatedCost.output,
+            toolCost: undefined as number | undefined,
+            total: accumulatedCost.total,
+          },
+          toolCalls:
+            toolCalls.length > 0
+              ? {
+                  list: toolCalls,
+                  count: toolCalls.length,
+                }
+              : undefined,
+          isStreaming: true,
+          createStream: ({ output }) =>
+            createReadableStreamFromDeepseekStream(streamResponse as any, (content, usage) => {
+              output.content = content
+              output.tokens = {
                 input: tokens.input + usage.prompt_tokens,
                 output: tokens.output + usage.completion_tokens,
                 total: tokens.total + usage.total_tokens,
@@ -474,59 +495,16 @@ export const deepseekProvider: ProviderConfig = {
                 usage.completion_tokens
               )
               const tc = sumToolCosts(toolResults)
-              streamingResult.execution.output.cost = {
+              output.cost = {
                 input: accumulatedCost.input + streamCost.input,
                 output: accumulatedCost.output + streamCost.output,
                 toolCost: tc || undefined,
                 total: accumulatedCost.total + streamCost.total + tc,
               }
-            }
-          ),
-          execution: {
-            success: true,
-            output: {
-              content: '',
-              model: request.model,
-              tokens: {
-                input: tokens.input,
-                output: tokens.output,
-                total: tokens.total,
-              },
-              toolCalls:
-                toolCalls.length > 0
-                  ? {
-                      list: toolCalls,
-                      count: toolCalls.length,
-                    }
-                  : undefined,
-              providerTiming: {
-                startTime: providerStartTimeISO,
-                endTime: new Date().toISOString(),
-                duration: Date.now() - providerStartTime,
-                modelTime: modelTime,
-                toolsTime: toolsTime,
-                firstResponseTime: firstResponseTime,
-                iterations: iterationCount + 1,
-                timeSegments: timeSegments,
-              },
-              cost: {
-                input: accumulatedCost.input,
-                output: accumulatedCost.output,
-                toolCost: undefined as number | undefined,
-                total: accumulatedCost.total,
-              },
-            },
-            logs: [],
-            metadata: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-            },
-            isStreaming: true,
-          },
-        }
+            }),
+        })
 
-        return streamingResult as StreamingExecution
+        return streamingResult
       }
 
       return {

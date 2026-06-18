@@ -1,6 +1,19 @@
+import { useEffect } from 'react'
 import { createLogger } from '@sim/logger'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import Cookies from 'js-cookie'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { requestJson } from '@/lib/api/client/request'
+import {
+  type ConnectedAccount,
+  disconnectOAuthContract,
+  listConnectedAccountsContract,
+  listOAuthConnectionsContract,
+  type OAuthAccountSummary,
+  type OAuthConnection,
+} from '@/lib/api/contracts/oauth-connections'
 import { client } from '@/lib/auth/auth-client'
+import { readOAuthReturnContext } from '@/lib/credentials/client-state'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
 
 const logger = createLogger('OAuthConnectionsQuery')
@@ -68,6 +81,60 @@ function postArenaV3OAuthNavigateToParent(url: string): void {
   window.parent.postMessage(payload, '*')
 }
 
+/**
+ * Arena iframe embed (`from=arena_v3`): one-time email-cookie sign-in for the integrations page.
+ * Same pattern as deployed chat (`ArenaDeployedChat`: localStorage guard + `client.signIn.email`).
+ */
+export function useArenaV3IntegrationsAutoLogin(workspaceId: string): void {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    if (searchParams.get('from') !== ARENA_V3_FROM_QUERY_VALUE || !workspaceId) {
+      return
+    }
+
+    const autoLoginKey = `integrations:arenaV3AutoLogin:${workspaceId}`
+    let cancelled = false
+
+    const run = async () => {
+      try {
+        const alreadyTried = typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
+        const cookieEmail = Cookies.get('email')
+        if (!cookieEmail || alreadyTried) {
+          return
+        }
+
+        const sessionRes = await client.getSession()
+        if (sessionRes?.data?.user?.id || cancelled) {
+          return
+        }
+
+        localStorage.setItem(autoLoginKey, '1')
+        await client.signIn.email(
+          {
+            email: cookieEmail,
+            password: 'Position2!',
+            callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+          },
+          {}
+        )
+        if (!cancelled) {
+          router.refresh()
+        }
+      } catch (error) {
+        logger.error('Arena v3 integrations auto-login failed', { error })
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, workspaceId, router])
+}
+//-------------------
+
 async function fetchOAuth2LinkAuthorizeUrl(
   providerId: string,
   callbackURL: string
@@ -99,7 +166,8 @@ async function fetchOAuth2LinkAuthorizeUrl(
 export const oauthConnectionsKeys = {
   all: ['oauthConnections'] as const,
   connections: () => [...oauthConnectionsKeys.all, 'connections'] as const,
-  accounts: (provider: string) => [...oauthConnectionsKeys.all, 'accounts', provider] as const,
+  accounts: () => [...oauthConnectionsKeys.all, 'accounts'] as const,
+  account: (provider: string) => [...oauthConnectionsKeys.accounts(), provider] as const,
 }
 
 /** OAuth service with connection status and linked accounts. */
@@ -107,17 +175,10 @@ export interface ServiceInfo extends OAuthServiceConfig {
   id: string
   isConnected: boolean
   lastConnected?: string
-  accounts?: { id: string; name: string }[]
+  accounts?: OAuthAccountSummary[]
 }
 
-/** OAuth connection data returned from the API. */
-interface OAuthConnectionResponse {
-  provider: string
-  baseProvider?: string
-  accounts?: { id: string; name: string }[]
-  lastConnected?: string
-  scopes?: string[]
-}
+type OAuthConnectionResponse = OAuthConnection
 
 function defineServices(): ServiceInfo[] {
   const servicesList: ServiceInfo[] = []
@@ -140,17 +201,7 @@ async function fetchOAuthConnections(signal?: AbortSignal): Promise<ServiceInfo[
   try {
     const serviceDefinitions = defineServices()
 
-    const response = await fetch('/api/auth/oauth/connections', { signal })
-
-    if (response.status === 404) {
-      return serviceDefinitions
-    }
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch OAuth connections')
-    }
-
-    const data = await response.json()
+    const data = await requestJson(listOAuthConnectionsContract, { signal })
     const connections = data.connections || []
 
     const updatedServices = serviceDefinitions.map((service) => {
@@ -161,7 +212,7 @@ async function fetchOAuthConnections(signal?: AbortSignal): Promise<ServiceInfo[
       if (connection) {
         return {
           ...service,
-          isConnected: connection.accounts?.length > 0,
+          isConnected: (connection.accounts?.length ?? 0) > 0,
           accounts: connection.accounts || [],
           lastConnected: connection.lastConnected,
         }
@@ -183,7 +234,7 @@ async function fetchOAuthConnections(signal?: AbortSignal): Promise<ServiceInfo[
       if (connectionWithScopes) {
         return {
           ...service,
-          isConnected: connectionWithScopes.accounts?.length > 0,
+          isConnected: (connectionWithScopes.accounts?.length ?? 0) > 0,
           accounts: connectionWithScopes.accounts || [],
           lastConnected: connectionWithScopes.lastConnected,
         }
@@ -254,6 +305,34 @@ export function useConnectOAuthService() {
         return { success: true }
       }
 
+      if (providerId === 'unipile_linkedin') {
+        const returnCtx = readOAuthReturnContext()
+        const response = await fetch(`${origin}/api/auth/unipile/hosted/link`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            callbackURL,
+            workspaceId: returnCtx?.workspaceId,
+            credentialId:
+              returnCtx?.reconnect && returnCtx.credentialId ? returnCtx.credentialId : undefined,
+          }),
+        })
+        const data = (await response.json().catch(() => ({}))) as {
+          url?: string
+          error?: string
+        }
+        if (!response.ok || !data.url) {
+          throw new Error(data.error || 'Failed to start LinkedIn (Unipile) connection')
+        }
+        if (delegateToParent) {
+          postArenaV3OAuthNavigateToParent(data.url)
+        } else {
+          window.location.href = data.url
+        }
+        return { success: true }
+      }
+
       if (delegateToParent) {
         const url = await fetchOAuth2LinkAuthorizeUrl(providerId, callbackURL)
         postArenaV3OAuthNavigateToParent(url)
@@ -268,11 +347,11 @@ export function useConnectOAuthService() {
 
       return { success: true }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: oauthConnectionsKeys.connections() })
-    },
     onError: (error) => {
       logger.error('OAuth connection error:', error)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: oauthConnectionsKeys.connections() })
     },
   })
 }
@@ -293,23 +372,13 @@ export function useDisconnectOAuthService() {
 
   return useMutation({
     mutationFn: async ({ provider, providerId, accountId }: DisconnectServiceParams) => {
-      const response = await fetch('/api/auth/oauth/disconnect', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      return requestJson(disconnectOAuthContract, {
+        body: {
           provider,
           providerId,
           accountId,
-        }),
+        },
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to disconnect service')
-      }
-
-      return response.json()
     },
     onMutate: async ({ serviceId, accountId }) => {
       await queryClient.cancelQueries({ queryKey: oauthConnectionsKeys.connections() })
@@ -351,26 +420,17 @@ export function useDisconnectOAuthService() {
 }
 
 /** Connected OAuth account for a specific provider. */
-export interface ConnectedAccount {
-  id: string
-  accountId: string
-  providerId: string
-  displayName?: string
-}
+export type { ConnectedAccount }
 
 async function fetchConnectedAccounts(
   provider: string,
   signal?: AbortSignal
 ): Promise<ConnectedAccount[]> {
-  const response = await fetch(`/api/auth/accounts?provider=${provider}`, { signal })
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}))
-    throw new Error(data.error || `Failed to load ${provider} accounts`)
-  }
-
-  const data = await response.json()
-  return data.accounts || []
+  const data = await requestJson(listConnectedAccountsContract, {
+    query: { provider },
+    signal,
+  })
+  return data.accounts
 }
 
 /**
@@ -380,7 +440,7 @@ async function fetchConnectedAccounts(
  */
 export function useConnectedAccounts(provider: string, options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: oauthConnectionsKeys.accounts(provider),
+    queryKey: oauthConnectionsKeys.account(provider),
     queryFn: ({ signal }) => fetchConnectedAccounts(provider, signal),
     enabled: options?.enabled ?? true,
     staleTime: 60 * 1000,

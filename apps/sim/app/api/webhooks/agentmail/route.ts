@@ -8,41 +8,74 @@ import {
   workspace,
 } from '@sim/db'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { tasks } from '@trigger.dev/sdk'
-import { and, eq, gt, ne, sql } from 'drizzle-orm'
+import { and, eq, gt, isNotNull, ne, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { Webhook } from 'svix'
-import { isTriggerDevEnabled } from '@/lib/core/config/feature-flags'
+import {
+  agentMailEnvelopeSchema,
+  agentMailMessageSchema,
+  webhookSvixHeadersSchema,
+} from '@/lib/api/contracts/webhooks'
+import { isTriggerDevEnabled } from '@/lib/core/config/env-flags'
+import {
+  assertContentLengthWithinLimit,
+  isPayloadSizeLimitError,
+  readStreamToBufferWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { executeInboxTask } from '@/lib/mothership/inbox/executor'
 import type { AgentMailWebhookPayload, RejectionReason } from '@/lib/mothership/inbox/types'
+import { WEBHOOK_MAX_BODY_BYTES } from '@/lib/webhooks/constants'
 
 const logger = createLogger('AgentMailWebhook')
 
 const AUTOMATED_SENDERS = ['mailer-daemon@', 'noreply@', 'no-reply@', 'postmaster@']
 const MAX_EMAILS_PER_HOUR = 20
 
+const AGENTMAIL_BODY_LABEL = 'AgentMail webhook body'
+
+/**
+ * Bound the unauthenticated AgentMail webhook body before buffering it for Svix
+ * signature verification, so an oversized payload cannot exhaust pod memory.
+ */
+async function readAgentMailBody(req: Request): Promise<string> {
+  assertContentLengthWithinLimit(req.headers, WEBHOOK_MAX_BODY_BYTES, AGENTMAIL_BODY_LABEL)
+  const buffer = await readStreamToBufferWithLimit(req.body, {
+    maxBytes: WEBHOOK_MAX_BODY_BYTES,
+    label: AGENTMAIL_BODY_LABEL,
+  })
+  return new TextDecoder().decode(buffer)
+}
+
 export const POST = withRouteHandler(async (req: Request) => {
   try {
-    const rawBody = await req.text()
-    const svixId = req.headers.get('svix-id')
-    const svixTimestamp = req.headers.get('svix-timestamp')
-    const svixSignature = req.headers.get('svix-signature')
+    let rawBody: string
+    try {
+      rawBody = await readAgentMailBody(req)
+    } catch (bodyError) {
+      if (isPayloadSizeLimitError(bodyError)) {
+        logger.warn('Rejected oversized AgentMail webhook body', {
+          maxBytes: WEBHOOK_MAX_BODY_BYTES,
+          observedBytes: bodyError.observedBytes,
+        })
+        return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
+      }
+      throw bodyError
+    }
+    const headersResult = webhookSvixHeadersSchema.safeParse({
+      'svix-id': req.headers.get('svix-id'),
+      'svix-timestamp': req.headers.get('svix-timestamp'),
+      'svix-signature': req.headers.get('svix-signature'),
+    })
 
-    const payload = JSON.parse(rawBody) as AgentMailWebhookPayload
-
-    if (payload.event_type !== 'message.received') {
-      return NextResponse.json({ ok: true })
+    if (!headersResult.success) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { message } = payload
-    const inboxId = message?.inbox_id
-    if (!message || !inboxId) {
-      return NextResponse.json({ ok: true })
-    }
-
-    const [result] = await db
+    const webhookCandidates = await db
       .select({
         id: workspace.id,
         inboxEnabled: workspace.inboxEnabled,
@@ -52,29 +85,62 @@ export const POST = withRouteHandler(async (req: Request) => {
       })
       .from(workspace)
       .leftJoin(mothershipInboxWebhook, eq(mothershipInboxWebhook.workspaceId, workspace.id))
-      .where(eq(workspace.inboxProviderId, inboxId))
-      .limit(1)
+      .where(isNotNull(mothershipInboxWebhook.secret))
 
-    if (!result || !result.webhookSecret) {
-      if (!result) {
-        logger.warn('No workspace found for inbox', { inboxId })
-      } else {
-        logger.warn('No webhook secret found for workspace', { workspaceId: result.id })
-      }
+    let result: (typeof webhookCandidates)[number] | undefined
+    for (const candidate of webhookCandidates) {
+      if (!candidate.webhookSecret) continue
+
+      try {
+        const wh = new Webhook(candidate.webhookSecret)
+        wh.verify(rawBody, headersResult.data)
+        result = candidate
+        break
+      } catch {}
+    }
+
+    if (!result) {
+      logger.warn('Webhook signature verification failed', {
+        candidateCount: webhookCandidates.length,
+      })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    try {
-      const wh = new Webhook(result.webhookSecret)
-      wh.verify(rawBody, {
-        'svix-id': svixId || '',
-        'svix-timestamp': svixTimestamp || '',
-        'svix-signature': svixSignature || '',
-      })
-    } catch (verifyErr) {
-      logger.warn('Webhook signature verification failed', {
+    const envelopeResult = agentMailEnvelopeSchema.safeParse(JSON.parse(rawBody))
+    if (!envelopeResult.success) {
+      logger.warn('Invalid AgentMail webhook payload', {
         workspaceId: result.id,
-        error: verifyErr instanceof Error ? verifyErr.message : 'Unknown error',
+        issues: envelopeResult.error.issues,
+      })
+      return NextResponse.json(
+        { error: 'Invalid envelope payload', details: envelopeResult.error.issues },
+        { status: 400 }
+      )
+    }
+
+    if (envelopeResult.data.event_type !== 'message.received') {
+      return NextResponse.json({ ok: true })
+    }
+
+    const messageResult = agentMailMessageSchema.safeParse(envelopeResult.data.message)
+    if (!messageResult.success) {
+      logger.warn('Invalid AgentMail message payload', {
+        workspaceId: result.id,
+        issues: messageResult.error.issues,
+      })
+      return NextResponse.json(
+        { error: 'Invalid message payload', details: messageResult.error.issues },
+        { status: 400 }
+      )
+    }
+
+    const message: AgentMailWebhookPayload['message'] = messageResult.data
+    const inboxId = message.inbox_id
+    if (result.inboxProviderId !== inboxId) {
+      logger.warn('Verified AgentMail payload inbox mismatch', {
+        workspaceId: result.id,
+        verifiedInboxId: result.inboxProviderId,
+        payloadInboxId: inboxId,
       })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -182,7 +248,7 @@ export const POST = withRouteHandler(async (req: Request) => {
         executeInboxTask(taskId).catch((err) => {
           logger.error('Local inbox task execution failed', {
             taskId,
-            error: err instanceof Error ? err.message : 'Unknown error',
+            error: getErrorMessage(err, 'Unknown error'),
           })
         })
       }
@@ -191,7 +257,7 @@ export const POST = withRouteHandler(async (req: Request) => {
       executeInboxTask(taskId).catch((err) => {
         logger.error('Local inbox task execution failed', {
           taskId,
-          error: err instanceof Error ? err.message : 'Unknown error',
+          error: getErrorMessage(err, 'Unknown error'),
         })
       })
     }
@@ -199,7 +265,7 @@ export const POST = withRouteHandler(async (req: Request) => {
     return NextResponse.json({ ok: true })
   } catch (error) {
     logger.error('AgentMail webhook error', {
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error, 'Unknown error'),
     })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

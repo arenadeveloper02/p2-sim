@@ -1,5 +1,8 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
+import { workspaceFileParamsSchema } from '@/lib/api/contracts/workspace-files'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -18,7 +21,14 @@ const logger = createLogger('WorkspaceFileDownloadAPI')
 export const POST = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ id: string; fileId: string }> }) => {
     const requestId = generateRequestId()
-    const { id: workspaceId, fileId } = await params
+    const paramsResult = workspaceFileParamsSchema.safeParse(await params)
+    if (!paramsResult.success) {
+      return NextResponse.json(
+        { error: getValidationErrorMessage(paramsResult.error, 'Invalid route parameters') },
+        { status: 400 }
+      )
+    }
+    const { id: workspaceId, fileId } = paramsResult.data
 
     try {
       const session = await getSession()
@@ -57,7 +67,7 @@ export const POST = withRouteHandler(
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : 'Failed to generate download URL',
+          error: getErrorMessage(error, 'Failed to generate download URL'),
         },
         { status: 500 }
       )

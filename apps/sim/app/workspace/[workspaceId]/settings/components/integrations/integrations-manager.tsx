@@ -1,11 +1,19 @@
 'use client'
 
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type ChangeEvent,
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createLogger } from '@sim/logger'
-import Cookies from 'js-cookie'
+import { getErrorMessage } from '@sim/utils/errors'
 import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
 import Image from 'next/image'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import {
   Avatar,
   AvatarFallback,
@@ -18,30 +26,28 @@ import {
   Modal,
   ModalBody,
   ModalContent,
+  ModalDescription,
   ModalFooter,
   ModalHeader,
   Skeleton,
   Textarea,
   Tooltip,
 } from '@/components/emcn'
-import { Input as UiInput } from '@/components/ui'
-import { client, useSession } from '@/lib/auth/auth-client'
+import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
-import {
-  clearPendingCredentialCreateRequest,
-  PENDING_CREDENTIAL_CREATE_REQUEST_EVENT,
-  type PendingCredentialCreateRequest,
-  readPendingCredentialCreateRequest,
-  writeOAuthReturnContext,
-} from '@/lib/credentials/client-state'
+import { writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import { getCanonicalScopesForProvider, getServiceConfigByProviderId } from '@/lib/oauth'
+import { ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID } from '@/lib/oauth/types'
 import { getScopeDescription } from '@/lib/oauth/utils'
 import { getUserColor } from '@/lib/workspaces/colors'
-import { CredentialSkeleton } from '@/app/workspace/[workspaceId]/settings/components/credentials/credential-skeleton'
+import { filterOAuthItemsForWorkspace } from '@/lib/workspaces/is-admin-workspace'
+import {
+  ConnectServiceAccountModal,
+  type ServiceAccountProviderId,
+} from '@/app/workspace/[workspaceId]/integrations/components/connect-service-account-modal'
 import { useBrandConfig } from '@/ee/whitelabeling'
 import {
   useCreateCredentialDraft,
-  useCreateWorkspaceCredential,
   useDeleteWorkspaceCredential,
   useRemoveWorkspaceCredentialMember,
   useUpdateWorkspaceCredential,
@@ -52,6 +58,7 @@ import {
   type WorkspaceCredentialRole,
 } from '@/hooks/queries/credentials'
 import {
+  useArenaV3IntegrationsAutoLogin,
   useConnectOAuthService,
   useDisconnectOAuthService,
   useOAuthConnections,
@@ -62,16 +69,54 @@ import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
 const logger = createLogger('IntegrationsManager')
 
-const roleOptions = [
+const GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID = 'google-service-account' as const
+
+function CredentialSkeleton() {
+  return (
+    <div className='flex items-center justify-between gap-3'>
+      <div className='flex min-w-0 items-center gap-2.5'>
+        <Skeleton className='size-8 flex-shrink-0 rounded-md' />
+        <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
+          <Skeleton className='h-4 w-32' />
+          <Skeleton className='h-3 w-48' />
+        </div>
+      </div>
+      <Skeleton className='h-8 w-20 rounded-md' />
+    </div>
+  )
+}
+
+function resolveServiceAccountProviderId(providerId: string): ServiceAccountProviderId | null {
+  if (providerId === ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID) {
+    return ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID
+  }
+  if (providerId === GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID) {
+    return GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID
+  }
+  return null
+}
+
+function openServiceAccountConnect(
+  providerId: string,
+  setCreateOAuthProviderId: (id: string) => void,
+  setShowServiceAccountConnectModal: (open: boolean) => void
+) {
+  setCreateOAuthProviderId(providerId)
+  setShowServiceAccountConnectModal(true)
+}
+
+const ROLE_OPTIONS = [
   { value: 'member', label: 'Member' },
   { value: 'admin', label: 'Admin' },
 ] as const
 
-const roleComboOptions = roleOptions.map((option) => ({ value: option.value, label: option.label }))
+const roleComboOptions = ROLE_OPTIONS.map((option) => ({
+  value: option.value,
+  label: option.label,
+}))
 
 export function IntegrationsManager() {
   const params = useParams()
-  const router = useRouter()
   const searchParams = useSearchParams()
   const workspaceId = (params?.workspaceId as string) || ''
   const isArenaV3IntegrationsEmbed = searchParams.get('from') === 'arena_v3'
@@ -92,60 +137,14 @@ export function IntegrationsManager() {
   }, [searchParams])
 
   useOAuthReturnRouter()
-
-  /**
-   * Arena iframe embed (`from=arena_v3`): one-time email-cookie sign-in, same pattern as deployed chat
-   * (`ArenaDeployedChat`: localStorage guard + `client.signIn.email`).
-   */
-  useEffect(() => {
-    if (searchParams.get('from') !== 'arena_v3' || !workspaceId) {
-      return
-    }
-
-    const autoLoginKey = `integrations:arenaV3AutoLogin:${workspaceId}`
-    let cancelled = false
-
-    const run = async () => {
-      try {
-        const alreadyTried = typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
-        const cookieEmail = Cookies.get('email')
-        if (!cookieEmail || alreadyTried) {
-          return
-        }
-
-        const sessionRes = await client.getSession()
-        if (sessionRes?.data?.user?.id || cancelled) {
-          return
-        }
-
-        localStorage.setItem(autoLoginKey, '1')
-        await client.signIn.email(
-          {
-            email: cookieEmail,
-            password: 'Position2!',
-            callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
-          },
-          {}
-        )
-        if (!cancelled) {
-          router.refresh()
-        }
-      } catch (error) {
-        logger.error('Arena v3 integrations auto-login failed', { error })
-      }
-    }
-
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [searchParams, workspaceId, router])
+  useArenaV3IntegrationsAutoLogin(workspaceId)
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCredentialId, setSelectedCredentialId] = useState<string | null>(null)
   const [memberRole, setMemberRole] = useState<WorkspaceCredentialRole>('admin')
   const [memberUserId, setMemberUserId] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showServiceAccountConnectModal, setShowServiceAccountConnectModal] = useState(false)
   const [createDisplayName, setCreateDisplayName] = useState('')
   const [createDescription, setCreateDescription] = useState('')
   const [createOAuthProviderId, setCreateOAuthProviderId] = useState('')
@@ -174,12 +173,6 @@ export function IntegrationsManager() {
     | { type: 'kb-connectors'; knowledgeBaseId: string }
     | undefined
   >(undefined)
-  const [saJsonInput, setSaJsonInput] = useState('')
-  const [saDisplayName, setSaDisplayName] = useState('')
-  const [saDescription, setSaDescription] = useState('')
-  const [saError, setSaError] = useState<string | null>(null)
-  const [saIsSubmitting, setSaIsSubmitting] = useState(false)
-  const [saDragActive, setSaDragActive] = useState(false)
 
   const { data: session } = useSession()
   const currentUserId = session?.user?.id || ''
@@ -199,9 +192,14 @@ export function IntegrationsManager() {
 
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId || null)
 
-  const oauthCredentials = useMemo(
-    () => credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account'),
-    [credentials]
+  const oauthCredentials = useMemo(() => {
+    const oauth = credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account')
+    return filterOAuthItemsForWorkspace(oauth, workspaceId)
+  }, [credentials, workspaceId])
+
+  const workspaceOAuthConnections = useMemo(
+    () => filterOAuthItemsForWorkspace(oauthConnections, workspaceId),
+    [oauthConnections, workspaceId]
   )
 
   const selectedCredential = useMemo(
@@ -214,15 +212,14 @@ export function IntegrationsManager() {
   )
 
   const createDraft = useCreateCredentialDraft()
-  const createCredential = useCreateWorkspaceCredential()
   const updateCredential = useUpdateWorkspaceCredential()
   const deleteCredential = useDeleteWorkspaceCredential()
   const upsertMember = useUpsertWorkspaceCredentialMember()
   const removeMember = useRemoveWorkspaceCredentialMember()
 
   const oauthServiceNameByProviderId = useMemo(
-    () => new Map(oauthConnections.map((service) => [service.providerId, service.name])),
-    [oauthConnections]
+    () => new Map(workspaceOAuthConnections.map((service) => [service.providerId, service.name])),
+    [workspaceOAuthConnections]
   )
   const resolveProviderLabel = (providerId?: string | null): string => {
     if (!providerId) return ''
@@ -240,7 +237,7 @@ export function IntegrationsManager() {
         resolveProviderLabel(credential.providerId).toLowerCase().includes(normalized)
       )
     })
-  }, [oauthCredentials, searchTerm, oauthConnections])
+  }, [oauthCredentials, searchTerm, workspaceOAuthConnections])
 
   const sortedCredentials = useMemo(() => {
     return [...filteredCredentials].sort((a, b) => {
@@ -251,29 +248,28 @@ export function IntegrationsManager() {
   }, [filteredCredentials])
 
   const filteredAvailableIntegrations = useMemo(() => {
-    if (!searchTerm.trim()) return oauthConnections
+    if (!searchTerm.trim()) return workspaceOAuthConnections
     const normalized = searchTerm.toLowerCase()
-    return oauthConnections.filter((service) => service.name.toLowerCase().includes(normalized))
-  }, [oauthConnections, searchTerm])
+    return workspaceOAuthConnections.filter((service) =>
+      service.name.toLowerCase().includes(normalized)
+    )
+  }, [workspaceOAuthConnections, searchTerm])
 
   const oauthServiceOptions = useMemo(
     () =>
-      oauthConnections.map((service) => ({
+      workspaceOAuthConnections.map((service) => ({
         value: service.providerId,
         label: service.name,
         icon: getServiceConfigByProviderId(service.providerId)?.icon,
       })),
-    [oauthConnections]
+    [workspaceOAuthConnections]
   )
 
   const activeMembers = useMemo(
     () => members.filter((member) => member.status === 'active'),
     [members]
   )
-  const adminMemberCount = useMemo(
-    () => activeMembers.filter((member) => member.role === 'admin').length,
-    [activeMembers]
-  )
+  const adminMemberCount = activeMembers.filter((member) => member.role === 'admin').length
 
   const workspaceUserOptions = useMemo(() => {
     const activeMemberUserIds = new Set(activeMembers.map((member) => member.userId))
@@ -286,8 +282,10 @@ export function IntegrationsManager() {
   }, [workspacePermissions?.users, activeMembers])
 
   const selectedOAuthService = useMemo(
-    () => oauthConnections.find((service) => service.providerId === createOAuthProviderId) || null,
-    [oauthConnections, createOAuthProviderId]
+    () =>
+      workspaceOAuthConnections.find((service) => service.providerId === createOAuthProviderId) ||
+      null,
+    [workspaceOAuthConnections, createOAuthProviderId]
   )
   const createOAuthRequiredScopes = useMemo(() => {
     if (!createOAuthProviderId) return []
@@ -315,15 +313,12 @@ export function IntegrationsManager() {
     )
   }, [credentials, createDisplayName])
 
-  const isDescriptionDirty = useMemo(() => {
-    if (!selectedCredential) return false
-    return selectedDescriptionDraft !== (selectedCredential.description || '')
-  }, [selectedCredential, selectedDescriptionDraft])
-
-  const isDisplayNameDirty = useMemo(() => {
-    if (!selectedCredential) return false
-    return selectedDisplayNameDraft !== selectedCredential.displayName
-  }, [selectedCredential, selectedDisplayNameDraft])
+  const isDescriptionDirty = selectedCredential
+    ? selectedDescriptionDraft !== (selectedCredential.description || '')
+    : false
+  const isDisplayNameDirty = selectedCredential
+    ? selectedDisplayNameDraft !== selectedCredential.displayName
+    : false
 
   const isDetailsDirty = isDescriptionDirty || isDisplayNameDirty
 
@@ -352,7 +347,7 @@ export function IntegrationsManager() {
         if (isDescriptionDirty) setSelectedDescriptionDraft((v) => v.trim())
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to save changes'
+      const message = getErrorMessage(error, 'Failed to save changes')
       setDetailsError(message)
       logger.error('Failed to save credential details', error)
     }
@@ -385,61 +380,6 @@ export function IntegrationsManager() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [selectedCredentialId, isDetailsDirty])
 
-  const applyPendingCredentialCreateRequest = useCallback(
-    (request: PendingCredentialCreateRequest) => {
-      if (request.workspaceId !== workspaceId) {
-        return
-      }
-
-      if (Date.now() - request.requestedAt > 15 * 60 * 1000) {
-        clearPendingCredentialCreateRequest()
-        return
-      }
-
-      if (request.type !== 'oauth') return
-
-      pendingReturnOriginRef.current = request.returnOrigin
-
-      setShowCreateModal(true)
-      setCreateError(null)
-      setCreateDescription('')
-      setCreateOAuthProviderId(request.providerId)
-      setCreateDisplayName(request.displayName)
-
-      clearPendingCredentialCreateRequest()
-    },
-    [workspaceId]
-  )
-
-  useEffect(() => {
-    if (!workspaceId) return
-    const request = readPendingCredentialCreateRequest()
-    if (!request) return
-    applyPendingCredentialCreateRequest(request)
-  }, [workspaceId, applyPendingCredentialCreateRequest])
-
-  useEffect(() => {
-    if (!workspaceId) return
-
-    const handlePendingCreateRequest = (event: Event) => {
-      const request = (event as CustomEvent<PendingCredentialCreateRequest>).detail
-      if (!request) return
-      applyPendingCredentialCreateRequest(request)
-    }
-
-    window.addEventListener(
-      PENDING_CREDENTIAL_CREATE_REQUEST_EVENT,
-      handlePendingCreateRequest as EventListener
-    )
-
-    return () => {
-      window.removeEventListener(
-        PENDING_CREDENTIAL_CREATE_REQUEST_EVENT,
-        handlePendingCreateRequest as EventListener
-      )
-    }
-  }, [workspaceId, applyPendingCredentialCreateRequest])
-
   const isSelectedAdmin = selectedCredential?.role === 'admin'
   const selectedOAuthServiceConfig = useMemo(() => {
     if (!selectedCredential?.providerId) {
@@ -456,10 +396,6 @@ export function IntegrationsManager() {
     setCreateError(null)
     setCreateStep(1)
     setServiceSearch('')
-    setSaJsonInput('')
-    setSaDisplayName('')
-    setSaDescription('')
-    setSaError(null)
     pendingReturnOriginRef.current = undefined
   }
 
@@ -533,7 +469,7 @@ export function IntegrationsManager() {
         callbackURL: window.location.href,
       })
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to start OAuth connection'
+      const message = getErrorMessage(error, 'Failed to start OAuth connection')
       setCreateError(message)
       logger.error('Failed to connect OAuth service', error)
     }
@@ -583,13 +519,13 @@ export function IntegrationsManager() {
       setShowDeleteConfirmDialog(false)
       setCredentialToDelete(null)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to disconnect integration'
+      const message = getErrorMessage(error, 'Failed to disconnect integration')
       setDeleteError(message)
       logger.error('Failed to disconnect integration', error)
     }
   }
 
-  const [isShareingWithWorkspace, setIsSharingWithWorkspace] = useState(false)
+  const [isSharingWithWorkspace, setIsSharingWithWorkspace] = useState(false)
 
   const handleShareWithWorkspace = async () => {
     if (!selectedCredential || !isSelectedAdmin) return
@@ -608,7 +544,7 @@ export function IntegrationsManager() {
         })
       }
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to share with workspace'
+      const message = getErrorMessage(error, 'Failed to share with workspace')
       setDetailsError(message)
       logger.error('Failed to share credential with workspace', error)
     } finally {
@@ -654,7 +590,7 @@ export function IntegrationsManager() {
         callbackURL: window.location.href,
       })
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to start reconnect'
+      const message = getErrorMessage(error, 'Failed to start reconnect')
       setDetailsError(message)
       logger.error('Failed to reconnect OAuth credential', error)
     }
@@ -715,124 +651,47 @@ export function IntegrationsManager() {
     filteredAvailableIntegrations.length === 0
 
   const handleAddForProvider = useCallback((providerId: string) => {
-    setCreateOAuthProviderId(providerId)
-    setCreateStep(2)
+    const serviceConfig = getServiceConfigByProviderId(providerId)
     setCreateDisplayName('')
     setCreateDescription('')
     setCreateError(null)
+
+    if (serviceConfig?.authType === 'service_account') {
+      openServiceAccountConnect(
+        providerId,
+        setCreateOAuthProviderId,
+        setShowServiceAccountConnectModal
+      )
+      return
+    }
+
+    setCreateOAuthProviderId(providerId)
+    setCreateStep(2)
     setShowCreateModal(true)
   }, [])
 
-  const validateServiceAccountJson = (raw: string): { valid: boolean; error?: string } => {
-    let parsed: Record<string, unknown>
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      return { valid: false, error: 'Invalid JSON. Paste the full service account key file.' }
-    }
-    if (parsed.type !== 'service_account') {
-      return { valid: false, error: 'JSON key must have "type": "service_account".' }
-    }
-    if (!parsed.client_email || typeof parsed.client_email !== 'string') {
-      return { valid: false, error: 'Missing "client_email" field.' }
-    }
-    if (!parsed.private_key || typeof parsed.private_key !== 'string') {
-      return { valid: false, error: 'Missing "private_key" field.' }
-    }
-    if (!parsed.project_id || typeof parsed.project_id !== 'string') {
-      return { valid: false, error: 'Missing "project_id" field.' }
-    }
-    return { valid: true }
-  }
-
-  const handleCreateServiceAccount = async () => {
-    setSaError(null)
-    const trimmed = saJsonInput.trim()
-    if (!trimmed) {
-      setSaError('Paste the service account JSON key.')
-      return
-    }
-    const validation = validateServiceAccountJson(trimmed)
-    if (!validation.valid) {
-      setSaError(validation.error ?? 'Invalid JSON')
-      return
-    }
-    setSaIsSubmitting(true)
-    try {
-      await createCredential.mutateAsync({
-        workspaceId,
-        type: 'service_account',
-        displayName: saDisplayName.trim() || undefined,
-        description: saDescription.trim() || undefined,
-        serviceAccountJson: trimmed,
-      })
-      setShowCreateModal(false)
-      resetCreateForm()
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Failed to add service account'
-      setSaError(message)
-      logger.error('Failed to create service account credential', error)
-    } finally {
-      setSaIsSubmitting(false)
-    }
-  }
-
-  const readSaJsonFile = useCallback(
-    (file: File) => {
-      if (!file.name.endsWith('.json')) {
-        setSaError('Only .json files are supported')
-        return
-      }
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const text = e.target?.result
-        if (typeof text === 'string') {
-          setSaJsonInput(text)
-          setSaError(null)
-          try {
-            const parsed = JSON.parse(text)
-            if (parsed.client_email && !saDisplayName.trim()) {
-              setSaDisplayName(parsed.client_email)
-            }
-          } catch {
-            // validation will catch this on submit
-          }
-        }
-      }
-      reader.readAsText(file)
-    },
-    [saDisplayName]
+  const serviceAccountProviderId = useMemo(
+    () => resolveServiceAccountProviderId(createOAuthProviderId),
+    [createOAuthProviderId]
   )
 
-  const handleSaFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    readSaJsonFile(file)
-    event.target.value = ''
-  }
-
-  const handleSaDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault()
-    event.stopPropagation()
-    setSaDragActive(true)
-  }, [])
-
-  const handleSaDragLeave = useCallback((event: React.DragEvent) => {
-    event.preventDefault()
-    event.stopPropagation()
-    setSaDragActive(false)
-  }, [])
-
-  const handleSaDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault()
-      event.stopPropagation()
-      setSaDragActive(false)
-      const file = event.dataTransfer.files[0]
-      if (file) readSaJsonFile(file)
-    },
-    [readSaJsonFile]
-  )
+  const serviceAccountConnectConfig = useMemo(() => {
+    if (!serviceAccountProviderId) return null
+    const config = getServiceConfigByProviderId(createOAuthProviderId)
+    const icon = selectedOAuthService?.icon ?? config?.icon
+    if (!icon) return null
+    return {
+      providerId: serviceAccountProviderId,
+      serviceName:
+        selectedOAuthService?.name || config?.name || resolveProviderLabel(createOAuthProviderId),
+      icon,
+    }
+  }, [
+    serviceAccountProviderId,
+    createOAuthProviderId,
+    selectedOAuthService,
+    oauthServiceNameByProviderId,
+  ])
 
   const filteredServices = useMemo(() => {
     if (!serviceSearch.trim()) return oauthServiceOptions
@@ -853,16 +712,21 @@ export function IntegrationsManager() {
           <>
             <ModalHeader>Connect Integration</ModalHeader>
             <ModalBody>
+              <ModalDescription className='sr-only'>
+                Select a service to connect an integration
+              </ModalDescription>
               <div className='flex flex-col gap-3'>
                 <div className='flex items-center gap-2 rounded-[8px] border border-[var(--border)] bg-transparent px-2 py-[5px]'>
                   <Search
-                    className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
+                    className='size-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
                     strokeWidth={2}
                   />
-                  <UiInput
+                  <Input
                     placeholder='Search services...'
                     value={serviceSearch}
-                    onChange={(e) => setServiceSearch(e.target.value)}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                      setServiceSearch(event.target.value)
+                    }
                     className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
                   />
                 </div>
@@ -870,17 +734,28 @@ export function IntegrationsManager() {
                   {filteredServices.map((service) => {
                     const config = getServiceConfigByProviderId(service.value)
                     return (
-                      <button
+                      <Button
                         key={service.value}
                         type='button'
+                        variant='ghost'
                         onClick={() => {
+                          if (config?.authType === 'service_account') {
+                            setShowCreateModal(false)
+                            openServiceAccountConnect(
+                              service.value,
+                              setCreateOAuthProviderId,
+                              setShowServiceAccountConnectModal
+                            )
+                            setServiceSearch('')
+                            return
+                          }
                           setCreateOAuthProviderId(service.value)
                           setCreateStep(2)
                           setServiceSearch('')
                         }}
-                        className='flex items-center gap-2.5 rounded-[6px] px-2 py-2 text-left hover:bg-[var(--surface-5)]'
+                        className='h-auto w-full justify-start gap-2.5 rounded-[6px] p-2 text-left hover-hover:bg-[var(--surface-5)]'
                       >
-                        <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[6px] bg-[var(--surface-5)]'>
+                        <div className='flex size-8 flex-shrink-0 items-center justify-center rounded-[6px] bg-[var(--surface-5)]'>
                           {config ? (
                             createElement(config.icon, { className: 'h-4 w-4' })
                           ) : (
@@ -892,7 +767,7 @@ export function IntegrationsManager() {
                         <span className='font-medium text-[15px] text-[var(--text-primary)]'>
                           {service.label}
                         </span>
-                      </button>
+                      </Button>
                     )
                   })}
                   {filteredServices.length === 0 && (
@@ -909,21 +784,22 @@ export function IntegrationsManager() {
               </Button>
             </ModalFooter>
           </>
-        ) : selectedOAuthService?.authType !== 'service_account' ? (
+        ) : (
           <>
             <ModalHeader>
               <div className='flex items-center gap-2.5'>
-                <button
+                <Button
                   type='button'
+                  variant='ghost'
                   onClick={() => {
                     setCreateStep(1)
                     setCreateError(null)
                   }}
-                  className='flex h-6 w-6 items-center justify-center rounded-[4px] text-[var(--text-muted)] hover:bg-[var(--surface-5)] hover:text-[var(--text-primary)]'
+                  className='size-6 rounded-[4px] p-0 text-[var(--text-muted)] hover-hover:bg-[var(--surface-5)] hover-hover:text-[var(--text-primary)]'
                   aria-label='Back'
                 >
                   ←
-                </button>
+                </Button>
                 <span>
                   Connect{' '}
                   {selectedOAuthService?.name || resolveProviderLabel(createOAuthProviderId)}
@@ -931,6 +807,9 @@ export function IntegrationsManager() {
               </div>
             </ModalHeader>
             <ModalBody>
+              <ModalDescription className='sr-only'>
+                Connect your OAuth account for this integration
+              </ModalDescription>
               {(createError || existingOAuthDisplayName) && (
                 <div className='mb-3 flex flex-col gap-2'>
                   {createError && (
@@ -947,7 +826,7 @@ export function IntegrationsManager() {
               )}
               <div className='flex flex-col gap-4'>
                 <div className='flex items-center gap-3'>
-                  <div className='flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-[8px] bg-[var(--surface-5)]'>
+                  <div className='flex size-[40px] flex-shrink-0 items-center justify-center rounded-[8px] bg-[var(--surface-5)]'>
                     {selectedOAuthService &&
                       createElement(selectedOAuthService.icon, { className: 'h-[18px] w-[18px]' })}
                   </div>
@@ -971,8 +850,8 @@ export function IntegrationsManager() {
                     <ul className='max-h-[200px] space-y-2.5 overflow-y-auto px-3.5 py-3'>
                       {createDisplayScopes.map((scope) => (
                         <li key={scope} className='flex items-start gap-2.5'>
-                          <div className='mt-0.5 flex h-[16px] w-[16px] flex-shrink-0 items-center justify-center'>
-                            <Check className='h-[10px] w-[10px] text-[var(--text-primary)]' />
+                          <div className='mt-0.5 flex size-[16px] flex-shrink-0 items-center justify-center'>
+                            <Check className='size-[10px] text-[var(--text-primary)]' />
                           </div>
                           <span className='text-[12px] text-[var(--text-primary)]'>
                             {getScopeDescription(scope)}
@@ -1035,163 +914,27 @@ export function IntegrationsManager() {
               </Button>
             </ModalFooter>
           </>
-        ) : (
-          <>
-            <ModalHeader>
-              <div className='flex items-center gap-2.5'>
-                <button
-                  type='button'
-                  onClick={() => {
-                    setCreateStep(1)
-                    setSaError(null)
-                  }}
-                  className='flex h-6 w-6 items-center justify-center rounded-[4px] text-[var(--text-muted)] hover:bg-[var(--surface-5)] hover:text-[var(--text-primary)]'
-                  aria-label='Back'
-                >
-                  ←
-                </button>
-                <span>
-                  Add {selectedOAuthService?.name || resolveProviderLabel(createOAuthProviderId)}
-                </span>
-              </div>
-            </ModalHeader>
-            <ModalBody>
-              {saError && (
-                <div className='mb-3'>
-                  <Badge variant='red' size='lg' dot className='max-w-full'>
-                    {saError}
-                  </Badge>
-                </div>
-              )}
-              <div className='flex flex-col gap-4'>
-                <div className='flex items-center gap-3'>
-                  <div className='flex h-[40px] w-[40px] flex-shrink-0 items-center justify-center rounded-[8px] bg-[var(--surface-5)]'>
-                    {selectedOAuthService &&
-                      createElement(selectedOAuthService.icon, { className: 'h-[18px] w-[18px]' })}
-                  </div>
-                  <div>
-                    <p className='font-medium text-[13px] text-[var(--text-primary)]'>
-                      Add {selectedOAuthService?.name || 'service account'}
-                    </p>
-                    <p className='text-[12px] text-[var(--text-tertiary)]'>
-                      {selectedOAuthService?.description || 'Paste or upload the JSON key file'}
-                    </p>
-                    <a
-                      href='https://docs.sim.ai/credentials/google-service-account'
-                      target='_blank'
-                      rel='noopener noreferrer'
-                      className='text-[12px] text-[var(--accent)] hover:underline'
-                    >
-                      View setup guide
-                    </a>
-                  </div>
-                </div>
-
-                <div>
-                  <Label>
-                    JSON Key<span className='ml-1'>*</span>
-                  </Label>
-                  <div
-                    onDragOver={handleSaDragOver}
-                    onDragLeave={handleSaDragLeave}
-                    onDrop={handleSaDrop}
-                    className={cn(
-                      'relative mt-1.5 rounded-md border-2 border-dashed transition-colors',
-                      saDragActive
-                        ? 'border-[var(--accent)] bg-[var(--accent)]/5'
-                        : 'border-transparent'
-                    )}
-                  >
-                    {saDragActive && (
-                      <div className='pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-[var(--accent)]/5'>
-                        <p className='font-medium text-[13px] text-[var(--accent)]'>
-                          Drop JSON key file here
-                        </p>
-                      </div>
-                    )}
-                    <Textarea
-                      value={saJsonInput}
-                      onChange={(event) => {
-                        setSaJsonInput(event.target.value)
-                        setSaError(null)
-                        if (!saDisplayName.trim()) {
-                          try {
-                            const parsed = JSON.parse(event.target.value)
-                            if (parsed.client_email) setSaDisplayName(parsed.client_email)
-                          } catch {
-                            // not valid yet
-                          }
-                        }
-                      }}
-                      placeholder='Paste your service account JSON key here or drag & drop a .json file...'
-                      autoComplete='off'
-                      data-lpignore='true'
-                      className={cn(
-                        'min-h-[120px] resize-none border-0 font-mono text-[12px]',
-                        saDragActive && 'opacity-30'
-                      )}
-                    />
-                  </div>
-                  <div className='mt-1.5'>
-                    <label className='inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'>
-                      <input
-                        type='file'
-                        accept='.json'
-                        onChange={handleSaFileUpload}
-                        className='hidden'
-                      />
-                      Or upload a .json file
-                    </label>
-                  </div>
-                </div>
-                <div>
-                  <Label>Display name</Label>
-                  <Input
-                    value={saDisplayName}
-                    onChange={(event) => setSaDisplayName(event.target.value)}
-                    placeholder='Auto-populated from client_email'
-                    autoComplete='off'
-                    data-lpignore='true'
-                    className='mt-1.5'
-                  />
-                </div>
-                <div>
-                  <Label>Description</Label>
-                  <Textarea
-                    value={saDescription}
-                    onChange={(event) => setSaDescription(event.target.value)}
-                    placeholder='Optional description'
-                    maxLength={500}
-                    autoComplete='off'
-                    data-lpignore='true'
-                    className='mt-1.5 min-h-[80px] resize-none'
-                  />
-                </div>
-              </div>
-            </ModalBody>
-            <ModalFooter>
-              <Button
-                variant='default'
-                onClick={() => {
-                  setCreateStep(1)
-                  setSaError(null)
-                }}
-              >
-                Back
-              </Button>
-              <Button
-                variant='primary'
-                onClick={handleCreateServiceAccount}
-                disabled={!saJsonInput.trim() || saIsSubmitting}
-              >
-                {saIsSubmitting ? 'Adding...' : 'Add Service Account'}
-              </Button>
-            </ModalFooter>
-          </>
         )}
       </ModalContent>
     </Modal>
   )
+
+  const serviceAccountConnectModalJsx =
+    serviceAccountConnectConfig && showServiceAccountConnectModal ? (
+      <ConnectServiceAccountModal
+        open={showServiceAccountConnectModal}
+        onOpenChange={(open) => {
+          setShowServiceAccountConnectModal(open)
+          if (!open) {
+            setCreateOAuthProviderId('')
+          }
+        }}
+        workspaceId={workspaceId}
+        serviceAccountProviderId={serviceAccountConnectConfig.providerId}
+        serviceName={serviceAccountConnectConfig.serviceName}
+        serviceIcon={serviceAccountConnectConfig.icon}
+      />
+    ) : null
 
   const handleCloseDeleteDialog = () => {
     setShowDeleteConfirmDialog(false)
@@ -1207,18 +950,18 @@ export function IntegrationsManager() {
       <ModalContent size='sm'>
         <ModalHeader>Disconnect Integration</ModalHeader>
         <ModalBody>
-          <p className='text-[var(--text-secondary)]'>
+          <ModalDescription className='text-[var(--text-secondary)]'>
             Are you sure you want to disconnect{' '}
             <span className='font-medium text-[var(--text-primary)]'>
               {credentialToDelete?.displayName}
             </span>
             ? This action cannot be undone.
-          </p>
+          </ModalDescription>
           {deleteError && (
-            <div className='mt-3 rounded-lg border border-red-500/50 bg-red-50 p-3 dark:bg-red-950/30'>
+            <div className='mt-3 rounded-lg border border-[color-mix(in_srgb,var(--text-error)_40%,transparent)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] p-3'>
               <div className='flex items-start gap-2.5'>
-                <AlertTriangle className='mt-[1px] h-4 w-4 flex-shrink-0 text-red-600 dark:text-red-400' />
-                <p className='text-red-700 text-small dark:text-red-300'>{deleteError}</p>
+                <AlertTriangle className='mt-[1px] size-4 flex-shrink-0 text-[var(--text-error)]' />
+                <p className='text-[var(--text-error)] text-small'>{deleteError}</p>
               </div>
             </div>
           )}
@@ -1246,9 +989,9 @@ export function IntegrationsManager() {
       <ModalContent size='sm'>
         <ModalHeader>Unsaved Changes</ModalHeader>
         <ModalBody>
-          <p className='text-[var(--text-secondary)]'>
+          <ModalDescription className='text-[var(--text-secondary)]'>
             You have unsaved changes. Are you sure you want to discard them?
-          </p>
+          </ModalDescription>
         </ModalBody>
         <ModalFooter>
           <Button variant='default' onClick={() => setShowUnsavedChangesAlert(false)}>
@@ -1269,7 +1012,7 @@ export function IntegrationsManager() {
           <div className='min-h-0 flex-1 overflow-y-auto'>
             <div className='flex flex-col gap-4.5'>
               <div className='flex items-center gap-2.5 border-[var(--border)] border-b pb-3'>
-                <div className='flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--surface-5)]'>
+                <div className='flex size-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--surface-5)]'>
                   {selectedOAuthServiceConfig ? (
                     createElement(selectedOAuthServiceConfig.icon, {
                       className: 'h-[18px] w-[18px]',
@@ -1309,9 +1052,10 @@ export function IntegrationsManager() {
                   Display Name
                   <Tooltip.Root>
                     <Tooltip.Trigger asChild>
-                      <button
+                      <Button
                         type='button'
-                        className='-my-1 flex h-5 w-5 items-center justify-center'
+                        variant='ghost'
+                        className='-my-1 size-5 p-0'
                         onClick={() => {
                           navigator.clipboard.writeText(selectedCredential.id)
                           setCopyIdSuccess(true)
@@ -1320,11 +1064,11 @@ export function IntegrationsManager() {
                         aria-label='Copy value'
                       >
                         {copyIdSuccess ? (
-                          <Check className='h-3 w-3 text-green-500' />
+                          <Check className='size-3 text-[var(--text-success)]' />
                         ) : (
-                          <Clipboard className='h-3 w-3 text-[var(--text-icon)]' />
+                          <Clipboard className='size-3 text-[var(--text-icon)]' />
                         )}
-                      </button>
+                      </Button>
                     </Tooltip.Trigger>
                     <Tooltip.Content>
                       {copyIdSuccess ? 'Copied!' : 'Copy credential ID'}
@@ -1357,7 +1101,7 @@ export function IntegrationsManager() {
               </div>
 
               {detailsError && (
-                <div className='rounded-lg border border-[color-mix(in_srgb,var(--status-red)_40%,transparent)] bg-[color-mix(in_srgb,var(--status-red)_10%,transparent)] px-2.5 py-2 text-[var(--status-red)] text-small'>
+                <div className='rounded-lg border border-[color-mix(in_srgb,var(--text-error)_40%,transparent)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] px-2.5 py-2 text-[var(--text-error)] text-small'>
                   {detailsError}
                 </div>
               )}
@@ -1375,10 +1119,13 @@ export function IntegrationsManager() {
                     {activeMembers.map((member) => (
                       <div
                         key={member.id}
-                        className='grid grid-cols-[1fr_120px_72px] items-center gap-2'
+                        className={cn(
+                          'grid items-center gap-2',
+                          isSelectedAdmin ? 'grid-cols-[1fr_120px_72px]' : 'grid-cols-[1fr_200px]'
+                        )}
                       >
                         <div className='flex min-w-0 items-center gap-2.5'>
-                          <Avatar className='h-8 w-8 flex-shrink-0'>
+                          <Avatar className='size-8 flex-shrink-0'>
                             <AvatarFallback
                               style={{
                                 background: getUserColor(member.userId || member.userEmail || ''),
@@ -1389,7 +1136,7 @@ export function IntegrationsManager() {
                             </AvatarFallback>
                           </Avatar>
                           <div className='min-w-0'>
-                            <p className='truncate font-medium text-[var(--text-primary)] text-sm'>
+                            <p className='truncate font-medium text-[var(--text-primary)] text-small'>
                               {member.userName || member.userEmail || member.userId}
                             </p>
                             <p className='truncate text-[var(--text-tertiary)] text-caption'>
@@ -1401,7 +1148,7 @@ export function IntegrationsManager() {
                         <Combobox
                           options={roleComboOptions}
                           value={
-                            roleOptions.find((option) => option.value === member.role)?.label || ''
+                            ROLE_OPTIONS.find((option) => option.value === member.role)?.label || ''
                           }
                           selectedValue={member.role}
                           onChange={(value) =>
@@ -1413,7 +1160,7 @@ export function IntegrationsManager() {
                           }
                           size='sm'
                         />
-                        {isSelectedAdmin ? (
+                        {isSelectedAdmin && (
                           <Button
                             variant='ghost'
                             onClick={() => handleRemoveMember(member.userId)}
@@ -1422,8 +1169,6 @@ export function IntegrationsManager() {
                           >
                             Remove
                           </Button>
-                        ) : (
-                          <div />
                         )}
                       </div>
                     ))}
@@ -1445,7 +1190,7 @@ export function IntegrationsManager() {
                         <Combobox
                           options={roleComboOptions}
                           value={
-                            roleOptions.find((option) => option.value === memberRole)?.label || ''
+                            ROLE_OPTIONS.find((option) => option.value === memberRole)?.label || ''
                           }
                           selectedValue={memberRole}
                           onChange={(value) => setMemberRole(value as WorkspaceCredentialRole)}
@@ -1483,14 +1228,14 @@ export function IntegrationsManager() {
                       }`}
                     </Button>
                   )}
-                  {(workspaceUserOptions.length > 0 || isShareingWithWorkspace) && (
+                  {(workspaceUserOptions.length > 0 || isSharingWithWorkspace) && (
                     <Button
                       variant='default'
                       onClick={handleShareWithWorkspace}
-                      disabled={isShareingWithWorkspace || workspaceUserOptions.length === 0}
+                      disabled={isSharingWithWorkspace || workspaceUserOptions.length === 0}
                     >
-                      <Share2 className='mr-1.5 h-[13px] w-[13px]' />
-                      {isShareingWithWorkspace ? 'Sharing...' : 'Share'}
+                      <Share2 className='mr-1.5 size-[13px]' />
+                      {isSharingWithWorkspace ? 'Sharing...' : 'Share with workspace'}
                     </Button>
                   )}
                   <Button
@@ -1572,12 +1317,15 @@ export function IntegrationsManager() {
           />
         </div>
         <h1 className='font-semibold text-heading-darker text-lg'>
-          VIMI is your always-on AI assistant that listens across your work ecosystem.
+          Let's set up Arena, connect your core tools to get started.
         </h1>
         <p className='mb-3 font-normal text-heading-darker text-sm'>
-          Connect your core tools to unlock its full potential. It keeps a continuous pulse on your
+          {/* Connect your core tools to unlock its full potential. It keeps a continuous pulse on your
           work and surfaces the most important updates in one place—so nothing critical slips
-          through the cracks.
+          through the cracks. */}
+          Arena's AI and VIMI, works by syncing with the tools you already use. Connect them now so
+          VIMI can keep a continuous pulse on your work and surface what matters from the moment you
+          start.
         </p>
 
         {requestedIntegrationsToConnect.length > 0 && (
@@ -1656,6 +1404,7 @@ export function IntegrationsManager() {
           )}
         </div>
         {createModalJsx}
+        {serviceAccountConnectModalJsx}
         {deleteConfirmDialogJsx}
       </>
     )
@@ -1667,13 +1416,13 @@ export function IntegrationsManager() {
         <div className='flex items-center gap-2'>
           <div className='flex flex-1 items-center gap-2 rounded-lg border border-[var(--border)] bg-transparent px-2 py-1.5 transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover-hover:border-[var(--border-1)] dark:hover-hover:bg-[var(--surface-5)]'>
             <Search
-              className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
+              className='size-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
               strokeWidth={2}
             />
-            <UiInput
+            <Input
               placeholder='Search integrations...'
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setSearchTerm(event.target.value)}
               disabled={credentialsLoading}
               className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
             />
@@ -1683,7 +1432,7 @@ export function IntegrationsManager() {
             disabled={credentialsLoading}
             variant='primary'
           >
-            <Plus className='mr-1.5 h-[13px] w-[13px]' />
+            <Plus className='mr-1.5 size-[13px]' />
             Connect
           </Button>
         </div>
@@ -1705,7 +1454,7 @@ export function IntegrationsManager() {
                   <div key={credential.id} className='flex items-center justify-between gap-3'>
                     <div className='flex min-w-0 items-center gap-2.5'>
                       {serviceConfig && (
-                        <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--surface-5)]'>
+                        <div className='flex size-8 flex-shrink-0 items-center justify-center rounded-md bg-[var(--surface-5)]'>
                           {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
                         </div>
                       )}
@@ -1719,9 +1468,6 @@ export function IntegrationsManager() {
                       </div>
                     </div>
                     <div className='flex flex-shrink-0 items-center gap-1'>
-                      <Button variant='default' onClick={() => handleSelectCredential(credential)}>
-                        Details
-                      </Button>
                       {credential.role === 'admin' && (
                         <Button
                           variant='ghost'
@@ -1735,6 +1481,9 @@ export function IntegrationsManager() {
                           Disconnect
                         </Button>
                       )}
+                      <Button variant='default' onClick={() => handleSelectCredential(credential)}>
+                        Details
+                      </Button>
                     </div>
                   </div>
                 )
@@ -1748,7 +1497,10 @@ export function IntegrationsManager() {
 
               {filteredAvailableIntegrations.length > 0 && (
                 <div
-                  className={`flex flex-col gap-2${hasCredentials || showNoResults ? ' mt-2 border-[var(--border)] border-t pt-4' : ''}`}
+                  className={cn(
+                    'flex flex-col gap-2',
+                    (hasCredentials || showNoResults) && 'mt-2 border-[var(--border)] border-t pt-4'
+                  )}
                 >
                   <p className='mb-1 font-medium text-[12px] text-[var(--text-muted)]'>
                     Available integrations
@@ -1763,7 +1515,7 @@ export function IntegrationsManager() {
                       >
                         <div className='flex min-w-0 items-center gap-2.5'>
                           {serviceConfig && (
-                            <div className='flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[6px] bg-[var(--surface-5)]'>
+                            <div className='flex size-8 flex-shrink-0 items-center justify-center rounded-[6px] bg-[var(--surface-5)]'>
                               {createElement(serviceConfig.icon, { className: 'h-4 w-4' })}
                             </div>
                           )}
@@ -1786,6 +1538,7 @@ export function IntegrationsManager() {
       </div>
 
       {createModalJsx}
+      {serviceAccountConnectModalJsx}
       {deleteConfirmDialogJsx}
     </>
   )

@@ -15,6 +15,7 @@ import {
   type ToolCallInfo,
   ToolCallStatus,
 } from '@/app/workspace/[workspaceId]/home/types'
+import { getMothershipAttachmentPreviewUrl } from './attachment-preview'
 import type { PersistedContentBlock, PersistedMessage } from './persisted-message'
 import { withBlockTiming } from './persisted-message'
 
@@ -24,6 +25,9 @@ const STATE_TO_STATUS: Record<string, ToolCallStatus> = {
   [MothershipStreamV1ToolOutcome.cancelled]: ToolCallStatus.cancelled,
   [MothershipStreamV1ToolOutcome.rejected]: ToolCallStatus.rejected,
   [MothershipStreamV1ToolOutcome.skipped]: ToolCallStatus.skipped,
+  aborted: ToolCallStatus.cancelled,
+  failed: ToolCallStatus.error,
+  interrupted: ToolCallStatus.interrupted,
   pending: ToolCallStatus.executing,
   executing: ToolCallStatus.executing,
 }
@@ -46,7 +50,17 @@ function toToolCallInfo(block: PersistedContentBlock): ToolCallInfo | undefined 
 
 function toDisplayBlock(block: PersistedContentBlock): ContentBlock | undefined {
   const displayed = toDisplayBlockBody(block)
-  return displayed ? withBlockTiming(displayed, block) : undefined
+  if (!displayed) return undefined
+  if (block.parentToolCallId && displayed.parentToolCallId === undefined) {
+    displayed.parentToolCallId = block.parentToolCallId
+  }
+  if (block.spanId && displayed.spanId === undefined) {
+    displayed.spanId = block.spanId
+  }
+  if (block.parentSpanId && displayed.parentSpanId === undefined) {
+    displayed.parentSpanId = block.parentSpanId
+  }
+  return withBlockTiming(displayed, block)
 }
 
 function toDisplayBlockBody(block: PersistedContentBlock): ContentBlock | undefined {
@@ -87,9 +101,7 @@ function toDisplayAttachment(f: PersistedMessage['fileAttachments']): ChatMessag
     filename: a.filename,
     media_type: a.media_type,
     size: a.size,
-    previewUrl: a.media_type.startsWith('image/')
-      ? `/api/files/serve/${encodeURIComponent(a.key)}?context=mothership`
-      : undefined,
+    previewUrl: getMothershipAttachmentPreviewUrl(a),
   }))
 }
 
@@ -109,7 +121,18 @@ function toDisplayContexts(
   }))
 }
 
+const displayMessageCache = new WeakMap<PersistedMessage, ChatMessage>()
+
+/**
+ * Maps a `PersistedMessage` (server wire shape) to a `ChatMessage` (UI shape).
+ * Reference-stable: returns the same object for a given `PersistedMessage`
+ * instance so `React.memo` boundaries downstream of React Query's structural
+ * sharing can short-circuit on identity.
+ */
 export function toDisplayMessage(msg: PersistedMessage): ChatMessage {
+  const cached = displayMessageCache.get(msg)
+  if (cached) return cached
+
   const display: ChatMessage = {
     id: msg.id,
     role: msg.role,
@@ -133,5 +156,6 @@ export function toDisplayMessage(msg: PersistedMessage): ChatMessage {
 
   display.contexts = toDisplayContexts(msg.contexts)
 
+  displayMessageCache.set(msg, display)
   return display
 }

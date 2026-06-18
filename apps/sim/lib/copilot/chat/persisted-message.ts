@@ -1,5 +1,10 @@
 import { generateId } from '@sim/utils/id'
 import {
+  mergeAndRedactPersistedBlocks,
+  redactSensitiveContent,
+  redactToolCallResult,
+} from '@/lib/copilot/chat/sim-key-redaction'
+import {
   MothershipStreamV1CompletionStatus,
   MothershipStreamV1EventType,
   MothershipStreamV1SpanLifecycleEvent,
@@ -15,9 +20,9 @@ import type {
   OrchestratorResult,
 } from '@/lib/copilot/request/types'
 
-export type PersistedToolState = LocalToolCallStatus | MothershipStreamV1ToolOutcome
+export type PersistedToolState = LocalToolCallStatus | MothershipStreamV1ToolOutcome | 'interrupted'
 
-export interface PersistedToolCall {
+interface PersistedToolCall {
   id: string
   name: string
   state: PersistedToolState
@@ -41,6 +46,9 @@ export interface PersistedContentBlock {
   toolCall?: PersistedToolCall
   timestamp?: number
   endedAt?: number
+  parentToolCallId?: string
+  spanId?: string
+  parentSpanId?: string
 }
 
 export interface PersistedFileAttachment {
@@ -51,7 +59,7 @@ export interface PersistedFileAttachment {
   size: number
 }
 
-export interface PersistedMessageContext {
+interface PersistedMessageContext {
   kind: string
   label: string
   workflowId?: string
@@ -71,6 +79,34 @@ export interface PersistedMessage {
   contentBlocks?: PersistedContentBlock[]
   fileAttachments?: PersistedFileAttachment[]
   contexts?: PersistedMessageContext[]
+}
+
+/**
+ * Drop the `output` of every persisted tool result, keeping `success` and
+ * `error`. Tool outputs are never rendered (the chat thread shows only the tool
+ * name/title/status) and never replayed to the model (the upstream copilot
+ * service owns conversation memory), so storing them only bloats
+ * `copilot_messages.content` — a single `get_workflow_logs`/`run_workflow`
+ * result can reach hundreds of MB and stall task loads.
+ *
+ * Applied on both the write path (so new rows never store outputs) and the read
+ * path (so already-bloated rows still load fast). Returns the original
+ * reference when there is nothing to strip, preserving memoized identity for
+ * read-side consumers.
+ */
+export function stripToolResultOutput(message: PersistedMessage): PersistedMessage {
+  if (!message.contentBlocks?.length) return message
+  let changed = false
+  const contentBlocks = message.contentBlocks.map((block) => {
+    const toolCall = block.toolCall
+    const result = toolCall?.result
+    if (!toolCall || !result || typeof result !== 'object' || !('output' in result)) return block
+    changed = true
+    const strippedResult: { success: boolean; error?: string } = { success: result.success }
+    if (result.error !== undefined) strippedResult.error = result.error
+    return { ...block, toolCall: { ...toolCall, result: strippedResult } }
+  })
+  return changed ? { ...message, contentBlocks } : message
 }
 
 // ---------------------------------------------------------------------------
@@ -101,9 +137,28 @@ export function withBlockTiming<T>(target: T, src: { timestamp?: number; endedAt
   return target
 }
 
+function withBlockParent<T>(target: T, src: { parentToolCallId?: string }): T {
+  if (src.parentToolCallId) {
+    ;(target as { parentToolCallId?: string }).parentToolCallId = src.parentToolCallId
+  }
+  return target
+}
+
+/**
+ * Carry deterministic span identity (spanId / parentSpanId) across a block
+ * mapping so the nesting tree survives the persist → normalize → display round
+ * trip. Shared by both the write and read paths.
+ */
+function withBlockSpan<T>(target: T, src: { spanId?: string; parentSpanId?: string }): T {
+  const writable = target as { spanId?: string; parentSpanId?: string }
+  if (src.spanId) writable.spanId = src.spanId
+  if (src.parentSpanId) writable.parentSpanId = src.parentSpanId
+  return target
+}
+
 function mapContentBlock(block: ContentBlock): PersistedContentBlock {
   const persisted = mapContentBlockBody(block)
-  return withBlockTiming(persisted, block)
+  return withBlockSpan(withBlockParent(withBlockTiming(persisted, block), block), block)
 }
 
 function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
@@ -156,11 +211,13 @@ function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
         state === 'pending' ||
         state === 'executing'
 
+      const redactedResult = redactToolCallResult(block.toolCall.name, block.toolCall.result)
+
       const toolCall: PersistedToolCall = {
         id: block.toolCall.id,
         name: block.toolCall.name,
         state,
-        ...(isSubagentTool && isNonTerminal ? {} : { result: block.toolCall.result }),
+        ...(isSubagentTool && isNonTerminal ? {} : { result: redactedResult }),
         ...(isSubagentTool && isNonTerminal
           ? {}
           : block.toolCall.params
@@ -194,7 +251,7 @@ export function buildPersistedAssistantMessage(
   const message: PersistedMessage = {
     id: generateId(),
     role: 'assistant',
-    content: result.content,
+    content: redactSensitiveContent(result.content),
     timestamp: new Date().toISOString(),
   }
 
@@ -203,10 +260,49 @@ export function buildPersistedAssistantMessage(
   }
 
   if (result.contentBlocks.length > 0) {
-    message.contentBlocks = result.contentBlocks.map(mapContentBlock)
+    message.contentBlocks = mergeAndRedactPersistedBlocks(result.contentBlocks.map(mapContentBlock))
   }
 
   return message
+}
+
+export function withStoppedContentBlock(message: PersistedMessage): PersistedMessage {
+  const contentBlocks = message.contentBlocks ?? []
+  const hasAssistantText = contentBlocks.some(
+    (block) =>
+      block.type === MothershipStreamV1EventType.text &&
+      block.channel !== MothershipStreamV1TextChannel.thinking &&
+      block.content?.trim()
+  )
+  if (
+    contentBlocks.some(
+      (block) =>
+        block.type === MothershipStreamV1EventType.complete &&
+        block.status === MothershipStreamV1CompletionStatus.cancelled
+    )
+  ) {
+    return message
+  }
+
+  return normalizeMessage({
+    ...message,
+    contentBlocks: [
+      ...(hasAssistantText || !message.content.trim()
+        ? []
+        : [
+            {
+              type: MothershipStreamV1EventType.text,
+              channel: MothershipStreamV1TextChannel.assistant,
+              content: message.content,
+            },
+          ]),
+      ...contentBlocks,
+      {
+        type: MothershipStreamV1EventType.complete,
+        status: MothershipStreamV1CompletionStatus.cancelled,
+      },
+    ],
+  })
 }
 
 export interface UserMessageParams {
@@ -265,6 +361,9 @@ interface RawBlock {
   status?: string
   timestamp?: number
   endedAt?: number
+  parentToolCallId?: string
+  spanId?: string
+  parentSpanId?: string
   toolCall?: {
     id?: string
     name?: string
@@ -294,6 +393,9 @@ const OUTCOME_NORMALIZATION: Record<string, PersistedToolState> = {
   [MothershipStreamV1ToolOutcome.cancelled]: MothershipStreamV1ToolOutcome.cancelled,
   [MothershipStreamV1ToolOutcome.skipped]: MothershipStreamV1ToolOutcome.skipped,
   [MothershipStreamV1ToolOutcome.rejected]: MothershipStreamV1ToolOutcome.rejected,
+  aborted: MothershipStreamV1ToolOutcome.cancelled,
+  failed: MothershipStreamV1ToolOutcome.error,
+  interrupted: 'interrupted',
   pending: 'pending',
   executing: 'executing',
 }
@@ -321,6 +423,7 @@ function normalizeCanonicalBlock(block: RawBlock): PersistedContentBlock {
   if (block.kind) result.kind = block.kind as MothershipStreamV1SpanPayloadKind
   if (block.lifecycle) result.lifecycle = block.lifecycle as MothershipStreamV1SpanLifecycleEvent
   if (block.status) result.status = block.status as MothershipStreamV1CompletionStatus
+  if (block.parentToolCallId) result.parentToolCallId = block.parentToolCallId
   if (block.toolCall) {
     result.toolCall = {
       id: block.toolCall.id ?? '',
@@ -437,6 +540,15 @@ function normalizeBlock(block: RawBlock): PersistedContentBlock {
   }
   if (typeof block.endedAt === 'number' && result.endedAt === undefined) {
     result.endedAt = block.endedAt
+  }
+  if (block.parentToolCallId && result.parentToolCallId === undefined) {
+    result.parentToolCallId = block.parentToolCallId
+  }
+  if (block.spanId && result.spanId === undefined) {
+    result.spanId = block.spanId
+  }
+  if (block.parentSpanId && result.parentSpanId === undefined) {
+    result.parentSpanId = block.parentSpanId
   }
   return result
 }

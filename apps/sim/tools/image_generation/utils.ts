@@ -1,10 +1,10 @@
 import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
 import { sanitizeImageGenerationWrapperParams } from '@/lib/image-generation/nano-banana-inputs'
-import type { ToolConfig } from '@/tools/types'
 import type {
   ImageGenerationWrapperParams,
   ImageGenerationWrapperResponse,
 } from '@/tools/image_generation/types'
+import type { ToolConfig } from '@/tools/types'
 
 interface CreateImageGenerationWrapperToolArgs {
   baseTool: ToolConfig
@@ -84,7 +84,8 @@ export function createImageGenerationWrapperTool(
         type: 'string',
         required: false,
         visibility: 'hidden',
-        description: 'Warning emitted when multiple input images were provided and the latest one was used',
+        description:
+          'Warning emitted when multiple input images were provided and the latest one was used',
       },
     },
     outputs: buildWrapperOutputs(baseTool.outputs),

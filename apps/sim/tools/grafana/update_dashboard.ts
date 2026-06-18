@@ -1,7 +1,6 @@
 import type { GrafanaUpdateDashboardParams } from '@/tools/grafana/types'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
-// Using ToolResponse for intermediate state since this tool fetches existing data first
 export const updateDashboardTool: ToolConfig<GrafanaUpdateDashboardParams, ToolResponse> = {
   id: 'grafana_update_dashboard',
   name: 'Grafana Update Dashboard',
@@ -74,7 +73,8 @@ export const updateDashboardTool: ToolConfig<GrafanaUpdateDashboardParams, ToolR
       type: 'boolean',
       required: false,
       visibility: 'user-only',
-      description: 'Overwrite even if there is a version conflict',
+      description:
+        'Overwrite even if there is a version conflict (defaults to false to surface 412 conflicts)',
     },
     message: {
       type: 'string',
@@ -85,130 +85,31 @@ export const updateDashboardTool: ToolConfig<GrafanaUpdateDashboardParams, ToolR
   },
 
   request: {
-    // First, GET the existing dashboard
-    url: (params) =>
-      `${params.baseUrl.replace(/\/$/, '')}/api/dashboards/uid/${params.dashboardUid}`,
-    method: 'GET',
-    headers: (params) => {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${params.apiKey}`,
-      }
-      if (params.organizationId) {
-        headers['X-Grafana-Org-Id'] = params.organizationId
-      }
-      return headers
-    },
+    url: () => '/api/tools/grafana/update_dashboard',
+    method: 'POST',
+    headers: () => ({ 'Content-Type': 'application/json' }),
+    body: (params) => ({
+      apiKey: params.apiKey,
+      baseUrl: params.baseUrl,
+      organizationId: params.organizationId,
+      dashboardUid: params.dashboardUid,
+      title: params.title,
+      folderUid: params.folderUid,
+      tags: params.tags,
+      timezone: params.timezone,
+      refresh: params.refresh,
+      panels: params.panels,
+      overwrite: params.overwrite,
+      message: params.message,
+    }),
   },
 
   transformResponse: async (response: Response) => {
-    // Store the existing dashboard data for postProcess to use
     const data = await response.json()
     return {
-      success: true,
-      output: {
-        _existingDashboard: data.dashboard,
-        _existingMeta: data.meta,
-      },
-    }
-  },
-
-  postProcess: async (result, params) => {
-    // Merge user changes with existing dashboard and POST the complete object
-    const existingDashboard = result.output._existingDashboard
-    const existingMeta = result.output._existingMeta
-
-    if (!existingDashboard || !existingDashboard.uid) {
-      return {
-        success: false,
-        output: {},
-        error: 'Failed to fetch existing dashboard',
-      }
-    }
-
-    // Build the updated dashboard by merging existing data with new params
-    const updatedDashboard: Record<string, any> = {
-      ...existingDashboard,
-    }
-
-    // Apply user's changes
-    if (params.title) updatedDashboard.title = params.title
-    if (params.timezone) updatedDashboard.timezone = params.timezone
-    if (params.refresh) updatedDashboard.refresh = params.refresh
-
-    if (params.tags) {
-      updatedDashboard.tags = params.tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t)
-    }
-
-    if (params.panels) {
-      try {
-        updatedDashboard.panels = JSON.parse(params.panels)
-      } catch {
-        // Keep existing panels if parse fails
-      }
-    }
-
-    // Increment version for update
-    if (existingDashboard.version) {
-      updatedDashboard.version = existingDashboard.version
-    }
-
-    // Build the request body
-    const body: Record<string, any> = {
-      dashboard: updatedDashboard,
-      overwrite: params.overwrite !== false,
-    }
-
-    // Use existing folder if not specified
-    if (params.folderUid) {
-      body.folderUid = params.folderUid
-    } else if (existingMeta?.folderUid) {
-      body.folderUid = existingMeta.folderUid
-    }
-
-    if (params.message) {
-      body.message = params.message
-    }
-
-    // Make the POST request with the complete merged object
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
-    }
-    if (params.organizationId) {
-      headers['X-Grafana-Org-Id'] = params.organizationId
-    }
-
-    const updateResponse = await fetch(`${params.baseUrl.replace(/\/$/, '')}/api/dashboards/db`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    })
-
-    if (!updateResponse.ok) {
-      const errorText = await updateResponse.text()
-      return {
-        success: false,
-        output: {},
-        error: `Failed to update dashboard: ${errorText}`,
-      }
-    }
-
-    const data = await updateResponse.json()
-
-    return {
-      success: true,
-      output: {
-        id: data.id,
-        uid: data.uid,
-        url: data.url,
-        status: data.status,
-        version: data.version,
-        slug: data.slug,
-      },
+      success: data.success ?? true,
+      output: data.output ?? {},
+      ...(data.error ? { error: data.error } : {}),
     }
   },
 

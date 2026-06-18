@@ -14,7 +14,10 @@ import {
 } from '@/lib/core/utils/browser-storage'
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
-import { useChatHistory, useMarkTaskRead } from '@/hooks/queries/tasks'
+import {
+  useMarkMothershipChatRead,
+  useMothershipChatHistory,
+} from '@/hooks/queries/mothership-chats'
 import type { ChatContext } from '@/stores/panel'
 import { EmbedHtmlContent, MothershipChat, MothershipView, UserInput } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
@@ -113,8 +116,8 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
 
   const wasSendingRef = useRef(false)
 
-  const { isPending: isChatHistoryPending } = useChatHistory(chatId)
-  const { mutate: markRead } = useMarkTaskRead(workspaceId)
+  const { isPending: isChatHistoryPending } = useMothershipChatHistory(chatId)
+  const { mutate: markRead } = useMarkMothershipChatRead(workspaceId)
 
   const { mothershipRef, handleResizePointerDown, clearWidth } = useMothershipResize()
 
@@ -303,7 +306,7 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
   // active conversation is in flight. Previously this branch only checked
   // `hasMessages` and the `chatId` prop, which let the dashboard re-flash
   // mid-request in embed mode: when the workflow path created a new chat row
-  // and `resolvedChatId` was set internally, `useChatHistory` momentarily
+  // and `resolvedChatId` was set internally, `useMothershipChatHistory` momentarily
   // returned `{ messages: [] }` and the prop `chatId` was still undefined, so
   // both predicates were `false` and the dashboard re-mounted (which also
   // restarted the rotating placeholder via `<UserInput isInitialView>`).

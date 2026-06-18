@@ -52,6 +52,52 @@ import { focusFirstTextInput, focusFirstTextInputIn } from './auto-focus'
 const ANIMATION_CLASSES =
   'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=open]:animate-in motion-reduce:animate-none'
 
+function hasOpenFloatingLayer() {
+  return Boolean(document.querySelector('[data-radix-popper-content-wrapper] [data-state="open"]'))
+}
+
+/**
+ * Clears a stale `pointer-events: none` lock Radix can leave on `<body>` when
+ * this dialog closes while a nested modal popper (an open `ChipDropdown` /
+ * `Select`) is still open: both layers' body locks tear down in the same tick
+ * and the release is lost, freezing the page so nothing is clickable.
+ *
+ * Rendered INSIDE `DialogPrimitive.Content` so it unmounts exactly when the
+ * dialog closes (Radix `Presence`), unlike `ModalContent` which consumers keep
+ * mounted across open/close. The check is deferred a frame so it runs after
+ * Radix's own teardown, and only clears the lock when no other dialog remains
+ * open (nested modals keep theirs). Outside a dialog, EMCN poppers are
+ * non-modal and never lock the body, so a surviving lock is always stale.
+ */
+function ModalBodyLockReleaser() {
+  React.useEffect(() => {
+    return () => {
+      requestAnimationFrame(() => {
+        if (document.body.style.pointerEvents !== 'none') return
+        const anotherDialogOpen = document.querySelector(
+          '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]'
+        )
+        if (!anotherDialogOpen) {
+          document.body.style.pointerEvents = ''
+        }
+      })
+    }
+  }, [])
+  return null
+}
+
+/**
+ * Whether the current subtree renders inside a `ModalContent`.
+ *
+ * Floating EMCN controls (e.g. `ChipDropdown`) read this to switch their
+ * Radix popper to modal behavior. A non-modal popper portaled to `body`
+ * underneath a modal dialog inherits the dialog's `pointer-events: none`
+ * body lock and its outside-scroll lock, leaving the popper unclickable and
+ * unscrollable; a modal popper pauses the dialog's focus trap and carries
+ * its own scroll allowance.
+ */
+const InsideModalContext = React.createContext(false)
+
 /**
  * Root modal component. Manages open state.
  */
@@ -74,25 +120,24 @@ const ModalClose = DialogPrimitive.Close
 
 /**
  * Modal overlay component with fade transition.
- * Clicking this overlay closes the dialog via DialogPrimitive.Close.
+ * Outside interactions are handled by the dialog content so nested poppers can
+ * close without also dismissing the modal.
  */
 const ModalOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
 >(({ className, style, ...props }, ref) => {
   return (
-    <DialogPrimitive.Close asChild>
-      <DialogPrimitive.Overlay
-        ref={ref}
-        className={cn(
-          'fixed inset-0 z-[var(--z-modal)] bg-black/10 backdrop-blur-[2px]',
-          ANIMATION_CLASSES,
-          className
-        )}
-        style={style}
-        {...props}
-      />
-    </DialogPrimitive.Close>
+    <DialogPrimitive.Overlay
+      ref={ref}
+      className={cn(
+        'fixed inset-0 z-[var(--z-modal)] bg-black/10 backdrop-blur-[2px]',
+        ANIMATION_CLASSES,
+        className
+      )}
+      style={style}
+      {...props}
+    />
   )
 })
 
@@ -126,9 +171,32 @@ export interface ModalContentProps
    * - lg: max 600px (content-heavy modals)
    * - xl: max 800px (complex editors)
    * - full: max 1200px (dashboards, large content)
+   *
+   * Sizes up to `xl` center within the content area (offset for the sidebar,
+   * and the panel on workflow pages). `full` modals span most of the viewport,
+   * so they center against the full viewport instead.
    * @default 'md'
    */
   size?: ModalSize
+  /**
+   * Strips the modal's default visual chrome (background, ring, rounded
+   * corners, overflow clip) so a custom surface nested inside can fully own
+   * its appearance. Useful when wrapping a self-styled panel like
+   * `ChipModal`. Modal mechanics (overlay, focus trap, ESC, animations)
+   * remain intact.
+   *
+   * When `bare` is `true`, pass `srTitle` to keep the dialog accessible —
+   * there's no visible `ModalHeader` providing a title.
+   * @default false
+   */
+  bare?: boolean
+  /**
+   * Screen-reader-only title rendered as a hidden `DialogPrimitive.Title`.
+   * Pair with `bare` to satisfy Radix's accessibility contract when no
+   * visible `ModalHeader` is rendered. Without it, Radix's focus management
+   * can fall into states where the dialog can't be re-opened cleanly.
+   */
+  srTitle?: string
 }
 
 /**
@@ -140,10 +208,20 @@ const ModalContent = React.forwardRef<
   ModalContentProps
 >(
   (
-    { className, children, showClose = true, size = 'md', style, onOpenAutoFocus, ...props },
+    {
+      className,
+      children,
+      showClose = true,
+      size = 'md',
+      bare = false,
+      srTitle,
+      style,
+      onOpenAutoFocus,
+      'aria-describedby': ariaDescribedBy,
+      ...props
+    },
     ref
   ) => {
-    const [isInteractionReady, setIsInteractionReady] = React.useState(false)
     const pathname = usePathname()
     const isWorkflowPage = pathname?.includes('/w/') ?? false
     /** Full-bleed embed routes; no sidebar offset (avoids stale --sidebar-width after client nav from workspace). */
@@ -151,29 +229,29 @@ const ModalContent = React.forwardRef<
       pathname?.startsWith('/chat/') === true || pathname?.startsWith('/form/') === true
     const isRenderFromIframe = typeof window !== 'undefined' && window.self !== window.top
 
-    React.useEffect(() => {
-      const timer = setTimeout(() => setIsInteractionReady(true), 100)
-      return () => clearTimeout(timer)
-    }, [])
-
     return (
       <ModalPortal>
         <ModalOverlay />
         <div
           className='pointer-events-none fixed inset-0 z-[var(--z-modal)] flex items-center justify-center'
-          style={{
-            paddingLeft:
-              isPublicEmbedPage || isRenderFromIframe
-                ? '0'
-                : isWorkflowPage
-                  ? 'calc(var(--sidebar-width) - var(--panel-width))'
-                  : 'var(--sidebar-width)',
-          }}
+          style={
+            size === 'full'
+              ? undefined
+              : {
+                  paddingLeft:
+                    isPublicEmbedPage || isRenderFromIframe
+                      ? '0'
+                      : isWorkflowPage
+                        ? 'calc(var(--sidebar-width) - var(--panel-width))'
+                        : 'var(--sidebar-width)',
+                }
+          }
         >
           <DialogPrimitive.Content
             ref={ref}
             className={cn(
-              'pointer-events-auto flex max-h-[84vh] flex-col overflow-hidden rounded-xl bg-[var(--bg)] text-small ring-1 ring-foreground/10',
+              'pointer-events-auto flex max-h-[84vh] flex-col text-small',
+              !bare && 'overflow-hidden rounded-xl bg-[var(--bg)] ring-1 ring-foreground/10',
               ANIMATION_CLASSES,
               'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 duration-200',
               MODAL_SIZES[size],
@@ -181,10 +259,6 @@ const ModalContent = React.forwardRef<
             )}
             style={style}
             onEscapeKeyDown={(e) => {
-              if (!isInteractionReady) {
-                e.preventDefault()
-                return
-              }
               e.stopPropagation()
             }}
             onPointerDown={(e) => {
@@ -193,10 +267,34 @@ const ModalContent = React.forwardRef<
             onPointerUp={(e) => {
               e.stopPropagation()
             }}
+            onInteractOutside={(e) => {
+              /**
+               * Radix dispatches outside-interaction events to every open
+               * layer at once, so a click that should only dismiss an open
+               * dropdown / select / combobox (portaled into a popper wrapper
+               * above this modal) would also close the modal — both via the
+               * pointer event and via the transient focus shift when the
+               * popper's focus scope unwinds (`focusOutside`). Worse, the
+               * modal and the popper tearing down their body pointer-events
+               * locks in the same tick can leave the page frozen. Keep the
+               * modal open and let the interaction dismiss just the popper
+               * layer. The `data-state="open"` filter ignores poppers that
+               * are merely animating closed, so a follow-up click during the
+               * exit animation still dismisses the modal.
+               */
+              if (hasOpenFloatingLayer()) {
+                e.preventDefault()
+              }
+            }}
             onOpenAutoFocus={onOpenAutoFocus ?? focusFirstTextInput}
+            aria-describedby={ariaDescribedBy}
             {...props}
           >
-            {children}
+            <ModalBodyLockReleaser />
+            {srTitle ? (
+              <DialogPrimitive.Title className='sr-only'>{srTitle}</DialogPrimitive.Title>
+            ) : null}
+            <InsideModalContext.Provider value={true}>{children}</InsideModalContext.Provider>
           </DialogPrimitive.Content>
         </div>
       </ModalPortal>
@@ -222,9 +320,9 @@ const ModalHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
       <DialogPrimitive.Close asChild>
         <Button
           variant='ghost'
-          className='relative h-[16px] w-[16px] flex-shrink-0 p-0 before:absolute before:inset-[-14px] before:content-[""]'
+          className='relative size-[16px] flex-shrink-0 p-0 before:absolute before:inset-[-14px] before:content-[""]'
         >
-          <X className='h-[16px] w-[16px]' />
+          <X className='size-[16px]' />
           <span className='sr-only'>Close</span>
         </Button>
       </DialogPrimitive.Close>
@@ -241,7 +339,7 @@ const ModalTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title ref={ref} className={cn('', className)} {...props} />
+  <DialogPrimitive.Title ref={ref} className={className} {...props} />
 ))
 
 ModalTitle.displayName = 'ModalTitle'
@@ -253,7 +351,7 @@ const ModalDescription = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description ref={ref} className={cn('', className)} {...props} />
+  <DialogPrimitive.Description ref={ref} className={className} {...props} />
 ))
 
 ModalDescription.displayName = 'ModalDescription'
@@ -424,6 +522,7 @@ const ModalFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
 ModalFooter.displayName = 'ModalFooter'
 
 export {
+  InsideModalContext,
   Modal,
   ModalTrigger,
   ModalContent,

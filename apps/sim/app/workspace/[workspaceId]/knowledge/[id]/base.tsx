@@ -1,25 +1,30 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { format } from 'date-fns'
-import { AlertCircle, Loader2, Pencil, Plus, Tag, X } from 'lucide-react'
+import { AlertCircle, Pencil, Plus, Tag, X } from 'lucide-react'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import {
   Badge,
   Button,
-  Combobox,
-  type ComboboxOption,
-  DatePicker,
-  Input,
-  Label,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
+  ChipConfirmModal,
+  type ChipConfirmTextSegment,
+  ChipDatePicker,
+  ChipDropdown,
+  type ChipDropdownOption,
+  ChipInput,
+  ChipModal,
+  ChipModalBody,
+  ChipModalHeader,
+  cellIconNodeClass,
+  chipContentGap,
+  chipContentLabelClass,
+  chipVariants,
+  Loader,
   Tooltip,
   Trash,
 } from '@/components/emcn'
@@ -36,14 +41,14 @@ import { formatFileSize } from '@/lib/uploads/utils/file-utils'
 import type {
   BreadcrumbItem,
   FilterTag,
-  HeaderAction,
+  ResourceAction,
   ResourceCell,
   ResourceColumn,
   ResourceRow,
   SelectableConfig,
   SortConfig,
 } from '@/app/workspace/[workspaceId]/components'
-import { Resource } from '@/app/workspace/[workspaceId]/components'
+import { FloatingOverflowText, Resource } from '@/app/workspace/[workspaceId]/components'
 import {
   ActionBar,
   AddConnectorModal,
@@ -56,7 +61,7 @@ import {
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
-import { CONNECTOR_REGISTRY } from '@/connectors/registry'
+import { CONNECTOR_META_REGISTRY } from '@/connectors/registry'
 import {
   useKnowledgeBase,
   useKnowledgeBaseDocuments,
@@ -83,14 +88,22 @@ const logger = createLogger('KnowledgeBase')
 const DOCUMENTS_PER_PAGE = 50
 
 const DOCUMENT_COLUMNS: ResourceColumn[] = [
-  { id: 'name', header: 'Name' },
-  { id: 'size', header: 'Size' },
-  { id: 'tokens', header: 'Tokens' },
-  { id: 'chunks', header: 'Chunks' },
+  { id: 'name', header: 'Name', widthMultiplier: 0.8 },
+  { id: 'size', header: 'Size', widthMultiplier: 0.75 },
+  { id: 'tokens', header: 'Tokens', widthMultiplier: 0.75 },
+  { id: 'chunks', header: 'Chunks', widthMultiplier: 0.75 },
   { id: 'uploaded', header: 'Uploaded' },
-  { id: 'status', header: 'Status' },
+  { id: 'status', header: 'Status', widthMultiplier: 0.75 },
   { id: 'tags', header: 'Tags' },
 ]
+
+const STATUS_FILTER_OPTIONS: ChipDropdownOption[] = [
+  { value: 'all', label: 'All' },
+  { value: 'enabled', label: 'Enabled' },
+  { value: 'disabled', label: 'Disabled' },
+]
+
+const FILTER_SECTION_LABEL_CLASS = 'text-[var(--text-muted)] text-small'
 
 interface KnowledgeBaseProps {
   id: string
@@ -99,7 +112,7 @@ interface KnowledgeBaseProps {
 }
 
 const AnimatedLoader = ({ className }: { className?: string }) => (
-  <Loader2 className={cn(className, 'animate-spin')} />
+  <Loader className={className} animate />
 )
 
 const getStatusBadge = (doc: DocumentData) => {
@@ -215,7 +228,7 @@ export function KnowledgeBase({
   const { mutate: deleteDocumentMutation } = useDeleteDocument()
   const { mutate: deleteKnowledgeBaseMutation, isPending: isDeleting } =
     useDeleteKnowledgeBase(workspaceId)
-  const { mutate: updateKnowledgeBaseMutation } = useUpdateKnowledgeBase(workspaceId)
+  const { mutateAsync: updateKnowledgeBaseMutation } = useUpdateKnowledgeBase(workspaceId)
 
   const kbRename = useInlineRename({
     onSave: (kbId, name) =>
@@ -225,7 +238,7 @@ export function KnowledgeBase({
 
   const [searchQuery, setSearchQuery] = useState('')
   const [showTagsModal, setShowTagsModal] = useState(false)
-  const [enabledFilter, setEnabledFilter] = useState<string[]>([])
+  const [enabledFilter, setEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const [tagFilterEntries, setTagFilterEntries] = useState<
     {
       id: string
@@ -251,17 +264,6 @@ export function KnowledgeBase({
         })),
     [tagFilterEntries]
   )
-
-  const enabledFilterParam = useMemo<'all' | 'enabled' | 'disabled'>(() => {
-    if (enabledFilter.length === 1) return enabledFilter[0] as 'enabled' | 'disabled'
-    return 'all'
-  }, [enabledFilter])
-
-  const enabledDisplayLabel = useMemo(() => {
-    if (enabledFilter.length === 0) return 'All'
-    if (enabledFilter.length === 1) return enabledFilter[0] === 'enabled' ? 'Enabled' : 'Disabled'
-    return '2 selected'
-  }, [enabledFilter])
 
   const handleSearchChange = useCallback((newQuery: string) => {
     setSearchQuery(newQuery)
@@ -318,7 +320,6 @@ export function KnowledgeBase({
 
   const {
     knowledgeBase,
-    isLoading: isLoadingKnowledgeBase,
     error: knowledgeBaseError,
     refresh: refreshKnowledgeBase,
   } = useKnowledgeBase(id)
@@ -331,8 +332,6 @@ export function KnowledgeBase({
   const {
     documents,
     pagination,
-    isLoading: isLoadingDocuments,
-    isFetching: isFetchingDocuments,
     isPlaceholderData: isPlaceholderDocuments,
     error: documentsError,
     hasProcessingDocuments,
@@ -353,7 +352,7 @@ export function KnowledgeBase({
       if (hasSyncingConnectorsRef.current) return 5000
       return false
     },
-    enabledFilter: enabledFilterParam,
+    enabledFilter: enabledFilter,
     tagFilters: activeTagFilters.length > 0 ? activeTagFilters : undefined,
   })
 
@@ -369,6 +368,12 @@ export function KnowledgeBase({
   }, [hasSyncingConnectors, refreshKnowledgeBase, refreshDocuments])
 
   const knowledgeBaseName = knowledgeBase?.name || passedKnowledgeBaseName || 'Knowledge Base'
+  /**
+   * Breadcrumb leaf label. Falls back to the canonical '…' placeholder while
+   * the name loads (mirroring loading.tsx) instead of duplicating the root
+   * "Knowledge Base" crumb.
+   */
+  const knowledgeBaseCrumbLabel = knowledgeBase?.name || passedKnowledgeBaseName || '…'
   const error = knowledgeBaseError || documentsError
 
   const totalPages = Math.ceil(pagination.total / pagination.limit)
@@ -467,8 +472,7 @@ export function KnowledgeBase({
           logger.error('Error retrying document:', err)
           updateDocument(docId, {
             processingStatus: 'failed',
-            processingError:
-              err instanceof Error ? err.message : 'Failed to retry document processing',
+            processingError: getErrorMessage(err, 'Failed to retry document processing'),
           })
         },
       }
@@ -609,7 +613,7 @@ export function KnowledgeBase({
           knowledgeBaseId: id,
           operation: 'enable',
           selectAll: true,
-          enabledFilter: enabledFilterParam,
+          enabledFilter: enabledFilter,
         },
         {
           onSuccess: (result) => {
@@ -656,7 +660,7 @@ export function KnowledgeBase({
           knowledgeBaseId: id,
           operation: 'disable',
           selectAll: true,
-          enabledFilter: enabledFilterParam,
+          enabledFilter: enabledFilter,
         },
         {
           onSuccess: (result) => {
@@ -705,7 +709,7 @@ export function KnowledgeBase({
           knowledgeBaseId: id,
           operation: 'delete',
           selectAll: true,
-          enabledFilter: enabledFilterParam,
+          enabledFilter: enabledFilter,
         },
         {
           onSuccess: (result) => {
@@ -745,12 +749,12 @@ export function KnowledgeBase({
 
   const selectedDocumentsList = documents.filter((doc) => selectedDocuments.has(doc.id))
   const enabledCount = isSelectAllMode
-    ? enabledFilterParam === 'disabled'
+    ? enabledFilter === 'disabled'
       ? 0
       : pagination.total
     : selectedDocumentsList.filter((doc) => doc.enabled).length
   const disabledCount = isSelectAllMode
-    ? enabledFilterParam === 'enabled'
+    ? enabledFilter === 'enabled'
       ? 0
       : pagination.total
     : selectedDocumentsList.filter((doc) => !doc.enabled).length
@@ -785,23 +789,15 @@ export function KnowledgeBase({
     setContextMenuDocument(null)
   }, [closeContextMenu])
 
-  const prevKnowledgeBaseIdRef = useRef<string>(id)
-  const isNavigatingToNewKB = prevKnowledgeBaseIdRef.current !== id
-
-  if (knowledgeBase && knowledgeBase.id === id) {
-    prevKnowledgeBaseIdRef.current = id
-  }
-
-  const isInitialLoad = isLoadingKnowledgeBase && !knowledgeBase
-  const isFetchingNewKB = isNavigatingToNewKB && isFetchingDocuments
-
   const breadcrumbs: BreadcrumbItem[] = [
     {
       label: 'Knowledge Base',
+      icon: Database,
       onClick: () => router.push(`/workspace/${workspaceId}/knowledge`),
     },
     {
-      label: knowledgeBaseName,
+      label: knowledgeBaseCrumbLabel,
+      icon: Database,
       editing: kbRename.editingId
         ? {
             isEditing: true,
@@ -809,27 +805,46 @@ export function KnowledgeBase({
             onChange: kbRename.setEditValue,
             onSubmit: kbRename.submitRename,
             onCancel: kbRename.cancelRename,
+            disabled: kbRename.isSaving,
           }
         : undefined,
       dropdownItems: [
-        ...(userPermissions.canEdit
+        ...(userPermissions.canEdit || userPermissions.isLoading
           ? [
               {
                 label: 'Rename',
                 icon: Pencil,
+                disabled: !userPermissions.canEdit,
                 onClick: () => kbRename.startRename(id, knowledgeBaseName),
               },
-              { label: 'Tags', icon: Tag, onClick: () => setShowTagsModal(true) },
-              { label: 'Delete', icon: Trash, onClick: () => setShowDeleteDialog(true) },
+              {
+                label: 'Tags',
+                icon: Tag,
+                disabled: !userPermissions.canEdit,
+                onClick: () => setShowTagsModal(true),
+              },
+              {
+                label: 'Delete',
+                icon: Trash,
+                disabled: !userPermissions.canEdit,
+                onClick: () => setShowDeleteDialog(true),
+              },
             ]
           : []),
       ],
     },
   ]
 
-  const headerActions: HeaderAction[] = [
-    ...(userPermissions.canEdit
-      ? [{ label: 'New connector', icon: Plus, onClick: () => setShowAddConnectorModal(true) }]
+  const headerActions: ResourceAction[] = [
+    ...(userPermissions.canEdit || userPermissions.isLoading
+      ? [
+          {
+            text: 'New connector',
+            icon: Plus,
+            disabled: !userPermissions.canEdit,
+            onSelect: () => setShowAddConnectorModal(true),
+          },
+        ]
       : []),
   ]
 
@@ -858,45 +873,40 @@ export function KnowledgeBase({
 
   const filterContent = useMemo(
     () => (
-      <div className='flex w-[240px] flex-col gap-3 p-3'>
-        <div className='flex flex-col gap-1.5'>
-          <span className='font-medium text-[var(--text-secondary)] text-caption'>Status</span>
-          <Combobox
-            options={[
-              { value: 'enabled', label: 'Enabled' },
-              { value: 'disabled', label: 'Disabled' },
-            ]}
-            multiSelect
-            multiSelectValues={enabledFilter}
-            onMultiSelectChange={(values) => {
-              setEnabledFilter(values)
+      <AutoWidthPanel>
+        <div className='flex flex-col gap-2'>
+          <div className='flex h-5 items-center justify-between'>
+            <span className={FILTER_SECTION_LABEL_CLASS}>Status</span>
+            {enabledFilter !== 'all' && (
+              <Button
+                variant='ghost'
+                onClick={() => {
+                  setEnabledFilter('all')
+                  setCurrentPage(1)
+                  setSelectedDocuments(new Set())
+                  setIsSelectAllMode(false)
+                }}
+                className='-mr-1 h-auto px-1 py-0.5 text-[var(--text-muted)] text-xs hover-hover:text-[var(--text-secondary)]'
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+          <ChipDropdown
+            options={STATUS_FILTER_OPTIONS}
+            value={enabledFilter}
+            onChange={(value) => {
+              if (value !== 'all' && value !== 'enabled' && value !== 'disabled') return
+              setEnabledFilter(value)
               setCurrentPage(1)
               setSelectedDocuments(new Set())
               setIsSelectAllMode(false)
             }}
-            overlayContent={
-              <span className='truncate text-[var(--text-primary)]'>{enabledDisplayLabel}</span>
-            }
-            showAllOption
-            allOptionLabel='All'
-            size='sm'
-            className='h-[32px] w-full rounded-md'
+            align='start'
+            fullWidth
+            flush
           />
         </div>
-        {enabledFilter.length > 0 && (
-          <button
-            type='button'
-            onClick={() => {
-              setEnabledFilter([])
-              setCurrentPage(1)
-              setSelectedDocuments(new Set())
-              setIsSelectAllMode(false)
-            }}
-            className='flex h-[32px] w-full items-center justify-center rounded-md text-[var(--text-secondary)] text-caption transition-colors hover-hover:bg-[var(--surface-active)]'
-          >
-            Clear status filter
-          </button>
-        )}
         <TagFilterSection
           tagDefinitions={tagDefinitions}
           entries={tagFilterEntries}
@@ -907,30 +917,46 @@ export function KnowledgeBase({
             setIsSelectAllMode(false)
           }}
         />
-      </div>
+      </AutoWidthPanel>
     ),
-    [enabledFilter, enabledDisplayLabel, tagDefinitions, tagFilterEntries]
+    [enabledFilter, tagDefinitions, tagFilterEntries]
   )
 
   const connectorBadges =
     connectors.length > 0 ? (
       <>
         {connectors.map((connector) => {
-          const def = CONNECTOR_REGISTRY[connector.connectorType]
+          const def = CONNECTOR_META_REGISTRY[connector.connectorType]
           const ConnectorIcon = def?.icon
           return (
             <button
               key={connector.id}
               type='button'
               onClick={() => setShowConnectorsModal(true)}
-              className='flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-[var(--text-secondary)] text-caption shadow-[inset_0_0_0_1px_var(--border)] transition-colors hover-hover:bg-[var(--surface-3)]'
+              className={cn(chipVariants({ variant: 'filled', flush: true }), 'max-w-[180px]')}
             >
-              {connector.status === 'syncing' ? (
-                <Loader2 className='h-[14px] w-[14px] animate-spin' />
-              ) : (
-                ConnectorIcon && <ConnectorIcon className='h-[14px] w-[14px]' />
-              )}
-              {def?.name || connector.connectorType}
+              <span className='relative flex size-[14px] flex-shrink-0 items-center justify-center'>
+                {connector.status === 'syncing' ? (
+                  <Loader className='size-[14px]' animate />
+                ) : (
+                  ConnectorIcon && <ConnectorIcon className='size-[14px]' />
+                )}
+                {connector.status !== 'active' && connector.status !== 'syncing' && (
+                  <span
+                    className={cn(
+                      '-right-0.5 -top-0.5 absolute size-1.5 rounded-xs border border-[var(--surface-2)]',
+                      connector.status === 'error'
+                        ? 'bg-[var(--text-error)]'
+                        : connector.status === 'disabled'
+                          ? 'bg-[var(--caution)]'
+                          : 'bg-[var(--text-muted)]'
+                    )}
+                  />
+                )}
+              </span>
+              <span className='truncate text-[var(--text-body)]'>
+                {def?.name || connector.connectorType}
+              </span>
             </button>
           )
         })}
@@ -939,15 +965,12 @@ export function KnowledgeBase({
 
   const filterTags: FilterTag[] = useMemo(
     () => [
-      ...(enabledFilter.length > 0
+      ...(enabledFilter !== 'all'
         ? [
             {
-              label:
-                enabledFilter.length === 1
-                  ? `Status: ${enabledFilter[0] === 'enabled' ? 'Enabled' : 'Disabled'}`
-                  : 'Status: 2 selected',
+              label: `Status: ${enabledFilter === 'enabled' ? 'Enabled' : 'Disabled'}`,
               onRemove: () => {
-                setEnabledFilter([])
+                setEnabledFilter('all')
                 setCurrentPage(1)
                 setSelectedDocuments(new Set())
                 setIsSelectAllMode(false)
@@ -982,7 +1005,9 @@ export function KnowledgeBase({
   const documentRows: ResourceRow[] = useMemo(
     () =>
       documents.map((doc) => {
-        const ConnectorIcon = doc.connectorType ? CONNECTOR_REGISTRY[doc.connectorType]?.icon : null
+        const ConnectorIcon = doc.connectorType
+          ? CONNECTOR_META_REGISTRY[doc.connectorType]?.icon
+          : null
         const DocIcon = ConnectorIcon || getDocumentIcon(doc.mimeType, doc.filename)
 
         const tags = getDocumentTags(doc, tagDefinitions)
@@ -1012,19 +1037,18 @@ export function KnowledgeBase({
                   <Tooltip.Root>
                     <Tooltip.Trigger asChild>
                       <span
+                        role='presentation'
                         className='block max-w-full truncate text-[var(--text-secondary)] text-caption'
                         onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
                       >
                         {tagsDisplayText}
                       </span>
                     </Tooltip.Trigger>
-                    <Tooltip.Content
-                      side='top'
-                      className='max-h-[104px] max-w-[240px] overflow-y-auto'
-                    >
+                    <Tooltip.Content side='top' className='max-w-[240px]'>
                       <div className='flex flex-col gap-0.5'>
                         {tags.map((tag) => (
-                          <div key={tag.slot} className='text-xs'>
+                          <div key={tag.slot} className='truncate text-xs'>
                             <span className='text-[var(--text-muted)]'>{tag.displayName}:</span>{' '}
                             {tag.value}
                           </div>
@@ -1040,18 +1064,16 @@ export function KnowledgeBase({
           cells: {
             name: {
               content: (
-                <span className='flex min-w-0 items-center gap-3 font-medium text-[var(--text-body)] text-sm'>
-                  <span className='flex-shrink-0 text-[var(--text-icon)]'>
-                    <DocIcon className='h-[14px] w-[14px]' />
+                <span className={cn('flex min-w-0 items-center', chipContentGap)}>
+                  <span className={cellIconNodeClass}>
+                    <DocIcon className='size-[14px]' />
                   </span>
-                  <Tooltip.Root>
-                    <Tooltip.Trigger asChild>
-                      <span className='min-w-0 truncate'>
-                        <SearchHighlight text={doc.filename} searchQuery={searchQuery} />
-                      </span>
-                    </Tooltip.Trigger>
-                    <Tooltip.Content side='top'>{doc.filename}</Tooltip.Content>
-                  </Tooltip.Root>
+                  <FloatingOverflowText
+                    label={doc.filename}
+                    className={cn('block', chipContentLabelClass)}
+                  >
+                    <SearchHighlight text={doc.filename} searchQuery={searchQuery} />
+                  </FloatingOverflowText>
                 </span>
               ),
             },
@@ -1089,16 +1111,10 @@ export function KnowledgeBase({
     [documents, tagDefinitions, searchQuery]
   )
 
-  const emptyMessage = searchQuery
-    ? 'No documents found'
-    : enabledFilter.length > 0 || activeTagFilters.length > 0
-      ? 'Nothing matches your filter'
-      : undefined
-
   if (error && !knowledgeBase) {
     return (
       <div className='flex h-full flex-col items-center justify-center gap-3'>
-        <DatabaseX className='h-[32px] w-[32px] text-[var(--text-muted)]' />
+        <DatabaseX className='size-[32px] text-[var(--text-muted)]' />
         <div className='flex flex-col items-center gap-1'>
           <h2 className='font-medium text-[20px] text-[var(--text-secondary)]'>
             Knowledge base not found
@@ -1113,61 +1129,66 @@ export function KnowledgeBase({
 
   return (
     <>
-      <Resource
-        icon={Database}
-        title='Knowledge Base'
-        breadcrumbs={breadcrumbs}
-        create={{
-          label: 'New documents',
-          onClick: handleAddDocuments,
-          disabled: userPermissions.canEdit !== true,
-        }}
-        headerActions={headerActions}
-        sort={sortConfig}
-        search={{
-          value: searchQuery,
-          onChange: handleSearchChange,
-          placeholder: 'Search documents...',
-        }}
-        filter={filterContent}
-        filterTags={filterTags}
-        extras={connectorBadges}
-        columns={DOCUMENT_COLUMNS}
-        rows={documentRows}
-        selectable={selectableConfig}
-        onRowClick={handleDocumentClick}
-        onRowContextMenu={handleDocumentContextMenu}
-        onContextMenu={handleEmptyContextMenu}
-        isLoading={
-          isInitialLoad || isFetchingNewKB || (isLoadingDocuments && documents.length === 0)
-        }
-        pagination={{
-          currentPage,
-          totalPages,
-          onPageChange: (page) => setCurrentPage(page),
-        }}
-        emptyMessage={emptyMessage}
-        overlay={
-          <ActionBar
-            className={totalPages > 1 ? 'bottom-[72px]' : undefined}
-            selectedCount={selectedDocuments.size}
-            onEnable={disabledCount > 0 ? handleBulkEnable : undefined}
-            onDisable={enabledCount > 0 ? handleBulkDisable : undefined}
-            onDelete={handleBulkDelete}
-            enabledCount={enabledCount}
-            disabledCount={disabledCount}
-            isLoading={isBulkOperating}
-            totalCount={pagination.total}
-            isAllPageSelected={isAllSelected}
-            isAllSelected={isSelectAllMode}
-            onSelectAll={() => setIsSelectAllMode(true)}
-            onClearSelectAll={() => {
-              setIsSelectAllMode(false)
-              setSelectedDocuments(new Set())
-            }}
-          />
-        }
-      />
+      <Resource onContextMenu={handleEmptyContextMenu}>
+        <Resource.Header
+          icon={Database}
+          title='Knowledge Base'
+          breadcrumbs={breadcrumbs}
+          actions={[
+            ...headerActions,
+            {
+              text: 'New documents',
+              icon: Plus,
+              onSelect: handleAddDocuments,
+              disabled: userPermissions.canEdit !== true,
+              variant: 'primary',
+            },
+          ]}
+        />
+        <Resource.Options
+          search={{
+            value: searchQuery,
+            onChange: handleSearchChange,
+            placeholder: 'Search documents...',
+          }}
+          sort={sortConfig}
+          filter={filterContent ? { content: filterContent } : undefined}
+          filterTags={filterTags}
+          aside={connectorBadges}
+        />
+        <Resource.Table
+          columns={DOCUMENT_COLUMNS}
+          rows={documentRows}
+          selectable={selectableConfig}
+          onRowClick={handleDocumentClick}
+          onRowContextMenu={handleDocumentContextMenu}
+          pagination={{
+            currentPage,
+            totalPages,
+            onPageChange: (page) => setCurrentPage(page),
+          }}
+          overlay={
+            <ActionBar
+              className={totalPages > 1 ? 'bottom-[72px]' : undefined}
+              selectedCount={selectedDocuments.size}
+              onEnable={disabledCount > 0 ? handleBulkEnable : undefined}
+              onDisable={enabledCount > 0 ? handleBulkDisable : undefined}
+              onDelete={handleBulkDelete}
+              enabledCount={enabledCount}
+              disabledCount={disabledCount}
+              isLoading={isBulkOperating}
+              totalCount={pagination.total}
+              isAllPageSelected={isAllSelected}
+              isAllSelected={isSelectAllMode}
+              onSelectAll={() => setIsSelectAllMode(true)}
+              onClearSelectAll={() => {
+                setIsSelectAllMode(false)
+                setSelectedDocuments(new Set())
+              }}
+            />
+          }
+        />
+      </Resource>
 
       <BaseTagsModal
         open={showTagsModal}
@@ -1176,108 +1197,84 @@ export function KnowledgeBase({
         knowledgeBaseName={knowledgeBaseName}
       />
 
-      <Modal open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <ModalContent size='sm'>
-          <ModalHeader>Delete Knowledge Base</ModalHeader>
-          <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
-              Are you sure you want to delete{' '}
-              <span className='font-medium text-[var(--text-primary)]'>{knowledgeBaseName}</span>?
-              <span className='text-[var(--text-error)]'>
-                The knowledge base and all {pagination.total} document
-                {pagination.total === 1 ? '' : 's'} within it will be removed.
-              </span>{' '}
-              You can restore it from Recently Deleted in Settings.
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant='default'
-              onClick={() => setShowDeleteDialog(false)}
-              disabled={isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button variant='destructive' onClick={handleDeleteKnowledgeBase} disabled={isDeleting}>
-              {isDeleting ? 'Deleting...' : 'Delete Knowledge Base'}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <ChipConfirmModal
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        srTitle='Delete Knowledge Base'
+        title='Delete Knowledge Base'
+        text={[
+          'Are you sure you want to delete ',
+          { text: knowledgeBaseName, bold: true },
+          '? ',
+          {
+            text: `The knowledge base and all ${pagination.total} document${pagination.total === 1 ? '' : 's'} within it will be removed.`,
+            error: true,
+          },
+          ' You can restore it from Recently Deleted in Settings.',
+        ]}
+        confirm={{
+          label: 'Delete Knowledge Base',
+          onClick: handleDeleteKnowledgeBase,
+          pending: isDeleting,
+          pendingLabel: 'Deleting...',
+        }}
+      />
 
-      <Modal open={showDeleteDocumentModal} onOpenChange={setShowDeleteDocumentModal}>
-        <ModalContent size='sm'>
-          <ModalHeader>Delete Document</ModalHeader>
-          <ModalBody>
-            {(() => {
-              const docToDelete = documents.find((doc) => doc.id === documentToDelete)
-              return (
-                <p className='text-[var(--text-secondary)]'>
-                  Are you sure you want to delete{' '}
-                  <span className='font-medium text-[var(--text-primary)]'>
-                    {docToDelete?.filename ?? 'this document'}
-                  </span>
-                  ?{' '}
-                  {docToDelete?.connectorId ? (
-                    <span className='text-[var(--text-error)]'>
-                      This document is synced from a connector. Deleting it will permanently exclude
-                      it from future syncs. To temporarily hide it from search, disable it instead.
-                    </span>
-                  ) : (
-                    <>
-                      <span className='text-[var(--text-error)]'>
-                        This will permanently delete the document.
-                      </span>{' '}
-                      This action cannot be undone.
-                    </>
-                  )}
-                </p>
-              )
-            })()}
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant='default'
-              onClick={() => {
-                setShowDeleteDocumentModal(false)
-                setDocumentToDelete(null)
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant='destructive' onClick={confirmDeleteDocument}>
-              Delete Document
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <ChipConfirmModal
+        open={showDeleteDocumentModal}
+        onOpenChange={(open) => {
+          setShowDeleteDocumentModal(open)
+          if (!open) setDocumentToDelete(null)
+        }}
+        srTitle='Delete Document'
+        title='Delete Document'
+        text={(() => {
+          const docToDelete = documents.find((doc) => doc.id === documentToDelete)
+          const base: ChipConfirmTextSegment[] = [
+            'Are you sure you want to delete ',
+            { text: docToDelete?.filename ?? 'this document', bold: true },
+            '? ',
+          ]
+          return docToDelete?.connectorId
+            ? [
+                ...base,
+                {
+                  text: 'This document is synced from a connector. Deleting it will permanently exclude it from future syncs. To temporarily hide it from search, disable it instead.',
+                  error: true,
+                },
+              ]
+            : [
+                ...base,
+                { text: 'This will permanently delete the document.', error: true },
+                ' This action cannot be undone.',
+              ]
+        })()}
+        confirm={{
+          label: 'Delete Document',
+          onClick: confirmDeleteDocument,
+        }}
+      />
 
-      <Modal open={showBulkDeleteModal} onOpenChange={setShowBulkDeleteModal}>
-        <ModalContent size='sm'>
-          <ModalHeader>Delete Documents</ModalHeader>
-          <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
-              Are you sure you want to delete {selectedDocuments.size} document
-              {selectedDocuments.size === 1 ? '' : 's'}?{' '}
-              <span className='text-[var(--text-error)]'>
-                This will permanently delete the selected document
-                {selectedDocuments.size === 1 ? '' : 's'}.
-              </span>{' '}
-              This action cannot be undone.
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant='default' onClick={() => setShowBulkDeleteModal(false)}>
-              Cancel
-            </Button>
-            <Button variant='destructive' onClick={confirmBulkDelete} disabled={isBulkOperating}>
-              {isBulkOperating
-                ? 'Deleting...'
-                : `Delete ${selectedDocuments.size} Document${selectedDocuments.size === 1 ? '' : 's'}`}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <ChipConfirmModal
+        open={showBulkDeleteModal}
+        onOpenChange={setShowBulkDeleteModal}
+        srTitle='Delete Documents'
+        title='Delete Documents'
+        text={[
+          `Are you sure you want to delete ${selectedDocuments.size} document${selectedDocuments.size === 1 ? '' : 's'}? `,
+          {
+            text: `This will permanently delete the selected document${selectedDocuments.size === 1 ? '' : 's'}.`,
+            error: true,
+          },
+          ' This action cannot be undone.',
+        ]}
+        confirm={{
+          label: `Delete ${selectedDocuments.size} Document${selectedDocuments.size === 1 ? '' : 's'}`,
+          onClick: confirmBulkDelete,
+          pending: isBulkOperating,
+          pendingLabel: 'Deleting...',
+        }}
+      />
 
       <AddDocumentsModal
         open={showAddDocumentsModal}
@@ -1307,20 +1304,25 @@ export function KnowledgeBase({
         />
       )}
 
-      <Modal open={showConnectorsModal} onOpenChange={setShowConnectorsModal}>
-        <ModalContent size='lg'>
-          <ModalHeader>Connected Sources</ModalHeader>
-          <ModalBody>
-            <ConnectorsSection
-              workspaceId={workspaceId}
-              knowledgeBaseId={id}
-              connectors={connectors}
-              isLoading={isLoadingConnectors}
-              canEdit={userPermissions.canEdit}
-            />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+      <ChipModal
+        open={showConnectorsModal}
+        onOpenChange={setShowConnectorsModal}
+        srTitle='Connected Sources'
+      >
+        <ChipModalHeader onClose={() => setShowConnectorsModal(false)}>
+          Connected Sources
+        </ChipModalHeader>
+        <ChipModalBody>
+          <ConnectorsSection
+            workspaceId={workspaceId}
+            knowledgeBaseId={id}
+            connectors={connectors}
+            isLoading={isLoadingConnectors}
+            canEdit={userPermissions.canEdit}
+            className='mt-0'
+          />
+        </ChipModalBody>
+      </ChipModal>
 
       <DocumentContextMenu
         isOpen={isContextMenuOpen}
@@ -1405,6 +1407,18 @@ export function KnowledgeBase({
   )
 }
 
+/**
+ * Sizes the filter popover to its content with pure CSS `max-content` (clamped to
+ * `[280, 420]`). Because the padding box is part of `max-content`, the `p-3`
+ * inset is preserved on every edge — there is no separate measured/animated outer
+ * layer that can disagree by a few pixels and clip the right padding. The width
+ * still adapts to the active filters; it just resizes instantly rather than
+ * animating.
+ */
+function AutoWidthPanel({ children }: { children: ReactNode }) {
+  return <div className='flex w-max min-w-[280px] max-w-[420px] flex-col p-3'>{children}</div>
+}
+
 interface TagFilterEntry {
   id: string
   tagName: string
@@ -1431,13 +1445,91 @@ interface TagFilterSectionProps {
   onChange: (entries: TagFilterEntry[]) => void
 }
 
+interface TagFilterValueControlProps {
+  entry: TagFilterEntry
+  onChange: (patch: Partial<TagFilterEntry>) => void
+}
+
 /**
- * Tag filter section rendered inside the combined filter popover
+ * Renders the value input for a knowledge base tag filter row.
+ */
+function TagFilterValueControl({ entry, onChange }: TagFilterValueControlProps) {
+  const isBetween = entry.operator === 'between'
+
+  if (entry.fieldType === 'date') {
+    if (isBetween) {
+      return (
+        <div className='grid grid-cols-[1fr_auto_1fr] items-center gap-2'>
+          <ChipDatePicker
+            value={entry.value || undefined}
+            onChange={(value) => onChange({ value })}
+            placeholder='From'
+            fullWidth
+            flush
+          />
+          <span className='flex-shrink-0 text-[var(--text-muted)] text-xs'>to</span>
+          <ChipDatePicker
+            value={entry.valueTo || undefined}
+            onChange={(value) => onChange({ valueTo: value })}
+            placeholder='To'
+            fullWidth
+            flush
+          />
+        </div>
+      )
+    }
+
+    return (
+      <ChipDatePicker
+        value={entry.value || undefined}
+        onChange={(value) => onChange({ value })}
+        placeholder='Select date'
+        fullWidth
+        flush
+      />
+    )
+  }
+
+  if (isBetween) {
+    return (
+      <div className='grid grid-cols-[1fr_auto_1fr] items-center gap-2'>
+        <ChipInput
+          value={entry.value}
+          onChange={(event) => onChange({ value: event.target.value })}
+          placeholder='From'
+        />
+        <span className='flex-shrink-0 text-[var(--text-muted)] text-xs'>to</span>
+        <ChipInput
+          value={entry.valueTo}
+          onChange={(event) => onChange({ valueTo: event.target.value })}
+          placeholder='To'
+        />
+      </div>
+    )
+  }
+
+  return (
+    <ChipInput
+      value={entry.value}
+      onChange={(event) => onChange({ value: event.target.value })}
+      placeholder={
+        entry.fieldType === 'boolean'
+          ? 'true or false'
+          : entry.fieldType === 'number'
+            ? 'Enter number'
+            : 'Enter value'
+      }
+    />
+  )
+}
+
+/**
+ * Tag filter section rendered inside the combined filter popover.
  */
 function TagFilterSection({ tagDefinitions, entries, onChange }: TagFilterSectionProps) {
   const activeCount = entries.filter((f) => f.tagSlot && f.value.trim()).length
 
-  const tagOptions: ComboboxOption[] = tagDefinitions.map((t) => ({
+  const tagOptions: ChipDropdownOption[] = tagDefinitions.map((t) => ({
     value: t.displayName,
     label: t.displayName,
   }))
@@ -1446,6 +1538,21 @@ function TagFilterSection({ tagDefinitions, entries, onChange }: TagFilterSectio
     () => (entries.length > 0 ? entries : [createEmptyEntry()]),
     [entries]
   )
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const prevCountRef = useRef(filtersToShow.length)
+
+  useEffect(() => {
+    if (filtersToShow.length > prevCountRef.current) {
+      const el = scrollRef.current
+      if (el) {
+        requestAnimationFrame(() => {
+          el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+        })
+      }
+    }
+    prevCountRef.current = filtersToShow.length
+  }, [filtersToShow.length])
 
   const updateEntry = (id: string, patch: Partial<TagFilterEntry>) => {
     const existing = filtersToShow.find((e) => e.id === id)
@@ -1480,130 +1587,94 @@ function TagFilterSection({ tagDefinitions, entries, onChange }: TagFilterSectio
   if (tagDefinitions.length === 0) return null
 
   return (
-    <div className='border-[var(--border-1)] border-t'>
-      <div className='flex items-center justify-between px-3 py-2'>
-        <span className='font-medium text-[var(--text-secondary)] text-caption'>
-          Filter by tags
-        </span>
-        <div className='flex items-center gap-1'>
-          {activeCount > 0 && (
-            <Button
-              variant='ghost'
-              className='h-auto px-1.5 py-0.5 text-[var(--text-muted)] text-xs'
-              onClick={() => onChange([])}
-            >
-              Clear all
-            </Button>
-          )}
-          <Button variant='ghost' className='h-auto p-0' onClick={addFilter}>
-            <Plus className='h-3.5 w-3.5' />
+    <div className='mt-3 border-[var(--border-1)] border-t pt-3'>
+      <div className='flex h-5 items-center justify-between'>
+        <span className={FILTER_SECTION_LABEL_CLASS}>Filter by tags</span>
+        {activeCount > 0 && (
+          <Button
+            variant='ghost'
+            className='-mr-1 h-auto px-1 py-0.5 text-[var(--text-muted)] text-xs hover-hover:text-[var(--text-secondary)]'
+            onClick={() => onChange([])}
+          >
+            Clear all
           </Button>
-        </div>
+        )}
       </div>
 
-      <div className='flex max-h-[320px] flex-col gap-2 overflow-y-auto px-3 pb-3'>
-        {filtersToShow.map((entry) => {
+      <div
+        ref={scrollRef}
+        className='mt-2 flex max-h-[300px] flex-col gap-2 overflow-y-auto overflow-x-hidden'
+      >
+        {filtersToShow.map((entry, index) => {
           const operators = getOperatorsForFieldType(entry.fieldType)
-          const operatorOptions: ComboboxOption[] = operators.map((op) => ({
+          const operatorOptions: ChipDropdownOption[] = operators.map((op) => ({
             value: op.value,
             label: op.label,
           }))
-          const isBetween = entry.operator === 'between'
 
           return (
-            <div
-              key={entry.id}
-              className='flex flex-col gap-1.5 rounded-md border border-[var(--border-1)] p-2'
-            >
-              <div className='flex items-center justify-between'>
-                <Label className='text-[var(--text-muted)] text-xs'>Tag</Label>
-                <button
-                  type='button'
-                  onClick={() => removeFilter(entry.id)}
-                  className='text-[var(--text-muted)] transition-colors hover-hover:text-[var(--text-error)]'
-                >
-                  <X className='h-3 w-3' />
-                </button>
-              </div>
-              <Combobox
-                options={tagOptions}
-                value={entry.tagName}
-                onChange={(v) => handleTagChange(entry.id, v)}
-                placeholder='Select tag'
-              />
-
-              {entry.tagSlot && (
-                <>
-                  <Label className='text-[var(--text-muted)] text-xs'>Operator</Label>
-                  <Combobox
-                    options={operatorOptions}
-                    value={entry.operator}
-                    onChange={(v) => updateEntry(entry.id, { operator: v, valueTo: '' })}
-                    placeholder='Select operator'
+            <div key={entry.id} className='flex flex-col gap-2'>
+              {index > 0 && (
+                <div className='flex items-center gap-2'>
+                  <span className='shrink-0 text-[var(--text-muted)] text-xs leading-none'>
+                    and
+                  </span>
+                  <div className='h-px flex-1 bg-[var(--border-1)]' />
+                </div>
+              )}
+              <div className='flex items-start gap-2'>
+                <div className='flex min-w-0 flex-1 flex-wrap items-center gap-2'>
+                  <ChipDropdown
+                    options={tagOptions}
+                    value={entry.tagName}
+                    onChange={(value) => handleTagChange(entry.id, value)}
+                    placeholder='Select tag'
+                    align='start'
+                    matchTriggerWidth={false}
+                    contentClassName='max-h-[240px] overflow-y-auto'
+                    className='max-w-[150px]'
+                    flush
                   />
-
-                  <Label className='text-[var(--text-muted)] text-xs'>Value</Label>
-                  {entry.fieldType === 'date' ? (
-                    isBetween ? (
-                      <div className='flex items-center gap-1.5'>
-                        <DatePicker
-                          size='sm'
-                          value={entry.value || undefined}
-                          onChange={(v) => updateEntry(entry.id, { value: v })}
-                          placeholder='From'
-                        />
-                        <span className='flex-shrink-0 text-[var(--text-muted)] text-xs'>to</span>
-                        <DatePicker
-                          size='sm'
-                          value={entry.valueTo || undefined}
-                          onChange={(v) => updateEntry(entry.id, { valueTo: v })}
-                          placeholder='To'
-                        />
-                      </div>
-                    ) : (
-                      <DatePicker
-                        size='sm'
-                        value={entry.value || undefined}
-                        onChange={(v) => updateEntry(entry.id, { value: v })}
-                        placeholder='Select date'
-                      />
-                    )
-                  ) : isBetween ? (
-                    <div className='flex items-center gap-1.5'>
-                      <Input
-                        value={entry.value}
-                        onChange={(e) => updateEntry(entry.id, { value: e.target.value })}
-                        placeholder='From'
-                        className='h-[28px] text-caption'
-                      />
-                      <span className='flex-shrink-0 text-[var(--text-muted)] text-xs'>to</span>
-                      <Input
-                        value={entry.valueTo}
-                        onChange={(e) => updateEntry(entry.id, { valueTo: e.target.value })}
-                        placeholder='To'
-                        className='h-[28px] text-caption'
-                      />
-                    </div>
-                  ) : (
-                    <Input
-                      value={entry.value}
-                      onChange={(e) => updateEntry(entry.id, { value: e.target.value })}
-                      placeholder={
-                        entry.fieldType === 'boolean'
-                          ? 'true or false'
-                          : entry.fieldType === 'number'
-                            ? 'Enter number'
-                            : 'Enter value'
-                      }
-                      className='h-[28px] text-caption'
+                  {entry.tagSlot && (
+                    <ChipDropdown
+                      options={operatorOptions}
+                      value={entry.operator}
+                      onChange={(value) => updateEntry(entry.id, { operator: value, valueTo: '' })}
+                      placeholder='Operator'
+                      align='start'
+                      matchTriggerWidth={false}
+                      flush
                     />
                   )}
-                </>
+                </div>
+                <Button
+                  variant='ghost'
+                  className='relative size-[30px] shrink-0 p-0 text-[var(--text-muted)] before:absolute before:inset-[-5px] before:content-[""] hover-hover:bg-[var(--surface-active)] hover-hover:text-[var(--text-error)]'
+                  onClick={() => removeFilter(entry.id)}
+                  aria-label='Remove tag filter'
+                >
+                  <X className='size-[14px]' />
+                </Button>
+              </div>
+              {entry.tagSlot && (
+                <TagFilterValueControl
+                  entry={entry}
+                  onChange={(patch) => updateEntry(entry.id, patch)}
+                />
               )}
             </div>
           )
         })}
       </div>
+
+      <Button
+        variant='ghost'
+        onClick={addFilter}
+        className='mt-2 h-[30px] w-full justify-start gap-2 px-2 text-[var(--text-secondary)] text-caption hover-hover:text-[var(--text-primary)]'
+      >
+        <Plus className='size-[14px]' />
+        Add filter
+      </Button>
     </div>
   )
 }

@@ -1,7 +1,11 @@
+import type { OutputCondition, SubBlockConfig } from '@/blocks/types'
+
 export interface TriggerOutput {
   type?: string
   description?: string | TriggerOutput
-  [key: string]: TriggerOutput | string | undefined
+  /** Restricts which trigger configurations surface this output in the tag dropdown. */
+  condition?: OutputCondition
+  [key: string]: TriggerOutput | OutputCondition | string | undefined
 }
 
 export interface TriggerConfig {
@@ -11,11 +15,9 @@ export interface TriggerConfig {
   description: string
   version: string
 
-  // Optional icon component for UI display
   icon?: React.ComponentType<{ className?: string }>
 
-  // Subblocks define the UI and configuration (same as blocks)
-  subBlocks: import('@/blocks/types').SubBlockConfig[]
+  subBlocks: SubBlockConfig[]
 
   // Define the structure of data this trigger outputs to workflows
   outputs: Record<string, TriggerOutput>
@@ -34,7 +36,7 @@ export interface TriggerRegistry {
   [triggerId: string]: TriggerConfig
 }
 
-export interface TriggerInstance {
+interface TriggerInstance {
   id: string
   triggerId: string
   blockId: string

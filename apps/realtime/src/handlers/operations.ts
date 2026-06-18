@@ -9,11 +9,13 @@ import {
   WORKFLOW_OPERATIONS,
 } from '@sim/realtime-protocol/constants'
 import { WorkflowOperationSchema } from '@sim/realtime-protocol/schemas'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { assertWorkflowMutable, WorkflowLockedError } from '@sim/workflow-authz'
 import { ZodError } from 'zod'
 import { persistWorkflowOperation } from '@/database/operations'
 import type { AuthenticatedSocket } from '@/middleware/auth'
-import { checkRolePermission } from '@/middleware/permissions'
+import { checkWorkflowOperationPermission } from '@/middleware/permissions'
 import type { IRoomManager, UserSession } from '@/rooms'
 
 const logger = createLogger('OperationsHandlers')
@@ -123,11 +125,17 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
 
         await roomManager.updateUserActivity(workflowId, socket.id, { lastActivity: Date.now() })
 
-        // Check permissions using cached role (no DB query)
-        const permissionCheck = checkRolePermission(userPresence.role, operation)
+        // Re-validate the workspace role against the DB (cached per pod for a short
+        // window) so revoked or downgraded collaborators lose write access live.
+        const permissionCheck = await checkWorkflowOperationPermission(
+          session.userId,
+          workflowId,
+          operation,
+          userPresence.role
+        )
         if (!permissionCheck.allowed) {
           logger.warn(
-            `User ${session.userId} (role: ${userPresence.role}) forbidden from ${operation} on ${target}`
+            `User ${session.userId} (role: ${permissionCheck.role ?? 'none'}) forbidden from ${operation} on ${target}`
           )
           emitOperationError({
             type: 'INSUFFICIENT_PERMISSIONS',
@@ -137,6 +145,24 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
           })
           return
         }
+      }
+
+      try {
+        await assertWorkflowMutable(workflowId)
+      } catch (error) {
+        if (error instanceof WorkflowLockedError) {
+          emitOperationError(
+            {
+              type: 'WORKFLOW_LOCKED',
+              message: error.message,
+              operation,
+              target,
+            },
+            { error: error.message, retryable: false }
+          )
+          return
+        }
+        throw error
       }
 
       // Broadcast first for position updates to minimize latency, then persist
@@ -186,7 +212,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
           if (operationId) {
             socket.emit('operation-failed', {
               operationId,
-              error: error instanceof Error ? error.message : 'Database persistence failed',
+              error: getErrorMessage(error, 'Database persistence failed'),
               retryable: true,
             })
           }
@@ -228,7 +254,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
           if (operationId) {
             socket.emit('operation-failed', {
               operationId,
-              error: error instanceof Error ? error.message : 'Database persistence failed',
+              error: getErrorMessage(error, 'Database persistence failed'),
               retryable: true,
             })
           }
@@ -568,7 +594,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         })
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      const errorMessage = getErrorMessage(error, 'Unknown error occurred')
 
       if (operationId) {
         socket.emit('operation-failed', {
@@ -582,11 +608,11 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         socket.emit('operation-error', {
           type: 'VALIDATION_ERROR',
           message: 'Invalid operation data',
-          errors: error.errors,
+          errors: error.issues,
           operation: data.operation,
           target: data.target,
         })
-        logger.warn(`Validation error for operation from ${session.userId}:`, error.errors)
+        logger.warn(`Validation error for operation from ${session.userId}:`, error.issues)
       } else if (error instanceof Error) {
         if (error.message.includes('not found')) {
           socket.emit('operation-error', {

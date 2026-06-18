@@ -1,6 +1,6 @@
 import { SalesforceIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import type { BlockConfig } from '@/blocks/types'
+import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { SalesforceResponse } from '@/tools/salesforce/types'
 import { getTrigger } from '@/triggers'
@@ -12,11 +12,10 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
   authMode: AuthMode.OAuth,
   longDescription:
     'Integrate Salesforce into your workflow. Manage accounts, contacts, leads, opportunities, cases, and tasks with powerful automation capabilities.',
-  docsLink: 'https://docs.sim.ai/tools/salesforce',
+  docsLink: 'https://docs.sim.ai/integrations/salesforce',
   category: 'tools',
-  integrationType: IntegrationType.CRM,
-  tags: ['sales-engagement', 'customer-support'],
-  bgColor: '#E0E0E0',
+  integrationType: IntegrationType.Sales,
+  bgColor: '#FFFFFF',
   icon: SalesforceIcon,
   triggers: {
     enabled: true,
@@ -99,6 +98,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       title: 'Fields to Return',
       type: 'short-input',
       placeholder: 'Comma-separated fields',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -116,6 +116,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       title: 'Limit',
       type: 'short-input',
       placeholder: 'Max results (default: 100)',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -133,6 +134,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       title: 'Order By',
       type: 'short-input',
       placeholder: 'Field and direction (e.g., "Name ASC")',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -159,8 +161,12 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
           'create_contact',
           'update_contact',
           'create_case',
+          'update_case',
+          'create_opportunity',
+          'update_opportunity',
         ],
       },
+      required: { field: 'operation', value: ['update_account', 'delete_account'] },
     },
     {
       id: 'name',
@@ -171,12 +177,14 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
         field: 'operation',
         value: ['create_account', 'update_account', 'create_opportunity', 'update_opportunity'],
       },
+      required: { field: 'operation', value: ['create_account', 'create_opportunity'] },
     },
     {
       id: 'type',
       title: 'Type',
       type: 'short-input',
       placeholder: 'Type',
+      mode: 'advanced',
       condition: { field: 'operation', value: ['create_account', 'update_account'] },
     },
     {
@@ -184,6 +192,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       title: 'Industry',
       type: 'short-input',
       placeholder: 'Industry',
+      mode: 'advanced',
       condition: { field: 'operation', value: ['create_account', 'update_account'] },
     },
     {
@@ -208,6 +217,63 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       title: 'Website',
       type: 'short-input',
       placeholder: 'Website',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_account', 'update_account'] },
+    },
+    {
+      id: 'billingStreet',
+      title: 'Billing Street',
+      type: 'short-input',
+      placeholder: 'Billing street address',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_account', 'update_account'] },
+    },
+    {
+      id: 'billingCity',
+      title: 'Billing City',
+      type: 'short-input',
+      placeholder: 'Billing city',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_account', 'update_account'] },
+    },
+    {
+      id: 'billingState',
+      title: 'Billing State',
+      type: 'short-input',
+      placeholder: 'Billing state/province',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_account', 'update_account'] },
+    },
+    {
+      id: 'billingPostalCode',
+      title: 'Billing Postal Code',
+      type: 'short-input',
+      placeholder: 'Billing postal code',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_account', 'update_account'] },
+    },
+    {
+      id: 'billingCountry',
+      title: 'Billing Country',
+      type: 'short-input',
+      placeholder: 'Billing country',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_account', 'update_account'] },
+    },
+    {
+      id: 'annualRevenue',
+      title: 'Annual Revenue',
+      type: 'short-input',
+      placeholder: 'Annual revenue (number)',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_account', 'update_account'] },
+    },
+    {
+      id: 'numberOfEmployees',
+      title: 'Number of Employees',
+      type: 'short-input',
+      placeholder: 'Employee count (integer)',
+      mode: 'advanced',
       condition: { field: 'operation', value: ['create_account', 'update_account'] },
     },
     // Contact fields
@@ -218,8 +284,9 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       placeholder: 'Contact ID',
       condition: {
         field: 'operation',
-        value: ['get_contacts', 'update_contact', 'delete_contact', 'create_case'],
+        value: ['get_contacts', 'update_contact', 'delete_contact', 'create_case', 'update_case'],
       },
+      required: { field: 'operation', value: ['update_contact', 'delete_contact'] },
     },
     {
       id: 'lastName',
@@ -230,6 +297,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
         field: 'operation',
         value: ['create_contact', 'update_contact', 'create_lead', 'update_lead'],
       },
+      required: { field: 'operation', value: ['create_contact', 'create_lead'] },
     },
     {
       id: 'firstName',
@@ -261,6 +329,54 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
         value: ['create_contact', 'update_contact', 'create_lead', 'update_lead'],
       },
     },
+    {
+      id: 'department',
+      title: 'Department',
+      type: 'short-input',
+      placeholder: 'Department',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_contact', 'update_contact'] },
+    },
+    {
+      id: 'mailingStreet',
+      title: 'Mailing Street',
+      type: 'short-input',
+      placeholder: 'Mailing street address',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_contact', 'update_contact'] },
+    },
+    {
+      id: 'mailingCity',
+      title: 'Mailing City',
+      type: 'short-input',
+      placeholder: 'Mailing city',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_contact', 'update_contact'] },
+    },
+    {
+      id: 'mailingState',
+      title: 'Mailing State',
+      type: 'short-input',
+      placeholder: 'Mailing state/province',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_contact', 'update_contact'] },
+    },
+    {
+      id: 'mailingPostalCode',
+      title: 'Mailing Postal Code',
+      type: 'short-input',
+      placeholder: 'Mailing postal code',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_contact', 'update_contact'] },
+    },
+    {
+      id: 'mailingCountry',
+      title: 'Mailing Country',
+      type: 'short-input',
+      placeholder: 'Mailing country',
+      mode: 'advanced',
+      condition: { field: 'operation', value: ['create_contact', 'update_contact'] },
+    },
     // Lead fields
     {
       id: 'leadId',
@@ -268,6 +384,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       type: 'short-input',
       placeholder: 'Lead ID',
       condition: { field: 'operation', value: ['get_leads', 'update_lead', 'delete_lead'] },
+      required: { field: 'operation', value: ['update_lead', 'delete_lead'] },
     },
     {
       id: 'company',
@@ -275,6 +392,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       type: 'short-input',
       placeholder: 'Company name',
       condition: { field: 'operation', value: ['create_lead', 'update_lead'] },
+      required: { field: 'operation', value: ['create_lead'] },
     },
     {
       id: 'status',
@@ -298,6 +416,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       title: 'Lead Source',
       type: 'short-input',
       placeholder: 'Lead source',
+      mode: 'advanced',
       condition: { field: 'operation', value: ['create_lead', 'update_lead'] },
     },
     // Opportunity fields
@@ -310,6 +429,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
         field: 'operation',
         value: ['get_opportunities', 'update_opportunity', 'delete_opportunity'],
       },
+      required: { field: 'operation', value: ['update_opportunity', 'delete_opportunity'] },
     },
     {
       id: 'stageName',
@@ -317,6 +437,7 @@ export const SalesforceBlock: BlockConfig<SalesforceResponse> = {
       type: 'short-input',
       placeholder: 'Stage name',
       condition: { field: 'operation', value: ['create_opportunity', 'update_opportunity'] },
+      required: { field: 'operation', value: ['create_opportunity'] },
     },
     {
       id: 'closeDate',
@@ -350,6 +471,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       title: 'Probability',
       type: 'short-input',
       placeholder: 'Win probability (0-100)',
+      mode: 'advanced',
       condition: { field: 'operation', value: ['create_opportunity', 'update_opportunity'] },
     },
     // Case fields
@@ -359,6 +481,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'Case ID',
       condition: { field: 'operation', value: ['get_cases', 'update_case', 'delete_case'] },
+      required: { field: 'operation', value: ['update_case', 'delete_case'] },
     },
     {
       id: 'subject',
@@ -369,6 +492,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
         field: 'operation',
         value: ['create_case', 'update_case', 'create_task', 'update_task'],
       },
+      required: { field: 'operation', value: ['create_case', 'create_task'] },
     },
     {
       id: 'priority',
@@ -385,7 +509,8 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       title: 'Origin',
       type: 'short-input',
       placeholder: 'Origin (e.g., Phone, Email, Web)',
-      condition: { field: 'operation', value: ['create_case'] },
+      condition: { field: 'operation', value: ['create_case', 'update_case'] },
+      mode: 'advanced',
     },
     // Task fields
     {
@@ -394,6 +519,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'Task ID',
       condition: { field: 'operation', value: ['get_tasks', 'update_task', 'delete_task'] },
+      required: { field: 'operation', value: ['update_task', 'delete_task'] },
     },
     {
       id: 'activityDate',
@@ -419,14 +545,16 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       title: 'Related Contact/Lead ID',
       type: 'short-input',
       placeholder: 'Contact or Lead ID',
-      condition: { field: 'operation', value: ['create_task'] },
+      condition: { field: 'operation', value: ['create_task', 'update_task'] },
+      mode: 'advanced',
     },
     {
       id: 'whatId',
       title: 'Related Account/Opportunity ID',
       type: 'short-input',
       placeholder: 'Account or Opportunity ID',
-      condition: { field: 'operation', value: ['create_task'] },
+      condition: { field: 'operation', value: ['create_task', 'update_task'] },
+      mode: 'advanced',
     },
     // Report fields
     {
@@ -438,24 +566,23 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       required: true,
     },
     {
-      id: 'folderName',
-      title: 'Folder Name',
-      type: 'short-input',
-      placeholder: 'Filter by folder name',
-      condition: { field: 'operation', value: ['list_reports', 'list_dashboards'] },
-    },
-    {
       id: 'searchTerm',
       title: 'Search Term',
       type: 'short-input',
       placeholder: 'Search reports by name',
+      mode: 'advanced',
       condition: { field: 'operation', value: ['list_reports'] },
     },
     {
       id: 'includeDetails',
       title: 'Include Details',
-      type: 'short-input',
-      placeholder: 'Include detail rows (true/false)',
+      type: 'dropdown',
+      options: [
+        { label: 'Yes', id: 'true' },
+        { label: 'No', id: 'false' },
+      ],
+      value: () => 'true',
+      mode: 'advanced',
       condition: { field: 'operation', value: ['run_report'] },
     },
     {
@@ -463,6 +590,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       title: 'Report Filters',
       type: 'long-input',
       placeholder: 'JSON array of report filters',
+      mode: 'advanced',
       condition: { field: 'operation', value: ['run_report'] },
     },
     // Dashboard fields
@@ -505,6 +633,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       title: 'Description',
       type: 'long-input',
       placeholder: 'Description',
+      mode: 'advanced',
       condition: {
         field: 'operation',
         value: [
@@ -663,6 +792,119 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
   },
   outputs: {
     success: { type: 'boolean', description: 'Operation success status' },
-    output: { type: 'json', description: 'Operation result data' },
+    output: {
+      type: 'json',
+      description:
+        'Operation result: sObject record(s) for get/create/update/delete ops (accounts, contacts, leads, opportunities, cases, tasks); report/dashboard payloads for analytics ops; records[] + paging for SOQL query ops; sObject schema for describe/list-objects ops',
+    },
   },
 }
+
+export const SalesforceBlockMeta = {
+  tags: ['sales-engagement', 'customer-support'],
+  url: 'https://www.salesforce.com',
+  templates: [
+    {
+      icon: SalesforceIcon,
+      title: 'CRM knowledge search',
+      prompt:
+        'Create a knowledge base connected to my Salesforce account so all deals, contacts, notes, and activities are automatically synced and searchable. Then build an agent I can ask things like "what\'s the history with Acme Corp?" or "who was involved in the last enterprise deal?" and get instant answers with CRM record citations.',
+      modules: ['knowledge-base', 'agent'],
+      category: 'sales',
+      tags: ['sales', 'crm', 'research'],
+    },
+    {
+      icon: SalesforceIcon,
+      title: 'Deal pipeline tracker',
+      prompt:
+        'Create a table with columns for deal name, stage, amount, close date, and next steps. Build a workflow that syncs open deals from Salesforce into this table daily, and sends me a Slack summary each morning of deals that need attention or are at risk of slipping.',
+      modules: ['tables', 'scheduled', 'agent', 'workflows'],
+      category: 'sales',
+      tags: ['sales', 'crm', 'monitoring', 'reporting'],
+      alsoIntegrations: ['slack'],
+    },
+
+    {
+      icon: SalesforceIcon,
+      title: 'Push Salesforce pipeline updates to Slack',
+      prompt:
+        'Build a workflow that monitors Salesforce opportunities and posts a Slack notification to your sales team whenever a deal advances, closes, or needs immediate attention.',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['automation', 'communication'],
+      featured: true,
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: SalesforceIcon,
+      title: 'Inbound lead router',
+      prompt:
+        'Build a workflow that triggers on new inbound form submissions, creates a Salesforce lead with the captured fields, runs a SOQL query to check for an existing account match, assigns the lead to the right owner, and posts the new lead with its score to Slack.',
+      modules: ['agent', 'workflows'],
+      category: 'sales',
+      tags: ['sales', 'crm', 'automation'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: SalesforceIcon,
+      title: 'Salesforce case escalation',
+      prompt:
+        'Create a scheduled workflow that queries open Salesforce cases past their SLA, escalates each by updating its priority and owner, creates a follow-up task on the account, and Slacks the support lead a summary of everything that breached.',
+      modules: ['scheduled', 'agent', 'workflows'],
+      category: 'support',
+      tags: ['support', 'crm', 'monitoring'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: SalesforceIcon,
+      title: 'Salesforce report digest',
+      prompt:
+        'Build a scheduled workflow that runs a saved Salesforce report each morning, refreshes the linked dashboard, summarizes the key metrics and biggest movers with an agent, and emails the leadership team a written narrative of what changed.',
+      modules: ['scheduled', 'agent', 'workflows'],
+      category: 'sales',
+      tags: ['sales', 'reporting', 'analysis'],
+    },
+    {
+      icon: SalesforceIcon,
+      title: 'Closed-won onboarding kickoff',
+      prompt:
+        'Create a workflow that watches Salesforce opportunities for stage changes to closed-won, pulls the related account and contacts, creates onboarding tasks for the CS owner, and writes a kickoff record into a tables-based project tracker.',
+      modules: ['tables', 'agent', 'workflows'],
+      category: 'operations',
+      tags: ['sales', 'crm', 'automation'],
+    },
+  ],
+  skills: [
+    {
+      name: 'capture-inbound-lead',
+      description:
+        'Create or update a Salesforce lead from an inbound signal and assign follow-up.',
+      content:
+        '# Capture Inbound Lead\n\nGet an inbound lead into Salesforce cleanly.\n\n## Steps\n1. Run get_leads to check for an existing lead with the same email.\n2. If new, run create_lead with name, company, email, and source; otherwise run update_lead to enrich it.\n3. Run create_task to assign a follow-up to the owner.\n\n## Output\nReturn the lead id, whether it was created or updated, and the follow-up task id.',
+    },
+    {
+      name: 'log-opportunity-update',
+      description: 'Advance a Salesforce opportunity stage and record the change for the account.',
+      content:
+        '# Log Opportunity Update\n\nKeep a deal current in Salesforce.\n\n## Steps\n1. Run get_opportunities to locate the deal.\n2. Run update_opportunity to set the new stage, amount, or close date.\n3. Run create_task to capture the next action.\n\n## Output\nReturn the opportunity id, its new stage, and the next-step task. Note if the stage moved to closed-won or closed-lost.',
+    },
+    {
+      name: 'sync-account-contacts',
+      description: 'Pull a Salesforce account with its contacts for a 360 view.',
+      content:
+        '# Sync Account Contacts\n\nAssemble a full picture of an account.\n\n## Steps\n1. Run get_accounts to resolve the target account.\n2. Run get_contacts filtered to the account to list its people.\n3. Optionally run get_opportunities and get_cases for active deals and support context.\n\n## Output\nReturn the account, its contacts with roles, and a summary of open opportunities and cases.',
+    },
+    {
+      name: 'create-support-case',
+      description: 'Open a Salesforce case for a customer issue and assign the owner.',
+      content:
+        '# Create Support Case\n\nFile a support case in Salesforce.\n\n## Steps\n1. Run get_contacts or get_accounts to link the case to the right record.\n2. Run create_case with subject, description, priority, and origin.\n3. Run create_task for the assigned owner if a follow-up is required.\n\n## Output\nReturn the case id, priority, and linked account or contact.',
+    },
+    {
+      name: 'run-sales-report',
+      description: 'Run a Salesforce report and summarize the results for a stakeholder.',
+      content:
+        '# Run Sales Report\n\nPull live numbers from a Salesforce report.\n\n## Steps\n1. Run list_reports to find the report, or use a known report id.\n2. Run run_report to execute it and capture the result set.\n3. Summarize the key metrics and notable changes.\n\n## Output\nReturn the headline metrics and a short narrative of what the report shows.',
+    },
+  ],
+} as const satisfies BlockMeta

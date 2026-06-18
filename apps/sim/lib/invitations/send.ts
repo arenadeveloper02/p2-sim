@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import {
   type InvitationKind,
+  type InvitationMembershipIntent,
   invitation,
   invitationWorkspaceGrant,
   organization,
@@ -8,7 +9,8 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { normalizeEmail } from '@sim/utils/string'
+import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 import {
   getEmailSubject,
   renderBatchInvitationEmail,
@@ -16,13 +18,13 @@ import {
   renderWorkspaceInvitationEmail,
 } from '@/components/emails'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { computeInvitationExpiry, normalizeEmail } from '@/lib/invitations/core'
+import { computeInvitationExpiry } from '@/lib/invitations/core'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress } from '@/lib/messaging/email/utils'
 
 const logger = createLogger('InvitationSend')
 
-export interface WorkspaceGrantInput {
+interface WorkspaceGrantInput {
   workspaceId: string
   permission: 'admin' | 'write' | 'read'
 }
@@ -32,6 +34,7 @@ export interface CreatePendingInvitationInput {
   email: string
   inviterId: string
   organizationId: string | null
+  membershipIntent?: InvitationMembershipIntent
   role: 'admin' | 'member'
   grants: WorkspaceGrantInput[]
   expiresAt?: Date
@@ -58,6 +61,7 @@ export async function createPendingInvitation(
       email: normalizeEmail(input.email),
       inviterId: input.inviterId,
       organizationId: input.organizationId,
+      membershipIntent: input.membershipIntent ?? 'internal',
       role: input.role,
       status: 'pending',
       token,
@@ -81,17 +85,21 @@ export async function createPendingInvitation(
   return { invitationId, token, expiresAt }
 }
 
-export async function countPendingInvitationsForOrganization(
-  organizationId: string
-): Promise<number> {
+async function countPendingInvitationsForOrganization(organizationId: string): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(invitation)
-    .where(and(eq(invitation.organizationId, organizationId), eq(invitation.status, 'pending')))
+    .where(
+      and(
+        eq(invitation.organizationId, organizationId),
+        eq(invitation.status, 'pending'),
+        ne(invitation.membershipIntent, 'external')
+      )
+    )
   return row?.count ?? 0
 }
 
-export async function findPendingInvitationByOrgEmail(params: {
+async function findPendingInvitationByOrgEmail(params: {
   organizationId: string | null
   email: string
 }) {
@@ -178,27 +186,33 @@ export async function sendInvitationEmail(
   const inviteUrl = `${getBaseUrl()}/invite/${input.invitationId}?token=${input.token}`
 
   if (input.kind === 'workspace') {
-    const primaryGrant = input.grants[0]
-    if (!primaryGrant) {
+    if (input.grants.length === 0) {
       return { success: false, error: 'Workspace invitation is missing a workspace grant' }
     }
 
-    const [workspaceRow] = await db
-      .select({ name: workspace.name })
+    const grantWorkspaceIds = input.grants.map((grant) => grant.workspaceId)
+    const workspaceRows = await db
+      .select({ id: workspace.id, name: workspace.name })
       .from(workspace)
-      .where(eq(workspace.id, primaryGrant.workspaceId))
-      .limit(1)
+      .where(inArray(workspace.id, grantWorkspaceIds))
+    const workspaceNames = grantWorkspaceIds.map(
+      (id) => workspaceRows.find((row) => row.id === id)?.name || 'a workspace'
+    )
 
-    const workspaceName = workspaceRow?.name || 'a workspace'
     const emailHtml = await renderWorkspaceInvitationEmail(
       input.inviterName,
-      workspaceName,
+      workspaceNames,
       inviteUrl
     )
 
+    const subject =
+      workspaceNames.length === 1
+        ? `You've been invited to join "${workspaceNames[0]}" on Sim`
+        : `You've been invited to join ${workspaceNames.length} workspaces on Sim`
+
     const result = await sendEmail({
       to: input.email,
-      subject: `You've been invited to join "${workspaceName}" on Sim`,
+      subject,
       html: emailHtml,
       from: getFromEmailAddress(),
       emailType: 'transactional',

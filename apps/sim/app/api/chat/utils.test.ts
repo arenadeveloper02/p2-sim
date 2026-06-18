@@ -4,6 +4,8 @@
  * @vitest-environment node
  */
 import {
+  dbChainMock,
+  dbChainMockFns,
   encryptionMock,
   encryptionMockFns,
   loggingSessionMock,
@@ -17,15 +19,38 @@ const {
   mockMergeSubBlockValues,
   mockValidateAuthToken,
   mockSetDeploymentAuthCookie,
-  mockAddCorsHeaders,
   mockIsEmailAllowed,
+  mockGetSession,
+  mockCheckRateLimitDirect,
+  mockIsWorkspaceApiExecutionEntitled,
+  flagState,
 } = vi.hoisted(() => ({
   mockMergeSubblockStateWithValues: vi.fn().mockReturnValue({}),
   mockMergeSubBlockValues: vi.fn().mockReturnValue({}),
   mockValidateAuthToken: vi.fn().mockReturnValue(false),
   mockSetDeploymentAuthCookie: vi.fn(),
-  mockAddCorsHeaders: vi.fn((response: unknown) => response),
   mockIsEmailAllowed: vi.fn(),
+  mockGetSession: vi.fn(),
+  mockCheckRateLimitDirect: vi.fn().mockResolvedValue({ allowed: true }),
+  mockIsWorkspaceApiExecutionEntitled: vi.fn().mockResolvedValue(true),
+  flagState: { isBillingEnabled: false, isFreeApiDeploymentGateEnabled: true },
+}))
+
+vi.mock('@sim/db', () => dbChainMock)
+
+vi.mock('@/lib/billing/core/api-access', () => ({
+  isWorkspaceApiExecutionEntitled: mockIsWorkspaceApiExecutionEntitled,
+}))
+
+vi.mock('@/lib/core/rate-limiter', () => ({
+  RateLimiter: class {
+    checkRateLimitDirect = mockCheckRateLimitDirect
+  },
+}))
+
+vi.mock('@/lib/auth', () => ({
+  auth: { api: { getSession: vi.fn() } },
+  getSession: mockGetSession,
 }))
 
 const mockDecryptSecret = encryptionMockFns.mockDecryptSecret
@@ -50,20 +75,31 @@ vi.mock('@/lib/core/security/encryption', () => encryptionMock)
 vi.mock('@/lib/core/security/deployment', () => ({
   validateAuthToken: mockValidateAuthToken,
   setDeploymentAuthCookie: mockSetDeploymentAuthCookie,
-  addCorsHeaders: mockAddCorsHeaders,
   isEmailAllowed: mockIsEmailAllowed,
 }))
 
-vi.mock('@/lib/core/config/feature-flags', () => ({
+vi.mock('@/lib/core/config/env-flags', () => ({
   isDev: true,
-  isHosted: false,
   isProd: false,
+  get isBillingEnabled() {
+    return flagState.isBillingEnabled
+  },
+  get isFreeApiDeploymentGateEnabled() {
+    return flagState.isFreeApiDeploymentGateEnabled
+  },
 }))
 
 vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
 
+import { NextRequest } from 'next/server'
 import { decryptSecret } from '@/lib/core/security/encryption'
-import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
+import { assertChatEmbedAllowed, setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
+
+function chatRequest(origin?: string): NextRequest {
+  return new NextRequest('https://www.sim.ai/api/chat/abc', {
+    headers: origin ? { origin } : undefined,
+  })
+}
 
 describe('Chat API Utils', () => {
   beforeEach(() => {
@@ -145,6 +181,7 @@ describe('Chat API Utils', () => {
   describe('Chat auth validation', () => {
     beforeEach(() => {
       mockDecryptSecret.mockResolvedValue({ decrypted: 'correct-password' })
+      mockCheckRateLimitDirect.mockResolvedValue({ allowed: true })
     })
 
     it('should allow access to public chats', async () => {
@@ -231,6 +268,32 @@ describe('Chat API Utils', () => {
       expect(result.error).toBe('Invalid password')
     })
 
+    it('should return 429 when the password attempt rate limit is exceeded', async () => {
+      mockCheckRateLimitDirect.mockResolvedValueOnce({ allowed: false, retryAfterMs: 60_000 })
+
+      const deployment = {
+        id: 'chat-id',
+        authType: 'password',
+        password: 'encrypted-password',
+      }
+
+      const mockRequest = {
+        method: 'POST',
+        cookies: {
+          get: vi.fn().mockReturnValue(null),
+        },
+      } as any
+
+      const result = await validateChatAuth('request-id', deployment, mockRequest, {
+        password: 'any-guess',
+      })
+
+      expect(result.authorized).toBe(false)
+      expect(result.status).toBe(429)
+      expect(result.retryAfterMs).toBe(60_000)
+      expect(decryptSecret).not.toHaveBeenCalled()
+    })
+
     it('should request email auth for email-protected chats', async () => {
       const deployment = {
         id: 'chat-id',
@@ -284,6 +347,68 @@ describe('Chat API Utils', () => {
       })
       expect(result3.authorized).toBe(false)
       expect(result3.error).toBe('Email not authorized')
+    })
+
+    describe('SSO auth', () => {
+      const ssoDeployment = {
+        id: 'chat-id',
+        authType: 'sso',
+        allowedEmails: ['user@example.com', '@company.com'],
+      }
+
+      const postRequest = {
+        method: 'POST',
+        cookies: { get: vi.fn().mockReturnValue(null) },
+      } as any
+
+      it('rejects when no session is present', async () => {
+        mockGetSession.mockResolvedValue(null)
+
+        const result = await validateChatAuth('request-id', ssoDeployment, postRequest, {
+          input: 'hello',
+        })
+
+        expect(result.authorized).toBe(false)
+        expect(result.error).toBe('auth_required_sso')
+      })
+
+      it('ignores body-supplied email and uses the session email', async () => {
+        mockGetSession.mockResolvedValue({ user: { email: 'session@example.com' } })
+        mockIsEmailAllowed.mockReturnValue(true)
+
+        await validateChatAuth('request-id', ssoDeployment, postRequest, {
+          email: 'attacker@evil.com',
+          input: 'hello',
+        })
+
+        expect(mockIsEmailAllowed).toHaveBeenCalledWith(
+          'session@example.com',
+          ssoDeployment.allowedEmails
+        )
+      })
+
+      it('authorizes execution when session email is allowlisted', async () => {
+        mockGetSession.mockResolvedValue({ user: { email: 'user@example.com' } })
+        mockIsEmailAllowed.mockReturnValue(true)
+
+        const result = await validateChatAuth('request-id', ssoDeployment, postRequest, {
+          input: 'hello',
+        })
+
+        expect(result.authorized).toBe(true)
+      })
+
+      it('rejects execution when session email is not allowlisted', async () => {
+        mockGetSession.mockResolvedValue({ user: { email: 'stranger@other.com' } })
+        mockIsEmailAllowed.mockReturnValue(false)
+
+        const result = await validateChatAuth('request-id', ssoDeployment, postRequest, {
+          input: 'hello',
+        })
+
+        expect(result.authorized).toBe(false)
+        expect(result.error).toBe('Your email is not authorized to access this chat')
+      })
     })
   })
 
@@ -350,5 +475,79 @@ describe('Chat API Utils', () => {
 
       expect(extractedFromStreaming).toBe(executionResult)
     })
+  })
+})
+
+describe('assertChatEmbedAllowed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    flagState.isBillingEnabled = true
+    flagState.isFreeApiDeploymentGateEnabled = true
+    mockIsWorkspaceApiExecutionEntitled.mockResolvedValue(true)
+    dbChainMockFns.limit.mockResolvedValue([{ workspaceId: 'ws-1' }])
+  })
+
+  it('returns 403 for a cross-site origin when the owner is on the free plan', async () => {
+    mockIsWorkspaceApiExecutionEntitled.mockResolvedValueOnce(false)
+    const res = await assertChatEmbedAllowed(
+      chatRequest('https://evil.example.com'),
+      'wf-1',
+      'req-1'
+    )
+    expect(res?.status).toBe(403)
+  })
+
+  it('allows a cross-site origin when the owner is on a paid plan', async () => {
+    const res = await assertChatEmbedAllowed(
+      chatRequest('https://evil.example.com'),
+      'wf-1',
+      'req-1'
+    )
+    expect(res).toBeNull()
+  })
+
+  it('returns 403 for a cross-site origin when the workflow has no active workspace', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([])
+    const res = await assertChatEmbedAllowed(
+      chatRequest('https://evil.example.com'),
+      'wf-1',
+      'req-1'
+    )
+    expect(res?.status).toBe(403)
+    expect(mockIsWorkspaceApiExecutionEntitled).not.toHaveBeenCalled()
+  })
+
+  it('allows a first-party *.sim.ai origin without gating', async () => {
+    const res = await assertChatEmbedAllowed(chatRequest('https://chat.sim.ai'), 'wf-1', 'req-1')
+    expect(res).toBeNull()
+    expect(mockIsWorkspaceApiExecutionEntitled).not.toHaveBeenCalled()
+  })
+
+  it('allows requests with no Origin header', async () => {
+    const res = await assertChatEmbedAllowed(chatRequest(), 'wf-1', 'req-1')
+    expect(res).toBeNull()
+    expect(mockIsWorkspaceApiExecutionEntitled).not.toHaveBeenCalled()
+  })
+
+  it('is a no-op when billing is disabled', async () => {
+    flagState.isBillingEnabled = false
+    const res = await assertChatEmbedAllowed(
+      chatRequest('https://evil.example.com'),
+      'wf-1',
+      'req-1'
+    )
+    expect(res).toBeNull()
+    expect(mockIsWorkspaceApiExecutionEntitled).not.toHaveBeenCalled()
+  })
+
+  it('is a no-op when the gate feature flag is disabled', async () => {
+    flagState.isFreeApiDeploymentGateEnabled = false
+    const res = await assertChatEmbedAllowed(
+      chatRequest('https://evil.example.com'),
+      'wf-1',
+      'req-1'
+    )
+    expect(res).toBeNull()
+    expect(mockIsWorkspaceApiExecutionEntitled).not.toHaveBeenCalled()
   })
 })

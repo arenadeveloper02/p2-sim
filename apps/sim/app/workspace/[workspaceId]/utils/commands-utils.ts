@@ -10,14 +10,12 @@ export type CommandId =
   | 'accept-diff-changes'
   | 'add-agent'
   | 'add-workflow'
-  | 'add-task'
-  // | 'goto-templates'
   | 'goto-logs'
   | 'open-search'
+  | 'open-workflow-search-replace'
   | 'run-workflow'
   | 'clear-terminal-console'
   | 'focus-toolbar-search'
-  | 'clear-notifications'
   | 'fit-to-view'
 
 /**
@@ -26,7 +24,7 @@ export type CommandId =
  * This central registry defines the keyboard shortcut and default behavior
  * for whether the command is allowed inside editable elements.
  */
-export interface CommandDefinition {
+interface CommandDefinition {
   /** Stable identifier for the command. */
   id: CommandId
   /** Shortcut string in the form "Mod+Shift+A", "Mod+Enter", etc. */
@@ -59,16 +57,6 @@ export const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
     shortcut: 'Mod+Shift+P',
     allowInEditable: false,
   },
-  'add-task': {
-    id: 'add-task',
-    shortcut: 'Mod+Shift+K',
-    allowInEditable: false,
-  },
-  // 'goto-templates': {
-  //   id: 'goto-templates',
-  //   shortcut: 'Mod+Y',
-  //   allowInEditable: true,
-  // },
   'goto-logs': {
     id: 'goto-logs',
     shortcut: 'Mod+L',
@@ -77,6 +65,11 @@ export const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   'open-search': {
     id: 'open-search',
     shortcut: 'Mod+K',
+    allowInEditable: true,
+  },
+  'open-workflow-search-replace': {
+    id: 'open-workflow-search-replace',
+    shortcut: 'Mod+F',
     allowInEditable: true,
   },
   'run-workflow': {
@@ -91,12 +84,7 @@ export const COMMAND_DEFINITIONS: Record<CommandId, CommandDefinition> = {
   },
   'focus-toolbar-search': {
     id: 'focus-toolbar-search',
-    shortcut: 'Mod+F',
-    allowInEditable: false,
-  },
-  'clear-notifications': {
-    id: 'clear-notifications',
-    shortcut: 'Mod+E',
+    shortcut: 'Mod+Alt+F',
     allowInEditable: false,
   },
   'fit-to-view': {

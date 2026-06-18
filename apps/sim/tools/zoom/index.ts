@@ -11,40 +11,4 @@ export { zoomListAccountRecordingsTool } from './list_account_recordings'
 export { zoomListMeetingsTool } from './list_meetings'
 export { zoomListPastParticipantsTool } from './list_past_participants'
 export { zoomListRecordingsTool } from './list_recordings'
-// Type exports
-export type {
-  ZoomCreateMeetingParams,
-  ZoomCreateMeetingResponse,
-  ZoomDeleteMeetingParams,
-  ZoomDeleteMeetingResponse,
-  ZoomDeleteRecordingParams,
-  ZoomDeleteRecordingResponse,
-  ZoomDownloadTranscriptParams,
-  ZoomDownloadTranscriptResponse,
-  ZoomGetAccountRecordingsWithTranscriptParams,
-  ZoomGetAccountRecordingsWithTranscriptResponse,
-  ZoomGetMeetingInvitationParams,
-  ZoomGetMeetingInvitationResponse,
-  ZoomGetMeetingParams,
-  ZoomGetMeetingRecordingsParams,
-  ZoomGetMeetingRecordingsResponse,
-  ZoomGetMeetingResponse,
-  ZoomListAccountRecordingsParams,
-  ZoomListAccountRecordingsResponse,
-  ZoomListMeetingsParams,
-  ZoomListMeetingsResponse,
-  ZoomListPastParticipantsParams,
-  ZoomListPastParticipantsResponse,
-  ZoomListRecordingsParams,
-  ZoomListRecordingsResponse,
-  ZoomMeeting,
-  ZoomMeetingSettings,
-  ZoomMeetingType,
-  ZoomParticipant,
-  ZoomRecording,
-  ZoomRecordingFile,
-  ZoomResponse,
-  ZoomUpdateMeetingParams,
-  ZoomUpdateMeetingResponse,
-} from './types'
 export { zoomUpdateMeetingTool } from './update_meeting'

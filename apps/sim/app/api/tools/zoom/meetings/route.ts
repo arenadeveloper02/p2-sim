@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
+import { zoomMeetingsSelectorContract } from '@/lib/api/contracts/selectors'
+import { parseRequest } from '@/lib/api/server'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -9,18 +11,34 @@ const logger = createLogger('ZoomMeetingsAPI')
 
 export const dynamic = 'force-dynamic'
 
-export const POST = withRouteHandler(async (request: Request) => {
+/**
+ * Zoom `GET /v2/users/me/meetings` returns `next_page_token`, which is passed
+ * back as `?next_page_token=` until it comes back as an empty string. `page_size`
+ * max is 300. Bounded by `MAX_ZOOM_PAGES` so a runaway response can't loop forever.
+ */
+const ZOOM_PAGE_SIZE = 300
+const MAX_ZOOM_PAGES = 50
+
+const MEETING_TYPES = ['scheduled', 'live', 'upcoming'] as const
+
+interface ZoomMeeting {
+  id: number
+  topic: string
+}
+
+interface ZoomMeetingsPage {
+  meetings?: ZoomMeeting[]
+  next_page_token?: string
+}
+
+export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
   try {
-    const body = await request.json()
-    const { credential, workflowId } = body
+    const parsed = await parseRequest(zoomMeetingsSelectorContract, request, {})
+    if (!parsed.success) return parsed.response
+    const { credential, workflowId } = parsed.data.body
 
-    if (!credential) {
-      logger.error('Missing credential in request')
-      return NextResponse.json({ error: 'Credential is required' }, { status: 400 })
-    }
-
-    const authz = await authorizeCredentialUse(request as any, {
+    const authz = await authorizeCredentialUse(request, {
       credentialId: credential,
       workflowId,
     })
@@ -44,35 +62,59 @@ export const POST = withRouteHandler(async (request: Request) => {
       )
     }
 
-    const response = await fetch(
-      'https://api.zoom.us/v2/users/me/meetings?page_size=300&type=scheduled',
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    )
+    // Instant meetings are not reliably returned under `type=scheduled` alone.
+    // Fetch multiple list types and merge by id, paginating each type.
+    const meetingsById = new Map<string, { id: string; name: string }>()
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      logger.error('Failed to fetch Zoom meetings', {
-        status: response.status,
-        error: errorData,
-      })
-      return NextResponse.json(
-        { error: 'Failed to fetch Zoom meetings', details: errorData },
-        { status: response.status }
-      )
+    for (const type of MEETING_TYPES) {
+      let nextPageToken = ''
+
+      for (let page = 0; page < MAX_ZOOM_PAGES; page++) {
+        const url = new URL('https://api.zoom.us/v2/users/me/meetings')
+        url.searchParams.set('page_size', String(ZOOM_PAGE_SIZE))
+        url.searchParams.set('type', type)
+        if (nextPageToken) {
+          url.searchParams.set('next_page_token', nextPageToken)
+        }
+
+        const response = await fetch(url.toString(), {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          logger.warn('Failed to fetch Zoom meetings for type', {
+            type,
+            status: response.status,
+            error: errorData,
+          })
+          break
+        }
+
+        const data = (await response.json()) as ZoomMeetingsPage
+        for (const meeting of data.meetings ?? []) {
+          const id = String(meeting.id)
+          meetingsById.set(id, { id, name: meeting.topic ?? '' })
+        }
+
+        nextPageToken = data.next_page_token?.trim() || ''
+        if (!nextPageToken) {
+          break
+        }
+
+        if (page === MAX_ZOOM_PAGES - 1) {
+          logger.warn(
+            'Zoom meetings pagination hit MAX_ZOOM_PAGES cap; meeting list may be incomplete',
+            { type, maxPages: MAX_ZOOM_PAGES }
+          )
+        }
+      }
     }
 
-    const data = await response.json()
-    const meetings = (data.meetings || []).map((meeting: { id: number; topic: string }) => ({
-      id: String(meeting.id),
-      name: meeting.topic,
-    }))
-
-    return NextResponse.json({ meetings })
+    return NextResponse.json({ meetings: Array.from(meetingsById.values()) })
   } catch (error) {
     logger.error('Error processing Zoom meetings request:', error)
     return NextResponse.json(

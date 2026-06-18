@@ -1,42 +1,41 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { ChevronDown, ChevronUp, FileText, Pencil, Tag } from 'lucide-react'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import {
-  Badge,
-  Button,
-  Combobox,
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  Trash,
-} from '@/components/emcn'
+import { Badge, ChipCombobox, ChipConfirmModal, Plus, Trash } from '@/components/emcn'
+import { Database } from '@/components/emcn/icons'
 import { SearchHighlight } from '@/components/ui/search-highlight'
 import type { ChunkData } from '@/lib/knowledge/types'
 import { formatTokenCount } from '@/lib/tokenization'
 import type {
   BreadcrumbItem,
   FilterTag,
-  HeaderAction,
   PaginationConfig,
+  ResourceAction,
   ResourceColumn,
   ResourceRow,
   SearchConfig,
   SelectableConfig,
   SortConfig,
 } from '@/app/workspace/[workspaceId]/components'
-import { Resource, ResourceHeader } from '@/app/workspace/[workspaceId]/components'
-import { ChunkContextMenu } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components/chunk-context-menu/chunk-context-menu'
-import { ChunkEditor } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components/chunk-editor/chunk-editor'
-import { DeleteChunkModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components/delete-chunk-modal/delete-chunk-modal'
-import { DocumentTagsModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components/document-tags-modal/document-tags-modal'
+import {
+  EMPTY_CELL_PLACEHOLDER,
+  FloatingOverflowText,
+  Resource,
+} from '@/app/workspace/[workspaceId]/components'
+import {
+  ChunkContextMenu,
+  ChunkEditor,
+  DeleteChunkModal,
+  DocumentTagsModal,
+} from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components'
 import { ActionBar } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
+import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
+import { CONNECTOR_META_REGISTRY } from '@/connectors/registry'
 import { useDocument, useDocumentChunks, useKnowledgeBase } from '@/hooks/kb/use-knowledge'
 import {
   useBulkChunkOperation,
@@ -56,35 +55,20 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 interface UnsavedChangesModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onKeepEditing: () => void
   onDiscard: () => void
 }
 
-function UnsavedChangesModal({
-  open,
-  onOpenChange,
-  onKeepEditing,
-  onDiscard,
-}: UnsavedChangesModalProps) {
+function UnsavedChangesModal({ open, onOpenChange, onDiscard }: UnsavedChangesModalProps) {
   return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent size='sm'>
-        <ModalHeader>Unsaved Changes</ModalHeader>
-        <ModalBody>
-          <p className='text-[var(--text-secondary)]'>
-            You have unsaved changes. Are you sure you want to discard them?
-          </p>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant='default' onClick={onKeepEditing}>
-            Keep Editing
-          </Button>
-          <Button variant='destructive' onClick={onDiscard}>
-            Discard Changes
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+    <ChipConfirmModal
+      open={open}
+      onOpenChange={onOpenChange}
+      srTitle='Unsaved Changes'
+      title='Unsaved Changes'
+      text='You have unsaved changes. Are you sure you want to discard them?'
+      dismissLabel='Keep editing'
+      confirm={{ label: 'Discard Changes', onClick: onDiscard }}
+    />
   )
 }
 
@@ -125,9 +109,9 @@ function truncateContent(content: string, maxLength = 150, searchQuery = ''): st
 
 const CHUNK_COLUMNS: ResourceColumn[] = [
   { id: 'content', header: 'Content' },
-  { id: 'index', header: 'Index' },
-  { id: 'tokens', header: 'Tokens' },
-  { id: 'status', header: 'Status' },
+  { id: 'index', header: 'Index', widthMultiplier: 0.6 },
+  { id: 'tokens', header: 'Tokens', widthMultiplier: 0.6 },
+  { id: 'status', header: 'Status', widthMultiplier: 0.75 },
 ]
 
 export function Document({
@@ -147,11 +131,7 @@ export function Document({
   const userPermissions = useUserPermissionsContext()
 
   const { knowledgeBase } = useKnowledgeBase(knowledgeBaseId)
-  const {
-    document: documentData,
-    isLoading: isLoadingDocument,
-    error: documentError,
-  } = useDocument(knowledgeBaseId, documentId)
+  const { document: documentData, error: documentError } = useDocument(knowledgeBaseId, documentId)
 
   const [showTagsModal, setShowTagsModal] = useState(false)
 
@@ -175,7 +155,6 @@ export function Document({
     goToPage: initialGoToPage,
     error: initialError,
     updateChunk: initialUpdateChunk,
-    isFetching: isFetchingChunks,
   } = useDocumentChunks(
     knowledgeBaseId,
     documentId,
@@ -346,7 +325,7 @@ export function Document({
   const { mutate: updateChunkMutation } = useUpdateChunk()
   const { mutate: deleteDocumentMutation, isPending: isDeletingDocument } = useDeleteDocument()
   const { mutate: bulkChunkMutation, isPending: isBulkOperating } = useBulkChunkOperation()
-  const { mutate: updateDocumentMutation } = useUpdateDocument()
+  const { mutateAsync: updateDocumentMutation } = useUpdateDocument()
 
   const docRename = useInlineRename({
     onSave: (docId, filename) =>
@@ -362,11 +341,20 @@ export function Document({
 
   const combinedError = documentError || searchError || initialError
 
-  const isConnectorDocument = Boolean(
-    documentData && 'connectorId' in documentData && documentData.connectorId
-  )
-  const effectiveKnowledgeBaseName = knowledgeBase?.name || knowledgeBaseName || 'Knowledge Base'
+  const isConnectorDocument = Boolean(documentData?.connectorId)
   const effectiveDocumentName = documentData?.filename || documentName || 'Document'
+  /**
+   * Breadcrumb labels. Fall back to the canonical '…' placeholder while names
+   * load (mirroring loading.tsx) instead of the generic "Knowledge Base" /
+   * "Document" labels used elsewhere.
+   */
+  const knowledgeBaseCrumbLabel = knowledgeBase?.name || knowledgeBaseName || '…'
+  const documentCrumbLabel = documentData?.filename || documentName || '…'
+  const ConnectorIcon = documentData?.connectorType
+    ? CONNECTOR_META_REGISTRY[documentData.connectorType]?.icon
+    : null
+  const DocumentIcon =
+    ConnectorIcon || getDocumentIcon(documentData?.mimeType ?? '', effectiveDocumentName)
   const isCompleted = documentData?.processingStatus === 'completed'
   const canEdit = userPermissions.canEdit === true
 
@@ -423,6 +411,13 @@ export function Document({
     }
   }, [isDirty, isCreatingNewChunk])
 
+  const handleUnsavedChangesOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setShowUnsavedChangesAlert(false)
+      setPendingAction(null)
+    }
+  }, [])
+
   const handleDiscardChanges = useCallback(() => {
     setShowUnsavedChangesAlert(false)
     const action = pendingAction
@@ -435,17 +430,19 @@ export function Document({
     }
   }, [pendingAction, closeEditor])
 
+  const handleSaveEvent = useEffectEvent(handleSave)
+
   useEffect(() => {
     if (!isInEditorView) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault()
-        handleSave()
+        handleSaveEvent()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isInEditorView, handleSave])
+  }, [isInEditorView])
 
   useEffect(() => {
     if (!isDirty) return
@@ -527,15 +524,24 @@ export function Document({
     () =>
       combinedError
         ? [
-            { label: 'Knowledge Base', onClick: handleNavToKB },
-            { label: effectiveKnowledgeBaseName, onClick: handleNavToKBDetail },
+            { label: 'Knowledge Base', icon: Database, onClick: handleNavToKB },
+            {
+              label: knowledgeBaseCrumbLabel,
+              icon: Database,
+              onClick: handleNavToKBDetail,
+            },
             { label: 'Error' },
           ]
         : [
-            { label: 'Knowledge Base', onClick: handleNavToKB },
-            { label: effectiveKnowledgeBaseName, onClick: handleNavToKBDetail },
+            { label: 'Knowledge Base', icon: Database, onClick: handleNavToKB },
             {
-              label: effectiveDocumentName,
+              label: knowledgeBaseCrumbLabel,
+              icon: Database,
+              onClick: handleNavToKBDetail,
+            },
+            {
+              label: documentCrumbLabel,
+              icon: DocumentIcon,
               editing: docRename.editingId
                 ? {
                     isEditing: true,
@@ -543,6 +549,7 @@ export function Document({
                     onChange: docRename.setEditValue,
                     onSubmit: docRename.submitRename,
                     onCancel: docRename.cancelRename,
+                    disabled: docRename.isSaving,
                   }
                 : undefined,
               dropdownItems: [
@@ -560,13 +567,15 @@ export function Document({
       combinedError,
       handleNavToKB,
       handleNavToKBDetail,
-      effectiveKnowledgeBaseName,
-      effectiveDocumentName,
+      knowledgeBaseCrumbLabel,
+      documentCrumbLabel,
+      DocumentIcon,
       docRename.editingId,
       docRename.editValue,
       docRename.setEditValue,
       docRename.submitRename,
       docRename.cancelRename,
+      docRename.isSaving,
       userPermissions.canEdit,
       handleStartDocRename,
       handleShowTags,
@@ -648,7 +657,7 @@ export function Document({
       <div className='flex w-[240px] flex-col gap-3 p-3'>
         <div className='flex flex-col gap-1.5'>
           <span className='font-medium text-[var(--text-secondary)] text-caption'>Status</span>
-          <Combobox
+          <ChipCombobox
             options={[
               { value: 'enabled', label: 'Enabled' },
               { value: 'disabled', label: 'Disabled' },
@@ -665,8 +674,7 @@ export function Document({
             }
             showAllOption
             allOptionLabel='All'
-            size='sm'
-            className='h-[32px] w-full rounded-md'
+            className='w-full'
           />
         </div>
         {enabledFilter.length > 0 && (
@@ -891,17 +899,6 @@ export function Document({
     setContextMenuChunk(null)
   }, [closeContextMenu])
 
-  const prevDocumentIdRef = useRef<string>(documentId)
-  const isNavigatingToNewDoc = prevDocumentIdRef.current !== documentId
-
-  useEffect(() => {
-    if (documentData && documentData.id === documentId) {
-      prevDocumentIdRef.current = documentId
-    }
-  }, [documentData, documentId])
-
-  const isFetchingNewDoc = isNavigatingToNewDoc && isFetchingChunks
-
   const selectableConfig: SelectableConfig | undefined = isCompleted
     ? {
         selectedIds: selectedChunks,
@@ -950,7 +947,7 @@ export function Document({
             content: {
               content: (
                 <div className='flex items-center gap-2'>
-                  <FileText className='h-5 w-5 flex-shrink-0 text-[var(--text-muted)]' />
+                  <FileText className='size-5 flex-shrink-0 text-[var(--text-muted)]' />
                   <span className='text-[var(--text-muted)] text-sm italic'>
                     {documentData?.processingStatus === 'pending' &&
                       'Document processing pending...'}
@@ -962,50 +959,52 @@ export function Document({
                 </div>
               ),
             },
-            index: { label: '—' },
-            tokens: { label: '—' },
-            status: { label: '—' },
+            index: { label: EMPTY_CELL_PLACEHOLDER },
+            tokens: { label: EMPTY_CELL_PLACEHOLDER },
+            status: { label: EMPTY_CELL_PLACEHOLDER },
           },
         },
       ]
     }
 
-    return displayChunks.map((chunk: ChunkData) => ({
-      id: chunk.id,
-      cells: {
-        content: {
-          content: (
-            <span
-              className='block min-w-0 truncate text-[var(--text-primary)] text-sm'
-              title={chunk.content}
-            >
-              <SearchHighlight
-                text={truncateContent(chunk.content, 150, searchQuery)}
-                searchQuery={searchQuery}
-              />
-            </span>
-          ),
-        },
-        index: {
-          content: (
-            <span className='font-mono text-[var(--text-primary)] text-sm'>{chunk.chunkIndex}</span>
-          ),
-        },
-        tokens: {
-          label: formatTokenCount(chunk.tokenCount),
-        },
-        status: {
-          content: (
-            <Badge variant={chunk.enabled ? 'green' : 'gray'} size='sm'>
-              {chunk.enabled ? 'Enabled' : 'Disabled'}
-            </Badge>
-          ),
-        },
-      },
-    }))
-  }, [isCompleted, documentData?.processingStatus, displayChunks, searchQuery])
+    return displayChunks.map((chunk: ChunkData) => {
+      const previewContent = truncateContent(chunk.content, 150, searchQuery)
 
-  const emptyMessage = combinedError ? 'Error loading document' : undefined
+      return {
+        id: chunk.id,
+        cells: {
+          content: {
+            content: (
+              <FloatingOverflowText
+                label={chunk.content}
+                showWhen={previewContent !== chunk.content}
+                className='block truncate text-[var(--text-primary)] text-sm'
+              >
+                <SearchHighlight text={previewContent} searchQuery={searchQuery} />
+              </FloatingOverflowText>
+            ),
+          },
+          index: {
+            content: (
+              <span className='font-mono text-[var(--text-primary)] text-sm'>
+                {chunk.chunkIndex}
+              </span>
+            ),
+          },
+          tokens: {
+            label: formatTokenCount(chunk.tokenCount),
+          },
+          status: {
+            content: (
+              <Badge variant={chunk.enabled ? 'green' : 'gray'} size='sm'>
+                {chunk.enabled ? 'Enabled' : 'Disabled'}
+              </Badge>
+            ),
+          },
+        },
+      }
+    })
+  }, [isCompleted, documentData?.processingStatus, displayChunks, searchQuery])
 
   const saveLabel =
     saveStatus === 'saving'
@@ -1026,44 +1025,54 @@ export function Document({
 
   const editorBreadcrumbBase = useMemo<BreadcrumbItem[]>(
     () => [
-      { label: 'Knowledge Base', onClick: handleNavToKB },
-      { label: effectiveKnowledgeBaseName, onClick: handleNavToKBDetail },
-      { label: effectiveDocumentName, onClick: handleBackAttempt },
+      { label: 'Knowledge Base', icon: Database, onClick: handleNavToKB },
+      {
+        label: knowledgeBaseCrumbLabel,
+        icon: Database,
+        onClick: handleNavToKBDetail,
+      },
+      { label: documentCrumbLabel, icon: DocumentIcon, onClick: handleBackAttempt },
     ],
     [
       handleNavToKB,
       handleNavToKBDetail,
-      effectiveKnowledgeBaseName,
-      effectiveDocumentName,
+      knowledgeBaseCrumbLabel,
+      documentCrumbLabel,
+      DocumentIcon,
       handleBackAttempt,
     ]
   )
 
-  const newChunkBreadcrumbs = useMemo(
-    () => [...editorBreadcrumbBase, { label: 'New Chunk' }],
+  const newChunkBreadcrumbs = useMemo<BreadcrumbItem[]>(
+    () => [...editorBreadcrumbBase, { label: 'New Chunk', terminal: true }],
     [editorBreadcrumbBase]
   )
 
-  const editChunkBreadcrumbs = useMemo(
+  const editChunkBreadcrumbs = useMemo<BreadcrumbItem[]>(
     () => [
       ...editorBreadcrumbBase,
-      { label: selectedChunk ? `Chunk #${selectedChunk.chunkIndex}` : '' },
+      { label: selectedChunk ? `Chunk #${selectedChunk.chunkIndex}` : '', terminal: true },
     ],
     [editorBreadcrumbBase, selectedChunk?.chunkIndex]
   )
 
   const loadingBreadcrumbs = useMemo<BreadcrumbItem[]>(
     () => [
-      { label: 'Knowledge Base', onClick: handleNavToKB },
-      { label: effectiveKnowledgeBaseName, onClick: handleNavToKBDetail },
-      { label: effectiveDocumentName, onClick: handleClearSelectedChunk },
-      { label: 'Loading...' },
+      { label: 'Knowledge Base', icon: Database, onClick: handleNavToKB },
+      {
+        label: knowledgeBaseCrumbLabel,
+        icon: Database,
+        onClick: handleNavToKBDetail,
+      },
+      { label: documentCrumbLabel, icon: DocumentIcon, onClick: handleClearSelectedChunk },
+      { label: '…', terminal: true },
     ],
     [
       handleNavToKB,
       handleNavToKBDetail,
-      effectiveKnowledgeBaseName,
-      effectiveDocumentName,
+      knowledgeBaseCrumbLabel,
+      documentCrumbLabel,
+      DocumentIcon,
       handleClearSelectedChunk,
     ]
   )
@@ -1079,36 +1088,36 @@ export function Document({
     [handleNavigateChunk]
   )
 
-  const createActions = useMemo<HeaderAction[]>(
+  const createActions = useMemo<ResourceAction[]>(
     () => [
       {
-        label: saveLabel,
-        onClick: handleSaveClick,
+        text: saveLabel,
+        onSelect: handleSaveClick,
         disabled: !isDirty || saveStatus === 'saving',
       },
     ],
     [saveLabel, handleSaveClick, isDirty, saveStatus]
   )
 
-  const editorActions = useMemo<HeaderAction[]>(() => {
-    const actions: HeaderAction[] = [
+  const editorActions = useMemo<ResourceAction[]>(() => {
+    const actions: ResourceAction[] = [
       {
-        label: 'Previous chunk',
+        text: 'Previous chunk',
         icon: ChevronUp,
-        onClick: handleNavigatePrev,
+        onSelect: handleNavigatePrev,
         disabled: !canNavigatePrev,
       },
       {
-        label: 'Next chunk',
+        text: 'Next chunk',
         icon: ChevronDown,
-        onClick: handleNavigateNextChunk,
+        onSelect: handleNavigateNextChunk,
         disabled: !canNavigateNext,
       },
     ]
     if (canEdit && !isConnectorDocument) {
       actions.push({
-        label: saveLabel,
-        onClick: handleSaveClick,
+        text: saveLabel,
+        onSelect: handleSaveClick,
         disabled: !isDirty || saveStatus === 'saving',
       })
     }
@@ -1129,8 +1138,8 @@ export function Document({
   if (isCreatingNewChunk && documentData) {
     return (
       <>
-        <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
-          <ResourceHeader
+        <Resource>
+          <Resource.Header
             icon={FileText}
             breadcrumbs={newChunkBreadcrumbs}
             actions={createActions}
@@ -1147,15 +1156,11 @@ export function Document({
             saveRef={saveRef}
             onCreated={handleChunkCreated}
           />
-        </div>
+        </Resource>
 
         <UnsavedChangesModal
           open={showUnsavedChangesAlert}
-          onOpenChange={setShowUnsavedChangesAlert}
-          onKeepEditing={() => {
-            setShowUnsavedChangesAlert(false)
-            setPendingAction(null)
-          }}
+          onOpenChange={handleUnsavedChangesOpenChange}
           onDiscard={handleDiscardChanges}
         />
       </>
@@ -1165,19 +1170,19 @@ export function Document({
   if (selectedChunkId) {
     if (!selectedChunk || !documentData) {
       return (
-        <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
-          <ResourceHeader icon={FileText} breadcrumbs={loadingBreadcrumbs} />
+        <Resource>
+          <Resource.Header icon={FileText} breadcrumbs={loadingBreadcrumbs} />
           <div className='flex flex-1 items-center justify-center'>
-            <span className='text-[var(--text-muted)] text-sm'>Loading chunk...</span>
+            <span className='text-[var(--text-muted)] text-sm'>Loading chunk…</span>
           </div>
-        </div>
+        </Resource>
       )
     }
 
     return (
       <>
-        <div className='flex h-full flex-1 flex-col overflow-hidden bg-[var(--bg)]'>
-          <ResourceHeader
+        <Resource>
+          <Resource.Header
             icon={FileText}
             breadcrumbs={editChunkBreadcrumbs}
             actions={editorActions}
@@ -1193,15 +1198,11 @@ export function Document({
             onSaveStatusChange={setSaveStatus}
             saveRef={saveRef}
           />
-        </div>
+        </Resource>
 
         <UnsavedChangesModal
           open={showUnsavedChangesAlert}
-          onOpenChange={setShowUnsavedChangesAlert}
-          onKeepEditing={() => {
-            setShowUnsavedChangesAlert(false)
-            setPendingAction(null)
-          }}
+          onOpenChange={handleUnsavedChangesOpenChange}
           onDiscard={handleDiscardChanges}
         />
       </>
@@ -1210,25 +1211,36 @@ export function Document({
 
   return (
     <>
-      <Resource
-        icon={FileText}
-        title={effectiveDocumentName}
-        breadcrumbs={breadcrumbs}
-        create={createAction}
-        search={combinedError ? undefined : searchConfig}
-        columns={CHUNK_COLUMNS}
-        rows={combinedError ? [] : chunkRows}
-        selectable={combinedError ? undefined : selectableConfig}
-        onRowClick={isCompleted ? handleChunkClick : undefined}
-        onRowContextMenu={isCompleted ? handleChunkContextMenu : undefined}
-        onContextMenu={handleEmptyContextMenu}
-        isLoading={isLoadingDocument || isFetchingNewDoc}
-        pagination={paginationConfig}
-        emptyMessage={emptyMessage}
-        filter={combinedError ? undefined : filterContent}
-        filterTags={combinedError ? undefined : filterTags}
-        sort={combinedError ? undefined : sortConfig}
-      />
+      <Resource onContextMenu={handleEmptyContextMenu}>
+        <Resource.Header
+          icon={FileText}
+          title={effectiveDocumentName}
+          breadcrumbs={breadcrumbs}
+          actions={[
+            {
+              text: createAction.label,
+              icon: Plus,
+              onSelect: createAction.onClick,
+              disabled: createAction.disabled,
+              variant: 'primary',
+            },
+          ]}
+        />
+        <Resource.Options
+          search={combinedError ? undefined : searchConfig}
+          sort={combinedError ? undefined : sortConfig}
+          filterTags={combinedError ? undefined : filterTags}
+          filter={combinedError ? undefined : { content: filterContent }}
+        />
+        <Resource.Table
+          columns={CHUNK_COLUMNS}
+          rows={combinedError ? [] : chunkRows}
+          selectable={combinedError ? undefined : selectableConfig}
+          onRowClick={isCompleted ? handleChunkClick : undefined}
+          onRowContextMenu={isCompleted ? handleChunkContextMenu : undefined}
+          pagination={paginationConfig}
+        />
+      </Resource>
 
       <DocumentTagsModal
         open={showTagsModal}
@@ -1258,49 +1270,34 @@ export function Document({
         isLoading={isBulkOperating}
       />
 
-      <Modal open={showDeleteDocumentDialog} onOpenChange={setShowDeleteDocumentDialog}>
-        <ModalContent size='sm'>
-          <ModalHeader>Delete Document</ModalHeader>
-          <ModalBody>
-            <p className='text-[var(--text-secondary)]'>
-              Are you sure you want to delete{' '}
-              <span className='font-medium text-[var(--text-primary)]'>
-                {effectiveDocumentName}
-              </span>
-              ?{' '}
-              <span className='text-[var(--text-error)]'>
-                This will permanently delete the document and all {documentData?.chunkCount ?? 0}{' '}
-                chunk
-                {documentData?.chunkCount === 1 ? '' : 's'} within it.
-              </span>{' '}
-              {documentData?.connectorId ? (
-                <span className='text-[var(--text-error)]'>
-                  This document is synced from a connector. Deleting it will permanently exclude it
-                  from future syncs. To temporarily hide it from search, disable it instead.
-                </span>
-              ) : (
-                <>This action cannot be undone.</>
-              )}
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant='default'
-              onClick={() => setShowDeleteDocumentDialog(false)}
-              disabled={isDeletingDocument}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant='destructive'
-              onClick={handleDeleteDocument}
-              disabled={isDeletingDocument}
-            >
-              {isDeletingDocument ? 'Deleting...' : 'Delete Document'}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <ChipConfirmModal
+        open={showDeleteDocumentDialog}
+        onOpenChange={setShowDeleteDocumentDialog}
+        srTitle='Delete Document'
+        title='Delete Document'
+        text={[
+          'Are you sure you want to delete ',
+          { text: effectiveDocumentName, bold: true },
+          '? ',
+          {
+            text: `This will permanently delete the document and all ${documentData?.chunkCount ?? 0} chunk${documentData?.chunkCount === 1 ? '' : 's'} within it.`,
+            error: true,
+          },
+          ' ',
+          documentData?.connectorId
+            ? {
+                text: 'This document is synced from a connector. Deleting it will permanently exclude it from future syncs. To temporarily hide it from search, disable it instead.',
+                error: true,
+              }
+            : 'This action cannot be undone.',
+        ]}
+        confirm={{
+          label: 'Delete Document',
+          onClick: handleDeleteDocument,
+          pending: isDeletingDocument,
+          pendingLabel: 'Deleting...',
+        }}
+      />
 
       <ChunkContextMenu
         isOpen={isContextMenuOpen}

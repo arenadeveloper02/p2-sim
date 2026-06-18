@@ -2,8 +2,13 @@
 import type { ToolResponse } from '@/tools/types'
 
 // Common parameters for all Exa AI tools
-export interface ExaBaseParams {
+interface ExaBaseParams {
   apiKey: string
+}
+
+/** Cost breakdown returned by Exa API responses */
+interface ExaCostDollars {
+  total: number
 }
 
 // Search tool types
@@ -26,23 +31,20 @@ export interface ExaSearchParams extends ExaBaseParams {
     | 'movie'
     | 'song'
     | 'personal_site'
-  /** ISO 8601: links crawled by Exa after this time (`startCrawlDate`). Unsupported for company/people categories. */
-  startCrawlDate?: string
-  /** ISO 8601: links crawled before this time (`endCrawlDate`). Unsupported for company/people categories. */
-  endCrawlDate?: string
-  /** ISO 8601: published date after this time (`startPublishedDate`). Unsupported for company/people categories. */
-  startPublishedDate?: string
-  /** ISO 8601: published date before this time (`endPublishedDate`). Unsupported for company/people categories. */
-  endPublishedDate?: string
   // Content options
   text?: boolean | { maxCharacters?: number }
   highlights?: boolean | { query?: string; numSentences?: number; highlightsPerUrl?: number }
   summary?: boolean | { query?: string }
   // Live crawl mode
   livecrawl?: 'always' | 'fallback' | 'never'
+  // Date filters (ISO 8601)
+  startCrawlDate?: string
+  endCrawlDate?: string
+  startPublishedDate?: string
+  endPublishedDate?: string
 }
 
-export interface ExaSearchResult {
+interface ExaSearchResult {
   title: string
   url: string
   publishedDate?: string
@@ -75,7 +77,7 @@ export interface ExaGetContentsParams extends ExaBaseParams {
   livecrawl?: 'always' | 'fallback' | 'never'
 }
 
-export interface ExaGetContentsResult {
+interface ExaGetContentsResult {
   url: string
   title: string
   text?: string
@@ -116,7 +118,7 @@ export interface ExaFindSimilarLinksParams extends ExaBaseParams {
   livecrawl?: 'always' | 'fallback' | 'never'
 }
 
-export interface ExaSimilarLink {
+interface ExaSimilarLink {
   title: string
   url: string
   text?: string

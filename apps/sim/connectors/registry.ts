@@ -1,64 +1,125 @@
-import { airtableConnector } from '@/connectors/airtable'
-import { asanaConnector } from '@/connectors/asana'
-import { confluenceConnector } from '@/connectors/confluence'
-import { discordConnector } from '@/connectors/discord'
-import { dropboxConnector } from '@/connectors/dropbox'
-import { evernoteConnector } from '@/connectors/evernote'
-import { firefliesConnector } from '@/connectors/fireflies'
-import { githubConnector } from '@/connectors/github'
-import { gmailConnector } from '@/connectors/gmail'
-import { googleCalendarConnector } from '@/connectors/google-calendar'
-import { googleDocsConnector } from '@/connectors/google-docs'
-import { googleDriveConnector } from '@/connectors/google-drive'
-import { googleSheetsConnector } from '@/connectors/google-sheets'
-import { hubspotConnector } from '@/connectors/hubspot'
-import { intercomConnector } from '@/connectors/intercom'
-import { jiraConnector } from '@/connectors/jira'
-import { linearConnector } from '@/connectors/linear'
-import { microsoftTeamsConnector } from '@/connectors/microsoft-teams'
-import { notionConnector } from '@/connectors/notion'
-import { obsidianConnector } from '@/connectors/obsidian'
-import { onedriveConnector } from '@/connectors/onedrive'
-import { outlookConnector } from '@/connectors/outlook'
-import { redditConnector } from '@/connectors/reddit'
-import { salesforceConnector } from '@/connectors/salesforce'
-import { servicenowConnector } from '@/connectors/servicenow'
-import { sharepointConnector } from '@/connectors/sharepoint'
-import { slackConnector } from '@/connectors/slack'
-import type { ConnectorRegistry } from '@/connectors/types'
-import { webflowConnector } from '@/connectors/webflow'
-import { wordpressConnector } from '@/connectors/wordpress'
-import { zendeskConnector } from '@/connectors/zendesk'
+import { airtableConnectorMeta } from '@/connectors/airtable/meta'
+import { asanaConnectorMeta } from '@/connectors/asana/meta'
+import { ashbyConnectorMeta } from '@/connectors/ashby/meta'
+import { azureDevopsConnectorMeta } from '@/connectors/azure-devops/meta'
+import { confluenceConnectorMeta } from '@/connectors/confluence/meta'
+import { discordConnectorMeta } from '@/connectors/discord/meta'
+import { docusignConnectorMeta } from '@/connectors/docusign/meta'
+import { dropboxConnectorMeta } from '@/connectors/dropbox/meta'
+import { evernoteConnectorMeta } from '@/connectors/evernote/meta'
+import { fathomConnectorMeta } from '@/connectors/fathom/meta'
+import { firefliesConnectorMeta } from '@/connectors/fireflies/meta'
+import { githubConnectorMeta } from '@/connectors/github/meta'
+import { gitlabConnectorMeta } from '@/connectors/gitlab/meta'
+import { gmailConnectorMeta } from '@/connectors/gmail/meta'
+import { gongConnectorMeta } from '@/connectors/gong/meta'
+import { googleCalendarConnectorMeta } from '@/connectors/google-calendar/meta'
+import { googleDocsConnectorMeta } from '@/connectors/google-docs/meta'
+import { googleDriveConnectorMeta } from '@/connectors/google-drive/meta'
+import { googleFormsConnectorMeta } from '@/connectors/google-forms/meta'
+import { googleSheetsConnectorMeta } from '@/connectors/google-sheets/meta'
+import { grainConnectorMeta } from '@/connectors/grain/meta'
+import { granolaConnectorMeta } from '@/connectors/granola/meta'
+import { greenhouseConnectorMeta } from '@/connectors/greenhouse/meta'
+import { hubspotConnectorMeta } from '@/connectors/hubspot/meta'
+import { incidentioConnectorMeta } from '@/connectors/incidentio/meta'
+import { intercomConnectorMeta } from '@/connectors/intercom/meta'
+import { jiraConnectorMeta } from '@/connectors/jira/meta'
+import { jsmConnectorMeta } from '@/connectors/jsm/meta'
+import { linearConnectorMeta } from '@/connectors/linear/meta'
+import { microsoftTeamsConnectorMeta } from '@/connectors/microsoft-teams/meta'
+import { mondayConnectorMeta } from '@/connectors/monday/meta'
+import { notionConnectorMeta } from '@/connectors/notion/meta'
+import { obsidianConnectorMeta } from '@/connectors/obsidian/meta'
+import { onedriveConnectorMeta } from '@/connectors/onedrive/meta'
+import { outlookConnectorMeta } from '@/connectors/outlook/meta'
+import { redditConnectorMeta } from '@/connectors/reddit/meta'
+import { rootlyConnectorMeta } from '@/connectors/rootly/meta'
+import { s3ConnectorMeta } from '@/connectors/s3/meta'
+import { salesforceConnectorMeta } from '@/connectors/salesforce/meta'
+import { sentryConnectorMeta } from '@/connectors/sentry/meta'
+import { servicenowConnectorMeta } from '@/connectors/servicenow/meta'
+import { sharepointConnectorMeta } from '@/connectors/sharepoint/meta'
+import { slackConnectorMeta } from '@/connectors/slack/meta'
+import { typeformConnectorMeta } from '@/connectors/typeform/meta'
+import type { ConnectorMeta, ConnectorMetaRegistry } from '@/connectors/types'
+import { webflowConnectorMeta } from '@/connectors/webflow/meta'
+import { wordpressConnectorMeta } from '@/connectors/wordpress/meta'
+import { xConnectorMeta } from '@/connectors/x/meta'
+import { youtubeConnectorMeta } from '@/connectors/youtube/meta'
+import { zendeskConnectorMeta } from '@/connectors/zendesk/meta'
+import { zoomConnectorMeta } from '@/connectors/zoom/meta'
 
-export const CONNECTOR_REGISTRY: ConnectorRegistry = {
-  airtable: airtableConnector,
-  asana: asanaConnector,
-  confluence: confluenceConnector,
-  discord: discordConnector,
-  dropbox: dropboxConnector,
-  evernote: evernoteConnector,
-  fireflies: firefliesConnector,
-  github: githubConnector,
-  gmail: gmailConnector,
-  google_calendar: googleCalendarConnector,
-  google_docs: googleDocsConnector,
-  google_drive: googleDriveConnector,
-  google_sheets: googleSheetsConnector,
-  hubspot: hubspotConnector,
-  intercom: intercomConnector,
-  jira: jiraConnector,
-  linear: linearConnector,
-  microsoft_teams: microsoftTeamsConnector,
-  notion: notionConnector,
-  obsidian: obsidianConnector,
-  onedrive: onedriveConnector,
-  outlook: outlookConnector,
-  reddit: redditConnector,
-  salesforce: salesforceConnector,
-  servicenow: servicenowConnector,
-  sharepoint: sharepointConnector,
-  slack: slackConnector,
-  webflow: webflowConnector,
-  wordpress: wordpressConnector,
-  zendesk: zendeskConnector,
+/**
+ * Client-safe registry of connector metadata. Imports each connector's `meta.ts`
+ * (never the runtime module), so it carries no server-only code and can be used
+ * from client components — the metadata counterpart to the full
+ * `CONNECTOR_REGISTRY` in `@/connectors/registry.server`, mirroring the
+ * `BLOCK_META_REGISTRY` split in `@/blocks/registry`.
+ */
+export const CONNECTOR_META_REGISTRY: ConnectorMetaRegistry = {
+  airtable: airtableConnectorMeta,
+  asana: asanaConnectorMeta,
+  ashby: ashbyConnectorMeta,
+  azure_devops: azureDevopsConnectorMeta,
+  confluence: confluenceConnectorMeta,
+  discord: discordConnectorMeta,
+  docusign: docusignConnectorMeta,
+  dropbox: dropboxConnectorMeta,
+  evernote: evernoteConnectorMeta,
+  fathom: fathomConnectorMeta,
+  fireflies: firefliesConnectorMeta,
+  github: githubConnectorMeta,
+  gitlab: gitlabConnectorMeta,
+  gmail: gmailConnectorMeta,
+  gong: gongConnectorMeta,
+  google_calendar: googleCalendarConnectorMeta,
+  google_docs: googleDocsConnectorMeta,
+  google_drive: googleDriveConnectorMeta,
+  google_forms: googleFormsConnectorMeta,
+  google_sheets: googleSheetsConnectorMeta,
+  grain: grainConnectorMeta,
+  granola: granolaConnectorMeta,
+  greenhouse: greenhouseConnectorMeta,
+  hubspot: hubspotConnectorMeta,
+  incidentio: incidentioConnectorMeta,
+  intercom: intercomConnectorMeta,
+  jira: jiraConnectorMeta,
+  jsm: jsmConnectorMeta,
+  linear: linearConnectorMeta,
+  microsoft_teams: microsoftTeamsConnectorMeta,
+  monday: mondayConnectorMeta,
+  notion: notionConnectorMeta,
+  obsidian: obsidianConnectorMeta,
+  onedrive: onedriveConnectorMeta,
+  outlook: outlookConnectorMeta,
+  reddit: redditConnectorMeta,
+  rootly: rootlyConnectorMeta,
+  s3: s3ConnectorMeta,
+  salesforce: salesforceConnectorMeta,
+  sentry: sentryConnectorMeta,
+  servicenow: servicenowConnectorMeta,
+  sharepoint: sharepointConnectorMeta,
+  slack: slackConnectorMeta,
+  typeform: typeformConnectorMeta,
+  webflow: webflowConnectorMeta,
+  wordpress: wordpressConnectorMeta,
+  x: xConnectorMeta,
+  youtube: youtubeConnectorMeta,
+  zendesk: zendeskConnectorMeta,
+  zoom: zoomConnectorMeta,
+}
+
+/**
+ * Look up a single connector's metadata by ID. Returns `undefined` for unknown IDs.
+ */
+export function getConnectorMeta(connectorId: string): ConnectorMeta | undefined {
+  return CONNECTOR_META_REGISTRY[connectorId]
+}
+
+/**
+ * Return all connector metadata as an ID-keyed record.
+ */
+export function getAllConnectorMeta(): ConnectorMetaRegistry {
+  return CONNECTOR_META_REGISTRY
 }

@@ -3,10 +3,12 @@ import { NextResponse } from 'next/server'
 import { airtableHandler } from '@/lib/webhooks/providers/airtable'
 import { ashbyHandler } from '@/lib/webhooks/providers/ashby'
 import { attioHandler } from '@/lib/webhooks/providers/attio'
+import { azureDevOpsHandler } from '@/lib/webhooks/providers/azure-devops'
 import { calcomHandler } from '@/lib/webhooks/providers/calcom'
 import { calendlyHandler } from '@/lib/webhooks/providers/calendly'
 import { circlebackHandler } from '@/lib/webhooks/providers/circleback'
 import { confluenceHandler } from '@/lib/webhooks/providers/confluence'
+import { emailBisonHandler } from '@/lib/webhooks/providers/emailbison'
 import { fathomHandler } from '@/lib/webhooks/providers/fathom'
 import { firefliesHandler } from '@/lib/webhooks/providers/fireflies'
 import { genericHandler } from '@/lib/webhooks/providers/generic'
@@ -16,8 +18,8 @@ import { gongHandler } from '@/lib/webhooks/providers/gong'
 import { googleFormsHandler } from '@/lib/webhooks/providers/google-forms'
 import { grainHandler } from '@/lib/webhooks/providers/grain'
 import { greenhouseHandler } from '@/lib/webhooks/providers/greenhouse'
-import { hubspotHandler } from '@/lib/webhooks/providers/hubspot'
 import { imapHandler } from '@/lib/webhooks/providers/imap'
+import { instantlyHandler } from '@/lib/webhooks/providers/instantly'
 import { intercomHandler } from '@/lib/webhooks/providers/intercom'
 import { jiraHandler } from '@/lib/webhooks/providers/jira'
 import { jsmHandler } from '@/lib/webhooks/providers/jsm'
@@ -30,9 +32,11 @@ import { outlookHandler } from '@/lib/webhooks/providers/outlook'
 import { resendHandler } from '@/lib/webhooks/providers/resend'
 import { rssHandler } from '@/lib/webhooks/providers/rss'
 import { salesforceHandler } from '@/lib/webhooks/providers/salesforce'
+import { sendblueHandler } from '@/lib/webhooks/providers/sendblue'
 import { servicenowHandler } from '@/lib/webhooks/providers/servicenow'
 import { slackHandler } from '@/lib/webhooks/providers/slack'
 import { stripeHandler } from '@/lib/webhooks/providers/stripe'
+import { tableProviderHandler } from '@/lib/webhooks/providers/table'
 import { telegramHandler } from '@/lib/webhooks/providers/telegram'
 import { twilioHandler } from '@/lib/webhooks/providers/twilio'
 import { twilioVoiceHandler } from '@/lib/webhooks/providers/twilio-voice'
@@ -50,10 +54,12 @@ const PROVIDER_HANDLERS: Record<string, WebhookProviderHandler> = {
   airtable: airtableHandler,
   ashby: ashbyHandler,
   attio: attioHandler,
+  azure_devops: azureDevOpsHandler,
   calendly: calendlyHandler,
   calcom: calcomHandler,
   circleback: circlebackHandler,
   confluence: confluenceHandler,
+  emailbison: emailBisonHandler,
   fireflies: firefliesHandler,
   generic: genericHandler,
   gmail: gmailHandler,
@@ -63,9 +69,9 @@ const PROVIDER_HANDLERS: Record<string, WebhookProviderHandler> = {
   fathom: fathomHandler,
   grain: grainHandler,
   greenhouse: greenhouseHandler,
-  hubspot: hubspotHandler,
   imap: imapHandler,
   intercom: intercomHandler,
+  instantly: instantlyHandler,
   jira: jiraHandler,
   jsm: jsmHandler,
   lemlist: lemlistHandler,
@@ -77,9 +83,11 @@ const PROVIDER_HANDLERS: Record<string, WebhookProviderHandler> = {
   outlook: outlookHandler,
   rss: rssHandler,
   salesforce: salesforceHandler,
+  sendblue: sendblueHandler,
   servicenow: servicenowHandler,
   slack: slackHandler,
   stripe: stripeHandler,
+  table: tableProviderHandler,
   telegram: telegramHandler,
   twilio: twilioHandler,
   twilio_voice: twilioVoiceHandler,

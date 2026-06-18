@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { WORKSPACE_ID_CONDITION_KEY } from '@/lib/workspaces/is-admin-workspace'
 import { getBlock } from '@/blocks/index'
 import { isMcpTool } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
@@ -49,8 +50,14 @@ export class GenericBlockHandler implements BlockHandler {
           blockType,
           workflowId: ctx.workflowId,
         })
-        const transformedParams = blockConfig.tools.config.params(inputs)
-        finalInputs = { ...inputs, ...transformedParams }
+        const paramsForTransform = ctx.workspaceId
+          ? { ...inputs, [WORKSPACE_ID_CONDITION_KEY]: ctx.workspaceId }
+          : inputs
+        const transformedParams = blockConfig.tools.config.params(paramsForTransform)
+        const definedTransformedParams = Object.fromEntries(
+          Object.entries(transformedParams).filter(([, value]) => value !== undefined)
+        )
+        finalInputs = { ...inputs, ...definedTransformedParams }
         logger.info('GenericHandler: params transformed', {
           blockName,
           workflowId: ctx.workflowId,
@@ -105,8 +112,7 @@ export class GenericBlockHandler implements BlockHandler {
             enforceCredentialAccess: ctx.enforceCredentialAccess,
           },
         },
-        false,
-        ctx
+        { executionContext: ctx }
       )
 
       logger.info('GenericHandler: executeTool returned', {

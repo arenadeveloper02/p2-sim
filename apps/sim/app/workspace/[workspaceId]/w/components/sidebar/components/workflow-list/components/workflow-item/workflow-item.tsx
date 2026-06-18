@@ -5,11 +5,12 @@ import clsx from 'clsx'
 import { MoreHorizontal } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { chipVariants } from '@/components/emcn'
+import { Lock } from '@/components/emcn/icons'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { workflowBorderColor } from '@/lib/workspaces/colors'
+import { cn } from '@/lib/core/utils/cn'
 import { selectWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
-import { getWorkflowLockToggleIds } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import { Avatars } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/workflow-item/avatars/avatars'
@@ -17,7 +18,7 @@ import {
   useContextMenu,
   useItemDrag,
   useItemRename,
-  useSidebarDragContext,
+  useSidebarListContext,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import {
   buildDragResources,
@@ -32,47 +33,43 @@ import {
   useExportSelection,
   useExportWorkflow,
 } from '@/app/workspace/[workspaceId]/w/hooks'
+import { useFolderMap } from '@/hooks/queries/folders'
 import { getFolderMap } from '@/hooks/queries/utils/folder-cache'
+import {
+  isFolderOrAncestorLocked,
+  isWorkflowEffectivelyLocked,
+} from '@/hooks/queries/utils/folder-tree'
 import { getWorkflows } from '@/hooks/queries/utils/workflow-cache'
 import { useUpdateWorkflow } from '@/hooks/queries/workflows'
 import { useFolderStore } from '@/stores/folders/store'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { WorkflowMetadata } from '@/stores/workflows/registry/types'
-import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 interface WorkflowItemProps {
   workflow: WorkflowMetadata
   active: boolean
-  level: number
-  dragDisabled?: boolean
-  onWorkflowClick: (workflowId: string, shiftKey: boolean) => void
-  onDragStart?: () => void
-  onDragEnd?: () => void
 }
 
 /**
  * WorkflowItem component displaying a single workflow with drag and selection support.
- * Uses the item drag hook for unified drag behavior.
+ * Selection and drag callbacks come from the sidebar list context; uses the item drag
+ * hook for unified drag behavior.
  *
  * @param props - Component props
  * @returns Workflow item with drag and selection support
  */
-export function WorkflowItem({
-  workflow,
-  active,
-  level,
-  dragDisabled = false,
-  onWorkflowClick,
-  onDragStart: onDragStartProp,
-  onDragEnd: onDragEndProp,
-}: WorkflowItemProps) {
-  const { isAnyDragActive } = useSidebarDragContext()
+export function WorkflowItem({ workflow, active }: WorkflowItemProps) {
+  const { isAnyDragActive, dragDisabled, onWorkflowClick, onItemDragStart, onItemDragEnd } =
+    useSidebarListContext()
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const selectedWorkflows = useFolderStore((state) => state.selectedWorkflows)
   const updateWorkflowMutation = useUpdateWorkflow()
   const userPermissions = useUserPermissionsContext()
   const isSelected = selectedWorkflows.has(workflow.id)
+
+  const { data: foldersById = {} } = useFolderMap(workspaceId)
+  const inheritedFolderLocked = isFolderOrAncestorLocked(workflow.folderId, foldersById)
+  const effectiveLocked = isWorkflowEffectivelyLocked(workflow, foldersById)
 
   const { canDeleteWorkflows, canDeleteFolder } = useCanDelete({ workspaceId })
 
@@ -174,35 +171,14 @@ export function WorkflowItem({
     window.open(`/workspace/${workspaceId}/w/${workflow.id}`, '_blank')
   }, [workspaceId, workflow.id])
 
-  const handleColorChange = useCallback(
-    (color: string) => {
-      updateWorkflowMutation.mutate({ workspaceId, workflowId: workflow.id, metadata: { color } })
-    },
-    [workflow.id, workspaceId]
-  )
-
-  const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
-  const isActiveWorkflow = workflow.id === activeWorkflowId
-
-  const isWorkflowLocked = useWorkflowStore(
-    useCallback(
-      (state) => {
-        if (!isActiveWorkflow) return false
-        const blockValues = Object.values(state.blocks)
-        if (blockValues.length === 0) return false
-        return blockValues.every((block) => block.locked)
-      },
-      [isActiveWorkflow]
-    )
-  )
-
   const handleToggleLock = useCallback(() => {
-    if (!isActiveWorkflow) return
-    const blocks = useWorkflowStore.getState().blocks
-    const blockIds = getWorkflowLockToggleIds(blocks, !isWorkflowLocked)
-    if (blockIds.length === 0) return
-    window.dispatchEvent(new CustomEvent('toggle-workflow-lock', { detail: { blockIds } }))
-  }, [isActiveWorkflow, isWorkflowLocked])
+    if (inheritedFolderLocked) return
+    updateWorkflowMutation.mutate({
+      workspaceId,
+      workflowId: workflow.id,
+      metadata: { locked: !workflow.locked },
+    })
+  }, [updateWorkflowMutation, workflow.id, workflow.locked, inheritedFolderLocked, workspaceId])
 
   const isEditingRef = useRef(false)
   const dragGhostRef = useRef<HTMLElement | null>(null)
@@ -354,16 +330,16 @@ export function WorkflowItem({
 
       const total = selection.workflowIds.length + selection.folderIds.length
       const ghostLabel = total > 1 ? `${workflow.name} +${total - 1} more` : workflow.name
-      const icon = total === 1 ? { kind: 'workflow' as const, color: workflow.color } : undefined
+      const icon = total === 1 ? { kind: 'workflow' as const } : undefined
       const ghost = createSidebarDragGhost(ghostLabel, icon)
       // Force reflow so the browser can capture the rendered element
       void ghost.offsetHeight
       e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, ghost.offsetHeight / 2)
       dragGhostRef.current = ghost
 
-      onDragStartProp?.()
+      onItemDragStart(workflow.folderId || null)
     },
-    [workflow.id, workflow.name, workflow.color, workspaceId, onDragStartProp]
+    [workflow.id, workflow.name, workflow.folderId, workspaceId, onItemDragStart]
   )
 
   const {
@@ -381,19 +357,20 @@ export function WorkflowItem({
       dragGhostRef.current = null
     }
     handleDragEndBase()
-    onDragEndProp?.()
-  }, [handleDragEndBase, onDragEndProp])
+    onItemDragEnd()
+  }, [handleDragEndBase, onItemDragEnd])
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      if (effectiveLocked) return
       handleStartEdit()
     },
-    [handleStartEdit]
+    [handleStartEdit, effectiveLocked]
   )
 
-  const handleClick = useCallback(
+  const handleWorkflowSelect = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>) => {
       e.stopPropagation()
 
@@ -426,31 +403,19 @@ export function WorkflowItem({
       <Link
         href={`/workspace/${workspaceId}/w/${workflow.id}`}
         data-item-id={workflow.id}
-        className={clsx(
-          'group mx-0.5 flex h-[30px] items-center gap-2 rounded-lg px-2 text-sm',
-          (active || isContextMenuOpen || (isSelected && selectedWorkflows.size > 1)) &&
-            'bg-[var(--surface-active)]',
-          !active &&
-            !isContextMenuOpen &&
-            !(isSelected && selectedWorkflows.size > 1) &&
-            !isAnyDragActive &&
-            'hover-hover:bg-[var(--surface-hover)]',
+        className={cn(
+          chipVariants({
+            active: active || isContextMenuOpen || (isSelected && selectedWorkflows.size > 1),
+            fullWidth: true,
+          }),
           (isDragging || (isAnyDragActive && isSelected)) && 'opacity-50'
         )}
-        draggable={!isEditing && !dragDisabled}
+        draggable={!isEditing && !dragDisabled && !effectiveLocked}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        onClick={handleClick}
+        onClick={handleWorkflowSelect}
         onContextMenu={handleContextMenu}
       >
-        <div
-          className='h-[16px] w-[16px] flex-shrink-0 rounded-sm border-[2.5px]'
-          style={{
-            backgroundColor: workflow.color,
-            borderColor: workflowBorderColor(workflow.color),
-            backgroundClip: 'padding-box',
-          }}
-        />
         <div className='min-w-0 flex-1'>
           <div className='flex min-w-0 items-center gap-2'>
             {isEditing ? (
@@ -460,7 +425,7 @@ export function WorkflowItem({
                 onChange={(e) => setEditValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onBlur={handleInputBlur}
-                className='w-full min-w-0 border-0 bg-transparent p-0 font-base text-[var(--text-body)] text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+                className='w-full min-w-0 border-0 bg-transparent p-0 text-[var(--text-body)] text-sm outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
                 maxLength={100}
                 disabled={isRenaming}
                 onClick={(e) => {
@@ -474,7 +439,7 @@ export function WorkflowItem({
               />
             ) : (
               <div
-                className='min-w-0 truncate font-base text-[var(--text-body)]'
+                className='min-w-0 truncate text-[var(--text-body)]'
                 onDoubleClick={handleDoubleClick}
               >
                 {workflow.name}
@@ -484,21 +449,34 @@ export function WorkflowItem({
           </div>
         </div>
         {!isEditing && (
-          <>
+          <div className='relative size-[18px] flex-shrink-0'>
+            {workflow.locked && (
+              <span
+                role='img'
+                aria-label='Workflow is locked'
+                className={clsx(
+                  'pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity',
+                  !isAnyDragActive && 'group-hover:opacity-0',
+                  isContextMenuOpen && 'opacity-0'
+                )}
+              >
+                <Lock className='size-[14px] text-[var(--text-icon)]' aria-hidden='true' />
+              </span>
+            )}
             <button
               type='button'
               aria-label='Workflow options'
               onPointerDown={handleMorePointerDown}
               onClick={handleMoreClick}
               className={clsx(
-                'flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity',
-                !isAnyDragActive && 'group-hover:opacity-100',
-                isContextMenuOpen && 'opacity-100'
+                'pointer-events-none absolute inset-0 flex items-center justify-center rounded-sm opacity-0 transition-opacity',
+                !isAnyDragActive && 'group-hover:pointer-events-auto group-hover:opacity-100',
+                isContextMenuOpen && 'pointer-events-auto opacity-100'
               )}
             >
-              <MoreHorizontal className='h-[16px] w-[16px] text-[var(--text-icon)]' />
+              <MoreHorizontal className='size-[16px] text-[var(--text-icon)]' />
             </button>
-          </>
+          </div>
         )}
       </Link>
 
@@ -512,22 +490,19 @@ export function WorkflowItem({
         onDuplicate={handleDuplicate}
         onExport={handleExport}
         onDelete={handleOpenDeleteModal}
-        onColorChange={handleColorChange}
-        currentColor={workflow.color}
         showOpenInNewTab={!isMixedSelection && selectedWorkflows.size <= 1}
         showRename={!isMixedSelection && selectedWorkflows.size <= 1}
         showDuplicate={true}
         showExport={true}
-        showColorChange={!isMixedSelection && selectedWorkflows.size <= 1}
-        disableRename={!userPermissions.canEdit}
+        disableRename={!userPermissions.canEdit || effectiveLocked}
         disableDuplicate={!userPermissions.canEdit || isDuplicatingSelection}
         disableExport={!userPermissions.canEdit}
-        disableColorChange={!userPermissions.canEdit}
-        disableDelete={!userPermissions.canEdit || !canDeleteSelection}
+        showDelete={userPermissions.canEdit}
+        disableDelete={!canDeleteSelection || effectiveLocked}
         onToggleLock={handleToggleLock}
-        showLock={isActiveWorkflow && !isMixedSelection && selectedWorkflows.size <= 1}
-        disableLock={!userPermissions.canAdmin}
-        isLocked={isWorkflowLocked}
+        showLock={!isMixedSelection && selectedWorkflows.size <= 1}
+        disableLock={!userPermissions.canAdmin || inheritedFolderLocked}
+        isLocked={effectiveLocked}
       />
 
       <DeleteModal

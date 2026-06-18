@@ -1,14 +1,13 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { GmailIcon } from '@/components/icons'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { DEFAULT_MAX_THREADS, gmailConnectorMeta } from '@/connectors/gmail/meta'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
-import { htmlToPlainText, joinTagArray, parseTagDate } from '@/connectors/utils'
+import { htmlToPlainText, joinTagArray, parseMultiValue, parseTagDate } from '@/connectors/utils'
 
 const logger = createLogger('GmailConnector')
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me'
-const DEFAULT_MAX_THREADS = 500
 const THREADS_PER_PAGE = 100
 
 interface GmailHeader {
@@ -46,15 +45,39 @@ interface GmailLabel {
 }
 
 /**
+ * Formats a single Gmail label name for use in a `label:` operator.
+ * Gmail search syntax accepts quoted strings for labels containing spaces;
+ * unquoted label tokens have spaces replaced with hyphens.
+ */
+function formatLabelToken(name: string): string {
+  const trimmed = name.trim()
+  if (!trimmed) return ''
+  if (/\s/.test(trimmed)) {
+    const escaped = trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    return `label:"${escaped}"`
+  }
+  return `label:${trimmed}`
+}
+
+/**
  * Builds a Gmail search query string from the source config.
  * Combines the user's custom query with the label and date range filters.
+ * When multiple labels are provided, they are OR-joined: `(label:A OR label:B)`.
  */
 function buildSearchQuery(sourceConfig: Record<string, unknown>): string {
   const parts: string[] = []
 
-  const labelName = sourceConfig.label as string | undefined
-  if (labelName?.trim()) {
-    parts.push(`label:${labelName.trim().replace(/\s+/g, '-')}`)
+  const labelNames = parseMultiValue(sourceConfig.label)
+  if (labelNames.length === 1) {
+    const token = formatLabelToken(labelNames[0])
+    if (token) parts.push(token)
+  } else if (labelNames.length > 1) {
+    const tokens = labelNames.map(formatLabelToken).filter(Boolean)
+    if (tokens.length === 1) {
+      parts.push(tokens[0])
+    } else if (tokens.length > 1) {
+      parts.push(`(${tokens.join(' OR ')})`)
+    }
   }
 
   const dateRange = (sourceConfig.dateRange as string) || 'all'
@@ -88,8 +111,18 @@ function buildSearchQuery(sourceConfig: Record<string, unknown>): string {
   }
 
   const customQuery = sourceConfig.query as string | undefined
-  if (customQuery?.trim()) {
-    parts.push(customQuery.trim())
+  const trimmedCustom = customQuery?.trim()
+  if (trimmedCustom) {
+    /**
+     * Wrap the user-supplied query in parentheses whenever it contains an OR
+     * so it's AND-joined as a single clause with the preceding label / category
+     * / date filters. Always wrap (rather than try to detect existing outer
+     * parens) because a regex like /^\(.*\)$/ misclassifies inputs such as
+     * `(from:alice) OR (from:bob)` where the parens don't bracket the whole
+     * expression. Double-wrapping is a no-op in Gmail search syntax.
+     */
+    const needsGroup = /\bOR\b/i.test(trimmedCustom)
+    parts.push(needsGroup ? `(${trimmedCustom})` : trimmedCustom)
   }
 
   return parts.join(' ')
@@ -303,90 +336,7 @@ function threadToStub(thread: {
 }
 
 export const gmailConnector: ConnectorConfig = {
-  id: 'gmail',
-  name: 'Gmail',
-  description: 'Sync email threads from Gmail into your knowledge base',
-  version: '1.0.0',
-  icon: GmailIcon,
-
-  auth: {
-    mode: 'oauth',
-    provider: 'google-email',
-    requiredScopes: ['https://www.googleapis.com/auth/gmail.modify'],
-  },
-
-  configFields: [
-    {
-      id: 'labelSelector',
-      title: 'Label',
-      type: 'selector',
-      selectorKey: 'gmail.labels',
-      canonicalParamId: 'label',
-      mode: 'basic',
-      placeholder: 'Select a label',
-      required: false,
-      description: 'Only sync emails with this label. Leave empty for all mail.',
-    },
-    {
-      id: 'label',
-      title: 'Label',
-      type: 'short-input',
-      canonicalParamId: 'label',
-      mode: 'advanced',
-      placeholder: 'e.g. INBOX, IMPORTANT, or a custom label name',
-      required: false,
-      description: 'Only sync emails with this label. Leave empty for all mail.',
-    },
-    {
-      id: 'dateRange',
-      title: 'Date Range',
-      type: 'dropdown',
-      required: false,
-      options: [
-        { label: 'Last 7 days', id: '7d' },
-        { label: 'Last 30 days', id: '30d' },
-        { label: 'Last 90 days', id: '90d' },
-        { label: 'Last 6 months', id: '6m' },
-        { label: 'Last year', id: '1y' },
-        { label: 'All time', id: 'all' },
-      ],
-    },
-    {
-      id: 'excludePromotions',
-      title: 'Exclude Promotions',
-      type: 'dropdown',
-      required: false,
-      options: [
-        { label: 'Yes (recommended)', id: 'true' },
-        { label: 'No', id: 'false' },
-      ],
-    },
-    {
-      id: 'excludeSocial',
-      title: 'Exclude Social',
-      type: 'dropdown',
-      required: false,
-      options: [
-        { label: 'Yes (recommended)', id: 'true' },
-        { label: 'No', id: 'false' },
-      ],
-    },
-    {
-      id: 'query',
-      title: 'Search Filter',
-      type: 'short-input',
-      placeholder: 'e.g. from:boss@company.com subject:report has:attachment',
-      required: false,
-      description: 'Additional Gmail search filter. Uses the same syntax as the Gmail search bar.',
-    },
-    {
-      id: 'maxThreads',
-      title: 'Max Threads',
-      type: 'short-input',
-      required: false,
-      placeholder: `e.g. 200 (default: ${DEFAULT_MAX_THREADS})`,
-    },
-  ],
+  ...gmailConnectorMeta,
 
   listDocuments: async (
     accessToken: string,
@@ -529,9 +479,9 @@ export const gmailConnector: ConnectorConfig = {
         return { valid: false, error: `Failed to access Gmail: ${profileResponse.status}` }
       }
 
-      // If a label is specified, verify it exists
-      const labelName = sourceConfig.label as string | undefined
-      if (labelName?.trim()) {
+      // If labels are specified, verify each one exists
+      const labelNames = parseMultiValue(sourceConfig.label)
+      if (labelNames.length > 0) {
         const labelsUrl = `${GMAIL_API_BASE}/labels`
         const labelsResponse = await fetchWithRetry(
           labelsUrl,
@@ -551,13 +501,13 @@ export const gmailConnector: ConnectorConfig = {
 
         const labelsData = await labelsResponse.json()
         const labels = (labelsData.labels || []) as GmailLabel[]
-        const normalized = labelName.trim().toLowerCase()
-        const match = labels.find((l) => l.name.toLowerCase() === normalized)
+        const labelNameSet = new Set(labels.map((l) => l.name.toLowerCase()))
+        const missing = labelNames.filter((name) => !labelNameSet.has(name.toLowerCase()))
 
-        if (!match) {
+        if (missing.length > 0) {
           return {
             valid: false,
-            error: `Label "${labelName}" not found. Available labels: ${labels
+            error: `Label(s) not found: ${missing.join(', ')}. Available labels: ${labels
               .filter(
                 (l) =>
                   l.type !== 'system' ||
@@ -594,17 +544,10 @@ export const gmailConnector: ConnectorConfig = {
 
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
+      const message = getErrorMessage(error, 'Failed to validate configuration')
       return { valid: false, error: message }
     }
   },
-
-  tagDefinitions: [
-    { id: 'from', displayName: 'From', fieldType: 'text' },
-    { id: 'labels', displayName: 'Labels', fieldType: 'text' },
-    { id: 'messageCount', displayName: 'Messages in Thread', fieldType: 'number' },
-    { id: 'lastMessageDate', displayName: 'Last Message', fieldType: 'date' },
-  ],
 
   mapTags: (metadata: Record<string, unknown>): Record<string, unknown> => {
     const result: Record<string, unknown> = {}

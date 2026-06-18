@@ -3,8 +3,8 @@
 import {
   createContext,
   type ReactNode,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { backoffWithJitter } from '@sim/utils/retry'
 import { useParams } from 'next/navigation'
 import type { Socket } from 'socket.io-client'
 import { getSocketUrl } from '@/lib/core/utils/urls'
@@ -25,12 +26,22 @@ import {
 } from '@/app/workspace/providers/socket-join-target'
 import { getBlock } from '@/blocks'
 import { useOperationQueueStore } from '@/stores/operation-queue/store'
+import type {
+  SubblockUpdateEmit,
+  VariableUpdateEmit,
+  WorkflowOperationEmit,
+} from '@/stores/operation-queue/types'
 import { useWorkflowRegistry as useWorkflowRegistryStore } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('SocketContext')
 
 const TAB_SESSION_ID_KEY = 'sim_tab_session_id'
+
+/** Bounded auto-retry budget for auth-class connect failures before going terminal. */
+const MAX_AUTH_RETRY_ATTEMPTS = 5
+const AUTH_RETRY_BASE_MS = 1000
+const AUTH_RETRY_MAX_MS = 30000
 
 function getTabSessionId(): string {
   if (typeof window === 'undefined') return ''
@@ -65,33 +76,21 @@ interface SocketContextType {
   isReconnecting: boolean
   isRetryingWorkflowJoin: boolean
   authFailed: boolean
+  /**
+   * Workflow whose room join failed non-retryably (e.g. access denied). The room
+   * is blocked until the user targets a different workflow or refreshes; edits made
+   * while blocked would never persist, so consumers should surface this and block edits.
+   */
+  blockedJoinWorkflowId: string | null
   currentWorkflowId: string | null
   currentSocketId: string | null
   presenceUsers: PresenceUser[]
   joinWorkflow: (workflowId: string) => void
   leaveWorkflow: () => void
   retryConnection: () => void
-  emitWorkflowOperation: (
-    workflowId: string,
-    operation: string,
-    target: string,
-    payload: any,
-    operationId?: string
-  ) => void
-  emitSubblockUpdate: (
-    blockId: string,
-    subblockId: string,
-    value: any,
-    operationId: string | undefined,
-    workflowId: string
-  ) => void
-  emitVariableUpdate: (
-    variableId: string,
-    field: string,
-    value: any,
-    operationId: string | undefined,
-    workflowId: string
-  ) => void
+  emitWorkflowOperation: WorkflowOperationEmit
+  emitSubblockUpdate: SubblockUpdateEmit
+  emitVariableUpdate: VariableUpdateEmit
 
   emitCursorUpdate: (cursor: { x: number; y: number } | null) => void
   emitSelectionUpdate: (selection: { type: 'block' | 'edge' | 'none'; id?: string }) => void
@@ -116,15 +115,16 @@ const SocketContext = createContext<SocketContextType>({
   isReconnecting: false,
   isRetryingWorkflowJoin: false,
   authFailed: false,
+  blockedJoinWorkflowId: null,
   currentWorkflowId: null,
   currentSocketId: null,
   presenceUsers: [],
   joinWorkflow: () => {},
   leaveWorkflow: () => {},
   retryConnection: () => {},
-  emitWorkflowOperation: () => {},
-  emitSubblockUpdate: () => {},
-  emitVariableUpdate: () => {},
+  emitWorkflowOperation: () => false,
+  emitSubblockUpdate: () => false,
+  emitVariableUpdate: () => false,
   emitCursorUpdate: () => {},
   emitSelectionUpdate: () => {},
   onWorkflowOperation: () => {},
@@ -140,7 +140,7 @@ const SocketContext = createContext<SocketContextType>({
   onOperationFailed: () => {},
 })
 
-export const useSocket = () => useContext(SocketContext)
+export const useSocket = () => use(SocketContext)
 
 interface SocketProviderProps {
   children: ReactNode
@@ -157,6 +157,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
   const [currentSocketId, setCurrentSocketId] = useState<string | null>(null)
   const [presenceUsers, setPresenceUsers] = useState<PresenceUser[]>([])
   const [authFailed, setAuthFailed] = useState(false)
+  const [blockedJoinWorkflowId, setBlockedJoinWorkflowId] = useState<string | null>(null)
   const [explicitWorkflowId, setExplicitWorkflowId] = useState<string | null>(null)
   const initializedRef = useRef(false)
   const socketRef = useRef<Socket | null>(null)
@@ -164,6 +165,8 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
   const explicitWorkflowIdRef = useRef<string | null>(explicitWorkflowId)
   const joinControllerRef = useRef(new SocketJoinController())
   const joinRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const authRetryAttemptsRef = useRef(0)
+  const authRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const params = useParams()
   const urlWorkflowId = params?.workflowId as string | undefined
@@ -212,6 +215,13 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
     if (joinRetryTimeoutRef.current !== null) {
       clearTimeout(joinRetryTimeoutRef.current)
       joinRetryTimeoutRef.current = null
+    }
+  }, [])
+
+  const clearAuthRetryTimeout = useCallback(() => {
+    if (authRetryTimeoutRef.current !== null) {
+      clearTimeout(authRetryTimeoutRef.current)
+      authRetryTimeoutRef.current = null
     }
   }, [])
 
@@ -305,6 +315,9 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
   )
 
   const generateSocketToken = async (): Promise<string> => {
+    // boundary-raw-fetch: pre-bootstrap one-time socket token mint — Better Auth's
+    // generateOneTimeToken handler (in INDIRECT_ZOD_ROUTES baseline) has no client
+    // contract; called from Socket.IO auth callback before any contract-bound client.
     const res = await fetch('/api/auth/socket-token', {
       method: 'POST',
       credentials: 'include',
@@ -324,11 +337,6 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
 
   useEffect(() => {
     if (!user?.id) return
-
-    if (authFailed) {
-      logger.info('Socket initialization skipped - auth failed, waiting for retry')
-      return
-    }
 
     if (initializedRef.current || socket || isConnecting) {
       logger.info('Socket already exists or is connecting, skipping initialization')
@@ -375,6 +383,9 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
         socketInstance.on('connect', () => {
           setIsConnected(true)
           setIsConnecting(false)
+          setIsReconnecting(false)
+          authRetryAttemptsRef.current = 0
+          clearAuthRetryTimeout()
           setCurrentSocketId(socketInstance.id ?? null)
           logger.info('Socket connected successfully', {
             socketId: socketInstance.id,
@@ -403,26 +414,45 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
 
         socketInstance.on('connect_error', (error: Error) => {
           setIsConnecting(false)
-          logger.error('Socket connection error:', { message: error.message })
 
-          // Check if this is an authentication failure
-          const isAuthError =
-            error.message?.includes('Token validation failed') ||
-            error.message?.includes('Authentication failed') ||
-            error.message?.includes('Authentication required')
+          if (socketInstance.active) {
+            // Temporary failure (timeout, network): Socket.IO retries natively with
+            // built-in backoff, re-invoking the auth callback for a fresh token.
+            logger.warn('Socket connection error, will auto-reconnect', {
+              message: error.message,
+            })
+            setIsReconnecting(true)
+            return
+          }
 
-          if (isAuthError) {
-            logger.warn(
-              'Authentication failed - stopping reconnection attempts. User may need to refresh/re-login.'
+          // active === false: denied by server middleware (always auth — it is the
+          // realtime server's only middleware). Socket.IO never retries denials, so
+          // schedule a manual connect() on the same instance with bounded backoff;
+          // the auth callback mints a fresh token on each attempt.
+          if (authRetryAttemptsRef.current < MAX_AUTH_RETRY_ATTEMPTS) {
+            authRetryAttemptsRef.current += 1
+            const delayMs = backoffWithJitter(authRetryAttemptsRef.current, null, {
+              baseMs: AUTH_RETRY_BASE_MS,
+              maxMs: AUTH_RETRY_MAX_MS,
+            })
+            setIsReconnecting(true)
+            logger.warn('Socket connection denied, retrying with a fresh token', {
+              message: error.message,
+              attempt: authRetryAttemptsRef.current,
+              delayMs: Math.round(delayMs),
+            })
+            clearAuthRetryTimeout()
+            authRetryTimeoutRef.current = setTimeout(() => {
+              authRetryTimeoutRef.current = null
+              socketInstance.connect()
+            }, delayMs)
+          } else {
+            logger.error(
+              'Socket connection denied after max retries - stopping. User may need to refresh/re-login.',
+              { message: error.message }
             )
-            socketInstance.disconnect()
-            setSocket(null)
             setAuthFailed(true)
             setIsReconnecting(false)
-            initializedRef.current = false
-          } else if (socketInstance.active) {
-            // Temporary failure, will auto-reconnect
-            setIsReconnecting(true)
           }
         })
 
@@ -444,7 +474,9 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
         })
 
         socketInstance.io.on('reconnect_error', (error: Error) => {
-          logger.error('Socket reconnection error:', { message: error.message })
+          logger.warn('Socket reconnection attempt failed, will retry', {
+            message: error.message,
+          })
         })
 
         socketInstance.io.on('reconnect_failed', () => {
@@ -482,6 +514,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
             logger.debug(`Ignoring stale join-workflow-success for ${workflowId}`)
           } else {
             setIsRetryingWorkflowJoin(false)
+            setBlockedJoinWorkflowId(null)
             setVisibleWorkflowId(workflowId)
             setPresenceUsers(presenceUsers || [])
             logger.info(`Successfully joined workflow room: ${workflowId}`, {
@@ -512,6 +545,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
             if (result.workflowId) {
               useOperationQueueStore.getState().cancelOperationsForWorkflow(result.workflowId)
             }
+            setBlockedJoinWorkflowId(result.workflowId ?? null)
 
             logger.error('Failed to join workflow:', {
               workflowId: result.workflowId,
@@ -721,6 +755,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
 
     return () => {
       clearJoinRetryTimeout()
+      clearAuthRetryTimeout()
       positionUpdateTimeouts.current.forEach((timeoutId) => {
         clearTimeout(timeoutId)
       })
@@ -734,6 +769,33 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
         socketRef.current = null
       }
     }
+  }, [user?.id])
+
+  /**
+   * Recover from a terminal auth failure without a full page reload. When the tab
+   * regains focus or the network returns, reset the retry budget and reconnect the
+   * existing socket — the auth callback re-mints a fresh token natively.
+   */
+  useEffect(() => {
+    if (!user?.id || !authFailed) return
+
+    const recoverFromAuthFailure = () => {
+      if (document.visibilityState !== 'visible') return
+      logger.info('Window focus/online detected, retrying socket connection after auth failure')
+      authRetryAttemptsRef.current = 0
+      setAuthFailed(false)
+      socketRef.current?.connect()
+    }
+
+    window.addEventListener('focus', recoverFromAuthFailure)
+    window.addEventListener('online', recoverFromAuthFailure)
+    document.addEventListener('visibilitychange', recoverFromAuthFailure)
+
+    return () => {
+      window.removeEventListener('focus', recoverFromAuthFailure)
+      window.removeEventListener('online', recoverFromAuthFailure)
+      document.removeEventListener('visibilitychange', recoverFromAuthFailure)
+    }
   }, [user?.id, authFailed])
 
   const hydrationPhase = useWorkflowRegistryStore((s) => s.hydration.phase)
@@ -743,7 +805,10 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       return
     }
 
-    executeJoinCommands(joinControllerRef.current.requestWorkflow(getRequestedWorkflowId()))
+    const requestedWorkflowId = getRequestedWorkflowId()
+
+    setBlockedJoinWorkflowId((prev) => (prev && prev !== requestedWorkflowId ? null : prev))
+    executeJoinCommands(joinControllerRef.current.requestWorkflow(requestedWorkflowId))
   }, [
     explicitWorkflowId,
     getRequestedWorkflowId,
@@ -778,13 +843,19 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       return
     }
     logger.info('Retrying socket connection after auth failure')
+    authRetryAttemptsRef.current = 0
     setAuthFailed(false)
-    // initializedRef.current was already reset in connect_error handler
-    // Effect will re-run and attempt connection
+    socketRef.current?.connect()
   }, [authFailed])
 
   const emitWorkflowOperation = useCallback(
-    (workflowId: string, operation: string, target: string, payload: any, operationId?: string) => {
+    (
+      workflowId: string,
+      operation: string,
+      target: string,
+      payload: any,
+      operationId?: string
+    ): boolean => {
       if (
         !socket ||
         !currentWorkflowId ||
@@ -798,7 +869,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
           operation,
           target,
         })
-        return
+        return false
       }
 
       const isPositionUpdate = operation === 'update-position' && target === 'block'
@@ -822,7 +893,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
             clearTimeout(timeoutId)
             positionUpdateTimeouts.current.delete(blockId)
           }
-          return
+          return true
         }
 
         pendingPositionUpdates.current.set(blockId, {
@@ -846,16 +917,18 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
 
           positionUpdateTimeouts.current.set(blockId, timeoutId)
         }
-      } else {
-        socket.emit('workflow-operation', {
-          workflowId,
-          operation,
-          target,
-          payload,
-          timestamp: Date.now(),
-          operationId,
-        })
+        return true
       }
+
+      socket.emit('workflow-operation', {
+        workflowId,
+        operation,
+        target,
+        payload,
+        timestamp: Date.now(),
+        operationId,
+      })
+      return true
     },
     [socket, currentWorkflowId, isWorkflowVisible]
   )
@@ -867,7 +940,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       value: any,
       operationId: string | undefined,
       workflowId: string
-    ) => {
+    ): boolean => {
       if (
         !socket ||
         workflowId !== currentWorkflowIdRef.current ||
@@ -886,7 +959,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
           reason,
           currentWorkflowId: currentWorkflowIdRef.current,
         })
-        return
+        return false
       }
 
       const block = useWorkflowStore.getState().blocks?.[blockId]
@@ -912,6 +985,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
         timestamp: Date.now(),
         operationId,
       })
+      return true
     },
     [socket]
   )
@@ -923,7 +997,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       value: any,
       operationId: string | undefined,
       workflowId: string
-    ) => {
+    ): boolean => {
       if (
         !socket ||
         workflowId !== currentWorkflowIdRef.current ||
@@ -942,7 +1016,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
           reason,
           currentWorkflowId: currentWorkflowIdRef.current,
         })
-        return
+        return false
       }
       socket.emit('variable-update', {
         workflowId,
@@ -952,6 +1026,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
         timestamp: Date.now(),
         operationId,
       })
+      return true
     },
     [socket]
   )
@@ -1040,6 +1115,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       isReconnecting,
       isRetryingWorkflowJoin,
       authFailed,
+      blockedJoinWorkflowId,
       currentWorkflowId,
       currentSocketId,
       presenceUsers,
@@ -1070,6 +1146,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       isReconnecting,
       isRetryingWorkflowJoin,
       authFailed,
+      blockedJoinWorkflowId,
       currentWorkflowId,
       currentSocketId,
       presenceUsers,

@@ -2,9 +2,11 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { apiKey } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { and, eq, not } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { updateWorkspaceApiKeyContract } from '@/lib/api/contracts/api-keys'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -13,14 +15,10 @@ import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceApiKeyAPI')
 
-const UpdateKeySchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-})
-
 export const PUT = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string; keyId: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string; keyId: string }> }) => {
     const requestId = generateRequestId()
-    const { id: workspaceId, keyId } = await params
+    const { id: workspaceId, keyId } = await context.params
 
     try {
       const session = await getSession()
@@ -36,8 +34,9 @@ export const PUT = withRouteHandler(
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
 
-      const body = await request.json()
-      const { name } = UpdateKeySchema.parse(body)
+      const parsed = await parseRequest(updateWorkspaceApiKeyContract, request, context)
+      if (!parsed.success) return parsed.response
+      const { name } = parsed.data.body
 
       const existingKey = await db
         .select()
@@ -118,7 +117,7 @@ export const PUT = withRouteHandler(
     } catch (error: unknown) {
       logger.error(`[${requestId}] Workspace API key PUT error`, error)
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to update workspace API key' },
+        { error: getErrorMessage(error, 'Failed to update workspace API key') },
         { status: 500 }
       )
     }
@@ -193,7 +192,7 @@ export const DELETE = withRouteHandler(
     } catch (error: unknown) {
       logger.error(`[${requestId}] Workspace API key DELETE error`, error)
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Failed to delete workspace API key' },
+        { error: getErrorMessage(error, 'Failed to delete workspace API key') },
         { status: 500 }
       )
     }

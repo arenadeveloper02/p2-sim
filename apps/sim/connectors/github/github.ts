@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { GithubIcon } from '@/components/icons'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { githubConnectorMeta } from '@/connectors/github/meta'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { parseTagDate } from '@/connectors/utils'
 
@@ -10,6 +10,20 @@ const logger = createLogger('GitHubConnector')
 const GITHUB_API_URL = 'https://api.github.com'
 const BATCH_SIZE = 30
 const GIT_SHA_PREFIX = 'git-sha:'
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+const BINARY_SNIFF_BYTES = 8000
+
+/**
+ * Heuristic binary detection: Git treats files containing a NUL byte in the
+ * first 8000 bytes as binary. Matches `git diff` / `git grep` semantics.
+ */
+function isBinaryBuffer(buf: Buffer): boolean {
+  const len = Math.min(buf.length, BINARY_SNIFF_BYTES)
+  for (let i = 0; i < len; i++) {
+    if (buf[i] === 0) return true
+  }
+  return false
+}
 
 /**
  * Parses the repository string into owner and repo.
@@ -91,6 +105,48 @@ async function fetchTree(
 }
 
 /**
+ * Fetches blob content via the Git Blobs API. Used as a fallback when the
+ * `/contents/` endpoint cannot return the file body (files larger than 1 MB
+ * return `content: ""` and `encoding: "none"`). Supports blobs up to 100 MB.
+ */
+async function fetchBlobContent(
+  accessToken: string,
+  owner: string,
+  repo: string,
+  sha: string
+): Promise<string | null> {
+  const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/git/blobs/${encodeURIComponent(sha)}`
+  const response = await fetchWithRetry(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${accessToken}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch git blob ${sha}: ${response.status}`)
+  }
+
+  const data = await response.json()
+  const content = (data.content as string) || ''
+  const encoding = data.encoding as string | undefined
+
+  if (encoding === 'base64') {
+    const buf = Buffer.from(content, 'base64')
+    if (isBinaryBuffer(buf)) return null
+    return buf.toString('utf8')
+  }
+  /**
+   * Per https://docs.github.com/en/rest/git/blobs the Blobs API only ever
+   * returns base64. Refuse to silently persist empty content for an
+   * unexpected encoding so a sync surfaces the error instead.
+   */
+  throw new Error(`Unexpected git blob encoding for ${sha}: ${encoding ?? 'undefined'}`)
+}
+
+/**
  * Creates a lightweight stub ExternalDocument from a tree item.
  * Uses the Git blob SHA as contentHash for change detection, avoiding
  * the need to fetch blob content for every file during listing.
@@ -108,7 +164,7 @@ function treeItemToStub(
     content: '',
     contentDeferred: true,
     mimeType: 'text/plain',
-    sourceUrl: `https://github.com/${owner}/${repo}/blob/${encodeURIComponent(branch)}/${item.path.split('/').map(encodeURIComponent).join('/')}`,
+    sourceUrl: `https://github.com/${owner}/${repo}/blob/${branch.split('/').map(encodeURIComponent).join('/')}/${item.path.split('/').map(encodeURIComponent).join('/')}`,
     contentHash: `${GIT_SHA_PREFIX}${item.sha}`,
     metadata: {
       path: item.path,
@@ -121,55 +177,7 @@ function treeItemToStub(
 }
 
 export const githubConnector: ConnectorConfig = {
-  id: 'github',
-  name: 'GitHub',
-  description: 'Sync files from a GitHub repository into your knowledge base',
-  version: '1.0.0',
-  icon: GithubIcon,
-
-  auth: {
-    mode: 'apiKey',
-    label: 'Personal Access Token',
-    placeholder: 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-  },
-
-  configFields: [
-    {
-      id: 'repository',
-      title: 'Repository',
-      type: 'short-input',
-      placeholder: 'owner/repo',
-      required: true,
-    },
-    {
-      id: 'branch',
-      title: 'Branch',
-      type: 'short-input',
-      placeholder: 'main (default)',
-      required: false,
-    },
-    {
-      id: 'pathPrefix',
-      title: 'Path Filter',
-      type: 'short-input',
-      placeholder: 'e.g. docs/, src/components/',
-      required: false,
-    },
-    {
-      id: 'extensions',
-      title: 'File Extensions',
-      type: 'short-input',
-      placeholder: 'e.g. .md, .txt, .mdx',
-      required: false,
-    },
-    {
-      id: 'maxFiles',
-      title: 'Max Files',
-      type: 'short-input',
-      required: false,
-      placeholder: 'e.g. 500 (default: unlimited)',
-    },
-  ],
+  ...githubConnectorMeta,
 
   listDocuments: async (
     accessToken: string,
@@ -189,10 +197,11 @@ export const githubConnector: ConnectorConfig = {
     } else {
       const tree = await fetchTree(accessToken, owner, repo, branch)
 
-      // Filter by path prefix and extensions
+      // Filter by path prefix, extensions, and size
       const filtered = tree.filter((item) => {
         if (pathPrefix && !item.path.startsWith(pathPrefix)) return false
         if (!matchesExtension(item.path, extSet)) return false
+        if (typeof item.size === 'number' && item.size > MAX_FILE_SIZE) return false
         return true
       })
 
@@ -252,15 +261,49 @@ export const githubConnector: ConnectorConfig = {
 
       if (!response.ok) {
         if (response.status === 404) return null
+        if (response.status === 403) {
+          logger.info('Skipping GitHub file rejected by Contents API', {
+            path,
+            status: response.status,
+          })
+          return null
+        }
         throw new Error(`Failed to fetch file ${path}: ${response.status}`)
       }
 
       const lastModifiedHeader = response.headers.get('last-modified') || undefined
       const data = await response.json()
-      const content =
-        data.encoding === 'base64'
-          ? Buffer.from(data.content as string, 'base64').toString('utf-8')
-          : (data.content as string) || ''
+
+      const size = typeof data.size === 'number' ? data.size : 0
+      if (size > MAX_FILE_SIZE) {
+        logger.info('Skipping GitHub file exceeding size limit', {
+          path,
+          size,
+          limit: MAX_FILE_SIZE,
+        })
+        return null
+      }
+
+      const rawContent = (data.content as string) || ''
+      const encoding = data.encoding as string | undefined
+      let content: string
+      if (encoding === 'base64' && rawContent.length > 0) {
+        const buf = Buffer.from(rawContent, 'base64')
+        if (isBinaryBuffer(buf)) {
+          logger.info('Skipping binary GitHub file', { path, size })
+          return null
+        }
+        content = buf.toString('utf8')
+      } else if (encoding === 'none' && data.sha && size > 0) {
+        const blobContent = await fetchBlobContent(accessToken, owner, repo, data.sha as string)
+        if (blobContent === null) {
+          logger.info('Skipping binary GitHub file', { path, size })
+          return null
+        }
+        content = blobContent
+      } else {
+        content = ''
+      }
 
       return {
         externalId,
@@ -268,7 +311,7 @@ export const githubConnector: ConnectorConfig = {
         content,
         contentDeferred: false,
         mimeType: 'text/plain',
-        sourceUrl: `https://github.com/${owner}/${repo}/blob/${encodeURIComponent(branch)}/${path.split('/').map(encodeURIComponent).join('/')}`,
+        sourceUrl: `https://github.com/${owner}/${repo}/blob/${branch.split('/').map(encodeURIComponent).join('/')}/${path.split('/').map(encodeURIComponent).join('/')}`,
         contentHash: `${GIT_SHA_PREFIX}${data.sha as string}`,
         metadata: {
           path,
@@ -305,7 +348,7 @@ export const githubConnector: ConnectorConfig = {
     } catch (error) {
       return {
         valid: false,
-        error: error instanceof Error ? error.message : 'Invalid repository format',
+        error: getErrorMessage(error, 'Invalid repository format'),
       }
     }
 
@@ -345,18 +388,10 @@ export const githubConnector: ConnectorConfig = {
 
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
+      const message = getErrorMessage(error, 'Failed to validate configuration')
       return { valid: false, error: message }
     }
   },
-
-  tagDefinitions: [
-    { id: 'path', displayName: 'File Path', fieldType: 'text' },
-    { id: 'repository', displayName: 'Repository', fieldType: 'text' },
-    { id: 'branch', displayName: 'Branch', fieldType: 'text' },
-    { id: 'size', displayName: 'File Size', fieldType: 'number' },
-    { id: 'lastModified', displayName: 'Last Modified', fieldType: 'date' },
-  ],
 
   mapTags: (metadata: Record<string, unknown>): Record<string, unknown> => {
     const result: Record<string, unknown> = {}

@@ -1,30 +1,24 @@
 import { useQuery } from '@tanstack/react-query'
+import { requestJson } from '@/lib/api/client/request'
+import { listOAuthCredentialsContract } from '@/lib/api/contracts'
 import type { Credential } from '@/lib/oauth'
 import { CREDENTIAL_SET } from '@/executor/constants'
 import { useCredentialSetDetail } from '@/hooks/queries/credential-sets'
 import { useWorkspaceCredential } from '@/hooks/queries/credentials'
-import { fetchJson } from '@/hooks/selectors/helpers'
-
-interface CredentialListResponse {
-  credentials?: Credential[]
-}
-
-interface CredentialDetailResponse {
-  credentials?: Credential[]
-}
 
 export const oauthCredentialKeys = {
   all: ['oauthCredentials'] as const,
+  lists: () => [...oauthCredentialKeys.all, 'list'] as const,
   list: (providerId?: string, workspaceId?: string, workflowId?: string) =>
     [
-      ...oauthCredentialKeys.all,
-      'list',
+      ...oauthCredentialKeys.lists(),
       providerId ?? 'none',
       workspaceId ?? 'none',
       workflowId ?? 'none',
     ] as const,
+  details: () => [...oauthCredentialKeys.all, 'detail'] as const,
   detail: (credentialId?: string, workflowId?: string) =>
-    [...oauthCredentialKeys.all, 'detail', credentialId ?? 'none', workflowId ?? 'none'] as const,
+    [...oauthCredentialKeys.details(), credentialId ?? 'none', workflowId ?? 'none'] as const,
 }
 
 interface FetchOAuthCredentialsParams {
@@ -39,9 +33,9 @@ export async function fetchOAuthCredentials(
 ): Promise<Credential[]> {
   const { providerId, workspaceId, workflowId } = params
   if (!providerId) return []
-  const data = await fetchJson<CredentialListResponse>('/api/auth/oauth/credentials', {
+  const data = await requestJson(listOAuthCredentialsContract, {
     signal,
-    searchParams: {
+    query: {
       provider: providerId,
       workspaceId,
       workflowId,
@@ -56,9 +50,9 @@ export async function fetchOAuthCredentialDetail(
   signal?: AbortSignal
 ): Promise<Credential[]> {
   if (!credentialId) return []
-  const data = await fetchJson<CredentialDetailResponse>('/api/auth/oauth/credentials', {
+  const data = await requestJson(listOAuthCredentialsContract, {
     signal,
-    searchParams: {
+    query: {
       credentialId,
       workflowId,
     },

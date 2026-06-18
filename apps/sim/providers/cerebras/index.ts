@@ -1,11 +1,15 @@
 import { Cerebras } from '@cerebras/cerebras_cloud_sdk'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import type { StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
+import { formatMessagesForProvider } from '@/providers/attachments'
 import type { CerebrasResponse } from '@/providers/cerebras/types'
 import { createReadableStreamFromCerebrasStream } from '@/providers/cerebras/utils'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
+import { createStreamingExecution } from '@/providers/streaming-execution'
+import { adaptOpenAIChatToolSchema } from '@/providers/tool-schema-adapter'
+import { enrichLastModelSegmentFromChatCompletions } from '@/providers/trace-enrichment'
 import type {
   ProviderConfig,
   ProviderRequest,
@@ -63,21 +67,15 @@ export const cerebrasProvider: ProviderConfig = {
       if (request.messages) {
         allMessages.push(...request.messages)
       }
+      const formattedMessages = formatMessagesForProvider(allMessages, 'cerebras')
 
       const tools = request.tools?.length
-        ? request.tools.map((tool) => ({
-            type: 'function',
-            function: {
-              name: tool.id,
-              description: tool.description,
-              parameters: tool.parameters,
-            },
-          }))
+        ? request.tools.map((tool) => adaptOpenAIChatToolSchema(tool))
         : undefined
 
       const payload: any = {
         model: request.model.replace('cerebras/', ''),
-        messages: allMessages,
+        messages: formattedMessages,
       }
       if (request.temperature !== undefined) payload.temperature = request.temperature
       if (request.maxTokens != null) payload.max_completion_tokens = request.maxTokens
@@ -127,60 +125,37 @@ export const cerebrasProvider: ProviderConfig = {
           request.abortSignal ? { signal: request.abortSignal } : undefined
         )
 
-        const streamingResult = {
-          stream: createReadableStreamFromCerebrasStream(streamResponse, (content, usage) => {
-            streamingResult.execution.output.content = content
-            streamingResult.execution.output.tokens = {
-              input: usage.prompt_tokens,
-              output: usage.completion_tokens,
-              total: usage.total_tokens,
-            }
+        const streamingResult = createStreamingExecution({
+          model: request.model,
+          providerStartTime,
+          providerStartTimeISO,
+          timing: { kind: 'simple', segmentName: request.model },
+          initialTokens: { input: 0, output: 0, total: 0 },
+          initialCost: { input: 0, output: 0, total: 0 },
+          isStreaming: true,
+          createStream: ({ output }) =>
+            createReadableStreamFromCerebrasStream(streamResponse, (content, usage) => {
+              output.content = content
+              output.tokens = {
+                input: usage.prompt_tokens,
+                output: usage.completion_tokens,
+                total: usage.total_tokens,
+              }
 
-            const costResult = calculateCost(
-              request.model,
-              usage.prompt_tokens,
-              usage.completion_tokens
-            )
-            streamingResult.execution.output.cost = {
-              input: costResult.input,
-              output: costResult.output,
-              total: costResult.total,
-            }
-          }),
-          execution: {
-            success: true,
-            output: {
-              content: '',
-              model: request.model,
-              tokens: { input: 0, output: 0, total: 0 },
-              toolCalls: undefined,
-              providerTiming: {
-                startTime: providerStartTimeISO,
-                endTime: new Date().toISOString(),
-                duration: Date.now() - providerStartTime,
-                timeSegments: [
-                  {
-                    type: 'model',
-                    name: 'Streaming response',
-                    startTime: providerStartTime,
-                    endTime: Date.now(),
-                    duration: Date.now() - providerStartTime,
-                  },
-                ],
-              },
-              cost: { input: 0, output: 0, total: 0 },
-            },
-            logs: [],
-            metadata: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-            },
-            isStreaming: true,
-          },
-        }
+              const costResult = calculateCost(
+                request.model,
+                usage.prompt_tokens,
+                usage.completion_tokens
+              )
+              output.cost = {
+                input: costResult.input,
+                output: costResult.output,
+                total: costResult.total,
+              }
+            }),
+        })
 
-        return streamingResult as StreamingExecution
+        return streamingResult
       }
       const initialCallTime = Date.now()
 
@@ -198,7 +173,7 @@ export const cerebrasProvider: ProviderConfig = {
       }
       const toolCalls = []
       const toolResults: Record<string, unknown>[] = []
-      const currentMessages = [...allMessages]
+      const currentMessages = [...formattedMessages]
       let iterationCount = 0
 
       let modelTime = firstResponseTime
@@ -206,7 +181,7 @@ export const cerebrasProvider: ProviderConfig = {
       const timeSegments: TimeSegment[] = [
         {
           type: 'model',
-          name: 'Initial response',
+          name: request.model,
           startTime: initialCallTime,
           endTime: initialCallTime + firstResponseTime,
           duration: firstResponseTime,
@@ -218,6 +193,13 @@ export const cerebrasProvider: ProviderConfig = {
       try {
         while (iterationCount < MAX_TOOL_ITERATIONS) {
           const toolCallsInResponse = currentResponse.choices[0]?.message?.tool_calls
+
+          enrichLastModelSegmentFromChatCompletions(
+            timeSegments,
+            currentResponse,
+            toolCallsInResponse,
+            { model: request.model, provider: 'cerebras' }
+          )
 
           if (!toolCallsInResponse || toolCallsInResponse.length === 0) {
             if (currentResponse.choices[0]?.message?.content) {
@@ -253,7 +235,9 @@ export const cerebrasProvider: ProviderConfig = {
               if (!tool) return null
 
               const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-              const result = await executeTool(toolName, executionParams)
+              const result = await executeTool(toolName, executionParams, {
+                signal: request.abortSignal,
+              })
               const toolCallEndTime = Date.now()
 
               return {
@@ -279,7 +263,7 @@ export const cerebrasProvider: ProviderConfig = {
                 result: {
                   success: false,
                   output: undefined,
-                  error: error instanceof Error ? error.message : 'Tool execution failed',
+                  error: getErrorMessage(error, 'Tool execution failed'),
                 },
                 startTime: toolCallStartTime,
                 endTime: toolCallEndTime,
@@ -313,6 +297,7 @@ export const cerebrasProvider: ProviderConfig = {
               startTime: startTime,
               endTime: endTime,
               duration: duration,
+              toolCallId: toolCall.id,
             })
             let resultContent: any
             if (result.success && result.output) {
@@ -382,7 +367,7 @@ export const cerebrasProvider: ProviderConfig = {
 
             timeSegments.push({
               type: 'model',
-              name: 'Final response',
+              name: request.model,
               startTime: nextModelStartTime,
               endTime: nextModelEndTime,
               duration: thisModelTime,
@@ -398,6 +383,13 @@ export const cerebrasProvider: ProviderConfig = {
               tokens.output += finalResponse.usage.completion_tokens || 0
               tokens.total += finalResponse.usage.total_tokens || 0
             }
+
+            enrichLastModelSegmentFromChatCompletions(
+              timeSegments,
+              finalResponse,
+              finalResponse.choices[0]?.message?.tool_calls,
+              { model: request.model, provider: 'cerebras' }
+            )
 
             break
           }
@@ -419,7 +411,7 @@ export const cerebrasProvider: ProviderConfig = {
 
             timeSegments.push({
               type: 'model',
-              name: `Model response (iteration ${iterationCount + 1})`,
+              name: request.model,
               startTime: nextModelStartTime,
               endTime: nextModelEndTime,
               duration: thisModelTime,
@@ -434,6 +426,15 @@ export const cerebrasProvider: ProviderConfig = {
 
             iterationCount++
           }
+        }
+
+        if (iterationCount === MAX_TOOL_ITERATIONS) {
+          enrichLastModelSegmentFromChatCompletions(
+            timeSegments,
+            currentResponse,
+            currentResponse.choices[0]?.message?.tool_calls,
+            { model: request.model, provider: 'cerebras' }
+          )
         }
       } catch (error) {
         logger.error('Error in Cerebras tool processing:', { error })
@@ -460,73 +461,62 @@ export const cerebrasProvider: ProviderConfig = {
 
         const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
 
-        const streamingResult = {
-          stream: createReadableStreamFromCerebrasStream(streamResponse, (content, usage) => {
-            streamingResult.execution.output.content = content
-            streamingResult.execution.output.tokens = {
-              input: tokens.input + usage.prompt_tokens,
-              output: tokens.output + usage.completion_tokens,
-              total: tokens.total + usage.total_tokens,
-            }
-
-            const streamCost = calculateCost(
-              request.model,
-              usage.prompt_tokens,
-              usage.completion_tokens
-            )
-            const tc = sumToolCosts(toolResults)
-            streamingResult.execution.output.cost = {
-              input: accumulatedCost.input + streamCost.input,
-              output: accumulatedCost.output + streamCost.output,
-              toolCost: tc || undefined,
-              total: accumulatedCost.total + streamCost.total + tc,
-            }
-          }),
-          execution: {
-            success: true,
-            output: {
-              content: '',
-              model: request.model,
-              tokens: {
-                input: tokens.input,
-                output: tokens.output,
-                total: tokens.total,
-              },
-              toolCalls:
-                toolCalls.length > 0
-                  ? {
-                      list: toolCalls,
-                      count: toolCalls.length,
-                    }
-                  : undefined,
-              providerTiming: {
-                startTime: providerStartTimeISO,
-                endTime: new Date().toISOString(),
-                duration: Date.now() - providerStartTime,
-                modelTime: modelTime,
-                toolsTime: toolsTime,
-                firstResponseTime: firstResponseTime,
-                iterations: iterationCount + 1,
-                timeSegments: timeSegments,
-              },
-              cost: {
-                input: accumulatedCost.input,
-                output: accumulatedCost.output,
-                toolCost: undefined as number | undefined,
-                total: accumulatedCost.total,
-              },
-            },
-            logs: [],
-            metadata: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-            },
-            isStreaming: true,
+        const streamingResult = createStreamingExecution({
+          model: request.model,
+          providerStartTime,
+          providerStartTimeISO,
+          timing: {
+            kind: 'accumulated',
+            modelTime,
+            toolsTime,
+            firstResponseTime,
+            iterations: iterationCount + 1,
+            timeSegments,
           },
-        }
+          initialTokens: {
+            input: tokens.input,
+            output: tokens.output,
+            total: tokens.total,
+          },
+          initialCost: {
+            input: accumulatedCost.input,
+            output: accumulatedCost.output,
+            toolCost: undefined as number | undefined,
+            total: accumulatedCost.total,
+          },
+          toolCalls:
+            toolCalls.length > 0
+              ? {
+                  list: toolCalls,
+                  count: toolCalls.length,
+                }
+              : undefined,
+          isStreaming: true,
+          createStream: ({ output }) =>
+            createReadableStreamFromCerebrasStream(streamResponse, (content, usage) => {
+              output.content = content
+              output.tokens = {
+                input: tokens.input + usage.prompt_tokens,
+                output: tokens.output + usage.completion_tokens,
+                total: tokens.total + usage.total_tokens,
+              }
 
-        return streamingResult as StreamingExecution
+              const streamCost = calculateCost(
+                request.model,
+                usage.prompt_tokens,
+                usage.completion_tokens
+              )
+              const tc = sumToolCosts(toolResults)
+              output.cost = {
+                input: accumulatedCost.input + streamCost.input,
+                output: accumulatedCost.output + streamCost.output,
+                toolCost: tc || undefined,
+                total: accumulatedCost.total + streamCost.total + tc,
+              }
+            }),
+        })
+
+        return streamingResult
       }
 
       return {
@@ -564,3 +554,8 @@ export const cerebrasProvider: ProviderConfig = {
     }
   },
 }
+
+/**
+ * Enriches the last model segment with per-iteration content from a Chat
+ * Completions response: assistant text, tool calls, finish reason, token usage.
+ */
