@@ -3,13 +3,8 @@ import { mkdir } from 'fs/promises'
 import path, { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { env } from '@/lib/core/config/env'
+import { getStorageProvider, S3_CONFIG, USE_S3_STORAGE } from '@/lib/uploads/config'
 import { ensureAgentGeneratedImagesDirectory } from '@/lib/uploads/utils/image-storage.server'
-import {
-  getStorageProvider,
-  S3_CONFIG,
-  USE_BLOB_STORAGE,
-  USE_S3_STORAGE,
-} from '@/lib/uploads/config'
 
 const logger = createLogger('UploadsSetup')
 
