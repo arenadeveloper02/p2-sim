@@ -135,7 +135,7 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
 
         if (isAdminWorkspace(workspaceId)) {
           return {
-            account: params.account ?? params.accountAdvanced,
+            account: params.accountAdvanced ?? params.account,
             query: params.query,
             workspaceId,
             _context: params._context,
