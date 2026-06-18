@@ -10,7 +10,7 @@ import { getSession } from '@/lib/auth'
 import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { recordUsage } from '@/lib/billing/core/usage-log'
 import { env } from '@/lib/core/config/env'
-import { isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { getCostMultiplier, isBillingEnabled } from '@/lib/core/config/env-flags'
 import { RateLimiter } from '@/lib/core/rate-limiter'
 import { validateAuthToken } from '@/lib/core/security/deployment'
 import { getClientIp } from '@/lib/core/utils/request'
@@ -197,7 +197,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             category: 'fixed',
             source: 'voice-input',
             description: `Voice input session (${maxMinutes} min)`,
-            cost: sessionCost,
+            cost: sessionCost * getCostMultiplier(),
             sourceReference: `voice-input:${hashVoiceToken(data.token)}`,
           },
         ],

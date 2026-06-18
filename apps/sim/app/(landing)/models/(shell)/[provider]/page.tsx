@@ -13,6 +13,7 @@ import {
 import { ModelTimelineChart } from '@/app/(landing)/models/components/model-timeline-chart'
 import {
   buildProviderFaqs,
+  formatFileSize,
   formatPrice,
   formatTokenCount,
   getProviderBySlug,
@@ -55,30 +56,18 @@ export async function generateMetadata({
       `${provider.name} AI models`,
       ...provider.models.slice(0, 6).map((model) => model.displayName),
     ],
+    // og:image/twitter:image come from the sibling opengraph-image.tsx —
+    // Next serves it at a hash-suffixed URL, so hardcoding it here 404s.
     openGraph: {
       title: `${provider.name} Models | Sim`,
       description: `Explore ${provider.modelCount} ${provider.name} models with pricing and capability details.`,
       url: `${baseUrl}${provider.href}`,
       type: 'website',
-      images: [
-        {
-          url: `${baseUrl}${provider.href}/opengraph-image`,
-          width: 1200,
-          height: 630,
-          alt: `${provider.name} Models on Sim`,
-        },
-      ],
     },
     twitter: {
       card: 'summary_large_image',
       title: `${provider.name} Models | Sim`,
       description: providerFaqs[0]?.answer ?? provider.summary,
-      images: [
-        {
-          url: `${baseUrl}${provider.href}/opengraph-image`,
-          alt: `${provider.name} Models on Sim`,
-        },
-      ],
     },
     alternates: {
       canonical: `${baseUrl}${provider.href}`,
@@ -216,9 +205,16 @@ export default async function ProviderModelsPage({
                 {provider.name} models
               </h1>
             </div>
-            <span className='shrink-0 font-martian-mono text-[var(--landing-text-subtle)] text-xs uppercase tracking-[0.1em]'>
-              {provider.modelCount} models
-            </span>
+            <div className='flex shrink-0 flex-col items-end gap-1'>
+              <span className='font-martian-mono text-[var(--landing-text-subtle)] text-xs uppercase tracking-[0.1em]'>
+                {provider.modelCount} models
+              </span>
+              {provider.maxFileAttachmentBytes ? (
+                <span className='font-martian-mono text-[var(--landing-text-subtle)] text-xs uppercase tracking-[0.1em]'>
+                  {formatFileSize(provider.maxFileAttachmentBytes)} file uploads
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
 

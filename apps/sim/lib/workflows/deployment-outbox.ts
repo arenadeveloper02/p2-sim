@@ -461,7 +461,7 @@ async function removeMcpToolsIfStillUndeployed(
       .limit(1)
 
     if (!workflowRecord || workflowRecord.isDeployed) return []
-    return removeMcpToolsForWorkflow(workflowId, requestId, tx, false, true)
+    return removeMcpToolsForWorkflow(workflowId, requestId, tx, true)
   })
   notifyMcpToolServers(tools)
 }
@@ -615,7 +615,7 @@ async function pruneWorkflowGroupOutputsIfStillActive(params: {
 
     if (!versionRow) return
 
-    const { pruneStaleWorkflowGroupOutputs } = await import('@/lib/table/service')
+    const { pruneStaleWorkflowGroupOutputs } = await import('@/lib/table/workflow-groups/service')
     await pruneStaleWorkflowGroupOutputs({
       workflowId: params.workflowId,
       workspaceId: params.workspaceId,
