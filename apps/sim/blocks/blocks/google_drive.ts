@@ -1261,6 +1261,7 @@ Return ONLY the query string - no explanations, no quotes around the whole thing
 
 export const GoogleDriveBlockMeta = {
   tags: ['cloud', 'google-workspace', 'document-processing'],
+  url: 'https://workspace.google.com/products/drive',
   templates: [
     {
       icon: BookOpen,

@@ -366,6 +366,17 @@ interface CoalescedRefreshOptions {
   requestId?: string
   userId?: string
   targetTable?: 'account' | 'account_tokens'
+  /** HubSpot shared-tenant alias for per-portal OAuth app credentials. */
+  alias?: string
+}
+
+function resolveHubSpotRefreshAlias(credential: {
+  providerId?: string
+  alias?: string | null
+}): string | undefined {
+  if (credential.providerId !== 'hubspot') return undefined
+  const alias = typeof credential.alias === 'string' ? credential.alias.trim() : ''
+  return alias || undefined
 }
 
 async function performCoalescedRefresh({
@@ -375,6 +386,7 @@ async function performCoalescedRefresh({
   requestId,
   userId,
   targetTable = 'account',
+  alias,
 }: CoalescedRefreshOptions): Promise<string | null> {
   const logContext = {
     ...(requestId ? { requestId } : {}),
@@ -382,6 +394,7 @@ async function performCoalescedRefresh({
     providerId,
     accountId,
     targetTable,
+    ...(alias ? { alias } : {}),
   }
 
   const deadCode = await getRecentTerminalError(accountId)
@@ -395,12 +408,12 @@ async function performCoalescedRefresh({
 
   const lockKey = `oauth:refresh:${accountId}`
 
-  return coalesceLocally(lockKey, () =>
+  const refreshPromise = coalesceLocally(lockKey, () =>
     withLeaderLock<string>({
       key: lockKey,
       onLeader: async () => {
         try {
-          const result = await refreshOAuthToken(providerId, refreshToken)
+          const result = await refreshOAuthToken(providerId, refreshToken, alias)
 
           if (!result.ok) {
             logger.error('Failed to refresh token', {
@@ -480,6 +493,16 @@ async function performCoalescedRefresh({
       },
     })
   )
+
+  try {
+    return await refreshPromise
+  } catch (error) {
+    logger.error('Coalesced refresh did not settle', {
+      ...logContext,
+      error: toError(error).message,
+    })
+    return null
+  }
 }
 
 export async function getOAuthToken(userId: string, providerId: string): Promise<string | null> {
@@ -545,6 +568,7 @@ export async function getOAuthToken(userId: string, providerId: string): Promise
       refreshToken: credential.refreshToken!,
       userId,
       targetTable: sourceTable,
+      alias: resolveHubSpotRefreshAlias(credential),
     })
   }
 
@@ -634,6 +658,7 @@ export async function refreshAccessTokenIfNeeded(
       refreshToken: credential.refreshToken!,
       requestId,
       userId: credential.userId,
+      alias: resolveHubSpotRefreshAlias(credential),
     })
     if (fresh) return fresh
     // If refresh was only triggered proactively (Microsoft refresh-token aging),
@@ -763,6 +788,7 @@ export async function refreshTokenIfNeeded(
     requestId,
     userId: credential.userId,
     targetTable: inAccountTokens ? 'account_tokens' : 'account',
+    alias: resolveHubSpotRefreshAlias(credential),
   })
   if (fresh) return { accessToken: fresh, refreshed: true }
 
