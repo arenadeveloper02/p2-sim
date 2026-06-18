@@ -24,7 +24,7 @@ services:
       - CRON_SECRET=${CRON_SECRET:-}
       # Socket / Realtime
       - SOCKET_SERVER_URL=${SOCKET_SERVER_URL:-http://realtime:3002}
-      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://realtime:3002}
+      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3002}
       - REDIS_URL=${REDIS_URL:-}
       # Copilot / Agent
       - COPILOT_API_KEY=${COPILOT_API_KEY}
