@@ -14,14 +14,22 @@ fi
 
 cd "$DEPLOY_ROOT"
 
+SIM_ENV_FILE="${DEPLOY_ROOT}/apps/sim/.env"
+if [ ! -f "$SIM_ENV_FILE" ]; then
+  echo "Missing env file: $SIM_ENV_FILE" >&2
+  exit 1
+fi
+
+COMPOSE_ENV_ARGS=(--env-file "$SIM_ENV_FILE")
+
 git stash
 git fetch origin "$BRANCH"
 git checkout "$BRANCH"
 git pull --rebase origin "$BRANCH"
 
-docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" down --remove-orphans
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" down --remove-orphans
 docker image rm -f p2-sim-simstudio p2-sim-realtime p2-sim-migrations 2>/dev/null || true
-docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" up -d --build --remove-orphans
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" up -d --build --remove-orphans
 docker image prune -f
 
 cd ~
