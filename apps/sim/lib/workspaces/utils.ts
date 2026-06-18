@@ -45,6 +45,29 @@ export async function getWorkspaceBilledAccountUserId(workspaceId: string): Prom
   return settings?.billedAccountUserId ?? null
 }
 
+export async function getWorkspaceOwnerId(workspaceId: string): Promise<string | null> {
+  if (!workspaceId) {
+    return null
+  }
+
+  const rows = await db
+    .select({ ownerId: workspaceTable.ownerId })
+    .from(workspaceTable)
+    .where(and(eq(workspaceTable.id, workspaceId), isNull(workspaceTable.archivedAt)))
+    .limit(1)
+
+  return rows[0]?.ownerId ?? null
+}
+
+/**
+ * Resolves the execution actor for scheduled workflow runs.
+ * Schedules use the workspace owner so OAuth credentials align with the member
+ * who typically connects integrations on that workspace.
+ */
+export async function getScheduleExecutionActorUserId(workspaceId: string): Promise<string | null> {
+  return getWorkspaceOwnerId(workspaceId)
+}
+
 export async function listUserWorkspaces(userId: string, scope: WorkspaceScope = 'active') {
   const workspaces = await db
     .select({
