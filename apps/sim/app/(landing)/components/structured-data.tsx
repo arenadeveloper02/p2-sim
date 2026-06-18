@@ -138,7 +138,7 @@ export default function StructuredData() {
         ],
         featureList: [
           'AI workspace for teams',
-          'Mothership — natural language agent creation',
+          'Chat — natural language agent creation',
           'Visual workflow builder',
           '1,000+ integrations',
           'LLM orchestration (OpenAI, Anthropic, Google, xAI, Mistral, Perplexity)',
@@ -191,7 +191,7 @@ export default function StructuredData() {
             name: 'What is the best AI agent builder?',
             acceptedAnswer: {
               '@type': 'Answer',
-              text: 'Sim is the open-source AI workspace trusted by over 100,000 builders for creating, deploying, and managing AI agents. Build agents visually with the workflow builder, conversationally through Mothership, or programmatically with the API. Sim connects to 1,000+ integrations and all major LLMs (OpenAI, Anthropic, Google, xAI, Mistral), and includes knowledge bases, tables, real-time collaboration, and enterprise governance. Free tier available. SOC2 compliant. Self-hostable.',
+              text: 'Sim is the open-source AI workspace trusted by over 100,000 builders for creating, deploying, and managing AI agents. Build agents visually with the workflow builder, conversationally through Chat, or programmatically with the API. Sim connects to 1,000+ integrations and all major LLMs (OpenAI, Anthropic, Google, xAI, Mistral), and includes knowledge bases, tables, real-time collaboration, and enterprise governance. Free tier available. SOC2 compliant. Self-hostable.',
             },
           },
           {
@@ -223,7 +223,7 @@ export default function StructuredData() {
             name: 'Do I need coding skills to use Sim?',
             acceptedAnswer: {
               '@type': 'Answer',
-              text: 'No coding skills are required. Sim provides multiple ways to build agents: a visual workflow builder for drag-and-drop creation, Mothership for building in natural language, and templates for common use cases. Developers can also use custom functions, the API, and the CLI/SDK for advanced use cases.',
+              text: 'No coding skills are required. Sim provides multiple ways to build agents: a visual workflow builder for drag-and-drop creation, Chat for building in natural language, and templates for common use cases. Developers can also use custom functions, the API, and the CLI/SDK for advanced use cases.',
             },
           },
           {

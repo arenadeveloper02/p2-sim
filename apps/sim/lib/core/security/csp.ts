@@ -1,5 +1,5 @@
 import { env, getEnv } from '../config/env'
-import { isDev, isHosted, isReactGrabEnabled } from '../config/feature-flags'
+import { isDev, isHosted, isReactGrabEnabled } from '../config/env-flags'
 
 /**
  * Arena hub (dev/test/sandbox/prod) and Sim agent hosts on thearena.ai for `frame-ancestors`, `connect-src`, and `frame-src`.

@@ -150,7 +150,7 @@ export const allNavigationItems: NavigationItem[] = [
   },
   // {
   //   id: 'copilot',
-  //   label: 'Copilot keys',
+  //   label: 'Chat keys',
   //   icon: HexSimple,
   //   section: 'system',
   //   requiresHosted: true,

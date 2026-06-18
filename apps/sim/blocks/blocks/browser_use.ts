@@ -216,6 +216,7 @@ export const BrowserUseBlock: BlockConfig<BrowserUseResponse> = {
 
 export const BrowserUseBlockMeta = {
   tags: ['web-scraping', 'automation', 'agentic'],
+  url: 'https://browser-use.com',
   templates: [
     {
       icon: BrowserUseIcon,
