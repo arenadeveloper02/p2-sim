@@ -65,4 +65,3 @@ until wget -q --spider http://127.0.0.1:3000/api/health; do sleep 2; done
 until wget -q --spider http://127.0.0.1:3002/health; do sleep 2; done
 
 cd ~
-echo "Deploy complete: $BRANCH"
