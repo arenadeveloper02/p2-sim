@@ -1,0 +1,5 @@
+# RDS-backed deploy: migrations are managed on RDS separately, not via local compose.
+services:
+  migrations:
+    profiles:
+      - manual-migrate
