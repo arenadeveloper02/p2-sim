@@ -256,7 +256,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
         }
       },
       params: (params) => {
-        const { oauthCredential, values, spreadsheetId, ...rest } = params
+        const { oauthCredential, values, spreadsheetId, range, ...rest } = params
 
         // Handle values consistently for write / update / append:
         // - If it's already an array/object (e.g. passed from another block), use as-is
@@ -284,9 +284,14 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           throw new Error('Spreadsheet ID is required.')
         }
 
+        const resolvedRange = resolveGoogleSheetsV2RangeParams({ range })
+
         return {
           ...rest,
           spreadsheetId: effectiveSpreadsheetId,
+          range,
+          sheetName: resolvedRange.sheetName,
+          cellRange: resolvedRange.cellRange,
           values: parsedValues,
           oauthCredential,
         }
