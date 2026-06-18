@@ -61,10 +61,17 @@ export async function getWorkspaceOwnerId(workspaceId: string): Promise<string |
 
 /**
  * Resolves the execution actor for scheduled workflow runs.
- * Schedules use the workspace owner so OAuth credentials align with the member
- * who typically connects integrations on that workspace.
+ * Prefers the workflow owner (who typically connects block credentials), then
+ * falls back to the workspace owner when the workflow record has no user.
  */
-export async function getScheduleExecutionActorUserId(workspaceId: string): Promise<string | null> {
+export async function getScheduleExecutionActorUserId(
+  workspaceId: string,
+  workflowUserId?: string | null
+): Promise<string | null> {
+  if (workflowUserId) {
+    return workflowUserId
+  }
+
   return getWorkspaceOwnerId(workspaceId)
 }
 

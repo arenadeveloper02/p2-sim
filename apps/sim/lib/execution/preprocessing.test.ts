@@ -167,12 +167,19 @@ describe('preprocessExecution schedule actor resolution', () => {
     requestId: 'request-1',
     checkDeployment: false,
     checkRateLimit: false,
-    workflowRecord: { id: 'workflow-1', workspaceId: 'workspace-1', isDeployed: true } as any,
+    workflowRecord: {
+      id: 'workflow-1',
+      userId: 'creator-1',
+      workspaceId: 'workspace-1',
+      isDeployed: true,
+    } as any,
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetScheduleExecutionActorUserId.mockResolvedValue('workspace-owner-1')
+    mockGetScheduleExecutionActorUserId.mockImplementation(
+      async (_workspaceId: string, workflowUserId?: string | null) => workflowUserId ?? null
+    )
     mockGetActivelyBannedUserIds.mockResolvedValue([])
     vi.mocked(getHighestPrioritySubscription).mockResolvedValue({ plan: 'free' } as any)
     vi.mocked(checkServerSideUsageLimits).mockResolvedValue({
@@ -182,12 +189,12 @@ describe('preprocessExecution schedule actor resolution', () => {
     } as any)
   })
 
-  it('uses the workspace owner for scheduled runs instead of the billed account', async () => {
+  it('uses the workflow owner for scheduled runs instead of the billed account', async () => {
     const result = await preprocessExecution(scheduleOptions)
 
     expect(result.success).toBe(true)
-    expect(result.actorUserId).toBe('workspace-owner-1')
-    expect(mockGetScheduleExecutionActorUserId).toHaveBeenCalledWith('workspace-1')
+    expect(result.actorUserId).toBe('creator-1')
+    expect(mockGetScheduleExecutionActorUserId).toHaveBeenCalledWith('workspace-1', 'creator-1')
     expect(mockGetWorkspaceBilledAccountUserId).not.toHaveBeenCalled()
   })
 })

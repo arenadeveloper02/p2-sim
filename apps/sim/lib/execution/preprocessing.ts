@@ -269,9 +269,9 @@ export async function preprocessExecution(
 
     if (!actorUserId && workspaceId) {
       if (triggerType === 'schedule') {
-        actorUserId = await getScheduleExecutionActorUserId(workspaceId)
+        actorUserId = await getScheduleExecutionActorUserId(workspaceId, workflowRecord.userId)
         if (actorUserId) {
-          logger.info(`[${requestId}] Using workspace owner for schedule actor: ${actorUserId}`)
+          logger.info(`[${requestId}] Using workflow owner for schedule actor: ${actorUserId}`)
         }
       } else {
         actorUserId = await getWorkspaceBilledAccountUserId(workspaceId)
