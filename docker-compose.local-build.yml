@@ -1,0 +1,20 @@
+services:
+  simstudio:
+    image: p2-sim-simstudio
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+
+  realtime:
+    image: p2-sim-realtime
+    build:
+      context: .
+      dockerfile: docker/realtime.Dockerfile
+
+  migrations:
+    image: p2-sim-migrations
+    build:
+      context: .
+      dockerfile: docker/db.Dockerfile
