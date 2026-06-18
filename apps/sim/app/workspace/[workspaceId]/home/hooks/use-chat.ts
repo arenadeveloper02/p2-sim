@@ -3,6 +3,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId, generateShortId } from '@sim/utils/id'
+import { isRecordLike } from '@sim/utils/object'
 import { useQueryClient } from '@tanstack/react-query'
 import { usePathname, useRouter } from 'next/navigation'
 import { requestJson } from '@/lib/api/client/request'
@@ -60,7 +61,6 @@ import {
   createStreamLoopContext,
   dispatchStreamEvent,
   finalizeResidualToolCalls,
-  isRecord,
 } from '@/app/workspace/[workspaceId]/home/hooks/stream'
 import {
   fetchMothershipChatHistory,
@@ -256,7 +256,7 @@ async function sleepWithAbort(ms: number, signal?: AbortSignal) {
 }
 
 function isFileAttachmentForApi(value: unknown): value is FileAttachmentForApi {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   return (
     typeof value.id === 'string' &&
     typeof value.key === 'string' &&
@@ -269,7 +269,7 @@ function isFileAttachmentForApi(value: unknown): value is FileAttachmentForApi {
 }
 
 function isChatContext(value: unknown): value is ChatContext {
-  if (!isRecord(value) || typeof value.kind !== 'string' || typeof value.label !== 'string') {
+  if (!isRecordLike(value) || typeof value.kind !== 'string' || typeof value.label !== 'string') {
     return false
   }
 
@@ -295,6 +295,8 @@ function isChatContext(value: unknown): value is ChatContext {
       return typeof value.folderId === 'string'
     case 'filefolder':
       return typeof value.fileFolderId === 'string'
+    case 'scheduledtask':
+      return typeof value.scheduleId === 'string'
     case 'docs':
       return true
     case 'slash_command':
@@ -487,14 +489,14 @@ function isStreamSchemaValidationError(error: unknown): error is StreamSchemaVal
 }
 
 function parseStreamBatchResponse(value: unknown): StreamBatchResponse {
-  if (!isRecord(value)) {
+  if (!isRecordLike(value)) {
     throw new Error('Invalid stream batch response')
   }
 
   const rawEvents = Array.isArray(value.events) ? value.events : []
   const events: StreamBatchEvent[] = []
   for (const [index, entry] of rawEvents.entries()) {
-    if (!isRecord(entry)) {
+    if (!isRecordLike(entry)) {
       throw createBatchSchemaValidationError(`Reconnect batch event ${index + 1} is not an object.`)
     }
     if (
@@ -3870,21 +3872,21 @@ export function useChat(
               }),
             })
             const payload: unknown = await res.json().catch(() => null)
-            if (isRecord(payload) && payload.aborted === true) {
+            if (isRecordLike(payload) && payload.aborted === true) {
               abortSucceeded = true
             }
             if (!res.ok) {
-              if (isRecord(payload) && payload.settled === false) {
+              if (isRecordLike(payload) && payload.settled === false) {
                 return false
               }
               throw new Error(
-                isRecord(payload) && typeof payload.error === 'string'
+                isRecordLike(payload) && typeof payload.error === 'string'
                   ? payload.error
                   : 'Failed to abort previous response'
               )
             }
             abortSucceeded = true
-            return isRecord(payload) && payload.settled === true
+            return isRecordLike(payload) && payload.settled === true
           }
           const abortPromise = sid
             ? postAbortRequest(resolvedChatId).then((settled) => {

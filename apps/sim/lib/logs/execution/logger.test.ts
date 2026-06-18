@@ -1,4 +1,4 @@
-import { featureFlagsMock } from '@sim/testing'
+import { envFlagsMock } from '@sim/testing'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { recordUsage } from '@/lib/billing/core/usage-log'
 import { ExecutionLogger } from '@/lib/logs/execution/logger'
@@ -50,13 +50,17 @@ vi.mock('@/lib/billing/core/usage', () => ({
 vi.mock('@/lib/billing/core/usage-log', () => ({
   recordUsage: vi.fn(() => Promise.resolve()),
   stableEventKey: vi.fn((parts: Record<string, unknown>) => JSON.stringify(parts)),
+  deriveBillingContext: vi.fn((userId: string) => ({
+    billingEntity: { type: 'user', id: userId },
+    billingPeriod: { start: new Date('2024-01-01'), end: new Date('2024-02-01') },
+  })),
 }))
 
 vi.mock('@/lib/billing/threshold-billing', () => ({
   checkAndBillOverageThreshold: vi.fn(() => Promise.resolve()),
 }))
 
-vi.mock('@/lib/core/config/feature-flags', () => featureFlagsMock)
+vi.mock('@/lib/core/config/env-flags', () => envFlagsMock)
 
 // Mock security module
 vi.mock('@/lib/core/security/redaction', () => ({

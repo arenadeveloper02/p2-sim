@@ -6,7 +6,7 @@ import { generateId } from '@sim/utils/id'
 import { checkSelfHostedMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { createRunSegment, updateRunStatus } from '@/lib/copilot/async-runs/repository'
-import { SIM_AGENT_VERSION } from '@/lib/copilot/constants'
+import { SIM_AGENT_VERSION, TOOL_WATCHDOG_RESUME_GRACE_MS } from '@/lib/copilot/constants'
 import {
   MothershipStreamV1EventType,
   MothershipStreamV1RunKind,
@@ -25,7 +25,11 @@ import {
   setTerminalToolCallState,
 } from '@/lib/copilot/request/tool-call-state'
 import { handleBillingLimitResponse } from '@/lib/copilot/request/tools/billing'
-import { executeToolAndReport } from '@/lib/copilot/request/tools/executor'
+import {
+  executeToolAndReport,
+  forceFailHungToolCall,
+  toolWatchdogTimeoutMs,
+} from '@/lib/copilot/request/tools/executor'
 import type { TraceCollector } from '@/lib/copilot/request/trace'
 import { RequestTraceV1SpanStatus } from '@/lib/copilot/request/trace'
 import type {
@@ -38,7 +42,7 @@ import type {
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
-import { isBillingEnabled, isHosted } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 
 const logger = createLogger('CopilotLifecycle')
@@ -442,15 +446,48 @@ async function runCheckpointLoop(
     if (!continuation) break
 
     if (context.pendingToolPromises.size > 0) {
+      // Bounded by the slowest pending tool's watchdog plus grace. The
+      // per-tool watchdog already guarantees each promise settles; this gate
+      // is the structural backstop so that no tool failure mode — known or
+      // unknown — can park the checkpoint loop (and the chat's pending-stream
+      // lock) forever.
+      const waitBudgetMs =
+        Array.from(context.pendingToolPromises.keys()).reduce(
+          (max, toolCallId) =>
+            Math.max(max, toolWatchdogTimeoutMs(context.toolCalls.get(toolCallId)?.name)),
+          0
+        ) + TOOL_WATCHDOG_RESUME_GRACE_MS
       const waitSpan = context.trace.startSpan('Wait for Tools', 'lifecycle.wait_tools', {
         checkpointId: continuation.checkpointId,
         pendingCount: context.pendingToolPromises.size,
+        waitBudgetMs,
       })
       logger.info('Waiting for in-flight tool executions before resume', {
         checkpointId: continuation.checkpointId,
         pendingCount: context.pendingToolPromises.size,
+        waitBudgetMs,
       })
-      await Promise.allSettled(context.pendingToolPromises.values())
+      const settledInTime = await Promise.race([
+        Promise.allSettled(context.pendingToolPromises.values()).then(() => true),
+        sleep(waitBudgetMs).then(() => false),
+      ])
+      if (!settledInTime) {
+        const hungToolCallIds = Array.from(context.pendingToolPromises.keys())
+        logger.error('Pending tool executions exceeded the resume wait budget; force-failing', {
+          checkpointId: continuation.checkpointId,
+          waitBudgetMs,
+          hungToolCallIds,
+        })
+        for (const toolCallId of hungToolCallIds) {
+          await forceFailHungToolCall(
+            toolCallId,
+            context,
+            'Tool execution hung on the Sim executor and was abandoned so the conversation could continue.'
+          )
+          context.pendingToolPromises.delete(toolCallId)
+        }
+      }
+      waitSpan.attributes = { ...waitSpan.attributes, settledInTime }
       context.trace.endSpan(waitSpan)
     }
 
