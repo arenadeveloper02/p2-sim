@@ -1,37 +1,47 @@
 services:
   simstudio:
-    image: ghcr.io/simstudioai/simstudio:latest
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
     restart: unless-stopped
     ports:
       - '3000:3000'
     deploy:
       resources:
         limits:
-          memory: 8G
+          memory: 12G
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
+      - DATABASE_URL=postgresql://p2agent:37zJ905LhNrI@prod-agents.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-      # TRUSTED_ORIGINS: comma-separated public origins to trust for auth in
-      # addition to NEXT_PUBLIC_APP_URL. Use when serving from multiple domains
-      # (apex + www, alias hostnames, reverse-proxy IPs). Empty by default.
-      - TRUSTED_ORIGINS=${TRUSTED_ORIGINS:-}
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your_encryption_key_here}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-placeholder}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-placeholder}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-placeholder}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-placeholder}
+      - RESEND_API_KEY=${RESEND_API_KEY:-placeholder}
+      - OLLAMA_URL=${OLLAMA_URL:-http://localhost:11434}
+      - SOCKET_SERVER_URL=${SOCKET_SERVER_URL:-http://realtime:3002}
+      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://realtime:3002}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_KEY_1=${OPENAI_API_KEY_1:-}
+      - OPENAI_API_KEY_2=${OPENAI_API_KEY_2:-}
+      - OPENAI_API_KEY_3=${OPENAI_API_KEY_3:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_API_KEY_1=${ANTHROPIC_API_KEY_1:-}
+      - ANTHROPIC_API_KEY_2=${ANTHROPIC_API_KEY_2:-}
+      - ANTHROPIC_API_KEY_3=${ANTHROPIC_API_KEY_3:-}
+      - XAI_API_KEY=${XAI_API_KEY:-}
+      - XAI_API_KEY_1=${XAI_API_KEY_1:-}
+      - XAI_API_KEY_2=${XAI_API_KEY_2:-}
+      - XAI_API_KEY_3=${XAI_API_KEY_3:-}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - REDIS_URL=${REDIS_URL:-}
       - COPILOT_API_KEY=${COPILOT_API_KEY}
       - SIM_AGENT_API_URL=${SIM_AGENT_API_URL}
-      - OLLAMA_URL=${OLLAMA_URL:-http://localhost:11434}
-      - SOCKET_SERVER_URL=${SOCKET_SERVER_URL:-http://realtime:3002}
-      # NEXT_PUBLIC_SOCKET_URL is read by the browser. Leaving it unset lets the
-      # client default to the page's own origin (assumes the reverse proxy routes
-      # /socket.io). Set it explicitly only when the realtime service is on a
-      # different host:port from the app (e.g. wss://socket.example.com).
-      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-}
-      - ADMISSION_GATE_MAX_INFLIGHT=${ADMISSION_GATE_MAX_INFLIGHT:-500}
     depends_on:
       db:
         condition: service_healthy
@@ -40,34 +50,35 @@ services:
       realtime:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3000']
+      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3000/api/health']
       interval: 90s
       timeout: 5s
       retries: 3
       start_period: 10s
 
   realtime:
-    image: ghcr.io/simstudioai/realtime:latest
+    build:
+      context: .
+      dockerfile: docker/realtime.Dockerfile
     restart: unless-stopped
     ports:
       - '3002:3002'
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 6G
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
+      - DATABASE_URL=postgresql://p2agent:37zJ905LhNrI@prod-agents.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - REDIS_URL=${REDIS_URL:-}
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3002/health']
+      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3002/health']
       interval: 90s
       timeout: 5s
       retries: 3
@@ -75,7 +86,6 @@ services:
 
   migrations:
     image: ghcr.io/simstudioai/migrations:latest
-    working_dir: /app/packages/db
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
     depends_on:
