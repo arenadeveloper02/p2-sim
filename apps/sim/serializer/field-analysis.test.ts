@@ -213,4 +213,44 @@ describe('extractBlockParams', () => {
     expect(params.credential).toBeUndefined()
     expect(params.manualCredential).toBeUndefined()
   })
+
+  it('falls back to advanced canonical value when basic mode is forced but empty', () => {
+    svcConfig.value = config([
+      {
+        id: 'spreadsheetId',
+        title: 'Spreadsheet',
+        type: 'file-selector',
+        canonicalParamId: 'spreadsheetId',
+        mode: 'basic',
+      },
+      {
+        id: 'manualSpreadsheetId',
+        title: 'Spreadsheet ID',
+        type: 'short-input',
+        canonicalParamId: 'spreadsheetId',
+        mode: 'advanced',
+      },
+      {
+        id: 'range',
+        title: 'Range',
+        type: 'short-input',
+      },
+    ])
+
+    const params = extractBlockParams(
+      block({
+        type: 'svc',
+        data: { canonicalModes: { spreadsheetId: 'basic' } },
+        subBlocks: {
+          spreadsheetId: { value: '' },
+          manualSpreadsheetId: { value: 'spreadsheet-123' },
+          range: { value: 'Sheet1!A1:B2' },
+        },
+      })
+    )
+
+    expect(params.spreadsheetId).toBe('spreadsheet-123')
+    expect(params.manualSpreadsheetId).toBeUndefined()
+    expect(params.range).toBe('Sheet1!A1:B2')
+  })
 })
