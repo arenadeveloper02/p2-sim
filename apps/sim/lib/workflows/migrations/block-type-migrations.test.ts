@@ -2,8 +2,8 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import type { BlockState } from '@/stores/workflows/workflow/types'
 import { migrateBlockTypes } from '@/lib/workflows/migrations/block-type-migrations'
+import type { BlockState } from '@/stores/workflows/workflow/types'
 
 function makeBlock(overrides: Partial<BlockState> & { type: string }): BlockState {
   return {

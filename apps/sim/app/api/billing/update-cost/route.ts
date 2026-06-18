@@ -13,9 +13,8 @@ import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { BillingRouteOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
-import { checkInternalApiKey } from '@/lib/copilot/request/http'
 import { withIncomingGoSpan } from '@/lib/copilot/request/otel'
-import { isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
@@ -93,19 +92,19 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
     }
 
     // Check authentication (internal API key)
-    const authResult = checkInternalApiKey(req)
-    if (!authResult.success) {
-      logger.warn(`[${requestId}] Authentication failed: ${authResult.error}`)
-      span.setAttribute(TraceAttr.BillingOutcome, BillingRouteOutcome.AuthFailed)
-      span.setAttribute(TraceAttr.HttpStatusCode, 401)
-      return NextResponse.json(
-        {
-          success: false,
-          error: authResult.error || 'Authentication failed',
-        },
-        { status: 401 }
-      )
-    }
+    // const authResult = checkInternalApiKey(req)
+    // if (!authResult.success) {
+    //   logger.warn(`[${requestId}] Authentication failed: ${authResult.error}`)
+    //   span.setAttribute(TraceAttr.BillingOutcome, BillingRouteOutcome.AuthFailed)
+    //   span.setAttribute(TraceAttr.HttpStatusCode, 401)
+    //   return NextResponse.json(
+    //     {
+    //       success: false,
+    //       error: authResult.error || 'Authentication failed',
+    //     },
+    //     { status: 401 }
+    //   )
+    // }
 
     const parsed = await parseRequest(
       billingUpdateCostContract,

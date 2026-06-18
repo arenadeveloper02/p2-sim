@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { permissions, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { normalizeEmail } from '@sim/utils/string'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { batchWorkspaceInvitationsContract } from '@/lib/api/contracts/invitations'
@@ -9,7 +10,6 @@ import { getSession } from '@/lib/auth'
 import { getUserOrganization } from '@/lib/billing/organizations/membership'
 import { validateSeatAvailability } from '@/lib/billing/validation/seat-management'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { normalizeEmail } from '@/lib/invitations/core'
 import {
   createWorkspaceInvitation,
   prepareWorkspaceInvitationContext,

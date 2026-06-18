@@ -364,7 +364,8 @@ export async function POST(request: NextRequest) {
     const outputMetadata = getOutputMetadata(firstOutput)
     const provider =
       getStringParam(firstOutput, 'provider') || getStringParam(outputMetadata, 'provider') || ''
-    const model = getStringParam(firstOutput, 'model') || getStringParam(outputMetadata, 'model') || ''
+    const model =
+      getStringParam(firstOutput, 'model') || getStringParam(outputMetadata, 'model') || ''
     const falaiCostDollars = successfulResults.reduce((total, result) => {
       if (!isRecord(result.output)) return total
       const cost = result.output.__falaiCostDollars

@@ -45,18 +45,24 @@ vi.mock('@/app/api/table/utils', async () => {
 })
 
 /**
- * The route imports `importAppendRows` / `importReplaceRows` from the barrel,
- * which forwards them from `./service`. These functions own the import
- * transaction (column adds + row writes); mocking the service module replaces
- * them without touching the other real helpers (`coerceRowsForTable`,
- * `createCsvParser`, etc.) exported through the barrel.
+ * The route imports `importAppendRows` / `importReplaceRows` from
+ * `@/lib/table/import-data`. These functions own the import transaction (column
+ * adds + row writes); mocking that module replaces them without touching the
+ * other real helpers (`coerceRowsForTable`, `createCsvParser`, etc.) exported
+ * through the barrel.
  */
-vi.mock('@/lib/table/service', () => ({
+vi.mock('@/lib/table/import-data', () => ({
   importAppendRows: mockImportAppendRows,
   importReplaceRows: mockImportReplaceRows,
+}))
+
+vi.mock('@/lib/table/jobs/service', () => ({
+  markTableJobRunning: mockMarkTableImporting,
+  releaseJobClaim: mockReleaseImportClaim,
+}))
+
+vi.mock('@/lib/table/rows/service', () => ({
   dispatchAfterBatchInsert: mockDispatchAfterBatchInsert,
-  markTableImporting: mockMarkTableImporting,
-  releaseImportClaim: mockReleaseImportClaim,
 }))
 
 import { POST } from '@/app/api/table/[tableId]/import/route'
@@ -184,7 +190,7 @@ describe('POST /api/table/[tableId]/import', () => {
   it('releases the import claim after a successful write', async () => {
     const response = await callPost(createFormData(createCsvFile('name,age\nAlice,30')))
     expect(response.status).toBe(200)
-    expect(mockMarkTableImporting).toHaveBeenCalledWith('tbl_1', 'deadbeefcafef00d')
+    expect(mockMarkTableImporting).toHaveBeenCalledWith('tbl_1', 'deadbeefcafef00d', 'import')
     expect(mockReleaseImportClaim).toHaveBeenCalledWith('tbl_1', 'deadbeefcafef00d')
   })
 

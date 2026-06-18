@@ -351,11 +351,10 @@ export const QUOTE_PROPERTIES_OUTPUT = {
  * @see https://developers.hubspot.com/docs/api/crm/appointments
  */
 export const APPOINTMENT_PROPERTIES_OUTPUT = {
-  hs_appointment_type: { type: 'string', description: 'Appointment type' },
-  hs_meeting_title: { type: 'string', description: 'Meeting title' },
-  hs_meeting_start_time: { type: 'string', description: 'Start time (ISO 8601)' },
-  hs_meeting_end_time: { type: 'string', description: 'End time (ISO 8601)' },
-  hs_meeting_location: { type: 'string', description: 'Meeting location' },
+  hs_appointment_name: { type: 'string', description: 'Appointment title/name' },
+  hs_appointment_start: { type: 'string', description: 'Start time (ISO 8601)' },
+  hs_appointment_end: { type: 'string', description: 'End time (ISO 8601)' },
+  hs_appointment_status: { type: 'string', description: 'Appointment status (e.g., SCHEDULED)' },
   hubspot_owner_id: { type: 'string', description: 'HubSpot owner ID' },
   hs_object_id: { type: 'string', description: 'HubSpot object ID (same as record ID)' },
   hs_createdate: { type: 'string', description: 'Creation date (ISO 8601)' },
@@ -680,48 +679,217 @@ export const LISTS_ARRAY_OUTPUT: OutputProperty = {
 }
 
 /**
- * User properties returned by HubSpot Settings API v3.
- * Note: firstName and lastName are NOT returned by the Settings API.
- * Use the Owners API if you need user names.
- * @see https://developers.hubspot.com/docs/reference/api/settings/users/user-provisioning
+ * Common note properties returned by HubSpot API.
+ * @see https://developers.hubspot.com/docs/api-reference/crm-notes-v3
  */
-export const USER_OUTPUT_PROPERTIES = {
-  id: { type: 'string', description: 'User ID' },
-  email: { type: 'string', description: 'User email address' },
-  roleId: { type: 'string', description: 'User role ID', optional: true },
-  primaryTeamId: { type: 'string', description: 'Primary team ID', optional: true },
-  secondaryTeamIds: {
-    type: 'array',
-    description: 'Secondary team IDs',
-    optional: true,
-    items: { type: 'string', description: 'Team ID' },
+export const NOTE_PROPERTIES_OUTPUT = {
+  hs_note_body: { type: 'string', description: 'Note text/body (supports rich text/HTML)' },
+  hs_timestamp: { type: 'string', description: 'Note activity time (ISO 8601)' },
+  hubspot_owner_id: { type: 'string', description: 'HubSpot owner ID' },
+  hs_attachment_ids: {
+    type: 'string',
+    description: 'Semicolon-separated IDs of files attached to the note',
   },
-  superAdmin: { type: 'boolean', description: 'Whether user is a super admin', optional: true },
+  hs_object_id: { type: 'string', description: 'HubSpot object ID (same as record ID)' },
+  hs_createdate: { type: 'string', description: 'Note creation date (ISO 8601)' },
+  hs_lastmodifieddate: { type: 'string', description: 'Last modified date (ISO 8601)' },
 } as const satisfies Record<string, OutputProperty>
 
 /**
- * Users array output definition for list endpoints.
+ * Common email engagement properties returned by HubSpot API.
+ * @see https://developers.hubspot.com/docs/api-reference/crm-emails-v3
  */
-export const USERS_ARRAY_OUTPUT: OutputProperty = {
+export const EMAIL_PROPERTIES_OUTPUT = {
+  hs_timestamp: { type: 'string', description: 'Email activity time (ISO 8601)' },
+  hs_email_direction: {
+    type: 'string',
+    description: 'Direction (EMAIL = outgoing, INCOMING_EMAIL, FORWARDED_EMAIL)',
+  },
+  hs_email_status: {
+    type: 'string',
+    description: 'Send status (SENT, SENDING, SCHEDULED, FAILED, BOUNCED)',
+  },
+  hs_email_subject: { type: 'string', description: 'Email subject line' },
+  hs_email_text: { type: 'string', description: 'Plain-text email body' },
+  hs_email_html: { type: 'string', description: 'HTML email body' },
+  hs_email_headers: { type: 'string', description: 'JSON-encoded from/to/cc/bcc headers' },
+  hs_email_from_email: { type: 'string', description: 'Sender email address' },
+  hs_email_to_email: { type: 'string', description: 'Recipient email address(es)' },
+  hubspot_owner_id: { type: 'string', description: 'HubSpot owner ID' },
+  hs_object_id: { type: 'string', description: 'HubSpot object ID (same as record ID)' },
+  hs_createdate: { type: 'string', description: 'Email creation date (ISO 8601)' },
+  hs_lastmodifieddate: { type: 'string', description: 'Last modified date (ISO 8601)' },
+} as const satisfies Record<string, OutputProperty>
+
+/**
+ * Note object output definition with nested properties.
+ */
+export const NOTE_OBJECT_OUTPUT: OutputProperty = {
+  type: 'object',
+  description: 'HubSpot note record',
+  properties: {
+    ...CRM_RECORD_BASE_OUTPUT_PROPERTIES,
+    properties: {
+      type: 'object',
+      description: 'Note properties',
+      properties: NOTE_PROPERTIES_OUTPUT,
+    },
+    associations: {
+      type: 'object',
+      description: 'Associated records (contacts, companies, deals, etc.)',
+      optional: true,
+    },
+  },
+}
+
+/**
+ * Notes array output definition for list/search endpoints.
+ */
+export const NOTES_ARRAY_OUTPUT: OutputProperty = {
   type: 'array',
-  description: 'Array of HubSpot user objects',
+  description: 'Array of HubSpot note records',
   items: {
     type: 'object',
-    properties: USER_OUTPUT_PROPERTIES,
+    properties: {
+      ...CRM_RECORD_BASE_OUTPUT_PROPERTIES,
+      properties: {
+        type: 'object',
+        description: 'Note properties',
+        properties: NOTE_PROPERTIES_OUTPUT,
+      },
+      associations: { type: 'object', description: 'Associated records', optional: true },
+    },
+  },
+}
+
+/**
+ * Email object output definition with nested properties.
+ */
+export const EMAIL_OBJECT_OUTPUT: OutputProperty = {
+  type: 'object',
+  description: 'HubSpot email engagement record',
+  properties: {
+    ...CRM_RECORD_BASE_OUTPUT_PROPERTIES,
+    properties: {
+      type: 'object',
+      description: 'Email properties',
+      properties: EMAIL_PROPERTIES_OUTPUT,
+    },
+    associations: {
+      type: 'object',
+      description: 'Associated records (contacts, companies, deals, etc.)',
+      optional: true,
+    },
+  },
+}
+
+/**
+ * Emails array output definition for list/search endpoints.
+ */
+export const EMAILS_ARRAY_OUTPUT: OutputProperty = {
+  type: 'array',
+  description: 'Array of HubSpot email engagement records',
+  items: {
+    type: 'object',
+    properties: {
+      ...CRM_RECORD_BASE_OUTPUT_PROPERTIES,
+      properties: {
+        type: 'object',
+        description: 'Email properties',
+        properties: EMAIL_PROPERTIES_OUTPUT,
+      },
+      associations: { type: 'object', description: 'Associated records', optional: true },
+    },
+  },
+}
+
+/**
+ * Property option output (picklist/enumeration value).
+ * @see https://developers.hubspot.com/docs/api-reference/crm-properties-v3
+ */
+export const PROPERTY_OPTION_OUTPUT_PROPERTIES = {
+  label: { type: 'string', description: 'Human-readable option label' },
+  value: { type: 'string', description: 'Internal value used when setting the property' },
+  displayOrder: { type: 'number', description: 'Display order (-1 sorts last)', optional: true },
+  hidden: { type: 'boolean', description: 'Whether the option is hidden in the HubSpot UI' },
+  description: { type: 'string', description: 'Option description', optional: true },
+} as const satisfies Record<string, OutputProperty>
+
+/**
+ * Property definitions array output for the properties endpoint.
+ */
+export const PROPERTIES_ARRAY_OUTPUT: OutputProperty = {
+  type: 'array',
+  description: 'Array of HubSpot property definitions',
+  items: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'Internal property name' },
+      label: { type: 'string', description: 'Human-readable label' },
+      type: {
+        type: 'string',
+        description: 'Property data type (string, number, enumeration, bool, datetime, etc.)',
+      },
+      fieldType: { type: 'string', description: 'Field type controlling HubSpot UI rendering' },
+      description: { type: 'string', description: 'Property help text' },
+      groupName: { type: 'string', description: 'Property group the property belongs to' },
+      options: {
+        type: 'array',
+        description: 'Enumeration/picklist options (empty for non-enumerated properties)',
+        items: { type: 'object', properties: PROPERTY_OPTION_OUTPUT_PROPERTIES },
+      },
+      displayOrder: { type: 'number', description: 'Display order', optional: true },
+      calculated: {
+        type: 'boolean',
+        description: 'Whether the property is calculated by HubSpot',
+        optional: true,
+      },
+      hidden: { type: 'boolean', description: 'Whether the property is hidden', optional: true },
+      hubspotDefined: {
+        type: 'boolean',
+        description: 'Whether the property is a HubSpot default property',
+        optional: true,
+      },
+      archived: {
+        type: 'boolean',
+        description: 'Whether the property is archived',
+        optional: true,
+      },
+    },
+  },
+}
+
+/**
+ * Associations array output for the v4 associations list endpoint.
+ */
+export const ASSOCIATIONS_ARRAY_OUTPUT: OutputProperty = {
+  type: 'array',
+  description: 'Array of associated records',
+  items: {
+    type: 'object',
+    properties: {
+      toObjectId: { type: 'string', description: 'ID of the associated (target) record' },
+      associationTypes: {
+        type: 'array',
+        description: 'Association types linking the two records',
+        items: {
+          type: 'object',
+          properties: {
+            category: {
+              type: 'string',
+              description:
+                'Association category (HUBSPOT_DEFINED, USER_DEFINED, INTEGRATOR_DEFINED)',
+            },
+            typeId: { type: 'number', description: 'Association type ID' },
+            label: { type: 'string', description: 'Association label', optional: true },
+          },
+        },
+      },
+    },
   },
 }
 
 // Common HubSpot types
-interface HubSpotUser {
-  id: string
-  email: string
-  firstName?: string
-  lastName?: string
-  roleId?: string
-  primaryTeamId?: string
-  superAdmin?: boolean
-}
-
 interface HubSpotCrmObject {
   id: string
   properties: Record<string, any>
@@ -744,7 +912,7 @@ interface HubSpotPaging {
 // Users
 export interface HubSpotGetUsersResponse extends ToolResponse {
   output: {
-    users: HubSpotUser[]
+    users: HubSpotCrmObject[]
     paging: HubSpotPaging | null
     totalItems?: number
     success: boolean
@@ -755,6 +923,7 @@ export interface HubSpotGetUsersParams {
   accessToken: string
   limit?: string
   after?: string
+  properties?: string
 }
 
 // List Contacts
@@ -1517,51 +1686,6 @@ export interface HubSpotGetEmailStatisticsHistogramResponse extends ToolResponse
   }
 }
 
-export interface HubSpotGetEmailParams {
-  accessToken: string
-  emailId: string
-}
-
-export interface HubSpotGetEmailResponse extends ToolResponse {
-  output: {
-    email: Record<string, any> // The email object from HubSpot API
-    metadata: {
-      operation: 'get_email'
-      emailId: string
-    }
-    success: boolean
-  }
-}
-
-export interface HubSpotListEmailsParams {
-  accessToken: string
-  archived?: boolean
-  createdAfter?: string
-  createdBefore?: string
-  workflowNames?: boolean
-  includeStats?: boolean
-  isPublished?: boolean
-  limit?: number
-  marketingCampaignNames?: boolean
-}
-
-export interface HubSpotListEmailsResponse extends ToolResponse {
-  output: {
-    emails: Record<string, any>[] // Array of email objects from HubSpot API
-    paging?: Record<string, any> // Pagination information if available
-    metadata: {
-      operation: 'list_emails'
-      totalReturned: number
-      archived?: boolean
-      createdAfter?: string
-      createdBefore?: string
-      isPublished?: boolean
-      limit?: number
-    }
-    success: boolean
-  }
-}
-
 /** Generic CRM object from HubSpot (companies, contacts, carts, appointments, etc.). */
 // export interface HubSpotCrmObject {
 //   id: string
@@ -1594,6 +1718,35 @@ export interface HubSpotListObjectsResponse extends ToolResponse {
     success: boolean
   }
 }
+// Notes
+export type HubSpotNote = HubSpotCrmObject
+export type HubSpotCreateNoteParams = HubSpotCreateContactParams
+export type HubSpotCreateNoteResponse = ToolResponse & {
+  output: { note: HubSpotContact; noteId: string; success: boolean }
+}
+export type HubSpotGetNoteParams = Omit<HubSpotGetContactParams, 'contactId'> & { noteId: string }
+export type HubSpotGetNoteResponse = ToolResponse & {
+  output: { note: HubSpotContact; noteId: string; success: boolean }
+}
+export type HubSpotListNotesParams = HubSpotListContactsParams
+export type HubSpotListNotesResponse = ToolResponse & {
+  output: {
+    notes: HubSpotContact[]
+    paging?: HubSpotPaging
+    metadata: { totalReturned: number; hasMore: boolean }
+    success: boolean
+  }
+}
+export type HubSpotSearchNotesParams = HubSpotSearchContactsParams
+export interface HubSpotSearchNotesResponse extends ToolResponse {
+  output: {
+    notes: HubSpotContact[]
+    total: number
+    paging?: HubSpotPaging
+    metadata: { totalReturned: number; hasMore: boolean }
+    success: boolean
+  }
+}
 
 /** Get a single CRM object by type and ID (appointments, courses 0-410, deals 0-3, discounts, custom objects). */
 export interface HubSpotGetObjectParams {
@@ -1609,6 +1762,74 @@ export interface HubSpotGetObjectResponse extends ToolResponse {
   output: {
     object: HubSpotCrmObject
     objectId: string
+    success: boolean
+  }
+}
+// Emails
+export type HubSpotEmail = HubSpotCrmObject
+export type HubSpotCreateEmailParams = HubSpotCreateContactParams
+export type HubSpotCreateEmailResponse = ToolResponse & {
+  output: { email: HubSpotContact; emailId: string; success: boolean }
+}
+export type HubSpotGetEmailParams = Omit<HubSpotGetContactParams, 'contactId'> & { emailId: string }
+export type HubSpotGetEmailResponse = ToolResponse & {
+  output: { email: HubSpotContact; emailId: string; success: boolean }
+}
+export type HubSpotListEmailsParams = HubSpotListContactsParams
+export type HubSpotListEmailsResponse = ToolResponse & {
+  output: {
+    emails: HubSpotContact[]
+    paging?: HubSpotPaging
+    metadata: { totalReturned: number; hasMore: boolean }
+    success: boolean
+  }
+}
+export type HubSpotSearchEmailsParams = HubSpotSearchContactsParams
+export interface HubSpotSearchEmailsResponse extends ToolResponse {
+  output: {
+    emails: HubSpotContact[]
+    total: number
+    paging?: HubSpotPaging
+    metadata: { totalReturned: number; hasMore: boolean }
+    success: boolean
+  }
+}
+
+// Properties
+interface HubSpotPropertyOption {
+  label: string
+  value: string
+  displayOrder?: number
+  hidden: boolean
+  description?: string
+}
+
+interface HubSpotProperty {
+  name: string
+  label: string
+  type: string
+  fieldType: string
+  description: string
+  groupName: string
+  options: HubSpotPropertyOption[]
+  displayOrder?: number
+  calculated?: boolean
+  hidden?: boolean
+  hubspotDefined?: boolean
+  archived?: boolean
+}
+
+export interface HubSpotGetPropertiesParams {
+  accessToken: string
+  objectType: string
+  propertyName?: string
+  archived?: boolean
+}
+
+export interface HubSpotGetPropertiesResponse extends ToolResponse {
+  output: {
+    properties: HubSpotProperty[]
+    metadata: { totalReturned: number; objectType: string }
     success: boolean
   }
 }
@@ -1633,6 +1854,16 @@ export interface HubSpotListAssociationTypesResponse extends ToolResponse {
 }
 
 /** List associations for an object (v4 API). */
+// Associations (v4)
+interface HubSpotAssociatedObject {
+  toObjectId: string
+  associationTypes: Array<{
+    category: string
+    typeId: number
+    label?: string
+  }>
+}
+
 export interface HubSpotListAssociationsParams {
   accessToken: string
   objectType: string
@@ -1809,28 +2040,6 @@ export interface HubSpotGetPipelineResponse extends ToolResponse {
   }
 }
 
-/** Property definition (from /crm/v3/properties/ API). */
-export interface HubSpotProperty {
-  name: string
-  label?: string
-  type?: string
-  fieldType?: string
-  groupName?: string
-  description?: string
-  options?: Array<{
-    value: string
-    label: string
-    displayOrder?: number
-    hidden?: boolean
-    description?: string
-  }>
-  displayOrder?: number
-  formField?: boolean
-  hasUniqueValue?: boolean
-  hidden?: boolean
-  modificationMetadata?: Record<string, unknown>
-}
-
 export interface HubSpotListPropertiesParams {
   accessToken: string
   objectType: string
@@ -1855,6 +2064,24 @@ export interface HubSpotGetPropertyResponse extends ToolResponse {
   output: {
     property: HubSpotProperty
     propertyName: string
+    success: boolean
+  }
+}
+export interface HubSpotCreateAssociationParams {
+  accessToken: string
+  objectType: string
+  objectId: string
+  toObjectType: string
+  toObjectId: string
+  associationCategory?: string
+  associationTypeId?: number
+}
+
+export interface HubSpotCreateAssociationResponse extends ToolResponse {
+  output: {
+    fromObjectId: string
+    toObjectId: string
+    labels: string[]
     success: boolean
   }
 }
@@ -1926,3 +2153,14 @@ export type HubSpotResponse =
   | HubSpotListListsResponse
   | HubSpotGetListResponse
   | HubSpotCreateListResponse
+  | HubSpotCreateNoteResponse
+  | HubSpotGetNoteResponse
+  | HubSpotListNotesResponse
+  | HubSpotSearchNotesResponse
+  | HubSpotCreateEmailResponse
+  | HubSpotGetEmailResponse
+  | HubSpotListEmailsResponse
+  | HubSpotSearchEmailsResponse
+  | HubSpotGetPropertiesResponse
+  | HubSpotListAssociationsResponse
+  | HubSpotCreateAssociationResponse

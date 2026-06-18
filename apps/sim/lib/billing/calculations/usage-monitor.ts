@@ -9,7 +9,7 @@ import {
   type HighestPrioritySubscription,
 } from '@/lib/billing/core/plan'
 import { getPooledOrgCurrentPeriodCost, getUserUsageLimit } from '@/lib/billing/core/usage'
-import { getBillingPeriodUsageCost } from '@/lib/billing/core/usage-log'
+import { COPILOT_USAGE_SOURCES, getBillingPeriodUsageCost } from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import {
   computeDailyRefreshConsumed,
@@ -20,9 +20,9 @@ import {
   getOrgMemberWorkspaceUsage,
 } from '@/lib/billing/organizations/member-limits'
 import { getPlanTierDollars, isPaid } from '@/lib/billing/plan-helpers'
-import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
+import { getFreeTierLimit, isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
 import { toDecimal, toNumber } from '@/lib/billing/utils/decimal'
-import { isBillingEnabled, isHosted } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
 
 const logger = createLogger('UsageMonitor')
 
@@ -348,6 +348,84 @@ export async function checkBillingBlocked(
   }
 
   return { blocked: false }
+}
+
+/**
+ * Self-hosted mothership/copilot cap: compares only {@link COPILOT_USAGE_SOURCES}
+ * ledger cost (plus the legacy copilot baseline on `user_stats`) against a
+ * per-user limit on `user_stats.current_usage_limit`. Workflow and other non-copilot usage is
+ * excluded so operators can meter hosted Go without capping local execution.
+ */
+export async function checkSelfHostedMothershipUsageLimits(userId: string): Promise<{
+  isExceeded: boolean
+  currentUsage: number
+  limit: number
+  message?: string
+}> {
+  if (isHosted || !isBillingEnabled) {
+    return { isExceeded: false, currentUsage: 0, limit: 99999 }
+  }
+
+  try {
+    const blocked = await checkBillingBlocked(userId)
+    if (blocked.blocked) {
+      return { isExceeded: true, currentUsage: 0, limit: 0, message: blocked.message }
+    }
+
+    const [stats] = await db
+      .select({
+        currentPeriodCopilotCost: userStats.currentPeriodCopilotCost,
+        currentUsageLimit: userStats.currentUsageLimit,
+      })
+      .from(userStats)
+      .where(eq(userStats.userId, userId))
+      .limit(1)
+
+    if (!stats) {
+      return {
+        isExceeded: true,
+        currentUsage: 0,
+        limit: 0,
+        message: 'User account not properly initialized. Please contact support.',
+      }
+    }
+
+    const baseline = toNumber(toDecimal(stats.currentPeriodCopilotCost))
+    const ledgerUsage = await getBillingPeriodUsageCost(
+      { type: 'user', id: userId },
+      defaultBillingPeriod(),
+      COPILOT_USAGE_SOURCES
+    )
+    const currentUsage = baseline + ledgerUsage
+
+    const limit = stats.currentUsageLimit
+      ? toNumber(toDecimal(stats.currentUsageLimit))
+      : getFreeTierLimit()
+
+    const isExceeded = currentUsage >= limit
+    const formattedUsage = currentUsage.toFixed(2)
+    const formattedLimit = limit.toFixed(2)
+
+    return {
+      isExceeded,
+      currentUsage,
+      limit,
+      message: isExceeded
+        ? `Mothership usage limit exceeded: $${formattedUsage} used of $${formattedLimit} limit for copilot/mothership APIs. Raise this user's usage limit in billing settings.`
+        : undefined,
+    }
+  } catch (error) {
+    logger.error('Error in self-hosted mothership usage limit check', {
+      error: toError(error).message,
+      userId,
+    })
+    return {
+      isExceeded: true,
+      currentUsage: 0,
+      limit: 0,
+      message: 'Unable to determine mothership usage limits. Execution blocked for security.',
+    }
+  }
 }
 
 /**

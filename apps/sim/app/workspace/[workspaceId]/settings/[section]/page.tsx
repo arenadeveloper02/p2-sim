@@ -2,7 +2,7 @@ import { Suspense } from 'react'
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query'
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { prefetchGeneralSettings, prefetchSubscriptionData, prefetchUserProfile } from './prefetch'
@@ -14,7 +14,7 @@ import { SettingsPage } from './settings'
  * section renderer has no matching branch and shows an empty panel.
  */
 const SETTINGS_REDIRECTS: Record<string, (workspaceId: string) => string> = {
-  integrations: (id) => `/workspace/${id}/integrations`,
+  // integrations: (id) => `/workspace/${id}/integrations`,
   skills: (id) => `/workspace/${id}/skills`,
 }
 
@@ -31,7 +31,7 @@ const SECTION_TITLES: Record<string, string> = {
   team: 'Team',
   sso: 'Single Sign-On',
   whitelabeling: 'Whitelabeling',
-  copilot: 'Copilot Keys',
+  copilot: 'Chat Keys',
   mcp: 'MCP Tools',
   'custom-tools': 'Custom Tools',
   'workflow-mcp-servers': 'MCP Servers',

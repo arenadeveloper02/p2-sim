@@ -68,8 +68,9 @@ export const knowledgeKeys = {
   lists: () => [...knowledgeKeys.all, 'list'] as const,
   list: (workspaceId?: string, scope: KnowledgeQueryScope = 'active') =>
     [...knowledgeKeys.lists(), workspaceId ?? 'all', scope] as const,
+  details: () => [...knowledgeKeys.all, 'detail'] as const,
   detail: (knowledgeBaseId?: string) =>
-    [...knowledgeKeys.all, 'detail', knowledgeBaseId ?? ''] as const,
+    [...knowledgeKeys.details(), knowledgeBaseId ?? ''] as const,
   tagDefinitions: (knowledgeBaseId: string) =>
     [...knowledgeKeys.detail(knowledgeBaseId), 'tagDefinitions'] as const,
   tagUsage: (knowledgeBaseId: string) =>
@@ -84,6 +85,8 @@ export const knowledgeKeys = {
     [...knowledgeKeys.document(knowledgeBaseId, documentId), 'chunks', paramsKey] as const,
   chunk: (knowledgeBaseId: string, documentId: string, chunkId: string) =>
     [...knowledgeKeys.document(knowledgeBaseId, documentId), 'chunk', chunkId] as const,
+  chunkSearch: (knowledgeBaseId: string, documentId: string, searchKey: string) =>
+    [...knowledgeKeys.document(knowledgeBaseId, documentId), 'search', searchKey] as const,
 }
 
 export async function fetchKnowledgeBases(
@@ -410,11 +413,7 @@ export function useDocumentChunkSearchQuery(
 ) {
   const searchKey = serializeSearchParams(params)
   return useQuery({
-    queryKey: [
-      ...knowledgeKeys.document(params.knowledgeBaseId, params.documentId),
-      'search',
-      searchKey,
-    ],
+    queryKey: knowledgeKeys.chunkSearch(params.knowledgeBaseId, params.documentId, searchKey),
     queryFn: ({ signal }) => fetchAllDocumentChunks(params, signal),
     enabled:
       (options?.enabled ?? true) &&

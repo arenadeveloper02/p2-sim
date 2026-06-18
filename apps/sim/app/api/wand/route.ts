@@ -14,7 +14,7 @@ import {
 import { recordUsage } from '@/lib/billing/core/usage-log'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { env } from '@/lib/core/config/env'
-import { isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { getCostMultiplier, isBillingEnabled } from '@/lib/core/config/env-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { enrichTableSchema } from '@/lib/table/llm/wand'
@@ -117,6 +117,7 @@ async function updateUserStatsForWand(
 
     if (!isBYOK) {
       const pricing = getModelPricing(modelName)
+      const costMultiplier = getCostMultiplier()
       let modelCost = 0
 
       if (pricing) {
@@ -127,7 +128,7 @@ async function updateUserStatsForWand(
         modelCost = (promptTokens / 1000000) * 0.005 + (completionTokens / 1000000) * 0.015
       }
 
-      costToStore = modelCost
+      costToStore = modelCost * costMultiplier
     }
 
     await recordUsage({

@@ -643,6 +643,7 @@ Example 2 - Product Data:
 
 export const FirecrawlBlockMeta = {
   tags: ['web-scraping', 'automation'],
+  url: 'https://www.firecrawl.dev',
   templates: [
     {
       icon: FirecrawlIcon,

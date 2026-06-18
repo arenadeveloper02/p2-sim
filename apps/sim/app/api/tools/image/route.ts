@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
+import { isRecordLike } from '@sim/utils/object'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   type ImageToolBody,
@@ -513,10 +514,6 @@ const FALAI_IMAGE_MODEL_CONFIGS: Record<string, FalAIImageModelConfig> = {
   },
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 function getStringProperty(
   record: Record<string, unknown> | undefined,
   key: string
@@ -534,7 +531,7 @@ function getNumberProperty(
 }
 
 function firstRecord(value: unknown): Record<string, unknown> | undefined {
-  return Array.isArray(value) ? value.find(isRecord) : undefined
+  return Array.isArray(value) ? value.find(isRecordLike) : undefined
 }
 
 function pickAllowed(
@@ -633,8 +630,7 @@ async function generateWithOpenAI(
         ? pickAllowed(body.moderation, OPENAI_MODERATION_LEVELS, 'auto')
         : undefined,
       inputImage,
-      inputImageMimeType:
-        typeof inputImageMimeType === 'string' ? inputImageMimeType : undefined,
+      inputImageMimeType: typeof inputImageMimeType === 'string' ? inputImageMimeType : undefined,
     })
 
     return {
@@ -692,7 +688,7 @@ async function generateWithOpenAI(
     maxBytes: MAX_IMAGE_JSON_BYTES,
     label: 'OpenAI image response',
   })
-  if (!isRecord(data)) {
+  if (!isRecordLike(data)) {
     throw new Error('Invalid OpenAI image response')
   }
 
@@ -786,27 +782,27 @@ async function generateWithGemini(
     maxBytes: MAX_IMAGE_JSON_BYTES,
     label: 'Gemini image response',
   })
-  if (!isRecord(data)) {
+  if (!isRecordLike(data)) {
     throw new Error('Invalid Gemini image response')
   }
 
   const candidate = firstRecord(data.candidates)
-  const content = isRecord(candidate?.content) ? candidate.content : undefined
+  const content = isRecordLike(candidate?.content) ? candidate.content : undefined
   const parts = Array.isArray(content?.parts) ? content.parts : []
-  const textPart = parts.find((part) => isRecord(part) && typeof part.text === 'string')
+  const textPart = parts.find((part) => isRecordLike(part) && typeof part.text === 'string')
   const imagePart = parts.find((part) => {
-    if (!isRecord(part)) return false
-    return isRecord(part.inlineData) || isRecord(part.inline_data)
+    if (!isRecordLike(part)) return false
+    return isRecordLike(part.inlineData) || isRecordLike(part.inline_data)
   })
 
-  if (!isRecord(imagePart)) {
+  if (!isRecordLike(imagePart)) {
     logger.error(`[${requestId}] Gemini response missing image part`)
     throw new Error('No image data found in Gemini response')
   }
 
-  const inlineData = isRecord(imagePart.inlineData)
+  const inlineData = isRecordLike(imagePart.inlineData)
     ? imagePart.inlineData
-    : isRecord(imagePart.inline_data)
+    : isRecordLike(imagePart.inline_data)
       ? imagePart.inline_data
       : undefined
   const base64Image = getStringProperty(inlineData, 'data')
@@ -829,7 +825,7 @@ async function generateWithGemini(
     fileName: `gemini-${model}.${extensionFromContentType(contentType)}`,
     provider: 'gemini',
     model,
-    description: isRecord(textPart) ? getStringProperty(textPart, 'text') : undefined,
+    description: isRecordLike(textPart) ? getStringProperty(textPart, 'text') : undefined,
   }
 }
 
@@ -839,7 +835,7 @@ function buildFalAIQueueUrl(endpoint: string, requestId: string, path: 'status' 
 
 function getFalAIErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error
-  if (isRecord(error)) {
+  if (isRecordLike(error)) {
     return (
       getStringProperty(error, 'message') ||
       getStringProperty(error, 'detail') ||
@@ -952,7 +948,7 @@ async function generateWithFalAI(
     maxBytes: MAX_IMAGE_JSON_BYTES,
     label: 'Fal.ai create response',
   })
-  if (!isRecord(createData)) {
+  if (!isRecordLike(createData)) {
     throw new Error('Invalid Fal.ai queue response')
   }
 
@@ -995,7 +991,7 @@ async function generateWithFalAI(
       maxBytes: MAX_IMAGE_JSON_BYTES,
       label: 'Fal.ai status response',
     })
-    if (!isRecord(statusData)) {
+    if (!isRecordLike(statusData)) {
       throw new Error('Invalid Fal.ai status response')
     }
 
@@ -1027,7 +1023,7 @@ async function generateWithFalAI(
         maxBytes: MAX_IMAGE_JSON_BYTES,
         label: 'Fal.ai result response',
       })
-      if (!isRecord(resultData)) {
+      if (!isRecordLike(resultData)) {
         throw new Error('Invalid Fal.ai result response')
       }
 

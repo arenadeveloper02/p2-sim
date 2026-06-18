@@ -1,5 +1,8 @@
+import { useEffect } from 'react'
 import { createLogger } from '@sim/logger'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import Cookies from 'js-cookie'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { requestJson } from '@/lib/api/client/request'
 import {
   type ConnectedAccount,
@@ -78,6 +81,60 @@ function postArenaV3OAuthNavigateToParent(url: string): void {
   window.parent.postMessage(payload, '*')
 }
 
+/**
+ * Arena iframe embed (`from=arena_v3`): one-time email-cookie sign-in for the integrations page.
+ * Same pattern as deployed chat (`ArenaDeployedChat`: localStorage guard + `client.signIn.email`).
+ */
+export function useArenaV3IntegrationsAutoLogin(workspaceId: string): void {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    if (searchParams.get('from') !== ARENA_V3_FROM_QUERY_VALUE || !workspaceId) {
+      return
+    }
+
+    const autoLoginKey = `integrations:arenaV3AutoLogin:${workspaceId}`
+    let cancelled = false
+
+    const run = async () => {
+      try {
+        const alreadyTried = typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
+        const cookieEmail = Cookies.get('email')
+        if (!cookieEmail || alreadyTried) {
+          return
+        }
+
+        const sessionRes = await client.getSession()
+        if (sessionRes?.data?.user?.id || cancelled) {
+          return
+        }
+
+        localStorage.setItem(autoLoginKey, '1')
+        await client.signIn.email(
+          {
+            email: cookieEmail,
+            password: 'Position2!',
+            callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
+          },
+          {}
+        )
+        if (!cancelled) {
+          router.refresh()
+        }
+      } catch (error) {
+        logger.error('Arena v3 integrations auto-login failed', { error })
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, workspaceId, router])
+}
+//-------------------
+
 async function fetchOAuth2LinkAuthorizeUrl(
   providerId: string,
   callbackURL: string
@@ -109,7 +166,8 @@ async function fetchOAuth2LinkAuthorizeUrl(
 export const oauthConnectionsKeys = {
   all: ['oauthConnections'] as const,
   connections: () => [...oauthConnectionsKeys.all, 'connections'] as const,
-  accounts: (provider: string) => [...oauthConnectionsKeys.all, 'accounts', provider] as const,
+  accounts: () => [...oauthConnectionsKeys.all, 'accounts'] as const,
+  account: (provider: string) => [...oauthConnectionsKeys.accounts(), provider] as const,
 }
 
 /** OAuth service with connection status and linked accounts. */
@@ -289,11 +347,11 @@ export function useConnectOAuthService() {
 
       return { success: true }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: oauthConnectionsKeys.connections() })
-    },
     onError: (error) => {
       logger.error('OAuth connection error:', error)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: oauthConnectionsKeys.connections() })
     },
   })
 }
@@ -382,7 +440,7 @@ async function fetchConnectedAccounts(
  */
 export function useConnectedAccounts(provider: string, options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: oauthConnectionsKeys.accounts(provider),
+    queryKey: oauthConnectionsKeys.account(provider),
     queryFn: ({ signal }) => fetchConnectedAccounts(provider, signal),
     enabled: options?.enabled ?? true,
     staleTime: 60 * 1000,
