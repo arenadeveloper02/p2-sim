@@ -110,6 +110,16 @@ export function getEmailDomain(): string {
 }
 
 /**
+ * Returns the inbox address for help, contact, and integration-request submissions.
+ * Override with HELP_INBOX_EMAIL; otherwise defaults to help@EMAIL_DOMAIN.
+ */
+export function getHelpInboxEmail(): string {
+  const override = env.HELP_INBOX_EMAIL?.trim()
+  if (override) return override
+  return `help@${env.EMAIL_DOMAIN || getEmailDomain()}`
+}
+
+/**
  * Returns the external login redirect URL based on the hostname
  * @param hostname - The hostname from the request
  * @returns The external login URL
