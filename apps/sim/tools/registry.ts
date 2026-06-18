@@ -1361,7 +1361,6 @@ import {
   googleSlidesDuplicateTool,
   googleSlidesExportPresentationTool,
   googleSlidesGetPageTool,
-  googleSlidesGetTemplateSchemaTool,
   googleSlidesGetThumbnailTool,
   googleSlidesGroupObjectsTool,
   googleSlidesInsertTableColumnsTool,
@@ -2377,6 +2376,11 @@ import {
   pdlPersonSearchTool,
 } from '@/tools/peopledatalabs'
 import { perplexityChatTool, perplexitySearchTool } from '@/tools/perplexity'
+import {
+  getP2UsersTool as p2DocsGetP2UsersTool,
+  getPresentationIconsTool as p2DocsGetPresentationIconsTool,
+  getTemplateSchemaTool as p2DocsGetTemplateSchemaTool,
+} from '@/tools/p2_docs'
 import {
   personaApproveInquiryTool,
   personaCreateAccountTool,
@@ -5525,7 +5529,6 @@ export const tools: Record<string, ToolConfig> = {
   google_slides_get_thumbnail: googleSlidesGetThumbnailTool,
   google_slides_add_image: googleSlidesAddImageTool,
   google_slides_get_page: googleSlidesGetPageTool,
-  google_slides_get_template_schema: googleSlidesGetTemplateSchemaTool,
   google_slides_delete_object: googleSlidesDeleteObjectTool,
   google_slides_duplicate_object: googleSlidesDuplicateObjectTool,
   google_slides_update_slides_position: googleSlidesUpdateSlidesPositionTool,
@@ -5583,6 +5586,9 @@ export const tools: Record<string, ToolConfig> = {
   pdl_autocomplete: pdlAutocompleteTool,
   perplexity_chat: perplexityChatTool,
   perplexity_search: perplexitySearchTool,
+  p2_docs_get_p2_users: p2DocsGetP2UsersTool,
+  p2_docs_get_presentation_icons: p2DocsGetPresentationIconsTool,
+  p2_docs_get_template_schema: p2DocsGetTemplateSchemaTool,
   persona_approve_inquiry: personaApproveInquiryTool,
   persona_create_account: personaCreateAccountTool,
   persona_create_inquiry: personaCreateInquiryTool,

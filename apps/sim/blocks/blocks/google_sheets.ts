@@ -3,6 +3,7 @@ import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import { createVersionedToolSelector, SERVICE_ACCOUNT_SUBBLOCKS } from '@/blocks/utils'
+import { resolveGoogleSheetsV2RangeParams } from '@/tools/google_sheets/range'
 import type { GoogleSheetsResponse, GoogleSheetsV2Response } from '@/tools/google_sheets/types'
 import { getTrigger } from '@/triggers'
 
@@ -898,10 +899,13 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           }
         }
 
-        // Handle read/write/update/append/clear operations (require sheet name)
-        const effectiveSheetName = sheetName ? String(sheetName).trim() : ''
+        const resolvedRange = resolveGoogleSheetsV2RangeParams({
+          sheetName,
+          cellRange,
+          range: params.range,
+        })
 
-        if (!effectiveSheetName) {
+        if (!resolvedRange.sheetName) {
           throw new Error('Sheet name is required. Please select or enter a sheet name.')
         }
 
@@ -910,8 +914,8 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
         return {
           ...rest,
           spreadsheetId: effectiveSpreadsheetId,
-          sheetName: effectiveSheetName,
-          cellRange: cellRange ? (cellRange as string).trim() : undefined,
+          sheetName: resolvedRange.sheetName,
+          cellRange: resolvedRange.cellRange,
           values: parsedValues,
           oauthCredential,
           ...(filterColumn ? { filterColumn: (filterColumn as string).trim() } : {}),

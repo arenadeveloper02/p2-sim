@@ -118,6 +118,9 @@ export const ADMIN_WORKSPACE_ONLY_OAUTH_PROVIDER_IDS = ['zoom-admin'] as const
 export const ADMIN_WORKSPACE_ONLY_TOOL_IDS = [
   'zoom_list_account_recordings',
   'zoom_get_account_recordings_with_transcript',
+  'p2_docs_get_template_schema',
+  'p2_docs_get_presentation_icons',
+  'p2_docs_get_p2_users',
 ] as const
 
 /**

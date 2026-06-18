@@ -293,14 +293,18 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       )
     }
 
-    const resUrl = new URL(response.url)
-    const typeFromUrl = resUrl.searchParams.get('type')
+    let typeFromUrl: string | null = null
+    if (response.url.trim()) {
+      try {
+        const type = new URL(response.url).searchParams.get('type')
+        if (type && isValidSemrushApiType(type)) {
+          typeFromUrl = type.trim().toLowerCase()
+        }
+      } catch {}
+    }
+
     const reportType =
-      (typeFromUrl && isValidSemrushApiType(typeFromUrl)
-        ? typeFromUrl.trim().toLowerCase()
-        : null) ||
-      (params ? resolveSemrushApiType(params) : '') ||
-      'domain_organic'
+      (params ? resolveSemrushApiType(params) : null) || typeFromUrl || 'domain_organic'
 
     // Parse CSV using generic parser (Semrush uses semicolon delimiter)
     const parseResult = parseCsvResponse(csvText, {
