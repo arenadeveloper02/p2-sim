@@ -145,7 +145,7 @@
   (function () {
     /** Same key as apps/sim/app/_shell/resume-path-sync.tsx */
     var RESUME_KEY = 'sim_resume_path';
-    var POLL_MS = 5000;
+    var POLL_MS = 2000;
 
     function resumeWhenHealthy() {
       fetch('/api/health', { cache: 'no-store' })
@@ -159,9 +159,19 @@
             }
           });
         })
-        .catch(function () {});
+        .catch(function () {
+          // Connection refused or 502 during cutover — keep showing this page and poll.
+        });
     }
 
+    try {
+      var path = window.location.pathname + window.location.search + window.location.hash;
+      if (path && path !== '/' && !sessionStorage.getItem(RESUME_KEY)) {
+        sessionStorage.setItem(RESUME_KEY, path);
+      }
+    } catch (e) {}
+
+    resumeWhenHealthy();
     setInterval(resumeWhenHealthy, POLL_MS);
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible') resumeWhenHealthy();
