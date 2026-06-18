@@ -3348,7 +3348,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "SECTION_HEADER",
             "shapeId": "g3f14351dc08_0_976",
             "minChars": 10,
-            "maxChars": 40,
+            "maxChars": 32,
             "description": "Step 1 section header (15pt bold, colored text). Template default: 'Craft a Compelling Narrative'",
             "content": ""
           },
@@ -3358,7 +3358,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "BODY",
             "shapeId": "g3f14351dc08_0_977",
             "minChars": 40,
-            "maxChars": 150,
+            "maxChars": 130,
             "description": "Step 1 body text (12pt regular, dark text). Explains the step in detail.",
             "content": ""
           },
@@ -3371,7 +3371,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "SECTION_HEADER",
             "shapeId": "g3f14351dc08_0_980",
             "minChars": 10,
-            "maxChars": 40,
+            "maxChars": 32,
             "description": "Step 2 section header (15pt bold, colored text).",
             "content": ""
           },
@@ -3381,7 +3381,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "BODY",
             "shapeId": "g3f14351dc08_0_981",
             "minChars": 40,
-            "maxChars": 150,
+            "maxChars": 130,
             "description": "Step 2 body text (12pt regular, dark text). Explains the step in detail.",
             "content": ""
           },
@@ -3394,7 +3394,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "SECTION_HEADER",
             "shapeId": "g3f14351dc08_0_982",
             "minChars": 10,
-            "maxChars": 40,
+            "maxChars": 32,
             "description": "Step 3 section header (15pt bold, colored text).",
             "content": ""
           },
@@ -3404,7 +3404,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "BODY",
             "shapeId": "g3f14351dc08_0_983",
             "minChars": 40,
-            "maxChars": 150,
+            "maxChars": 130,
             "description": "Step 3 body text (12pt regular, dark text). Explains the step in detail.",
             "content": ""
           },
@@ -3417,7 +3417,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "SECTION_HEADER",
             "shapeId": "g3f14351dc08_0_978",
             "minChars": 10,
-            "maxChars": 40,
+            "maxChars": 32,
             "description": "Step 4 section header (15pt bold, colored text).",
             "content": ""
           },
@@ -3427,7 +3427,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "BODY",
             "shapeId": "g3f14351dc08_0_979",
             "minChars": 40,
-            "maxChars": 150,
+            "maxChars": 130,
             "description": "Step 4 body text (12pt regular, dark text). Explains the step in detail.",
             "content": ""
           },
@@ -3440,7 +3440,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "SECTION_HEADER",
             "shapeId": "g3f14351dc08_0_984",
             "minChars": 10,
-            "maxChars": 40,
+            "maxChars": 32,
             "description": "Step 5 section header (15pt bold, colored text).",
             "content": ""
           },
@@ -3450,7 +3450,7 @@ function buildTemplateSchema(): PresentationSchema {
             "role": "BODY",
             "shapeId": "g3f14351dc08_0_985",
             "minChars": 40,
-            "maxChars": 150,
+            "maxChars": 130,
             "description": "Step 5 body text (12pt regular, dark text). Explains the step in detail.",
             "content": ""
           }
