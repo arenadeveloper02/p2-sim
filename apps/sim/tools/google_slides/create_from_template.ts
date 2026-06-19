@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
-import { getTemplateMasterSchema } from './templates'
+import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
+import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
 
 const logger = createLogger('GoogleSlidesCreateFromTemplate')
@@ -37,6 +38,7 @@ interface BlockLike {
   role?: string
   shapeId: string
   content?: string | string[]
+  source?: 'icon_library' | 'stock_photo' | 'ai_photo' | 'generated' | 'p2_users'
 }
 
 interface SlideLike {

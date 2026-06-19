@@ -52,6 +52,7 @@ import { getDependsOnFields } from '@/blocks/utils'
 import { useKnowledgeBase } from '@/hooks/kb/use-knowledge'
 import { useCustomTools } from '@/hooks/queries/custom-tools'
 import { useDeployWorkflow } from '@/hooks/queries/deployments'
+import { useHubSpotAccountDisplayName } from '@/hooks/queries/hubspot-accounts'
 import { useMcpServers, useMcpToolsQuery } from '@/hooks/queries/mcp'
 import { useCredentialName } from '@/hooks/queries/oauth/oauth-credentials'
 import { useReactivateSchedule, useScheduleInfo } from '@/hooks/queries/schedules'
@@ -190,6 +191,14 @@ const SubBlockRow = memo(function SubBlockRow({
     workspaceId
   )
 
+  const shouldHydrateHubSpotAccount =
+    typeof rawValue === 'string' &&
+    rawValue.length > 0 &&
+    !rawValue.startsWith('<') &&
+    !rawValue.includes('{{') &&
+    subBlock?.type === 'oauth-input' &&
+    subBlock.serviceId === 'hubspot'
+
   const shouldHydrateUnipileAccount =
     typeof rawValue === 'string' &&
     rawValue.length > 0 &&
@@ -197,6 +206,12 @@ const SubBlockRow = memo(function SubBlockRow({
     !rawValue.includes('{{') &&
     ((subBlock?.type === 'oauth-input' && subBlock.serviceId === 'unipile_linkedin') ||
       Boolean(subBlock?.fetchOptionById))
+
+  const { data: hubSpotAccountLabel } = useHubSpotAccountDisplayName(
+    shouldHydrateHubSpotAccount ? rawValue : undefined,
+    workspaceId,
+    shouldHydrateHubSpotAccount && !credentialName
+  )
 
   const { data: unipileAccountLabel } = useUnipileAccountDisplayName(
     shouldHydrateUnipileAccount ? rawValue : undefined,
@@ -407,6 +422,7 @@ const SubBlockRow = memo(function SubBlockRow({
   const isSelectorType = subBlock?.type && SELECTOR_TYPES_HYDRATION_REQUIRED.includes(subBlock.type)
   const hydratedName =
     credentialName ||
+    hubSpotAccountLabel ||
     unipileAccountLabel ||
     dropdownLabel ||
     fetchOptionByIdLabel ||

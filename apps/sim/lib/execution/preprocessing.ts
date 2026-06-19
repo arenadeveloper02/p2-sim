@@ -18,7 +18,10 @@ import { getExecutionTimeout } from '@/lib/core/execution-limits'
 import { RateLimiter } from '@/lib/core/rate-limiter/rate-limiter'
 import type { SubscriptionPlan } from '@/lib/core/rate-limiter/types'
 import { LoggingSession, type SessionStartParams } from '@/lib/logs/execution/logging-session'
-import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
+import {
+  getScheduleExecutionActorUserId,
+  getWorkspaceBilledAccountUserId,
+} from '@/lib/workspaces/utils'
 import type { CoreTriggerType } from '@/stores/logs/filters/types'
 
 const logger = createLogger('ExecutionPreprocessing')
@@ -265,9 +268,16 @@ export async function preprocessExecution(
     }
 
     if (!actorUserId && workspaceId) {
-      actorUserId = await getWorkspaceBilledAccountUserId(workspaceId)
-      if (actorUserId) {
-        logger.info(`[${requestId}] Using workspace billed account: ${actorUserId}`)
+      if (triggerType === 'schedule') {
+        actorUserId = await getScheduleExecutionActorUserId(workspaceId, workflowRecord.userId)
+        if (actorUserId) {
+          logger.info(`[${requestId}] Using workflow owner for schedule actor: ${actorUserId}`)
+        }
+      } else {
+        actorUserId = await getWorkspaceBilledAccountUserId(workspaceId)
+        if (actorUserId) {
+          logger.info(`[${requestId}] Using workspace billed account: ${actorUserId}`)
+        }
       }
     }
 

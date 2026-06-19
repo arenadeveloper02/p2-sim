@@ -48,8 +48,13 @@ export interface ListBlock extends BaseBlock {
 export interface ImageBlock extends BaseBlock {
   type: 'IMAGE'
   role: 'PRIMARY_VISUAL' | 'SUPPORTING_VISUAL'
-  usage: string[] // Hints for image generation
-  width?: number // Optional guidance only
+  source?: 'icon_library' | 'stock_photo' | 'ai_photo' | 'generated' | 'p2_users'
+  usage: string[]        // for icon_library: semantic hints for AI matching
+  // for stock_photo/ai_photo/generated: visual style hints
+  iconLibraryId?: string // filled by AI — matched icon id from IconLibrary
+  /** When source is 'icon_library', constrains selection to icons of this color variant. */
+  iconLibraryColor?: IconColor
+  width?: number
   height?: number
 }
 

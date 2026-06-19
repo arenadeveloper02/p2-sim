@@ -3,6 +3,7 @@ import { getScopesForService } from '@/lib/oauth/utils'
 import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import { createVersionedToolSelector, SERVICE_ACCOUNT_SUBBLOCKS } from '@/blocks/utils'
+import { resolveGoogleSheetsV2RangeParams } from '@/tools/google_sheets/range'
 import type { GoogleSheetsResponse, GoogleSheetsV2Response } from '@/tools/google_sheets/types'
 import { getTrigger } from '@/triggers'
 
@@ -256,7 +257,7 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
         }
       },
       params: (params) => {
-        const { oauthCredential, values, spreadsheetId, ...rest } = params
+        const { oauthCredential, values, spreadsheetId, range, ...rest } = params
 
         // Handle values consistently for write / update / append:
         // - If it's already an array/object (e.g. passed from another block), use as-is
@@ -284,9 +285,14 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           throw new Error('Spreadsheet ID is required.')
         }
 
+        const resolvedRange = resolveGoogleSheetsV2RangeParams({ range })
+
         return {
           ...rest,
           spreadsheetId: effectiveSpreadsheetId,
+          range,
+          sheetName: resolvedRange.sheetName,
+          cellRange: resolvedRange.cellRange,
           values: parsedValues,
           oauthCredential,
         }
@@ -898,10 +904,13 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
           }
         }
 
-        // Handle read/write/update/append/clear operations (require sheet name)
-        const effectiveSheetName = sheetName ? String(sheetName).trim() : ''
+        const resolvedRange = resolveGoogleSheetsV2RangeParams({
+          sheetName,
+          cellRange,
+          range: params.range,
+        })
 
-        if (!effectiveSheetName) {
+        if (!resolvedRange.sheetName) {
           throw new Error('Sheet name is required. Please select or enter a sheet name.')
         }
 
@@ -910,8 +919,8 @@ Return ONLY the JSON array - no explanations, no markdown, no extra text.`,
         return {
           ...rest,
           spreadsheetId: effectiveSpreadsheetId,
-          sheetName: effectiveSheetName,
-          cellRange: cellRange ? (cellRange as string).trim() : undefined,
+          sheetName: resolvedRange.sheetName,
+          cellRange: resolvedRange.cellRange,
           values: parsedValues,
           oauthCredential,
           ...(filterColumn ? { filterColumn: (filterColumn as string).trim() } : {}),
