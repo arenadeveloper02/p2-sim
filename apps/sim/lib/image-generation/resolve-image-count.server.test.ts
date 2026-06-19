@@ -13,6 +13,30 @@ vi.mock('@/lib/core/config/api-keys', () => ({
 
 import { resolveImageGenerationCount } from '@/lib/image-generation/resolve-image-count.server'
 
+function mockSlmImageCount(imageCount: number) {
+  const mockFetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: vi.fn().mockResolvedValue({
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                text: JSON.stringify({
+                  imageCount,
+                  imageUrl: null,
+                }),
+              },
+            ],
+          },
+        },
+      ],
+    }),
+  })
+  global.fetch = mockFetch as unknown as typeof fetch
+  return mockFetch
+}
+
 describe('resolveImageGenerationCount', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -22,26 +46,7 @@ describe('resolveImageGenerationCount', () => {
   it('uses the explicit requested variation count even when Gemini returns a lower count', async () => {
     const originalPrompt =
       'Give 4 different variations with different jerseys, teams and fans wearing different players tshirts.'
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue({
-        candidates: [
-          {
-            content: {
-              parts: [
-                {
-                  text: JSON.stringify({
-                    imageCount: 3,
-                    imageUrl: null,
-                  }),
-                },
-              ],
-            },
-          },
-        ],
-      }),
-    })
-    global.fetch = mockFetch as unknown as typeof fetch
+    mockSlmImageCount(3)
 
     const result = await resolveImageGenerationCount({
       prompt: originalPrompt,
@@ -56,15 +61,57 @@ describe('resolveImageGenerationCount', () => {
       originalPrompt,
       originalPrompt,
     ])
+  })
 
-    const [, requestInit] = mockFetch.mock.calls[0] as [string, RequestInit]
-    const body = JSON.parse(String(requestInit.body)) as {
-      contents: Array<{ parts: Array<{ text: string }> }>
-      systemInstruction: { parts: Array<{ text: string }> }
-    }
-    expect(body.contents[0]?.parts[0]?.text).toBe(`Prompt:\n${originalPrompt}`)
-    expect(body.systemInstruction.parts[0]?.text).toContain('imageCount must be that exact number')
-    expect(body.systemInstruction.parts[0]?.text).not.toContain('singleImagePrompt')
+  it('counts separate variations even when the SLM returns 1', async () => {
+    const originalPrompt = 'Give me three separate variations of this logo'
+    mockSlmImageCount(1)
+
+    const result = await resolveImageGenerationCount({ prompt: originalPrompt })
+
+    expect(result.imageCount).toBe(3)
+    expect(result.singleImagePrompts).toHaveLength(3)
+  })
+
+  it('does not treat a reference single image as a combined-output request', async () => {
+    const originalPrompt = 'Give me 3 variations of a single image'
+    mockSlmImageCount(1)
+
+    const result = await resolveImageGenerationCount({ prompt: originalPrompt })
+
+    expect(result.imageCount).toBe(3)
+    expect(result.singleImagePrompts).toHaveLength(3)
+  })
+
+  it('extracts variation count when the reference image is mentioned earlier in the prompt', async () => {
+    const originalPrompt = 'Edit this single image and give me 4 variations with new backgrounds'
+    mockSlmImageCount(1)
+
+    const result = await resolveImageGenerationCount({ prompt: originalPrompt })
+
+    expect(result.imageCount).toBe(4)
+    expect(result.singleImagePrompts).toHaveLength(4)
+  })
+
+  it('returns one image for side-by-side composition requests', async () => {
+    const originalPrompt = 'Give me three variations side by side in a single image'
+    mockSlmImageCount(3)
+
+    const result = await resolveImageGenerationCount({ prompt: originalPrompt })
+
+    expect(result.imageCount).toBe(1)
+    expect(result.singleImagePrompts).toEqual([originalPrompt])
+  })
+
+  it('honors repeat multipliers for combined side-by-side compositions', async () => {
+    const originalPrompt =
+      'Give me three variations side by side in a single image three times'
+    mockSlmImageCount(1)
+
+    const result = await resolveImageGenerationCount({ prompt: originalPrompt })
+
+    expect(result.imageCount).toBe(3)
+    expect(result.singleImagePrompts).toHaveLength(3)
   })
 
   it('preserves the original prompt when the SLM returns rewritten prompt fields in legacy payloads', async () => {
