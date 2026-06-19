@@ -4054,6 +4054,8 @@ export const helpSupportIssue = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
     type: helpSupportIssueTypeEnum('type').notNull(),
     subject: text('subject').notNull(),
     message: text('message').notNull(),
@@ -4065,6 +4067,8 @@ export const helpSupportIssue = pgTable(
   },
   (table) => ({
     userIdIdx: index('help_support_issue_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('help_support_issue_workspace_id_idx').on(table.workspaceId),
+    workflowIdIdx: index('help_support_issue_workflow_id_idx').on(table.workflowId),
     typeIdx: index('help_support_issue_type_idx').on(table.type),
     createdAtIdx: index('help_support_issue_created_at_idx').on(table.createdAt),
   })
