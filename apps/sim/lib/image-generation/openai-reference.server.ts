@@ -3,6 +3,7 @@ import {
   readResponseJsonWithLimit,
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { resolveInlineImageData } from '@/app/api/google/api-service'
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024
@@ -94,6 +95,7 @@ export async function generateOpenAIImageEdit(
       Authorization: `Bearer ${apiKey}`,
     },
     body: form,
+    signal: AbortSignal.timeout(IMAGE_GENERATION_PROVIDER_TIMEOUT_MS),
   })
 
   if (!response.ok) {

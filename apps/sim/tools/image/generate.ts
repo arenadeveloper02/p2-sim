@@ -1,3 +1,4 @@
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 import type { ImageGenerationParams, ImageGenerationResponse } from '@/tools/image/types'
 import type { ToolConfig } from '@/tools/types'
@@ -248,7 +249,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         ? '/api/tools/image'
         : '/api/tools/image-generation',
     method: 'POST',
-    timeout: 600000,
+    timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
     headers: () => ({
       'Content-Type': 'application/json',
     }),

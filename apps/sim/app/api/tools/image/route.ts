@@ -34,6 +34,7 @@ import {
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
 
@@ -531,6 +532,7 @@ async function bufferFromImageUrl(url: string): Promise<{ buffer: Buffer; conten
   const imageResponse = await secureFetchWithPinnedIP(url, urlValidation.resolvedIP, {
     method: 'GET',
     maxResponseBytes: MAX_IMAGE_BYTES,
+    timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
   })
   if (!imageResponse.ok) {
     await readResponseTextWithLimit(imageResponse, {
@@ -621,6 +623,7 @@ async function generateWithOpenAI(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(IMAGE_GENERATION_PROVIDER_TIMEOUT_MS),
   })
 
   if (!openaiResponse.ok) {
@@ -714,6 +717,7 @@ async function generateWithGemini(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(IMAGE_GENERATION_PROVIDER_TIMEOUT_MS),
     }
   )
 
