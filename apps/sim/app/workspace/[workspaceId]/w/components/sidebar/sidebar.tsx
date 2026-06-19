@@ -1722,12 +1722,10 @@ export const Sidebar = memo(function Sidebar() {
                         <BookOpen className='h-[14px] w-[14px]' />
                         Docs
                       </DropdownMenuItem>
-                      {false && (
-                        <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
-                          <HelpCircle className='h-[14px] w-[14px]' />
-                          Report an issue
-                        </DropdownMenuItem>
-                      )}
+                      <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
+                        <HelpCircle className='h-[14px] w-[14px]' />
+                        Report an issue
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
 
