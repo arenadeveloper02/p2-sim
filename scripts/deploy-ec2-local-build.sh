@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 BRANCH="${1:-}"
 DEPLOY_ROOT="${DEPLOY_ROOT:-/root/git/p2-sim}"
@@ -12,6 +11,17 @@ if [ -z "$BRANCH" ]; then
   exit 1
 fi
 
+CONTAINERS=$(docker ps -a -q --filter ancestor="p2-sim-simstudio")
+docker stop $CONTAINERS
+docker rm $CONTAINERS
+
+CONTAINERS=$(docker ps -a -q --filter ancestor="p2-sim-realtime")
+docker stop $CONTAINERS
+docker rm $CONTAINERS
+
+docker rmi -f "p2-sim-simstudio"
+docker rmi -f "p2-sim-realtime"
+
 cd "$DEPLOY_ROOT"
 
 SIM_ENV_FILE="${DEPLOY_ROOT}/apps/sim/.env"
@@ -23,13 +33,10 @@ fi
 COMPOSE_ENV_ARGS=(--env-file "$SIM_ENV_FILE")
 
 git stash
-git fetch origin "$BRANCH"
+git fetch
 git checkout "$BRANCH"
 git pull --rebase origin "$BRANCH"
 
-docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" down --remove-orphans
-docker image rm -f p2-sim-simstudio p2-sim-realtime p2-sim-migrations 2>/dev/null || true
-docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" up -d --build --remove-orphans
-docker image prune -f
+docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" up -d --build
 
 cd ~
