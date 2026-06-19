@@ -46,6 +46,10 @@ function isToolDone(status: ToolCallData['status']): boolean {
   )
 }
 
+function displayAgentLabel(label: string): string {
+  return /\bsim\b/i.test(label) ? 'Arena AI' : label
+}
+
 export function AgentGroup({
   agentName,
   agentLabel,
@@ -54,6 +58,7 @@ export function AgentGroup({
   isStreaming = false,
   defaultExpanded = false,
 }: AgentGroupProps) {
+  const resolvedAgentLabel = displayAgentLabel(agentLabel)
   const AgentIcon = getAgentIcon(agentName)
   const hasItems = items.length > 0
   const toolItems = items.filter(
@@ -88,7 +93,7 @@ export function AgentGroup({
               <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
             )}
           </div>
-          <span className='text-[var(--text-body)] text-sm'>{agentLabel}</span>
+          <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
           <ChevronDown
             className={cn(
               'h-[7px] w-[9px] text-[var(--text-icon)] transition-transform duration-150',
@@ -105,7 +110,7 @@ export function AgentGroup({
               <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
             )}
           </div>
-          <span className='text-[var(--text-body)] text-sm'>{agentLabel}</span>
+          <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
         </div>
       )}
       {hasItems && (
