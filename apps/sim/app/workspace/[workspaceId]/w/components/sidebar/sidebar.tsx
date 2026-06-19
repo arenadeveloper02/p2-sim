@@ -1818,6 +1818,10 @@ export const Sidebar = memo(function Sidebar() {
         connectedAccounts={searchModalConnectedAccounts}
         isOnWorkflowPage={!!workflowId}
         isOnIntegrationsPage={isOnIntegrationsPage}
+        canEdit={canEdit}
+        onCreateWorkflow={handleCreateWorkflow}
+        onCreateFolder={handleCreateFolder}
+        onImportWorkflow={handleImportWorkflow}
       />
 
       <HelpModal
