@@ -55,6 +55,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Check committed secrets
+        run: bun run check:secrets
+
       - name: Validate env flags
         run: |
           FILE="apps/sim/lib/core/config/env-flags.ts"
