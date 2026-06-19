@@ -91,6 +91,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       await persistHelpSupportIssue({
         id: issueId,
         userId,
+        userEmail: email,
         workspaceId: workspaceId?.trim() || null,
         workflowId: workflowId?.trim() || null,
         type: validatedType,

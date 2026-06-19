@@ -20,6 +20,7 @@ interface HelpSupportImageInput {
 interface PersistHelpSupportIssueInput {
   id: string
   userId: string
+  userEmail: string
   workspaceId?: string | null
   workflowId?: string | null
   type: HelpSupportIssueType
@@ -72,6 +73,7 @@ export async function persistHelpSupportIssue(input: PersistHelpSupportIssueInpu
   await db.insert(helpSupportIssue).values({
     id: input.id,
     userId: input.userId,
+    userEmail: input.userEmail,
     workspaceId: input.workspaceId ?? null,
     workflowId: input.workflowId ?? null,
     type: input.type,

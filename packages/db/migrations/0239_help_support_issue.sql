@@ -2,6 +2,7 @@ CREATE TYPE "public"."help_support_issue_type" AS ENUM('bug', 'feedback', 'featu
 CREATE TABLE "help_support_issue" (
 	"id" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
+	"user_email" text NOT NULL,
 	"workspace_id" text,
 	"workflow_id" text,
 	"type" "help_support_issue_type" NOT NULL,

@@ -4054,6 +4054,7 @@ export const helpSupportIssue = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    userEmail: text('user_email').notNull(),
     workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
     workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
     type: helpSupportIssueTypeEnum('type').notNull(),
