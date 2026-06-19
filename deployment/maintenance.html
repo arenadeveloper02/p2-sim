@@ -146,17 +146,33 @@
     /** Same key as apps/sim/app/_shell/resume-path-sync.tsx */
     var RESUME_KEY = 'sim_resume_path';
     var POLL_MS = 2000;
+    var MAINTENANCE_PORT = '8080';
+    var APP_PORT = '3000';
+
+    function getAppOrigin() {
+      var loc = window.location;
+      if (loc.port === MAINTENANCE_PORT) {
+        return loc.protocol + '//' + loc.hostname + ':' + APP_PORT;
+      }
+      return loc.origin;
+    }
+
+    function getAppHealthUrl() {
+      return getAppOrigin() + '/api/health';
+    }
 
     function resumeWhenHealthy() {
-      fetch('/api/health', { cache: 'no-store' })
+      fetch(getAppHealthUrl(), { cache: 'no-store' })
         .then(function (response) {
           var contentType = response.headers.get('content-type') || '';
           if (!response.ok || contentType.indexOf('application/json') === -1) return;
           return response.json().then(function (body) {
             if (body && body.status === 'ok') {
+              var appOrigin = getAppOrigin();
               var saved = sessionStorage.getItem(RESUME_KEY);
               sessionStorage.removeItem(RESUME_KEY);
-              window.location.replace(saved && saved !== '/' ? saved : '/');
+              var target = saved && saved !== '/' ? appOrigin + saved : appOrigin + '/';
+              window.location.replace(target);
             }
           });
         })

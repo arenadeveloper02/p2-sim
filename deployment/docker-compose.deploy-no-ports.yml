@@ -1,4 +1,4 @@
-# Strips host port bindings so simstudio/realtime can boot while maintenance owns 3000/3002.
+# Legacy: only needed when maintenance hijacked host 3000/3002. Current deploy uses maintenance on :8080.
 services:
   simstudio:
     ports: !reset []

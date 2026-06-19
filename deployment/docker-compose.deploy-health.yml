@@ -1,4 +1,5 @@
 # Faster healthchecks for deploy cutover. Merge with the base compose file + deploy.sh --wait.
+# These probe inside each container (simstudio:3000, realtime:3002), NOT the host maintenance port.
 services:
   simstudio:
     healthcheck:
