@@ -12,11 +12,17 @@ export function mergeOrgBrandConfig(
     return instanceConfig
   }
 
+  const orgLogo = orgSettings.logoUrl
+  const orgWordmark = orgSettings.wordmarkUrl
+  const resolvedLogo = orgLogo || orgWordmark
+  const resolvedWordmark = orgWordmark || orgLogo
+
   return {
     ...instanceConfig,
     name: orgSettings.brandName || instanceConfig.name,
-    logoUrl: orgSettings.logoUrl || instanceConfig.logoUrl,
-    wordmarkUrl: orgSettings.wordmarkUrl || instanceConfig.wordmarkUrl,
+    logoUrl: resolvedLogo || instanceConfig.logoUrl,
+    logoUrlBlacktext: resolvedLogo || instanceConfig.logoUrlBlacktext,
+    wordmarkUrl: resolvedWordmark || instanceConfig.wordmarkUrl,
     supportEmail: orgSettings.supportEmail || instanceConfig.supportEmail,
     documentationUrl: orgSettings.documentationUrl || instanceConfig.documentationUrl,
     termsUrl: orgSettings.termsUrl || instanceConfig.termsUrl,

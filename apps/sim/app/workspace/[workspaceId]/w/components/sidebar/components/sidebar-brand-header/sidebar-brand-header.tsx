@@ -11,7 +11,10 @@ interface SidebarBrandHeaderProps {
   workspaceId: string
   isCollapsed: boolean
   showCollapsedTooltips: boolean
+  /** Square logo shown in the collapsed sidebar. */
   brandLogoUrl?: string
+  /** Wide wordmark shown in the expanded sidebar; falls back to `brandLogoUrl`. */
+  brandWordmarkUrl?: string
   brandName?: string
   arenaHubAgentsUrl?: string | null
 }
@@ -24,14 +27,17 @@ export function SidebarBrandHeader({
   isCollapsed,
   showCollapsedTooltips,
   brandLogoUrl,
+  brandWordmarkUrl,
   brandName,
   arenaHubAgentsUrl,
 }: SidebarBrandHeaderProps) {
-  if (!brandLogoUrl && !arenaHubAgentsUrl) return null
+  const expandedBrandUrl = brandWordmarkUrl || brandLogoUrl
+
+  if (!brandLogoUrl && !expandedBrandUrl && !arenaHubAgentsUrl) return null
 
   return (
     <div className='flex-shrink-0'>
-      {brandLogoUrl ? (
+      {brandLogoUrl || expandedBrandUrl ? (
         <>
           <div
             className={cn(
@@ -50,22 +56,26 @@ export function SidebarBrandHeader({
               )}
               aria-label={brandName}
             >
-              <Image
-                src={brandLogoUrl}
-                alt={brandName || ''}
-                width={140}
-                height={44}
-                className='sidebar-collapse-hide sidebar-collapse-remove h-[44px] w-auto max-w-[220px] object-contain object-left'
-                unoptimized
-              />
-              <Image
-                src={brandLogoUrl}
-                alt={brandName || ''}
-                width={34}
-                height={34}
-                className='sidebar-collapse-show absolute inset-0 m-auto size-[34px] object-contain'
-                unoptimized
-              />
+              {expandedBrandUrl ? (
+                <Image
+                  src={expandedBrandUrl}
+                  alt={brandName || ''}
+                  width={140}
+                  height={44}
+                  className='sidebar-collapse-hide sidebar-collapse-remove h-[44px] w-auto max-w-[220px] object-contain object-left'
+                  unoptimized
+                />
+              ) : null}
+              {brandLogoUrl ? (
+                <Image
+                  src={brandLogoUrl}
+                  alt={brandName || ''}
+                  width={34}
+                  height={34}
+                  className='sidebar-collapse-show absolute inset-0 m-auto size-[34px] object-contain'
+                  unoptimized
+                />
+              ) : null}
             </Link>
           </div>
           <div className='border-[var(--border)] border-b' />

@@ -1274,7 +1274,8 @@ export const Sidebar = memo(function Sidebar() {
               workspaceId={workspaceId}
               isCollapsed={isCollapsed}
               showCollapsedTooltips={showCollapsedTooltips}
-              brandLogoUrl={brand?.logoUrlBlacktext}
+              brandLogoUrl={brand?.logoUrl || brand?.logoUrlBlacktext}
+              brandWordmarkUrl={brand?.wordmarkUrl}
               brandName={brand?.name}
               arenaHubAgentsUrl={arenaHubAgentsUrl}
             />
