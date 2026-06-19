@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
-import { getTemplateMasterSchema } from './templates'
+import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
+import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
 
 const logger = createLogger('GoogleSlidesCreateFromTemplate')
@@ -37,12 +38,124 @@ interface BlockLike {
   role?: string
   shapeId: string
   content?: string | string[]
+  source?: 'icon_library' | 'stock_photo' | 'ai_photo' | 'generated' | 'p2_users'
 }
 
 interface SlideLike {
   order: number
   templateSlideObjectId: string
   blocks: BlockLike[]
+}
+
+const KNOWN_IMAGE_HOST = 'arenav2image.s3.us-west-1.amazonaws.com'
+const ICON_LIBRARY_PATH_PREFIX = '/presentation-icons/'
+const P2_USERS_PATH_PREFIX = '/presentation-profile-images/'
+
+type KnownImageSource = 'icon_library' | 'p2_users'
+
+function normalizeImagePathForLookup(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    return decodeURIComponent(parsed.pathname).toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+function getKnownImageSourceFromUrl(url: string): KnownImageSource | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname !== KNOWN_IMAGE_HOST) return null
+    if (parsed.pathname.startsWith(ICON_LIBRARY_PATH_PREFIX)) return 'icon_library'
+    if (parsed.pathname.startsWith(P2_USERS_PATH_PREFIX)) return 'p2_users'
+  } catch {
+    // ignore invalid URLs
+  }
+  return null
+}
+
+function isKnownCatalogImage(
+  blockSource: BlockLike['source'],
+  imageUrl: string
+): boolean {
+  if (blockSource === 'icon_library' || blockSource === 'p2_users') return true
+  return getKnownImageSourceFromUrl(imageUrl) !== null
+}
+
+let knownImageUrlIndex: Map<string, string> | null = null
+
+function getKnownImageUrlIndex(): Map<string, string> {
+  if (knownImageUrlIndex) return knownImageUrlIndex
+
+  const index = new Map<string, string>()
+  const addUrl = (url: string) => {
+    const key = normalizeImagePathForLookup(url)
+    if (key && !index.has(key)) {
+      index.set(key, url)
+    }
+  }
+
+  for (const icon of getPresentationIconLibrary().icons) {
+    addUrl(icon.pngUrl)
+    if (icon.svgUrl) addUrl(icon.svgUrl)
+  }
+  for (const member of P2_TEAM_MEMBERS) {
+    addUrl(member.url)
+  }
+
+  knownImageUrlIndex = index
+  return index
+}
+
+function resolveKnownCatalogImageUrl(imageUrl: string): string | null {
+  const key = normalizeImagePathForLookup(imageUrl)
+  if (!key) return null
+  const canonical = getKnownImageUrlIndex().get(key)
+  return canonical && canonical !== imageUrl ? canonical : null
+}
+
+// --- Image URL Pre-flight Check ---
+async function isImageUrlAccessible(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: 'HEAD' })
+    if (res.ok) return true
+    // Some servers don't support HEAD; fall back to a byte-range GET
+    const getRes = await fetch(url, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+    })
+    return getRes.ok || getRes.status === 206
+  } catch (err) {
+    logger.warn('Image URL accessibility check threw', {
+      url,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return false
+  }
+}
+
+/**
+ * Returns an accessible image URL, correcting case for icon-library and P2-user assets when needed.
+ */
+async function resolveAccessibleImageUrl(
+  imageUrl: string,
+  blockSource?: BlockLike['source']
+): Promise<string | null> {
+  if (await isImageUrlAccessible(imageUrl)) return imageUrl
+
+  if (!isKnownCatalogImage(blockSource, imageUrl)) return null
+
+  const correctedUrl = resolveKnownCatalogImageUrl(imageUrl)
+  if (correctedUrl && (await isImageUrlAccessible(correctedUrl))) {
+    logger.info('Resolved image URL via case-insensitive catalog lookup', {
+      original: imageUrl,
+      resolved: correctedUrl,
+      source: blockSource ?? getKnownImageSourceFromUrl(imageUrl),
+    })
+    return correctedUrl
+  }
+
+  return null
 }
 
 // --- Exponential Backoff Wrapper ---
@@ -299,7 +412,6 @@ export const createFromTemplateTool: ToolConfig<
       const objectIds: Record<string, string> = {}
       const newSlideId = generateObjectId()
 
-      // Map the slide's own object ID so we know exactly what its new ID is going to be.
       objectIds[templateSlideId] = newSlideId
 
       for (const b of blocks) {
@@ -308,7 +420,6 @@ export const createFromTemplateTool: ToolConfig<
         }
       }
 
-      // 1. Add the duplication request (inserts right after the template slide)
       duplicateRequests.push({
         duplicateObject: {
           objectId: templateSlideId,
@@ -316,12 +427,10 @@ export const createFromTemplateTool: ToolConfig<
         },
       })
 
-      // 2. Immediately move this newly created slide to the absolute end of the presentation
-      // Because this executes sequentially in the batch, the total length increases by 1 each time.
       duplicateRequests.push({
         updateSlidesPosition: {
           slideObjectIds: [newSlideId],
-          insertionIndex: originalSlidesToDelete.length + i + 1, // original length + loop index + 1
+          insertionIndex: originalSlidesToDelete.length + i + 1,
         },
       })
 
@@ -356,7 +465,7 @@ export const createFromTemplateTool: ToolConfig<
 
     logger.info('Fetching presentation state to build list maps', { presentationId })
 
-    // 3. Fetch the presentation EXACTLY ONCE to get text endIndexes for lists
+    // 3. Fetch presentation ONCE to get text endIndexes AND shape geometry
     const presRes = await fetchWithRetry(
       `https://slides.googleapis.com/v1/presentations/${presentationId}`,
       {
@@ -369,7 +478,19 @@ export const createFromTemplateTool: ToolConfig<
     }
     const textEndIndexMap = buildTextEndIndexMap(presData)
 
-    // 4. Build a single massive batch of requests for ALL content replacements
+    // Build shape geometry map for image size restoration
+    const shapeGeometryMap: Record<string, { size: any; transform: any }> = {}
+    for (const slide of presData.slides || []) {
+      for (const el of slide.pageElements || []) {
+        if (el.size && el.transform) {
+          shapeGeometryMap[el.objectId] = {
+            size: el.size,
+            transform: el.transform,
+          }
+        }
+      }
+    }
+
     logger.info('Preparing batch content replacements', {
       presentationId,
       slideCount: slidesOrdered.length,
@@ -377,6 +498,13 @@ export const createFromTemplateTool: ToolConfig<
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const batchRequests: any[] = []
+
+    // Collect pending image checks: { objectId, imageUrl, source }
+    const imageCheckQueue: {
+      objectId: string
+      imageUrl: string
+      source?: BlockLike['source']
+    }[] = []
 
     for (let s = 0; s < slidesOrdered.length; s++) {
       const slideSchema = slidesOrdered[s] as SlideLike
@@ -399,11 +527,11 @@ export const createFromTemplateTool: ToolConfig<
         } else if (block.type === 'IMAGE' && content) {
           const imageUrl = typeof content === 'string' ? content : ''
           if (imageUrl) {
-            batchRequests.push({ replaceImage: { imageObjectId: objectId, url: imageUrl } })
+            imageCheckQueue.push({ objectId, imageUrl, source: block.source })
           }
         } else if (isList && Array.isArray(content) && content.length > 0) {
           const listText = content.join('\n')
-          const endIndex = textEndIndexMap[objectId] || 1 // Fallback to 1 if not found
+          const endIndex = textEndIndexMap[objectId] || 1
 
           batchRequests.push({
             deleteText: {
@@ -412,6 +540,68 @@ export const createFromTemplateTool: ToolConfig<
             },
           })
           batchRequests.push({ insertText: { objectId, insertionIndex: 0, text: listText } })
+        }
+      }
+    }
+
+    // Run all image URL checks in parallel, then add only passing ones to the batch
+    if (imageCheckQueue.length > 0) {
+      logger.info('Running image URL pre-flight checks', { count: imageCheckQueue.length })
+
+      const checkResults = await Promise.all(
+        imageCheckQueue.map(async ({ objectId, imageUrl, source }) => {
+          const resolvedUrl = await resolveAccessibleImageUrl(imageUrl, source)
+          return {
+            objectId,
+            imageUrl: resolvedUrl,
+            accessible: resolvedUrl !== null,
+          }
+        })
+      )
+
+      for (const { objectId, imageUrl, accessible } of checkResults) {
+        if (accessible && imageUrl) {
+          // Replace the image content
+          batchRequests.push({
+            replaceImage: {
+              imageObjectId: objectId,
+              url: imageUrl,
+              imageReplaceMethod: 'CENTER_CROP',
+            },
+          })
+
+          // Reset crop properties so the new image is shown in full
+          batchRequests.push({
+            updateImageProperties: {
+              objectId,
+              imageProperties: {
+                cropProperties: {},
+              },
+              fields: 'cropProperties',
+            },
+          })
+
+          // Restore the original shape's size and position so the element
+          // doesn't shrink/expand after the image swap
+          const geo = shapeGeometryMap[objectId]
+          if (geo) {
+            batchRequests.push({
+              updatePageElementTransform: {
+                objectId,
+                transform: {
+                  ...geo.transform,
+                  unit: 'EMU',
+                },
+                applyMode: 'ABSOLUTE',
+              },
+            })
+          } else {
+            logger.warn('No geometry found for image shape — size may not be preserved', {
+              objectId,
+            })
+          }
+        } else {
+          logger.warn('Skipping image replacement — URL not accessible', { objectId, imageUrl })
         }
       }
     }

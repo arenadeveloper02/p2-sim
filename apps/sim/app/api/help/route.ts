@@ -4,9 +4,10 @@ import { renderHelpConfirmationEmail } from '@/components/emails'
 import { helpFormBodySchema } from '@/lib/api/contracts/common'
 import { validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-import { env } from '@/lib/core/config/env'
+// import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getEmailDomain } from '@/lib/core/utils/urls'
+// import { getEmailDomain } from '@/lib/core/utils/urls'
+import { getHelpInboxEmail } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress } from '@/lib/messaging/email/utils'
@@ -85,8 +86,11 @@ ${message}
       emailText += `\n\n${images.length} image(s) attached.`
     }
 
+    const helpInboxEmail = getHelpInboxEmail()
+
     const emailResult = await sendEmail({
-      to: [`help@${env.EMAIL_DOMAIN || getEmailDomain()}`],
+      // to: [`help@${env.EMAIL_DOMAIN || getEmailDomain()}`],
+      to: [helpInboxEmail],
       subject: `[${type.toUpperCase()}] ${subject}`,
       text: emailText,
       from: getFromEmailAddress(),
@@ -118,7 +122,8 @@ ${message}
         subject: `Your ${type} request has been received: ${subject}`,
         html: confirmationHtml,
         from: getFromEmailAddress(),
-        replyTo: `help@${env.EMAIL_DOMAIN || getEmailDomain()}`,
+        // replyTo: `help@${env.EMAIL_DOMAIN || getEmailDomain()}`,
+        replyTo: helpInboxEmail,
         emailType: 'transactional',
       })
     } catch (err) {

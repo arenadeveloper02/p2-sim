@@ -5,12 +5,17 @@
 import { loggingSessionMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetWorkspaceBilledAccountUserId, mockCheckRateLimit, mockGetActivelyBannedUserIds } =
-  vi.hoisted(() => ({
-    mockGetWorkspaceBilledAccountUserId: vi.fn(),
-    mockCheckRateLimit: vi.fn(),
-    mockGetActivelyBannedUserIds: vi.fn().mockResolvedValue([]),
-  }))
+const {
+  mockGetWorkspaceBilledAccountUserId,
+  mockGetScheduleExecutionActorUserId,
+  mockCheckRateLimit,
+  mockGetActivelyBannedUserIds,
+} = vi.hoisted(() => ({
+  mockGetWorkspaceBilledAccountUserId: vi.fn(),
+  mockGetScheduleExecutionActorUserId: vi.fn(),
+  mockCheckRateLimit: vi.fn(),
+  mockGetActivelyBannedUserIds: vi.fn().mockResolvedValue([]),
+}))
 
 vi.mock('@sim/db', () => ({ db: {} }))
 vi.mock('drizzle-orm', () => ({ eq: vi.fn() }))
@@ -33,6 +38,7 @@ vi.mock('@/lib/core/rate-limiter/rate-limiter', () => ({
 vi.mock('@/lib/logs/execution/logging-session', () => loggingSessionMock)
 vi.mock('@/lib/workspaces/utils', () => ({
   getWorkspaceBilledAccountUserId: mockGetWorkspaceBilledAccountUserId,
+  getScheduleExecutionActorUserId: mockGetScheduleExecutionActorUserId,
 }))
 
 vi.mock('@sim/workflow-authz', () => ({
@@ -50,7 +56,7 @@ import { preprocessExecution } from './preprocessing'
 
 describe('preprocessExecution correlation logging', () => {
   it('preserves trigger correlation when logging preprocessing failures', async () => {
-    mockGetWorkspaceBilledAccountUserId.mockResolvedValueOnce(null)
+    mockGetScheduleExecutionActorUserId.mockResolvedValueOnce(null)
 
     const loggingSession = {
       safeStart: vi.fn().mockResolvedValue(true),
@@ -149,6 +155,47 @@ describe('preprocessExecution logPreprocessingErrors option', () => {
     expect(result).toMatchObject({ success: false, error: { statusCode: 402 } })
     // No execution-log row written — the caller (table cell) surfaces it instead.
     expect(loggingSession.safeStart).not.toHaveBeenCalled()
+  })
+})
+
+describe('preprocessExecution schedule actor resolution', () => {
+  const scheduleOptions = {
+    workflowId: 'workflow-1',
+    userId: 'unknown',
+    triggerType: 'schedule' as const,
+    executionId: 'execution-1',
+    requestId: 'request-1',
+    checkDeployment: false,
+    checkRateLimit: false,
+    workflowRecord: {
+      id: 'workflow-1',
+      userId: 'creator-1',
+      workspaceId: 'workspace-1',
+      isDeployed: true,
+    } as any,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetScheduleExecutionActorUserId.mockImplementation(
+      async (_workspaceId: string, workflowUserId?: string | null) => workflowUserId ?? null
+    )
+    mockGetActivelyBannedUserIds.mockResolvedValue([])
+    vi.mocked(getHighestPrioritySubscription).mockResolvedValue({ plan: 'free' } as any)
+    vi.mocked(checkServerSideUsageLimits).mockResolvedValue({
+      isExceeded: false,
+      currentUsage: 1,
+      limit: 10,
+    } as any)
+  })
+
+  it('uses the workflow owner for scheduled runs instead of the billed account', async () => {
+    const result = await preprocessExecution(scheduleOptions)
+
+    expect(result.success).toBe(true)
+    expect(result.actorUserId).toBe('creator-1')
+    expect(mockGetScheduleExecutionActorUserId).toHaveBeenCalledWith('workspace-1', 'creator-1')
+    expect(mockGetWorkspaceBilledAccountUserId).not.toHaveBeenCalled()
   })
 })
 

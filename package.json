@@ -26,6 +26,8 @@
     "check:api-validation": "bun run scripts/check-api-validation-contracts.ts --check",
     "check:api-validation:strict": "bun run scripts/check-api-validation-contracts.ts --check --enforce-boundary-baseline",
     "check:realtime-prune": "bun run scripts/check-realtime-prune-graph.ts",
+    "check:credentials": "bun run scripts/check-committed-secrets.ts",
+    "check:secrets": "bun run scripts/check-committed-secrets.ts",
     "check:zustand-v5": "bun run scripts/check-zustand-v5-selectors.ts",
     "check:react-query": "bun run scripts/check-react-query-patterns.ts --check",
     "check:utils": "bun run scripts/check-utils-enforcement.ts",

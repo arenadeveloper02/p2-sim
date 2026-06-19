@@ -51,7 +51,6 @@ export const GoogleSlidesBlock: BlockConfig<GoogleSlidesResponse> = {
         { label: 'Create Shape', id: 'create_shape' },
         { label: 'Create Line', id: 'create_line' },
         { label: 'Insert Text', id: 'insert_text' },
-        { label: 'Get Template Schema', id: 'get_template_schema' },
         { label: 'Delete Text', id: 'delete_text' },
         { label: 'Update Text Style', id: 'update_text_style' },
         { label: 'Update Paragraph Style', id: 'update_paragraph_style' },
@@ -932,17 +931,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       placeholder: 'Zero-based index (default: 0)',
       condition: { field: 'operation', value: 'insert_text' },
     },
-    // Get Template Schema operation
-    {
-      id: 'templateSchemaTemplate',
-      title: 'Template',
-      type: 'dropdown',
-      options: [{ label: 'Position2 2026', id: 'position2_2026' }],
-      canonicalParamId: 'template',
-      condition: { field: 'operation', value: 'get_template_schema' },
-      required: true,
-    },
-
     // ========== Copy Presentation Operation Fields ==========
     {
       id: 'sourcePresentationSelector',
@@ -2567,7 +2555,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       'google_slides_create_table',
       'google_slides_create_shape',
       'google_slides_insert_text',
-      'google_slides_get_template_schema',
       'google_slides_create_from_template',
       'google_slides_update_text_style',
       'google_slides_update_paragraph_style',
@@ -2649,8 +2636,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
             return 'google_slides_create_shape'
           case 'insert_text':
             return 'google_slides_insert_text'
-          case 'get_template_schema':
-            return 'google_slides_get_template_schema'
           case 'update_text_style':
             return 'google_slides_update_text_style'
           case 'update_paragraph_style':
@@ -2747,7 +2732,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           duplicateFolderSelector,
           duplicateFolderId,
           template,
-          templateSchemaTemplate,
           createFromTemplatePresentationName,
           createFromTemplateSchemaJson,
           ...rest
@@ -2808,15 +2792,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
           result.sourcePresentationId = effectiveSourcePresentationId || undefined
           result.title = duplicateTitle
           result.folderId = effectiveFolderId || undefined
-        }
-
-        if (params.operation === 'get_template_schema') {
-          const effectiveTemplate = (
-            (template as string) ||
-            (templateSchemaTemplate as string) ||
-            ''
-          ).trim()
-          result.template = effectiveTemplate || undefined
         }
 
         // Replace Text operation
@@ -3421,8 +3396,6 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
     insertTextObjectId: { type: 'string', description: 'Object ID for text insertion' },
     insertTextContent: { type: 'string', description: 'Text to insert' },
     insertTextIndex: { type: 'number', description: 'Insertion index' },
-    // Get template schema operation
-    templateSchemaTemplate: { type: 'string', description: 'Template id (e.g. position2_2026)' },
 
     // Copy presentation operation
     sourcePresentationId: { type: 'string', description: 'Source/template presentation ID' },
@@ -3708,6 +3681,14 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       type: 'json',
       description: 'Full presentation template schema (slides, blocks, shapeIds)',
     },
+    // Get presentation icons operation
+    icons: {
+      type: 'json',
+      description: 'Presentation icon catalog entries (id, label, category, tags, pngUrl)',
+    },
+    count: { type: 'number', description: 'Number of icons returned' },
+    baseUrl: { type: 'string', description: 'Base URL for presentation icon assets' },
+    version: { type: 'string', description: 'Icon library version' },
     // Create from template operation
     slidesCreated: { type: 'number', description: 'Number of slides created' },
 
