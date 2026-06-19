@@ -44,16 +44,16 @@ export const TABLE_LIMITS = {
  */
 export const DEFAULT_TABLE_PLAN_LIMITS = {
   free: {
-    maxTables: 3,
-    maxRowsPerTable: 1000,
+    maxTables: 1000, // Previous Value = 3
+    maxRowsPerTable: 1000000, // Previous Value = 1000
   },
   pro: {
-    maxTables: 25,
-    maxRowsPerTable: 5000,
+    maxTables: 1000, // Previous Value = 25
+    maxRowsPerTable: 1000000, // Previous Value = 5000
   },
   team: {
-    maxTables: 100,
-    maxRowsPerTable: 10000,
+    maxTables: 1000, // Previous Value = 100
+    maxRowsPerTable: 1000000, // Previous Value = 10000
   },
   enterprise: {
     maxTables: 10000,

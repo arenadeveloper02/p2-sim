@@ -1,8 +1,8 @@
+import { getTemplateMasterSchema } from '@/tools/google_slides/templates'
 import type { ToolConfig } from '@/tools/types'
-import { getTemplateMasterSchema } from './templates'
 
 interface GetTemplateSchemaParams {
-  template: string
+  template?: string
 }
 
 interface GetTemplateSchemaResponse {
@@ -14,22 +14,23 @@ interface GetTemplateSchemaResponse {
 
 export const getTemplateSchemaTool: ToolConfig<GetTemplateSchemaParams, GetTemplateSchemaResponse> =
   {
-    id: 'google_slides_get_template_schema',
-    name: 'Get Google Slides Template Schema',
+    id: 'p2_docs_get_template_schema',
+    name: 'Get Template Schema',
     description: 'Return the JSON schema for a presentation template (e.g. position2_2026)',
     version: '1.0',
 
     params: {
       template: {
         type: 'string',
-        required: true,
+        required: false,
         visibility: 'user-or-llm',
-        description: 'Template id (e.g. position2_2026). Use TEMPLATE_OPTIONS for dropdown values.',
+        description:
+          'Template id (e.g. position2_2026). Defaults to position2_2026 when omitted.',
       },
     },
 
     request: {
-      url: '/api/tools/google_slides/get_template_schema',
+      url: '/api/tools/p2_docs/get_template_schema',
       method: 'GET',
       headers: () => ({}),
     },
@@ -37,7 +38,8 @@ export const getTemplateSchemaTool: ToolConfig<GetTemplateSchemaParams, GetTempl
     directExecution: async (
       params: GetTemplateSchemaParams
     ): Promise<GetTemplateSchemaResponse> => {
-      const schema = getTemplateMasterSchema(params.template.trim())
+      const templateId = (params.template?.trim() || 'position2_2026')
+      const schema = getTemplateMasterSchema(templateId)
       return {
         success: true,
         output: {
