@@ -1,17 +1,15 @@
-import type { PresentationSchema } from './schema'
+import type { IconLibrary, PresentationSchema } from './schema'
+import { iconLibrary } from './icon_library'
 
-/** Template ids supported by getTemplateMasterSchema (for dropdown) */
 export const TEMPLATE_OPTIONS = [{ value: 'position2_2026', label: 'Position2 2026' }] as const
 
 export type TemplateId = (typeof TEMPLATE_OPTIONS)[number]['value']
 
-/**
- * Returns the master schema for the given template id.
- * Template must match a known id (e.g. position2_2026); use TEMPLATE_OPTIONS for dropdown values.
- *
- * @param template - Template id from TEMPLATE_OPTIONS (e.g. 'position2_2026')
- * @returns Full presentation schema for that template
- */
+/** Returns the static presentation icon catalog used by template image blocks. */
+export function getPresentationIconLibrary(): IconLibrary {
+  return iconLibrary
+}
+
 export function getTemplateMasterSchema(template: string): PresentationSchema {
   if (template === 'position2_2026') {
     return buildTemplateSchema()
@@ -21,10 +19,6 @@ export function getTemplateMasterSchema(template: string): PresentationSchema {
   )
 }
 
-/**
- * Runs once when template changes
- * Output is stored in DB / JSON file
- */
 function buildTemplateSchema(): PresentationSchema {
   return {
     schemaVersion: '1.0',
@@ -34,7 +28,7 @@ function buildTemplateSchema(): PresentationSchema {
       {
         slideKey: 'TITLE_SLIDE',
         order: 1,
-        templateSlideObjectId: 'g3b56832a139_1_23', // from presentations.get
+        templateSlideObjectId: 'g3b56832a139_1_23',
         description: 'Opening title slide',
         blocks: [
           {
@@ -51,6 +45,9 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'topic_visual',
             type: 'IMAGE',
             role: 'SUPPORTING_VISUAL',
+            source: 'icon_library',
+            iconLibraryColor: 'white',
+            replaceable: false,
             usage: ['logo', 'topic_icon'],
             shapeId: 'g3b56832a139_1_24',
             description: 'Small supporting visual, not a hero image',
@@ -94,24 +91,29 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Month and year display (e.g., "February | 2026")',
             content: '',
           },
-          // {
-          //   key: 'hero_image',
-          //   type: 'IMAGE',
-          //   role: 'PRIMARY_VISUAL',
-          //   usage: ['background', 'contextual_photo', 'hero'],
-          //   shapeId: 'g392319e7c15_4_91',
-          //   description: 'Large hero image on the right side of the slide',
-          //   content: '',
-          // },
-          // {
-          //   key: 'logo',
-          //   type: 'IMAGE',
-          //   role: 'SUPPORTING_VISUAL',
-          //   usage: ['logo', 'branding'],
-          //   shapeId: 'g392319e7c15_4_98',
-          //   description: 'Company logo in top left corner',
-          //   content: '',
-          // },
+          {
+            key: 'hero_image',
+            type: 'IMAGE',
+            role: 'PRIMARY_VISUAL',
+            source: 'stock_photo',
+            replaceable: false,
+            usage: ['background', 'contextual_photo', 'hero'],
+            shapeId: 'g392319e7c15_4_91',
+            description: 'Large hero image on the right side of the slide',
+            content: '',
+          },
+          {
+            key: 'logo',
+            type: 'IMAGE',
+            role: 'SUPPORTING_VISUAL',
+            source: 'icon_library',
+            iconLibraryColor: 'white',
+            replaceable: false,
+            usage: ['logo', 'branding'],
+            shapeId: 'g392319e7c15_4_98',
+            description: 'Company logo in top left corner',
+            content: '',
+          },
         ],
       },
       {
@@ -119,16 +121,13 @@ function buildTemplateSchema(): PresentationSchema {
         order: 3,
         description: 'Table of contents slide with numbered list of sections',
         templateSlideObjectId: 'g2380b89c92d_0_1',
-
         blocks: [
           {
             key: 'toc_items',
             type: 'TEXT',
             role: 'LIST',
-
-            shapeId: 'g2380b89c92d_0_3', // BODY text box containing numbered list
+            shapeId: 'g2380b89c92d_0_3',
             description: 'List of section titles shown in the table of contents',
-
             content: [],
             minItems: 3,
             maxItems: 8,
@@ -143,14 +142,14 @@ function buildTemplateSchema(): PresentationSchema {
       {
         slideKey: 'TWO_COLUMN_IMAGE_TEXT',
         order: 4,
-        templateSlideObjectId: 'g3bd983d1368_1_0', // correct – matches the slide's objectId
+        templateSlideObjectId: 'g3bd983d1368_1_0',
         description: 'Two-column layout with images, headers, and bulleted text content',
         blocks: [
           {
             key: 'title',
             type: 'TEXT',
             role: 'TITLE',
-            shapeId: 'g3bd983d1368_1_3', // correct – TITLE placeholder
+            shapeId: 'g3bd983d1368_1_3',
             minChars: 15,
             maxChars: 40,
             description: 'Slide title describing the two-column content',
@@ -171,7 +170,7 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'left_header',
             type: 'TEXT',
             role: 'SECTION_HEADER',
-            shapeId: 'g3bd983d1368_1_11', // correct – left bold 18pt header
+            shapeId: 'g3bd983d1368_1_11',
             minChars: 10,
             maxChars: 40,
             description: 'Left column header (bold, colored, 18pt)',
@@ -181,9 +180,9 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'left_content',
             type: 'TEXT',
             role: 'LIST',
-            shapeId: 'g3bd983d1368_1_12', // correct – left bulleted list
+            shapeId: 'g3bd983d1368_1_12',
             minItems: 2,
-            maxItems: 3,
+            maxItems: 2,
             itemConstraints: {
               minChars: 30,
               maxChars: 100,
@@ -207,7 +206,7 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'right_header',
             type: 'TEXT',
             role: 'SECTION_HEADER',
-            shapeId: 'g3bd983d1368_1_13', // correct – right bold 18pt header
+            shapeId: 'g3bd983d1368_1_13',
             minChars: 10,
             maxChars: 40,
             description: 'Right column header (bold, colored, 18pt)',
@@ -217,9 +216,9 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'right_content',
             type: 'TEXT',
             role: 'LIST',
-            shapeId: 'g3bd983d1368_1_15', // ← FIXED: was wrong (1_14), now correct
+            shapeId: 'g3bd983d1368_1_15',
             minItems: 2,
-            maxItems: 3,
+            maxItems: 2,
             itemConstraints: {
               minChars: 30,
               maxChars: 100,
@@ -250,6 +249,8 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'left_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
+            source: 'stock_photo',
+            replaceable: false,
             usage: ['contextual_photo', 'illustration'],
             shapeId: 'g392319e7c15_4_335',
             description: 'Left column image',
@@ -261,7 +262,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'SECTION_HEADER',
             shapeId: 'g3bec8eac249_0_0',
             minChars: 25,
-            maxChars: 40,
+            maxChars: 35,
             description: 'Left column header (18pt bold, ACCENT5 color)',
             content: '',
           },
@@ -271,7 +272,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g3bec8eac249_0_1',
             minChars: 40,
-            maxChars: 130,
+            maxChars: 85,
             description: 'Left column body text (14pt regular)',
             content: '',
           },
@@ -279,6 +280,8 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'middle_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
+            source: 'stock_photo',
+            replaceable: false,
             usage: ['contextual_photo', 'illustration'],
             shapeId: 'g392319e7c15_4_337',
             description: 'Middle column image',
@@ -290,7 +293,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'SECTION_HEADER',
             shapeId: 'g3bec8eac249_0_2',
             minChars: 25,
-            maxChars: 40,
+            maxChars: 35,
             description: 'Middle column header (18pt bold, ACCENT3 color)',
             content: '',
           },
@@ -300,7 +303,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g3bec8eac249_0_5',
             minChars: 40,
-            maxChars: 130,
+            maxChars: 85,
             description: 'Middle column body text (14pt regular)',
             content: '',
           },
@@ -308,6 +311,8 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'right_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
+            source: 'stock_photo',
+            replaceable: false,
             usage: ['contextual_photo', 'illustration'],
             shapeId: 'g392319e7c15_4_336',
             description: 'Right column image',
@@ -319,7 +324,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'SECTION_HEADER',
             shapeId: 'g3bec8eac249_0_7',
             minChars: 25,
-            maxChars: 40,
+            maxChars: 35,
             description: 'Right column header (18pt bold, ACCENT6 color)',
             content: '',
           },
@@ -329,7 +334,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g3bec8eac249_0_6',
             minChars: 40,
-            maxChars: 130,
+            maxChars: 85,
             description: 'Right column body text (14pt regular)',
             content: '',
           },
@@ -367,10 +372,10 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'LIST',
             shapeId: 'g392319e7c15_4_29',
             minItems: 2,
-            maxItems: 4,
+            maxItems: 3,
             itemConstraints: {
               minChars: 30,
-              maxChars: 160,
+              maxChars: 140,
               description: 'Body text for each bulleted point',
             },
             description: 'Left column bulleted list (14pt, DARK1 color)',
@@ -392,10 +397,10 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'LIST',
             shapeId: 'g3bec8eac249_0_10',
             minItems: 2,
-            maxItems: 4,
+            maxItems: 3,
             itemConstraints: {
               minChars: 30,
-              maxChars: 160,
+              maxChars: 140,
               description: 'Body text for each bulleted point',
             },
             description: 'Right column bulleted list (14pt, DARK1 color)',
@@ -407,8 +412,7 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FOUR_COLUMN_TEXT_ONLY',
         order: 7,
         templateSlideObjectId: 'g392319e7c15_4_308',
-        description:
-          'Four-column text layout (2x2 grid) with headers and body text (no images, no bullets)',
+        description: 'Four-column text layout (2x2 grid) with headers and body text (no images, no bullets)',
         blocks: [
           {
             key: 'title',
@@ -534,7 +538,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g392319e7c15_4_290',
             minChars: 40,
-            maxChars: 200,
+            maxChars: 100,
             description: 'Top-left column body text (14pt regular)',
             content: '',
           },
@@ -554,7 +558,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g3bec8eac249_0_23',
             minChars: 40,
-            maxChars: 200,
+            maxChars: 100,
             description: 'Top-middle column body text (14pt regular)',
             content: '',
           },
@@ -574,7 +578,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g3bec8eac249_0_25',
             minChars: 40,
-            maxChars: 200,
+            maxChars: 100,
             description: 'Top-right column body text (14pt regular)',
             content: '',
           },
@@ -594,7 +598,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g3bec8eac249_0_27',
             minChars: 40,
-            maxChars: 200,
+            maxChars: 100,
             description: 'Bottom-left column body text (14pt regular)',
             content: '',
           },
@@ -614,7 +618,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g3bec8eac249_0_28',
             minChars: 40,
-            maxChars: 200,
+            maxChars: 100,
             description: 'Bottom-middle column body text (14pt regular)',
             content: '',
           },
@@ -634,7 +638,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g3bec8eac249_0_31',
             minChars: 40,
-            maxChars: 200,
+            maxChars: 100,
             description: 'Bottom-right column body text (14pt regular)',
             content: '',
           },
@@ -644,8 +648,7 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'BULLETED_LIST_WITH_STATS',
         order: 9,
         templateSlideObjectId: 'g258f1f1ebd7_0_38',
-        description:
-          'Two-section layout: left side with bulleted list, right side with 3 circular stat items',
+        description: 'Two-section layout: left side with bulleted list, right side with 3 circular stat items',
         blocks: [
           {
             key: 'title',
@@ -653,7 +656,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'TITLE',
             shapeId: 'g258f1f1ebd7_0_40',
             minChars: 15,
-            maxChars: 60,
+            maxChars: 40,
             description: 'Slide title',
             content: '',
           },
@@ -666,7 +669,7 @@ function buildTemplateSchema(): PresentationSchema {
             maxItems: 4,
             itemConstraints: {
               minChars: 50,
-              maxChars: 220,
+              maxChars: 160,
               description: 'Bulleted point with detailed content',
             },
             description: 'Left side bulleted list with detailed points',
@@ -738,8 +741,7 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'BULLETED_LIST_WITH_LARGE_STAT',
         order: 10,
         templateSlideObjectId: 'g2380b89c92d_0_153',
-        description:
-          'Two-section layout: left side with bulleted list, right side with one large circular stat',
+        description: 'Two-section layout: left side with bulleted list, right side with one large circular stat',
         blocks: [
           {
             key: 'title',
@@ -747,7 +749,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'TITLE',
             shapeId: 'g2380b89c92d_0_154',
             minChars: 15,
-            maxChars: 60,
+            maxChars: 40,
             description: 'Slide title',
             content: '',
           },
@@ -760,7 +762,7 @@ function buildTemplateSchema(): PresentationSchema {
             maxItems: 5,
             itemConstraints: {
               minChars: 80,
-              maxChars: 250,
+              maxChars: 210,
               description: 'Bulleted point with extensive detailed content',
             },
             description: 'Left side bulleted list with extensive points',
@@ -829,8 +831,7 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3b5c40508b0_1_8',
             minChars: 5,
             maxChars: 100,
-            description:
-              'Question or prompt text displayed in the white card (e.g., "Question:", "What questions do you have?")',
+            description: 'Question or prompt text displayed in the white card',
             content: '',
           },
         ],
@@ -839,8 +840,7 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'CONTACT_SLIDE',
         order: 13,
         templateSlideObjectId: 'g2380b89c92d_0_168',
-        description:
-          'Contact/closing slide with company info, location, social media icons, and footer - no editable content blocks',
+        description: 'Contact/closing slide with company info, location, social media icons, and footer - no editable content blocks',
         blocks: [],
       },
       {

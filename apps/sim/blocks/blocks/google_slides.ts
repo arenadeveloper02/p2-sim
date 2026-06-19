@@ -3681,6 +3681,14 @@ Return ONLY the text content - no explanations, no markdown formatting markers, 
       type: 'json',
       description: 'Full presentation template schema (slides, blocks, shapeIds)',
     },
+    // Get presentation icons operation
+    icons: {
+      type: 'json',
+      description: 'Presentation icon catalog entries (id, label, category, tags, pngUrl)',
+    },
+    count: { type: 'number', description: 'Number of icons returned' },
+    baseUrl: { type: 'string', description: 'Base URL for presentation icon assets' },
+    version: { type: 'string', description: 'Icon library version' },
     // Create from template operation
     slidesCreated: { type: 'number', description: 'Number of slides created' },
 

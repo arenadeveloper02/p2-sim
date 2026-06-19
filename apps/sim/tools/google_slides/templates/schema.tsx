@@ -56,6 +56,7 @@ export interface ImageBlock extends BaseBlock {
   iconLibraryColor?: IconColor
   width?: number
   height?: number
+  replaceable: boolean
 }
 
 /* ---------- Union Block ---------- */
@@ -72,6 +73,24 @@ export interface SlideSchema {
   templateSlideObjectId: string // Slide ID from TEMPLATE presentation
 
   blocks: Block[]
+}
+
+export type IconColor = 'black' | 'white'
+
+export interface IconSchema {
+  id: string
+  label: string
+  category: string
+  tags: string[]
+  pngUrl: string
+  svgUrl?: string
+  color: IconColor
+}
+
+export interface IconLibrary {
+  version: string
+  baseUrl: string
+  icons: IconSchema[]
 }
 
 /* ---------- Presentation Schema ---------- */
