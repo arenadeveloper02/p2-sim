@@ -29,6 +29,7 @@ import type { SubBlockConfig } from '@/blocks/types'
 import { CREDENTIAL_SET } from '@/executor/constants'
 import { useCredentialSets } from '@/hooks/queries/credential-sets'
 import { useWorkspaceCredential, useWorkspaceCredentials } from '@/hooks/queries/credentials'
+import { useHubSpotAccountOptions } from '@/hooks/queries/hubspot-accounts'
 import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
 import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
 import { useOrganizations } from '@/hooks/queries/organization'
@@ -116,6 +117,8 @@ export function CredentialSelector({
     effectiveProviderId === UNIPILE_LINKEDIN_PROVIDER_ID && isAdminWorkspace(workspaceId)
 
   const isTriggerMode = subBlock.mode === 'trigger' || subBlock.mode === 'trigger-advanced'
+  const isSharedHubspotWorkspace =
+    isAdminWorkspace(workspaceId) && effectiveProviderId === 'hubspot'
 
   const {
     data: rawCredentials = [],
@@ -147,9 +150,17 @@ export function CredentialSelector({
     enabled: additionalConnectOptions.length > 0,
   })
 
+  const {
+    data: hubspotAccountOptions = [],
+    isFetching: hubspotAccountOptionsLoading,
+    refetch: refetchHubspotAccounts,
+  } = useHubSpotAccountOptions(isSharedHubspotWorkspace ? workspaceId : undefined)
+
   const credentialsLoading = isAllCredentials
     ? allCredentialsLoading
-    : oauthCredentialsLoading || (isSharedUnipileWorkspace && unipileAccountOptionsLoading)
+    : oauthCredentialsLoading ||
+      (isSharedHubspotWorkspace && hubspotAccountOptionsLoading) ||
+      (isSharedUnipileWorkspace && unipileAccountOptionsLoading)
 
   const selectionPool = useMemo(
     () =>
@@ -184,25 +195,33 @@ export function CredentialSelector({
     [credentialSets, selectedCredentialSetId]
   )
 
-  const { data: inaccessibleCredential } = useWorkspaceCredential(
-    selectedId || undefined,
-    Boolean(selectedId) &&
-      !selectedCredential &&
-      !selectedAllCredential &&
-      !credentialsLoading &&
-      Boolean(workspaceId)
+  const matchedHubspotOption = useMemo(
+    () => hubspotAccountOptions.find((option) => option.id === selectedId) ?? null,
+    [hubspotAccountOptions, selectedId]
   )
-  const inaccessibleCredentialName = inaccessibleCredential?.displayName ?? null
 
   const selectedUnipileAccountOption = useMemo(
     () => unipileAccountOptions.find((option) => option.id === selectedId) ?? null,
     [unipileAccountOptions, selectedId]
   )
 
+  const { data: inaccessibleCredential } = useWorkspaceCredential(
+    selectedId || undefined,
+    Boolean(selectedId) &&
+      !selectedCredential &&
+      !selectedAllCredential &&
+      !matchedHubspotOption &&
+      !selectedUnipileAccountOption &&
+      !credentialsLoading &&
+      Boolean(workspaceId)
+  )
+  const inaccessibleCredentialName = inaccessibleCredential?.displayName ?? null
+
   const resolvedLabel = useMemo(() => {
     if (selectedCredentialSet) return selectedCredentialSet.name
     if (selectedAllCredential) return selectedAllCredential.displayName
     if (selectedCredential) return selectedCredential.name
+    if (matchedHubspotOption) return matchedHubspotOption.label
     if (selectedUnipileAccountOption) return selectedUnipileAccountOption.label
     if (inaccessibleCredentialName) return inaccessibleCredentialName
     return ''
@@ -210,6 +229,7 @@ export function CredentialSelector({
     selectedCredentialSet,
     selectedAllCredential,
     selectedCredential,
+    matchedHubspotOption,
     selectedUnipileAccountOption,
     inaccessibleCredentialName,
   ])
@@ -237,9 +257,11 @@ export function CredentialSelector({
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
-      if (isOpen) void refetch()
+      if (!isOpen) return
+      void refetch()
+      if (isSharedHubspotWorkspace) void refetchHubspotAccounts()
     },
-    [refetch]
+    [refetch, isSharedHubspotWorkspace, refetchHubspotAccounts]
   )
 
   const hasOAuthSelection = Boolean(selectedCredential)
@@ -374,6 +396,28 @@ export function CredentialSelector({
       return { comboboxOptions: options, comboboxGroups: undefined }
     }
 
+    if (isSharedHubspotWorkspace) {
+      const personalAccountCount = hubspotAccountOptions.filter(
+        (option) => option.source === 'personal'
+      ).length
+
+      const options = hubspotAccountOptions.map((option) => ({
+        label: option.label,
+        value: option.id,
+        iconElement: getProviderIcon(provider),
+      }))
+
+      options.push({
+        label:
+          personalAccountCount > 0 ? 'Connect another HubSpot account' : 'Connect HubSpot account',
+        value: '__connect_account__',
+        iconElement: <ExternalLink className='size-3' />,
+      })
+      options.push(...additionalConnectItems)
+
+      return { comboboxOptions: options, comboboxGroups: undefined }
+    }
+
     if (isSharedUnipileWorkspace) {
       const personalAccountCount = unipileAccountOptions.filter(
         (option) => option.source === 'personal'
@@ -477,6 +521,8 @@ export function CredentialSelector({
     isSharedUnipileWorkspace,
     unipileAccountOptions,
     allWorkspaceCredentials,
+    isSharedHubspotWorkspace,
+    hubspotAccountOptions,
     credentials,
     provider,
     effectiveProviderId,
@@ -605,6 +651,12 @@ export function CredentialSelector({
         return
       }
 
+      const matchedHubspotOption = hubspotAccountOptions.find((option) => option.id === value)
+      if (matchedHubspotOption) {
+        handleSelect(value)
+        return
+      }
+
       setIsEditing(true)
       setEditingValue(value)
     },
@@ -613,6 +665,7 @@ export function CredentialSelector({
       allWorkspaceCredentials,
       credentials,
       credentialSets,
+      hubspotAccountOptions,
       unipileAccountOptions,
       handleAddCredential,
       handleSelect,
