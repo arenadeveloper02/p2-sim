@@ -1,14 +1,19 @@
+import type { HelpSupportIssueAttachment } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
 import { type NextRequest, NextResponse } from 'next/server'
 import { renderHelpConfirmationEmail } from '@/components/emails'
 import { helpFormBodySchema } from '@/lib/api/contracts/common'
 import { validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-// import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
-// import { getEmailDomain } from '@/lib/core/utils/urls'
 import { getHelpInboxEmail } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import {
+  formatHelpSupportAttachmentLinks,
+  persistHelpSupportIssue,
+  uploadHelpSupportAttachments,
+} from '@/lib/help/support-issue'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress } from '@/lib/messaging/email/utils'
 
@@ -71,37 +76,56 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
 
     const userId = session.user.id
+    const issueId = generateId()
+    const validatedType = validationResult.data.type
+
+    let attachments: HelpSupportIssueAttachment[] = []
+    try {
+      attachments = await uploadHelpSupportAttachments(issueId, images)
+    } catch (uploadError) {
+      logger.error(`[${requestId}] Failed to upload help support attachments`, uploadError)
+      return NextResponse.json({ error: 'Failed to upload attachments' }, { status: 500 })
+    }
+
+    try {
+      await persistHelpSupportIssue({
+        id: issueId,
+        userId,
+        userEmail: email,
+        workspaceId: workspaceId?.trim() || null,
+        workflowId: workflowId?.trim() || null,
+        type: validatedType,
+        subject: validationResult.data.subject,
+        message: validationResult.data.message,
+        attachments,
+      })
+    } catch (dbError) {
+      logger.error(`[${requestId}] Failed to persist help support issue`, dbError)
+      return NextResponse.json({ error: 'Failed to save help request' }, { status: 500 })
+    }
+
     let emailText = `
-Type: ${type}
+Type: ${validatedType}
 From: ${email}
 User ID: ${userId}
 Workspace ID: ${workspaceId ?? 'N/A'}
 Workflow ID: ${workflowId ?? 'N/A'}
 Browser: ${userAgent ?? 'N/A'}
 
-${message}
+${validationResult.data.message}
     `
 
-    if (images.length > 0) {
-      emailText += `\n\n${images.length} image(s) attached.`
-    }
+    emailText += formatHelpSupportAttachmentLinks(attachments)
 
     const helpInboxEmail = getHelpInboxEmail()
 
     const emailResult = await sendEmail({
-      // to: [`help@${env.EMAIL_DOMAIN || getEmailDomain()}`],
       to: [helpInboxEmail],
-      subject: `[${type.toUpperCase()}] ${subject}`,
+      subject: `[${validatedType.toUpperCase()}] ${validationResult.data.subject}`,
       text: emailText,
       from: getFromEmailAddress(),
       replyTo: email,
       emailType: 'transactional',
-      attachments: images.map((image) => ({
-        filename: image.filename,
-        content: image.content.toString('base64'),
-        contentType: image.contentType,
-        disposition: 'attachment',
-      })),
     })
 
     if (!emailResult.success) {
@@ -109,20 +133,16 @@ ${message}
       return NextResponse.json({ error: 'Failed to send email' }, { status: 500 })
     }
 
-    logger.info(`[${requestId}] Help request email sent successfully`)
+    logger.info(`[${requestId}] Help request email sent successfully`, { issueId })
 
     try {
-      const confirmationHtml = await renderHelpConfirmationEmail(
-        type as 'bug' | 'feedback' | 'feature_request' | 'other',
-        images.length
-      )
+      const confirmationHtml = await renderHelpConfirmationEmail(validatedType, attachments.length)
 
       await sendEmail({
         to: [email],
-        subject: `Your ${type} request has been received: ${subject}`,
+        subject: `Your ${validatedType} request has been received: ${validationResult.data.subject}`,
         html: confirmationHtml,
         from: getFromEmailAddress(),
-        // replyTo: `help@${env.EMAIL_DOMAIN || getEmailDomain()}`,
         replyTo: helpInboxEmail,
         emailType: 'transactional',
       })
