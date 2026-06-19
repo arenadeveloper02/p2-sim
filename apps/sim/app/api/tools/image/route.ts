@@ -917,12 +917,14 @@ async function generateWithFalAI(
 
   logger.info(`[${requestId}] Fal.ai image request created: ${falRequestId}`)
 
-  const pollIntervalMs = 3000
+  const pollIntervalMs = 1000
   const maxAttempts = Math.ceil(getMaxExecutionTimeout() / pollIntervalMs)
   let attempts = 0
 
   while (attempts < maxAttempts) {
-    await sleep(pollIntervalMs)
+    if (attempts > 0) {
+      await sleep(pollIntervalMs)
+    }
 
     const statusResponse = await fetch(statusUrl, {
       headers: {

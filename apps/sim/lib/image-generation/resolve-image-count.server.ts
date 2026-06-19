@@ -44,6 +44,10 @@ const VARIATION_COUNT_FALLBACK_REGEX =
 const COMBINED_OUTPUT_COMPOSITION_REGEX =
   /\b(?:collage|grid|sheet)\b|\bside[\s-]by[\s-]side\b|\b(?:in|into|as|within)\s+(?:a\s+)?(?:single|one)\s+image\b|\bcombined?\s+into\s+(?:a\s+)?(?:single|one)\s+image\b/i
 
+/** Ambiguous multi-image intent that still needs the SLM when no explicit count is present. */
+const AMBIGUOUS_MULTI_IMAGE_INTENT_REGEX =
+  /\b(?:variations?|versions?|options?|alternatives?|multiple|several|a few|couple of|both)\b|\b(?:two|three|four|five|[2-5])\s+(?:different\s+|separate\s+)?(?:images?|pictures?|renders?|outputs?|variations?|versions?|options?)\b/i
+
 function clampCount(n: number): number {
   return Math.min(MAX_IMAGES_TO_GENERATE, Math.max(1, Math.round(n)))
 }
@@ -96,6 +100,26 @@ function extractExplicitOutputCount(prompt: string): number | undefined {
   }
 
   return explicitCount
+}
+
+function promptNeedsSlmCountResolution(prompt: string): boolean {
+  return AMBIGUOUS_MULTI_IMAGE_INTENT_REGEX.test(prompt)
+}
+
+function buildResolveResult(
+  prompt: string,
+  imageCount: number,
+  slmSuggested: number,
+  promptImageUrl?: string
+): ResolveImageGenerationCountResult {
+  const count = clampCount(imageCount)
+  return {
+    imageCount: count,
+    slmSuggested,
+    promptImageUrl,
+    singleImagePrompt: prompt,
+    singleImagePrompts: buildPromptsForCount(prompt, count),
+  }
 }
 
 /**
@@ -202,6 +226,22 @@ export async function resolveImageGenerationCount(
     return { imageCount: 1, slmSuggested: 1, singleImagePrompt: '', singleImagePrompts: [''] }
   }
 
+  if (explicitOutputCount !== undefined) {
+    logger.info('SLM image-count skipped (explicit count)', {
+      imageCount: explicitOutputCount,
+      hasPromptImageUrl: Boolean(promptImageUrl),
+    })
+    return buildResolveResult(prompt, explicitOutputCount, explicitOutputCount, promptImageUrl)
+  }
+
+  if (!promptNeedsSlmCountResolution(prompt)) {
+    logger.info('SLM image-count skipped (single-image prompt)', {
+      promptLength: prompt.length,
+      hasPromptImageUrl: Boolean(promptImageUrl),
+    })
+    return buildResolveResult(prompt, 1, 1, promptImageUrl)
+  }
+
   const systemInstruction = `You estimate how many distinct image files the user wants generated.
 Count output files, not concepts inside one file.
 Reply with only a JSON object: {"imageCount":N,"imageUrl":"..."}.
@@ -260,13 +300,7 @@ Examples:
         message: (errBody as { error?: { message?: string } }).error?.message,
       })
       const fallbackCount = explicitOutputCount ?? 1
-      return {
-        imageCount: fallbackCount,
-        slmSuggested: fallbackCount,
-        promptImageUrl,
-        singleImagePrompt: prompt,
-        singleImagePrompts: buildPromptsForCount(prompt, fallbackCount),
-      }
+      return buildResolveResult(prompt, fallbackCount, fallbackCount, promptImageUrl)
     }
 
     const data = (await response.json()) as {
@@ -281,13 +315,7 @@ Examples:
         hasPromptImageUrl: Boolean(promptImageUrl),
       })
       const fallbackCount = explicitOutputCount ?? 1
-      return {
-        imageCount: fallbackCount,
-        slmSuggested: fallbackCount,
-        promptImageUrl,
-        singleImagePrompt: prompt,
-        singleImagePrompts: buildPromptsForCount(prompt, fallbackCount),
-      }
+      return buildResolveResult(prompt, fallbackCount, fallbackCount, promptImageUrl)
     }
 
     const parsed = parseSuggestedFieldsFromSlmText(text)
@@ -307,13 +335,7 @@ Examples:
       message: error instanceof Error ? error.message : String(error),
     })
     const fallbackCount = explicitOutputCount ?? 1
-    return {
-      imageCount: fallbackCount,
-      slmSuggested: fallbackCount,
-      promptImageUrl,
-      singleImagePrompt: prompt,
-      singleImagePrompts: buildPromptsForCount(prompt, fallbackCount),
-    }
+    return buildResolveResult(prompt, fallbackCount, fallbackCount, promptImageUrl)
   } finally {
     clearTimeout(timeoutHandle)
   }
@@ -325,11 +347,5 @@ Examples:
     explicitOutputCount,
     hasPromptImageUrl: Boolean(resolvedPromptImageUrl),
   })
-  return {
-    imageCount,
-    slmSuggested,
-    promptImageUrl: resolvedPromptImageUrl,
-    singleImagePrompt: prompt,
-    singleImagePrompts: buildPromptsForCount(prompt, imageCount),
-  }
+  return buildResolveResult(prompt, imageCount, slmSuggested, resolvedPromptImageUrl)
 }

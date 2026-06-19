@@ -53,17 +53,34 @@ describe('resolveImageGenerationCount', () => {
     })
 
     expect(result.imageCount).toBe(4)
-    expect(result.slmSuggested).toBe(3)
+    expect(result.slmSuggested).toBe(4)
     expect(result.singleImagePrompt).toBe(originalPrompt)
-    expect(result.singleImagePrompts).toEqual([
-      originalPrompt,
-      originalPrompt,
-      originalPrompt,
-      originalPrompt,
-    ])
+    expect(result.singleImagePrompts).toHaveLength(4)
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
-  it('counts separate variations even when the SLM returns 1', async () => {
+  it('skips the SLM for ordinary single-image prompts', async () => {
+    const originalPrompt = 'A red sports car on a mountain road at sunset.'
+    mockSlmImageCount(1)
+
+    const result = await resolveImageGenerationCount({ prompt: originalPrompt })
+
+    expect(result.imageCount).toBe(1)
+    expect(result.slmSuggested).toBe(1)
+    expect(result.singleImagePrompts).toEqual([originalPrompt])
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('still calls the SLM when the prompt asks for variations without an explicit count', async () => {
+    const originalPrompt = 'Give me some variations of this logo concept'
+    mockSlmImageCount(3)
+
+    await resolveImageGenerationCount({ prompt: originalPrompt })
+
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts separate variations even when the SLM would return 1', async () => {
     const originalPrompt = 'Give me three separate variations of this logo'
     mockSlmImageCount(1)
 
@@ -71,6 +88,7 @@ describe('resolveImageGenerationCount', () => {
 
     expect(result.imageCount).toBe(3)
     expect(result.singleImagePrompts).toHaveLength(3)
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   it('does not treat a reference single image as a combined-output request', async () => {
@@ -81,6 +99,7 @@ describe('resolveImageGenerationCount', () => {
 
     expect(result.imageCount).toBe(3)
     expect(result.singleImagePrompts).toHaveLength(3)
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   it('extracts variation count when the reference image is mentioned earlier in the prompt', async () => {
@@ -91,9 +110,10 @@ describe('resolveImageGenerationCount', () => {
 
     expect(result.imageCount).toBe(4)
     expect(result.singleImagePrompts).toHaveLength(4)
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
-  it('returns one image for side-by-side composition requests', async () => {
+  it('returns one image for side-by-side composition requests without calling the SLM', async () => {
     const originalPrompt = 'Give me three variations side by side in a single image'
     mockSlmImageCount(3)
 
@@ -101,6 +121,7 @@ describe('resolveImageGenerationCount', () => {
 
     expect(result.imageCount).toBe(1)
     expect(result.singleImagePrompts).toEqual([originalPrompt])
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   it('honors repeat multipliers for combined side-by-side compositions', async () => {
@@ -112,6 +133,7 @@ describe('resolveImageGenerationCount', () => {
 
     expect(result.imageCount).toBe(3)
     expect(result.singleImagePrompts).toHaveLength(3)
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   it('preserves the original prompt when the SLM returns rewritten prompt fields in legacy payloads', async () => {

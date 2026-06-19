@@ -3,6 +3,7 @@ import {
   MAX_IMAGES_TO_GENERATE,
 } from '@/lib/image-generation/constants'
 import { sanitizeImageGenerationWrapperParams } from '@/lib/image-generation/nano-banana-inputs'
+import { runImageGenerationWrapper } from '@/lib/image-generation/run-wrapper.server'
 import type {
   ImageGenerationWrapperParams,
   ImageGenerationWrapperResponse,
@@ -107,7 +108,25 @@ export function createImageGenerationWrapperTool(
       },
     },
     postProcess: undefined,
-    directExecution: undefined,
+    directExecution: async (params) => {
+      const result = await runImageGenerationWrapper({
+        baseToolId: baseToolId as 'openai_image' | 'google_imagen' | 'google_nano_banana',
+        params: sanitizeImageGenerationWrapperParams(params as Record<string, unknown>),
+      })
+
+      if (!result.success) {
+        return {
+          success: false,
+          output: {},
+          error: result.error,
+        }
+      }
+
+      return {
+        success: true,
+        output: result.output,
+      }
+    },
     transformResponse: async (response) => {
       return (await response.json()) as ImageGenerationWrapperResponse
     },

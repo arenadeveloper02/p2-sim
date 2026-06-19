@@ -23,7 +23,9 @@ import { isUserFile } from '@/lib/core/utils/user-file'
 import { isSameOrigin } from '@/lib/core/utils/validation'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
-import { stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
+import { sanitizeImageGenerationWrapperParams, stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
+import { runImageGenerationWrapper } from '@/lib/image-generation/run-wrapper.server'
+import { generateOpenAIImageToolResponse } from '@/lib/image-generation/openai-generate.server'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { hostedKeyMetrics } from '@/lib/monitoring/metrics'
 import { resolveUnipileExternalAccountId } from '@/lib/unipile/account-from-credential'
@@ -81,6 +83,31 @@ async function executeNanoBananaDirect(params: Record<string, any>): Promise<Too
     _context: params._context,
   })
   return toolResponse
+}
+
+async function executeImageGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
+  logger.info('Running image generation wrapper in-process')
+  const result = await runImageGenerationWrapper({
+    baseToolId: 'image_generate',
+    params: sanitizeImageGenerationWrapperParams(params as Record<string, unknown>),
+  })
+
+  if (!result.success) {
+    return {
+      success: false,
+      output: {},
+      error: result.error,
+    }
+  }
+
+  return {
+    success: true,
+    output: result.output,
+  }
+}
+
+async function executeOpenAIImageDirect(params: Record<string, any>): Promise<ToolResponse> {
+  return generateOpenAIImageToolResponse(params as Record<string, unknown>)
 }
 
 function resolveToolScope(
@@ -1300,7 +1327,13 @@ export async function executeTool(
 
     // Check for direct execution (no HTTP request needed)
     const directExecution =
-      normalizedToolId === 'google_nano_banana' ? executeNanoBananaDirect : tool.directExecution
+      normalizedToolId === 'google_nano_banana'
+        ? executeNanoBananaDirect
+        : normalizedToolId === 'image_generate'
+          ? executeImageGenerateDirect
+          : normalizedToolId === 'openai_image'
+            ? executeOpenAIImageDirect
+            : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)
