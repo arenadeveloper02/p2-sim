@@ -26,14 +26,22 @@ const server = http.createServer((req, res) => {
   const url = req.url || "/";
   const pathname = url.split("?")[0];
 
-  applyMaintenanceHeaders(res, url);
+  if (pathname === "/health") {
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
 
-  if (pathname === "/api/health" || pathname === "/health") {
+  if (pathname === "/api/health") {
+    applyMaintenanceHeaders(res, url);
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(JSON.stringify({ status: "maintenance" }));
     return;
   }
 
+  applyMaintenanceHeaders(res, url);
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.end(html);
 });

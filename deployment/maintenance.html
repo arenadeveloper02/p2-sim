@@ -150,7 +150,8 @@
     function resumeWhenHealthy() {
       fetch('/api/health', { cache: 'no-store' })
         .then(function (response) {
-          if (!response.ok) return;
+          var contentType = response.headers.get('content-type') || '';
+          if (!response.ok || contentType.indexOf('application/json') === -1) return;
           return response.json().then(function (body) {
             if (body && body.status === 'ok') {
               var saved = sessionStorage.getItem(RESUME_KEY);
