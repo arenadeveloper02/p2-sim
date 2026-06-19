@@ -1,4 +1,5 @@
 import { getBlock } from '@/blocks/registry'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 
 /**
  * Block types that bypass permission-group access control entirely.
@@ -19,4 +20,17 @@ import { getBlock } from '@/blocks/registry'
 export function isBlockTypeAccessControlExempt(blockType: string): boolean {
   if (blockType === 'start_trigger') return true
   return getBlock(blockType)?.hideFromToolbar === true
+}
+
+/**
+ * Returns whether a block should be shown in the toolbar, search, and block pickers
+ * for the given workspace. Admin-only blocks are hidden outside admin workspaces.
+ */
+export function isBlockVisibleForWorkspace(
+  blockType: string,
+  workspaceId: string | null | undefined
+): boolean {
+  const block = getBlock(blockType)
+  if (!block?.adminWorkspaceOnly) return true
+  return isAdminWorkspace(workspaceId)
 }
