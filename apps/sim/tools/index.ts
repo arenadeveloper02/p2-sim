@@ -23,7 +23,10 @@ import { isUserFile } from '@/lib/core/utils/user-file'
 import { isSameOrigin } from '@/lib/core/utils/validation'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
-import { sanitizeImageGenerationWrapperParams, stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
+import {
+  sanitizeImageGenerationWrapperParams,
+  stripInlinePayloadFromFileReference,
+} from '@/lib/image-generation/nano-banana-inputs'
 import { generateOpenAIImageToolResponse } from '@/lib/image-generation/openai-generate.server'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { hostedKeyMetrics } from '@/lib/monitoring/metrics'
@@ -55,6 +58,9 @@ import {
 import * as toolsUtilsServer from '@/tools/utils.server'
 
 const logger = createLogger('Tools')
+const imageGenerationDiagnosticsLogger = createLogger('ImageGenerationDiagnostics', {
+  logLevel: 'INFO',
+})
 
 interface ToolExecutionScope {
   workspaceId?: string
@@ -67,7 +73,87 @@ interface ToolExecutionScope {
   copilotToolExecution?: boolean
 }
 
+function getImageGenerationMemorySnapshot(): Record<string, number> {
+  const memory = process.memoryUsage()
+  return {
+    rssMb: Math.round(memory.rss / 1024 / 1024),
+    heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
+    heapTotalMb: Math.round(memory.heapTotal / 1024 / 1024),
+    externalMb: Math.round(memory.external / 1024 / 1024),
+    arrayBuffersMb: Math.round(memory.arrayBuffers / 1024 / 1024),
+  }
+}
+
+function summarizeImageGenerationReference(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return {
+      type: 'string',
+      length: trimmed.length,
+      isHttpUrl: trimmed.startsWith('http://') || trimmed.startsWith('https://'),
+      isInternalFileUrl: trimmed.includes('/api/files/serve/'),
+      isDataUrl: trimmed.startsWith('data:'),
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      length: value.length,
+      first: summarizeImageGenerationReference(value[0]),
+    }
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    return {
+      type: 'object',
+      keys: Object.keys(record).sort(),
+      hasKey: typeof record.key === 'string',
+      hasPath: typeof record.path === 'string',
+      hasUrl: typeof record.url === 'string',
+      urlIsInternal: typeof record.url === 'string' && record.url.includes('/api/files/serve/'),
+      pathIsInternal: typeof record.path === 'string' && record.path.includes('/api/files/serve/'),
+      size: typeof record.size === 'number' ? record.size : undefined,
+      typeField: typeof record.type === 'string' ? record.type : undefined,
+      mimeTypeField: typeof record.mimeType === 'string' ? record.mimeType : undefined,
+    }
+  }
+
+  return { type: typeof value }
+}
+
+function logImageGenerationToolEntry(
+  stage: string,
+  params: Record<string, any>,
+  metadata: Record<string, unknown> = {}
+): void {
+  imageGenerationDiagnosticsLogger.info(`Image generation tool ${stage}`, {
+    ...metadata,
+    provider: params.provider,
+    model: params.model,
+    promptLength: typeof params.prompt === 'string' ? params.prompt.length : undefined,
+    paramKeys: Object.keys(params).sort(),
+    hasInputImage:
+      params.inputImage !== undefined && params.inputImage !== null && params.inputImage !== '',
+    hasInputImages: Array.isArray(params.inputImages) && params.inputImages.length > 0,
+    inputImage: summarizeImageGenerationReference(params.inputImage),
+    inputImages: summarizeImageGenerationReference(params.inputImages),
+    inputImageUrl: summarizeImageGenerationReference(params.inputImageUrl),
+    inputImageUrls: summarizeImageGenerationReference(params.inputImageUrls),
+    context: params._context
+      ? {
+          workflowId: params._context.workflowId,
+          executionId: params._context.executionId,
+          workspaceId: params._context.workspaceId,
+        }
+      : undefined,
+    memory: getImageGenerationMemorySnapshot(),
+  })
+}
+
 async function executeNanoBananaDirect(params: Record<string, any>): Promise<ToolResponse> {
+  logImageGenerationToolEntry('nano banana direct entry', params)
   logger.info('Running Nano Banana generation in-process')
   const inputImages = Array.isArray(params.inputImages) ? params.inputImages : undefined
   const { toolResponse } = await generateNanoBananaImage({
@@ -86,6 +172,7 @@ async function executeNanoBananaDirect(params: Record<string, any>): Promise<Too
 }
 
 async function executeImageGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
+  logImageGenerationToolEntry('image_generate direct entry', params)
   logger.info('Running image generation wrapper in-process')
   const { runImageGenerationWrapper } = await import('@/lib/image-generation/run-wrapper.server')
   const result = await runImageGenerationWrapper({
@@ -108,6 +195,7 @@ async function executeImageGenerateDirect(params: Record<string, any>): Promise<
 }
 
 async function executeOpenAIImageDirect(params: Record<string, any>): Promise<ToolResponse> {
+  logImageGenerationToolEntry('openai image direct entry', params)
   return generateOpenAIImageToolResponse(params as Record<string, unknown>)
 }
 
@@ -124,6 +212,7 @@ async function executeImageGenerationWrapperV2Direct(
     }
   }
 
+  logImageGenerationToolEntry('v2 wrapper direct entry', params, { toolId, baseToolId })
   logger.info('Running image generation wrapper in-process', { toolId, baseToolId })
   const { runImageGenerationWrapper } = await import('@/lib/image-generation/run-wrapper.server')
   const result = await runImageGenerationWrapper({

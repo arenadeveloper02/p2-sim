@@ -11,7 +11,7 @@ import { resolveInlineImageData } from '@/app/api/google/api-service'
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024
 const MAX_IMAGE_JSON_BYTES = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 256 * 1024
 const GPT_IMAGE_2_MODEL = 'gpt-image-2'
-const logger = createLogger('OpenAIImageReference')
+const logger = createLogger('OpenAIImageReference', { logLevel: 'INFO' })
 
 const GPT_IMAGE_EDIT_MODELS = new Set([
   'gpt-image-2',

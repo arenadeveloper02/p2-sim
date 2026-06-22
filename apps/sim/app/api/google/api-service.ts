@@ -15,7 +15,7 @@ import {
 import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import type { ToolResponse } from '@/tools/types'
 
-const logger = createLogger('GoogleApiService')
+const logger = createLogger('GoogleApiService', { logLevel: 'INFO' })
 
 const SVG_MIME = 'image/svg+xml'
 const MAX_URL_IMAGE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
