@@ -89,6 +89,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/utils'
 import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
+import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
@@ -1163,20 +1164,30 @@ export const Sidebar = memo(function Sidebar() {
 
   const handleOpenHelpFromMenu = useCallback(() => setIsHelpModalOpen(true), [])
 
-  const handleOpenDocs = useCallback(() => {
-    window.open('https://docs.sim.ai', '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'docs_opened', { source: 'help_menu' })
-  }, [posthog])
-
   const handleChatRenameBlur = useCallback(
     () => void chatFlyoutRename.saveRename(),
     [chatFlyoutRename.saveRename]
   )
 
   const handleOpenArenaDocs = useCallback(() => {
-    window.open('/arena-ai-docs', '_blank', 'noopener,noreferrer')
+    window.open(resolveBrandDocsUrl(brand?.documentationUrl), '_blank', 'noopener,noreferrer')
     captureEvent(posthog, 'arena_docs_opened', { source: 'help_menu' })
-  }, [posthog])
+  }, [brand?.documentationUrl, posthog])
+
+  const handleContactSupport = useCallback(() => {
+    if (!brand?.supportEmail) return
+    window.location.href = `mailto:${brand.supportEmail}`
+  }, [brand?.supportEmail])
+
+  const handleOpenTerms = useCallback(() => {
+    if (!brand?.termsUrl) return
+    window.open(brand.termsUrl, '_blank', 'noopener,noreferrer')
+  }, [brand?.termsUrl])
+
+  const handleOpenPrivacy = useCallback(() => {
+    if (!brand?.privacyUrl) return
+    window.open(brand.privacyUrl, '_blank', 'noopener,noreferrer')
+  }, [brand?.privacyUrl])
 
   const handleWorkflowRenameBlur = useCallback(
     () => void workflowFlyoutRename.saveRename(),
@@ -1670,14 +1681,28 @@ export const Sidebar = memo(function Sidebar() {
                       </DropdownMenuTrigger>
                     </SidebarTooltip>
                     <DropdownMenuContent align='start' side='top' sideOffset={4}>
-                      {/* <DropdownMenuItem onSelect={handleOpenDocs}>
-                        <BookOpen className='h-[14px] w-[14px]' />
-                        Docs
-                      </DropdownMenuItem> */}
                       <DropdownMenuItem onSelect={handleOpenArenaDocs}>
                         <BookOpen className='h-[14px] w-[14px]' />
                         Docs
                       </DropdownMenuItem>
+                      {brand?.supportEmail ? (
+                        <DropdownMenuItem onSelect={handleContactSupport}>
+                          <HelpCircle className='h-[14px] w-[14px]' />
+                          Contact support
+                        </DropdownMenuItem>
+                      ) : null}
+                      {brand?.termsUrl ? (
+                        <DropdownMenuItem onSelect={handleOpenTerms}>
+                          <BookOpen className='h-[14px] w-[14px]' />
+                          Terms of service
+                        </DropdownMenuItem>
+                      ) : null}
+                      {brand?.privacyUrl ? (
+                        <DropdownMenuItem onSelect={handleOpenPrivacy}>
+                          <BookOpen className='h-[14px] w-[14px]' />
+                          Privacy policy
+                        </DropdownMenuItem>
+                      ) : null}
                       {false && (
                         <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
                           <HelpCircle className='h-[14px] w-[14px]' />

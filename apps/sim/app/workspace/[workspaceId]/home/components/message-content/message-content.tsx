@@ -7,6 +7,7 @@ import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
 import { resolveToolDisplay } from '@/lib/copilot/tools/client/store-utils'
 import { ClientToolCallState } from '@/lib/copilot/tools/client/tool-call-state'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
+import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import type { ContentBlock, OptionItem, ToolCallData } from '../../types'
 import { SUBAGENT_LABELS, TOOL_UI_METADATA } from '../../types'
 import type { AgentGroupItem } from './components'
@@ -207,8 +208,8 @@ function formatToolName(name: string): string {
     .join(' ')
 }
 
-function resolveAgentLabel(key: string): string {
-  if (key === 'mothership') return 'Sim'
+function resolveAgentLabel(key: string, brandName?: string): string {
+  if (key === 'mothership') return brandName || 'Sim'
   return SUBAGENT_LABELS[key] ?? formatToolName(key)
 }
 
@@ -274,12 +275,17 @@ function toToolData(tc: NonNullable<ContentBlock['toolCall']>): ToolCallData {
 
 const SPAN_ROOT = 'main'
 
-function createAgentGroupSegment(name: string, idKey: string, ordinal: number): AgentGroupSegment {
+function createAgentGroupSegment(
+  name: string,
+  idKey: string,
+  ordinal: number,
+  brandName?: string
+): AgentGroupSegment {
   return {
     type: 'agent_group',
     id: `agent-${idKey}-${ordinal}`,
     agentName: name,
-    agentLabel: resolveAgentLabel(name),
+    agentLabel: resolveAgentLabel(name, brandName),
     items: [],
     isDelegating: false,
     isOpen: false,
@@ -303,7 +309,7 @@ function appendTextItem(group: AgentGroupSegment, content: string): void {
  * no name/tool-call reverse lookups. Delegation tool_calls are absorbed — the
  * subagent span is the canonical representation of the nested agent.
  */
-function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
+function parseBlocksWithSpanTree(blocks: ContentBlock[], brandName?: string): MessageSegment[] {
   const segments: MessageSegment[] = []
   const groupsBySpanId = new Map<string, AgentGroupSegment>()
 
@@ -321,7 +327,7 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
   const ensureMothership = (): AgentGroupSegment => {
     const existing = tailMothershipGroup()
     if (existing) return existing
-    const group = createAgentGroupSegment('mothership', 'mothership', segments.length)
+    const group = createAgentGroupSegment('mothership', 'mothership', segments.length, brandName)
     segments.push(group)
     return group
   }
@@ -360,7 +366,7 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
   ): AgentGroupSegment => {
     const existing = groupsBySpanId.get(spanId)
     if (existing) return existing
-    const group = createAgentGroupSegment(name, spanId, ordinal)
+    const group = createAgentGroupSegment(name, spanId, ordinal, brandName)
     groupsBySpanId.set(spanId, group)
     attachSpanGroup(group, parentSpanId)
     return group
@@ -528,14 +534,14 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
  * legacy flat heuristics below are retained for transcripts persisted before
  * span identity existed.
  */
-export function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
+export function parseBlocks(blocks: ContentBlock[], brandName?: string): MessageSegment[] {
   if (blocks.some((block) => Boolean(block.spanId))) {
-    return parseBlocksWithSpanTree(blocks)
+    return parseBlocksWithSpanTree(blocks, brandName)
   }
-  return parseBlocksLegacy(blocks)
+  return parseBlocksLegacy(blocks, brandName)
 }
 
-function parseBlocksLegacy(blocks: ContentBlock[]): MessageSegment[] {
+function parseBlocksLegacy(blocks: ContentBlock[], brandName?: string): MessageSegment[] {
   const segments: MessageSegment[] = []
   const groupsByKey = new Map<string, AgentGroupSegment>()
   let activeGroupKey: string | null = null
@@ -565,7 +571,7 @@ function parseBlocksLegacy(blocks: ContentBlock[]): MessageSegment[] {
       type: 'agent_group',
       id: `agent-${key}-${segments.length}`,
       agentName: name,
-      agentLabel: resolveAgentLabel(name),
+      agentLabel: resolveAgentLabel(name, brandName),
       items: [],
       isDelegating: false,
       isOpen: false,
@@ -806,7 +812,11 @@ function MessageContentInner({
   onOptionSelect,
 }: MessageContentProps) {
   const { onWorkspaceResourceSelect } = useChatSurface()
-  const parsed = useMemo(() => (blocks.length > 0 ? parseBlocks(blocks) : []), [blocks])
+  const brand = useOrgBrandConfig()
+  const parsed = useMemo(
+    () => (blocks.length > 0 ? parseBlocks(blocks, brand.name) : []),
+    [blocks, brand.name]
+  )
 
   const segments: MessageSegment[] =
     parsed.length > 0
