@@ -7,7 +7,7 @@ import {
 } from '@/lib/image-generation/nano-banana-inputs'
 import { resolveImageGenerationCount } from '@/lib/image-generation/resolve-image-count.server'
 
-const logger = createLogger('ImageGenerationWrapper')
+const logger = createLogger('ImageGenerationWrapper', { logLevel: 'INFO' })
 const GPT_IMAGE_2_MODEL = 'gpt-image-2'
 
 export const INLINE_IMAGE_PAYLOAD_ERROR =
@@ -349,7 +349,7 @@ export async function runImageGenerationWrapper(
     MAX_CONCURRENT_GENERATIONS,
     async (index) => {
       try {
-        const executionParams = {
+        const executionParams: Record<string, unknown> = {
           ...buildExecutionParams(executionToolId, resolvedBaseParams),
           ...(originalPrompt ? { prompt: originalPrompt } : {}),
         }
@@ -366,16 +366,17 @@ export async function runImageGenerationWrapper(
         }
         const result = await executeTool(executionToolId, executionParams)
         if (isGptImage2) {
-          const output = isRecord((result as ToolResult).output)
-            ? (result as ToolResult).output
+          const toolResult = result as ToolResult
+          const output: Record<string, unknown> = isRecord(toolResult.output)
+            ? toolResult.output
             : {}
           logGptImage2Wrapper('tool execution completed', {
             executionToolId,
             index,
-            success: (result as ToolResult).success,
+            success: toolResult.success,
             outputKeys: Object.keys(output).sort(),
             imageCount: extractImagesFromOutput(output).length,
-            error: (result as ToolResult).error,
+            error: toolResult.error,
           })
         }
         return { status: 'fulfilled' as const, value: result as ToolResult }

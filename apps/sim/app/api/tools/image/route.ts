@@ -39,7 +39,7 @@ import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
 import { parseImageUrls } from '@/lib/utils/parse-image-urls'
 
-const logger = createLogger('ImageProxyAPI')
+const logger = createLogger('ImageProxyAPI', { logLevel: 'INFO' })
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024
 const MAX_IMAGE_JSON_BYTES = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 256 * 1024
 const GPT_IMAGE_2_MODEL = 'gpt-image-2'
