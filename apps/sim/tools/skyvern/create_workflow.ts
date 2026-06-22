@@ -1,3 +1,4 @@
+import { buildSkyvernCreateWorkflowBody } from '@/tools/skyvern/build-create-workflow-body'
 import type { SkyvernCreateWorkflowParams, SkyvernCreateWorkflowResponse } from '@/tools/skyvern/types'
 import {
   buildSkyvernUrl,
@@ -73,6 +74,13 @@ export const skyvernCreateWorkflowTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Optional step-by-step instructions (used as navigation goal when navigation goal is empty)',
     },
+    workflowParameters: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Workflow input parameters (key, workflow_parameter_type, description, default_value)',
+    },
   },
 
   request: {
@@ -84,33 +92,7 @@ export const skyvernCreateWorkflowTool: ToolConfig<
       'Content-Type': 'application/json',
       'x-api-key': requireSkyvernApiKey(params.apiKey),
     }),
-    body: (params) => {
-      const block: Record<string, unknown> = {
-        block_type: 'task',
-        label: params.blockLabel?.trim() || 'UI_Automation',
-        parameter_keys: [],
-        url: params.url.trim(),
-      }
-
-      const navigationGoal = params.navigationGoal?.trim() || params.prompt?.trim()
-      if (navigationGoal) {
-        block.navigation_goal = navigationGoal
-      }
-      if (params.dataExtractionGoal?.trim()) {
-        block.data_extraction_goal = params.dataExtractionGoal.trim()
-      }
-
-      return {
-        json_definition: {
-          title: params.title.trim(),
-          description: params.description?.trim() || undefined,
-          workflow_definition: {
-            parameters: [],
-            blocks: [block],
-          },
-        },
-      }
-    },
+    body: (params) => buildSkyvernCreateWorkflowBody(params),
   },
 
   transformResponse: async (response) => {

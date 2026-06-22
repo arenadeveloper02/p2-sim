@@ -1,12 +1,14 @@
 import { SkyvernIcon } from '@/components/icons'
 import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
+import { parseSkyvernRunParameterRows } from '@/tools/skyvern/parameter-rows'
 import type {
   SkyvernCreateWorkflowResponse,
   SkyvernGetRunResponse,
   SkyvernListWorkflowsResponse,
   SkyvernRunWorkflowResponse,
 } from '@/tools/skyvern/types'
+import { generateId } from '@sim/utils/id'
 
 export type SkyvernResponse =
   | SkyvernCreateWorkflowResponse
@@ -197,32 +199,71 @@ export const SkyvernBlock: BlockConfig<SkyvernResponse> = {
       mode: 'advanced',
     },
     {
+      id: 'workflowParameters',
+      title: 'Workflow Parameters',
+      type: 'input-format',
+      inputFormatVariant: 'skyvern_workflow_parameters',
+      inputFormatConfig: {
+        title: 'Parameter',
+        fieldNamePlaceholder: 'parameter_key',
+        fieldValuePlaceholder: 'Default value (optional)',
+      },
+      condition: { field: 'operation', value: 'skyvern_create_workflow' },
+      defaultValue: () => [
+        {
+          id: generateId(),
+          name: 'starting_url',
+          type: 'string',
+          description: 'Starting URL',
+          value: '',
+          collapsed: false,
+        },
+        {
+          id: generateId(),
+          name: 'appointment_type',
+          type: 'string',
+          description: 'Appointment type',
+          value: '',
+          collapsed: false,
+        },
+        {
+          id: generateId(),
+          name: 'days_to_search',
+          type: 'integer',
+          description: 'Number of days to search',
+          value: '',
+          collapsed: false,
+        },
+      ],
+    },
+    {
       id: 'url',
       title: 'Starting URL',
       type: 'short-input',
-      placeholder: 'https://example.com',
+      placeholder: '{{starting_url}}',
       condition: { field: 'operation', value: 'skyvern_create_workflow' },
       required: { field: 'operation', value: 'skyvern_create_workflow' },
+      value: () => '{{starting_url}}',
     },
     {
       id: 'navigationGoal',
       title: 'Navigation Goal',
       type: 'long-input',
-      placeholder: 'Describe how the agent should navigate the page',
+      placeholder: 'Primary goal for the navigation block (e.g. fill out the contact form)',
       condition: { field: 'operation', value: 'skyvern_create_workflow' },
     },
     {
       id: 'dataExtractionGoal',
       title: 'Data Extraction Goal',
       type: 'long-input',
-      placeholder: 'Describe what structured data to extract and the JSON schema',
+      placeholder: 'Creates a separate extraction block after navigation (e.g. extract company email)',
       condition: { field: 'operation', value: 'skyvern_create_workflow' },
     },
     {
       id: 'prompt',
       title: 'Prompt',
       type: 'long-input',
-      placeholder: 'Optional step-by-step prompt for the task block',
+      placeholder: 'Extra instructions merged with navigation goal, or used alone if navigation goal is empty',
       condition: { field: 'operation', value: 'skyvern_create_workflow' },
       mode: 'advanced',
     },
@@ -267,12 +308,35 @@ export const SkyvernBlock: BlockConfig<SkyvernResponse> = {
       required: { field: 'operation', value: 'skyvern_run_workflow' },
     },
     {
-      id: 'runParameters',
+      id: 'runWorkflowParameters',
       title: 'Run Parameters',
+      type: 'input-format',
+      inputFormatVariant: 'skyvern_run_parameters',
+      inputFormatConfig: {
+        title: 'Parameter',
+        fieldNamePlaceholder: 'parameter_key',
+        fieldValuePlaceholder: 'Value for this run',
+      },
+      mode: 'basic',
+      condition: { field: 'operation', value: 'skyvern_run_workflow' },
+      defaultValue: () => [
+        {
+          id: generateId(),
+          name: 'starting_url',
+          type: 'string',
+          value: '',
+          collapsed: false,
+        },
+      ],
+    },
+    {
+      id: 'runParameters',
+      title: 'Run Parameters (JSON)',
       type: 'code',
       language: 'json',
       placeholder: '{"starting_url": "https://example.com"}',
       condition: { field: 'operation', value: 'skyvern_run_workflow' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt:
@@ -300,9 +364,11 @@ export const SkyvernBlock: BlockConfig<SkyvernResponse> = {
     config: {
       tool: (params) => params.operation,
       params: (params) => {
-        const result: Record<string, unknown> = {
-          apiKey: params.apiKey,
-          baseUrl: params.baseUrl,
+        const result: Record<string, unknown> = {}
+
+        if (process.env.NEXT_PUBLIC_SKYVERN_CONFIGURED !== 'true') {
+          if (params.apiKey) result.apiKey = params.apiKey
+          if (params.baseUrl) result.baseUrl = params.baseUrl
         }
 
         switch (params.operation) {
@@ -314,6 +380,7 @@ export const SkyvernBlock: BlockConfig<SkyvernResponse> = {
             result.navigationGoal = params.navigationGoal
             result.dataExtractionGoal = params.dataExtractionGoal
             result.prompt = params.prompt
+            result.workflowParameters = params.workflowParameters
             break
           case 'skyvern_list_workflows': {
             const pageInput =
@@ -327,15 +394,29 @@ export const SkyvernBlock: BlockConfig<SkyvernResponse> = {
             if (Number.isFinite(pageSize)) result.pageSize = pageSize
             break
           }
-          case 'skyvern_run_workflow':
+          case 'skyvern_run_workflow': {
             result.workflowPermanentId = params.workflowPermanentId
+
+            const parametersFromRows = parseSkyvernRunParameterRows(params.runWorkflowParameters)
+            let parametersFromJson: Record<string, unknown> = {}
+
             if (params.runParameters) {
-              result.parameters =
-                typeof params.runParameters === 'string'
-                  ? JSON.parse(params.runParameters)
-                  : params.runParameters
+              try {
+                parametersFromJson =
+                  typeof params.runParameters === 'string'
+                    ? (JSON.parse(params.runParameters) as Record<string, unknown>)
+                    : (params.runParameters as Record<string, unknown>)
+              } catch {
+                parametersFromJson = {}
+              }
+            }
+
+            const mergedParameters = { ...parametersFromJson, ...parametersFromRows }
+            if (Object.keys(mergedParameters).length > 0) {
+              result.parameters = mergedParameters
             }
             break
+          }
           case 'skyvern_get_run':
             result.runId = params.runId
             break
@@ -360,11 +441,19 @@ export const SkyvernBlock: BlockConfig<SkyvernResponse> = {
       description: 'Data extraction goal (create workflow)',
     },
     prompt: { type: 'string', description: 'Task prompt (create workflow)' },
+    workflowParameters: {
+      type: 'json',
+      description: 'Workflow parameter definitions (create workflow)',
+    },
     page: { type: 'number', description: 'Page number (list workflows)' },
     pageSize: { type: 'number', description: 'Page size (list workflows)' },
     workflowPermanentId: {
       type: 'string',
       description: 'Permanent workflow ID wpid_... (run workflow)',
+    },
+    runWorkflowParameters: {
+      type: 'json',
+      description: 'Workflow run parameter rows (run workflow)',
     },
     runParameters: { type: 'json', description: 'Workflow run parameters JSON (run workflow)' },
     runId: { type: 'string', description: 'Workflow run ID wr_... (get run status)' },

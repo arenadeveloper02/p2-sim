@@ -13,6 +13,7 @@ export interface SkyvernCreateWorkflowParams extends SkyvernBaseParams {
   navigationGoal?: string
   dataExtractionGoal?: string
   prompt?: string
+  workflowParameters?: unknown
 }
 
 export interface SkyvernCreateWorkflowResponse extends ToolResponse {

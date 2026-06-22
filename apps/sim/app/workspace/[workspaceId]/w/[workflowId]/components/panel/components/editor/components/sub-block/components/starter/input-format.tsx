@@ -60,6 +60,8 @@ interface FieldFormatProps {
     | 'linkedin_comment_mentions'
     | 'linkedin_profile_sections'
     | 'linkedin_search_filters'
+    | 'skyvern_workflow_parameters'
+    | 'skyvern_run_parameters'
   title?: string
   placeholder?: string
   showType?: boolean
@@ -80,6 +82,16 @@ const TYPE_OPTIONS: ComboboxOption[] = [
   { label: 'Object', value: 'object' },
   { label: 'Array', value: 'array' },
   { label: 'Files', value: 'file[]' },
+]
+
+const SKYVERN_PARAMETER_TYPE_OPTIONS: ComboboxOption[] = [
+  { label: 'String', value: 'string' },
+  { label: 'Integer', value: 'integer' },
+  { label: 'Float', value: 'float' },
+  { label: 'Boolean', value: 'boolean' },
+  { label: 'JSON', value: 'json' },
+  { label: 'File URL', value: 'file_url' },
+  { label: 'Credential ID', value: 'credential_id' },
 ]
 
 /**
@@ -134,12 +146,19 @@ export function FieldFormat({
   const isLinkedinMentions = variant === 'linkedin_comment_mentions'
   const isLinkedinProfileSections = variant === 'linkedin_profile_sections'
   const isLinkedinSearchFilters = variant === 'linkedin_search_filters'
+  const isSkyvernWorkflowParameters = variant === 'skyvern_workflow_parameters'
+  const isSkyvernRunParameters = variant === 'skyvern_run_parameters'
   const inputFormatConfig = config?.inputFormatConfig
+  const typeOptions = isSkyvernWorkflowParameters || isSkyvernRunParameters
+    ? SKYVERN_PARAMETER_TYPE_OPTIONS
+    : TYPE_OPTIONS
   const showTypeEffective =
-    isLinkedinMentions || isLinkedinProfileSections || isLinkedinSearchFilters ? false : showType
+    isLinkedinMentions || isLinkedinProfileSections || isLinkedinSearchFilters
+      ? false
+      : showType
   const showDescriptionEffective = isLinkedinMentions
     ? true
-    : isLinkedinProfileSections || isLinkedinSearchFilters
+    : isLinkedinProfileSections || isLinkedinSearchFilters || isSkyvernRunParameters
       ? false
       : showDescription
   const showValueEffective = isLinkedinProfileSections ? false : showValue
@@ -709,7 +728,7 @@ export function FieldFormat({
                   <div className='flex flex-col gap-1.5'>
                     {renderFieldLabel('Type')}
                     <Combobox
-                      options={TYPE_OPTIONS}
+                      options={typeOptions}
                       value={field.type}
                       onChange={(value) => updateField(field.id, 'type', value)}
                       disabled={isReadOnly}
@@ -804,10 +823,43 @@ export function InputFormat(
       | 'linkedin_comment_mentions'
       | 'linkedin_profile_sections'
       | 'linkedin_search_filters'
+      | 'skyvern_workflow_parameters'
+      | 'skyvern_run_parameters'
   }
 ) {
   const { variant = 'default', showValue = true, config, ...rest } = props
   const inputFormatConfig = config?.inputFormatConfig
+  if (variant === 'skyvern_workflow_parameters') {
+    return (
+      <FieldFormat
+        {...rest}
+        config={config}
+        variant='skyvern_workflow_parameters'
+        title={inputFormatConfig?.title ?? 'Parameter'}
+        placeholder={inputFormatConfig?.fieldNamePlaceholder ?? 'parameter_key'}
+        showDescription
+        showValue={showValue}
+        valuePlaceholder={
+          inputFormatConfig?.fieldValuePlaceholder ?? 'Default value (optional)'
+        }
+        descriptionPlaceholder='Describe this parameter'
+      />
+    )
+  }
+  if (variant === 'skyvern_run_parameters') {
+    return (
+      <FieldFormat
+        {...rest}
+        config={config}
+        variant='skyvern_run_parameters'
+        title={inputFormatConfig?.title ?? 'Parameter'}
+        placeholder={inputFormatConfig?.fieldNamePlaceholder ?? 'parameter_key'}
+        showDescription={false}
+        showValue={showValue}
+        valuePlaceholder={inputFormatConfig?.fieldValuePlaceholder ?? 'Value for this run'}
+      />
+    )
+  }
   if (variant === 'linkedin_comment_mentions') {
     return (
       <FieldFormat
