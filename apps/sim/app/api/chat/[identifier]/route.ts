@@ -1241,7 +1241,7 @@ export const GET = withRouteHandler(
         deployment.authType !== 'public' &&
         deployment.authType !== 'sso' &&
         authCookie &&
-        validateAuthToken(authCookie.value, deployment.id, deployment.password)
+        validateAuthToken(authCookie.value, deployment.id, deployment.authType, deployment.password)
       ) {
         let userWorkspaceIds: string[] | undefined
         try {

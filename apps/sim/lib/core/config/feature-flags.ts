@@ -74,6 +74,22 @@ const FEATURE_FLAGS = {
       'user context — use enabled:true for global rollout rather than per-user targeting.',
     fallback: 'MOTHERSHIP_BETA_FEATURES',
   },
+  'table-snapshot-cache': {
+    description:
+      'Mount Sim tables into code sandboxes by reference via a version-keyed CSV snapshot in ' +
+      'object storage (reused across runs until the table mutates) instead of draining the whole ' +
+      'table into web-process heap. resolveInputFiles evaluates without user context — use ' +
+      'enabled:true for global rollout rather than per-user targeting.',
+    fallback: 'TABLE_SNAPSHOT_CACHE',
+  },
+  'pii-redaction': {
+    description:
+      'Redact PII from workflow logs via configurable Data Retention rules (Presidio at the ' +
+      'logger persist choke point) and expose the Data Retention config surfaces. Global on/off ' +
+      'only — evaluated without user/org context so the persist path and config routes always ' +
+      'agree.',
+    fallback: 'PII_REDACTION',
+  },
 } satisfies Record<string, FeatureFlagDefinition>
 
 /**

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/core/utils/cn'
 import { Sidebar } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
@@ -15,10 +15,26 @@ const SLIDE_TRANSITION =
 
 interface WorkspaceChromeProps {
   children: React.ReactNode
+  /** Cookie-derived collapse state from the server layout; seeds the sidebar's first render. */
+  initialSidebarCollapsed?: boolean
 }
 
+/**
+ * Routes that hide the left sidebar (full-bleed embeds and upgrade).
+ */
 function isFullscreenPath(pathname: string | null): boolean {
-  return FULLSCREEN_SUFFIXES.some((s) => pathname?.endsWith(s))
+  if (!pathname) return false
+  if (FULLSCREEN_SUFFIXES.some((suffix) => pathname.endsWith(suffix))) return true
+  return (
+    /^\/workspace\/[^/]+\/embed\/?$/.test(pathname) ||
+    /^\/workspace\/[^/]+\/home\/embed\/?$/.test(pathname) ||
+    /^\/workspace\/[^/]+\/task\/[^/]+\/embed\/?$/.test(pathname)
+  )
+}
+
+function readSidebarWidthCssVar(): string {
+  if (typeof window === 'undefined') return ''
+  return getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width').trim()
 }
 
 /**
@@ -41,14 +57,33 @@ function isFullscreenPath(pathname: string | null): boolean {
  * On a direct load of a fullscreen route the wrapper mounts already collapsed,
  * so no slide plays (CSS transitions don't run on mount).
  */
-export function WorkspaceChrome({ children }: WorkspaceChromeProps) {
+export function WorkspaceChrome({
+  children,
+  initialSidebarCollapsed = false,
+}: WorkspaceChromeProps) {
   const pathname = usePathname()
   const isFullscreen = isFullscreenPath(pathname)
 
   const setOrigin = useFullscreenOriginStore((s) => s.setOrigin)
 
+  const storeIsCollapsed = useSidebarStore((s) => s.isCollapsed)
   const hasHydrated = useSidebarStore((s) => s._hasHydrated)
   const syncSidebarWidth = useSidebarStore((s) => s.syncWidth)
+
+  /**
+   * Single source of collapse for the whole chrome, driving the rail's structure,
+   * labels, and width. The server renders from the `sidebar_collapsed` cookie
+   * (`initialSidebarCollapsed`) and the store seeds from the same cookie — after
+   * the pre-paint script migrates any legacy `localStorage` flag — so prop and
+   * store agree. The prop is used until the store hydrates (keeping the first
+   * client render identical to the server), then the store takes over.
+   */
+  const isCollapsed = hasHydrated ? storeIsCollapsed : initialSidebarCollapsed
+
+  // Hydrate the persisted width before paint (collapse comes from the cookie/prop).
+  useLayoutEffect(() => {
+    void useSidebarStore.persist.rehydrate()
+  }, [])
 
   // Remember the last non-fullscreen page so a fullscreen route's Back control
   // can return there, deterministically and for any trigger.
@@ -61,11 +96,17 @@ export function WorkspaceChrome({ children }: WorkspaceChromeProps) {
   // store rehydration only fires once, so a soft navigation can leave
   // `--sidebar-width` stuck at its `0px` default — collapsing the sidebar to
   // nothing with no reachable control to bring it back. Re-syncing here recovers
-  // that state. Gated on hydration so it never clobbers the persisted value with
-  // store defaults during the pre-hydration window.
-  useEffect(() => {
+  // that state. When the CSS var is still at the global default (`0px`), sync
+  // immediately so the sidebar is visible before persisted width rehydrates.
+  useLayoutEffect(() => {
+    if (isFullscreen) return
+    const cssWidth = readSidebarWidthCssVar()
+    if (!cssWidth || cssWidth === '0px') {
+      syncSidebarWidth()
+      return
+    }
     if (hasHydrated) syncSidebarWidth()
-  }, [pathname, hasHydrated, syncSidebarWidth])
+  }, [pathname, isFullscreen, hasHydrated, syncSidebarWidth])
 
   // Re-clamp the width when the window shrinks below what the persisted width
   // allows, so the sidebar can never grow wider than the viewport permits.
@@ -93,6 +134,7 @@ export function WorkspaceChrome({ children }: WorkspaceChromeProps) {
           SLIDE_TRANSITION,
           isFullscreen ? 'w-0' : 'w-[var(--sidebar-width)]'
         )}
+        data-collapsed={isCollapsed || undefined}
         aria-hidden={isFullscreen || undefined}
         suppressHydrationWarning
       >
@@ -103,7 +145,7 @@ export function WorkspaceChrome({ children }: WorkspaceChromeProps) {
             isFullscreen && '-translate-x-full'
           )}
         >
-          <Sidebar />
+          <Sidebar isCollapsed={isCollapsed} />
         </div>
       </div>
       <div
