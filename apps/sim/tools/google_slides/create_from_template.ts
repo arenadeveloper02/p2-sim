@@ -156,8 +156,6 @@ async function resolveAccessibleImageUrl(
   return null
 }
 
-// --- Sim Internal Image → Public Google Drive URL ---
-
 /**
  * Returns true for URLs served through the Sim file-serve proxy
  * (`/api/files/serve/…`), which require a Sim bearer token.
@@ -170,22 +168,6 @@ function isSimInternalImageUrl(url: string): boolean {
   }
 }
 
-const FILE_SERVE_PATH_PREFIX = '/api/files/serve/'
-
-/**
- * Extracts the S3 storage key from a Sim file-serve URL.
- * e.g. `https://…/api/files/serve/agent-generated-images%2F…` → `agent-generated-images/…`
- */
-function extractSimFileServeKey(url: string): string | null {
-  try {
-    const { pathname } = new URL(url)
-    if (!pathname.includes(FILE_SERVE_PATH_PREFIX)) return null
-    const encoded = pathname.slice(pathname.indexOf(FILE_SERVE_PATH_PREFIX) + FILE_SERVE_PATH_PREFIX.length)
-    return decodeURIComponent(encoded)
-  } catch {
-    return null
-  }
-}
 
 /**
  * Generates a short-lived internal JWT that satisfies `checkSessionOrInternalAuth` on
@@ -205,122 +187,48 @@ async function generateInternalFetchToken(): Promise<string> {
 }
 
 /**
- * Downloads a Sim-generated image via the file-serve route (using a short-lived internal
- * JWT for auth) and re-uploads it to the caller's Google Drive as a publicly readable
- * file so that the Google Slides API can fetch it during `replaceImage`.
+ * Converts a Sim file-serve URL into a 1-hour presigned S3 URL that Google Slides
+ * can fetch anonymously during `replaceImage`.
  *
- * Steps:
- *   1. Generate a 5-minute internal JWT (no server-only imports — `jose` only).
- *   2. GET image bytes from `/api/files/serve/…` with the JWT in `Authorization`.
- *   3. POST a multipart upload to Google Drive using `googleAccessToken`.
- *   4. PATCH a `reader/anyone` permission on the new Drive file.
- *   5. Return the public URL and the Drive file ID (for post-slide cleanup).
+ * Calls the internal `/api/tools/google_slides/presign-image` endpoint (server-only,
+ * no Node.js imports in this file). Uses a short-lived internal JWT for auth.
  *
  * Returns `null` if any step fails (errors are logged as warnings, not thrown).
  */
-async function fetchSimImageAsPublicDriveUrl(
-  imageUrl: string,
-  googleAccessToken: string
-): Promise<{ url: string; driveFileId: string } | null> {
+async function resolveSimImageToPresignedUrl(imageUrl: string): Promise<string | null> {
   let internalToken: string
   try {
     internalToken = await generateInternalFetchToken()
   } catch (err) {
-    logger.warn('Failed to generate internal fetch token for Sim image', {
+    logger.warn('Failed to generate internal token for presign request', {
       error: err instanceof Error ? err.message : String(err),
     })
     return null
   }
 
-  const imageRes = await fetch(imageUrl, {
-    headers: { Authorization: `Bearer ${internalToken}` },
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const presignRes = await fetch(`${appUrl}/api/tools/google_slides/presign-image`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${internalToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ imageUrl }),
   })
-  if (!imageRes.ok) {
-    logger.warn('Failed to fetch Sim internal image via serve route', {
+
+  if (!presignRes.ok) {
+    const err = await presignRes.json().catch(() => ({}))
+    logger.warn('Failed to get presigned URL for Sim image', {
       imageUrl,
-      status: imageRes.status,
+      status: presignRes.status,
+      error: (err as { error?: string }).error,
     })
     return null
   }
 
-  const contentType = imageRes.headers.get('content-type') || 'image/jpeg'
-  const imageBuffer = await imageRes.arrayBuffer()
-
-  const boundary = 'sim_drive_upload_boundary'
-  const metadata = JSON.stringify({ name: `sim-ai-image-${Date.now()}.jpg`, mimeType: contentType })
-
-  const enc = new TextEncoder()
-  const metaPart = enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`)
-  const imgHeader = enc.encode(`--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`)
-  const closing = enc.encode(`\r\n--${boundary}--`)
-
-  const multipart = new Uint8Array(
-    metaPart.byteLength + imgHeader.byteLength + imageBuffer.byteLength + closing.byteLength
-  )
-  multipart.set(metaPart, 0)
-  multipart.set(imgHeader, metaPart.byteLength)
-  multipart.set(new Uint8Array(imageBuffer), metaPart.byteLength + imgHeader.byteLength)
-  multipart.set(closing, metaPart.byteLength + imgHeader.byteLength + imageBuffer.byteLength)
-
-  const uploadRes = await fetch(
-    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${googleAccessToken}`,
-        'Content-Type': `multipart/related; boundary="${boundary}"`,
-      },
-      body: multipart,
-    }
-  )
-
-  if (!uploadRes.ok) {
-    const err = await uploadRes.json().catch(() => ({}))
-    logger.warn('Failed to upload Sim image to Google Drive', {
-      status: uploadRes.status,
-      error: (err as { error?: { message?: string } }).error?.message,
-    })
-    return null
-  }
-
-  const { id: fileId } = (await uploadRes.json()) as { id: string }
-
-  const permRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${googleAccessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ role: 'reader', type: 'anyone' }),
-    }
-  )
-
-  if (!permRes.ok) {
-    logger.warn('Failed to make Drive image public', { fileId })
-    return null
-  }
-
-  logger.info('Sim image proxied to public Google Drive URL', { imageUrl, fileId })
-  return { url: `https://drive.google.com/uc?export=download&id=${fileId}`, driveFileId: fileId }
-}
-
-/**
- * Deletes a temporary Drive file created during image proxying.
- * Fires-and-forgets — errors are logged but never thrown so they
- * don't roll back an already-successful slide update.
- */
-async function deleteDriveFile(fileId: string, googleAccessToken: string): Promise<void> {
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${googleAccessToken}` },
-  })
-  if (res.ok || res.status === 204 || res.status === 404) {
-    logger.info('Temporary Drive image deleted', { fileId })
-  } else {
-    logger.warn('Failed to delete temporary Drive image', { fileId, status: res.status })
-  }
+  const { url } = (await presignRes.json()) as { url: string }
+  logger.info('Resolved Sim image to presigned S3 URL', { imageUrl })
+  return url
 }
 
 // --- Exponential Backoff Wrapper ---
@@ -671,8 +579,6 @@ export const createFromTemplateTool: ToolConfig<
       source?: BlockLike['source']
     }[] = []
 
-    // Track temporary Drive file IDs to delete after batchUpdate succeeds
-    const tempDriveFileIds: string[] = []
 
     for (let s = 0; s < slidesOrdered.length; s++) {
       const slideSchema = slidesOrdered[s] as SlideLike
@@ -718,13 +624,10 @@ export const createFromTemplateTool: ToolConfig<
 
       const checkResults = await Promise.all(
         imageCheckQueue.map(async ({ objectId, imageUrl, source }) => {
-          // Sim-internal URLs: download directly from storage, upload to Drive as public proxy
+          // Sim-internal URLs: resolve to a presigned S3 URL via internal endpoint
           if (isSimInternalImageUrl(imageUrl)) {
-            const result = await fetchSimImageAsPublicDriveUrl(imageUrl, accessToken)
-            if (result) {
-              tempDriveFileIds.push(result.driveFileId)
-            }
-            return { objectId, imageUrl: result?.url ?? null, accessible: result !== null }
+            const presignedUrl = await resolveSimImageToPresignedUrl(imageUrl)
+            return { objectId, imageUrl: presignedUrl, accessible: presignedUrl !== null }
           }
 
           const resolvedUrl = await resolveAccessibleImageUrl(imageUrl, source)
@@ -816,13 +719,6 @@ export const createFromTemplateTool: ToolConfig<
         })
         throw new Error(errData.error?.message || 'Failed to apply template updates')
       }
-    }
-
-    // Clean up temporary Drive files used as public image proxies.
-    // Run in parallel, fire-and-forget — failures are logged but never thrown.
-    if (tempDriveFileIds.length > 0) {
-      logger.info('Cleaning up temporary Drive images', { count: tempDriveFileIds.length })
-      await Promise.all(tempDriveFileIds.map((id) => deleteDriveFile(id, accessToken)))
     }
 
     logger.info('Create from template completed', {
