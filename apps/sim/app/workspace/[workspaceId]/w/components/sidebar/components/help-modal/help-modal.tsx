@@ -106,7 +106,7 @@ async function submitHelpRequest({ data, images, workflowId, workspaceId }: Subm
   })
 
   // boundary-raw-fetch: multipart/form-data submission with image attachments, requestJson only supports JSON bodies
-  const response = await fetch('/api/help', {
+  const response = await fetch('/api/help/arena-help', {
     method: 'POST',
     body: formData,
   })

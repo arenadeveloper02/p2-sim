@@ -1703,12 +1703,10 @@ export const Sidebar = memo(function Sidebar() {
                           Privacy policy
                         </DropdownMenuItem>
                       ) : null}
-                      {false && (
-                        <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
-                          <HelpCircle className='h-[14px] w-[14px]' />
-                          Report an issue
-                        </DropdownMenuItem>
-                      )}
+                      <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
+                        <HelpCircle className='h-[14px] w-[14px]' />
+                        Report an issue
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
 

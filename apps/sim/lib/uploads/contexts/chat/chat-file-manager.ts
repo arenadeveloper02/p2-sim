@@ -95,8 +95,12 @@ export async function processChatFiles(
   )
 
   const durableReferences: UserFile[] = []
-  const transformedFiles: Array<{ type: 'file' | 'url'; data: string; name: string; mime?: string }> =
-    []
+  const transformedFiles: Array<{
+    type: 'file' | 'url'
+    data: string
+    name: string
+    mime?: string
+  }> = []
 
   for (const file of files) {
     const directUrl = file.url?.trim()
