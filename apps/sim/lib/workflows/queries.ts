@@ -1,7 +1,8 @@
 import { db } from '@sim/db'
-import { permissions, workflow } from '@sim/db/schema'
+import { workflow } from '@sim/db/schema'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { WorkflowListItem } from '@/lib/api/contracts/workflows'
+import { listAccessibleWorkspaceRowsForUser } from '@/lib/workspaces/utils'
 
 type WorkflowListScope = 'active' | 'archived' | 'all'
 
@@ -23,6 +24,7 @@ const listColumns = {
   updatedAt: workflow.updatedAt,
   archivedAt: workflow.archivedAt,
   locked: workflow.locked,
+  isDeployed: workflow.isDeployed,
 } as const
 
 const orderByClause = [asc(workflow.sortOrder), asc(workflow.createdAt), asc(workflow.id)]
@@ -38,6 +40,7 @@ type WorkflowListRow = {
   updatedAt: Date
   archivedAt: Date | null
   locked: boolean
+  isDeployed: boolean
 }
 
 /** Normalizes timestamp columns to ISO strings to honor the `WorkflowListItem` wire contract. */
@@ -85,11 +88,8 @@ export async function listWorkflowsForUser({
     return rows.map(toListItem)
   }
 
-  const workspacePermissionRows = await db
-    .select({ workspaceId: permissions.entityId })
-    .from(permissions)
-    .where(and(eq(permissions.userId, userId), eq(permissions.entityType, 'workspace')))
-  const workspaceIds = workspacePermissionRows.map((row) => row.workspaceId)
+  const accessibleRows = await listAccessibleWorkspaceRowsForUser(userId, 'all')
+  const workspaceIds = accessibleRows.map((row) => row.workspace.id)
   if (workspaceIds.length === 0) return []
 
   const rows = await db

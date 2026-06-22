@@ -51,6 +51,7 @@ async function WorkspaceLayoutInner({
   }
 
   const { workspaceId } = await params
+  const initialSidebarCollapsed = (await cookies()).get('sidebar_collapsed')?.value === '1'
   const queryClient = getQueryClient()
   const sidebarPrefetch = prefetchWorkspaceSidebar(queryClient, workspaceId, session.user.id)
 
@@ -72,7 +73,9 @@ async function WorkspaceLayoutInner({
             <WorkspacePermissionsProvider>
               <WorkspaceScopeSync />
               <HydrationBoundary state={dehydrate(queryClient)}>
-                <WorkspaceChrome>{children}</WorkspaceChrome>
+                <WorkspaceChrome initialSidebarCollapsed={initialSidebarCollapsed}>
+                  {children}
+                </WorkspaceChrome>
               </HydrationBoundary>
             </WorkspacePermissionsProvider>
           </div>

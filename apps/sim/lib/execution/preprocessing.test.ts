@@ -45,7 +45,7 @@ vi.mock('@/lib/workspaces/utils', () => ({
   getScheduleExecutionActorUserId: mockGetScheduleExecutionActorUserId,
 }))
 
-vi.mock('@sim/workflow-authz', () => ({
+vi.mock('@sim/platform-authz/workflow', () => ({
   getActiveWorkflowRecord: vi.fn().mockResolvedValue({
     id: 'workflow-1',
     userId: 'creator-1',

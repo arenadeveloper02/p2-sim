@@ -279,6 +279,7 @@ import { SimilarwebBlock, SimilarwebBlockMeta } from '@/blocks/blocks/similarweb
 import { SixtyfourBlock, SixtyfourBlockMeta } from '@/blocks/blocks/sixtyfour'
 import { SlackBlock, SlackBlockMeta } from '@/blocks/blocks/slack'
 import { SmtpBlock } from '@/blocks/blocks/smtp'
+import { SportmonksBlock, SportmonksBlockMeta } from '@/blocks/blocks/sportmonks'
 import { SpotifyBlock, SpotifyBlockMeta } from '@/blocks/blocks/spotify'
 import { SpyfuBlock } from '@/blocks/blocks/spyfu'
 import { SQSBlock, SQSBlockMeta } from '@/blocks/blocks/sqs'
@@ -598,6 +599,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   slack: SlackBlock,
   spyfu: SpyfuBlock,
   smtp: SmtpBlock,
+  sportmonks: SportmonksBlock,
   spotify: SpotifyBlock,
   sqs: SQSBlock,
   square: SquareBlock,
@@ -863,6 +865,7 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   similarweb: SimilarwebBlockMeta,
   sixtyfour: SixtyfourBlockMeta,
   slack: SlackBlockMeta,
+  sportmonks: SportmonksBlockMeta,
   spotify: SpotifyBlockMeta,
   sqs: SQSBlockMeta,
   square: SquareBlockMeta,

@@ -54,6 +54,7 @@ export type SubBlockType =
   | 'text'
   | 'router-input'
   | 'table-selector'
+  | 'column-selector'
   | 'modal'
   | 'arena-project-selector'
   | 'arena-group-selector'
