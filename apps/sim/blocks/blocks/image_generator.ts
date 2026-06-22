@@ -4,6 +4,7 @@ import {
   NANO_BANANA_PRO_MODEL,
   resolveNanoBananaReferences,
 } from '@/lib/image-generation/nano-banana-inputs'
+import { mergeUrlsAndDeduplicate, parseImageUrls } from '@/lib/utils/parse-image-urls'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import {
   createVersionedToolSelector,
@@ -22,6 +23,32 @@ function normalizeReferenceFiles(input: unknown): unknown[] {
   }
   return []
 }
+
+function resolveFalaiNanoBanana2References(params: Record<string, unknown>): {
+  inputImages?: unknown[]
+} {
+  const references = [
+    ...normalizeReferenceFiles(params.inputImage),
+    ...normalizeReferenceFiles(params.inputImages),
+    ...mergeUrlsAndDeduplicate(
+      parseImageUrls(params.inputImageUrl),
+      parseImageUrls(params.inputImageUrls)
+    ),
+  ]
+
+  return references.length > 0 ? { inputImages: references } : {}
+}
+
+const REFERENCE_IMAGE_MODELS = [
+  'gpt-image-2',
+  'gpt-image-1.5',
+  'gpt-image-1',
+  'gpt-image-1-mini',
+  'gemini-3.1-flash-image-preview',
+  'gemini-3-pro-image-preview',
+  'gemini-2.5-flash-image',
+  'nano-banana-2',
+]
 
 const OPENAI_GPT_IMAGE_MODELS = [
   { label: 'GPT Image 2', id: 'gpt-image-2' },
@@ -999,7 +1026,11 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       uploadContext: 'image-fusion',
       allowStartFilesReference: true,
       defaultValue: '<start.files>',
-      condition: { field: 'provider', value: ['openai', 'gemini'] },
+      condition: {
+        field: 'provider',
+        value: ['openai', 'gemini', 'falai'],
+        and: { field: 'model', value: REFERENCE_IMAGE_MODELS },
+      },
       dependsOn: ['provider', 'model'],
     },
     {
@@ -1009,7 +1040,11 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       placeholder:
         'Optional: add one or more image URLs or references. One image edits, multiple images fuse.',
       mode: 'advanced',
-      condition: { field: 'provider', value: ['openai', 'gemini'] },
+      condition: {
+        field: 'provider',
+        value: ['openai', 'gemini', 'falai'],
+        and: { field: 'model', value: REFERENCE_IMAGE_MODELS },
+      },
       dependsOn: ['provider', 'model'],
     },
     {
@@ -1139,22 +1174,25 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
               ? 'nano-banana-2'
               : 'gpt-image-1.5'
 
+        const model = params.model || defaultModel
         const referenceInputs =
-          provider === 'openai' || provider === 'gemini'
-            ? resolveNanoBananaReferences({
-                model: params.model,
-                uploadedReferences: [
-                  ...normalizeReferenceFiles(params.inputImage),
-                  ...normalizeReferenceFiles(params.inputImages),
-                ],
-                inputImageUrl: params.inputImageUrl,
-                inputImageUrls: params.inputImageUrls,
-              })
-            : {}
+          provider === 'falai' && model === 'nano-banana-2'
+            ? resolveFalaiNanoBanana2References(params)
+            : provider === 'openai' || provider === 'gemini'
+              ? resolveNanoBananaReferences({
+                  model: params.model,
+                  uploadedReferences: [
+                    ...normalizeReferenceFiles(params.inputImage),
+                    ...normalizeReferenceFiles(params.inputImages),
+                  ],
+                  inputImageUrl: params.inputImageUrl,
+                  inputImageUrls: params.inputImageUrls,
+                })
+              : {}
 
         return {
           provider,
-          model: params.model || defaultModel,
+          model,
           prompt: params.prompt,
           apiKey: params.apiKey,
           ...(params.size && { size: params.size }),
