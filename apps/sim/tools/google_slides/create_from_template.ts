@@ -1,3 +1,4 @@
+import { SignJWT } from 'jose'
 import { createLogger } from '@sim/logger'
 import type { ToolConfig } from '@/tools/types'
 import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
@@ -187,13 +188,30 @@ function extractSimFileServeKey(url: string): string | null {
 }
 
 /**
- * Downloads a Sim-generated image directly from cloud storage (bypassing the HTTP serve
- * route) and re-uploads it to the caller's Google Drive as a publicly readable file so
- * that the Google Slides API can fetch it during `replaceImage`.
+ * Generates a short-lived internal JWT that satisfies `checkSessionOrInternalAuth` on
+ * Sim API routes. Uses only `jose` (browser-safe) so this file stays client-bundle-safe.
+ */
+async function generateInternalFetchToken(): Promise<string> {
+  const secret = new TextEncoder().encode(
+    process.env.INTERNAL_JWT_SECRET || process.env.INTERNAL_API_SECRET || ''
+  )
+  return new SignJWT({ type: 'internal' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .setIssuer('sim-internal')
+    .setAudience('sim-api')
+    .sign(secret)
+}
+
+/**
+ * Downloads a Sim-generated image via the file-serve route (using a short-lived internal
+ * JWT for auth) and re-uploads it to the caller's Google Drive as a publicly readable
+ * file so that the Google Slides API can fetch it during `replaceImage`.
  *
  * Steps:
- *   1. Extract the S3 key from the Sim file-serve URL.
- *   2. Download bytes directly via the storage service (same IAM credentials, no HTTP hop).
+ *   1. Generate a 5-minute internal JWT (no server-only imports — `jose` only).
+ *   2. GET image bytes from `/api/files/serve/…` with the JWT in `Authorization`.
  *   3. POST a multipart upload to Google Drive using `googleAccessToken`.
  *   4. PATCH a `reader/anyone` permission on the new Drive file.
  *   5. Return the public URL and the Drive file ID (for post-slide cleanup).
@@ -204,31 +222,29 @@ async function fetchSimImageAsPublicDriveUrl(
   imageUrl: string,
   googleAccessToken: string
 ): Promise<{ url: string; driveFileId: string } | null> {
-  const storageKey = extractSimFileServeKey(imageUrl)
-  if (!storageKey) {
-    logger.warn('Could not extract storage key from Sim file-serve URL', { imageUrl })
-    return null
-  }
-
-  let imageBytes: Buffer
+  let internalToken: string
   try {
-    const { downloadFile } = await import('@/lib/uploads/core/storage-service')
-    imageBytes = await downloadFile({ key: storageKey, context: 'agent-generated-images' })
+    internalToken = await generateInternalFetchToken()
   } catch (err) {
-    logger.warn('Failed to download Sim image from storage', {
-      imageUrl,
-      storageKey,
+    logger.warn('Failed to generate internal fetch token for Sim image', {
       error: err instanceof Error ? err.message : String(err),
     })
     return null
   }
 
-  const ext = storageKey.split('.').pop()?.toLowerCase() ?? 'jpeg'
-  const contentType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
-  const imageBuffer = imageBytes.buffer.slice(
-    imageBytes.byteOffset,
-    imageBytes.byteOffset + imageBytes.byteLength
-  )
+  const imageRes = await fetch(imageUrl, {
+    headers: { Authorization: `Bearer ${internalToken}` },
+  })
+  if (!imageRes.ok) {
+    logger.warn('Failed to fetch Sim internal image via serve route', {
+      imageUrl,
+      status: imageRes.status,
+    })
+    return null
+  }
+
+  const contentType = imageRes.headers.get('content-type') || 'image/jpeg'
+  const imageBuffer = await imageRes.arrayBuffer()
 
   const boundary = 'sim_drive_upload_boundary'
   const metadata = JSON.stringify({ name: `sim-ai-image-${Date.now()}.jpg`, mimeType: contentType })
