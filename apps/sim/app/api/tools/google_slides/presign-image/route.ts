@@ -33,7 +33,7 @@ function extractKeyFromServeUrl(imageUrl: string): string | null {
  * (`Authorization: Bearer <internal_jwt>`).
  */
 export const POST = withRouteHandler(async (request: NextRequest) => {
-  const authResult = await checkInternalAuth(request)
+  const authResult = await checkInternalAuth(request, { requireWorkflowId: false })
   if (!authResult.success) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
