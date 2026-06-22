@@ -4032,3 +4032,45 @@ export const dataDrainRuns = pgTable(
     drainStartedIdx: index('data_drain_runs_drain_started_idx').on(table.drainId, table.startedAt),
   })
 )
+
+export const helpSupportIssueTypeEnum = pgEnum('help_support_issue_type', [
+  'bug',
+  'feedback',
+  'feature_request',
+  'other',
+])
+
+export type HelpSupportIssueAttachment = {
+  filename: string
+  content_type: string
+  file_url: string
+  storage_key: string
+}
+
+export const helpSupportIssue = pgTable(
+  'help_support_issue',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    userEmail: text('user_email').notNull(),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    type: helpSupportIssueTypeEnum('type').notNull(),
+    subject: text('subject').notNull(),
+    message: text('message').notNull(),
+    attachments: jsonb('attachments')
+      .$type<HelpSupportIssueAttachment[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index('help_support_issue_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('help_support_issue_workspace_id_idx').on(table.workspaceId),
+    workflowIdIdx: index('help_support_issue_workflow_id_idx').on(table.workflowId),
+    typeIdx: index('help_support_issue_type_idx').on(table.type),
+    createdAtIdx: index('help_support_issue_created_at_idx').on(table.createdAt),
+  })
+)

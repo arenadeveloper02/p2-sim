@@ -490,6 +490,8 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
     }
   }
   hideFromToolbar?: boolean
+  /** When true, the block appears in the toolbar and search only for admin workspaces. */
+  adminWorkspaceOnly?: boolean
   triggers?: {
     enabled: boolean
     available: string[] // List of trigger IDs this block supports

@@ -122,6 +122,7 @@ export const env = createEnv({
     FROM_EMAIL_ADDRESS:                    z.string().min(1).optional(),           // Complete from address (e.g., "Sim <noreply@domain.com>" or "noreply@domain.com")
     PERSONAL_EMAIL_FROM:                   z.string().min(1).optional(),           // From address for personalized emails
     EMAIL_DOMAIN:                          z.string().min(1).optional(),           // Domain for sending emails (fallback when FROM_EMAIL_ADDRESS not set)
+    HELP_INBOX_EMAIL:                      z.string().email().optional(),          // Inbox for help/contact form submissions (defaults to help@EMAIL_DOMAIN)
     AZURE_ACS_CONNECTION_STRING:           z.string().optional(),                  // Azure Communication Services connection string
     AWS_SES_REGION:                        z.string().min(1).optional(),           // AWS region for SES (credentials resolved via default SDK provider chain)
     SMTP_HOST:                             z.string().min(1).optional(),           // SMTP server hostname
