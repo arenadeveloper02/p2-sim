@@ -19,8 +19,22 @@ interface WorkspaceChromeProps {
   initialSidebarCollapsed?: boolean
 }
 
+/**
+ * Routes that hide the left sidebar (full-bleed embeds and upgrade).
+ */
 function isFullscreenPath(pathname: string | null): boolean {
-  return FULLSCREEN_SUFFIXES.some((s) => pathname?.endsWith(s))
+  if (!pathname) return false
+  if (FULLSCREEN_SUFFIXES.some((suffix) => pathname.endsWith(suffix))) return true
+  return (
+    /^\/workspace\/[^/]+\/embed\/?$/.test(pathname) ||
+    /^\/workspace\/[^/]+\/home\/embed\/?$/.test(pathname) ||
+    /^\/workspace\/[^/]+\/task\/[^/]+\/embed\/?$/.test(pathname)
+  )
+}
+
+function readSidebarWidthCssVar(): string {
+  if (typeof window === 'undefined') return ''
+  return getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width').trim()
 }
 
 /**
@@ -82,11 +96,17 @@ export function WorkspaceChrome({
   // store rehydration only fires once, so a soft navigation can leave
   // `--sidebar-width` stuck at its `0px` default — collapsing the sidebar to
   // nothing with no reachable control to bring it back. Re-syncing here recovers
-  // that state. Gated on hydration so it never clobbers the persisted value with
-  // store defaults during the pre-hydration window.
-  useEffect(() => {
+  // that state. When the CSS var is still at the global default (`0px`), sync
+  // immediately so the sidebar is visible before persisted width rehydrates.
+  useLayoutEffect(() => {
+    if (isFullscreen) return
+    const cssWidth = readSidebarWidthCssVar()
+    if (!cssWidth || cssWidth === '0px') {
+      syncSidebarWidth()
+      return
+    }
     if (hasHydrated) syncSidebarWidth()
-  }, [pathname, hasHydrated, syncSidebarWidth])
+  }, [pathname, isFullscreen, hasHydrated, syncSidebarWidth])
 
   // Re-clamp the width when the window shrinks below what the persisted width
   // allows, so the sidebar can never grow wider than the viewport permits.
