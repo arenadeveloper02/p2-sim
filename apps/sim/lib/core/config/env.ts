@@ -106,6 +106,13 @@ export const env = createEnv({
      //browseruse
      BROWSER_USE_API_KEY:                   z.string().min(1).optional(),           // BrowserUse API key for browser automation
 
+     // Skyvern
+     SKYVERN_API_KEY:                       z.string().min(1).optional(),           // Skyvern API key for browser automation workflows
+     SKYVERN_BASE_URL:                      z.string().url().optional(),            // Skyvern API base URL (defaults to https://api.skyvern.com)
+     SKYVERN_WORKFLOWS_API_PATH:            z.string().min(1).optional(),           // Skyvern agents API path for create/list (defaults to /v1/agents)
+     SKYVERN_RUN_AGENTS_API_PATH:           z.string().min(1).optional(),           // Skyvern run API path (defaults to /v1/run/agents)
+     SKYVERN_RUNS_API_PATH:                 z.string().min(1).optional(),           // Skyvern runs API path for get status (defaults to /v1/runs)
+
      // Firecrawl
      FIRECRAWL_API_KEY:                     z.string().min(1).optional(),           // Firecrawl API key for web crawling
      
@@ -532,6 +539,7 @@ export const env = createEnv({
     NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS: z.string().optional(),              // Hide Bedrock credential fields when deployment uses AWS default credential chain (IAM roles, instance profiles, ECS task roles, IRSA)
     NEXT_PUBLIC_AZURE_CONFIGURED:          z.string().optional(),              // Hide Azure credential fields when endpoint/key/version are pre-configured server-side
     NEXT_PUBLIC_BROWSER_USE_CONFIGURED:    z.string().optional(),              // Hide Browser Use API key field when BROWSER_USE_API_KEY is set server-side (client cannot read the secret)
+    NEXT_PUBLIC_SKYVERN_CONFIGURED:        z.string().optional(),              // Hide Skyvern credential fields when SKYVERN_API_KEY is set server-side (client cannot read the secret)
     NEXT_PUBLIC_VISION_SERVER_KEYS_CONFIGURED: z.string().optional(),          // Hide Vision block API key when provider keys are set server-side (OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY)
     NEXT_PUBLIC_COHERE_CONFIGURED:         z.string().optional(),              // Hide Cohere API key field on Knowledge block when COHERE_API_KEY is pre-configured server-side
     NEXT_PUBLIC_COPILOT_TRAINING_ENABLED:  z.string().optional(),
@@ -617,6 +625,7 @@ export const env = createEnv({
     NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS: process.env.NEXT_PUBLIC_BEDROCK_DEFAULT_CREDENTIALS,
     NEXT_PUBLIC_AZURE_CONFIGURED: process.env.NEXT_PUBLIC_AZURE_CONFIGURED,
     NEXT_PUBLIC_BROWSER_USE_CONFIGURED: process.env.NEXT_PUBLIC_BROWSER_USE_CONFIGURED,
+    NEXT_PUBLIC_SKYVERN_CONFIGURED: process.env.NEXT_PUBLIC_SKYVERN_CONFIGURED,
     NEXT_PUBLIC_VISION_SERVER_KEYS_CONFIGURED: process.env.NEXT_PUBLIC_VISION_SERVER_KEYS_CONFIGURED,
     NEXT_PUBLIC_COHERE_CONFIGURED: process.env.NEXT_PUBLIC_COHERE_CONFIGURED,
     NEXT_PUBLIC_COPILOT_TRAINING_ENABLED: process.env.NEXT_PUBLIC_COPILOT_TRAINING_ENABLED,

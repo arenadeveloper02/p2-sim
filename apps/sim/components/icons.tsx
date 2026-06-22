@@ -5381,6 +5381,23 @@ export function SftpIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function SkyvernIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
+      <path
+        d='M4 14.5C7.5 11 10.5 9.5 13.5 9.5C16 9.5 18 10.5 20 12.5C18.5 16 15.5 18.5 11.5 19.5C8 20.3 5.5 19 4 14.5Z'
+        fill='currentColor'
+      />
+      <path
+        d='M6 8.5C9 6.5 12 5.5 15 6C17.5 6.4 19.5 7.5 21 9.5C19 8 16.5 7.5 14 8C11 8.5 8.5 9.5 6 11.5C5.5 10.2 5.7 9.2 6 8.5Z'
+        fill='currentColor'
+        opacity='0.75'
+      />
+      <circle cx='17.5' cy='8' r='1.25' fill='currentColor' />
+    </svg>
+  )
+}
+
 export function ApifyIcon(props: SVGProps<SVGSVGElement>) {
   const id = useId()
   const clipId = `apify_clip_${id}`

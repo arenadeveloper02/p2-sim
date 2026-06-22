@@ -1887,7 +1887,8 @@ async function executeToolRequest(
             }
           }
         } else {
-          const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl')
+          const allowHttp = tool.request.allowHttp === true
+          const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl', { allowHttp })
           if (!urlValidation.isValid) {
             throw new Error(`Invalid tool URL: ${urlValidation.error}`)
           }
@@ -1899,6 +1900,7 @@ async function executeToolRequest(
             timeout: requestParams.timeout,
             maxResponseBytes: MAX_TOOL_RESPONSE_BODY_BYTES,
             signal,
+            allowHttp,
           })
 
           const responseHeaders = new Headers(secureResponse.headers.toRecord())

@@ -271,6 +271,7 @@ import { ShopifyBlock, ShopifyBlockMeta } from '@/blocks/blocks/shopify'
 import { SimWorkspaceEventBlock } from '@/blocks/blocks/sim_workspace_event'
 import { SimilarwebBlock, SimilarwebBlockMeta } from '@/blocks/blocks/similarweb'
 import { SixtyfourBlock, SixtyfourBlockMeta } from '@/blocks/blocks/sixtyfour'
+import { SkyvernBlock, SkyvernBlockMeta } from '@/blocks/blocks/skyvern'
 import { SlackBlock, SlackBlockMeta } from '@/blocks/blocks/slack'
 import { SmtpBlock } from '@/blocks/blocks/smtp'
 import { SpotifyBlock, SpotifyBlockMeta } from '@/blocks/blocks/spotify'
@@ -583,6 +584,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   sim_workspace_event: SimWorkspaceEventBlock,
   similarweb: SimilarwebBlock,
   sixtyfour: SixtyfourBlock,
+  skyvern: SkyvernBlock,
   slack: SlackBlock,
   spyfu: SpyfuBlock,
   smtp: SmtpBlock,
@@ -845,6 +847,7 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   shopify: ShopifyBlockMeta,
   similarweb: SimilarwebBlockMeta,
   sixtyfour: SixtyfourBlockMeta,
+  skyvern: SkyvernBlockMeta,
   slack: SlackBlockMeta,
   spotify: SpotifyBlockMeta,
   sqs: SQSBlockMeta,
