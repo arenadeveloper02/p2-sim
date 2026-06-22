@@ -8,6 +8,7 @@ import {
 import { resolveImageGenerationCount } from '@/lib/image-generation/resolve-image-count.server'
 
 const logger = createLogger('ImageGenerationWrapper')
+const GPT_IMAGE_2_MODEL = 'gpt-image-2'
 
 export const INLINE_IMAGE_PAYLOAD_ERROR =
   'Image Generator request payload is too large or malformed. For 4K image generation with reference images, upload the reference image as a file or use an image URL instead of passing inline base64 image data.'
@@ -116,6 +117,62 @@ function getStringParam(params: Record<string, unknown>, key: string): string | 
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined
 }
 
+function getMemorySnapshot(): Record<string, number> {
+  const memory = process.memoryUsage()
+  return {
+    rssMb: Math.round(memory.rss / 1024 / 1024),
+    heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
+    heapTotalMb: Math.round(memory.heapTotal / 1024 / 1024),
+    externalMb: Math.round(memory.external / 1024 / 1024),
+    arrayBuffersMb: Math.round(memory.arrayBuffers / 1024 / 1024),
+  }
+}
+
+function summarizeReferenceInput(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return {
+      type: 'string',
+      length: trimmed.length,
+      isHttpUrl: trimmed.startsWith('http://') || trimmed.startsWith('https://'),
+      isInternalFileUrl: trimmed.includes('/api/files/serve/'),
+      isDataUrl: trimmed.startsWith('data:'),
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      length: value.length,
+      first: summarizeReferenceInput(value[0]),
+    }
+  }
+
+  if (isRecord(value)) {
+    return {
+      type: 'object',
+      keys: Object.keys(value).sort(),
+      hasKey: typeof value.key === 'string',
+      hasPath: typeof value.path === 'string',
+      hasUrl: typeof value.url === 'string',
+      urlIsInternal: typeof value.url === 'string' && value.url.includes('/api/files/serve/'),
+      pathIsInternal: typeof value.path === 'string' && value.path.includes('/api/files/serve/'),
+      size: typeof value.size === 'number' ? value.size : undefined,
+      typeField: typeof value.type === 'string' ? value.type : undefined,
+      mimeTypeField: typeof value.mimeType === 'string' ? value.mimeType : undefined,
+    }
+  }
+
+  return { type: typeof value }
+}
+
+function logGptImage2Wrapper(stage: string, metadata: Record<string, unknown>): void {
+  logger.info(`GPT Image 2 wrapper ${stage}`, {
+    ...metadata,
+    memory: getMemorySnapshot(),
+  })
+}
+
 function hasReferenceImages(params: Record<string, unknown>): boolean {
   const inputImages = params.inputImages
   const inputImage = params.inputImage
@@ -217,7 +274,33 @@ export async function runImageGenerationWrapper(
   const { imageCount: _imageCount, inputImageUrl, ...baseParams } = validated.params
   const inputImageWarning = normalizeOptionalString(validated.params.inputImageWarning)
   const originalPrompt = String(baseParams.prompt ?? '')
+  const requestedModel = getStringParam(validated.params, 'model') ?? ''
+  const isGptImage2 = requestedModel === GPT_IMAGE_2_MODEL
   const executionToolId = resolveExecutionToolId(validated.baseToolId, validated.params)
+
+  if (isGptImage2) {
+    logGptImage2Wrapper('input parsed', {
+      requestedBaseToolId: validated.baseToolId,
+      executionToolId,
+      provider: getStringParam(validated.params, 'provider'),
+      model: requestedModel,
+      promptLength: originalPrompt.length,
+      requestedImageCountParam: validated.params.imageCount,
+      resolvedImageCount: imageCount,
+      hasPromptImageUrl: Boolean(promptImageUrl),
+      hasInputImageUrl: Boolean(inputImageUrl),
+      inputImageUrl: summarizeReferenceInput(inputImageUrl),
+      inputImage: summarizeReferenceInput(validated.params.inputImage),
+      inputImages: summarizeReferenceInput(validated.params.inputImages),
+      inputImageUrls: summarizeReferenceInput(validated.params.inputImageUrls),
+      size: validated.params.size,
+      quality: validated.params.quality,
+      background: validated.params.background,
+      outputFormat: validated.params.outputFormat,
+      moderation: validated.params.moderation,
+    })
+  }
+
   const resolvedBaseParams = applyNanoBananaPromptImageParams({
     baseToolId: executionToolId,
     baseParams: {
@@ -228,6 +311,18 @@ export async function runImageGenerationWrapper(
     inputImages: validated.params.inputImages,
     promptImageUrl,
   })
+
+  if (isGptImage2) {
+    logGptImage2Wrapper('params resolved', {
+      executionToolId,
+      resolvedParamKeys: Object.keys(resolvedBaseParams).sort(),
+      inputImage: summarizeReferenceInput(resolvedBaseParams.inputImage),
+      inputImages: summarizeReferenceInput(resolvedBaseParams.inputImages),
+      hasPrompt: typeof resolvedBaseParams.prompt === 'string',
+      promptLength:
+        typeof resolvedBaseParams.prompt === 'string' ? resolvedBaseParams.prompt.length : null,
+    })
+  }
 
   if (inputImageWarning) {
     logger.warn('Image generation input warning', {
@@ -252,14 +347,47 @@ export async function runImageGenerationWrapper(
   const settled = await runWithConcurrency<PromiseSettledResult<ToolResult>>(
     imageCount,
     MAX_CONCURRENT_GENERATIONS,
-    async () => {
+    async (index) => {
       try {
-        const result = await executeTool(executionToolId, {
+        const executionParams = {
           ...buildExecutionParams(executionToolId, resolvedBaseParams),
           ...(originalPrompt ? { prompt: originalPrompt } : {}),
-        })
+        }
+        if (isGptImage2) {
+          logGptImage2Wrapper('tool execution starting', {
+            executionToolId,
+            index,
+            paramKeys: Object.keys(executionParams).sort(),
+            inputImage: summarizeReferenceInput(executionParams.inputImage),
+            inputImages: summarizeReferenceInput(executionParams.inputImages),
+            promptLength:
+              typeof executionParams.prompt === 'string' ? executionParams.prompt.length : null,
+          })
+        }
+        const result = await executeTool(executionToolId, executionParams)
+        if (isGptImage2) {
+          const output = isRecord((result as ToolResult).output)
+            ? (result as ToolResult).output
+            : {}
+          logGptImage2Wrapper('tool execution completed', {
+            executionToolId,
+            index,
+            success: (result as ToolResult).success,
+            outputKeys: Object.keys(output).sort(),
+            imageCount: extractImagesFromOutput(output).length,
+            error: (result as ToolResult).error,
+          })
+        }
         return { status: 'fulfilled' as const, value: result as ToolResult }
       } catch (err) {
+        if (isGptImage2) {
+          logGptImage2Wrapper('tool execution threw', {
+            executionToolId,
+            index,
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+          })
+        }
         return {
           status: 'rejected' as const,
           reason: err instanceof Error ? err : new Error(String(err)),
@@ -287,6 +415,13 @@ export async function runImageGenerationWrapper(
       imageCount,
       failures: failureMessages,
     })
+    if (isGptImage2) {
+      logGptImage2Wrapper('all attempts failed', {
+        executionToolId,
+        imageCount,
+        failures: failureMessages,
+      })
+    }
     return {
       success: false,
       error: failureMessages[0] || 'Image generation failed',
@@ -346,6 +481,21 @@ export async function runImageGenerationWrapper(
         ]
       : []),
   ]
+
+  if (isGptImage2) {
+    logGptImage2Wrapper('output assembled', {
+      executionToolId,
+      requested: imageCount,
+      succeeded: successfulResults.length,
+      failed: failureMessages.length,
+      imagesCount: images.length,
+      primaryImageLength: primaryImage.length,
+      provider,
+      model,
+      warnings,
+      s3UploadFailed,
+    })
+  }
 
   return {
     success: true,

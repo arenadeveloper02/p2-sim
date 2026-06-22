@@ -1,9 +1,9 @@
 import { db } from '@sim/db'
 import { workflow as workflowTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { generateId, isValidUuid } from '@sim/utils/id'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { executeWorkflowBodySchema } from '@/lib/api/contracts/workflows'
@@ -1240,12 +1240,28 @@ async function handleExecutePost(
           const isBuffered = event.type !== 'stream:chunk' && event.type !== 'stream:done'
           let eventToSend = event
           if (isBuffered) {
-            const entry = terminalStatus
-              ? await eventWriter.writeTerminal(event, terminalStatus)
-              : await eventWriter.write(event)
-            eventToSend = entry.event
-            eventToSend.eventId = entry.eventId
-            terminalEventPublished ||= Boolean(terminalStatus)
+            try {
+              const entry = terminalStatus
+                ? await eventWriter.writeTerminal(event, terminalStatus)
+                : await eventWriter.write(event)
+              eventToSend = entry.event
+              eventToSend.eventId = entry.eventId
+              terminalEventPublished ||= Boolean(terminalStatus)
+            } catch (e) {
+              // The event buffer (Redis replay store) rejected this event — e.g. the flush
+              // batch exceeds the per-write byte cap for large block outputs. The buffer only
+              // backs reconnect/replay; the live SSE stream is the primary delivery. Fall
+              // through to enqueue the event live (below) instead of throwing, so terminal
+              // events still reach the active client and the UI doesn't hang on "running".
+              // Marking a terminal event delivered-live as published lets finalization close
+              // the stream cleanly instead of aborting it with controller.error().
+              reqLogger.warn('Event buffer write failed; delivering event over live stream only', {
+                eventType: event.type,
+                terminal: Boolean(terminalStatus),
+                error: toError(e).message,
+              })
+              terminalEventPublished ||= Boolean(terminalStatus)
+            }
           }
           if (!isStreamClosed) {
             try {

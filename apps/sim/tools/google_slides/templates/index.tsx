@@ -1,5 +1,5 @@
-import type { IconLibrary, PresentationSchema } from './schema'
 import { iconLibrary } from './icon_library'
+import type { IconLibrary, PresentationSchema } from './schema'
 
 export const TEMPLATE_OPTIONS = [{ value: 'position2_2026', label: 'Position2 2026' }] as const
 
@@ -427,7 +427,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FOUR_COLUMN_TEXT_ONLY',
         order: 7,
         templateSlideObjectId: 'g392319e7c15_4_308',
-        description: 'Four-column text layout (2x2 grid) with headers and body text (no images, no bullets)',
+        description:
+          'Four-column text layout (2x2 grid) with headers and body text (no images, no bullets)',
         blocks: [
           {
             key: 'title',
@@ -663,7 +664,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'BULLETED_LIST_WITH_STATS',
         order: 9,
         templateSlideObjectId: 'g258f1f1ebd7_0_38',
-        description: 'Two-section layout: left side with bulleted list, right side with 3 circular stat items',
+        description:
+          'Two-section layout: left side with bulleted list, right side with 3 circular stat items',
         blocks: [
           {
             key: 'title',
@@ -756,7 +758,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'BULLETED_LIST_WITH_LARGE_STAT',
         order: 10,
         templateSlideObjectId: 'g2380b89c92d_0_153',
-        description: 'Two-section layout: left side with bulleted list, right side with one large circular stat',
+        description:
+          'Two-section layout: left side with bulleted list, right side with one large circular stat',
         blocks: [
           {
             key: 'title',
@@ -855,7 +858,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'CONTACT_SLIDE',
         order: 13,
         templateSlideObjectId: 'g2380b89c92d_0_168',
-        description: 'Contact/closing slide with company info, location, social media icons, and footer - no editable content blocks',
+        description:
+          'Contact/closing slide with company info, location, social media icons, and footer - no editable content blocks',
         blocks: [],
       },
       {
@@ -890,7 +894,8 @@ function buildTemplateSchema(): PresentationSchema {
             replaceable: true,
             usage: ['icon', 'icon_library'],
             shapeId: 'g2380b89c92d_0_68',
-            description: 'Icon for left column — AI picks from icon library based on left column topic',
+            description:
+              'Icon for left column — AI picks from icon library based on left column topic',
             content: '',
           },
           {
@@ -922,7 +927,8 @@ function buildTemplateSchema(): PresentationSchema {
             replaceable: true,
             usage: ['icon', 'icon_library'],
             shapeId: 'g2380b89c92d_0_69',
-            description: 'Icon for middle column — AI picks from icon library based on middle column topic',
+            description:
+              'Icon for middle column — AI picks from icon library based on middle column topic',
             content: '',
           },
           {
@@ -954,7 +960,8 @@ function buildTemplateSchema(): PresentationSchema {
             replaceable: true,
             usage: ['icon', 'icon_library'],
             shapeId: 'g2380b89c92d_0_70',
-            description: 'Right column icon — AI picks from icon library based on right column topic',
+            description:
+              'Right column icon — AI picks from icon library based on right column topic',
             content: '',
           },
           {
@@ -993,7 +1000,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_188',
             minChars: 3,
             maxChars: 30,
-            description: 'Slide title (e.g. "Infographics") — placeholder TITLE, inherits master style',
+            description:
+              'Slide title (e.g. "Infographics") — placeholder TITLE, inherits master style',
             content: '',
           },
           {
@@ -1025,7 +1033,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_396',
             minChars: 20,
             maxChars: 60,
-            description: 'Agenda item 01 subtext (12pt, gray, Poppins light) — ACCENT2 colored shape',
+            description:
+              'Agenda item 01 subtext (12pt, gray, Poppins light) — ACCENT2 colored shape',
             content: '',
           },
           {
@@ -1057,7 +1066,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_393',
             minChars: 20,
             maxChars: 60,
-            description: 'Agenda item 02 subtext (12pt, gray, Poppins light) — ACCENT3 colored shape',
+            description:
+              'Agenda item 02 subtext (12pt, gray, Poppins light) — ACCENT3 colored shape',
             content: '',
           },
           {
@@ -1089,7 +1099,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_390',
             minChars: 20,
             maxChars: 60,
-            description: 'Agenda item 03 subtext (12pt, gray, Poppins light) — ACCENT4 colored shape',
+            description:
+              'Agenda item 03 subtext (12pt, gray, Poppins light) — ACCENT4 colored shape',
             content: '',
           },
           {
@@ -1121,7 +1132,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_387',
             minChars: 20,
             maxChars: 60,
-            description: 'Agenda item 04 subtext (12pt, gray, Poppins light) — ACCENT5 colored shape',
+            description:
+              'Agenda item 04 subtext (12pt, gray, Poppins light) — ACCENT5 colored shape',
             content: '',
           },
           {
@@ -1153,7 +1165,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_384',
             minChars: 20,
             maxChars: 60,
-            description: 'Agenda item 05 subtext (12pt, gray, Poppins light) — ACCENT6 colored shape',
+            description:
+              'Agenda item 05 subtext (12pt, gray, Poppins light) — ACCENT6 colored shape',
             content: '',
           },
         ],
@@ -1162,7 +1175,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'DIAMOND_GRID_AGENDA',
         order: 18,
         templateSlideObjectId: 'g3f14351dc08_0_374',
-        description: 'Two-column grid of 6 agenda items, each with a rotated diamond-shaped colored icon, bold uppercase title, and body description. Left column: items 1–3 (top to bottom). Right column: items 4–6.',
+        description:
+          'Two-column grid of 6 agenda items, each with a rotated diamond-shaped colored icon, bold uppercase title, and body description. Left column: items 1–3 (top to bottom). Right column: items 4–6.',
         blocks: [
           {
             key: 'title',
@@ -1384,7 +1398,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'AGENDA_FIVE_COLUMN',
         order: 19,
         templateSlideObjectId: 'g3f14351dc08_0_366',
-        description: 'Five-item horizontal agenda slide with tall colored accent cards, item label and subtext per item displayed in a single row',
+        description:
+          'Five-item horizontal agenda slide with tall colored accent cards, item label and subtext per item displayed in a single row',
         blocks: [
           {
             key: 'title',
@@ -1502,7 +1517,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FOUR_BUBBLE_TEXT',
         order: 20,
         templateSlideObjectId: 'g3f14351dc08_0_195',
-        description: 'Four-item bubble layout with colored circular accents connected by dashed lines to small indicator dots. Each bubble contains a bold white text label. Items displayed in a single row.',
+        description:
+          'Four-item bubble layout with colored circular accents connected by dashed lines to small indicator dots. Each bubble contains a bold white text label. Items displayed in a single row.',
         blocks: [
           {
             key: 'title',
@@ -1521,7 +1537,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_488',
             minChars: 20,
             maxChars: 48,
-            description: 'Item 1 text inside large circle (15pt bold, white, centered) — LIGHT2 bubble',
+            description:
+              'Item 1 text inside large circle (15pt bold, white, centered) — LIGHT2 bubble',
             content: '',
           },
           {
@@ -1531,7 +1548,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_489',
             minChars: 20,
             maxChars: 50,
-            description: 'Item 2 text inside large circle (15pt bold, white, centered) — ACCENT5 bubble',
+            description:
+              'Item 2 text inside large circle (15pt bold, white, centered) — ACCENT5 bubble',
             content: '',
           },
           {
@@ -1541,7 +1559,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_490',
             minChars: 20,
             maxChars: 49,
-            description: 'Item 3 text inside large circle (15pt bold, white, centered) — ACCENT4 bubble',
+            description:
+              'Item 3 text inside large circle (15pt bold, white, centered) — ACCENT4 bubble',
             content: '',
           },
           {
@@ -1551,7 +1570,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_491',
             minChars: 20,
             maxChars: 43,
-            description: 'Item 4 text inside large circle (15pt bold, white, centered) — ACCENT6 bubble',
+            description:
+              'Item 4 text inside large circle (15pt bold, white, centered) — ACCENT6 bubble',
             content: '',
           },
         ],
@@ -1560,7 +1580,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FIVE_CHEVRON_PROCESS',
         order: 21,
         templateSlideObjectId: 'g3f14351dc08_0_350',
-        description: 'Five-item horizontal chevron process flow slide. Each item has a HOME_PLATE header label, a chevron shape with a large letter, a stage label below, and a body paragraph. Includes two zone labels on bottom arrows.',
+        description:
+          'Five-item horizontal chevron process flow slide. Each item has a HOME_PLATE header label, a chevron shape with a large letter, a stage label below, and a body paragraph. Includes two zone labels on bottom arrows.',
         blocks: [
           {
             key: 'title',
@@ -1581,7 +1602,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_537',
             minChars: 1,
             maxChars: 1,
-            description: 'Large decorative letter inside chevron 1 (65pt bold, white, ACCENT2) — typically first letter of item1_stage',
+            description:
+              'Large decorative letter inside chevron 1 (65pt bold, white, ACCENT2) — typically first letter of item1_stage',
             content: '',
           },
           {
@@ -1591,7 +1613,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_539',
             minChars: 1,
             maxChars: 1,
-            description: 'Large decorative letter inside chevron 2 (65pt bold, white, ACCENT5) — typically first letter of item2_stage',
+            description:
+              'Large decorative letter inside chevron 2 (65pt bold, white, ACCENT5) — typically first letter of item2_stage',
             content: '',
           },
           {
@@ -1601,7 +1624,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_541',
             minChars: 1,
             maxChars: 1,
-            description: 'Large decorative letter inside chevron 3 (65pt bold, white, ACCENT4) — typically first letter of item3_stage',
+            description:
+              'Large decorative letter inside chevron 3 (65pt bold, white, ACCENT4) — typically first letter of item3_stage',
             content: '',
           },
           {
@@ -1611,7 +1635,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_543',
             minChars: 1,
             maxChars: 1,
-            description: 'Large decorative letter inside chevron 4 (65pt bold, white, ACCENT3) — typically first letter of item4_stage',
+            description:
+              'Large decorative letter inside chevron 4 (65pt bold, white, ACCENT3) — typically first letter of item4_stage',
             content: '',
           },
           {
@@ -1621,7 +1646,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_545',
             minChars: 1,
             maxChars: 1,
-            description: 'Large decorative letter inside chevron 5 (65pt bold, white, ACCENT6) — typically first letter of item5_stage',
+            description:
+              'Large decorative letter inside chevron 5 (65pt bold, white, ACCENT6) — typically first letter of item5_stage',
             content: '',
           },
 
@@ -1805,14 +1831,15 @@ function buildTemplateSchema(): PresentationSchema {
             maxChars: 20,
             description: 'Right arrow zone label (11pt bold, white, centered) — gray RIGHT_ARROW',
             content: '',
-          }
+          },
         ],
       },
       {
         slideKey: 'FOUR_ROW_LETTER_LIST',
         order: 22,
         templateSlideObjectId: 'g3f14351dc08_0_496',
-        description: 'Four-row horizontal layout with alternating dark/colored background bands. Each row has a large bold letter accent on the left and a bold statement text on the right.',
+        description:
+          'Four-row horizontal layout with alternating dark/colored background bands. Each row has a large bold letter accent on the left and a bold statement text on the right.',
         blocks: [
           {
             key: 'title',
@@ -1833,7 +1860,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_578',
             minChars: 1,
             maxChars: 1,
-            description: 'Large decorative letter for row 1 (47pt bold, white, Poppins) — typically first letter of row1_label',
+            description:
+              'Large decorative letter for row 1 (47pt bold, white, Poppins) — typically first letter of row1_label',
             content: '',
           },
           {
@@ -1843,7 +1871,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_579',
             minChars: 1,
             maxChars: 1,
-            description: 'Large decorative letter for row 2 (47pt bold, white, Poppins) — typically first letter of row2_label',
+            description:
+              'Large decorative letter for row 2 (47pt bold, white, Poppins) — typically first letter of row2_label',
             content: '',
           },
           {
@@ -1853,7 +1882,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_580',
             minChars: 1,
             maxChars: 1,
-            description: 'Large decorative letter for row 3 (47pt bold, white, Poppins) — typically first letter of row3_label',
+            description:
+              'Large decorative letter for row 3 (47pt bold, white, Poppins) — typically first letter of row3_label',
             content: '',
           },
           {
@@ -1863,7 +1893,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_581',
             minChars: 1,
             maxChars: 1,
-            description: 'Large decorative letter for row 4 (47pt bold, white, Poppins) — typically first letter of row4_label',
+            description:
+              'Large decorative letter for row 4 (47pt bold, white, Poppins) — typically first letter of row4_label',
             content: '',
           },
 
@@ -1875,7 +1906,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_582',
             minChars: 10,
             maxChars: 58,
-            description: 'Row 1 statement text (19pt bold, white, Poppins) — dark navy background band',
+            description:
+              'Row 1 statement text (19pt bold, white, Poppins) — dark navy background band',
             content: '',
           },
           {
@@ -1885,7 +1917,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_583',
             minChars: 10,
             maxChars: 50,
-            description: 'Row 2 statement text (19pt bold, white, Poppins) — medium blue background band',
+            description:
+              'Row 2 statement text (19pt bold, white, Poppins) — medium blue background band',
             content: '',
           },
           {
@@ -1895,7 +1928,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_584',
             minChars: 10,
             maxChars: 49,
-            description: 'Row 3 statement text (19pt bold, white, Poppins) — dark slate background band',
+            description:
+              'Row 3 statement text (19pt bold, white, Poppins) — dark slate background band',
             content: '',
           },
           {
@@ -1946,7 +1980,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_610',
             minChars: 10,
             maxChars: 58,
-            description: 'Top-left item label (bold, DARK1, centered, Poppins) — positioned above the icon pair',
+            description:
+              'Top-left item label (bold, DARK1, centered, Poppins) — positioned above the icon pair',
             content: '',
           },
           {
@@ -1968,7 +2003,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_611',
             minChars: 10,
             maxChars: 50,
-            description: 'Bottom-left item label (bold, DARK1, centered, Poppins) — positioned below the icon pair',
+            description:
+              'Bottom-left item label (bold, DARK1, centered, Poppins) — positioned below the icon pair',
             content: '',
           },
           {
@@ -1990,7 +2026,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_612',
             minChars: 10,
             maxChars: 49,
-            description: 'Top-right item label (bold, DARK1, centered, Poppins) — positioned above the icon pair',
+            description:
+              'Top-right item label (bold, DARK1, centered, Poppins) — positioned above the icon pair',
             content: '',
           },
           {
@@ -2012,7 +2049,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_613',
             minChars: 10,
             maxChars: 43,
-            description: 'Bottom-right item label (bold, DARK1, centered, Poppins) — positioned below the icon pair',
+            description:
+              'Bottom-right item label (bold, DARK1, centered, Poppins) — positioned below the icon pair',
             content: '',
           },
         ],
@@ -2053,7 +2091,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_628',
             minChars: 5,
             maxChars: 30,
-            description: 'Top-left node label (16pt bold, green color, centered, Poppins) — may contain a vertical tab character \\u000b for a soft line break',
+            description:
+              'Top-left node label (16pt bold, green color, centered, Poppins) — may contain a vertical tab character \\u000b for a soft line break',
             content: '',
           },
           {
@@ -2075,7 +2114,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_629',
             minChars: 5,
             maxChars: 30,
-            description: 'Bottom-left node label (16pt bold, light blue color, centered, Poppins) — may contain a vertical tab character \\u000b for a soft line break',
+            description:
+              'Bottom-left node label (16pt bold, light blue color, centered, Poppins) — may contain a vertical tab character \\u000b for a soft line break',
             content: '',
           },
           {
@@ -2097,7 +2137,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_630',
             minChars: 5,
             maxChars: 30,
-            description: 'Top-center node label (16pt bold, gray color, centered, Poppins) — may contain a vertical tab character \\u000b for a soft line break',
+            description:
+              'Top-center node label (16pt bold, gray color, centered, Poppins) — may contain a vertical tab character \\u000b for a soft line break',
             content: '',
           },
           {
@@ -2119,7 +2160,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_631',
             minChars: 5,
             maxChars: 30,
-            description: 'Bottom-center node label (16pt bold, dark blue color, centered, Poppins) — may contain a vertical tab character \\u000b for a soft line break',
+            description:
+              'Bottom-center node label (16pt bold, dark blue color, centered, Poppins) — may contain a vertical tab character \\u000b for a soft line break',
             content: '',
           },
           {
@@ -2150,7 +2192,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'TWO_COLUMN_IMAGE_HEADLINE_BODY',
         order: 25,
         templateSlideObjectId: 'g3f14351dc08_0_687',
-        description: 'Two-column layout with a large center image/graphic, a headline and body text on the left, and a headline and body text on the right. Left body text is right-aligned, right body text is left-aligned.',
+        description:
+          'Two-column layout with a large center image/graphic, a headline and body text on the left, and a headline and body text on the right. Left body text is right-aligned, right body text is left-aligned.',
         blocks: [
           {
             key: 'title',
@@ -2242,7 +2285,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_752',
             minChars: 1,
             maxChars: 2,
-            description: 'Row 1 large number (65pt bold, ACCENT6 purple color, Poppins) — sits between left text and the head graphic, visually aligned with the top purple section. Typically "1".',
+            description:
+              'Row 1 large number (65pt bold, ACCENT6 purple color, Poppins) — sits between left text and the head graphic, visually aligned with the top purple section. Typically "1".',
             content: '',
           },
           {
@@ -2252,7 +2296,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_753',
             minChars: 3,
             maxChars: 20,
-            description: 'Row 1 uppercase section label (19pt bold, ACCENT6 purple color, right-aligned, Poppins) — appears above the row 1 body text e.g. "PLANNING"',
+            description:
+              'Row 1 uppercase section label (19pt bold, ACCENT6 purple color, right-aligned, Poppins) — appears above the row 1 body text e.g. "PLANNING"',
             content: '',
           },
           {
@@ -2262,7 +2307,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_754',
             minChars: 40,
             maxChars: 100,
-            description: 'Row 1 body text (12pt medium, DARK1 color, right-aligned, Poppins) — appears below row 1 label on the left side of the slide',
+            description:
+              'Row 1 body text (12pt medium, DARK1 color, right-aligned, Poppins) — appears below row 1 label on the left side of the slide',
             content: '',
           },
 
@@ -2286,7 +2332,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_755',
             minChars: 1,
             maxChars: 2,
-            description: 'Row 2 large number (65pt bold, ACCENT5 navy color, Poppins) — sits between left text and the head graphic, visually aligned with the middle navy section. Typically "2".',
+            description:
+              'Row 2 large number (65pt bold, ACCENT5 navy color, Poppins) — sits between left text and the head graphic, visually aligned with the middle navy section. Typically "2".',
             content: '',
           },
           {
@@ -2296,7 +2343,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_756',
             minChars: 3,
             maxChars: 20,
-            description: 'Row 2 uppercase section label (19pt bold, ACCENT5 navy color, right-aligned, Poppins) — appears above the row 2 body text e.g. "IDEA"',
+            description:
+              'Row 2 uppercase section label (19pt bold, ACCENT5 navy color, right-aligned, Poppins) — appears above the row 2 body text e.g. "IDEA"',
             content: '',
           },
           {
@@ -2306,7 +2354,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_757',
             minChars: 40,
             maxChars: 100,
-            description: 'Row 2 body text (12pt medium, DARK1 color, right-aligned, Poppins) — appears below row 2 label on the left side of the slide',
+            description:
+              'Row 2 body text (12pt medium, DARK1 color, right-aligned, Poppins) — appears below row 2 label on the left side of the slide',
             content: '',
           },
 
@@ -2330,7 +2379,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_758',
             minChars: 1,
             maxChars: 2,
-            description: 'Row 3 large number (65pt bold, ACCENT4 cyan color, Poppins) — sits between left text and the head graphic, visually aligned with the bottom cyan section. Typically "3".',
+            description:
+              'Row 3 large number (65pt bold, ACCENT4 cyan color, Poppins) — sits between left text and the head graphic, visually aligned with the bottom cyan section. Typically "3".',
             content: '',
           },
           {
@@ -2340,7 +2390,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_759',
             minChars: 3,
             maxChars: 20,
-            description: 'Row 3 uppercase section label (19pt bold, ACCENT4 cyan color, right-aligned, Poppins) — appears above the row 3 body text e.g. "SOLUTION"',
+            description:
+              'Row 3 uppercase section label (19pt bold, ACCENT4 cyan color, right-aligned, Poppins) — appears above the row 3 body text e.g. "SOLUTION"',
             content: '',
           },
           {
@@ -2350,7 +2401,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_760',
             minChars: 40,
             maxChars: 100,
-            description: 'Row 3 body text (12pt medium, DARK1 color, right-aligned, Poppins) — appears below row 3 label on the left side of the slide',
+            description:
+              'Row 3 body text (12pt medium, DARK1 color, right-aligned, Poppins) — appears below row 3 label on the left side of the slide',
             content: '',
           },
         ],
@@ -2359,7 +2411,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'THREE_COLUMN_STAT_BULLET_LIST',
         order: 27,
         templateSlideObjectId: 'g3f14351dc08_0_741',
-        description: 'Three-column layout. Each column has a colored header bar, a bulleted list body (3 bullets, real listId), and a large stat value at the bottom. Columns use ACCENT3 green, ACCENT5 navy, ACCENT6 purple.',
+        description:
+          'Three-column layout. Each column has a colored header bar, a bulleted list body (3 bullets, real listId), and a large stat value at the bottom. Columns use ACCENT3 green, ACCENT5 navy, ACCENT6 purple.',
         blocks: [
           {
             key: 'title',
@@ -2380,7 +2433,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_771',
             minChars: 3,
             maxChars: 20,
-            description: 'Column 1 header label (19pt bold, white, centered) — on ACCENT3 green rounded bar e.g. "BUDGET"',
+            description:
+              'Column 1 header label (19pt bold, white, centered) — on ACCENT3 green rounded bar e.g. "BUDGET"',
             content: '',
           },
           {
@@ -2393,9 +2447,11 @@ function buildTemplateSchema(): PresentationSchema {
             itemConstraints: {
               minChars: 40,
               maxChars: 80,
-              description: 'Bullet point (12pt regular, dark, Poppins) — listId localListEntityId478 auto-applies bullet formatting',
+              description:
+                'Bullet point (12pt regular, dark, Poppins) — listId localListEntityId478 auto-applies bullet formatting',
             },
-            description: 'Column 1 bulleted list — single shape with real listId, 3 bullets joined with \\n',
+            description:
+              'Column 1 bulleted list — single shape with real listId, 3 bullets joined with \\n',
             content: [],
           },
           {
@@ -2417,7 +2473,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_772',
             minChars: 3,
             maxChars: 20,
-            description: 'Column 2 header label (19pt bold, white, centered) — on ACCENT5 navy rounded bar e.g. "SPENDING"',
+            description:
+              'Column 2 header label (19pt bold, white, centered) — on ACCENT5 navy rounded bar e.g. "SPENDING"',
             content: '',
           },
           {
@@ -2430,9 +2487,11 @@ function buildTemplateSchema(): PresentationSchema {
             itemConstraints: {
               minChars: 40,
               maxChars: 80,
-              description: 'Bullet point (12pt regular, dark, Poppins) — listId localListEntityId480 auto-applies bullet formatting',
+              description:
+                'Bullet point (12pt regular, dark, Poppins) — listId localListEntityId480 auto-applies bullet formatting',
             },
-            description: 'Column 2 bulleted list — single shape with real listId, 3 bullets joined with \\n',
+            description:
+              'Column 2 bulleted list — single shape with real listId, 3 bullets joined with \\n',
             content: [],
           },
           {
@@ -2454,7 +2513,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_773',
             minChars: 3,
             maxChars: 20,
-            description: 'Column 3 header label (19pt bold, white, centered) — on ACCENT6 purple rounded bar e.g. "SAVING"',
+            description:
+              'Column 3 header label (19pt bold, white, centered) — on ACCENT6 purple rounded bar e.g. "SAVING"',
             content: '',
           },
           {
@@ -2467,9 +2527,11 @@ function buildTemplateSchema(): PresentationSchema {
             itemConstraints: {
               minChars: 40,
               maxChars: 80,
-              description: 'Bullet point (12pt regular, dark, Poppins) — listId localListEntityId482 auto-applies bullet formatting',
+              description:
+                'Bullet point (12pt regular, dark, Poppins) — listId localListEntityId482 auto-applies bullet formatting',
             },
-            description: 'Column 3 bulleted list — single shape with real listId, 3 bullets joined with \\n',
+            description:
+              'Column 3 bulleted list — single shape with real listId, 3 bullets joined with \\n',
             content: [],
           },
           {
@@ -2522,7 +2584,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_790',
             minChars: 40,
             maxChars: 80,
-            description: 'Row 1 body text (12pt medium, white/LIGHT1, left-aligned, Poppins) — inside the lighter green HOME_PLATE center shape',
+            description:
+              'Row 1 body text (12pt medium, white/LIGHT1, left-aligned, Poppins) — inside the lighter green HOME_PLATE center shape',
             content: '',
           },
           {
@@ -2532,7 +2595,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_793',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 1 stat value (29pt bold, white/LIGHT1, Poppins) — inside the dark green arrow HOME_PLATE on the right e.g. "$1,000,000"',
+            description:
+              'Row 1 stat value (29pt bold, white/LIGHT1, Poppins) — inside the dark green arrow HOME_PLATE on the right e.g. "$1,000,000"',
             content: '',
           },
 
@@ -2556,7 +2620,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_791',
             minChars: 40,
             maxChars: 80,
-            description: 'Row 2 body text (12pt medium, white/LIGHT1, left-aligned, Poppins) — inside the lighter navy HOME_PLATE center shape',
+            description:
+              'Row 2 body text (12pt medium, white/LIGHT1, left-aligned, Poppins) — inside the lighter navy HOME_PLATE center shape',
             content: '',
           },
           {
@@ -2566,7 +2631,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_794',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 2 stat value (29pt bold, white/LIGHT1, Poppins) — inside the dark navy arrow HOME_PLATE on the right e.g. "$900,000"',
+            description:
+              'Row 2 stat value (29pt bold, white/LIGHT1, Poppins) — inside the dark navy arrow HOME_PLATE on the right e.g. "$900,000"',
             content: '',
           },
 
@@ -2590,7 +2656,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_792',
             minChars: 40,
             maxChars: 110,
-            description: 'Row 3 body text (12pt medium, white/LIGHT1, left-aligned, Poppins) — inside the lighter purple HOME_PLATE center shape',
+            description:
+              'Row 3 body text (12pt medium, white/LIGHT1, left-aligned, Poppins) — inside the lighter purple HOME_PLATE center shape',
             content: '',
           },
           {
@@ -2600,7 +2667,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_795',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 3 stat value (29pt bold, white/LIGHT1, Poppins) — inside the dark purple arrow HOME_PLATE on the right e.g. "$1,200,000"',
+            description:
+              'Row 3 stat value (29pt bold, white/LIGHT1, Poppins) — inside the dark purple arrow HOME_PLATE on the right e.g. "$1,200,000"',
             content: '',
           },
         ],
@@ -2609,7 +2677,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FIVE_ROW_ICON_LABEL_BODY',
         order: 29,
         templateSlideObjectId: 'g3f14351dc08_0_725',
-        description: 'Five-row list layout. Each row has: a large light gray number on the far left (static, decorative); a white circle with a static icon outline; a solid colored rounded rectangle on the left with a bold white label; and a tinted rounded rectangle on the right with dark body text. Each row uses a distinct color — purple, navy, cyan/light blue, green, orange.',
+        description:
+          'Five-row list layout. Each row has: a large light gray number on the far left (static, decorative); a white circle with a static icon outline; a solid colored rounded rectangle on the left with a bold white label; and a tinted rounded rectangle on the right with dark body text. Each row uses a distinct color — purple, navy, cyan/light blue, green, orange.',
         blocks: [
           {
             key: 'title',
@@ -2630,7 +2699,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_799',
             minChars: 1,
             maxChars: 2,
-            description: 'Row 1 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "1"',
+            description:
+              'Row 1 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "1"',
             content: '',
           },
           {
@@ -2640,7 +2710,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_806',
             minChars: 5,
             maxChars: 35,
-            description: 'Row 1 label (15pt bold, white, left-aligned, Poppins) — inside solid purple rounded rectangle e.g. "Improved User Satisfaction"',
+            description:
+              'Row 1 label (15pt bold, white, left-aligned, Poppins) — inside solid purple rounded rectangle e.g. "Improved User Satisfaction"',
             content: '',
           },
           {
@@ -2650,7 +2721,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_808',
             minChars: 20,
             maxChars: 80,
-            description: 'Row 1 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted purple rounded rectangle on the right',
+            description:
+              'Row 1 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted purple rounded rectangle on the right',
             content: '',
           },
 
@@ -2662,7 +2734,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_800',
             minChars: 1,
             maxChars: 2,
-            description: 'Row 2 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "2"',
+            description:
+              'Row 2 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "2"',
             content: '',
           },
           {
@@ -2672,7 +2745,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_813',
             minChars: 5,
             maxChars: 35,
-            description: 'Row 2 label (15pt bold, white, left-aligned, Poppins) — inside solid navy rounded rectangle e.g. "Stronger Brand Perception"',
+            description:
+              'Row 2 label (15pt bold, white, left-aligned, Poppins) — inside solid navy rounded rectangle e.g. "Stronger Brand Perception"',
             content: '',
           },
           {
@@ -2682,7 +2756,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_815',
             minChars: 20,
             maxChars: 80,
-            description: 'Row 2 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted navy rounded rectangle on the right',
+            description:
+              'Row 2 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted navy rounded rectangle on the right',
             content: '',
           },
 
@@ -2694,7 +2769,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_801',
             minChars: 1,
             maxChars: 2,
-            description: 'Row 3 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "3"',
+            description:
+              'Row 3 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "3"',
             content: '',
           },
           {
@@ -2704,7 +2780,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_820',
             minChars: 5,
             maxChars: 35,
-            description: 'Row 3 label (15pt bold, white, left-aligned, Poppins) — inside solid cyan rounded rectangle e.g. "Reduced Sales Cycle"',
+            description:
+              'Row 3 label (15pt bold, white, left-aligned, Poppins) — inside solid cyan rounded rectangle e.g. "Reduced Sales Cycle"',
             content: '',
           },
           {
@@ -2714,7 +2791,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_822',
             minChars: 20,
             maxChars: 80,
-            description: 'Row 3 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted cyan rounded rectangle on the right',
+            description:
+              'Row 3 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted cyan rounded rectangle on the right',
             content: '',
           },
 
@@ -2726,7 +2804,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_802',
             minChars: 1,
             maxChars: 2,
-            description: 'Row 4 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "4"',
+            description:
+              'Row 4 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "4"',
             content: '',
           },
           {
@@ -2736,7 +2815,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_827',
             minChars: 5,
             maxChars: 35,
-            description: 'Row 4 label (15pt bold, white, left-aligned, Poppins) — inside solid green rounded rectangle e.g. "Competitive Advantage"',
+            description:
+              'Row 4 label (15pt bold, white, left-aligned, Poppins) — inside solid green rounded rectangle e.g. "Competitive Advantage"',
             content: '',
           },
           {
@@ -2746,7 +2826,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_829',
             minChars: 20,
             maxChars: 80,
-            description: 'Row 4 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted green rounded rectangle on the right',
+            description:
+              'Row 4 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted green rounded rectangle on the right',
             content: '',
           },
 
@@ -2758,7 +2839,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_803',
             minChars: 1,
             maxChars: 2,
-            description: 'Row 5 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "5"',
+            description:
+              'Row 5 large decorative number (36pt bold, light gray, right-aligned, Poppins) — typically "5"',
             content: '',
           },
           {
@@ -2768,7 +2850,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_834',
             minChars: 5,
             maxChars: 35,
-            description: 'Row 5 label (15pt bold, white, left-aligned, Poppins) — inside solid orange rounded rectangle e.g. "Increased Customer Lifetime Value"',
+            description:
+              'Row 5 label (15pt bold, white, left-aligned, Poppins) — inside solid orange rounded rectangle e.g. "Increased Customer Lifetime Value"',
             content: '',
           },
           {
@@ -2778,7 +2861,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_836',
             minChars: 20,
             maxChars: 50,
-            description: 'Row 5 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted orange rounded rectangle on the right',
+            description:
+              'Row 5 body text (15pt regular, DARK1, left-aligned, Poppins) — inside tinted orange rounded rectangle on the right',
             content: '',
           },
         ],
@@ -2787,7 +2871,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'THREE_ROW_PITCH_STRATEGY',
         order: 30,
         templateSlideObjectId: 'g3f14351dc08_0_717',
-        description: 'Three-row strategic messaging layout. Each row features a solid colored label shape and a tinted body text rectangle. Rows are color-coded: Light Blue, Navy, and Purple.',
+        description:
+          'Three-row strategic messaging layout. Each row features a solid colored label shape and a tinted body text rectangle. Rows are color-coded: Light Blue, Navy, and Purple.',
         blocks: [
           {
             key: 'title',
@@ -2807,7 +2892,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_866',
             minChars: 5,
             maxChars: 22,
-            description: 'Row 1 label (19pt bold, white, Poppins) — inside solid light blue rounded rectangle. Template default: "Convey Empathy"',
+            description:
+              'Row 1 label (19pt bold, white, Poppins) — inside solid light blue rounded rectangle. Template default: "Convey Empathy"',
             content: '',
           },
           {
@@ -2817,7 +2903,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_867',
             minChars: 30,
             maxChars: 60,
-            description: 'Row 1 body text (16pt regular, generic color, Poppins) — inside tinted light blue rectangle. e.g., "Empathic statement + observation about new state..."',
+            description:
+              'Row 1 body text (16pt regular, generic color, Poppins) — inside tinted light blue rectangle. e.g., "Empathic statement + observation about new state..."',
             content: '',
           },
 
@@ -2829,7 +2916,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_871',
             minChars: 5,
             maxChars: 22,
-            description: 'Row 2 label (19pt bold, white, Poppins) — inside solid navy rounded rectangle. Template default: "Offer Value"',
+            description:
+              'Row 2 label (19pt bold, white, Poppins) — inside solid navy rounded rectangle. Template default: "Offer Value"',
             content: '',
           },
           {
@@ -2839,7 +2927,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_872',
             minChars: 30,
             maxChars: 60,
-            description: 'Row 2 body text (16pt regular, generic color, Poppins) — inside tinted navy rectangle. e.g., "Share compelling peer insight to demonstrate..."',
+            description:
+              'Row 2 body text (16pt regular, generic color, Poppins) — inside tinted navy rectangle. e.g., "Share compelling peer insight to demonstrate..."',
             content: '',
           },
 
@@ -2851,7 +2940,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_876',
             minChars: 5,
             maxChars: 22,
-            description: 'Row 3 label (19pt bold, white, Poppins) — inside solid purple rounded rectangle. Template default: "Offer to Collaborate"',
+            description:
+              'Row 3 label (19pt bold, white, Poppins) — inside solid purple rounded rectangle. Template default: "Offer to Collaborate"',
             content: '',
           },
           {
@@ -2861,7 +2951,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_877',
             minChars: 30,
             maxChars: 60,
-            description: 'Row 3 body text (16pt regular, generic color, Poppins) — inside tinted purple rectangle. e.g., "Invite to a compelling collaboration opportunity..."',
+            description:
+              'Row 3 body text (16pt regular, generic color, Poppins) — inside tinted purple rectangle. e.g., "Invite to a compelling collaboration opportunity..."',
             content: '',
           },
         ],
@@ -2870,7 +2961,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FOUR_ROW_COMPARISON_STATS',
         order: 31,
         templateSlideObjectId: 'g3f14351dc08_0_855',
-        description: 'Four-row metric comparison layout (typically used for financial/quarterly data like Actual vs Budget). Features two column headers and four rows, each containing a central label, a left stat, and a right stat.',
+        description:
+          'Four-row metric comparison layout (typically used for financial/quarterly data like Actual vs Budget). Features two column headers and four rows, each containing a central label, a left stat, and a right stat.',
         blocks: [
           {
             key: 'title',
@@ -2891,7 +2983,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_907',
             minChars: 3,
             maxChars: 20,
-            description: 'Left column header (16pt bold, dark color, left-aligned) — Template default: "ACTUAL"',
+            description:
+              'Left column header (16pt bold, dark color, left-aligned) — Template default: "ACTUAL"',
             content: '',
           },
           {
@@ -2901,7 +2994,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_908',
             minChars: 3,
             maxChars: 20,
-            description: 'Right column header (16pt bold, dark color, right-aligned) — Template default: "BUDGET"',
+            description:
+              'Right column header (16pt bold, dark color, right-aligned) — Template default: "BUDGET"',
             content: '',
           },
 
@@ -2913,7 +3007,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_895',
             minChars: 2,
             maxChars: 10,
-            description: 'Row 1 center label (16pt bold, white/LIGHT2, centered) — Template default: "Q1"',
+            description:
+              'Row 1 center label (16pt bold, white/LIGHT2, centered) — Template default: "Q1"',
             content: '',
           },
           {
@@ -2923,7 +3018,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_899',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 1 left statistic (16pt bold, white/LIGHT1, left-aligned) — Template default: "$9,140,000"',
+            description:
+              'Row 1 left statistic (16pt bold, white/LIGHT1, left-aligned) — Template default: "$9,140,000"',
             content: '',
           },
           {
@@ -2933,7 +3029,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_903',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 1 right statistic (16pt bold, white/LIGHT1, right-aligned) — Template default: "$8,310,000"',
+            description:
+              'Row 1 right statistic (16pt bold, white/LIGHT1, right-aligned) — Template default: "$8,310,000"',
             content: '',
           },
 
@@ -2945,7 +3042,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_896',
             minChars: 2,
             maxChars: 10,
-            description: 'Row 2 center label (16pt bold, white/LIGHT2, centered) — Template default: "Q2"',
+            description:
+              'Row 2 center label (16pt bold, white/LIGHT2, centered) — Template default: "Q2"',
             content: '',
           },
           {
@@ -2955,7 +3053,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_900',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 2 left statistic (16pt bold, white/LIGHT1, left-aligned) — Template default: "$6,030,000"',
+            description:
+              'Row 2 left statistic (16pt bold, white/LIGHT1, left-aligned) — Template default: "$6,030,000"',
             content: '',
           },
           {
@@ -2965,7 +3064,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_904',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 2 right statistic (16pt bold, white/LIGHT1, right-aligned) — Template default: "$5,600,000"',
+            description:
+              'Row 2 right statistic (16pt bold, white/LIGHT1, right-aligned) — Template default: "$5,600,000"',
             content: '',
           },
 
@@ -2977,7 +3077,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_897',
             minChars: 2,
             maxChars: 10,
-            description: 'Row 3 center label (16pt bold, white/LIGHT2, centered) — Template default: "Q3"',
+            description:
+              'Row 3 center label (16pt bold, white/LIGHT2, centered) — Template default: "Q3"',
             content: '',
           },
           {
@@ -2987,7 +3088,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_901',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 3 left statistic (16pt bold, white/LIGHT1, left-aligned) — Template default: "$7,090,000"',
+            description:
+              'Row 3 left statistic (16pt bold, white/LIGHT1, left-aligned) — Template default: "$7,090,000"',
             content: '',
           },
           {
@@ -2997,7 +3099,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_905',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 3 right statistic (16pt bold, white/LIGHT1, right-aligned) — Template default: "$7,670,000"',
+            description:
+              'Row 3 right statistic (16pt bold, white/LIGHT1, right-aligned) — Template default: "$7,670,000"',
             content: '',
           },
 
@@ -3009,7 +3112,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_898',
             minChars: 2,
             maxChars: 10,
-            description: 'Row 4 center label (16pt bold, white/LIGHT2, centered) — Template default: "Q4"',
+            description:
+              'Row 4 center label (16pt bold, white/LIGHT2, centered) — Template default: "Q4"',
             content: '',
           },
           {
@@ -3019,7 +3123,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_902',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 4 left statistic (16pt bold, white/LIGHT1, left-aligned) — Template default: "$4,470,000"',
+            description:
+              'Row 4 left statistic (16pt bold, white/LIGHT1, left-aligned) — Template default: "$4,470,000"',
             content: '',
           },
           {
@@ -3029,7 +3134,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_906',
             minChars: 2,
             maxChars: 15,
-            description: 'Row 4 right statistic (16pt bold, white/LIGHT1, right-aligned) — Template default: "$3,770,000"',
+            description:
+              'Row 4 right statistic (16pt bold, white/LIGHT1, right-aligned) — Template default: "$3,770,000"',
             content: '',
           },
         ],
@@ -3038,7 +3144,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'TWELVE_STEP_WINDING_ROADMAP',
         order: 32,
         templateSlideObjectId: 'g3f14351dc08_0_847',
-        description: 'A 12-step winding roadmap or timeline layout. Includes a START label, an END label, and 12 distinct nodes. Each node has a large bold number (or short label) and a small body text block.',
+        description:
+          'A 12-step winding roadmap or timeline layout. Includes a START label, an END label, and 12 distinct nodes. Each node has a large bold number (or short label) and a small body text block.',
         blocks: [
           {
             key: 'title',
@@ -3059,7 +3166,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_945',
             minChars: 2,
             maxChars: 15,
-            description: 'Label indicating the beginning of the path (16pt bold, centered). Template default: "START"',
+            description:
+              'Label indicating the beginning of the path (16pt bold, centered). Template default: "START"',
             content: '',
           },
           {
@@ -3069,7 +3177,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_946',
             minChars: 2,
             maxChars: 15,
-            description: 'Label indicating the conclusion of the path (16pt bold, centered). Template default: "END"',
+            description:
+              'Label indicating the conclusion of the path (16pt bold, centered). Template default: "END"',
             content: '',
           },
 
@@ -3081,7 +3190,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_921',
             minChars: 1,
             maxChars: 3,
-            description: 'Step 1 indicator (31pt bold, white). Can be a number or very short text like "Q1" or "M1". Template default: "1"',
+            description:
+              'Step 1 indicator (31pt bold, white). Can be a number or very short text like "Q1" or "M1". Template default: "1"',
             content: '',
           },
           {
@@ -3339,143 +3449,146 @@ function buildTemplateSchema(): PresentationSchema {
         ],
       },
       {
-        "slideKey": "FIVE_STEP_ROADMAP",
-        "order": 33,
-        "templateSlideObjectId": "g3f14351dc08_0_839",
-        "description": "Five-step timeline or process roadmap layout. Fixed coordinate progression order.",
-        "blocks": [
+        slideKey: 'FIVE_STEP_ROADMAP',
+        order: 33,
+        templateSlideObjectId: 'g3f14351dc08_0_839',
+        description:
+          'Five-step timeline or process roadmap layout. Fixed coordinate progression order.',
+        blocks: [
           {
-            "key": "title",
-            "type": "TEXT",
-            "role": "TITLE",
-            "shapeId": "g3f14351dc08_0_840",
-            "minChars": 3,
-            "maxChars": 30,
-            "description": "Slide title text box.",
-            "content": ""
+            key: 'title',
+            type: 'TEXT',
+            role: 'TITLE',
+            shapeId: 'g3f14351dc08_0_840',
+            minChars: 3,
+            maxChars: 30,
+            description: 'Slide title text box.',
+            content: '',
           },
 
           // ── Step 1 (Top Left) ──
 
           {
-            "key": "step1_header",
-            "type": "TEXT",
-            "role": "SECTION_HEADER",
-            "shapeId": "g3f14351dc08_0_976",
-            "minChars": 10,
-            "maxChars": 40,
-            "description": "Step 1 section header (15pt bold, colored text). Template default: 'Craft a Compelling Narrative'",
-            "content": ""
+            key: 'step1_header',
+            type: 'TEXT',
+            role: 'SECTION_HEADER',
+            shapeId: 'g3f14351dc08_0_976',
+            minChars: 10,
+            maxChars: 40,
+            description:
+              "Step 1 section header (15pt bold, colored text). Template default: 'Craft a Compelling Narrative'",
+            content: '',
           },
           {
-            "key": "step1_body",
-            "type": "TEXT",
-            "role": "BODY",
-            "shapeId": "g3f14351dc08_0_977",
-            "minChars": 40,
-            "maxChars": 150,
-            "description": "Step 1 body text (12pt regular, dark text). Explains the step in detail.",
-            "content": ""
+            key: 'step1_body',
+            type: 'TEXT',
+            role: 'BODY',
+            shapeId: 'g3f14351dc08_0_977',
+            minChars: 40,
+            maxChars: 150,
+            description: 'Step 1 body text (12pt regular, dark text). Explains the step in detail.',
+            content: '',
           },
 
           // ── Step 2 (Top Right) ──
 
           {
-            "key": "step2_header",
-            "type": "TEXT",
-            "role": "SECTION_HEADER",
-            "shapeId": "g3f14351dc08_0_980",
-            "minChars": 10,
-            "maxChars": 40,
-            "description": "Step 2 section header (15pt bold, colored text).",
-            "content": ""
+            key: 'step2_header',
+            type: 'TEXT',
+            role: 'SECTION_HEADER',
+            shapeId: 'g3f14351dc08_0_980',
+            minChars: 10,
+            maxChars: 40,
+            description: 'Step 2 section header (15pt bold, colored text).',
+            content: '',
           },
           {
-            "key": "step2_body",
-            "type": "TEXT",
-            "role": "BODY",
-            "shapeId": "g3f14351dc08_0_981",
-            "minChars": 40,
-            "maxChars": 150,
-            "description": "Step 2 body text (12pt regular, dark text). Explains the step in detail.",
-            "content": ""
+            key: 'step2_body',
+            type: 'TEXT',
+            role: 'BODY',
+            shapeId: 'g3f14351dc08_0_981',
+            minChars: 40,
+            maxChars: 150,
+            description: 'Step 2 body text (12pt regular, dark text). Explains the step in detail.',
+            content: '',
           },
 
           // ── Step 3 (Middle Right) ──
 
           {
-            "key": "step3_header",
-            "type": "TEXT",
-            "role": "SECTION_HEADER",
-            "shapeId": "g3f14351dc08_0_982",
-            "minChars": 10,
-            "maxChars": 40,
-            "description": "Step 3 section header (15pt bold, colored text).",
-            "content": ""
+            key: 'step3_header',
+            type: 'TEXT',
+            role: 'SECTION_HEADER',
+            shapeId: 'g3f14351dc08_0_982',
+            minChars: 10,
+            maxChars: 40,
+            description: 'Step 3 section header (15pt bold, colored text).',
+            content: '',
           },
           {
-            "key": "step3_body",
-            "type": "TEXT",
-            "role": "BODY",
-            "shapeId": "g3f14351dc08_0_983",
-            "minChars": 40,
-            "maxChars": 150,
-            "description": "Step 3 body text (12pt regular, dark text). Explains the step in detail.",
-            "content": ""
+            key: 'step3_body',
+            type: 'TEXT',
+            role: 'BODY',
+            shapeId: 'g3f14351dc08_0_983',
+            minChars: 40,
+            maxChars: 150,
+            description: 'Step 3 body text (12pt regular, dark text). Explains the step in detail.',
+            content: '',
           },
 
           // ── Step 4 (Middle Left) ──
 
           {
-            "key": "step4_header",
-            "type": "TEXT",
-            "role": "SECTION_HEADER",
-            "shapeId": "g3f14351dc08_0_978",
-            "minChars": 10,
-            "maxChars": 40,
-            "description": "Step 4 section header (15pt bold, colored text).",
-            "content": ""
+            key: 'step4_header',
+            type: 'TEXT',
+            role: 'SECTION_HEADER',
+            shapeId: 'g3f14351dc08_0_978',
+            minChars: 10,
+            maxChars: 40,
+            description: 'Step 4 section header (15pt bold, colored text).',
+            content: '',
           },
           {
-            "key": "step4_body",
-            "type": "TEXT",
-            "role": "BODY",
-            "shapeId": "g3f14351dc08_0_979",
-            "minChars": 40,
-            "maxChars": 150,
-            "description": "Step 4 body text (12pt regular, dark text). Explains the step in detail.",
-            "content": ""
+            key: 'step4_body',
+            type: 'TEXT',
+            role: 'BODY',
+            shapeId: 'g3f14351dc08_0_979',
+            minChars: 40,
+            maxChars: 150,
+            description: 'Step 4 body text (12pt regular, dark text). Explains the step in detail.',
+            content: '',
           },
 
           // ── Step 5 (Bottom Center) ──
 
           {
-            "key": "step5_header",
-            "type": "TEXT",
-            "role": "SECTION_HEADER",
-            "shapeId": "g3f14351dc08_0_984",
-            "minChars": 10,
-            "maxChars": 40,
-            "description": "Step 5 section header (15pt bold, colored text).",
-            "content": ""
+            key: 'step5_header',
+            type: 'TEXT',
+            role: 'SECTION_HEADER',
+            shapeId: 'g3f14351dc08_0_984',
+            minChars: 10,
+            maxChars: 40,
+            description: 'Step 5 section header (15pt bold, colored text).',
+            content: '',
           },
           {
-            "key": "step5_body",
-            "type": "TEXT",
-            "role": "BODY",
-            "shapeId": "g3f14351dc08_0_985",
-            "minChars": 40,
-            "maxChars": 150,
-            "description": "Step 5 body text (12pt regular, dark text). Explains the step in detail.",
-            "content": ""
-          }
-        ]
+            key: 'step5_body',
+            type: 'TEXT',
+            role: 'BODY',
+            shapeId: 'g3f14351dc08_0_985',
+            minChars: 40,
+            maxChars: 150,
+            description: 'Step 5 body text (12pt regular, dark text). Explains the step in detail.',
+            content: '',
+          },
+        ],
       },
       {
         slideKey: 'SIX_STAGE_PROJECT_ROADMAP',
         order: 34,
         templateSlideObjectId: 'g3f14351dc08_0_947',
-        description: 'A winding project roadmap featuring six process stages and an ultimate goal. Each stage consists of a colored header and a bulleted task list, arranged in an alternating top/bottom wave pattern.',
+        description:
+          'A winding project roadmap featuring six process stages and an ultimate goal. Each stage consists of a colored header and a bulleted task list, arranged in an alternating top/bottom wave pattern.',
         blocks: [
           {
             key: 'title',
@@ -3496,7 +3609,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1006',
             minChars: 3,
             maxChars: 20,
-            description: 'The starting label text bounding box at the very beginning of the roadmap. Template default: "Start Migration"',
+            description:
+              'The starting label text bounding box at the very beginning of the roadmap. Template default: "Start Migration"',
             content: '',
           },
 
@@ -3570,7 +3684,8 @@ function buildTemplateSchema(): PresentationSchema {
             type: 'TEXT',
             role: 'LIST',
             shapeId: 'g3f14351dc08_0_1019',
-            description: 'Strategic action lists or requirements related to the stage 3 assessment tier.',
+            description:
+              'Strategic action lists or requirements related to the stage 3 assessment tier.',
             minItems: 1,
             maxItems: 3,
             itemConstraints: {
@@ -3589,7 +3704,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1015',
             minChars: 5,
             maxChars: 20,
-            description: 'Phase title string for stage 4. Template default text: "Making Pages Live"',
+            description:
+              'Phase title string for stage 4. Template default text: "Making Pages Live"',
             content: '',
           },
           {
@@ -3597,7 +3713,8 @@ function buildTemplateSchema(): PresentationSchema {
             type: 'TEXT',
             role: 'LIST',
             shapeId: 'g3f14351dc08_0_1023',
-            description: 'Strategic action lists or requirements related to the stage 4 deployment phase.',
+            description:
+              'Strategic action lists or requirements related to the stage 4 deployment phase.',
             minItems: 1,
             maxItems: 3,
             itemConstraints: {
@@ -3616,7 +3733,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1016',
             minChars: 5,
             maxChars: 20,
-            description: 'Phase title string for stage 5. Template default text: "Monitor the results"',
+            description:
+              'Phase title string for stage 5. Template default text: "Monitor the results"',
             content: '',
           },
           {
@@ -3624,7 +3742,8 @@ function buildTemplateSchema(): PresentationSchema {
             type: 'TEXT',
             role: 'LIST',
             shapeId: 'g3f14351dc08_0_1024',
-            description: 'Strategic action lists or requirements related to phase 5 analytics processing.',
+            description:
+              'Strategic action lists or requirements related to phase 5 analytics processing.',
             minItems: 1,
             maxItems: 3,
             itemConstraints: {
@@ -3651,7 +3770,8 @@ function buildTemplateSchema(): PresentationSchema {
             type: 'TEXT',
             role: 'LIST',
             shapeId: 'g3f14351dc08_0_1022',
-            description: 'Strategic action lists or requirements related to concluding phase 6 administrative optimization tasks.',
+            description:
+              'Strategic action lists or requirements related to concluding phase 6 administrative optimization tasks.',
             minItems: 1,
             maxItems: 3,
             itemConstraints: {
@@ -3670,7 +3790,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1007',
             minChars: 5,
             maxChars: 20,
-            description: 'Label representing the ultimate successful benchmark endpoint of the project track timeline. Template default: "Successful Migration"',
+            description:
+              'Label representing the ultimate successful benchmark endpoint of the project track timeline. Template default: "Successful Migration"',
             content: '',
           },
         ],
@@ -3679,7 +3800,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'TEN_STEP_PROCESS_SNAKE',
         order: 36,
         templateSlideObjectId: 'g3f14351dc08_0_955',
-        description: 'A snaking 10-step process lifecycle. Each step consists of a central colored circle containing the primary action and external bold labels for category headers or sub-tasks.',
+        description:
+          'A snaking 10-step process lifecycle. Each step consists of a central colored circle containing the primary action and external bold labels for category headers or sub-tasks.',
         blocks: [
           {
             key: 'title',
@@ -3888,7 +4010,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1062',
             minChars: 5,
             maxChars: 30,
-            description: 'Text inside the final circle. Template: "Periodic review for improvement"',
+            description:
+              'Text inside the final circle. Template: "Periodic review for improvement"',
             content: '',
           },
           {
@@ -3951,7 +4074,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1102',
             minChars: 20,
             maxChars: 120,
-            description: 'Node 1 supporting body text paragraph located directly at the bottom left.',
+            description:
+              'Node 1 supporting body text paragraph located directly at the bottom left.',
             content: '',
           },
 
@@ -4019,7 +4143,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1106',
             minChars: 20,
             maxChars: 120,
-            description: 'Node 3 supporting body text paragraph located at the bottom center-left area.',
+            description:
+              'Node 3 supporting body text paragraph located at the bottom center-left area.',
             content: '',
           },
 
@@ -4087,7 +4212,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1104',
             minChars: 20,
             maxChars: 120,
-            description: 'Node 5 supporting body text paragraph located at the bottom right-center area.',
+            description:
+              'Node 5 supporting body text paragraph located at the bottom right-center area.',
             content: '',
           },
 
@@ -4123,14 +4249,15 @@ function buildTemplateSchema(): PresentationSchema {
             maxChars: 20,
             description: 'Node 6 header text box positioned at the bottom far-right area.',
             content: '',
-          }
+          },
         ],
       },
       {
         slideKey: 'TWO_NODE_HANDSHAKE_LAYOUT',
         order: 38,
         templateSlideObjectId: 'g3f14351dc08_0_1033',
-        description: 'A professional two-column corporate layout featuring left and right colored circular text nodes overlaid on top of a subtle handshake icon graphic watermark.',
+        description:
+          'A professional two-column corporate layout featuring left and right colored circular text nodes overlaid on top of a subtle handshake icon graphic watermark.',
         blocks: [
           {
             key: 'title',
@@ -4151,7 +4278,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1148',
             minChars: 5,
             maxChars: 30,
-            description: 'Left side circular overlay title header (16pt bold, white text, centered). Template default: "YOUR TITLE"',
+            description:
+              'Left side circular overlay title header (16pt bold, white text, centered). Template default: "YOUR TITLE"',
             content: '',
           },
           {
@@ -4161,7 +4289,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1149',
             minChars: 80,
             maxChars: 250,
-            description: 'Left side supporting narrative summary paragraph block (9pt regular, white text, centered).',
+            description:
+              'Left side supporting narrative summary paragraph block (9pt regular, white text, centered).',
             content: '',
           },
 
@@ -4173,7 +4302,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1146',
             minChars: 5,
             maxChars: 30,
-            description: 'Right side circular overlay title header (16pt bold, white text, centered). Template default: "YOUR TITLE"',
+            description:
+              'Right side circular overlay title header (16pt bold, white text, centered). Template default: "YOUR TITLE"',
             content: '',
           },
           {
@@ -4183,7 +4313,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1147',
             minChars: 80,
             maxChars: 250,
-            description: 'Right side supporting narrative summary paragraph block (9pt regular, white text, centered).',
+            description:
+              'Right side supporting narrative summary paragraph block (9pt regular, white text, centered).',
             content: '',
           },
         ],
@@ -4260,7 +4391,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1174',
             minChars: 5,
             maxChars: 30,
-            description: 'Title for the top-right light blue node. Template default: "YOUR TITLE 02"',
+            description:
+              'Title for the top-right light blue node. Template default: "YOUR TITLE 02"',
             content: '',
           },
           {
@@ -4294,7 +4426,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1168',
             minChars: 5,
             maxChars: 30,
-            description: 'Title for the bottom-right dark blue node. Template default: "YOUR TITLE 03"',
+            description:
+              'Title for the bottom-right dark blue node. Template default: "YOUR TITLE 03"',
             content: '',
           },
           {
@@ -4479,7 +4612,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1208',
             minChars: 5,
             maxChars: 20,
-            description: 'Header for the bottom-right section. Template default: "PRODUCTS & SERVICES"',
+            description:
+              'Header for the bottom-right section. Template default: "PRODUCTS & SERVICES"',
             content: '',
           },
           {
@@ -4734,12 +4868,12 @@ function buildTemplateSchema(): PresentationSchema {
         ],
       },
 
-
       {
         slideKey: 'FOUR_BAR_DOMINO_PERSPECTIVE',
         order: 42,
         templateSlideObjectId: 'g3f14351dc08_0_1184',
-        description: 'A 3D perspective column chart layout featuring four distinct colored bars. The first bar leans at an angle like a tumbling domino, while the remaining three stand upright. Each column maps to a bold title and a short explanation paragraph below.',
+        description:
+          'A 3D perspective column chart layout featuring four distinct colored bars. The first bar leans at an angle like a tumbling domino, while the remaining three stand upright. Each column maps to a bold title and a short explanation paragraph below.',
         blocks: [
           {
             key: 'title',
@@ -4760,7 +4894,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1257',
             minChars: 5,
             maxChars: 30,
-            description: 'Bold title below the first leaning purple pillar. Template default: "Executive Summary"',
+            description:
+              'Bold title below the first leaning purple pillar. Template default: "Executive Summary"',
             content: '',
           },
           {
@@ -4782,7 +4917,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1259',
             minChars: 5,
             maxChars: 30,
-            description: 'Bold title below the second vertical dark blue pillar. Template default: "Products & Services"',
+            description:
+              'Bold title below the second vertical dark blue pillar. Template default: "Products & Services"',
             content: '',
           },
           {
@@ -4804,7 +4940,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1261',
             minChars: 5,
             maxChars: 30,
-            description: 'Bold title below the third vertical light blue pillar. Template default: "Market Analysis"',
+            description:
+              'Bold title below the third vertical light blue pillar. Template default: "Market Analysis"',
             content: '',
           },
           {
@@ -4826,7 +4963,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1263',
             minChars: 5,
             maxChars: 30,
-            description: 'Bold title below the fourth vertical green pillar. Template default: "Financial Planning"',
+            description:
+              'Bold title below the fourth vertical green pillar. Template default: "Financial Planning"',
             content: '',
           },
           {
@@ -4845,7 +4983,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'SEVEN_STEP_ARC_DIAGRAM',
         order: 43,
         templateSlideObjectId: 'g3f14351dc08_0_1192',
-        description: 'Semi-circular arc diagram with 7 numbered nodes around a central Benefits hub. Each node has a separate title shape and body shape. The hub has a title and 3 separate benefit label shapes.',
+        description:
+          'Semi-circular arc diagram with 7 numbered nodes around a central Benefits hub. Each node has a separate title shape and body shape. The hub has a title and 3 separate benefit label shapes.',
         blocks: [
           {
             key: 'title',
@@ -4876,7 +5015,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1324',
             minChars: 5,
             maxChars: 18,
-            description: 'Top benefit label inside hub (13pt, white, centered) e.g. "Increased Visibility"',
+            description:
+              'Top benefit label inside hub (13pt, white, centered) e.g. "Increased Visibility"',
             content: '',
           },
           {
@@ -4886,7 +5026,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1326',
             minChars: 5,
             maxChars: 18,
-            description: 'Middle benefit label inside hub (13pt, white, centered) e.g. "Trust Building"',
+            description:
+              'Middle benefit label inside hub (13pt, white, centered) e.g. "Trust Building"',
             content: '',
           },
           {
@@ -4896,7 +5037,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1325',
             minChars: 5,
             maxChars: 18,
-            description: 'Bottom benefit label inside hub (13pt, white, centered) e.g. "Better Engagement"',
+            description:
+              'Bottom benefit label inside hub (13pt, white, centered) e.g. "Better Engagement"',
             content: '',
           },
 
@@ -5130,7 +5272,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FIVE_STAGE_RIBBON_FUNNEL',
         order: 44,
         templateSlideObjectId: 'g3f14351dc08_0_1264',
-        description: 'Five-stage tapering funnel with curved ribbon layers. Layers 1-3 have body text on the left (right-aligned), layers 4-5 have body text on the right (left-aligned). Each layer has a centered white title inside the ribbon.',
+        description:
+          'Five-stage tapering funnel with curved ribbon layers. Layers 1-3 have body text on the left (right-aligned), layers 4-5 have body text on the right (left-aligned). Each layer has a centered white title inside the ribbon.',
         blocks: [
           {
             key: 'title',
@@ -5161,7 +5304,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1350',
             minChars: 15,
             maxChars: 150,
-            description: 'Body text for layer 1 (12pt, dark, right-aligned) — positioned on the LEFT side',
+            description:
+              'Body text for layer 1 (12pt, dark, right-aligned) — positioned on the LEFT side',
             content: '',
           },
 
@@ -5173,7 +5317,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1342',
             minChars: 3,
             maxChars: 20,
-            description: 'Title inside second dark blue ribbon (17pt bold, white, Montserrat, centered)',
+            description:
+              'Title inside second dark blue ribbon (17pt bold, white, Montserrat, centered)',
             content: '',
           },
           {
@@ -5183,7 +5328,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1346',
             minChars: 15,
             maxChars: 150,
-            description: 'Body text for layer 2 (12pt, dark, left-aligned) — positioned on the RIGHT side',
+            description:
+              'Body text for layer 2 (12pt, dark, left-aligned) — positioned on the RIGHT side',
             content: '',
           },
 
@@ -5195,7 +5341,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1343',
             minChars: 3,
             maxChars: 20,
-            description: 'Title inside central orange ribbon (17pt bold, white, Montserrat, centered)',
+            description:
+              'Title inside central orange ribbon (17pt bold, white, Montserrat, centered)',
             content: '',
           },
           {
@@ -5205,7 +5352,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1349',
             minChars: 15,
             maxChars: 150,
-            description: 'Body text for layer 3 (12pt, dark, right-aligned) — positioned on the LEFT side',
+            description:
+              'Body text for layer 3 (12pt, dark, right-aligned) — positioned on the LEFT side',
             content: '',
           },
 
@@ -5217,7 +5365,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1344',
             minChars: 3,
             maxChars: 20,
-            description: 'Title inside fourth light blue ribbon (17pt bold, white, Montserrat, centered)',
+            description:
+              'Title inside fourth light blue ribbon (17pt bold, white, Montserrat, centered)',
             content: '',
           },
           {
@@ -5227,7 +5376,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1347',
             minChars: 15,
             maxChars: 150,
-            description: 'Body text for layer 4 (12pt, dark, left-aligned) — positioned on the RIGHT side',
+            description:
+              'Body text for layer 4 (12pt, dark, left-aligned) — positioned on the RIGHT side',
             content: '',
           },
 
@@ -5239,7 +5389,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1345',
             minChars: 3,
             maxChars: 20,
-            description: 'Title inside bottom green ribbon (17pt bold, white, Montserrat, centered)',
+            description:
+              'Title inside bottom green ribbon (17pt bold, white, Montserrat, centered)',
             content: '',
           },
           {
@@ -5249,7 +5400,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1348',
             minChars: 15,
             maxChars: 150,
-            description: 'Body text for layer 5 (12pt, dark, right-aligned) — positioned on the LEFT side',
+            description:
+              'Body text for layer 5 (12pt, dark, right-aligned) — positioned on the LEFT side',
             content: '',
           },
         ],
@@ -5258,7 +5410,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'PYRAMID_FUNNEL_COMPARISON',
         order: 45,
         templateSlideObjectId: 'g3f14351dc08_0_1272',
-        description: 'A dual-diagram comparison layout. The left side features a 3-tier prioritization pyramid labeled A, B, and C with associated percentage ranges and target audience definitions. The right side features a 7-stage vertical concentric funnel diagram mapping stages 1 through 7 to concise context text fields.',
+        description:
+          'A dual-diagram comparison layout. The left side features a 3-tier prioritization pyramid labeled A, B, and C with associated percentage ranges and target audience definitions. The right side features a 7-stage vertical concentric funnel diagram mapping stages 1 through 7 to concise context text fields.',
         blocks: [
           {
             key: 'title',
@@ -5283,7 +5436,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1380',
             minChars: 2,
             maxChars: 15,
-            description: 'Percentage metric value string aligned to left of Tier A. Default: "5% to 8%"',
+            description:
+              'Percentage metric value string aligned to left of Tier A. Default: "5% to 8%"',
             content: '',
           },
           {
@@ -5293,7 +5447,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1379',
             minChars: 1,
             maxChars: 2,
-            description: 'Central identifier glyph text within the top pyramid section. Default: "A"',
+            description:
+              'Central identifier glyph text within the top pyramid section. Default: "A"',
             content: '',
           },
           {
@@ -5303,7 +5458,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1383',
             minChars: 5,
             maxChars: 30,
-            description: 'Target definition text header aligned to right of Tier A. Default: "Company & Individual"',
+            description:
+              'Target definition text header aligned to right of Tier A. Default: "Company & Individual"',
             content: '',
           },
 
@@ -5315,7 +5471,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1381',
             minChars: 2,
             maxChars: 15,
-            description: 'Percentage metric value string aligned to left of Tier B. Default: "20% to 25%"',
+            description:
+              'Percentage metric value string aligned to left of Tier B. Default: "20% to 25%"',
             content: '',
           },
           {
@@ -5325,7 +5482,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1376',
             minChars: 1,
             maxChars: 2,
-            description: 'Central identifier glyph text within the middle pyramid section. Default: "B"',
+            description:
+              'Central identifier glyph text within the middle pyramid section. Default: "B"',
             content: '',
           },
           {
@@ -5335,7 +5493,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1384',
             minChars: 5,
             maxChars: 30,
-            description: 'Target definition text header aligned to right of Tier B. Default: "Company & Persona"',
+            description:
+              'Target definition text header aligned to right of Tier B. Default: "Company & Persona"',
             content: '',
           },
 
@@ -5347,7 +5506,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1382',
             minChars: 2,
             maxChars: 15,
-            description: 'Percentage metric value string aligned to left of Tier C. Default: "67% to 75%"',
+            description:
+              'Percentage metric value string aligned to left of Tier C. Default: "67% to 75%"',
             content: '',
           },
           {
@@ -5357,7 +5517,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1377',
             minChars: 1,
             maxChars: 2,
-            description: 'Central identifier glyph text within the bottom pyramid section. Default: "C"',
+            description:
+              'Central identifier glyph text within the bottom pyramid section. Default: "C"',
             content: '',
           },
           {
@@ -5367,7 +5528,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1385',
             minChars: 5,
             maxChars: 30,
-            description: 'Target definition text header aligned to right of Tier C. Default: "Industry & Persona"',
+            description:
+              'Target definition text header aligned to right of Tier C. Default: "Industry & Persona"',
             content: '',
           },
 
@@ -5379,7 +5541,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1378',
             minChars: 10,
             maxChars: 80,
-            description: 'Foundational baseline descriptive contextual copy within the dark gray base polygon element. Default: "Inbound and broad demand generation only"',
+            description:
+              'Foundational baseline descriptive contextual copy within the dark gray base polygon element. Default: "Inbound and broad demand generation only"',
             content: '',
           },
 
@@ -5395,7 +5558,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1405',
             minChars: 3,
             maxChars: 15,
-            description: 'Internal placeholder header string within funnel ring layer 1. Default: "Title 1"',
+            description:
+              'Internal placeholder header string within funnel ring layer 1. Default: "Title 1"',
             content: '',
           },
           {
@@ -5405,7 +5569,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1411',
             minChars: 5,
             maxChars: 40,
-            description: 'External context descriptive callout paragraph aligned right to layer 1. Default: "Content here"',
+            description:
+              'External context descriptive callout paragraph aligned right to layer 1. Default: "Content here"',
             content: '',
           },
 
@@ -5417,7 +5582,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1406',
             minChars: 3,
             maxChars: 15,
-            description: 'Internal placeholder header string within funnel ring layer 2. Default: "Title 2"',
+            description:
+              'Internal placeholder header string within funnel ring layer 2. Default: "Title 2"',
             content: '',
           },
           {
@@ -5427,7 +5593,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1412',
             minChars: 5,
             maxChars: 40,
-            description: 'External context descriptive callout paragraph aligned right to layer 2. Default: "Content here"',
+            description:
+              'External context descriptive callout paragraph aligned right to layer 2. Default: "Content here"',
             content: '',
           },
 
@@ -5439,7 +5606,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1407',
             minChars: 3,
             maxChars: 15,
-            description: 'Internal placeholder header string within funnel ring layer 3. Default: "Title 3"',
+            description:
+              'Internal placeholder header string within funnel ring layer 3. Default: "Title 3"',
             content: '',
           },
           {
@@ -5461,7 +5629,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1408',
             minChars: 3,
             maxChars: 15,
-            description: 'Internal placeholder header string within funnel ring layer 4. Default: "Title 4"',
+            description:
+              'Internal placeholder header string within funnel ring layer 4. Default: "Title 4"',
             content: '',
           },
           {
@@ -5483,7 +5652,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1409',
             minChars: 3,
             maxChars: 15,
-            description: 'Internal placeholder header string within funnel ring layer 5. Default: "Title 5"',
+            description:
+              'Internal placeholder header string within funnel ring layer 5. Default: "Title 5"',
             content: '',
           },
           {
@@ -5505,7 +5675,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1410',
             minChars: 3,
             maxChars: 15,
-            description: 'Internal placeholder header string within funnel ring layer 6. Default: "Title 6"',
+            description:
+              'Internal placeholder header string within funnel ring layer 6. Default: "Title 6"',
             content: '',
           },
           {
@@ -5527,7 +5698,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1426',
             minChars: 3,
             maxChars: 15,
-            description: 'Internal placeholder header string within funnel ring layer 7. Default: "Title 7"',
+            description:
+              'Internal placeholder header string within funnel ring layer 7. Default: "Title 7"',
             content: '',
           },
           {
@@ -5549,7 +5721,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1418',
             minChars: 3,
             maxChars: 15,
-            description: 'Baseline footer category label text centered directly beneath the funnel configuration. Default: "Stages"',
+            description:
+              'Baseline footer category label text centered directly beneath the funnel configuration. Default: "Stages"',
             content: '',
           },
         ],
@@ -5558,7 +5731,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'SIX_STAGE_VERTICAL_FUNNEL_DETAILS',
         order: 46,
         templateSlideObjectId: 'g3f14351dc08_0_1351',
-        description: 'A structured split-screen layout showcasing a six-tier vertical funnel on the left. The funnel levels taper downward through traditional conversion phases, bracketed together by a dotted keyline that connects directly to two multi-line breakdown overview sections on the right.',
+        description:
+          'A structured split-screen layout showcasing a six-tier vertical funnel on the left. The funnel levels taper downward through traditional conversion phases, bracketed together by a dotted keyline that connects directly to two multi-line breakdown overview sections on the right.',
         blocks: [
           {
             key: 'title',
@@ -5579,7 +5753,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1449',
             minChars: 5,
             maxChars: 15,
-            description: 'Section header text block positioned at the top right. Default: "Contextualizing Asset Creation"',
+            description:
+              'Section header text block positioned at the top right. Default: "Contextualizing Asset Creation"',
             content: '',
           },
           {
@@ -5589,7 +5764,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1448',
             minChars: 20,
             maxChars: 50,
-            description: 'Supporting regular context body paragraph located underneath the top right header.',
+            description:
+              'Supporting regular context body paragraph located underneath the top right header.',
             content: '',
           },
 
@@ -5601,7 +5777,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1450',
             minChars: 5,
             maxChars: 20,
-            description: 'Section header text block positioned at the bottom right. Default: "Impact on Customer Engagement"',
+            description:
+              'Section header text block positioned at the bottom right. Default: "Impact on Customer Engagement"',
             content: '',
           },
           {
@@ -5611,7 +5788,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1427',
             minChars: 20,
             maxChars: 50,
-            description: 'Supporting regular context body paragraph located underneath the bottom right header.',
+            description:
+              'Supporting regular context body paragraph located underneath the bottom right header.',
             content: '',
           },
 
@@ -5623,7 +5801,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1442',
             minChars: 3,
             maxChars: 13,
-            description: 'Internal bold white title centered on Funnel Level 1 (Top). Default: "Awareness"',
+            description:
+              'Internal bold white title centered on Funnel Level 1 (Top). Default: "Awareness"',
             content: '',
           },
           {
@@ -5633,7 +5812,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1443',
             minChars: 3,
             maxChars: 13,
-            description: 'Internal bold white title centered on Funnel Level 2. Default: "Interest"',
+            description:
+              'Internal bold white title centered on Funnel Level 2. Default: "Interest"',
             content: '',
           },
           {
@@ -5643,7 +5823,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1444',
             minChars: 3,
             maxChars: 12,
-            description: 'Internal bold white title centered on Funnel Level 3. Default: "Consideration"',
+            description:
+              'Internal bold white title centered on Funnel Level 3. Default: "Consideration"',
             content: '',
           },
           {
@@ -5663,7 +5844,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1446',
             minChars: 3,
             maxChars: 12,
-            description: 'Internal bold white title centered on Funnel Level 5. Default: "Conversion"',
+            description:
+              'Internal bold white title centered on Funnel Level 5. Default: "Conversion"',
             content: '',
           },
           {
@@ -5673,7 +5855,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1447',
             minChars: 3,
             maxChars: 12,
-            description: 'Internal bold white title centered on Funnel Level 6 (Bottom). Default: "Loyalty & Advocacy"',
+            description:
+              'Internal bold white title centered on Funnel Level 6 (Bottom). Default: "Loyalty & Advocacy"',
             content: '',
           },
         ],
@@ -5716,7 +5899,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1455',
             minChars: 5,
             maxChars: 20,
-            description: 'The header inside the first horizontal funnel block. Default: "Lead Generation"',
+            description:
+              'The header inside the first horizontal funnel block. Default: "Lead Generation"',
             content: '',
           },
           {
@@ -5726,7 +5910,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1459',
             minChars: 5,
             maxChars: 20,
-            description: 'Colored sub-label below the first funnel block. Default: "Driving qualified traffic"',
+            description:
+              'Colored sub-label below the first funnel block. Default: "Driving qualified traffic"',
             content: '',
           },
           {
@@ -5765,7 +5950,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1456',
             minChars: 5,
             maxChars: 20,
-            description: 'The header inside the second horizontal funnel block. Default: "Marketing Ops"',
+            description:
+              'The header inside the second horizontal funnel block. Default: "Marketing Ops"',
             content: '',
           },
           {
@@ -5775,7 +5961,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1460',
             minChars: 5,
             maxChars: 20,
-            description: 'Colored sub-label below the second funnel block. Default: "Nurturing prospects"',
+            description:
+              'Colored sub-label below the second funnel block. Default: "Nurturing prospects"',
             content: '',
           },
           {
@@ -5814,7 +6001,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1457',
             minChars: 5,
             maxChars: 20,
-            description: 'The header inside the third horizontal funnel block. Default: "Sales Ops"',
+            description:
+              'The header inside the third horizontal funnel block. Default: "Sales Ops"',
             content: '',
           },
           {
@@ -5824,7 +6012,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1461',
             minChars: 5,
             maxChars: 20,
-            description: 'Colored sub-label below the third funnel block. Default: "Converting opportunities"',
+            description:
+              'Colored sub-label below the third funnel block. Default: "Converting opportunities"',
             content: '',
           },
           {
@@ -5863,7 +6052,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1458',
             minChars: 5,
             maxChars: 20,
-            description: 'The header inside the fourth horizontal funnel block. Default: "Customer Success"',
+            description:
+              'The header inside the fourth horizontal funnel block. Default: "Customer Success"',
             content: '',
           },
           {
@@ -5873,7 +6063,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1462',
             minChars: 5,
             maxChars: 20,
-            description: 'Colored sub-label below the fourth funnel block. Default: "Growing relationships"',
+            description:
+              'Colored sub-label below the fourth funnel block. Default: "Growing relationships"',
             content: '',
           },
           {
@@ -5897,7 +6088,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'THREE_ICEBERG_COMPARISON',
         order: 48,
         templateSlideObjectId: 'g3f14351dc08_0_1367',
-        description: 'A conceptual diagram layout showcasing three polygon-style icebergs floating side-by-side, scaled progressively from left to right to signify growth, scale, or maturity levels. Each iceberg maps to its own distinct title and supporting paragraph directly beneath the waterline.',
+        description:
+          'A conceptual diagram layout showcasing three polygon-style icebergs floating side-by-side, scaled progressively from left to right to signify growth, scale, or maturity levels. Each iceberg maps to its own distinct title and supporting paragraph directly beneath the waterline.',
         blocks: [
           {
             key: 'title',
@@ -5918,7 +6110,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1636',
             minChars: 3,
             maxChars: 25,
-            description: 'Title positioned under the first and smallest iceberg on the left. Default placeholder: "Your Title"',
+            description:
+              'Title positioned under the first and smallest iceberg on the left. Default placeholder: "Your Title"',
             content: '',
           },
           {
@@ -5940,7 +6133,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1638',
             minChars: 3,
             maxChars: 25,
-            description: 'Title positioned under the middle, medium-sized iceberg. Default placeholder: "Your Title"',
+            description:
+              'Title positioned under the middle, medium-sized iceberg. Default placeholder: "Your Title"',
             content: '',
           },
           {
@@ -5962,7 +6156,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1640',
             minChars: 3,
             maxChars: 25,
-            description: 'Title positioned under the third and largest iceberg on the right. Default placeholder: "Your Title"',
+            description:
+              'Title positioned under the third and largest iceberg on the right. Default placeholder: "Your Title"',
             content: '',
           },
           {
@@ -5981,7 +6176,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'FOUR_STAGE_ICEBERG_DIAGRAM',
         order: 49,
         templateSlideObjectId: 'g3f14351dc08_0_1471',
-        description: 'A multi-tier conceptual iceberg model showcasing hierarchical layers. The visible tip represents an initial phase, while the submerged base is divided horizontally into four dark-to-light blue segmentations. Dotted line callouts point outward to alternating left and right metadata fields containing titles and description copy.',
+        description:
+          'A multi-tier conceptual iceberg model showcasing hierarchical layers. The visible tip represents an initial phase, while the submerged base is divided horizontally into four dark-to-light blue segmentations. Dotted line callouts point outward to alternating left and right metadata fields containing titles and description copy.',
         blocks: [
           {
             key: 'title',
@@ -6002,7 +6198,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1657',
             minChars: 3,
             maxChars: 25,
-            description: 'The section header copy corresponding to the top submerged block. Aligned left. Default: "Your Title"',
+            description:
+              'The section header copy corresponding to the top submerged block. Aligned left. Default: "Your Title"',
             content: '',
           },
           {
@@ -6012,7 +6209,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1656',
             minChars: 20,
             maxChars: 100,
-            description: 'The contextual description matching the top submerged layer on the left side.',
+            description:
+              'The contextual description matching the top submerged layer on the left side.',
             content: '',
           },
 
@@ -6024,7 +6222,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1653',
             minChars: 3,
             maxChars: 25,
-            description: 'The section header copy corresponding to the second submerged layer block. Aligned right. Default: "Your Title"',
+            description:
+              'The section header copy corresponding to the second submerged layer block. Aligned right. Default: "Your Title"',
             content: '',
           },
           {
@@ -6046,7 +6245,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1659',
             minChars: 3,
             maxChars: 25,
-            description: 'The section header copy corresponding to the third submerged layer block. Aligned left. Default: "Your Title"',
+            description:
+              'The section header copy corresponding to the third submerged layer block. Aligned left. Default: "Your Title"',
             content: '',
           },
           {
@@ -6068,7 +6268,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1655',
             minChars: 3,
             maxChars: 25,
-            description: 'The section header copy corresponding to the lowest point of the iceberg block. Aligned right. Default: "Your Title"',
+            description:
+              'The section header copy corresponding to the lowest point of the iceberg block. Aligned right. Default: "Your Title"',
             content: '',
           },
           {
@@ -6078,7 +6279,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3f14351dc08_0_1654',
             minChars: 20,
             maxChars: 100,
-            description: 'The contextual description matching the lowest base tip point on the right side.',
+            description:
+              'The contextual description matching the lowest base tip point on the right side.',
             content: '',
           },
         ],
@@ -6087,7 +6289,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'THREE_STAGE_LIGHT_FUNNEL',
         order: 50,
         templateSlideObjectId: 'g3e56ca19c4f_2_1933',
-        description: 'A clean three-stage marketing funnel design set against a gradient dark blue-to-purple background. The funnel is depicted as a glowing, transparent cone split horizontally into three sections. The title of the slide is placed on the left side, while the funnel sections contain stacked title and description pairings on the right side.',
+        description:
+          'A clean three-stage marketing funnel design set against a gradient dark blue-to-purple background. The funnel is depicted as a glowing, transparent cone split horizontally into three sections. The title of the slide is placed on the left side, while the funnel sections contain stacked title and description pairings on the right side.',
         blocks: [
           // ── Main Slide Layout Title ──
           {
@@ -6097,7 +6300,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3e56ca19c4f_2_1937',
             minChars: 5,
             maxChars: 30,
-            description: 'The prominent heading positioned on the left side of the slide layout. Default placeholder: "Three Stages of Funnel"',
+            description:
+              'The prominent heading positioned on the left side of the slide layout. Default placeholder: "Three Stages of Funnel"',
             content: '',
           },
 
@@ -6109,7 +6313,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecaa1ec171_1_18',
             minChars: 3,
             maxChars: 20,
-            description: 'The bold header label for the top section of the funnel. Default: "Awareness Stage"',
+            description:
+              'The bold header label for the top section of the funnel. Default: "Awareness Stage"',
             content: '',
           },
           {
@@ -6119,7 +6324,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3e56ca19c4f_2_1942',
             minChars: 15,
             maxChars: 60,
-            description: 'Supporting description text positioned directly under the Stage 1 header.',
+            description:
+              'Supporting description text positioned directly under the Stage 1 header.',
             content: '',
           },
 
@@ -6131,7 +6337,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecaa1ec171_1_19',
             minChars: 3,
             maxChars: 20,
-            description: 'The bold header label for the middle section of the funnel. Default: "Consideration Stage"',
+            description:
+              'The bold header label for the middle section of the funnel. Default: "Consideration Stage"',
             content: '',
           },
           {
@@ -6141,7 +6348,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3e56ca19c4f_2_1943',
             minChars: 15,
             maxChars: 60,
-            description: 'Supporting description text positioned directly under the Stage 2 header.',
+            description:
+              'Supporting description text positioned directly under the Stage 2 header.',
             content: '',
           },
 
@@ -6153,7 +6361,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecaa1ec171_1_20',
             minChars: 3,
             maxChars: 20,
-            description: 'The bold header label for the bottom narrow section of the funnel. Default: "Enablement Stage"',
+            description:
+              'The bold header label for the bottom narrow section of the funnel. Default: "Enablement Stage"',
             content: '',
           },
           {
@@ -6163,7 +6372,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3e56ca19c4f_2_1944',
             minChars: 15,
             maxChars: 60,
-            description: 'Supporting description text positioned directly under the Stage 3 header.',
+            description:
+              'Supporting description text positioned directly under the Stage 3 header.',
             content: '',
           },
         ],
@@ -6182,7 +6392,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g392319e7c15_4_142',
             minChars: 10,
             maxChars: 50,
-            description: 'Slide title displayed at the top (e.g. "Meet the Team", "Our Leadership").',
+            description:
+              'Slide title displayed at the top (e.g. "Meet the Team", "Our Leadership").',
             content: '',
           },
 
@@ -6205,7 +6416,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_2',
             minChars: 2,
             maxChars: 30,
-            description: 'Full name or first name of the first person (left column). Bold, large text.',
+            description:
+              'Full name or first name of the first person (left column). Bold, large text.',
             content: '',
           },
           {
@@ -6215,7 +6427,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g392319e7c15_4_144',
             minChars: 3,
             maxChars: 40,
-            description: 'Job title or role of the first person (left column). e.g. "Founder & CEO".',
+            description:
+              'Job title or role of the first person (left column). e.g. "Founder & CEO".',
             content: '',
           },
 
@@ -6248,7 +6461,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g392319e7c15_4_146',
             minChars: 3,
             maxChars: 40,
-            description: 'Job title or role of the second person (center column). e.g. "Board Member".',
+            description:
+              'Job title or role of the second person (center column). e.g. "Board Member".',
             content: '',
           },
 
@@ -6281,7 +6495,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_5',
             minChars: 3,
             maxChars: 40,
-            description: 'Job title or role of the third person (right column). e.g. "Board Member".',
+            description:
+              'Job title or role of the third person (right column). e.g. "Board Member".',
             content: '',
           },
         ],
@@ -6300,7 +6515,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g2380b89c92d_0_78',
             minChars: 10,
             maxChars: 50,
-            description: 'Slide title displayed at the top (e.g. "Meet the Team", "Our Creative Team").',
+            description:
+              'Slide title displayed at the top (e.g. "Meet the Team", "Our Creative Team").',
             content: '',
           },
 
@@ -6323,7 +6539,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_6',
             minChars: 2,
             maxChars: 30,
-            description: 'Full name or first name of the first person (top-left). Bold, large text.',
+            description:
+              'Full name or first name of the first person (top-left). Bold, large text.',
             content: '',
           },
           {
@@ -6333,7 +6550,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_7',
             minChars: 3,
             maxChars: 40,
-            description: 'Job title or role of the first person (top-left). e.g. "Creative Director".',
+            description:
+              'Job title or role of the first person (top-left). e.g. "Creative Director".',
             content: '',
           },
 
@@ -6366,7 +6584,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_9',
             minChars: 3,
             maxChars: 40,
-            description: 'Job title or role of the second person (top-center). e.g. "Copy Director".',
+            description:
+              'Job title or role of the second person (top-center). e.g. "Copy Director".',
             content: '',
           },
 
@@ -6432,7 +6651,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_13',
             minChars: 3,
             maxChars: 40,
-            description: 'Job title or role of the fourth person (bottom-left). e.g. "Creative Supervisor".',
+            description:
+              'Job title or role of the fourth person (bottom-left). e.g. "Creative Supervisor".',
             content: '',
           },
 
@@ -6465,7 +6685,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_15',
             minChars: 3,
             maxChars: 40,
-            description: 'Job title or role of the fifth person (bottom-center). e.g. "Senior Vfx Producer".',
+            description:
+              'Job title or role of the fifth person (bottom-center). e.g. "Senior Vfx Producer".',
             content: '',
           },
 
@@ -6498,7 +6719,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_17',
             minChars: 3,
             maxChars: 40,
-            description: 'Job title or role of the sixth person (bottom-right). e.g. "Graphic Designer".',
+            description:
+              'Job title or role of the sixth person (bottom-right). e.g. "Graphic Designer".',
             content: '',
           },
         ],
@@ -6517,7 +6739,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g392319e7c15_4_103',
             minChars: 10,
             maxChars: 50,
-            description: 'Slide title displayed at the top (e.g. "Meet the Team", "Our Leadership").',
+            description:
+              'Slide title displayed at the top (e.g. "Meet the Team", "Our Leadership").',
             content: '',
           },
 
@@ -6540,7 +6763,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_18',
             minChars: 2,
             maxChars: 30,
-            description: 'Full name or first name of the first person (row 1, col 1). Bold, large text.',
+            description:
+              'Full name or first name of the first person (row 1, col 1). Bold, large text.',
             content: '',
           },
           {
@@ -6550,7 +6774,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_19',
             minChars: 3,
             maxChars: 50,
-            description: 'Job title or role of the first person (row 1, col 1). e.g. "Creative Supervisor".',
+            description:
+              'Job title or role of the first person (row 1, col 1). e.g. "Creative Supervisor".',
             content: '',
           },
 
@@ -6583,7 +6808,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_23',
             minChars: 3,
             maxChars: 50,
-            description: 'Job title or role of the second person (row 1, col 2). e.g. "VP, Computing Systems Marketing".',
+            description:
+              'Job title or role of the second person (row 1, col 2). e.g. "VP, Computing Systems Marketing".',
             content: '',
           },
 
@@ -6616,7 +6842,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_24',
             minChars: 3,
             maxChars: 50,
-            description: 'Job title or role of the third person (row 1, col 3). e.g. "Senior Director, Operations Excellence".',
+            description:
+              'Job title or role of the third person (row 1, col 3). e.g. "Senior Director, Operations Excellence".',
             content: '',
           },
 
@@ -6649,7 +6876,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_25',
             minChars: 3,
             maxChars: 50,
-            description: 'Job title or role of the fourth person (row 1, col 4). e.g. "Senior Director, PA".',
+            description:
+              'Job title or role of the fourth person (row 1, col 4). e.g. "Senior Director, PA".',
             content: '',
           },
 
@@ -6682,7 +6910,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_30',
             minChars: 3,
             maxChars: 50,
-            description: 'Job title or role of the fifth person (row 2, col 1). e.g. "Chief Technology Officer, Product".',
+            description:
+              'Job title or role of the fifth person (row 2, col 1). e.g. "Chief Technology Officer, Product".',
             content: '',
           },
 
@@ -6715,7 +6944,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_31',
             minChars: 3,
             maxChars: 50,
-            description: 'Job title or role of the sixth person (row 2, col 2). e.g. "Finance Controller, Finance".',
+            description:
+              'Job title or role of the sixth person (row 2, col 2). e.g. "Finance Controller, Finance".',
             content: '',
           },
 
@@ -6748,7 +6978,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_32',
             minChars: 3,
             maxChars: 50,
-            description: 'Job title or role of the seventh person (row 2, col 3). e.g. "Senior Director, Media & Affiliate Partnership".',
+            description:
+              'Job title or role of the seventh person (row 2, col 3). e.g. "Senior Director, Media & Affiliate Partnership".',
             content: '',
           },
 
@@ -6781,7 +7012,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ecc5a7d010_0_33',
             minChars: 3,
             maxChars: 50,
-            description: 'Job title or role of the eighth person (row 2, col 4). e.g. "Senior Director, HR".',
+            description:
+              'Job title or role of the eighth person (row 2, col 4). e.g. "Senior Director, HR".',
             content: '',
           },
         ],
@@ -6980,6 +7212,6 @@ function buildTemplateSchemaTest(): PresentationSchema {
           },
         ],
       },
-    ]
+    ],
   }
 }

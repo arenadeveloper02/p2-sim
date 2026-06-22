@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import sharp from 'sharp'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { assertKnownSizeWithinLimit } from '@/lib/core/utils/stream-limits'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import type { StorageContext } from '@/lib/uploads'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
@@ -19,6 +20,78 @@ const logger = createLogger('GoogleApiService')
 const SVG_MIME = 'image/svg+xml'
 const MAX_URL_IMAGE_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
 const URL_FETCH_TIMEOUT_MS = 30_000 // 30 seconds
+
+function getMemorySnapshot(): Record<string, number> {
+  const memory = process.memoryUsage()
+  return {
+    rssMb: Math.round(memory.rss / 1024 / 1024),
+    heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
+    heapTotalMb: Math.round(memory.heapTotal / 1024 / 1024),
+    externalMb: Math.round(memory.external / 1024 / 1024),
+    arrayBuffersMb: Math.round(memory.arrayBuffers / 1024 / 1024),
+  }
+}
+
+function summarizeInlineImageInput(inputImage: unknown): Record<string, unknown> {
+  if (typeof inputImage === 'string') {
+    const trimmed = inputImage.trim()
+    return {
+      type: 'string',
+      length: trimmed.length,
+      isHttpUrl: trimmed.startsWith('http://') || trimmed.startsWith('https://'),
+      isInternalFileUrl: trimmed.includes('/api/files/serve/'),
+      isDataUrl: trimmed.startsWith('data:'),
+    }
+  }
+
+  if (Array.isArray(inputImage)) {
+    return {
+      type: 'array',
+      length: inputImage.length,
+      first: summarizeInlineImageInput(inputImage[0]),
+    }
+  }
+
+  if (isRecord(inputImage)) {
+    return {
+      type: 'object',
+      keys: Object.keys(inputImage).sort(),
+      hasKey: typeof inputImage.key === 'string',
+      hasPath: typeof inputImage.path === 'string',
+      hasUrl: typeof inputImage.url === 'string',
+      size: typeof inputImage.size === 'number' ? inputImage.size : undefined,
+      typeField: typeof inputImage.type === 'string' ? inputImage.type : undefined,
+      mimeTypeField: typeof inputImage.mimeType === 'string' ? inputImage.mimeType : undefined,
+      urlIsInternal:
+        typeof inputImage.url === 'string' && inputImage.url.includes('/api/files/serve/'),
+      pathIsInternal:
+        typeof inputImage.path === 'string' && inputImage.path.includes('/api/files/serve/'),
+    }
+  }
+
+  return { type: typeof inputImage }
+}
+
+function normalizeImageMimeType(
+  buffer: Buffer,
+  preferredMimeType?: string,
+  responseMimeType?: string | null
+): string {
+  const detectedMimeType = detectImageMimeType(buffer)
+  const normalizedResponseMimeType = responseMimeType?.split(';')[0].trim().toLowerCase()
+  const normalizedPreferredMimeType = preferredMimeType?.split(';')[0].trim().toLowerCase()
+  const isGenericResponseMimeType =
+    !normalizedResponseMimeType ||
+    normalizedResponseMimeType === 'application/octet-stream' ||
+    normalizedResponseMimeType === 'binary/octet-stream'
+
+  return (
+    detectedMimeType ??
+    (isGenericResponseMimeType ? normalizedPreferredMimeType : normalizedResponseMimeType) ??
+    normalizedPreferredMimeType ??
+    'image/png'
+  )
+}
 
 function detectImageMimeType(buffer: Buffer): string | null {
   if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
@@ -104,18 +177,11 @@ async function fetchImageUrlForInlineData(
     )
   }
 
-  const detectedMimeType = detectImageMimeType(buffer)
-  const responseMimeType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase()
-  const normalizedPreferredMimeType = preferredMimeType?.split(';')[0].trim().toLowerCase()
-  const isGenericResponseMimeType =
-    !responseMimeType ||
-    responseMimeType === 'application/octet-stream' ||
-    responseMimeType === 'binary/octet-stream'
-  const mimeType =
-    detectedMimeType ??
-    (isGenericResponseMimeType ? normalizedPreferredMimeType : responseMimeType) ??
-    normalizedPreferredMimeType ??
-    'image/png'
+  const mimeType = normalizeImageMimeType(
+    buffer,
+    preferredMimeType,
+    response.headers.get('content-type')
+  )
 
   if (!mimeType.startsWith('image/')) {
     throw new Error(`URL did not return an image (${mimeType})`)
@@ -149,6 +215,31 @@ export interface NanoBananaRequestBody {
 interface InlineImageData {
   mimeType: string
   data: string
+}
+
+async function resolveStorageImageForInlineData(
+  key: string,
+  context: StorageContext,
+  preferredMimeType?: string
+): Promise<InlineImageData> {
+  logger.info('Resolving image from storage for inline data', {
+    key,
+    context,
+    preferredMimeType,
+    maxBytes: MAX_URL_IMAGE_SIZE_BYTES,
+    memory: getMemorySnapshot(),
+  })
+  const fileBuffer = await downloadFile({ key, context, maxBytes: MAX_URL_IMAGE_SIZE_BYTES })
+  assertKnownSizeWithinLimit(fileBuffer.length, MAX_URL_IMAGE_SIZE_BYTES, 'reference image')
+  const mimeType = normalizeImageMimeType(fileBuffer, preferredMimeType)
+  logger.info('Resolved image from storage for inline data', {
+    mimeType,
+    size: fileBuffer.length,
+    context,
+    estimatedBase64Length: Math.ceil(fileBuffer.length / 3) * 4,
+    memory: getMemorySnapshot(),
+  })
+  return ensureSupportedMime(fileBuffer, mimeType)
 }
 
 interface NanoBananaResponseParams {
@@ -405,14 +496,48 @@ export const resolveInlineImageData = async (
   inputImage: unknown,
   inputImageMimeType?: string
 ): Promise<InlineImageData | null> => {
+  logger.info('Resolving inline image data', {
+    inputImage: summarizeInlineImageInput(inputImage),
+    inputImageMimeType,
+    memory: getMemorySnapshot(),
+  })
+
   if (!inputImage) {
+    logger.info('No inline image input provided')
     return null
   }
 
   if (typeof inputImage === 'string') {
     const str = inputImage.trim()
+    if (isInternalFileUrl(str)) {
+      try {
+        const s3Key = extractStorageKey(str)
+        logger.info('Inline image string is internal file URL', {
+          key: s3Key,
+          context: inferContextFromKey(s3Key),
+          inputLength: str.length,
+          memory: getMemorySnapshot(),
+        })
+        return await resolveStorageImageForInlineData(
+          s3Key,
+          inferContextFromKey(s3Key),
+          inputImageMimeType
+        )
+      } catch (error) {
+        logger.error('Failed to resolve image from internal URL', {
+          url: str.slice(0, 80),
+          error,
+        })
+        throw new Error(`Failed to process input image: ${toError(error).message}`)
+      }
+    }
     if (str.startsWith('http://') || str.startsWith('https://')) {
       try {
+        logger.info('Inline image string is external URL', {
+          inputLength: str.length,
+          preferredMimeType: inputImageMimeType,
+          memory: getMemorySnapshot(),
+        })
         return await fetchImageUrlForInlineData(str, inputImageMimeType)
       } catch (error) {
         logger.error('Failed to fetch image from URL', { url: str.slice(0, 80), error })
@@ -421,6 +546,13 @@ export const resolveInlineImageData = async (
     }
     const mimeType = inputImageMimeType || 'image/png'
     const buffer = Buffer.from(inputImage, 'base64')
+    logger.info('Inline image string treated as base64 payload', {
+      mimeType,
+      base64Length: inputImage.length,
+      estimatedBytes: Math.floor((inputImage.length * 3) / 4),
+      decodedBytes: buffer.length,
+      memory: getMemorySnapshot(),
+    })
     return ensureSupportedMime(buffer, mimeType)
   }
 
@@ -432,10 +564,11 @@ export const resolveInlineImageData = async (
   if (obj.key) {
     try {
       const context = inferContextFromKey(obj.key)
-      const fileBuffer = await downloadFile({ key: obj.key, context })
-      const mimeType = obj.type || inputImageMimeType || 'image/png'
-      logger.info('Resolved image from key for inline data', { mimeType, size: fileBuffer.length })
-      return ensureSupportedMime(fileBuffer, mimeType)
+      return await resolveStorageImageForInlineData(
+        obj.key,
+        context,
+        obj.type || inputImageMimeType
+      )
     } catch (error) {
       logger.error('Failed to resolve inline image data from key', error)
       throw new Error(`Failed to process input image: ${toError(error).message}`)
@@ -461,12 +594,7 @@ export const resolveInlineImageData = async (
         context = inferContextFromKey(s3Key)
       }
 
-      const fileBuffer = await downloadFile({ key: s3Key, context })
-      const mimeType = obj.type || inputImageMimeType || 'image/png'
-
-      logger.info('Resolved image for inline data', { mimeType, size: fileBuffer.length })
-
-      return ensureSupportedMime(fileBuffer, mimeType)
+      return await resolveStorageImageForInlineData(s3Key, context, obj.type || inputImageMimeType)
     } catch (error) {
       logger.error('Failed to resolve inline image data', error)
       throw new Error(`Failed to process input image: ${toError(error).message}`)
@@ -476,10 +604,11 @@ export const resolveInlineImageData = async (
   if (obj.url && isInternalFileUrl(obj.url)) {
     try {
       const s3Key = extractStorageKey(obj.url)
-      const fileBuffer = await downloadFile({ key: s3Key, context: inferContextFromKey(s3Key) })
-      const mimeType = obj.type || inputImageMimeType || 'image/png'
-      logger.info('Resolved image from URL for inline data', { mimeType, size: fileBuffer.length })
-      return ensureSupportedMime(fileBuffer, mimeType)
+      return await resolveStorageImageForInlineData(
+        s3Key,
+        inferContextFromKey(s3Key),
+        obj.type || inputImageMimeType
+      )
     } catch (error) {
       logger.error('Failed to resolve inline image data from URL', error)
       throw new Error(`Failed to process input image: ${toError(error).message}`)

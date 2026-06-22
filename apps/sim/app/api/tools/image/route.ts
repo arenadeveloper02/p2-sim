@@ -37,10 +37,12 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
+import { parseImageUrls } from '@/lib/utils/parse-image-urls'
 
 const logger = createLogger('ImageProxyAPI')
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024
 const MAX_IMAGE_JSON_BYTES = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 256 * 1024
+const GPT_IMAGE_2_MODEL = 'gpt-image-2'
 
 export const dynamic = 'force-dynamic'
 /**
@@ -73,6 +75,66 @@ function hasReferenceImage(body: ImageToolBody): boolean {
     (inputImage !== undefined && inputImage !== null && inputImage !== '') ||
     (Array.isArray(inputImages) && inputImages.length > 0)
   )
+}
+
+function getMemorySnapshot(): Record<string, number> {
+  const memory = process.memoryUsage()
+  return {
+    rssMb: Math.round(memory.rss / 1024 / 1024),
+    heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
+    heapTotalMb: Math.round(memory.heapTotal / 1024 / 1024),
+    externalMb: Math.round(memory.external / 1024 / 1024),
+    arrayBuffersMb: Math.round(memory.arrayBuffers / 1024 / 1024),
+  }
+}
+
+function summarizeImageInput(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return {
+      type: 'string',
+      length: trimmed.length,
+      isHttpUrl: trimmed.startsWith('http://') || trimmed.startsWith('https://'),
+      isInternalFileUrl: trimmed.includes('/api/files/serve/'),
+      isDataUrl: trimmed.startsWith('data:'),
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      length: value.length,
+      first: summarizeImageInput(value[0]),
+    }
+  }
+
+  if (isRecordLike(value)) {
+    return {
+      type: 'object',
+      keys: Object.keys(value).sort(),
+      hasKey: typeof value.key === 'string',
+      hasPath: typeof value.path === 'string',
+      hasUrl: typeof value.url === 'string',
+      urlIsInternal: typeof value.url === 'string' && value.url.includes('/api/files/serve/'),
+      pathIsInternal: typeof value.path === 'string' && value.path.includes('/api/files/serve/'),
+      size: typeof value.size === 'number' ? value.size : undefined,
+      typeField: typeof value.type === 'string' ? value.type : undefined,
+      mimeTypeField: typeof value.mimeType === 'string' ? value.mimeType : undefined,
+    }
+  }
+
+  return { type: typeof value }
+}
+
+function logGptImage2Route(
+  requestId: string,
+  stage: string,
+  metadata: Record<string, unknown>
+): void {
+  logger.info(`[${requestId}] GPT Image 2 route ${stage}`, {
+    ...metadata,
+    memory: getMemorySnapshot(),
+  })
 }
 
 interface StoredImageResponse {
@@ -319,6 +381,7 @@ const GEMINI_PRO_IMAGE_SIZES = ['1K', '2K', '4K'] as const
 
 interface FalAIImageModelConfig {
   endpoint: string
+  editEndpoint?: string
   defaultSize?: string
   sizeOptions?: readonly string[]
   defaultAspectRatio?: string
@@ -367,6 +430,7 @@ const FALAI_SEEDREAM_IMAGE_SIZES = [...FALAI_STANDARD_IMAGE_SIZES, 'auto_2K', 'a
 const FALAI_IMAGE_MODEL_CONFIGS: Record<string, FalAIImageModelConfig> = {
   'nano-banana-2': {
     endpoint: 'fal-ai/nano-banana-2',
+    editEndpoint: 'fal-ai/nano-banana-2/edit',
     defaultAspectRatio: 'auto',
     aspectRatios: [...FALAI_NANO_BANANA_ASPECT_RATIOS, ...FALAI_EXTREME_ASPECT_RATIOS],
     defaultResolution: '1K',
@@ -559,9 +623,31 @@ async function generateWithOpenAI(
   const model = pickAllowed(body.model, OPENAI_IMAGE_MODELS, 'gpt-image-1.5')
   const inputImage = (body as Record<string, unknown>).inputImage
   const inputImageMimeType = (body as Record<string, unknown>).inputImageMimeType
+  const isGptImage2 = model === GPT_IMAGE_2_MODEL
+
+  if (isGptImage2) {
+    logGptImage2Route(requestId, 'openai generation started', {
+      provider: body.provider,
+      model,
+      promptLength: body.prompt.length,
+      hasReferenceImage: hasReferenceImage(body),
+      hasInputImage: inputImage !== undefined && inputImage !== null && inputImage !== '',
+      hasInputImages: Array.isArray((body as Record<string, unknown>).inputImages),
+      inputImage: summarizeImageInput(inputImage),
+      inputImageMimeType,
+      requestedSize: body.size,
+      requestedQuality: body.quality,
+      requestedBackground: body.background,
+      requestedOutputFormat: body.outputFormat,
+      requestedModeration: body.moderation,
+      workspaceId: body.workspaceId,
+      workflowId: body.workflowId,
+      executionId: body.executionId,
+    })
+  }
 
   if (hasReferenceImage(body) && inputImage) {
-    const editResult = await generateOpenAIImageEdit(apiKey, {
+    const editParams = {
       model,
       prompt: body.prompt,
       size:
@@ -580,7 +666,30 @@ async function generateWithOpenAI(
         : undefined,
       inputImage,
       inputImageMimeType: typeof inputImageMimeType === 'string' ? inputImageMimeType : undefined,
+    }
+
+    if (isGptImage2) {
+      logGptImage2Route(requestId, 'edit dispatching', {
+        size: editParams.size,
+        quality: editParams.quality,
+        background: editParams.background,
+        outputFormat: editParams.outputFormat,
+        moderation: editParams.moderation,
+        inputImageMimeType: editParams.inputImageMimeType,
+      })
+    }
+
+    const editResult = await generateOpenAIImageEdit(apiKey, {
+      ...editParams,
     })
+
+    if (isGptImage2) {
+      logGptImage2Route(requestId, 'edit completed', {
+        outputBytes: editResult.buffer.length,
+        contentType: editResult.contentType,
+        revisedPromptLength: editResult.revisedPrompt?.length,
+      })
+    }
 
     return {
       buffer: editResult.buffer,
@@ -616,6 +725,18 @@ async function generateWithOpenAI(
     requestBody.moderation = pickAllowed(body.moderation, OPENAI_MODERATION_LEVELS, 'auto')
   }
 
+  if (isGptImage2) {
+    logGptImage2Route(requestId, 'text-to-image dispatching', {
+      requestBodyKeys: Object.keys(requestBody).sort(),
+      size,
+      outputFormat,
+      quality: requestBody.quality,
+      background: requestBody.background,
+      moderation: requestBody.moderation,
+      maxImageJsonBytes: MAX_IMAGE_JSON_BYTES,
+    })
+  }
+
   const openaiResponse = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
     headers: {
@@ -626,18 +747,49 @@ async function generateWithOpenAI(
     signal: AbortSignal.timeout(IMAGE_GENERATION_PROVIDER_TIMEOUT_MS),
   })
 
+  if (isGptImage2) {
+    logGptImage2Route(requestId, 'text-to-image response received', {
+      status: openaiResponse.status,
+      ok: openaiResponse.ok,
+      contentType: openaiResponse.headers.get('content-type'),
+      contentLength: openaiResponse.headers.get('content-length'),
+      requestId:
+        openaiResponse.headers.get('x-request-id') ??
+        openaiResponse.headers.get('openai-request-id') ??
+        openaiResponse.headers.get('x-openai-request-id'),
+    })
+  }
+
   if (!openaiResponse.ok) {
     const error = await readResponseTextWithLimit(openaiResponse, {
       maxBytes: DEFAULT_MAX_ERROR_BODY_BYTES,
       label: 'OpenAI image error response',
     })
+    if (isGptImage2) {
+      logGptImage2Route(requestId, 'text-to-image error response read', {
+        status: openaiResponse.status,
+        errorLength: error.length,
+        errorPreview: error.slice(0, 500),
+      })
+    }
     throw new Error(`OpenAI API error: ${openaiResponse.status} - ${error}`)
   }
 
+  if (isGptImage2) {
+    logGptImage2Route(requestId, 'text-to-image json read starting', {
+      maxImageJsonBytes: MAX_IMAGE_JSON_BYTES,
+    })
+  }
   const data = await readResponseJsonWithLimit(openaiResponse, {
     maxBytes: MAX_IMAGE_JSON_BYTES,
     label: 'OpenAI image response',
   })
+  if (isGptImage2) {
+    logGptImage2Route(requestId, 'text-to-image json read completed', {
+      topLevelKeys: isRecordLike(data) ? Object.keys(data).sort() : [],
+      dataCount: isRecordLike(data) && Array.isArray(data.data) ? data.data.length : null,
+    })
+  }
   if (!isRecordLike(data)) {
     throw new Error('Invalid OpenAI image response')
   }
@@ -650,15 +802,48 @@ async function generateWithOpenAI(
   let contentType = getContentTypeForFormat(outputFormat)
 
   if (base64Image) {
+    if (isGptImage2) {
+      logGptImage2Route(requestId, 'text-to-image base64 decode starting', {
+        base64Length: base64Image.length,
+        estimatedBytes: Math.floor((base64Image.length * 3) / 4),
+        contentType,
+      })
+    }
     buffer = Buffer.from(base64Image, 'base64')
     assertKnownSizeWithinLimit(buffer.length, MAX_IMAGE_BYTES, 'OpenAI image response')
+    if (isGptImage2) {
+      logGptImage2Route(requestId, 'text-to-image base64 decoded', {
+        outputBytes: buffer.length,
+        contentType,
+      })
+    }
   } else if (imageUrl) {
+    if (isGptImage2) {
+      logGptImage2Route(requestId, 'text-to-image URL download starting', {
+        sourceUrlLength: imageUrl.length,
+      })
+    }
     const downloaded = await bufferFromImageUrl(imageUrl)
     buffer = downloaded.buffer
     contentType = downloaded.contentType
+    if (isGptImage2) {
+      logGptImage2Route(requestId, 'text-to-image URL downloaded', {
+        outputBytes: buffer.length,
+        contentType,
+      })
+    }
   } else {
     logger.error(`[${requestId}] OpenAI response missing image payload`)
     throw new Error('No image data found in OpenAI response')
+  }
+
+  if (isGptImage2) {
+    logGptImage2Route(requestId, 'openai generation completed', {
+      outputBytes: buffer.length,
+      contentType,
+      hasSourceUrl: Boolean(imageUrl),
+      revisedPromptLength: revisedPrompt?.length,
+    })
   }
 
   return {
@@ -796,6 +981,73 @@ function getFalAIErrorMessage(error: unknown): string {
   return 'Unknown Fal.ai error'
 }
 
+function extractReferenceUrl(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed
+    }
+    if (trimmed.startsWith('/')) {
+      return `${getBaseUrl()}${trimmed}`
+    }
+    return undefined
+  }
+
+  if (!isRecordLike(value)) {
+    return undefined
+  }
+
+  const url =
+    typeof value.url === 'string'
+      ? value.url.trim()
+      : typeof value.path === 'string'
+        ? value.path.trim()
+        : ''
+
+  if (!url) {
+    return undefined
+  }
+
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url
+  }
+
+  if (url.startsWith('/')) {
+    return `${getBaseUrl()}${url}`
+  }
+
+  return undefined
+}
+
+function collectReferenceUrls(...inputs: unknown[]): string[] {
+  const urls = new Set<string>()
+  for (const input of inputs) {
+    if (typeof input === 'string') {
+      const parsedUrls = parseImageUrls(input)
+      if (parsedUrls.length > 0) {
+        for (const parsedUrl of parsedUrls) {
+          const url = extractReferenceUrl(parsedUrl)
+          if (url) urls.add(url)
+        }
+        continue
+      }
+    }
+
+    if (Array.isArray(input)) {
+      for (const item of input) {
+        const url = extractReferenceUrl(item)
+        if (url) urls.add(url)
+      }
+      continue
+    }
+
+    const url = extractReferenceUrl(input)
+    if (url) urls.add(url)
+  }
+
+  return Array.from(urls)
+}
+
 async function generateWithFalAI(
   apiKey: string,
   body: ImageToolBody,
@@ -808,9 +1060,35 @@ async function generateWithFalAI(
     throw new Error(`Unknown Fal.ai image model: ${model}`)
   }
 
-  const requestBody: Record<string, string | number | boolean> = {
+  const referenceUrls = collectReferenceUrls(
+    body.inputImage,
+    body.inputImages,
+    body.inputImageUrl,
+    body.inputImageUrls
+  )
+  const endpoint =
+    referenceUrls.length > 0 && modelConfig.editEndpoint
+      ? modelConfig.editEndpoint
+      : modelConfig.endpoint
+
+  const requestBody: Record<string, string | number | boolean | string[]> = {
     prompt: body.prompt,
     sync_mode: false,
+  }
+
+  if (referenceUrls.length > 0 && modelConfig.editEndpoint) {
+    requestBody.image_urls = referenceUrls
+    logger.info(`[${requestId}] Fal.ai image edit references resolved`, {
+      model,
+      endpoint,
+      referenceCount: referenceUrls.length,
+      referenceUrlLengths: referenceUrls.map((url) => url.length),
+    })
+  } else if (referenceUrls.length > 0) {
+    logger.warn(`[${requestId}] Fal.ai model does not support reference image edit endpoint`, {
+      model,
+      referenceCount: referenceUrls.length,
+    })
   }
 
   if (modelConfig.maxNumImages) {
@@ -878,7 +1156,7 @@ async function generateWithFalAI(
     requestBody.thinking_level = pickAllowed(body.thinkingLevel, ['minimal', 'high'], 'minimal')
   }
 
-  const createResponse = await fetch(`https://queue.fal.run/${modelConfig.endpoint}`, {
+  const createResponse = await fetch(`https://queue.fal.run/${endpoint}`, {
     method: 'POST',
     headers: {
       Authorization: `Key ${apiKey}`,
@@ -910,10 +1188,10 @@ async function generateWithFalAI(
 
   const statusUrl =
     getStringProperty(createData, 'status_url') ||
-    buildFalAIQueueUrl(modelConfig.endpoint, falRequestId, 'status')
+    buildFalAIQueueUrl(endpoint, falRequestId, 'status')
   const responseUrl =
     getStringProperty(createData, 'response_url') ||
-    buildFalAIQueueUrl(modelConfig.endpoint, falRequestId, 'response')
+    buildFalAIQueueUrl(endpoint, falRequestId, 'response')
 
   logger.info(`[${requestId}] Fal.ai image request created: ${falRequestId}`)
 
@@ -1013,7 +1291,7 @@ async function generateWithFalAI(
         falaiCost: body.useHostedCostTracking
           ? await getFalAICostMetadata({
               apiKey,
-              endpointId: modelConfig.endpoint,
+              endpointId: endpoint,
               requestId: falRequestId,
             })
           : undefined,
@@ -1038,6 +1316,7 @@ async function storeGeneratedImage(
 ): Promise<StoredImageResponse> {
   const timestamp = Date.now()
   const safeFileName = imageResult.fileName || `image-${imageResult.provider}-${timestamp}.png`
+  const isGptImage2 = imageResult.provider === 'openai' && imageResult.model === GPT_IMAGE_2_MODEL
   const executionContext =
     body.workspaceId && body.workflowId && body.executionId
       ? {
@@ -1047,7 +1326,26 @@ async function storeGeneratedImage(
         }
       : null
 
+  if (isGptImage2) {
+    logGptImage2Route(requestId, 'storage started', {
+      outputBytes: imageResult.buffer.length,
+      contentType: imageResult.contentType,
+      fileName: safeFileName,
+      hasExecutionContext: Boolean(executionContext),
+      workspaceId: body.workspaceId,
+      workflowId: body.workflowId,
+      executionId: body.executionId,
+    })
+  }
+
   if (executionContext) {
+    if (isGptImage2) {
+      logGptImage2Route(requestId, 'execution upload starting', {
+        outputBytes: imageResult.buffer.length,
+        contentType: imageResult.contentType,
+        fileName: safeFileName,
+      })
+    }
     const { uploadExecutionFile } = await import('@/lib/uploads/contexts/execution')
     const imageFile = await uploadExecutionFile(
       executionContext,
@@ -1056,6 +1354,16 @@ async function storeGeneratedImage(
       imageResult.contentType,
       userId
     )
+
+    if (isGptImage2) {
+      logGptImage2Route(requestId, 'execution upload completed', {
+        fileName: safeFileName,
+        imageUrlLength: imageFile.url.length,
+        key: imageFile.key,
+        size: imageFile.size,
+        type: imageFile.type,
+      })
+    }
 
     return {
       content: imageFile.url,
@@ -1080,6 +1388,14 @@ async function storeGeneratedImage(
   }
 
   const { StorageService } = await import('@/lib/uploads')
+  if (isGptImage2) {
+    logGptImage2Route(requestId, 'fallback upload starting', {
+      outputBytes: imageResult.buffer.length,
+      contentType: imageResult.contentType,
+      fileName: safeFileName,
+      context: 'copilot',
+    })
+  }
   const fileInfo = await StorageService.uploadFile({
     file: imageResult.buffer,
     fileName: safeFileName,
@@ -1087,6 +1403,14 @@ async function storeGeneratedImage(
     context: 'copilot',
   })
   const imageUrl = `${getBaseUrl()}${fileInfo.path}`
+  if (isGptImage2) {
+    logGptImage2Route(requestId, 'fallback upload completed', {
+      fileName: safeFileName,
+      imageUrlLength: imageUrl.length,
+      path: fileInfo.path,
+      key: fileInfo.key,
+    })
+  }
   logger.info(`[${requestId}] Stored generated image fallback`, {
     fileName: safeFileName,
     size: imageResult.buffer.length,
