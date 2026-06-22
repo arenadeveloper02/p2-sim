@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { skyvernWorkflowsContract } from '@/lib/api/contracts/tools/skyvern'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import { env } from '@/lib/core/config/env'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   buildSkyvernUrl,
@@ -39,13 +40,34 @@ function toWorkflowOption(workflow: SkyvernWorkflowRecord): { id: string; name: 
   return { id, name }
 }
 
+function resolveSelectorCredentials(params: { apiKey?: string; baseUrl?: string }): {
+  apiKey: string
+  baseUrl: string
+} {
+  const serverApiKey = env.SKYVERN_API_KEY?.trim()
+  const bodyApiKey = params.apiKey?.trim()
+
+  // When the deployment provides credentials, ignore stale block baseUrl/apiKey
+  // unless the caller explicitly passes an API key (BYOK).
+  if (serverApiKey && !bodyApiKey) {
+    return {
+      apiKey: serverApiKey,
+      baseUrl: resolveSkyvernBaseUrl(),
+    }
+  }
+
+  return {
+    apiKey: requireSkyvernApiKey(bodyApiKey),
+    baseUrl: resolveSkyvernBaseUrl(params.baseUrl),
+  }
+}
+
 async function fetchSkyvernWorkflows(params: {
   apiKey?: string
   baseUrl?: string
   searchKey?: string
 }): Promise<Array<{ id: string; name: string }>> {
-  const apiKey = requireSkyvernApiKey(params.apiKey)
-  const baseUrl = resolveSkyvernBaseUrl(params.baseUrl)
+  const { apiKey, baseUrl } = resolveSelectorCredentials(params)
   const agentsPath = resolveSkyvernAgentsApiPath()
 
   const workflowsById = new Map<string, { id: string; name: string }>()
@@ -69,9 +91,19 @@ async function fetchSkyvernWorkflows(params: {
       const errorData = await response.json().catch(() => ({}))
       logger.error('Failed to fetch Skyvern workflows', {
         status: response.status,
+        baseUrl,
         error: errorData,
       })
-      throw new Error(`Failed to fetch Skyvern workflows (${response.status})`)
+      const detail =
+        typeof errorData === 'object' &&
+        errorData !== null &&
+        'detail' in errorData &&
+        typeof errorData.detail === 'string'
+          ? errorData.detail
+          : `Failed to fetch Skyvern workflows (${response.status})`
+      const error = new Error(detail) as Error & { status?: number }
+      error.status = response.status
+      throw error
     }
 
     const data = await response.json()
@@ -120,9 +152,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json({ workflows })
   } catch (error) {
     logger.error('Error fetching Skyvern workflows', { error: getErrorMessage(error) })
+    const status =
+      typeof error === 'object' && error !== null && 'status' in error
+        ? Number((error as { status?: number }).status)
+        : 500
     return NextResponse.json(
       { error: getErrorMessage(error, 'Failed to retrieve Skyvern workflows') },
-      { status: 500 }
+      { status: status === 403 || status === 401 ? status : 500 }
     )
   }
 })

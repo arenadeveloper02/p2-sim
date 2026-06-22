@@ -26,6 +26,10 @@ async function getSkyvernBlockValues(blockId: string): Promise<{
   apiKey?: string
   baseUrl?: string
 } | null> {
+  if (process.env.NEXT_PUBLIC_SKYVERN_CONFIGURED === 'true') {
+    return {}
+  }
+
   const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
   const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
 
