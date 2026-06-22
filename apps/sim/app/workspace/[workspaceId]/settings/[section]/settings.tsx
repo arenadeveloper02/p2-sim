@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
@@ -103,8 +102,6 @@ interface SettingsPageProps {
 }
 
 export function SettingsPage({ section }: SettingsPageProps) {
-  const searchParams = useSearchParams()
-  const mcpServerId = searchParams.get('mcpServerId')
   const { data: session, isPending: sessionLoading } = useSession()
   const posthog = usePostHog()
 
@@ -150,7 +147,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {effectiveSection === 'whitelabeling' && <WhitelabelingSettings />}
       {effectiveSection === 'byok' && <BYOK />}
       {effectiveSection === 'copilot' && <Copilot />}
-      {effectiveSection === 'mcp' && <MCP initialServerId={mcpServerId} />}
+      {effectiveSection === 'mcp' && <MCP />}
       {effectiveSection === 'custom-tools' && <CustomTools />}
       {effectiveSection === 'workflow-mcp-servers' && <WorkflowMcpServers />}
       {effectiveSection === 'inbox' && <Inbox />}
