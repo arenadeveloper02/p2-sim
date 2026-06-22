@@ -8,8 +8,9 @@ import type { StorageContext } from '@/lib/uploads/config'
 import { S3_CHAT_CONFIG } from '@/lib/uploads/config'
 import type { StorageConfig } from '@/lib/uploads/core/storage-client'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
+import { extractOrganizationIdFromOrgLogoKey } from '@/lib/uploads/contexts/org-logos/utils'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { getUserEntityPermissions, isOrganizationAdminOrOwner } from '@/lib/workspaces/permissions/utils'
 import { isUuid } from '@/executor/constants'
 
 const logger = createLogger('FileAuthorization')
@@ -148,7 +149,8 @@ export async function verifyFileAccess(
     if (
       inferredContext === 'profile-pictures' ||
       inferredContext === 'og-images' ||
-      inferredContext === 'workspace-logos'
+      inferredContext === 'workspace-logos' ||
+      inferredContext === 'org-logos'
     ) {
       if (requireWrite) {
         return await verifyPublicAssetWriteAccess(cloudKey, userId, inferredContext, customConfig)
@@ -272,7 +274,7 @@ async function verifyWorkspaceFileAccess(
 
 /**
  * Authorize a destructive operation (delete) on a "public" asset context:
- * `profile-pictures`, `workspace-logos`, or `og-images`. These contexts are
+ * `profile-pictures`, `workspace-logos`, `org-logos`, or `og-images`. These contexts are
  * world-readable, so {@link verifyFileAccess} short-circuits reads — but a write
  * must prove ownership of the user/workspace the object belongs to and never
  * short-circuit to `true`.
@@ -287,7 +289,7 @@ async function verifyWorkspaceFileAccess(
 async function verifyPublicAssetWriteAccess(
   cloudKey: string,
   userId: string,
-  context: 'profile-pictures' | 'og-images' | 'workspace-logos',
+  context: 'profile-pictures' | 'og-images' | 'workspace-logos' | 'org-logos',
   customConfig?: StorageConfig
 ): Promise<boolean> {
   try {
@@ -302,6 +304,27 @@ async function verifyPublicAssetWriteAccess(
         logger.warn('workspace-logos delete denied: write/admin required on owner workspace', {
           userId,
           workspaceId: binding.workspaceId,
+          cloudKey,
+        })
+        return false
+      }
+      return true
+    }
+
+    if (context === 'org-logos') {
+      const organizationId = extractOrganizationIdFromOrgLogoKey(cloudKey)
+      if (!organizationId) {
+        logger.warn('org-logos delete denied: could not resolve organization from key', {
+          userId,
+          cloudKey,
+        })
+        return false
+      }
+      const canManageOrg = await isOrganizationAdminOrOwner(userId, organizationId)
+      if (!canManageOrg) {
+        logger.warn('org-logos delete denied: organization owner/admin required', {
+          userId,
+          organizationId,
           cloudKey,
         })
         return false

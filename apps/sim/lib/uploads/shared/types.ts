@@ -24,6 +24,7 @@ export type StorageContext =
   | 'logs'
   | 'figma-design'
   | 'workspace-logos'
+  | 'org-logos'
 
 /**
  * Contexts exempt from storage quota checks. Includes system-internal contexts
@@ -38,6 +39,7 @@ export type StorageContext =
 export const QUOTA_EXEMPT_STORAGE_CONTEXTS = new Set<StorageContext>([
   'profile-pictures',
   'workspace-logos',
+  'org-logos',
   'og-images',
   'logs',
 ])

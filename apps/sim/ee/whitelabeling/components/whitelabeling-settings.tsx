@@ -5,7 +5,6 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { Image as ImageIcon, X } from 'lucide-react'
 import Image from 'next/image'
-import { useParams } from 'next/navigation'
 import { Button, ChipInput, Label, Loader, toast } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client/utils'
@@ -114,7 +113,6 @@ function ColorInput({ label, value, onChange, placeholder = '#000000' }: ColorIn
 }
 
 export function WhitelabelingSettings() {
-  const params = useParams<{ workspaceId: string }>()
   const { data: session } = useSession()
   const { data: orgsData } = useOrganizations()
   const { data: subscriptionData } = useSubscriptionData()
@@ -197,16 +195,16 @@ export function WhitelabelingSettings() {
     currentImage: logoUrl,
     onUpload: (url) => setLogoUrl(url),
     onError: (error) => toast.error(error),
-    context: 'workspace-logos',
-    workspaceId: params.workspaceId,
+    context: 'org-logos',
+    organizationId: orgId,
   })
 
   const wordmarkUpload = useProfilePictureUpload({
     currentImage: wordmarkUrl,
     onUpload: (url) => setWordmarkUrl(url),
     onError: (error) => toast.error(error),
-    context: 'workspace-logos',
-    workspaceId: params.workspaceId,
+    context: 'org-logos',
+    organizationId: orgId,
   })
 
   const hasChanges =
