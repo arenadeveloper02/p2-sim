@@ -1,4 +1,5 @@
 import {
+  assertKnownSizeWithinLimit,
   DEFAULT_MAX_ERROR_BODY_BYTES,
   readResponseJsonWithLimit,
   readResponseTextWithLimit,
@@ -6,7 +7,7 @@ import {
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { resolveInlineImageData } from '@/app/api/google/api-service'
 
-const MAX_IMAGE_BYTES = 25 * 1024 * 1024
+const MAX_IMAGE_BYTES = 50 * 1024 * 1024
 const MAX_IMAGE_JSON_BYTES = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 256 * 1024
 
 const GPT_IMAGE_EDIT_MODELS = new Set([
@@ -74,6 +75,7 @@ export async function generateOpenAIImageEdit(
 
   const form = new FormData()
   const buffer = Buffer.from(inline.data, 'base64')
+  assertKnownSizeWithinLimit(buffer.length, MAX_IMAGE_BYTES, 'OpenAI reference image')
   form.append(
     'image',
     new Blob([buffer], { type: inline.mimeType }),
@@ -127,7 +129,11 @@ export async function generateOpenAIImageEdit(
     outputFormat === 'jpeg' ? 'image/jpeg' : outputFormat === 'webp' ? 'image/webp' : 'image/png'
 
   return {
-    buffer: Buffer.from(base64Image, 'base64'),
+    buffer: (() => {
+      const imageBuffer = Buffer.from(base64Image, 'base64')
+      assertKnownSizeWithinLimit(imageBuffer.length, MAX_IMAGE_BYTES, 'OpenAI image edit response')
+      return imageBuffer
+    })(),
     contentType,
     revisedPrompt,
   }
