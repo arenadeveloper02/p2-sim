@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { account, credential, credentialMember } from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray, notInArray } from 'drizzle-orm'
+import { ensureBilledAccountCredentialMembership } from '@/lib/credentials/access'
 import { getServiceConfigByProviderId } from '@/lib/oauth'
 
 /** Provider IDs that are not real OAuth integrations (login-only social providers and password) */
@@ -142,6 +143,11 @@ export async function syncWorkspaceOAuthCredentialsForUser(
         })
         .where(eq(credentialMember.id, existingMembership.id))
       updatedMemberships += 1
+      await ensureBilledAccountCredentialMembership({
+        credentialId,
+        workspaceId,
+        invitedBy: userId,
+      })
       continue
     }
 
@@ -163,6 +169,12 @@ export async function syncWorkspaceOAuthCredentialsForUser(
         throw error
       }
     }
+
+    await ensureBilledAccountCredentialMembership({
+      credentialId,
+      workspaceId,
+      invitedBy: userId,
+    })
   }
 
   return { updatedMemberships }
