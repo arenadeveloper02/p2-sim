@@ -2,7 +2,7 @@ import { db } from '@sim/db'
 import { credential, credentialMember, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq, inArray, ne } from 'drizzle-orm'
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm'
 import type { DbOrTx } from '@/lib/db/types'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
@@ -64,6 +64,68 @@ export async function getCredentialActorContext(
     canWriteWorkspace: workspaceAccess.canWrite,
     isAdmin,
   }
+}
+
+/**
+ * Ensures the workspace billing account can use a credential in org workspaces.
+ * Org schedulers and other background runs execute as `billed_account_user_id`.
+ */
+export async function ensureBilledAccountCredentialMembership(params: {
+  credentialId: string
+  workspaceId: string
+  invitedBy: string
+  tx?: DbOrTx
+}): Promise<boolean> {
+  const { credentialId, workspaceId, invitedBy, tx = db } = params
+
+  const [workspaceRow] = await tx
+    .select({
+      organizationId: workspace.organizationId,
+      billedAccountUserId: workspace.billedAccountUserId,
+    })
+    .from(workspace)
+    .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
+    .limit(1)
+
+  if (!workspaceRow?.organizationId || !workspaceRow.billedAccountUserId) {
+    return false
+  }
+
+  const billedUserId = workspaceRow.billedAccountUserId
+  if (billedUserId === invitedBy) {
+    return false
+  }
+
+  const now = new Date()
+  await tx
+    .insert(credentialMember)
+    .values({
+      id: generateId(),
+      credentialId,
+      userId: billedUserId,
+      role: 'member',
+      status: 'active',
+      joinedAt: now,
+      invitedBy,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [credentialMember.credentialId, credentialMember.userId],
+      set: {
+        status: 'active',
+        updatedAt: now,
+      },
+    })
+
+  logger.info('Ensured billed account credential membership for org workspace', {
+    credentialId,
+    workspaceId,
+    billedUserId,
+    invitedBy,
+  })
+
+  return true
 }
 
 /**
