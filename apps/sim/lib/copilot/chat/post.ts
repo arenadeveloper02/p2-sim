@@ -1,10 +1,10 @@
 import { type Context as OtelContext, context as otelContextApi } from '@opentelemetry/api'
 import { db } from '@sim/db'
-import { copilotChats, permissions } from '@sim/db/schema'
+import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { isZodError, validationErrorResponse } from '@/lib/api/server'
@@ -22,7 +22,7 @@ import {
   resolveActiveResourceContext,
 } from '@/lib/copilot/chat/process-contents'
 import { finalizeAssistantTurn } from '@/lib/copilot/chat/terminal-state'
-import { generateWorkspaceContext } from '@/lib/copilot/chat/workspace-context'
+import { generateWorkspaceSnapshot } from '@/lib/copilot/chat/workspace-context'
 import { chatPubSub } from '@/lib/copilot/chat-status'
 import { COPILOT_REQUEST_MODES } from '@/lib/copilot/constants'
 import {
@@ -32,6 +32,7 @@ import {
 } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
+import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { createBadRequestResponse, createUnauthorizedResponse } from '@/lib/copilot/request/http'
 import { createSSEStream, SSE_RESPONSE_HEADERS } from '@/lib/copilot/request/lifecycle/start'
 import { startCopilotOtelRoot, withCopilotSpan } from '@/lib/copilot/request/otel'
@@ -48,6 +49,7 @@ import { resolveWorkflowIdForUser } from '@/lib/workflows/utils'
 import {
   getUserEntityPermissions,
   isWorkspaceAccessDeniedError,
+  type PermissionType,
 } from '@/lib/workspaces/permissions/utils'
 import type { ChatContext } from '@/stores/panel'
 
@@ -184,6 +186,7 @@ type UnifiedChatBranch =
         prefetch?: boolean
         implicitFeedback?: string
         workspaceContext?: string
+        vfs?: VfsSnapshotV1
       }) => Promise<Record<string, unknown>>
       buildExecutionContext: (params: {
         userId: string
@@ -195,6 +198,7 @@ type UnifiedChatBranch =
   | {
       kind: 'workspace'
       workspaceId: string
+      workspacePermission: PermissionType | null
       effectiveModel: string
       goRoute: '/api/mothership'
       titleModel: string
@@ -211,6 +215,7 @@ type UnifiedChatBranch =
         userTimezone?: string
         userMetadata?: { name?: string; email?: string; timezone?: string }
         workspaceContext?: string
+        vfs?: VfsSnapshotV1
       }) => Promise<Record<string, unknown>>
       buildExecutionContext: (params: {
         userId: string
@@ -617,6 +622,7 @@ async function resolveBranch(params: {
             prefetch: payloadParams.prefetch,
             implicitFeedback: payloadParams.implicitFeedback,
             workspaceContext: payloadParams.workspaceContext,
+            vfs: payloadParams.vfs,
             userPermission: payloadParams.userPermission,
             userTimezone: payloadParams.userTimezone,
             userMetadata: payloadParams.userMetadata,
@@ -640,25 +646,20 @@ async function resolveBranch(params: {
     return createBadRequestResponse('workspaceId is required when workflowId is not provided')
   }
 
-  const [permissionRow] = await db
-    .select({ permissionType: permissions.permissionType })
-    .from(permissions)
-    .where(
-      and(
-        eq(permissions.userId, authenticatedUserId),
-        eq(permissions.entityType, 'workspace'),
-        eq(permissions.entityId, requestedWorkspaceId)
-      )
-    )
-    .limit(1)
+  const workspacePermission = await getUserEntityPermissions(
+    authenticatedUserId,
+    'workspace',
+    requestedWorkspaceId
+  )
 
-  if (!permissionRow) {
+  if (workspacePermission === null) {
     return createBadRequestResponse('Workspace not found or access denied')
   }
 
   return {
     kind: 'workspace',
     workspaceId: requestedWorkspaceId,
+    workspacePermission,
     effectiveModel: DEFAULT_MODEL,
     goRoute: '/api/mothership',
     titleModel: DEFAULT_MODEL,
@@ -676,6 +677,7 @@ async function resolveBranch(params: {
           fileAttachments: payloadParams.fileAttachments,
           chatId: payloadParams.chatId,
           workspaceContext: payloadParams.workspaceContext,
+          vfs: payloadParams.vfs,
           userPermission: payloadParams.userPermission,
           userTimezone: payloadParams.userTimezone,
           userMetadata: payloadParams.userMetadata,
@@ -881,15 +883,22 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       })
 
       const workspaceId = branch.workspaceId
-      const userPermissionPromise = workspaceId
-        ? getUserEntityPermissions(authenticatedUserId, 'workspace', workspaceId).catch((error) => {
-            logger.warn('Failed to load user permissions', {
-              error: getErrorMessage(error),
-              workspaceId,
-            })
-            return null
-          })
-        : Promise.resolve(null)
+      // The workspace branch already resolved this permission (and gated on it)
+      // during branch resolution; reuse it instead of querying again.
+      const userPermissionPromise =
+        branch.kind === 'workspace'
+          ? Promise.resolve(branch.workspacePermission)
+          : workspaceId
+            ? getUserEntityPermissions(authenticatedUserId, 'workspace', workspaceId).catch(
+                (error) => {
+                  logger.warn('Failed to load user permissions', {
+                    error: getErrorMessage(error),
+                    workspaceId,
+                  })
+                  return null
+                }
+              )
+            : Promise.resolve(null)
       // Wrap the pre-LLM prep work in spans so the trace waterfall shows
       // where time is going between "request received" and "llm.stream
       // opens". Previously these ran bare under the root and inflated the
@@ -899,7 +908,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         ? withCopilotSpan(
             TraceSpan.CopilotChatBuildWorkspaceContext,
             { [TraceAttr.WorkspaceId]: workspaceId },
-            () => generateWorkspaceContext(workspaceId, authenticatedUserId),
+            () => generateWorkspaceSnapshot(workspaceId, authenticatedUserId),
             activeOtelRoot.context
           )
         : Promise.resolve(undefined)
@@ -944,7 +953,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         activeOtelRoot.context
       )
 
-      const [agentContexts, userPermission, workspaceContext, , executionContext] =
+      const [agentContexts, userPermission, workspaceSnapshot, , executionContext] =
         await Promise.all([
           agentContextsPromise,
           userPermissionPromise,
@@ -952,6 +961,11 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           persistUserMessagePromise,
           executionContextPromise,
         ])
+      // Both halves come from one primary-db fetch (workspace-context.ts):
+      // `workspaceContext` is the markdown transition fallback, `vfs` is the
+      // typed snapshot Go diffs into baseline+delta messages.
+      const workspaceContext = workspaceSnapshot?.markdown
+      const vfs = workspaceSnapshot?.snapshot
 
       executionContext.userPermission = userPermission ?? undefined
 
@@ -988,6 +1002,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 prefetch: body.prefetch,
                 implicitFeedback: body.implicitFeedback,
                 workspaceContext,
+                vfs,
               })
             : branch.buildPayload({
                 message: body.message,
@@ -1000,6 +1015,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 userTimezone: body.userTimezone,
                 userMetadata,
                 workspaceContext,
+                vfs,
               }),
         activeOtelRoot.context
       )

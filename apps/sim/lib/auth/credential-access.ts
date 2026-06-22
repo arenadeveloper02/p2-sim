@@ -111,15 +111,15 @@ export async function authorizeCredentialUse(
         )
         .limit(1)
 
-      if (!membership) {
+      if (requesterPerm === null) {
+        return { ok: false, error: 'You do not have access to this workspace.' }
+      }
+      if (!membership && requesterPerm !== 'admin') {
         return {
           ok: false,
           error:
             'You do not have access to this credential. Ask the credential admin to add you as a member.',
         }
-      }
-      if (requesterPerm === null) {
-        return { ok: false, error: 'You do not have access to this workspace.' }
       }
 
       return {
@@ -169,16 +169,16 @@ export async function authorizeCredentialUse(
       )
       .limit(1)
 
-    if (!membership) {
-      return {
-        ok: false,
-        error: `You do not have access to this credential. Ask the credential admin to add you as a member.`,
-      }
-    }
     if (requesterPerm === null) {
       return {
         ok: false,
         error: 'You do not have access to this workspace.',
+      }
+    }
+    if (!membership && requesterPerm !== 'admin') {
+      return {
+        ok: false,
+        error: `You do not have access to this credential. Ask the credential admin to add you as a member.`,
       }
     }
 
@@ -235,25 +235,32 @@ export async function authorizeCredentialUse(
         return { ok: false, error: 'Credential account not found' }
       }
 
-      if (actingUserId) {
-        const [membership] = await db
-          .select({ id: credentialMember.id })
-          .from(credentialMember)
-          .where(
-            and(
-              eq(credentialMember.credentialId, workspaceCredential.id),
-              eq(credentialMember.userId, actingUserId),
-              eq(credentialMember.status, 'active')
-            )
+      const [membership] = await db
+        .select({ id: credentialMember.id })
+        .from(credentialMember)
+        .where(
+          and(
+            eq(credentialMember.credentialId, workspaceCredential.id),
+            eq(credentialMember.userId, actingUserId),
+            eq(credentialMember.status, 'active')
           )
-          .limit(1)
+        )
+        .limit(1)
 
-        if (!membership) {
-          return {
-            ok: false,
-            error:
-              'You do not have access to this credential. Ask the credential admin to add you as a member.',
-          }
+      const requesterPerm = await getUserEntityPermissions(
+        actingUserId,
+        'workspace',
+        workflowContext.workspaceId
+      )
+
+      if (requesterPerm === null) {
+        return { ok: false, error: 'You do not have access to this workspace.' }
+      }
+      if (!membership && requesterPerm !== 'admin') {
+        return {
+          ok: false,
+          error:
+            'You do not have access to this credential. Ask the credential admin to add you as a member.',
         }
       }
 
