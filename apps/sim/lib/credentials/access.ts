@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
-import { credential, credentialMember, credentialTypeEnum } from '@sim/db/schema'
-import { and, eq, inArray } from 'drizzle-orm'
+import { credential, credentialMember, credentialTypeEnum, workspace } from '@sim/db/schema'
+import { generateId } from '@sim/utils/id'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { DbOrTx } from '@/lib/db/types'
 import { checkWorkspaceAccess, type WorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
@@ -111,6 +112,64 @@ export async function getCredentialActorContext(
  * Workspace owners and admins are derived credential admins, so no per-credential
  * owner promotion is needed to avoid orphaning a credential. Returns the number
  * of memberships revoked.
+ * Ensures the workspace billing account can use a credential in org workspaces.
+ * Org schedulers and other background runs execute as `billed_account_user_id`.
+ */
+export async function ensureBilledAccountCredentialMembership(params: {
+  credentialId: string
+  workspaceId: string
+  invitedBy: string
+  tx?: DbOrTx
+}): Promise<boolean> {
+  const { credentialId, workspaceId, invitedBy, tx = db } = params
+
+  const [workspaceRow] = await tx
+    .select({
+      organizationId: workspace.organizationId,
+      billedAccountUserId: workspace.billedAccountUserId,
+    })
+    .from(workspace)
+    .where(and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt)))
+    .limit(1)
+
+  if (!workspaceRow?.organizationId || !workspaceRow.billedAccountUserId) {
+    return false
+  }
+
+  const billedUserId = workspaceRow.billedAccountUserId
+  if (billedUserId === invitedBy) {
+    return false
+  }
+
+  const now = new Date()
+  await tx
+    .insert(credentialMember)
+    .values({
+      id: generateId(),
+      credentialId,
+      userId: billedUserId,
+      role: 'member',
+      status: 'active',
+      joinedAt: now,
+      invitedBy,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [credentialMember.credentialId, credentialMember.userId],
+      set: {
+        status: 'active',
+        updatedAt: now,
+      },
+    })
+
+  return true
+}
+
+/**
+ * Revokes all credential memberships for a user across a workspace.
+ * Before revoking, ensures the workspace owner is an admin on any credential
+ * where the removed user is the sole active admin, preventing orphaned credentials.
  */
 export async function revokeWorkspaceCredentialMembershipsTx(
   tx: DbOrTx,

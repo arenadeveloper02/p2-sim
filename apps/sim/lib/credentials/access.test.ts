@@ -1,118 +1,85 @@
+/**
+ * @vitest-environment node
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCheckWorkspaceAccess, dbState } = vi.hoisted(() => ({
-  mockCheckWorkspaceAccess: vi.fn(),
-  dbState: { results: [] as any[][] },
-}))
-
-function makeChain() {
-  const chain: any = {}
-  chain.from = vi.fn(() => chain)
-  chain.where = vi.fn(() => chain)
-  chain.limit = vi.fn(() => Promise.resolve(dbState.results.shift() ?? []))
-  return chain
-}
+const { mockLimit, mockOnConflictDoUpdate, mockInsertValues, mockInsert } = vi.hoisted(() => {
+  const mockLimit = vi.fn()
+  const mockOnConflictDoUpdate = vi.fn().mockResolvedValue(undefined)
+  const mockInsertValues = vi.fn().mockReturnValue({ onConflictDoUpdate: mockOnConflictDoUpdate })
+  const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues })
+  return { mockLimit, mockOnConflictDoUpdate, mockInsertValues, mockInsert }
+})
 
 vi.mock('@sim/db', () => ({
-  db: { select: vi.fn(() => makeChain()) },
-}))
-
-vi.mock('@sim/db/schema', () => ({
-  credentialTypeEnum: {
-    enumValues: ['oauth', 'env_workspace', 'env_personal', 'service_account'],
-  },
-  credential: {
-    id: 'credential.id',
-    workspaceId: 'credential.workspaceId',
-    type: 'credential.type',
-  },
-  credentialMember: {
-    credentialId: 'credentialMember.credentialId',
-    userId: 'credentialMember.userId',
-    status: 'credentialMember.status',
-    role: 'credentialMember.role',
+  db: {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: mockLimit,
+        })),
+      })),
+    })),
+    insert: mockInsert,
   },
 }))
 
-vi.mock('drizzle-orm', () => ({
-  and: vi.fn((...args: unknown[]) => ({ and: args })),
-  eq: vi.fn((a: unknown, b: unknown) => ({ eq: [a, b] })),
-  inArray: vi.fn((a: unknown, b: unknown) => ({ inArray: [a, b] })),
-}))
+import { ensureBilledAccountCredentialMembership } from './access'
 
-vi.mock('@/lib/workspaces/permissions/utils', () => ({
-  checkWorkspaceAccess: mockCheckWorkspaceAccess,
-}))
-
-import { getCredentialActorContext } from '@/lib/credentials/access'
-
-const workspaceAdminAccess = { hasAccess: true, canWrite: true, canAdmin: true }
-const noWorkspaceAccess = { hasAccess: false, canWrite: false, canAdmin: false }
-
-describe('getCredentialActorContext', () => {
+describe('ensureBilledAccountCredentialMembership', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    dbState.results = []
+    mockOnConflictDoUpdate.mockResolvedValue(undefined)
+    mockInsertValues.mockReturnValue({ onConflictDoUpdate: mockOnConflictDoUpdate })
+    mockInsert.mockReturnValue({ values: mockInsertValues })
   })
 
-  it('treats an explicit credential admin membership as admin', async () => {
-    dbState.results = [[{ id: 'c1', workspaceId: 'ws', type: 'oauth' }], [{ role: 'admin' }]]
-    mockCheckWorkspaceAccess.mockResolvedValue({ hasAccess: true, canWrite: true, canAdmin: false })
+  it('skips non-org workspaces', async () => {
+    mockLimit.mockResolvedValueOnce([{ organizationId: null, billedAccountUserId: 'billed-1' }])
 
-    const ctx = await getCredentialActorContext('c1', 'user1')
-
-    expect(ctx.isAdmin).toBe(true)
-  })
-
-  it('derives credential admin from workspace admin for shared credentials', async () => {
-    dbState.results = [[{ id: 'c1', workspaceId: 'ws', type: 'oauth' }], []]
-    mockCheckWorkspaceAccess.mockResolvedValue(workspaceAdminAccess)
-
-    const ctx = await getCredentialActorContext('c1', 'admin-user')
-
-    expect(ctx.isAdmin).toBe(true)
-  })
-
-  it('does not derive credential admin on personal env credentials', async () => {
-    dbState.results = [[{ id: 'c1', workspaceId: 'ws', type: 'env_personal' }], []]
-    mockCheckWorkspaceAccess.mockResolvedValue(workspaceAdminAccess)
-
-    const ctx = await getCredentialActorContext('c1', 'admin-user')
-
-    expect(ctx.isAdmin).toBe(false)
-  })
-
-  it('is not admin for a non-admin without membership', async () => {
-    dbState.results = [[{ id: 'c1', workspaceId: 'ws', type: 'oauth' }], []]
-    mockCheckWorkspaceAccess.mockResolvedValue({
-      hasAccess: true,
-      canWrite: false,
-      canAdmin: false,
+    const result = await ensureBilledAccountCredentialMembership({
+      credentialId: 'cred-1',
+      workspaceId: 'ws-1',
+      invitedBy: 'member-1',
     })
 
-    const ctx = await getCredentialActorContext('c1', 'reader-user')
-
-    expect(ctx.isAdmin).toBe(false)
+    expect(result).toBe(false)
+    expect(mockInsert).not.toHaveBeenCalled()
   })
 
-  it('returns empty context when the credential does not exist', async () => {
-    dbState.results = [[]]
+  it('skips when the connector is the billed account user', async () => {
+    mockLimit.mockResolvedValueOnce([{ organizationId: 'org-1', billedAccountUserId: 'owner-1' }])
 
-    const ctx = await getCredentialActorContext('missing', 'user1')
+    const result = await ensureBilledAccountCredentialMembership({
+      credentialId: 'cred-1',
+      workspaceId: 'ws-1',
+      invitedBy: 'owner-1',
+    })
 
-    expect(ctx.credential).toBeNull()
-    expect(ctx.isAdmin).toBe(false)
-    expect(mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+    expect(result).toBe(false)
+    expect(mockInsert).not.toHaveBeenCalled()
   })
 
-  it('exposes workspace access flags from checkWorkspaceAccess', async () => {
-    dbState.results = [[{ id: 'c1', workspaceId: 'ws', type: 'oauth' }], []]
-    mockCheckWorkspaceAccess.mockResolvedValue(noWorkspaceAccess)
+  it('adds the billed account user as a credential member for org workspaces', async () => {
+    mockLimit.mockResolvedValueOnce([{ organizationId: 'org-1', billedAccountUserId: 'billed-1' }])
 
-    const ctx = await getCredentialActorContext('c1', 'outsider')
+    const result = await ensureBilledAccountCredentialMembership({
+      credentialId: 'cred-1',
+      workspaceId: 'ws-1',
+      invitedBy: 'member-1',
+    })
 
-    expect(ctx.hasWorkspaceAccess).toBe(false)
-    expect(ctx.canWriteWorkspace).toBe(false)
-    expect(ctx.isAdmin).toBe(false)
+    expect(result).toBe(true)
+    expect(mockInsert).toHaveBeenCalled()
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialId: 'cred-1',
+        userId: 'billed-1',
+        role: 'member',
+        status: 'active',
+        invitedBy: 'member-1',
+      })
+    )
+    expect(mockOnConflictDoUpdate).toHaveBeenCalled()
   })
 })
