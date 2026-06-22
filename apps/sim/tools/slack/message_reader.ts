@@ -113,6 +113,7 @@ export const slackMessageReaderTool: ToolConfig<
       'Content-Type': 'application/json',
     }),
     body: (params: SlackMessageReaderParams) => {
+      const isTrue = (v: unknown): boolean => v === true || v === 'true'
       const isDM = params.destinationType === 'dm'
       return {
         accessToken: params.accessToken || params.botToken,
@@ -122,8 +123,10 @@ export const slackMessageReaderTool: ToolConfig<
         oldest: params.oldest,
         latest: params.latest,
         cursor: params.cursor,
-        autoPaginate: params.autoPaginate ?? true,
-        includeThreads: params.includeThreads ?? true,
+        autoPaginate:
+          params.autoPaginate === undefined ? true : isTrue(params.autoPaginate),
+        includeThreads:
+          params.includeThreads === undefined ? true : isTrue(params.includeThreads),
         maxThreads: params.maxThreads,
         maxRepliesPerThread: params.maxRepliesPerThread,
       }
