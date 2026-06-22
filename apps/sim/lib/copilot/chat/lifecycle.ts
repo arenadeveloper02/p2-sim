@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { copilotChats, copilotMessages } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
 import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { type PersistedMessage, stripToolResultOutput } from '@/lib/copilot/chat/persisted-message'
 import {

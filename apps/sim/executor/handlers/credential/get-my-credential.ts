@@ -1,9 +1,9 @@
 import { createLogger } from '@sim/logger'
-import type { BlockOutput } from '@/blocks/types'
-import type { ExecutionContext } from '@/executor/types'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { syncWorkspaceOAuthCredentialsForUser } from '@/lib/credentials/oauth'
 import { getServiceConfigByProviderId } from '@/lib/oauth/utils'
+import type { BlockOutput } from '@/blocks/types'
+import type { ExecutionContext } from '@/executor/types'
 
 const logger = createLogger('GetMyCredential')
 

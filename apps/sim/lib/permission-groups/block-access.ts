@@ -1,5 +1,5 @@
-import { getBlock } from '@/blocks/registry'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
+import { getBlock } from '@/blocks/registry'
 
 /**
  * Block types that bypass permission-group access control entirely.
