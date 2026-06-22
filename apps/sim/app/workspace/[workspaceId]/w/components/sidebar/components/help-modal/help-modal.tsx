@@ -61,6 +61,7 @@ interface SubmitHelpVariables {
   images: ImageWithPreview[]
   workflowId?: string
   workspaceId: string
+  onOpenChange?: (open: boolean) => void
 }
 
 async function compressImage(file: File): Promise<File> {
@@ -88,7 +89,13 @@ async function compressImage(file: File): Promise<File> {
   }
 }
 
-async function submitHelpRequest({ data, images, workflowId, workspaceId }: SubmitHelpVariables) {
+async function submitHelpRequest({
+  data,
+  images,
+  workflowId,
+  workspaceId,
+  onOpenChange,
+}: SubmitHelpVariables) {
   const formData = new FormData()
   formData.append('subject', data.subject)
   formData.append('message', data.message)
@@ -113,6 +120,7 @@ async function submitHelpRequest({ data, images, workflowId, workspaceId }: Subm
     const errorData = await response.json().catch(() => null)
     throw new Error(errorData?.error || 'Failed to submit help request')
   }
+  onOpenChange?.(false)
 }
 
 export function HelpModal({ open, onOpenChange, workflowId, workspaceId }: HelpModalProps) {
@@ -246,7 +254,7 @@ export function HelpModal({ open, onOpenChange, workflowId, workspaceId }: HelpM
   function onSubmit(data: FormValues) {
     if (helpMutation.isPending) return
     setSubmitStatus(null)
-    helpMutation.mutate({ data, images, workflowId, workspaceId })
+    helpMutation.mutate({ data, images, workflowId, workspaceId, onOpenChange })
   }
 
   return (

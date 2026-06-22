@@ -1,5 +1,5 @@
-import type { IconLibrary } from '@/tools/google_slides/templates/schema'
 import { getPresentationIconLibrary } from '@/tools/google_slides/templates'
+import type { IconLibrary } from '@/tools/google_slides/templates/schema'
 import type { ToolConfig } from '@/tools/types'
 
 interface GetPresentationIconsParams {

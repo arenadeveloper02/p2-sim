@@ -24,7 +24,7 @@ vi.mock('@sim/db', () => ({
   },
 }))
 
-import { ensureBilledAccountCredentialMembership } from '@/lib/credentials/access'
+import { ensureBilledAccountCredentialMembership } from './access'
 
 describe('ensureBilledAccountCredentialMembership', () => {
   beforeEach(() => {

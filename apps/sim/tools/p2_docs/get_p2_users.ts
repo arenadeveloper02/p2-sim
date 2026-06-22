@@ -42,8 +42,7 @@ export const getP2UsersTool: ToolConfig<GetP2UsersParams, GetP2UsersResponse> = 
     const users = keyword
       ? P2_TEAM_MEMBERS.filter(
           (m) =>
-            m.name.toLowerCase().includes(keyword) ||
-            m.designation.toLowerCase().includes(keyword)
+            m.name.toLowerCase().includes(keyword) || m.designation.toLowerCase().includes(keyword)
         )
       : P2_TEAM_MEMBERS
 
