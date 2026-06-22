@@ -17,6 +17,7 @@ import { getSession } from '@/lib/auth'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { ensureBilledAccountCredentialMembership } from '@/lib/credentials/access'
 import {
   AtlassianValidationError,
   normalizeAtlassianDomain,
@@ -563,6 +564,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           invitedBy: session.user.id,
           createdAt: now,
           updatedAt: now,
+        })
+
+        await ensureBilledAccountCredentialMembership({
+          credentialId,
+          workspaceId,
+          invitedBy: session.user.id,
+          tx,
         })
       }
     })
