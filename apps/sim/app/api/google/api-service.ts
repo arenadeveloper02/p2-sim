@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import sharp from 'sharp'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import type { StorageContext } from '@/lib/uploads'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
@@ -609,7 +610,7 @@ export const buildNanoBananaRequestBody = async (params: {
 }
 
 /** Timeout for the outgoing request to Google – fail before route maxDuration on stuck generations. */
-const GOOGLE_API_TIMEOUT_MS = 3 * 60 * 1000
+const GOOGLE_API_TIMEOUT_MS = IMAGE_GENERATION_PROVIDER_TIMEOUT_MS
 
 export interface NanoBananaGenerationParams {
   model: string
