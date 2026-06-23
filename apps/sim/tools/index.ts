@@ -173,6 +173,43 @@ async function executeNanoBananaDirect(params: Record<string, any>): Promise<Too
 
 async function executeImageGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
   logImageGenerationToolEntry('image_generate direct entry', params)
+
+  if (params.__skipSmartWrapper === true) {
+    logger.info('Running direct image generation provider in-process')
+    const { buildImageToolBodyFromExecutionParams, runImageToolGeneration } = await import(
+      '@/lib/image-generation/run-image-tool.server'
+    )
+
+    const context = params._context as { userId?: string } | undefined
+    const userId =
+      context?.userId ??
+      (typeof params.userId === 'string' ? params.userId : undefined) ??
+      (typeof params.sessionUserId === 'string' ? params.sessionUserId : undefined)
+
+    if (!userId) {
+      return {
+        success: false,
+        output: {},
+        error: 'Missing userId for image generation',
+      }
+    }
+
+    try {
+      const body = buildImageToolBodyFromExecutionParams(params as Record<string, unknown>)
+      const output = await runImageToolGeneration(body, { userId })
+      return {
+        success: true,
+        output: { ...output },
+      }
+    } catch (error) {
+      return {
+        success: false,
+        output: {},
+        error: getErrorMessage(error, 'Image generation failed'),
+      }
+    }
+  }
+
   logger.info('Running image generation wrapper in-process')
   const { runImageGenerationWrapper } = await import('@/lib/image-generation/run-wrapper.server')
   const result = await runImageGenerationWrapper({
