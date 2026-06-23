@@ -21,8 +21,11 @@ import {
 import { useMyMemberCredits } from '@/hooks/queries/organization'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
 
-const USAGE_SOURCE_DESCRIPTION =
-  'Credits include combined usage from Mothership and Workflow Runs.'
+const MY_USAGE_TOOLTIP =
+  'Credits include combined usage from Mothership and Workflow Runs for your current billing period.'
+
+const USAGE_BY_SOURCE_TOOLTIP =
+  'Mothership includes copilot, workspace chat, and related AI usage. Workflow runs covers workflow execution costs.'
 
 interface BillingPersonalUsageViewProps {
   data: CreditUsageSummary
@@ -86,8 +89,11 @@ export function BillingPersonalUsageView({ data }: BillingPersonalUsageViewProps
     <div className='flex flex-col gap-7'>
       <BillingUsageSection
         label='My usage'
-        description={USAGE_SOURCE_DESCRIPTION}
-        headerAccessory={<Info className='size-[14px] text-[var(--text-icon)]' />}
+        headerAccessory={
+          <Info side='top' align='start' className='flex-shrink-0 text-[var(--text-icon)]'>
+            {MY_USAGE_TOOLTIP}
+          </Info>
+        }
       >
         <div className='flex flex-col gap-5'>
           <div className='grid gap-3 md:grid-cols-3'>
@@ -151,7 +157,11 @@ export function BillingPersonalUsageView({ data }: BillingPersonalUsageViewProps
 
       <BillingUsageSection
         label='Usage by source'
-        headerAccessory={<Info className='size-[14px] text-[var(--text-icon)]' />}
+        headerAccessory={
+          <Info side='top' align='start' className='flex-shrink-0 text-[var(--text-icon)]'>
+            {USAGE_BY_SOURCE_TOOLTIP}
+          </Info>
+        }
       >
         <div className='flex flex-col gap-4'>
           <BillingUsageSourceRow

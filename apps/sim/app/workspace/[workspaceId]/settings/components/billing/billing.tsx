@@ -501,56 +501,30 @@ export function Billing() {
             </SettingsSection>
           )}
 
-          {(subscription.isPaid || subscription.isEnterprise) && (
+          {subscription.isPaid && !subscription.isEnterprise && (
             <SettingsSection label='Subscription'>
-              <div className='flex flex-col gap-4'>
-                {periodEnd && (
-                  <div className='flex items-center justify-between'>
-                    <span className='text-[var(--text-body)] text-small'>
-                      {isCancelledAtPeriodEnd ? 'Access until' : 'Next billing date'}
-                    </span>
-                    <span className='text-[var(--text-muted)] text-small'>
-                      {new Date(periodEnd).toLocaleDateString()}
-                    </span>
-                  </div>
-                )}
-
-                <div className='flex items-center justify-between'>
-                  <span className='text-[var(--text-body)] text-small'>Payment method</span>
+              <div className='flex items-center justify-between'>
+                <span className='text-[var(--text-body)] text-small'>
+                  {isCancelledAtPeriodEnd ? 'Subscription canceled' : 'Cancel subscription'}
+                </span>
+                {isCancelledAtPeriodEnd ? (
                   <Chip
+                    variant='primary'
                     flush
-                    disabled={!canManageBilling || openBillingPortal.isPending}
-                    onClick={handleOpenBillingPortal}
+                    disabled={!canManageBilling}
+                    onClick={handleRestoreSubscription}
                   >
-                    Manage in Stripe
+                    Restore
                   </Chip>
-                </div>
-
-                {!subscription.isEnterprise && (
-                  <div className='flex items-center justify-between'>
-                    <span className='text-[var(--text-body)] text-small'>
-                      {isCancelledAtPeriodEnd ? 'Subscription canceled' : 'Cancel subscription'}
-                    </span>
-                    {isCancelledAtPeriodEnd ? (
-                      <Chip
-                        variant='primary'
-                        flush
-                        disabled={!canManageBilling}
-                        onClick={handleRestoreSubscription}
-                      >
-                        Restore
-                      </Chip>
-                    ) : (
-                      <Chip
-                        variant='destructive'
-                        flush
-                        disabled={!canManageBilling}
-                        onClick={handleCancelSubscription}
-                      >
-                        Cancel
-                      </Chip>
-                    )}
-                  </div>
+                ) : (
+                  <Chip
+                    variant='destructive'
+                    flush
+                    disabled={!canManageBilling}
+                    onClick={handleCancelSubscription}
+                  >
+                    Cancel
+                  </Chip>
                 )}
               </div>
             </SettingsSection>

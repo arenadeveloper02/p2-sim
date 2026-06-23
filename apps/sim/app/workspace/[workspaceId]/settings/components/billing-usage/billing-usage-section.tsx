@@ -23,7 +23,9 @@ export function BillingUsageSection({
         <div className='flex min-w-0 flex-col gap-1'>
           <div className='flex items-center gap-1.5'>
             <span className='font-medium text-[var(--text-body)] text-small'>{label}</span>
-            {headerAccessory}
+            {headerAccessory ? (
+              <span className='flex flex-shrink-0 items-center'>{headerAccessory}</span>
+            ) : null}
           </div>
           {description ? (
             <p className='text-[var(--text-muted)] text-small'>{description}</p>
