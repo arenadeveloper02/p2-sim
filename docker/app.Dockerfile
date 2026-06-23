@@ -67,21 +67,16 @@ COPY --from=pruner /app/bun.lock ./bun.lock
 
 ENV NEXT_TELEMETRY_DISABLED=1 \
     VERCEL_TELEMETRY_DISABLED=1 \
-    DOCKER_BUILD=1 \
-    NODE_OPTIONS=--max-old-space-size=6144
+    DOCKER_BUILD=1
 
 # Dummy values so next build can evaluate modules. Override at runtime.
 ARG DATABASE_URL="postgresql://user:pass@localhost:5432/dummy"
 ENV DATABASE_URL=${DATABASE_URL}
 
-# Provide dummy NEXT_PUBLIC_APP_URL for build-time evaluation.
-# Runtime environments should override this with the actual URL.
-# ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
-# ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
+ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
-# Use Turbopack (default `next build`) — webpack exceeds RAM on typical 8GB build hosts.
-# cwd() call sites use turbopackIgnore; see lib/uploads/core/setup.server.ts.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \
     --mount=type=cache,id=turbo-cache-${TARGETPLATFORM},target=/app/.turbo \
     bun run build
@@ -96,60 +91,9 @@ WORKDIR /app
 # Node.js 22, Python, ffmpeg, etc. are already installed in base stage
 ENV NODE_ENV=production
 
-# ========================================
-# Install Python + Chrome + Chromedriver
-# ========================================
-RUN apt-get update && apt-get install -y \
-      python3 python3-pip python3-venv bash ffmpeg \
-      wget gnupg ca-certificates \
-      xvfb \
-      libnss3 \
-      libxss1 \
-      libasound2 \
-      libx11-xcb1 \
-      libxcomposite1 \
-      libxrandr2 \
-      libxdamage1 \
-      libgbm1 \
-      libgtk-3-0 \
-      libatk1.0-0 \
-      libatk-bridge2.0-0 \
-      libcairo2 \
-      libpango-1.0-0 \
-      libpangocairo-1.0-0 \
-      fonts-liberation \
-    && wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
-         | gpg --dearmor > /usr/share/keyrings/google-linux.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-         > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y \
-      google-chrome-stable \
-      chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
-
-# # Environment variables for Chrome
-ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
-    CHROME_BIN=/usr/bin/google-chrome \
-    CHROME_PATH=/usr/bin/google-chrome \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
-
-
-# ========================================
-# Create non-root user
-# ========================================
+# Create non-root user and group
 RUN groupadd -g 1001 nodejs && \
-    useradd -m -u 1001 -g nodejs nextjs
-
-
-# ========================================
-# Copy build artifacts from builder
-# ========================================
-# Install Node.js 22 (for isolated-vm worker) and other runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+    useradd -u 1001 -g nodejs nextjs
 
 # Copy application artifacts from builder
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/public ./apps/sim/public
@@ -185,17 +129,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN mkdir -p apps/sim/.next/cache && \
     chown -R nextjs:nodejs apps/sim/.next/cache
 
-
-# ========================================
-# Entrypoint for Xvfb + app
-# ========================================
-COPY --chmod=755 ./docker/docker-entrypoint.sh /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-
-
-# ========================================
-# Run app as non-root
-# ========================================
+# Switch to non-root user
 USER nextjs
 
 EXPOSE 3000
