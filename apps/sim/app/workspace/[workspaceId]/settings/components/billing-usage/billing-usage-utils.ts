@@ -14,6 +14,69 @@ export function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value))
 }
 
+export interface OrgMemberCreditDisplay {
+  totalCredits: number | 'unlimited'
+  allocatedCredits: number | null
+  usedCredits: number
+  remainingCredits: number | 'unlimited'
+  progressNumerator: number
+  progressDenominator: number
+  progressPercent: number
+}
+
+/**
+ * Derive org-member billing card values: org pool total/remaining plus optional
+ * per-member allocation. Remaining matches enforcement — capped members cannot
+ * exceed their allocation or the shared org pool, whichever is tighter.
+ */
+export function resolveOrgMemberCreditDisplay(params: {
+  orgPool: { totalCredits: number; usedCredits: number; isUnlimited: boolean }
+  allocatedCredits: number | null
+  memberUsedCredits: number
+}): OrgMemberCreditDisplay {
+  const { orgPool, allocatedCredits, memberUsedCredits } = params
+
+  const totalCredits: number | 'unlimited' = orgPool.isUnlimited ? 'unlimited' : orgPool.totalCredits
+
+  const orgRemaining = orgPool.isUnlimited
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, orgPool.totalCredits - orgPool.usedCredits)
+
+  const memberRemaining =
+    allocatedCredits != null ? Math.max(0, allocatedCredits - memberUsedCredits) : null
+
+  let remainingCredits: number | 'unlimited'
+  if (orgPool.isUnlimited) {
+    remainingCredits =
+      memberRemaining != null ? memberRemaining : ('unlimited' as const)
+  } else if (memberRemaining != null) {
+    remainingCredits = Math.min(memberRemaining, orgRemaining)
+  } else {
+    remainingCredits = orgRemaining
+  }
+
+  const progressNumerator =
+    allocatedCredits != null ? memberUsedCredits : orgPool.usedCredits
+  const progressDenominator =
+    allocatedCredits != null
+      ? allocatedCredits
+      : orgPool.isUnlimited
+        ? 0
+        : orgPool.totalCredits
+  const progressPercent =
+    progressDenominator > 0 ? clampPercent((progressNumerator / progressDenominator) * 100) : 0
+
+  return {
+    totalCredits,
+    allocatedCredits,
+    usedCredits: memberUsedCredits,
+    remainingCredits,
+    progressNumerator,
+    progressDenominator,
+    progressPercent,
+  }
+}
+
 /** Format a credit count for display. */
 export function formatCreditCount(credits: number): string {
   return credits.toLocaleString()

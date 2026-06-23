@@ -6,7 +6,7 @@ import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { getOrgMemberLedgerByUser } from '@/lib/billing/core/organization'
-import { getUserUsageData } from '@/lib/billing/core/usage'
+import { getOrgUsageLimit, getUserUsageData } from '@/lib/billing/core/usage'
 import {
   COPILOT_USAGE_SOURCES,
   getBillingPeriodUsageCost,
@@ -18,6 +18,7 @@ import {
   getOrgMemberRefreshBounds,
 } from '@/lib/billing/credits/daily-refresh'
 import { apportionCredits, dollarsToCredits } from '@/lib/billing/credits/conversion'
+import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { getPlanTierDollars, isPaid } from '@/lib/billing/plan-helpers'
 import { getHighestPrioritySubscription, resolveBillingInterval } from '@/lib/billing/core/subscription'
 import type { DbClient } from '@/lib/db/types'
@@ -43,10 +44,16 @@ export interface MemberCreditUsageRow {
 
 export interface CreditUsageSummaryResult {
   scope: 'personal' | 'organization'
+  viewer: 'solo' | 'org_member'
   billingPeriodStart: string | null
   billingPeriodEnd: string | null
   billingInterval: 'month' | 'year'
   summary: CreditUsageBreakdownCredits
+  orgPool?: {
+    totalCredits: number
+    usedCredits: number
+    isUnlimited: boolean
+  }
   members?: MemberCreditUsageRow[]
 }
 
@@ -183,6 +190,30 @@ async function getRefreshDeductionForOrg(
   )
 }
 
+async function getOrganizationPoolSnapshot(
+  organizationId: string,
+  executor: DbClient
+): Promise<CreditUsageSummaryResult['orgPool']> {
+  const subscription = await getOrganizationSubscription(organizationId, { executor })
+  const plan = subscription?.plan ?? 'free'
+  const { limit: orgLimitDollars } = await getOrgUsageLimit(
+    organizationId,
+    plan,
+    subscription?.seats ?? null,
+    executor
+  )
+  const isUnlimited = orgLimitDollars >= ON_DEMAND_UNLIMITED
+
+  const orgSummary = await getOrganizationCreditUsageSummary(organizationId, executor)
+  const usedCredits = orgSummary?.summary.totalCredits ?? 0
+
+  return {
+    totalCredits: isUnlimited ? 0 : dollarsToCredits(orgLimitDollars),
+    usedCredits,
+    isUnlimited,
+  }
+}
+
 async function getPersonalCreditUsageSummary(
   userId: string,
   organizationId: string | null,
@@ -215,12 +246,16 @@ async function getPersonalCreditUsageSummary(
       workflowLedger,
     })
 
+    const orgPool = await getOrganizationPoolSnapshot(organizationId, executor)
+
     return {
       scope: 'personal',
+      viewer: 'org_member',
       billingPeriodStart: billingPeriod.start.toISOString(),
       billingPeriodEnd: billingPeriod.end.toISOString(),
       billingInterval: resolveBillingInterval(subscription),
       summary: toCreditBreakdown(dollarBreakdown, dollarBreakdown.totalDollars),
+      orgPool,
     }
   }
 
@@ -283,6 +318,7 @@ async function getPersonalCreditUsageSummary(
 
   return {
     scope: 'personal',
+    viewer: 'solo',
     billingPeriodStart: usageData.billingPeriodStart?.toISOString() ?? null,
     billingPeriodEnd: usageData.billingPeriodEnd?.toISOString() ?? null,
     billingInterval: resolveBillingInterval(subscription),
@@ -405,6 +441,7 @@ async function getOrganizationCreditUsageSummary(
 
   return {
     scope: 'organization',
+    viewer: 'solo',
     billingPeriodStart: billingPeriod.start.toISOString(),
     billingPeriodEnd: billingPeriod.end.toISOString(),
     billingInterval: resolveBillingInterval(subscription),
