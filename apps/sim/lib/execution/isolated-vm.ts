@@ -938,8 +938,8 @@ function spawnWorker(): Promise<WorkerInfo> {
     const candidatePaths = [
       path.join(currentDir, 'isolated-vm-worker.cjs'),
       path.join(currentDir, '..', '..', 'lib', 'execution', 'isolated-vm-worker.cjs'),
-      path.join(process.cwd(), 'apps', 'sim', 'lib', 'execution', 'isolated-vm-worker.cjs'),
-      path.join(process.cwd(), 'lib', 'execution', 'isolated-vm-worker.cjs'),
+      path.join(/*turbopackIgnore: true*/ process.cwd(), 'apps', 'sim', 'lib', 'execution', 'isolated-vm-worker.cjs'),
+      path.join(/*turbopackIgnore: true*/ process.cwd(), 'lib', 'execution', 'isolated-vm-worker.cjs'),
     ]
     const workerPath = candidatePaths.find((p) => fs.existsSync(p))
 

@@ -79,6 +79,8 @@ ENV DATABASE_URL=${DATABASE_URL}
 # ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
+# Production build uses webpack (--webpack in apps/sim/package.json) to avoid Turbopack
+# emit-conflict failures when multiple server routes share traced cwd() modules.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \
     --mount=type=cache,id=turbo-cache-${TARGETPLATFORM},target=/app/.turbo \
     bun run build
