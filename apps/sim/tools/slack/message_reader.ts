@@ -123,10 +123,8 @@ export const slackMessageReaderTool: ToolConfig<
         oldest: params.oldest,
         latest: params.latest,
         cursor: params.cursor,
-        autoPaginate:
-          params.autoPaginate === undefined ? true : isTrue(params.autoPaginate),
-        includeThreads:
-          params.includeThreads === undefined ? true : isTrue(params.includeThreads),
+        autoPaginate: params.autoPaginate === undefined ? true : isTrue(params.autoPaginate),
+        includeThreads: params.includeThreads === undefined ? true : isTrue(params.includeThreads),
         maxThreads: params.maxThreads,
         maxRepliesPerThread: params.maxRepliesPerThread,
       }
