@@ -363,7 +363,6 @@ export const blockTypeToIconMap: Record<string, IconComponent> = {
   image_fusion: ImageIcon,
   icypeas: IcypeasIcon,
   identity_center: IdentityCenterIcon,
-  image_fusion: ImageIcon,
   imap: MailServerIcon,
   incidentio: IncidentioIcon,
   infisical: InfisicalIcon,
