@@ -49,26 +49,20 @@ export const slackReadMessagesBodySchema = z
       return val
     }, z.string().optional().nullable()),
     cursor: z.string().optional().nullable(),
-    autoPaginate: z.preprocess(
-      (val) => {
-        if (val === undefined || val === null) return undefined
-        if (typeof val === 'boolean') return val
-        if (val === 'true') return true
-        if (val === 'false') return false
-        return val
-      },
-      z.boolean().optional().default(true)
-    ),
-    includeThreads: z.preprocess(
-      (val) => {
-        if (val === undefined || val === null) return undefined
-        if (typeof val === 'boolean') return val
-        if (val === 'true') return true
-        if (val === 'false') return false
-        return val
-      },
-      z.boolean().optional().default(true)
-    ),
+    autoPaginate: z.preprocess((val) => {
+      if (val === undefined || val === null) return undefined
+      if (typeof val === 'boolean') return val
+      if (val === 'true') return true
+      if (val === 'false') return false
+      return val
+    }, z.boolean().optional().default(true)),
+    includeThreads: z.preprocess((val) => {
+      if (val === undefined || val === null) return undefined
+      if (typeof val === 'boolean') return val
+      if (val === 'true') return true
+      if (val === 'false') return false
+      return val
+    }, z.boolean().optional().default(true)),
     maxThreads: z.preprocess(
       (val) => {
         if (val === '' || val === null || val === undefined) return 10
