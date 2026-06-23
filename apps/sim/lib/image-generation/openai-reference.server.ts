@@ -6,7 +6,7 @@ import {
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
-import { resolveInlineImageData } from '@/app/api/google/api-service'
+import { resolveProviderInlineImageData } from '@/app/api/google/api-service'
 
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024
 const MAX_IMAGE_JSON_BYTES = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 256 * 1024
@@ -121,12 +121,18 @@ function logGptImage2(stage: string, metadata: Record<string, unknown>): void {
   })
 }
 
+interface OpenAIImageEditOptions {
+  userId: string
+  requestId?: string
+}
+
 /**
  * Generate an OpenAI GPT Image edit using a single reference image.
  */
 export async function generateOpenAIImageEdit(
   apiKey: string,
-  params: OpenAIImageEditParams
+  params: OpenAIImageEditParams,
+  options: OpenAIImageEditOptions
 ): Promise<OpenAIImageEditResult> {
   const model = GPT_IMAGE_EDIT_MODELS.has(params.model) ? params.model : 'gpt-image-1.5'
   const shouldLogGptImage2 = model === GPT_IMAGE_2_MODEL
@@ -148,7 +154,12 @@ export async function generateOpenAIImageEdit(
     })
   }
 
-  const inline = await resolveInlineImageData(params.inputImage, params.inputImageMimeType)
+  const inline = await resolveProviderInlineImageData(
+    params.inputImage,
+    params.inputImageMimeType,
+    options.userId,
+    options.requestId ?? 'openai-image-edit'
+  )
   if (shouldLogGptImage2) {
     logGptImage2('reference resolved', {
       inlineMimeType: inline?.mimeType,

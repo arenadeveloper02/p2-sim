@@ -3,12 +3,12 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockDownloadFile } = vi.hoisted(() => ({
-  mockDownloadFile: vi.fn(),
+const { mockResolveProviderInlineImageData } = vi.hoisted(() => ({
+  mockResolveProviderInlineImageData: vi.fn(),
 }))
 
-vi.mock('@/lib/uploads/core/storage-service', () => ({
-  downloadFile: mockDownloadFile,
+vi.mock('@/app/api/google/api-service', () => ({
+  resolveProviderInlineImageData: mockResolveProviderInlineImageData,
 }))
 
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
@@ -18,7 +18,7 @@ describe('generateOpenAIImageEdit', () => {
     vi.clearAllMocks()
   })
 
-  it('resolves internal absolute reference URLs from storage instead of fetching them', async () => {
+  it('resolves internal reference URLs via temporary provider URL before calling OpenAI', async () => {
     const referenceImage = Buffer.from([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00,
     ])
@@ -32,25 +32,36 @@ describe('generateOpenAIImageEdit', () => {
       )
     )
 
-    mockDownloadFile.mockResolvedValue(referenceImage)
+    mockResolveProviderInlineImageData.mockResolvedValue({
+      mimeType: 'image/png',
+      data: referenceImage.toString('base64'),
+    })
     global.fetch = mockFetch as unknown as typeof fetch
 
-    const result = await generateOpenAIImageEdit('openai-key', {
-      model: 'gpt-image-2',
-      prompt: 'Use this as a reference',
-      size: '1024x1024',
-      quality: 'low',
-      background: 'opaque',
-      outputFormat: 'png',
-      inputImage: 'https://dev-agent.thearena.ai/api/files/serve/execution/ws/wf/ex/source.png',
-    })
+    const internalReferenceUrl =
+      'https://dev-agent.thearena.ai/api/files/serve/execution/ws/wf/ex/source.png'
+
+    const result = await generateOpenAIImageEdit(
+      'openai-key',
+      {
+        model: 'gpt-image-2',
+        prompt: 'Use this as a reference',
+        size: '1024x1024',
+        quality: 'low',
+        background: 'opaque',
+        outputFormat: 'png',
+        inputImage: internalReferenceUrl,
+      },
+      { userId: 'user-1', requestId: 'req-1' }
+    )
 
     expect(result.buffer.toString()).toBe('generated-image')
-    expect(mockDownloadFile).toHaveBeenCalledWith({
-      key: 'execution/ws/wf/ex/source.png',
-      context: 'execution',
-      maxBytes: 20 * 1024 * 1024,
-    })
+    expect(mockResolveProviderInlineImageData).toHaveBeenCalledWith(
+      internalReferenceUrl,
+      undefined,
+      'user-1',
+      'req-1'
+    )
     expect(mockFetch).toHaveBeenCalledTimes(1)
     expect(mockFetch.mock.calls[0]?.[0]).toBe('https://api.openai.com/v1/images/edits')
   })

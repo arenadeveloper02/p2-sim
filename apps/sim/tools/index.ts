@@ -172,7 +172,6 @@ async function executeNanoBananaDirect(params: Record<string, any>): Promise<Too
 }
 
 async function executeImageGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
-  logImageGenerationToolEntry('image_generate direct entry', params)
 
   if (params.__skipSmartWrapper === true) {
     logger.info('Running direct image generation provider in-process')

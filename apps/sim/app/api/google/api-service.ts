@@ -3,6 +3,7 @@ import { toError } from '@sim/utils/errors'
 import sharp from 'sharp'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { assertKnownSizeWithinLimit } from '@/lib/core/utils/stream-limits'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import type { StorageContext } from '@/lib/uploads'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
@@ -625,6 +626,123 @@ export const resolveInlineImageData = async (
       })
       throw new Error(`Failed to fetch image from URL: ${toError(error).message}`)
     }
+  }
+
+  throw new Error('Invalid input image format')
+}
+
+async function resolveInternalImageViaProviderUrl(
+  internalReference: string,
+  preferredMimeType: string | undefined,
+  userId: string,
+  requestId: string
+): Promise<InlineImageData> {
+  const absoluteUrl = internalReference.startsWith('http')
+    ? internalReference
+    : `${getBaseUrl()}${internalReference.startsWith('/') ? internalReference : `/${internalReference}`}`
+
+  const { resolveInternalFileUrl } = await import('@/lib/uploads/utils/file-utils.server')
+  const resolution = await resolveInternalFileUrl(absoluteUrl, userId, requestId, logger)
+  if (resolution.error || !resolution.fileUrl) {
+    throw new Error(resolution.error?.message ?? 'Failed to resolve provider image URL')
+  }
+
+  logger.info('Resolved internal image via temporary provider URL', {
+    key: extractStorageKey(absoluteUrl),
+    requestId,
+  })
+
+  return fetchImageUrlForInlineData(resolution.fileUrl, preferredMimeType)
+}
+
+/**
+ * Resolves a reference image for external image providers (OpenAI edits, Fal.ai image_urls).
+ * App-facing metadata should keep `/api/files/serve/...` URLs; this helper mints a short-lived
+ * presigned URL only for the provider fetch step.
+ */
+export const resolveProviderInlineImageData = async (
+  inputImage: unknown,
+  inputImageMimeType: string | undefined,
+  userId: string,
+  requestId: string
+): Promise<InlineImageData | null> => {
+  logger.info('Resolving provider inline image data', {
+    inputImage: summarizeInlineImageInput(inputImage),
+    inputImageMimeType,
+    requestId,
+    memory: getMemorySnapshot(),
+  })
+
+  if (!inputImage) {
+    return null
+  }
+
+  if (typeof inputImage === 'string') {
+    const str = inputImage.trim()
+    if (isInternalFileUrl(str)) {
+      return resolveInternalImageViaProviderUrl(str, inputImageMimeType, userId, requestId)
+    }
+    if (str.startsWith('http://') || str.startsWith('https://')) {
+      return fetchImageUrlForInlineData(str, inputImageMimeType)
+    }
+    const mimeType = inputImageMimeType || 'image/png'
+    const buffer = Buffer.from(str, 'base64')
+    return ensureSupportedMime(buffer, mimeType)
+  }
+
+  const obj = inputImage as { path?: string; key?: string; url?: string; type?: string }
+  if (typeof inputImage !== 'object' || inputImage === null) {
+    throw new Error('Invalid input image format')
+  }
+
+  if (obj.key) {
+    return resolveInternalImageViaProviderUrl(
+      `/api/files/serve/${encodeURIComponent(obj.key)}`,
+      obj.type || inputImageMimeType,
+      userId,
+      requestId
+    )
+  }
+
+  if (obj.path) {
+    if (obj.path.startsWith('s3://')) {
+      const urlWithoutProtocol = obj.path.replace('s3://', '')
+      const pathParts = urlWithoutProtocol.split('/')
+      const bucket = pathParts[0]
+      const s3Key = pathParts.slice(1).join('/').split('?')[0]
+      const context =
+        bucket && bucket === S3_AGENT_GENERATED_IMAGES_CONFIG.bucket
+          ? 'agent-generated-images'
+          : 'workspace'
+      return resolveInternalImageViaProviderUrl(
+        `/api/files/serve/${encodeURIComponent(s3Key)}?context=${context}`,
+        obj.type || inputImageMimeType,
+        userId,
+        requestId
+      )
+    }
+
+    if (isInternalFileUrl(obj.path)) {
+      return resolveInternalImageViaProviderUrl(
+        obj.path,
+        obj.type || inputImageMimeType,
+        userId,
+        requestId
+      )
+    }
+  }
+
+  if (obj.url && isInternalFileUrl(obj.url)) {
+    return resolveInternalImageViaProviderUrl(
+      obj.url,
+      obj.type || inputImageMimeType,
+      userId,
+      requestId
+    )
+  }
+
+  if (obj.url && (obj.url.startsWith('http://') || obj.url.startsWith('https://'))) {
+    return fetchImageUrlForInlineData(obj.url, obj.type || inputImageMimeType)
   }
 
   throw new Error('Invalid input image format')

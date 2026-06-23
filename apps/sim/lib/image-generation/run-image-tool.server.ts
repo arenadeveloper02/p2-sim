@@ -20,6 +20,10 @@ import { getBaseUrl } from '@/lib/core/utils/urls'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
+import { generateFileId } from '@/lib/uploads/contexts/execution/utils'
+import { extractStorageKey, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
+import { resolveInternalFileUrl } from '@/lib/uploads/utils/file-utils.server'
+import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import { parseImageUrls } from '@/lib/utils/parse-image-urls'
 
 const logger = createLogger('ImageToolGeneration', { logLevel: 'INFO' })
@@ -227,11 +231,11 @@ export async function runImageToolGeneration(
   let imageResult: GeneratedImageResult
 
   if (provider === 'openai') {
-    imageResult = await generateWithOpenAI(apiKey, body, requestId, logger)
+    imageResult = await generateWithOpenAI(apiKey, body, requestId, logger, options.userId)
   } else if (provider === 'gemini') {
     imageResult = await generateWithGemini(apiKey, body, requestId, logger)
   } else if (provider === 'falai') {
-    imageResult = await generateWithFalAI(apiKey, body, requestId, logger)
+    imageResult = await generateWithFalAI(apiKey, body, requestId, logger, options.userId)
   } else {
     throw new Error(`Unknown provider: ${provider}`)
   }
@@ -520,7 +524,8 @@ async function generateWithOpenAI(
   apiKey: string,
   body: ImageToolBody,
   requestId: string,
-  logger: ReturnType<typeof createLogger>
+  logger: ReturnType<typeof createLogger>,
+  userId: string
 ): Promise<GeneratedImageResult> {
   const model = pickAllowed(body.model, OPENAI_IMAGE_MODELS, 'gpt-image-1.5')
   const inputImage = (body as Record<string, unknown>).inputImage
@@ -581,9 +586,13 @@ async function generateWithOpenAI(
       })
     }
 
-    const editResult = await generateOpenAIImageEdit(apiKey, {
-      ...editParams,
-    })
+    const editResult = await generateOpenAIImageEdit(
+      apiKey,
+      {
+        ...editParams,
+      },
+      { userId, requestId }
+    )
 
     if (isGptImage2) {
       logGptImage2Route(requestId, 'edit completed', {
@@ -950,11 +959,36 @@ function collectReferenceUrls(...inputs: unknown[]): string[] {
   return Array.from(urls)
 }
 
+async function collectProviderReferenceUrls(
+  userId: string,
+  requestId: string,
+  ...inputs: unknown[]
+): Promise<string[]> {
+  const urls = collectReferenceUrls(...inputs)
+  const resolvedUrls: string[] = []
+
+  for (const url of urls) {
+    if (isInternalFileUrl(url)) {
+      const resolution = await resolveInternalFileUrl(url, userId, requestId, logger)
+      if (resolution.error || !resolution.fileUrl) {
+        throw new Error(resolution.error?.message ?? 'Failed to resolve provider reference URL')
+      }
+      resolvedUrls.push(resolution.fileUrl)
+      continue
+    }
+
+    resolvedUrls.push(url)
+  }
+
+  return resolvedUrls
+}
+
 async function generateWithFalAI(
   apiKey: string,
   body: ImageToolBody,
   requestId: string,
-  logger: ReturnType<typeof createLogger>
+  logger: ReturnType<typeof createLogger>,
+  userId: string
 ): Promise<GeneratedImageResult> {
   const model = body.model || 'nano-banana-2'
   const modelConfig = FALAI_IMAGE_MODEL_CONFIGS[model]
@@ -962,7 +996,9 @@ async function generateWithFalAI(
     throw new Error(`Unknown Fal.ai image model: ${model}`)
   }
 
-  const referenceUrls = collectReferenceUrls(
+  const referenceUrls = await collectProviderReferenceUrls(
+    userId,
+    requestId,
     body.inputImage,
     body.inputImages,
     body.inputImageUrl,
@@ -1210,6 +1246,37 @@ async function generateWithFalAI(
   throw new Error('Fal.ai image generation timed out')
 }
 
+function buildStoredImageResponse(
+  imageResult: GeneratedImageResult,
+  safeFileName: string,
+  imageUrl: string,
+  imageFile: StoredImageResponse['imageFile'],
+  s3UploadFailed?: boolean
+): StoredImageResponse {
+  return {
+    content: imageUrl,
+    imageUrl,
+    imageFile,
+    fileName: safeFileName,
+    contentType: imageResult.contentType,
+    provider: imageResult.provider,
+    model: imageResult.model,
+    metadata: {
+      provider: imageResult.provider,
+      model: imageResult.model,
+      description: imageResult.description,
+      revisedPrompt: imageResult.revisedPrompt,
+      seed: imageResult.seed,
+      jobId: imageResult.jobId,
+      contentType: imageResult.contentType,
+      ...(s3UploadFailed ? { s3UploadFailed } : {}),
+    },
+    __falaiCostDollars: imageResult.falaiCost?.costDollars,
+    __falaiBilling: imageResult.falaiCost,
+    ...(s3UploadFailed ? { s3UploadFailed } : {}),
+  }
+}
+
 async function storeGeneratedImage(
   imageResult: GeneratedImageResult,
   body: ImageToolBody,
@@ -1219,74 +1286,68 @@ async function storeGeneratedImage(
   const timestamp = Date.now()
   const safeFileName = imageResult.fileName || `image-${imageResult.provider}-${timestamp}.png`
   const isGptImage2 = imageResult.provider === 'openai' && imageResult.model === GPT_IMAGE_2_MODEL
-  const executionContext =
-    body.workspaceId && body.workflowId && body.executionId
-      ? {
-          workspaceId: body.workspaceId,
-          workflowId: body.workflowId,
-          executionId: body.executionId,
-        }
-      : null
+  const workflowId = body.workflowId?.trim()
+  const actorUserId = body.userId?.trim() || userId.trim() || 'unknown'
 
   if (isGptImage2) {
     logGptImage2Route(requestId, 'storage started', {
       outputBytes: imageResult.buffer.length,
       contentType: imageResult.contentType,
       fileName: safeFileName,
-      hasExecutionContext: Boolean(executionContext),
+      hasWorkflowId: Boolean(workflowId),
       workspaceId: body.workspaceId,
       workflowId: body.workflowId,
       executionId: body.executionId,
     })
   }
 
-  if (executionContext) {
+  if (workflowId) {
     if (isGptImage2) {
-      logGptImage2Route(requestId, 'execution upload starting', {
+      logGptImage2Route(requestId, 'agent-generated-images upload starting', {
         outputBytes: imageResult.buffer.length,
         contentType: imageResult.contentType,
         fileName: safeFileName,
+        workflowId,
+        actorUserId,
       })
     }
-    const { uploadExecutionFile } = await import('@/lib/uploads/contexts/execution')
-    const imageFile = await uploadExecutionFile(
-      executionContext,
-      imageResult.buffer,
-      safeFileName,
-      imageResult.contentType,
-      userId
+
+    const saveResult = await saveGeneratedImage(
+      imageResult.buffer.toString('base64'),
+      workflowId,
+      actorUserId,
+      imageResult.contentType
     )
+    const imageUrl = saveResult.url
+    const key = extractStorageKey(imageUrl)
+    const imageFile = {
+      id: generateFileId(),
+      name: safeFileName,
+      url: imageUrl,
+      key,
+      size: imageResult.buffer.length,
+      type: imageResult.contentType,
+      context: 'agent-generated-images' as const,
+    }
 
     if (isGptImage2) {
-      logGptImage2Route(requestId, 'execution upload completed', {
+      logGptImage2Route(requestId, 'agent-generated-images upload completed', {
         fileName: safeFileName,
-        imageUrlLength: imageFile.url.length,
-        key: imageFile.key,
+        imageUrlLength: imageUrl.length,
+        key,
         size: imageFile.size,
         type: imageFile.type,
+        s3UploadFailed: saveResult.s3UploadFailed,
       })
     }
 
-    return {
-      content: imageFile.url,
-      imageUrl: imageFile.url,
+    return buildStoredImageResponse(
+      imageResult,
+      safeFileName,
+      imageUrl,
       imageFile,
-      fileName: safeFileName,
-      contentType: imageResult.contentType,
-      provider: imageResult.provider,
-      model: imageResult.model,
-      metadata: {
-        provider: imageResult.provider,
-        model: imageResult.model,
-        description: imageResult.description,
-        revisedPrompt: imageResult.revisedPrompt,
-        seed: imageResult.seed,
-        jobId: imageResult.jobId,
-        contentType: imageResult.contentType,
-      },
-      __falaiCostDollars: imageResult.falaiCost?.costDollars,
-      __falaiBilling: imageResult.falaiCost,
-    }
+      saveResult.s3UploadFailed
+    )
   }
 
   const { StorageService } = await import('@/lib/uploads')
@@ -1318,23 +1379,5 @@ async function storeGeneratedImage(
     size: imageResult.buffer.length,
   })
 
-  return {
-    content: imageUrl,
-    imageUrl,
-    fileName: safeFileName,
-    contentType: imageResult.contentType,
-    provider: imageResult.provider,
-    model: imageResult.model,
-    metadata: {
-      provider: imageResult.provider,
-      model: imageResult.model,
-      description: imageResult.description,
-      revisedPrompt: imageResult.revisedPrompt,
-      seed: imageResult.seed,
-      jobId: imageResult.jobId,
-      contentType: imageResult.contentType,
-    },
-    __falaiCostDollars: imageResult.falaiCost?.costDollars,
-    __falaiBilling: imageResult.falaiCost,
-  }
+  return buildStoredImageResponse(imageResult, safeFileName, imageUrl, undefined)
 }
