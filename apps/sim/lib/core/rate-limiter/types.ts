@@ -1,10 +1,10 @@
 import { getPlanTypeForLimits } from '@/lib/billing/plan-helpers'
 import { env } from '@/lib/core/config/env'
-import { isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import type { CoreTriggerType } from '@/stores/logs/filters/types'
 import type { TokenBucketConfig } from './storage'
 
-export type TriggerType = CoreTriggerType | 'form' | 'api-endpoint'
+export type TriggerType = CoreTriggerType | 'api-endpoint'
 
 export type RateLimitCounterType = 'sync' | 'async' | 'api-endpoint'
 

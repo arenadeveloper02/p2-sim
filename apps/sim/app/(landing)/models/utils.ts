@@ -8,6 +8,9 @@ const PROVIDER_PREFIXES: Record<string, string[]> = {
   bedrock: ['bedrock/'],
   cerebras: ['cerebras/'],
   fireworks: ['fireworks/'],
+  together: ['together/'],
+  baseten: ['baseten/'],
+  'ollama-cloud': ['ollama-cloud/'],
   groq: ['groq/'],
   openrouter: ['openrouter/'],
   vllm: ['vllm/'],
@@ -124,6 +127,8 @@ export interface CatalogProvider {
   color?: string
   isReseller: boolean
   contextInformationAvailable: boolean
+  /** Max agent-block file attachment size in bytes when the provider exceeds the default. */
+  maxFileAttachmentBytes: number | null
   providerCapabilityTags: string[]
   modelCount: number
   models: CatalogModel[]
@@ -145,6 +150,18 @@ export function formatTokenCount(value?: number | null): string {
   }
 
   return value.toLocaleString('en-US')
+}
+
+export function formatFileSize(bytes?: number | null): string {
+  if (bytes == null) {
+    return 'Unknown'
+  }
+
+  const gb = bytes / (1024 * 1024 * 1024)
+  if (gb >= 1) {
+    return `${trimTrailingZeros(gb.toFixed(1))}GB`
+  }
+  return `${Math.round(bytes / (1024 * 1024))}MB`
 }
 
 export function formatPrice(price?: number | null): string {
@@ -504,6 +521,7 @@ const rawProviders = Object.values(PROVIDER_DEFINITIONS).map((provider) => {
     color: provider.color,
     isReseller: provider.isReseller ?? false,
     contextInformationAvailable: provider.contextInformationAvailable !== false,
+    maxFileAttachmentBytes: provider.fileAttachment?.maxBytes ?? null,
     providerCapabilityTags,
     modelCount: models.length,
     models,
@@ -780,12 +798,14 @@ export function buildModelCapabilityFacts(model: CatalogModel): CapabilityFact[]
 }
 
 export function getCheapestProviderModel(provider: CatalogProvider): CatalogModel | null {
-  return [...provider.models].sort((a, b) => a.pricing.input - b.pricing.input)[0] ?? null
+  if (provider.models.length === 0) return null
+  return provider.models.reduce((min, m) => (m.pricing.input < min.pricing.input ? m : min))
 }
 
 export function getLargestContextProviderModel(provider: CatalogProvider): CatalogModel | null {
-  return (
-    [...provider.models].sort((a, b) => (b.contextWindow ?? 0) - (a.contextWindow ?? 0))[0] ?? null
+  if (provider.models.length === 0) return null
+  return provider.models.reduce((max, m) =>
+    (m.contextWindow ?? 0) > (max.contextWindow ?? 0) ? m : max
   )
 }
 

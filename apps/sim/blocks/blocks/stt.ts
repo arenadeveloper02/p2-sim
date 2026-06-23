@@ -11,10 +11,9 @@ export const SttBlock: BlockConfig<SttBlockResponse> = {
   authMode: AuthMode.ApiKey,
   longDescription:
     'Transcribe audio and video files to text using leading AI providers. Supports multiple languages, timestamps, and speaker diarization.',
-  docsLink: 'https://docs.sim.ai/tools/stt',
-  category: 'tools',
+  docsLink: 'https://docs.sim.ai/integrations/stt',
+  category: 'blocks',
   integrationType: IntegrationType.AI,
-  tags: ['speech-to-text', 'document-processing'],
   bgColor: '#181C1E',
   icon: STTIcon,
 
@@ -43,6 +42,7 @@ export const SttBlock: BlockConfig<SttBlockResponse> = {
       condition: { field: 'provider', value: 'whisper' },
       options: [{ label: 'Whisper-1', id: 'whisper-1' }],
       value: () => 'whisper-1',
+      dependsOn: ['provider'],
       required: true,
     },
 
@@ -52,11 +52,9 @@ export const SttBlock: BlockConfig<SttBlockResponse> = {
       title: 'Model',
       type: 'dropdown',
       condition: { field: 'provider', value: 'elevenlabs' },
-      options: [
-        { label: 'Scribe v1', id: 'scribe_v1' },
-        { label: 'Scribe v1 Experimental', id: 'scribe_v1_experimental' },
-      ],
-      value: () => 'scribe_v1',
+      options: [{ label: 'Scribe v2', id: 'scribe_v2' }],
+      value: () => 'scribe_v2',
+      dependsOn: ['provider'],
       required: true,
     },
 
@@ -75,6 +73,7 @@ export const SttBlock: BlockConfig<SttBlockResponse> = {
         { label: 'Base', id: 'base' },
       ],
       value: () => 'nova-3',
+      dependsOn: ['provider'],
       required: true,
     },
 
@@ -86,6 +85,7 @@ export const SttBlock: BlockConfig<SttBlockResponse> = {
       condition: { field: 'provider', value: 'assemblyai' },
       options: [{ label: 'Best', id: 'best' }],
       value: () => 'best',
+      dependsOn: ['provider'],
       required: true,
     },
 
@@ -104,6 +104,7 @@ export const SttBlock: BlockConfig<SttBlockResponse> = {
         { label: 'Gemini 2.0 Flash', id: 'gemini-2.0-flash-exp' },
       ],
       value: () => 'gemini-2.5-flash',
+      dependsOn: ['provider'],
       required: true,
     },
 
@@ -295,7 +296,7 @@ export const SttBlock: BlockConfig<SttBlockResponse> = {
     model: {
       type: 'string',
       description:
-        'Provider-specific model (e.g., scribe_v1 for ElevenLabs, nova-3 for Deepgram, best for AssemblyAI, gemini-2.0-flash-exp for Gemini)',
+        'Provider-specific model (e.g., scribe_v2 for ElevenLabs, nova-3 for Deepgram, best for AssemblyAI, gemini-2.0-flash-exp for Gemini)',
     },
     audioFile: { type: 'json', description: 'Audio/video file (UserFile)' },
     audioUrl: { type: 'string', description: 'Audio/video URL' },

@@ -1,11 +1,17 @@
 'use server'
 
-import type { Logger } from '@sim/logger'
+import { createLogger, type Logger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
   secureFetchWithPinnedIP,
   validateUrlWithDNS,
 } from '@/lib/core/security/input-validation.server'
+import {
+  assertKnownSizeWithinLimit,
+  consumeOrCancelBody,
+  readResponseToBufferWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import type { StorageContext } from '@/lib/uploads'
 import { StorageService } from '@/lib/uploads'
 import { isExecutionFile } from '@/lib/uploads/contexts/execution/utils'
@@ -18,6 +24,8 @@ import {
 } from '@/lib/uploads/utils/file-utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
 import type { UserFile } from '@/executor/types'
+
+const logger = createLogger('FileUtilsServer')
 
 /**
  * Result type for file input resolution
@@ -62,7 +70,7 @@ export async function resolveFileInputToUrl(
       return {
         error: {
           status: 400,
-          message: error instanceof Error ? error.message : 'Failed to process file',
+          message: getErrorMessage(error, 'Failed to process file'),
         },
       }
     }
@@ -132,20 +140,64 @@ export async function resolveFileInputToUrl(
 }
 
 /**
- * Download a file from a URL (internal or external)
- * For internal URLs, uses direct storage access (server-side only)
- * For external URLs, validates DNS/SSRF and uses secure fetch with IP pinning
+ * Options for {@link downloadFileFromUrl}.
+ */
+export interface DownloadFileFromUrlOptions {
+  /** Download timeout for external URLs. Defaults to the max execution timeout. */
+  timeoutMs?: number
+  /** Hard cap on the number of bytes read from the source. */
+  maxBytes?: number
+  /**
+   * Principal the download is performed on behalf of. Required to authorize
+   * internal (`/api/files/serve/...`) URLs: the resolved storage key is checked
+   * with {@link verifyFileAccess} before any bytes are read. Without it, internal
+   * URLs are rejected (fail closed) so a `/api/files/serve/` substring can never
+   * be treated as implicitly trusted.
+   */
+  userId?: string
+}
+
+/**
+ * Download a file from a URL (internal or external).
+ *
+ * For internal URLs, uses direct storage access (server-side only) after
+ * authorizing the resolved storage key against `userId`. Context is derived
+ * from the key via {@link inferContextFromKey}, never from a caller-controlled
+ * `?context=` query param — trusting the param would let a private key be
+ * labeled with a world-readable context (e.g. profile-pictures) so
+ * {@link verifyFileAccess} short-circuits to granted while the private object is
+ * still read. This mirrors how `/api/files/serve` resolves context.
+ *
+ * For external URLs, validates DNS/SSRF and uses secure fetch with IP pinning.
  */
 export async function downloadFileFromUrl(
   fileUrl: string,
-  timeoutMs = getMaxExecutionTimeout()
+  options: DownloadFileFromUrlOptions = {}
 ): Promise<Buffer> {
-  const { parseInternalFileUrl } = await import('./file-utils')
+  const { timeoutMs = getMaxExecutionTimeout(), maxBytes, userId } = options
 
   if (isInternalFileUrl(fileUrl)) {
-    const { key, context } = parseInternalFileUrl(fileUrl)
+    if (!userId) {
+      logger.warn('Internal file download denied: no userId provided', { fileUrl })
+      throw new Error('Access denied: internal file URL requires an authenticated user')
+    }
+
+    const key = extractStorageKey(fileUrl)
+    if (!key) {
+      logger.warn('Internal file download denied: could not resolve storage key', { fileUrl })
+      throw new Error('Access denied: could not resolve internal file key')
+    }
+
+    const context = inferContextFromKey(key)
+
+    const hasAccess = await verifyFileAccess(key, userId, undefined, context, false)
+    if (!hasAccess) {
+      logger.warn('Internal file download denied: access check failed', { key, context, userId })
+      throw new Error('Access denied: file not found or insufficient permissions')
+    }
+
     const { downloadFile } = await import('@/lib/uploads/core/storage-service')
-    return downloadFile({ key, context })
+    return downloadFile({ key, context, maxBytes })
   }
 
   const urlValidation = await validateUrlWithDNS(fileUrl, 'fileUrl')
@@ -155,13 +207,18 @@ export async function downloadFileFromUrl(
 
   const response = await secureFetchWithPinnedIP(fileUrl, urlValidation.resolvedIP!, {
     timeout: timeoutMs,
+    maxResponseBytes: maxBytes,
   })
 
   if (!response.ok) {
+    await consumeOrCancelBody(response)
     throw new Error(`Failed to download file: ${response.statusText}`)
   }
 
-  return Buffer.from(await response.arrayBuffer())
+  return readResponseToBufferWithLimit(response, {
+    maxBytes: maxBytes ?? Number.MAX_SAFE_INTEGER,
+    label: 'file download',
+  })
 }
 
 export async function resolveInternalFileUrl(
@@ -207,16 +264,20 @@ export async function resolveInternalFileUrl(
 export async function downloadFileFromStorage(
   userFile: UserFile,
   requestId: string,
-  logger: Logger
+  logger: Logger,
+  options: { maxBytes?: number } = {}
 ): Promise<Buffer> {
   let buffer: Buffer
+  if (options.maxBytes !== undefined && userFile.size > options.maxBytes) {
+    assertKnownSizeWithinLimit(userFile.size, options.maxBytes, 'storage file download')
+  }
 
   if (isExecutionFile(userFile)) {
     logger.info(`[${requestId}] Downloading from execution storage: ${userFile.key}`)
     const { downloadExecutionFile } = await import(
       '@/lib/uploads/contexts/execution/execution-file-manager'
     )
-    buffer = await downloadExecutionFile(userFile)
+    buffer = await downloadExecutionFile(userFile, { maxBytes: options.maxBytes })
   } else if (userFile.key) {
     const context = (userFile.context as StorageContext) || inferContextFromKey(userFile.key)
     logger.info(
@@ -227,9 +288,14 @@ export async function downloadFileFromStorage(
     buffer = await downloadFile({
       key: userFile.key,
       context,
+      maxBytes: options.maxBytes,
     })
   } else {
     throw new Error('File has no key - cannot download')
+  }
+
+  if (options.maxBytes !== undefined) {
+    assertKnownSizeWithinLimit(buffer.length, options.maxBytes, 'storage file download')
   }
 
   return buffer

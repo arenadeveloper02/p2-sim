@@ -1,32 +1,3 @@
-import {
-  Agent,
-  Auth,
-  CreateWorkflow,
-  Debug,
-  Deploy,
-  EditWorkflow,
-  FunctionExecute,
-  GetPageContents,
-  Glob,
-  Grep,
-  Job,
-  Knowledge,
-  KnowledgeBase,
-  ManageMcpTool,
-  ManageSkill,
-  OpenResource,
-  Read as ReadTool,
-  Research,
-  ScrapePage,
-  SearchLibraryDocs,
-  SearchOnline,
-  Superagent,
-  Table,
-  UserMemory,
-  UserTable,
-  Workflow,
-  WorkspaceFile,
-} from '@/lib/copilot/generated/tool-catalog-v1'
 import type { ChatContext } from '@/stores/panel'
 
 const EDIT_CONTENT_TOOL_ID = 'edit_content'
@@ -63,16 +34,17 @@ export const ToolCallStatus = {
   cancelled: 'cancelled',
   skipped: 'skipped',
   rejected: 'rejected',
+  interrupted: 'interrupted',
 } as const
 export type ToolCallStatus = (typeof ToolCallStatus)[keyof typeof ToolCallStatus]
 
-export interface ToolCallResult {
+interface ToolCallResult {
   success: boolean
   output?: unknown
   error?: string
 }
 
-export interface GenericResourceEntry {
+interface GenericResourceEntry {
   toolCallId: string
   toolName: string
   displayTitle: string
@@ -133,6 +105,16 @@ export interface ContentBlock {
   options?: OptionItem[]
   timestamp?: number
   endedAt?: number
+  parentToolCallId?: string
+  /**
+   * Deterministic agent-run identity. `spanId` is the stable per-invocation id
+   * of the subagent that produced this block; `parentSpanId` links it to the
+   * run that invoked it (empty/"main" for top-level). These are the primary
+   * nesting keys used to build the agent tree; `parentToolCallId` is retained
+   * for tool linkage and legacy back-compat.
+   */
+  spanId?: string
+  parentSpanId?: string
 }
 
 export interface ChatMessageAttachment {
@@ -152,6 +134,8 @@ export interface ChatMessageContext {
   fileId?: string
   folderId?: string
   chatId?: string
+  blockType?: string
+  skillId?: string
 }
 
 export interface ChatMessage {
@@ -176,47 +160,9 @@ export const SUBAGENT_LABELS: Record<string, string> = {
   superagent: 'Superagent',
   run: 'Run Agent',
   agent: 'Tools Agent',
+  scheduled_task: 'Scheduled Task Agent',
+  // `job` retained as a backward-compat alias so historical transcripts still render a label.
   job: 'Job Agent',
   file: 'File Agent',
+  media: 'Media Agent',
 } as const
-
-interface ToolTitleMetadata {
-  title: string
-}
-
-/**
- * Fallback titles for tool calls when the stream did not provide one.
- */
-export const TOOL_UI_METADATA: Record<string, ToolTitleMetadata> = {
-  [Glob.id]: { title: 'Finding files' },
-  [Grep.id]: { title: 'Searching' },
-  [ReadTool.id]: { title: 'Reading file' },
-  [SearchOnline.id]: { title: 'Searching online' },
-  [ScrapePage.id]: { title: 'Scraping page' },
-  [GetPageContents.id]: { title: 'Getting page contents' },
-  [SearchLibraryDocs.id]: { title: 'Searching library docs' },
-  [ManageMcpTool.id]: { title: 'MCP server action' },
-  [ManageSkill.id]: { title: 'Skill action' },
-  [UserMemory.id]: { title: 'Accessing memory' },
-  [FunctionExecute.id]: { title: 'Running code' },
-  [Superagent.id]: { title: 'Executing action' },
-  [UserTable.id]: { title: 'Managing table' },
-  [WorkspaceFile.id]: { title: 'Editing file' },
-  [EDIT_CONTENT_TOOL_ID]: { title: 'Applying file content' },
-  [CreateWorkflow.id]: { title: 'Creating workflow' },
-  [EditWorkflow.id]: { title: 'Editing workflow' },
-  [Workflow.id]: { title: 'Workflow Agent' },
-  [Debug.id]: { title: 'Debug Agent' },
-  [RUN_SUBAGENT_ID]: { title: 'Run Agent' },
-  [Deploy.id]: { title: 'Deploy Agent' },
-  [Auth.id]: { title: 'Auth Agent' },
-  [Knowledge.id]: { title: 'Knowledge Agent' },
-  [KnowledgeBase.id]: { title: 'Managing knowledge base' },
-  [Table.id]: { title: 'Table Agent' },
-  [Job.id]: { title: 'Job Agent' },
-  [Agent.id]: { title: 'Tools Agent' },
-  custom_tool: { title: 'Creating tool' },
-  [Research.id]: { title: 'Research Agent' },
-  [OpenResource.id]: { title: 'Opening resource' },
-  context_compaction: { title: 'Compacted context' },
-}

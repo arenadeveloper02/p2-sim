@@ -1,8 +1,9 @@
 import { type Context, SpanStatusCode } from '@opentelemetry/api'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { ORCHESTRATION_TIMEOUT_MS } from '@/lib/copilot/constants'
 import {
-  type MothershipStreamV1EventType,
+  MothershipStreamV1EventType,
   MothershipStreamV1SpanLifecycleEvent,
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import { CopilotSseCloseReason } from '@/lib/copilot/generated/trace-attribute-values-v1'
@@ -30,7 +31,9 @@ import {
 } from '@/lib/copilot/request/handlers/types'
 import { getCopilotTracer } from '@/lib/copilot/request/otel'
 import {
+  AbortReason,
   eventToStreamEvent,
+  hasAbortMarker,
   isSubagentSpanStreamEvent,
   parsePersistedStreamEventEnvelope,
 } from '@/lib/copilot/request/session'
@@ -134,17 +137,27 @@ export async function runStreamLoop(
     requestBodyBytes,
   })
   const fetchStart = performance.now()
-  const response = await fetchGo(fetchUrl, {
-    ...fetchOptions,
-    signal: abortSignal,
-    otelContext: options.otelContext,
-    spanName: `sim → go ${pathname}`,
-    operation: 'stream',
-    attributes: {
-      [TraceAttr.CopilotStream]: true,
-      ...(requestBodyBytes ? { [TraceAttr.HttpRequestContentLength]: requestBodyBytes } : {}),
-    },
-  })
+  let response: Response
+  try {
+    response = await fetchGo(fetchUrl, {
+      ...fetchOptions,
+      signal: abortSignal,
+      otelContext: options.otelContext,
+      spanName: `sim → go ${pathname}`,
+      operation: 'stream',
+      attributes: {
+        [TraceAttr.CopilotStream]: true,
+        ...(requestBodyBytes ? { [TraceAttr.HttpRequestContentLength]: requestBodyBytes } : {}),
+      },
+    })
+  } catch (error) {
+    fetchSpan.attributes = {
+      ...(fetchSpan.attributes ?? {}),
+      headersMs: Math.round(performance.now() - fetchStart),
+    }
+    context.trace.endSpan(fetchSpan, abortSignal?.aborted ? 'cancelled' : 'error')
+    throw error
+  }
   const headersElapsedMs = Math.round(performance.now() - fetchStart)
   fetchSpan.attributes = {
     ...(fetchSpan.attributes ?? {}),
@@ -302,6 +315,30 @@ export async function runStreamLoop(
           counters.eventsByType[streamEvent.type as MothershipStreamV1EventType] += 1
         }
 
+        // Surface the full error payload the moment it arrives on the wire. This
+        // is the single chokepoint every error event passes through (main AND
+        // subagent lanes), before subagent routing — which has no `error`
+        // handler — would otherwise swallow it. The client only renders
+        // `message`/`displayMessage`, so log `code`/`provider`/`data` (the raw
+        // upstream provider error) here to explain a client-side "Stream error".
+        if (streamEvent.type === MothershipStreamV1EventType.error) {
+          const errorPayload = streamEvent.payload
+          logger.error('Received error event from Go copilot stream', {
+            path: pathname,
+            lane: streamEvent.scope?.lane ?? 'main',
+            parentToolCallId: streamEvent.scope?.parentToolCallId,
+            agentId: streamEvent.scope?.agentId,
+            code: errorPayload.code,
+            provider: errorPayload.provider,
+            message: errorPayload.message,
+            error: errorPayload.error,
+            displayMessage: errorPayload.displayMessage,
+            data: errorPayload.data,
+            requestId: context.requestId,
+            messageId: context.messageId,
+          })
+        }
+
         if (shouldSkipToolCallEvent(streamEvent) || shouldSkipToolResultEvent(streamEvent)) {
           return
         }
@@ -322,7 +359,7 @@ export async function runStreamLoop(
         } catch (error) {
           logger.warn('Failed to forward stream event', {
             type: streamEvent.type,
-            error: error instanceof Error ? error.message : String(error),
+            error: getErrorMessage(error),
           })
         }
 
@@ -338,6 +375,11 @@ export async function runStreamLoop(
         if (isSubagentSpanStreamEvent(streamEvent)) {
           const spanData = parseSubagentSpanData(streamEvent.payload.data)
           const toolCallId = streamEvent.scope?.parentToolCallId || spanData?.toolCallId
+          // Deterministic nesting identity. spanId / parentSpanId are the
+          // primary keys; the toolCallId-keyed stack below is the legacy
+          // fallback for streams that predate span identity.
+          const spanId = streamEvent.scope?.spanId
+          const parentSpanId = streamEvent.scope?.parentSpanId
           const subagentName = streamEvent.payload.agent
           const spanEvt = streamEvent.payload.event
           const isPendingPause = spanData?.pending === true
@@ -349,28 +391,27 @@ export async function runStreamLoop(
           flushSubagentThinkingBlock(context)
           flushThinkingBlock(context)
           if (spanEvt === MothershipStreamV1SpanLifecycleEvent.start) {
-            const lastParent = context.subAgentParentStack[context.subAgentParentStack.length - 1]
-            const lastBlock = context.contentBlocks[context.contentBlocks.length - 1]
             if (toolCallId) {
-              if (lastParent !== toolCallId) {
-                context.subAgentParentStack.push(toolCallId)
-              }
-              context.subAgentParentToolCallId = toolCallId
               context.subAgentContent[toolCallId] ??= ''
               context.subAgentToolCalls[toolCallId] ??= []
             }
-            if (
-              subagentName &&
-              !(
-                lastParent === toolCallId &&
-                lastBlock?.type === 'subagent' &&
-                lastBlock.content === subagentName
-              )
-            ) {
-              context.contentBlocks.push({
-                type: 'subagent',
-                content: subagentName,
-                timestamp: Date.now(),
+            if (toolCallId && subagentName) {
+              const openParents = (context.openSubagentParents ??= new Set<string>())
+              if (!openParents.has(toolCallId)) {
+                openParents.add(toolCallId)
+                context.contentBlocks.push({
+                  type: 'subagent',
+                  content: subagentName,
+                  parentToolCallId: toolCallId,
+                  ...(spanId ? { spanId } : {}),
+                  ...(parentSpanId ? { parentSpanId } : {}),
+                  timestamp: Date.now(),
+                })
+              }
+            } else {
+              logger.warn('subagent start missing toolCallId or agent name', {
+                hasToolCallId: Boolean(toolCallId),
+                hasSubagentName: Boolean(subagentName),
               })
             }
             return
@@ -379,36 +420,39 @@ export async function runStreamLoop(
             if (isPendingPause) {
               return
             }
-            if (context.subAgentParentStack.length > 0) {
-              context.subAgentParentStack.pop()
-            } else {
-              logger.warn('subagent end without matching start')
+            if (!toolCallId) {
+              logger.warn('subagent end missing toolCallId')
             }
-            context.subAgentParentToolCallId =
-              context.subAgentParentStack.length > 0
-                ? context.subAgentParentStack[context.subAgentParentStack.length - 1]
-                : undefined
-            if (subagentName) {
+            if (toolCallId) {
               for (let i = context.contentBlocks.length - 1; i >= 0; i--) {
                 const b = context.contentBlocks[i]
                 if (
                   b.type === 'subagent' &&
-                  b.content === subagentName &&
-                  b.endedAt === undefined
+                  b.endedAt === undefined &&
+                  b.parentToolCallId === toolCallId
                 ) {
                   b.endedAt = Date.now()
                   break
                 }
               }
+              context.openSubagentParents?.delete(toolCallId)
             }
             return
           }
         }
 
-        if (handleSubagentRouting(streamEvent, context)) {
-          const handler = subAgentHandlers[streamEvent.type]
-          if (handler) {
-            await handler(streamEvent, context, execContext, options)
+        // Subagent-lane events are routed ONLY by their own scope. A valid one
+        // (has parentToolCallId) goes to the subagent handler; a malformed one
+        // (missing parentToolCallId — Go always stamps it, so this is defensive)
+        // is DROPPED rather than falling through to the main handler, which would
+        // merge foreign subagent text/tools into the durable main assistant
+        // message and mis-attribute it.
+        if (streamEvent.scope?.lane === 'subagent') {
+          if (handleSubagentRouting(streamEvent, context)) {
+            const handler = subAgentHandlers[streamEvent.type]
+            if (handler) {
+              await handler(streamEvent, context, execContext, options)
+            }
           }
           return context.streamComplete || undefined
         }
@@ -426,16 +470,32 @@ export async function runStreamLoop(
     })
 
     if (!context.streamComplete && !abortSignal?.aborted && !context.wasAborted) {
-      const streamPath = new URL(fetchUrl).pathname
-      const message = `Copilot backend stream ended before a terminal event on ${streamPath}`
-      context.errors.push(message)
-      logger.error('Copilot backend stream ended before a terminal event', {
-        path: streamPath,
-        requestId: context.requestId,
-        messageId: context.messageId,
-      })
-      endedOn = CopilotSseCloseReason.ClosedNoTerminal
-      throw new CopilotBackendError(message, { status: 503 })
+      let abortRequested = false
+      try {
+        abortRequested = await hasAbortMarker(context.messageId)
+      } catch (error) {
+        logger.warn('Failed to read abort marker at body close', {
+          streamId: context.messageId,
+          error: getErrorMessage(error),
+        })
+      }
+
+      if (abortRequested) {
+        options.onAbortObserved?.(AbortReason.MarkerObservedAtBodyClose)
+        context.wasAborted = true
+        endedOn = CopilotSseCloseReason.Aborted
+      } else {
+        const streamPath = new URL(fetchUrl).pathname
+        const message = `Copilot backend stream ended before a terminal event on ${streamPath}`
+        context.errors.push(message)
+        logger.error('Copilot backend stream ended before a terminal event', {
+          path: streamPath,
+          requestId: context.requestId,
+          messageId: context.messageId,
+        })
+        endedOn = CopilotSseCloseReason.ClosedNoTerminal
+        throw new CopilotBackendError(message, { status: 503 })
+      }
     }
   } catch (error) {
     if (error instanceof FatalSseEventError && !context.errors.includes(error.message)) {
@@ -561,14 +621,14 @@ function stampSseReadLoopSpan(
   const nowWall = Date.now()
   const startWall = nowWall - (nowPerf - startPerfMs)
 
-  const terminalEventSeen = counters.eventsByType.complete > 0
+  const terminalEventSeen = counters.eventsByType.complete > 0 || counters.eventsByType.error > 0
   // `terminal_event_missing` is the single-attribute dashboard signal
   // for the "disappeared response" bug class: the caller considered
   // this leg to be the final one (`context.streamComplete === true`)
-  // but no `complete` event arrived on the wire. Tool-pause legs have
-  // expectedTerminal=false and never trip this, so dashboards can
-  // filter on `{ .copilot.sse.terminal_event_missing = true }` without
-  // false positives.
+  // but no terminal `complete` or `error` event arrived on the wire.
+  // Tool-pause legs have expectedTerminal=false and never trip this, so
+  // dashboards can filter on `{ .copilot.sse.terminal_event_missing = true }`
+  // without false positives.
   const terminalEventMissing = opts.expectedTerminal && !terminalEventSeen
 
   const tracer = getCopilotTracer()

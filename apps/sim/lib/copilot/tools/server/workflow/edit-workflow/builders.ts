@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { generateId, isValidUuid } from '@sim/utils/id'
+import { sortObjectKeysDeep } from '@sim/utils/object'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
 import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
 import {
@@ -384,25 +385,9 @@ export function normalizeResponseFormat(value: any): string {
 
     // If it's an object, stringify it with consistent formatting
     if (obj && typeof obj === 'object') {
-      // Sort keys recursively for consistent comparison
-      const sortKeys = (item: any): any => {
-        if (Array.isArray(item)) {
-          return item.map(sortKeys)
-        }
-        if (item !== null && typeof item === 'object') {
-          return Object.keys(item)
-            .sort()
-            .reduce((result: any, key: string) => {
-              result[key] = sortKeys(item[key])
-              return result
-            }, {})
-        }
-        return item
-      }
-
       // Return pretty-printed with 2-space indentation for UI readability
       // The sanitizer will normalize it to minified format for comparison
-      return JSON.stringify(sortKeys(obj), null, 2)
+      return JSON.stringify(sortObjectKeysDeep(obj), null, 2)
     }
 
     return String(value)
@@ -427,7 +412,28 @@ export function createValidatedEdge(
   skippedItems?: SkippedItem[]
 ): boolean {
   if (!modifiedState.blocks[targetBlockId]) {
-    logger.warn(`Target block "${targetBlockId}" not found. Edge skipped.`, {
+    // The target doesn't exist yet. It may be created by a later operation in
+    // this batch or by a future edit_workflow call. Record the connection as
+    // pending on the source block (persisted in block.data) so it is resolved
+    // automatically once the target appears, instead of being silently dropped.
+    const pendingSource = modifiedState.blocks[sourceBlockId]
+    if (pendingSource) {
+      if (!pendingSource.data) pendingSource.data = {}
+      if (!pendingSource.data.pendingConnections) pendingSource.data.pendingConnections = {}
+      const pending = pendingSource.data.pendingConnections as Record<
+        string,
+        Array<{ target: string; targetHandle: string }>
+      >
+      if (!pending[sourceHandle]) pending[sourceHandle] = []
+      if (
+        !pending[sourceHandle].some(
+          (p) => p.target === targetBlockId && p.targetHandle === targetHandle
+        )
+      ) {
+        pending[sourceHandle].push({ target: targetBlockId, targetHandle })
+      }
+    }
+    logger.warn(`Target block "${targetBlockId}" not found. Connection deferred until it exists.`, {
       sourceBlockId,
       targetBlockId,
       sourceHandle,
@@ -436,7 +442,7 @@ export function createValidatedEdge(
       type: 'invalid_edge_target',
       operationType,
       blockId: sourceBlockId,
-      reason: `Edge from "${sourceBlockId}" to "${targetBlockId}" skipped - target block does not exist`,
+      reason: `Edge from "${sourceBlockId}" to "${targetBlockId}" deferred until the target block "${targetBlockId}" exists - if it is created later (in this or a following edit) the engine wires this edge automatically; if you did not intend to create "${targetBlockId}", fix the target id.`,
       details: { sourceHandle, targetHandle, targetId: targetBlockId },
     })
     return false
@@ -512,6 +518,17 @@ export function createValidatedEdge(
 
   // Use normalized handle if available (e.g., 'if' -> 'condition-{uuid}')
   const finalSourceHandle = sourceValidation.normalizedHandle || sourceHandle
+
+  // Avoid creating duplicate edges (e.g., when a pending connection resolves to
+  // the same edge a later operation already created).
+  const edgeExists = (modifiedState.edges || []).some(
+    (e: any) =>
+      e.source === sourceBlockId &&
+      e.sourceHandle === finalSourceHandle &&
+      e.target === targetBlockId &&
+      e.targetHandle === targetHandle
+  )
+  if (edgeExists) return true
 
   modifiedState.edges.push({
     id: generateId(),

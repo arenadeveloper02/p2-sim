@@ -1,14 +1,16 @@
 'use client'
 
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { useShallow } from 'zustand/react/shallow'
-import { Skeleton } from '@/components/emcn'
+import { Loader } from '@/components/emcn'
+import {
+  DashboardSegmentsContext,
+  type SegmentSelectionMode,
+} from '@/app/workspace/[workspaceId]/logs/components/dashboard/dashboard-segments-context'
+import { useLogFilters } from '@/app/workspace/[workspaceId]/logs/hooks/use-log-filters'
 import { formatLatency } from '@/app/workspace/[workspaceId]/logs/utils'
 import type { DashboardStatsResponse, WorkflowStats } from '@/hooks/queries/logs'
 import { useWorkflows } from '@/hooks/queries/workflows'
-import { useFilterStore } from '@/stores/logs/filters/store'
 import { LineChart, WorkflowsList } from './components'
 
 interface WorkflowExecution {
@@ -28,99 +30,20 @@ interface WorkflowExecution {
   overallSuccessRate: number
 }
 
-const SKELETON_BAR_HEIGHTS = [
-  45, 72, 38, 85, 52, 68, 30, 90, 55, 42, 78, 35, 88, 48, 65, 28, 82, 58, 40, 75, 32, 95, 50, 70,
-]
-
-function GraphCardSkeleton({ title }: { title: string }) {
-  return (
-    <div className='flex flex-col overflow-hidden rounded-md bg-[var(--surface-2)] dark:bg-[var(--surface-2)]'>
-      <div className='flex min-w-0 items-center justify-between gap-2 bg-[var(--surface-3)] px-4 py-[9px] dark:bg-[var(--surface-3)]'>
-        <span className='min-w-0 truncate font-medium text-[var(--text-primary)] text-sm'>
-          {title}
-        </span>
-        <Skeleton className='h-[20px] w-[40px]' />
-      </div>
-      <div className='flex-1 overflow-y-auto rounded-t-[6px] bg-[var(--surface-2)] px-3.5 py-2.5 dark:bg-[var(--surface-1)]'>
-        <div className='flex h-[166px] flex-col justify-end gap-1'>
-          <div className='flex items-end gap-0.5'>
-            {SKELETON_BAR_HEIGHTS.map((height, i) => (
-              <Skeleton
-                key={i}
-                className='flex-1'
-                style={{
-                  height: `${height}%`,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function WorkflowRowSkeleton() {
-  return (
-    <div className='flex h-[44px] items-center gap-4 px-6'>
-      <div className='flex w-[160px] flex-shrink-0 items-center gap-2 pr-2'>
-        <Skeleton className='h-[10px] w-[10px] flex-shrink-0 rounded-[3px]' />
-        <Skeleton className='h-[16px] flex-1' />
-      </div>
-      <div className='flex-1'>
-        <Skeleton className='h-[24px] w-full rounded-sm' />
-      </div>
-      <div className='w-[100px] flex-shrink-0 pl-4'>
-        <Skeleton className='h-[16px] w-[50px]' />
-      </div>
-    </div>
-  )
-}
-
-function WorkflowsListSkeleton({ rowCount = 5 }: { rowCount?: number }) {
-  return (
-    <div className='flex h-full flex-col overflow-hidden rounded-md bg-[var(--surface-2)] dark:bg-[var(--surface-1)]'>
-      <div className='flex-shrink-0 rounded-t-[6px] bg-[var(--surface-3)] px-6 py-2.5 dark:bg-[var(--surface-3)]'>
-        <div className='flex items-center gap-4'>
-          <span className='w-[160px] flex-shrink-0 font-medium text-[var(--text-tertiary)] text-caption'>
-            Workflow
-          </span>
-          <span className='flex-1 font-medium text-[var(--text-tertiary)] text-caption'>Logs</span>
-          <span className='w-[100px] flex-shrink-0 pl-4 font-medium text-[var(--text-tertiary)] text-caption'>
-            Success Rate
-          </span>
-        </div>
-      </div>
-      <div className='min-h-0 flex-1 overflow-y-auto overflow-x-hidden'>
-        {Array.from({ length: rowCount }).map((_, i) => (
-          <WorkflowRowSkeleton key={i} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function DashboardSkeleton() {
-  return (
-    <div className='mt-6 flex min-h-0 flex-1 flex-col pb-6'>
-      <div className='mb-4 flex-shrink-0'>
-        <div className='grid grid-cols-1 gap-4 md:grid-cols-3'>
-          <GraphCardSkeleton title='Runs' />
-          <GraphCardSkeleton title='Errors' />
-          <GraphCardSkeleton title='Latency' />
-        </div>
-      </div>
-      <div className='min-h-0 flex-1 overflow-hidden'>
-        <WorkflowsListSkeleton rowCount={14} />
-      </div>
-    </div>
-  )
+function DashboardFallback() {
+  return <div className='mt-6 flex min-h-0 flex-1 flex-col bg-[var(--bg)] pb-6' />
 }
 
 interface DashboardProps {
   stats?: DashboardStatsResponse
   isLoading: boolean
   error?: Error | null
+  /**
+   * Debounced search term. Comes pre-debounced from the parent (same value the
+   * dashboard stats query uses) so the in-memory workflow list filtering and the
+   * stats query stay in sync while typing.
+   */
+  searchQuery: string
 }
 
 /**
@@ -143,19 +66,12 @@ function toWorkflowExecution(wf: WorkflowStats): WorkflowExecution {
   }
 }
 
-function DashboardInner({ stats, isLoading, error }: DashboardProps) {
+function DashboardInner({ stats, isLoading, error, searchQuery }: DashboardProps) {
   const [selectedSegments, setSelectedSegments] = useState<Record<string, number[]>>({})
   const [lastAnchorIndices, setLastAnchorIndices] = useState<Record<string, number>>({})
   const lastAnchorIndicesRef = useRef<Record<string, number>>({})
 
-  const { workflowIds, searchQuery, toggleWorkflowId, timeRange } = useFilterStore(
-    useShallow((s) => ({
-      workflowIds: s.workflowIds,
-      searchQuery: s.searchQuery,
-      toggleWorkflowId: s.toggleWorkflowId,
-      timeRange: s.timeRange,
-    }))
-  )
+  const { workflowIds, toggleWorkflowId, timeRange } = useLogFilters()
 
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: allWorkflowList = [], isPending: isWorkflowsPending } = useWorkflows(workspaceId)
@@ -388,12 +304,7 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
    * @param mode - Selection mode: 'single', 'toggle' (cmd+click), or 'range' (shift+click)
    */
   const handleSegmentClick = useCallback(
-    (
-      workflowId: string,
-      segmentIndex: number,
-      _timestamp: string,
-      mode: 'single' | 'toggle' | 'range'
-    ) => {
+    (workflowId: string, segmentIndex: number, _timestamp: string, mode: SegmentSelectionMode) => {
       if (mode === 'toggle') {
         setSelectedSegments((prev) => {
           const currentSegments = prev[workflowId] || []
@@ -441,6 +352,15 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
     []
   )
 
+  const segmentsContextValue = useMemo(
+    () => ({
+      selectedSegments,
+      onSegmentClick: handleSegmentClick,
+      segmentDurationMs: segmentMs,
+    }),
+    [selectedSegments, handleSegmentClick, segmentMs]
+  )
+
   const resetKey = `${JSON.stringify(stats?.workflows?.map((w) => w.workflowId))}-${timeRange}-${workflowIds.join(',')}-${searchQuery}`
   const prevResetKeyRef = useRef(resetKey)
   if (resetKey !== prevResetKeyRef.current) {
@@ -450,7 +370,7 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
   }
 
   if (isLoading) {
-    return <DashboardSkeleton />
+    return <DashboardFallback />
   }
 
   if (error) {
@@ -500,7 +420,7 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
                 />
               ) : (
                 <div className='flex h-[166px] items-center justify-center'>
-                  <Loader2 className='h-[16px] w-[16px] animate-spin text-[var(--text-secondary)]' />
+                  <Loader className='size-[16px] text-[var(--text-secondary)]' animate />
                 </div>
               )}
             </div>
@@ -527,7 +447,7 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
                 />
               ) : (
                 <div className='flex h-[166px] items-center justify-center'>
-                  <Loader2 className='h-[16px] w-[16px] animate-spin text-[var(--text-secondary)]' />
+                  <Loader className='size-[16px] text-[var(--text-secondary)]' animate />
                 </div>
               )}
             </div>
@@ -554,7 +474,7 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
                 />
               ) : (
                 <div className='flex h-[166px] items-center justify-center'>
-                  <Loader2 className='h-[16px] w-[16px] animate-spin text-[var(--text-secondary)]' />
+                  <Loader className='size-[16px] text-[var(--text-secondary)]' animate />
                 </div>
               )}
             </div>
@@ -563,15 +483,14 @@ function DashboardInner({ stats, isLoading, error }: DashboardProps) {
       </div>
 
       <div className='min-h-0 flex-1 overflow-hidden'>
-        <WorkflowsList
-          filteredExecutions={filteredExecutions as WorkflowExecution[]}
-          expandedWorkflowId={expandedWorkflowId}
-          onToggleWorkflow={handleToggleWorkflow}
-          selectedSegments={selectedSegments}
-          onSegmentClick={handleSegmentClick}
-          searchQuery={searchQuery}
-          segmentDurationMs={segmentMs}
-        />
+        <DashboardSegmentsContext.Provider value={segmentsContextValue}>
+          <WorkflowsList
+            filteredExecutions={filteredExecutions as WorkflowExecution[]}
+            expandedWorkflowId={expandedWorkflowId}
+            onToggleWorkflow={handleToggleWorkflow}
+            searchQuery={searchQuery}
+          />
+        </DashboardSegmentsContext.Provider>
       </div>
     </div>
   )

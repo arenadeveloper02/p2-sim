@@ -1,9 +1,14 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { GoogleDocsIcon } from '@/components/icons'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { googleDocsConnectorMeta } from '@/connectors/google-docs/meta'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
-import { joinTagArray, parseTagDate } from '@/connectors/utils'
+import {
+  buildDriveParentsClause,
+  joinTagArray,
+  parseMultiValue,
+  parseTagDate,
+} from '@/connectors/utils'
 
 const logger = createLogger('GoogleDocsConnector')
 
@@ -84,14 +89,22 @@ function extractTextFromDocsBody(doc: DocsDocument): string {
     if (!paragraph?.elements) continue
 
     const prefix = headingPrefix(paragraph.paragraphStyle?.namedStyleType)
-    const text = paragraph.elements.map((el) => el.textRun?.content ?? '').join('')
+    /**
+     * Each paragraph's final `textRun.content` already ends with `\n`. Strip
+     * it before joining with `\n` so a heading followed by a body paragraph
+     * is separated by a single newline, not two.
+     */
+    const text = paragraph.elements
+      .map((el) => el.textRun?.content ?? '')
+      .join('')
+      .replace(/\n+$/, '')
 
     if (text.trim()) {
       parts.push(`${prefix}${text}`)
     }
   }
 
-  return parts.join('').trim()
+  return parts.join('\n').trim()
 }
 
 /**
@@ -144,43 +157,14 @@ function fileToStub(file: DriveFile): ExternalDocument {
 function buildQuery(sourceConfig: Record<string, unknown>): string {
   const parts: string[] = ['trashed = false', "mimeType = 'application/vnd.google-apps.document'"]
 
-  const folderId = sourceConfig.folderId as string | undefined
-  if (folderId?.trim()) {
-    parts.push(`'${folderId.trim().replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' in parents`)
-  }
+  const parentsClause = buildDriveParentsClause(parseMultiValue(sourceConfig.folderId))
+  if (parentsClause) parts.push(parentsClause)
 
   return parts.join(' and ')
 }
 
 export const googleDocsConnector: ConnectorConfig = {
-  id: 'google_docs',
-  name: 'Google Docs',
-  description: 'Sync Google Docs documents into your knowledge base',
-  version: '1.0.0',
-  icon: GoogleDocsIcon,
-
-  auth: {
-    mode: 'oauth',
-    provider: 'google-docs',
-    requiredScopes: ['https://www.googleapis.com/auth/drive'],
-  },
-
-  configFields: [
-    {
-      id: 'folderId',
-      title: 'Folder ID',
-      type: 'short-input',
-      placeholder: 'e.g. 1aBcDeFgHiJkLmNoPqRsTuVwXyZ (optional)',
-      required: false,
-    },
-    {
-      id: 'maxDocs',
-      title: 'Max Documents',
-      type: 'short-input',
-      required: false,
-      placeholder: 'e.g. 500 (default: unlimited)',
-    },
-  ],
+  ...googleDocsConnectorMeta,
 
   listDocuments: async (
     accessToken: string,
@@ -227,13 +211,23 @@ export const googleDocsConnector: ConnectorConfig = {
     const data = await response.json()
     const files = (data.files || []) as DriveFile[]
 
+    /**
+     * Drive sets `incompleteSearch` when it could not search every corpus (it
+     * arises with the `allDrives` scope enabled by `includeItemsFromAllDrives`).
+     * A partial listing drops still-existing docs, so reconciliation must be
+     * suppressed to avoid hard-deleting valid documents.
+     */
+    const incompleteSearch = data.incompleteSearch === true
+
     const maxDocs = sourceConfig.maxDocs ? Number(sourceConfig.maxDocs) : 0
     const previouslyFetched = (syncContext?.totalDocsFetched as number) ?? 0
 
     let documents = files.map(fileToStub)
+    let slicedSome = false
     if (maxDocs > 0) {
       const remaining = maxDocs - previouslyFetched
       if (documents.length > remaining) {
+        slicedSome = true
         documents = documents.slice(0, remaining)
       }
     }
@@ -243,6 +237,19 @@ export const googleDocsConnector: ConnectorConfig = {
     const hitLimit = maxDocs > 0 && totalFetched >= maxDocs
 
     const nextPageToken = data.nextPageToken as string | undefined
+
+    /**
+     * Mark the listing as incomplete so the sync engine skips deletion
+     * reconciliation when this page does not represent the full source set:
+     * - `slicedSome`: the page held more docs than the `maxDocs` cap allowed.
+     * - `hitLimit` with a next page: the cap was reached while more pages remain.
+     * - `incompleteSearch`: Drive could not search every corpus, so the page is
+     *   partial and may omit still-existing docs.
+     * Reconciliation against any of these would hard-delete valid documents.
+     */
+    if (syncContext && (slicedSome || (hitLimit && Boolean(nextPageToken)) || incompleteSearch)) {
+      syncContext.listingCapped = true
+    }
 
     return {
       documents,
@@ -294,7 +301,7 @@ export const googleDocsConnector: ConnectorConfig = {
     accessToken: string,
     sourceConfig: Record<string, unknown>
   ): Promise<{ valid: boolean; error?: string }> => {
-    const folderId = sourceConfig.folderId as string | undefined
+    const folderIds = parseMultiValue(sourceConfig.folderId)
     const maxDocs = sourceConfig.maxDocs as string | undefined
 
     if (maxDocs && (Number.isNaN(Number(maxDocs)) || Number(maxDocs) <= 0)) {
@@ -302,30 +309,38 @@ export const googleDocsConnector: ConnectorConfig = {
     }
 
     try {
-      if (folderId?.trim()) {
-        const url = `https://www.googleapis.com/drive/v3/files/${folderId.trim()}?fields=id,name,mimeType&supportsAllDrives=true`
-        const response = await fetchWithRetry(
-          url,
-          {
-            method: 'GET',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: 'application/json',
+      if (folderIds.length > 0) {
+        for (const folderId of folderIds) {
+          const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType&supportsAllDrives=true`
+          const response = await fetchWithRetry(
+            url,
+            {
+              method: 'GET',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                Accept: 'application/json',
+              },
             },
-          },
-          VALIDATE_RETRY_OPTIONS
-        )
+            VALIDATE_RETRY_OPTIONS
+          )
 
-        if (!response.ok) {
-          if (response.status === 404) {
-            return { valid: false, error: 'Folder not found. Check the folder ID and permissions.' }
+          if (!response.ok) {
+            if (response.status === 404) {
+              return {
+                valid: false,
+                error: `Folder "${folderId}" not found. Check the folder ID and permissions.`,
+              }
+            }
+            return {
+              valid: false,
+              error: `Failed to access folder "${folderId}": ${response.status}`,
+            }
           }
-          return { valid: false, error: `Failed to access folder: ${response.status}` }
-        }
 
-        const folder = await response.json()
-        if (folder.mimeType !== 'application/vnd.google-apps.folder') {
-          return { valid: false, error: 'The provided ID is not a folder' }
+          const folder = await response.json()
+          if (folder.mimeType !== 'application/vnd.google-apps.folder') {
+            return { valid: false, error: `"${folderId}" is not a folder` }
+          }
         }
       } else {
         const url =
@@ -349,15 +364,9 @@ export const googleDocsConnector: ConnectorConfig = {
 
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
-      return { valid: false, error: message }
+      return { valid: false, error: toError(error).message || 'Failed to validate configuration' }
     }
   },
-
-  tagDefinitions: [
-    { id: 'owners', displayName: 'Owner', fieldType: 'text' },
-    { id: 'lastModified', displayName: 'Last Modified', fieldType: 'date' },
-  ],
 
   mapTags: (metadata: Record<string, unknown>): Record<string, unknown> => {
     const result: Record<string, unknown> = {}

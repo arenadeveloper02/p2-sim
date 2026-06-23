@@ -3,6 +3,7 @@
  * These are pure functions that compute values from organization data
  */
 
+import { isOrgAdminRole } from '@sim/platform-authz/predicates'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import type { Organization } from '@/lib/workspaces/organization/types'
 
@@ -28,7 +29,7 @@ export function isAdminOrOwner(
   userEmail?: string
 ): boolean {
   const role = getUserRole(organization, userEmail)
-  return role === 'owner' || role === 'admin'
+  return isOrgAdminRole(role)
 }
 
 /**
@@ -45,7 +46,9 @@ export function calculateSeatUsage(organization: Organization | null | undefined
 
   const membersCount = organization.members?.length || 0
   const pendingInvitationsCount =
-    organization.invitations?.filter((inv) => inv.status === 'pending').length || 0
+    organization.invitations?.filter(
+      (inv) => inv.status === 'pending' && inv.membershipIntent !== 'external'
+    ).length || 0
 
   return {
     used: membersCount + pendingInvitationsCount,

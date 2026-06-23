@@ -14,9 +14,19 @@ import {
 } from '@/lib/core/utils/browser-storage'
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
-import { useChatHistory, useMarkTaskRead } from '@/hooks/queries/tasks'
+import {
+  useMarkMothershipChatRead,
+  useMothershipChatHistory,
+} from '@/hooks/queries/mothership-chats'
 import type { ChatContext } from '@/stores/panel'
-import { EmbedHtmlContent, MothershipChat, MothershipView, UserInput } from './components'
+import {
+  ChatSurfaceProvider,
+  EmbedHtmlContent,
+  MothershipChat,
+  MothershipResourcesProvider,
+  MothershipView,
+  UserInput,
+} from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
 import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
 
@@ -55,15 +65,13 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
           workspaceId,
           nameOverride: seed.workflowName,
           descriptionOverride: seed.workflowDescription || 'Imported from landing template',
-          colorOverride: seed.color,
-          createWorkflow: async ({ name, description, color, workspaceId }) => {
+          createWorkflow: async ({ name, description, workspaceId }) => {
             const response = await fetch('/api/workflows', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 name,
                 description,
-                color,
                 workspaceId,
                 deduplicate: true,
               }),
@@ -113,8 +121,8 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
 
   const wasSendingRef = useRef(false)
 
-  const { isPending: isChatHistoryPending } = useChatHistory(chatId)
-  const { mutate: markRead } = useMarkTaskRead(workspaceId)
+  const { isPending: isChatHistoryPending } = useMothershipChatHistory(chatId)
+  const { mutate: markRead } = useMarkMothershipChatRead(workspaceId)
 
   const { mothershipRef, handleResizePointerDown, clearWidth } = useMothershipResize()
 
@@ -152,6 +160,9 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
     removeFromQueue,
     sendNow,
     editQueuedMessage,
+    cancelQueueEdit,
+    editingQueuedId,
+    dispatchingHeadId,
     previewSession,
     genericResourceData,
   } = useChat(
@@ -303,7 +314,7 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
   // active conversation is in flight. Previously this branch only checked
   // `hasMessages` and the `chatId` prop, which let the dashboard re-flash
   // mid-request in embed mode: when the workflow path created a new chat row
-  // and `resolvedChatId` was set internally, `useChatHistory` momentarily
+  // and `resolvedChatId` was set internally, `useMothershipChatHistory` momentarily
   // returned `{ messages: [] }` and the prop `chatId` was still undefined, so
   // both predicates were `false` and the dashboard re-mounted (which also
   // restarted the rotating placeholder via `<UserInput isInitialView>`).
@@ -356,15 +367,18 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
             {session?.user?.name ? `, ${session.user.name.split(' ')[0]}` : ''}?
           </h1>
           <div ref={initialViewInputRef} className='w-full' data-tour='home-chat-input'>
-            <UserInput
-              defaultValue={initialPrompt}
-              onSubmit={handleSubmit}
-              isSending={isSending}
-              onStopGeneration={handleStopGeneration}
+            <ChatSurfaceProvider
               userId={session?.user?.id}
               onContextAdd={handleContextAdd}
               onContextRemove={handleInitialContextRemove}
-            />
+            >
+              <UserInput
+                defaultValue={initialPrompt}
+                onSubmit={handleSubmit}
+                isSending={isSending}
+                onStopGeneration={handleStopGeneration}
+              />
+            </ChatSurfaceProvider>
           </div>
         </div>
         <EmbedHtmlContent
@@ -388,9 +402,12 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
           onSubmit={handleSubmit}
           onStopGeneration={handleStopGeneration}
           messageQueue={messageQueue}
+          editingQueuedId={editingQueuedId}
+          dispatchingHeadId={dispatchingHeadId}
           onRemoveQueuedMessage={removeFromQueue}
           onSendQueuedMessage={sendNow}
           onEditQueuedMessage={editQueuedMessage}
+          onCancelQueueEdit={cancelQueueEdit}
           userId={session?.user?.id}
           chatId={resolvedChatId}
           onContextAdd={handleContextAdd}
@@ -413,22 +430,26 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
         </div>
       )}
 
-      <MothershipView
-        ref={mothershipRef}
-        workspaceId={workspaceId}
-        chatId={resolvedChatId}
-        resources={resources}
-        activeResourceId={activeResourceId}
-        onSelectResource={setActiveResourceId}
-        onAddResource={addResource}
-        onRemoveResource={removeResource}
-        onReorderResources={reorderResources}
-        onCollapse={collapseResource}
-        isCollapsed={isResourceCollapsed}
-        previewSession={previewSession}
-        genericResourceData={genericResourceData ?? undefined}
-        className={skipResourceTransition ? '!transition-none' : undefined}
-      />
+      <MothershipResourcesProvider
+        selectResource={setActiveResourceId}
+        addResource={addResource}
+        removeResource={removeResource}
+        reorderResources={reorderResources}
+        collapseResource={collapseResource}
+      >
+        <MothershipView
+          ref={mothershipRef}
+          workspaceId={workspaceId}
+          chatId={resolvedChatId}
+          resources={resources}
+          activeResourceId={activeResourceId}
+          isCollapsed={isResourceCollapsed}
+          previewSession={previewSession}
+          isAgentResponding={isSending}
+          genericResourceData={genericResourceData ?? undefined}
+          className={skipResourceTransition ? '!transition-none' : undefined}
+        />
+      </MothershipResourcesProvider>
 
       {isResourceCollapsed && (
         <div className='absolute top-[8.5px] right-[16px]'>

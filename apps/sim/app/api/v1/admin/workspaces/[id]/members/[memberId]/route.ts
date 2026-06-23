@@ -22,12 +22,23 @@
  */
 
 import { db } from '@sim/db'
-import { permissions, user } from '@sim/db/schema'
+import { permissions, user, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
+import {
+  adminV1GetWorkspaceMemberContract,
+  adminV1RemoveWorkspaceMemberContract,
+  adminV1UpdateWorkspaceMemberContract,
+} from '@/lib/api/contracts/v1/admin'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { revokeWorkspaceCredentialMemberships } from '@/lib/credentials/access'
+import { revokeWorkspaceCredentialMembershipsTx } from '@/lib/credentials/access'
 import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
+import {
+  reassignWorkflowOwnershipForWorkspaceMemberRemovalTx,
+  transferWorkspaceOwnershipToBilledAccountForMemberRemovalTx,
+  WorkspaceBillingAccountRemovalError,
+} from '@/lib/workspaces/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
   badRequestResponse,
@@ -45,8 +56,11 @@ interface RouteParams {
 }
 
 export const GET = withRouteHandler(
-  withAdminAuthParams<RouteParams>(async (_, context) => {
-    const { id: workspaceId, memberId } = await context.params
+  withAdminAuthParams<RouteParams>(async (request, context) => {
+    const parsed = await parseRequest(adminV1GetWorkspaceMemberContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId, memberId } = parsed.data.params
 
     try {
       const workspaceData = await getWorkspaceById(workspaceId)
@@ -105,15 +119,13 @@ export const GET = withRouteHandler(
 
 export const PATCH = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: workspaceId, memberId } = await context.params
+    const parsed = await parseRequest(adminV1UpdateWorkspaceMemberContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId, memberId } = parsed.data.params
+    const { permissions: permissionLevel } = parsed.data.body
 
     try {
-      const body = await request.json()
-
-      if (!body.permissions || !['admin', 'write', 'read'].includes(body.permissions)) {
-        return badRequestResponse('permissions must be "admin", "write", or "read"')
-      }
-
       const workspaceData = await getWorkspaceById(workspaceId)
 
       if (!workspaceData) {
@@ -141,11 +153,24 @@ export const PATCH = withRouteHandler(
         return notFoundResponse('Workspace member')
       }
 
+      const [workspaceBilling] = await db
+        .select({ billedAccountUserId: workspace.billedAccountUserId })
+        .from(workspace)
+        .where(eq(workspace.id, workspaceId))
+        .limit(1)
+
+      if (
+        workspaceBilling?.billedAccountUserId === existingMember.userId &&
+        permissionLevel !== 'admin'
+      ) {
+        return badRequestResponse('Workspace billing account must retain admin permissions')
+      }
+
       const now = new Date()
 
       await db
         .update(permissions)
-        .set({ permissionType: body.permissions, updatedAt: now })
+        .set({ permissionType: permissionLevel, updatedAt: now })
         .where(eq(permissions.id, memberId))
 
       const [userData] = await db
@@ -158,7 +183,7 @@ export const PATCH = withRouteHandler(
         id: existingMember.id,
         workspaceId,
         userId: existingMember.userId,
-        permissions: body.permissions,
+        permissions: permissionLevel,
         createdAt: existingMember.createdAt.toISOString(),
         updatedAt: now.toISOString(),
         userName: userData?.name ?? '',
@@ -166,7 +191,7 @@ export const PATCH = withRouteHandler(
         userImage: userData?.image ?? null,
       }
 
-      logger.info(`Admin API: Updated member ${memberId} permissions to ${body.permissions}`, {
+      logger.info(`Admin API: Updated member ${memberId} permissions to ${permissionLevel}`, {
         workspaceId,
         previousPermissions: existingMember.permissionType,
       })
@@ -180,8 +205,11 @@ export const PATCH = withRouteHandler(
 )
 
 export const DELETE = withRouteHandler(
-  withAdminAuthParams<RouteParams>(async (_, context) => {
-    const { id: workspaceId, memberId } = await context.params
+  withAdminAuthParams<RouteParams>(async (request, context) => {
+    const parsed = await parseRequest(adminV1RemoveWorkspaceMemberContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId, memberId } = parsed.data.params
 
     try {
       const workspaceData = await getWorkspaceById(workspaceId)
@@ -209,9 +237,39 @@ export const DELETE = withRouteHandler(
         return notFoundResponse('Workspace member')
       }
 
-      await db.delete(permissions).where(eq(permissions.id, memberId))
+      const [workspaceBilling] = await db
+        .select({ billedAccountUserId: workspace.billedAccountUserId })
+        .from(workspace)
+        .where(eq(workspace.id, workspaceId))
+        .limit(1)
 
-      await revokeWorkspaceCredentialMemberships(workspaceId, existingMember.userId)
+      if (workspaceBilling?.billedAccountUserId === existingMember.userId) {
+        return badRequestResponse(
+          'Cannot remove the workspace billing account. Please reassign billing first.'
+        )
+      }
+
+      await db.transaction(async (tx) => {
+        await transferWorkspaceOwnershipToBilledAccountForMemberRemovalTx({
+          tx,
+          workspaceId,
+          departingUserId: existingMember.userId,
+        })
+
+        const workflowOwnershipReassignment =
+          await reassignWorkflowOwnershipForWorkspaceMemberRemovalTx({
+            tx,
+            workspaceIds: [workspaceId],
+            departingUserId: existingMember.userId,
+          })
+        if (workflowOwnershipReassignment.unresolved.length > 0) {
+          throw new WorkspaceBillingAccountRemovalError()
+        }
+
+        await tx.delete(permissions).where(eq(permissions.id, memberId))
+
+        await revokeWorkspaceCredentialMembershipsTx(tx, workspaceId, existingMember.userId)
+      })
 
       logger.info(`Admin API: Removed member ${memberId} from workspace ${workspaceId}`, {
         userId: existingMember.userId,
@@ -224,6 +282,9 @@ export const DELETE = withRouteHandler(
         workspaceId,
       })
     } catch (error) {
+      if (error instanceof WorkspaceBillingAccountRemovalError) {
+        return badRequestResponse(error.message)
+      }
       logger.error('Admin API: Failed to remove workspace member', { error, workspaceId, memberId })
       return internalErrorResponse('Failed to remove workspace member')
     }

@@ -2,12 +2,13 @@ import type { Logger } from '@sim/logger'
 import { secureFetchWithValidation } from '@/lib/core/security/input-validation.server'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { FileAccessDeniedError, verifyFileAccess } from '@/app/api/files/authorization'
 import type { ToolFileData } from '@/tools/types'
 
 /**
  * Sends a message to a Slack channel using chat.postMessage
  */
-export async function postSlackMessage(
+async function postSlackMessage(
   accessToken: string,
   channel: string,
   text: string,
@@ -75,11 +76,12 @@ export function formatMessageSuccessResponse(
 /**
  * Uploads files to Slack and returns the uploaded file IDs
  */
-export async function uploadFilesToSlack(
+async function uploadFilesToSlack(
   files: any[],
   accessToken: string,
   requestId: string,
-  logger: Logger
+  logger: Logger,
+  ownerUserId: string
 ): Promise<{ fileIds: string[]; files: ToolFileData[] }> {
   const userFiles = processFilesToUserFiles(files, requestId, logger)
   const uploadedFileIds: string[] = []
@@ -87,6 +89,11 @@ export async function uploadFilesToSlack(
 
   for (const userFile of userFiles) {
     logger.info(`[${requestId}] Uploading file: ${userFile.name}`)
+
+    const hasAccess = await verifyFileAccess(userFile.key, ownerUserId)
+    if (!hasAccess) {
+      throw new FileAccessDeniedError()
+    }
 
     const buffer = await downloadFileFromStorage(userFile, requestId, logger)
 
@@ -142,12 +149,13 @@ export async function uploadFilesToSlack(
 /**
  * Completes the file upload process by associating files with a channel
  */
-export async function completeSlackFileUpload(
+async function completeSlackFileUpload(
   uploadedFileIds: string[],
   channel: string,
   text: string,
   accessToken: string,
-  threadTs?: string | null
+  threadTs?: string | null,
+  blocks?: unknown[] | null
 ): Promise<{ ok: boolean; files?: any[]; error?: string }> {
   const response = await fetch('https://slack.com/api/files.completeUploadExternal', {
     method: 'POST',
@@ -158,7 +166,10 @@ export async function completeSlackFileUpload(
     body: JSON.stringify({
       files: uploadedFileIds.map((id) => ({ id })),
       channel_id: channel,
-      initial_comment: text,
+      // Per Slack docs for files.completeUploadExternal: if `initial_comment`
+      // is provided, `blocks` is silently ignored. So when blocks are present
+      // we omit initial_comment and let blocks render instead.
+      ...(blocks && blocks.length > 0 ? { blocks } : { initial_comment: text }),
       ...(threadTs && { thread_ts: threadTs }),
     }),
   })
@@ -226,6 +237,7 @@ export interface SlackMessageParams {
   accessToken: string
   channel?: string
   userId?: string
+  ownerUserId: string
   text: string
   threadTs?: string | null
   blocks?: unknown[] | null
@@ -254,8 +266,17 @@ export async function sendSlackMessage(
   }
   error?: string
 }> {
-  const { accessToken, text, threadTs, blocks, files, link_names, unfurl_links, unfurl_media } =
-    params
+  const {
+    accessToken,
+    text,
+    threadTs,
+    blocks,
+    files,
+    ownerUserId,
+    link_names,
+    unfurl_links,
+    unfurl_media,
+  } = params
   let { channel } = params
 
   if (!channel && params.userId) {
@@ -297,7 +318,8 @@ export async function sendSlackMessage(
     files,
     accessToken,
     requestId,
-    logger
+    logger,
+    ownerUserId
   )
 
   // No valid files uploaded - send text-only
@@ -323,7 +345,14 @@ export async function sendSlackMessage(
   }
 
   // Complete file upload with thread support
-  const completeData = await completeSlackFileUpload(fileIds, channel, text, accessToken, threadTs)
+  const completeData = await completeSlackFileUpload(
+    fileIds,
+    channel,
+    text,
+    accessToken,
+    threadTs,
+    blocks
+  )
 
   if (!completeData.ok) {
     logger.error(`[${requestId}] Failed to complete upload:`, completeData.error)

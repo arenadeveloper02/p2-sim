@@ -8,6 +8,7 @@ import { Button } from '@/components/emcn'
 import { Panel } from '@/app/workspace/[workspaceId]/w/[workflowId]/components'
 import { usePreventZoom } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks'
 import { Sidebar } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
+import { readCollapsedCookie } from '@/stores/sidebar/store'
 
 const logger = createLogger('ErrorBoundary')
 
@@ -38,7 +39,7 @@ export function ErrorUI({
             <p className='max-w-[300px] text-[var(--text-tertiary)] text-small'>{message}</p>
           </div>
           <Button variant='default' size='sm' onClick={onReset ?? (() => window.location.reload())}>
-            <RefreshCw className='mr-1.5 h-[14px] w-[14px]' />
+            <RefreshCw className='mr-1.5 size-[14px]' />
             Try again
           </Button>
         </div>
@@ -48,7 +49,7 @@ export function ErrorUI({
 
   return (
     <div ref={preventZoomRef} className='flex h-screen w-full flex-col bg-[var(--surface-1)]'>
-      <Sidebar />
+      <Sidebar isCollapsed={readCollapsedCookie()} />
 
       <div className='relative flex flex-1'>
         <div className='pointer-events-none absolute inset-0 flex items-center justify-center'>

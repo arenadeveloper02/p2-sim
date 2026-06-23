@@ -1,6 +1,6 @@
 import { JiraIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import type { BlockConfig } from '@/blocks/types'
+import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
 import type { JiraResponse } from '@/tools/jira/types'
@@ -14,11 +14,10 @@ export const JiraBlock: BlockConfig<JiraResponse> = {
   triggerAllowed: true,
   longDescription:
     'Integrate Jira into the workflow. Can read, write, and update issues. Can also trigger workflows based on Jira webhook events.',
-  docsLink: 'https://docs.sim.ai/tools/jira',
+  docsLink: 'https://docs.sim.ai/integrations/jira',
   category: 'tools',
   integrationType: IntegrationType.Productivity,
-  tags: ['project-management', 'ticketing'],
-  bgColor: '#E0E0E0',
+  bgColor: '#FFFFFF',
   icon: JiraIcon,
   subBlocks: [
     {
@@ -27,6 +26,7 @@ export const JiraBlock: BlockConfig<JiraResponse> = {
       type: 'dropdown',
       options: [
         { label: 'Read Issue', id: 'read' },
+        { label: 'Read Bulk Issues', id: 'read-bulk' },
         { label: 'Update Issue', id: 'update' },
         { label: 'Write Issue', id: 'write' },
         { label: 'Delete Issue', id: 'delete' },
@@ -167,7 +167,7 @@ export const JiraBlock: BlockConfig<JiraResponse> = {
       type: 'short-input',
       canonicalParamId: 'issueKey',
       placeholder: 'Enter Jira issue key',
-      dependsOn: ['credential', 'domain'],
+      dependsOn: ['credential', 'domain', 'projectId'],
       condition: {
         field: 'operation',
         value: [
@@ -270,6 +270,7 @@ Return ONLY the description text - no explanations.`,
       placeholder: 'Parent issue key for subtasks (e.g., PROJ-123)',
       dependsOn: ['projectId'],
       condition: { field: 'operation', value: 'write' },
+      mode: 'advanced',
     },
     // Write/Update Issue additional fields
     {
@@ -320,6 +321,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       placeholder: 'Reporter account ID',
       dependsOn: ['projectId'],
       condition: { field: 'operation', value: 'write' },
+      mode: 'advanced',
     },
     {
       id: 'environment',
@@ -327,6 +329,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'long-input',
       placeholder: 'Environment information (e.g., Production, Staging)',
       condition: { field: 'operation', value: ['write', 'update'] },
+      mode: 'advanced',
     },
     {
       id: 'customFieldId',
@@ -334,6 +337,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'e.g., customfield_10001 or 10001',
       condition: { field: 'operation', value: ['write', 'update'] },
+      mode: 'advanced',
     },
     {
       id: 'customFieldValue',
@@ -341,6 +345,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'Value for the custom field',
       condition: { field: 'operation', value: ['write', 'update'] },
+      mode: 'advanced',
     },
     {
       id: 'components',
@@ -348,6 +353,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'Comma-separated component names',
       condition: { field: 'operation', value: ['write', 'update'] },
+      mode: 'advanced',
     },
     {
       id: 'fixVersions',
@@ -355,6 +361,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       type: 'short-input',
       placeholder: 'Comma-separated fix version names',
       condition: { field: 'operation', value: ['write', 'update'] },
+      mode: 'advanced',
     },
     {
       id: 'notifyUsers',
@@ -366,6 +373,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'true',
       condition: { field: 'operation', value: 'update' },
+      mode: 'advanced',
     },
     // Delete Issue fields
     {
@@ -378,6 +386,7 @@ Return ONLY the date string in YYYY-MM-DD format - no explanations, no quotes, n
       ],
       value: () => 'false',
       condition: { field: 'operation', value: 'delete' },
+      mode: 'advanced',
     },
     // Assign Issue fields
     {
@@ -421,6 +430,7 @@ Return ONLY the comment text - no explanations.`,
       type: 'short-input',
       placeholder: 'Resolution name (e.g., "Fixed", "Won\'t Fix")',
       condition: { field: 'operation', value: 'transition' },
+      mode: 'advanced',
     },
     // Search Issues fields
     {
@@ -453,6 +463,7 @@ Return ONLY the JQL query - no explanations or markdown formatting.`,
       type: 'short-input',
       placeholder: 'Cursor token for next page (omit for first page)',
       condition: { field: 'operation', value: 'search' },
+      mode: 'advanced',
     },
     {
       id: 'startAt',
@@ -460,6 +471,7 @@ Return ONLY the JQL query - no explanations or markdown formatting.`,
       type: 'short-input',
       placeholder: 'Pagination start index (default: 0)',
       condition: { field: 'operation', value: ['get_comments', 'get_worklogs'] },
+      mode: 'advanced',
     },
     {
       id: 'maxResults',
@@ -467,6 +479,7 @@ Return ONLY the JQL query - no explanations or markdown formatting.`,
       type: 'short-input',
       placeholder: 'Maximum results to return (default: 50)',
       condition: { field: 'operation', value: ['search', 'get_comments', 'get_worklogs'] },
+      mode: 'advanced',
     },
     {
       id: 'fields',
@@ -474,6 +487,7 @@ Return ONLY the JQL query - no explanations or markdown formatting.`,
       type: 'short-input',
       placeholder: 'Comma-separated fields to return (e.g., key,summary,status)',
       condition: { field: 'operation', value: 'search' },
+      mode: 'advanced',
     },
     // Comment fields
     {
@@ -629,6 +643,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'long-input',
       placeholder: 'Add optional comment for the link',
       condition: { field: 'operation', value: 'create_link' },
+      mode: 'advanced',
       wandConfig: {
         enabled: true,
         prompt: `Generate a comment for a Jira issue link based on the user's description.
@@ -657,6 +672,7 @@ Return ONLY the comment text - no explanations.`,
       type: 'short-input',
       placeholder: 'Enter account ID for specific user',
       condition: { field: 'operation', value: 'get_users' },
+      mode: 'advanced',
     },
     {
       id: 'usersStartAt',
@@ -664,6 +680,7 @@ Return ONLY the comment text - no explanations.`,
       type: 'short-input',
       placeholder: 'Pagination start index (default: 0)',
       condition: { field: 'operation', value: 'get_users' },
+      mode: 'advanced',
     },
     {
       id: 'usersMaxResults',
@@ -671,6 +688,7 @@ Return ONLY the comment text - no explanations.`,
       type: 'short-input',
       placeholder: 'Maximum users to return (default: 50)',
       condition: { field: 'operation', value: 'get_users' },
+      mode: 'advanced',
     },
     // Search Users fields
     {
@@ -744,16 +762,8 @@ Return ONLY the comment text - no explanations.`,
     ],
     config: {
       tool: (params) => {
-        // Use canonical param IDs (raw subBlock IDs are deleted after serialization)
-        const effectiveProjectId = params.projectId ? String(params.projectId).trim() : ''
-        const effectiveIssueKey = params.issueKey ? String(params.issueKey).trim() : ''
-
         switch (params.operation) {
           case 'read':
-            // If a project is selected but no issue is chosen, route to bulk read
-            if (effectiveProjectId && !effectiveIssueKey) {
-              return 'jira_bulk_read'
-            }
             return 'jira_retrieve'
           case 'update':
             return 'jira_update'
@@ -877,7 +887,12 @@ Return ONLY the comment text - no explanations.`,
               environment: params.environment || undefined,
               customFieldId: params.customFieldId || undefined,
               customFieldValue: params.customFieldValue || undefined,
-              notifyUsers: params.notifyUsers === 'false' ? false : undefined,
+              notifyUsers:
+                params.notifyUsers === 'false'
+                  ? false
+                  : params.notifyUsers === 'true'
+                    ? true
+                    : undefined,
             }
             return {
               ...baseParams,
@@ -989,12 +1004,20 @@ Return ONLY the comment text - no explanations.`,
             }
           }
           case 'add_worklog': {
+            const rawTime = params.timeSpentSeconds
+            const parsedTime =
+              rawTime !== undefined && rawTime !== null && String(rawTime).trim() !== ''
+                ? Number(String(rawTime).trim())
+                : undefined
+            if (parsedTime !== undefined && (!Number.isFinite(parsedTime) || parsedTime <= 0)) {
+              throw new Error(
+                'Time Spent (seconds) must be a positive number of seconds (e.g., 3600 for 1 hour)'
+              )
+            }
             return {
               ...baseParams,
               issueKey: effectiveIssueKey,
-              timeSpentSeconds: params.timeSpentSeconds
-                ? Number.parseInt(params.timeSpentSeconds)
-                : undefined,
+              timeSpentSeconds: parsedTime,
               comment: params.worklogComment,
               started: params.started,
             }
@@ -1012,9 +1035,17 @@ Return ONLY the comment text - no explanations.`,
               ...baseParams,
               issueKey: effectiveIssueKey,
               worklogId: params.worklogId,
-              timeSpentSeconds: params.timeSpentSecondsUpdate
-                ? Number.parseInt(params.timeSpentSecondsUpdate)
-                : undefined,
+              timeSpentSeconds: (() => {
+                const raw = params.timeSpentSecondsUpdate
+                if (raw === undefined || raw === null || String(raw).trim() === '') return undefined
+                const n = Number(String(raw).trim())
+                if (!Number.isFinite(n) || n <= 0) {
+                  throw new Error(
+                    'Time Spent (seconds) must be a positive number of seconds (e.g., 3600 for 1 hour)'
+                  )
+                }
+                return n
+              })(),
               comment: params.worklogComment,
               started: params.started,
             }
@@ -1305,3 +1336,106 @@ Return ONLY the comment text - no explanations.`,
     ],
   },
 }
+
+export const JiraBlockMeta = {
+  tags: ['project-management', 'ticketing'],
+  url: 'https://www.atlassian.com/software/jira',
+  templates: [
+    {
+      icon: JiraIcon,
+      title: 'Jira knowledge search',
+      prompt:
+        'Create a knowledge base connected to my Jira project so all tickets, comments, and resolutions are automatically synced and searchable. Then build an agent I can ask things like "how did we fix the auth timeout issue?" or "what was decided about the API redesign?" and get answers with ticket citations.',
+      modules: ['knowledge-base', 'agent'],
+      category: 'engineering',
+      tags: ['engineering', 'research'],
+    },
+    {
+      icon: JiraIcon,
+      title: 'Sprint report generator',
+      prompt:
+        'Create a scheduled workflow that runs at the end of each sprint, pulls all completed, in-progress, and blocked Jira tickets, calculates velocity and carry-over, and generates a sprint summary document with charts and trends to share with the team.',
+      modules: ['scheduled', 'agent', 'files', 'workflows'],
+      category: 'engineering',
+      tags: ['engineering', 'reporting', 'team'],
+    },
+    {
+      icon: JiraIcon,
+      title: 'Jira backlog grooming digest',
+      prompt:
+        'Build a scheduled weekly workflow that scans Jira backlog for tickets missing estimates, owners, or priorities, generates a grooming queue, and posts the top items to Slack.',
+      modules: ['scheduled', 'agent', 'workflows'],
+      category: 'engineering',
+      tags: ['engineering', 'team'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: JiraIcon,
+      title: 'Jira stale-ticket sweeper',
+      prompt:
+        'Create a scheduled workflow that lists Jira tickets with no activity in 14 days, pings the assignee in Slack with a status prompt, and updates the ticket based on the response.',
+      modules: ['scheduled', 'agent', 'workflows'],
+      category: 'engineering',
+      tags: ['engineering', 'monitoring'],
+      alsoIntegrations: ['slack'],
+    },
+    {
+      icon: JiraIcon,
+      title: 'Jira release notes builder',
+      prompt:
+        'Build a workflow that pulls Jira tickets resolved since the last release tag, groups by feature area, and drafts user-facing release notes for marketing review.',
+      modules: ['agent', 'files', 'workflows'],
+      category: 'marketing',
+      tags: ['engineering', 'content'],
+    },
+    {
+      icon: JiraIcon,
+      title: 'Jira to Linear migrator',
+      prompt:
+        'Create a workflow that imports a Jira project into Linear, preserving status mapping, labels, comments, and assignees, and writes a mapping table for redirect URLs.',
+      modules: ['tables', 'agent', 'workflows'],
+      category: 'engineering',
+      tags: ['engineering', 'sync'],
+      alsoIntegrations: ['linear'],
+    },
+
+    {
+      icon: JiraIcon,
+      title: 'Auto-generate Confluence pages from Jira sprints',
+      prompt:
+        'Build a workflow that runs at the end of each Jira sprint, pulls all completed and in-progress tickets, and automatically creates a structured Confluence documentation page so sprint reporting requires no manual effort.',
+      modules: ['agent', 'workflows'],
+      category: 'productivity',
+      tags: ['automation', 'communication'],
+      featured: true,
+      alsoIntegrations: ['confluence'],
+    },
+  ],
+  skills: [
+    {
+      name: 'create-bug-from-report',
+      description:
+        'Turn a bug report into a well-structured Jira issue with steps, severity, and labels.',
+      content:
+        '# Create a Bug From a Report\n\nConvert a raw bug report into a clean, actionable Jira issue.\n\n## Steps\n1. Parse the report for summary, steps to reproduce, expected vs actual behavior, and environment.\n2. Create an issue in the target project with type Bug, a clear summary, and a structured description.\n3. Set priority based on impact and add relevant labels or components.\n4. Optionally assign it to the right owner.\n\n## Output\nReturn the issue key, URL, priority, and assignee. Confirm the description includes reproduction steps.',
+    },
+    {
+      name: 'triage-open-issues',
+      description: 'Search open issues with JQL and propose assignees, priorities, and labels.',
+      content:
+        '# Triage Open Issues\n\nBring order to a backlog of unassigned or stale issues.\n\n## Steps\n1. Search issues using JQL (e.g. unassigned and recently created in a project).\n2. Read each issue to understand scope and urgency.\n3. For each, propose a priority, suggested assignee, and labels; apply updates where confident.\n4. Add a short triage comment explaining the decision.\n\n## Output\nReturn a table of issues with proposed/applied priority, assignee, and labels, flagging any that need a human decision.',
+    },
+    {
+      name: 'transition-and-comment',
+      description: 'Move an issue to a new workflow status and post a progress comment.',
+      content:
+        '# Transition and Comment\n\nAdvance a Jira issue through its workflow with a clear note.\n\n## Steps\n1. Retrieve the issue and read its current status.\n2. Get available transitions and choose the correct next status (e.g. In Progress, In Review, Done).\n3. Transition the issue to that status.\n4. Add a comment summarizing what changed and any next steps.\n\n## Output\nReturn the issue key, the new status, and the comment that was posted.',
+    },
+    {
+      name: 'sprint-status-digest',
+      description: 'Summarize issues in a project or sprint grouped by status and assignee.',
+      content:
+        '# Sprint Status Digest\n\nProduce a quick read on where work stands.\n\n## Steps\n1. Search issues with JQL scoped to the project or current sprint.\n2. Group results by status and by assignee.\n3. Identify blocked issues, overdue items, and anything unassigned.\n\n## Output\nReturn a digest: counts by status, work per assignee, and a callout list of blocked or at-risk issues with their keys.',
+    },
+  ],
+} as const satisfies BlockMeta

@@ -9,7 +9,8 @@ import {
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { and, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
+import { randomInt } from '@sim/utils/random'
+import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { decryptApiKey } from '@/lib/api-key/crypto'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import type { DocumentData } from '@/lib/knowledge/documents/service'
@@ -20,10 +21,11 @@ import {
 } from '@/lib/knowledge/documents/service'
 import { StorageService } from '@/lib/uploads'
 import { deleteFile } from '@/lib/uploads/core/storage-service'
+import { deleteFileMetadata } from '@/lib/uploads/server/metadata'
 import { extractStorageKey } from '@/lib/uploads/utils/file-utils'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { knowledgeConnectorSync } from '@/background/knowledge-connector-sync'
-import { CONNECTOR_REGISTRY } from '@/connectors/registry'
+import { CONNECTOR_REGISTRY } from '@/connectors/registry.server'
 import type {
   ConnectorAuthConfig,
   DocumentTags,
@@ -41,6 +43,16 @@ class ConnectorDeletedException extends Error {
 }
 
 const SYNC_BATCH_SIZE = 5
+/** Estimated source bytes for a doc whose listing did not report a size. */
+const DEFAULT_OP_SIZE_BYTES = 4 * 1024 * 1024
+/**
+ * Max summed source bytes hydrated/uploaded concurrently within a batch. Each
+ * in-flight file materializes as a content string plus an upload buffer, so this
+ * bounds peak worker memory: a few large files near the per-file cap are processed
+ * in smaller sub-chunks instead of all at once, while small files still process up
+ * to SYNC_BATCH_SIZE at a time.
+ */
+const CONTENT_INFLIGHT_BUDGET_BYTES = 64 * 1024 * 1024
 const MAX_PAGES = 500
 const MAX_SAFE_TITLE_LENGTH = 200
 const STALE_PROCESSING_MINUTES = 45
@@ -56,23 +68,107 @@ type KnowledgeBaseLockingTx = Pick<typeof db, 'execute' | 'select'>
 type DocOp =
   | { type: 'add'; extDoc: ExternalDocument }
   | { type: 'update'; existingId: string; extDoc: ExternalDocument }
+  | { type: 'skip'; extDoc: ExternalDocument }
 
-async function isConnectorDeleted(connectorId: string): Promise<boolean> {
-  const rows = await db
-    .select({ archivedAt: knowledgeConnector.archivedAt, deletedAt: knowledgeConnector.deletedAt })
-    .from(knowledgeConnector)
-    .where(eq(knowledgeConnector.id, connectorId))
-    .limit(1)
-  return rows.length === 0 || rows[0].archivedAt !== null || rows[0].deletedAt !== null
+type DocClassification =
+  | { type: 'add' }
+  | { type: 'update'; existingId: string }
+  | { type: 'skip' }
+  | { type: 'unchanged' }
+  | { type: 'drop' }
+
+/**
+ * Decides what a listed external document becomes during reconciliation.
+ *
+ * - `skip`: connector flagged it (e.g. too large) and it is not already indexed —
+ *   record a visible `failed` document instead of dropping it silently. A file that
+ *   is already indexed is kept as-is (last-known-good) rather than downgraded.
+ * - `drop`: empty, non-deferred content that cannot be indexed.
+ * - `add` / `update` / `unchanged`: normal content reconciliation by content hash.
+ */
+export function classifyExternalDoc(
+  extDoc: Pick<ExternalDocument, 'content' | 'contentDeferred' | 'contentHash' | 'skippedReason'>,
+  existing: { id: string; contentHash: string | null } | undefined
+): DocClassification {
+  if (extDoc.skippedReason) {
+    return existing ? { type: 'unchanged' } : { type: 'skip' }
+  }
+  if (!extDoc.content.trim() && !extDoc.contentDeferred) {
+    return { type: 'drop' }
+  }
+  if (!existing) {
+    return { type: 'add' }
+  }
+  if (existing.contentHash !== extDoc.contentHash) {
+    return { type: 'update', existingId: existing.id }
+  }
+  return { type: 'unchanged' }
 }
 
-async function isKnowledgeBaseDeleted(knowledgeBaseId: string): Promise<boolean> {
+/** Estimated source bytes for a pending op, taken from its listing metadata. */
+function estimateOpSizeBytes(op: DocOp): number {
+  // Skip ops load no content (just a row insert), so they do not count against the
+  // in-flight content budget.
+  if (op.type === 'skip') return 0
+  const size = op.extDoc.metadata?.fileSize ?? op.extDoc.metadata?.size
+  return typeof size === 'number' && Number.isFinite(size) && size > 0
+    ? size
+    : DEFAULT_OP_SIZE_BYTES
+}
+
+/**
+ * Splits content ops into sub-chunks bounded by both a count (maxCount) and a summed
+ * byte budget, so large files are hydrated/uploaded a few at a time. A single op
+ * larger than the budget still forms its own chunk (always >= 1 op per chunk).
+ */
+export function chunkOpsByByteBudget(
+  ops: DocOp[],
+  budgetBytes: number,
+  maxCount: number
+): DocOp[][] {
+  const chunks: DocOp[][] = []
+  let current: DocOp[] = []
+  let currentBytes = 0
+  for (const op of ops) {
+    const bytes = estimateOpSizeBytes(op)
+    if (current.length > 0 && (current.length >= maxCount || currentBytes + bytes > budgetBytes)) {
+      chunks.push(current)
+      current = []
+      currentBytes = 0
+    }
+    current.push(op)
+    currentBytes += bytes
+  }
+  if (current.length > 0) {
+    chunks.push(current)
+  }
+  return chunks
+}
+
+/** Single-roundtrip liveness check used between batches. */
+async function checkSyncLiveness(
+  connectorId: string,
+  knowledgeBaseId: string
+): Promise<{ connectorDeleted: boolean; knowledgeBaseDeleted: boolean }> {
   const rows = await db
-    .select({ deletedAt: knowledgeBase.deletedAt })
-    .from(knowledgeBase)
-    .where(eq(knowledgeBase.id, knowledgeBaseId))
+    .select({
+      connectorArchivedAt: knowledgeConnector.archivedAt,
+      connectorDeletedAt: knowledgeConnector.deletedAt,
+      kbDeletedAt: knowledgeBase.deletedAt,
+    })
+    .from(knowledgeConnector)
+    .innerJoin(knowledgeBase, eq(knowledgeBase.id, knowledgeConnector.knowledgeBaseId))
+    .where(and(eq(knowledgeConnector.id, connectorId), eq(knowledgeBase.id, knowledgeBaseId)))
     .limit(1)
-  return rows.length === 0 || rows[0].deletedAt !== null
+
+  if (rows.length === 0) {
+    return { connectorDeleted: true, knowledgeBaseDeleted: true }
+  }
+  const row = rows[0]
+  return {
+    connectorDeleted: row.connectorArchivedAt !== null || row.connectorDeletedAt !== null,
+    knowledgeBaseDeleted: row.kbDeletedAt !== null,
+  }
 }
 
 async function isKnowledgeBaseActiveInTx(
@@ -93,7 +189,7 @@ async function isKnowledgeBaseActiveInTx(
 function calculateNextSyncTime(syncIntervalMinutes: number): Date | null {
   if (syncIntervalMinutes <= 0) return null
   const now = Date.now()
-  const jitterMs = Math.floor(Math.random() * Math.min(syncIntervalMinutes * 6_000, 300_000))
+  const jitterMs = randomInt(0, Math.min(syncIntervalMinutes * 6_000, 300_000))
   return new Date(now + syncIntervalMinutes * 60_000 + jitterMs)
 }
 
@@ -116,6 +212,27 @@ async function completeSyncLog(
       docsFailed: result.docsFailed,
     })
     .where(eq(knowledgeConnectorSyncLog.id, syncLogId))
+}
+
+/**
+ * Decides whether deletion reconciliation may run for a sync.
+ *
+ * Reconciliation hard-deletes every stored document absent from the listing,
+ * so it must only run against a complete source set:
+ * - never on incremental syncs (they list only changed documents)
+ * - never when the engine truncated pagination (`listingTruncated`) — a forced
+ *   fullSync cannot fix truncation, so it cannot override it
+ * - not when a connector capped its listing (`listingCapped`), unless a forced
+ *   fullSync deliberately overrides the cap to reconcile the capped scope
+ */
+export function shouldReconcileDeletions(
+  isIncremental: boolean | undefined,
+  syncContext: Record<string, unknown> | undefined,
+  fullSync: boolean | undefined
+): boolean {
+  if (isIncremental) return false
+  if (syncContext?.listingTruncated) return false
+  return !syncContext?.listingCapped || Boolean(fullSync)
 }
 
 /**
@@ -156,8 +273,11 @@ export async function dispatchSync(
     const connectorRows = await db
       .select({
         knowledgeBaseId: knowledgeConnector.knowledgeBaseId,
+        connectorArchivedAt: knowledgeConnector.archivedAt,
+        connectorDeletedAt: knowledgeConnector.deletedAt,
         workspaceId: knowledgeBase.workspaceId,
         userId: knowledgeBase.userId,
+        kbDeletedAt: knowledgeBase.deletedAt,
       })
       .from(knowledgeConnector)
       .innerJoin(knowledgeBase, eq(knowledgeBase.id, knowledgeConnector.knowledgeBaseId))
@@ -165,10 +285,39 @@ export async function dispatchSync(
       .limit(1)
 
     const row = connectorRows[0]
+    if (!row) {
+      logger.warn(`Skipping sync dispatch: connector not found`, { connectorId, requestId })
+      return
+    }
+    if (row.kbDeletedAt) {
+      logger.warn(`Skipping sync dispatch: knowledge base is deleted`, {
+        connectorId,
+        knowledgeBaseId: row.knowledgeBaseId,
+        requestId,
+      })
+      await db
+        .update(knowledgeConnector)
+        .set({
+          status: 'error',
+          nextSyncAt: null,
+          lastSyncError: 'Knowledge base deleted',
+          updatedAt: new Date(),
+        })
+        .where(eq(knowledgeConnector.id, connectorId))
+      return
+    }
+    if (row.connectorArchivedAt || row.connectorDeletedAt) {
+      logger.warn(`Skipping sync dispatch: connector is archived or deleted`, {
+        connectorId,
+        requestId,
+      })
+      return
+    }
+
     const tags = [`connectorId:${connectorId}`]
-    if (row?.knowledgeBaseId) tags.push(`knowledgeBaseId:${row.knowledgeBaseId}`)
-    if (row?.workspaceId) tags.push(`workspaceId:${row.workspaceId}`)
-    if (row?.userId) tags.push(`userId:${row.userId}`)
+    if (row.knowledgeBaseId) tags.push(`knowledgeBaseId:${row.knowledgeBaseId}`)
+    if (row.workspaceId) tags.push(`workspaceId:${row.workspaceId}`)
+    if (row.userId) tags.push(`userId:${row.userId}`)
 
     await knowledgeConnectorSync.trigger(
       {
@@ -261,7 +410,8 @@ export async function executeSync(
     .limit(1)
 
   if (connectorRows.length === 0) {
-    throw new Error(`Connector not found: ${connectorId}`)
+    logger.warn(`Skipping sync: connector ${connectorId} not found, archived, or deleted`)
+    return { ...result, error: 'connector_unavailable' }
   }
 
   const connector = connectorRows[0]
@@ -272,16 +422,31 @@ export async function executeSync(
   }
 
   const kbRows = await db
-    .select({ userId: knowledgeBase.userId })
+    .select({ userId: knowledgeBase.userId, workspaceId: knowledgeBase.workspaceId })
     .from(knowledgeBase)
     .where(and(eq(knowledgeBase.id, connector.knowledgeBaseId), isNull(knowledgeBase.deletedAt)))
     .limit(1)
 
   if (kbRows.length === 0) {
-    throw new Error(`Knowledge base not found: ${connector.knowledgeBaseId}`)
+    logger.warn(
+      `Skipping sync: knowledge base ${connector.knowledgeBaseId} is deleted (connector ${connectorId})`
+    )
+    await db
+      .update(knowledgeConnector)
+      .set({
+        status: 'error',
+        nextSyncAt: null,
+        lastSyncError: 'Knowledge base deleted',
+        updatedAt: new Date(),
+      })
+      .where(eq(knowledgeConnector.id, connectorId))
+    return { ...result, error: 'knowledge_base_deleted' }
   }
 
   const userId = kbRows[0].userId
+  // Resolved once per sync and threaded into add/updateDocument so every synced
+  // kb/ object records a trusted ownership binding without an N+1 KB lookup.
+  const kbOwner: KnowledgeBaseOwner = { workspaceId: kbRows[0].workspaceId, userId }
   const sourceConfig = connector.sourceConfig as Record<string, unknown>
 
   const lockResult = await db
@@ -355,6 +520,22 @@ export async function executeSync(
 
       cursor = page.nextCursor
       hasMore = page.hasMore
+    }
+
+    if (hasMore) {
+      /**
+       * Pagination stopped before source exhaustion (MAX_PAGES or a missing
+       * cursor), so the listing is incomplete. `listingTruncated` blocks
+       * deletion reconciliation absolutely — unlike connector-set
+       * `listingCapped`, it cannot be overridden by a forced fullSync, since
+       * re-running one truncates identically.
+       */
+      syncContext.listingCapped = true
+      syncContext.listingTruncated = true
+      logger.warn('Pagination ended before source exhaustion; skipping deletion reconciliation', {
+        connectorId,
+        docsSoFar: externalDocs.length,
+      })
     }
 
     logger.info(`Fetched ${externalDocs.length} documents from ${connectorConfig.name}`, {
@@ -437,36 +618,52 @@ export async function executeSync(
         continue
       }
 
-      if (!extDoc.content.trim() && !extDoc.contentDeferred) {
-        logger.info(`Skipping empty document: ${extDoc.title}`, {
-          externalId: extDoc.externalId,
-        })
-        continue
-      }
-
       const existing = existingByExternalId.get(extDoc.externalId)
+      const classification = classifyExternalDoc(extDoc, existing)
 
-      if (!existing) {
-        pendingOps.push({ type: 'add', extDoc })
-      } else if (existing.contentHash !== extDoc.contentHash) {
-        pendingOps.push({ type: 'update', existingId: existing.id, extDoc })
-      } else {
-        result.docsUnchanged++
+      switch (classification.type) {
+        case 'skip':
+          pendingOps.push({ type: 'skip', extDoc })
+          break
+        case 'drop':
+          logger.info(`Skipping empty document: ${extDoc.title}`, {
+            externalId: extDoc.externalId,
+          })
+          break
+        case 'add':
+          pendingOps.push({ type: 'add', extDoc })
+          break
+        case 'update':
+          pendingOps.push({ type: 'update', existingId: classification.existingId, extDoc })
+          break
+        case 'unchanged':
+          result.docsUnchanged++
+          break
       }
     }
 
-    for (let i = 0; i < pendingOps.length; i += SYNC_BATCH_SIZE) {
-      if (await isConnectorDeleted(connectorId)) {
+    // Batch by both count and summed content bytes so a few large files near the
+    // per-file cap never hydrate/upload together and exhaust the worker heap.
+    const batches = chunkOpsByByteBudget(pendingOps, CONTENT_INFLIGHT_BUDGET_BYTES, SYNC_BATCH_SIZE)
+    for (const rawBatch of batches) {
+      const liveness = await checkSyncLiveness(connectorId, connector.knowledgeBaseId)
+      if (liveness.connectorDeleted) {
         throw new ConnectorDeletedException(connectorId)
       }
-      if (await isKnowledgeBaseDeleted(connector.knowledgeBaseId)) {
+      if (liveness.knowledgeBaseDeleted) {
         throw new Error(`Knowledge base ${connector.knowledgeBaseId} was deleted during sync`)
       }
 
-      const rawBatch = pendingOps.slice(i, i + SYNC_BATCH_SIZE)
+      // Oversized/skipped docs become visible `failed` rows (never silent). They are
+      // flagged either at listing time (skip ops here) or discovered only at fetch
+      // time during hydration below; both are collected and persisted after hydration.
+      const skipExtDocs: ExternalDocument[] = rawBatch
+        .filter((op) => op.type === 'skip')
+        .map((op) => op.extDoc)
 
-      const deferredOps = rawBatch.filter((op) => op.extDoc.contentDeferred)
-      const readyOps = rawBatch.filter((op) => !op.extDoc.contentDeferred)
+      const contentOps = rawBatch.filter((op) => op.type !== 'skip')
+      const deferredOps = contentOps.filter((op) => op.extDoc.contentDeferred)
+      const readyOps = contentOps.filter((op) => !op.extDoc.contentDeferred)
 
       if (deferredOps.length > 0) {
         if (connectorConfig.auth.mode === 'oauth') {
@@ -481,7 +678,30 @@ export async function executeSync(
               op.extDoc.externalId,
               syncContext
             )
-            if (!fullDoc?.content.trim()) return null
+            // A connector may only learn a file is too large at fetch time (its
+            // listing has no size). Surface that as a failed row for new files; keep
+            // already-indexed files as last-known-good rather than downgrading them.
+            if (fullDoc?.skippedReason) {
+              if (op.type === 'add') {
+                skipExtDocs.push({
+                  ...op.extDoc,
+                  skippedReason: fullDoc.skippedReason,
+                  contentHash: fullDoc.contentHash ?? op.extDoc.contentHash,
+                  metadata: { ...op.extDoc.metadata, ...fullDoc.metadata },
+                })
+              } else if (op.type === 'update') {
+                // Already-indexed file is kept as last-known-good (not downgraded), so it
+                // counts as unchanged rather than slipping past every result counter.
+                result.docsUnchanged++
+              }
+              return null
+            }
+            if (!fullDoc?.content.trim()) {
+              // An empty re-fetch leaves an already-indexed update as last-known-good; count
+              // it as unchanged so the totals still reconcile with documents seen.
+              if (op.type === 'update') result.docsUnchanged++
+              return null
+            }
             const hydratedHash = fullDoc.contentHash ?? op.extDoc.contentHash
             if (
               op.type === 'update' &&
@@ -519,6 +739,27 @@ export async function executeSync(
         }
       }
 
+      // Record all skipped (oversized) docs in this batch in one bulk insert.
+      if (skipExtDocs.length > 0) {
+        try {
+          const recorded = await skipDocuments(
+            connector.knowledgeBaseId,
+            connectorId,
+            connector.connectorType,
+            skipExtDocs,
+            sourceConfig
+          )
+          result.docsFailed += recorded
+        } catch (error) {
+          result.docsFailed += skipExtDocs.length
+          logger.error('Failed to record skipped documents', {
+            connectorId,
+            count: skipExtDocs.length,
+            error: toError(error).message,
+          })
+        }
+      }
+
       const batch = readyOps
 
       const settled = await Promise.allSettled(
@@ -529,6 +770,7 @@ export async function executeSync(
               connectorId,
               connector.connectorType,
               op.extDoc,
+              kbOwner,
               sourceConfig
             )
           }
@@ -538,6 +780,7 @@ export async function executeSync(
             connectorId,
             connector.connectorType,
             op.extDoc,
+            kbOwner,
             sourceConfig
           )
         })
@@ -574,9 +817,7 @@ export async function executeSync(
       }
     }
 
-    // Reconcile deletions for non-incremental syncs that returned ALL docs.
-    // Skip when listing was capped (maxFiles/maxThreads) — unseen docs may still exist in the source.
-    if (!isIncremental && (!syncContext?.listingCapped || options?.fullSync)) {
+    if (shouldReconcileDeletions(isIncremental, syncContext, options?.fullSync)) {
       const removedIds = existingDocs
         .filter((d) => d.externalId && !seenExternalIds.has(d.externalId))
         .map((d) => d.id)
@@ -596,11 +837,12 @@ export async function executeSync(
       }
     }
 
-    // Check if connector was deleted before retrying stuck documents
-    if (await isConnectorDeleted(connectorId)) {
+    // Check if connector/KB were deleted before retrying stuck documents
+    const postBatchLiveness = await checkSyncLiveness(connectorId, connector.knowledgeBaseId)
+    if (postBatchLiveness.connectorDeleted) {
       throw new ConnectorDeletedException(connectorId)
     }
-    if (await isKnowledgeBaseDeleted(connector.knowledgeBaseId)) {
+    if (postBatchLiveness.knowledgeBaseDeleted) {
       throw new Error(`Knowledge base ${connector.knowledgeBaseId} was deleted during sync`)
     }
 
@@ -637,6 +879,9 @@ export async function executeSync(
           lt(document.uploadedAt, syncStartedAt),
           gt(document.uploadedAt, retryCutoff),
           eq(document.userExcluded, false),
+          // Skipped (oversized) docs are recorded as content-less failed rows with no
+          // storage key; they cannot be reprocessed, so exclude them from retry.
+          isNotNull(document.storageKey),
           isNull(document.archivedAt),
           isNull(document.deletedAt)
         )
@@ -824,6 +1069,102 @@ export async function executeSync(
   }
 }
 
+/** Owning workspace + user for a knowledge base, resolved once per sync. */
+interface KnowledgeBaseOwner {
+  workspaceId: string | null
+  userId: string
+}
+
+/**
+ * Build the storage `metadata` that records a trusted ownership binding for a
+ * synced `kb/` object. Returns `undefined` for legacy null-workspace KBs (no
+ * workspace-scoped ownership to bind), which `uploadFile` treats as "no binding".
+ */
+function kbOwnershipMetadata(
+  kbOwner: KnowledgeBaseOwner,
+  originalName: string
+): { workspaceId: string; userId: string; originalName: string } | undefined {
+  return kbOwner.workspaceId
+    ? { workspaceId: kbOwner.workspaceId, userId: kbOwner.userId, originalName }
+    : undefined
+}
+
+/** Builds a content-less `failed` document row for a skipped (e.g. oversized) file. */
+function buildSkippedDocumentRow(
+  knowledgeBaseId: string,
+  connectorId: string,
+  connectorType: string,
+  extDoc: ExternalDocument,
+  sourceConfig?: Record<string, unknown>
+) {
+  const reason = extDoc.skippedReason ?? 'Document was skipped during sync'
+  const tagValues = extDoc.metadata
+    ? resolveTagMapping(connectorType, extDoc.metadata, sourceConfig)
+    : undefined
+  // Connectors put the source size under either `fileSize` or `size`; accept both
+  // so the skipped failed row shows the real size instead of 0.
+  const rawSize = extDoc.metadata?.fileSize ?? extDoc.metadata?.size
+  const fileSize =
+    typeof rawSize === 'number' && Number.isFinite(rawSize) ? Math.max(0, Math.trunc(rawSize)) : 0
+
+  return {
+    id: generateId(),
+    knowledgeBaseId,
+    filename: extDoc.title,
+    fileUrl: '',
+    storageKey: null,
+    fileSize,
+    mimeType: 'text/plain',
+    processingStatus: 'failed',
+    processingError: reason,
+    enabled: true,
+    connectorId,
+    externalId: extDoc.externalId,
+    contentHash: extDoc.contentHash,
+    sourceUrl: extDoc.sourceUrl ?? null,
+    ...tagValues,
+    uploadedAt: new Date(),
+  }
+}
+
+/**
+ * Records source files that were intentionally not indexed (e.g. they exceed the
+ * connector's size limit) as content-less `failed` documents in a single bulk insert.
+ * This keeps the files visible in the knowledge base UI — with `processingError`
+ * explaining why — instead of silently dropping them. The rows have no storage key,
+ * so they are excluded from the stuck-document retry sweep (nothing to reprocess).
+ *
+ * Only called for files not already indexed; previously-indexed files that later
+ * exceed the limit are kept as-is (last-known-good) by `classifyExternalDoc`.
+ *
+ * Returns the number of rows recorded.
+ */
+async function skipDocuments(
+  knowledgeBaseId: string,
+  connectorId: string,
+  connectorType: string,
+  extDocs: ExternalDocument[],
+  sourceConfig?: Record<string, unknown>
+): Promise<number> {
+  if (extDocs.length === 0) {
+    return 0
+  }
+  const rows = extDocs.map((extDoc) =>
+    buildSkippedDocumentRow(knowledgeBaseId, connectorId, connectorType, extDoc, sourceConfig)
+  )
+
+  await db.transaction(async (tx) => {
+    const isActive = await isKnowledgeBaseActiveInTx(tx, knowledgeBaseId)
+    if (!isActive) {
+      throw new Error(`Knowledge base ${knowledgeBaseId} is deleted`)
+    }
+
+    await tx.insert(document).values(rows)
+  })
+
+  return rows.length
+}
+
 /**
  * Upload content to storage as a .txt file, create a document record,
  * and trigger processing via the existing pipeline.
@@ -833,11 +1174,9 @@ async function addDocument(
   connectorId: string,
   connectorType: string,
   extDoc: ExternalDocument,
+  kbOwner: KnowledgeBaseOwner,
   sourceConfig?: Record<string, unknown>
 ): Promise<DocumentData> {
-  if (await isKnowledgeBaseDeleted(knowledgeBaseId)) {
-    throw new Error(`Knowledge base ${knowledgeBaseId} is deleted`)
-  }
   const documentId = generateId()
   const contentBuffer = Buffer.from(extDoc.content, 'utf-8')
   const safeTitle = sanitizeStorageTitle(extDoc.title)
@@ -850,6 +1189,7 @@ async function addDocument(
     context: 'knowledge-base',
     customKey,
     preserveKey: true,
+    metadata: kbOwnershipMetadata(kbOwner, `${safeTitle}.txt`),
   })
 
   const fileUrl = `${getInternalApiBaseUrl()}${fileInfo.path}?context=knowledge-base`
@@ -872,6 +1212,7 @@ async function addDocument(
         knowledgeBaseId,
         filename: extDoc.title,
         fileUrl,
+        storageKey: fileInfo.key,
         fileSize: contentBuffer.length,
         mimeType: 'text/plain',
         chunkCount: 0,
@@ -892,6 +1233,7 @@ async function addDocument(
     const storageKey = extractStorageKey(urlPath)
     if (storageKey && storageKey !== urlPath) {
       await deleteFile({ key: storageKey, context: 'knowledge-base' }).catch(() => undefined)
+      await deleteFileMetadata(storageKey).catch(() => undefined)
     }
     throw error
   }
@@ -915,11 +1257,9 @@ async function updateDocument(
   connectorId: string,
   connectorType: string,
   extDoc: ExternalDocument,
+  kbOwner: KnowledgeBaseOwner,
   sourceConfig?: Record<string, unknown>
 ): Promise<DocumentData> {
-  if (await isKnowledgeBaseDeleted(knowledgeBaseId)) {
-    throw new Error(`Knowledge base ${knowledgeBaseId} is deleted`)
-  }
   // Fetch old file URL before uploading replacement
   const existingRows = await db
     .select({ fileUrl: document.fileUrl })
@@ -939,6 +1279,7 @@ async function updateDocument(
     context: 'knowledge-base',
     customKey,
     preserveKey: true,
+    metadata: kbOwnershipMetadata(kbOwner, `${safeTitle}.txt`),
   })
 
   const fileUrl = `${getInternalApiBaseUrl()}${fileInfo.path}?context=knowledge-base`
@@ -961,6 +1302,7 @@ async function updateDocument(
         .set({
           filename: extDoc.title,
           fileUrl,
+          storageKey: fileInfo.key,
           fileSize: contentBuffer.length,
           contentHash: extDoc.contentHash,
           sourceUrl: extDoc.sourceUrl ?? null,
@@ -987,17 +1329,19 @@ async function updateDocument(
     const storageKey = extractStorageKey(urlPath)
     if (storageKey && storageKey !== urlPath) {
       await deleteFile({ key: storageKey, context: 'knowledge-base' }).catch(() => undefined)
+      await deleteFileMetadata(storageKey).catch(() => undefined)
     }
     throw error
   }
 
-  // Clean up old storage file
+  // Clean up old storage file and its ownership binding
   if (oldFileUrl) {
     try {
       const urlPath = new URL(oldFileUrl, 'http://localhost').pathname
       const storageKey = extractStorageKey(urlPath)
       if (storageKey && storageKey !== urlPath) {
         await deleteFile({ key: storageKey, context: 'knowledge-base' })
+        await deleteFileMetadata(storageKey)
       }
     } catch (error) {
       logger.warn('Failed to delete old storage file', {

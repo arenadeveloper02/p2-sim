@@ -1,8 +1,9 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { AzureOpenAI } from 'openai'
 import type {
   ChatCompletion,
+  ChatCompletionContentPart,
   ChatCompletionCreateParamsBase,
   ChatCompletionCreateParamsStreaming,
   ChatCompletionMessageParam,
@@ -11,9 +12,10 @@ import type {
 } from 'openai/resources/chat/completions'
 import type { ReasoningEffort } from 'openai/resources/shared'
 import { env } from '@/lib/core/config/env'
-import { validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
+import { createPinnedFetch, validateUrlWithDNS } from '@/lib/core/security/input-validation.server'
 import type { StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
+import { prepareProviderAttachments } from '@/providers/attachments'
 import {
   checkForForcedToolUsage,
   createReadableStreamFromAzureOpenAIStream,
@@ -25,6 +27,9 @@ import {
 } from '@/providers/azure-openai/utils'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import { executeResponsesProviderRequest } from '@/providers/openai/core'
+import { createStreamingExecution } from '@/providers/streaming-execution'
+import { adaptOpenAIChatToolSchema } from '@/providers/tool-schema-adapter'
+import { enrichLastModelSegmentFromChatCompletions } from '@/providers/trace-enrichment'
 import type {
   FunctionCallResponse,
   ProviderConfig,
@@ -51,7 +56,8 @@ async function executeChatCompletionsRequest(
   request: ProviderRequest,
   azureEndpoint: string,
   azureApiVersion: string,
-  deploymentName: string
+  deploymentName: string,
+  pinnedFetch?: typeof fetch
 ): Promise<ProviderResponse | StreamingExecution> {
   logger.info('Using Azure OpenAI Chat Completions API', {
     model: request.model,
@@ -70,6 +76,7 @@ async function executeChatCompletionsRequest(
     apiKey: request.apiKey!,
     apiVersion: azureApiVersion,
     endpoint: azureEndpoint,
+    ...(pinnedFetch ? { fetch: pinnedFetch } : {}),
   })
 
   const allMessages: ChatCompletionMessageParam[] = []
@@ -89,18 +96,32 @@ async function executeChatCompletionsRequest(
   }
 
   if (request.messages) {
-    allMessages.push(...(request.messages as ChatCompletionMessageParam[]))
+    for (const message of request.messages) {
+      if (!message.files?.length || message.role !== 'user') {
+        allMessages.push(message as ChatCompletionMessageParam)
+        continue
+      }
+
+      const attachments = prepareProviderAttachments(message.files, 'azure-openai')
+      const nonImage = attachments.find((a) => a.contentType !== 'image')
+      if (nonImage) {
+        throw new Error(
+          `File "${nonImage.filename}" (${nonImage.mimeType}) requires the Azure OpenAI Responses API endpoint; chat-completions deployments support images only`
+        )
+      }
+
+      const parts: ChatCompletionContentPart[] = []
+      if (message.content) parts.push({ type: 'text', text: message.content })
+      for (const a of attachments) {
+        parts.push({ type: 'image_url', image_url: { url: a.remoteUrl ?? a.dataUrl ?? '' } })
+      }
+      const { files: _files, ...rest } = message
+      allMessages.push({ ...rest, content: parts } as ChatCompletionMessageParam)
+    }
   }
 
   const tools: ChatCompletionTool[] | undefined = request.tools?.length
-    ? request.tools.map((tool) => ({
-        type: 'function' as const,
-        function: {
-          name: tool.id,
-          description: tool.description,
-          parameters: tool.parameters,
-        },
-      }))
+    ? request.tools.map((tool) => adaptOpenAIChatToolSchema(tool))
     : undefined
 
   const payload: ChatCompletionCreateParamsBase & { verbosity?: string } = {
@@ -173,75 +194,38 @@ async function executeChatCompletionsRequest(
         request.abortSignal ? { signal: request.abortSignal } : undefined
       )
 
-      const streamingResult = {
-        stream: createReadableStreamFromAzureOpenAIStream(streamResponse, (content, usage) => {
-          streamingResult.execution.output.content = content
-          streamingResult.execution.output.tokens = {
-            input: usage.prompt_tokens,
-            output: usage.completion_tokens,
-            total: usage.total_tokens,
-          }
-
-          const costResult = calculateCost(
-            request.model,
-            usage.prompt_tokens,
-            usage.completion_tokens
-          )
-          streamingResult.execution.output.cost = {
-            input: costResult.input,
-            output: costResult.output,
-            total: costResult.total,
-          }
-
-          const streamEndTime = Date.now()
-          const streamEndTimeISO = new Date(streamEndTime).toISOString()
-
-          if (streamingResult.execution.output.providerTiming) {
-            streamingResult.execution.output.providerTiming.endTime = streamEndTimeISO
-            streamingResult.execution.output.providerTiming.duration =
-              streamEndTime - providerStartTime
-
-            if (streamingResult.execution.output.providerTiming.timeSegments?.[0]) {
-              streamingResult.execution.output.providerTiming.timeSegments[0].endTime =
-                streamEndTime
-              streamingResult.execution.output.providerTiming.timeSegments[0].duration =
-                streamEndTime - providerStartTime
+      const streamingResult = createStreamingExecution({
+        model: request.model,
+        providerStartTime,
+        providerStartTimeISO,
+        timing: { kind: 'simple', segmentName: request.model },
+        initialTokens: { input: 0, output: 0, total: 0 },
+        initialCost: { input: 0, output: 0, total: 0 },
+        createStream: ({ output, finalizeTiming }) =>
+          createReadableStreamFromAzureOpenAIStream(streamResponse, (content, usage) => {
+            output.content = content
+            output.tokens = {
+              input: usage.prompt_tokens,
+              output: usage.completion_tokens,
+              total: usage.total_tokens,
             }
-          }
-        }),
-        execution: {
-          success: true,
-          output: {
-            content: '',
-            model: request.model,
-            tokens: { input: 0, output: 0, total: 0 },
-            toolCalls: undefined,
-            providerTiming: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-              timeSegments: [
-                {
-                  type: 'model',
-                  name: 'Streaming response',
-                  startTime: providerStartTime,
-                  endTime: Date.now(),
-                  duration: Date.now() - providerStartTime,
-                },
-              ],
-            },
-            cost: { input: 0, output: 0, total: 0 },
-          },
-          logs: [],
-          metadata: {
-            startTime: providerStartTimeISO,
-            endTime: new Date().toISOString(),
-            duration: Date.now() - providerStartTime,
-          },
-        },
-      } as StreamingExecution
 
-      return streamingResult as StreamingExecution
+            const costResult = calculateCost(
+              request.model,
+              usage.prompt_tokens,
+              usage.completion_tokens
+            )
+            output.cost = {
+              input: costResult.input,
+              output: costResult.output,
+              total: costResult.total,
+            }
+
+            finalizeTiming()
+          }),
+      })
+
+      return streamingResult
     }
 
     const initialCallTime = Date.now()
@@ -272,12 +256,19 @@ async function executeChatCompletionsRequest(
     const timeSegments: TimeSegment[] = [
       {
         type: 'model',
-        name: 'Initial response',
+        name: request.model,
         startTime: initialCallTime,
         endTime: initialCallTime + firstResponseTime,
         duration: firstResponseTime,
       },
     ]
+
+    enrichLastModelSegmentFromChatCompletions(
+      timeSegments,
+      currentResponse,
+      currentResponse.choices[0]?.message?.tool_calls,
+      { model: request.model, provider: 'azure_openai' }
+    )
 
     const firstCheckResult = checkForForcedToolUsage(
       currentResponse,
@@ -316,7 +307,9 @@ async function executeChatCompletionsRequest(
           if (!tool) return null
 
           const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-          const result = await executeTool(toolName, executionParams)
+          const result = await executeTool(toolName, executionParams, {
+            signal: request.abortSignal,
+          })
           const toolCallEndTime = Date.now()
 
           return {
@@ -339,7 +332,7 @@ async function executeChatCompletionsRequest(
             result: {
               success: false,
               output: undefined,
-              error: error instanceof Error ? error.message : 'Tool execution failed',
+              error: getErrorMessage(error, 'Tool execution failed'),
             },
             startTime: toolCallStartTime,
             endTime: toolCallEndTime,
@@ -450,11 +443,18 @@ async function executeChatCompletionsRequest(
 
       timeSegments.push({
         type: 'model',
-        name: `Model response (iteration ${iterationCount + 1})`,
+        name: request.model,
         startTime: nextModelStartTime,
         endTime: nextModelEndTime,
         duration: thisModelTime,
       })
+
+      enrichLastModelSegmentFromChatCompletions(
+        timeSegments,
+        currentResponse,
+        currentResponse.choices[0]?.message?.tool_calls,
+        { model: request.model, provider: 'azure_openai' }
+      )
 
       modelTime += thisModelTime
 
@@ -488,80 +488,62 @@ async function executeChatCompletionsRequest(
         request.abortSignal ? { signal: request.abortSignal } : undefined
       )
 
-      const streamingResult = {
-        stream: createReadableStreamFromAzureOpenAIStream(streamResponse, (content, usage) => {
-          streamingResult.execution.output.content = content
-          streamingResult.execution.output.tokens = {
-            input: tokens.input + usage.prompt_tokens,
-            output: tokens.output + usage.completion_tokens,
-            total: tokens.total + usage.total_tokens,
-          }
-
-          const streamCost = calculateCost(
-            request.model,
-            usage.prompt_tokens,
-            usage.completion_tokens
-          )
-          const tc = sumToolCosts(toolResults)
-          streamingResult.execution.output.cost = {
-            input: accumulatedCost.input + streamCost.input,
-            output: accumulatedCost.output + streamCost.output,
-            toolCost: tc || undefined,
-            total: accumulatedCost.total + streamCost.total + tc,
-          }
-
-          const streamEndTime = Date.now()
-          const streamEndTimeISO = new Date(streamEndTime).toISOString()
-
-          if (streamingResult.execution.output.providerTiming) {
-            streamingResult.execution.output.providerTiming.endTime = streamEndTimeISO
-            streamingResult.execution.output.providerTiming.duration =
-              streamEndTime - providerStartTime
-          }
-        }),
-        execution: {
-          success: true,
-          output: {
-            content: '',
-            model: request.model,
-            tokens: {
-              input: tokens.input,
-              output: tokens.output,
-              total: tokens.total,
-            },
-            toolCalls:
-              toolCalls.length > 0
-                ? {
-                    list: toolCalls,
-                    count: toolCalls.length,
-                  }
-                : undefined,
-            providerTiming: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-              modelTime: modelTime,
-              toolsTime: toolsTime,
-              firstResponseTime: firstResponseTime,
-              iterations: iterationCount + 1,
-              timeSegments: timeSegments,
-            },
-            cost: {
-              input: accumulatedCost.input,
-              output: accumulatedCost.output,
-              total: accumulatedCost.total,
-            },
-          },
-          logs: [],
-          metadata: {
-            startTime: providerStartTimeISO,
-            endTime: new Date().toISOString(),
-            duration: Date.now() - providerStartTime,
-          },
+      const streamingResult = createStreamingExecution({
+        model: request.model,
+        providerStartTime,
+        providerStartTimeISO,
+        timing: {
+          kind: 'accumulated',
+          modelTime,
+          toolsTime,
+          firstResponseTime,
+          iterations: iterationCount + 1,
+          timeSegments,
         },
-      } as StreamingExecution
+        initialTokens: {
+          input: tokens.input,
+          output: tokens.output,
+          total: tokens.total,
+        },
+        initialCost: {
+          input: accumulatedCost.input,
+          output: accumulatedCost.output,
+          total: accumulatedCost.total,
+        },
+        toolCalls:
+          toolCalls.length > 0
+            ? {
+                list: toolCalls,
+                count: toolCalls.length,
+              }
+            : undefined,
+        createStream: ({ output, finalizeTiming }) =>
+          createReadableStreamFromAzureOpenAIStream(streamResponse, (content, usage) => {
+            output.content = content
+            output.tokens = {
+              input: tokens.input + usage.prompt_tokens,
+              output: tokens.output + usage.completion_tokens,
+              total: tokens.total + usage.total_tokens,
+            }
 
-      return streamingResult as StreamingExecution
+            const streamCost = calculateCost(
+              request.model,
+              usage.prompt_tokens,
+              usage.completion_tokens
+            )
+            const tc = sumToolCosts(toolResults)
+            output.cost = {
+              input: accumulatedCost.input + streamCost.input,
+              output: accumulatedCost.output + streamCost.output,
+              toolCost: tc || undefined,
+              total: accumulatedCost.total + streamCost.total + tc,
+            }
+
+            finalizeTiming()
+          }),
+      })
+
+      return streamingResult
     }
 
     const providerEndTime = Date.now()
@@ -626,6 +608,7 @@ export const azureOpenAIProvider: ProviderConfig = {
       )
     }
 
+    let pinnedFetch: typeof fetch | undefined
     if (userProvidedEndpoint) {
       const validation = await validateUrlWithDNS(userProvidedEndpoint, 'azureEndpoint')
       if (!validation.isValid) {
@@ -635,6 +618,10 @@ export const azureOpenAIProvider: ProviderConfig = {
         })
         throw new Error(`Invalid Azure OpenAI endpoint: ${validation.error}`)
       }
+      if (!validation.resolvedIP) {
+        throw new Error('Invalid Azure OpenAI endpoint: could not resolve a pinnable IP address')
+      }
+      pinnedFetch = createPinnedFetch(validation.resolvedIP)
     }
 
     const apiKey = request.apiKey
@@ -672,7 +659,8 @@ export const azureOpenAIProvider: ProviderConfig = {
         { ...request, apiKey },
         baseUrl,
         azureApiVersion,
-        deploymentName
+        deploymentName,
+        pinnedFetch
       )
     }
 
@@ -696,6 +684,7 @@ export const azureOpenAIProvider: ProviderConfig = {
             'api-key': apiKey,
           },
           logger,
+          fetch: pinnedFetch,
         }
       )
     }
@@ -720,6 +709,7 @@ export const azureOpenAIProvider: ProviderConfig = {
           'api-key': apiKey,
         },
         logger,
+        fetch: pinnedFetch,
       }
     )
   },

@@ -3,7 +3,14 @@
  *
  * @vitest-environment node
  */
-import { authMockFns, hybridAuthMockFns, permissionsMock, permissionsMockFns } from '@sim/testing'
+import {
+  authMockFns,
+  hybridAuthMockFns,
+  permissionsMock,
+  permissionsMockFns,
+  storageServiceMock,
+  storageServiceMockFns,
+} from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -16,8 +23,6 @@ const mocks = vi.hoisted(() => {
   const mockGetStorageProvider = vi.fn()
   const mockIsUsingCloudStorage = vi.fn()
   const mockUploadFile = vi.fn()
-  const mockHasCloudStorage = vi.fn()
-  const mockStorageUploadFile = vi.fn()
 
   return {
     mockVerifyFileAccess,
@@ -28,8 +33,6 @@ const mocks = vi.hoisted(() => {
     mockGetStorageProvider,
     mockIsUsingCloudStorage,
     mockUploadFile,
-    mockHasCloudStorage,
-    mockStorageUploadFile,
   }
 })
 
@@ -85,17 +88,22 @@ vi.mock('@/lib/uploads', () => ({
   uploadFile: mocks.mockUploadFile,
 }))
 
-vi.mock('@/lib/uploads/core/storage-service', () => ({
-  uploadFile: mocks.mockStorageUploadFile,
-  hasCloudStorage: mocks.mockHasCloudStorage,
-}))
+vi.mock('@/lib/uploads/core/storage-service', () => storageServiceMock)
+
+vi.mock('@/lib/uploads/shared/types', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/uploads/shared/types')>()
+  return {
+    ...actual,
+    MAX_WORKSPACE_FORMDATA_FILE_SIZE: 1024,
+  }
+})
 
 vi.mock('@/lib/uploads/setup.server', () => ({
   UPLOAD_DIR_SERVER: '/tmp/test-uploads',
 }))
 
 import { uploadWorkspaceFile } from '@/lib/uploads/contexts/workspace'
-import { OPTIONS, POST } from '@/app/api/files/upload/route'
+import { POST } from '@/app/api/files/upload/route'
 
 /**
  * Configure mocks for authenticated file upload tests
@@ -153,8 +161,8 @@ function setupFileApiMocks(
     type: 'text/plain',
   })
 
-  mocks.mockHasCloudStorage.mockReturnValue(cloudEnabled)
-  mocks.mockStorageUploadFile.mockResolvedValue({
+  storageServiceMockFns.mockHasCloudStorage.mockReturnValue(cloudEnabled)
+  storageServiceMockFns.mockUploadFile.mockResolvedValue({
     key: 'test-key',
     path: '/test/path',
   })
@@ -179,6 +187,13 @@ describe('File Upload API Route', () => {
     return new File([content], name, { type })
   }
 
+  const createUploadRequest = (formData: FormData): NextRequest =>
+    new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      headers: { 'content-length': '1024' },
+      body: formData,
+    })
+
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -196,10 +211,7 @@ describe('File Upload API Route', () => {
     const mockFile = createMockFile()
     const formData = createMockFormData([mockFile])
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -215,6 +227,26 @@ describe('File Upload API Route', () => {
     expect(uploadWorkspaceFile).toHaveBeenCalled()
   })
 
+  it('should accept chunked multipart uploads without a content-length header', async () => {
+    setupFileApiMocks({
+      cloudEnabled: false,
+      storageProvider: 'local',
+    })
+
+    const formData = createMockFormData([createMockFile()])
+    const req = new NextRequest('http://localhost:3000/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    expect(req.headers.get('content-length')).toBeNull()
+
+    const response = await POST(req)
+
+    expect(response.status).toBe(200)
+    expect(uploadWorkspaceFile).toHaveBeenCalled()
+  })
+
   it('should upload a file to S3 when in S3 mode', async () => {
     setupFileApiMocks({
       cloudEnabled: true,
@@ -224,10 +256,7 @@ describe('File Upload API Route', () => {
     const mockFile = createMockFile()
     const formData = createMockFormData([mockFile])
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -253,10 +282,7 @@ describe('File Upload API Route', () => {
     const mockFile2 = createMockFile('file2.txt', 'text/plain')
     const formData = createMockFormData([mockFile1, mockFile2])
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -313,10 +339,7 @@ describe('File Upload API Route', () => {
 
     const formData = new FormData()
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -337,10 +360,7 @@ describe('File Upload API Route', () => {
     const mockFile = createMockFile()
     const formData = createMockFormData([mockFile])
 
-    const req = new NextRequest('http://localhost:3000/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const req = createUploadRequest(formData)
 
     const response = await POST(req)
     const data = await response.json()
@@ -348,14 +368,6 @@ describe('File Upload API Route', () => {
     expect(response.status).toBe(413)
     expect(data).toHaveProperty('error')
     expect(typeof data.error).toBe('string')
-  })
-
-  it('should handle CORS preflight requests', async () => {
-    const response = await OPTIONS()
-
-    expect(response.status).toBe(204)
-    expect(response.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, DELETE, OPTIONS')
-    expect(response.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type')
   })
 })
 
@@ -367,8 +379,8 @@ describe('File Upload Security Tests', () => {
       user: { id: 'test-user-id' },
     })
 
-    mocks.mockHasCloudStorage.mockReturnValue(false)
-    mocks.mockStorageUploadFile.mockResolvedValue({
+    storageServiceMockFns.mockHasCloudStorage.mockReturnValue(false)
+    storageServiceMockFns.mockUploadFile.mockResolvedValue({
       key: 'test-key',
       path: '/test/path',
     })
@@ -412,6 +424,7 @@ describe('File Upload Security Tests', () => {
 
         const req = new Request('http://localhost/api/files/upload', {
           method: 'POST',
+          headers: { 'content-length': '1024' },
           body: formData,
         })
 
@@ -431,6 +444,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -450,6 +464,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -468,6 +483,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -487,6 +503,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -512,6 +529,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 
@@ -533,6 +551,7 @@ describe('File Upload Security Tests', () => {
 
       const req = new Request('http://localhost/api/files/upload', {
         method: 'POST',
+        headers: { 'content-length': '1024' },
         body: formData,
       })
 

@@ -39,7 +39,7 @@ const mockCheckWriteAccess = knowledgeApiUtilsMockFns.mockCheckKnowledgeBaseWrit
 vi.mock('@sim/db', () => ({ db: mockDbChain }))
 vi.mock('@/app/api/knowledge/utils', () => knowledgeApiUtilsMock)
 vi.mock('@/app/api/auth/oauth/utils', () => authOAuthUtilsMock)
-vi.mock('@/connectors/registry', () => ({
+vi.mock('@/connectors/registry.server', () => ({
   CONNECTOR_REGISTRY: {
     jira: { validateConfig: mockValidateConfig },
   },
@@ -162,7 +162,7 @@ describe('Knowledge Connector By ID API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data.error).toBe('Invalid request')
+      expect(data.error).toBe('Validation error')
     })
 
     it('returns 404 when connector not found during sourceConfig validation', async () => {

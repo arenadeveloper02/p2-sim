@@ -1,7 +1,6 @@
-import type { GrafanaUpdateAlertRuleParams } from '@/tools/grafana/types'
+import { ALERT_RULE_OUTPUT_FIELDS, type GrafanaUpdateAlertRuleParams } from '@/tools/grafana/types'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
-// Using ToolResponse for intermediate state since this tool fetches existing data first
 export const updateAlertRuleTool: ToolConfig<GrafanaUpdateAlertRuleParams, ToolResponse> = {
   id: 'grafana_update_alert_rule',
   name: 'Grafana Update Alert Rule',
@@ -79,7 +78,7 @@ export const updateAlertRuleTool: ToolConfig<GrafanaUpdateAlertRuleParams, ToolR
       type: 'string',
       required: false,
       visibility: 'user-only',
-      description: 'State on execution error (Alerting, OK)',
+      description: 'State on execution error (Error, Alerting, OK)',
     },
     annotations: {
       type: 'string',
@@ -93,161 +92,80 @@ export const updateAlertRuleTool: ToolConfig<GrafanaUpdateAlertRuleParams, ToolR
       visibility: 'user-or-llm',
       description: 'JSON object of labels',
     },
+    isPaused: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-only',
+      description: 'Whether the rule is paused',
+    },
+    keepFiringFor: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Duration to keep firing after the condition stops (e.g., 5m)',
+    },
+    missingSeriesEvalsToResolve: {
+      type: 'number',
+      required: false,
+      visibility: 'user-only',
+      description: 'Number of missing series evaluations before resolving',
+    },
+    notificationSettings: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'JSON object of per-rule notification settings (overrides)',
+    },
+    record: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'JSON object configuring this as a recording rule',
+    },
+    disableProvenance: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-only',
+      description: 'Set X-Disable-Provenance header so the rule remains editable in the Grafana UI',
+    },
   },
 
   request: {
-    // First, GET the existing alert rule
-    url: (params) =>
-      `${params.baseUrl.replace(/\/$/, '')}/api/v1/provisioning/alert-rules/${params.alertRuleUid}`,
-    method: 'GET',
-    headers: (params) => {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${params.apiKey}`,
-      }
-      if (params.organizationId) {
-        headers['X-Grafana-Org-Id'] = params.organizationId
-      }
-      return headers
-    },
+    url: () => '/api/tools/grafana/update_alert_rule',
+    method: 'POST',
+    headers: () => ({ 'Content-Type': 'application/json' }),
+    body: (params) => ({
+      apiKey: params.apiKey,
+      baseUrl: params.baseUrl,
+      organizationId: params.organizationId,
+      alertRuleUid: params.alertRuleUid,
+      title: params.title,
+      folderUid: params.folderUid,
+      ruleGroup: params.ruleGroup,
+      condition: params.condition,
+      data: params.data,
+      forDuration: params.forDuration,
+      noDataState: params.noDataState,
+      execErrState: params.execErrState,
+      annotations: params.annotations,
+      labels: params.labels,
+      isPaused: params.isPaused,
+      keepFiringFor: params.keepFiringFor,
+      missingSeriesEvalsToResolve: params.missingSeriesEvalsToResolve,
+      notificationSettings: params.notificationSettings,
+      record: params.record,
+      disableProvenance: params.disableProvenance,
+    }),
   },
 
   transformResponse: async (response: Response) => {
-    // Store the existing rule data for postProcess to use
     const data = await response.json()
     return {
-      success: true,
-      output: {
-        _existingRule: data,
-      },
+      success: data.success ?? true,
+      output: data.output ?? {},
+      ...(data.error ? { error: data.error } : {}),
     }
   },
 
-  postProcess: async (result, params) => {
-    // Merge user changes with existing rule and PUT the complete object
-    const existingRule = result.output._existingRule
-
-    if (!existingRule || !existingRule.uid) {
-      return {
-        success: false,
-        output: {},
-        error: 'Failed to fetch existing alert rule',
-      }
-    }
-
-    // Build the updated rule by merging existing data with new params
-    const updatedRule: Record<string, any> = {
-      ...existingRule,
-    }
-
-    // Apply user's changes
-    if (params.title) updatedRule.title = params.title
-    if (params.folderUid) updatedRule.folderUID = params.folderUid
-    if (params.ruleGroup) updatedRule.ruleGroup = params.ruleGroup
-    if (params.condition) updatedRule.condition = params.condition
-    if (params.forDuration) updatedRule.for = params.forDuration
-    if (params.noDataState) updatedRule.noDataState = params.noDataState
-    if (params.execErrState) updatedRule.execErrState = params.execErrState
-
-    if (params.data) {
-      try {
-        updatedRule.data = JSON.parse(params.data)
-      } catch {
-        // Keep existing data if parse fails
-      }
-    }
-
-    if (params.annotations) {
-      try {
-        updatedRule.annotations = {
-          ...(existingRule.annotations || {}),
-          ...JSON.parse(params.annotations),
-        }
-      } catch {
-        // Keep existing annotations if parse fails
-      }
-    }
-
-    if (params.labels) {
-      try {
-        updatedRule.labels = {
-          ...(existingRule.labels || {}),
-          ...JSON.parse(params.labels),
-        }
-      } catch {
-        // Keep existing labels if parse fails
-      }
-    }
-
-    // Make the PUT request with the complete merged object
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${params.apiKey}`,
-    }
-    if (params.organizationId) {
-      headers['X-Grafana-Org-Id'] = params.organizationId
-    }
-
-    const updateResponse = await fetch(
-      `${params.baseUrl.replace(/\/$/, '')}/api/v1/provisioning/alert-rules/${params.alertRuleUid}`,
-      {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(updatedRule),
-      }
-    )
-
-    if (!updateResponse.ok) {
-      const errorText = await updateResponse.text()
-      return {
-        success: false,
-        output: {},
-        error: `Failed to update alert rule: ${errorText}`,
-      }
-    }
-
-    const data = await updateResponse.json()
-
-    return {
-      success: true,
-      output: {
-        uid: data.uid,
-        title: data.title,
-        condition: data.condition,
-        data: data.data,
-        updated: data.updated,
-        noDataState: data.noDataState,
-        execErrState: data.execErrState,
-        for: data.for,
-        annotations: data.annotations || {},
-        labels: data.labels || {},
-        isPaused: data.isPaused || false,
-        folderUID: data.folderUID,
-        ruleGroup: data.ruleGroup,
-        orgId: data.orgId,
-        namespace_uid: data.namespace_uid,
-        namespace_id: data.namespace_id,
-        provenance: data.provenance || '',
-      },
-    }
-  },
-
-  outputs: {
-    uid: {
-      type: 'string',
-      description: 'The UID of the updated alert rule',
-    },
-    title: {
-      type: 'string',
-      description: 'Alert rule title',
-    },
-    folderUID: {
-      type: 'string',
-      description: 'Parent folder UID',
-    },
-    ruleGroup: {
-      type: 'string',
-      description: 'Rule group name',
-    },
-  },
+  outputs: ALERT_RULE_OUTPUT_FIELDS,
 }

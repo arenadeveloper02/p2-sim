@@ -4,12 +4,37 @@ export const FORMS_API_BASE = 'https://forms.googleapis.com/v1'
 
 const logger = createLogger('GoogleFormsUtils')
 
-export function buildListResponsesUrl(params: { formId: string; pageSize?: number }): string {
-  const { formId, pageSize } = params
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+}
+
+export function getGoogleFormsErrorMessage(data: unknown, fallback: string): string {
+  if (!isRecord(data)) return fallback
+
+  const { error } = data
+  if (!isRecord(error)) return fallback
+
+  const { message } = error
+  return typeof message === 'string' ? message : fallback
+}
+
+export function buildListResponsesUrl(params: {
+  formId: string
+  pageSize?: number
+  pageToken?: string
+  filter?: string
+}): string {
+  const { formId, pageSize, pageToken, filter } = params
   const url = new URL(`${FORMS_API_BASE}/forms/${encodeURIComponent(formId)}/responses`)
   if (pageSize && pageSize > 0) {
     const limited = Math.min(pageSize, 5000)
     url.searchParams.set('pageSize', String(limited))
+  }
+  if (pageToken) {
+    url.searchParams.set('pageToken', pageToken)
+  }
+  if (filter) {
+    url.searchParams.set('filter', filter)
   }
   const finalUrl = url.toString()
   logger.debug('Built Google Forms list responses URL', { finalUrl })

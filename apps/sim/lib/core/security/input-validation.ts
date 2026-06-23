@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import * as ipaddr from 'ipaddr.js'
-import { isHosted } from '@/lib/core/config/feature-flags'
+import { isHosted } from '@/lib/core/config/env-flags'
 
 const logger = createLogger('InputValidation')
 
@@ -617,6 +617,27 @@ export function validateSharePointSiteId(
 export function validateJiraCloudId(
   value: string | null | undefined,
   paramName = 'cloudId'
+): ValidationResult {
+  return validatePathSegment(value, {
+    paramName,
+    allowHyphens: true,
+    allowUnderscores: false,
+    allowDots: false,
+    maxLength: 100,
+  })
+}
+
+/**
+ * Validates an Atlassian Assets workspace ID (a UUID-shaped, hyphenated
+ * alphanumeric identifier) before it is interpolated into an API path.
+ *
+ * @param value - The Assets workspace ID to validate
+ * @param paramName - Name of the parameter for error messages
+ * @returns ValidationResult
+ */
+export function validateAssetsWorkspaceId(
+  value: string | null | undefined,
+  paramName = 'workspaceId'
 ): ValidationResult {
   return validatePathSegment(value, {
     paramName,
@@ -1592,4 +1613,31 @@ export function validateWorkdayTenantUrl(
   }
 
   return { isValid: true, sanitized: url as string }
+}
+
+/**
+ * Validates a database identifier (table or column name) to prevent SQL injection.
+ *
+ * Accepts only identifiers that start with a letter or underscore and contain
+ * only letters, digits, and underscores — the safe subset of SQL identifiers.
+ *
+ * @param value - The identifier to validate
+ * @param paramName - Name of the parameter for error messages (e.g. 'table', 'column')
+ * @returns ValidationResult with isValid flag and optional error message
+ */
+export function validateDatabaseIdentifier(
+  value: unknown,
+  paramName = 'identifier'
+): ValidationResult {
+  if (typeof value !== 'string' || value.length === 0) {
+    return { isValid: false, error: `${paramName} is required` }
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+    logger.warn('Invalid database identifier', { paramName, value: value.substring(0, 100) })
+    return {
+      isValid: false,
+      error: `Invalid ${paramName}: must start with a letter or underscore and contain only letters, digits, and underscores`,
+    }
+  }
+  return { isValid: true, sanitized: value }
 }

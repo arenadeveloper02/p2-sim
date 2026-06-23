@@ -1,31 +1,47 @@
+import { truncate } from '@sim/utils/string'
 import { getCopilotToolDescription } from '@/lib/copilot/tools/descriptions'
-import { isHosted } from '@/lib/core/config/feature-flags'
+import { isHosted } from '@/lib/core/config/env-flags'
 import { isSubBlockHidden } from '@/lib/workflows/subblocks/visibility'
 import type { BlockConfig, SubBlockConfig } from '@/blocks/types'
 import { DYNAMIC_MODEL_PROVIDERS, PROVIDER_DEFINITIONS } from '@/providers/models'
 import type { ToolConfig } from '@/tools/types'
 
 /**
- * Serialize workflow metadata for VFS meta.json
+ * Serialize workflow metadata for VFS meta.json.
+ *
+ * `locked` is the EFFECTIVE lock — true when the workflow is locked directly or
+ * sits inside a locked folder. A locked workflow cannot be edited, moved,
+ * renamed, or deleted (mutations are rejected server-side with a 423). The
+ * mothership should read this before attempting any workflow mutation.
+ * `inheritedFolderLock` carries the resolved containing-folder lock (the
+ * caller computes folder inheritance; see workspace-vfs materializeWorkflows).
  */
-export function serializeWorkflowMeta(wf: {
-  id: string
-  name: string
-  description?: string | null
-  folderId?: string | null
-  isDeployed: boolean
-  deployedAt?: Date | null
-  runCount: number
-  lastRunAt?: Date | null
-  createdAt: Date
-  updatedAt: Date
-}): string {
+export function serializeWorkflowMeta(
+  wf: {
+    id: string
+    name: string
+    description?: string | null
+    folderId?: string | null
+    isDeployed: boolean
+    deployedAt?: Date | null
+    runCount: number
+    lastRunAt?: Date | null
+    createdAt: Date
+    updatedAt: Date
+    locked?: boolean
+  },
+  options?: { inheritedFolderLock?: boolean }
+): string {
+  const directLock = wf.locked ?? false
+  const locked = directLock || (options?.inheritedFolderLock ?? false)
   return JSON.stringify(
     {
       id: wf.id,
       name: wf.name,
       description: wf.description || undefined,
       folderId: wf.folderId || undefined,
+      locked,
+      lockedBy: locked ? (directLock ? 'workflow' : 'folder') : undefined,
       isDeployed: wf.isDeployed,
       deployedAt: wf.deployedAt?.toISOString(),
       runCount: wf.runCount,
@@ -263,12 +279,14 @@ export function serializeConnectorOverview(connectors: SerializableConnectorConf
 }
 
 /**
- * Serialize workspace file metadata for VFS files/{name}/meta.json
- * and files/by-id/{id}/meta.json.
+ * Serialize workspace file metadata for VFS files/{path}/{name}/meta.json.
  */
 export function serializeFileMeta(file: {
   id: string
   name: string
+  folderId?: string | null
+  folderPath?: string | null
+  vfsPath?: string
   contentType: string
   size: number
   uploadedAt: Date
@@ -277,9 +295,14 @@ export function serializeFileMeta(file: {
     {
       id: file.id,
       name: file.name,
+      folderId: file.folderId || undefined,
+      folderPath: file.folderPath || undefined,
+      vfsPath: file.vfsPath,
       contentType: file.contentType,
       size: file.size,
       uploadedAt: file.uploadedAt.toISOString(),
+      readContentWith: file.vfsPath ? `${file.vfsPath}/content` : undefined,
+      note: 'This is file metadata only. To read the file text/bytes, read the readContentWith path (i.e. append /content).',
     },
     null,
     2
@@ -527,16 +550,6 @@ export interface DeploymentData {
     customizations: unknown
     isActive: boolean
   } | null
-  form?: {
-    id: string
-    identifier: string
-    title: string
-    description?: string | null
-    authType: string
-    showBranding: boolean
-    customizations: unknown
-    isActive: boolean
-  } | null
   mcp: Array<{
     serverId: string
     serverName: string
@@ -595,20 +608,6 @@ export function serializeDeployments(data: DeploymentData): string {
     }
   }
 
-  if (data.form) {
-    result.form = {
-      id: data.form.id,
-      identifier: data.form.identifier,
-      formUrl: `/form/${data.form.identifier}`,
-      title: data.form.title,
-      description: data.form.description || undefined,
-      authType: data.form.authType,
-      showBranding: data.form.showBranding,
-      customizations: data.form.customizations,
-      isActive: data.form.isActive,
-    }
-  }
-
   if (data.mcp.length > 0) {
     result.mcp = data.mcp.map((m) => ({
       serverId: m.serverId,
@@ -636,7 +635,8 @@ export function serializeDeployments(data: DeploymentData): string {
 
 /**
  * Serialize deployment version history for VFS workflows/{name}/versions.json.
- * Lists all versions without full state — use get_deployment_version tool to fetch a version's state.
+ * Lists all versions without full state — use the diff_workflows tool to compare a version,
+ * or load_deployment to restore one into the draft.
  */
 export function serializeVersions(
   versions: Array<{
@@ -676,7 +676,7 @@ export function serializeCustomTool(tool: {
       id: tool.id,
       title: tool.title,
       schema: tool.schema,
-      codePreview: tool.code.length > 500 ? `${tool.code.slice(0, 500)}...` : tool.code,
+      codePreview: truncate(tool.code, 500),
     },
     null,
     2
@@ -723,7 +723,7 @@ export function serializeSkill(s: {
       id: s.id,
       name: s.name,
       description: s.description,
-      contentPreview: s.content.length > 500 ? `${s.content.slice(0, 500)}...` : s.content,
+      contentPreview: truncate(s.content, 500),
       createdAt: s.createdAt.toISOString(),
     },
     null,
@@ -739,6 +739,9 @@ export function serializeIntegrationSchema(tool: ToolConfig): string {
 
   return JSON.stringify(
     {
+      // The full registry id is the agent-callable id (deferred tools are sent
+      // with this exact id; no stripping). Surface it verbatim so "copy the id
+      // field and load it" matches the callable tool and the block's tools.access.
       id: tool.id,
       name: tool.name,
       description: getCopilotToolDescription(tool, { isHosted }),

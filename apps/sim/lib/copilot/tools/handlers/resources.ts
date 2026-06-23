@@ -1,11 +1,17 @@
+import { db } from '@sim/db'
+import { workflowSchedule } from '@sim/db/schema'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/request/types'
 import { type MothershipResource, MothershipResourceType } from '@/lib/copilot/resources/types'
+import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
 import { getKnowledgeBaseById } from '@/lib/knowledge/service'
 import { getLogById } from '@/lib/logs/service'
 import { getTableById } from '@/lib/table/service'
-import { getWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import {
+  getWorkspaceFile,
+  resolveWorkspaceFileReference,
+} from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { getWorkflowById } from '@/lib/workflows/utils'
-import { isUuid } from '@/executor/constants'
 import type { OpenResourceItem, OpenResourceParams, ValidOpenResourceParams } from './param-types'
 
 const VALID_OPEN_RESOURCE_TYPES = new Set(Object.values(MothershipResourceType))
@@ -15,20 +21,30 @@ async function resolveResource(
   context: ExecutionContext
 ): Promise<MothershipResource | { error: string }> {
   const resourceType = item.type
-  let resourceId = item.id
+  let resourceId = item.id ?? ''
   let title: string = resourceType
 
   if (resourceType === 'file') {
     if (!context.workspaceId)
       return { error: 'Opening a workspace file requires workspace context.' }
-    if (!isUuid(item.id))
-      return { error: 'open_resource for files requires the canonical file UUID.' }
-    const record = await getWorkspaceFile(context.workspaceId, item.id)
-    if (!record) return { error: `No workspace file with id "${item.id}".` }
+    const fileRef = item.path || item.id || ''
+    const record = item.path
+      ? await resolveWorkspaceFileReference(context.workspaceId, item.path)
+      : item.id
+        ? await getWorkspaceFile(context.workspaceId, item.id)
+        : null
+    if (!record) return { error: `No workspace file found for "${fileRef}".` }
     resourceId = record.id
     title = record.name
+    return {
+      type: resourceType,
+      id: resourceId,
+      title,
+      path: canonicalWorkspaceFilePath({ folderPath: record.folderPath, name: record.name }),
+    }
   }
   if (resourceType === 'workflow') {
+    if (!item.id) return { error: 'workflow resources require `id`.' }
     const wf = await getWorkflowById(item.id)
     if (!wf) return { error: `No workflow with id "${item.id}".` }
     if (context.workspaceId && wf.workspaceId !== context.workspaceId)
@@ -37,6 +53,7 @@ async function resolveResource(
     title = wf.name
   }
   if (resourceType === 'table') {
+    if (!item.id) return { error: 'table resources require `id`.' }
     const tbl = await getTableById(item.id)
     if (!tbl) return { error: `No table with id "${item.id}".` }
     if (context.workspaceId && tbl.workspaceId !== context.workspaceId)
@@ -45,6 +62,7 @@ async function resolveResource(
     title = tbl.name
   }
   if (resourceType === 'knowledgebase') {
+    if (!item.id) return { error: 'knowledgebase resources require `id`.' }
     const kb = await getKnowledgeBaseById(item.id)
     if (!kb) return { error: `No knowledge base with id "${item.id}".` }
     if (context.workspaceId && kb.workspaceId !== context.workspaceId)
@@ -53,6 +71,7 @@ async function resolveResource(
     title = kb.name
   }
   if (resourceType === 'log') {
+    if (!item.id) return { error: 'log resources require `id`.' }
     const logRecord = await getLogById(item.id)
     if (!logRecord) return { error: `No log with id "${item.id}".` }
     if (context.workspaceId && logRecord.workspaceId !== context.workspaceId)
@@ -67,6 +86,26 @@ async function resolveResource(
     })
     title = `${workflowName} — ${timestamp}`
   }
+  if (resourceType === 'scheduledtask') {
+    if (!item.id) return { error: 'scheduledtask resources require `id`.' }
+    if (!context.workspaceId)
+      return { error: 'Opening a scheduled task requires workspace context.' }
+    const [schedule] = await db
+      .select({ id: workflowSchedule.id, jobTitle: workflowSchedule.jobTitle })
+      .from(workflowSchedule)
+      .where(
+        and(
+          eq(workflowSchedule.id, item.id),
+          eq(workflowSchedule.sourceWorkspaceId, context.workspaceId),
+          eq(workflowSchedule.sourceType, 'job'),
+          isNull(workflowSchedule.archivedAt)
+        )
+      )
+      .limit(1)
+    if (!schedule) return { error: `No scheduled task with id "${item.id}".` }
+    resourceId = schedule.id
+    title = schedule.jobTitle || 'Scheduled Task'
+  }
 
   return { type: resourceType, id: resourceId, title }
 }
@@ -78,7 +117,10 @@ export async function executeOpenResource(
   const params = rawParams as OpenResourceParams
 
   const items: OpenResourceItem[] =
-    params.resources ?? (params.type && params.id ? [{ type: params.type, id: params.id }] : [])
+    params.resources ??
+    (params.type && (params.id || params.path)
+      ? [{ type: params.type, id: params.id, path: params.path }]
+      : [])
 
   if (items.length === 0) {
     return { success: false, error: 'resources array is required' }
@@ -117,8 +159,8 @@ function validateOpenResourceItem(
   if (!VALID_OPEN_RESOURCE_TYPES.has(item.type)) {
     return { success: false, error: `Invalid resource type: ${item.type}` }
   }
-  if (!item.id) {
+  if (!item.id && !(item.type === 'file' && item.path)) {
     return { success: false, error: `${item.type} resources require \`id\`` }
   }
-  return { success: true, params: { type: item.type, id: item.id } }
+  return { success: true, params: { type: item.type, id: item.id, path: item.path } }
 }

@@ -1,12 +1,22 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createLogger } from '@sim/logger'
-import { Loader2, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { Modal, ModalClose, ModalContent, ModalTitle, ModalTrigger } from '@/components/emcn'
-import { GithubIcon, GoogleIcon } from '@/components/icons'
+import {
+  Loader,
+  Modal,
+  ModalClose,
+  ModalContent,
+  ModalDescription,
+  ModalTitle,
+  ModalTrigger,
+} from '@/components/emcn'
+import { GithubIcon, GoogleIcon, MicrosoftIcon } from '@/components/icons'
+import { requestJson } from '@/lib/api/client/request'
+import { type AuthProviderStatusResponse, getAuthProvidersContract } from '@/lib/api/contracts/auth'
 import { client } from '@/lib/auth/auth-client'
 import { getEnv, isFalsy, isTruthy } from '@/lib/core/config/env'
 import { captureClientEvent } from '@/lib/posthog/client'
@@ -23,17 +33,14 @@ interface AuthModalProps {
   source: PostHogEventMap['auth_modal_opened']['source']
 }
 
-interface ProviderStatus {
-  githubAvailable: boolean
-  googleAvailable: boolean
-  registrationDisabled: boolean
-}
+type ProviderStatus = AuthProviderStatusResponse
 
-let fetchPromise: Promise<ProviderStatus> | null = null
+let fetchPromise: Promise<AuthProviderStatusResponse> | null = null
 
 const FALLBACK_STATUS: ProviderStatus = {
   githubAvailable: false,
   googleAvailable: false,
+  microsoftAvailable: false,
   registrationDisabled: false,
 }
 
@@ -42,14 +49,11 @@ const SOCIAL_BTN =
 
 function fetchProviderStatus(): Promise<ProviderStatus> {
   if (fetchPromise) return fetchPromise
-  fetchPromise = fetch('/api/auth/providers')
-    .then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      return r.json()
-    })
-    .then(({ githubAvailable, googleAvailable, registrationDisabled }: ProviderStatus) => ({
+  fetchPromise = requestJson(getAuthProvidersContract, {})
+    .then(({ githubAvailable, googleAvailable, microsoftAvailable, registrationDisabled }) => ({
       githubAvailable,
       googleAvailable,
+      microsoftAvailable,
       registrationDisabled,
     }))
     .catch(() => {
@@ -64,14 +68,17 @@ export function AuthModal({ children, defaultView = 'login', source }: AuthModal
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<AuthView>(defaultView)
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null)
-  const [socialLoading, setSocialLoading] = useState<'github' | 'google' | null>(null)
+  const [socialLoading, setSocialLoading] = useState<'github' | 'google' | 'microsoft' | null>(null)
   const brand = useMemo(() => getBrandConfig(), [])
 
   useEffect(() => {
     fetchProviderStatus().then(setProviderStatus)
   }, [])
 
-  const hasSocial = providerStatus?.githubAvailable || providerStatus?.googleAvailable
+  const hasSocial =
+    providerStatus?.githubAvailable ||
+    providerStatus?.googleAvailable ||
+    providerStatus?.microsoftAvailable
   const ssoEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
   const emailEnabled = !isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED'))
   const hasModalContent = hasSocial || ssoEnabled
@@ -88,24 +95,21 @@ export function AuthModal({ children, defaultView = 'login', source }: AuthModal
     }
   }, [open, providerStatus, hasModalContent, defaultView, router, view])
 
-  const handleOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      if (nextOpen && providerStatus && !hasModalContent) {
-        router.push(defaultView === 'login' ? '/login' : '/signup')
-        return
-      }
-      setOpen(nextOpen)
-      if (nextOpen) {
-        const initialView =
-          defaultView === 'signup' && providerStatus?.registrationDisabled ? 'login' : defaultView
-        setView(initialView)
-        captureClientEvent('auth_modal_opened', { view: initialView, source })
-      }
-    },
-    [defaultView, hasModalContent, providerStatus, router, source]
-  )
+  function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen && providerStatus && !hasModalContent) {
+      router.push(defaultView === 'login' ? '/login' : '/signup')
+      return
+    }
+    setOpen(nextOpen)
+    if (nextOpen) {
+      const initialView =
+        defaultView === 'signup' && providerStatus?.registrationDisabled ? 'login' : defaultView
+      setView(initialView)
+      captureClientEvent('auth_modal_opened', { view: initialView, source })
+    }
+  }
 
-  const handleSocialLogin = useCallback(async (provider: 'github' | 'google') => {
+  async function handleSocialLogin(provider: 'github' | 'google' | 'microsoft') {
     setSocialLoading(provider)
     try {
       await client.signIn.social({ provider, callbackURL: '/workspace' })
@@ -114,17 +118,17 @@ export function AuthModal({ children, defaultView = 'login', source }: AuthModal
     } finally {
       setSocialLoading(null)
     }
-  }, [])
+  }
 
-  const handleSSOLogin = useCallback(() => {
+  function handleSSOLogin() {
     setOpen(false)
     router.push('/sso')
-  }, [router])
+  }
 
-  const handleEmailContinue = useCallback(() => {
+  function handleEmailContinue() {
     setOpen(false)
     router.push(view === 'login' ? '/login' : '/signup')
-  }, [router, view])
+  }
 
   return (
     <Modal open={open} onOpenChange={handleOpenChange}>
@@ -136,16 +140,19 @@ export function AuthModal({ children, defaultView = 'login', source }: AuthModal
         <ModalTitle className='sr-only'>
           {view === 'login' ? 'Log in' : 'Create account'}
         </ModalTitle>
+        <ModalDescription className='sr-only'>
+          {view === 'login' ? 'Sign in to your account' : 'Create a new account'}
+        </ModalDescription>
 
         <div className='relative px-6 pt-6 pb-6'>
           <ModalClose className='absolute top-6 right-6 rounded-sm opacity-70 transition-opacity hover:opacity-100'>
-            <X className='h-5 w-5 text-[var(--landing-text-muted)]' />
+            <X className='size-5 text-[var(--landing-text-muted)]' />
             <span className='sr-only'>Close</span>
           </ModalClose>
 
           {!providerStatus ? (
             <div className='flex items-center justify-center py-16'>
-              <Loader2 className='h-5 w-5 animate-spin text-[var(--landing-text-muted)]' />
+              <Loader className='size-5 text-[var(--landing-text-muted)]' animate />
             </div>
           ) : (
             <>
@@ -176,9 +183,22 @@ export function AuthModal({ children, defaultView = 'login', source }: AuthModal
                     disabled={!!socialLoading}
                     className={SOCIAL_BTN}
                   >
-                    <GoogleIcon className='absolute left-4 h-[18px] w-[18px] shrink-0' />
+                    <GoogleIcon className='absolute left-4 size-[18px] shrink-0' />
                     <span>
                       {socialLoading === 'google' ? 'Connecting...' : 'Continue with Google'}
+                    </span>
+                  </button>
+                )}
+                {providerStatus.microsoftAvailable && (
+                  <button
+                    type='button'
+                    onClick={() => handleSocialLogin('microsoft')}
+                    disabled={!!socialLoading}
+                    className={SOCIAL_BTN}
+                  >
+                    <MicrosoftIcon className='absolute left-4 size-[18px] shrink-0' />
+                    <span>
+                      {socialLoading === 'microsoft' ? 'Connecting...' : 'Continue with Microsoft'}
                     </span>
                   </button>
                 )}
@@ -189,7 +209,7 @@ export function AuthModal({ children, defaultView = 'login', source }: AuthModal
                     disabled={!!socialLoading}
                     className={SOCIAL_BTN}
                   >
-                    <GithubIcon className='absolute left-4 h-[18px] w-[18px] shrink-0' />
+                    <GithubIcon className='absolute left-4 size-[18px] shrink-0' />
                     <span>
                       {socialLoading === 'github' ? 'Connecting...' : 'Continue with GitHub'}
                     </span>
@@ -202,7 +222,8 @@ export function AuthModal({ children, defaultView = 'login', source }: AuthModal
                 )}
               </div>
 
-              {emailEnabled && (
+              {/* Email option only available on login — signup is OAuth-only */}
+              {emailEnabled && view === 'login' && (
                 <>
                   <div className='relative my-4'>
                     <div className='absolute inset-0 flex items-center'>

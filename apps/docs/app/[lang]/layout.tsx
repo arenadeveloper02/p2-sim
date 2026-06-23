@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { defineI18nUI } from 'fumadocs-ui/i18n'
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
 import { RootProvider } from 'fumadocs-ui/provider/next'
+import { Geist_Mono, Inter } from 'next/font/google'
 import {
   SidebarFolder,
   SidebarItem,
@@ -10,9 +11,23 @@ import {
 import { Navbar } from '@/components/navbar/navbar'
 import { SimLogoFull } from '@/components/ui/sim-logo'
 import { i18n } from '@/lib/i18n'
+import { serializeJsonLd } from '@/lib/json-ld'
 import { source } from '@/lib/source'
 import { DOCS_BASE_URL } from '@/lib/urls'
+import { season } from '@/app/fonts/season'
 import '../global.css'
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-geist-sans',
+  display: 'swap',
+})
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+  display: 'swap',
+})
 
 /** Fonts loaded via link in head to avoid next/font Turbopack resolution during build. */
 const FONT_LINKS = (
@@ -77,23 +92,19 @@ export default async function Layout({ children, params }: LayoutProps) {
       },
     },
     inLanguage: lang,
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: `${DOCS_BASE_URL}/api/search?q={search_term_string}`,
-      },
-      'query-input': 'required name=search_term_string',
-    },
   }
 
   return (
-    <html lang={lang} suppressHydrationWarning>
+    <html
+      lang={lang}
+      className={`${inter.variable} ${geistMono.variable} ${season.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         {FONT_LINKS}
         <script
           type='application/ld+json'
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
         />
       </head>
       <body className='flex min-h-screen flex-col font-sans'>

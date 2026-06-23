@@ -5,6 +5,7 @@ import { AuthMode, IntegrationType } from '@/blocks/types'
 import {
   getAgentModelOptions,
   getProviderCredentialSubBlocks,
+  normalizeFileInput,
   RESPONSE_FORMAT_WAND_CONFIG,
 } from '@/blocks/utils'
 import {
@@ -77,10 +78,9 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
   - Prefer using integrations as tools within the agent block over separate integration blocks unless complete determinism needed. 
   - Response Format should be a valid JSON Schema. This determines the output of the agent only if present. Fields can be accessed at root level by the following blocks: e.g. <agent1.field>. If response format is not present, the agent will return the standard outputs: content, model, tokens, toolCalls.
   `,
-  docsLink: 'https://docs.sim.ai/blocks/agent',
+  docsLink: 'https://docs.sim.ai/workflows/blocks/agent',
   category: 'blocks',
   integrationType: IntegrationType.AI,
-  tags: ['llm', 'agentic', 'automation'],
   bgColor: 'var(--brand)',
   icon: AgentIcon,
   subBlocks: [
@@ -134,6 +134,26 @@ Return ONLY the JSON array.`,
       defaultValue: 'gpt-4o',
       searchable: true,
       options: getAgentModelOptions,
+      commandSearchable: true,
+    },
+    {
+      id: 'attachmentFiles',
+      title: 'Files',
+      type: 'file-upload',
+      canonicalParamId: 'files',
+      placeholder: 'Upload files for the agent',
+      multiple: true,
+      mode: 'basic',
+      required: false,
+    },
+    {
+      id: 'files',
+      title: 'Files',
+      type: 'short-input',
+      canonicalParamId: 'files',
+      placeholder: 'Reference files from previous blocks',
+      mode: 'advanced',
+      required: false,
     },
     {
       id: 'reasoningEffort',
@@ -336,6 +356,7 @@ Return ONLY the JSON array.`,
         value: 'none',
         not: true,
       },
+      dependsOn: ['memoryType'],
     },
     {
       id: 'slidingWindowSize',
@@ -348,6 +369,7 @@ Return ONLY the JSON array.`,
         field: 'memoryType',
         value: 'sliding_window',
       },
+      dependsOn: ['memoryType'],
     },
     {
       id: 'slidingWindowTokens',
@@ -360,6 +382,7 @@ Return ONLY the JSON array.`,
         field: 'memoryType',
         value: 'sliding_window_tokens',
       },
+      dependsOn: ['memoryType'],
     },
     {
       id: 'temperature',
@@ -378,6 +401,28 @@ Return ONLY the JSON array.`,
             (model) =>
               supportsTemperature(model) &&
               getMaxTemperature(model) === 1 &&
+              !deepResearch.has(model.toLowerCase())
+          )
+        })(),
+      }),
+    },
+    {
+      id: 'temperature',
+      title: 'Temperature',
+      type: 'slider',
+      min: 0,
+      max: 1.5,
+      defaultValue: 0.3,
+      mode: 'advanced',
+      condition: () => ({
+        field: 'model',
+        value: (() => {
+          const deepResearch = new Set(MODELS_WITH_DEEP_RESEARCH.map((m) => m.toLowerCase()))
+          const allModels = Object.keys(getBaseModelProviders())
+          return allModels.filter(
+            (model) =>
+              supportsTemperature(model) &&
+              getMaxTemperature(model) === 1.5 &&
               !deepResearch.has(model.toLowerCase())
           )
         })(),
@@ -469,6 +514,8 @@ Return ONLY the JSON array.`,
             tools: undefined,
           }
         }
+        const normalizedFiles = normalizeFileInput(params.files)
+        const baseParams = normalizedFiles ? { ...params, files: normalizedFiles } : params
 
         // If tools array is provided, handle tool usage control
         if (params.tools && Array.isArray(params.tools)) {
@@ -504,9 +551,9 @@ Return ONLY the JSON array.`,
             logger.info('Filtered out tools set to none', { tools: filteredOutTools.join(', ') })
           }
 
-          return { ...params, tools: transformedTools }
+          return { ...baseParams, tools: transformedTools }
         }
-        return params
+        return baseParams
       },
     },
   },
@@ -516,6 +563,7 @@ Return ONLY the JSON array.`,
       description:
         'Array of message objects with role and content: [{ role: "system", content: "..." }, { role: "user", content: "..." }]',
     },
+    files: { type: 'array', description: 'Files to include with the latest user message' },
     memoryType: {
       type: 'string',
       description:
@@ -524,7 +572,7 @@ Return ONLY the JSON array.`,
     conversationId: {
       type: 'string',
       description:
-        'Conversation ID to retrieve and store memories. Automatically retrieved from Start block output if not provided.',
+        'Specific conversation ID to retrieve memories from (used when memoryType is conversation, sliding_window, or sliding_window_tokens)',
     },
     slidingWindowSize: {
       type: 'string',

@@ -1,14 +1,16 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage } from '@sim/utils/errors'
 import {
   assertServerToolNotAborted,
   type BaseServerTool,
   type ServerToolContext,
 } from '@/lib/copilot/tools/server/base-tool'
-import { runSandboxTask } from '@/lib/execution/sandbox/run-task'
+import { isE2BDocEnabled } from '@/lib/core/config/env-flags'
 import { updateWorkspaceFileContent } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { getE2BDocFormat } from './doc-compile'
+import { buildEmbeddedImageRefWarning } from './embedded-image-refs'
 import { consumeLatestFileIntent } from './file-intent-store'
-import { getDocumentFormatInfo, inferContentType } from './workspace-file'
+import { compileDocForWrite, getDocumentFormatInfo, inferContentType } from './workspace-file'
 
 const logger = createLogger('EditContentServerTool')
 
@@ -48,9 +50,15 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
       return { success: false, message: 'content is required for edit_content' }
     }
 
+    // Consume the intent from THIS file subagent's channel (its outer tool_use
+    // id), not just the latest in the message — otherwise two file agents
+    // writing concurrently would each grab whichever workspace_file landed last
+    // and write their content into the wrong file. Falls back to latest-in-
+    // message when no channel id is present (main-agent / legacy calls).
     const intent = await consumeLatestFileIntent(workspaceId, {
       chatId: context.chatId,
       messageId: context.messageId,
+      channelId: context.parentToolCallId,
     })
     if (!intent) {
       return {
@@ -63,12 +71,20 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
     try {
       const { operation, fileRecord } = intent
       const docInfo = getDocumentFormatInfo(fileRecord.name)
+      const e2bFmt = isE2BDocEnabled ? await getE2BDocFormat(fileRecord.name) : null
 
       let finalContent: string
       switch (operation) {
         case 'append': {
           const existing = intent.existingContent ?? ''
-          finalContent = docInfo.isDoc
+          // The JS engines (isolated-vm and E2B-node pptx/docx) use the `{ ... }`
+          // block-append convention — block statements scope cleanly inside the
+          // compile wrapper. Python docs (pdf/xlsx) are a single cohesive script,
+          // so brace-wrapping would produce invalid Python; plain-concatenate.
+          // Brace-wrap appended content for the JS engines (isolated-vm and
+          // E2B-node pptx/docx); Python docs (pdf/xlsx) are one cohesive script.
+          const braceWrap = e2bFmt ? e2bFmt.engine === 'node' : docInfo.isDoc
+          finalContent = braceWrap
             ? existing
               ? `${existing}\n{\n${content}\n}`
               : content
@@ -201,26 +217,29 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
           return { success: false, message: `Unsupported operation in intent: ${operation}` }
       }
 
-      if (docInfo.isDoc) {
-        try {
-          await runSandboxTask(
-            docInfo.taskId!,
-            { code: finalContent, workspaceId },
-            { ownerKey: `user:${context.userId}`, signal: context.abortSignal }
-          )
-        } catch (err) {
-          const msg = toError(err).message
-          return {
-            success: false,
-            message: `${docInfo.formatName} generation failed: ${msg}. Fix the content and retry.`,
-          }
-        }
+      // Compile once via the right engine (or isolated-vm fallback) and resolve
+      // the source MIME to store. Shared with the create path.
+      const compiled = await compileDocForWrite({
+        source: finalContent,
+        fileName: fileRecord.name,
+        workspaceId,
+        ownerKey: `user:${context.userId}`,
+        signal: context.abortSignal,
+        fallbackMime: inferContentType(fileRecord.name, intent.contentType),
+      })
+      if (!compiled.ok) {
+        return { success: false, message: compiled.message }
       }
 
       const fileBuffer = Buffer.from(finalContent, 'utf-8')
       assertServerToolNotAborted(context)
-      const mime = docInfo.sourceMime || inferContentType(fileRecord.name, intent.contentType)
-      await updateWorkspaceFileContent(workspaceId, intent.fileId, context.userId, fileBuffer, mime)
+      await updateWorkspaceFileContent(
+        workspaceId,
+        intent.fileId,
+        context.userId,
+        fileBuffer,
+        compiled.sourceMime
+      )
 
       const verb =
         operation === 'append' ? 'appended to' : operation === 'update' ? 'updated' : 'patched'
@@ -232,18 +251,22 @@ export const editContentServerTool: BaseServerTool<EditContentArgs, EditContentR
         userId: context.userId,
       })
 
+      // Flag any `/api/files/view/<id>` embeds the model just authored that won't render/export
+      // (non-workspace or missing), so it can self-correct on the next step.
+      const embedWarning = await buildEmbeddedImageRefWarning(content, workspaceId)
+
       return {
         success: true,
-        message: `File "${fileRecord.name}" ${verb} successfully (${fileBuffer.length} bytes)`,
+        message: `File "${fileRecord.name}" ${verb} successfully (${fileBuffer.length} bytes)${embedWarning}`,
         data: {
           id: intent.fileId,
           name: fileRecord.name,
           size: fileBuffer.length,
-          contentType: mime,
+          contentType: compiled.sourceMime,
         },
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      const errorMessage = getErrorMessage(error, 'Unknown error occurred')
       logger.error('Error in edit_content tool', {
         operation: intent.operation,
         fileId: intent.fileId,

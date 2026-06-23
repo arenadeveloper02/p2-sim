@@ -18,7 +18,7 @@ export const KnowledgeBlock: BlockConfig = {
   bgColor: '#00B0B0',
   icon: PackageSearchIcon,
   category: 'blocks',
-  docsLink: 'https://docs.sim.ai/blocks/knowledge',
+  docsLink: 'https://docs.sim.ai/integrations/knowledge',
   subBlocks: [
     {
       id: 'operation',
@@ -106,6 +106,47 @@ export const KnowledgeBlock: BlockConfig = {
       dependsOn: ['knowledgeBaseSelector'],
       condition: { field: 'operation', value: 'search' },
     },
+    //..........sim side reraking..................>
+    // {
+    //   id: 'rerankerEnabled',
+    //   title: 'Rerank Results',
+    //   type: 'switch',
+    //   condition: { field: 'operation', value: 'search' },
+    // },
+    // {
+    //   id: 'rerankerModel',
+    //   title: 'Rerank Model',
+    //   type: 'dropdown',
+    //   options: SUPPORTED_RERANKER_MODELS.map((id) => ({ label: id, id })),
+    //   value: () => DEFAULT_RERANKER_MODEL,
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'search',
+    //     and: { field: 'rerankerEnabled', value: true },
+    //   },
+    // },
+    // {
+    //   id: 'rerankerInputCount',
+    //   title: 'Documents Sent to Reranker',
+    //   type: 'short-input',
+    //   placeholder: 'Auto (4× results, capped at 100)',
+    //   mode: 'advanced',
+    //   condition: {
+    //     field: 'operation',
+    //     value: 'search',
+    //     and: { field: 'rerankerEnabled', value: true },
+    //   },
+    // },
+    // {
+    //   id: 'apiKey',
+    //   title: 'Cohere API Key',
+    //   type: 'short-input',
+    //   placeholder: 'Enter your Cohere API key',
+    //   password: true,
+    //   connectionDroppable: false,
+    //   required: true,
+    //   condition: getCohereRerankerApiKeyCondition(),
+    // },
 
     // --- List Documents ---
     {
@@ -172,6 +213,7 @@ export const KnowledgeBlock: BlockConfig = {
       type: 'short-input',
       canonicalParamId: 'documentId',
       placeholder: 'Enter document ID',
+      dependsOn: ['knowledgeBaseId'],
       required: true,
       mode: 'advanced',
       condition: {
@@ -448,6 +490,14 @@ export const KnowledgeBlock: BlockConfig = {
     rerankModel: { type: 'string', description: 'Optional rerank model name' },
     rerankTopN: { type: 'number', description: 'Optional rerank top N' },
     // Document tags for create document (JSON string of tag objects)
+    // rereanking fields from sim side.........................>
+    // rerankerEnabled: { type: 'boolean', description: 'Apply Cohere reranking to search results' },
+    // rerankerModel: { type: 'string', description: 'Cohere rerank model identifier' },
+    // rerankerInputCount: {
+    //   type: 'number',
+    //   description: 'Number of vector results sent to the Cohere reranker (1–100)',
+    // },
+    // apiKey: { type: 'string', description: 'Cohere API key (self-hosted only)' },
     documentTags: { type: 'string', description: 'Document tags' },
     chunkSearch: { type: 'string', description: 'Search filter for chunks' },
     chunkEnabledFilter: { type: 'string', description: 'Filter chunks by enabled status' },

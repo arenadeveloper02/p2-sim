@@ -33,10 +33,11 @@
  *   SSO_SAML_WANT_ASSERTIONS_SIGNED=true (optional, defaults to false)
  */
 
+import { getErrorMessage } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
-import { v4 as uuidv4 } from 'uuid'
 import { ssoProvider, user } from '../schema'
 
 interface SSOMapping {
@@ -507,7 +508,7 @@ async function registerSSOProvider(): Promise<boolean> {
           })
         } catch (error) {
           logger.error('Error fetching OIDC discovery document', {
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: getErrorMessage(error, 'Unknown error'),
             discoveryUrl,
           })
           logger.error(
@@ -557,7 +558,7 @@ async function registerSSOProvider(): Promise<boolean> {
     }
 
     const providerData: SSOProviderData = {
-      id: uuidv4(),
+      id: generateId(),
       issuer: ssoConfig.issuer,
       domain: ssoConfig.domain,
       userId: adminUser.id,
@@ -649,7 +650,7 @@ async function registerSSOProvider(): Promise<boolean> {
     return true
   } catch (error) {
     logger.error('❌ Failed to register SSO provider:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getErrorMessage(error, 'Unknown error'),
       errorType: typeof error,
       errorDetails: JSON.stringify(error),
       stack: error instanceof Error ? error.stack : undefined,

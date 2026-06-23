@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { HubspotIcon } from '@/components/icons'
+import { getErrorMessage } from '@sim/utils/errors'
 import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import { hubspotConnectorMeta } from '@/connectors/hubspot/meta'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import { parseTagDate } from '@/connectors/utils'
 
@@ -171,44 +172,7 @@ function recordToDocument(
 }
 
 export const hubspotConnector: ConnectorConfig = {
-  id: 'hubspot',
-  name: 'HubSpot',
-  description: 'Sync CRM records from HubSpot into your knowledge base',
-  version: '1.0.0',
-  icon: HubspotIcon,
-
-  auth: {
-    mode: 'oauth',
-    provider: 'hubspot',
-    requiredScopes: [
-      'crm.objects.contacts.read',
-      'crm.objects.companies.read',
-      'crm.objects.deals.read',
-      'tickets',
-    ],
-  },
-
-  configFields: [
-    {
-      id: 'objectType',
-      title: 'Object Type',
-      type: 'dropdown',
-      required: true,
-      options: [
-        { label: 'Contacts', id: 'contacts' },
-        { label: 'Companies', id: 'companies' },
-        { label: 'Deals', id: 'deals' },
-        { label: 'Tickets', id: 'tickets' },
-      ],
-    },
-    {
-      id: 'maxRecords',
-      title: 'Max Records',
-      type: 'short-input',
-      required: false,
-      placeholder: 'e.g. 500 (default: unlimited)',
-    },
-  ],
+  ...hubspotConnectorMeta,
 
   listDocuments: async (
     accessToken: string,
@@ -366,17 +330,10 @@ export const hubspotConnector: ConnectorConfig = {
 
       return { valid: true }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to validate configuration'
+      const message = getErrorMessage(error, 'Failed to validate configuration')
       return { valid: false, error: message }
     }
   },
-
-  tagDefinitions: [
-    { id: 'objectType', displayName: 'Object Type', fieldType: 'text' },
-    { id: 'owner', displayName: 'Owner', fieldType: 'text' },
-    { id: 'lastModified', displayName: 'Last Modified', fieldType: 'date' },
-    { id: 'pipeline', displayName: 'Pipeline', fieldType: 'text' },
-  ],
 
   mapTags: (metadata: Record<string, unknown>): Record<string, unknown> => {
     const result: Record<string, unknown> = {}

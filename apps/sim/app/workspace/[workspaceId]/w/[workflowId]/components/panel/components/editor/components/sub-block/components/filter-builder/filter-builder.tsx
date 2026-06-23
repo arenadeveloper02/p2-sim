@@ -1,13 +1,15 @@
 'use client'
 
 import { useCallback, useMemo } from 'react'
-import { generateId } from '@sim/utils/id'
-import type { ComboboxOption } from '@/components/emcn'
+import { Plus } from 'lucide-react'
+import { Button } from '@/components/emcn'
 import { useTableColumns } from '@/lib/table/hooks'
 import type { FilterRule } from '@/lib/table/query-builder/constants'
 import { useFilterBuilder } from '@/lib/table/query-builder/use-query-builder'
+import { useCanonicalSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-canonical-sub-block-value'
 import { useSubBlockInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-input'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { FilterRuleRow } from './components/filter-rule-row'
 
 interface FilterBuilderProps {
@@ -20,15 +22,6 @@ interface FilterBuilderProps {
   tableIdSubBlockId?: string
 }
 
-const createDefaultRule = (columns: ComboboxOption[]): FilterRule => ({
-  id: generateId(),
-  logicalOperator: 'and',
-  column: columns[0]?.value || '',
-  operator: 'eq',
-  value: '',
-  collapsed: false,
-})
-
 /** Visual builder for table filter rules in workflow blocks. */
 export function FilterBuilder({
   blockId,
@@ -39,8 +32,9 @@ export function FilterBuilder({
   columns: propColumns,
   tableIdSubBlockId = 'tableId',
 }: FilterBuilderProps) {
+  const activeSearchTarget = useActiveSearchTarget()
   const [storeValue, setStoreValue] = useSubBlockValue<FilterRule[]>(blockId, subBlockId)
-  const [tableIdValue] = useSubBlockValue<string>(blockId, tableIdSubBlockId)
+  const tableIdValue = useCanonicalSubBlockValue<string>(blockId, tableIdSubBlockId)
 
   const dynamicColumns = useTableColumns({ tableId: tableIdValue })
   const columns = useMemo(() => {
@@ -49,8 +43,7 @@ export function FilterBuilder({
   }, [propColumns, dynamicColumns])
 
   const value = isPreview ? previewValue : storeValue
-  const rules: FilterRule[] =
-    Array.isArray(value) && value.length > 0 ? value : [createDefaultRule(columns)]
+  const rules: FilterRule[] = Array.isArray(value) ? value : []
   const isReadOnly = isPreview || disabled
 
   const { comparisonOptions, logicalOptions, addRule, removeRule, updateRule } = useFilterBuilder({
@@ -83,37 +76,52 @@ export function FilterBuilder({
   const handleRemoveRule = useCallback(
     (id: string) => {
       if (isReadOnly) return
-      if (rules.length === 1) {
-        setStoreValue([createDefaultRule(columns)])
-      } else {
-        removeRule(id)
-      }
+      removeRule(id)
     },
-    [isReadOnly, rules, columns, setStoreValue, removeRule]
+    [isReadOnly, removeRule]
   )
+
+  if (rules.length === 0) {
+    if (isReadOnly) return null
+    return (
+      <Button
+        variant='ghost'
+        onClick={addRule}
+        className='h-7 w-full justify-start gap-1.5 border border-[var(--border-1)] border-dashed text-[var(--text-muted)] text-small'
+      >
+        <Plus className='size-[14px]' />
+        Add filter condition
+      </Button>
+    )
+  }
 
   return (
     <div className='space-y-2'>
-      {rules.map((rule, index) => (
-        <FilterRuleRow
-          key={rule.id}
-          blockId={blockId}
-          subBlockId={subBlockId}
-          rule={rule}
-          index={index}
-          columns={columns}
-          comparisonOptions={comparisonOptions}
-          logicalOptions={logicalOptions}
-          isReadOnly={isReadOnly}
-          isPreview={isPreview}
-          disabled={disabled}
-          onAdd={addRule}
-          onRemove={handleRemoveRule}
-          onUpdate={updateRule}
-          onToggleCollapse={toggleCollapse}
-          inputController={inputController}
-        />
-      ))}
+      {rules.map((rule, index) => {
+        const isSearchExpanded =
+          activeSearchTarget?.subBlockId === subBlockId && activeSearchTarget.valuePath[0] === index
+        const displayRule = isSearchExpanded ? { ...rule, collapsed: false } : rule
+        return (
+          <FilterRuleRow
+            key={rule.id}
+            blockId={blockId}
+            subBlockId={subBlockId}
+            rule={displayRule}
+            index={index}
+            columns={columns}
+            comparisonOptions={comparisonOptions}
+            logicalOptions={logicalOptions}
+            isReadOnly={isReadOnly}
+            isPreview={isPreview}
+            disabled={disabled}
+            onAdd={addRule}
+            onRemove={handleRemoveRule}
+            onUpdate={updateRule}
+            onToggleCollapse={toggleCollapse}
+            inputController={inputController}
+          />
+        )
+      })}
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { isRecordLike, sortObjectKeysDeep } from '@sim/utils/object'
 import type { Edge } from 'reactflow'
 import { sanitizeWorkflowForSharing } from '@/lib/workflows/credentials/credential-extractor'
 import type { BlockState, Loop, Parallel, WorkflowState } from '@/stores/workflows/workflow/types'
@@ -17,7 +18,7 @@ export interface CopilotWorkflowState {
  * Connections are embedded here instead of separate edges array
  * Loops and parallels have nested structure for clarity
  */
-export interface CopilotBlockState {
+interface CopilotBlockState {
   type: string
   name: string
   inputs?: Record<string, string | number | string[][] | object>
@@ -31,7 +32,7 @@ export interface CopilotBlockState {
 /**
  * Edge state for copilot (only semantic connection data)
  */
-export interface CopilotEdge {
+interface CopilotEdge {
   id: string
   source: string
   target: string
@@ -53,7 +54,6 @@ export interface ExportWorkflowState {
     metadata?: {
       name?: string
       description?: string
-      color?: string
       sortOrder?: number
       exportedAt?: string
     }
@@ -76,6 +76,72 @@ interface SanitizedCondition {
   value: string
 }
 
+function toSanitizedCondition(condition: unknown): SanitizedCondition {
+  const record = isRecordLike(condition) ? condition : {}
+  return {
+    id: String(record.id ?? ''),
+    title: String(record.title ?? ''),
+    value: String(record.value ?? ''),
+  }
+}
+
+function parseArrayValue(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function parseConditions(value: unknown): Array<{ id: string; title: string }> | null {
+  const items = parseArrayValue(value)
+  if (!items) {
+    return null
+  }
+
+  const conditions: Array<{ id: string; title: string }> = []
+  for (const item of items) {
+    if (!isRecordLike(item) || typeof item.id !== 'string') {
+      return null
+    }
+    conditions.push({
+      id: item.id,
+      title: typeof item.title === 'string' ? item.title : '',
+    })
+  }
+
+  return conditions
+}
+
+function parseRoutes(value: unknown): Array<{ id: string; title?: string }> | null {
+  const items = parseArrayValue(value)
+  if (!items) {
+    return null
+  }
+
+  const routes: Array<{ id: string; title?: string }> = []
+  for (const item of items) {
+    if (!isRecordLike(item) || typeof item.id !== 'string') {
+      return null
+    }
+    routes.push({
+      id: item.id,
+      title: typeof item.title === 'string' ? item.title : undefined,
+    })
+  }
+
+  return routes
+}
+
 /**
  * Sanitize condition blocks by removing UI-specific metadata
  * Returns cleaned JSON string (not parsed array)
@@ -86,14 +152,7 @@ function sanitizeConditions(conditionsJson: string): string {
     if (!Array.isArray(conditions)) return conditionsJson
 
     // Keep only id, title, and value - remove UI state
-    const cleaned: SanitizedCondition[] = conditions.map((cond: unknown) => {
-      const condition = cond as Record<string, unknown>
-      return {
-        id: String(condition.id ?? ''),
-        title: String(condition.title ?? ''),
-        value: String(condition.value ?? ''),
-      }
-    })
+    const cleaned: SanitizedCondition[] = conditions.map(toSanitizedCondition)
 
     return JSON.stringify(cleaned)
   } catch {
@@ -188,23 +247,8 @@ function sanitizeTools(tools: ToolInput[]): SanitizedTool[] {
   })
 }
 
-/**
- * Sort object keys recursively for consistent comparison
- */
-function sortKeysRecursively(item: unknown): unknown {
-  if (Array.isArray(item)) {
-    return item.map(sortKeysRecursively)
-  }
-  if (item !== null && typeof item === 'object') {
-    const obj = item as Record<string, unknown>
-    return Object.keys(obj)
-      .sort()
-      .reduce((result: Record<string, unknown>, key: string) => {
-        result[key] = sortKeysRecursively(obj[key])
-        return result
-      }, {})
-  }
-  return item
+function isToolInput(value: unknown): value is ToolInput {
+  return isRecordLike(value) && typeof value.type === 'string'
 }
 
 /**
@@ -238,7 +282,7 @@ function sanitizeSubBlocks(
 
         // Sort keys for consistent comparison
         if (obj && typeof obj === 'object') {
-          sanitized[key] = sortKeysRecursively(obj) as Record<string, unknown>
+          sanitized[key] = sortObjectKeysDeep(obj) as Record<string, unknown>
           return
         }
       } catch {
@@ -253,13 +297,7 @@ function sanitizeSubBlocks(
       if (typeof subBlock.value === 'string') {
         sanitized[key] = sanitizeConditions(subBlock.value)
       } else if (Array.isArray(subBlock.value)) {
-        sanitized[key] = (subBlock.value as unknown as Array<Record<string, unknown>>).map(
-          (cond) => ({
-            id: String(cond.id ?? ''),
-            title: String(cond.title ?? ''),
-            value: String(cond.value ?? ''),
-          })
-        )
+        sanitized[key] = subBlock.value.map(toSanitizedCondition)
       } else {
         sanitized[key] = subBlock.value
       }
@@ -267,7 +305,8 @@ function sanitizeSubBlocks(
     }
 
     if (key === 'tools' && Array.isArray(subBlock.value)) {
-      sanitized[key] = sanitizeTools(subBlock.value as unknown as ToolInput[])
+      const toolItems: unknown[] = subBlock.value
+      sanitized[key] = sanitizeTools(toolItems.filter(isToolInput))
       return
     }
 
@@ -304,20 +343,8 @@ function convertConditionHandleToSimple(
     return handle
   }
 
-  let conditions: Array<{ id: string; title: string }>
-  if (Array.isArray(conditionsValue)) {
-    conditions = conditionsValue as unknown as Array<{ id: string; title: string }>
-  } else if (typeof conditionsValue === 'string') {
-    try {
-      conditions = JSON.parse(conditionsValue)
-    } catch {
-      return handle
-    }
-  } else {
-    return handle
-  }
-
-  if (!Array.isArray(conditions)) {
+  const conditions = parseConditions(conditionsValue)
+  if (!conditions) {
     return handle
   }
 
@@ -364,20 +391,8 @@ function convertRouterHandleToSimple(handle: string, _blockId: string, block: Bl
     return handle
   }
 
-  let routes: Array<{ id: string; title?: string }>
-  if (Array.isArray(routesValue)) {
-    routes = routesValue as unknown as Array<{ id: string; title?: string }>
-  } else if (typeof routesValue === 'string') {
-    try {
-      routes = JSON.parse(routesValue)
-    } catch {
-      return handle
-    }
-  } else {
-    return handle
-  }
-
-  if (!Array.isArray(routes)) {
+  const routes = parseRoutes(routesValue)
+  if (!routes) {
     return handle
   }
 

@@ -4,6 +4,7 @@ import type { Edge } from 'reactflow'
 import { DEFAULT_DUPLICATE_OFFSET } from '@/lib/workflows/autolayout/constants'
 import { getEffectiveBlockOutputs } from '@/lib/workflows/blocks/block-outputs'
 import { remapConditionBlockIds, remapConditionEdgeHandle } from '@/lib/workflows/condition-ids'
+import { createDefaultInputFormatField } from '@/lib/workflows/input-format'
 import { buildDefaultCanonicalModes } from '@/lib/workflows/subblocks/visibility'
 import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
 import { getBlock } from '@/blocks'
@@ -151,15 +152,7 @@ export function prepareBlockState(options: PrepareBlockStateOptions): BlockState
       } else if (subBlock.defaultValue !== undefined) {
         initialValue = subBlock.defaultValue
       } else if (subBlock.type === 'input-format' || subBlock.type === 'response-format') {
-        initialValue = [
-          {
-            id: generateId(),
-            name: '',
-            type: 'string',
-            value: '',
-            collapsed: false,
-          },
-        ]
+        initialValue = [createDefaultInputFormatField()]
       } else if (subBlock.type === 'table') {
         initialValue = []
       }
@@ -351,7 +344,7 @@ export function regenerateWorkflowIds(
     blockIdMap.set(oldId, newId)
     const oldNormalizedName = normalizeName(block.name)
     nameMap.set(oldNormalizedName, oldNormalizedName)
-    const newBlock = { ...block, id: newId, subBlocks: JSON.parse(JSON.stringify(block.subBlocks)) }
+    const newBlock = { ...block, id: newId, subBlocks: structuredClone(block.subBlocks) }
     remapConditionIds(newBlock.subBlocks, {}, oldId, newId)
     newBlocks[newId] = newBlock
   })
@@ -521,7 +514,7 @@ export function regenerateBlockIds(
       id: newId,
       name: newName,
       position: newPosition,
-      subBlocks: JSON.parse(JSON.stringify(block.subBlocks)),
+      subBlocks: structuredClone(block.subBlocks),
       // Temporarily keep data as-is, we'll fix parentId in second pass
       data: block.data ? { ...block.data } : block.data,
       // Duplicated blocks are always unlocked so users can edit them
@@ -533,7 +526,7 @@ export function regenerateBlockIds(
     allBlocksForNaming[newId] = newBlock
 
     if (subBlockValues[oldId]) {
-      newSubBlockValues[newId] = JSON.parse(JSON.stringify(subBlockValues[oldId]))
+      newSubBlockValues[newId] = structuredClone(subBlockValues[oldId])
     }
 
     // Remap condition/router IDs in the duplicated block

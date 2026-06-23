@@ -82,7 +82,7 @@
             "description": "The unique identifier of the deployed workflow to execute.",
             "schema": {
               "type": "string",
-              "example": "wf_1a2b3c4d5e"
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
             }
           }
         ],
@@ -133,7 +133,7 @@
                 },
                 "example": {
                   "success": true,
-                  "executionId": "exec_abc123",
+                  "executionId": "c7a92e15-3f4b-4d8c-a1e6-9b0d5f2c8e74",
                   "output": {
                     "content": "The weather in Tokyo is sunny, 22\u00b0C."
                   },
@@ -169,6 +169,158 @@
         }
       }
     },
+    "/api/workflows/{id}/executions/{executionId}": {
+      "get": {
+        "operationId": "getWorkflowExecution",
+        "summary": "Get Execution Status",
+        "description": "Get the current status of a workflow execution. Returns the run's lifecycle state (`running`, `paused`, `completed`, `failed`, etc.), timing, error, and optionally per-block outputs. Designed for polling \u2014 works for any execution, including ones that pause and resume.",
+        "tags": ["Workflows"],
+        "x-codeSamples": [
+          {
+            "id": "curl",
+            "label": "cURL",
+            "lang": "bash",
+            "source": "curl \\\n  \"https://www.sim.ai/api/workflows/{id}/executions/{executionId}\" \\\n  -H \"X-API-Key: YOUR_API_KEY\""
+          },
+          {
+            "id": "curl-with-outputs",
+            "label": "cURL (with block outputs)",
+            "lang": "bash",
+            "source": "curl \\\n  \"https://www.sim.ai/api/workflows/{id}/executions/{executionId}?selectedOutputs=blockId,blockId.field&includeOutput=true\" \\\n  -H \"X-API-Key: YOUR_API_KEY\""
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The unique identifier of the workflow.",
+            "schema": {
+              "type": "string",
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
+            }
+          },
+          {
+            "name": "executionId",
+            "in": "path",
+            "required": true,
+            "description": "The unique identifier of the execution.",
+            "schema": {
+              "type": "string",
+              "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
+            }
+          },
+          {
+            "name": "includeOutput",
+            "in": "query",
+            "required": false,
+            "description": "When `true` and the execution has `status: completed`, include the workflow's final output in the response.",
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"]
+            }
+          },
+          {
+            "name": "selectedOutputs",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated block-output selectors. A bare `blockId` returns that block's full output; a dot-path like `blockId.field` or `blockId.nested.path` returns just that value. Results are returned in the `blockOutputs` map keyed by the selector string.",
+            "schema": {
+              "type": "string",
+              "example": "c1b90bce-8a82-42a5-b6a5-5762846c2eaf,c1b90bce-8a82-42a5-b6a5-5762846c2eaf.waitDuration"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Execution status returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowExecutionStatus"
+                },
+                "examples": {
+                  "completed": {
+                    "summary": "Completed run",
+                    "value": {
+                      "executionId": "9254f1c9-5a11-4a12-91e3-8065293f3609",
+                      "workflowId": "81f661e1-d704-4861-b5c1-5bb3cf57e6a7",
+                      "status": "completed",
+                      "trigger": "api",
+                      "level": "info",
+                      "startedAt": "2026-05-15T19:43:12.189Z",
+                      "endedAt": "2026-05-15T19:45:45.224Z",
+                      "totalDurationMs": 153035,
+                      "paused": null,
+                      "cost": {
+                        "total": 0.005
+                      },
+                      "error": null,
+                      "finalOutput": null,
+                      "blockOutputs": null
+                    }
+                  },
+                  "paused": {
+                    "summary": "Currently paused run",
+                    "value": {
+                      "executionId": "772749f6-ee81-414c-a2c3-671549dd62b8",
+                      "workflowId": "81f661e1-d704-4861-b5c1-5bb3cf57e6a7",
+                      "status": "paused",
+                      "trigger": "manual",
+                      "level": "info",
+                      "startedAt": "2026-05-15T22:25:57.178Z",
+                      "endedAt": "2026-05-15T22:25:57.215Z",
+                      "totalDurationMs": 1,
+                      "paused": {
+                        "pausedAt": "2026-05-15T22:25:57.216Z",
+                        "resumeAt": "2026-05-16T18:25:57.200Z",
+                        "pauseKind": "time",
+                        "blockedOnBlockId": "c1b90bce-8a82-42a5-b6a5-5762846c2eaf",
+                        "pausedExecutionId": "438bf05b-bd3c-4011-b78e-b19c112eeb66",
+                        "pausePointCount": 1,
+                        "resumedCount": 0
+                      },
+                      "cost": {
+                        "total": 0.005
+                      },
+                      "error": null,
+                      "finalOutput": null,
+                      "blockOutputs": null
+                    }
+                  },
+                  "failed": {
+                    "summary": "Failed run",
+                    "value": {
+                      "executionId": "3ccfdeed-a63c-4e86-98e2-8bec723bca52",
+                      "workflowId": "81f661e1-d704-4861-b5c1-5bb3cf57e6a7",
+                      "status": "failed",
+                      "trigger": "api",
+                      "level": "error",
+                      "startedAt": "2026-05-15T22:24:50.991Z",
+                      "endedAt": "2026-05-15T22:24:50.999Z",
+                      "totalDurationMs": 2,
+                      "paused": null,
+                      "cost": {
+                        "total": 0.005
+                      },
+                      "error": "Wait 1: Wait time exceeds maximum of 5 minutes; enable async mode to wait up to 30 days",
+                      "finalOutput": null,
+                      "blockOutputs": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/workflows/{id}/executions/{executionId}/cancel": {
       "post": {
         "operationId": "cancelExecution",
@@ -191,7 +343,7 @@
             "description": "The unique identifier of the workflow.",
             "schema": {
               "type": "string",
-              "example": "wf_1a2b3c4d5e"
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
             }
           },
           {
@@ -201,7 +353,7 @@
             "description": "The unique identifier of the execution to cancel.",
             "schema": {
               "type": "string",
-              "example": "exec_9f8e7d6c5b"
+              "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
             }
           }
         ],
@@ -225,7 +377,7 @@
                 },
                 "example": {
                   "success": true,
-                  "executionId": "exec_abc123"
+                  "executionId": "c7a92e15-3f4b-4d8c-a1e6-9b0d5f2c8e74"
                 }
               }
             }
@@ -261,7 +413,7 @@
             "description": "The unique identifier of the workflow.",
             "schema": {
               "type": "string",
-              "example": "wf_1a2b3c4d5e"
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
             }
           },
           {
@@ -295,8 +447,8 @@
                   "pausedExecutions": [
                     {
                       "id": "pe_abc123",
-                      "workflowId": "wf_1a2b3c4d5e",
-                      "executionId": "exec_9f8e7d6c5b",
+                      "workflowId": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
+                      "executionId": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13",
                       "status": "paused",
                       "totalPauseCount": 1,
                       "resumedCount": 0,
@@ -313,11 +465,11 @@
                           "resumeStatus": "paused",
                           "snapshotReady": true,
                           "resumeLinks": {
-                            "apiUrl": "https://www.sim.ai/api/resume/wf_1a2b3c4d5e/exec_9f8e7d6c5b/ctx_xyz789",
-                            "uiUrl": "https://www.sim.ai/resume/wf_1a2b3c4d5e/exec_9f8e7d6c5b",
+                            "apiUrl": "https://www.sim.ai/api/resume/3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36/e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13/ctx_xyz789",
+                            "uiUrl": "https://www.sim.ai/resume/3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36/e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13",
                             "contextId": "ctx_xyz789",
-                            "executionId": "exec_9f8e7d6c5b",
-                            "workflowId": "wf_1a2b3c4d5e"
+                            "executionId": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13",
+                            "workflowId": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
                           },
                           "response": {
                             "displayData": {
@@ -371,7 +523,7 @@
             "description": "The unique identifier of the workflow.",
             "schema": {
               "type": "string",
-              "example": "wf_1a2b3c4d5e"
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
             }
           },
           {
@@ -381,7 +533,7 @@
             "description": "The execution ID of the paused execution.",
             "schema": {
               "type": "string",
-              "example": "exec_9f8e7d6c5b"
+              "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
             }
           }
         ],
@@ -430,7 +582,7 @@
             "description": "The unique identifier of the workflow.",
             "schema": {
               "type": "string",
-              "example": "wf_1a2b3c4d5e"
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
             }
           },
           {
@@ -440,7 +592,7 @@
             "description": "The execution ID of the paused execution.",
             "schema": {
               "type": "string",
-              "example": "exec_9f8e7d6c5b"
+              "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
             }
           }
         ],
@@ -505,7 +657,7 @@
             "description": "The unique identifier of the workflow.",
             "schema": {
               "type": "string",
-              "example": "wf_1a2b3c4d5e"
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
             }
           },
           {
@@ -515,7 +667,7 @@
             "description": "The execution ID of the paused execution.",
             "schema": {
               "type": "string",
-              "example": "exec_9f8e7d6c5b"
+              "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
             }
           },
           {
@@ -572,7 +724,7 @@
             "description": "The unique identifier of the workflow.",
             "schema": {
               "type": "string",
-              "example": "wf_1a2b3c4d5e"
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
             }
           },
           {
@@ -582,7 +734,7 @@
             "description": "The execution ID of the paused execution.",
             "schema": {
               "type": "string",
-              "example": "exec_9f8e7d6c5b"
+              "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
             }
           },
           {
@@ -679,7 +831,7 @@
                     "value": {
                       "success": true,
                       "status": "completed",
-                      "executionId": "exec_new123",
+                      "executionId": "f0b3d8c2-7e5a-4b9d-8c1f-6a4e2d0b9c58",
                       "output": {
                         "result": "Approved and processed"
                       },
@@ -695,7 +847,7 @@
                     "summary": "Queued behind another resume",
                     "value": {
                       "status": "queued",
-                      "executionId": "exec_new123",
+                      "executionId": "f0b3d8c2-7e5a-4b9d-8c1f-6a4e2d0b9c58",
                       "queuePosition": 2,
                       "message": "Resume queued. It will run after current resumes finish."
                     }
@@ -704,7 +856,7 @@
                     "summary": "Execution started (fire and forget)",
                     "value": {
                       "status": "started",
-                      "executionId": "exec_new123",
+                      "executionId": "f0b3d8c2-7e5a-4b9d-8c1f-6a4e2d0b9c58",
                       "message": "Resume execution started."
                     }
                   }
@@ -723,7 +875,7 @@
                   "success": true,
                   "async": true,
                   "jobId": "job_4a3b2c1d0e",
-                  "executionId": "exec_new123",
+                  "executionId": "f0b3d8c2-7e5a-4b9d-8c1f-6a4e2d0b9c58",
                   "message": "Resume execution queued",
                   "statusUrl": "https://www.sim.ai/api/jobs/job_4a3b2c1d0e"
                 }
@@ -859,7 +1011,7 @@
                 "example": {
                   "data": [
                     {
-                      "id": "wf_abc123",
+                      "id": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
                       "name": "Weather Bot",
                       "isDeployed": true,
                       "createdAt": "2026-01-15T10:30:00Z",
@@ -905,7 +1057,7 @@
             "description": "The unique workflow identifier.",
             "schema": {
               "type": "string",
-              "example": "wf_1a2b3c4d5e"
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
             }
           }
         ],
@@ -929,7 +1081,7 @@
                 },
                 "example": {
                   "data": {
-                    "id": "wf_abc123",
+                    "id": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
                     "name": "Weather Bot",
                     "description": "A workflow that fetches weather data",
                     "isDeployed": true,
@@ -945,6 +1097,311 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/{id}/deploy": {
+      "post": {
+        "operationId": "deployWorkflow",
+        "summary": "Deploy Workflow",
+        "description": "Deploy the workflow's current draft state. Creates a new deployment version, makes it live for API execution, and activates any schedules and triggers. Optionally accepts a name and description for the new version. Requires admin permission on the workflow's workspace. Returns 404 when the workflow does not exist or you do not have access to it.",
+        "tags": ["Workflows"],
+        "x-codeSamples": [
+          {
+            "id": "curl",
+            "label": "cURL",
+            "lang": "bash",
+            "source": "curl -X POST \\\n  \"https://www.sim.ai/api/v1/workflows/{id}/deploy\" \\\n  -H \"X-API-Key: YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\": \"Release 4\", \"description\": \"Fixes the agent prompt\"}'"
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The unique workflow identifier.",
+            "schema": {
+              "type": "string",
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional metadata for the new deployment version. The request body may be omitted entirely.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "description": "Optional label for the new deployment version.",
+                    "example": "Release 4"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Optional summary of what changed in this version.",
+                    "example": "Fixes the agent prompt",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workflow deployed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "description": "The resulting deployment state of the workflow.",
+                      "$ref": "#/components/schemas/WorkflowDeployment"
+                    },
+                    "limits": {
+                      "$ref": "#/components/schemas/Limits",
+                      "description": "Rate limit and usage information for the current API key."
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "id": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
+                    "isDeployed": true,
+                    "deployedAt": "2026-06-12T10:30:00Z",
+                    "version": 4,
+                    "warnings": []
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "423": {
+            "description": "The workflow is locked and cannot be modified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Human-readable error message."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "undeployWorkflow",
+        "summary": "Undeploy Workflow",
+        "description": "Take the workflow offline. API execution stops and schedules, webhooks, and other deployment side effects are removed. Deployment versions are retained, so the workflow can be deployed again later. Requires admin permission on the workflow's workspace. Returns 404 when the workflow does not exist or you do not have access to it.",
+        "tags": ["Workflows"],
+        "x-codeSamples": [
+          {
+            "id": "curl",
+            "label": "cURL",
+            "lang": "bash",
+            "source": "curl -X DELETE \\\n  \"https://www.sim.ai/api/v1/workflows/{id}/deploy\" \\\n  -H \"X-API-Key: YOUR_API_KEY\""
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The unique workflow identifier.",
+            "schema": {
+              "type": "string",
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workflow undeployed successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "description": "The resulting deployment state of the workflow.",
+                      "$ref": "#/components/schemas/WorkflowDeployment"
+                    },
+                    "limits": {
+                      "$ref": "#/components/schemas/Limits",
+                      "description": "Rate limit and usage information for the current API key."
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "id": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
+                    "isDeployed": false,
+                    "deployedAt": null,
+                    "warnings": []
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "423": {
+            "description": "The workflow is locked and cannot be modified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Human-readable error message."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/{id}/rollback": {
+      "post": {
+        "operationId": "rollbackWorkflow",
+        "summary": "Rollback Workflow",
+        "description": "Roll the live deployment back to a previous deployment version. The workflow must currently be deployed. By default the version immediately preceding the currently active one is re-activated; pass `version` to target a specific deployment version instead. The workflow's draft state is not modified. Requires admin permission on the workflow's workspace. Returns 404 when the workflow does not exist or you do not have access to it.",
+        "tags": ["Workflows"],
+        "x-codeSamples": [
+          {
+            "id": "curl",
+            "label": "cURL",
+            "lang": "bash",
+            "source": "curl -X POST \\\n  \"https://www.sim.ai/api/v1/workflows/{id}/rollback\" \\\n  -H \"X-API-Key: YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"version\": 3}'"
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The unique workflow identifier.",
+            "schema": {
+              "type": "string",
+              "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional rollback target. The request body may be omitted entirely to roll back to the previous version.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The deployment version to re-activate. Defaults to the version immediately preceding the active one.",
+                    "example": 3,
+                    "maximum": 2147483647
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workflow rolled back successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "description": "The resulting deployment state of the workflow.",
+                      "$ref": "#/components/schemas/WorkflowDeployment"
+                    },
+                    "limits": {
+                      "$ref": "#/components/schemas/Limits",
+                      "description": "Rate limit and usage information for the current API key."
+                    }
+                  }
+                },
+                "example": {
+                  "data": {
+                    "id": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
+                    "isDeployed": true,
+                    "deployedAt": "2026-06-12T10:30:00Z",
+                    "version": 3,
+                    "warnings": []
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "423": {
+            "description": "The workflow is locked and cannot be modified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Human-readable error message."
+                    }
+                  }
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -1206,7 +1663,7 @@
                   "data": [
                     {
                       "id": "log_abc123",
-                      "workflowId": "wf_abc123",
+                      "workflowId": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
                       "level": "info",
                       "trigger": "api",
                       "createdAt": "2026-01-15T10:30:00Z"
@@ -1275,8 +1732,8 @@
                 "example": {
                   "data": {
                     "id": "log_abc123",
-                    "workflowId": "wf_abc123",
-                    "executionId": "exec_abc123",
+                    "workflowId": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
+                    "executionId": "c7a92e15-3f4b-4d8c-a1e6-9b0d5f2c8e74",
                     "level": "info",
                     "trigger": "api",
                     "totalDurationMs": 1250,
@@ -1322,7 +1779,7 @@
             "description": "The unique execution identifier.",
             "schema": {
               "type": "string",
-              "example": "exec_9f8e7d6c5b"
+              "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
             }
           }
         ],
@@ -1401,8 +1858,8 @@
                   }
                 },
                 "example": {
-                  "executionId": "exec_abc123",
-                  "workflowId": "wf_abc123",
+                  "executionId": "c7a92e15-3f4b-4d8c-a1e6-9b0d5f2c8e74",
+                  "workflowId": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
                   "workflowState": {},
                   "executionMetadata": {}
                 }
@@ -1624,7 +2081,7 @@
                     "actorName": "Jane Doe",
                     "actorEmail": "jane@example.com",
                     "resourceType": "workflow",
-                    "resourceId": "wf_abc123",
+                    "resourceId": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36",
                     "metadata": {},
                     "createdAt": "2026-01-15T10:30:00Z"
                   }
@@ -1759,7 +2216,7 @@
                   "data": {
                     "tables": [
                       {
-                        "id": "tbl_abc123",
+                        "id": "tbl_92e4c6a8b0d24f1e8a3c5d7b9f0e2a14",
                         "name": "contacts",
                         "description": "Customer contacts",
                         "schema": {
@@ -1908,7 +2365,7 @@
                   "success": true,
                   "data": {
                     "table": {
-                      "id": "tbl_abc123",
+                      "id": "tbl_92e4c6a8b0d24f1e8a3c5d7b9f0e2a14",
                       "name": "contacts",
                       "description": "Customer contacts",
                       "schema": {
@@ -1998,7 +2455,7 @@
                   "success": true,
                   "data": {
                     "table": {
-                      "id": "tbl_abc123",
+                      "id": "tbl_92e4c6a8b0d24f1e8a3c5d7b9f0e2a14",
                       "name": "contacts",
                       "description": "Customer contacts",
                       "schema": {
@@ -2576,7 +3033,7 @@
                   "data": {
                     "rows": [
                       {
-                        "id": "row_abc123",
+                        "id": "row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93",
                         "data": {
                           "email": "jane@example.com",
                           "name": "Jane Doe"
@@ -2744,7 +3201,7 @@
                   "success": true,
                   "data": {
                     "row": {
-                      "id": "row_abc123",
+                      "id": "row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93",
                       "data": {
                         "email": "jane@example.com",
                         "name": "Jane Doe",
@@ -2868,7 +3325,7 @@
             "id": "curl",
             "label": "cURL",
             "lang": "bash",
-            "source": "curl -X DELETE \\\n  \"https://www.sim.ai/api/v1/tables/{tableId}/rows\" \\\n  -H \"X-API-Key: YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"workspaceId\": \"YOUR_WORKSPACE_ID\",\n    \"rowIds\": [\"row_abc123\", \"row_def456\"]\n  }'"
+            "source": "curl -X DELETE \\\n  \"https://www.sim.ai/api/v1/tables/{tableId}/rows\" \\\n  -H \"X-API-Key: YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"workspaceId\": \"YOUR_WORKSPACE_ID\",\n    \"rowIds\": [\"row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93\", \"row_2a4c6e8d0b1f4d3e917c5b7d9f1a3c85\"]\n  }'"
           }
         ],
         "parameters": [
@@ -2927,7 +3384,10 @@
               },
               "example": {
                 "workspaceId": "wsp_abc123",
-                "rowIds": ["row_abc123", "row_def456"]
+                "rowIds": [
+                  "row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93",
+                  "row_2a4c6e8d0b1f4d3e917c5b7d9f1a3c85"
+                ]
               }
             }
           }
@@ -2983,7 +3443,10 @@
                   "data": {
                     "message": "Rows deleted successfully",
                     "deletedCount": 2,
-                    "deletedRowIds": ["row_abc123", "row_def456"]
+                    "deletedRowIds": [
+                      "row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93",
+                      "row_2a4c6e8d0b1f4d3e917c5b7d9f1a3c85"
+                    ]
                   }
                 }
               }
@@ -3016,7 +3479,7 @@
             "id": "curl",
             "label": "cURL",
             "lang": "bash",
-            "source": "curl -X PATCH \\\n  \"https://www.sim.ai/api/v1/tables/{tableId}/rows\" \\\n  -H \"X-API-Key: YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"workspaceId\": \"YOUR_WORKSPACE_ID\",\n    \"updates\": [\n      { \"rowId\": \"row_abc123\", \"data\": { \"status\": \"active\" } },\n      { \"rowId\": \"row_def456\", \"data\": { \"status\": \"archived\" } }\n    ]\n  }'"
+            "source": "curl -X PATCH \\\n  \"https://www.sim.ai/api/v1/tables/{tableId}/rows\" \\\n  -H \"X-API-Key: YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"workspaceId\": \"YOUR_WORKSPACE_ID\",\n    \"updates\": [\n      { \"rowId\": \"row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93\", \"data\": { \"status\": \"active\" } },\n      { \"rowId\": \"row_2a4c6e8d0b1f4d3e917c5b7d9f1a3c85\", \"data\": { \"status\": \"archived\" } }\n    ]\n  }'"
           }
         ],
         "parameters": [
@@ -3063,13 +3526,13 @@
                 "workspaceId": "wsp_abc123",
                 "updates": [
                   {
-                    "rowId": "row_abc123",
+                    "rowId": "row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93",
                     "data": {
                       "status": "active"
                     }
                   },
                   {
-                    "rowId": "row_def456",
+                    "rowId": "row_2a4c6e8d0b1f4d3e917c5b7d9f1a3c85",
                     "data": {
                       "status": "archived"
                     }
@@ -3154,7 +3617,7 @@
                   "success": true,
                   "data": {
                     "row": {
-                      "id": "row_abc123",
+                      "id": "row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93",
                       "data": {
                         "email": "jane@example.com",
                         "name": "Jane Doe"
@@ -3266,7 +3729,7 @@
                   "success": true,
                   "data": {
                     "row": {
-                      "id": "row_abc123",
+                      "id": "row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93",
                       "data": {
                         "email": "jane@example.com",
                         "name": "Updated Name"
@@ -3484,7 +3947,7 @@
                   "success": true,
                   "data": {
                     "row": {
-                      "id": "row_abc123",
+                      "id": "row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93",
                       "data": {
                         "email": "user@example.com",
                         "name": "John Doe"
@@ -3572,7 +4035,7 @@
                   "data": {
                     "files": [
                       {
-                        "id": "file_abc123",
+                        "id": "wf_V1StGXR8z5jdHi6BmyT91",
                         "name": "data.csv",
                         "size": 1024,
                         "type": "text/csv",
@@ -3668,7 +4131,7 @@
                   "success": true,
                   "data": {
                     "file": {
-                      "id": "file_abc123",
+                      "id": "wf_V1StGXR8z5jdHi6BmyT91",
                       "name": "data.csv",
                       "size": 1024,
                       "type": "text/csv",
@@ -3736,7 +4199,7 @@
             "description": "The unique identifier of the file.",
             "schema": {
               "type": "string",
-              "example": "wf_1709571234_abc1234"
+              "example": "wf_V1StGXR8z5jdHi6BmyT91"
             }
           },
           {
@@ -3835,7 +4298,7 @@
             "description": "The unique identifier of the file to delete.",
             "schema": {
               "type": "string",
-              "example": "wf_1709571234_abc1234"
+              "example": "wf_V1StGXR8z5jdHi6BmyT91"
             }
           },
           {
@@ -3948,7 +4411,7 @@
                   "data": {
                     "knowledgeBases": [
                       {
-                        "id": "kb_abc123",
+                        "id": "d2c8f4a6-1b3e-4c5d-9e7f-8a0b2c4d6e1f",
                         "name": "Product Docs",
                         "description": "Product documentation and FAQs",
                         "docCount": 5,
@@ -4059,7 +4522,7 @@
                   "success": true,
                   "data": {
                     "knowledgeBase": {
-                      "id": "kb_abc123",
+                      "id": "d2c8f4a6-1b3e-4c5d-9e7f-8a0b2c4d6e1f",
                       "name": "Product Docs",
                       "description": "Product documentation and FAQs",
                       "docCount": 0,
@@ -4146,7 +4609,7 @@
                   "success": true,
                   "data": {
                     "knowledgeBase": {
-                      "id": "kb_abc123",
+                      "id": "d2c8f4a6-1b3e-4c5d-9e7f-8a0b2c4d6e1f",
                       "name": "Product Docs",
                       "description": "Product documentation and FAQs",
                       "docCount": 5,
@@ -4269,7 +4732,7 @@
                   "success": true,
                   "data": {
                     "knowledgeBase": {
-                      "id": "kb_abc123",
+                      "id": "d2c8f4a6-1b3e-4c5d-9e7f-8a0b2c4d6e1f",
                       "name": "Updated Product Docs",
                       "description": "Updated product documentation",
                       "docCount": 5,
@@ -4525,8 +4988,8 @@
                   "data": {
                     "documents": [
                       {
-                        "id": "doc_abc123",
-                        "knowledgeBaseId": "kb_abc123",
+                        "id": "b6e2a8d4-5c7f-4a1b-8d3e-0f9c1b5a7e29",
+                        "knowledgeBaseId": "d2c8f4a6-1b3e-4c5d-9e7f-8a0b2c4d6e1f",
                         "filename": "Getting Started.pdf",
                         "fileSize": 204800,
                         "mimeType": "application/pdf",
@@ -4643,8 +5106,8 @@
                   "success": true,
                   "data": {
                     "document": {
-                      "id": "doc_abc123",
-                      "knowledgeBaseId": "kb_abc123",
+                      "id": "b6e2a8d4-5c7f-4a1b-8d3e-0f9c1b5a7e29",
+                      "knowledgeBaseId": "d2c8f4a6-1b3e-4c5d-9e7f-8a0b2c4d6e1f",
                       "filename": "Getting Started.pdf",
                       "fileSize": 204800,
                       "mimeType": "application/pdf",
@@ -4791,8 +5254,8 @@
                   "success": true,
                   "data": {
                     "document": {
-                      "id": "doc_abc123",
-                      "knowledgeBaseId": "kb_abc123",
+                      "id": "b6e2a8d4-5c7f-4a1b-8d3e-0f9c1b5a7e29",
+                      "knowledgeBaseId": "d2c8f4a6-1b3e-4c5d-9e7f-8a0b2c4d6e1f",
                       "filename": "Getting Started.pdf",
                       "fileSize": 204800,
                       "mimeType": "application/pdf",
@@ -4970,7 +5433,7 @@
               },
               "example": {
                 "workspaceId": "wsp_abc123",
-                "knowledgeBaseIds": ["kb_abc123"],
+                "knowledgeBaseIds": ["d2c8f4a6-1b3e-4c5d-9e7f-8a0b2c4d6e1f"],
                 "query": "How do I reset my password?",
                 "topK": 5
               }
@@ -5028,8 +5491,9 @@
                   "data": {
                     "results": [
                       {
-                        "documentId": "doc_abc123",
+                        "documentId": "b6e2a8d4-5c7f-4a1b-8d3e-0f9c1b5a7e29",
                         "documentName": "Getting Started.pdf",
+                        "sourceUrl": "https://example.atlassian.net/wiki/spaces/DOCS/pages/12345",
                         "content": "To reset your password, go to Settings > Security.",
                         "chunkIndex": 3,
                         "similarity": 0.95,
@@ -5037,7 +5501,7 @@
                       }
                     ],
                     "query": "How do I reset my password?",
-                    "knowledgeBaseIds": ["kb_abc123"],
+                    "knowledgeBaseIds": ["d2c8f4a6-1b3e-4c5d-9e7f-8a0b2c4d6e1f"],
                     "topK": 5,
                     "totalResults": 1
                   }
@@ -5081,7 +5545,7 @@
         "required": true,
         "schema": {
           "type": "string",
-          "example": "tbl_abc123"
+          "example": "tbl_92e4c6a8b0d24f1e8a3c5d7b9f0e2a14"
         },
         "description": "The unique identifier of the table."
       },
@@ -5091,7 +5555,7 @@
         "required": true,
         "schema": {
           "type": "string",
-          "example": "row_xyz789"
+          "example": "row_6b8d0f2a4c3e4e5da28f7c9b1d3f5a07"
         },
         "description": "The unique identifier of the row."
       },
@@ -5141,7 +5605,7 @@
           "id": {
             "type": "string",
             "description": "Unique table identifier.",
-            "example": "tbl_abc123"
+            "example": "tbl_92e4c6a8b0d24f1e8a3c5d7b9f0e2a14"
           },
           "name": {
             "type": "string",
@@ -5193,7 +5657,7 @@
           "id": {
             "type": "string",
             "description": "Unique row identifier.",
-            "example": "row_xyz789"
+            "example": "row_6b8d0f2a4c3e4e5da28f7c9b1d3f5a07"
           },
           "data": {
             "type": "object",
@@ -5223,7 +5687,7 @@
           "id": {
             "type": "string",
             "description": "Unique workflow identifier.",
-            "example": "wf_1a2b3c4d5e"
+            "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
           },
           "name": {
             "type": "string",
@@ -5236,21 +5700,16 @@
             "description": "Optional description of what the workflow does.",
             "example": "Routes incoming support tickets and drafts responses"
           },
-          "color": {
-            "type": "string",
-            "description": "Hex color code used for the workflow icon in the dashboard (e.g., #33c482).",
-            "example": "#33c482"
-          },
           "folderId": {
             "type": "string",
             "nullable": true,
             "description": "The folder this workflow belongs to. null if at the workspace root.",
-            "example": "folder_abc123"
+            "example": "8a4c2e6b-0d1f-4b3a-9c5e-7f2d8b4a6c91"
           },
           "workspaceId": {
             "type": "string",
             "description": "The workspace this workflow belongs to.",
-            "example": "ws_xyz789"
+            "example": "a91c4b2e-6d3f-4e8a-b5c7-0d9e2f1a8c64"
           },
           "isDeployed": {
             "type": "boolean",
@@ -5297,7 +5756,7 @@
           "id": {
             "type": "string",
             "description": "Unique workflow identifier.",
-            "example": "wf_1a2b3c4d5e"
+            "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
           },
           "name": {
             "type": "string",
@@ -5310,21 +5769,16 @@
             "description": "Optional description of what the workflow does.",
             "example": "Routes incoming support tickets and drafts responses"
           },
-          "color": {
-            "type": "string",
-            "description": "Hex color code used for the workflow icon in the dashboard.",
-            "example": "#33c482"
-          },
           "folderId": {
             "type": "string",
             "nullable": true,
             "description": "The folder this workflow belongs to. null if at the workspace root.",
-            "example": "folder_abc123"
+            "example": "8a4c2e6b-0d1f-4b3a-9c5e-7f2d8b4a6c91"
           },
           "workspaceId": {
             "type": "string",
             "description": "The workspace this workflow belongs to.",
-            "example": "ws_xyz789"
+            "example": "a91c4b2e-6d3f-4e8a-b5c7-0d9e2f1a8c64"
           },
           "isDeployed": {
             "type": "boolean",
@@ -5381,6 +5835,41 @@
           }
         }
       },
+      "WorkflowDeployment": {
+        "type": "object",
+        "description": "Deployment state of a workflow after a deploy, undeploy, or rollback operation.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique workflow identifier.",
+            "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
+          },
+          "isDeployed": {
+            "type": "boolean",
+            "description": "Whether the workflow is deployed and available for API execution after the operation.",
+            "example": true
+          },
+          "deployedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 timestamp of the active deployment. null after an undeploy.",
+            "example": "2026-06-12T10:30:00Z"
+          },
+          "version": {
+            "type": "integer",
+            "description": "The deployment version that is now active. Omitted for undeploy.",
+            "example": 4
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Non-fatal warnings. Present when trigger, schedule, or MCP side-effect sync is still in progress or needs a redeploy."
+          }
+        }
+      },
       "ExecutionResult": {
         "type": "object",
         "description": "Result of a synchronous workflow execution.",
@@ -5393,7 +5882,7 @@
           "executionId": {
             "type": "string",
             "description": "Unique identifier for this execution. Use this to query logs or cancel the execution.",
-            "example": "exec_9f8e7d6c5b"
+            "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
           },
           "output": {
             "type": "object",
@@ -5456,7 +5945,7 @@
           "executionId": {
             "type": "string",
             "description": "Unique execution identifier. Use this to query execution status or cancel.",
-            "example": "exec_9f8e7d6c5b"
+            "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
           },
           "message": {
             "type": "string",
@@ -5483,12 +5972,12 @@
           "workflowId": {
             "type": "string",
             "description": "The workflow that was executed.",
-            "example": "wf_1a2b3c4d5e"
+            "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
           },
           "executionId": {
             "type": "string",
             "description": "Unique execution identifier for this run.",
-            "example": "exec_9f8e7d6c5b"
+            "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
           },
           "level": {
             "type": "string",
@@ -5548,12 +6037,12 @@
           "workflowId": {
             "type": "string",
             "description": "The workflow that was executed.",
-            "example": "wf_1a2b3c4d5e"
+            "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
           },
           "executionId": {
             "type": "string",
             "description": "Unique execution identifier for this run.",
-            "example": "exec_9f8e7d6c5b"
+            "example": "e4f8d2b6-9a1c-4e3d-8b7f-5c0a2d9e6f13"
           },
           "level": {
             "type": "string",
@@ -5589,7 +6078,7 @@
               "id": {
                 "type": "string",
                 "description": "Unique workflow identifier.",
-                "example": "wf_1a2b3c4d5e"
+                "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
               },
               "name": {
                 "type": "string",
@@ -5830,6 +6319,141 @@
           }
         }
       },
+      "WorkflowExecutionStatus": {
+        "type": "object",
+        "description": "Current status of a workflow execution.",
+        "properties": {
+          "executionId": {
+            "type": "string",
+            "description": "The unique identifier of the execution.",
+            "example": "9254f1c9-5a11-4a12-91e3-8065293f3609"
+          },
+          "workflowId": {
+            "type": "string",
+            "description": "The unique identifier of the workflow.",
+            "example": "81f661e1-d704-4861-b5c1-5bb3cf57e6a7"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "running", "paused", "completed", "failed", "cancelled"],
+            "description": "Current normalized lifecycle status. `paused` is set when a row exists in pausedExecutions with status `paused` or `partially_resumed`; otherwise the workflowExecutionLogs row's status field is used.",
+            "example": "completed"
+          },
+          "trigger": {
+            "type": "string",
+            "enum": ["api", "manual", "schedule", "webhook", "chat"],
+            "description": "What triggered the execution.",
+            "example": "api"
+          },
+          "level": {
+            "type": "string",
+            "enum": ["info", "warning", "error"],
+            "description": "Log level of the execution.",
+            "example": "info"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when execution started.",
+            "example": "2026-05-15T19:43:12.189Z"
+          },
+          "endedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 timestamp when execution ended. Null while the run is in flight.",
+            "example": "2026-05-15T19:45:45.224Z"
+          },
+          "totalDurationMs": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Total duration of the execution in milliseconds. Null while the run is in flight.",
+            "example": 153035
+          },
+          "paused": {
+            "type": "object",
+            "nullable": true,
+            "description": "Pause-state details. Present only when status is `paused`.",
+            "properties": {
+              "pausedAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 timestamp when the workflow was paused.",
+                "example": "2026-05-15T22:25:57.216Z"
+              },
+              "resumeAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "description": "Earliest scheduled resume time across active pause points. Null for human-only pauses.",
+                "example": "2026-05-16T18:25:57.200Z"
+              },
+              "pauseKind": {
+                "type": "string",
+                "enum": ["time", "human"],
+                "nullable": true,
+                "description": "What kind of pause the workflow is waiting on.",
+                "example": "time"
+              },
+              "blockedOnBlockId": {
+                "type": "string",
+                "nullable": true,
+                "description": "The block currently blocking resume.",
+                "example": "c1b90bce-8a82-42a5-b6a5-5762846c2eaf"
+              },
+              "pausedExecutionId": {
+                "type": "string",
+                "description": "ID of the paused-execution row, useful for cross-referencing with the human-in-the-loop endpoints.",
+                "example": "438bf05b-bd3c-4011-b78e-b19c112eeb66"
+              },
+              "pausePointCount": {
+                "type": "integer",
+                "description": "Total number of pause points recorded for this execution.",
+                "example": 1
+              },
+              "resumedCount": {
+                "type": "integer",
+                "description": "Number of pause points already resumed.",
+                "example": 0
+              }
+            }
+          },
+          "cost": {
+            "type": "object",
+            "nullable": true,
+            "description": "Cost summary. Detailed token / model breakdown lives on the /v1/logs detail endpoint.",
+            "properties": {
+              "total": {
+                "type": "number",
+                "description": "Total cost in USD.",
+                "example": 0.005
+              }
+            }
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Error message. Present only when status is `failed`.",
+            "example": null
+          },
+          "finalOutput": {
+            "type": "object",
+            "nullable": true,
+            "description": "The workflow's final output. Returned only when ?includeOutput=true AND status is `completed`.",
+            "example": null
+          },
+          "blockOutputs": {
+            "type": "object",
+            "nullable": true,
+            "description": "Per-block outputs keyed by the selector string. Returned only when `?selectedOutputs` is set.",
+            "additionalProperties": true,
+            "example": {
+              "c1b90bce-8a82-42a5-b6a5-5762846c2eaf.waitDuration": 60000,
+              "c1b90bce-8a82-42a5-b6a5-5762846c2eaf.status": "completed"
+            }
+          }
+        }
+      },
       "AuditLogEntry": {
         "type": "object",
         "description": "An enterprise audit log entry recording an action taken in the workspace.",
@@ -5843,7 +6467,7 @@
             "type": "string",
             "nullable": true,
             "description": "The workspace where the action occurred.",
-            "example": "ws_xyz789"
+            "example": "a91c4b2e-6d3f-4e8a-b5c7-0d9e2f1a8c64"
           },
           "actorId": {
             "type": "string",
@@ -5877,7 +6501,7 @@
             "type": "string",
             "nullable": true,
             "description": "The unique identifier of the affected resource.",
-            "example": "wf_1a2b3c4d5e"
+            "example": "3b1f7c92-8d4e-4a6b-9c0d-5e2f8a714b36"
           },
           "resourceName": {
             "type": "string",
@@ -6001,7 +6625,7 @@
           "id": {
             "type": "string",
             "description": "Unique file identifier.",
-            "example": "wf_1709571234_abc1234"
+            "example": "wf_V1StGXR8z5jdHi6BmyT91"
           },
           "name": {
             "type": "string",
@@ -6263,6 +6887,11 @@
           "documentName": {
             "type": "string",
             "description": "Filename of the source document."
+          },
+          "sourceUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "URL to the original source document for connector-synced documents (e.g., a Confluence page, Google Doc, or Notion page). Null for documents without an external source."
           },
           "content": {
             "type": "string",
@@ -6807,7 +7436,10 @@
               "data": {
                 "message": "Rows updated successfully",
                 "updatedCount": 2,
-                "updatedRowIds": ["row_abc123", "row_def456"]
+                "updatedRowIds": [
+                  "row_1f3e5d7c9b8a4c2d806e4a6b8d0f2e93",
+                  "row_2a4c6e8d0b1f4d3e917c5b7d9f1a3c85"
+                ]
               }
             }
           }

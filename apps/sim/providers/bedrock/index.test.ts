@@ -6,9 +6,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockSend = vi.fn()
 
 vi.mock('@aws-sdk/client-bedrock-runtime', () => ({
-  BedrockRuntimeClient: vi.fn().mockImplementation(() => {
-    return { send: mockSend }
-  }),
+  BedrockRuntimeClient: vi.fn().mockImplementation(
+    class {
+      send = mockSend
+    }
+  ),
   ConverseCommand: vi.fn(),
   ConverseStreamCommand: vi.fn(),
 }))
@@ -23,6 +25,10 @@ vi.mock('@/providers/bedrock/utils', () => ({
 }))
 
 vi.mock('@/providers/models', () => ({
+  getProviderFileAttachment: vi
+    .fn()
+    .mockReturnValue({ maxBytes: 10 * 1024 * 1024, strategy: 'inline' }),
+  INLINE_ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,
   getProviderModels: vi.fn().mockReturnValue([]),
   getProviderDefaultModel: vi.fn().mockReturnValue('us.anthropic.claude-3-5-sonnet-20241022-v2:0'),
 }))
@@ -44,10 +50,12 @@ vi.mock('@/tools', () => ({
 
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime'
 import { bedrockProvider } from '@/providers/bedrock/index'
+import { clearProviderClientCacheForTests } from '@/providers/client-cache'
 
 describe('bedrockProvider credential handling', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clearProviderClientCacheForTests()
     mockSend.mockResolvedValue({
       output: { message: { content: [{ text: 'response' }] } },
       usage: { inputTokens: 10, outputTokens: 5 },

@@ -1,34 +1,23 @@
-import { db } from '@sim/db'
-import { pausedExecutions, permissions, workflow, workflowExecutionLogs } from '@sim/db/schema'
+import { dbReplica } from '@sim/db'
+import { pausedExecutions, workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, gte, inArray, isNotNull, isNull, lte, or, type SQL, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { workspaceMetricsExecutionsQuerySchema } from '@/lib/api/contracts/workspaces'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('MetricsExecutionsAPI')
-
-const QueryParamsSchema = z.object({
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
-  segments: z.coerce.number().min(1).max(200).default(72),
-  workflowIds: z.string().optional(),
-  folderIds: z.string().optional(),
-  triggers: z.string().optional(),
-  level: z.string().optional(), // Supports comma-separated values: 'error,running'
-  allTime: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((v) => v === 'true'),
-})
 
 export const GET = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     try {
       const { id: workspaceId } = await params
       const { searchParams } = new URL(request.url)
-      const qp = QueryParamsSchema.parse(Object.fromEntries(searchParams.entries()))
+      const qp = workspaceMetricsExecutionsQuerySchema.parse(
+        Object.fromEntries(searchParams.entries())
+      )
       const session = await getSession()
       if (!session?.user?.id) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -48,18 +37,8 @@ export const GET = withRouteHandler(
 
       const segments = qp.segments
 
-      const [permission] = await db
-        .select()
-        .from(permissions)
-        .where(
-          and(
-            eq(permissions.entityType, 'workspace'),
-            eq(permissions.entityId, workspaceId),
-            eq(permissions.userId, userId)
-          )
-        )
-        .limit(1)
-      if (!permission) {
+      const access = await checkWorkspaceAccess(workspaceId, userId)
+      if (!access.hasAccess) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
       const wfWhere = [eq(workflow.workspaceId, workspaceId)] as any[]
@@ -72,7 +51,7 @@ export const GET = withRouteHandler(
         wfWhere.push(inArray(workflow.id, wfList))
       }
 
-      const workflows = await db
+      const workflows = await dbReplica
         .select({ id: workflow.id, name: workflow.name })
         .from(workflow)
         .where(and(...wfWhere))
@@ -136,7 +115,7 @@ export const GET = withRouteHandler(
       }
 
       if (isAllTime) {
-        const boundsQuery = db
+        const boundsQuery = dbReplica
           .select({
             minDate: sql<Date>`MIN(${workflowExecutionLogs.startedAt})`,
             maxDate: sql<Date>`MAX(${workflowExecutionLogs.startedAt})`,
@@ -180,7 +159,7 @@ export const GET = withRouteHandler(
         lte(workflowExecutionLogs.startedAt, end),
       ]
 
-      const logs = await db
+      const logs = await dbReplica
         .select({
           workflowId: workflowExecutionLogs.workflowId,
           level: workflowExecutionLogs.level,

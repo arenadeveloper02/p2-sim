@@ -1,14 +1,20 @@
 import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { eq, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { wandGenerateContract } from '@/lib/api/contracts'
+import { parseRequest } from '@/lib/api/server'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import { getSession } from '@/lib/auth'
+import {
+  checkActorUsageLimits,
+  checkBillingBlocked,
+} from '@/lib/billing/calculations/usage-monitor'
 import { recordUsage } from '@/lib/billing/core/usage-log'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { env } from '@/lib/core/config/env'
-import { getCostMultiplier, isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { getCostMultiplier, isBillingEnabled } from '@/lib/core/config/env-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { enrichTableSchema } from '@/lib/table/llm/wand'
@@ -41,16 +47,6 @@ if (!useWandAzure && !openaiApiKey) {
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
-}
-
-interface RequestBody {
-  prompt: string
-  systemPrompt?: string
-  stream?: boolean
-  history?: ChatMessage[]
-  workflowId?: string
-  generationType?: string
-  wandContext?: Record<string, unknown>
 }
 
 function safeStringify(value: unknown): string {
@@ -94,7 +90,8 @@ Use this context to calculate relative dates like "yesterday", "last week", "beg
 }
 
 async function updateUserStatsForWand(
-  userId: string,
+  billingUserId: string,
+  workspaceId: string | null,
   usage: {
     prompt_tokens?: number
     completion_tokens?: number
@@ -112,7 +109,6 @@ async function updateUserStatsForWand(
   }
 
   try {
-    const totalTokens = usage.total_tokens || 0
     const promptTokens = usage.prompt_tokens || 0
     const completionTokens = usage.completion_tokens || 0
 
@@ -136,22 +132,21 @@ async function updateUserStatsForWand(
     }
 
     await recordUsage({
-      userId,
+      userId: billingUserId,
+      workspaceId: workspaceId ?? undefined,
       entries: [
         {
           category: 'model',
           source: 'wand',
           description: modelName,
           cost: costToStore,
+          sourceReference: `wand:${requestId}`,
           metadata: { inputTokens: promptTokens, outputTokens: completionTokens },
         },
       ],
-      additionalStats: {
-        totalTokensUsed: sql`total_tokens_used + ${totalTokens}`,
-      },
     })
 
-    await checkAndBillOverageThreshold(userId)
+    await checkAndBillOverageThreshold(billingUserId)
   } catch (error) {
     logger.error(`[${requestId}] Failed to update user stats for wand usage`, error)
   }
@@ -168,7 +163,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
   }
 
   try {
-    const body = (await req.json()) as RequestBody
+    const parsed = await parseRequest(wandGenerateContract, req, {})
+    if (!parsed.success) return parsed.response
+    const { body } = parsed.data
 
     const {
       prompt,
@@ -176,6 +173,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       stream = false,
       history = [],
       workflowId,
+      workspaceId: requestedWorkspaceId,
       generationType,
       wandContext = {},
     } = body
@@ -227,7 +225,32 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           { status: 403 }
         )
       }
+    } else if (requestedWorkspaceId) {
+      // No workflow entity to resolve from (e.g. table-schema wand or an
+      // unhydrated editor); attribute to the workspace the wand is running in,
+      // but only when the caller is a member so usage can't be misattributed.
+      const permission = await verifyWorkspaceMembership(session.user.id, requestedWorkspaceId)
+      if (permission) {
+        workspaceId = requestedWorkspaceId
+      }
     }
+
+    // Per-member usage must be attributable to an org workspace. The editor always
+    // supplies a workflow or a workspace the caller belongs to; refuse to run rather
+    // than stamp usage workspace-less (which would silently skip the per-member cap).
+    if (!workspaceId) {
+      return NextResponse.json(
+        { success: false, error: 'Workspace context is required.' },
+        { status: 400 }
+      )
+    }
+
+    // Wand is always an interactive, session-authenticated editor action, so the
+    // person using it is the billing actor — matching client-side executions and
+    // editor voice rather than the workspace billed account. deriveBillingContext
+    // still routes payment to the org for org-scoped members; per-member usage is
+    // attributed to the member who actually used the wand.
+    const billingUserId = session.user.id
 
     let isBYOK = false
     let activeOpenAIKey = openaiApiKey
@@ -247,6 +270,35 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         { success: false, error: 'Wand generation service is not configured.' },
         { status: 503 }
       )
+    }
+
+    // BYOK incurs no Sim-metered cost, so it skips usage gating — but a frozen /
+    // billing-blocked account is locked out of everything, so still check that.
+    // Non-BYOK runs the full actor gate, which already includes the billing-blocked
+    // check, so it isn't repeated here.
+    if (isBYOK) {
+      const blocked = await checkBillingBlocked(billingUserId)
+      if (blocked.blocked) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: blocked.message || 'Account is not in good standing. Please contact support.',
+          },
+          { status: 402 }
+        )
+      }
+    } else {
+      const usage = await checkActorUsageLimits(billingUserId, workspaceId)
+      if (usage.isExceeded) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
+            scope: usage.scope,
+          },
+          { status: 402 }
+        )
+      }
     }
 
     let finalSystemPrompt =
@@ -345,7 +397,13 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
               }
 
               usageRecorded = true
-              await updateUserStatsForWand(session.user.id, finalUsage, requestId, isBYOK)
+              await updateUserStatsForWand(
+                billingUserId,
+                workspaceId,
+                finalUsage,
+                requestId,
+                isBYOK
+              )
             }
 
             try {
@@ -562,7 +620,8 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const usage = parseResponsesUsage(completion.usage)
     if (usage) {
       await updateUserStatsForWand(
-        session.user.id,
+        billingUserId,
+        workspaceId,
         {
           prompt_tokens: usage.promptTokens,
           completion_tokens: usage.completionTokens,

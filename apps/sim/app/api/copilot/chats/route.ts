@@ -1,27 +1,28 @@
 import { db } from '@sim/db'
-import { copilotChats, permissions, workflow, workspace } from '@sim/db/schema'
+import { copilotChats, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { createWorkflowCopilotChatContract } from '@/lib/api/contracts/copilot'
+import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
+import { chatPubSub } from '@/lib/copilot/chat-status'
 import {
   authenticateCopilotRequestSessionOnly,
   createBadRequestResponse,
+  createForbiddenResponse,
   createInternalServerErrorResponse,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request/http'
-import { taskPubSub } from '@/lib/copilot/tasks'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { assertActiveWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
+import {
+  assertActiveWorkspaceAccess,
+  isWorkspaceAccessDeniedError,
+} from '@/lib/workspaces/permissions/utils'
+import { listAccessibleWorkspaceRowsForUser } from '@/lib/workspaces/utils'
 
 const logger = createLogger('CopilotChatsListAPI')
-
-const CreateWorkflowCopilotChatSchema = z.object({
-  workspaceId: z.string().min(1),
-  workflowId: z.string().min(1),
-})
 
 const DEFAULT_COPILOT_MODEL = 'claude-opus-4-6'
 
@@ -31,6 +32,21 @@ export const GET = withRouteHandler(async (_request: NextRequest) => {
     if (!isAuthenticated || !userId) {
       return createUnauthorizedResponse()
     }
+
+    // Active accessible workspaces (explicit + org-derived). Using the active
+    // scope keeps the archived-workspace exclusion the old join-based query had.
+    const accessibleRows = await listAccessibleWorkspaceRowsForUser(userId)
+    const accessibleWorkspaceIds = accessibleRows.map((row) => row.workspace.id)
+    const inAccessibleWorkspace =
+      accessibleWorkspaceIds.length > 0
+        ? or(
+            inArray(workflow.workspaceId, accessibleWorkspaceIds),
+            and(
+              isNull(copilotChats.workflowId),
+              inArray(copilotChats.workspaceId, accessibleWorkspaceIds)
+            )
+          )
+        : undefined
 
     const visibleChats = await db
       .selectDistinctOn([copilotChats.id], {
@@ -43,30 +59,14 @@ export const GET = withRouteHandler(async (_request: NextRequest) => {
       })
       .from(copilotChats)
       .leftJoin(workflow, eq(copilotChats.workflowId, workflow.id))
-      .leftJoin(
-        workspace,
-        or(
-          eq(workflow.workspaceId, workspace.id),
-          and(isNull(copilotChats.workflowId), eq(copilotChats.workspaceId, workspace.id))
-        )
-      )
-      .leftJoin(
-        permissions,
-        and(
-          eq(permissions.entityType, 'workspace'),
-          eq(permissions.entityId, workspace.id),
-          eq(permissions.userId, userId)
-        )
-      )
       .where(
         and(
           eq(copilotChats.userId, userId),
           or(
             and(isNull(copilotChats.workflowId), isNull(copilotChats.workspaceId)),
-            sql`${permissions.id} IS NOT NULL`
+            inAccessibleWorkspace
           ),
-          or(isNull(workflow.id), isNull(workflow.archivedAt)),
-          or(isNull(workspace.id), isNull(workspace.archivedAt))
+          or(isNull(workflow.id), isNull(workflow.archivedAt))
         )
       )
       .orderBy(copilotChats.id, desc(copilotChats.updatedAt))
@@ -96,8 +96,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return createUnauthorizedResponse()
     }
 
-    const body = await request.json()
-    const { workspaceId, workflowId } = CreateWorkflowCopilotChatSchema.parse(body)
+    const parsed = await parseRequest(
+      createWorkflowCopilotChatContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) =>
+          validationErrorResponse(error, 'workspaceId and workflowId are required'),
+      }
+    )
+    if (!parsed.success) return parsed.response
+    const { workspaceId, workflowId } = parsed.data.body
 
     await assertActiveWorkspaceAccess(workspaceId, userId)
 
@@ -129,12 +138,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return createInternalServerErrorResponse('Failed to create chat')
     }
 
-    taskPubSub?.publishStatusChanged({ workspaceId, chatId: result.chatId, type: 'created' })
+    chatPubSub?.publishStatusChanged({ workspaceId, chatId: result.chatId, type: 'created' })
 
     return NextResponse.json({ success: true, id: result.chatId })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return createBadRequestResponse('workspaceId and workflowId are required')
+    if (isWorkspaceAccessDeniedError(error)) {
+      return createForbiddenResponse('Workspace access denied')
     }
     logger.error('Error creating workflow copilot chat:', error)
     return createInternalServerErrorResponse('Failed to create chat')

@@ -3,29 +3,14 @@ import { user, userArenaDetails } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { updateUserProfileContract } from '@/lib/api/contracts'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { getUserProfile } from '@/lib/users/queries'
 
 const logger = createLogger('UpdateUserProfileAPI')
-
-const UpdateProfileSchema = z
-  .object({
-    name: z.string().min(1, 'Name is required').optional(),
-    image: z
-      .string()
-      .refine(
-        (val) => {
-          return val.startsWith('http://') || val.startsWith('https://') || val.startsWith('/api/')
-        },
-        { message: 'Invalid image URL' }
-      )
-      .optional(),
-  })
-  .refine((data) => data.name !== undefined || data.image !== undefined, {
-    message: 'At least one field (name or image) must be provided',
-  })
 
 interface UpdateData {
   updatedAt: Date
@@ -47,9 +32,10 @@ export const PATCH = withRouteHandler(async (request: NextRequest) => {
     }
 
     const userId = session.user.id
-    const body = await request.json()
 
-    const validatedData = UpdateProfileSchema.parse(body)
+    const parsed = await parseRequest(updateUserProfileContract, request, {})
+    if (!parsed.success) return parsed.response
+    const validatedData = parsed.data.body
 
     const updateData: UpdateData = { updatedAt: new Date() }
     if (validatedData.name !== undefined) updateData.name = validatedData.name
@@ -80,16 +66,6 @@ export const PATCH = withRouteHandler(async (request: NextRequest) => {
       },
     })
   } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      logger.warn(`[${requestId}] Invalid profile data`, {
-        errors: error.errors,
-      })
-      return NextResponse.json(
-        { error: 'Invalid profile data', details: error.errors },
-        { status: 400 }
-      )
-    }
-
     logger.error(`[${requestId}] Profile update error`, error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -109,17 +85,7 @@ export const GET = withRouteHandler(async () => {
 
     const userId = session.user.id
 
-    const [userRecord] = await db
-      .select({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        image: user.image,
-        emailVerified: user.emailVerified,
-      })
-      .from(user)
-      .where(eq(user.id, userId))
-      .limit(1)
+    const userRecord = await getUserProfile(userId)
 
     // here need to join the user_arena_table to get user type and department based on user_arena_table.user_id_ref and userRecord.id
     const [userArenaRecord] = await db

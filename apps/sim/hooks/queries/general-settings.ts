@@ -1,7 +1,15 @@
 import { createLogger } from '@sim/logger'
 import type { QueryClient } from '@tanstack/react-query'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { requestJson } from '@/lib/api/client/request'
+import {
+  getUserSettingsContract,
+  type MothershipEnvironment,
+  type UserSettingsApi,
+  updateUserSettingsContract,
+} from '@/lib/api/contracts'
 import { syncThemeToNextThemes } from '@/lib/core/utils/theme'
+import { getBrowserTimezone } from '@/lib/core/utils/timezone'
 
 const logger = createLogger('GeneralSettingsQuery')
 
@@ -20,29 +28,34 @@ export interface GeneralSettings {
   autoConnect: boolean
   showTrainingControls: boolean
   superUserModeEnabled: boolean
-  theme: 'light' | 'dark'
+  mothershipEnvironment: MothershipEnvironment
+  theme: 'light' | 'dark' | 'system'
   telemetryEnabled: boolean
   billingUsageNotificationsEnabled: boolean
   errorNotificationsEnabled: boolean
   snapToGridSize: number
   showActionBar: boolean
+  /** Saved IANA timezone, or `null` when unset (the app falls back to the browser zone). */
+  timezone: string | null
 }
 
 /**
  * Map raw API response data to GeneralSettings with defaults.
  * Shared by both client fetch and server prefetch to prevent shape drift.
  */
-export function mapGeneralSettingsResponse(data: Record<string, unknown>): GeneralSettings {
+export function mapGeneralSettingsResponse(data: UserSettingsApi): GeneralSettings {
   return {
-    autoConnect: (data.autoConnect as boolean) ?? true,
-    showTrainingControls: (data.showTrainingControls as boolean) ?? false,
-    superUserModeEnabled: (data.superUserModeEnabled as boolean) ?? false,
-    theme: (data.theme as GeneralSettings['theme']) || 'light',
-    telemetryEnabled: (data.telemetryEnabled as boolean) ?? true,
-    billingUsageNotificationsEnabled: (data.billingUsageNotificationsEnabled as boolean) ?? true,
-    errorNotificationsEnabled: (data.errorNotificationsEnabled as boolean) ?? true,
-    snapToGridSize: (data.snapToGridSize as number) ?? 0,
-    showActionBar: (data.showActionBar as boolean) ?? true,
+    autoConnect: data.autoConnect,
+    showTrainingControls: data.showTrainingControls,
+    superUserModeEnabled: data.superUserModeEnabled,
+    mothershipEnvironment: data.mothershipEnvironment,
+    theme: data.theme,
+    telemetryEnabled: data.telemetryEnabled,
+    billingUsageNotificationsEnabled: data.billingUsageNotificationsEnabled,
+    errorNotificationsEnabled: data.errorNotificationsEnabled,
+    snapToGridSize: data.snapToGridSize,
+    showActionBar: data.showActionBar,
+    timezone: data.timezone ?? null,
   }
 }
 
@@ -50,13 +63,7 @@ export function mapGeneralSettingsResponse(data: Record<string, unknown>): Gener
  * Fetch general settings from API
  */
 async function fetchGeneralSettings(signal?: AbortSignal): Promise<GeneralSettings> {
-  const response = await fetch('/api/users/me/settings', { signal })
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch general settings')
-  }
-
-  const { data } = await response.json()
+  const { data } = await requestJson(getUserSettingsContract, { signal })
   return mapGeneralSettingsResponse(data)
 }
 
@@ -128,29 +135,31 @@ export function useErrorNotificationsEnabled(): boolean {
 }
 
 /**
+ * The user's effective scheduling timezone: their saved preference, or the
+ * browser-detected zone when unset. Use this wherever a task's timezone is
+ * captured so scheduling honors the account preference rather than the device.
+ */
+export function useTimezone(): string {
+  const { data } = useGeneralSettings()
+  return data?.timezone ?? getBrowserTimezone()
+}
+
+/**
  * Update general settings mutation
  */
-interface UpdateSettingParams {
-  key: keyof GeneralSettings
-  value: GeneralSettings[keyof GeneralSettings]
-}
+type UpdateSettingParams = {
+  [K in keyof GeneralSettings]: {
+    key: K
+    value: GeneralSettings[K]
+  }
+}[keyof GeneralSettings]
 
 export function useUpdateGeneralSetting() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: async ({ key, value }: UpdateSettingParams) => {
-      const response = await fetch('/api/users/me/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [key]: value }),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to update setting: ${key}`)
-      }
-
-      return response.json()
+      return requestJson(updateUserSettingsContract, { body: { [key]: value } })
     },
     onMutate: async ({ key, value }) => {
       await queryClient.cancelQueries({ queryKey: generalSettingsKeys.settings() })
@@ -182,7 +191,7 @@ export function useUpdateGeneralSetting() {
       logger.error('Failed to update setting:', err)
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: generalSettingsKeys.settings() })
+      return queryClient.invalidateQueries({ queryKey: generalSettingsKeys.settings() })
     },
   })
 }

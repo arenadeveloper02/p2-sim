@@ -13,6 +13,7 @@ import {
   workflowsApiUtilsMock,
   workflowsApiUtilsMockFns,
 } from '@sim/testing'
+import { NextResponse } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -29,9 +30,12 @@ function createMockNextRequest(
     ...headers,
   })
 
+  const parsedUrl = new URL(url)
+
   return {
     method,
     headers: headersObj,
+    nextUrl: parsedUrl,
     cookies: {
       get: vi.fn().mockReturnValue(undefined),
     },
@@ -60,13 +64,17 @@ const createMockStream = () => {
   })
 }
 
-const { mockAddCorsHeaders, mockValidateChatAuth, mockSetChatAuthCookie, mockValidateAuthToken } =
-  vi.hoisted(() => ({
-    mockAddCorsHeaders: vi.fn().mockImplementation((response: Response) => response),
-    mockValidateChatAuth: vi.fn().mockResolvedValue({ authorized: true }),
-    mockSetChatAuthCookie: vi.fn(),
-    mockValidateAuthToken: vi.fn().mockReturnValue(false),
-  }))
+const {
+  mockValidateChatAuth,
+  mockSetChatAuthCookie,
+  mockValidateAuthToken,
+  mockAssertChatEmbedAllowed,
+} = vi.hoisted(() => ({
+  mockValidateChatAuth: vi.fn().mockResolvedValue({ authorized: true }),
+  mockSetChatAuthCookie: vi.fn(),
+  mockValidateAuthToken: vi.fn().mockReturnValue(false),
+  mockAssertChatEmbedAllowed: vi.fn().mockResolvedValue(null),
+}))
 
 const mockCreateErrorResponse = workflowsApiUtilsMockFns.mockCreateErrorResponse
 const mockCreateSuccessResponse = workflowsApiUtilsMockFns.mockCreateSuccessResponse
@@ -78,7 +86,6 @@ vi.mock('@sim/db', () => ({
 }))
 
 vi.mock('@/lib/core/security/deployment', () => ({
-  addCorsHeaders: mockAddCorsHeaders,
   validateAuthToken: mockValidateAuthToken,
   setDeploymentAuthCookie: vi.fn(),
   isEmailAllowed: vi.fn().mockReturnValue(false),
@@ -87,6 +94,7 @@ vi.mock('@/lib/core/security/deployment', () => ({
 vi.mock('@/app/api/chat/utils', () => ({
   validateChatAuth: mockValidateChatAuth,
   setChatAuthCookie: mockSetChatAuthCookie,
+  assertChatEmbedAllowed: mockAssertChatEmbedAllowed,
 }))
 
 vi.mock('@/app/api/workflows/utils', () => workflowsApiUtilsMock)
@@ -178,7 +186,6 @@ describe('Chat Identifier API Route', () => {
       },
     })
 
-    mockAddCorsHeaders.mockImplementation((response: Response) => response)
     mockValidateChatAuth.mockResolvedValue({ authorized: true })
     mockValidateAuthToken.mockReturnValue(false)
     mockCreateErrorResponse.mockImplementation((message: string, status: number, code?: string) => {
@@ -229,6 +236,24 @@ describe('Chat Identifier API Route', () => {
       expect(data).toHaveProperty('description', 'Test chat description')
       expect(data).toHaveProperty('customizations')
       expect(data.customizations).toHaveProperty('welcomeMessage', 'Welcome to the test chat')
+    })
+
+    it('should return 403 when embedding is blocked for a cross-origin caller', async () => {
+      mockAssertChatEmbedAllowed.mockResolvedValueOnce(
+        NextResponse.json(
+          { error: 'Embedding this chat on external sites requires a paid plan' },
+          {
+            status: 403,
+          }
+        )
+      )
+
+      const req = createMockNextRequest('GET', undefined, { origin: 'https://evil.example.com' })
+      const params = Promise.resolve({ identifier: 'test-chat' })
+
+      const response = await GET(req, { params })
+
+      expect(response.status).toBe(403)
     })
 
     it('should return 404 for non-existent identifier', async () => {
@@ -303,6 +328,28 @@ describe('Chat Identifier API Route', () => {
   })
 
   describe('POST endpoint', () => {
+    it('should return 403 when embedding is blocked for a cross-origin caller', async () => {
+      mockAssertChatEmbedAllowed.mockResolvedValueOnce(
+        NextResponse.json(
+          { error: 'Embedding this chat on external sites requires a paid plan' },
+          {
+            status: 403,
+          }
+        )
+      )
+
+      const req = createMockNextRequest(
+        'POST',
+        { input: 'Hello' },
+        { origin: 'https://evil.example.com' }
+      )
+      const params = Promise.resolve({ identifier: 'test-chat' })
+
+      const response = await POST(req, { params })
+
+      expect(response.status).toBe(403)
+    })
+
     it('should return chat config on successful authentication', async () => {
       const req = createMockNextRequest('POST', { password: 'test-password' })
       const params = Promise.resolve({ identifier: 'password-protected-chat' })
@@ -441,6 +488,8 @@ describe('Chat Identifier API Route', () => {
       const req = {
         method: 'POST',
         headers: new Headers(),
+        nextUrl: new URL('http://localhost:3000/api/test'),
+        cookies: { get: vi.fn().mockReturnValue(undefined) },
         json: vi.fn().mockRejectedValue(new Error('Invalid JSON')),
       } as any
 

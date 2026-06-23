@@ -1,19 +1,39 @@
 import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('FacebookAdsQuery')
 
-export const facebookAdsQueryTool: ToolConfig = {
+interface FacebookAdsQueryParams {
+  account?: string
+  query: string
+  workspaceId?: string
+  oauthCredential?: string
+  accessToken?: string
+  accountId?: string
+  adAccountId?: string
+  _context?: {
+    workspaceId?: string
+    workflowId?: string
+    userId?: string
+  }
+}
+
+export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> = {
   id: 'facebook_ads_query',
   version: '1.0.0',
   name: 'Facebook Ads Query',
   description:
     'Query Facebook Ads API for campaign performance, ad set metrics, and account insights using natural language. Supports all Position2 Facebook ad accounts.',
+  oauth: {
+    required: true,
+    provider: 'facebook-ads',
+  },
   params: {
     account: {
       type: 'string',
-      description: 'Facebook ad account identifier',
-      required: true,
+      description: 'Facebook ad account key (admin workspaces only)',
+      required: false,
       visibility: 'user-or-llm',
     },
     query: {
@@ -22,6 +42,36 @@ export const facebookAdsQueryTool: ToolConfig = {
       required: true,
       visibility: 'user-or-llm',
     },
+    workspaceId: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'Workspace ID for admin vs user credential routing',
+    },
+    oauthCredential: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Facebook Ads OAuth credential (non-admin workspaces)',
+    },
+    accessToken: {
+      type: 'string',
+      required: false,
+      visibility: 'hidden',
+      description: 'OAuth access token for the Facebook Marketing API',
+    },
+    accountId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Facebook ad account ID (non-admin workspaces)',
+    },
+    adAccountId: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Facebook ad account ID (non-admin workspaces)',
+    },
   },
   request: {
     url: () => '/api/facebook-ads/query',
@@ -29,16 +79,20 @@ export const facebookAdsQueryTool: ToolConfig = {
     headers: () => ({
       'Content-Type': 'application/json',
     }),
-    body: (params: { account: string; query: string }) => ({
+    body: (params: FacebookAdsQueryParams) => ({
       account: params.account,
       query: params.query,
+      workspaceId: params.workspaceId ?? params._context?.workspaceId,
+      accessToken: params.accessToken,
+      accountId: params.accountId,
+      adAccountId: params.accountId ?? params.adAccountId,
     }),
   },
-  transformResponse: async (response: Response, params?: { account: string; query: string }) => {
+  transformResponse: async (response: Response, params?: FacebookAdsQueryParams) => {
     try {
       logger.info('Processing Facebook Ads response', {
         status: response.status,
-        account: params?.account,
+        account: params?.account ?? params?.adAccountId,
       })
 
       if (!response.ok) {
@@ -52,7 +106,7 @@ export const facebookAdsQueryTool: ToolConfig = {
 
       const data = await response.json()
       logger.info('Facebook Ads query successful', {
-        account: params?.account,
+        account: params?.account ?? params?.adAccountId,
         dataLength: data.data?.length || 0,
       })
 
@@ -61,10 +115,13 @@ export const facebookAdsQueryTool: ToolConfig = {
         output: data,
       }
     } catch (error) {
-      logger.error('Facebook Ads query execution failed', { error, account: params?.account })
+      logger.error('Facebook Ads query execution failed', {
+        error: toError(error).message,
+        account: params?.account ?? params?.adAccountId,
+      })
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
+        error: toError(error).message,
       }
     }
   },
@@ -73,7 +130,7 @@ export const facebookAdsQueryTool: ToolConfig = {
 export type FacebookAdsQueryResponse = {
   success: boolean
   output: {
-    data: Array<Record<string, any>>
+    data: Array<Record<string, unknown>>
     account_id: string
     account_name: string
     query: string

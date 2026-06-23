@@ -1,5 +1,6 @@
 import { db, workflowSchedule } from '@sim/db'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { DbOrTx } from '@/lib/db/types'
@@ -23,12 +24,13 @@ export interface ScheduleDeployResult {
 
 /**
  * Create or update schedule records for a workflow during deployment.
- * Uses a transaction to ensure atomicity - all schedules are created or none are.
+ * Atomic either way: writes run inside the caller's transaction when `tx`
+ * is provided, otherwise inside a transaction opened here.
  */
 export async function createSchedulesForDeploy(
   workflowId: string,
   blocks: Record<string, BlockState>,
-  _tx: DbOrTx,
+  tx?: DbOrTx,
   deploymentVersionId?: string
 ): Promise<ScheduleDeployResult> {
   const scheduleBlocks = findScheduleBlocks(blocks)
@@ -72,15 +74,10 @@ export async function createSchedulesForDeploy(
   } | null = null
 
   try {
-    await db.transaction(async (tx) => {
+    const writeSchedules = async (trx: DbOrTx) => {
       const currentBlockIds = new Set(validatedBlocks.map((b) => b.blockId))
 
-      /**
-       * Deploy-owned rows use `source_type = 'workflow'`. Match all active rows for this workflow
-       * so redeploys with a new `deployment_version_id` still find the previous schedule row.
-       * `ON CONFLICT` on the partial unique index is brittle (migration / PG inference mismatches).
-       */
-      const existingSchedules = await tx
+      const existingSchedules = await trx
         .select({ id: workflowSchedule.id, blockId: workflowSchedule.blockId })
         .from(workflowSchedule)
         .where(
@@ -99,7 +96,7 @@ export async function createSchedulesForDeploy(
         logger.info(
           `Deleting ${orphanedScheduleIds.length} orphaned schedule(s) for workflow ${workflowId}`
         )
-        await tx.delete(workflowSchedule).where(inArray(workflowSchedule.id, orphanedScheduleIds))
+        await trx.delete(workflowSchedule).where(inArray(workflowSchedule.id, orphanedScheduleIds))
       }
 
       const keptIds = new Set(
@@ -119,7 +116,7 @@ export async function createSchedulesForDeploy(
           logger.warn(
             `Removing ${duplicateIds.length} duplicate workflow_schedule row(s) for workflow ${workflowId} block ${blockId}`
           )
-          await tx.delete(workflowSchedule).where(inArray(workflowSchedule.id, duplicateIds))
+          await trx.delete(workflowSchedule).where(inArray(workflowSchedule.id, duplicateIds))
           for (const id of duplicateIds) {
             keptIds.delete(id)
           }
@@ -136,10 +133,11 @@ export async function createSchedulesForDeploy(
           timezone,
           status: 'active' as const,
           failedCount: 0,
+          infraRetryCount: 0,
         }
 
         if (primaryRow) {
-          await tx
+          await trx
             .update(workflowSchedule)
             .set(setValues)
             .where(eq(workflowSchedule.id, primaryRow.id))
@@ -158,7 +156,7 @@ export async function createSchedulesForDeploy(
           }
         } else {
           const scheduleId = crypto.randomUUID()
-          await tx.insert(workflowSchedule).values({
+          await trx.insert(workflowSchedule).values({
             id: scheduleId,
             workflowId,
             deploymentVersionId: deploymentVersionId ?? null,
@@ -183,12 +181,16 @@ export async function createSchedulesForDeploy(
           lastScheduleInfo = { scheduleId, cronExpression, nextRunAt, timezone }
         }
       }
-    })
+    }
+
+    // The global client is not a transaction — wrap it so the atomicity
+    // contract holds even if a caller passes `db` explicitly.
+    await (tx && tx !== db ? writeSchedules(tx) : db.transaction(writeSchedules))
   } catch (error) {
     logger.error(`Failed to create schedules for workflow ${workflowId}`, error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to create schedules',
+      error: getErrorMessage(error, 'Failed to create schedules'),
     }
   }
 
@@ -226,7 +228,7 @@ export async function deleteSchedulesForWorkflow(
   )
 }
 
-export async function cleanupDeploymentVersion(params: {
+async function cleanupDeploymentVersion(params: {
   workflowId: string
   workflow: Record<string, unknown>
   requestId: string
@@ -236,6 +238,7 @@ export async function cleanupDeploymentVersion(params: {
    * Only deletes DB records.
    */
   skipExternalCleanup?: boolean
+  strictExternalCleanup?: boolean
 }): Promise<void> {
   const {
     workflowId,
@@ -243,13 +246,15 @@ export async function cleanupDeploymentVersion(params: {
     requestId,
     deploymentVersionId,
     skipExternalCleanup = false,
+    strictExternalCleanup = false,
   } = params
   await cleanupWebhooksForWorkflow(
     workflowId,
     workflow,
     requestId,
     deploymentVersionId,
-    skipExternalCleanup
+    skipExternalCleanup,
+    strictExternalCleanup
   )
   await deleteSchedulesForWorkflow(workflowId, db, deploymentVersionId)
 }

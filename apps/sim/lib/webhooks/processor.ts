@@ -9,9 +9,15 @@ import { isOrganizationOnTeamOrEnterprisePlan } from '@/lib/billing/core/subscri
 import { tryAdmit } from '@/lib/core/admission/gate'
 import { getInlineJobQueue, getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
-import { isProd } from '@/lib/core/config/feature-flags'
+import { isProd } from '@/lib/core/config/env-flags'
+import {
+  assertContentLengthWithinLimit,
+  isPayloadSizeLimitError,
+  readStreamToBufferWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
+import { WEBHOOK_MAX_BODY_BYTES } from '@/lib/webhooks/constants'
 import {
   getPendingWebhookVerification,
   matchesPendingWebhookVerificationProbe,
@@ -19,6 +25,7 @@ import {
 } from '@/lib/webhooks/pending-verification'
 import { getProviderHandler } from '@/lib/webhooks/providers'
 import { blockExistsInDeployment } from '@/lib/workflows/persistence/utils'
+import { SIM_TRIGGER_PROVIDER } from '@/lib/workspace-events/constants'
 import { executeWebhookJob } from '@/background/webhook-execution'
 import { resolveEnvVarReferences } from '@/executor/utils/reference-validation'
 import { isPollingWebhookProvider } from '@/triggers/constants'
@@ -70,19 +77,33 @@ async function verifyCredentialSetBilling(credentialSetId: string): Promise<{
   return { valid: true }
 }
 
+const WEBHOOK_BODY_LABEL = 'Webhook request body'
+
 export async function parseWebhookBody(
   request: NextRequest,
   requestId: string
 ): Promise<{ body: unknown; rawBody: string } | NextResponse> {
   let rawBody: string | null = null
   try {
-    const requestClone = request.clone()
-    rawBody = await requestClone.text()
+    assertContentLengthWithinLimit(request.headers, WEBHOOK_MAX_BODY_BYTES, WEBHOOK_BODY_LABEL)
+
+    const buffer = await readStreamToBufferWithLimit(request.clone().body, {
+      maxBytes: WEBHOOK_MAX_BODY_BYTES,
+      label: WEBHOOK_BODY_LABEL,
+    })
+    rawBody = new TextDecoder().decode(buffer)
 
     if (!rawBody || rawBody.length === 0) {
       return { body: {}, rawBody: '' }
     }
   } catch (bodyError) {
+    if (isPayloadSizeLimitError(bodyError)) {
+      logger.warn(`[${requestId}] Rejected oversized webhook body`, {
+        maxBytes: WEBHOOK_MAX_BODY_BYTES,
+        observedBytes: bodyError.observedBytes,
+      })
+      return new NextResponse('Request body too large', { status: 413 })
+    }
     logger.error(`[${requestId}] Failed to read request body`, {
       error: toError(bodyError).message,
     })
@@ -224,7 +245,7 @@ export function handlePreDeploymentVerification(
   return null
 }
 
-export async function findWebhookAndWorkflow(
+async function findWebhookAndWorkflow(
   options: WebhookProcessorOptions
 ): Promise<{ webhook: any; workflow: any } | null> {
   if (options.webhookId) {
@@ -305,8 +326,12 @@ export async function findWebhookAndWorkflow(
 }
 
 /**
- * Find ALL webhooks matching a path.
- * Used for credential sets where multiple webhooks share the same path.
+ * Finds all webhooks matching a path, scoped to a single workflow.
+ *
+ * Legitimate fan-out (credential sets) is always within one workflow, but paths
+ * are user-controlled and only unique per deployment version, so two tenants can
+ * register the same path. On collision we keep only the workflow that registered
+ * the path first, so one tenant can never receive another's webhook deliveries.
  */
 export async function findAllWebhooksForPath(
   options: WebhookProcessorOptions
@@ -344,7 +369,31 @@ export async function findAllWebhooksForPath(
 
   if (results.length === 0) {
     logger.warn(`[${options.requestId}] No active webhooks found for path: ${options.path}`)
-  } else if (results.length > 1) {
+    return results
+  }
+
+  const distinctWorkflowIds = new Set(results.map((result) => result.webhook.workflowId))
+
+  if (distinctWorkflowIds.size > 1) {
+    const owner = results.reduce((earliest, candidate) => {
+      const candidateTime = new Date(candidate.webhook.createdAt).getTime()
+      const earliestTime = new Date(earliest.webhook.createdAt).getTime()
+      if (candidateTime !== earliestTime) {
+        return candidateTime < earliestTime ? candidate : earliest
+      }
+      return candidate.webhook.id < earliest.webhook.id ? candidate : earliest
+    })
+    const ownerWorkflowId = owner.webhook.workflowId
+    const ownerResults = results.filter((result) => result.webhook.workflowId === ownerWorkflowId)
+
+    logger.error(
+      `[${options.requestId}] Cross-tenant webhook path collision for path: ${options.path}. Found ${results.length} active webhooks across ${distinctWorkflowIds.size} workflows. Dispatching only to owner workflow ${ownerWorkflowId} and dropping ${results.length - ownerResults.length} foreign webhook(s).`
+    )
+
+    return ownerResults
+  }
+
+  if (results.length > 1) {
     logger.info(
       `[${options.requestId}] Found ${results.length} webhooks for path: ${options.path} (credential set fan-out)`
     )
@@ -640,6 +689,7 @@ export interface PolledWebhookEventResult {
   success: boolean
   error?: string
   statusCode?: number
+  executionId?: string
 }
 
 type PolledWebhookRecord = typeof webhook.$inferSelect
@@ -743,7 +793,9 @@ export async function processPolledWebhookEvent(
       ...(credentialId ? { credentialId } : {}),
     }
 
-    if (isPollingWebhookProvider(payload.provider) && !shouldExecuteInline()) {
+    const isQueueRoutedProvider =
+      isPollingWebhookProvider(payload.provider) || payload.provider === SIM_TRIGGER_PROVIDER
+    if (isQueueRoutedProvider && !shouldExecuteInline()) {
       const jobId = await (await getJobQueue()).enqueue('webhook-execution', payload, {
         metadata: {
           workflowId: foundWorkflow.id,
@@ -793,7 +845,7 @@ export async function processPolledWebhookEvent(
       })()
     }
 
-    return { success: true }
+    return { success: true, executionId }
   } catch (error: unknown) {
     logger.error(`[${requestId}] Failed to process polled webhook event:`, error)
     return { success: false, error: 'Internal server error', statusCode: 500 }

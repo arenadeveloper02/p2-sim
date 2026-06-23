@@ -50,6 +50,9 @@ export const MOTHERSHIP_STREAM_V1_SCHEMA: JsonSchema = {
     MothershipStreamV1CheckpointPauseFrame: {
       additionalProperties: false,
       properties: {
+        checkpointId: {
+          type: 'string',
+        },
         parentToolCallId: {
           type: 'string',
         },
@@ -486,8 +489,11 @@ export const MOTHERSHIP_STREAM_V1_SCHEMA: JsonSchema = {
         streamId: {
           type: 'string',
         },
+        userId: {
+          type: 'string',
+        },
       },
-      required: ['streamId', 'checkpointId', 'results'],
+      required: ['streamId', 'checkpointId', 'userId', 'results'],
       type: 'object',
     },
     MothershipStreamV1ResumeToolResult: {
@@ -813,7 +819,13 @@ export const MOTHERSHIP_STREAM_V1_SCHEMA: JsonSchema = {
           enum: ['subagent'],
           type: 'string',
         },
+        parentSpanId: {
+          type: 'string',
+        },
         parentToolCallId: {
+          type: 'string',
+        },
+        spanId: {
           type: 'string',
         },
       },
@@ -1148,9 +1160,6 @@ export const MOTHERSHIP_STREAM_V1_SCHEMA: JsonSchema = {
           enum: ['call'],
           type: 'string',
         },
-        requiresConfirmation: {
-          type: 'boolean',
-        },
         status: {
           $ref: '#/$defs/MothershipStreamV1ToolStatus',
         },
@@ -1295,20 +1304,8 @@ export const MOTHERSHIP_STREAM_V1_SCHEMA: JsonSchema = {
         hidden: {
           type: 'boolean',
         },
-        icon: {
-          type: 'string',
-        },
         internal: {
           type: 'boolean',
-        },
-        phaseLabel: {
-          type: 'string',
-        },
-        requiresConfirmation: {
-          type: 'boolean',
-        },
-        title: {
-          type: 'string',
         },
       },
       type: 'object',

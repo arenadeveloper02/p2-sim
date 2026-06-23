@@ -9,30 +9,62 @@ services:
     deploy:
       resources:
         limits:
-          memory: 12G
+          memory: 8G
     environment:
-      #- DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@52.40.200.103:5432/${POSTGRES_DB:-simstudio}
-      #- DATABASE_URL=postgresql://p2agent:37zJ905LhNrI@p2-agents-dev.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio1?sslmode=require
-      - DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
-      #- DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio_dev?sslmode=require
+      # Core
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your_encryption_key_here}
-      - FREESTYLE_API_KEY=${FREESTYLE_API_KEY:-placeholder}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
+      - CRON_SECRET=${CRON_SECRET:-}
+      # Socket / Realtime
+      - SOCKET_SERVER_URL=${SOCKET_SERVER_URL:-http://realtime:3002}
+      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3002}
+      - REDIS_URL=${REDIS_URL:-}
+      # Copilot / Agent
+      - COPILOT_API_KEY=${COPILOT_API_KEY}
+      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL}
+      # OAuth
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-placeholder}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-placeholder}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-placeholder}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-placeholder}
+      - SLACK_CLIENT_ID=${SLACK_CLIENT_ID:-placeholder}
+      - SLACK_CLIENT_SECRET=${SLACK_CLIENT_SECRET:-placeholder}
+      - FB_CLIENT_ID=${FB_CLIENT_ID:-placeholder}
+      - FB_CLIENT_SECRET=${FB_CLIENT_SECRET:-placeholder}
+      - FB_ACCESS_TOKEN=${FB_ACCESS_TOKEN:-}
+      - SHOPIFY_CLIENT_ID=${SHOPIFY_CLIENT_ID:-placeholder}
+      - SHOPIFY_CLIENT_SECRET=${SHOPIFY_CLIENT_SECRET:-placeholder}
+      - GOOGLE_ADS_DEVELOPER_TOKEN=${GOOGLE_ADS_DEVELOPER_TOKEN:-}
+      - GOOGLE_ADS_CLIENT_ID=${GOOGLE_ADS_CLIENT_ID:-placeholder}
+      - GOOGLE_ADS_CLIENT_SECRET=${GOOGLE_ADS_CLIENT_SECRET:-placeholder}
+      - GOOGLE_ADS_REFRESH_TOKEN=${GOOGLE_ADS_REFRESH_TOKEN:-}
+      # AWS / S3
+      - AWS_REGION=${AWS_REGION:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - S3_LOGS_BUCKET_NAME=${S3_LOGS_BUCKET_NAME:-}
+      - S3_KB_BUCKET_NAME=${S3_KB_BUCKET_NAME:-}
+      - S3_EXECUTION_FILES_BUCKET_NAME=${S3_EXECUTION_FILES_BUCKET_NAME:-}
+      - S3_CHAT_BUCKET_NAME=${S3_CHAT_BUCKET_NAME:-}
+      - S3_COPILOT_BUCKET_NAME=${S3_COPILOT_BUCKET_NAME:-}
+      - S3_PROFILE_PICTURES_BUCKET_NAME=${S3_PROFILE_PICTURES_BUCKET_NAME:-}
+      # Email
       - RESEND_API_KEY=${RESEND_API_KEY:-placeholder}
-      - OLLAMA_URL=${OLLAMA_URL:-http://localhost:11434}
-      - SOCKET_SERVER_URL=${SOCKET_SERVER_URL:-http://localhost:3002}
-      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3002}
+      - FROM_EMAIL_ADDRESS=${FROM_EMAIL_ADDRESS:-}
+      # LLM / AI keys
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_API_KEY_1=${OPENAI_API_KEY_1:-}
       - OPENAI_API_KEY_2=${OPENAI_API_KEY_2:-}
       - OPENAI_API_KEY_3=${OPENAI_API_KEY_3:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_API_KEY_1=${ANTHROPIC_API_KEY_1:-}
       - ANTHROPIC_API_KEY_2=${ANTHROPIC_API_KEY_2:-}
       - ANTHROPIC_API_KEY_3=${ANTHROPIC_API_KEY_3:-}
@@ -40,6 +72,32 @@ services:
       - XAI_API_KEY_1=${XAI_API_KEY_1:-}
       - XAI_API_KEY_2=${XAI_API_KEY_2:-}
       - XAI_API_KEY_3=${XAI_API_KEY_3:-}
+      - SAMBANOVA_API_KEY=${SAMBANOVA_API_KEY:-}
+      - SAMBANOVA_API_KEY_1=${SAMBANOVA_API_KEY_1:-}
+      - SAMBANOVA_API_KEY_2=${SAMBANOVA_API_KEY_2:-}
+      - SAMBANOVA_API_KEY_3=${SAMBANOVA_API_KEY_3:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - IDEOGRAM_API_KEY=${IDEOGRAM_API_KEY:-}
+      # Tool / integration keys
+      - FIGMA_API_KEY=${FIGMA_API_KEY:-}
+      - BROWSER_USE_API_KEY=${BROWSER_USE_API_KEY:-}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - SEMRUSH_API_KEY=${SEMRUSH_API_KEY:-}
+      - FREESTYLE_API_KEY=${FREESTYLE_API_KEY:-placeholder}
+      # Google public
+      - NEXT_PUBLIC_GOOGLE_API_KEY=${NEXT_PUBLIC_GOOGLE_API_KEY:-}
+      - NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER=${NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER:-}
+      # Arena
+      - ARENA_BACKEND_BASE_URL=${ARENA_BACKEND_BASE_URL:-}
+      - ARENA_FRONTEND_APP_URL=${ARENA_FRONTEND_APP_URL:-}
+      - NEXT_PUBLIC_ARENA_BACKEND_BASE_URL=${NEXT_PUBLIC_ARENA_BACKEND_BASE_URL:-}
+      - NEXT_PUBLIC_ARENA_FRONTEND_APP_URL=${NEXT_PUBLIC_ARENA_FRONTEND_APP_URL:-}
+      # Analytics / admin
+      - NEXT_PUBLIC_MIX_PANEL_TOKEN=${NEXT_PUBLIC_MIX_PANEL_TOKEN:-}
+      - NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS=${NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS:-}
+      # Misc
+      - OLLAMA_URL=${OLLAMA_URL:-http://localhost:11434}
+      - CHROMEDRIVER_PATH=${CHROMEDRIVER_PATH:-}
     depends_on:
       db:
         condition: service_healthy
@@ -64,14 +122,13 @@ services:
         limits:
           memory: 4G
     environment:
-      #- DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@52.40.200.103:5432/${POSTGRES_DB:-simstudio}
-      #- DATABASE_URL=postgresql://p2agent:37zJ905LhNrI@p2-agents-dev.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio1?sslmode=require
-      - DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
-      #- DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio_dev?sslmode=require
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
+      - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - REDIS_URL=${REDIS_URL:-}
     depends_on:
       db:
         condition: service_healthy
@@ -81,6 +138,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  migrations:
+    image: ghcr.io/simstudioai/migrations:latest
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ['bun', 'run', 'db:migrate']
+    restart: 'no'
 
   db:
     image: pgvector/pgvector:pg17

@@ -5,9 +5,11 @@ import {
   getCanonicalScopesForProvider,
   getMissingRequiredScopes,
   getProviderIdFromServiceId,
+  getRequiredScopesForCredential,
   getScopesForService,
   getServiceByProviderAndId,
   getServiceConfigByProviderId,
+  getServiceConfigByServiceId,
   parseProvider,
 } from './utils'
 
@@ -267,6 +269,36 @@ describe('getServiceConfigByProviderId', () => {
   })
 })
 
+describe('getServiceConfigByServiceId', () => {
+  it.concurrent('should return service config for a service key', () => {
+    const service = getServiceConfigByServiceId('gmail')
+
+    expect(service).toBeDefined()
+    expect(service?.providerId).toBe('google-email')
+    expect(service?.name).toBe('Gmail')
+  })
+
+  it.concurrent('should resolve the shared Jira service used by Jira Service Management', () => {
+    const service = getServiceConfigByServiceId('jira')
+
+    expect(service).toBeDefined()
+    expect(service?.providerId).toBe('jira')
+    expect(service?.name).toBe('Jira')
+  })
+
+  it.concurrent('should not match on providerId values that are not service keys', () => {
+    const service = getServiceConfigByServiceId('google-email')
+
+    expect(service).toBeNull()
+  })
+
+  it.concurrent('should return null for unknown service id', () => {
+    const service = getServiceConfigByServiceId('invalid-service')
+
+    expect(service).toBeNull()
+  })
+})
+
 describe('getCanonicalScopesForProvider', () => {
   it.concurrent('should return scopes for valid providerId', () => {
     const scopes = getCanonicalScopesForProvider('google-email')
@@ -512,7 +544,14 @@ describe('parseProvider', () => {
     const config = parseProvider('zoom' as OAuthProvider)
 
     expect(config.baseProvider).toBe('zoom')
-    expect(config.featureType).toBe('zoom')
+    expect(config.featureType).toBe('zoom-client')
+  })
+
+  it.concurrent('should parse Zoom Admin provider', () => {
+    const adminConfig = parseProvider('zoom-admin' as OAuthProvider)
+
+    expect(adminConfig.baseProvider).toBe('zoom')
+    expect(adminConfig.featureType).toBe('zoom-admin')
   })
 
   it.concurrent('should parse WordPress provider', () => {
@@ -594,6 +633,22 @@ describe('getScopesForService', () => {
 
     expect(Array.isArray(scopes)).toBe(true)
     expect(scopes.length).toBe(0)
+  })
+})
+
+describe('getRequiredScopesForCredential', () => {
+  it.concurrent('uses zoom-admin canonical scopes when credential provider is zoom-admin', () => {
+    const scopes = getRequiredScopesForCredential({ provider: 'zoom-admin' }, [
+      'meeting:write:meeting',
+    ])
+
+    expect(scopes).toContain('cloud_recording:read:list_account_recordings:admin')
+    expect(scopes).not.toContain('meeting:write:meeting')
+  })
+
+  it.concurrent('falls back to block scopes when credential has no provider', () => {
+    const fallback = ['meeting:write:meeting']
+    expect(getRequiredScopesForCredential(undefined, fallback)).toEqual(fallback)
   })
 })
 

@@ -1,19 +1,26 @@
 import { db } from '@sim/db'
-import { permissions, workflow, workflowExecutionLogs } from '@sim/db/schema'
+import { workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { v1GetLogContract } from '@/lib/api/contracts/v1/logs'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
 import { createApiResponse, getUserLimits } from '@/app/api/v1/logs/meta'
-import { checkRateLimit, createRateLimitResponse } from '@/app/api/v1/middleware'
+import {
+  checkRateLimit,
+  createRateLimitResponse,
+  validateWorkspaceAccess,
+} from '@/app/api/v1/middleware'
 
 const logger = createLogger('V1LogDetailsAPI')
 
 export const revalidate = 0
 
 export const GET = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateId().slice(0, 8)
 
     try {
@@ -23,12 +30,19 @@ export const GET = withRouteHandler(
       }
 
       const userId = rateLimit.userId!
-      const { id } = await params
+      const parsed = await parseRequest(v1GetLogContract, request, context, {
+        validationErrorResponse: () =>
+          NextResponse.json({ error: 'Invalid log ID' }, { status: 400 }),
+      })
+      if (!parsed.success) return parsed.response
+
+      const { id } = parsed.data.params
 
       const rows = await db
         .select({
           id: workflowExecutionLogs.id,
           workflowId: workflowExecutionLogs.workflowId,
+          workspaceId: workflowExecutionLogs.workspaceId,
           executionId: workflowExecutionLogs.executionId,
           stateSnapshotId: workflowExecutionLogs.stateSnapshotId,
           level: workflowExecutionLogs.level,
@@ -37,13 +51,12 @@ export const GET = withRouteHandler(
           endedAt: workflowExecutionLogs.endedAt,
           totalDurationMs: workflowExecutionLogs.totalDurationMs,
           executionData: workflowExecutionLogs.executionData,
-          cost: workflowExecutionLogs.cost,
+          costTotal: workflowExecutionLogs.costTotal,
           files: workflowExecutionLogs.files,
           conversationId: workflowExecutionLogs.conversationId,
           createdAt: workflowExecutionLogs.createdAt,
           workflowName: workflow.name,
           workflowDescription: workflow.description,
-          workflowColor: workflow.color,
           workflowFolderId: workflow.folderId,
           workflowUserId: workflow.userId,
           workflowWorkspaceId: workflow.workspaceId,
@@ -52,14 +65,6 @@ export const GET = withRouteHandler(
         })
         .from(workflowExecutionLogs)
         .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
-        .innerJoin(
-          permissions,
-          and(
-            eq(permissions.entityType, 'workspace'),
-            eq(permissions.entityId, workflowExecutionLogs.workspaceId),
-            eq(permissions.userId, userId)
-          )
-        )
         .where(eq(workflowExecutionLogs.id, id))
         .limit(1)
 
@@ -68,11 +73,15 @@ export const GET = withRouteHandler(
         return NextResponse.json({ error: 'Log not found' }, { status: 404 })
       }
 
+      const accessError = await validateWorkspaceAccess(rateLimit, userId, log.workspaceId)
+      if (accessError) {
+        return NextResponse.json({ error: 'Log not found' }, { status: 404 })
+      }
+
       const workflowSummary = {
         id: log.workflowId,
         name: log.workflowName || 'Deleted Workflow',
         description: log.workflowDescription,
-        color: log.workflowColor,
         folderId: log.workflowFolderId,
         userId: log.workflowUserId,
         workspaceId: log.workflowWorkspaceId,
@@ -92,8 +101,15 @@ export const GET = withRouteHandler(
         totalDurationMs: log.totalDurationMs,
         files: log.files || undefined,
         workflow: workflowSummary,
-        executionData: log.executionData as any,
-        cost: log.cost as any,
+        executionData: (await materializeExecutionData(
+          log.executionData as Record<string, unknown> | null,
+          {
+            workspaceId: log.workspaceId,
+            workflowId: log.workflowId,
+            executionId: log.executionId,
+          }
+        )) as any,
+        cost: log.costTotal != null ? { total: Number(log.costTotal) } : null,
         createdAt: log.createdAt.toISOString(),
       }
 

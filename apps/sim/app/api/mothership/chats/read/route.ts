@@ -1,22 +1,18 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { markMothershipChatReadContract } from '@/lib/api/contracts/mothership-chats'
+import { parseRequest } from '@/lib/api/server'
 import {
   authenticateCopilotRequestSessionOnly,
-  createBadRequestResponse,
   createInternalServerErrorResponse,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request/http'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('MarkTaskReadAPI')
-
-const MarkReadSchema = z.object({
-  chatId: z.string().min(1),
-})
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
@@ -25,19 +21,23 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return createUnauthorizedResponse()
     }
 
-    const body = await request.json()
-    const { chatId } = MarkReadSchema.parse(body)
+    const parsed = await parseRequest(markMothershipChatReadContract, request, {})
+    if (!parsed.success) return parsed.response
+    const { chatId } = parsed.data.body
 
     await db
       .update(copilotChats)
       .set({ lastSeenAt: sql`GREATEST(${copilotChats.updatedAt}, NOW())` })
-      .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+      .where(
+        and(
+          eq(copilotChats.id, chatId),
+          eq(copilotChats.userId, userId),
+          or(isNull(copilotChats.lastSeenAt), lt(copilotChats.lastSeenAt, copilotChats.updatedAt))
+        )
+      )
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return createBadRequestResponse('chatId is required')
-    }
     logger.error('Error marking task as read:', error)
     return createInternalServerErrorResponse('Failed to mark task as read')
   }

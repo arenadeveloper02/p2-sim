@@ -8,6 +8,7 @@ import {
   schemaMock,
   setupGlobalFetchMock,
   setupGlobalStorageMocks,
+  terminalConsoleMock,
   workflowAuthzMock,
 } from '@sim/testing'
 import { afterAll, vi } from 'vitest'
@@ -20,7 +21,7 @@ vi.mock('@sim/db', () => databaseMock)
 vi.mock('@sim/db/schema', () => schemaMock)
 vi.mock('drizzle-orm', () => drizzleOrmMock)
 vi.mock('@sim/logger', () => loggerMock)
-vi.mock('@sim/workflow-authz', () => workflowAuthzMock)
+vi.mock('@sim/platform-authz/workflow', () => workflowAuthzMock)
 vi.mock('@/lib/auth', () => authMock)
 vi.mock('@/lib/auth/hybrid', () => hybridAuthMock)
 vi.mock('@/lib/core/utils/request', () => requestUtilsMock)
@@ -33,14 +34,8 @@ vi.mock('@/stores/console/store', () => ({
   },
 }))
 
-vi.mock('@/stores/terminal', () => ({
-  useTerminalConsoleStore: {
-    getState: vi.fn().mockReturnValue({
-      addConsole: vi.fn(),
-      updateConsole: vi.fn(),
-    }),
-  },
-}))
+vi.mock('@/stores/terminal', () => terminalConsoleMock)
+vi.mock('@/stores/terminal/console/store', () => terminalConsoleMock)
 
 vi.mock('@/stores/execution/store', () => ({
   useExecutionStore: {
@@ -76,6 +71,7 @@ vi.mock('@/stores/execution/store', () => ({
     lastRunEdges: new Map(),
   }),
   useIsBlockActive: vi.fn().mockReturnValue(false),
+  useIsCurrentWorkflowExecuting: vi.fn().mockReturnValue(false),
   useLastRunPath: vi.fn().mockReturnValue(new Map()),
   useLastRunEdges: vi.fn().mockReturnValue(new Map()),
 }))

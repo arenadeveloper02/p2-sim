@@ -1,9 +1,10 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { deleteWorkspaceBodySchema, updateWorkspaceContract } from '@/lib/api/contracts'
+import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { archiveWorkspace } from '@/lib/workspaces/lifecycle'
@@ -11,30 +12,12 @@ import { archiveWorkspace } from '@/lib/workspaces/lifecycle'
 const logger = createLogger('WorkspaceByIdAPI')
 
 import { db } from '@sim/db'
-import { permissions, templates, workspace } from '@sim/db/schema'
+import { permissions, workspace } from '@sim/db/schema'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
-
-const patchWorkspaceSchema = z.object({
-  name: z.string().trim().min(1).optional(),
-  color: z
-    .string()
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .optional(),
-  logoUrl: z
-    .string()
-    .refine((val) => val.startsWith('/') || val.startsWith('https://'), {
-      message: 'Logo URL must be an absolute path or HTTPS URL',
-    })
-    .nullable()
-    .optional(),
-  billedAccountUserId: z.string().optional(),
-  allowPersonalApiKeys: z.boolean().optional(),
-})
-
-const deleteWorkspaceSchema = z.object({
-  deleteTemplates: z.boolean().default(false),
-})
+import {
+  getEffectiveWorkspacePermission,
+  getUserEntityPermissions,
+} from '@/lib/workspaces/permissions/utils'
 
 export const GET = withRouteHandler(
   async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
@@ -46,49 +29,11 @@ export const GET = withRouteHandler(
     }
 
     const workspaceId = id
-    const url = new URL(request.url)
-    const checkTemplates = url.searchParams.get('check-templates') === 'true'
 
     // Check if user has any access to this workspace
     const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
     if (!userPermission) {
       return NextResponse.json({ error: 'Workspace not found or access denied' }, { status: 404 })
-    }
-
-    // If checking for published templates before deletion
-    if (checkTemplates) {
-      try {
-        // Get all workflows in this workspace
-        const workspaceWorkflows = await db
-          .select({ id: workflow.id })
-          .from(workflow)
-          .where(eq(workflow.workspaceId, workspaceId))
-
-        if (workspaceWorkflows.length === 0) {
-          return NextResponse.json({ hasPublishedTemplates: false, publishedTemplates: [] })
-        }
-
-        const workflowIds = workspaceWorkflows.map((w) => w.id)
-
-        // Check for published templates that reference these workflows
-        const publishedTemplates = await db
-          .select({
-            id: templates.id,
-            name: templates.name,
-            workflowId: templates.workflowId,
-          })
-          .from(templates)
-          .where(inArray(templates.workflowId, workflowIds))
-
-        return NextResponse.json({
-          hasPublishedTemplates: publishedTemplates.length > 0,
-          publishedTemplates,
-          count: publishedTemplates.length,
-        })
-      } catch (error) {
-        logger.error(`Error checking published templates for workspace ${workspaceId}:`, error)
-        return NextResponse.json({ error: 'Failed to check published templates' }, { status: 500 })
-      }
     }
 
     // Get workspace details
@@ -112,15 +57,17 @@ export const GET = withRouteHandler(
 )
 
 export const PATCH = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
-    const { id } = await params
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const session = await getSession()
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const workspaceId = id
+    const parsed = await parseRequest(updateWorkspaceContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const workspaceId = parsed.data.params.id
 
     // Check if user has admin permissions to update workspace
     const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
@@ -129,7 +76,7 @@ export const PATCH = withRouteHandler(
     }
 
     try {
-      const body = patchWorkspaceSchema.parse(await request.json())
+      const body = parsed.data.body
       const { name, color, logoUrl, billedAccountUserId, allowPersonalApiKeys } = body
 
       if (
@@ -196,28 +143,11 @@ export const PATCH = withRouteHandler(
 
         const candidateId = billedAccountUserId
 
-        const isOwner = candidateId === existingWorkspace.ownerId
-
-        let hasAdminAccess = isOwner
-
-        if (!hasAdminAccess) {
-          const adminPermission = await db
-            .select({ id: permissions.id })
-            .from(permissions)
-            .where(
-              and(
-                eq(permissions.entityType, 'workspace'),
-                eq(permissions.entityId, workspaceId),
-                eq(permissions.userId, candidateId),
-                eq(permissions.permissionType, 'admin')
-              )
-            )
-            .limit(1)
-
-          hasAdminAccess = adminPermission.length > 0
-        }
-
-        if (!hasAdminAccess) {
+        const candidatePermission = await getEffectiveWorkspacePermission(
+          candidateId,
+          existingWorkspace
+        )
+        if (candidatePermission !== 'admin') {
           return NextResponse.json(
             { error: 'Billed account must be a workspace admin' },
             { status: 400 }
@@ -298,8 +228,9 @@ export const DELETE = withRouteHandler(
     }
 
     const workspaceId = id
-    const body = deleteWorkspaceSchema.parse(await request.json().catch(() => ({})))
-    const { deleteTemplates } = body // User's choice: false = keep templates (recommended), true = delete templates
+    const rawBody = await request.json().catch(() => ({}))
+    const bodyValidation = deleteWorkspaceBodySchema.safeParse(rawBody)
+    if (!bodyValidation.success) return validationErrorResponse(bodyValidation.error)
 
     // Check if user has admin permissions to delete workspace
     const userPermission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
@@ -332,9 +263,7 @@ export const DELETE = withRouteHandler(
         return NextResponse.json({ error: 'Cannot delete the only workspace' }, { status: 400 })
       }
 
-      logger.info(
-        `Deleting workspace ${workspaceId} for user ${session.user.id}, deleteTemplates: ${deleteTemplates}`
-      )
+      logger.info(`Deleting workspace ${workspaceId} for user ${session.user.id}`)
 
       const workspaceWorkflows = await db
         .select({ id: workflow.id })
@@ -342,17 +271,6 @@ export const DELETE = withRouteHandler(
         .where(eq(workflow.workspaceId, workspaceId))
 
       const workflowIds = workspaceWorkflows.map((entry) => entry.id)
-
-      if (workflowIds.length > 0) {
-        if (deleteTemplates) {
-          await db.delete(templates).where(inArray(templates.workflowId, workflowIds))
-        } else {
-          await db
-            .update(templates)
-            .set({ workflowId: null })
-            .where(inArray(templates.workflowId, workflowIds))
-        }
-      }
 
       const archiveResult = await archiveWorkspace(workspaceId, {
         requestId: `workspace-${workspaceId}`,
@@ -377,7 +295,6 @@ export const DELETE = withRouteHandler(
             workflows: workflowIds.length,
           },
           archived: archiveResult.archived,
-          deleteTemplates,
         },
         request,
       })

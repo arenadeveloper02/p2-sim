@@ -6,6 +6,11 @@ export interface DevelopmentGenerateAppParams {
   privateRepo?: boolean
 }
 
+export interface DevelopmentEditAppParams {
+  userInput: string
+  repoName: string
+}
+
 export interface DevelopmentGenerateAppResponse extends ToolResponse {
   output: {
     content: string
@@ -37,3 +42,5 @@ export interface DevelopmentGenerateAppResponse extends ToolResponse {
     databaseProvisionError: string | null
   }
 }
+
+export type DevelopmentEditAppResponse = DevelopmentGenerateAppResponse

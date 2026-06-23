@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { useShallow } from 'zustand/react/shallow'
+import { requestJson } from '@/lib/api/client/request'
+import { listCopilotChatsContract } from '@/lib/api/contracts/copilot'
+import { listKnowledgeBasesContract } from '@/lib/api/contracts/knowledge/base'
+import { listLogsContract } from '@/lib/api/contracts/logs'
+import { type IntegrationDescriptor, listIntegrations } from '@/blocks/integration-matcher'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -59,15 +64,6 @@ export interface WorkflowBlockItem {
 }
 
 /**
- * Represents a template for mention suggestions
- */
-export interface TemplateItem {
-  id: string
-  name: string
-  stars: number
-}
-
-/**
  * Represents a log/execution for mention suggestions
  */
 export interface LogItem {
@@ -94,8 +90,8 @@ export interface MentionDataReturn {
   knowledgeBases: KnowledgeItem[]
   blocksList: BlockItem[]
   workflowBlocks: WorkflowBlockItem[]
-  templatesList: TemplateItem[]
   logsList: LogItem[]
+  integrations: readonly IntegrationDescriptor[]
 
   // Loading states
   isLoadingPastChats: boolean
@@ -103,20 +99,19 @@ export interface MentionDataReturn {
   isLoadingKnowledge: boolean
   isLoadingBlocks: boolean
   isLoadingWorkflowBlocks: boolean
-  isLoadingTemplates: boolean
   isLoadingLogs: boolean
+  isLoadingIntegrations: boolean
 
   // Ensure loaded functions
   ensurePastChatsLoaded: () => Promise<void>
   ensureKnowledgeLoaded: () => Promise<void>
   ensureBlocksLoaded: () => Promise<void>
-  ensureTemplatesLoaded: () => Promise<void>
   ensureLogsLoaded: () => Promise<void>
 }
 
 /**
  * Custom hook to fetch and manage data for mention suggestions
- * Loads data from APIs for chats, workflows, knowledge bases, blocks, templates, and logs
+ * Loads data from APIs for chats, workflows, knowledge bases, blocks, and logs
  *
  * @param props - Configuration including workflow and workspace IDs
  * @returns Mention data state and loading operations
@@ -139,14 +134,16 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
     setBlocksList([])
   }, [config.allowedIntegrations])
 
-  const [templatesList, setTemplatesList] = useState<TemplateItem[]>([])
-  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
-
   const [logsList, setLogsList] = useState<LogItem[]>([])
   const [isLoadingLogs, setIsLoadingLogs] = useState(false)
 
   const [workflowBlocks, setWorkflowBlocks] = useState<WorkflowBlockItem[]>([])
   const [isLoadingWorkflowBlocks, setIsLoadingWorkflowBlocks] = useState(false)
+
+  // Integrations are derived synchronously from the block registry via the
+  // shared auto-mention matcher singleton — no fetch, no loading state. The
+  // accessor returns a stable cached reference so no memoization is needed.
+  const integrations = listIntegrations()
 
   const blockKeys = useWorkflowStore(
     useShallow(useCallback((state) => Object.keys(state.blocks), []))
@@ -166,7 +163,6 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
     .map((w) => ({
       id: w.id,
       name: w.name || 'Untitled Workflow',
-      color: w.color,
     }))
 
   /**
@@ -222,19 +218,17 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
     if (isLoadingPastChats || pastChats.length > 0) return
     try {
       setIsLoadingPastChats(true)
-      const resp = await fetch('/api/copilot/chats')
-      if (!resp.ok) throw new Error(`Failed to load chats: ${resp.status}`)
-      const data = await resp.json()
-      const items = Array.isArray(data?.chats) ? data.chats : []
+      const data = await requestJson(listCopilotChatsContract, {})
+      const items = data.chats
 
-      const currentWorkflowChats = items.filter((c: any) => c.workflowId === workflowId)
+      const currentWorkflowChats = items.filter((c) => c.workflowId === workflowId)
 
       setPastChats(
-        currentWorkflowChats.map((c: any) => ({
+        currentWorkflowChats.map((c) => ({
           id: c.id,
           title: c.title ?? null,
           workflowId: c.workflowId ?? null,
-          updatedAt: c.updatedAt,
+          updatedAt: c.updatedAt ?? undefined,
         }))
       )
     } catch {
@@ -250,16 +244,16 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
     if (isLoadingKnowledge || knowledgeBases.length > 0) return
     try {
       setIsLoadingKnowledge(true)
-      const resp = await fetch(`/api/knowledge?workspaceId=${workspaceId}`)
-      if (!resp.ok) throw new Error(`Failed to load knowledge bases: ${resp.status}`)
-      const data = await resp.json()
-      const items = Array.isArray(data?.data) ? data.data : []
-      const sorted = [...items].sort((a: any, b: any) => {
+      const result = await requestJson(listKnowledgeBasesContract, {
+        query: { workspaceId },
+      })
+      const items = result.data
+      const sorted = [...items].sort((a, b) => {
         const ta = new Date(a.updatedAt || a.createdAt || 0).getTime()
         const tb = new Date(b.updatedAt || b.createdAt || 0).getTime()
         return tb - ta
       })
-      setKnowledgeBases(sorted.map((k: any) => ({ id: k.id, name: k.name || 'Untitled' })))
+      setKnowledgeBases(sorted.map((k) => ({ id: k.id, name: k.name || 'Untitled' })))
     } catch {
     } finally {
       setIsLoadingKnowledge(false)
@@ -315,47 +309,23 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
   }, [isLoadingBlocks, blocksList.length, isBlockAllowed])
 
   /**
-   * Ensures templates are loaded
-   */
-  const ensureTemplatesLoaded = useCallback(async () => {
-    if (isLoadingTemplates || templatesList.length > 0) return
-    try {
-      setIsLoadingTemplates(true)
-      const resp = await fetch('/api/templates?limit=50&offset=0')
-      if (!resp.ok) throw new Error(`Failed to load templates: ${resp.status}`)
-      const data = await resp.json()
-      const items = Array.isArray(data?.data) ? data.data : []
-      const mapped = items
-        .map((t: any) => ({ id: t.id, name: t.name || 'Untitled Template', stars: t.stars || 0 }))
-        .sort((a: any, b: any) => b.stars - a.stars)
-      setTemplatesList(mapped)
-    } catch {
-    } finally {
-      setIsLoadingTemplates(false)
-    }
-  }, [isLoadingTemplates, templatesList.length])
-
-  /**
    * Ensures logs are loaded
    */
   const ensureLogsLoaded = useCallback(async () => {
     if (isLoadingLogs || logsList.length > 0) return
     try {
       setIsLoadingLogs(true)
-      const resp = await fetch(`/api/logs?workspaceId=${workspaceId}&limit=50&details=full`)
-      if (!resp.ok) throw new Error(`Failed to load logs: ${resp.status}`)
-      const data = await resp.json()
-      const items = Array.isArray(data?.data) ? data.data : []
-      const mapped = items.map((l: any) => ({
+      const data = await requestJson(listLogsContract, {
+        query: { workspaceId, limit: 50 },
+      })
+      const items = data.data
+      const mapped = items.map((l) => ({
         id: l.id,
         executionId: l.executionId || l.id,
         level: l.level,
         trigger: l.trigger || null,
         createdAt: l.createdAt,
-        workflowName:
-          (l.workflow && (l.workflow.name || l.workflow.title)) ||
-          l.workflowName ||
-          'Untitled Workflow',
+        workflowName: l.workflow?.name ?? 'Untitled Workflow',
       }))
       setLogsList(mapped)
     } catch {
@@ -374,18 +344,17 @@ export function useMentionData(props: UseMentionDataProps): MentionDataReturn {
     isLoadingKnowledge,
     blocksList,
     isLoadingBlocks,
-    templatesList,
-    isLoadingTemplates,
     logsList,
     isLoadingLogs,
     workflowBlocks,
     isLoadingWorkflowBlocks,
+    integrations,
+    isLoadingIntegrations: false,
 
     // Operations
     ensurePastChatsLoaded,
     ensureKnowledgeLoaded,
     ensureBlocksLoaded,
-    ensureTemplatesLoaded,
     ensureLogsLoaded,
   }
 }

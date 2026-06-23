@@ -118,6 +118,7 @@ interface SubBlockProps {
   labelSuffix?: React.ReactNode
   /** Provides sibling values for dependency resolution in non-preview contexts (e.g. tool-input) */
   dependencyContext?: Record<string, unknown>
+  isSearchHighlighted?: boolean
 }
 
 /**
@@ -275,6 +276,7 @@ const renderLabel = (
     onCopy: () => void
   },
   labelSuffix?: React.ReactNode,
+  _isSearchHighlighted?: boolean,
   externalLink?: {
     show: boolean
     onClick: () => void
@@ -308,7 +310,7 @@ const renderLabel = (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <span className='inline-flex'>
-                  <AlertTriangle className='h-3 w-3 flex-shrink-0 cursor-pointer text-destructive' />
+                  <AlertTriangle className='size-3 flex-shrink-0 cursor-pointer text-destructive' />
                 </span>
               </Tooltip.Trigger>
               <Tooltip.Content side='top'>
@@ -324,13 +326,13 @@ const renderLabel = (
               <button
                 type='button'
                 onClick={copyState.onCopy}
-                className='-my-1 flex h-5 w-5 items-center justify-center'
+                className='-my-1 flex size-5 items-center justify-center'
                 aria-label='Copy value'
               >
                 {copyState.copied ? (
-                  <Check className='h-3 w-3 text-green-500' />
+                  <Check className='size-3 text-green-500' />
                 ) : (
-                  <Clipboard className='h-3 w-3 text-muted-foreground' />
+                  <Clipboard className='size-3 text-muted-foreground' />
                 )}
               </button>
             </Tooltip.Trigger>
@@ -392,9 +394,9 @@ const renderLabel = (
                     e.stopPropagation()
                     wandState.onSearchSubmit()
                   }}
-                  className='h-[20px] w-[20px] flex-shrink-0 p-0'
+                  className='size-[20px] flex-shrink-0 p-0'
                 >
-                  <ArrowUp className='h-[12px] w-[12px]' />
+                  <ArrowUp className='size-[12px]' />
                 </Button>
               </div>
             )}
@@ -405,7 +407,7 @@ const renderLabel = (
             <Tooltip.Trigger asChild>
               <button
                 type='button'
-                className='flex h-[12px] w-[12px] flex-shrink-0 items-center justify-center bg-transparent p-0'
+                className='flex size-[12px] flex-shrink-0 items-center justify-center bg-transparent p-0'
                 onClick={externalLink?.onClick}
                 aria-label={externalLink?.tooltip}
               >
@@ -422,7 +424,7 @@ const renderLabel = (
             <Tooltip.Trigger asChild>
               <button
                 type='button'
-                className='flex h-[12px] w-[12px] flex-shrink-0 items-center justify-center bg-transparent p-0 disabled:cursor-not-allowed disabled:opacity-50'
+                className='flex size-[12px] flex-shrink-0 items-center justify-center bg-transparent p-0 disabled:cursor-not-allowed disabled:opacity-50'
                 onClick={canonicalToggle?.onToggle}
                 disabled={canonicalToggleDisabledResolved}
                 aria-label={
@@ -486,6 +488,7 @@ const arePropsEqual = (prevProps: SubBlockProps, nextProps: SubBlockProps): bool
     prevProps.allowExpandInPreview === nextProps.allowExpandInPreview &&
     canonicalToggleEqual &&
     prevProps.labelSuffix === nextProps.labelSuffix &&
+    prevProps.isSearchHighlighted === nextProps.isSearchHighlighted &&
     prevProps.dependencyContext === nextProps.dependencyContext
   )
 }
@@ -502,6 +505,7 @@ const arePropsEqual = (prevProps: SubBlockProps, nextProps: SubBlockProps): bool
  * @param canonicalToggle - Metadata and handlers for the basic/advanced mode toggle
  * @param labelSuffix - Additional content rendered after the label text
  * @param dependencyContext - Sibling values for dependency resolution in non-preview contexts (e.g. tool-input)
+ * @param isSearchHighlighted - Whether workflow search should highlight this field
  */
 function SubBlockComponent({
   blockId,
@@ -513,6 +517,7 @@ function SubBlockComponent({
   canonicalToggle,
   labelSuffix,
   dependencyContext,
+  isSearchHighlighted,
 }: SubBlockProps): JSX.Element {
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -696,6 +701,7 @@ function SubBlockComponent({
             disabled={isDisabled}
             wandControlRef={wandControlRef}
             hideInternalWand={true}
+            isSearchHighlighted={isSearchHighlighted}
           />
         )
 
@@ -753,7 +759,7 @@ function SubBlockComponent({
           )
         }
         return (
-          <div onMouseDown={handleMouseDown}>
+          <div role='presentation' onMouseDown={handleMouseDown}>
             <Dropdown
               blockId={blockId}
               subBlockId={config.id}
@@ -782,7 +788,7 @@ function SubBlockComponent({
 
       case 'table-selector':
         return (
-          <div onMouseDown={handleMouseDown}>
+          <div role='presentation' onMouseDown={handleMouseDown}>
             <TableSelector
               blockId={blockId}
               subBlock={config}
@@ -795,7 +801,7 @@ function SubBlockComponent({
 
       case 'combobox':
         return (
-          <div onMouseDown={handleMouseDown}>
+          <div role='presentation' onMouseDown={handleMouseDown}>
             <ComboBox
               blockId={blockId}
               subBlockId={config.id}
@@ -932,6 +938,7 @@ function SubBlockComponent({
             isPreview={isPreview}
             subBlockValues={subBlockValues}
             disabled={isDisabled}
+            subBlockId={config.id}
           />
         )
 
@@ -1054,6 +1061,7 @@ function SubBlockComponent({
       case 'file-selector':
       case 'sheet-selector':
       case 'project-selector':
+      case 'column-selector':
         return (
           <SelectorInput
             blockId={blockId}
@@ -1143,7 +1151,7 @@ function SubBlockComponent({
         return (
           <InputMapping
             blockId={blockId}
-            subBlockId={config.id}
+            subBlock={config}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -1417,7 +1425,13 @@ function SubBlockComponent({
   }
 
   return (
-    <div onMouseDown={handleMouseDown} className='subblock-content flex flex-col gap-2.5'>
+    <div
+      role='presentation'
+      onMouseDown={handleMouseDown}
+      data-workflow-search-subblock-id={config.id}
+      data-workflow-search-canonical-id={config.canonicalParamId ?? config.id}
+      className='subblock-content flex flex-col gap-2.5'
+    >
       {renderLabel(
         config,
         isValidJson,
@@ -1444,6 +1458,7 @@ function SubBlockComponent({
           onCopy: handleCopy,
         },
         labelSuffix,
+        false,
         externalLink,
         dependencyContext
       )}

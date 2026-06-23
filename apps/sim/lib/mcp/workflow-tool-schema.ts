@@ -9,6 +9,7 @@ import type { McpToolSchema } from './types'
  * More specific than the generic McpToolSchema properties.
  */
 export interface McpToolProperty {
+  [key: string]: unknown
   type: string
   description?: string
   items?: McpToolProperty
@@ -56,7 +57,7 @@ function fieldTypeToZod(fieldType: string | undefined, isRequired: boolean): z.Z
       zodType = z.boolean()
       break
     case 'object':
-      zodType = z.record(z.any())
+      zodType = z.record(z.string(), z.any())
       break
     case 'array':
       zodType = z.array(z.any())
@@ -80,7 +81,7 @@ export function generateToolZodSchema(inputFormat: InputFormatField[]): z.ZodRaw
     return undefined
   }
 
-  const shape: z.ZodRawShape = {}
+  const shape: Record<string, z.ZodTypeAny> = {}
 
   for (const field of inputFormat) {
     if (!field.name) continue
@@ -184,6 +185,100 @@ export function generateToolInputSchema(inputFormat: InputFormatField[]): McpToo
     properties,
     required: required.length > 0 ? required : undefined,
   }
+}
+
+/**
+ * Overlay sparse per-parameter description overrides onto a base schema produced by
+ * `generateToolInputSchema`. Only keys present in both `overrides` and the base are applied;
+ * overrides for fields no longer in the Start block are ignored. An empty override falls back to
+ * the field name, matching the base converter's "no description" behavior.
+ */
+export function applyDescriptionOverrides(
+  baseSchema: Record<string, unknown>,
+  overrides: Record<string, string> | null | undefined
+): Record<string, unknown> {
+  if (!overrides || Object.keys(overrides).length === 0) return baseSchema
+  const baseProperties = baseSchema.properties as Record<string, McpToolProperty> | undefined
+  if (!baseProperties) return baseSchema
+
+  const properties: Record<string, McpToolProperty> = {}
+  for (const [name, property] of Object.entries(baseProperties)) {
+    const override = overrides[name]
+    properties[name] =
+      typeof override === 'string'
+        ? { ...property, description: override.trim() || name }
+        : property
+  }
+
+  return { ...baseSchema, properties }
+}
+
+/**
+ * Drop override entries whose parameter no longer exists in the base schema, so the stored override
+ * map never accumulates or resurrects descriptions for removed Start-block inputs.
+ */
+export function pruneOverridesToSchema(
+  overrides: Record<string, string>,
+  baseSchema: Record<string, unknown>
+): Record<string, string> {
+  const baseProperties = (baseSchema.properties ?? {}) as Record<string, unknown>
+  const pruned: Record<string, string> = {}
+  for (const [name, value] of Object.entries(overrides)) {
+    if (name in baseProperties) pruned[name] = value
+  }
+  return pruned
+}
+
+/**
+ * Derive the sparse description-override map between a full schema and the Start-block base: keep
+ * only fields whose description is a real custom value (present, not equal to the field name, and
+ * different from the base). Used to migrate a legacy full `parameterSchema` payload into overrides
+ * during the transition window.
+ */
+export function extractDescriptionOverrides(
+  schema: Record<string, unknown> | null | undefined,
+  baseSchema: Record<string, unknown>
+): Record<string, string> {
+  const overrides: Record<string, string> = {}
+  const schemaProperties = schema?.properties as
+    | Record<string, { description?: unknown }>
+    | undefined
+  if (!schemaProperties) return overrides
+  const baseProperties = (baseSchema.properties ?? {}) as Record<string, McpToolProperty>
+
+  for (const [name, property] of Object.entries(schemaProperties)) {
+    if (!(name in baseProperties)) continue
+    const description = typeof property?.description === 'string' ? property.description.trim() : ''
+    if (!description || description === name) continue
+    const baseDescription =
+      typeof baseProperties[name]?.description === 'string'
+        ? (baseProperties[name].description as string)
+        : ''
+    if (description !== baseDescription) overrides[name] = description
+  }
+
+  return overrides
+}
+
+const DEFAULT_WORKFLOW_DESCRIPTIONS = new Set([
+  'new workflow',
+  'your first workflow - start building here!',
+])
+
+/**
+ * Returns the workflow description when it is a real, user-meaningful value, or `null` for empty or
+ * placeholder defaults (so callers can fall back to a derived description). Shared by the serve
+ * layer and the deploy UI so both treat the same values as "no description".
+ */
+export function getMeaningfulWorkflowDescription(
+  description: string | null | undefined,
+  workflowName?: string | null
+): string | null {
+  const trimmed = description?.trim()
+  if (!trimmed) return null
+  if (DEFAULT_WORKFLOW_DESCRIPTIONS.has(trimmed.toLowerCase())) return null
+  if (workflowName && trimmed === workflowName.trim()) return null
+  return trimmed
 }
 
 /**

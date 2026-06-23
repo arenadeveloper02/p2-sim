@@ -85,10 +85,12 @@ export function mapGenerateAppResultToToolResponse(
       ? ' Local generated-apps copy removed after publish.'
       : ''
 
+  const actionLabel = data.mode === 'edit' ? 'Updated' : 'Generated'
+
   return {
     success: true,
     output: {
-      content: `Generated "${data.appName}" (${data.fileCount} files)${pathLabel}.${buildLabel}${gitLabel}${vercelLabel}${databaseLabel}${cleanupLabel}`,
+      content: `${actionLabel} "${data.appName}" (${data.fileCount} files)${pathLabel}.${buildLabel}${gitLabel}${vercelLabel}${databaseLabel}${cleanupLabel}`,
       appName: data.appName ?? null,
       repoName: data.repoName ?? null,
       description: data.description ?? null,

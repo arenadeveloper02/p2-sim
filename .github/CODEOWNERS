@@ -24,5 +24,17 @@
 # Client-side stream consumption, hydration, and reconnect.
 /apps/sim/app/workspace/*/home/hooks/index.ts @simstudioai/mothership
 /apps/sim/app/workspace/*/home/hooks/use-chat.ts @simstudioai/mothership
-/apps/sim/app/workspace/*/home/hooks/use-file-preview-sessions.ts @simstudioai/mothership
+/apps/sim/app/workspace/*/home/hooks/preview/ @simstudioai/mothership
+/apps/sim/app/workspace/*/home/hooks/stream/ @simstudioai/mothership
 /apps/sim/hooks/queries/tasks.ts @simstudioai/mothership
+
+# Dependency manifests and package-manager config. Any change here — adding,
+# removing, or bumping a dependency, or altering install/security settings —
+# requires review to guard against supply-chain risk. (CODEOWNERS gates file
+# changes, the closest proxy GitHub offers for "new dependency added".)
+package.json @simstudioai/deps
+**/package.json @simstudioai/deps
+bun.lock @simstudioai/deps
+**/bun.lock @simstudioai/deps
+bunfig.toml @simstudioai/deps
+.npmrc @simstudioai/deps

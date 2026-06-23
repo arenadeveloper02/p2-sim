@@ -1,5 +1,6 @@
 import type React from 'react'
 import type { QueryKey } from '@tanstack/react-query'
+import type { AnyApiRouteContract } from '@/lib/api/contracts/types'
 
 export type SelectorKey =
   | 'airtable.bases'
@@ -55,6 +56,7 @@ export type SelectorKey =
   | 'monday.boards'
   | 'monday.groups'
   | 'sim.workflows'
+  | 'table.columns'
 
 export interface SelectorOption {
   id: string
@@ -89,6 +91,8 @@ export interface SelectorContext {
   awsSecretAccessKey?: string
   awsRegion?: string
   logGroupName?: string
+  mcpServerId?: string
+  tableId?: string
 }
 
 export interface SelectorQueryArgs {
@@ -99,10 +103,31 @@ export interface SelectorQueryArgs {
   signal?: AbortSignal
 }
 
+export interface SelectorPage {
+  items: SelectorOption[]
+  nextCursor?: string
+}
+
+interface SelectorPageArgs extends SelectorQueryArgs {
+  cursor?: string
+}
+
 export interface SelectorDefinition {
   key: SelectorKey
+  contracts?: readonly AnyApiRouteContract[]
   getQueryKey: (args: SelectorQueryArgs) => QueryKey
-  fetchList: (args: SelectorQueryArgs) => Promise<SelectorOption[]>
+  /**
+   * Loads the full option list in a single call. Required unless `fetchPage` is
+   * defined, in which case the hook drives pagination through `fetchPage` and
+   * `fetchList` is never invoked — provide one or the other, not both.
+   */
+  fetchList?: (args: SelectorQueryArgs) => Promise<SelectorOption[]>
+  /**
+   * Optional. When defined, the selector hook fetches one page at a time and
+   * auto-drains remaining pages so the dropdown populates progressively.
+   * Returns `{ items, nextCursor }`; `nextCursor: undefined` ends the stream.
+   */
+  fetchPage?: (args: SelectorPageArgs) => Promise<SelectorPage>
   fetchById?: (args: SelectorQueryArgs) => Promise<SelectorOption | null>
   enabled?: (args: SelectorQueryArgs) => boolean
   staleTime?: number

@@ -1,5 +1,11 @@
+import type { Logger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { pollingIdempotency } from '@/lib/core/idempotency/service'
-import type { PollingProviderHandler, PollWebhookContext } from '@/lib/webhooks/polling/types'
+import {
+  getProviderConfig,
+  type PollingProviderHandler,
+  type PollWebhookContext,
+} from '@/lib/webhooks/polling/types'
 import {
   markWebhookFailed,
   markWebhookSuccess,
@@ -77,7 +83,7 @@ interface SimplifiedCalendarEvent {
   organizer: CalendarEventPerson | null
 }
 
-export interface GoogleCalendarWebhookPayload {
+interface GoogleCalendarWebhookPayload {
   event: SimplifiedCalendarEvent
   calendarId: string
   timestamp: string
@@ -99,7 +105,7 @@ export const googleCalendarPollingHandler: PollingProviderHandler = {
         logger
       )
 
-      const config = webhookData.providerConfig as unknown as GoogleCalendarWebhookConfig
+      const config = getProviderConfig<GoogleCalendarWebhookConfig>(webhookData.providerConfig)
       const calendarId = config.calendarId || config.manualCalendarId || 'primary'
 
       // First poll: seed timestamp, emit nothing
@@ -177,7 +183,7 @@ async function fetchChangedEvents(
   calendarId: string,
   config: GoogleCalendarWebhookConfig,
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ): Promise<CalendarEvent[]> {
   const allEvents: CalendarEvent[] = []
   const maxEvents = config.maxEventsPerPoll || MAX_EVENTS_PER_POLL
@@ -282,7 +288,7 @@ async function processEvents(
   webhookData: PollWebhookContext['webhookData'],
   workflowData: PollWebhookContext['workflowData'],
   requestId: string,
-  logger: ReturnType<typeof import('@sim/logger').createLogger>
+  logger: Logger
 ): Promise<{ processedCount: number; failedCount: number; latestUpdated: string | null }> {
   let processedCount = 0
   let failedCount = 0
@@ -343,7 +349,7 @@ async function processEvents(
       )
       processedCount++
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const errorMessage = getErrorMessage(error, 'Unknown error')
       logger.error(`[${requestId}] Error processing event ${event.id}:`, errorMessage)
       failedCount++
     }

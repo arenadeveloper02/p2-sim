@@ -1,15 +1,19 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import OpenAI from 'openai'
 import type { ChatCompletionCreateParamsStreaming } from 'openai/resources/chat/completions'
 import type { StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
+import { formatMessagesForProvider } from '@/providers/attachments'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import {
   checkForForcedToolUsage,
   createReadableStreamFromOpenAIStream,
   supportsNativeStructuredOutputs,
 } from '@/providers/openrouter/utils'
+import { createStreamingExecution } from '@/providers/streaming-execution'
+import { adaptOpenAIChatToolSchema } from '@/providers/tool-schema-adapter'
+import { enrichLastModelSegmentFromChatCompletions } from '@/providers/trace-enrichment'
 import type {
   FunctionCallResponse,
   Message,
@@ -108,21 +112,15 @@ export const openRouterProvider: ProviderConfig = {
     if (request.messages) {
       allMessages.push(...request.messages)
     }
+    const formattedMessages = formatMessagesForProvider(allMessages, 'openrouter') as Message[]
 
     const tools = request.tools?.length
-      ? request.tools.map((tool) => ({
-          type: 'function',
-          function: {
-            name: tool.id,
-            description: tool.description,
-            parameters: tool.parameters,
-          },
-        }))
+      ? request.tools.map((tool) => adaptOpenAIChatToolSchema(tool))
       : undefined
 
     const payload: any = {
       model: requestedModel,
-      messages: allMessages,
+      messages: formattedMessages,
     }
 
     if (request.temperature !== undefined) payload.temperature = request.temperature
@@ -164,71 +162,38 @@ export const openRouterProvider: ProviderConfig = {
           request.abortSignal ? { signal: request.abortSignal } : undefined
         )
 
-        const streamingResult = {
-          stream: createReadableStreamFromOpenAIStream(streamResponse, (content, usage) => {
-            streamingResult.execution.output.content = content
-            streamingResult.execution.output.tokens = {
-              input: usage.prompt_tokens,
-              output: usage.completion_tokens,
-              total: usage.total_tokens,
-            }
-
-            const costResult = calculateCost(
-              requestedModel,
-              usage.prompt_tokens,
-              usage.completion_tokens
-            )
-            streamingResult.execution.output.cost = {
-              input: costResult.input,
-              output: costResult.output,
-              total: costResult.total,
-            }
-
-            const end = Date.now()
-            const endISO = new Date(end).toISOString()
-            if (streamingResult.execution.output.providerTiming) {
-              streamingResult.execution.output.providerTiming.endTime = endISO
-              streamingResult.execution.output.providerTiming.duration = end - providerStartTime
-              if (streamingResult.execution.output.providerTiming.timeSegments?.[0]) {
-                streamingResult.execution.output.providerTiming.timeSegments[0].endTime = end
-                streamingResult.execution.output.providerTiming.timeSegments[0].duration =
-                  end - providerStartTime
+        const streamingResult = createStreamingExecution({
+          model: requestedModel,
+          providerStartTime,
+          providerStartTimeISO,
+          timing: { kind: 'simple', segmentName: request.model },
+          initialTokens: { input: 0, output: 0, total: 0 },
+          initialCost: { input: 0, output: 0, total: 0 },
+          createStream: ({ output, finalizeTiming }) =>
+            createReadableStreamFromOpenAIStream(streamResponse, (content, usage) => {
+              output.content = content
+              output.tokens = {
+                input: usage.prompt_tokens,
+                output: usage.completion_tokens,
+                total: usage.total_tokens,
               }
-            }
-          }),
-          execution: {
-            success: true,
-            output: {
-              content: '',
-              model: requestedModel,
-              tokens: { input: 0, output: 0, total: 0 },
-              toolCalls: undefined,
-              providerTiming: {
-                startTime: providerStartTimeISO,
-                endTime: new Date().toISOString(),
-                duration: Date.now() - providerStartTime,
-                timeSegments: [
-                  {
-                    type: 'model',
-                    name: 'Streaming response',
-                    startTime: providerStartTime,
-                    endTime: Date.now(),
-                    duration: Date.now() - providerStartTime,
-                  },
-                ],
-              },
-              cost: { input: 0, output: 0, total: 0 },
-            },
-            logs: [],
-            metadata: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-            },
-          },
-        } as StreamingExecution
 
-        return streamingResult as StreamingExecution
+              const costResult = calculateCost(
+                requestedModel,
+                usage.prompt_tokens,
+                usage.completion_tokens
+              )
+              output.cost = {
+                input: costResult.input,
+                output: costResult.output,
+                total: costResult.total,
+              }
+
+              finalizeTiming()
+            }),
+        })
+
+        return streamingResult
       }
 
       const initialCallTime = Date.now()
@@ -250,7 +215,7 @@ export const openRouterProvider: ProviderConfig = {
       }
       const toolCalls: FunctionCallResponse[] = []
       const toolResults: Record<string, unknown>[] = []
-      const currentMessages = [...allMessages]
+      const currentMessages = [...formattedMessages]
       let iterationCount = 0
       let modelTime = firstResponseTime
       let toolsTime = 0
@@ -258,7 +223,7 @@ export const openRouterProvider: ProviderConfig = {
       const timeSegments: TimeSegment[] = [
         {
           type: 'model',
-          name: 'Initial response',
+          name: request.model,
           startTime: initialCallTime,
           endTime: initialCallTime + firstResponseTime,
           duration: firstResponseTime,
@@ -280,6 +245,14 @@ export const openRouterProvider: ProviderConfig = {
         }
 
         const toolCallsInResponse = currentResponse.choices[0]?.message?.tool_calls
+
+        enrichLastModelSegmentFromChatCompletions(
+          timeSegments,
+          currentResponse,
+          toolCallsInResponse,
+          { model: request.model, provider: 'openrouter' }
+        )
+
         if (!toolCallsInResponse || toolCallsInResponse.length === 0) {
           break
         }
@@ -297,7 +270,9 @@ export const openRouterProvider: ProviderConfig = {
             if (!tool) return null
 
             const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-            const result = await executeTool(toolName, executionParams)
+            const result = await executeTool(toolName, executionParams, {
+              signal: request.abortSignal,
+            })
             const toolCallEndTime = Date.now()
 
             return {
@@ -323,7 +298,7 @@ export const openRouterProvider: ProviderConfig = {
               result: {
                 success: false,
                 output: undefined,
-                error: error instanceof Error ? error.message : 'Tool execution failed',
+                error: getErrorMessage(error, 'Tool execution failed'),
               },
               startTime: toolCallStartTime,
               endTime: toolCallEndTime,
@@ -359,11 +334,12 @@ export const openRouterProvider: ProviderConfig = {
             startTime: startTime,
             endTime: endTime,
             duration: duration,
+            toolCallId: toolCall.id,
           })
 
           let resultContent: any
-          if (result.success) {
-            toolResults.push(result.output!)
+          if (result.success && result.output) {
+            toolResults.push(result.output)
             resultContent = result.output
           } else {
             resultContent = {
@@ -424,7 +400,7 @@ export const openRouterProvider: ProviderConfig = {
         const thisModelTime = nextModelEndTime - nextModelStartTime
         timeSegments.push({
           type: 'model',
-          name: `Model response (iteration ${iterationCount + 1})`,
+          name: request.model,
           startTime: nextModelStartTime,
           endTime: nextModelEndTime,
           duration: thisModelTime,
@@ -439,6 +415,15 @@ export const openRouterProvider: ProviderConfig = {
           tokens.total += currentResponse.usage.total_tokens || 0
         }
         iterationCount++
+      }
+
+      if (iterationCount === MAX_TOOL_ITERATIONS) {
+        enrichLastModelSegmentFromChatCompletions(
+          timeSegments,
+          currentResponse,
+          currentResponse.choices[0]?.message?.tool_calls,
+          { model: request.model, provider: 'openrouter' }
+        )
       }
 
       if (request.stream) {
@@ -466,67 +451,51 @@ export const openRouterProvider: ProviderConfig = {
           request.abortSignal ? { signal: request.abortSignal } : undefined
         )
 
-        const streamingResult = {
-          stream: createReadableStreamFromOpenAIStream(streamResponse, (content, usage) => {
-            streamingResult.execution.output.content = content
-            streamingResult.execution.output.tokens = {
-              input: tokens.input + usage.prompt_tokens,
-              output: tokens.output + usage.completion_tokens,
-              total: tokens.total + usage.total_tokens,
-            }
-
-            const streamCost = calculateCost(
-              requestedModel,
-              usage.prompt_tokens,
-              usage.completion_tokens
-            )
-            const tc = sumToolCosts(toolResults)
-            streamingResult.execution.output.cost = {
-              input: accumulatedCost.input + streamCost.input,
-              output: accumulatedCost.output + streamCost.output,
-              toolCost: tc || undefined,
-              total: accumulatedCost.total + streamCost.total + tc,
-            }
-          }),
-          execution: {
-            success: true,
-            output: {
-              content: '',
-              model: requestedModel,
-              tokens: { input: tokens.input, output: tokens.output, total: tokens.total },
-              toolCalls:
-                toolCalls.length > 0
-                  ? {
-                      list: toolCalls,
-                      count: toolCalls.length,
-                    }
-                  : undefined,
-              providerTiming: {
-                startTime: providerStartTimeISO,
-                endTime: new Date().toISOString(),
-                duration: Date.now() - providerStartTime,
-                modelTime: modelTime,
-                toolsTime: toolsTime,
-                firstResponseTime: firstResponseTime,
-                iterations: iterationCount + 1,
-                timeSegments: timeSegments,
-              },
-              cost: {
-                input: accumulatedCost.input,
-                output: accumulatedCost.output,
-                total: accumulatedCost.total,
-              },
-            },
-            logs: [],
-            metadata: {
-              startTime: providerStartTimeISO,
-              endTime: new Date().toISOString(),
-              duration: Date.now() - providerStartTime,
-            },
+        const streamingResult = createStreamingExecution({
+          model: requestedModel,
+          providerStartTime,
+          providerStartTimeISO,
+          timing: {
+            kind: 'accumulated',
+            modelTime,
+            toolsTime,
+            firstResponseTime,
+            iterations: iterationCount + 1,
+            timeSegments,
           },
-        } as StreamingExecution
+          initialTokens: { input: tokens.input, output: tokens.output, total: tokens.total },
+          initialCost: {
+            input: accumulatedCost.input,
+            output: accumulatedCost.output,
+            total: accumulatedCost.total,
+          },
+          toolCalls:
+            toolCalls.length > 0 ? { list: toolCalls, count: toolCalls.length } : undefined,
+          createStream: ({ output }) =>
+            createReadableStreamFromOpenAIStream(streamResponse, (content, usage) => {
+              output.content = content
+              output.tokens = {
+                input: tokens.input + usage.prompt_tokens,
+                output: tokens.output + usage.completion_tokens,
+                total: tokens.total + usage.total_tokens,
+              }
 
-        return streamingResult as StreamingExecution
+              const streamCost = calculateCost(
+                requestedModel,
+                usage.prompt_tokens,
+                usage.completion_tokens
+              )
+              const tc = sumToolCosts(toolResults)
+              output.cost = {
+                input: accumulatedCost.input + streamCost.input,
+                output: accumulatedCost.output + streamCost.output,
+                toolCost: tc || undefined,
+                total: accumulatedCost.total + streamCost.total + tc,
+              }
+            }),
+        })
+
+        return streamingResult
       }
 
       if (request.responseFormat && hasActiveTools) {
@@ -573,6 +542,13 @@ export const openRouterProvider: ProviderConfig = {
           tokens.output += finalResponse.usage.completion_tokens || 0
           tokens.total += finalResponse.usage.total_tokens || 0
         }
+
+        enrichLastModelSegmentFromChatCompletions(
+          timeSegments,
+          finalResponse,
+          finalResponse.choices[0]?.message?.tool_calls,
+          { model: request.model, provider: 'openrouter' }
+        )
       }
 
       const providerEndTime = Date.now()

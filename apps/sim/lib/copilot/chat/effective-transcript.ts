@@ -1,3 +1,4 @@
+import { isRecordLike } from '@sim/utils/object'
 import { normalizeMessage, type PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import { resolveStreamToolOutcome } from '@/lib/copilot/chat/stream-tool-outcome'
 import {
@@ -13,6 +14,7 @@ import {
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import type { FilePreviewSession } from '@/lib/copilot/request/session/file-preview-session-contract'
 import type { StreamBatchEvent } from '@/lib/copilot/request/session/types'
+import { getToolDisplayTitle } from '@/lib/copilot/tools/tool-display'
 
 interface StreamSnapshotLike {
   events: StreamBatchEvent[]
@@ -32,12 +34,8 @@ export function getLiveAssistantMessageId(streamId: string): string {
   return `live-assistant:${streamId}`
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
 function asPayloadRecord(value: unknown): Record<string, unknown> | undefined {
-  return isRecord(value) ? value : undefined
+  return isRecordLike(value) ? value : undefined
 }
 
 function isTerminalStreamStatus(status: string | null | undefined): boolean {
@@ -63,25 +61,24 @@ function buildInlineErrorTag(payload: MothershipStreamV1ErrorPayload): string {
   })}</mothership-error>`
 }
 
-function resolveToolDisplayTitle(ui: unknown): string | undefined {
-  if (!isRecord(ui)) return undefined
-  return typeof ui.title === 'string'
-    ? ui.title
-    : typeof ui.phaseLabel === 'string'
-      ? ui.phaseLabel
-      : undefined
-}
-
 function appendTextBlock(
   blocks: RawPersistedBlock[],
   content: string,
   options: {
     lane?: 'subagent'
+    parentToolCallId?: string
+    spanId?: string
+    parentSpanId?: string
   }
 ): void {
   if (!content) return
   const last = blocks[blocks.length - 1]
-  if (last?.type === MothershipStreamV1EventType.text && last.lane === options.lane) {
+  if (
+    last?.type === MothershipStreamV1EventType.text &&
+    last.lane === options.lane &&
+    last.parentToolCallId === options.parentToolCallId &&
+    last.spanId === options.spanId
+  ) {
     last.content = `${typeof last.content === 'string' ? last.content : ''}${content}`
     return
   }
@@ -89,6 +86,9 @@ function appendTextBlock(
   blocks.push({
     type: MothershipStreamV1EventType.text,
     ...(options.lane ? { lane: options.lane } : {}),
+    ...(options.parentToolCallId ? { parentToolCallId: options.parentToolCallId } : {}),
+    ...(options.spanId ? { spanId: options.spanId } : {}),
+    ...(options.parentSpanId ? { parentSpanId: options.parentSpanId } : {}),
     content,
   })
 }
@@ -102,6 +102,7 @@ function buildLiveAssistantMessage(params: {
   const blocks: RawPersistedBlock[] = []
   const toolIndexById = new Map<string, number>()
   const subagentByParentToolCallId = new Map<string, string>()
+  const subagentBySpanId = new Map<string, string>()
   let activeSubagent: string | undefined
   let activeSubagentParentToolCallId: string | undefined
   let activeCompactionId: string | undefined
@@ -110,22 +111,41 @@ function buildLiveAssistantMessage(params: {
   let requestId: string | undefined
   let lastTimestamp: string | undefined
 
+  // Scope-only resolution (mirrors the live browser stream loop): with
+  // concurrent subagents the legacy activeSubagent fallback / name-match scan
+  // would mis-attribute interleaved replayed events to the wrong lane.
   const resolveScopedSubagent = (
     agentId: string | undefined,
-    parentToolCallId: string | undefined
+    parentToolCallId: string | undefined,
+    spanId?: string
   ): string | undefined => {
     if (agentId) return agentId
+    if (spanId) {
+      const scoped = subagentBySpanId.get(spanId)
+      if (scoped) return scoped
+    }
     if (parentToolCallId) {
       const scoped = subagentByParentToolCallId.get(parentToolCallId)
       if (scoped) return scoped
     }
-    return activeSubagent
+    return undefined
+  }
+
+  const resolveParentForSubagentBlock = (
+    subagent: string | undefined,
+    scopedParent: string | undefined
+  ): string | undefined => {
+    if (!subagent) return undefined
+    return scopedParent
   }
 
   const ensureToolBlock = (input: {
     toolCallId: string
     toolName: string
     calledBy?: string
+    parentToolCallId?: string
+    spanId?: string
+    parentSpanId?: string
     displayTitle?: string
     params?: Record<string, unknown>
     result?: { success: boolean; output?: unknown; error?: string }
@@ -155,6 +175,9 @@ function buildLiveAssistantMessage(params: {
             ? { display: existingToolCall.display }
             : {}),
       }
+      if (input.parentToolCallId) existing.parentToolCallId = input.parentToolCallId
+      if (input.spanId) existing.spanId = input.spanId
+      if (input.parentSpanId) existing.parentSpanId = input.parentSpanId
       return existing
     }
 
@@ -176,6 +199,9 @@ function buildLiveAssistantMessage(params: {
             }
           : {}),
       },
+      ...(input.parentToolCallId ? { parentToolCallId: input.parentToolCallId } : {}),
+      ...(input.spanId ? { spanId: input.spanId } : {}),
+      ...(input.parentSpanId ? { parentSpanId: input.parentSpanId } : {}),
     }
     toolIndexById.set(input.toolCallId, blocks.length)
     blocks.push(nextBlock)
@@ -192,7 +218,18 @@ function buildLiveAssistantMessage(params: {
       typeof parsed.scope?.parentToolCallId === 'string' ? parsed.scope.parentToolCallId : undefined
     const scopedAgentId =
       typeof parsed.scope?.agentId === 'string' ? parsed.scope.agentId : undefined
-    const scopedSubagent = resolveScopedSubagent(scopedAgentId, scopedParentToolCallId)
+    const scopedSpanId = typeof parsed.scope?.spanId === 'string' ? parsed.scope.spanId : undefined
+    const scopedParentSpanId =
+      typeof parsed.scope?.parentSpanId === 'string' ? parsed.scope.parentSpanId : undefined
+    const scopedSubagent = resolveScopedSubagent(
+      scopedAgentId,
+      scopedParentToolCallId,
+      scopedSpanId
+    )
+    const spanIdentity: { spanId?: string; parentSpanId?: string } = {
+      ...(scopedSpanId ? { spanId: scopedSpanId } : {}),
+      ...(scopedParentSpanId ? { parentSpanId: scopedParentSpanId } : {}),
+    }
 
     switch (parsed.type) {
       case MothershipStreamV1EventType.session: {
@@ -219,8 +256,11 @@ function buildLiveAssistantMessage(params: {
           runningText.length > 0 &&
           !runningText.endsWith('\n')
         const normalizedChunk = needsBoundaryNewline ? `\n${chunk}` : chunk
+        const parentForBlock = resolveParentForSubagentBlock(scopedSubagent, scopedParentToolCallId)
         appendTextBlock(blocks, normalizedChunk, {
           ...(scopedSubagent ? { lane: 'subagent' as const } : {}),
+          ...(parentForBlock ? { parentToolCallId: parentForBlock } : {}),
+          ...spanIdentity,
         })
         runningText += normalizedChunk
         lastContentSource = contentSource
@@ -229,7 +269,6 @@ function buildLiveAssistantMessage(params: {
       case MothershipStreamV1EventType.tool: {
         const payload = parsed.payload
         const toolCallId = payload.toolCallId
-        const displayTitle = resolveToolDisplayTitle('ui' in payload ? payload.ui : undefined)
 
         if ('previewPhase' in payload) {
           continue
@@ -239,11 +278,15 @@ function buildLiveAssistantMessage(params: {
           continue
         }
 
+        const parentForBlock = resolveParentForSubagentBlock(scopedSubagent, scopedParentToolCallId)
+
         if (payload.phase === MothershipStreamV1ToolPhase.result) {
           ensureToolBlock({
             toolCallId,
             toolName: payload.toolName,
             calledBy: scopedSubagent,
+            ...(parentForBlock ? { parentToolCallId: parentForBlock } : {}),
+            ...spanIdentity,
             state: resolveStreamToolOutcome(payload),
             result: {
               success: payload.success,
@@ -258,8 +301,13 @@ function buildLiveAssistantMessage(params: {
           toolCallId,
           toolName: payload.toolName,
           calledBy: scopedSubagent,
-          displayTitle,
-          params: isRecord(payload.arguments) ? payload.arguments : undefined,
+          ...(parentForBlock ? { parentToolCallId: parentForBlock } : {}),
+          ...spanIdentity,
+          displayTitle: getToolDisplayTitle(
+            payload.toolName,
+            isRecordLike(payload.arguments) ? payload.arguments : undefined
+          ),
+          params: isRecordLike(payload.arguments) ? payload.arguments : undefined,
           state: typeof payload.status === 'string' ? payload.status : 'executing',
         })
         continue
@@ -270,11 +318,18 @@ function buildLiveAssistantMessage(params: {
         }
 
         const spanData = asPayloadRecord(parsed.payload.data)
-        const parentToolCallId =
-          scopedParentToolCallId ??
-          (typeof spanData?.tool_call_id === 'string' ? spanData.tool_call_id : undefined)
+        const parentToolCallIdFromData =
+          typeof spanData?.tool_call_id === 'string'
+            ? spanData.tool_call_id
+            : typeof spanData?.toolCallId === 'string'
+              ? spanData.toolCallId
+              : undefined
+        const parentToolCallId = scopedParentToolCallId ?? parentToolCallIdFromData
         const name = typeof parsed.payload.agent === 'string' ? parsed.payload.agent : scopedAgentId
         if (parsed.payload.event === MothershipStreamV1SpanLifecycleEvent.start && name) {
+          if (scopedSpanId) {
+            subagentBySpanId.set(scopedSpanId, name)
+          }
           if (parentToolCallId) {
             subagentByParentToolCallId.set(parentToolCallId, name)
           }
@@ -285,6 +340,8 @@ function buildLiveAssistantMessage(params: {
             kind: MothershipStreamV1SpanPayloadKind.subagent,
             lifecycle: MothershipStreamV1SpanLifecycleEvent.start,
             content: name,
+            ...(parentToolCallId ? { parentToolCallId } : {}),
+            ...spanIdentity,
           })
           continue
         }
@@ -293,14 +350,16 @@ function buildLiveAssistantMessage(params: {
           if (spanData?.pending === true) {
             continue
           }
+          if (scopedSpanId) {
+            subagentBySpanId.delete(scopedSpanId)
+          }
           if (parentToolCallId) {
             subagentByParentToolCallId.delete(parentToolCallId)
           }
-          if (
-            !parentToolCallId ||
-            parentToolCallId === activeSubagentParentToolCallId ||
-            name === activeSubagent
-          ) {
+          // Clear the legacy pointer only for THIS lane (by parent tool call id)
+          // or an unscoped end — never by agent name, which would tear down a
+          // concurrent same-name sibling that is still open.
+          if (!parentToolCallId || parentToolCallId === activeSubagentParentToolCallId) {
             activeSubagent = undefined
             activeSubagentParentToolCallId = undefined
           }
@@ -308,6 +367,8 @@ function buildLiveAssistantMessage(params: {
             type: MothershipStreamV1EventType.span,
             kind: MothershipStreamV1SpanPayloadKind.subagent,
             lifecycle: MothershipStreamV1SpanLifecycleEvent.end,
+            ...(parentToolCallId ? { parentToolCallId } : {}),
+            ...spanIdentity,
           })
         }
         continue
@@ -343,8 +404,11 @@ function buildLiveAssistantMessage(params: {
         }
         const prefix = runningText.length > 0 && !runningText.endsWith('\n') ? '\n' : ''
         const content = `${prefix}${tag}`
+        const errorParent = resolveParentForSubagentBlock(scopedSubagent, scopedParentToolCallId)
         appendTextBlock(blocks, content, {
           ...(scopedSubagent ? { lane: 'subagent' as const } : {}),
+          ...(errorParent ? { parentToolCallId: errorParent } : {}),
+          ...spanIdentity,
         })
         runningText += content
         continue

@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
-import { env } from '@/lib/core/config/env'
+import { env, envNumber } from '@/lib/core/config/env'
 import { getRedisClient } from '@/lib/core/config/redis'
 import {
   type PersistedStreamEventEnvelope,
@@ -13,7 +13,7 @@ const logger = createLogger('SessionBuffer')
 const STREAM_OUTBOX_PREFIX = 'mothership_stream:'
 const DEFAULT_TTL_SECONDS = 60 * 60
 const DEFAULT_COMPLETED_TTL_SECONDS = 5 * 60
-const DEFAULT_EVENT_LIMIT = 5_000
+const DEFAULT_EVENT_LIMIT = 100_000
 const RETRY_DELAYS_MS = [0, 50, 150] as const
 
 type RedisOperationMetadata = {
@@ -40,17 +40,9 @@ export type StreamConfig = {
 
 export function getStreamConfig(): StreamConfig {
   return {
-    ttlSeconds: parsePositiveNumber(env.COPILOT_STREAM_TTL_SECONDS, DEFAULT_TTL_SECONDS),
-    eventLimit: parsePositiveNumber(env.COPILOT_STREAM_EVENT_LIMIT, DEFAULT_EVENT_LIMIT),
+    ttlSeconds: envNumber(env.COPILOT_STREAM_TTL_SECONDS, DEFAULT_TTL_SECONDS, { min: 1 }),
+    eventLimit: envNumber(env.COPILOT_STREAM_EVENT_LIMIT, DEFAULT_EVENT_LIMIT, { min: 1 }),
   }
-}
-
-function parsePositiveNumber(value: number | string | undefined, fallback: number) {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return value
-  }
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
 async function withRedisRetry<T>(
@@ -152,6 +144,7 @@ export async function appendEvents(
       zaddArgs.push(envelope.seq, JSON.stringify(envelope))
     }
     pipeline.zadd(key, ...(zaddArgs as [number, string, ...Array<number | string>]))
+    pipeline.zremrangebyrank(key, 0, -config.eventLimit - 1)
     pipeline.expire(key, config.ttlSeconds)
     pipeline.set(seqKey, String(envelopes[envelopes.length - 1].seq), 'EX', config.ttlSeconds)
     await pipeline.exec()

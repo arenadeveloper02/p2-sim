@@ -4,12 +4,14 @@ import {
   DeleteWorkflow,
   DownloadToWorkspaceFile,
   EditWorkflow,
+  Ffmpeg,
   FunctionExecute,
+  GenerateAudio,
   GenerateImage,
-  GenerateVisualization,
-  GetWorkflowLogs,
+  GenerateVideo,
   Knowledge,
   KnowledgeBase,
+  ManageScheduledTask,
   UserTable,
   WorkspaceFile,
 } from '@/lib/copilot/generated/tool-catalog-v1'
@@ -28,9 +30,11 @@ const RESOURCE_TOOL_NAMES: Set<string> = new Set([
   FunctionExecute.id,
   KnowledgeBase.id,
   Knowledge.id,
-  GenerateVisualization.id,
+  ManageScheduledTask.id,
   GenerateImage.id,
-  GetWorkflowLogs.id,
+  GenerateVideo.id,
+  GenerateAudio.id,
+  Ffmpeg.id,
 ])
 
 export function isResourceToolName(toolName: string): boolean {
@@ -145,8 +149,11 @@ export function extractResourcesFromToolResult(
     }
 
     case DownloadToWorkspaceFile.id:
-    case GenerateVisualization.id:
-    case GenerateImage.id: {
+    case GenerateImage.id:
+    case GenerateVideo.id:
+    case GenerateAudio.id:
+    case Ffmpeg.id: {
+      // ffmpeg's probe op writes no file (no fileId) → no resource/auto-open.
       if (result.fileId) {
         return [
           {
@@ -214,17 +221,17 @@ export function extractResourcesFromToolResult(
       return resources
     }
 
-    case GetWorkflowLogs.id: {
-      const entries = Array.isArray(output) ? output : Array.isArray(result.data) ? result.data : []
-      const resources: ChatResource[] = []
-      for (const entry of entries) {
-        const rec = asRecord(entry)
-        const logId = rec.id as string | undefined
-        if (logId) {
-          resources.push({ type: 'log', id: logId, title: 'Log' })
-        }
+    case ManageScheduledTask.id: {
+      // Read-only ops never auto-open; only create/update surface the task.
+      const op = getOperation(params)
+      if (op === 'list' || op === 'get') return []
+      const jobId = (result.jobId as string) ?? (data.jobId as string)
+      if (jobId) {
+        const args = asRecord(params?.args)
+        const title = (result.title as string) ?? (args.title as string) ?? 'Scheduled Task'
+        return [{ type: 'scheduledtask', id: jobId, title }]
       }
-      return resources
+      return []
     }
 
     default:
@@ -237,6 +244,7 @@ const DELETE_CAPABLE_TOOL_RESOURCE_TYPE: Record<string, ResourceType> = {
   [WorkspaceFile.id]: 'file',
   [UserTable.id]: 'table',
   [KnowledgeBase.id]: 'knowledgebase',
+  [ManageScheduledTask.id]: 'scheduledtask',
 }
 
 export function hasDeleteCapability(toolName: string): boolean {
@@ -298,6 +306,12 @@ export function extractDeletedResourcesFromToolResult(
         return [{ type: resourceType, id: kbId, title: (data.name as string) || 'Knowledge Base' }]
       }
       return []
+    }
+
+    case ManageScheduledTask.id: {
+      if (operation !== 'delete') return []
+      const deletedIds = Array.isArray(result.deleted) ? (result.deleted as string[]) : []
+      return deletedIds.map((id) => ({ type: resourceType, id, title: 'Scheduled Task' }))
     }
 
     default:

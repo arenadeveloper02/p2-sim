@@ -1,29 +1,18 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { renderHelpConfirmationEmail } from '@/components/emails'
+import { helpFormBodySchema } from '@/lib/api/contracts/common'
+import { validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-import { env } from '@/lib/core/config/env'
+// import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getEmailDomain } from '@/lib/core/utils/urls'
+// import { getEmailDomain } from '@/lib/core/utils/urls'
+import { getHelpInboxEmail } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { sendEmail } from '@/lib/messaging/email/mailer'
-import {
-  getFromEmailAddress,
-  NO_EMAIL_HEADER_CONTROL_CHARS_REGEX,
-} from '@/lib/messaging/email/utils'
+import { getFromEmailAddress } from '@/lib/messaging/email/utils'
 
 const logger = createLogger('HelpAPI')
-
-const helpFormSchema = z.object({
-  subject: z
-    .string()
-    .trim()
-    .min(1, 'Subject is required')
-    .regex(NO_EMAIL_HEADER_CONTROL_CHARS_REGEX, 'Invalid characters'),
-  message: z.string().min(1, 'Message is required'),
-  type: z.enum(['bug', 'feedback', 'feature_request', 'other']),
-})
 
 export const POST = withRouteHandler(async (req: NextRequest) => {
   const requestId = generateRequestId()
@@ -51,7 +40,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       email: `${email.substring(0, 3)}***`, // Log partial email for privacy
     })
 
-    const validationResult = helpFormSchema.safeParse({
+    const validationResult = helpFormBodySchema.safeParse({
       subject,
       message,
       type,
@@ -59,12 +48,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     if (!validationResult.success) {
       logger.warn(`[${requestId}] Invalid help request data`, {
-        errors: validationResult.error.format(),
+        issues: validationResult.error.issues,
       })
-      return NextResponse.json(
-        { error: 'Invalid request data', details: validationResult.error.format() },
-        { status: 400 }
-      )
+      return validationErrorResponse(validationResult.error)
     }
 
     const images: { filename: string; content: Buffer; contentType: string }[] = []
@@ -72,14 +58,13 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     for (const [key, value] of formData.entries()) {
       if (key.startsWith('image_') && typeof value !== 'string') {
         if (value && 'arrayBuffer' in value) {
-          const blob = value as unknown as Blob
-          const buffer = Buffer.from(await blob.arrayBuffer())
-          const filename = 'name' in value ? (value as any).name : `image_${key.split('_')[1]}`
+          const buffer = Buffer.from(await value.arrayBuffer())
+          const filename = value.name || `image_${key.split('_')[1]}`
 
           images.push({
             filename,
             content: buffer,
-            contentType: 'type' in value ? (value as any).type : 'application/octet-stream',
+            contentType: value.type || 'application/octet-stream',
           })
         }
       }
@@ -101,8 +86,11 @@ ${message}
       emailText += `\n\n${images.length} image(s) attached.`
     }
 
+    const helpInboxEmail = getHelpInboxEmail()
+
     const emailResult = await sendEmail({
-      to: [`help@${env.EMAIL_DOMAIN || getEmailDomain()}`],
+      // to: [`help@${env.EMAIL_DOMAIN || getEmailDomain()}`],
+      to: [helpInboxEmail],
       subject: `[${type.toUpperCase()}] ${subject}`,
       text: emailText,
       from: getFromEmailAddress(),
@@ -134,7 +122,8 @@ ${message}
         subject: `Your ${type} request has been received: ${subject}`,
         html: confirmationHtml,
         from: getFromEmailAddress(),
-        replyTo: `help@${env.EMAIL_DOMAIN || getEmailDomain()}`,
+        // replyTo: `help@${env.EMAIL_DOMAIN || getEmailDomain()}`,
+        replyTo: helpInboxEmail,
         emailType: 'transactional',
       })
     } catch (err) {

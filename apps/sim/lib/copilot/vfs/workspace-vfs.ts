@@ -1,10 +1,10 @@
+import { trace } from '@opentelemetry/api'
 import { db } from '@sim/db'
 import {
   a2aAgent,
   chat as chatTable,
   copilotChats,
   document,
-  form,
   jobExecutionLogs,
   knowledgeConnector,
   mcpServers as mcpServersTable,
@@ -17,17 +17,38 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { and, desc, eq, isNotNull, isNull, ne } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { listApiKeys } from '@/lib/api-key/service'
 import {
-  getHubSpotSharedAccountOptionIds,
-  mergeOAuthIntegrationPresence,
-} from '@/lib/copilot/chat/env-integration-presence'
-import { buildWorkspaceMd, type WorkspaceMdData } from '@/lib/copilot/chat/workspace-context'
+  buildWorkspaceContextMd,
+  buildWorkspaceMd,
+  type WorkspaceMdData,
+} from '@/lib/copilot/chat/workspace-context'
+import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
+import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
+import { getExposedIntegrationTools } from '@/lib/copilot/integration-tools'
+import { recordVfsMaterialize } from '@/lib/copilot/request/metrics'
+import { markSpanForError } from '@/lib/copilot/request/otel'
+import { compileDoc, getE2BDocFormat } from '@/lib/copilot/tools/server/files/doc-compile'
+import { extractDocText, isExtractableDocExt } from '@/lib/copilot/tools/server/files/doc-extract'
+import { runE2BCompiledCheck } from '@/lib/copilot/tools/server/files/doc-recalc'
+import { isRenderableDocExt, renderDocToGrid } from '@/lib/copilot/tools/server/files/doc-render'
+import {
+  collectWorkflowFieldIssues,
+  lintEditedWorkflowState,
+} from '@/lib/copilot/tools/server/workflow/edit-workflow/lint'
+import { UNRESOLVABLE_AT_LINT_NOTE } from '@/lib/copilot/tools/server/workflow/edit-workflow/validation'
+import { extractDocumentStyle } from '@/lib/copilot/vfs/document-style'
 import { type FileReadResult, readFileRecord } from '@/lib/copilot/vfs/file-reader'
 import { normalizeVfsSegment } from '@/lib/copilot/vfs/normalize-segment'
-import type { DirEntry, GrepMatch, GrepOptions, ReadResult } from '@/lib/copilot/vfs/operations'
+import type { GrepMatch, GrepOptions, ReadResult } from '@/lib/copilot/vfs/operations'
 import * as ops from '@/lib/copilot/vfs/operations'
+import {
+  buildVfsFolderPathMap,
+  canonicalWorkflowVfsDir,
+  canonicalWorkspaceFilePath,
+  encodeVfsPathSegments,
+} from '@/lib/copilot/vfs/path-utils'
 import type { DeploymentData } from '@/lib/copilot/vfs/serializers'
 import {
   serializeApiKeys,
@@ -57,19 +78,41 @@ import {
   serializeWorkflowMeta,
 } from '@/lib/copilot/vfs/serializers'
 import {
+  buildWorkflowAliasLinks,
+  isWorkflowAliasBackingPath,
+  WORKFLOW_ALIAS_LINKS_NAME,
+  WORKFLOW_CHANGELOG_ALIAS_NAME,
+  WORKFLOW_PLANS_ALIAS_DIR,
+  WORKFLOW_PLANS_BACKING_FOLDER,
+  WORKSPACE_PLANS_BACKING_FOLDER,
+  workflowChangelogBackingPath,
+  workspacePlanBackingPath,
+  workspacePlansBackingFolderPath,
+} from '@/lib/copilot/vfs/workflow-aliases'
+import { isE2BDocEnabled } from '@/lib/core/config/env-flags'
+import { isFeatureEnabled } from '@/lib/core/config/feature-flags'
+import {
   getAccessibleEnvCredentials,
   getAccessibleOAuthCredentials,
 } from '@/lib/credentials/environment'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
+import { BINARY_DOC_TASKS, MAX_DOCUMENT_PREVIEW_CODE_BYTES } from '@/lib/execution/constants'
+import { runSandboxTask, SandboxUserCodeError } from '@/lib/execution/sandbox/run-task'
 import { getKnowledgeBases } from '@/lib/knowledge/service'
+import { validateMermaidSource } from '@/lib/mermaid/validate'
 import { listTables } from '@/lib/table/service'
+import { listWorkspaceFileFolders } from '@/lib/uploads/contexts/workspace/workspace-file-folder-manager'
 import {
+  fetchWorkspaceFileBuffer,
   findWorkspaceFileRecord,
   listWorkspaceFiles,
+  type WorkspaceFileRecord,
 } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
-import { hasWorkflowChanged } from '@/lib/workflows/comparison'
 import { listCustomTools } from '@/lib/workflows/custom-tools/operations'
-import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
+import {
+  loadWorkflowDeploymentSnapshot,
+  loadWorkflowFromNormalizedTables,
+} from '@/lib/workflows/persistence/utils'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { listSkills } from '@/lib/workflows/skills/operations'
 import { listFolders, listWorkflows } from '@/lib/workflows/utils'
@@ -77,17 +120,35 @@ import {
   assertActiveWorkspaceAccess,
   getUsersWithPermissions,
   getWorkspaceWithOwner,
+  hasWorkspaceAdminAccess,
 } from '@/lib/workspaces/permissions/utils'
+import { computeNeedsRedeployment } from '@/app/api/workflows/utils'
 import { getAllBlocks } from '@/blocks/registry'
-import { CONNECTOR_REGISTRY } from '@/connectors/registry'
-import { tools as toolRegistry } from '@/tools/registry'
-import { getLatestVersionTools, stripVersionSuffix } from '@/tools/utils'
+import { CONNECTOR_REGISTRY } from '@/connectors/registry.server'
+import type { WorkflowState } from '@/stores/workflows/workflow/types'
 import { TRIGGER_REGISTRY } from '@/triggers/registry'
 
 const logger = createLogger('WorkspaceVFS')
+const MAX_COMPILED_ATTACHMENT_BYTES = 5 * 1024 * 1024
 
 /** Static component files, computed once and shared across all VFS instances */
 let staticComponentFiles: Map<string, string> | null = null
+
+// On-the-fly doc reads (render/extract) download the binary into the Sim process
+// and base64-stage it to E2B, so bound the input like the compile path's staging
+// caps — otherwise an authenticated member could OOM the worker with a multi-GB
+// upload (uploads are capped at 5GB).
+const MAX_DOC_READ_INPUT_BYTES = 50 * 1024 * 1024
+
+/**
+ * True when the buffer is an actual compiled/uploaded binary (vs a source-backed
+ * generated doc). OOXML (pptx/docx/xlsx) is a ZIP (starts `PK`); PDFs may carry a
+ * BOM or leading whitespace before `%PDF`, so scan the head rather than offset 0.
+ */
+function isBinaryDocBuffer(buffer: Buffer, ext: string): boolean {
+  if (ext === 'pdf') return buffer.subarray(0, 1024).toString('latin1').includes('%PDF')
+  return buffer.subarray(0, 2).toString('latin1') === 'PK'
+}
 
 /**
  * Build the static component files from block and tool registries.
@@ -113,32 +174,15 @@ function getStaticComponentFiles(): Map<string, string> {
   }
   blocksFiltered = allBlocks.length - visibleBlocks.length
 
-  const toolToService = new Map<string, string>()
-  for (const block of visibleBlocks) {
-    if (!block.tools?.access) continue
-    const service = stripVersionSuffix(block.type)
-    for (const toolId of block.tools.access) {
-      toolToService.set(toolId, service)
-    }
-  }
-
-  const latestTools = getLatestVersionTools(toolRegistry)
   let integrationCount = 0
 
   const oauthServices = new Map<string, { provider: string; operations: string[] }>()
   const apiKeyServices = new Map<string, { params: string[]; operations: string[] }>()
 
-  for (const [toolId, tool] of Object.entries(latestTools)) {
-    const baseName = stripVersionSuffix(toolId)
-    const service = toolToService.get(toolId) ?? toolToService.get(baseName)
-    if (!service) {
-      logger.debug('Tool not associated with any block, skipping VFS entry', { toolId })
-      continue
-    }
-
-    const prefix = `${service}_`
-    const operation = baseName.startsWith(prefix) ? baseName.slice(prefix.length) : baseName
-
+  // Integration tools come from the shared exposed-tool set (latest version of
+  // each operation owned by a visible block), the same set used to build the
+  // deferred callable tools — so discovery and execution can never drift.
+  for (const { config: tool, service, operation } of getExposedIntegrationTools()) {
     const path = `components/integrations/${service}/${operation}.json`
     files.set(path, serializeIntegrationSchema(tool))
     integrationCount++
@@ -199,9 +243,9 @@ function getStaticComponentFiles(): Map<string, string> {
             description: 'Condition expression (for loopType "while" or "doWhile")',
           },
         },
-        sourceHandles: ['loop-start-source', 'source'],
+        sourceHandles: ['loop-start-source', 'loop-end-source'],
         notes:
-          'Use "loop-start-source" to connect to blocks inside the loop. Use "source" for the edge that runs after the loop completes. Blocks inside the loop must have parentId set to the loop block ID.',
+          'Use "loop-start-source" to connect to blocks INSIDE the loop. Use "loop-end-source" for the edge that runs AFTER the loop completes. Do NOT use "source" for a loop block — it is rejected; the only valid source handles are "loop-start-source", "loop-end-source", and "error". Blocks inside the loop must have parentId set to the loop block ID.',
       },
       null,
       2
@@ -230,9 +274,9 @@ function getStaticComponentFiles(): Map<string, string> {
             description: 'Collection to distribute (for parallelType "collection")',
           },
         },
-        sourceHandles: ['parallel-start-source', 'source'],
+        sourceHandles: ['parallel-start-source', 'parallel-end-source'],
         notes:
-          'Use "parallel-start-source" to connect to blocks inside the parallel container. Use "source" for the edge after all branches complete. Blocks inside must have parentId set to the parallel block ID.',
+          'Use "parallel-start-source" to connect to blocks INSIDE the parallel container. Use "parallel-end-source" for the edge AFTER all branches complete. Do NOT use "source" for a parallel block — it is rejected; the only valid source handles are "parallel-start-source", "parallel-end-source", and "error". Blocks inside must have parentId set to the parallel block ID.',
       },
       null,
       2
@@ -302,9 +346,11 @@ function getStaticComponentFiles(): Map<string, string> {
  * Virtual Filesystem that materializes workspace data into an in-memory Map.
  *
  * Structure:
- *   WORKSPACE.md                         — workspace identity, members, inventory (auto-generated)
+ *   WORKSPACE_CONTEXT.md                 — full dynamic workspace/user context (auto-generated)
+ *   WORKSPACE.md                         — workspace inventory summary (auto-generated)
  *   workflows/{name}/meta.json            (root-level workflows)
  *   workflows/{name}/state.json          (sanitized blocks with embedded connections)
+ *   workflows/{name}/lint.json           (sources/sinks, required-field, credential/resource issues)
  *   workflows/{name}/executions.json
  *   workflows/{name}/deployment.json
  *   workflows/{folder}/{name}/...        (workflows inside folders, nested folders supported)
@@ -312,8 +358,9 @@ function getStaticComponentFiles(): Map<string, string> {
  *   knowledgebases/{name}/documents.json
  *   knowledgebases/{name}/connectors.json
  *   tables/{name}/meta.json
- *   files/{name}/meta.json
- *   files/by-id/{id}/meta.json
+ *   files/{name}                         (workspace file leaf; dynamic content on read)
+ *   files/{path}/{name}/style            (dynamic — style extraction for .docx/.pptx/.pdf)
+ *   files/{path}/{name}/compiled-check   (dynamic — compile generated source / validate diagrams, returns {ok,error?})
  *   jobs/{title}/meta.json
  *   jobs/{title}/history.json
  *   jobs/{title}/executions.json
@@ -332,11 +379,131 @@ function getStaticComponentFiles(): Map<string, string> {
  *   components/triggers/{provider}/{id}.json           (external triggers: github, slack, etc.)
  */
 export class WorkspaceVFS {
+  // Eagerly-materialized, cheap content (structure + metadata): folder markers,
+  // per-resource meta.json, WORKSPACE.md/WORKSPACE_CONTEXT.md, static components.
   private files: Map<string, string> = new Map()
+  // Lazily-materialized, expensive content keyed by VFS path. The loader runs on
+  // demand: a `read` resolves exactly one entry; a scoped `grep` resolves only
+  // the entries within its scope; an unscoped `grep` resolves all; a `glob` never
+  // resolves any (it matches keys only). This is why a read/glob no longer pays
+  // for every workflow's graph-load + lint + stringify — only grep over contents
+  // does, and only for what it actually scans.
+  private lazy: Map<string, () => Promise<string | null>> = new Map()
+  // Per-instance (per-tool-call) memo so state.json + lint.json for the same
+  // workflow share one normalized-table load, and deployment.json + versions.json
+  // share one deployment query.
+  private normalizedCache = new Map<
+    string,
+    Promise<Awaited<ReturnType<typeof loadWorkflowFromNormalizedTables>>>
+  >()
+  private deploymentCache = new Map<string, Promise<DeploymentData | null>>()
   private _workspaceId = ''
+  private _betaEnabled = false
 
   get workspaceId(): string {
     return this._workspaceId
+  }
+
+  /** Register a VFS path whose (expensive) content is produced on demand. */
+  private registerLazy(path: string, loader: () => Promise<string | null>): void {
+    this.lazy.set(path, loader)
+  }
+
+  /**
+   * Load a workflow's normalized state once per instance. state.json and lint.json
+   * both need it, and a grep over a workflow's dir touches both — without this they
+   * would each re-load the full block graph.
+   */
+  private loadNormalized(
+    workflowId: string
+  ): Promise<Awaited<ReturnType<typeof loadWorkflowFromNormalizedTables>>> {
+    let cached = this.normalizedCache.get(workflowId)
+    if (!cached) {
+      cached = loadWorkflowFromNormalizedTables(workflowId)
+      this.normalizedCache.set(workflowId, cached)
+    }
+    return cached
+  }
+
+  /** Load a workflow's deployment data once per instance (deployment.json + versions.json share it). */
+  private loadDeployments(wf: {
+    id: string
+    isDeployed: boolean
+    deployedAt: Date | null
+  }): Promise<DeploymentData | null> {
+    let cached = this.deploymentCache.get(wf.id)
+    if (!cached) {
+      cached = this.getWorkflowDeployments(wf.id, this._workspaceId, wf.isDeployed, wf.deployedAt)
+      this.deploymentCache.set(wf.id, cached)
+    }
+    return cached
+  }
+
+  /**
+   * Resolve a single lazy artifact into {@link files}. Idempotent: once resolved
+   * the entry moves to `files` and the loader is dropped. A loader that returns
+   * null (no data) leaves nothing behind, so the path reads as "not found".
+   */
+  private async resolveLazyPath(path: string): Promise<string | null> {
+    const existing = this.files.get(path)
+    if (existing !== undefined) return existing
+    const loader = this.lazy.get(path)
+    if (!loader) return null
+    this.lazy.delete(path)
+    let content: string | null = null
+    try {
+      content = await loader()
+    } catch (err) {
+      logger.warn('Failed to resolve lazy VFS artifact', {
+        workspaceId: this._workspaceId,
+        path,
+        error: toError(err).message,
+      })
+      content = null
+    }
+    if (content !== null) this.files.set(path, content)
+    return content
+  }
+
+  /**
+   * Resolve every lazy artifact a grep over `scope` will scan, in parallel. An
+   * undefined scope (unscoped grep) resolves all — the worst case, equivalent to
+   * the old eager full materialize, but now only paid by an unscoped grep.
+   * Uses the same scope matcher as {@link ops.grep} so the materialized set is
+   * exactly the set grep filters in.
+   */
+  private async resolveLazyWithinScope(scope?: string): Promise<void> {
+    const targets: string[] = []
+    for (const path of this.lazy.keys()) {
+      if (!scope || ops.pathWithinGrepScope(path, scope)) targets.push(path)
+    }
+    if (targets.length === 0) return
+    await Promise.all(targets.map((path) => this.resolveLazyPath(path)))
+  }
+
+  /**
+   * `recently-deleted/` artifacts are opt-in: excluded from the active view
+   * unless a path/pattern explicitly scopes into them.
+   */
+  private isRecentlyDeleted(key: string): boolean {
+    return key.startsWith('recently-deleted/')
+  }
+
+  /**
+   * A keys-only view (eager values plus empty placeholders for unresolved lazy
+   * paths) for glob/suggestSimilar, which match on keys and never read content.
+   */
+  private keyView(includeDeleted: boolean): Map<string, string> {
+    const view = new Map<string, string>()
+    for (const [key, value] of this.files) {
+      if (includeDeleted || !this.isRecentlyDeleted(key)) view.set(key, value)
+    }
+    for (const key of this.lazy.keys()) {
+      if ((includeDeleted || !this.isRecentlyDeleted(key)) && !view.has(key)) {
+        view.set(key, '')
+      }
+    }
+    return view
   }
 
   /**
@@ -347,73 +514,123 @@ export class WorkspaceVFS {
   async materialize(workspaceId: string, userId: string): Promise<void> {
     const start = Date.now()
     this.files = new Map()
+    this.lazy = new Map()
+    this.normalizedCache = new Map()
+    this.deploymentCache = new Map()
     this._workspaceId = workspaceId
+    this._betaEnabled = await isFeatureEnabled('mothership-beta', { userId })
 
-    const [
-      wfSummary,
-      kbSummary,
-      tblSummary,
-      fileSummary,
-      envSummary,
-      toolsSummary,
-      mcpServersSummary,
-      skillsSummary,
-      taskSummary,
-      jobsSummary,
-      wsRow,
-      members,
-    ] = await Promise.all([
-      this.materializeWorkflows(workspaceId, userId),
-      this.materializeKnowledgeBases(workspaceId, userId),
-      this.materializeTables(workspaceId),
-      this.materializeFiles(workspaceId),
-      this.materializeEnvironment(workspaceId, userId),
-      this.materializeCustomTools(workspaceId, userId),
-      this.materializeMcpServers(workspaceId),
-      this.materializeSkills(workspaceId),
-      this.materializeTasks(workspaceId, userId),
-      this.materializeJobs(workspaceId),
-      getWorkspaceWithOwner(workspaceId),
-      getUsersWithPermissions(workspaceId),
-    ])
-
-    this.files.set(
-      'WORKSPACE.md',
-      buildWorkspaceMd({
-        workspace: wsRow,
-        members,
-        workflows: wfSummary,
-        knowledgeBases: kbSummary,
-        tables: tblSummary,
-        files: fileSummary,
-        oauthIntegrations: envSummary.oauthIntegrations,
-        envVariables: envSummary.envVariables,
-        hubspotSharedAccounts: envSummary.hubspotSharedAccounts,
-        tasks: taskSummary,
-        customTools: toolsSummary,
-        mcpServers: mcpServersSummary,
-        skills: skillsSummary,
-        jobs: jobsSummary,
+    // Per-phase wall-clock, stamped on the span so a slow materialize in a
+    // trace names its bottleneck instead of showing up as unattributed dead
+    // time inside read/glob/grep (how the v0.7 lint.json regression hid).
+    const phaseMs: Record<string, number> = {}
+    const timed = <T>(phase: string, promise: Promise<T>): Promise<T> => {
+      const t0 = Date.now()
+      return promise.finally(() => {
+        phaseMs[phase] = Date.now() - t0
       })
-    )
-
-    await this.materializeRecentlyDeleted(workspaceId, userId)
-
-    for (const [path, content] of getStaticComponentFiles()) {
-      this.files.set(path, content)
     }
+
+    await trace
+      .getTracer('sim-copilot-vfs', '1.0.0')
+      .startActiveSpan(
+        TraceSpan.CopilotVfsMaterialize,
+        { attributes: { [TraceAttr.WorkspaceId]: workspaceId } },
+        async (span) => {
+          try {
+            const [
+              wfSummary,
+              kbSummary,
+              tblSummary,
+              fileSummary,
+              envSummary,
+              toolsSummary,
+              mcpServersSummary,
+              skillsSummary,
+              taskSummary,
+              jobsSummary,
+              wsRow,
+              members,
+            ] = await Promise.all([
+              timed('workflows', this.materializeWorkflows(workspaceId)),
+              timed('knowledge_bases', this.materializeKnowledgeBases(workspaceId, userId)),
+              timed('tables', this.materializeTables(workspaceId)),
+              timed('files', this.materializeFiles(workspaceId)),
+              timed('environment', this.materializeEnvironment(workspaceId, userId)),
+              timed('custom_tools', this.materializeCustomTools(workspaceId, userId)),
+              timed('mcp_servers', this.materializeMcpServers(workspaceId)),
+              timed('skills', this.materializeSkills(workspaceId)),
+              timed('tasks', this.materializeTasks(workspaceId, userId)),
+              timed('jobs', this.materializeJobs(workspaceId)),
+              timed('workspace_row', getWorkspaceWithOwner(workspaceId)),
+              timed('members', getUsersWithPermissions(workspaceId)),
+            ])
+
+            const workspaceMdData = {
+              workspace: wsRow,
+              members,
+              workflows: wfSummary,
+              knowledgeBases: kbSummary,
+              tables: tblSummary,
+              files: fileSummary,
+              oauthIntegrations: envSummary.oauthIntegrations,
+              envVariables: envSummary.envVariables,
+              tasks: taskSummary,
+              customTools: toolsSummary,
+              mcpServers: mcpServersSummary,
+              skills: skillsSummary,
+              jobs: jobsSummary,
+            }
+
+            this.files.set('WORKSPACE.md', buildWorkspaceMd(workspaceMdData))
+            this.files.set('WORKSPACE_CONTEXT.md', buildWorkspaceContextMd(workspaceMdData))
+
+            await timed('recently_deleted', this.materializeRecentlyDeleted(workspaceId, userId))
+
+            for (const [path, content] of getStaticComponentFiles()) {
+              this.files.set(path, content)
+            }
+
+            span.setAttributes({
+              [TraceAttr.CopilotVfsMaterializeFileCount]: this.files.size,
+              [TraceAttr.CopilotVfsMaterializePhaseMs]: JSON.stringify(phaseMs),
+            })
+          } catch (err) {
+            markSpanForError(span, err)
+            throw err
+          } finally {
+            // Record on success AND failure: a mid-phase failure (e.g. a DB
+            // timeout) still belongs in copilot.vfs.materialize.duration, else
+            // p50/p99 skew toward successes only. phaseMs holds whatever phases
+            // completed before the failure.
+            for (const [phase, ms] of Object.entries(phaseMs)) {
+              recordVfsMaterialize(phase, ms)
+            }
+            recordVfsMaterialize('total', Date.now() - start)
+            span.end()
+          }
+        }
+      )
+
+    // Durable Grafana signal for "how long does VFS materialize" — total plus
+    // per-phase (bounded phase set). getOrMaterializeVFS runs per VFS tool call
+    // with no cross-request cache, so this reveals whether materialize is the
+    // bottleneck (observability only; not a fix). Recorded inside the span's
+    // finally above so a failed materialize is captured too, not just successes.
+    const totalMs = Date.now() - start
 
     logger.info('VFS materialized', {
       workspaceId,
       fileCount: this.files.size,
-      durationMs: Date.now() - start,
+      durationMs: totalMs,
+      phaseMs,
     })
   }
 
   private activeFiles(): Map<string, string> {
     const filtered = new Map<string, string>()
     for (const [key, value] of this.files) {
-      if (!key.startsWith('recently-deleted/')) {
+      if (!this.isRecentlyDeleted(key)) {
         filtered.set(key, value)
       }
     }
@@ -425,39 +642,471 @@ export class WorkspaceVFS {
     return this.activeFiles()
   }
 
-  grep(
+  async grep(
     pattern: string,
     path?: string,
     options?: GrepOptions
-  ): GrepMatch[] | string[] | ops.GrepCountEntry[] {
+  ): Promise<GrepMatch[] | string[] | ops.GrepCountEntry[]> {
+    // grep is the only op that scans contents, so it is the only op that pays to
+    // materialize lazy artifacts — and only those within its scope.
+    await this.resolveLazyWithinScope(path)
     return ops.grep(this.filesForPath(path), pattern, path, options)
   }
 
-  glob(pattern: string): string[] {
-    const target = pattern.startsWith('recently-deleted') ? this.files : this.activeFiles()
-    return ops.glob(target, pattern)
+  /**
+   * Grep the *content* of a single workspace file (under `files/`), as opposed to
+   * {@link grep} which searches the in-memory VFS map (workflow JSON, metadata,
+   * plans, memories — workspace files appear there only as metadata).
+   *
+   * Content search applies to workspace files only and must target exactly one
+   * file (`files/<name>` or `files/<name>/content`, plus the `recently-deleted/`
+   * variants). A folder, the whole `files/` tree, or any path that does not
+   * resolve to a single file leaf throws — grepping multiple workspace files at
+   * once is intentionally unsupported.
+   *
+   * Per file type the file's text is resolved via {@link readFileContent} (the
+   * same extraction `read` uses): text-like files are read as UTF-8, parseable
+   * documents (pdf/docx/xlsx/pptx/…) are parsed to text, and the regex runs over
+   * that text. Images and binary files have no searchable text and throw, as do
+   * files too large for the inline read cap. Reading exactly one file (bounded by
+   * the existing per-type read caps) keeps this from loading the workspace into
+   * memory.
+   */
+  async grepFile(
+    path: string,
+    pattern: string,
+    options?: GrepOptions
+  ): Promise<GrepMatch[] | string[] | ops.GrepCountEntry[]> {
+    const normalized = path.replace(/^\/+/, '')
+    // Prefer the path verbatim when it is itself a file leaf (e.g. a file literally
+    // named "content"); otherwise drop a trailing "/content" read suffix.
+    const leaf = this.files.has(normalized) ? normalized : normalized.replace(/\/content$/, '')
+
+    const isWorkspaceFilePath = /^(recently-deleted\/)?files(\/|$)/.test(leaf)
+    if (!isWorkspaceFilePath || !this.files.has(leaf)) {
+      const suggestions = this.suggestSimilar(leaf)
+      const hint =
+        suggestions.length > 0
+          ? ` Did you mean: ${suggestions.join(', ')}?`
+          : ' Use glob to find the exact file path, then grep that single file.'
+      throw new ops.WorkspaceFileGrepError(
+        `Grep over workspace file content must target a single workspace file (e.g. path: "files/report.csv"). "${path}" is not a single workspace file.${hint}`
+      )
+    }
+
+    const contentPath = `${leaf}/content`
+    const result = await this.readFileContent(contentPath)
+    if (!result) {
+      throw new ops.WorkspaceFileGrepError(`Workspace file content not found for "${path}".`)
+    }
+
+    return ops.grepReadResult(leaf, result, pattern, contentPath, options)
   }
 
-  read(path: string, offset?: number, limit?: number): ReadResult | null {
+  glob(pattern: string): string[] {
+    // glob matches keys only, so it resolves no lazy content — it sees the full
+    // path structure (eager keys + lazy placeholders) for free.
+    const includeDeleted = pattern.startsWith('recently-deleted')
+    return ops.glob(this.keyView(includeDeleted), pattern)
+  }
+
+  async read(path: string, offset?: number, limit?: number): Promise<ReadResult | null> {
+    // Resolve the one lazy artifact being read into `files`; a no-op for eager
+    // paths (already present) and unknown paths (no loader). Lazy keys are always
+    // ASCII (built via encodeURIComponent), so no Unicode-normalized lookup is
+    // needed here; ops.read still does its own NFC/NFD fallback over `files`.
+    await this.resolveLazyPath(path)
     return ops.read(this.files, path, offset, limit)
   }
 
-  list(path: string): DirEntry[] {
-    return ops.list(this.filesForPath(path), path)
+  suggestSimilar(missingPath: string, max?: number): string[] {
+    return ops.suggestSimilar(this.keyView(true), missingPath, max)
   }
 
-  suggestSimilar(missingPath: string, max?: number): string[] {
-    return ops.suggestSimilar(this.files, missingPath, max)
+  private async resolveWorkspaceFileForDynamicRead(
+    path: string,
+    suffix: 'style' | 'compiled-check' | 'compiled' | 'render' | 'extract'
+  ): Promise<WorkspaceFileRecord | null> {
+    if (!this._betaEnabled && isWorkflowAliasBackingPath(path)) {
+      return null
+    }
+    const canonicalMatch = path.match(new RegExp(`^files/(.+)/${suffix}$`))
+    if (!canonicalMatch?.[1]) return null
+
+    const files = await listWorkspaceFiles(this._workspaceId, { includeReservedSystemFiles: true })
+    return findWorkspaceFileRecord(files, `files/${canonicalMatch[1]}`)
+  }
+
+  /**
+   * Renders a renderable doc (pptx/docx/pdf) record to a contact-sheet image and
+   * returns it as a model readable JPEG attachment. Shared by the `/render` and
+   * `/compiled` reads so a binary doc is NEVER attached as a raw (non-PDF)
+   * `document` block — the model only reads images and application/pdf. Compiles
+   * the source first when needed (E2B doc sandbox, else isolated-vm); uses the
+   * binary directly for already-binary uploads. Throws on compile/render failure
+   * (the caller's try/catch reports it).
+   */
+  private async renderDocRecordResult(
+    record: WorkspaceFileRecord,
+    ext: string,
+    buildMessage: (pageCount: number) => string
+  ): Promise<FileReadResult> {
+    if (typeof record.size === 'number' && record.size > MAX_DOC_READ_INPUT_BYTES) {
+      return {
+        content: JSON.stringify({ ok: false, error: 'File is too large to render' }),
+        totalLines: 1,
+      }
+    }
+    const buffer = await fetchWorkspaceFileBuffer(record)
+    if (buffer.length > MAX_DOC_READ_INPUT_BYTES) {
+      return {
+        content: JSON.stringify({ ok: false, error: 'File is too large to render' }),
+        totalLines: 1,
+      }
+    }
+    // Already-binary uploads render directly; source files are compiled first
+    // (E2B regime -> doc sandbox: Node pptx/docx, Python pdf; otherwise
+    // isolated-vm pptxgenjs/docx-js/pdf-lib).
+    let bin: Buffer
+    if (isBinaryDocBuffer(buffer, ext)) {
+      bin = buffer
+    } else {
+      const code = buffer.toString('utf-8')
+      if (Buffer.byteLength(code, 'utf-8') > MAX_DOCUMENT_PREVIEW_CODE_BYTES) {
+        return {
+          content: JSON.stringify({ ok: false, error: 'File source exceeds maximum size' }),
+          totalLines: 1,
+        }
+      }
+      if (isE2BDocEnabled && (await getE2BDocFormat(record.name))) {
+        bin = (
+          await compileDoc({ source: code, fileName: record.name, workspaceId: this._workspaceId })
+        ).buffer
+      } else {
+        const taskId = BINARY_DOC_TASKS[ext]
+        if (!taskId) {
+          return {
+            content: JSON.stringify({ ok: false, error: 'Cannot render this file' }),
+            totalLines: 1,
+          }
+        }
+        bin = await runSandboxTask(taskId, { code, workspaceId: this._workspaceId })
+      }
+    }
+    const { grid, pageCount } = await renderDocToGrid({
+      binary: bin,
+      ext,
+      workspaceId: this._workspaceId,
+    })
+    return {
+      content: buildMessage(pageCount),
+      totalLines: 1,
+      attachment: {
+        // The rendered contact sheet is a JPEG, so it must be an image block.
+        // Tagging it 'file' routes it to a provider document block, which only
+        // accepts application/pdf — Anthropic rejects image/jpeg there with a
+        // 400 that surfaces to the client as a "Stream error".
+        type: 'image',
+        name: `${record.name}.render.jpg`,
+        source: { type: 'base64', media_type: 'image/jpeg', data: grid.toString('base64') },
+      },
+    }
   }
 
   /**
    * Attempt to read dynamic workspace file content from storage.
-   * Handles images (base64), parseable documents (PDF, etc.), and text files.
-   * Returns null if the path doesn't match `files/{name}` / `files/by-id/{id}` or the file isn't found.
+   * Handles explicit /content reads for images, PDFs, documents, and text files.
+   * Also handles:
+   *   `files/{path}/{name}/style`           — style extraction (.docx / .pptx / .pdf)
+   *   `files/{path}/{name}/compiled-check`  — compile JS-source binary files or validate Mermaid diagrams
+   *   `files/{path}/{name}/compiled`        — compile JS-source binary files and return the compiled artifact as an attachment
+   * Files are resolved by their sanitized canonical path only.
+   * Returns null if the path doesn't match a dynamic file path or the file isn't found.
    */
   async readFileContent(path: string): Promise<FileReadResult | null> {
-    const deletedMatch = path.match(/^recently-deleted\/files\/(.+?)(?:\/content)?$/)
-    const activeMatch = path.match(/^files\/(.+?)(?:\/content)?$/)
+    const compiledMatch = /^files\/.+\/compiled$/.test(path)
+    if (compiledMatch) {
+      let record: WorkspaceFileRecord | null = null
+      try {
+        record = await this.resolveWorkspaceFileForDynamicRead(path, 'compiled')
+        if (!record) return null
+        const ext = record.name.split('.').pop()?.toLowerCase() ?? ''
+        const e2bFmt = isE2BDocEnabled ? await getE2BDocFormat(record.name) : null
+        const taskId = BINARY_DOC_TASKS[ext]
+        if (!e2bFmt && !taskId) return null
+
+        // Only PDF can be attached as a model-readable `document` block —
+        // Bedrock/Anthropic document blocks accept application/pdf ONLY. Attaching
+        // raw pptx/docx/xlsx binary is rejected by the provider (400). So for
+        // pptx/docx, render to page images (which the model CAN read) and return
+        // those directly — /compiled can never emit an invalid document block for
+        // these formats. xlsx isn't renderable; direct to /extract for its content.
+        if (ext !== 'pdf') {
+          if (isRenderableDocExt(ext)) {
+            const compiledName = record.name
+            return await this.renderDocRecordResult(
+              record,
+              ext,
+              (pageCount) =>
+                `${compiledName}: the raw ${ext.toUpperCase()} binary isn't model-readable, so it was rendered to ${pageCount} page image(s) for inspection.`
+            )
+          }
+          const extractPath = `${canonicalWorkspaceFilePath({
+            folderPath: record.folderPath,
+            name: record.name,
+          })}/extract`
+          return {
+            content: `${record.name} is a spreadsheet — read "${extractPath}" for its contents.`,
+            totalLines: 1,
+          }
+        }
+
+        const buffer = await fetchWorkspaceFileBuffer(record)
+        const code = buffer.toString('utf-8')
+        if (Buffer.byteLength(code, 'utf-8') > MAX_DOCUMENT_PREVIEW_CODE_BYTES) {
+          return {
+            content: JSON.stringify({ ok: false, error: 'File source exceeds maximum size' }),
+            totalLines: 1,
+          }
+        }
+        const compiled = e2bFmt
+          ? (
+              await compileDoc({
+                source: code,
+                fileName: record.name,
+                workspaceId: this._workspaceId,
+              })
+            ).buffer
+          : await runSandboxTask(taskId, { code, workspaceId: this._workspaceId })
+        if (compiled.length > MAX_COMPILED_ATTACHMENT_BYTES) {
+          return {
+            content: `[Compiled artifact too large: ${record.name} (${compiled.length} bytes, limit ${MAX_COMPILED_ATTACHMENT_BYTES})]`,
+            totalLines: 1,
+          }
+        }
+        return {
+          content: `Compiled file: ${record.name} (${compiled.length} bytes, application/pdf)`,
+          totalLines: 1,
+          attachment: {
+            type: 'file',
+            name: record.name,
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: compiled.toString('base64'),
+            },
+          },
+        }
+      } catch (err) {
+        logger.warn('Compiled artifact read failed via VFS', {
+          workspaceId: this._workspaceId,
+          path,
+          fileId: record?.id,
+          error: toError(err).message,
+        })
+        if (err instanceof SandboxUserCodeError) {
+          const json = JSON.stringify({
+            ok: false,
+            error: toError(err).message,
+            errorName: err.name,
+          })
+          return { content: json, totalLines: 1 }
+        }
+        return null
+      }
+    }
+
+    const renderMatch = /^files\/.+\/render$/.test(path)
+    if (renderMatch) {
+      let record: WorkspaceFileRecord | null = null
+      try {
+        record = await this.resolveWorkspaceFileForDynamicRead(path, 'render')
+        if (!record) return null
+        const ext = record.name.split('.').pop()?.toLowerCase() ?? ''
+        if (!isRenderableDocExt(ext)) {
+          return {
+            content: JSON.stringify({
+              ok: false,
+              error: 'Render supports .pptx, .docx, and .pdf only',
+            }),
+            totalLines: 1,
+          }
+        }
+        const renderName = record.name
+        return await this.renderDocRecordResult(
+          record,
+          ext,
+          (pageCount) =>
+            `Rendered ${pageCount} page(s) of ${renderName} as a contact-sheet grid for visual QA. Inspect each page for text overflow/cutoff, overlapping elements, low contrast, misalignment, and leftover placeholder text; fix and re-render until clean.`
+        )
+      } catch (err) {
+        logger.warn('Render read failed via VFS', {
+          workspaceId: this._workspaceId,
+          path,
+          fileId: record?.id,
+          error: toError(err).message,
+        })
+        // Return an explicit error (not null) once the file resolved — a null read
+        // looks like a missing path and sends the agent hunting for the "correct"
+        // render path instead of surfacing the real compile/render failure.
+        return {
+          content: JSON.stringify({ ok: false, error: toError(err).message }),
+          totalLines: 1,
+        }
+      }
+    }
+
+    const extractMatch = /^files\/.+\/extract$/.test(path)
+    if (extractMatch && isE2BDocEnabled) {
+      let record: WorkspaceFileRecord | null = null
+      try {
+        record = await this.resolveWorkspaceFileForDynamicRead(path, 'extract')
+        if (!record) return null
+        const ext = record.name.split('.').pop()?.toLowerCase() ?? ''
+        if (!isExtractableDocExt(ext)) {
+          return {
+            content: JSON.stringify({
+              ok: false,
+              error: 'Extraction supports .pdf, .pptx, .docx, and .xlsx only',
+            }),
+            totalLines: 1,
+          }
+        }
+        // Bound the input before downloading + base64-staging it in-process.
+        if (typeof record.size === 'number' && record.size > MAX_DOC_READ_INPUT_BYTES) {
+          return {
+            content: JSON.stringify({ ok: false, error: 'File is too large to extract' }),
+            totalLines: 1,
+          }
+        }
+        const buffer = await fetchWorkspaceFileBuffer(record)
+        if (buffer.length > MAX_DOC_READ_INPUT_BYTES) {
+          return {
+            content: JSON.stringify({ ok: false, error: 'File is too large to extract' }),
+            totalLines: 1,
+          }
+        }
+        // Extraction reads the binary. A source-backed generated doc (text source,
+        // no binary magic) should be read directly instead — point the agent there.
+        if (!isBinaryDocBuffer(buffer, ext)) {
+          return {
+            content: JSON.stringify({
+              ok: false,
+              error: 'This is a source-backed generated file; read its content directly instead.',
+            }),
+            totalLines: 1,
+          }
+        }
+        const { text, truncated } = await extractDocText({ binary: buffer, ext })
+        const note = truncated
+          ? '\n\n[... truncated — read the file directly for the full content]'
+          : ''
+        return {
+          content: `${text || '[no extractable text found]'}${note}`,
+          totalLines: 1,
+        }
+      } catch (err) {
+        logger.warn('Extract read failed via VFS', {
+          workspaceId: this._workspaceId,
+          path,
+          fileId: record?.id,
+          error: toError(err).message,
+        })
+        return {
+          content: JSON.stringify({ ok: false, error: toError(err).message }),
+          totalLines: 1,
+        }
+      }
+    }
+
+    const compiledCheckMatch = /^files\/.+\/compiled-check$/.test(path)
+    if (compiledCheckMatch) {
+      let record: WorkspaceFileRecord | null = null
+      try {
+        record = await this.resolveWorkspaceFileForDynamicRead(path, 'compiled-check')
+        if (!record) return null
+        const ext = record.name.split('.').pop()?.toLowerCase() ?? ''
+        const e2bFmt = isE2BDocEnabled ? await getE2BDocFormat(record.name) : null
+        const taskId = BINARY_DOC_TASKS[ext]
+        const isMermaidFile = ext === 'mmd' || ext === 'mermaid'
+        if (!e2bFmt && !taskId && !isMermaidFile) return null
+        const buffer = await fetchWorkspaceFileBuffer(record)
+        const code = buffer.toString('utf-8')
+        if (Buffer.byteLength(code, 'utf-8') > MAX_DOCUMENT_PREVIEW_CODE_BYTES) {
+          return {
+            content: JSON.stringify({ ok: false, error: 'File source exceeds maximum size' }),
+            totalLines: 1,
+          }
+        }
+        if (isMermaidFile) {
+          const result = await validateMermaidSource(code)
+          const json = JSON.stringify(result)
+          return { content: json, totalLines: 1 }
+        }
+        let result: { ok: boolean; error?: string; errorName?: string }
+        if (e2bFmt) {
+          // Loads the artifact if present, else compiles once (and recalc-scans
+          // xlsx). Only a script error is { ok: false }; infra failures rethrow to
+          // the outer catch so an E2B/S3 outage isn't reported as a bad script.
+          result = await runE2BCompiledCheck({
+            source: code,
+            fileName: record.name,
+            workspaceId: this._workspaceId,
+            ext,
+          })
+        } else {
+          try {
+            if (!taskId) return null
+            await runSandboxTask(taskId, { code, workspaceId: this._workspaceId })
+            result = { ok: true }
+          } catch (err) {
+            if (err instanceof SandboxUserCodeError) {
+              result = { ok: false, error: toError(err).message, errorName: err.name }
+            } else {
+              throw err
+            }
+          }
+        }
+        const json = JSON.stringify(result)
+        return { content: json, totalLines: 1 }
+      } catch (err) {
+        logger.warn('Compiled check failed via VFS', {
+          workspaceId: this._workspaceId,
+          path,
+          fileId: record?.id,
+          error: toError(err).message,
+        })
+        return null
+      }
+    }
+
+    const styleMatch = /^files\/.+\/style$/.test(path)
+    if (styleMatch) {
+      let record: WorkspaceFileRecord | null = null
+      try {
+        record = await this.resolveWorkspaceFileForDynamicRead(path, 'style')
+        if (!record) return null
+        const rawExt = record.name.split('.').pop()?.toLowerCase()
+        if (rawExt !== 'docx' && rawExt !== 'pptx' && rawExt !== 'pdf') return null
+        const ext: 'docx' | 'pptx' | 'pdf' = rawExt
+        const buffer = await fetchWorkspaceFileBuffer(record)
+        const summary = await extractDocumentStyle(buffer, ext)
+        if (!summary) return null
+        const json = JSON.stringify(summary, null, 2)
+        return { content: json, totalLines: json.split('\n').length }
+      } catch (err) {
+        logger.warn('Failed to extract document style via VFS', {
+          workspaceId: this._workspaceId,
+          path,
+          fileId: record?.id,
+          error: toError(err).message,
+        })
+        return null
+      }
+    }
+
+    const deletedMatch = path.match(/^recently-deleted\/files\/(.+)\/content$/)
+    const activeMatch = path.match(/^files\/(.+)\/content$/)
     const match = deletedMatch || activeMatch
     if (!match) return null
     const fileReference = path
@@ -465,12 +1114,18 @@ export class WorkspaceVFS {
       .replace(/\/content$/, '')
       .replace(/^\/+/, '')
 
+    if (!this._betaEnabled && isWorkflowAliasBackingPath(fileReference)) {
+      return null
+    }
     if (fileReference.endsWith('/meta.json') || path.endsWith('/meta.json')) return null
 
     const scope = deletedMatch ? 'archived' : 'active'
 
     try {
-      const files = await listWorkspaceFiles(this._workspaceId, { scope })
+      const files = await listWorkspaceFiles(this._workspaceId, {
+        scope,
+        includeReservedSystemFiles: this._betaEnabled,
+      })
       const record = findWorkspaceFileRecord(files, fileReference)
       if (!record) return null
       return readFileRecord(record)
@@ -491,28 +1146,38 @@ export class WorkspaceVFS {
   private buildFolderPaths(
     folders: Array<{ folderId: string; folderName: string; parentId: string | null }>
   ): Map<string, string> {
-    const folderMap = new Map<string, { name: string; parentId: string | null }>()
-    for (const f of folders) {
-      folderMap.set(f.folderId, { name: f.folderName, parentId: f.parentId })
+    return buildVfsFolderPathMap(folders)
+  }
+
+  /**
+   * Resolve the set of folder IDs that are effectively locked — locked directly
+   * or via a locked ancestor folder. A workflow inside any of these folders is
+   * itself immutable, so its meta.json must report `locked: true`. Mirrors the
+   * folder-chain walk in `@sim/platform-authz/workflow` getFolderLockStatus, but resolves
+   * the whole workspace in memory to avoid a per-workflow DB round trip.
+   */
+  private computeLockedFolderIds(
+    folders: Array<{ folderId: string; parentId: string | null; locked: boolean }>
+  ): Set<string> {
+    const byId = new Map(folders.map((f) => [f.folderId, f]))
+    const lockedFolderIds = new Set<string>()
+
+    for (const folder of folders) {
+      let current: string | null = folder.folderId
+      const visited = new Set<string>()
+      while (current && !visited.has(current)) {
+        visited.add(current)
+        const node = byId.get(current)
+        if (!node) break
+        if (node.locked) {
+          lockedFolderIds.add(folder.folderId)
+          break
+        }
+        current = node.parentId
+      }
     }
 
-    const cache = new Map<string, string>()
-    const resolve = (id: string): string => {
-      if (cache.has(id)) return cache.get(id)!
-      const folder = folderMap.get(id)
-      if (!folder) return ''
-      const parentPath = folder.parentId ? resolve(folder.parentId) : ''
-      const path = parentPath
-        ? `${parentPath}/${sanitizeName(folder.name)}`
-        : sanitizeName(folder.name)
-      cache.set(id, path)
-      return path
-    }
-
-    for (const id of folderMap.keys()) {
-      resolve(id)
-    }
-    return cache
+    return lockedFolderIds
   }
 
   /**
@@ -522,16 +1187,25 @@ export class WorkspaceVFS {
    *   workflows/{name}/           (if at workspace root)
    * Returns a summary for WORKSPACE.md generation.
    */
-  private async materializeWorkflows(
-    workspaceId: string,
-    _userId: string
-  ): Promise<WorkspaceMdData['workflows']> {
+  private async materializeWorkflows(workspaceId: string): Promise<WorkspaceMdData['workflows']> {
+    const workflowArtifactsEnabled = this._betaEnabled
     const [workflowRows, folderRows] = await Promise.all([
       listWorkflows(workspaceId),
       listFolders(workspaceId),
     ])
 
     const folderPaths = this.buildFolderPaths(folderRows)
+    const lockedFolderIds = this.computeLockedFolderIds(folderRows)
+
+    // NOTE: materialization is a pure READ. Alias backing (changelog/plan
+    // folders + files) is ensured at write time — workflow create/rename
+    // (lib/workflows/utils) and alias writes (vfs/resource-writer,
+    // tools/server/files/workspace-file) — never here. Ensuring per workflow
+    // on every materialize meant N storage/DB writes per read tool call, and
+    // concurrent materializations contending on the same rows.
+    const workspaceFiles = workflowArtifactsEnabled
+      ? await listWorkspaceFiles(workspaceId, { includeReservedSystemFiles: true })
+      : []
 
     // Register all folders in the VFS so empty folders are discoverable.
     for (const { folderId } of folderRows) {
@@ -543,77 +1217,162 @@ export class WorkspaceVFS {
 
     await Promise.all(
       workflowRows.map(async (wf) => {
-        const safeName = sanitizeName(wf.name)
         const folderPath = wf.folderId ? folderPaths.get(wf.folderId) : null
-        const prefix = folderPath
-          ? `workflows/${folderPath}/${safeName}/`
-          : `workflows/${safeName}/`
+        const prefix = `${canonicalWorkflowVfsDir({ name: wf.name, folderPath })}/`
+        const workflowPath = prefix.replace(/\/$/, '')
 
-        this.files.set(`${prefix}meta.json`, serializeWorkflowMeta(wf))
+        const inheritedFolderLock = wf.folderId ? lockedFolderIds.has(wf.folderId) : false
+        this.files.set(`${prefix}meta.json`, serializeWorkflowMeta(wf, { inheritedFolderLock }))
 
-        let normalized: Awaited<ReturnType<typeof loadWorkflowFromNormalizedTables>> = null
-        try {
-          normalized = await loadWorkflowFromNormalizedTables(wf.id)
-          if (normalized) {
-            const sanitized = sanitizeForCopilot({
-              blocks: normalized.blocks,
-              edges: normalized.edges,
-              loops: normalized.loops,
-              parallels: normalized.parallels,
-            } as any)
-            this.files.set(`${prefix}state.json`, JSON.stringify(sanitized, null, 2))
-          }
-        } catch (err) {
-          logger.warn('Failed to load workflow state', {
-            workflowId: wf.id,
-            error: toError(err).message,
-          })
-        }
-
-        try {
-          const execRows = await db
-            .select({
-              id: workflowExecutionLogs.id,
-              executionId: workflowExecutionLogs.executionId,
-              status: workflowExecutionLogs.status,
-              trigger: workflowExecutionLogs.trigger,
-              startedAt: workflowExecutionLogs.startedAt,
-              endedAt: workflowExecutionLogs.endedAt,
-              totalDurationMs: workflowExecutionLogs.totalDurationMs,
-            })
-            .from(workflowExecutionLogs)
-            .where(eq(workflowExecutionLogs.workflowId, wf.id))
-            .orderBy(desc(workflowExecutionLogs.startedAt))
-            .limit(5)
-
-          if (execRows.length > 0) {
-            this.files.set(`${prefix}executions.json`, serializeRecentExecutions(execRows))
-          }
-        } catch (err) {
-          logger.warn('Failed to load execution logs', {
-            workflowId: wf.id,
-            error: toError(err).message,
-          })
-        }
-
-        try {
-          const deploymentData = await this.getWorkflowDeployments(
-            wf.id,
-            workspaceId,
-            wf.isDeployed,
-            wf.deployedAt,
-            normalized
+        if (workflowArtifactsEnabled) {
+          const changelog = findWorkspaceFileRecord(
+            workspaceFiles,
+            workflowChangelogBackingPath(wf.id)
           )
-          if (deploymentData) {
-            this.files.set(`${prefix}deployment.json`, serializeDeployments(deploymentData))
-            if (deploymentData.versions && deploymentData.versions.length > 0) {
-              this.files.set(`${prefix}versions.json`, serializeVersions(deploymentData.versions))
+          let changelogContent = ''
+          if (changelog) {
+            try {
+              changelogContent = (await readFileRecord(changelog))?.content ?? ''
+            } catch (err) {
+              logger.warn('Failed to read workflow changelog alias backing file', {
+                workspaceId,
+                workflowId: wf.id,
+                fileId: changelog.id,
+                error: toError(err).message,
+              })
             }
           }
-        } catch (err) {
-          logger.warn('Failed to load deployment data', {
-            workflowId: wf.id,
-            error: toError(err).message,
+          if (changelog) {
+            this.files.set(`${prefix}${WORKFLOW_CHANGELOG_ALIAS_NAME}`, changelogContent)
+          }
+          this.files.set(`${prefix}${WORKFLOW_PLANS_ALIAS_DIR}/.folder`, '')
+
+          const planFiles = workspaceFiles.filter((file) => {
+            if (!file.folderPath) return false
+            return (
+              file.folderPath === `${WORKFLOW_PLANS_BACKING_FOLDER}/${wf.id}` ||
+              file.folderPath.startsWith(`${WORKFLOW_PLANS_BACKING_FOLDER}/${wf.id}/`)
+            )
+          })
+          for (const planFile of planFiles) {
+            const relativeFolder = planFile.folderPath
+              ?.replace(`${WORKFLOW_PLANS_BACKING_FOLDER}/${wf.id}`, '')
+              .replace(/^\/+/, '')
+            const aliasPlanPath = [
+              prefix,
+              `${WORKFLOW_PLANS_ALIAS_DIR}/`,
+              relativeFolder ? `${encodeVfsPathSegments(relativeFolder.split('/'))}/` : '',
+              normalizeVfsSegment(planFile.name),
+            ].join('')
+            try {
+              this.files.set(aliasPlanPath, (await readFileRecord(planFile))?.content ?? '')
+            } catch (err) {
+              logger.warn('Failed to read workflow plan alias backing file', {
+                workspaceId,
+                workflowId: wf.id,
+                fileId: planFile.id,
+                error: toError(err).message,
+              })
+            }
+          }
+          this.files.set(
+            `${prefix}${WORKFLOW_ALIAS_LINKS_NAME}`,
+            JSON.stringify(
+              {
+                aliases: buildWorkflowAliasLinks({
+                  workflowPath,
+                  workflowId: wf.id,
+                  changelog,
+                  planFiles,
+                }),
+              },
+              null,
+              2
+            )
+          )
+        }
+
+        // Heavy per-workflow content is LAZY: a read/glob never loads the block
+        // graph, runs lint, or queries executions/deployments. Only a read of the
+        // specific artifact — or a grep whose scope touches it — resolves it.
+        // state.json + lint.json share one memoized normalized-table load;
+        // deployment.json + versions.json share one memoized deployment query.
+        // This is the change that stops every read/glob from paying O(workflows)
+        // graph-loads + lint + stringify (what made large-workspace reads ~40s).
+        this.registerLazy(`${prefix}state.json`, async () => {
+          const normalized = await this.loadNormalized(wf.id)
+          // loadWorkflowFromNormalizedTables returns null for a zero-block
+          // workflow; it still exists and must be readable, so emit an
+          // empty-but-valid state.json rather than a 404.
+          const sanitized = normalized
+            ? sanitizeForCopilot({
+                blocks: normalized.blocks,
+                edges: normalized.edges,
+                loops: normalized.loops,
+                parallels: normalized.parallels,
+              } as any)
+            : sanitizeForCopilot({ blocks: {}, edges: [], loops: {}, parallels: {} } as any)
+          return JSON.stringify(sanitized, null, 2)
+        })
+
+        this.registerLazy(`${prefix}lint.json`, async () => {
+          const normalized = await this.loadNormalized(wf.id)
+          // Derived from the raw normalized state (subBlock values, advancedMode,
+          // canonicalModes, subflow edges). CPU-only by design: tier-2 reference
+          // resolution runs at edit_workflow apply time, not here. A zero-block
+          // workflow has no lint (reads as not-found, as before).
+          if (!normalized) return null
+          const graphLint = lintEditedWorkflowState(normalized as any)
+          const fieldIssues = collectWorkflowFieldIssues(normalized.blocks as any)
+          return JSON.stringify(
+            {
+              ...graphLint,
+              fieldIssues,
+              notes: [
+                UNRESOLVABLE_AT_LINT_NOTE,
+                'Credential/resource reference resolution is validated when editing the workflow, not in this snapshot.',
+              ],
+            },
+            null,
+            2
+          )
+        })
+
+        // executions.json is advertised only when the workflow has run (cheap
+        // signal: lastRunAt), matching the old "set iff execRows > 0" behavior
+        // without the per-workflow query on every tool call.
+        if (wf.lastRunAt) {
+          this.registerLazy(`${prefix}executions.json`, async () => {
+            const execRows = await db
+              .select({
+                id: workflowExecutionLogs.id,
+                executionId: workflowExecutionLogs.executionId,
+                status: workflowExecutionLogs.status,
+                trigger: workflowExecutionLogs.trigger,
+                startedAt: workflowExecutionLogs.startedAt,
+                endedAt: workflowExecutionLogs.endedAt,
+                totalDurationMs: workflowExecutionLogs.totalDurationMs,
+              })
+              .from(workflowExecutionLogs)
+              .where(eq(workflowExecutionLogs.workflowId, wf.id))
+              .orderBy(desc(workflowExecutionLogs.startedAt))
+              .limit(5)
+            return execRows.length > 0 ? serializeRecentExecutions(execRows) : null
+          })
+        }
+
+        // deployment.json / versions.json are advertised when the workflow is
+        // deployed (cheap signal: isDeployed). Both share one memoized query.
+        if (wf.isDeployed) {
+          this.registerLazy(`${prefix}deployment.json`, async () => {
+            const deploymentData = await this.loadDeployments(wf)
+            return deploymentData ? serializeDeployments(deploymentData) : null
+          })
+          this.registerLazy(`${prefix}versions.json`, async () => {
+            const deploymentData = await this.loadDeployments(wf)
+            return deploymentData?.versions && deploymentData.versions.length > 0
+              ? serializeVersions(deploymentData.versions)
+              : null
           })
         }
       })
@@ -660,70 +1419,61 @@ export class WorkspaceVFS {
           })
         )
 
-        try {
-          const docRows = await db
-            .select({
-              id: document.id,
-              filename: document.filename,
-              fileSize: document.fileSize,
-              mimeType: document.mimeType,
-              chunkCount: document.chunkCount,
-              tokenCount: document.tokenCount,
-              processingStatus: document.processingStatus,
-              enabled: document.enabled,
-              uploadedAt: document.uploadedAt,
-            })
-            .from(document)
-            .where(
-              and(
-                eq(document.knowledgeBaseId, kb.id),
-                eq(document.userExcluded, false),
-                isNull(document.archivedAt),
-                isNull(document.deletedAt)
+        // documents.json / connectors.json are lazy, advertised only when the KB
+        // summary says they exist (docCount / connectorTypes) — no per-KB query on
+        // a read/glob, only when the artifact is read or grepped.
+        if (kb.docCount > 0) {
+          this.registerLazy(`${prefix}documents.json`, async () => {
+            const docRows = await db
+              .select({
+                id: document.id,
+                filename: document.filename,
+                fileSize: document.fileSize,
+                mimeType: document.mimeType,
+                chunkCount: document.chunkCount,
+                tokenCount: document.tokenCount,
+                processingStatus: document.processingStatus,
+                enabled: document.enabled,
+                uploadedAt: document.uploadedAt,
+              })
+              .from(document)
+              .where(
+                and(
+                  eq(document.knowledgeBaseId, kb.id),
+                  eq(document.userExcluded, false),
+                  isNull(document.archivedAt),
+                  isNull(document.deletedAt)
+                )
               )
-            )
-
-          if (docRows.length > 0) {
-            this.files.set(`${prefix}documents.json`, serializeDocuments(docRows))
-          }
-        } catch (err) {
-          logger.warn('Failed to load KB documents', {
-            knowledgeBaseId: kb.id,
-            error: toError(err).message,
+            return docRows.length > 0 ? serializeDocuments(docRows) : null
           })
         }
 
-        try {
-          const connectorRows = await db
-            .select({
-              id: knowledgeConnector.id,
-              connectorType: knowledgeConnector.connectorType,
-              status: knowledgeConnector.status,
-              syncMode: knowledgeConnector.syncMode,
-              syncIntervalMinutes: knowledgeConnector.syncIntervalMinutes,
-              lastSyncAt: knowledgeConnector.lastSyncAt,
-              lastSyncError: knowledgeConnector.lastSyncError,
-              lastSyncDocCount: knowledgeConnector.lastSyncDocCount,
-              nextSyncAt: knowledgeConnector.nextSyncAt,
-              consecutiveFailures: knowledgeConnector.consecutiveFailures,
-              createdAt: knowledgeConnector.createdAt,
-            })
-            .from(knowledgeConnector)
-            .where(
-              and(
-                eq(knowledgeConnector.knowledgeBaseId, kb.id),
-                isNull(knowledgeConnector.archivedAt),
-                isNull(knowledgeConnector.deletedAt)
+        if (kb.connectorTypes.length > 0) {
+          this.registerLazy(`${prefix}connectors.json`, async () => {
+            const connectorRows = await db
+              .select({
+                id: knowledgeConnector.id,
+                connectorType: knowledgeConnector.connectorType,
+                status: knowledgeConnector.status,
+                syncMode: knowledgeConnector.syncMode,
+                syncIntervalMinutes: knowledgeConnector.syncIntervalMinutes,
+                lastSyncAt: knowledgeConnector.lastSyncAt,
+                lastSyncError: knowledgeConnector.lastSyncError,
+                lastSyncDocCount: knowledgeConnector.lastSyncDocCount,
+                nextSyncAt: knowledgeConnector.nextSyncAt,
+                consecutiveFailures: knowledgeConnector.consecutiveFailures,
+                createdAt: knowledgeConnector.createdAt,
+              })
+              .from(knowledgeConnector)
+              .where(
+                and(
+                  eq(knowledgeConnector.knowledgeBaseId, kb.id),
+                  isNull(knowledgeConnector.archivedAt),
+                  isNull(knowledgeConnector.deletedAt)
+                )
               )
-            )
-
-          if (connectorRows.length > 0) {
-            this.files.set(`${prefix}connectors.json`, serializeConnectors(connectorRows))
-          }
-        } catch (err) {
-          logger.warn('Failed to load KB connectors', {
-            knowledgeBaseId: kb.id,
-            error: toError(err).message,
+            return connectorRows.length > 0 ? serializeConnectors(connectorRows) : null
           })
         }
       })
@@ -783,25 +1533,40 @@ export class WorkspaceVFS {
    */
   private async materializeFiles(workspaceId: string): Promise<WorkspaceMdData['files']> {
     try {
-      const files = await listWorkspaceFiles(workspaceId)
+      const workflowArtifactsEnabled = this._betaEnabled
+      const folders = await listWorkspaceFileFolders(workspaceId, {
+        includeReservedSystemFolders: true,
+      })
+      const files = await listWorkspaceFiles(workspaceId, {
+        folders,
+        includeReservedSystemFiles: true,
+      })
+      for (const folder of folders) {
+        if (
+          !workflowArtifactsEnabled &&
+          isWorkflowAliasBackingPath(`files/${encodeVfsPathSegments(folder.path.split('/'))}`)
+        ) {
+          continue
+        }
+        this.files.set(`files/${encodeVfsPathSegments(folder.path.split('/'))}/.folder`, '')
+      }
 
       for (const file of files) {
-        const safeName = sanitizeName(file.name)
+        const filePath = canonicalWorkspaceFilePath({
+          folderPath: file.folderPath,
+          name: file.name,
+        })
+        if (!workflowArtifactsEnabled && isWorkflowAliasBackingPath(filePath)) {
+          continue
+        }
         this.files.set(
-          `files/${safeName}/meta.json`,
+          filePath,
           serializeFileMeta({
             id: file.id,
             name: file.name,
-            contentType: file.type,
-            size: file.size,
-            uploadedAt: file.uploadedAt,
-          })
-        )
-        this.files.set(
-          `files/by-id/${file.id}/meta.json`,
-          serializeFileMeta({
-            id: file.id,
-            name: file.name,
+            folderId: file.folderId,
+            folderPath: file.folderPath,
+            vfsPath: filePath,
             contentType: file.type,
             size: file.size,
             uploadedAt: file.uploadedAt,
@@ -809,7 +1574,86 @@ export class WorkspaceVFS {
         )
       }
 
-      return files.map((f) => ({ id: f.id, name: f.name, type: f.type, size: f.size }))
+      if (workflowArtifactsEnabled) {
+        this.files.set(`${WORKFLOW_PLANS_ALIAS_DIR}/.folder`, '')
+        const workspacePlanFiles = files.filter((file) => {
+          if (!file.folderPath) return false
+          return (
+            file.folderPath ===
+              `${WORKFLOW_PLANS_BACKING_FOLDER}/${WORKSPACE_PLANS_BACKING_FOLDER}` ||
+            file.folderPath.startsWith(
+              `${WORKFLOW_PLANS_BACKING_FOLDER}/${WORKSPACE_PLANS_BACKING_FOLDER}/`
+            )
+          )
+        })
+        const workspacePlanLinks = []
+        for (const planFile of workspacePlanFiles) {
+          const relativeFolder = planFile.folderPath
+            ?.replace(`${WORKFLOW_PLANS_BACKING_FOLDER}/${WORKSPACE_PLANS_BACKING_FOLDER}`, '')
+            .replace(/^\/+/, '')
+          const aliasRelativePath = [
+            relativeFolder ? `${encodeVfsPathSegments(relativeFolder.split('/'))}/` : '',
+            normalizeVfsSegment(planFile.name),
+          ].join('')
+          const aliasPlanPath = `${WORKFLOW_PLANS_ALIAS_DIR}/${aliasRelativePath}`
+          const relativeSegments = aliasRelativePath.split('/').slice(0, -1)
+          for (let index = 0; index < relativeSegments.length; index++) {
+            this.files.set(
+              `${WORKFLOW_PLANS_ALIAS_DIR}/${relativeSegments.slice(0, index + 1).join('/')}/.folder`,
+              ''
+            )
+          }
+          try {
+            this.files.set(aliasPlanPath, (await readFileRecord(planFile))?.content ?? '')
+            workspacePlanLinks.push({
+              kind: 'plan_file',
+              scope: 'workspace',
+              aliasPath: aliasPlanPath,
+              backingPath: workspacePlanBackingPath(aliasRelativePath),
+              backingFileId: planFile.id,
+            })
+          } catch (err) {
+            logger.warn('Failed to read workspace plan alias backing file', {
+              workspaceId,
+              fileId: planFile.id,
+              error: toError(err).message,
+            })
+          }
+        }
+        this.files.set(
+          `${WORKFLOW_PLANS_ALIAS_DIR}/${WORKFLOW_ALIAS_LINKS_NAME}`,
+          JSON.stringify(
+            {
+              aliases: [
+                {
+                  kind: 'plans_dir',
+                  scope: 'workspace',
+                  aliasPath: WORKFLOW_PLANS_ALIAS_DIR,
+                  backingPath: workspacePlansBackingFolderPath(),
+                },
+                ...workspacePlanLinks,
+              ],
+            },
+            null,
+            2
+          )
+        )
+      }
+
+      return files
+        .filter(
+          (f) =>
+            !isWorkflowAliasBackingPath(
+              canonicalWorkspaceFilePath({ folderPath: f.folderPath, name: f.name })
+            )
+        )
+        .map((f) => ({
+          id: f.id,
+          name: f.name,
+          type: f.type,
+          size: f.size,
+          folderPath: f.folderPath ?? null,
+        }))
     } catch (err) {
       logger.warn('Failed to materialize files', {
         workspaceId,
@@ -827,10 +1671,9 @@ export class WorkspaceVFS {
     workflowId: string,
     workspaceId: string,
     isDeployed: boolean,
-    deployedAt: Date | null,
-    currentNormalized?: Awaited<ReturnType<typeof loadWorkflowFromNormalizedTables>>
+    deployedAt: Date | null
   ): Promise<DeploymentData | null> {
-    const [chatRows, formRows, mcpRows, a2aRows, versionRows, allVersionRows] = await Promise.all([
+    const [chatRows, mcpRows, a2aRows, versionRows, allVersionRows] = await Promise.all([
       db
         .select({
           id: chatTable.id,
@@ -843,19 +1686,6 @@ export class WorkspaceVFS {
         })
         .from(chatTable)
         .where(and(eq(chatTable.workflowId, workflowId), isNull(chatTable.archivedAt))),
-      db
-        .select({
-          id: form.id,
-          identifier: form.identifier,
-          title: form.title,
-          description: form.description,
-          authType: form.authType,
-          showBranding: form.showBranding,
-          customizations: form.customizations,
-          isActive: form.isActive,
-        })
-        .from(form)
-        .where(and(eq(form.workflowId, workflowId), isNull(form.archivedAt))),
       db
         .select({
           serverId: workflowMcpTool.serverId,
@@ -921,24 +1751,22 @@ export class WorkspaceVFS {
     ])
 
     const hasAnyDeployment =
-      isDeployed ||
-      chatRows.length > 0 ||
-      formRows.length > 0 ||
-      mcpRows.length > 0 ||
-      a2aRows.length > 0
+      isDeployed || chatRows.length > 0 || mcpRows.length > 0 || a2aRows.length > 0
     if (!hasAnyDeployment && allVersionRows.length === 0) return null
 
     let needsRedeployment: boolean | undefined
     const deployedVersion = versionRows[0]
-    if (isDeployed && deployedVersion?.state && currentNormalized) {
+    if (isDeployed && deployedVersion?.state) {
       try {
-        const currentState = {
-          blocks: currentNormalized.blocks,
-          edges: currentNormalized.edges,
-          loops: currentNormalized.loops,
-          parallels: currentNormalized.parallels,
-        }
-        needsRedeployment = hasWorkflowChanged(currentState as any, deployedVersion.state as any)
+        // Use the canonical deployment snapshot (includes variables) so this
+        // matches check_deployment_status exactly. The reshaped normalized load
+        // dropped variables, which made any workflow with deployment variables
+        // permanently report needsRedeployment: true.
+        const currentSnapshot = await loadWorkflowDeploymentSnapshot(workflowId)
+        needsRedeployment = computeNeedsRedeployment(
+          currentSnapshot,
+          deployedVersion.state as WorkflowState
+        )
       } catch (err) {
         logger.warn('Failed to compute needsRedeployment', {
           workflowId,
@@ -956,7 +1784,6 @@ export class WorkspaceVFS {
         ? { version: deployedVersion.version, createdAt: deployedVersion.createdAt }
         : null,
       chat: chatRows[0] ?? null,
-      form: formRows[0] ?? null,
       mcp: mcpRows,
       a2a: a2aRows[0] ?? null,
       versions: allVersionRows,
@@ -1039,7 +1866,7 @@ export class WorkspaceVFS {
     workspaceId: string
   ): Promise<NonNullable<WorkspaceMdData['skills']>> {
     try {
-      const skillRows = await listSkills({ workspaceId })
+      const skillRows = await listSkills({ workspaceId, includeBuiltins: false })
 
       for (const s of skillRows) {
         const safeName = sanitizeName(s.name)
@@ -1078,7 +1905,33 @@ export class WorkspaceVFS {
         .select({
           id: copilotChats.id,
           title: copilotChats.title,
-          messages: copilotChats.messages,
+          messageCount: sql<number>`COALESCE((
+            SELECT COUNT(*) FROM copilot_messages cm
+            WHERE cm.chat_id = ${copilotChats.id} AND cm.deleted_at IS NULL
+          ), 0)`,
+          messages: sql<unknown[]>`COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'role', cm.content->>'role',
+                'content', cm.content->'content',
+                'contentBlocks', COALESCE((
+                  SELECT jsonb_agg(jsonb_build_object('type', 'text', 'content', b.value->'content') ORDER BY b.ord)
+                  FROM jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(cm.content->'contentBlocks') = 'array'
+                         THEN cm.content->'contentBlocks'
+                         ELSE '[]'::jsonb
+                    END
+                  ) WITH ORDINALITY AS b(value, ord)
+                  WHERE b.value->>'type' = 'text'
+                ), '[]'::jsonb)
+              )
+              ORDER BY cm.seq ASC NULLS LAST, cm.created_at ASC, cm.id ASC
+            )
+            FROM copilot_messages cm
+            WHERE cm.chat_id = ${copilotChats.id}
+              AND cm.deleted_at IS NULL
+              AND cm.content->>'role' IN ('user', 'assistant')
+          ), '[]'::jsonb)`,
           createdAt: copilotChats.createdAt,
           updatedAt: copilotChats.updatedAt,
         })
@@ -1098,13 +1951,14 @@ export class WorkspaceVFS {
         const safeName = sanitizeName(title)
         const prefix = `tasks/${safeName}/`
         const messages = Array.isArray(task.messages) ? task.messages : []
+        const messageCount = Number(task.messageCount) || 0
 
         this.files.set(
           `${prefix}session.md`,
           serializeTaskSession({
             id: task.id,
             title,
-            messageCount: messages.length,
+            messageCount,
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
           })
@@ -1194,29 +2048,25 @@ export class WorkspaceVFS {
           this.files.set(`jobs/${safeName}/history.json`, JSON.stringify(history, null, 2))
         }
 
-        try {
-          const execRows = await db
-            .select({
-              id: jobExecutionLogs.id,
-              executionId: jobExecutionLogs.executionId,
-              status: jobExecutionLogs.status,
-              trigger: jobExecutionLogs.trigger,
-              startedAt: jobExecutionLogs.startedAt,
-              endedAt: jobExecutionLogs.endedAt,
-              totalDurationMs: jobExecutionLogs.totalDurationMs,
-            })
-            .from(jobExecutionLogs)
-            .where(eq(jobExecutionLogs.scheduleId, job.id))
-            .orderBy(desc(jobExecutionLogs.startedAt))
-            .limit(5)
-
-          if (execRows.length > 0) {
-            this.files.set(`jobs/${safeName}/executions.json`, serializeRecentExecutions(execRows))
-          }
-        } catch (err) {
-          logger.warn('Failed to load job execution logs', {
-            jobId: job.id,
-            error: toError(err).message,
+        // executions.json is lazy, advertised only when the job has run (cheap
+        // signal: lastRanAt) — no per-job query on a read/glob.
+        if (job.lastRanAt) {
+          this.registerLazy(`jobs/${safeName}/executions.json`, async () => {
+            const execRows = await db
+              .select({
+                id: jobExecutionLogs.id,
+                executionId: jobExecutionLogs.executionId,
+                status: jobExecutionLogs.status,
+                trigger: jobExecutionLogs.trigger,
+                startedAt: jobExecutionLogs.startedAt,
+                endedAt: jobExecutionLogs.endedAt,
+                totalDurationMs: jobExecutionLogs.totalDurationMs,
+              })
+              .from(jobExecutionLogs)
+              .where(eq(jobExecutionLogs.scheduleId, job.id))
+              .orderBy(desc(jobExecutionLogs.startedAt))
+              .limit(5)
+            return execRows.length > 0 ? serializeRecentExecutions(execRows) : null
           })
         }
       }
@@ -1243,23 +2093,30 @@ export class WorkspaceVFS {
 
   private async materializeRecentlyDeleted(workspaceId: string, userId: string): Promise<void> {
     try {
-      const [archivedWorkflows, archivedFolders, archivedTables, archivedFiles, archivedKBs] =
-        await Promise.all([
-          listWorkflows(workspaceId, { scope: 'archived' }),
-          db
-            .select({
-              id: workflowFolder.id,
-              name: workflowFolder.name,
-              archivedAt: workflowFolder.archivedAt,
-            })
-            .from(workflowFolder)
-            .where(
-              and(eq(workflowFolder.workspaceId, workspaceId), isNotNull(workflowFolder.archivedAt))
-            ),
-          listTables(workspaceId, { scope: 'archived' }),
-          listWorkspaceFiles(workspaceId, { scope: 'archived' }),
-          getKnowledgeBases(userId, workspaceId, 'archived'),
-        ])
+      const [
+        archivedWorkflows,
+        archivedFolders,
+        archivedTables,
+        archivedFiles,
+        archivedFileFolders,
+        archivedKBs,
+      ] = await Promise.all([
+        listWorkflows(workspaceId, { scope: 'archived' }),
+        db
+          .select({
+            id: workflowFolder.id,
+            name: workflowFolder.name,
+            archivedAt: workflowFolder.archivedAt,
+          })
+          .from(workflowFolder)
+          .where(
+            and(eq(workflowFolder.workspaceId, workspaceId), isNotNull(workflowFolder.archivedAt))
+          ),
+        listTables(workspaceId, { scope: 'archived' }),
+        listWorkspaceFiles(workspaceId, { scope: 'archived' }),
+        listWorkspaceFileFolders(workspaceId, { scope: 'archived' }),
+        getKnowledgeBases(userId, workspaceId, 'archived'),
+      ])
 
       for (const wf of archivedWorkflows) {
         const safeName = sanitizeName(wf.name)
@@ -1298,13 +2155,42 @@ export class WorkspaceVFS {
         )
       }
 
-      for (const file of archivedFiles) {
-        const safeName = sanitizeName(file.name)
+      for (const folder of archivedFileFolders) {
+        const safePath = folder.path
+          .split('/')
+          .map((segment) => sanitizeName(segment))
+          .join('/')
         this.files.set(
-          `recently-deleted/files/${safeName}/meta.json`,
+          `recently-deleted/file-folders/${safePath}/meta.json`,
+          JSON.stringify(
+            {
+              id: folder.id,
+              name: folder.name,
+              parentId: folder.parentId,
+              path: folder.path,
+              deletedAt: folder.deletedAt,
+              type: 'file_folder',
+            },
+            null,
+            2
+          )
+        )
+      }
+
+      for (const file of archivedFiles) {
+        const filePath = canonicalWorkspaceFilePath({
+          folderPath: file.folderPath,
+          name: file.name,
+          prefix: 'recently-deleted/files',
+        })
+        this.files.set(
+          filePath,
           serializeFileMeta({
             id: file.id,
             name: file.name,
+            folderId: file.folderId,
+            folderPath: file.folderPath,
+            vfsPath: filePath,
             contentType: file.type,
             size: file.size,
             uploadedAt: file.uploadedAt,
@@ -1352,12 +2238,12 @@ export class WorkspaceVFS {
   ): Promise<{
     oauthIntegrations: WorkspaceMdData['oauthIntegrations']
     envVariables: WorkspaceMdData['envVariables']
-    hubspotSharedAccounts?: string[]
   }> {
     try {
+      const isWorkspaceAdmin = await hasWorkspaceAdminAccess(userId, workspaceId)
       const [envCredentials, oauthCredentials, apiKeyRows, envData] = await Promise.all([
-        getAccessibleEnvCredentials(workspaceId, userId),
-        getAccessibleOAuthCredentials(workspaceId, userId),
+        getAccessibleEnvCredentials(workspaceId, userId, { isWorkspaceAdmin }),
+        getAccessibleOAuthCredentials(workspaceId, userId, { isWorkspaceAdmin }),
         listApiKeys(workspaceId),
         getPersonalAndWorkspaceEnv(userId, workspaceId),
       ])
@@ -1390,37 +2276,22 @@ export class WorkspaceVFS {
         serializeEnvironmentVariables(personalVarNames, workspaceVarNames)
       )
 
-      const envKeys = [...new Set(envCredentials.map((c) => c.envKey).filter(Boolean))] as string[]
-      const hubspotSharedAccounts = getHubSpotSharedAccountOptionIds()
-      const oauthIntegrations = mergeOAuthIntegrationPresence(
-        oauthCredentials.map((c) => ({ providerId: c.providerId })),
-        envKeys,
-        hubspotSharedAccounts
-      )
-      if (hubspotSharedAccounts.length > 0) {
-        this.files.set(
-          'environment/hubspot-shared-accounts.json',
-          JSON.stringify(
-            {
-              note: 'HubSpot block `accounts` subblock ids; execution maps accounts → oauthCredential (see hubspot block tools.config.params).',
-              accountIds: hubspotSharedAccounts,
-            },
-            null,
-            2
-          )
-        )
-      }
+      const envKeys = [...new Set(envCredentials.map((c) => c.envKey))]
       return {
-        oauthIntegrations,
+        oauthIntegrations: oauthCredentials.map((c) => ({
+          id: c.id,
+          providerId: c.providerId,
+          displayName: c.displayName,
+          role: c.role,
+        })),
         envVariables: envKeys,
-        hubspotSharedAccounts: hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
       }
     } catch (err) {
       logger.warn('Failed to materialize environment data', {
         workspaceId,
         error: toError(err).message,
       })
-      return { oauthIntegrations: [], envVariables: [], hubspotSharedAccounts: undefined }
+      return { oauthIntegrations: [], envVariables: [] }
     }
   }
 }

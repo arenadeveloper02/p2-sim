@@ -1,26 +1,44 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { toError } from '@sim/utils/errors'
 import { formatDate } from '@sim/utils/formatting'
-import { Folder, Search } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import {
-  Button,
-  Combobox,
-  Input,
-  SModalTabs,
-  SModalTabsList,
-  SModalTabsTrigger,
-} from '@/components/emcn'
-import { workflowBorderColor } from '@/lib/workspaces/colors'
+import { debounce, useQueryStates } from 'nuqs'
+import { Button, ChipInput, ChipModalTabs } from '@/components/emcn'
+import { Folder, Search, Workflow } from '@/components/emcn/icons'
+import { type ColumnOption, SortDropdown } from '@/app/workspace/[workspaceId]/components'
 import { RESOURCE_REGISTRY } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry'
 import type { MothershipResourceType } from '@/app/workspace/[workspaceId]/home/types'
-import { DeletedItemSkeleton } from '@/app/workspace/[workspaceId]/settings/components/recently-deleted/deleted-item-skeleton'
+import {
+  DEFAULT_RECENTLY_DELETED_SORT_COLUMN,
+  DEFAULT_RECENTLY_DELETED_SORT_DIRECTION,
+  RECENTLY_DELETED_SORT_COLUMNS,
+  type RecentlyDeletedSortColumn,
+  type RecentlyDeletedTab,
+  recentlyDeletedParsers,
+  recentlyDeletedUrlKeys,
+} from '@/app/workspace/[workspaceId]/settings/components/recently-deleted/search-params'
 import { useFolders, useRestoreFolder } from '@/hooks/queries/folders'
 import { useKnowledgeBasesQuery, useRestoreKnowledgeBase } from '@/hooks/queries/kb/knowledge'
 import { useRestoreTable, useTablesList } from '@/hooks/queries/tables'
 import { useRestoreWorkflow, useWorkflows } from '@/hooks/queries/workflows'
+import {
+  useRestoreWorkspaceFileFolder,
+  useWorkspaceFileFolders,
+} from '@/hooks/queries/workspace-file-folders'
 import { useRestoreWorkspaceFile, useWorkspaceFiles } from '@/hooks/queries/workspace-files'
+import { useFolderStore } from '@/stores/folders/store'
+import type { WorkflowFolder } from '@/stores/folders/types'
+
+type ResourceType =
+  | 'all'
+  | 'workflow'
+  | 'table'
+  | 'knowledge'
+  | 'file'
+  | 'folder'
+  | 'workspace_folder'
 
 function getResourceHref(
   workspaceId: string,
@@ -36,13 +54,13 @@ function getResourceHref(
     case 'knowledge':
       return `${base}/knowledge/${id}`
     case 'file':
-      return `${base}/files`
+      return `${base}/files/${id}`
     case 'folder':
       return `${base}/w`
+    case 'workspace_folder':
+      return `${base}/files?folderId=${id}`
   }
 }
-
-type ResourceType = 'all' | 'workflow' | 'table' | 'knowledge' | 'file' | 'folder'
 
 type SortColumn = 'deleted' | 'name' | 'type'
 
@@ -53,13 +71,16 @@ interface SortConfig {
 
 const DEFAULT_SORT: SortConfig = { column: 'deleted', direction: 'desc' }
 
-const SORT_OPTIONS: { column: SortColumn; direction: 'asc' | 'desc'; label: string }[] = [
-  { column: 'deleted', direction: 'desc', label: 'Deleted (newest first)' },
-  { column: 'name', direction: 'asc', label: 'Name (A–Z)' },
-  { column: 'type', direction: 'asc', label: 'Type (A–Z)' },
+/** Debounce window for `search` URL writes; the input itself stays instant. */
+const SEARCH_DEBOUNCE_MS = 300 as const
+
+const SORT_OPTIONS: ColumnOption[] = [
+  { id: 'deleted', label: 'Deleted' },
+  { id: 'name', label: 'Name' },
+  { id: 'type', label: 'Type' },
 ]
 
-const ICON_CLASS = 'h-[14px] w-[14px]'
+const ICON_CLASS = 'size-[14px]'
 
 const RESOURCE_TYPE_TO_MOTHERSHIP: Partial<
   Record<Exclude<ResourceType, 'all'>, MothershipResourceType>
@@ -79,6 +100,11 @@ interface DeletedResource {
   color?: string
 }
 
+interface RestoredResourceEntry {
+  resource: DeletedResource
+  displayIndex: number
+}
+
 const TABS: { id: ResourceType; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'workflow', label: 'Workflows' },
@@ -91,6 +117,7 @@ const TABS: { id: ResourceType; label: string }[] = [
 const TYPE_LABEL: Record<Exclude<ResourceType, 'all'>, string> = {
   workflow: 'Workflow',
   folder: 'Folder',
+  workspace_folder: 'File Folder',
   table: 'Table',
   knowledge: 'Knowledge Base',
   file: 'File',
@@ -98,20 +125,10 @@ const TYPE_LABEL: Record<Exclude<ResourceType, 'all'>, string> = {
 
 function ResourceIcon({ resource }: { resource: DeletedResource }) {
   if (resource.type === 'workflow') {
-    const color = resource.color ?? '#888'
-    return (
-      <div
-        className='h-[14px] w-[14px] shrink-0 rounded-[3px] border-[2px]'
-        style={{
-          backgroundColor: color,
-          borderColor: workflowBorderColor(color),
-          backgroundClip: 'padding-box',
-        }}
-      />
-    )
+    return <Workflow className={`${ICON_CLASS} shrink-0 text-[var(--text-icon)]`} />
   }
 
-  if (resource.type === 'folder') {
+  if (resource.type === 'folder' || resource.type === 'workspace_folder') {
     const color = resource.color ?? '#6B7280'
     return <Folder className={ICON_CLASS} style={{ color }} />
   }
@@ -119,51 +136,86 @@ function ResourceIcon({ resource }: { resource: DeletedResource }) {
   const mothershipType = RESOURCE_TYPE_TO_MOTHERSHIP[resource.type]
   if (!mothershipType) return null
   const config = RESOURCE_REGISTRY[mothershipType]
-  return (
-    <>
-      {config.renderTabIcon(
-        { type: mothershipType, id: resource.id, title: resource.name },
-        ICON_CLASS
-      )}
-    </>
+  return config.renderTabIcon(
+    { type: mothershipType, id: resource.id, title: resource.name },
+    ICON_CLASS
   )
+}
+
+function matchesActiveTab(resource: DeletedResource, activeTab: ResourceType): boolean {
+  if (activeTab === 'all') return true
+  if (activeTab === 'file') return resource.type === 'file' || resource.type === 'workspace_folder'
+  return resource.type === activeTab
 }
 
 export function RecentlyDeleted() {
   const params = useParams()
   const router = useRouter()
   const workspaceId = params?.workspaceId as string
-  const [activeTab, setActiveTab] = useState<ResourceType>('all')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [activeSort, setActiveSort] = useState<SortConfig | null>(null)
+  const [
+    { tab: activeTab, sort: sortColumn, dir: sortDirection, search: urlSearchTerm },
+    setRecentlyDeletedFilters,
+  ] = useQueryStates(recentlyDeletedParsers, recentlyDeletedUrlKeys)
+
+  /**
+   * The input is controlled directly by the instant nuqs value; only the URL
+   * write is debounced. Filtering below is cheap in-memory over a small list, so
+   * it reads the instant value too.
+   */
+  const setSearchTerm = useCallback(
+    (value: string) => {
+      const trimmed = value.trim()
+      const next = trimmed.length > 0 ? trimmed : null
+      setRecentlyDeletedFilters(
+        { search: next },
+        next === null ? undefined : { limitUrlUpdates: debounce(SEARCH_DEBOUNCE_MS) }
+      )
+    },
+    [setRecentlyDeletedFilters]
+  )
+
+  const activeSort = useMemo<SortConfig | null>(
+    () =>
+      sortColumn === DEFAULT_RECENTLY_DELETED_SORT_COLUMN &&
+      sortDirection === DEFAULT_RECENTLY_DELETED_SORT_DIRECTION
+        ? null
+        : { column: sortColumn, direction: sortDirection },
+    [sortColumn, sortDirection]
+  )
+
   const [restoringIds, setRestoringIds] = useState<Set<string>>(new Set())
-  const [restoredItems, setRestoredItems] = useState<Map<string, DeletedResource>>(new Map())
+  const [restoredItems, setRestoredItems] = useState<Map<string, RestoredResourceEntry>>(new Map())
 
   const workflowsQuery = useWorkflows(workspaceId, { scope: 'archived' })
   const foldersQuery = useFolders(workspaceId, { scope: 'archived' })
+  const activeFoldersQuery = useFolders(workspaceId)
   const tablesQuery = useTablesList(workspaceId, 'archived')
   const knowledgeQuery = useKnowledgeBasesQuery(workspaceId, { scope: 'archived' })
   const filesQuery = useWorkspaceFiles(workspaceId, 'archived')
+  const workspaceFoldersQuery = useWorkspaceFileFolders(workspaceId, 'archived')
 
   const restoreWorkflow = useRestoreWorkflow()
   const restoreFolder = useRestoreFolder()
   const restoreTable = useRestoreTable()
   const restoreKnowledgeBase = useRestoreKnowledgeBase()
   const restoreWorkspaceFile = useRestoreWorkspaceFile()
+  const restoreWorkspaceFileFolder = useRestoreWorkspaceFileFolder()
 
   const isLoading =
     workflowsQuery.isLoading ||
     foldersQuery.isLoading ||
     tablesQuery.isLoading ||
     knowledgeQuery.isLoading ||
-    filesQuery.isLoading
+    filesQuery.isLoading ||
+    workspaceFoldersQuery.isLoading
 
   const error =
     workflowsQuery.error ||
     foldersQuery.error ||
     tablesQuery.error ||
     knowledgeQuery.error ||
-    filesQuery.error
+    filesQuery.error ||
+    workspaceFoldersQuery.error
 
   const resources = useMemo<DeletedResource[]>(() => {
     const items: DeletedResource[] = []
@@ -175,7 +227,6 @@ export function RecentlyDeleted() {
         type: 'workflow',
         deletedAt: wf.archivedAt ? new Date(wf.archivedAt) : new Date(wf.lastModified),
         workspaceId: wf.workspaceId ?? workspaceId,
-        color: wf.color,
       })
     }
 
@@ -220,12 +271,14 @@ export function RecentlyDeleted() {
       })
     }
 
-    // Merge back restored items that are no longer in the query data
-    const itemIds = new Set(items.map((i) => i.id))
-    for (const [id, resource] of restoredItems) {
-      if (!itemIds.has(id)) {
-        items.push(resource)
-      }
+    for (const wf of workspaceFoldersQuery.data ?? []) {
+      items.push({
+        id: wf.id,
+        name: wf.name,
+        type: 'workspace_folder',
+        deletedAt: wf.deletedAt ? new Date(wf.deletedAt) : new Date(wf.updatedAt),
+        workspaceId: wf.workspaceId,
+      })
     }
 
     return items
@@ -235,19 +288,19 @@ export function RecentlyDeleted() {
     tablesQuery.data,
     knowledgeQuery.data,
     filesQuery.data,
+    workspaceFoldersQuery.data,
     workspaceId,
-    restoredItems,
   ])
 
   const filtered = useMemo(() => {
-    let items = activeTab === 'all' ? resources : resources.filter((r) => r.type === activeTab)
-    if (searchTerm.trim()) {
-      const normalized = searchTerm.toLowerCase()
+    let items = resources.filter((resource) => matchesActiveTab(resource, activeTab))
+    if (urlSearchTerm.trim()) {
+      const normalized = urlSearchTerm.toLowerCase()
       items = items.filter((r) => r.name.toLowerCase().includes(normalized))
     }
     const col = (activeSort ?? DEFAULT_SORT).column
     const dir = (activeSort ?? DEFAULT_SORT).direction
-    return [...items].sort((a, b) => {
+    items = [...items].sort((a, b) => {
       let cmp = 0
       switch (col) {
         case 'name':
@@ -262,177 +315,201 @@ export function RecentlyDeleted() {
       }
       return dir === 'asc' ? cmp : -cmp
     })
-  }, [resources, activeTab, searchTerm, activeSort])
 
-  const showNoResults = searchTerm.trim() && filtered.length === 0 && resources.length > 0
-  const selectedSort = activeSort ?? DEFAULT_SORT
+    const itemIds = new Set(items.map((item) => item.id))
+    for (const [id, entry] of restoredItems) {
+      if (itemIds.has(id)) continue
+      if (!matchesActiveTab(entry.resource, activeTab)) continue
+      if (
+        urlSearchTerm.trim() &&
+        !entry.resource.name.toLowerCase().includes(urlSearchTerm.toLowerCase())
+      ) {
+        continue
+      }
+      items.splice(Math.min(entry.displayIndex, items.length), 0, entry.resource)
+    }
 
-  function handleRestore(resource: DeletedResource) {
+    return items
+  }, [resources, activeTab, urlSearchTerm, activeSort, restoredItems])
+
+  const showNoResults = urlSearchTerm.trim() && filtered.length === 0 && resources.length > 0
+
+  function handleView(resource: DeletedResource) {
+    if (resource.type === 'folder') {
+      const setExpanded = useFolderStore.getState().setExpanded
+      const byId = new Map<string, WorkflowFolder>()
+      for (const folder of foldersQuery.data ?? []) byId.set(folder.id, folder)
+      for (const folder of activeFoldersQuery.data ?? []) byId.set(folder.id, folder)
+      let current: WorkflowFolder | undefined = byId.get(resource.id)
+      const seen = new Set<string>()
+      while (current && !seen.has(current.id)) {
+        seen.add(current.id)
+        setExpanded(current.id, true)
+        current = current.parentId ? byId.get(current.parentId) : undefined
+      }
+    }
+    const href = getResourceHref(resource.workspaceId, resource.type, resource.id)
+    router.push(href)
+  }
+
+  async function handleRestore(resource: DeletedResource) {
+    const displayIndex = Math.max(
+      0,
+      filtered.findIndex((item) => item.id === resource.id)
+    )
     setRestoringIds((prev) => new Set(prev).add(resource.id))
 
-    const onSettled = () => {
+    try {
+      switch (resource.type) {
+        case 'workflow':
+          await restoreWorkflow.mutateAsync({
+            workflowId: resource.id,
+            workspaceId: resource.workspaceId,
+          })
+          break
+        case 'folder':
+          await restoreFolder.mutateAsync({
+            folderId: resource.id,
+            workspaceId: resource.workspaceId,
+          })
+          break
+        case 'table':
+          await restoreTable.mutateAsync(resource.id)
+          break
+        case 'knowledge':
+          await restoreKnowledgeBase.mutateAsync(resource.id)
+          break
+        case 'file':
+          await restoreWorkspaceFile.mutateAsync({
+            workspaceId: resource.workspaceId,
+            fileId: resource.id,
+          })
+          break
+        case 'workspace_folder':
+          await restoreWorkspaceFileFolder.mutateAsync({
+            workspaceId: resource.workspaceId,
+            folderId: resource.id,
+          })
+          break
+      }
+
+      setRestoredItems((prev) => new Map(prev).set(resource.id, { resource, displayIndex }))
+    } catch {
+      return
+    } finally {
       setRestoringIds((prev) => {
         const next = new Set(prev)
         next.delete(resource.id)
         return next
       })
     }
-
-    const onSuccess = () => {
-      setRestoredItems((prev) => new Map(prev).set(resource.id, resource))
-    }
-
-    switch (resource.type) {
-      case 'workflow':
-        restoreWorkflow.mutate(
-          { workflowId: resource.id, workspaceId: resource.workspaceId },
-          { onSettled, onSuccess }
-        )
-        break
-      case 'folder':
-        restoreFolder.mutate(
-          { folderId: resource.id, workspaceId: resource.workspaceId },
-          { onSettled, onSuccess }
-        )
-        break
-      case 'table':
-        restoreTable.mutate(resource.id, { onSettled, onSuccess })
-        break
-      case 'knowledge':
-        restoreKnowledgeBase.mutate(resource.id, { onSettled, onSuccess })
-        break
-      case 'file':
-        restoreWorkspaceFile.mutate(
-          { workspaceId: resource.workspaceId, fileId: resource.id },
-          { onSettled, onSuccess }
-        )
-        break
-    }
   }
 
   return (
-    <div className='flex h-full flex-col gap-4.5'>
-      <div className='flex items-center gap-2'>
-        <div className='flex flex-1 items-center gap-2 rounded-lg border border-[var(--border)] bg-transparent px-2 py-[5px] transition-colors duration-100 dark:bg-[var(--surface-4)] dark:hover-hover:border-[var(--border-1)] dark:hover-hover:bg-[var(--surface-5)]'>
-          <Search
-            className='h-[14px] w-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
-            strokeWidth={2}
-          />
-          <Input
-            placeholder='Search deleted items...'
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            disabled={isLoading}
-            className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
-          />
-        </div>
-        <div className='w-[190px] shrink-0'>
-          <Combobox
-            size='sm'
-            align='end'
-            disabled={isLoading}
-            value={`${selectedSort.column}:${selectedSort.direction}`}
-            onChange={(value) => {
-              const option = SORT_OPTIONS.find(
-                (sortOption) => `${sortOption.column}:${sortOption.direction}` === value
-              )
-              if (option) {
-                setActiveSort({ column: option.column, direction: option.direction })
-              }
-            }}
-            options={SORT_OPTIONS.map((option) => ({
-              label: option.label,
-              value: `${option.column}:${option.direction}`,
-            }))}
-            className='h-[30px] rounded-lg border-[var(--border)] bg-transparent px-2.5 text-small dark:bg-[var(--surface-4)]'
-          />
-        </div>
-      </div>
-
-      <SModalTabs value={activeTab} onValueChange={(v) => setActiveTab(v as ResourceType)}>
-        <SModalTabsList activeValue={activeTab} className='border-[var(--border)] border-b'>
-          {TABS.map((tab) => (
-            <SModalTabsTrigger key={tab.id} value={tab.id}>
-              {tab.label}
-            </SModalTabsTrigger>
-          ))}
-        </SModalTabsList>
-      </SModalTabs>
-
-      <div className='min-h-0 flex-1 overflow-y-auto'>
-        {error ? (
-          <div className='flex h-full flex-col items-center justify-center gap-2'>
-            <p className='text-[var(--text-error)] text-xs leading-tight'>
-              {error instanceof Error ? error.message : 'Failed to load deleted items'}
-            </p>
+    <div className='flex h-full flex-col bg-[var(--bg)]'>
+      <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
+        <div className='mx-auto flex max-w-[48rem] flex-col gap-4.5 pt-6 pb-6'>
+          <div className='flex items-center gap-2'>
+            <ChipInput
+              icon={Search}
+              placeholder='Search deleted items...'
+              value={urlSearchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              disabled={isLoading}
+              className='min-w-0 flex-1'
+            />
+            <SortDropdown
+              config={{
+                options: SORT_OPTIONS,
+                active: activeSort,
+                onSort: (column, direction) => {
+                  const sort = (RECENTLY_DELETED_SORT_COLUMNS as readonly string[]).includes(column)
+                    ? (column as RecentlyDeletedSortColumn)
+                    : DEFAULT_RECENTLY_DELETED_SORT_COLUMN
+                  setRecentlyDeletedFilters({ sort, dir: direction })
+                },
+                onClear: () =>
+                  setRecentlyDeletedFilters({
+                    sort: DEFAULT_RECENTLY_DELETED_SORT_COLUMN,
+                    dir: DEFAULT_RECENTLY_DELETED_SORT_DIRECTION,
+                  }),
+              }}
+            />
           </div>
-        ) : isLoading ? (
-          <div className='flex flex-col gap-2'>
-            <DeletedItemSkeleton />
-            <DeletedItemSkeleton />
-            <DeletedItemSkeleton />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className='flex h-full items-center justify-center text-[var(--text-muted)] text-sm'>
-            {showNoResults
-              ? `No items found matching \u201c${searchTerm}\u201d`
-              : 'No deleted items'}
-          </div>
-        ) : (
-          <div className='flex flex-col gap-2'>
-            {filtered.map((resource) => {
-              const isRestoring = restoringIds.has(resource.id)
-              const isRestored = restoredItems.has(resource.id)
 
-              return (
-                <div
-                  key={resource.id}
-                  className='flex items-center gap-3 rounded-md px-2 py-2 hover-hover:bg-[var(--bg-hover)]'
-                >
-                  <ResourceIcon resource={resource} />
+          <ChipModalTabs
+            tabs={TABS.map((tab) => ({ value: tab.id, label: tab.label }))}
+            value={activeTab}
+            onChange={(v) => setRecentlyDeletedFilters({ tab: v as RecentlyDeletedTab })}
+          />
 
-                  <div className='flex min-w-0 flex-1 flex-col'>
-                    <span className='truncate font-medium text-[var(--text-primary)] text-small'>
-                      {resource.name}
-                    </span>
-                    <span className='text-[var(--text-tertiary)] text-caption'>
-                      {TYPE_LABEL[resource.type]}
-                      {' \u00b7 '}
-                      Deleted {formatDate(resource.deletedAt)}
-                    </span>
-                  </div>
+          {error ? (
+            <div className='flex h-full flex-col items-center justify-center gap-2'>
+              <p className='text-[var(--text-error)] text-sm leading-tight'>
+                {toError(error).message || 'Failed to load deleted items'}
+              </p>
+            </div>
+          ) : isLoading ? null : filtered.length === 0 ? (
+            showNoResults ? (
+              <div className='py-4 text-center text-[var(--text-muted)] text-sm'>
+                {`No items found matching \u201c${urlSearchTerm}\u201d`}
+              </div>
+            ) : (
+              <div className='flex h-full items-center justify-center text-[var(--text-muted)] text-sm'>
+                No deleted items
+              </div>
+            )
+          ) : (
+            <div className='flex flex-col gap-2'>
+              {filtered.map((resource) => {
+                const isRestoring = restoringIds.has(resource.id)
+                const isRestored = restoredItems.has(resource.id)
 
-                  {isRestored ? (
-                    <div className='flex shrink-0 items-center gap-2'>
-                      <span className='text-[var(--text-tertiary)] text-small'>Restored</span>
+                return (
+                  <div
+                    key={resource.id}
+                    className='flex items-center gap-2.5 rounded-lg p-2 transition-colors hover-hover:bg-[var(--surface-active)]'
+                  >
+                    <ResourceIcon resource={resource} />
+
+                    <div className='flex min-w-0 flex-1 flex-col'>
+                      <span className='truncate font-medium text-[var(--text-primary)] text-small'>
+                        {resource.name}
+                      </span>
+                      <span className='text-[var(--text-muted)] text-small'>
+                        {TYPE_LABEL[resource.type]}
+                        {' \u00b7 '}
+                        Deleted {formatDate(resource.deletedAt)}
+                      </span>
+                    </div>
+
+                    {isRestoring ? (
+                      <Button variant='primary' size='sm' disabled className='shrink-0'>
+                        Restoring...
+                      </Button>
+                    ) : isRestored ? (
+                      <div className='flex shrink-0 items-center gap-2'>
+                        <span className='text-[var(--text-muted)] text-small'>Restored</span>
+                        <Button variant='primary' size='sm' onClick={() => handleView(resource)}>
+                          View
+                        </Button>
+                      </div>
+                    ) : (
                       <Button
                         variant='primary'
                         size='sm'
-                        onClick={() =>
-                          router.push(
-                            getResourceHref(resource.workspaceId, resource.type, resource.id)
-                          )
-                        }
+                        onClick={() => void handleRestore(resource)}
+                        className='shrink-0'
                       >
-                        View
+                        Restore
                       </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      variant='primary'
-                      size='sm'
-                      disabled={isRestoring}
-                      onClick={() => handleRestore(resource)}
-                      className='shrink-0'
-                    >
-                      {isRestoring ? 'Restoring...' : 'Restore'}
-                    </Button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -4,11 +4,22 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import {
+  v1DeleteTableRowContract,
+  v1GetTableRowContract,
+  v1UpdateTableRowContract,
+} from '@/lib/api/contracts/v1/tables'
+import { parseRequest, validationErrorResponseFromError } from '@/lib/api/server'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import type { RowData } from '@/lib/table'
-import { updateRow } from '@/lib/table'
+import type { RowData, TableSchema } from '@/lib/table'
+import {
+  buildIdByName,
+  buildNameById,
+  rowDataIdToName,
+  rowDataNameToId,
+  updateRow,
+} from '@/lib/table'
 import { accessError, checkAccess } from '@/app/api/table/utils'
 import {
   checkRateLimit,
@@ -21,17 +32,12 @@ const logger = createLogger('V1TableRowAPI')
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const UpdateRowSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  data: z.record(z.unknown(), { required_error: 'Row data is required' }),
-})
-
 interface RowRouteParams {
   params: Promise<{ tableId: string; rowId: string }>
 }
 
 /** GET /api/v1/tables/[tableId]/rows/[rowId] — Get a single row. */
-export const GET = withRouteHandler(async (request: NextRequest, { params }: RowRouteParams) => {
+export const GET = withRouteHandler(async (request: NextRequest, context: RowRouteParams) => {
   const requestId = generateRequestId()
 
   try {
@@ -41,18 +47,15 @@ export const GET = withRouteHandler(async (request: NextRequest, { params }: Row
     }
 
     const userId = rateLimit.userId!
-    const { tableId, rowId } = await params
-    const { searchParams } = new URL(request.url)
-    const workspaceId = searchParams.get('workspaceId')
+    const parsed = await parseRequest(v1GetTableRowContract, request, context, {
+      validationErrorResponse: () =>
+        NextResponse.json({ error: 'workspaceId query parameter is required' }, { status: 400 }),
+    })
+    if (!parsed.success) return parsed.response
+    const { tableId, rowId } = parsed.data.params
+    const { workspaceId } = parsed.data.query
 
-    if (!workspaceId) {
-      return NextResponse.json(
-        { error: 'workspaceId query parameter is required' },
-        { status: 400 }
-      )
-    }
-
-    const scopeError = checkWorkspaceScope(rateLimit, workspaceId)
+    const scopeError = await checkWorkspaceScope(rateLimit, workspaceId)
     if (scopeError) return scopeError
 
     const result = await checkAccess(tableId, userId, 'read')
@@ -84,12 +87,13 @@ export const GET = withRouteHandler(async (request: NextRequest, { params }: Row
       return NextResponse.json({ error: 'Row not found' }, { status: 404 })
     }
 
+    const nameById = buildNameById(result.table.schema as TableSchema)
     return NextResponse.json({
       success: true,
       data: {
         row: {
           id: row.id,
-          data: row.data,
+          data: rowDataIdToName(row.data as RowData, nameById),
           position: row.position,
           createdAt:
             row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
@@ -105,7 +109,7 @@ export const GET = withRouteHandler(async (request: NextRequest, { params }: Row
 })
 
 /** PATCH /api/v1/tables/[tableId]/rows/[rowId] — Partial update a single row. */
-export const PATCH = withRouteHandler(async (request: NextRequest, { params }: RowRouteParams) => {
+export const PATCH = withRouteHandler(async (request: NextRequest, context: RowRouteParams) => {
   const requestId = generateRequestId()
 
   try {
@@ -115,18 +119,12 @@ export const PATCH = withRouteHandler(async (request: NextRequest, { params }: R
     }
 
     const userId = rateLimit.userId!
-    const { tableId, rowId } = await params
+    const parsed = await parseRequest(v1UpdateTableRowContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { tableId, rowId } = parsed.data.params
+    const validated = parsed.data.body
 
-    let body: unknown
-    try {
-      body = await request.json()
-    } catch {
-      return NextResponse.json({ error: 'Request body must be valid JSON' }, { status: 400 })
-    }
-
-    const validated = UpdateRowSchema.parse(body)
-
-    const scopeError = checkWorkspaceScope(rateLimit, validated.workspaceId)
+    const scopeError = await checkWorkspaceScope(rateLimit, validated.workspaceId)
     if (scopeError) return scopeError
 
     const result = await checkAccess(tableId, userId, 'write')
@@ -138,23 +136,34 @@ export const PATCH = withRouteHandler(async (request: NextRequest, { params }: R
       return NextResponse.json({ error: 'Invalid workspace ID' }, { status: 400 })
     }
 
+    const idByName = buildIdByName(table.schema as TableSchema)
+    const nameById = buildNameById(table.schema as TableSchema)
     const updatedRow = await updateRow(
       {
         tableId,
         rowId,
-        data: validated.data as RowData,
+        data: rowDataNameToId(validated.data as RowData, idByName),
         workspaceId: validated.workspaceId,
+        actorUserId: userId,
       },
       table,
       requestId
     )
+    // No `cancellationGuard` is passed here, so `updateRow` can't return null
+    // from this caller. Defensive narrowing for TypeScript.
+    if (!updatedRow) {
+      return NextResponse.json({ error: 'Row not found' }, { status: 404 })
+    }
+    // Auto-dispatch for user edits is handled inside `updateRow` (mode: 'new').
+    // Firing a second mode: 'incomplete' dispatch here would race with it AND
+    // bulk-clear sibling-group outputs.
 
     return NextResponse.json({
       success: true,
       data: {
         row: {
           id: updatedRow.id,
-          data: updatedRow.data,
+          data: rowDataIdToName(updatedRow.data, nameById),
           position: updatedRow.position,
           createdAt:
             updatedRow.createdAt instanceof Date
@@ -169,12 +178,8 @@ export const PATCH = withRouteHandler(async (request: NextRequest, { params }: R
       },
     })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Validation error', details: error.errors },
-        { status: 400 }
-      )
-    }
+    const validationResponse = validationErrorResponseFromError(error)
+    if (validationResponse) return validationResponse
 
     const errorMessage = toError(error).message
 
@@ -198,7 +203,7 @@ export const PATCH = withRouteHandler(async (request: NextRequest, { params }: R
 })
 
 /** DELETE /api/v1/tables/[tableId]/rows/[rowId] — Delete a single row. */
-export const DELETE = withRouteHandler(async (request: NextRequest, { params }: RowRouteParams) => {
+export const DELETE = withRouteHandler(async (request: NextRequest, context: RowRouteParams) => {
   const requestId = generateRequestId()
 
   try {
@@ -208,18 +213,15 @@ export const DELETE = withRouteHandler(async (request: NextRequest, { params }: 
     }
 
     const userId = rateLimit.userId!
-    const { tableId, rowId } = await params
-    const { searchParams } = new URL(request.url)
-    const workspaceId = searchParams.get('workspaceId')
+    const parsed = await parseRequest(v1DeleteTableRowContract, request, context, {
+      validationErrorResponse: () =>
+        NextResponse.json({ error: 'workspaceId query parameter is required' }, { status: 400 }),
+    })
+    if (!parsed.success) return parsed.response
+    const { tableId, rowId } = parsed.data.params
+    const { workspaceId } = parsed.data.query
 
-    if (!workspaceId) {
-      return NextResponse.json(
-        { error: 'workspaceId query parameter is required' },
-        { status: 400 }
-      )
-    }
-
-    const scopeError = checkWorkspaceScope(rateLimit, workspaceId)
+    const scopeError = await checkWorkspaceScope(rateLimit, workspaceId)
     if (scopeError) return scopeError
 
     const result = await checkAccess(tableId, userId, 'write')
@@ -238,7 +240,7 @@ export const DELETE = withRouteHandler(async (request: NextRequest, { params }: 
           eq(userTableRows.workspaceId, workspaceId)
         )
       )
-      .returning()
+      .returning({ id: userTableRows.id })
 
     if (!deletedRow) {
       return NextResponse.json({ error: 'Row not found' }, { status: 404 })

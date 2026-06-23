@@ -1,11 +1,12 @@
 import { db } from '@sim/db'
 import { knowledgeBase } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { getValidationErrorMessage, parseJsonBody } from '@/lib/api/server'
+import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -16,7 +17,7 @@ import type { StructuredFilter } from '@/lib/knowledge/types'
 import { estimateTokenCount } from '@/lib/tokenization/estimators'
 import {
   generateSearchEmbedding,
-  getDocumentNamesByIds,
+  getDocumentMetadataByIds,
   getQueryStrategy,
   handleTagAndVectorSearch,
   handleTagOnlySearch,
@@ -114,8 +115,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
   try {
-    const body = await request.json()
-    const { workflowId, ...searchParams } = body
+    const parsedBody = await parseJsonBody(request)
+    if (!parsedBody.success) return parsedBody.response
+    const body = parsedBody.data as Record<string, unknown>
+    const { workflowId, skipUsageBilling, ...searchParams } = body
 
     const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
@@ -123,9 +126,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
     const userId = auth.userId
 
+    // Only the internal workflow tool may suppress route metering (it rolls the
+    // cost into the executor's usage instead). Session/API-key callers cannot set
+    // skipUsageBilling to dodge their own embedding/reranker charge.
+    const shouldMeter = !(skipUsageBilling === true && auth.authType === AuthType.INTERNAL_JWT)
+
     if (workflowId) {
       const authorization = await authorizeWorkflowByWorkspacePermission({
-        workflowId,
+        workflowId: workflowId as string,
         userId,
         action: 'read',
       })
@@ -298,9 +306,25 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       const workspaceId = accessChecks.find((ac) => ac?.hasAccess)?.knowledgeBase?.workspaceId
 
       const hasQuery = validatedData.query && validatedData.query.trim().length > 0
-      const queryEmbeddingPromise = hasQuery
-        ? generateSearchEmbedding(validatedData.query!, undefined, workspaceId)
-        : Promise.resolve(null)
+      const embeddingModels = Array.from(
+        new Set(
+          accessChecks
+            .filter(
+              (ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true
+            )
+            .map((ac) => ac.knowledgeBase.embeddingModel)
+        )
+      )
+      if (hasQuery && embeddingModels.length > 1) {
+        return NextResponse.json(
+          {
+            error:
+              'Selected knowledge bases use different embedding models and cannot be searched together. Search them separately.',
+          },
+          { status: 400 }
+        )
+      }
+      const queryEmbeddingModel = embeddingModels[0] ?? 'text-embedding-3-small'
 
       // Check if any requested knowledge bases were not accessible
       const inaccessibleKbIds = knowledgeBaseIds.filter((id) => !accessibleKbIds.includes(id))
@@ -312,27 +336,27 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
-      if (workflowId) {
-        const authorization = await authorizeWorkflowByWorkspacePermission({
-          workflowId,
-          userId,
-          action: 'read',
-        })
-        // const workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
-        // if (
-        //   workflowWorkspaceId &&
-        //   accessChecks.some(
-        //     (accessCheck) =>
-        //       accessCheck?.hasAccess &&
-        //       accessCheck.knowledgeBase?.workspaceId !== workflowWorkspaceId
-        //   )
-        // ) {
-        //   return NextResponse.json(
-        //     { error: 'Knowledge base does not belong to the workflow workspace' },
-        //     { status: 400 }
-        //   )
-        // }
-      }
+      // if (workflowId) {
+      // const authorization = await authorizeWorkflowByWorkspacePermission({
+      //   workflowId,
+      //   userId,
+      //   action: 'read',
+      // })
+      // const workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
+      // if (
+      //   workflowWorkspaceId &&
+      //   accessChecks.some(
+      //     (accessCheck) =>
+      //       accessCheck?.hasAccess &&
+      //       accessCheck.knowledgeBase?.workspaceId !== workflowWorkspaceId
+      //   )
+      // ) {
+      //   return NextResponse.json(
+      //     { error: 'Knowledge base does not belong to the workflow workspace' },
+      //     { status: 400 }
+      //   )
+      // }
+      // }
 
       let results: SearchResult[]
 
@@ -352,7 +376,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           structuredFilters
         )
         const strategy = getQueryStrategy(accessibleKbIds.length, validatedData.topK)
-        const queryVector = JSON.stringify(await queryEmbeddingPromise)
+        const queryEmbeddingResult = await generateSearchEmbedding(
+          validatedData.query!,
+          queryEmbeddingModel,
+          workspaceId
+        )
+        const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
 
         results = await handleTagAndVectorSearch({
           knowledgeBaseIds: accessibleKbIds,
@@ -364,7 +393,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       } else if (hasQuery && !hasFilters) {
         // Vector-only search
         const strategy = getQueryStrategy(accessibleKbIds.length, validatedData.topK)
-        const queryVector = JSON.stringify(await queryEmbeddingPromise)
+        const queryEmbeddingResult = await generateSearchEmbedding(
+          validatedData.query!,
+          queryEmbeddingModel,
+          workspaceId
+        )
+        const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
 
         results = await handleVectorOnlySearch({
           knowledgeBaseIds: accessibleKbIds,
@@ -389,7 +423,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       if (hasQuery) {
         try {
           tokenCount = estimateTokenCount(validatedData.query!, 'openai')
-          cost = calculateCost('text-embedding-3-small', tokenCount.count, 0, false)
+          cost = calculateCost(queryEmbeddingModel, tokenCount.count, 0, false)
         } catch (error) {
           logger.warn(`[${requestId}] Failed to calculate cost for search query`, {
             error: error instanceof Error ? error.message : 'Unknown error',
@@ -424,7 +458,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       // Fetch document names for the results
       const documentIds = results.map((result) => result.documentId)
-      const documentNameMap = await getDocumentNamesByIds(documentIds)
+      const documentNameMap = await getDocumentMetadataByIds(documentIds)
 
       // Fetch workspaceId per knowledge base for "View in Knowledge Base" links (only for users with workspace access)
       const kbIds = [...new Set(results.map((r) => r.knowledgeBaseId))]
@@ -506,7 +540,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
                     completion: 0,
                     total: tokenCount.count,
                   },
-                  model: 'text-embedding-3-small',
+                  model: queryEmbeddingModel,
                   pricing: cost.pricing,
                 },
               }
@@ -516,7 +550,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     } catch (validationError) {
       if (validationError instanceof z.ZodError) {
         return NextResponse.json(
-          { error: 'Invalid request data', details: validationError.errors },
+          {
+            error: getValidationErrorMessage(validationError),
+            details: validationError.issues,
+          },
           { status: 400 }
         )
       }

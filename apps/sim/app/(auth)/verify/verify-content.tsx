@@ -1,9 +1,8 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/emcn'
+import { InputOTP, InputOTPGroup, InputOTPSlot, Loader } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { AUTH_SUBMIT_BTN } from '@/app/(auth)/components/auth-button-classes'
 import { useVerification } from '@/app/(auth)/verify/use-verification'
@@ -26,15 +25,18 @@ function VerificationForm({
   const {
     otp,
     email,
-    isLoading,
-    isVerified,
-    isInvalidOtp,
+    status,
+    isResending,
     errorMessage,
     isOtpComplete,
     verifyCode,
     resendCode,
     handleOtpChange,
   } = useVerification({ hasEmailService, isProduction, isEmailVerificationEnabled })
+
+  const isVerified = status === 'verified'
+  const isInvalidOtp = status === 'error'
+  const isBusy = status === 'verifying' || isResending
 
   const [countdown, setCountdown] = useState(0)
   const [isResendDisabled, setIsResendDisabled] = useState(false)
@@ -89,7 +91,7 @@ function VerificationForm({
                 maxLength={6}
                 value={otp}
                 onChange={handleOtpChange}
-                disabled={isLoading}
+                disabled={isBusy}
                 className={cn('gap-2', isInvalidOtp && 'otp-error')}
               >
                 <InputOTPGroup>
@@ -113,13 +115,13 @@ function VerificationForm({
 
           <button
             onClick={verifyCode}
-            disabled={!isOtpComplete || isLoading}
+            disabled={!isOtpComplete || isBusy}
             className={AUTH_SUBMIT_BTN}
           >
-            {isLoading ? (
+            {isBusy ? (
               <span className='flex items-center gap-2'>
-                <Loader2 className='h-4 w-4 animate-spin' />
-                Verifying...
+                <Loader className='size-4' animate />
+                Verifying…
               </span>
             ) : (
               'Verify Email'
@@ -139,7 +141,7 @@ function VerificationForm({
                   <button
                     className='font-medium text-[var(--landing-text)] underline-offset-4 transition hover:text-white hover:underline'
                     onClick={handleResend}
-                    disabled={isLoading || isResendDisabled}
+                    disabled={isBusy || isResendDisabled}
                   >
                     Resend
                   </button>

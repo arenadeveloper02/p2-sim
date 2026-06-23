@@ -1,13 +1,15 @@
 import { db } from '@sim/db'
 import { account, credential, credentialMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
-import { and, eq } from 'drizzle-orm'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
+import { and, eq, inArray, isNotNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { oauthCredentialsQuerySchema } from '@/lib/api/contracts/credentials'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { getCredentialActorContext } from '@/lib/credentials/access'
 import { syncWorkspaceOAuthCredentialsForUser } from '@/lib/credentials/oauth'
 import {
   getCanonicalScopesForProvider,
@@ -19,21 +21,13 @@ export const dynamic = 'force-dynamic'
 
 const logger = createLogger('OAuthCredentialsAPI')
 
-const credentialsQuerySchema = z
-  .object({
-    provider: z.string().nullish(),
-    workflowId: z.string().uuid('Workflow ID must be a valid UUID').nullish(),
-    workspaceId: z.string().uuid('Workspace ID must be a valid UUID').nullish(),
-    credentialId: z
-      .string()
-      .min(1, 'Credential ID must not be empty')
-      .max(255, 'Credential ID is too long')
-      .nullish(),
-  })
-  .refine((data) => data.provider || data.credentialId, {
-    message: 'Provider or credentialId is required',
-    path: ['provider'],
-  })
+function getProviderIdsForQuery(providerId: string): string[] {
+  if (providerId === 'zoom') {
+    return ['zoom', 'zoom-admin']
+  }
+
+  return [providerId]
+}
 
 function toCredentialResponse(
   id: string,
@@ -79,31 +73,21 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       credentialId: searchParams.get('credentialId'),
     }
 
-    const parseResult = credentialsQuerySchema.safeParse(rawQuery)
+    const parseResult = oauthCredentialsQuerySchema.safeParse(rawQuery)
 
     if (!parseResult.success) {
-      const refinementError = parseResult.error.errors.find((err) => err.code === 'custom')
+      const refinementError = parseResult.error.issues.find((err) => err.code === 'custom')
       if (refinementError) {
         logger.warn(`[${requestId}] Invalid query parameters: ${refinementError.message}`)
-        return NextResponse.json(
-          {
-            error: refinementError.message,
-          },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: refinementError.message }, { status: 400 })
       }
 
-      const firstError = parseResult.error.errors[0]
-      const errorMessage = firstError?.message || 'Validation failed'
-
       logger.warn(`[${requestId}] Invalid query parameters`, {
-        errors: parseResult.error.errors,
+        errors: parseResult.error.issues,
       })
 
       return NextResponse.json(
-        {
-          error: errorMessage,
-        },
+        { error: getValidationErrorMessage(parseResult.error, 'Validation failed') },
         { status: 400 }
       )
     }
@@ -139,11 +123,13 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       effectiveWorkspaceId = workflowAuthorization.workflow?.workspaceId || undefined
     }
 
+    let requesterCanAdmin = false
     if (effectiveWorkspaceId) {
       const workspaceAccess = await checkWorkspaceAccess(effectiveWorkspaceId, requesterUserId)
       if (!workspaceAccess.hasAccess) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       }
+      requesterCanAdmin = workspaceAccess.canAdmin
     }
 
     if (credentialId) {
@@ -175,19 +161,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           }
 
           if (!workflowId) {
-            const [membership] = await db
-              .select({ id: credentialMember.id })
-              .from(credentialMember)
-              .where(
-                and(
-                  eq(credentialMember.credentialId, platformCredential.id),
-                  eq(credentialMember.userId, requesterUserId),
-                  eq(credentialMember.status, 'active')
-                )
-              )
-              .limit(1)
-
-            if (!membership) {
+            const access = await getCredentialActorContext(platformCredential.id, requesterUserId)
+            if (!access.hasWorkspaceAccess || (!access.member && !access.isAdmin)) {
               return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
             }
           }
@@ -218,19 +193,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
           }
         } else {
-          const [membership] = await db
-            .select({ id: credentialMember.id })
-            .from(credentialMember)
-            .where(
-              and(
-                eq(credentialMember.credentialId, platformCredential.id),
-                eq(credentialMember.userId, requesterUserId),
-                eq(credentialMember.status, 'active')
-              )
-            )
-            .limit(1)
-
-          if (!membership) {
+          const access = await getCredentialActorContext(platformCredential.id, requesterUserId)
+          if (!access.hasWorkspaceAccess || (!access.member && !access.isAdmin)) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
           }
         }
@@ -257,22 +221,26 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     }
 
     if (effectiveWorkspaceId && providerParam) {
+      const providerIds = getProviderIdsForQuery(providerParam)
+
       await syncWorkspaceOAuthCredentialsForUser({
         workspaceId: effectiveWorkspaceId,
         userId: requesterUserId,
       })
 
+      const oauthSelect = {
+        id: credential.id,
+        displayName: credential.displayName,
+        providerId: account.providerId,
+        accountProviderId: account.providerId,
+        scope: account.scope,
+        updatedAt: account.updatedAt,
+      }
       const credentialsData = await db
-        .select({
-          id: credential.id,
-          displayName: credential.displayName,
-          providerId: account.providerId,
-          scope: account.scope,
-          updatedAt: account.updatedAt,
-        })
+        .select(oauthSelect)
         .from(credential)
         .innerJoin(account, eq(credential.accountId, account.id))
-        .innerJoin(
+        .leftJoin(
           credentialMember,
           and(
             eq(credentialMember.credentialId, credential.id),
@@ -284,26 +252,37 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
           and(
             eq(credential.workspaceId, effectiveWorkspaceId),
             eq(credential.type, 'oauth'),
-            eq(account.providerId, providerParam)
+            providerIds.length === 1
+              ? eq(credential.providerId, providerParam)
+              : inArray(credential.providerId, providerIds)
+            // eq(account.providerId, providerParam),
+            // requesterCanAdmin ? undefined : isNotNull(credentialMember.id)
           )
         )
 
       const results = credentialsData.map((row) =>
-        toCredentialResponse(row.id, row.displayName, row.providerId, row.updatedAt, row.scope)
+        toCredentialResponse(
+          row.id,
+          row.displayName,
+          row.providerId ?? row.accountProviderId ?? providerParam,
+          row.updatedAt,
+          row.scope
+        )
       )
 
       const saProviderId = getServiceAccountProviderForProviderId(providerParam)
 
       if (saProviderId) {
+        const saSelect = {
+          id: credential.id,
+          displayName: credential.displayName,
+          providerId: credential.providerId,
+          updatedAt: credential.updatedAt,
+        }
         const serviceAccountCreds = await db
-          .select({
-            id: credential.id,
-            displayName: credential.displayName,
-            providerId: credential.providerId,
-            updatedAt: credential.updatedAt,
-          })
+          .select(saSelect)
           .from(credential)
-          .innerJoin(
+          .leftJoin(
             credentialMember,
             and(
               eq(credentialMember.credentialId, credential.id),
@@ -315,7 +294,8 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             and(
               eq(credential.workspaceId, effectiveWorkspaceId),
               eq(credential.type, 'service_account'),
-              eq(credential.providerId, saProviderId)
+              eq(credential.providerId, saProviderId),
+              requesterCanAdmin ? undefined : isNotNull(credentialMember.id)
             )
           )
 

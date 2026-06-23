@@ -1,13 +1,14 @@
 import { safeCompare } from '@sim/security/compare'
 import { sha256Hex } from '@sim/security/hash'
 import { hmacSha256Hex } from '@sim/security/hmac'
-import type { NextRequest, NextResponse } from 'next/server'
+import type { NextResponse } from 'next/server'
 import { env } from '@/lib/core/config/env'
-import { isDev } from '@/lib/core/config/feature-flags'
+import { isDev } from '@/lib/core/config/env-flags'
 
 /**
- * Shared authentication utilities for deployed chat and form endpoints.
- * These functions handle token generation, validation, cookies, and CORS.
+ * Shared authentication utilities for deployed chat endpoints.
+ * Handles token generation, validation, and auth cookies. CORS for these
+ * endpoints lives in proxy.ts as the single source of truth.
  */
 
 function signPayload(payload: string): string {
@@ -30,13 +31,14 @@ function generateAuthToken(
 }
 
 /**
- * Validates an HMAC-signed authentication token for a deployment (chat or form).
+ * Validates an HMAC-signed authentication token for a chat deployment.
  * Includes a password-derived slot so changing the deployment password immediately
  * invalidates existing sessions.
  */
 export function validateAuthToken(
   token: string,
   deploymentId: string,
+  authType: string,
   encryptedPassword?: string | null
 ): boolean {
   try {
@@ -54,9 +56,14 @@ export function validateAuthToken(
 
     const parts = payload.split(':')
     if (parts.length < 4) return false
-    const [storedId, _type, timestamp, storedPwSlot] = parts
+    const [storedId, storedType, timestamp, storedPwSlot] = parts
 
     if (storedId !== deploymentId) return false
+
+    // Bind the cookie to the auth type so a token minted under one mode (e.g. a
+    // `public` share, which has an empty password slot) can't satisfy another
+    // mode (e.g. `email` OTP) after the share's auth type is changed.
+    if (storedType !== authType) return false
 
     const expectedPwSlot = passwordSlot(encryptedPassword)
     if (storedPwSlot !== expectedPwSlot) return false
@@ -71,19 +78,27 @@ export function validateAuthToken(
   }
 }
 
+/** The kind of deployed resource an auth cookie/token belongs to. */
+export type DeploymentAuthKind = 'chat' | 'file'
+
+/** Canonical auth cookie name for a deployed resource (`{kind}_auth_{id}`). */
+export function deploymentAuthCookieName(cookiePrefix: DeploymentAuthKind, id: string): string {
+  return `${cookiePrefix}_auth_${id}`
+}
+
 /**
  * Sets an authentication cookie for a deployment
  */
 export function setDeploymentAuthCookie(
   response: NextResponse,
-  cookiePrefix: 'chat' | 'form',
+  cookiePrefix: DeploymentAuthKind,
   deploymentId: string,
   authType: string,
   encryptedPassword?: string | null
 ): void {
   const token = generateAuthToken(deploymentId, authType, encryptedPassword)
   response.cookies.set({
-    name: `${cookiePrefix}_auth_${deploymentId}`,
+    name: deploymentAuthCookieName(cookiePrefix, deploymentId),
     value: token,
     httpOnly: true,
     secure: !isDev,
@@ -94,35 +109,22 @@ export function setDeploymentAuthCookie(
 }
 
 /**
- * Adds CORS headers to allow cross-origin requests for embedded deployments.
- * We reflect the requesting origin to support same-site cross-origin setups
- * (e.g. subdomains), but never set Allow-Credentials — auth cookies use
- * SameSite=Lax and are handled within same-origin iframe contexts.
- */
-export function addCorsHeaders(response: NextResponse, request: NextRequest): NextResponse {
-  const origin = request.headers.get('origin')
-
-  if (origin) {
-    response.headers.set('Access-Control-Allow-Origin', origin)
-    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With')
-  }
-
-  return response
-}
-
-/**
- * Checks if an email matches the allowed emails list (exact match or domain match)
+ * Checks if an email matches the allowed emails list (exact match or domain
+ * match). Case-insensitive — email addresses are compared lowercased on both
+ * sides, so callers don't need to normalize before calling.
  */
 export function isEmailAllowed(email: string, allowedEmails: string[]): boolean {
-  if (allowedEmails.includes(email)) {
+  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedAllowed = allowedEmails.map((allowed) => allowed.trim().toLowerCase())
+
+  if (normalizedAllowed.includes(normalizedEmail)) {
     return true
   }
 
-  const atIndex = email.indexOf('@')
+  const atIndex = normalizedEmail.indexOf('@')
   if (atIndex > 0) {
-    const domain = email.substring(atIndex + 1)
-    if (domain && allowedEmails.some((allowed: string) => allowed === `@${domain}`)) {
+    const domain = normalizedEmail.substring(atIndex + 1)
+    if (domain && normalizedAllowed.some((allowed) => allowed === `@${domain}`)) {
       return true
     }
   }

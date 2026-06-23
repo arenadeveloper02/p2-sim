@@ -5,6 +5,8 @@ vi.mock('@/lib/core/config/env', () =>
   createEnvMock({
     GOOGLE_CLIENT_ID: 'google_client_id',
     GOOGLE_CLIENT_SECRET: 'google_client_secret',
+    GOOGLE_ADS_CLIENT_ID: 'google_ads_client_id',
+    GOOGLE_ADS_CLIENT_SECRET: 'google_ads_client_secret',
     GITHUB_CLIENT_ID: 'github_client_id',
     GITHUB_CLIENT_SECRET: 'github_client_secret',
     X_CLIENT_ID: 'x_client_id',
@@ -45,6 +47,8 @@ vi.mock('@/lib/core/config/env', () =>
     SHOPIFY_CLIENT_SECRET: 'shopify_client_secret',
     ZOOM_CLIENT_ID: 'zoom_client_id',
     ZOOM_CLIENT_SECRET: 'zoom_client_secret',
+    ZOOM_ADMIN_CLIENT_ID: 'zoom_admin_client_id',
+    ZOOM_ADMIN_CLIENT_SECRET: 'zoom_admin_client_secret',
     WORDPRESS_CLIENT_ID: 'wordpress_client_id',
     WORDPRESS_CLIENT_SECRET: 'wordpress_client_secret',
     SPOTIFY_CLIENT_ID: 'spotify_client_id',
@@ -79,7 +83,12 @@ function withMockFetch<T>(mockFetch: ReturnType<typeof vi.fn>, fn: () => Promise
 
 describe('OAuth Token Refresh', () => {
   describe('Basic Auth Providers', () => {
-    const basicAuthProviders = [
+    const basicAuthProviders: Array<{
+      name: string
+      providerId: string
+      endpoint: string
+      expectedBasicAuthPair?: `${string}:${string}`
+    }> = [
       {
         name: 'Airtable',
         providerId: 'airtable',
@@ -109,13 +118,19 @@ describe('OAuth Token Refresh', () => {
         endpoint: 'https://zoom.us/oauth/token',
       },
       {
+        name: 'Zoom Admin',
+        providerId: 'zoom-admin',
+        endpoint: 'https://zoom.us/oauth/token',
+        expectedBasicAuthPair: 'zoom_admin_client_id:zoom_admin_client_secret',
+      },
+      {
         name: 'Spotify',
         providerId: 'spotify',
         endpoint: 'https://accounts.spotify.com/api/token',
       },
     ]
 
-    basicAuthProviders.forEach(({ name, providerId, endpoint }) => {
+    basicAuthProviders.forEach(({ name, providerId, endpoint, expectedBasicAuthPair }) => {
       it.concurrent(
         `should send ${name} request with Basic Auth header and no credentials in body`,
         async () => {
@@ -148,8 +163,11 @@ describe('OAuth Token Refresh', () => {
           const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8')
           const [clientId, clientSecret] = credentials.split(':')
 
-          expect(clientId).toBe(`${providerId}_client_id`)
-          expect(clientSecret).toBe(`${providerId}_client_secret`)
+          const expectedPair =
+            expectedBasicAuthPair ?? `${providerId}_client_id:${providerId}_client_secret`
+          const [expectedClientId, expectedSecret] = expectedPair.split(':')
+          expect(clientId).toBe(expectedClientId)
+          expect(clientSecret).toBe(expectedSecret)
 
           const bodyParams = new URLSearchParams(requestOptions.body)
           const bodyKeys = Array.from(bodyParams.keys())
@@ -168,6 +186,11 @@ describe('OAuth Token Refresh', () => {
   describe('Body Credential Providers', () => {
     const bodyCredentialProviders = [
       { name: 'Google', providerId: 'google', endpoint: 'https://oauth2.googleapis.com/token' },
+      {
+        name: 'Google Ads',
+        providerId: 'google-ads',
+        endpoint: 'https://oauth2.googleapis.com/token',
+      },
       {
         name: 'Microsoft',
         providerId: 'microsoft',
@@ -261,9 +284,17 @@ describe('OAuth Token Refresh', () => {
           expect(bodyParams.get('refresh_token')).toBe(refreshToken)
 
           const expectedClientId =
-            providerId === 'outlook' ? 'microsoft_client_id' : `${providerId}_client_id`
+            providerId === 'outlook'
+              ? 'microsoft_client_id'
+              : providerId === 'google-ads'
+                ? 'google_ads_client_id'
+                : `${providerId}_client_id`
           const expectedClientSecret =
-            providerId === 'outlook' ? 'microsoft_client_secret' : `${providerId}_client_secret`
+            providerId === 'outlook'
+              ? 'microsoft_client_secret'
+              : providerId === 'google-ads'
+                ? 'google_ads_client_secret'
+                : `${providerId}_client_secret`
 
           expect(bodyParams.get('client_id')).toBe(expectedClientId)
           expect(bodyParams.get('client_secret')).toBe(expectedClientSecret)
@@ -326,7 +357,7 @@ describe('OAuth Token Refresh', () => {
   })
 
   describe('Error Handling', () => {
-    it.concurrent('should return null for unsupported provider', async () => {
+    it.concurrent('should return failure for unsupported provider', async () => {
       const mockFetch = createMockFetch(defaultOAuthResponse)
       const refreshToken = 'test_refresh_token'
 
@@ -334,10 +365,10 @@ describe('OAuth Token Refresh', () => {
         refreshOAuthToken('unsupported', refreshToken)
       )
 
-      expect(result).toBeNull()
+      expect(result.ok).toBe(false)
     })
 
-    it.concurrent('should return null for API error responses', async () => {
+    it.concurrent('should return failure with errorCode for HTTP error responses', async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 400,
@@ -351,16 +382,36 @@ describe('OAuth Token Refresh', () => {
 
       const result = await withMockFetch(mockFetch, () => refreshOAuthToken('google', refreshToken))
 
-      expect(result).toBeNull()
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errorCode).toBe('invalid_request')
+      }
     })
 
-    it.concurrent('should return null for network errors', async () => {
+    it.concurrent('should return failure for Slack-style body errors', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ ok: false, error: 'invalid_refresh_token' }),
+      })
+      const refreshToken = 'test_refresh_token'
+
+      const result = await withMockFetch(mockFetch, () => refreshOAuthToken('slack', refreshToken))
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errorCode).toBe('invalid_refresh_token')
+      }
+    })
+
+    it.concurrent('should return failure for network errors', async () => {
       const mockFetch = vi.fn().mockRejectedValue(new Error('Network error'))
       const refreshToken = 'test_refresh_token'
 
       const result = await withMockFetch(mockFetch, () => refreshOAuthToken('google', refreshToken))
 
-      expect(result).toBeNull()
+      expect(result.ok).toBe(false)
     })
   })
 
@@ -383,11 +434,53 @@ describe('OAuth Token Refresh', () => {
       )
 
       expect(result).toEqual({
+        ok: true,
         accessToken: 'new_access_token',
         expiresIn: 3600,
         refreshToken: newRefreshToken,
       })
     })
+
+    it.concurrent(
+      'should rotate refresh token for Microsoft providers (microsoft, outlook, onedrive, sharepoint)',
+      async () => {
+        const microsoftProviders = [
+          'microsoft',
+          'outlook',
+          'onedrive',
+          'sharepoint',
+          'microsoft-excel',
+          'microsoft-teams',
+          'microsoft-planner',
+          'microsoft-ad',
+          'microsoft-dataverse',
+        ]
+        const oldRefreshToken = 'old_microsoft_refresh_token'
+        const rotatedRefreshToken = 'rotated_microsoft_refresh_token'
+
+        for (const providerId of microsoftProviders) {
+          const mockFetch = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+              access_token: 'new_access_token',
+              expires_in: 3600,
+              refresh_token: rotatedRefreshToken,
+            }),
+          })
+
+          const result = await withMockFetch(mockFetch, () =>
+            refreshOAuthToken(providerId, oldRefreshToken)
+          )
+
+          expect(result).toEqual({
+            ok: true,
+            accessToken: 'new_access_token',
+            expiresIn: 3600,
+            refreshToken: rotatedRefreshToken,
+          })
+        }
+      }
+    )
 
     it.concurrent('should use original refresh token when new one is not provided', async () => {
       const refreshToken = 'original_refresh_token'
@@ -403,13 +496,14 @@ describe('OAuth Token Refresh', () => {
       const result = await withMockFetch(mockFetch, () => refreshOAuthToken('google', refreshToken))
 
       expect(result).toEqual({
+        ok: true,
         accessToken: 'new_access_token',
         expiresIn: 3600,
         refreshToken: refreshToken,
       })
     })
 
-    it.concurrent('should return null when access token is missing', async () => {
+    it.concurrent('should return failure when access token is missing', async () => {
       const refreshToken = 'test_refresh_token'
 
       const mockFetch = vi.fn().mockResolvedValue({
@@ -421,7 +515,7 @@ describe('OAuth Token Refresh', () => {
 
       const result = await withMockFetch(mockFetch, () => refreshOAuthToken('google', refreshToken))
 
-      expect(result).toBeNull()
+      expect(result.ok).toBe(false)
     })
 
     it.concurrent('should use default expiration when not provided', async () => {
@@ -437,6 +531,7 @@ describe('OAuth Token Refresh', () => {
       const result = await withMockFetch(mockFetch, () => refreshOAuthToken('google', refreshToken))
 
       expect(result).toEqual({
+        ok: true,
         accessToken: 'new_access_token',
         expiresIn: 3600,
         refreshToken: refreshToken,

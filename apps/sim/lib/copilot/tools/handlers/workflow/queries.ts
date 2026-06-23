@@ -1,4 +1,5 @@
 import { toError } from '@sim/utils/errors'
+import { mergeSubblockStateWithValues } from '@sim/workflow-persistence/subblocks'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/request/types'
 import { formatNormalizedWorkflowForCopilot } from '@/lib/copilot/tools/shared/workflow-utils'
 import { mcpService } from '@/lib/mcp/service'
@@ -11,19 +12,20 @@ import {
   loadDeployedWorkflowState,
   loadWorkflowFromNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
+import { resolveTriggerRunOptions, toPublicRunOption } from '@/lib/workflows/triggers/run-options'
 import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
-import { getWorkflowById, listFolders } from '@/lib/workflows/utils'
+import { getWorkflowById } from '@/lib/workflows/utils'
 import { listUserWorkspaces } from '@/lib/workspaces/utils'
 import { getBlock } from '@/blocks/registry'
 import { normalizeName } from '@/executor/constants'
 import type { Loop, Parallel } from '@/stores/workflows/workflow/types'
-import { ensureWorkflowAccess, ensureWorkspaceAccess, getDefaultWorkspaceId } from '../access'
+import { ensureWorkflowAccess } from '../access'
 import type {
   GetBlockOutputsParams,
   GetBlockUpstreamReferencesParams,
   GetDeployedWorkflowStateParams,
   GetWorkflowDataParams,
-  ListFoldersParams,
+  GetWorkflowRunOptionsParams,
 } from '../param-types'
 
 export async function executeListUserWorkspaces(
@@ -38,25 +40,74 @@ export async function executeListUserWorkspaces(
   }
 }
 
-export async function executeListFolders(
-  params: ListFoldersParams,
+export async function executeGetWorkflowRunOptions(
+  params: GetWorkflowRunOptionsParams,
   context: ExecutionContext
 ): Promise<ToolCallResult> {
   try {
-    const workspaceId =
-      (params?.workspaceId as string | undefined) ||
-      context.workspaceId ||
-      (await getDefaultWorkspaceId(context.userId))
+    const workflowId = params.workflowId || context.workflowId
+    if (!workflowId) {
+      return { success: false, error: 'workflowId is required' }
+    }
 
-    await ensureWorkspaceAccess(workspaceId, context.userId, 'read')
+    await ensureWorkflowAccess(workflowId, context.userId)
 
-    const folders = await listFolders(workspaceId)
+    const normalized = await loadWorkflowFromNormalizedTables(workflowId)
+    if (!normalized) {
+      return { success: false, error: `Workflow ${workflowId} has no saved state` }
+    }
+
+    const merged = mergeSubblockStateWithValues(normalized.blocks)
+    const options = resolveTriggerRunOptions(merged, normalized.edges)
+
+    if (options.length === 0) {
+      return {
+        success: true,
+        output: {
+          workflowId,
+          default: null,
+          triggers: [],
+          message:
+            'No runnable trigger blocks found. Add a Start/API/Input/Chat trigger or an external (webhook/integration) trigger before running.',
+        },
+      }
+    }
+
+    const guidanceFor = (kind: string): string => {
+      switch (kind) {
+        case 'fields':
+          return 'Build workflow_input matching inputSchema. Copy mockPayload only if you have no better values.'
+        case 'event_payload':
+          return 'Construct an event payload matching inputSchema, or run with useMockPayload: true if you cannot build one.'
+        case 'chat':
+          return 'Provide workflow_input shaped like { "input": "<message>" }.'
+        default:
+          return 'No input required.'
+      }
+    }
+
+    const triggers = options.map((option) => {
+      const pub = toPublicRunOption(option)
+      const callExample =
+        pub.inputKind === 'none'
+          ? { triggerBlockId: pub.triggerBlockId }
+          : { triggerBlockId: pub.triggerBlockId, workflow_input: pub.mockPayload }
+      return { ...pub, guidance: guidanceFor(pub.inputKind), callExample }
+    })
+
+    const defaultOption = options.find((option) => option.isDefault)
 
     return {
       success: true,
       output: {
-        workspaceId,
-        folders,
+        workflowId,
+        default: defaultOption
+          ? {
+              triggerBlockId: defaultOption.triggerBlockId,
+              reason: `Highest-priority trigger (${defaultOption.blockName})`,
+            }
+          : null,
+        triggers,
       },
     }
   } catch (error) {

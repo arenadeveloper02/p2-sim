@@ -112,19 +112,25 @@ export const slackMessageReaderTool: ToolConfig<
     headers: () => ({
       'Content-Type': 'application/json',
     }),
-    body: (params: SlackMessageReaderParams) => ({
-      accessToken: params.accessToken || params.botToken,
-      channel: params.channel,
-      userId: params.userId,
-      limit: params.limit,
-      oldest: params.oldest,
-      latest: params.latest,
-      cursor: params.cursor,
-      autoPaginate: params.autoPaginate ?? true,
-      includeThreads: params.includeThreads ?? true,
-      maxThreads: params.maxThreads,
-      maxRepliesPerThread: params.maxRepliesPerThread,
-    }),
+    body: (params: SlackMessageReaderParams) => {
+      const isTrue = (v: unknown): boolean => v === true || v === 'true'
+      const isDM = params.destinationType === 'dm'
+      return {
+        accessToken: params.accessToken || params.botToken,
+        channel: isDM ? undefined : params.channel?.trim(),
+        userId: isDM ? params.dmUserId?.trim() : undefined,
+        limit: params.limit,
+        oldest: params.oldest,
+        latest: params.latest,
+        cursor: params.cursor,
+        autoPaginate:
+          params.autoPaginate === undefined ? true : isTrue(params.autoPaginate),
+        includeThreads:
+          params.includeThreads === undefined ? true : isTrue(params.includeThreads),
+        maxThreads: params.maxThreads,
+        maxRepliesPerThread: params.maxRepliesPerThread,
+      }
+    },
   },
 
   transformResponse: async (response: Response) => {

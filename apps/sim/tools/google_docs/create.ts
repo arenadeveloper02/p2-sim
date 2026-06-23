@@ -135,15 +135,13 @@ function buildMarkdownMultipartBody(
     `--${boundary}\r\n` +
     `Content-Type: text/markdown\r\n\r\n` +
     `${sanitizeMarkdownForDrive(markdownContent)}\r\n` +
+    // `${markdownContent}\r\n` +
     `--${boundary}--`
   )
 }
 
 function shouldUseMarkdownUpload(params: GoogleDocsToolParams): boolean {
-  // Always use the Drive markdown upload path when content is present.
-  // This is a single round-trip and handles plain text transparently
-  // (no markdown syntax → same output as plain text insertion).
-  return Boolean(params.content)
+  return Boolean(params.markdown && params.content)
 }
 
 export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateResponse> = {
@@ -184,6 +182,13 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
       visibility: 'hidden',
       description: 'Drive folder ID (optional). Omit to create at My Drive root.',
     },
+    markdown: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'When true, content is interpreted as Markdown and converted to formatted Google Docs content (headings, bold/italic, lists, tables, links, code blocks, blockquotes). Default: false (content inserted as plain text).',
+    },
   },
 
   request: {
@@ -218,7 +223,7 @@ export const createTool: ToolConfig<GoogleDocsToolParams, GoogleDocsCreateRespon
         throw new Error('Title is required')
       }
 
-      const folderId = params.folderId
+      const folderId = params.folderSelector || params.folderId
       const metadata: Record<string, unknown> = {
         name: params.title,
         mimeType: DOC_MIME_TYPE,

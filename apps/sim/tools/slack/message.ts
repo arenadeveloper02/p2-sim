@@ -165,7 +165,7 @@ export const slackMessageTool: ToolConfig<SlackMessageParams, SlackMessageRespon
         channel: finalChannel,
         userId: finalUserId,
         text: params.text,
-        thread_ts: params.threadTs || undefined,
+        thread_ts: params.threadTs?.trim() || undefined,
         blocks:
           typeof params.blocks === 'string'
             ? JSON.parse(params.blocks)

@@ -1,19 +1,26 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, desc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import {
+  createMothershipChatContract,
+  listMothershipChatsContract,
+} from '@/lib/api/contracts/mothership-chats'
+import { parseRequest } from '@/lib/api/server'
+import { listMothershipChats } from '@/lib/copilot/chat/list-mothership-chats'
+import { chatPubSub } from '@/lib/copilot/chat-status'
 import {
   authenticateCopilotRequestSessionOnly,
-  createBadRequestResponse,
+  createForbiddenResponse,
   createInternalServerErrorResponse,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request/http'
-import { taskPubSub } from '@/lib/copilot/tasks'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { assertActiveWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
+import {
+  assertActiveWorkspaceAccess,
+  isWorkspaceAccessDeniedError,
+} from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('MothershipChatsAPI')
 
@@ -28,40 +35,22 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       return createUnauthorizedResponse()
     }
 
-    const workspaceId = request.nextUrl.searchParams.get('workspaceId')
-    if (!workspaceId) {
-      return createBadRequestResponse('workspaceId is required')
-    }
+    const queryResult = await parseRequest(listMothershipChatsContract, request, {})
+    if (!queryResult.success) return queryResult.response
+    const { workspaceId } = queryResult.data.query
 
     await assertActiveWorkspaceAccess(workspaceId, userId)
 
-    const chats = await db
-      .select({
-        id: copilotChats.id,
-        title: copilotChats.title,
-        updatedAt: copilotChats.updatedAt,
-        activeStreamId: copilotChats.conversationId,
-        lastSeenAt: copilotChats.lastSeenAt,
-      })
-      .from(copilotChats)
-      .where(
-        and(
-          eq(copilotChats.userId, userId),
-          eq(copilotChats.workspaceId, workspaceId),
-          eq(copilotChats.type, 'mothership')
-        )
-      )
-      .orderBy(desc(copilotChats.updatedAt))
+    const data = await listMothershipChats(userId, workspaceId)
 
-    return NextResponse.json({ success: true, data: chats })
+    return NextResponse.json({ success: true, data })
   } catch (error) {
+    if (isWorkspaceAccessDeniedError(error)) {
+      return createForbiddenResponse('Workspace access denied')
+    }
     logger.error('Error fetching mothership chats:', error)
     return createInternalServerErrorResponse('Failed to fetch chats')
   }
-})
-
-const CreateChatSchema = z.object({
-  workspaceId: z.string().min(1),
 })
 
 /**
@@ -75,8 +64,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return createUnauthorizedResponse()
     }
 
-    const body = await request.json()
-    const { workspaceId } = CreateChatSchema.parse(body)
+    const validation = await parseRequest(createMothershipChatContract, request, {})
+    if (!validation.success) return validation.response
+    const { workspaceId } = validation.data.body
 
     await assertActiveWorkspaceAccess(workspaceId, userId)
 
@@ -88,14 +78,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         workspaceId,
         type: 'mothership',
         title: null,
-        model: 'claude-opus-4-6',
-        messages: [],
+        model: 'claude-opus-4-8',
         updatedAt: now,
         lastSeenAt: now,
       })
       .returning({ id: copilotChats.id })
 
-    taskPubSub?.publishStatusChanged({ workspaceId, chatId: chat.id, type: 'created' })
+    chatPubSub?.publishStatusChanged({ workspaceId, chatId: chat.id, type: 'created' })
 
     captureServerEvent(
       userId,
@@ -108,8 +97,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json({ success: true, id: chat.id })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return createBadRequestResponse('workspaceId is required')
+    if (isWorkspaceAccessDeniedError(error)) {
+      return createForbiddenResponse('Workspace access denied')
     }
     logger.error('Error creating mothership chat:', error)
     return createInternalServerErrorResponse('Failed to create chat')

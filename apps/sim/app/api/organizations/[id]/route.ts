@@ -2,9 +2,11 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { member, organization } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { and, eq, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { updateOrganizationContract } from '@/lib/api/contracts/organization'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import {
   getOrganizationSeatAnalytics,
@@ -14,19 +16,22 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('OrganizationAPI')
 
-const updateOrganizationSchema = z.object({
-  name: z.string().trim().min(1, 'Organization name is required').optional(),
-  slug: z
-    .string()
-    .trim()
-    .min(1, 'Organization slug is required')
-    .regex(
-      /^[a-z0-9-_]+$/,
-      'Slug can only contain lowercase letters, numbers, hyphens, and underscores'
-    )
-    .optional(),
-  logo: z.string().nullable().optional(),
-})
+type OrganizationDetailsResponse = {
+  success: true
+  data: {
+    id: string
+    name: string
+    slug: string | null
+    logo: string | null
+    metadata: unknown
+    createdAt: Date
+    updatedAt: Date
+    seats?: NonNullable<Awaited<ReturnType<typeof getOrganizationSeatInfo>>>
+    seatAnalytics?: NonNullable<Awaited<ReturnType<typeof getOrganizationSeatAnalytics>>>
+  }
+  userRole: string
+  hasAdminAccess: boolean
+}
 
 /**
  * GET /api/organizations/[id]
@@ -45,7 +50,6 @@ export const GET = withRouteHandler(
       const url = new URL(request.url)
       const includeSeats = url.searchParams.get('include') === 'seats'
 
-      // Verify user has access to this organization
       const memberEntry = await db
         .select()
         .from(member)
@@ -59,7 +63,6 @@ export const GET = withRouteHandler(
         )
       }
 
-      // Get organization data
       const organizationEntry = await db
         .select()
         .from(organization)
@@ -71,9 +74,9 @@ export const GET = withRouteHandler(
       }
 
       const userRole = memberEntry[0].role
-      const hasAdminAccess = ['owner', 'admin'].includes(userRole)
+      const hasAdminAccess = isOrgAdminRole(userRole)
 
-      const response: any = {
+      const response: OrganizationDetailsResponse = {
         success: true,
         data: {
           id: organizationEntry[0].id,
@@ -88,14 +91,12 @@ export const GET = withRouteHandler(
         hasAdminAccess,
       }
 
-      // Include seat information if requested
       if (includeSeats) {
         const seatInfo = await getOrganizationSeatInfo(organizationId)
         if (seatInfo) {
           response.data.seats = seatInfo
         }
 
-        // Include analytics for admins
         if (hasAdminAccess) {
           const analytics = await getOrganizationSeatAnalytics(organizationId)
           if (analytics) {
@@ -119,10 +120,9 @@ export const GET = withRouteHandler(
 /**
  * PUT /api/organizations/[id]
  * Update organization settings (name, slug, logo)
- * Note: For seat updates, use PUT /api/organizations/[id]/seats instead
  */
 export const PUT = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
       const session = await getSession()
 
@@ -130,18 +130,12 @@ export const PUT = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const { id: organizationId } = await params
-      const body = await request.json()
+      const parsed = await parseRequest(updateOrganizationContract, request, context)
+      if (!parsed.success) return parsed.response
 
-      const validation = updateOrganizationSchema.safeParse(body)
-      if (!validation.success) {
-        const firstError = validation.error.errors[0]
-        return NextResponse.json({ error: firstError.message }, { status: 400 })
-      }
+      const { id: organizationId } = parsed.data.params
+      const { name, slug, logo } = parsed.data.body
 
-      const { name, slug, logo } = validation.data
-
-      // Verify user has admin access
       const memberEntry = await db
         .select()
         .from(member)
@@ -155,13 +149,11 @@ export const PUT = withRouteHandler(
         )
       }
 
-      if (!['owner', 'admin'].includes(memberEntry[0].role)) {
+      if (!isOrgAdminRole(memberEntry[0].role)) {
         return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 })
       }
 
-      // Handle settings update
       if (name !== undefined || slug !== undefined || logo !== undefined) {
-        // Check if slug is already taken by another organization
         if (slug !== undefined) {
           const existingSlug = await db
             .select()
@@ -174,13 +166,16 @@ export const PUT = withRouteHandler(
           }
         }
 
-        // Build update object with only provided fields
-        const updateData: any = { updatedAt: new Date() }
+        const updateData: {
+          updatedAt: Date
+          name?: string
+          slug?: string
+          logo?: string | null
+        } = { updatedAt: new Date() }
         if (name !== undefined) updateData.name = name
         if (slug !== undefined) updateData.slug = slug
         if (logo !== undefined) updateData.logo = logo
 
-        // Update organization
         const updatedOrg = await db
           .update(organization)
           .set(updateData)
@@ -227,7 +222,7 @@ export const PUT = withRouteHandler(
       return NextResponse.json({ error: 'No valid fields provided for update' }, { status: 400 })
     } catch (error) {
       logger.error('Failed to update organization', {
-        organizationId: (await params).id,
+        organizationId: (await context.params).id,
         error,
       })
 
@@ -235,7 +230,3 @@ export const PUT = withRouteHandler(
     }
   }
 )
-
-// DELETE method removed - organization deletion not implemented
-// If deletion is needed in the future, it should be implemented with proper
-// cleanup of subscriptions, members, workspaces, and billing data

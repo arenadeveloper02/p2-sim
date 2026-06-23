@@ -1,11 +1,15 @@
 import { db } from '@sim/db'
 import { workflowCheckpoints } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
 import { and, desc, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { getAccessibleCopilotChat } from '@/lib/copilot/chat/lifecycle'
+import {
+  createCopilotCheckpointContract,
+  listCopilotCheckpointsContract,
+} from '@/lib/api/contracts/copilot'
+import { getValidationErrorMessage, parseRequest, validationErrorResponse } from '@/lib/api/server'
+import { getAccessibleCopilotChatAuth } from '@/lib/copilot/chat/lifecycle'
 import {
   authenticateCopilotRequestSessionOnly,
   createBadRequestResponse,
@@ -16,13 +20,6 @@ import {
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('WorkflowCheckpointsAPI')
-
-const CreateCheckpointSchema = z.object({
-  workflowId: z.string(),
-  chatId: z.string(),
-  messageId: z.string().optional(), // ID of the user message that triggered this checkpoint
-  workflowState: z.string(), // JSON stringified workflow state
-})
 
 /**
  * POST /api/copilot/checkpoints
@@ -37,8 +34,20 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       return createUnauthorizedResponse()
     }
 
-    const body = await req.json()
-    const { workflowId, chatId, messageId, workflowState } = CreateCheckpointSchema.parse(body)
+    const parsed = await parseRequest(
+      createCopilotCheckpointContract,
+      req,
+      {},
+      {
+        validationErrorResponse: (error) =>
+          validationErrorResponse(
+            error,
+            getValidationErrorMessage(error, 'Invalid checkpoint payload')
+          ),
+      }
+    )
+    if (!parsed.success) return parsed.response
+    const { workflowId, chatId, messageId, workflowState } = parsed.data.body
 
     logger.info(`[${tracker.requestId}] Creating workflow checkpoint`, {
       userId,
@@ -51,7 +60,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     })
 
     // Verify that the chat belongs to the user
-    const chat = await getAccessibleCopilotChat(chatId, userId)
+    const chat = await getAccessibleCopilotChatAuth(chatId, userId)
 
     if (!chat) {
       return createBadRequestResponse('Chat not found or unauthorized')
@@ -133,19 +142,24 @@ export const GET = withRouteHandler(async (req: NextRequest) => {
       return createUnauthorizedResponse()
     }
 
-    const { searchParams } = new URL(req.url)
-    const chatId = searchParams.get('chatId')
-
-    if (!chatId) {
-      return createBadRequestResponse('chatId is required')
-    }
+    const parsed = await parseRequest(
+      listCopilotCheckpointsContract,
+      req,
+      {},
+      {
+        validationErrorResponse: (error) =>
+          validationErrorResponse(error, getValidationErrorMessage(error)),
+      }
+    )
+    if (!parsed.success) return parsed.response
+    const { chatId } = parsed.data.query
 
     logger.info(`[${tracker.requestId}] Fetching workflow checkpoints for chat`, {
       userId,
       chatId,
     })
 
-    const chat = await getAccessibleCopilotChat(chatId, userId)
+    const chat = await getAccessibleCopilotChatAuth(chatId, userId)
     if (!chat) {
       return createBadRequestResponse('Chat not found or unauthorized')
     }

@@ -2,13 +2,14 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import { workflow, workspaceFiles } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/request/types'
 import { findMothershipUploadRowByChatAndName } from '@/lib/copilot/tools/handlers/upload-file-reader'
+import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
 import { getServePathPrefix } from '@/lib/uploads'
-import { downloadWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { fetchWorkspaceFileBuffer } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
@@ -21,7 +22,7 @@ function toFileRecord(row: typeof workspaceFiles.$inferSelect) {
   return {
     id: row.id,
     workspaceId: row.workspaceId || '',
-    name: row.originalName,
+    name: row.displayName ?? row.originalName,
     key: row.key,
     path: `${pathPrefix}${encodeURIComponent(row.key)}?context=mothership`,
     size: row.size,
@@ -29,6 +30,7 @@ function toFileRecord(row: typeof workspaceFiles.$inferSelect) {
     uploadedBy: row.userId,
     deletedAt: row.deletedAt,
     uploadedAt: row.uploadedAt,
+    updatedAt: row.updatedAt,
     storageContext: 'mothership' as const,
   }
 }
@@ -44,7 +46,7 @@ async function executeSave(fileName: string, chatId: string): Promise<ToolCallRe
 
   const [updated] = await db
     .update(workspaceFiles)
-    .set({ context: 'workspace', chatId: null })
+    .set({ context: 'workspace', chatId: null, originalName: row.displayName ?? row.originalName })
     .where(and(eq(workspaceFiles.id, row.id), isNull(workspaceFiles.deletedAt)))
     .returning({ id: workspaceFiles.id, originalName: workspaceFiles.originalName })
 
@@ -57,14 +59,21 @@ async function executeSave(fileName: string, chatId: string): Promise<ToolCallRe
 
   logger.info('Materialized file', { fileName, fileId: updated.id, chatId })
 
+  // Canonical, per-segment-encoded path — matches how the workspace VFS serves
+  // the file (files/<encoded>), rather than echoing the raw display name.
+  const canonicalPath = canonicalWorkspaceFilePath({
+    folderPath: null,
+    name: updated.originalName,
+  })
+
   return {
     success: true,
     output: {
-      message: `File "${fileName}" materialized. It is now available at files/${fileName} and will persist independently of this chat.`,
+      message: `File "${updated.originalName}" materialized. It is now available at ${canonicalPath} and will persist independently of this chat.`,
       fileId: updated.id,
-      path: `files/${fileName}`,
+      path: canonicalPath,
     },
-    resources: [{ type: 'file', id: updated.id, title: fileName }],
+    resources: [{ type: 'file', id: updated.id, title: updated.originalName }],
   }
 }
 
@@ -82,7 +91,7 @@ async function executeImport(
     }
   }
 
-  const buffer = await downloadWorkspaceFile(toFileRecord(row))
+  const buffer = await fetchWorkspaceFileBuffer(toFileRecord(row))
   const content = buffer.toString('utf-8')
 
   let parsed: unknown
@@ -100,11 +109,7 @@ async function executeImport(
     }
   }
 
-  const {
-    name: rawName,
-    color: workflowColor,
-    description: workflowDescription,
-  } = extractWorkflowMetadata(parsed)
+  const { name: rawName, description: workflowDescription } = extractWorkflowMetadata(parsed)
 
   const workflowId = generateId()
   const now = new Date()
@@ -117,7 +122,6 @@ async function executeImport(
     folderId: null,
     name: dedupedName,
     description: workflowDescription,
-    color: workflowColor,
     lastSynced: now,
     createdAt: now,
     updatedAt: now,
@@ -204,17 +208,33 @@ export async function executeMaterializeFile(
   }
 
   const operation = (params.operation as string | undefined) || 'save'
+  // Only save/import are implemented. Reject anything else with guidance instead of
+  // silently falling back to save (table/knowledge_base are handled by their subagents).
+  if (operation !== 'save' && operation !== 'import') {
+    return {
+      success: false,
+      error: `Unsupported materialize_file operation "${operation}". Use "save" or "import". For CSV/TSV/JSON → use the table subagent; for documents → use the knowledge subagent.`,
+    }
+  }
   const succeeded: string[] = []
   const failed: Array<{ fileName: string; error: string }> = []
+  const resources: NonNullable<ToolCallResult['resources']> = []
 
   for (const fileName of fileNames) {
     try {
+      let result: ToolCallResult
       if (operation === 'import') {
-        await executeImport(fileName, context.chatId, context.workspaceId, context.userId)
+        result = await executeImport(fileName, context.chatId, context.workspaceId, context.userId)
       } else {
-        await executeSave(fileName, context.chatId)
+        result = await executeSave(fileName, context.chatId)
       }
-      succeeded.push(fileName)
+
+      if (result.success) {
+        succeeded.push(fileName)
+        if (result.resources) resources.push(...result.resources)
+      } else {
+        failed.push({ fileName, error: result.error ?? 'Failed to materialize file' })
+      }
     } catch (err) {
       logger.error('materialize_file failed', {
         fileName,
@@ -224,7 +244,7 @@ export async function executeMaterializeFile(
       })
       failed.push({
         fileName,
-        error: err instanceof Error ? err.message : 'Failed to materialize file',
+        error: getErrorMessage(err, 'Failed to materialize file'),
       })
     }
   }
@@ -236,5 +256,6 @@ export async function executeMaterializeFile(
       failed.length > 0
         ? `Failed to materialize: ${failed.map((f) => f.fileName).join(', ')}`
         : undefined,
+    resources: resources.length > 0 ? resources : undefined,
   }
 }

@@ -1,16 +1,17 @@
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
+import { fileDeleteContract } from '@/lib/api/contracts/storage-transfer'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import type { StorageContext } from '@/lib/uploads/config'
 import { deleteFile, hasCloudStorage } from '@/lib/uploads/core/storage-service'
 import { deleteFileMetadata } from '@/lib/uploads/server/metadata'
 import { extractStorageKey, inferContextFromKey } from '@/lib/uploads/utils/file-utils'
-import { verifyFileAccess } from '@/app/api/files/authorization'
+import { verifyFileAccess, verifyKBFileWriteAccess } from '@/app/api/files/authorization'
 import {
   createErrorResponse,
-  createOptionsResponse,
   createSuccessResponse,
   extractFilename,
   FileNotFoundError,
@@ -36,8 +37,21 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
 
     const userId = authResult.userId
-    const requestData = await request.json()
-    const { filePath, context } = requestData
+
+    const parsed = await parseRequest(
+      fileDeleteContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) =>
+          createErrorResponse(
+            new InvalidRequestError(getValidationErrorMessage(error, 'Invalid request data'))
+          ),
+      }
+    )
+    if (!parsed.success) return parsed.response
+
+    const { filePath, context } = parsed.data.body
 
     logger.info('File delete request received:', { filePath, context, userId })
 
@@ -48,15 +62,20 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     try {
       const key = extractStorageKeyFromPath(filePath)
 
-      const storageContext: StorageContext = context || inferContextFromKey(key)
+      // Derive context from the trusted key prefix, never the client-supplied value; a supplied context must agree with the key.
+      const storageContext: StorageContext = inferContextFromKey(key)
+      if (context && context !== storageContext) {
+        logger.warn('File delete context mismatch', { key, context, inferred: storageContext })
+        throw new InvalidRequestError(`Provided context "${context}" does not match the file key`)
+      }
 
-      const hasAccess = await verifyFileAccess(
-        key,
-        userId,
-        undefined, // customConfig
-        storageContext, // context
-        !hasCloudStorage() // isLocal
-      )
+      // Deletes require write/admin on the owning workspace; KB deletes are binding-only with no read fallback.
+      const hasAccess =
+        storageContext === 'knowledge-base'
+          ? await verifyKBFileWriteAccess(key, userId)
+          : await verifyFileAccess(key, userId, undefined, storageContext, !hasCloudStorage(), {
+              requireWrite: true,
+            })
 
       if (!hasAccess) {
         logger.warn('Unauthorized file delete attempt', { userId, key, context: storageContext })
@@ -104,10 +123,3 @@ function extractStorageKeyFromPath(filePath: string): string {
 
   return extractFilename(filePath)
 }
-
-/**
- * Handle CORS preflight requests
- */
-export const OPTIONS = withRouteHandler(async () => {
-  return createOptionsResponse()
-})

@@ -1,8 +1,9 @@
 import { account, db, user } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
-import { jwtDecode } from 'jwt-decode'
+import { decodeJwt } from 'jose'
 import { type NextRequest, NextResponse } from 'next/server'
+import type { OAuthConnection } from '@/lib/api/contracts/oauth-connections'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -46,7 +47,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const userEmail = userRecord.length > 0 ? userRecord[0]?.email : null
 
     // Process accounts to determine connections
-    const connections: any[] = []
+    const connections: OAuthConnection[] = []
 
     for (const acc of accounts) {
       const { baseProvider, featureType } = parseProvider(acc.providerId as OAuthProvider)
@@ -59,7 +60,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         // Method 1: Try to extract email from ID token (works for Google, etc.)
         if (acc.idToken) {
           try {
-            const decoded = jwtDecode<GoogleIdToken>(acc.idToken)
+            const decoded = decodeJwt<GoogleIdToken>(acc.idToken)
             if (decoded.email) {
               displayName = decoded.email
             } else if (decoded.name) {

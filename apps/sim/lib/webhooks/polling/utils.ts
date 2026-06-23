@@ -7,7 +7,7 @@ import {
   workflowDeploymentVersion,
 } from '@sim/db/schema'
 import type { Logger } from '@sim/logger'
-import { and, eq, isNull, or, sql } from 'drizzle-orm'
+import { and, eq, isNull, ne, or, sql } from 'drizzle-orm'
 import { isOrganizationOnTeamOrEnterprisePlan } from '@/lib/billing'
 import type { WebhookRecord, WorkflowRecord } from '@/lib/webhooks/polling/types'
 import {
@@ -61,7 +61,9 @@ export async function markWebhookSuccess(webhookId: string, logger: Logger): Pro
         failedCount: 0,
         updatedAt: new Date(),
       })
-      .where(eq(webhook.id, webhookId))
+      .where(
+        and(eq(webhook.id, webhookId), or(isNull(webhook.failedCount), ne(webhook.failedCount, 0)))
+      )
   } catch (err) {
     logger.error(`Failed to mark webhook ${webhookId} as successful:`, err)
   }
@@ -155,16 +157,19 @@ export async function updateWebhookProviderConfig(
   logger: Logger
 ): Promise<void> {
   try {
-    const result = await db.select().from(webhook).where(eq(webhook.id, webhookId))
-    const existingConfig = (result[0]?.providerConfig as Record<string, unknown>) || {}
+    const defined: Record<string, unknown> = {}
+    const removedKeys: string[] = []
+    for (const [key, value] of Object.entries(configUpdates)) {
+      if (value === undefined) removedKeys.push(key)
+      else defined[key] = value
+    }
+
+    const merged = sql`COALESCE(${webhook.providerConfig}, '{}'::jsonb) || ${JSON.stringify(defined)}::jsonb`
 
     await db
       .update(webhook)
       .set({
-        providerConfig: {
-          ...existingConfig,
-          ...configUpdates,
-        } as Record<string, unknown>,
+        providerConfig: removedKeys.length > 0 ? sql`(${merged}) - ${removedKeys}::text[]` : merged,
         updatedAt: new Date(),
       })
       .where(eq(webhook.id, webhookId))

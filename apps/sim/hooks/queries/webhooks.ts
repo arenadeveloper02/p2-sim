@@ -1,50 +1,37 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { isApiClientError } from '@/lib/api/client/errors'
+import { requestJson } from '@/lib/api/client/request'
+import {
+  type ListWebhooksByBlockResponse,
+  listWebhooksByBlockContract,
+  updateWebhookContract,
+  type WebhookData,
+} from '@/lib/api/contracts/webhooks'
 
 export const webhookKeys = {
   all: ['webhooks'] as const,
-  byBlock: (workflowId: string, blockId: string) =>
-    [...webhookKeys.all, workflowId, blockId] as const,
+  details: () => [...webhookKeys.all, 'detail'] as const,
+  byBlock: (workflowId?: string, blockId?: string) =>
+    [...webhookKeys.details(), workflowId ?? '', blockId ?? ''] as const,
 }
 
-interface WebhookProviderConfig {
-  triggerId?: string
-  credentialId?: string
-  credentialSetId?: string
-  userId?: string
-  historyId?: string
-  lastCheckedTimestamp?: string
-  setupCompleted?: boolean
-  externalId?: string
-  blockId?: string
-  [key: string]: unknown
-}
-
-export interface WebhookData {
-  id: string
-  path?: string
-  providerConfig?: WebhookProviderConfig
-}
-
-interface WebhookResponse {
-  webhooks: Array<{
-    webhook: WebhookData
-  }>
-}
+export type { WebhookData }
 
 async function fetchWebhooks(
   workflowId: string,
   blockId: string,
   signal?: AbortSignal
 ): Promise<WebhookData | null> {
-  const response = await fetch(`/api/webhooks?workflowId=${workflowId}&blockId=${blockId}`, {
-    signal,
-  })
-
-  if (!response.ok) {
-    return null
+  let data: ListWebhooksByBlockResponse
+  try {
+    data = await requestJson(listWebhooksByBlockContract, {
+      query: { workflowId, blockId },
+      signal,
+    })
+  } catch (error) {
+    if (isApiClientError(error) && error.status === 404) return null
+    throw error
   }
-
-  const data: WebhookResponse = await response.json()
 
   if (data.webhooks && data.webhooks.length > 0) {
     return data.webhooks[0].webhook
@@ -59,5 +46,32 @@ export function useWebhookQuery(workflowId: string, blockId: string, enabled = t
     queryFn: ({ signal }) => fetchWebhooks(workflowId, blockId, signal),
     enabled: enabled && Boolean(workflowId && blockId),
     staleTime: 60 * 1000,
+  })
+}
+
+interface ReactivateWebhookVariables {
+  webhookId: string
+  workflowId: string
+  blockId: string
+}
+
+/**
+ * Reactivates a disabled webhook and invalidates the block's webhook query so
+ * the shared cache (read by useWebhookQuery / useWebhookManagement) reflects the
+ * new active state immediately instead of serving the stale value for staleTime.
+ */
+export function useReactivateWebhook() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ webhookId }: ReactivateWebhookVariables) =>
+      requestJson(updateWebhookContract, {
+        params: { id: webhookId },
+        body: { isActive: true, failedCount: 0 },
+      }),
+    onSettled: (_data, _error, variables) =>
+      queryClient.invalidateQueries({
+        queryKey: webhookKeys.byBlock(variables.workflowId, variables.blockId),
+      }),
   })
 }

@@ -15,6 +15,7 @@ import {
   type ToolCallInfo,
   ToolCallStatus,
 } from '@/app/workspace/[workspaceId]/home/types'
+import { getMothershipAttachmentPreviewUrl } from './attachment-preview'
 import type { PersistedContentBlock, PersistedMessage } from './persisted-message'
 import { withBlockTiming } from './persisted-message'
 
@@ -24,6 +25,9 @@ const STATE_TO_STATUS: Record<string, ToolCallStatus> = {
   [MothershipStreamV1ToolOutcome.cancelled]: ToolCallStatus.cancelled,
   [MothershipStreamV1ToolOutcome.rejected]: ToolCallStatus.rejected,
   [MothershipStreamV1ToolOutcome.skipped]: ToolCallStatus.skipped,
+  aborted: ToolCallStatus.cancelled,
+  failed: ToolCallStatus.error,
+  interrupted: ToolCallStatus.interrupted,
   pending: ToolCallStatus.executing,
   executing: ToolCallStatus.executing,
 }
@@ -46,7 +50,17 @@ function toToolCallInfo(block: PersistedContentBlock): ToolCallInfo | undefined 
 
 function toDisplayBlock(block: PersistedContentBlock): ContentBlock | undefined {
   const displayed = toDisplayBlockBody(block)
-  return displayed ? withBlockTiming(displayed, block) : undefined
+  if (!displayed) return undefined
+  if (block.parentToolCallId && displayed.parentToolCallId === undefined) {
+    displayed.parentToolCallId = block.parentToolCallId
+  }
+  if (block.spanId && displayed.spanId === undefined) {
+    displayed.spanId = block.spanId
+  }
+  if (block.parentSpanId && displayed.parentSpanId === undefined) {
+    displayed.parentSpanId = block.parentSpanId
+  }
+  return withBlockTiming(displayed, block)
 }
 
 function toDisplayBlockBody(block: PersistedContentBlock): ContentBlock | undefined {
@@ -87,9 +101,7 @@ function toDisplayAttachment(f: PersistedMessage['fileAttachments']): ChatMessag
     filename: a.filename,
     media_type: a.media_type,
     size: a.size,
-    previewUrl: a.media_type.startsWith('image/')
-      ? `/api/files/serve/${encodeURIComponent(a.key)}?context=mothership`
-      : undefined,
+    previewUrl: getMothershipAttachmentPreviewUrl(a),
   }))
 }
 
@@ -109,7 +121,58 @@ function toDisplayContexts(
   }))
 }
 
+const WORKSPACE_FILE_TOOL = 'workspace_file'
+const EDIT_CONTENT_TOOL = 'edit_content'
+const MAIN_SPAN = 'main'
+
+/**
+ * Collapses an `edit_content` write into the most-recent `workspace_file` row in
+ * the same subagent span, mirroring the live turn-model fold. The live view
+ * folds these in `reduceEvent`, but the persisted transcript stores them as two
+ * separate tool blocks; without this a reloaded chat splits the file write into
+ * "workspace_file" + "edit_content" rows (and a refresh mid-write leaves the
+ * second row spinning). The reopened row inherits the edit_content's final
+ * status/result, exactly as the live single "writing" row resolves. Every other
+ * block is passed through untouched, so this only affects file writes.
+ */
+function foldFileWriteBlocks(blocks: ContentBlock[]): ContentBlock[] {
+  const folded: ContentBlock[] = []
+  const workspaceFileIndexBySpan = new Map<string, number>()
+  for (const block of blocks) {
+    const tc = block.type === ContentBlockType.tool_call ? block.toolCall : undefined
+    if (tc) {
+      const span = block.spanId ?? MAIN_SPAN
+      if (tc.name === EDIT_CONTENT_TOOL) {
+        const parentIndex = workspaceFileIndexBySpan.get(span)
+        const parent = parentIndex !== undefined ? folded[parentIndex] : undefined
+        if (parent?.type === ContentBlockType.tool_call && parent.toolCall) {
+          folded[parentIndex!] = {
+            ...parent,
+            toolCall: { ...parent.toolCall, status: tc.status, result: tc.result },
+          }
+          continue
+        }
+      } else if (tc.name === WORKSPACE_FILE_TOOL) {
+        workspaceFileIndexBySpan.set(span, folded.length)
+      }
+    }
+    folded.push(block)
+  }
+  return folded
+}
+
+const displayMessageCache = new WeakMap<PersistedMessage, ChatMessage>()
+
+/**
+ * Maps a `PersistedMessage` (server wire shape) to a `ChatMessage` (UI shape).
+ * Reference-stable: returns the same object for a given `PersistedMessage`
+ * instance so `React.memo` boundaries downstream of React Query's structural
+ * sharing can short-circuit on identity.
+ */
 export function toDisplayMessage(msg: PersistedMessage): ChatMessage {
+  const cached = displayMessageCache.get(msg)
+  if (cached) return cached
+
   const display: ChatMessage = {
     id: msg.id,
     role: msg.role,
@@ -121,9 +184,10 @@ export function toDisplayMessage(msg: PersistedMessage): ChatMessage {
   }
 
   if (msg.contentBlocks && msg.contentBlocks.length > 0) {
-    display.contentBlocks = msg.contentBlocks
+    const displayBlocks = msg.contentBlocks
       .map(toDisplayBlock)
       .filter((block): block is ContentBlock => !!block)
+    display.contentBlocks = foldFileWriteBlocks(displayBlocks)
   }
 
   const attachments = toDisplayAttachment(msg.fileAttachments)
@@ -133,5 +197,6 @@ export function toDisplayMessage(msg: PersistedMessage): ChatMessage {
 
   display.contexts = toDisplayContexts(msg.contexts)
 
+  displayMessageCache.set(msg, display)
   return display
 }

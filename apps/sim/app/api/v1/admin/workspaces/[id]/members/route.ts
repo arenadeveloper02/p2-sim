@@ -31,14 +31,25 @@
  */
 
 import { db } from '@sim/db'
-import { permissions, user, workspaceEnvironment } from '@sim/db/schema'
+import { permissions, user, workspace, workspaceEnvironment } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, count, eq } from 'drizzle-orm'
+import {
+  adminV1CreateWorkspaceMemberContract,
+  adminV1DeleteWorkspaceMemberContract,
+  adminV1ListWorkspaceMembersContract,
+} from '@/lib/api/contracts/v1/admin'
+import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { revokeWorkspaceCredentialMembershipsTx } from '@/lib/credentials/access'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
-import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
 import { getWorkspaceById } from '@/lib/workspaces/permissions/utils'
+import {
+  reassignWorkflowOwnershipForWorkspaceMemberRemovalTx,
+  transferWorkspaceOwnershipToBilledAccountForMemberRemovalTx,
+  WorkspaceBillingAccountRemovalError,
+} from '@/lib/workspaces/utils'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
   badRequestResponse,
@@ -47,11 +58,7 @@ import {
   notFoundResponse,
   singleResponse,
 } from '@/app/api/v1/admin/responses'
-import {
-  type AdminWorkspaceMember,
-  createPaginationMeta,
-  parsePaginationParams,
-} from '@/app/api/v1/admin/types'
+import { type AdminWorkspaceMember, createPaginationMeta } from '@/app/api/v1/admin/types'
 
 const logger = createLogger('AdminWorkspaceMembersAPI')
 
@@ -61,9 +68,11 @@ interface RouteParams {
 
 export const GET = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: workspaceId } = await context.params
-    const url = new URL(request.url)
-    const { limit, offset } = parsePaginationParams(url)
+    const parsed = await parseRequest(adminV1ListWorkspaceMembersContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId } = parsed.data.params
+    const { limit, offset } = parsed.data.query
 
     try {
       const workspaceData = await getWorkspaceById(workspaceId)
@@ -127,29 +136,33 @@ export const GET = withRouteHandler(
 
 export const POST = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: workspaceId } = await context.params
+    const parsed = await parseRequest(adminV1CreateWorkspaceMemberContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId } = parsed.data.params
+    const { userId, permissions: permissionLevel } = parsed.data.body
 
     try {
-      const body = await request.json()
-
-      if (!body.userId || typeof body.userId !== 'string') {
-        return badRequestResponse('userId is required')
-      }
-
-      if (!body.permissions || !['admin', 'write', 'read'].includes(body.permissions)) {
-        return badRequestResponse('permissions must be "admin", "write", or "read"')
-      }
-
       const workspaceData = await getWorkspaceById(workspaceId)
 
       if (!workspaceData) {
         return notFoundResponse('Workspace')
       }
 
+      const [workspaceBilling] = await db
+        .select({ billedAccountUserId: workspace.billedAccountUserId })
+        .from(workspace)
+        .where(eq(workspace.id, workspaceId))
+        .limit(1)
+
+      if (workspaceBilling?.billedAccountUserId === userId && permissionLevel !== 'admin') {
+        return badRequestResponse('Workspace billing account must retain admin permissions')
+      }
+
       const [userData] = await db
         .select({ id: user.id, name: user.name, email: user.email, image: user.image })
         .from(user)
-        .where(eq(user.id, body.userId))
+        .where(eq(user.id, userId))
         .limit(1)
 
       if (!userData) {
@@ -166,7 +179,7 @@ export const POST = withRouteHandler(
         .from(permissions)
         .where(
           and(
-            eq(permissions.userId, body.userId),
+            eq(permissions.userId, userId),
             eq(permissions.entityType, 'workspace'),
             eq(permissions.entityId, workspaceId)
           )
@@ -174,26 +187,23 @@ export const POST = withRouteHandler(
         .limit(1)
 
       if (existingPermission) {
-        if (existingPermission.permissionType !== body.permissions) {
+        if (existingPermission.permissionType !== permissionLevel) {
           const now = new Date()
           await db
             .update(permissions)
-            .set({ permissionType: body.permissions, updatedAt: now })
+            .set({ permissionType: permissionLevel, updatedAt: now })
             .where(eq(permissions.id, existingPermission.id))
 
-          logger.info(
-            `Admin API: Updated user ${body.userId} permissions in workspace ${workspaceId}`,
-            {
-              previousPermissions: existingPermission.permissionType,
-              newPermissions: body.permissions,
-            }
-          )
+          logger.info(`Admin API: Updated user ${userId} permissions in workspace ${workspaceId}`, {
+            previousPermissions: existingPermission.permissionType,
+            newPermissions: permissionLevel,
+          })
 
           return singleResponse({
             id: existingPermission.id,
             workspaceId,
-            userId: body.userId,
-            permissions: body.permissions as 'admin' | 'write' | 'read',
+            userId,
+            permissions: permissionLevel,
             createdAt: existingPermission.createdAt.toISOString(),
             updatedAt: now.toISOString(),
             userName: userData.name,
@@ -206,7 +216,7 @@ export const POST = withRouteHandler(
         return singleResponse({
           id: existingPermission.id,
           workspaceId,
-          userId: body.userId,
+          userId,
           permissions: existingPermission.permissionType,
           createdAt: existingPermission.createdAt.toISOString(),
           updatedAt: existingPermission.updatedAt.toISOString(),
@@ -222,18 +232,16 @@ export const POST = withRouteHandler(
 
       await db.insert(permissions).values({
         id: permissionId,
-        userId: body.userId,
+        userId,
         entityType: 'workspace',
         entityId: workspaceId,
-        permissionType: body.permissions,
+        permissionType: permissionLevel,
         createdAt: now,
         updatedAt: now,
       })
 
-      await applyWorkspaceAutoAddGroup(db, workspaceId, body.userId)
-
-      logger.info(`Admin API: Added user ${body.userId} to workspace ${workspaceId}`, {
-        permissions: body.permissions,
+      logger.info(`Admin API: Added user ${userId} to workspace ${workspaceId}`, {
+        permissions: permissionLevel,
         permissionId,
       })
 
@@ -247,15 +255,15 @@ export const POST = withRouteHandler(
         await syncWorkspaceEnvCredentials({
           workspaceId,
           envKeys: wsEnvKeys,
-          actingUserId: body.userId,
+          actingUserId: userId,
         })
       }
 
       return singleResponse({
         id: permissionId,
         workspaceId,
-        userId: body.userId,
-        permissions: body.permissions as 'admin' | 'write' | 'read',
+        userId,
+        permissions: permissionLevel,
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
         userName: userData.name,
@@ -272,19 +280,32 @@ export const POST = withRouteHandler(
 
 export const DELETE = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: workspaceId } = await context.params
-    const url = new URL(request.url)
-    const userId = url.searchParams.get('userId')
+    const parsed = await parseRequest(adminV1DeleteWorkspaceMemberContract, request, context)
+    if (!parsed.success) return parsed.response
+
+    const { id: workspaceId } = parsed.data.params
+    const { userId } = parsed.data.query
+    let targetUserId: string | undefined
 
     try {
-      if (!userId) {
-        return badRequestResponse('userId query parameter is required')
-      }
+      targetUserId = userId
 
       const workspaceData = await getWorkspaceById(workspaceId)
 
       if (!workspaceData) {
         return notFoundResponse('Workspace')
+      }
+
+      const [workspaceBilling] = await db
+        .select({ billedAccountUserId: workspace.billedAccountUserId })
+        .from(workspace)
+        .where(eq(workspace.id, workspaceId))
+        .limit(1)
+
+      if (workspaceBilling?.billedAccountUserId === userId) {
+        return badRequestResponse(
+          'Cannot remove the workspace billing account. Please reassign billing first.'
+        )
       }
 
       const [existingPermission] = await db
@@ -303,13 +324,40 @@ export const DELETE = withRouteHandler(
         return notFoundResponse('Workspace member')
       }
 
-      await db.delete(permissions).where(eq(permissions.id, existingPermission.id))
+      await db.transaction(async (tx) => {
+        await transferWorkspaceOwnershipToBilledAccountForMemberRemovalTx({
+          tx,
+          workspaceId,
+          departingUserId: userId,
+        })
+
+        const workflowOwnershipReassignment =
+          await reassignWorkflowOwnershipForWorkspaceMemberRemovalTx({
+            tx,
+            workspaceIds: [workspaceId],
+            departingUserId: userId,
+          })
+        if (workflowOwnershipReassignment.unresolved.length > 0) {
+          throw new WorkspaceBillingAccountRemovalError()
+        }
+
+        await tx.delete(permissions).where(eq(permissions.id, existingPermission.id))
+
+        await revokeWorkspaceCredentialMembershipsTx(tx, workspaceId, userId)
+      })
 
       logger.info(`Admin API: Removed user ${userId} from workspace ${workspaceId}`)
 
       return singleResponse({ removed: true, userId, workspaceId })
     } catch (error) {
-      logger.error('Admin API: Failed to remove workspace member', { error, workspaceId, userId })
+      if (error instanceof WorkspaceBillingAccountRemovalError) {
+        return badRequestResponse(error.message)
+      }
+      logger.error('Admin API: Failed to remove workspace member', {
+        error,
+        workspaceId,
+        userId: targetUserId,
+      })
       return internalErrorResponse('Failed to remove workspace member')
     }
   })

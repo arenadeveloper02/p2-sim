@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { upsertAsyncToolCall } from '@/lib/copilot/async-runs/repository'
+import { getErrorMessage, toError } from '@sim/utils/errors'
+import { ASYNC_TOOL_CONFIRMATION_STATUS } from '@/lib/copilot/async-runs/lifecycle'
+import { markAsyncToolDelivered, upsertAsyncToolCall } from '@/lib/copilot/async-runs/repository'
 import { STREAM_TIMEOUT_MS } from '@/lib/copilot/constants'
 import {
   MothershipStreamV1AsyncToolRecordStatus,
@@ -29,6 +30,7 @@ import type {
 } from '@/lib/copilot/request/types'
 import { getToolEntry, isSimExecuted } from '@/lib/copilot/tool-executor'
 import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
+import { getToolDisplayTitle } from '@/lib/copilot/tools/tool-display'
 import { isWorkflowToolName } from '@/lib/copilot/tools/workflow-tools'
 import type { ToolScope } from './types'
 import {
@@ -39,6 +41,7 @@ import {
   flushSubagentThinkingBlock,
   flushThinkingBlock,
   getScopedParentToolCallId,
+  getScopedSpanIdentity,
   getToolCallUI,
   getToolResultErrorMessage,
   handleClientCompletion,
@@ -48,13 +51,12 @@ import {
 
 const logger = createLogger('CopilotToolHandler')
 
-function applyToolDisplay(
-  toolCall: ToolCallState | undefined,
-  ui: { title?: string; phaseLabel?: string }
-): void {
-  if (!toolCall) return
-  const displayTitle = ui.title || ui.phaseLabel
-  if (displayTitle) toolCall.displayTitle = displayTitle
+function applyToolDisplay(toolCall: ToolCallState | undefined): void {
+  if (!toolCall?.name) return
+  toolCall.displayTitle = getToolDisplayTitle(
+    toolCall.name,
+    toolCall.params as Record<string, unknown> | undefined
+  )
 }
 
 /**
@@ -98,7 +100,7 @@ export async function prePersistClientExecutableToolCall(
     logger.warn('Failed to pre-persist async tool row before forwarding call frame', {
       toolCallId: data.toolCallId,
       toolName: data.toolName,
-      error: err instanceof Error ? err.message : String(err),
+      error: getErrorMessage(err),
     })
   })
 }
@@ -136,8 +138,14 @@ export async function handleToolEvent(
   // block into contentBlocks BEFORE we add the tool_call block, or
   // contentBlocks will end up with tool_call before thinking — which
   // re-renders on reload in the wrong order (Mothership group above
-  // the Thinking block, even though thinking happened first).
-  flushSubagentThinkingBlock(context)
+  // the Thinking block, even though thinking happened first). A subagent
+  // tool event flushes only its OWN lane so a concurrent sibling's thinking
+  // is left intact; a main tool event flushes all subagent lanes.
+  if (isSubagent && parentToolCallId) {
+    flushSubagentThinkingBlock(context, parentToolCallId)
+  } else {
+    flushSubagentThinkingBlock(context)
+  }
   flushThinkingBlock(context)
 
   if (isToolResultStreamEvent(event)) {
@@ -149,7 +157,20 @@ export async function handleToolEvent(
     return
   }
 
-  await handleCallPhase(event.payload, context, execContext, options, parentToolCallId, scope)
+  if (!parentToolCallId) {
+    context.sawMainToolCall = true
+    context.finalAssistantContent = ''
+  }
+
+  await handleCallPhase(
+    event.payload,
+    context,
+    execContext,
+    options,
+    parentToolCallId,
+    scope,
+    getScopedSpanIdentity(event)
+  )
 }
 
 function handleResultPhase(
@@ -224,7 +245,8 @@ async function handleCallPhase(
   execContext: ExecutionContext,
   options: OrchestratorOptions,
   parentToolCallId: string | undefined,
-  scope: ToolScope
+  scope: ToolScope,
+  spanIdentity: { spanId?: string; parentSpanId?: string }
 ): Promise<void> {
   const { toolCallId, toolName } = data
   const args = data.arguments
@@ -234,11 +256,13 @@ async function handleCallPhase(
   const isSubagent = scope === 'subagent'
   const ui = getToolCallUI(data)
 
+  if (isPartial && shouldDelayVfsPlaceholder(toolName, args)) return
+
   if (isSubagent) {
     if (wasToolResultSeen(toolCallId) || existing?.endTime) {
       if (existing && !existing.name && toolName) existing.name = toolName
       if (existing && !existing.params && args) existing.params = args
-      applyToolDisplay(existing, ui)
+      applyToolDisplay(existing)
       return
     }
   } else {
@@ -248,13 +272,21 @@ async function handleCallPhase(
     ) {
       if (!existing.name && toolName) existing.name = toolName
       if (!existing.params && args) existing.params = args
-      applyToolDisplay(existing, ui)
+      applyToolDisplay(existing)
       return
     }
   }
 
   if (isSubagent) {
-    registerSubagentToolCall(context, toolCallId, toolName, args, parentToolCallId!, ui)
+    registerSubagentToolCall(
+      context,
+      toolCallId,
+      toolName,
+      args,
+      parentToolCallId!,
+      ui,
+      spanIdentity
+    )
   } else {
     registerMainToolCall(context, toolCallId, toolName, args, existing, ui)
   }
@@ -267,6 +299,11 @@ async function handleCallPhase(
 
   const toolCall = context.toolCalls.get(toolCallId)
   if (!toolCall) return
+
+  // Capture the invoking subagent's channel id so the executor can thread it
+  // into the server tool context — this is what scopes the workspace_file ->
+  // edit_content intent handoff to one file subagent under concurrency.
+  if (parentToolCallId) toolCall.parentToolCallId = parentToolCallId
 
   const readPath = typeof args?.path === 'string' ? args.path : undefined
   if (toolName === 'read' && readPath?.startsWith('internal/')) return
@@ -307,23 +344,41 @@ async function handleCallPhase(
   )
 }
 
+function shouldDelayVfsPlaceholder(
+  toolName: string,
+  args: Record<string, unknown> | undefined
+): boolean {
+  return (toolName === 'read' || toolName === 'glob') && !args
+}
+
+function removeToolCallContentBlock(context: StreamingContext, toolCallId: string): void {
+  for (let i = context.contentBlocks.length - 1; i >= 0; i--) {
+    const block = context.contentBlocks[i]
+    if (block.type === 'tool_call' && block.toolCall?.id === toolCallId) {
+      context.contentBlocks.splice(i, 1)
+    }
+  }
+}
+
 function registerSubagentToolCall(
   context: StreamingContext,
   toolCallId: string,
   toolName: string,
   args: Record<string, unknown> | undefined,
   parentToolCallId: string,
-  ui: { title?: string; phaseLabel?: string }
+  ui: { title?: string; phaseLabel?: string; hidden?: boolean },
+  spanIdentity: { spanId?: string; parentSpanId?: string }
 ): void {
   if (!context.subAgentToolCalls[parentToolCallId]) {
     context.subAgentToolCalls[parentToolCallId] = []
   }
-  const hideFromUi = isToolHiddenInUi(toolName)
+  const hideFromUi = isToolHiddenInUi(toolName) || ui.hidden === true
   let toolCall = context.toolCalls.get(toolCallId)
   if (toolCall) {
     if (!toolCall.name && toolName) toolCall.name = toolName
     if (args && !toolCall.params) toolCall.params = args
-    applyToolDisplay(toolCall, ui)
+    applyToolDisplay(toolCall)
+    if (hideFromUi) removeToolCallContentBlock(context, toolCallId)
   } else {
     toolCall = {
       id: toolCallId,
@@ -332,7 +387,7 @@ function registerSubagentToolCall(
       params: args,
       startTime: Date.now(),
     }
-    applyToolDisplay(toolCall, ui)
+    applyToolDisplay(toolCall)
     context.toolCalls.set(toolCallId, toolCall)
     const parentToolCall = context.toolCalls.get(parentToolCallId)
     if (!hideFromUi) {
@@ -340,6 +395,8 @@ function registerSubagentToolCall(
         type: 'tool_call',
         toolCall,
         calledBy: parentToolCall?.name,
+        parentToolCallId,
+        ...spanIdentity,
       })
     }
   }
@@ -349,7 +406,7 @@ function registerSubagentToolCall(
   if (existingSubagentToolCall) {
     if (!existingSubagentToolCall.name && toolName) existingSubagentToolCall.name = toolName
     if (args && !existingSubagentToolCall.params) existingSubagentToolCall.params = args
-    applyToolDisplay(existingSubagentToolCall, ui)
+    applyToolDisplay(existingSubagentToolCall)
   } else {
     subagentToolCalls.push(toolCall)
   }
@@ -361,12 +418,16 @@ function registerMainToolCall(
   toolName: string,
   args: Record<string, unknown> | undefined,
   existing: ToolCallState | undefined,
-  ui: { title?: string; phaseLabel?: string }
+  ui: { title?: string; phaseLabel?: string; hidden?: boolean }
 ): void {
-  const hideFromUi = isToolHiddenInUi(toolName)
+  const hideFromUi = isToolHiddenInUi(toolName) || ui.hidden === true
   if (existing) {
     if (args && !existing.params) existing.params = args
-    applyToolDisplay(existing, ui)
+    applyToolDisplay(existing)
+    if (hideFromUi) {
+      removeToolCallContentBlock(context, toolCallId)
+      return
+    }
     if (
       !hideFromUi &&
       !context.contentBlocks.some((b) => b.type === 'tool_call' && b.toolCall?.id === toolCallId)
@@ -381,7 +442,7 @@ function registerMainToolCall(
       params: args,
       startTime: Date.now(),
     }
-    applyToolDisplay(created, ui)
+    applyToolDisplay(created)
     context.toolCalls.set(toolCallId, created)
     if (!hideFromUi) {
       addContentBlock(context, { type: 'tool_call', toolCall: created })
@@ -456,6 +517,15 @@ async function dispatchToolExecution(
             span.setAttribute(TraceAttr.ToolOutcome, completion.status)
           }
           handleClientCompletion(toolCall, toolCallId, completion)
+          if (completion?.status === ASYNC_TOOL_CONFIRMATION_STATUS.background) {
+            await markAsyncToolDelivered(toolCallId).catch((err) => {
+              logger.warn(`Failed to mark background ${scopeLabel}tool delivered`, {
+                toolCallId,
+                toolName,
+                error: toError(err).message,
+              })
+            })
+          }
           await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
           return (
             completion ?? {

@@ -4,10 +4,13 @@ import { getBrandConfig } from '@/ee/whitelabeling'
 export type EmailSubjectType =
   | 'sign-in'
   | 'email-verification'
+  | 'change-email'
   | 'forget-password'
   | 'reset-password'
+  | 'existing-account'
   | 'invitation'
   | 'batch-invitation'
+  | 'workspace-added'
   | 'polling-group-invitation'
   | 'help-confirmation'
   | 'enterprise-subscription'
@@ -34,14 +37,20 @@ export function getEmailSubject(type: EmailSubjectType): string {
       return `Sign in to ${brandName}`
     case 'email-verification':
       return `Verify your email for ${brandName}`
+    case 'change-email':
+      return `Verify your new email for ${brandName}`
     case 'forget-password':
       return `Reset your ${brandName} password`
     case 'reset-password':
       return `Reset your ${brandName} password`
+    case 'existing-account':
+      return `Sign-up attempt with your ${brandName} email`
     case 'invitation':
       return `You've been invited to join a team on ${brandName}`
     case 'batch-invitation':
       return `You've been invited to join a team and workspaces on ${brandName}`
+    case 'workspace-added':
+      return `You've been added to a workspace on ${brandName}`
     case 'polling-group-invitation':
       return `You've been invited to join an email polling group on ${brandName}`
     case 'help-confirmation':

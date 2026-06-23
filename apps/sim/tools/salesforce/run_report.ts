@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import type {
   SalesforceRunReportParams,
   SalesforceRunReportResponse,
@@ -74,12 +75,12 @@ export const salesforceRunReportTool: ToolConfig<
           return { reportMetadata: { reportFilters: filters } }
         } catch (e) {
           throw new Error(
-            `Invalid report filters JSON: ${e instanceof Error ? e.message : 'Parse error'}. Please provide a valid JSON array of filter objects.`
+            `Invalid report filters JSON: ${getErrorMessage(e, 'Parse error')}. Please provide a valid JSON array of filter objects.`
           )
         }
       }
       // Return undefined for GET requests (no body)
-      return undefined as any
+      return undefined
     },
   },
 
@@ -106,7 +107,7 @@ export const salesforceRunReportTool: ToolConfig<
         groupingsAcross: data.groupingsAcross ?? null,
         hasDetailRows: data.hasDetailRows ?? null,
         allData: data.allData ?? null,
-        reportName: data.reportMetadata?.name ?? null,
+        reportName: data.reportMetadata?.name ?? data.attributes?.reportName ?? null,
         reportFormat: data.reportMetadata?.reportFormat ?? null,
         success: true,
       },

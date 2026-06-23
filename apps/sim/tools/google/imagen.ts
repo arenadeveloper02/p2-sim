@@ -218,7 +218,9 @@ export const imagenTool: ToolConfig = {
         logger.error('No generated images found in Imagen response', {
           topLevelKeys: getObjectKeys(data),
           predictionsCount: Array.isArray(data.predictions) ? data.predictions.length : 0,
-          generatedImagesCount: Array.isArray(data.generatedImages) ? data.generatedImages.length : 0,
+          generatedImagesCount: Array.isArray(data.generatedImages)
+            ? data.generatedImages.length
+            : 0,
           imagesCount: Array.isArray(data.images) ? data.images.length : 0,
           dataCount: Array.isArray(data.data) ? data.data.length : 0,
         })

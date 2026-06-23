@@ -48,25 +48,22 @@ export const slackListMembersTool: ToolConfig<SlackListMembersParams, SlackListM
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description:
-        'Pagination cursor from a previous response (`output.cursor`) to fetch the next page',
+      description: 'Pagination cursor from a previous response.next_cursor',
     },
   },
 
   request: {
     url: (params: SlackListMembersParams) => {
       const url = new URL('https://slack.com/api/conversations.members')
-      url.searchParams.append('channel', params.channel)
+      url.searchParams.append('channel', params.channel.trim())
 
       // Set limit (default 100, max 200)
       const limit = params.limit ? Math.min(Number(params.limit), 200) : 100
       url.searchParams.append('limit', String(limit))
 
-      if (typeof params.cursor === 'string') {
-        const c = params.cursor.trim()
-        if (c) {
-          url.searchParams.append('cursor', c)
-        }
+      const cursor = params.cursor?.trim()
+      if (cursor) {
+        url.searchParams.append('cursor', cursor)
       }
 
       return url.toString()
@@ -107,7 +104,7 @@ export const slackListMembersTool: ToolConfig<SlackListMembersParams, SlackListM
       output: {
         members,
         count: members.length,
-        cursor,
+        nextCursor: cursor,
       },
     }
   },
@@ -124,11 +121,10 @@ export const slackListMembersTool: ToolConfig<SlackListMembersParams, SlackListM
       type: 'number',
       description: 'Total number of members returned',
     },
-    cursor: {
+    nextCursor: {
       type: 'string',
+      description: 'Cursor for the next page; null if no more pages',
       optional: true,
-      description:
-        'Cursor for the next page (`response_metadata.next_cursor`); absent or null when there are no more results',
     },
   },
 }

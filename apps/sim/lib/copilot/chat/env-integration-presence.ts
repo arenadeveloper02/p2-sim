@@ -4,27 +4,14 @@
  * matches runtime reality when tokens live in env vars instead of OAuth rows.
  */
 
-import { getBlock } from '@/blocks'
+import { listHubSpotSharedAccountAliases } from '@/lib/hubspot/env-aliases'
 
 /**
- * HubSpot block in this app uses a shared **accounts** dropdown; values are mapped to
- * `oauthCredential` in `tools.config.params` (see `hubspot.ts`). Mothership should treat
- * HubSpot as available when these options exist, even without OAuth credential rows.
+ * HubSpot shared portal aliases from `account_tokens` (see `list-account-options.ts`).
+ * Mothership treats HubSpot as available when these exist, even without per-user OAuth rows.
  */
 export function getHubSpotSharedAccountOptionIds(): string[] {
-  const block = getBlock('hubspot')
-  if (!block?.subBlocks) return []
-  const accountsSb = block.subBlocks.find((s) => s.id === 'accounts')
-  const raw = accountsSb?.options
-  if (!Array.isArray(raw) || raw.length === 0) return []
-  const ids: string[] = []
-  for (const o of raw) {
-    if (o && typeof o === 'object' && 'id' in o) {
-      const id = String((o as { id: unknown }).id).trim()
-      if (id) ids.push(id)
-    }
-  }
-  return ids
+  return listHubSpotSharedAccountAliases()
 }
 
 /**
@@ -42,20 +29,46 @@ export function inferProviderIdsFromEnvCredentialKeys(envKeys: string[]): string
   return [...out]
 }
 
+export interface OAuthIntegrationPresence {
+  id: string
+  providerId: string
+  displayName?: string | null
+  role?: string | null
+}
+
 /**
- * Merges OAuth/service-account connected providers with providers inferred from env credentials.
+ * Merges OAuth/service-account connected credentials with providers inferred from env credentials.
+ * Env-only providers get a synthetic row so WORKSPACE.md still lists them as available.
  */
 export function mergeOAuthIntegrationPresence(
-  fromOAuthRows: Array<{ providerId: string }>,
+  fromOAuthRows: OAuthIntegrationPresence[],
   envCredentialKeys: string[],
   hubspotSharedAccountIds?: string[]
-): Array<{ providerId: string }> {
-  const ids = new Set(fromOAuthRows.map((r) => r.providerId))
-  for (const p of inferProviderIdsFromEnvCredentialKeys(envCredentialKeys)) {
-    ids.add(p)
+): OAuthIntegrationPresence[] {
+  const result: OAuthIntegrationPresence[] = [...fromOAuthRows]
+  const presentProviders = new Set(fromOAuthRows.map((r) => r.providerId))
+
+  for (const providerId of inferProviderIdsFromEnvCredentialKeys(envCredentialKeys)) {
+    if (presentProviders.has(providerId)) continue
+    presentProviders.add(providerId)
+    result.push({
+      id: `__env__:${providerId}`,
+      providerId,
+      displayName: 'via environment credential',
+    })
   }
-  if (hubspotSharedAccountIds && hubspotSharedAccountIds.length > 0) {
-    ids.add('hubspot')
+
+  if (
+    hubspotSharedAccountIds &&
+    hubspotSharedAccountIds.length > 0 &&
+    !presentProviders.has('hubspot')
+  ) {
+    result.push({
+      id: '__hubspot_accounts__',
+      providerId: 'hubspot',
+      displayName: 'via shared accounts subblock',
+    })
   }
-  return [...ids].sort().map((providerId) => ({ providerId }))
+
+  return result.sort((a, b) => a.providerId.localeCompare(b.providerId) || a.id.localeCompare(b.id))
 }

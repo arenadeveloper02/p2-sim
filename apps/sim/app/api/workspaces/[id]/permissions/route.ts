@@ -1,15 +1,16 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { permissions, user, workspace, workspaceEnvironment } from '@sim/db/schema'
+import { member, permissions, user, workspace, workspaceEnvironment } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { ORG_ADMIN_ROLES } from '@sim/platform-authz/workspace'
 import { generateId } from '@sim/utils/id'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { updateWorkspacePermissionsContract } from '@/lib/api/contracts/workspaces'
+import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { syncWorkspaceEnvCredentials } from '@/lib/credentials/environment'
-import { applyWorkspaceAutoAddGroup } from '@/lib/permission-groups/auto-add'
 import { captureServerEvent } from '@/lib/posthog/server'
 import {
   checkWorkspaceAccess,
@@ -20,15 +21,6 @@ import {
 } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspacesPermissionsAPI')
-
-const updatePermissionsSchema = z.object({
-  updates: z.array(
-    z.object({
-      userId: z.string(),
-      permissions: z.enum(['admin', 'write', 'read']),
-    })
-  ),
-})
 
 /**
  * GET /api/workspaces/[id]/permissions
@@ -98,9 +90,9 @@ export const GET = withRouteHandler(
  * @returns Success message or error
  */
 export const PATCH = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     try {
-      const { id: workspaceId } = await params
+      const { id: workspaceId } = await context.params
       const session = await getSession()
 
       if (!session?.user?.id) {
@@ -116,10 +108,15 @@ export const PATCH = withRouteHandler(
         )
       }
 
-      const body = updatePermissionsSchema.parse(await request.json())
+      const parsed = await parseRequest(updateWorkspacePermissionsContract, request, context)
+      if (!parsed.success) return parsed.response
+      const body = parsed.data.body
 
       const workspaceRow = await db
-        .select({ billedAccountUserId: workspace.billedAccountUserId })
+        .select({
+          billedAccountUserId: workspace.billedAccountUserId,
+          organizationId: workspace.organizationId,
+        })
         .from(workspace)
         .where(eq(workspace.id, workspaceId))
         .limit(1)
@@ -129,6 +126,27 @@ export const PATCH = withRouteHandler(
       }
 
       const billedAccountUserId = workspaceRow[0].billedAccountUserId
+      const organizationId = workspaceRow[0].organizationId
+
+      if (organizationId) {
+        const targetUserIds = body.updates.map((update) => update.userId)
+        const orgAdminTargets = await db
+          .select({ userId: member.userId })
+          .from(member)
+          .where(
+            and(
+              eq(member.organizationId, organizationId),
+              inArray(member.userId, targetUserIds),
+              inArray(member.role, [...ORG_ADMIN_ROLES])
+            )
+          )
+        if (orgAdminTargets.length > 0) {
+          return NextResponse.json(
+            { error: 'Organization admins are workspace admins and their role cannot be changed' },
+            { status: 400 }
+          )
+        }
+      }
 
       const selfUpdate = body.updates.find((update) => update.userId === session.user.id)
       if (selfUpdate && selfUpdate.permissions !== 'admin') {
@@ -167,8 +185,6 @@ export const PATCH = withRouteHandler(
 
       await db.transaction(async (tx) => {
         for (const update of body.updates) {
-          const isNew = !permLookup.has(update.userId)
-
           await tx
             .delete(permissions)
             .where(
@@ -188,10 +204,6 @@ export const PATCH = withRouteHandler(
             createdAt: new Date(),
             updatedAt: new Date(),
           })
-
-          if (isNew) {
-            await applyWorkspaceAutoAddGroup(tx, workspaceId, update.userId)
-          }
         }
       })
 

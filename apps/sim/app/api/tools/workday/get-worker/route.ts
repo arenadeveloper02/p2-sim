@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { workdayGetWorkerContract } from '@/lib/api/contracts/tools/workday'
+import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -15,14 +17,6 @@ export const dynamic = 'force-dynamic'
 
 const logger = createLogger('WorkdayGetWorkerAPI')
 
-const RequestSchema = z.object({
-  tenantUrl: z.string().min(1),
-  tenant: z.string().min(1),
-  username: z.string().min(1),
-  password: z.string().min(1),
-  workerId: z.string().min(1),
-})
-
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
@@ -32,8 +26,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const data = RequestSchema.parse(body)
+    const parsed = await parseRequest(workdayGetWorkerContract, request, {})
+    if (!parsed.success) return parsed.response
+    const data = parsed.data.body
 
     const client = await createWorkdaySoapClient(
       data.tenantUrl,
@@ -81,7 +76,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   } catch (error) {
     logger.error(`[${requestId}] Workday get worker failed`, { error })
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      { success: false, error: getErrorMessage(error, 'Unknown error') },
       { status: 500 }
     )
   }

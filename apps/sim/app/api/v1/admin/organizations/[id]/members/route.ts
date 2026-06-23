@@ -32,11 +32,19 @@ import { db } from '@sim/db'
 import { member, organization, user, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { count, eq } from 'drizzle-orm'
+import {
+  adminV1AddOrganizationMemberContract,
+  adminV1ListOrganizationMembersContract,
+} from '@/lib/api/contracts/v1/admin'
+import { parseRequest } from '@/lib/api/server'
+import { getOrgMemberLedgerByUser } from '@/lib/billing/core/organization'
 import { addUserToOrganization } from '@/lib/billing/organizations/membership'
-import { isBillingEnabled } from '@/lib/core/config/feature-flags'
+import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
+  adminInvalidJsonResponse,
+  adminValidationErrorResponse,
   badRequestResponse,
   internalErrorResponse,
   listResponse,
@@ -47,7 +55,6 @@ import {
   type AdminMember,
   type AdminMemberDetail,
   createPaginationMeta,
-  parsePaginationParams,
 } from '@/app/api/v1/admin/types'
 
 const logger = createLogger('AdminOrganizationMembersAPI')
@@ -58,9 +65,13 @@ interface RouteParams {
 
 export const GET = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: organizationId } = await context.params
-    const url = new URL(request.url)
-    const { limit, offset } = parsePaginationParams(url)
+    const parsed = await parseRequest(adminV1ListOrganizationMembersContract, request, context, {
+      validationErrorResponse: adminValidationErrorResponse,
+    })
+    if (!parsed.success) return parsed.response
+
+    const { id: organizationId } = parsed.data.params
+    const { limit, offset } = parsed.data.query
 
     try {
       const [orgData] = await db
@@ -86,7 +97,6 @@ export const GET = withRouteHandler(
             userEmail: user.email,
             currentPeriodCost: userStats.currentPeriodCost,
             currentUsageLimit: userStats.currentUsageLimit,
-            lastActive: userStats.lastActive,
             billingBlocked: userStats.billingBlocked,
           })
           .from(member)
@@ -99,6 +109,11 @@ export const GET = withRouteHandler(
       ])
 
       const total = countResult[0].count
+
+      // currentPeriodCost is only a baseline; add each member's attributed
+      // usage_log for the org's period so admin shows real current usage.
+      const usageByUser = await getOrgMemberLedgerByUser(organizationId)
+
       const data: AdminMemberDetail[] = membersData.map((m) => ({
         id: m.id,
         userId: m.userId,
@@ -107,9 +122,10 @@ export const GET = withRouteHandler(
         createdAt: m.createdAt.toISOString(),
         userName: m.userName,
         userEmail: m.userEmail,
-        currentPeriodCost: m.currentPeriodCost ?? '0',
+        currentPeriodCost: (
+          Number(m.currentPeriodCost ?? 0) + (usageByUser.get(m.userId) ?? 0)
+        ).toString(),
         currentUsageLimit: m.currentUsageLimit,
-        lastActive: m.lastActive?.toISOString() ?? null,
         billingBlocked: m.billingBlocked ?? false,
       }))
 
@@ -127,18 +143,16 @@ export const GET = withRouteHandler(
 
 export const POST = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: organizationId } = await context.params
+    const parsed = await parseRequest(adminV1AddOrganizationMemberContract, request, context, {
+      validationErrorResponse: adminValidationErrorResponse,
+      invalidJsonResponse: adminInvalidJsonResponse,
+    })
+    if (!parsed.success) return parsed.response
+
+    const { id: organizationId } = parsed.data.params
 
     try {
-      const body = await request.json()
-
-      if (!body.userId || typeof body.userId !== 'string') {
-        return badRequestResponse('userId is required')
-      }
-
-      if (!body.role || !['admin', 'member'].includes(body.role)) {
-        return badRequestResponse('role must be "admin" or "member"')
-      }
+      const { userId, role } = parsed.data.body
 
       const [orgData] = await db
         .select({ id: organization.id, name: organization.name })
@@ -153,7 +167,7 @@ export const POST = withRouteHandler(
       const [userData] = await db
         .select({ id: user.id, name: user.name, email: user.email })
         .from(user)
-        .where(eq(user.id, body.userId))
+        .where(eq(user.id, userId))
         .limit(1)
 
       if (!userData) {
@@ -168,7 +182,7 @@ export const POST = withRouteHandler(
           organizationId: member.organizationId,
         })
         .from(member)
-        .where(eq(member.userId, body.userId))
+        .where(eq(member.userId, userId))
         .limit(1)
 
       if (existingMember) {
@@ -179,22 +193,22 @@ export const POST = withRouteHandler(
             )
           }
 
-          if (existingMember.role !== body.role) {
-            await db.update(member).set({ role: body.role }).where(eq(member.id, existingMember.id))
+          if (existingMember.role !== role) {
+            await db.update(member).set({ role }).where(eq(member.id, existingMember.id))
 
             logger.info(
-              `Admin API: Updated user ${body.userId} role in organization ${organizationId}`,
+              `Admin API: Updated user ${userId} role in organization ${organizationId}`,
               {
                 previousRole: existingMember.role,
-                newRole: body.role,
+                newRole: role,
               }
             )
 
             return singleResponse({
               id: existingMember.id,
-              userId: body.userId,
+              userId,
               organizationId,
-              role: body.role,
+              role,
               createdAt: existingMember.createdAt.toISOString(),
               userName: userData.name,
               userEmail: userData.email,
@@ -208,7 +222,7 @@ export const POST = withRouteHandler(
 
           return singleResponse({
             id: existingMember.id,
-            userId: body.userId,
+            userId,
             organizationId,
             role: existingMember.role,
             createdAt: existingMember.createdAt.toISOString(),
@@ -228,9 +242,9 @@ export const POST = withRouteHandler(
       }
 
       const result = await addUserToOrganization({
-        userId: body.userId,
+        userId,
         organizationId,
-        role: body.role,
+        role,
         skipBillingLogic: !isBillingEnabled,
       })
 
@@ -240,16 +254,16 @@ export const POST = withRouteHandler(
 
       const data: AdminMember = {
         id: result.memberId!,
-        userId: body.userId,
+        userId,
         organizationId,
-        role: body.role,
+        role,
         createdAt: new Date().toISOString(),
         userName: userData.name,
         userEmail: userData.email,
       }
 
-      logger.info(`Admin API: Added user ${body.userId} to organization ${organizationId}`, {
-        role: body.role,
+      logger.info(`Admin API: Added user ${userId} to organization ${organizationId}`, {
+        role,
         memberId: result.memberId,
         billingActions: result.billingActions,
       })

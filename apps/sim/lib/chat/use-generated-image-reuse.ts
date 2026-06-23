@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  extractGeneratedImagesFromData,
   type AssistantGeneratedImage,
+  extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
 import {
   materializeSelectedGeneratedImage,
-  toSelectedGeneratedImage,
   type SelectedGeneratedImage,
   type ToggleGeneratedImageInput,
+  toSelectedGeneratedImage,
 } from '@/lib/chat/generated-image-selection'
 
 interface MessageWithGeneratedImages {
@@ -20,7 +20,9 @@ interface MessageWithGeneratedImages {
 }
 
 export function useGeneratedImageReuse(messages: MessageWithGeneratedImages[]) {
-  const [selectedGeneratedImages, setSelectedGeneratedImages] = useState<SelectedGeneratedImage[]>([])
+  const [selectedGeneratedImages, setSelectedGeneratedImages] = useState<SelectedGeneratedImage[]>(
+    []
+  )
   const availableImageIds = useMemo(
     () =>
       new Set(
@@ -65,19 +67,18 @@ export function useGeneratedImageReuse(messages: MessageWithGeneratedImages[]) {
     []
   )
 
-  const removeSelectedGeneratedImage = useCallback(
-    (imageId: string) => {
-      setSelectedGeneratedImages((current) => current.filter((image) => image.id !== imageId))
-    },
-    []
-  )
+  const removeSelectedGeneratedImage = useCallback((imageId: string) => {
+    setSelectedGeneratedImages((current) => current.filter((image) => image.id !== imageId))
+  }, [])
 
   const clearSelectedGeneratedImages = useCallback(() => {
     setSelectedGeneratedImages([])
   }, [])
 
   const materializeSelectedGeneratedImages = useCallback(() => {
-    return Promise.all(effectiveGeneratedImages.map((image) => materializeSelectedGeneratedImage(image)))
+    return Promise.all(
+      effectiveGeneratedImages.map((image) => materializeSelectedGeneratedImage(image))
+    )
   }, [effectiveGeneratedImages])
 
   return {

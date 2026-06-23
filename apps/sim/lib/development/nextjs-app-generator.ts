@@ -181,6 +181,7 @@ export interface GenerateNextjsAppResult {
   neonProjectId?: string
   databaseProvisionError?: string
   error?: string
+  mode?: 'generate' | 'edit'
 }
 
 interface LlmAppSpec {
@@ -1069,7 +1070,12 @@ export async function generateNextjsApp(
               vercelProjectName: preparedVercelProjectName,
               githubOwner,
               githubRepoName,
+              githubToken,
+              outputDir,
               vercelTeamId,
+              gitRef: pushResult.defaultBranch ?? 'main',
+              gitCommitSha: pushResult.commitSha,
+              gitHubRepoId: pushResult.repoId,
               databaseProvisioned,
               neonProjectId,
             })
@@ -1176,6 +1182,430 @@ export async function generateNextjsApp(
   } catch (error) {
     const message = toError(error).message
     logger.error('Next.js app generation failed', { error: message })
+    return { success: false, error: message }
+  }
+}
+
+export interface EditNextjsAppInput {
+  userInput: string
+  repoName: string
+}
+
+const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    appName: { type: 'string' },
+    description: { type: 'string' },
+    features: { type: 'array', items: { type: 'string' } },
+    requiresDatabase: { type: 'boolean' },
+    files: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          content: { type: 'string' },
+        },
+        required: ['path', 'content'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['appName', 'description', 'features', 'requiresDatabase', 'files'],
+  additionalProperties: false,
+}
+
+const EDIT_APP_SYSTEM_PROMPT = `You are a senior full-stack engineer editing an existing Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
+
+Respond ONLY with JSON matching the provided schema.
+
+Constraints:
+- Apply the user's requested changes while preserving working architecture and unrelated code
+- Return ONLY files you create or modify (do not echo unchanged files)
+- Every returned file must contain complete, real, working code — no stubs or placeholders
+- ${GENERATED_APP_DEPENDENCY_GUIDANCE}
+- ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
+- ${GENERATED_APP_STYLING_GUIDANCE}
+- ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_README_GUIDANCE}
+- ${GENERATED_APP_VALIDATION_GUIDANCE}
+- NEVER use localStorage.setItem or sessionStorage.setItem to persist app data
+- Valid TypeScript, zero build errors, no secrets`
+
+function mergeEditedFiles(
+  existingFiles: GeneratedAppFile[],
+  editedFiles: GeneratedAppFile[]
+): GeneratedAppFile[] {
+  const byPath = new Map<string, GeneratedAppFile>()
+  for (const file of existingFiles) {
+    byPath.set(file.path.replace(/\\/g, '/'), file)
+  }
+  for (const file of editedFiles) {
+    byPath.set(file.path.replace(/\\/g, '/'), file)
+  }
+  return [...byPath.values()]
+}
+
+function inferAppMetadataFromFiles(
+  repoName: string,
+  existingFiles: GeneratedAppFile[]
+): Pick<LlmAppSpec, 'appName' | 'description' | 'features' | 'requiresDatabase'> {
+  const readme = existingFiles.find((file) => file.path === 'README.md')?.content ?? ''
+  const packageJsonFile = existingFiles.find((file) => file.path === 'package.json')
+  let appName = repoName
+  if (packageJsonFile) {
+    try {
+      const parsed = JSON.parse(packageJsonFile.content) as { name?: string }
+      if (parsed.name) {
+        appName = parsed.name
+      }
+    } catch {
+      // ignore invalid package.json
+    }
+  }
+
+  const description =
+    readme
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0)
+      ?.replace(/^#\s*/, '') ?? `Edited ${repoName}`
+
+  return {
+    appName,
+    description,
+    features: [],
+    requiresDatabase: resolveRequiresDatabase({
+      requiresDatabase: undefined,
+      files: existingFiles,
+    }),
+  }
+}
+
+async function requestAppEditsFromLlm(
+  userInput: string,
+  repoName: string,
+  existingFiles: GeneratedAppFile[]
+): Promise<LlmAppSpec> {
+  const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
+  const metadata = inferAppMetadataFromFiles(repoName, existingFiles)
+
+  const contextSummary = existingFiles
+    .map((file) => `--- ${file.path} ---\n${file.content}`)
+    .join('\n\n')
+
+  const userPrompt = `Repository: ${repoName}
+App name: ${metadata.appName}
+Description: ${metadata.description}
+
+User edit request:
+${userInput}
+
+Existing project files (read-only context):
+${contextSummary}
+
+Return JSON with app metadata and ONLY the files you changed or added.`
+
+  const parsed = await requestStructuredJsonWithContinuations(
+    anthropic,
+    EDIT_APP_SYSTEM_PROMPT,
+    userPrompt,
+    EDIT_APP_JSON_SCHEMA,
+    (text) => JSON.parse(extractJsonFromLlmText(text)) as LlmAppSpec
+  )
+
+  if (!parsed.files?.length) {
+    throw new Error('LLM did not return any file changes for the edit request')
+  }
+
+  const mergedFiles = mergeEditedFiles(existingFiles, parsed.files)
+
+  return normalizeAppSpec(
+    {
+      appName: parsed.appName || metadata.appName,
+      repoName,
+      description: parsed.description || metadata.description,
+      features: parsed.features?.length ? parsed.features : metadata.features,
+      requiresDatabase: parsed.requiresDatabase ?? metadata.requiresDatabase,
+      files: mergedFiles,
+    },
+    repoName
+  )
+}
+
+/**
+ * Edits an existing generated Next.js app from user instructions, then validates, pushes, and deploys.
+ */
+export async function editNextjsApp(input: EditNextjsAppInput): Promise<GenerateNextjsAppResult> {
+  const userInput = input.userInput?.trim()
+  const repoName = slugifyRepoName(input.repoName?.trim() ?? '')
+
+  if (!userInput) {
+    return { success: false, error: 'userInput is required' }
+  }
+  if (!repoName) {
+    return { success: false, error: 'repoName is required' }
+  }
+
+  try {
+    const { ensureLocalGeneratedApp } = await import('@/lib/development/ensure-local-generated-app')
+    const { readGeneratedAppFiles } = await import('@/lib/development/read-generated-app-files')
+    const {
+      ensureGitHubRepository,
+      pushRepoChangesToGitHub,
+    } = await import('@/lib/development/push-generated-app-to-github')
+
+    const localResult = await ensureLocalGeneratedApp(repoName)
+    if (!localResult.success || !localResult.outputDir) {
+      return { success: false, error: localResult.error ?? 'Failed to prepare local repository copy' }
+    }
+
+    const outputDir = localResult.outputDir
+    const monorepoRoot = findMonorepoRoot()
+    const outputPath = relative(monorepoRoot, outputDir)
+
+    const existingFiles = await readGeneratedAppFiles(outputDir)
+    const generationStartedAt = Date.now()
+    let spec = await requestAppEditsFromLlm(userInput, repoName, existingFiles)
+    logger.info('LLM app edit finished', {
+      durationMs: Date.now() - generationStartedAt,
+      changedFiles: spec.files.length,
+      requiresDatabase: spec.requiresDatabase,
+    })
+
+    const fileCount = await writeAppFiles(outputDir, spec.files)
+    if (fileCount === 0) {
+      return { success: false, error: 'No valid files were written to the output directory' }
+    }
+
+    let buildValidated: boolean | undefined
+    let buildOutput: string | undefined
+
+    const buildRepair = await validateAndRepairUntilTypecheckPasses(outputDir, spec, userInput)
+    spec = buildRepair.spec
+    buildValidated = buildRepair.buildValidated
+    buildOutput = buildRepair.buildOutput
+
+    if (!buildValidated) {
+      const errorSummary = formatBuildErrorsSummary(buildOutput ?? '')
+      return {
+        success: false,
+        error: `App validation failed after edit (${buildRepair.repairRounds} repair round(s)):\n${errorSummary || truncateBuildLog(buildOutput ?? '')}`,
+        appName: spec.appName,
+        repoName,
+        description: spec.description,
+        features: spec.features,
+        outputPath,
+        absoluteOutputPath: outputDir,
+        fileCount,
+        buildValidated: false,
+        buildOutput,
+      }
+    }
+
+    let gitPushed = false
+    let githubHtmlUrl = localResult.githubHtmlUrl
+    let githubCloneUrl = localResult.githubCloneUrl
+    let githubOwner = localResult.githubOwner
+    let githubRepoName = localResult.githubRepoName ?? repoName
+    let gitPushError: string | undefined
+
+    const {
+      githubToken,
+      githubOwner: githubOwnerHint,
+      vercelToken,
+      vercelTeamId,
+      neonIntegrationConfigurationId,
+      neonApiKey,
+      neonOrgId,
+    } = resolveDevelopmentDeployEnv()
+
+    let vercelDeployed = false
+    let vercelUrl: string | undefined
+    let vercelDeploymentUrl: string | undefined
+    let vercelProjectId: string | undefined
+    let vercelDeploymentId: string | undefined
+    let vercelInspectorUrl: string | undefined
+    let vercelDeployError: string | undefined
+    let databaseProvisioned: boolean | undefined
+    let neonProjectId: string | undefined
+    let databaseProvisionError: string | undefined
+
+    if (!githubToken) {
+      gitPushError = 'DEVELOPMENT_GITHUB_TOKEN is not set in the environment.'
+    } else if (!vercelToken) {
+      vercelDeployError = 'DEVELOPMENT_VERCEL_TOKEN is not set in the environment.'
+    } else {
+      logger.info('Ensuring GitHub repository exists before Vercel setup (edit)', { repoName })
+      const repoResult = await ensureGitHubRepository({
+        repoName,
+        description: spec.description,
+        githubToken,
+        githubOwner: githubOwnerHint ?? githubOwner,
+      })
+
+      if (!repoResult.success || !repoResult.owner || !repoResult.repoName) {
+        gitPushError = repoResult.error ?? 'Failed to resolve GitHub repository for edit'
+        vercelDeployError = gitPushError
+      } else {
+        githubOwner = repoResult.owner
+        githubRepoName = repoResult.repoName
+        githubHtmlUrl = repoResult.htmlUrl ?? githubHtmlUrl
+        githubCloneUrl = repoResult.cloneUrl ?? githubCloneUrl
+
+        logger.info('Preparing Vercel project before edit push', { repoName })
+        const prepareResult = await prepareVercelProjectForDeploy({
+          vercelToken,
+          projectName: repoName,
+          githubOwner,
+          githubRepoName,
+          vercelTeamId,
+          requiresDatabase: spec.requiresDatabase === true,
+          neonIntegrationConfigurationId,
+          neonApiKey,
+          neonOrgId,
+        })
+
+        vercelProjectId = prepareResult.vercelProjectId
+        databaseProvisioned = prepareResult.databaseProvisioned
+        neonProjectId = prepareResult.neonProjectId
+        databaseProvisionError = prepareResult.databaseProvisionError
+
+        if (!prepareResult.success || !vercelProjectId || !prepareResult.vercelProjectName) {
+          vercelDeployError = prepareResult.error ?? 'Failed to prepare Vercel project'
+        } else {
+          logger.info('Pushing edited app to GitHub', { repoName })
+          const pushResult = await pushRepoChangesToGitHub({
+            outputDir,
+            repoName,
+            githubToken,
+            githubOwner,
+            commitMessage: `${userInput.slice(0, 72)}`,
+          })
+
+          gitPushed = pushResult.success && pushResult.pushed === true
+          githubHtmlUrl = pushResult.htmlUrl ?? githubHtmlUrl
+          githubCloneUrl = pushResult.cloneUrl ?? githubCloneUrl
+          githubOwner = pushResult.owner ?? githubOwner
+          githubRepoName = pushResult.repoName ?? githubRepoName
+          gitPushError = pushResult.error
+
+          if (!gitPushed || !githubOwner || !githubRepoName || !pushResult.commitSha) {
+            vercelDeployError =
+              gitPushError ??
+              'Vercel deploy requires a successful GitHub push with a new commit. Check DEVELOPMENT_GITHUB_TOKEN in .env and git push errors.'
+          } else {
+            logger.info('Deploying edited app to Vercel', {
+              repoName,
+              commitSha: pushResult.commitSha,
+              repoId: pushResult.repoId,
+            })
+            const deployResult = await deployPreparedVercelProject({
+              vercelToken,
+              vercelProjectId,
+              vercelProjectName: prepareResult.vercelProjectName,
+              githubOwner,
+              githubRepoName,
+              githubToken,
+              outputDir,
+              vercelTeamId,
+              gitRef: pushResult.defaultBranch ?? 'main',
+              gitCommitSha: pushResult.commitSha,
+              gitHubRepoId: pushResult.repoId,
+              databaseProvisioned,
+              neonProjectId,
+            })
+
+            vercelDeployed = deployResult.success
+            vercelUrl = deployResult.vercelUrl
+            vercelDeploymentUrl = deployResult.vercelDeploymentUrl
+            vercelProjectId = deployResult.vercelProjectId ?? vercelProjectId
+            vercelDeploymentId = deployResult.vercelDeploymentId
+            vercelInspectorUrl = deployResult.vercelInspectorUrl
+            vercelDeployError = deployResult.error
+          }
+        }
+      }
+    }
+
+    if (!vercelDeployed) {
+      return {
+        success: false,
+        error: vercelDeployError ?? 'Vercel deployment failed after edit',
+        appName: spec.appName,
+        repoName,
+        description: spec.description,
+        features: spec.features,
+        outputPath,
+        absoluteOutputPath: outputDir,
+        fileCount,
+        buildValidated,
+        buildOutput,
+        gitPushed,
+        githubHtmlUrl,
+        githubCloneUrl,
+        githubOwner,
+        githubRepoName,
+        gitPushError,
+        vercelDeployed: false,
+        vercelDeployError,
+        requiresDatabase: spec.requiresDatabase,
+        databaseProvisioned,
+        neonProjectId,
+        databaseProvisionError,
+      }
+    }
+
+    let resolvedAbsoluteOutputPath: string | undefined = outputDir
+    const shouldRemoveLocal = gitPushed && vercelDeployed
+
+    if (shouldRemoveLocal) {
+      try {
+        await rm(outputDir, { recursive: true, force: true })
+        resolvedAbsoluteOutputPath = undefined
+        logger.info('Removed local generated app folder after edit publish', { outputDir, repoName })
+      } catch (cleanupError) {
+        logger.warn('Failed to remove local generated app folder after edit', {
+          outputDir,
+          error: toError(cleanupError).message,
+        })
+      }
+    }
+
+    return {
+      success: true,
+      appName: spec.appName,
+      repoName,
+      description: spec.description,
+      features: spec.features,
+      outputPath,
+      absoluteOutputPath: resolvedAbsoluteOutputPath,
+      fileCount,
+      buildValidated,
+      buildOutput,
+      gitPushed,
+      githubHtmlUrl,
+      githubCloneUrl,
+      githubOwner,
+      githubRepoName,
+      gitPushError,
+      vercelDeployed,
+      vercelUrl,
+      vercelDeploymentUrl,
+      vercelProjectId,
+      vercelDeploymentId,
+      vercelInspectorUrl,
+      vercelDeployError,
+      requiresDatabase: spec.requiresDatabase,
+      databaseProvisioned,
+      neonProjectId,
+      databaseProvisionError,
+      mode: 'edit',
+    }
+  } catch (error) {
+    const message = toError(error).message
+    logger.error('Next.js app edit failed', { error: message, repoName })
     return { success: false, error: message }
   }
 }

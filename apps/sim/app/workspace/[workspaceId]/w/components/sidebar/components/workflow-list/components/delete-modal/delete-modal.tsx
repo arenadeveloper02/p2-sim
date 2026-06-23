@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@/components/emcn'
+import { ChipConfirmModal, type ChipConfirmTextSegment, ChipModalField } from '@/components/emcn'
 
 interface DeleteModalProps {
   /**
@@ -68,175 +68,124 @@ export function DeleteModal({
 
   let title = ''
   if (itemType === 'workflow') {
-    title = isMultiple ? 'Delete Workflows' : 'Delete Workflow'
+    title = isMultiple ? 'Delete workflows' : 'Delete workflow'
   } else if (itemType === 'folder') {
-    title = isMultiple ? 'Delete Folders' : 'Delete Folder'
+    title = isMultiple ? 'Delete folders' : 'Delete folder'
   } else if (itemType === 'task') {
-    title = isMultiple ? 'Delete Tasks' : 'Delete Task'
+    title = isMultiple ? 'Delete chats' : 'Delete chat'
   } else if (itemType === 'mixed') {
-    title = 'Delete Items'
+    title = 'Delete items'
   } else {
-    title = 'Delete Workspace'
+    title = 'Delete workspace'
   }
 
   const restorableTypes = new Set<string>(['workflow', 'folder', 'mixed'])
 
-  const renderDescription = () => {
+  const buildDescriptionSegments = (): ChipConfirmTextSegment[] => {
     if (itemType === 'workflow') {
+      const warning = {
+        text: 'All associated blocks, executions, and configuration will be removed.',
+        error: true,
+      }
       if (isMultiple) {
-        return (
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>
-              {displayNames.join(', ')}
-            </span>
-            ?{' '}
-            <span className='text-[var(--text-error)]'>
-              All associated blocks, executions, and configuration will be removed.
-            </span>
-          </>
-        )
+        return [
+          'Are you sure you want to delete ',
+          { text: displayNames.join(', '), bold: true },
+          '? ',
+          warning,
+        ]
       }
       if (isSingle && displayNames.length > 0) {
-        return (
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>{displayNames[0]}</span>?{' '}
-            <span className='text-[var(--text-error)]'>
-              All associated blocks, executions, and configuration will be removed.
-            </span>
-          </>
-        )
+        return [
+          'Are you sure you want to delete ',
+          { text: displayNames[0], bold: true },
+          '? ',
+          warning,
+        ]
       }
-      return (
-        <>
-          Are you sure you want to delete this workflow?{' '}
-          <span className='text-[var(--text-error)]'>
-            All associated blocks, executions, and configuration will be removed.
-          </span>
-        </>
-      )
+      return ['Are you sure you want to delete this workflow? ', warning]
     }
 
     if (itemType === 'folder') {
       if (isMultiple) {
-        return (
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>
-              {displayNames.join(', ')}
-            </span>
-            ?{' '}
-            <span className='text-[var(--text-error)]'>
-              All workflows and contents within these folders will be archived.
-            </span>
-          </>
-        )
+        return [
+          'Are you sure you want to delete ',
+          { text: displayNames.join(', '), bold: true },
+          '? ',
+          {
+            text: 'All workflows and contents within these folders will be archived.',
+            error: true,
+          },
+        ]
+      }
+      const warning = {
+        text: 'All associated workflows and contents will be archived.',
+        error: true,
       }
       if (isSingle && displayNames.length > 0) {
-        return (
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>{displayNames[0]}</span>?{' '}
-            <span className='text-[var(--text-error)]'>
-              All associated workflows and contents will be archived.
-            </span>
-          </>
-        )
+        return [
+          'Are you sure you want to delete ',
+          { text: displayNames[0], bold: true },
+          '? ',
+          warning,
+        ]
       }
-      return (
-        <>
-          Are you sure you want to delete this folder?{' '}
-          <span className='text-[var(--text-error)]'>
-            All associated workflows and contents will be archived.
-          </span>
-        </>
-      )
+      return ['Are you sure you want to delete this folder? ', warning]
     }
 
     if (itemType === 'task') {
+      const warning = {
+        text: 'This will permanently remove all conversation history.',
+        error: true,
+      }
       if (isMultiple) {
-        return (
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>
-              {displayNames.length} tasks
-            </span>
-            ?{' '}
-            <span className='text-[var(--text-error)]'>
-              This will permanently remove all conversation history.
-            </span>
-          </>
-        )
+        return [
+          'Are you sure you want to delete ',
+          { text: `${displayNames.length} chats`, bold: true },
+          '? ',
+          warning,
+        ]
       }
       if (isSingle && displayNames.length > 0) {
-        return (
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>{displayNames[0]}</span>?{' '}
-            <span className='text-[var(--text-error)]'>
-              This will permanently remove all conversation history.
-            </span>
-          </>
-        )
+        return [
+          'Are you sure you want to delete ',
+          { text: displayNames[0], bold: true },
+          '? ',
+          warning,
+        ]
       }
-      return (
-        <>
-          Are you sure you want to delete this task?{' '}
-          <span className='text-[var(--text-error)]'>
-            This will permanently remove all conversation history.
-          </span>
-        </>
-      )
+      return ['Are you sure you want to delete this chat? ', warning]
     }
 
     if (itemType === 'mixed') {
-      if (displayNames.length > 0) {
-        return (
-          <>
-            Are you sure you want to delete{' '}
-            <span className='font-medium text-[var(--text-primary)]'>
-              {displayNames.join(', ')}
-            </span>
-            ?{' '}
-            <span className='text-[var(--text-error)]'>
-              All selected workflows and folders, including their contents, will be archived.
-            </span>
-          </>
-        )
+      const warning = {
+        text: 'All selected workflows and folders, including their contents, will be archived.',
+        error: true,
       }
-      return (
-        <>
-          Are you sure you want to delete the selected items?{' '}
-          <span className='text-[var(--text-error)]'>
-            All selected workflows and folders, including their contents, will be archived.
-          </span>
-        </>
-      )
+      if (displayNames.length > 0) {
+        return [
+          'Are you sure you want to delete ',
+          { text: displayNames.join(', '), bold: true },
+          '? ',
+          warning,
+        ]
+      }
+      return ['Are you sure you want to delete the selected items? ', warning]
     }
 
-    // workspace type
-    if (isSingle && displayNames.length > 0) {
-      return (
-        <>
-          Are you sure you want to delete{' '}
-          <span className='font-medium text-[var(--text-primary)]'>{displayNames[0]}</span>?{' '}
-          <span className='text-[var(--text-error)]'>
-            This will permanently remove all associated workflows, tables, files, logs, and
-            knowledge bases.
-          </span>
-        </>
-      )
+    const workspaceWarning = {
+      text: 'This will permanently remove all associated workflows, tables, files, logs, and knowledge bases.',
+      error: true,
     }
-    return (
-      <>
-        Are you sure you want to delete this workspace?{' '}
-        <span className='text-[var(--text-error)]'>
-          This will permanently remove all associated workflows, tables, files, logs, and knowledge
-          bases.
-        </span>
-      </>
-    )
+    if (isSingle && displayNames.length > 0) {
+      return [
+        'Are you sure you want to delete ',
+        { text: displayNames[0], bold: true },
+        '? ',
+        workspaceWarning,
+      ]
+    }
+    return ['Are you sure you want to delete this workspace? ', workspaceWarning]
   }
 
   const handleClose = () => {
@@ -245,45 +194,41 @@ export function DeleteModal({
   }
 
   return (
-    <Modal open={isOpen} onOpenChange={handleClose}>
-      <ModalContent size='sm'>
-        <ModalHeader>{title}</ModalHeader>
-        <ModalBody>
-          <p className='text-[var(--text-secondary)]'>
-            {renderDescription()}{' '}
-            {restorableTypes.has(itemType)
-              ? 'You can restore it from Recently Deleted in Settings.'
-              : 'This action cannot be undone.'}
-          </p>
-          {isWorkspace && workspaceName && (
-            <div className='mt-3'>
-              <label
-                htmlFor='workspace-delete-confirm'
-                className='mb-1.5 block text-[var(--text-secondary)] text-sm'
-              >
-                Type <span className='font-medium text-[var(--text-primary)]'>{workspaceName}</span>{' '}
-                to confirm
-              </label>
-              <input
-                id='workspace-delete-confirm'
-                type='text'
-                value={confirmationText}
-                onChange={(e) => setConfirmationText(e.target.value)}
-                className='w-full rounded-md border border-[var(--border)] bg-transparent px-3 py-2 text-[var(--text-primary)] text-sm placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-1)] focus:outline-none'
-                placeholder={workspaceName}
-              />
-            </div>
-          )}
-        </ModalBody>
-        <ModalFooter>
-          <Button variant='default' onClick={handleClose} disabled={isDeleting}>
-            Cancel
-          </Button>
-          <Button variant='destructive' onClick={onConfirm} disabled={isDeleting || !isConfirmed}>
-            {isDeleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+    <ChipConfirmModal
+      open={isOpen}
+      onOpenChange={handleClose}
+      srTitle={title}
+      title={title}
+      text={[
+        ...buildDescriptionSegments(),
+        ' ',
+        restorableTypes.has(itemType)
+          ? 'You can restore it from Recently deleted in Settings.'
+          : 'This action cannot be undone.',
+      ]}
+      confirm={{
+        label: 'Delete',
+        onClick: onConfirm,
+        pending: isDeleting,
+        pendingLabel: 'Deleting...',
+        disabled: !isConfirmed,
+      }}
+    >
+      {isWorkspace && workspaceName && (
+        <ChipModalField
+          type='input'
+          title={
+            <span>
+              Type&nbsp;
+              <span className='font-medium text-[var(--text-primary)]'>{workspaceName}</span>
+              &nbsp;to confirm
+            </span>
+          }
+          value={confirmationText}
+          onChange={setConfirmationText}
+          placeholder={workspaceName}
+        />
+      )}
+    </ChipConfirmModal>
   )
 }

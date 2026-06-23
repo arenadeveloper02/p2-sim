@@ -1,24 +1,26 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { account, credentialSet, credentialSetMember } from '@sim/db/schema'
+import { account, credential, credentialSet, credentialSetMember } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, like, or } from 'drizzle-orm'
+import { and, eq, inArray, like, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { disconnectOAuthContract } from '@/lib/api/contracts/oauth-connections'
+import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { deleteCredential } from '@/lib/credentials/deletion'
+import { captureServerEvent } from '@/lib/posthog/server'
+import { UnipileDeleteAccountError } from '@/lib/unipile/delete-account'
+import {
+  listAccountsToDisconnect,
+  unlinkUnipileAccountsFromProvider,
+} from '@/lib/unipile/disconnect-accounts'
 import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('OAuthDisconnectAPI')
-
-const disconnectSchema = z.object({
-  provider: z.string({ required_error: 'Provider is required' }).min(1, 'Provider is required'),
-  providerId: z.string().optional(),
-  accountId: z.string().optional(),
-})
 
 /**
  * Disconnect an OAuth provider for the current user
@@ -34,57 +36,90 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: 'User not authenticated' }, { status: 401 })
     }
 
-    const rawBody = await request.json()
-    const parseResult = disconnectSchema.safeParse(rawBody)
-
-    if (!parseResult.success) {
-      const firstError = parseResult.error.errors[0]
-      const errorMessage = firstError?.message || 'Validation failed'
-
-      logger.warn(`[${requestId}] Invalid disconnect request`, {
-        errors: parseResult.error.errors,
-      })
-
-      return NextResponse.json(
-        {
-          error: errorMessage,
+    const parsed = await parseRequest(
+      disconnectOAuthContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid disconnect request`, { errors: error.issues })
+          return NextResponse.json(
+            { error: getValidationErrorMessage(error, 'Validation failed') },
+            { status: 400 }
+          )
         },
-        { status: 400 }
-      )
-    }
+      }
+    )
+    if (!parsed.success) return parsed.response
 
-    const { provider, providerId, accountId } = parseResult.data
+    const { provider, providerId, accountId } = parsed.data.body
+    const userId = session.user.id
 
     logger.info(`[${requestId}] Processing OAuth disconnect request`, {
       provider,
       hasProviderId: !!providerId,
+      hasAccountId: !!accountId,
     })
 
-    // If a specific account row ID is provided, delete that exact account
-    if (accountId) {
-      await db
-        .delete(account)
-        .where(and(eq(account.userId, session.user.id), eq(account.id, accountId)))
-    } else if (providerId) {
-      // If a specific providerId is provided, delete accounts for that provider ID
-      await db
-        .delete(account)
-        .where(and(eq(account.userId, session.user.id), eq(account.providerId, providerId)))
-    } else {
-      // Otherwise, delete all accounts for this provider
-      // Handle both exact matches (e.g., 'confluence') and prefixed matches (e.g., 'google-email')
-      await db
-        .delete(account)
-        .where(
-          and(
+    const accountsToRemove = await listAccountsToDisconnect({
+      userId,
+      provider,
+      providerId,
+      accountRowId: accountId,
+    })
+
+    await unlinkUnipileAccountsFromProvider(accountsToRemove)
+
+    // Delete credentials before their accounts so deleteCredential can clear
+    // stored references first. Otherwise FK CASCADE would orphan them silently.
+    const accountFilter = accountId
+      ? and(eq(account.userId, session.user.id), eq(account.id, accountId))
+      : providerId
+        ? and(eq(account.userId, session.user.id), eq(account.providerId, providerId))
+        : and(
             eq(account.userId, session.user.id),
             or(eq(account.providerId, provider), like(account.providerId, `${provider}-%`))
           )
+
+    const targetAccounts = await db.select({ id: account.id }).from(account).where(accountFilter)
+
+    const targetAccountIds = targetAccounts.map((a) => a.id)
+
+    if (targetAccountIds.length > 0) {
+      const credentialsToDelete = await db
+        .select({
+          id: credential.id,
+          workspaceId: credential.workspaceId,
+          providerId: credential.providerId,
+        })
+        .from(credential)
+        .where(inArray(credential.accountId, targetAccountIds))
+
+      for (const cred of credentialsToDelete) {
+        await deleteCredential({
+          credentialId: cred.id,
+          actorId: session.user.id,
+          actorName: session.user.name,
+          actorEmail: session.user.email,
+          reason: 'oauth_disconnect',
+          request,
+        })
+
+        captureServerEvent(
+          session.user.id,
+          'credential_deleted',
+          {
+            credential_type: 'oauth',
+            provider_id: cred.providerId ?? providerId ?? provider,
+            workspace_id: cred.workspaceId,
+          },
+          { groups: { workspace: cred.workspaceId } }
         )
+      }
+
+      await db.delete(account).where(inArray(account.id, targetAccountIds))
     }
 
-    // Sync webhooks for all credential sets the user is a member of
-    // This removes webhooks that were using the disconnected credential
     const userMemberships = await db
       .select({
         id: credentialSetMember.id,
@@ -93,16 +128,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       })
       .from(credentialSetMember)
       .innerJoin(credentialSet, eq(credentialSetMember.credentialSetId, credentialSet.id))
-      .where(
-        and(
-          eq(credentialSetMember.userId, session.user.id),
-          eq(credentialSetMember.status, 'active')
-        )
-      )
+      .where(and(eq(credentialSetMember.userId, userId), eq(credentialSetMember.status, 'active')))
 
     for (const membership of userMemberships) {
-      // Only sync if the credential set matches this provider
-      // Credential sets store OAuth provider IDs like 'google-email' or 'outlook'
       const matchesProvider =
         membership.providerId === provider ||
         membership.providerId === providerId ||
@@ -116,7 +144,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             provider,
           })
         } catch (error) {
-          // Log but don't fail the disconnect - credential is already removed
           logger.error(`[${requestId}] Failed to sync webhooks after credential disconnect`, {
             credentialSetId: membership.credentialSetId,
             provider,
@@ -128,7 +155,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     recordAudit({
       workspaceId: null,
-      actorId: session.user.id,
+      actorId: userId,
       action: AuditAction.OAUTH_DISCONNECTED,
       resourceType: AuditResourceType.OAUTH,
       resourceId: providerId ?? provider,
@@ -136,12 +163,30 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       actorEmail: session.user.email ?? undefined,
       resourceName: provider,
       description: `Disconnected OAuth provider: ${provider}`,
-      metadata: { provider, providerId },
+      metadata: { provider, providerId, accountId },
       request,
     })
 
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {
+    if (error instanceof UnipileDeleteAccountError) {
+      logger.warn(`[${requestId}] Unipile unlink failed during disconnect`, {
+        status: error.status,
+        message: error.message,
+      })
+      return NextResponse.json({ error: error.message }, { status: 502 })
+    }
+
+    const message = error instanceof Error ? error.message : 'Internal server error'
+    if (
+      message.includes('Unipile API key') ||
+      message.includes('UNIPILE_API_KEY') ||
+      message.includes('Failed to unlink LinkedIn')
+    ) {
+      logger.warn(`[${requestId}] Unipile disconnect configuration error`, { message })
+      return NextResponse.json({ error: message }, { status: 502 })
+    }
+
     logger.error(`[${requestId}] Error disconnecting OAuth provider`, error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

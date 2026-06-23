@@ -1,10 +1,13 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
+import { microsoftExcelSheetsSelectorContract } from '@/lib/api/contracts/selectors/microsoft'
+import { parseRequest } from '@/lib/api/server'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
-import { getItemBasePath } from '@/tools/microsoft_excel/utils'
+import { extractGraphError, getItemBasePath } from '@/tools/microsoft_excel/utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,21 +32,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   logger.info(`[${requestId}] Microsoft Excel sheets request received`)
 
   try {
-    const { searchParams } = new URL(request.url)
-    const credentialId = searchParams.get('credentialId')
-    const spreadsheetId = searchParams.get('spreadsheetId')
-    const driveId = searchParams.get('driveId') || undefined
-    const workflowId = searchParams.get('workflowId') || undefined
-
-    if (!credentialId) {
-      logger.warn(`[${requestId}] Missing credentialId parameter`)
-      return NextResponse.json({ error: 'Credential ID is required' }, { status: 400 })
-    }
-
-    if (!spreadsheetId) {
-      logger.warn(`[${requestId}] Missing spreadsheetId parameter`)
-      return NextResponse.json({ error: 'Spreadsheet ID is required' }, { status: 400 })
-    }
+    const parsed = await parseRequest(microsoftExcelSheetsSelectorContract, request, {})
+    if (!parsed.success) return parsed.response
+    const { credentialId, spreadsheetId, driveId, workflowId } = parsed.data.query
 
     const authz = await authorizeCredentialUse(request, { credentialId, workflowId })
     if (!authz.ok || !authz.credentialOwnerUserId) {
@@ -69,7 +60,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       basePath = getItemBasePath(spreadsheetId, driveId)
     } catch (error) {
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Invalid parameters' },
+        { error: getErrorMessage(error, 'Invalid parameters') },
         { status: 400 }
       )
     }
@@ -83,18 +74,12 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     })
 
     if (!worksheetsResponse.ok) {
-      const errorData = await worksheetsResponse
-        .text()
-        .then((text) => JSON.parse(text))
-        .catch(() => ({ error: { message: 'Unknown error' } }))
+      const errorMessage = await extractGraphError(worksheetsResponse)
       logger.error(`[${requestId}] Microsoft Graph API error`, {
         status: worksheetsResponse.status,
-        error: errorData.error?.message || 'Failed to fetch worksheets',
+        error: errorMessage,
       })
-      return NextResponse.json(
-        { error: errorData.error?.message || 'Failed to fetch worksheets' },
-        { status: worksheetsResponse.status }
-      )
+      return NextResponse.json({ error: errorMessage }, { status: worksheetsResponse.status })
     }
 
     const data: WorksheetsResponse = await worksheetsResponse.json()

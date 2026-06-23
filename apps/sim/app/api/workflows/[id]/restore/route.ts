@@ -1,20 +1,29 @@
-import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
+import {
+  assertFolderMutable,
+  FolderLockedError,
+  WorkflowLockedError,
+} from '@sim/platform-authz/workflow'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
+import { restoreWorkflowContract } from '@/lib/api/contracts/workflows'
+import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { restoreWorkflow } from '@/lib/workflows/lifecycle'
+import { performRestoreWorkflow } from '@/lib/workflows/orchestration'
 import { getWorkflowById } from '@/lib/workflows/utils'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('RestoreWorkflowAPI')
 
 export const POST = withRouteHandler(
-  async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const requestId = generateRequestId()
-    const { id: workflowId } = await params
+    const parsed = await parseRequest(restoreWorkflowContract, request, context)
+    if (!parsed.success) return parsed.response
+    const { id: workflowId } = parsed.data.params
 
     try {
       const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
@@ -40,30 +49,24 @@ export const POST = withRouteHandler(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const result = await restoreWorkflow(workflowId, { requestId })
+      if (workflowData.locked) {
+        throw new WorkflowLockedError('Workflow is locked')
+      }
+      await assertFolderMutable(workflowData.folderId)
 
-      if (!result.restored) {
-        return NextResponse.json({ error: 'Workflow is not archived' }, { status: 400 })
+      const result = await performRestoreWorkflow({
+        workflowId,
+        userId: auth.userId,
+        requestId,
+      })
+
+      if (!result.success) {
+        const status =
+          result.errorCode === 'not_found' ? 404 : result.errorCode === 'validation' ? 400 : 500
+        return NextResponse.json({ error: result.error }, { status })
       }
 
       logger.info(`[${requestId}] Restored workflow ${workflowId}`)
-
-      recordAudit({
-        workspaceId: workflowData.workspaceId,
-        actorId: auth.userId,
-        actorName: auth.userName,
-        actorEmail: auth.userEmail,
-        action: AuditAction.WORKFLOW_RESTORED,
-        resourceType: AuditResourceType.WORKFLOW,
-        resourceId: workflowId,
-        resourceName: workflowData.name,
-        description: `Restored workflow "${workflowData.name}"`,
-        metadata: {
-          workflowName: workflowData.name,
-          workspaceId: workflowData.workspaceId || undefined,
-        },
-        request,
-      })
 
       captureServerEvent(
         auth.userId,
@@ -74,9 +77,13 @@ export const POST = withRouteHandler(
 
       return NextResponse.json({ success: true })
     } catch (error) {
+      if (error instanceof WorkflowLockedError || error instanceof FolderLockedError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+
       logger.error(`[${requestId}] Error restoring workflow ${workflowId}`, error)
       return NextResponse.json(
-        { error: error instanceof Error ? error.message : 'Internal server error' },
+        { error: getErrorMessage(error, 'Internal server error') },
         { status: 500 }
       )
     }

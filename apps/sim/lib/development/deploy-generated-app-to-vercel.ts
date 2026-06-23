@@ -52,8 +52,12 @@ export interface DeployPreparedVercelProjectInput {
   vercelProjectName: string
   githubOwner: string
   githubRepoName: string
+  githubToken?: string
+  outputDir?: string
   vercelTeamId?: string
   gitRef?: string
+  gitCommitSha?: string
+  gitHubRepoId?: number
   databaseProvisioned?: boolean
   neonProjectId?: string
 }
@@ -205,20 +209,45 @@ async function createVercelProject(
   throw new Error(vercelErrorMessage(data, status))
 }
 
+async function linkVercelProjectToGitHub(
+  token: string,
+  projectId: string,
+  githubRepo: string,
+  teamId?: string
+): Promise<VercelProject> {
+  const body = JSON.stringify({
+    gitRepository: {
+      type: 'github',
+      repo: githubRepo,
+    },
+  })
+
+  const { data, status } = await vercelRequest<VercelProject>(
+    token,
+    `/v9/projects/${encodeURIComponent(projectId)}`,
+    { method: 'PATCH', body },
+    teamId
+  )
+
+  if (status !== 200) {
+    throw new Error(vercelErrorMessage(data, status))
+  }
+
+  return data
+}
+
 function buildGitSource(
   gitRef: string,
-  githubOwner: string,
-  githubRepoName: string,
-  repoId?: number
-): Record<string, string | number> {
-  if (repoId) {
-    return { type: 'github', repoId, ref: gitRef }
-  }
+  repoId: number,
+  commitSha?: string
+): Record<string, string> {
+  const branchRef = gitRef.startsWith('refs/') ? gitRef : `refs/heads/${gitRef}`
+
   return {
     type: 'github',
-    org: githubOwner,
-    repo: githubRepoName,
-    ref: gitRef,
+    repoId: String(repoId),
+    ref: branchRef,
+    ...(commitSha ? { sha: commitSha } : {}),
   }
 }
 
@@ -226,15 +255,15 @@ async function createGitDeployment(
   token: string,
   project: VercelProject,
   gitRef: string,
-  githubOwner: string,
-  githubRepoName: string,
-  teamId?: string
+  repoId: number,
+  teamId?: string,
+  commitSha?: string
 ): Promise<VercelDeployment> {
   const body = JSON.stringify({
     name: project.name,
     project: project.id,
     target: 'production',
-    gitSource: buildGitSource(gitRef, githubOwner, githubRepoName, project.link?.repoId),
+    gitSource: buildGitSource(gitRef, repoId, commitSha),
     projectSettings: {
       framework: 'nextjs',
     },
@@ -392,6 +421,21 @@ export async function prepareVercelProjectForDeploy(
 
     let project = await createVercelProject(token, projectName, githubRepo, input.vercelTeamId)
 
+    try {
+      project = await linkVercelProjectToGitHub(
+        token,
+        project.id,
+        githubRepo,
+        input.vercelTeamId
+      )
+    } catch (error) {
+      logger.warn('Failed to refresh Vercel project GitHub link', {
+        projectId: project.id,
+        githubRepo,
+        error: toError(error).message,
+      })
+    }
+
     if (!project.link?.repoId) {
       const refreshed = await getVercelProjectByName(token, projectName, input.vercelTeamId)
       if (refreshed) {
@@ -466,10 +510,49 @@ export async function deployPreparedVercelProject(
     return { success: false, error: 'GitHub owner and repository name are required for Vercel deploy' }
   }
 
-  const gitRef = input.gitRef?.trim() || DEFAULT_GIT_REF
-  const githubRepo = `${githubOwner}/${githubRepoName}`
-
   try {
+    let gitRef = input.gitRef?.trim() || DEFAULT_GIT_REF
+    let gitCommitSha = input.gitCommitSha?.trim()
+    let gitHubRepoId = input.gitHubRepoId
+    let resolvedOwner = githubOwner
+    let resolvedRepoName = githubRepoName
+    let remoteUrl: string | undefined
+
+    if (input.githubToken?.trim()) {
+      const {
+        fetchGitHubRepositoryDetails,
+        waitForGitHubCommit,
+        fetchGitHubBranchHeadSha,
+      } = await import('@/lib/development/fetch-github-repository')
+
+      const repoDetails = await fetchGitHubRepositoryDetails(
+        input.githubToken,
+        githubRepoName,
+        githubOwner
+      )
+
+      resolvedOwner = repoDetails.owner
+      resolvedRepoName = repoDetails.name
+      gitRef = repoDetails.defaultBranch
+      gitHubRepoId = repoDetails.id
+      remoteUrl = repoDetails.htmlUrl
+
+      if (gitCommitSha) {
+        await waitForGitHubCommit(input.githubToken, repoDetails, gitCommitSha)
+      } else {
+        gitCommitSha = await fetchGitHubBranchHeadSha(input.githubToken, repoDetails, gitRef)
+      }
+
+      logger.info('Resolved GitHub repository for Vercel deploy', {
+        fullName: repoDetails.fullName,
+        repoId: gitHubRepoId,
+        gitRef,
+        gitCommitSha,
+      })
+    }
+
+    const resolvedGithubRepo = `${resolvedOwner}/${resolvedRepoName}`
+
     let project = await getVercelProjectByName(token, input.vercelProjectName, input.vercelTeamId)
     if (!project) {
       return {
@@ -479,29 +562,113 @@ export async function deployPreparedVercelProject(
       }
     }
 
-    if (!project.link?.repoId) {
-      const refreshed = await getVercelProjectByName(token, input.vercelProjectName, input.vercelTeamId)
-      if (refreshed) {
-        project = refreshed
+    try {
+      project = await linkVercelProjectToGitHub(
+        token,
+        project.id,
+        resolvedGithubRepo,
+        input.vercelTeamId
+      )
+    } catch (error) {
+      logger.warn('Failed to refresh Vercel project GitHub link before deploy', {
+        projectId: project.id,
+        githubRepo: resolvedGithubRepo,
+        error: toError(error).message,
+      })
+    }
+
+    if (!gitHubRepoId) {
+      gitHubRepoId = project.link?.repoId
+    }
+
+    if (!gitHubRepoId) {
+      return {
+        success: false,
+        error:
+          'Could not resolve GitHub repository ID for Vercel deploy. Set DEVELOPMENT_GITHUB_TOKEN so repo details can be fetched from GitHub.',
+        vercelProjectId: input.vercelProjectId,
+      }
+    }
+
+    if (!gitCommitSha) {
+      return {
+        success: false,
+        error: 'Could not resolve GitHub commit SHA for Vercel deploy',
+        vercelProjectId: input.vercelProjectId,
       }
     }
 
     logger.info('Triggering Vercel deployment from Git', {
       projectId: project.id,
       gitRef,
-      repoId: project.link?.repoId,
-      githubRepo,
+      repoId: gitHubRepoId,
+      commitSha: gitCommitSha,
+      githubRepo: resolvedGithubRepo,
     })
 
-    const created = await createGitDeployment(
-      token,
-      project,
-      gitRef,
-      githubOwner,
-      githubRepoName,
-      input.vercelTeamId
-    )
-    const ready = await waitForDeploymentReady(token, created.id, input.vercelTeamId)
+    let ready: VercelDeployment
+    try {
+      const created = await createGitDeployment(
+        token,
+        project,
+        gitRef,
+        gitHubRepoId,
+        input.vercelTeamId,
+        gitCommitSha
+      )
+      ready = await waitForDeploymentReady(token, created.id, input.vercelTeamId)
+    } catch (gitDeployError) {
+      const gitMessage = toError(gitDeployError).message
+      const shouldFallback =
+        /git_info_fail|incorrect_git_source_info|unable to fetch required git information/i.test(
+          gitMessage
+        ) && Boolean(input.outputDir)
+
+      if (!shouldFallback) {
+        throw gitDeployError
+      }
+
+      logger.warn('Git-based Vercel deploy failed; falling back to file upload deploy', {
+        projectId: project.id,
+        error: gitMessage,
+      })
+
+      const { deployVercelProjectFromFiles } = await import(
+        '@/lib/development/deploy-vercel-from-files'
+      )
+      const fileDeploy = await deployVercelProjectFromFiles({
+        vercelToken: token,
+        vercelProjectId: project.id,
+        vercelProjectName: project.name,
+        outputDir: input.outputDir as string,
+        vercelTeamId: input.vercelTeamId,
+        gitMetadata: {
+          remoteUrl,
+          commitSha: gitCommitSha,
+          commitRef: gitRef,
+          commitMessage: 'Sim Development deployment',
+        },
+      })
+
+      if (!fileDeploy.success) {
+        return {
+          success: false,
+          error: `${gitMessage}\n\nFile upload deploy fallback also failed: ${fileDeploy.error}`,
+          vercelProjectId: input.vercelProjectId,
+        }
+      }
+
+      return {
+        success: true,
+        vercelUrl: fileDeploy.vercelUrl,
+        vercelDeploymentUrl: fileDeploy.vercelDeploymentUrl,
+        vercelProjectId: fileDeploy.vercelProjectId,
+        vercelDeploymentId: fileDeploy.vercelDeploymentId,
+        vercelInspectorUrl: fileDeploy.vercelInspectorUrl,
+        databaseProvisioned: input.databaseProvisioned,
+        neonProjectId: input.neonProjectId,
+      }
+    }
 
     const vercelUrl = resolveLiveUrl(ready, project.name)
     const vercelDeploymentUrl = ready.url ? toHttpsUrl(ready.url) : vercelUrl

@@ -2,7 +2,9 @@ import { db } from '@sim/db'
 import { chat } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
-import type { NextRequest } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
+import { ttsStreamContract } from '@/lib/api/contracts/media/tts-stream'
+import { parseRequest } from '@/lib/api/server'
 import { env } from '@/lib/core/config/env'
 import { validateAuthToken } from '@/lib/core/security/deployment'
 import { validateAlphanumericId } from '@/lib/core/security/input-validation'
@@ -41,7 +43,10 @@ async function validateChatAuth(request: NextRequest, chatId: string): Promise<b
     const cookieName = `chat_auth_${chatId}`
     const authCookie = request.cookies.get(cookieName)
 
-    if (authCookie && validateAuthToken(authCookie.value, chatId, chatData.password)) {
+    if (
+      authCookie &&
+      validateAuthToken(authCookie.value, chatId, chatData.authType, chatData.password)
+    ) {
       return true
     }
 
@@ -54,22 +59,23 @@ async function validateChatAuth(request: NextRequest, chatId: string): Promise<b
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
-    let body: any
-    try {
-      body = await request.json()
-    } catch {
-      return new Response('Invalid request body', { status: 400 })
-    }
+    const parsed = await parseRequest(
+      ttsStreamContract,
+      request,
+      {},
+      {
+        invalidJsonResponse: () => new NextResponse('Invalid request body', { status: 400 }),
+        validationErrorResponse: (error) => {
+          if (error.issues.some((issue) => issue.path[0] === 'chatId')) {
+            return new NextResponse('chatId is required', { status: 400 })
+          }
+          return new NextResponse('Missing required parameters', { status: 400 })
+        },
+      }
+    )
+    if (!parsed.success) return parsed.response
 
-    const { text, voiceId, modelId = 'eleven_turbo_v2_5', chatId } = body
-
-    if (!chatId) {
-      return new Response('chatId is required', { status: 400 })
-    }
-
-    if (!text || !voiceId) {
-      return new Response('Missing required parameters', { status: 400 })
-    }
+    const { text, voiceId, modelId, chatId } = parsed.data.body
 
     const isChatAuthed = await validateChatAuth(request, chatId)
     if (!isChatAuthed) {
@@ -89,7 +95,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return new Response('ElevenLabs service not configured', { status: 503 })
     }
 
-    const endpoint = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`
+    const query = new URLSearchParams({ output_format: 'mp3_44100_128' })
+    const endpoint = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?${query.toString()}`
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -101,17 +108,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       body: JSON.stringify({
         text,
         model_id: modelId,
-        optimize_streaming_latency: 4,
-        output_format: 'mp3_22050_32', // Fastest format
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.8,
           style: 0.0,
           use_speaker_boost: false,
         },
-        enable_ssml_parsing: false,
-        apply_text_normalization: 'off',
-        use_pvc_as_ivc: false,
+        apply_text_normalization: 'auto',
       }),
     })
 

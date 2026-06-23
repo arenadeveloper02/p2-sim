@@ -2,99 +2,30 @@ import { db } from '@sim/db'
 import { settings } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateShortId } from '@sim/utils/id'
-import { eq } from 'drizzle-orm'
-import { NextResponse } from 'next/server'
-import { z } from 'zod'
+import { type NextRequest, NextResponse } from 'next/server'
+import { updateUserSettingsContract } from '@/lib/api/contracts'
+import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { defaultUserSettings, getUserSettings } from '@/lib/users/queries'
 
 const logger = createLogger('UserSettingsAPI')
-
-const SettingsSchema = z.object({
-  theme: z.enum(['light', 'dark']).optional(),
-  autoConnect: z.boolean().optional(),
-  telemetryEnabled: z.boolean().optional(),
-  emailPreferences: z
-    .object({
-      unsubscribeAll: z.boolean().optional(),
-      unsubscribeMarketing: z.boolean().optional(),
-      unsubscribeUpdates: z.boolean().optional(),
-      unsubscribeNotifications: z.boolean().optional(),
-    })
-    .optional(),
-  billingUsageNotificationsEnabled: z.boolean().optional(),
-  showTrainingControls: z.boolean().optional(),
-  superUserModeEnabled: z.boolean().optional(),
-  errorNotificationsEnabled: z.boolean().optional(),
-  snapToGridSize: z.number().min(0).max(50).optional(),
-  showActionBar: z.boolean().optional(),
-  lastActiveWorkspaceId: z.string().optional(),
-})
-
-const defaultSettings = {
-  theme: 'light',
-  autoConnect: true,
-  telemetryEnabled: true,
-  emailPreferences: {},
-  billingUsageNotificationsEnabled: true,
-  showTrainingControls: false,
-  superUserModeEnabled: false,
-  errorNotificationsEnabled: true,
-  snapToGridSize: 0,
-  showActionBar: true,
-  lastActiveWorkspaceId: null,
-}
 
 export const GET = withRouteHandler(async () => {
   const requestId = generateRequestId()
 
   try {
     const session = await getSession()
-
-    if (!session?.user?.id) {
-      logger.info(`[${requestId}] Returning default settings for unauthenticated user`)
-      return NextResponse.json({ data: defaultSettings }, { status: 200 })
-    }
-
-    const userId = session.user.id
-    const result = await db.select().from(settings).where(eq(settings.userId, userId)).limit(1)
-
-    if (!result.length) {
-      return NextResponse.json({ data: defaultSettings }, { status: 200 })
-    }
-
-    const userSettings = result[0]
-
-    // Convert 'system' theme to 'light' (remove system theme support)
-    const theme =
-      userSettings.theme === 'system' || !userSettings.theme ? 'light' : userSettings.theme
-
-    return NextResponse.json(
-      {
-        data: {
-          theme,
-          autoConnect: userSettings.autoConnect,
-          telemetryEnabled: userSettings.telemetryEnabled,
-          emailPreferences: userSettings.emailPreferences ?? {},
-          billingUsageNotificationsEnabled: userSettings.billingUsageNotificationsEnabled ?? true,
-          showTrainingControls: userSettings.showTrainingControls ?? false,
-          superUserModeEnabled: userSettings.superUserModeEnabled ?? false,
-          errorNotificationsEnabled: userSettings.errorNotificationsEnabled ?? true,
-          snapToGridSize: userSettings.snapToGridSize ?? 0,
-          showActionBar: userSettings.showActionBar ?? true,
-          lastActiveWorkspaceId: userSettings.lastActiveWorkspaceId ?? null,
-        },
-      },
-      { status: 200 }
-    )
+    const data = await getUserSettings(session?.user?.id ?? null)
+    return NextResponse.json({ data }, { status: 200 })
   } catch (error: any) {
     logger.error(`[${requestId}] Settings fetch error`, error)
-    return NextResponse.json({ data: defaultSettings }, { status: 200 })
+    return NextResponse.json({ data: defaultUserSettings }, { status: 200 })
   }
 })
 
-export const PATCH = withRouteHandler(async (request: Request) => {
+export const PATCH = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
   try {
@@ -108,40 +39,39 @@ export const PATCH = withRouteHandler(async (request: Request) => {
     }
 
     const userId = session.user.id
-    const body = await request.json()
 
-    try {
-      const validatedData = SettingsSchema.parse(body)
+    const parsed = await parseRequest(
+      updateUserSettingsContract,
+      request,
+      {},
+      {
+        validationErrorResponse: (error) => {
+          logger.warn(`[${requestId}] Invalid settings data`, { errors: error.issues })
+          return validationErrorResponse(error, 'Invalid settings data')
+        },
+      }
+    )
+    if (!parsed.success) return parsed.response
 
-      await db
-        .insert(settings)
-        .values({
-          id: generateShortId(),
-          userId,
+    const validatedData = parsed.data.body
+
+    await db
+      .insert(settings)
+      .values({
+        id: generateShortId(),
+        userId,
+        ...validatedData,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [settings.userId],
+        set: {
           ...validatedData,
           updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [settings.userId],
-          set: {
-            ...validatedData,
-            updatedAt: new Date(),
-          },
-        })
+        },
+      })
 
-      return NextResponse.json({ success: true }, { status: 200 })
-    } catch (validationError) {
-      if (validationError instanceof z.ZodError) {
-        logger.warn(`[${requestId}] Invalid settings data`, {
-          errors: validationError.errors,
-        })
-        return NextResponse.json(
-          { error: 'Invalid settings data', details: validationError.errors },
-          { status: 400 }
-        )
-      }
-      throw validationError
-    }
+    return NextResponse.json({ success: true }, { status: 200 })
   } catch (error: any) {
     logger.error(`[${requestId}] Settings update error`, error)
     return NextResponse.json({ success: true }, { status: 200 })

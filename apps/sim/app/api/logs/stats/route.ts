@@ -1,50 +1,25 @@
-import { db } from '@sim/db'
-import { permissions, workflow, workflowExecutionLogs } from '@sim/db/schema'
+import { dbReplica } from '@sim/db'
+import { workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import {
+  type DashboardStatsResponse,
+  type SegmentStats,
+  statsQueryParamsSchema,
+  type WorkflowStats,
+} from '@/lib/api/contracts/logs'
+import { isZodError } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { buildFilterConditions, LogFilterParamsSchema } from '@/lib/logs/filters'
+import { buildFilterConditions } from '@/lib/logs/filters'
+import { expandFolderIdsWithDescendants } from '@/lib/logs/folder-expansion'
+import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('LogsStatsAPI')
 
 export const revalidate = 0
-
-const StatsQueryParamsSchema = LogFilterParamsSchema.extend({
-  segmentCount: z.coerce.number().optional().default(72),
-})
-
-export interface SegmentStats {
-  timestamp: string
-  totalExecutions: number
-  successfulExecutions: number
-  avgDurationMs: number
-}
-
-export interface WorkflowStats {
-  workflowId: string
-  workflowName: string
-  segments: SegmentStats[]
-  overallSuccessRate: number
-  totalExecutions: number
-  totalSuccessful: number
-}
-
-export interface DashboardStatsResponse {
-  workflows: WorkflowStats[]
-  aggregateSegments: SegmentStats[]
-  totalRuns: number
-  totalErrors: number
-  avgLatency: number
-  timeBounds: {
-    start: string
-    end: string
-  }
-  segmentMs: number
-}
 
 export const GET = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
@@ -60,28 +35,43 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
     try {
       const { searchParams } = new URL(request.url)
-      const params = StatsQueryParamsSchema.parse(Object.fromEntries(searchParams.entries()))
+      const params = statsQueryParamsSchema.parse(Object.fromEntries(searchParams.entries()))
+
+      const access = await checkWorkspaceAccess(params.workspaceId, userId)
+      if (!access.hasAccess) {
+        return NextResponse.json(
+          {
+            workflows: [],
+            aggregateSegments: [],
+            totalRuns: 0,
+            totalErrors: 0,
+            avgLatency: 0,
+            timeBounds: { start: new Date().toISOString(), end: new Date().toISOString() },
+            segmentMs: 0,
+          } satisfies DashboardStatsResponse,
+          { status: 200 }
+        )
+      }
 
       const workspaceFilter = eq(workflowExecutionLogs.workspaceId, params.workspaceId)
+
+      if (params.folderIds) {
+        params.folderIds = await expandFolderIdsWithDescendants(
+          params.workspaceId,
+          params.folderIds
+        )
+      }
 
       const commonFilters = buildFilterConditions(params, { useSimpleLevelFilter: true })
       const whereCondition = commonFilters ? and(workspaceFilter, commonFilters) : workspaceFilter
 
-      const boundsQuery = await db
+      const boundsQuery = await dbReplica
         .select({
           minTime: sql<string>`MIN(${workflowExecutionLogs.startedAt})`,
           maxTime: sql<string>`MAX(${workflowExecutionLogs.startedAt})`,
         })
         .from(workflowExecutionLogs)
         .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
-        .innerJoin(
-          permissions,
-          and(
-            eq(permissions.entityType, 'workspace'),
-            eq(permissions.entityId, workflowExecutionLogs.workspaceId),
-            eq(permissions.userId, userId)
-          )
-        )
         .where(whereCondition)
 
       const bounds = boundsQuery[0]
@@ -102,7 +92,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       const segmentMs = Math.max(60000, Math.floor(totalMs / params.segmentCount))
       const startTimeIso = startTime.toISOString()
 
-      const statsQuery = await db
+      const statsQuery = await dbReplica
         .select({
           workflowId: sql<string>`COALESCE(${workflowExecutionLogs.workflowId}, 'deleted')`,
           workflowName: sql<string>`COALESCE(${workflow.name}, 'Deleted Workflow')`,
@@ -122,14 +112,6 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         })
         .from(workflowExecutionLogs)
         .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
-        .innerJoin(
-          permissions,
-          and(
-            eq(permissions.entityType, 'workspace'),
-            eq(permissions.entityId, workflowExecutionLogs.workspaceId),
-            eq(permissions.userId, userId)
-          )
-        )
         .where(whereCondition)
         .groupBy(
           sql`COALESCE(${workflowExecutionLogs.workflowId}, 'deleted')`,
@@ -277,14 +259,14 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
       return NextResponse.json(response, { status: 200 })
     } catch (validationError) {
-      if (validationError instanceof z.ZodError) {
+      if (isZodError(validationError)) {
         logger.warn(`[${requestId}] Invalid logs stats request parameters`, {
-          errors: validationError.errors,
+          errors: validationError.issues,
         })
         return NextResponse.json(
           {
             error: 'Invalid request parameters',
-            details: validationError.errors,
+            details: validationError.issues,
           },
           { status: 400 }
         )

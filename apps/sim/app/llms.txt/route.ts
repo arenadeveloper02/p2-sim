@@ -7,7 +7,7 @@ export function GET() {
 
 > Sim is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work.
 
-Sim lets teams create agents visually with the workflow builder, conversationally through Mothership, or programmatically with the API. The workspace includes knowledge bases, tables, files, and full observability.
+Sim lets teams create agents visually with the workflow builder, conversationally through Chat, or programmatically with the API. The workspace includes knowledge bases, tables, files, and full observability.
 
 ## Preferred URLs
 
@@ -20,8 +20,8 @@ Sim lets teams create agents visually with the workflow builder, conversationall
 ## Documentation
 
 - [Documentation](https://docs.sim.ai): Product guides and technical reference
-- [Quickstart](https://docs.sim.ai/quickstart): Fastest path to getting started
-- [API Reference](https://docs.sim.ai/api): API documentation
+- [Quickstart](https://docs.sim.ai/getting-started): Fastest path to getting started
+- [API Reference](https://docs.sim.ai/api-reference): API documentation
 
 ## Key Concepts
 

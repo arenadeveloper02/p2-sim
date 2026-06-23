@@ -1,15 +1,17 @@
 import { db } from '@sim/db'
-import { permissions, userStats, workflowFolder, workflow as workflowTable } from '@sim/db/schema'
+import { workflowFolder, workflow as workflowTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
 import { generateId } from '@sim/utils/id'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/workflow-authz'
 import { and, asc, eq, inArray, isNull, max, min, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { getNextWorkflowColor } from '@/lib/workflows/colors'
+import { ensureWorkflowAliasBacking } from '@/lib/copilot/vfs/workflow-alias-backing'
+import { materializeInlineExecutionValue } from '@/lib/execution/payloads/inline-materialization.server'
+import type { ExecutionMaterializationContext } from '@/lib/execution/payloads/materialization.server'
 import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
-import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
+import { listAccessibleWorkspaceRowsForUser } from '@/lib/workspaces/utils'
 import type { ExecutionResult } from '@/executor/types'
 
 const logger = createLogger('WorkflowUtils')
@@ -52,17 +54,21 @@ export async function listWorkflows(workspaceId: string, options?: { scope?: Wor
 /**
  * Generates a unique workflow name within a workspace+folder scope.
  * If the name already exists among active workflows, appends (2), (3), etc.
+ *
+ * Pass a transaction as `executor` when running inside an open tx so the
+ * lookup observes workflows inserted earlier in the same transaction.
  */
 export async function deduplicateWorkflowName(
   name: string,
   workspaceId: string,
-  folderId: string | null | undefined
+  folderId: string | null | undefined,
+  executor: Pick<typeof db, 'select'> = db
 ): Promise<string> {
   const folderCondition = folderId
     ? eq(workflowTable.folderId, folderId)
     : isNull(workflowTable.folderId)
 
-  const [existing] = await db
+  const [existing] = await executor
     .select({ id: workflowTable.id })
     .from(workflowTable)
     .where(
@@ -81,7 +87,7 @@ export async function deduplicateWorkflowName(
 
   for (let i = 2; i < 100; i++) {
     const candidate = `${name} (${i})`
-    const [dup] = await db
+    const [dup] = await executor
       .select({ id: workflowTable.id })
       .from(workflowTable)
       .where(
@@ -106,6 +112,7 @@ export type WorkflowResolutionResult =
   | {
       status: 'resolved'
       workflowId: string
+      workspaceId: string
       workflowName?: string
     }
   | {
@@ -141,15 +148,22 @@ export async function resolveWorkflowIdForUser(
       }
     }
     const wf = await getWorkflowById(workflowId)
-    return { status: 'resolved', workflowId, workflowName: wf?.name || undefined }
+    if (!wf?.workspaceId) {
+      return {
+        status: 'not_found',
+        message: 'No workflows found. Create a workflow first or provide a valid workflowId.',
+      }
+    }
+    return {
+      status: 'resolved',
+      workflowId,
+      workspaceId: wf.workspaceId,
+      workflowName: wf.name || undefined,
+    }
   }
 
-  const workspaceIds = await db
-    .select({ entityId: permissions.entityId })
-    .from(permissions)
-    .where(and(eq(permissions.userId, userId), eq(permissions.entityType, 'workspace')))
-
-  const workspaceIdList = workspaceIds.map((row) => row.entityId)
+  const accessibleRows = await listAccessibleWorkspaceRowsForUser(userId, 'all')
+  const workspaceIdList = accessibleRows.map((row) => row.workspace.id)
   const allowedWorkspaceIds = workspaceId
     ? workspaceIdList.filter((candidateWorkspaceId) => candidateWorkspaceId === workspaceId)
     : workspaceIdList
@@ -160,13 +174,18 @@ export async function resolveWorkflowIdForUser(
     }
   }
 
-  const workflows = await db
+  const workflowRows = await db
     .select()
     .from(workflowTable)
     .where(
       and(inArray(workflowTable.workspaceId, allowedWorkspaceIds), isNull(workflowTable.archivedAt))
     )
     .orderBy(asc(workflowTable.sortOrder), asc(workflowTable.createdAt), asc(workflowTable.id))
+
+  const workflows = workflowRows.filter(
+    (workflow): workflow is (typeof workflowRows)[number] & { workspaceId: string } =>
+      workflow.workspaceId !== null
+  )
 
   if (workflows.length === 0) {
     return {
@@ -187,6 +206,7 @@ export async function resolveWorkflowIdForUser(
       return {
         status: 'resolved',
         workflowId: match.id,
+        workspaceId: match.workspaceId,
         workflowName: match.name || undefined,
       }
     }
@@ -211,6 +231,7 @@ export async function resolveWorkflowIdForUser(
     return {
       status: 'resolved',
       workflowId: workflows[0].id,
+      workspaceId: workflows[0].workspaceId,
       workflowName: workflows[0].name || undefined,
     }
   }
@@ -243,53 +264,6 @@ export async function updateWorkflowRunCounts(workflowId: string, runs = 1) {
       })
       .where(eq(workflowTable.id, workflowId))
 
-    let activityUserId: string | null = null
-    if (workflow.workspaceId) {
-      try {
-        activityUserId = await getWorkspaceBilledAccountUserId(workflow.workspaceId)
-      } catch (error) {
-        logger.warn(`Error resolving billed account for workspace ${workflow.workspaceId}`, {
-          workflowId,
-          error,
-        })
-      }
-    }
-
-    if (activityUserId) {
-      try {
-        const existing = await db
-          .select()
-          .from(userStats)
-          .where(eq(userStats.userId, activityUserId))
-          .limit(1)
-
-        if (existing.length === 0) {
-          logger.warn('User stats record not found - should be created during onboarding', {
-            userId: activityUserId,
-            workflowId,
-          })
-        } else {
-          await db
-            .update(userStats)
-            .set({
-              lastActive: new Date(),
-            })
-            .where(eq(userStats.userId, activityUserId))
-        }
-      } catch (error) {
-        logger.error(`Error updating userStats lastActive for userId ${activityUserId}:`, error)
-        // Don't rethrow - we want to continue even if this fails
-      }
-    } else {
-      logger.warn(
-        'Skipping userStats lastActive update: unable to resolve workspace billed account',
-        {
-          workflowId,
-          workspaceId: workflow.workspaceId,
-        }
-      )
-    }
-
     return {
       success: true,
       runsAdded: runs,
@@ -315,17 +289,19 @@ export const workflowHasResponseBlock = (
   return responseBlock !== undefined
 }
 
-export const createHttpResponseFromBlock = (
-  executionResult: Pick<ExecutionResult, 'output'>
-): NextResponse => {
+export const createHttpResponseFromBlock = async (
+  executionResult: Pick<ExecutionResult, 'output'>,
+  context?: ExecutionMaterializationContext
+): Promise<NextResponse> => {
   const { data = {}, status = 200, headers = {} } = executionResult.output
+  const responseData = await materializeInlineExecutionValue(data, context)
 
   const responseHeaders = new Headers({
     'Content-Type': 'application/json',
     ...headers,
   })
 
-  return NextResponse.json(data, {
+  return NextResponse.json(responseData, {
     status: status,
     headers: responseHeaders,
   })
@@ -396,19 +372,11 @@ export interface CreateWorkflowInput {
   workspaceId: string
   name: string
   description?: string | null
-  color?: string
   folderId?: string | null
 }
 
 export async function createWorkflowRecord(params: CreateWorkflowInput) {
-  const {
-    userId,
-    workspaceId,
-    name,
-    description = null,
-    color = getNextWorkflowColor(),
-    folderId = null,
-  } = params
+  const { userId, workspaceId, name, description = null, folderId = null } = params
   const workflowId = generateId()
   const now = new Date()
 
@@ -471,7 +439,6 @@ export async function createWorkflowRecord(params: CreateWorkflowInput) {
     sortOrder,
     name,
     description,
-    color,
     lastSynced: now,
     createdAt: now,
     updatedAt: now,
@@ -486,17 +453,18 @@ export async function createWorkflowRecord(params: CreateWorkflowInput) {
     throw new Error(saveResult.error || 'Failed to save workflow state')
   }
 
+  await ensureWorkflowAliasBacking({ workspaceId, userId, workflowId, workflowName: name })
+
   return { workflowId, name, workspaceId, folderId, sortOrder, createdAt: now, updatedAt: now }
 }
 
 export async function updateWorkflowRecord(
   workflowId: string,
-  updates: { name?: string; description?: string; color?: string; folderId?: string | null }
+  updates: { name?: string; description?: string; folderId?: string | null }
 ) {
   const setData: Record<string, unknown> = { updatedAt: new Date() }
   if (updates.name !== undefined) setData.name = updates.name
   if (updates.description !== undefined) setData.description = updates.description
-  if (updates.color !== undefined) setData.color = updates.color
   if (updates.folderId !== undefined) setData.folderId = updates.folderId
   await db.update(workflowTable).set(setData).where(eq(workflowTable.id, workflowId))
 }
@@ -564,6 +532,18 @@ export async function updateFolderRecord(
   await db.update(workflowFolder).set(setData).where(eq(workflowFolder.id, folderId))
 }
 
+export async function verifyFolderWorkspace(
+  folderId: string,
+  workspaceId: string
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: workflowFolder.id })
+    .from(workflowFolder)
+    .where(and(eq(workflowFolder.id, folderId), eq(workflowFolder.workspaceId, workspaceId)))
+    .limit(1)
+  return Boolean(row)
+}
+
 export async function deleteFolderRecord(folderId: string): Promise<boolean> {
   const [folder] = await db
     .select({ parentId: workflowFolder.parentId })
@@ -625,6 +605,7 @@ export async function listFolders(workspaceId: string) {
       folderName: workflowFolder.name,
       parentId: workflowFolder.parentId,
       sortOrder: workflowFolder.sortOrder,
+      locked: workflowFolder.locked,
     })
     .from(workflowFolder)
     .where(and(eq(workflowFolder.workspaceId, workspaceId), isNull(workflowFolder.archivedAt)))

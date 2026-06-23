@@ -1,19 +1,23 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 import { toError } from '@sim/utils/errors'
 import { useMutation } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Combobox, type ComboboxOption, Input, Textarea } from '@/components/emcn'
+import { Combobox, Input, Textarea } from '@/components/emcn'
 import { Check } from '@/components/emcn/icons'
-import { getEnv } from '@/lib/core/config/env'
-import { captureClientEvent } from '@/lib/posthog/client'
+import { requestJson } from '@/lib/api/client/request'
 import {
   CONTACT_TOPIC_OPTIONS,
   type ContactRequestPayload,
   contactRequestSchema,
-} from '@/app/(landing)/components/contact/consts'
+  type SubmitContactBody,
+  submitContactContract,
+} from '@/lib/api/contracts/contact'
+import { flattenFieldErrors } from '@/lib/api/contracts/primitives'
+import { getEnv } from '@/lib/core/config/env'
+import { captureClientEvent } from '@/lib/posthog/client'
 import { LandingField } from '@/app/(landing)/components/forms/landing-field'
 
 type ContactField = keyof ContactRequestPayload
@@ -52,29 +56,8 @@ const LANDING_SUBMIT =
 const LANDING_LABEL =
   'font-[500] font-season text-[13px] text-[var(--landing-text)] tracking-[0.02em]'
 
-interface SubmitContactRequestInput extends ContactRequestPayload {
-  website: string
-  captchaToken?: string
-  captchaUnavailable?: boolean
-}
-
-async function submitContactRequest(payload: SubmitContactRequestInput) {
-  const response = await fetch('/api/contact', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-
-  const result = (await response.json().catch(() => null)) as {
-    error?: string
-    message?: string
-  } | null
-
-  if (!response.ok) {
-    throw new Error(result?.error || 'Failed to send message')
-  }
-
-  return result
+async function submitContactRequest(payload: SubmitContactBody) {
+  return requestJson(submitContactContract, { body: payload })
 }
 
 export function ContactForm() {
@@ -86,7 +69,6 @@ export function ContactForm() {
       captureClientEvent('landing_contact_submitted', { topic: variables.topic })
       setForm(INITIAL_FORM_STATE)
       setErrors({})
-      setSubmitSuccess(true)
     },
     onError: () => {
       turnstileRef.current?.reset()
@@ -95,15 +77,10 @@ export function ContactForm() {
 
   const [form, setForm] = useState<ContactFormState>(INITIAL_FORM_STATE)
   const [errors, setErrors] = useState<ContactErrors>({})
-  const [submitSuccess, setSubmitSuccess] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [website, setWebsite] = useState('')
   const [widgetReady, setWidgetReady] = useState(false)
-  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | undefined>()
-
-  useEffect(() => {
-    setTurnstileSiteKey(getEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY'))
-  }, [])
+  const [turnstileSiteKey] = useState(() => getEnv('NEXT_PUBLIC_TURNSTILE_SITE_KEY'))
 
   function updateField<TField extends keyof ContactFormState>(
     field: TField,
@@ -134,15 +111,7 @@ export function ContactForm() {
     })
 
     if (!parsed.success) {
-      const fieldErrors = parsed.error.flatten().fieldErrors
-      setErrors({
-        name: fieldErrors.name?.[0],
-        email: fieldErrors.email?.[0],
-        company: fieldErrors.company?.[0],
-        topic: fieldErrors.topic?.[0],
-        subject: fieldErrors.subject?.[0],
-        message: fieldErrors.message?.[0],
-      })
+      setErrors(flattenFieldErrors<ContactField>(parsed.error))
       setIsSubmitting(false)
       return
     }
@@ -170,6 +139,7 @@ export function ContactForm() {
   }
 
   const isBusy = contactMutation.isPending || isSubmitting
+  const submitSuccess = contactMutation.isSuccess
 
   const submitError = contactMutation.isError
     ? toError(contactMutation.error).message || 'Failed to send message. Please try again.'
@@ -178,8 +148,8 @@ export function ContactForm() {
   if (submitSuccess) {
     return (
       <div className='flex flex-col items-center px-8 py-16 text-center'>
-        <div className='flex h-16 w-16 items-center justify-center rounded-full border border-[var(--landing-bg-elevated)] bg-[var(--landing-bg-surface)] text-[var(--landing-text)]'>
-          <Check className='h-8 w-8' />
+        <div className='flex size-16 items-center justify-center rounded-full border border-[var(--landing-bg-elevated)] bg-[var(--landing-bg-surface)] text-[var(--landing-text)]'>
+          <Check className='size-8' />
         </div>
         <h2 className='mt-6 font-[430] font-season text-[24px] text-[var(--landing-text)] leading-[1.2] tracking-[-0.02em]'>
           Message received
@@ -190,7 +160,7 @@ export function ContactForm() {
         </p>
         <button
           type='button'
-          onClick={() => setSubmitSuccess(false)}
+          onClick={() => contactMutation.reset()}
           className='mt-6 font-season text-[13px] text-[var(--landing-text)] underline underline-offset-2 transition-opacity hover:opacity-80'
         >
           Send another message
@@ -275,7 +245,7 @@ export function ContactForm() {
           labelClassName={LANDING_LABEL}
         >
           <Combobox
-            options={CONTACT_TOPIC_OPTIONS as unknown as ComboboxOption[]}
+            options={[...CONTACT_TOPIC_OPTIONS]}
             value={form.topic}
             selectedValue={form.topic}
             onChange={(value) => updateField('topic', value as ContactRequestPayload['topic'])}

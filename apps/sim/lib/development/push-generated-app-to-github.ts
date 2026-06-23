@@ -28,6 +28,9 @@ export interface PushGeneratedAppToGitHubResult {
   htmlUrl?: string
   cloneUrl?: string
   defaultBranch?: string
+  repoId?: number
+  commitSha?: string
+  pushed?: boolean
   error?: string
 }
 
@@ -36,6 +39,7 @@ interface GitHubUserResponse {
 }
 
 interface GitHubRepoResponse {
+  id: number
   name: string
   html_url: string
   clone_url: string
@@ -43,12 +47,13 @@ interface GitHubRepoResponse {
   owner: { login: string }
 }
 
-async function runGit(cwd: string, args: string[]): Promise<void> {
-  await execFileAsync('git', args, {
+async function runGit(cwd: string, args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync('git', args, {
     cwd,
     encoding: 'utf-8',
     maxBuffer: 10 * 1024 * 1024,
   })
+  return stdout.trim()
 }
 
 async function githubFetch<T>(
@@ -136,6 +141,34 @@ async function createGitHubRepository(
       ? data.message
       : `GitHub API error (${status})`
   throw new Error(message)
+}
+
+async function ensureGitRemote(
+  outputDir: string,
+  remoteUrl: string,
+  defaultBranch: string
+): Promise<void> {
+  const gitDir = join(outputDir, '.git')
+  if (!existsSync(gitDir)) {
+    await runGit(outputDir, ['init'])
+    await runGit(outputDir, ['branch', '-M', defaultBranch])
+  }
+
+  try {
+    await runGit(outputDir, ['remote', 'get-url', 'origin'])
+    await runGit(outputDir, ['remote', 'set-url', 'origin', remoteUrl])
+  } catch {
+    try {
+      await runGit(outputDir, ['remote', 'remove', 'origin'])
+    } catch {
+      // no existing origin
+    }
+    await runGit(outputDir, ['remote', 'add', 'origin', remoteUrl])
+  }
+}
+
+async function getHeadCommitSha(outputDir: string): Promise<string> {
+  return runGit(outputDir, ['rev-parse', 'HEAD'])
 }
 
 function buildAuthenticatedRemoteUrl(token: string, owner: string, repoName: string): string {
@@ -226,10 +259,130 @@ export async function ensureGitHubRepository(
       htmlUrl: repo.html_url,
       cloneUrl: repo.clone_url,
       defaultBranch: repo.default_branch || 'main',
+      repoId: repo.id,
     }
   } catch (error) {
     const message = toError(error).message
     logger.error('Failed to ensure GitHub repository exists', { error: message })
+    return { success: false, error: message }
+  }
+}
+
+/**
+ * Commits and pushes local changes to an existing GitHub repository.
+ */
+export async function pushRepoChangesToGitHub(
+  input: PushGeneratedAppToGitHubInput & { commitMessage?: string }
+): Promise<PushGeneratedAppToGitHubResult> {
+  const token = input.githubToken?.trim()
+  if (!token) {
+    return { success: false, error: 'GitHub token is required to push changes' }
+  }
+
+  const repoName = input.repoName.trim()
+  if (!repoName) {
+    return { success: false, error: 'Repository name is required' }
+  }
+
+  if (!existsSync(input.outputDir)) {
+    return { success: false, error: `Output directory does not exist: ${input.outputDir}` }
+  }
+
+  try {
+    const { data: user, status: userStatus } = await githubFetch<GitHubUserResponse>(
+      token,
+      '/user'
+    )
+    if (userStatus !== 200) {
+      return { success: false, error: 'Invalid GitHub token or insufficient API access' }
+    }
+
+    const owner = await resolveGitHubOwner(token, input.githubOwner)
+    const { data: repo, status: repoStatus } = await githubFetch<GitHubRepoResponse>(
+      token,
+      `/repos/${owner}/${repoName}`
+    )
+    if (repoStatus !== 200) {
+      return { success: false, error: `GitHub repository "${owner}/${repoName}" was not found` }
+    }
+
+    const defaultBranch = repo.default_branch || 'main'
+    const remoteUrl = buildAuthenticatedRemoteUrl(token, owner, repo.name)
+
+    await ensureGitRemote(input.outputDir, remoteUrl, defaultBranch)
+    await runGit(input.outputDir, ['config', 'user.email', GIT_COMMIT_EMAIL])
+    await runGit(input.outputDir, ['config', 'user.name', GIT_COMMIT_NAME])
+
+    try {
+      await runGit(input.outputDir, ['fetch', 'origin', defaultBranch])
+    } catch (error) {
+      logger.warn('Could not fetch remote branch before edit push', {
+        repoName,
+        defaultBranch,
+        error: toError(error).message,
+      })
+    }
+
+    await runGit(input.outputDir, ['add', '.'])
+
+    let pushed = false
+    try {
+      await runGit(input.outputDir, ['diff', '--cached', '--quiet'])
+      return {
+        success: false,
+        pushed: false,
+        error: 'No file changes to push after edit. Update User Input and try again.',
+        owner,
+        repoName: repo.name,
+        htmlUrl: repo.html_url,
+        cloneUrl: repo.clone_url,
+        defaultBranch,
+        repoId: repo.id,
+      }
+    } catch {
+      await runGit(input.outputDir, [
+        'commit',
+        '-m',
+        input.commitMessage?.trim() || 'Update from Sim Development',
+      ])
+
+      try {
+        await runGit(input.outputDir, ['pull', '--rebase', 'origin', defaultBranch])
+      } catch (error) {
+        logger.warn('Rebase before push failed; attempting direct push', {
+          repoName,
+          error: toError(error).message,
+        })
+      }
+
+      await runGit(input.outputDir, ['push', 'origin', `HEAD:${defaultBranch}`])
+      pushed = true
+    }
+
+    const commitSha = await getHeadCommitSha(input.outputDir)
+
+    logger.info('Pushed edited app changes to GitHub', {
+      owner,
+      repoName: repo.name,
+      htmlUrl: repo.html_url,
+      commitSha,
+      pushed,
+    })
+
+    return {
+      success: true,
+      pushed,
+      owner,
+      repoName: repo.name,
+      htmlUrl: repo.html_url,
+      cloneUrl: repo.clone_url,
+      defaultBranch,
+      repoId: repo.id,
+      commitSha,
+    }
+  } catch (error) {
+    const message = toError(error).message
+    logger.error('Failed to push edited app changes to GitHub', { error: message })
     return { success: false, error: message }
   }
 }
@@ -273,20 +426,25 @@ export async function pushGeneratedAppToGitHub(
     const remoteUrl = buildAuthenticatedRemoteUrl(token, owner, repo.name)
 
     await initCommitAndPush(input.outputDir, remoteUrl, defaultBranch)
+    const commitSha = await getHeadCommitSha(input.outputDir)
 
     logger.info('Pushed generated app to GitHub', {
       owner,
       repoName: repo.name,
       htmlUrl: repo.html_url,
+      commitSha,
     })
 
     return {
       success: true,
+      pushed: true,
       owner,
       repoName: repo.name,
       htmlUrl: repo.html_url,
       cloneUrl: repo.clone_url,
       defaultBranch,
+      repoId: repo.id,
+      commitSha,
     }
   } catch (error) {
     const message = toError(error).message

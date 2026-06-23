@@ -2,29 +2,19 @@ import { DescribeLogGroupsCommand } from '@aws-sdk/client-cloudwatch-logs'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
+import { cloudwatchLogGroupsSelectorContract } from '@/lib/api/contracts/selectors/cloudwatch'
+import { parseToolRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { validateAwsRegion } from '@/lib/core/security/input-validation'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { createCloudWatchLogsClient } from '@/app/api/tools/cloudwatch/utils'
 
 const logger = createLogger('CloudWatchDescribeLogGroups')
 
-const DescribeLogGroupsSchema = z.object({
-  region: z
-    .string()
-    .min(1, 'AWS region is required')
-    .refine((v) => validateAwsRegion(v).isValid, {
-      message: 'Invalid AWS region format (e.g., us-east-1, eu-west-2)',
-    }),
-  accessKeyId: z.string().min(1, 'AWS access key ID is required'),
-  secretAccessKey: z.string().min(1, 'AWS secret access key is required'),
-  prefix: z.string().optional(),
-  limit: z.preprocess(
-    (v) => (v === '' || v === undefined || v === null ? undefined : v),
-    z.number({ coerce: true }).int().positive().optional()
-  ),
-})
+/** AWS DescribeLogGroups caps `limit` at 50 items per page. */
+const LOG_GROUPS_PAGE_SIZE = 50
+
+/** Upper bound on pages drained to avoid unbounded loops on very large accounts. */
+const MAX_LOG_GROUPS_PAGES = 20
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
@@ -33,8 +23,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const validatedData = DescribeLogGroupsSchema.parse(body)
+    const parsed = await parseToolRequest(cloudwatchLogGroupsSelectorContract, request, {
+      errorFormat: 'firstError',
+      logger,
+    })
+    if (!parsed.success) return parsed.response
+    const validatedData = parsed.data.body
 
     logger.info('Describing CloudWatch log groups')
 
@@ -45,38 +39,63 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     })
 
     try {
-      const command = new DescribeLogGroupsCommand({
-        ...(validatedData.prefix && { logGroupNamePrefix: validatedData.prefix }),
-        ...(validatedData.limit !== undefined && { limit: validatedData.limit }),
-      })
+      const totalLimit = validatedData.limit
+      const logGroups: {
+        logGroupName: string
+        arn: string
+        storedBytes: number
+        retentionInDays: number | undefined
+        creationTime: number | undefined
+      }[] = []
+      let nextToken: string | undefined
 
-      const response = await client.send(command)
+      for (let page = 0; page < MAX_LOG_GROUPS_PAGES; page++) {
+        const pageLimit =
+          totalLimit !== undefined
+            ? Math.min(LOG_GROUPS_PAGE_SIZE, totalLimit - logGroups.length)
+            : LOG_GROUPS_PAGE_SIZE
 
-      const logGroups = (response.logGroups ?? []).map((lg) => ({
-        logGroupName: lg.logGroupName ?? '',
-        arn: lg.arn ?? '',
-        storedBytes: lg.storedBytes ?? 0,
-        retentionInDays: lg.retentionInDays,
-        creationTime: lg.creationTime,
-      }))
+        const command = new DescribeLogGroupsCommand({
+          ...(validatedData.prefix && { logGroupNamePrefix: validatedData.prefix }),
+          limit: pageLimit,
+          ...(nextToken && { nextToken }),
+        })
 
-      logger.info(`Successfully described ${logGroups.length} log groups`)
+        const response = await client.send(command)
+
+        for (const lg of response.logGroups ?? []) {
+          logGroups.push({
+            logGroupName: lg.logGroupName ?? '',
+            arn: lg.arn ?? '',
+            storedBytes: lg.storedBytes ?? 0,
+            retentionInDays: lg.retentionInDays,
+            creationTime: lg.creationTime,
+          })
+        }
+
+        nextToken = response.nextToken
+        if (!nextToken) break
+        if (totalLimit !== undefined && logGroups.length >= totalLimit) break
+
+        if (page === MAX_LOG_GROUPS_PAGES - 1) {
+          logger.warn(
+            `DescribeLogGroups hit pagination cap of ${MAX_LOG_GROUPS_PAGES} pages; log group list may be incomplete`
+          )
+        }
+      }
+
+      const cappedLogGroups = totalLimit !== undefined ? logGroups.slice(0, totalLimit) : logGroups
+
+      logger.info(`Successfully described ${cappedLogGroups.length} log groups`)
 
       return NextResponse.json({
         success: true,
-        output: { logGroups },
+        output: { logGroups: cappedLogGroups },
       })
     } finally {
       client.destroy()
     }
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      logger.warn('Invalid request data', { errors: error.errors })
-      return NextResponse.json(
-        { error: error.errors[0]?.message ?? 'Invalid request' },
-        { status: 400 }
-      )
-    }
     logger.error('DescribeLogGroups failed', { error: toError(error).message })
     return NextResponse.json(
       { error: `Failed to describe CloudWatch log groups: ${toError(error).message}` },

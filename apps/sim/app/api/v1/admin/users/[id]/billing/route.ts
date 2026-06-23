@@ -23,11 +23,19 @@ import { member, organization, subscription, user, userStats } from '@sim/db/sch
 import { createLogger } from '@sim/logger'
 import { generateShortId } from '@sim/utils/id'
 import { eq, or } from 'drizzle-orm'
+import {
+  adminV1GetUserBillingContract,
+  adminV1UpdateUserBillingContract,
+} from '@/lib/api/contracts/v1/admin'
+import { parseRequest } from '@/lib/api/server'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import { getUserUsageData } from '@/lib/billing/core/usage'
 import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { withAdminAuthParams } from '@/app/api/v1/admin/middleware'
 import {
+  adminInvalidJsonResponse,
+  adminValidationErrorResponse,
   badRequestResponse,
   internalErrorResponse,
   notFoundResponse,
@@ -45,8 +53,13 @@ interface RouteParams {
 }
 
 export const GET = withRouteHandler(
-  withAdminAuthParams<RouteParams>(async (_, context) => {
-    const { id: userId } = await context.params
+  withAdminAuthParams<RouteParams>(async (request, context) => {
+    const parsed = await parseRequest(adminV1GetUserBillingContract, request, context, {
+      validationErrorResponse: adminValidationErrorResponse,
+    })
+    if (!parsed.success) return parsed.response
+
+    const { id: userId } = parsed.data.params
 
     try {
       const [userData] = await db
@@ -65,6 +78,11 @@ export const GET = withRouteHandler(
       }
 
       const [stats] = await db.select().from(userStats).where(eq(userStats.userId, userId)).limit(1)
+
+      // currentPeriodCost is now only a baseline; canonical current-period usage
+      // (baseline + attributed usage_log, refresh-adjusted) comes from the same
+      // helper users see, so admin reflects real usage instead of a stale 0.
+      const usage = await getUserUsageData(userId)
 
       const memberOrgs = await db
         .select({
@@ -95,27 +113,14 @@ export const GET = withRouteHandler(
         userName: userData.name,
         userEmail: userData.email,
         stripeCustomerId: userData.stripeCustomerId,
-        totalManualExecutions: stats?.totalManualExecutions ?? 0,
-        totalApiCalls: stats?.totalApiCalls ?? 0,
-        totalWebhookTriggers: stats?.totalWebhookTriggers ?? 0,
-        totalScheduledExecutions: stats?.totalScheduledExecutions ?? 0,
-        totalChatExecutions: stats?.totalChatExecutions ?? 0,
-        totalMcpExecutions: stats?.totalMcpExecutions ?? 0,
-        totalA2aExecutions: stats?.totalA2aExecutions ?? 0,
-        totalTokensUsed: stats?.totalTokensUsed ?? 0,
-        totalCost: stats?.totalCost ?? '0',
         currentUsageLimit: stats?.currentUsageLimit ?? null,
-        currentPeriodCost: stats?.currentPeriodCost ?? '0',
+        currentPeriodCost: usage.currentUsage.toString(),
         lastPeriodCost: stats?.lastPeriodCost ?? null,
         billedOverageThisPeriod: stats?.billedOverageThisPeriod ?? '0',
         storageUsedBytes: stats?.storageUsedBytes ?? 0,
-        lastActive: stats?.lastActive?.toISOString() ?? null,
         billingBlocked: stats?.billingBlocked ?? false,
-        totalCopilotCost: stats?.totalCopilotCost ?? '0',
         currentPeriodCopilotCost: stats?.currentPeriodCopilotCost ?? '0',
         lastPeriodCopilotCost: stats?.lastPeriodCopilotCost ?? null,
-        totalCopilotTokens: stats?.totalCopilotTokens ?? 0,
-        totalCopilotCalls: stats?.totalCopilotCalls ?? 0,
         subscriptions: subscriptions.map(toAdminSubscription),
         organizationMemberships: memberOrgs.map((m) => ({
           organizationId: m.organizationId,
@@ -136,11 +141,22 @@ export const GET = withRouteHandler(
 
 export const PATCH = withRouteHandler(
   withAdminAuthParams<RouteParams>(async (request, context) => {
-    const { id: userId } = await context.params
+    const parsed = await parseRequest(adminV1UpdateUserBillingContract, request, context, {
+      validationErrorResponse: adminValidationErrorResponse,
+      invalidJsonResponse: adminInvalidJsonResponse,
+    })
+    if (!parsed.success) return parsed.response
+
+    const { id: userId } = parsed.data.params
 
     try {
-      const body = await request.json()
-      const reason = body.reason || 'Admin update (no reason provided)'
+      const {
+        currentUsageLimit,
+        billingBlocked,
+        currentPeriodCost,
+        reason: providedReason,
+      } = parsed.data.body
+      const reason = providedReason || 'Admin update (no reason provided)'
 
       const [userData] = await db
         .select({ id: user.id })
@@ -171,60 +187,50 @@ export const PATCH = withRouteHandler(
       const updated: string[] = []
       const warnings: string[] = []
 
-      if (body.currentUsageLimit !== undefined) {
+      if (currentUsageLimit !== undefined) {
         if (isOrgScopedMember && orgMembership) {
           warnings.push(
             'User is on an org-scoped subscription. Individual limits are ignored in favor of organization limits.'
           )
         }
 
-        if (body.currentUsageLimit === null) {
+        if (currentUsageLimit === null) {
           updateData.currentUsageLimit = null
-        } else if (typeof body.currentUsageLimit === 'number' && body.currentUsageLimit >= 0) {
+        } else {
           const currentCost = Number.parseFloat(existingStats?.currentPeriodCost || '0')
-          if (body.currentUsageLimit < currentCost) {
+          if (currentUsageLimit < currentCost) {
             warnings.push(
-              `New limit ($${body.currentUsageLimit.toFixed(2)}) is below current usage ($${currentCost.toFixed(2)}). User may be immediately blocked.`
+              `New limit ($${currentUsageLimit.toFixed(2)}) is below current usage ($${currentCost.toFixed(2)}). User may be immediately blocked.`
             )
           }
-          updateData.currentUsageLimit = body.currentUsageLimit.toFixed(2)
-        } else {
-          return badRequestResponse('currentUsageLimit must be a non-negative number or null')
+          updateData.currentUsageLimit = currentUsageLimit.toFixed(2)
         }
         updateData.usageLimitUpdatedAt = new Date()
         updated.push('currentUsageLimit')
       }
 
-      if (body.billingBlocked !== undefined) {
-        if (typeof body.billingBlocked !== 'boolean') {
-          return badRequestResponse('billingBlocked must be a boolean')
-        }
-
-        if (body.billingBlocked === false && existingStats?.billingBlocked === true) {
+      if (billingBlocked !== undefined) {
+        if (billingBlocked === false && existingStats?.billingBlocked === true) {
           warnings.push(
             'Unblocking user. Ensure payment issues are resolved to prevent re-blocking on next invoice.'
           )
         }
 
-        updateData.billingBlocked = body.billingBlocked
+        updateData.billingBlocked = billingBlocked
         // Clear the reason when unblocking
-        if (body.billingBlocked === false) {
+        if (billingBlocked === false) {
           updateData.billingBlockedReason = null
         }
         updated.push('billingBlocked')
       }
 
-      if (body.currentPeriodCost !== undefined) {
-        if (typeof body.currentPeriodCost !== 'number' || body.currentPeriodCost < 0) {
-          return badRequestResponse('currentPeriodCost must be a non-negative number')
-        }
-
+      if (currentPeriodCost !== undefined) {
         const previousCost = existingStats?.currentPeriodCost || '0'
         warnings.push(
-          `Manually adjusting currentPeriodCost from $${previousCost} to $${body.currentPeriodCost.toFixed(2)}. This may affect billing accuracy.`
+          `Manually adjusting currentPeriodCost from $${previousCost} to $${currentPeriodCost.toFixed(2)}. This may affect billing accuracy.`
         )
 
-        updateData.currentPeriodCost = body.currentPeriodCost.toFixed(2)
+        updateData.currentPeriodCost = currentPeriodCost.toFixed(2)
         updated.push('currentPeriodCost')
       }
 

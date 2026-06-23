@@ -1,3 +1,16 @@
+/**
+ * Defense-in-depth ceiling on the size of any single workspace file upload.
+ * Enforced both server-side (presigned route) and client-side (Files tab) so
+ * users get fast feedback before bytes are streamed.
+ */
+export const MAX_WORKSPACE_FILE_SIZE = 5 * 1024 * 1024 * 1024
+
+/**
+ * Cap on the legacy FormData upload route, which buffers the whole file in
+ * worker memory. Direct-to-storage uploads use {@link MAX_WORKSPACE_FILE_SIZE}.
+ */
+export const MAX_WORKSPACE_FORMDATA_FILE_SIZE = 100 * 1024 * 1024
+
 export type StorageContext =
   | 'knowledge-base'
   | 'chat'
@@ -11,6 +24,25 @@ export type StorageContext =
   | 'logs'
   | 'figma-design'
   | 'workspace-logos'
+
+/**
+ * Contexts exempt from storage quota checks. Includes system-internal contexts
+ * (`logs` — written by the execution pipeline, not user-initiated) and small
+ * metadata assets (`profile-pictures`, `workspace-logos`, `og-images`). All
+ * other contexts are user-driven uploads and must pass quota validation.
+ *
+ * Note: every quota-exempt context is excluded from `ALLOWED_UPLOAD_CONTEXTS`
+ * in the multipart endpoint, so none are reachable there — the exemption applies
+ * only to the single-part upload paths (presigned/FormData) those small assets
+ * actually use. The multipart endpoint therefore only ever serves
+ * quota-enforced contexts.
+ */
+export const QUOTA_EXEMPT_STORAGE_CONTEXTS = new Set<StorageContext>([
+  'profile-pictures',
+  'workspace-logos',
+  'og-images',
+  'logs',
+])
 
 export interface FileInfo {
   path: string
@@ -44,6 +76,7 @@ export interface UploadFileOptions {
 export interface DownloadFileOptions {
   key: string
   context?: StorageContext
+  maxBytes?: number
 }
 
 export interface DeleteFileOptions {
@@ -59,6 +92,11 @@ export interface GeneratePresignedUrlOptions {
   userId?: string
   expirationSeconds?: number
   metadata?: Record<string, string>
+  /**
+   * When provided, overrides the default `${context}/${timestamp}-${id}-${name}` key derivation.
+   * The caller takes responsibility for uniqueness and prefix conventions.
+   */
+  customKey?: string
 }
 
 export interface PresignedUrlResponse {

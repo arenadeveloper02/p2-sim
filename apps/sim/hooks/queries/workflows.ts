@@ -8,10 +8,24 @@ import {
   keepPreviousData,
   skipToken,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { getNextWorkflowColor } from '@/lib/workflows/colors'
+import { requestJson } from '@/lib/api/client/request'
+import { revertToDeploymentVersionContract } from '@/lib/api/contracts/deployments'
+import {
+  createWorkflowContract,
+  deleteWorkflowContract,
+  duplicateWorkflowContract,
+  getWorkflowStateContract,
+  type ImportWorkflowAsSuperuserBody,
+  type ImportWorkflowAsSuperuserResponse,
+  importWorkflowAsSuperuserContract,
+  reorderWorkflowsContract,
+  restoreWorkflowContract,
+  updateWorkflowContract,
+} from '@/lib/api/contracts/workflows'
 import { deploymentKeys } from '@/hooks/queries/deployments'
 import { fetchDeploymentVersionState } from '@/hooks/queries/utils/fetch-deployment-version-state'
 import { getFolderMap } from '@/hooks/queries/utils/folder-cache'
@@ -39,10 +53,17 @@ async function fetchWorkflowState(
   workflowId: string,
   signal?: AbortSignal
 ): Promise<WorkflowState | null> {
-  const response = await fetch(`/api/workflows/${workflowId}`, { signal })
-  if (!response.ok) throw new Error('Failed to fetch workflow')
-  const { data } = await response.json()
-  return data?.state ?? null
+  const { data } = await requestJson(getWorkflowStateContract, {
+    params: { id: workflowId },
+    signal,
+  })
+  const wireState = data.state
+  return {
+    ...wireState,
+    loops: wireState.loops ?? {},
+    parallels: wireState.parallels ?? {},
+    deployedAt: wireState.deployedAt ?? undefined,
+  } as WorkflowState
 }
 
 /**
@@ -56,6 +77,31 @@ export function useWorkflowState(workflowId: string | undefined) {
     queryFn: workflowId ? ({ signal }) => fetchWorkflowState(workflowId, signal) : skipToken,
     staleTime: 30 * 1000,
   })
+}
+
+/**
+ * Batched workflow-state fetch for callers that need state for several
+ * workflows at once (e.g. a table with multiple workflow groups). One
+ * subscription per unique workflow id — duplicates in `workflowIds` are
+ * collapsed before subscribing so N consumers of the same id don't each
+ * register their own observer.
+ */
+export function useWorkflowStates(
+  workflowIds: ReadonlyArray<string | undefined>
+): Map<string, WorkflowState | null> {
+  const uniqueIds = Array.from(new Set(workflowIds.filter((id): id is string => Boolean(id))))
+  const results = useQueries({
+    queries: uniqueIds.map((id) => ({
+      queryKey: workflowKeys.state(id),
+      queryFn: ({ signal }: { signal?: AbortSignal }) => fetchWorkflowState(id, signal),
+      staleTime: 30 * 1000,
+    })),
+  })
+  const map = new Map<string, WorkflowState | null>()
+  uniqueIds.forEach((id, i) => {
+    map.set(id, (results[i].data as WorkflowState | null | undefined) ?? null)
+  })
+  return map
 }
 
 export function useWorkflows(workspaceId?: string, options?: { scope?: WorkflowQueryScope }) {
@@ -93,18 +139,16 @@ interface CreateWorkflowVariables {
   workspaceId: string
   name?: string
   description?: string
-  color?: string
   folderId?: string | null
   sortOrder?: number
   id?: string
   deduplicate?: boolean
 }
 
-interface CreateWorkflowResult {
+interface CreateWorkflowMutationData {
   id: string
   name: string
   description?: string
-  color: string
   workspaceId: string
   folderId?: string | null
   sortOrder: number
@@ -115,35 +159,22 @@ export function useCreateWorkflow() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (variables: CreateWorkflowVariables): Promise<CreateWorkflowResult> => {
-      const { workspaceId, name, description, color, folderId, sortOrder, id, deduplicate } =
-        variables
+    mutationFn: async (variables: CreateWorkflowVariables): Promise<CreateWorkflowMutationData> => {
+      const { workspaceId, name, description, folderId, sortOrder, id, deduplicate } = variables
 
       logger.info(`Creating new workflow in workspace: ${workspaceId}`)
 
-      const createResponse = await fetch('/api/workflows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const createdWorkflow = await requestJson(createWorkflowContract, {
+        body: {
           id,
           name: name || generateCreativeWorkflowName(),
           description: description || 'New workflow',
-          color: color || getNextWorkflowColor(),
           workspaceId,
           folderId: folderId || null,
           sortOrder,
           deduplicate,
-        }),
+        },
       })
-
-      if (!createResponse.ok) {
-        const errorData = await createResponse.json()
-        throw new Error(
-          `Failed to create workflow: ${errorData.error || createResponse.statusText}`
-        )
-      }
-
-      const createdWorkflow = await createResponse.json()
       const workflowId = createdWorkflow.id
 
       logger.info(`Successfully created workflow ${workflowId}`)
@@ -152,7 +183,6 @@ export function useCreateWorkflow() {
         id: workflowId,
         name: createdWorkflow.name,
         description: createdWorkflow.description,
-        color: createdWorkflow.color,
         workspaceId,
         folderId: createdWorkflow.folderId,
         sortOrder: createdWorkflow.sortOrder ?? 0,
@@ -190,10 +220,10 @@ export function useCreateWorkflow() {
         lastModified: new Date(),
         createdAt: new Date(),
         description: variables.description || 'New workflow',
-        color: variables.color || getNextWorkflowColor(),
         workspaceId: variables.workspaceId,
         folderId: variables.folderId || null,
         sortOrder,
+        locked: false,
       }
 
       queryClient.setQueryData<WorkflowMetadata[]>(
@@ -219,7 +249,6 @@ export function useCreateWorkflow() {
                   lastModified: new Date(),
                   createdAt: new Date(),
                   description: data.description,
-                  color: data.color,
                   workspaceId: data.workspaceId,
                   folderId: data.folderId,
                   sortOrder: data.sortOrder,
@@ -274,19 +303,18 @@ interface DuplicateWorkflowVariables {
   sourceId: string
   name: string
   description?: string
-  color: string
   folderId?: string | null
   newId?: string
 }
 
-interface DuplicateWorkflowResult {
+interface DuplicateWorkflowMutationData {
   id: string
   name: string
   description?: string
-  color: string
   workspaceId: string
   folderId?: string | null
   sortOrder: number
+  locked: boolean
   blocksCount: number
   edgesCount: number
   subflowsCount: number
@@ -296,30 +324,23 @@ export function useDuplicateWorkflowMutation() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (variables: DuplicateWorkflowVariables): Promise<DuplicateWorkflowResult> => {
-      const { workspaceId, sourceId, name, description, color, folderId, newId } = variables
+    mutationFn: async (
+      variables: DuplicateWorkflowVariables
+    ): Promise<DuplicateWorkflowMutationData> => {
+      const { workspaceId, sourceId, name, description, folderId, newId } = variables
 
       logger.info(`Duplicating workflow ${sourceId} in workspace: ${workspaceId}`)
 
-      const response = await fetch(`/api/workflows/${sourceId}/duplicate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const duplicatedWorkflow = await requestJson(duplicateWorkflowContract, {
+        params: { id: sourceId },
+        body: {
           name,
           description,
-          color,
           workspaceId,
           folderId: folderId ?? null,
           newId,
-        }),
+        },
       })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(`Failed to duplicate workflow: ${errorData.error || response.statusText}`)
-      }
-
-      const duplicatedWorkflow = await response.json()
 
       logger.info(`Successfully duplicated workflow ${sourceId} to ${duplicatedWorkflow.id}`, {
         blocksCount: duplicatedWorkflow.blocksCount,
@@ -331,10 +352,10 @@ export function useDuplicateWorkflowMutation() {
         id: duplicatedWorkflow.id,
         name: duplicatedWorkflow.name || name,
         description: duplicatedWorkflow.description || description,
-        color: duplicatedWorkflow.color || color,
         workspaceId,
         folderId: duplicatedWorkflow.folderId ?? folderId,
         sortOrder: duplicatedWorkflow.sortOrder ?? 0,
+        locked: duplicatedWorkflow.locked,
         blocksCount: duplicatedWorkflow.blocksCount || 0,
         edgesCount: duplicatedWorkflow.edgesCount || 0,
         subflowsCount: duplicatedWorkflow.subflowsCount || 0,
@@ -361,7 +382,6 @@ export function useDuplicateWorkflowMutation() {
         lastModified: new Date(),
         createdAt: new Date(),
         description: variables.description,
-        color: variables.color,
         workspaceId: variables.workspaceId,
         folderId: targetFolderId,
         sortOrder: getTopInsertionSortOrder(
@@ -370,6 +390,7 @@ export function useDuplicateWorkflowMutation() {
           variables.workspaceId,
           targetFolderId
         ),
+        locked: false,
       }
 
       queryClient.setQueryData<WorkflowMetadata[]>(
@@ -395,10 +416,10 @@ export function useDuplicateWorkflowMutation() {
                   lastModified: new Date(),
                   createdAt: new Date(),
                   description: data.description,
-                  color: data.color,
                   workspaceId: data.workspaceId,
                   folderId: data.folderId,
                   sortOrder: data.sortOrder,
+                  locked: data.locked,
                 }
               : w
           )
@@ -413,18 +434,6 @@ export function useDuplicateWorkflowMutation() {
           }
           return { selectedWorkflows }
         })
-      }
-
-      const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
-      if (variables.sourceId === activeWorkflowId) {
-        const sourceSubblockValues =
-          useSubBlockStore.getState().workflowValues[variables.sourceId] || {}
-        useSubBlockStore.setState((state) => ({
-          workflowValues: {
-            ...state.workflowValues,
-            [data.id]: { ...sourceSubblockValues },
-          },
-        }))
       }
 
       logger.info(`[DuplicateWorkflow] Success, replaced temp entry ${tempId}`)
@@ -455,18 +464,11 @@ export function useUpdateWorkflow() {
 
   return useMutation({
     mutationFn: async (variables: UpdateWorkflowVariables) => {
-      const response = await fetch(`/api/workflows/${variables.workflowId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(variables.metadata),
+      const { workflow: updatedWorkflow } = await requestJson(updateWorkflowContract, {
+        params: { id: variables.workflowId },
+        body: variables.metadata,
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to update workflow')
-      }
-
-      const { workflow: updatedWorkflow } = await response.json()
       return mapWorkflow(updatedWorkflow)
     },
     onMutate: async (variables) => {
@@ -514,14 +516,9 @@ export function useDeleteWorkflowMutation() {
 
   return useMutation({
     mutationFn: async (variables: DeleteWorkflowVariables) => {
-      const response = await fetch(`/api/workflows/${variables.workflowId}`, {
-        method: 'DELETE',
+      await requestJson(deleteWorkflowContract, {
+        params: { id: variables.workflowId },
       })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-        throw new Error(error.error || 'Failed to delete workflow')
-      }
 
       logger.info(`Successfully deleted workflow ${variables.workflowId} from database`)
     },
@@ -576,27 +573,25 @@ export function useRevertToVersion() {
 
   return useMutation({
     mutationFn: async ({ workflowId, version }: RevertToVersionVariables): Promise<void> => {
-      const response = await fetch(`/api/workflows/${workflowId}/deployments/${version}/revert`, {
-        method: 'POST',
+      await requestJson(revertToDeploymentVersionContract, {
+        params: { id: workflowId, version },
       })
-
-      if (!response.ok) {
-        throw new Error('Failed to load deployment')
-      }
     },
     onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: workflowKeys.state(variables.workflowId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: deploymentKeys.info(variables.workflowId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: deploymentKeys.deployedState(variables.workflowId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: deploymentKeys.versions(variables.workflowId),
-      })
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: workflowKeys.state(variables.workflowId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: deploymentKeys.info(variables.workflowId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: deploymentKeys.deployedState(variables.workflowId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: deploymentKeys.versions(variables.workflowId),
+        }),
+      ])
     },
   })
 }
@@ -615,16 +610,7 @@ export function useReorderWorkflows() {
 
   return useMutation({
     mutationFn: async (variables: ReorderWorkflowsVariables): Promise<void> => {
-      const response = await fetch('/api/workflows/reorder', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(variables),
-      })
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        throw new Error(error.error || 'Failed to reorder workflows')
-      }
+      await requestJson(reorderWorkflowsContract, { body: variables })
     },
     onMutate: async (variables) => {
       await queryClient.cancelQueries({
@@ -666,16 +652,6 @@ export function useReorderWorkflows() {
   })
 }
 
-interface ImportWorkflowParams {
-  workflowId: string
-  targetWorkspaceId: string
-}
-
-interface ImportWorkflowResponse {
-  newWorkflowId: string
-  copilotChatsImported?: number
-}
-
 export function useImportWorkflow() {
   const queryClient = useQueryClient()
 
@@ -683,20 +659,10 @@ export function useImportWorkflow() {
     mutationFn: async ({
       workflowId,
       targetWorkspaceId,
-    }: ImportWorkflowParams): Promise<ImportWorkflowResponse> => {
-      const response = await fetch('/api/superuser/import-workflow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflowId, targetWorkspaceId }),
+    }: ImportWorkflowAsSuperuserBody): Promise<ImportWorkflowAsSuperuserResponse> => {
+      return requestJson(importWorkflowAsSuperuserContract, {
+        body: { workflowId, targetWorkspaceId },
       })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data?.error || `Import failed with status ${response.status}`)
-      }
-
-      return data
     },
     onSettled: (_data, _error, variables) => {
       return invalidateWorkflowLists(queryClient, variables.targetWorkspaceId)
@@ -709,12 +675,7 @@ export function useRestoreWorkflow() {
 
   return useMutation({
     mutationFn: async ({ workflowId }: { workflowId: string; workspaceId: string }) => {
-      const res = await fetch(`/api/workflows/${workflowId}/restore`, { method: 'POST' })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Failed to restore workflow')
-      }
-      return res.json()
+      return requestJson(restoreWorkflowContract, { params: { id: workflowId } })
     },
     onSettled: (_data, _error, variables) => {
       return invalidateWorkflowLists(queryClient, variables.workspaceId, ['active', 'archived'])

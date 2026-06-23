@@ -188,6 +188,7 @@ export class HumanInTheLoopBlockHandler implements BlockHandler {
         parallelScope,
         loopScope,
         resumeLinks,
+        pauseKind: 'human',
       }
 
       const responseOutput: Record<string, any> = {
@@ -482,7 +483,7 @@ export class HumanInTheLoopBlockHandler implements BlockHandler {
           blockNameMapping: blockNameMappingWithPause,
         }
 
-        const result = await executeTool(toolId, toolParams, false, ctx)
+        const result = await executeTool(toolId, toolParams, { executionContext: ctx })
         const durationMs = Date.now() - startTime
 
         if (!result.success) {

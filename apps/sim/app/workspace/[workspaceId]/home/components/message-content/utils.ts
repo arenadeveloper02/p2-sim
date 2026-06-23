@@ -3,7 +3,6 @@ import {
   Asterisk,
   Blimp,
   Bug,
-  Calendar,
   Database,
   Eye,
   File,
@@ -20,8 +19,9 @@ import {
   TerminalWindow,
   Wrench,
 } from '@/components/emcn'
-import { Table as TableIcon } from '@/components/emcn/icons'
-import { AgentIcon } from '@/components/icons'
+import { Calendar, Table as TableIcon } from '@/components/emcn/icons'
+import { AgentIcon, ImageIcon, TTSIcon, VideoIcon } from '@/components/icons'
+import type { ToolCallStatus } from '@/app/workspace/[workspaceId]/home/types'
 
 export type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
 
@@ -52,6 +52,7 @@ const TOOL_ICONS: Record<string, IconComponent> = {
   knowledge: Database,
   knowledge_base: Database,
   table: TableIcon,
+  scheduled_task: Calendar,
   job: Calendar,
   agent: AgentIcon,
   custom_tool: Wrench,
@@ -59,6 +60,11 @@ const TOOL_ICONS: Record<string, IconComponent> = {
   context_compaction: Asterisk,
   open_resource: Eye,
   file: File,
+  media: VideoIcon,
+  generate_image: ImageIcon,
+  generate_video: VideoIcon,
+  generate_audio: TTSIcon,
+  ffmpeg: Wrench,
 }
 
 export function getAgentIcon(name: string): IconComponent {
@@ -68,4 +74,44 @@ export function getAgentIcon(name: string): IconComponent {
 export function getToolIcon(name: string): IconComponent | undefined {
   const icon = TOOL_ICONS[name as keyof typeof TOOL_ICONS]
   return icon === Blimp ? undefined : icon
+}
+
+export type MessagePhase = 'streaming' | 'revealing' | 'settled'
+
+interface DeriveMessagePhaseArgs {
+  isStreaming: boolean
+  isRevealing: boolean
+}
+
+export function deriveMessagePhase({
+  isStreaming,
+  isRevealing,
+}: DeriveMessagePhaseArgs): MessagePhase {
+  if (isStreaming) return 'streaming'
+  if (isRevealing) return 'revealing'
+  return 'settled'
+}
+
+type ToolDisplayState = 'spinner' | 'cancelled' | 'interrupted' | 'icon'
+
+export function resolveToolDisplayState(status: ToolCallStatus): ToolDisplayState {
+  // Pure projection of the tool's own status. A row spins iff it is genuinely
+  // executing; every terminal status maps to a glyph. No transport/turn-live
+  // gating — deterministic terminals (tool `result`, turn propagation) guarantee
+  // a row never lingers `executing` after its work is done.
+  if (status === 'executing') return 'spinner'
+  if (status === 'cancelled') return 'cancelled'
+  if (status === 'interrupted') return 'interrupted'
+  return 'icon'
+}
+
+export function isToolDone(status: ToolCallStatus): boolean {
+  return (
+    status === 'success' ||
+    status === 'error' ||
+    status === 'cancelled' ||
+    status === 'skipped' ||
+    status === 'rejected' ||
+    status === 'interrupted'
+  )
 }

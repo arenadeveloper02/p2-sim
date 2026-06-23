@@ -95,6 +95,7 @@ const { mockDb, mockWorkflowBlocks, mockWorkflowEdges, mockWorkflowSubflows } = 
 
 vi.mock('@sim/db', () => ({
   db: mockDb,
+  runOutsideTransactionContext: <T>(fn: () => T): T => fn(),
   workflowBlocks: mockWorkflowBlocks,
   workflowEdges: mockWorkflowEdges,
   workflowSubflows: mockWorkflowSubflows,
@@ -110,6 +111,22 @@ vi.mock('@sim/db', () => ({
   },
   workflow: {},
   webhook: {},
+}))
+
+const { mockSanitizeAgentToolsInBlocks } = vi.hoisted(() => ({
+  mockSanitizeAgentToolsInBlocks: vi.fn(),
+}))
+
+/**
+ * Default identity behavior for the mocked migration step. Re-applied in the
+ * cache describe block's `beforeEach` because the outer `afterEach` calls
+ * `vi.resetAllMocks()`, which clears implementations.
+ */
+const sanitizeIdentity = (blocks: unknown) => ({ blocks })
+mockSanitizeAgentToolsInBlocks.mockImplementation(sanitizeIdentity)
+
+vi.mock('@/lib/workflows/sanitization/validation', () => ({
+  sanitizeAgentToolsInBlocks: mockSanitizeAgentToolsInBlocks,
 }))
 
 import * as dbHelpers from '@/lib/workflows/persistence/utils'
@@ -179,6 +196,7 @@ const mockBlocksFromDb = [
       name: 'Parallel Container',
       position: { x: 600, y: 50 },
       height: 250,
+      count: 3,
       data: { width: 500, height: 300, parallelType: 'count', count: 3 },
     }),
     mockWorkflowId
@@ -225,7 +243,10 @@ const mockSubflowsFromDb = [
     config: {
       id: 'parallel-1',
       nodes: ['block-3'],
+      count: 5,
       distribution: ['item1', 'item2'],
+      parallelType: 'count',
+      batchSize: 1,
     },
   },
 ]
@@ -260,7 +281,8 @@ const mockWorkflowState = createWorkflowState({
       name: 'Parallel Container',
       position: { x: 600, y: 50 },
       height: 250,
-      data: { width: 500, height: 300, parallelType: 'count', count: 3 },
+      count: 3,
+      data: { width: 500, height: 300, parallelType: 'count', count: 3, batchSize: 1 },
     }),
     'block-3': createApiBlock({
       id: 'block-3',
@@ -292,6 +314,8 @@ const mockWorkflowState = createWorkflowState({
       id: 'parallel-1',
       nodes: ['block-3'],
       distribution: ['item1', 'item2'],
+      parallelType: 'count',
+      batchSize: 1,
     },
   },
 })
@@ -299,10 +323,47 @@ const mockWorkflowState = createWorkflowState({
 describe('Database Helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSanitizeAgentToolsInBlocks.mockImplementation(sanitizeIdentity)
   })
 
   afterEach(() => {
     vi.resetAllMocks()
+  })
+
+  describe('buildWorkflowDeploymentSnapshot', () => {
+    it('combines normalized workflow state with persisted variables', () => {
+      const snapshot = dbHelpers.buildWorkflowDeploymentSnapshot(
+        {
+          blocks: asAppBlocks({ block: createStarterBlock({ id: 'block' }) }),
+          edges: [],
+          loops: {},
+          parallels: {},
+          isFromNormalizedTables: true,
+        },
+        {
+          variable: {
+            id: 'variable',
+            name: 'threshold',
+            type: 'number',
+            value: 5,
+          },
+        }
+      )
+
+      expect(snapshot.blocks.block).toBeDefined()
+      expect(snapshot.edges).toEqual([])
+      expect(snapshot.loops).toEqual({})
+      expect(snapshot.parallels).toEqual({})
+      expect(snapshot.variables).toEqual({
+        variable: {
+          id: 'variable',
+          name: 'threshold',
+          type: 'number',
+          value: 5,
+        },
+      })
+      expect(snapshot.lastSaved).toEqual(expect.any(Number))
+    })
   })
 
   describe('loadWorkflowFromNormalizedTables', () => {
@@ -382,8 +443,16 @@ describe('Database Helpers', () => {
         count: 5,
         distribution: ['item1', 'item2'],
         parallelType: 'count',
+        batchSize: 1,
         enabled: true,
       })
+      expect(result?.blocks['parallel-1'].data).toEqual(
+        expect.objectContaining({
+          count: 5,
+          parallelType: 'count',
+          batchSize: 1,
+        })
+      )
     })
 
     it('should return null when no blocks are found', async () => {
@@ -673,6 +742,20 @@ describe('Database Helpers', () => {
         workflowId: mockWorkflowId,
         type: 'loop',
       })
+      expect(capturedSubflowInserts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'parallel-1',
+            workflowId: mockWorkflowId,
+            type: 'parallel',
+            config: expect.objectContaining({
+              count: 3,
+              parallelType: 'count',
+              batchSize: 1,
+            }),
+          }),
+        ])
+      )
     })
 
     it('should regenerate missing loop and parallel definitions from block data', async () => {
@@ -702,7 +785,7 @@ describe('Database Helpers', () => {
 
       mockDb.transaction = mockTransaction
 
-      const staleWorkflowState = JSON.parse(JSON.stringify(mockWorkflowState))
+      const staleWorkflowState = structuredClone(mockWorkflowState)
       staleWorkflowState.loops = {}
       staleWorkflowState.parallels = {}
 
@@ -712,7 +795,11 @@ describe('Database Helpers', () => {
       expect(capturedSubflowInserts).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: 'loop-1', type: 'loop' }),
-          expect.objectContaining({ id: 'parallel-1', type: 'parallel' }),
+          expect.objectContaining({
+            id: 'parallel-1',
+            type: 'parallel',
+            config: expect.objectContaining({ batchSize: 1 }),
+          }),
         ])
       )
     })
@@ -759,6 +846,58 @@ describe('Database Helpers', () => {
       const result = await dbHelpers.workflowExistsInNormalizedTables(mockWorkflowId)
 
       expect(result).toBe(false)
+    })
+  })
+
+  describe('workflow row locking', () => {
+    function createMissingWorkflowTx() {
+      const lockFor = vi.fn().mockResolvedValue([])
+      const limit = vi.fn(() => ({ for: lockFor }))
+      const where = vi.fn(() => ({ limit }))
+      const from = vi.fn(() => ({ where }))
+      const select = vi.fn(() => ({ from }))
+      const update = vi.fn()
+
+      return {
+        tx: {
+          execute: vi.fn().mockResolvedValue([{ id: mockWorkflowId }]),
+          select,
+          update,
+        },
+        lockFor,
+        update,
+      }
+    }
+
+    it('returns not_found when deploy cannot lock a workflow row', async () => {
+      const { tx, lockFor } = createMissingWorkflowTx()
+      mockDb.transaction = vi.fn().mockImplementation(async (callback) => callback(tx))
+
+      const result = await dbHelpers.deployWorkflow({
+        workflowId: mockWorkflowId,
+        deployedBy: 'user-123',
+      })
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Workflow not found',
+        errorCode: 'not_found',
+      })
+      expect(lockFor).toHaveBeenCalledWith('update')
+      expect(tx.execute).not.toHaveBeenCalled()
+    })
+
+    it('returns an error when undeploy cannot lock a workflow row', async () => {
+      const { tx, update } = createMissingWorkflowTx()
+      mockDb.transaction = vi.fn().mockImplementation(async (callback) => callback(tx))
+
+      const result = await dbHelpers.undeployWorkflow({ workflowId: mockWorkflowId })
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Workflow not found',
+      })
+      expect(update).not.toHaveBeenCalled()
     })
   })
 
@@ -1426,6 +1565,159 @@ describe('Database Helpers', () => {
 
       expect(messages2).toEqual(messages1)
       expect(messages2).toEqual([{ role: 'system', content: 'System' }])
+    })
+  })
+
+  describe('loadDeployedWorkflowState deployed-state cache', () => {
+    /**
+     * Minimal but realistic deployed state: a couple of plain (non-agent,
+     * credential-free) blocks plus an edge. Plain blocks make the real
+     * downstream migration steps (agent-message, subblock-id, credential,
+     * canonical-mode) no-ops, so the only observable "heavy work" is the
+     * mocked `sanitizeAgentToolsInBlocks` first step, which we use as the
+     * migration call counter.
+     */
+    function buildDeployedState() {
+      return {
+        blocks: {
+          'block-1': {
+            id: 'block-1',
+            type: 'api',
+            name: 'API Block',
+            position: { x: 0, y: 0 },
+            enabled: true,
+            subBlocks: { url: { id: 'url', type: 'short-input', value: 'https://example.com' } },
+            outputs: {},
+            data: {},
+          },
+          'block-2': {
+            id: 'block-2',
+            type: 'function',
+            name: 'Function Block',
+            position: { x: 100, y: 0 },
+            enabled: true,
+            subBlocks: { code: { id: 'code', type: 'code', value: 'return 1' } },
+            outputs: {},
+            data: {},
+          },
+        },
+        edges: [
+          {
+            id: 'edge-1',
+            source: 'block-1',
+            target: 'block-2',
+            sourceHandle: 'output',
+            targetHandle: 'input',
+          },
+        ],
+        loops: {},
+        parallels: {},
+        variables: { threshold: 5 },
+      }
+    }
+
+    /**
+     * Wires `db.select` to return a single active deployment-version row for the
+     * given id. Returns the inner `where` spy so tests can assert how many times
+     * the active-version SELECT ran.
+     */
+    function mockActiveVersionSelect(versionId: string, state: unknown) {
+      const where = vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ id: versionId, state, createdAt: new Date() }]),
+        }),
+      })
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({ where }),
+      })
+      return where
+    }
+
+    beforeEach(() => {
+      vi.clearAllMocks()
+      mockSanitizeAgentToolsInBlocks.mockImplementation(sanitizeIdentity)
+      dbHelpers.invalidateDeployedStateCache()
+    })
+
+    it('serves a cache HIT, skipping migrations on the second call for the same active version', async () => {
+      const where = mockActiveVersionSelect('dv-hit', buildDeployedState())
+
+      const first = await dbHelpers.loadDeployedWorkflowState('wf-1', 'workspace-1')
+      const second = await dbHelpers.loadDeployedWorkflowState('wf-1', 'workspace-1')
+
+      expect(first).toBeDefined()
+      expect(second).toBeDefined()
+      expect(mockSanitizeAgentToolsInBlocks).toHaveBeenCalledTimes(1)
+      expect(where).toHaveBeenCalledTimes(2)
+    })
+
+    it('still runs the active-version SELECT on every call so rollback/redeploy stays observable', async () => {
+      const where = mockActiveVersionSelect('dv-active', buildDeployedState())
+
+      await dbHelpers.loadDeployedWorkflowState('wf-2', 'workspace-1')
+      await dbHelpers.loadDeployedWorkflowState('wf-2', 'workspace-1')
+
+      expect(where).toHaveBeenCalledTimes(2)
+    })
+
+    it('deep-clones on read: mutating the first result does not corrupt the cached copy', async () => {
+      mockActiveVersionSelect('dv-clone', buildDeployedState())
+
+      const first = await dbHelpers.loadDeployedWorkflowState('wf-3', 'workspace-1')
+      ;(first.blocks['block-1'] as any).name = 'MUTATED'
+      ;(first.blocks['block-1'].subBlocks.url as any).value = 'https://hacked.example'
+      first.edges.push({
+        id: 'edge-injected',
+        source: 'block-2',
+        target: 'block-1',
+      } as any)
+
+      const second = await dbHelpers.loadDeployedWorkflowState('wf-3', 'workspace-1')
+
+      expect(second.blocks['block-1'].name).toBe('API Block')
+      expect(second.blocks['block-1'].subBlocks.url.value).toBe('https://example.com')
+      expect(second.edges).toHaveLength(1)
+      expect(second.blocks).toEqual(buildDeployedState().blocks)
+    })
+
+    it('keys the cache by deploymentVersionId: a different active id triggers a fresh build', async () => {
+      mockActiveVersionSelect('dv-old', buildDeployedState())
+      await dbHelpers.loadDeployedWorkflowState('wf-4', 'workspace-1')
+      expect(mockSanitizeAgentToolsInBlocks).toHaveBeenCalledTimes(1)
+
+      mockActiveVersionSelect('dv-new', buildDeployedState())
+      await dbHelpers.loadDeployedWorkflowState('wf-4', 'workspace-1')
+      expect(mockSanitizeAgentToolsInBlocks).toHaveBeenCalledTimes(2)
+    })
+
+    it('invalidateDeployedStateCache(id) forces a rebuild on the next call', async () => {
+      mockActiveVersionSelect('dv-inv', buildDeployedState())
+
+      await dbHelpers.loadDeployedWorkflowState('wf-5', 'workspace-1')
+      await dbHelpers.loadDeployedWorkflowState('wf-5', 'workspace-1')
+      expect(mockSanitizeAgentToolsInBlocks).toHaveBeenCalledTimes(1)
+
+      dbHelpers.invalidateDeployedStateCache('dv-inv')
+
+      await dbHelpers.loadDeployedWorkflowState('wf-5', 'workspace-1')
+      expect(mockSanitizeAgentToolsInBlocks).toHaveBeenCalledTimes(2)
+    })
+
+    it('throws when there is no active deployment and does not cache the failure', async () => {
+      const where = vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
+      })
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({ where }),
+      })
+
+      await expect(dbHelpers.loadDeployedWorkflowState('wf-6', 'workspace-1')).rejects.toThrow(
+        'Workflow wf-6 has no active deployment'
+      )
+
+      expect(mockSanitizeAgentToolsInBlocks).not.toHaveBeenCalled()
     })
   })
 })
