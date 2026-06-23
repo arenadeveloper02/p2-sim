@@ -244,6 +244,10 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   yml: 'application/x-yaml',
   rtf: 'application/rtf',
 
+  // Archives
+  zip: 'application/zip',
+  gz: 'application/gzip',
+
   // Code / plain-text source
   py: 'text/x-python',
   js: 'text/javascript',

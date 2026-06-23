@@ -1,16 +1,20 @@
 import { db } from '@sim/db'
 import { document, knowledgeBase, workspaceFile } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { permissionSatisfies } from '@sim/platform-authz/workspace'
 import { and, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { getFileMetadata } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { S3_CHAT_CONFIG } from '@/lib/uploads/config'
+import { extractOrganizationIdFromOrgLogoKey } from '@/lib/uploads/contexts/org-logos/utils'
 import type { StorageConfig } from '@/lib/uploads/core/storage-client'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
-import { extractOrganizationIdFromOrgLogoKey } from '@/lib/uploads/contexts/org-logos/utils'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
-import { getUserEntityPermissions, isOrganizationAdminOrOwner } from '@/lib/workspaces/permissions/utils'
+import {
+  getUserEntityPermissions,
+  isOrganizationAdminOrOwner,
+} from '@/lib/workspaces/permissions/utils'
 import { isUuid } from '@/executor/constants'
 
 const logger = createLogger('FileAuthorization')
@@ -40,8 +44,7 @@ function workspacePermissionSatisfies(
   permission: WorkspacePermission | null,
   requireWrite: boolean
 ): boolean {
-  if (permission === null) return false
-  return requireWrite ? permission === 'write' || permission === 'admin' : true
+  return permissionSatisfies(permission, requireWrite ? 'write' : 'read')
 }
 
 /**
