@@ -5,7 +5,6 @@ import { createLogger } from '@sim/logger'
 import { Chip, Plus } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client/utils'
-import { getBaseUrl } from '@/lib/core/utils/urls'
 import { generateSlug, isAdminOrOwner, type Member } from '@/lib/workspaces/organization'
 import {
   NoOrganizationView,
@@ -24,7 +23,7 @@ import {
   useRemoveMember,
   useTransferOwnership,
 } from '@/hooks/queries/organization'
-import { useOpenBillingPortal, useSubscriptionData } from '@/hooks/queries/subscription'
+import { useSubscriptionData } from '@/hooks/queries/subscription'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 
 const logger = createLogger('TeamManagement')
@@ -55,7 +54,6 @@ export function TeamManagement() {
 
   const removeMemberMutation = useRemoveMember()
   const transferOwnershipMutation = useTransferOwnership()
-  const openBillingPortal = useOpenBillingPortal()
   const createOrgMutation = useCreateOrganization()
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
@@ -68,7 +66,6 @@ export function TeamManagement() {
     isExternalRemoval?: boolean
   }>({ open: false, memberId: '', memberName: '' })
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
-  const [transferPortalError, setTransferPortalError] = useState<string | null>(null)
   const [orgName, setOrgName] = useState('')
   const [orgSlug, setOrgSlug] = useState('')
 
@@ -215,7 +212,6 @@ export function TeamManagement() {
       setTransferDialogOpen(next)
       if (!next) {
         transferOwnershipMutation.reset()
-        setTransferPortalError(null)
       }
     },
     [transferOwnershipMutation]
@@ -223,7 +219,6 @@ export function TeamManagement() {
 
   const handleOpenTransferDialog = useCallback(() => {
     transferOwnershipMutation.reset()
-    setTransferPortalError(null)
     setTransferDialogOpen(true)
   }, [transferOwnershipMutation])
 
@@ -249,37 +244,6 @@ export function TeamManagement() {
     },
     [activeOrganization?.id, transferOwnershipMutation]
   )
-
-  const handleOpenTransferBillingPortal = useCallback(() => {
-    if (!activeOrganization?.id) return
-    setTransferPortalError(null)
-    const portalWindow = window.open('', '_blank')
-    openBillingPortal.mutate(
-      {
-        context: 'organization',
-        organizationId: activeOrganization.id,
-        returnUrl: `${getBaseUrl()}/workspace`,
-      },
-      {
-        onSuccess: (data) => {
-          if (portalWindow) {
-            portalWindow.location.href = data.url
-          } else {
-            window.location.href = data.url
-          }
-        },
-        onError: (error) => {
-          portalWindow?.close()
-          logger.error('Failed to open billing portal from transfer dialog', { error })
-          setTransferPortalError(
-            error instanceof Error
-              ? error.message
-              : 'Failed to open Stripe billing portal. Please try again.'
-          )
-        },
-      }
-    )
-  }, [activeOrganization?.id, openBillingPortal])
 
   const queryError = orgError
   const errorMessage = queryError instanceof Error ? queryError.message : null
@@ -375,11 +339,7 @@ export function TeamManagement() {
         currentUserId={session?.user?.id ?? ''}
         isSubmitting={transferOwnershipMutation.isPending}
         error={transferOwnershipMutation.error}
-        portalError={transferPortalError}
-        hasPaidSubscription={Boolean(orgSubscription)}
-        isOpeningBillingPortal={openBillingPortal.isPending}
         onConfirm={handleConfirmTransfer}
-        onOpenBillingPortal={handleOpenTransferBillingPortal}
       />
 
       <RemoveMemberDialog
