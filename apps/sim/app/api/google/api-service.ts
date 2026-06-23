@@ -857,7 +857,6 @@ export async function generateNanoBananaImage(
     }
 
     const data = await response.json()
-    logger.info('Nano Banana API success', data)
 
     const userId = _context?.sessionUserId ?? _context?.userId
     const toolResponse = await buildNanoBananaToolResponse(data, {
