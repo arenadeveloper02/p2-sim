@@ -439,6 +439,9 @@ export const workflowExecutionLogs = pgTable(
       table.workspaceId,
       table.startedAt
     ),
+    workspaceStartedAtIdDescIdx: index(
+      'workflow_execution_logs_workspace_started_at_id_desc_idx'
+    ).on(table.workspaceId, sql`${table.startedAt} DESC NULLS LAST`, sql`${table.id} DESC`),
     workspaceCostTotalIdx: index('workflow_execution_logs_workspace_cost_total_idx').on(
       table.workspaceId,
       table.costTotal
@@ -631,7 +634,6 @@ export const workspaceBYOKKeys = pgTable(
       table.workspaceId,
       table.providerId
     ),
-    workspaceIdx: index('workspace_byok_workspace_idx').on(table.workspaceId),
   })
 )
 
@@ -1151,6 +1153,36 @@ export const workflowQueries = pgTable(
     userIdIdx: index('workflow_queries_user_id_idx').on(table.userId),
   })
 )
+/**
+ * A single PII redaction rule. Lives in the org-level
+ * {@link DataRetentionSettings.piiRedaction} rules list. Each rule targets one
+ * scope — all workspaces (`workspaceId: null`) or a single workspace — and
+ * `workspaceId` is unique across rules. Resolution is most-specific-wins: a
+ * workspace's own rule overrides the all-workspaces rule (never unioned).
+ */
+export interface PiiRedactionRule {
+  id: string
+  name?: string
+  /** Presidio entity types to mask. Empty = redact nothing for this scope. */
+  entityTypes: string[]
+  /** `null` = all workspaces; otherwise the single targeted workspace. */
+  workspaceId: string | null
+}
+
+/**
+ * Org-level data retention + governance settings. Retention-hours fall back to
+ * plan defaults when unset. `piiRedaction.rules` are org-scoped; each rule
+ * selects which workspaces it applies to.
+ */
+export interface DataRetentionSettings {
+  logRetentionHours?: number | null
+  softDeleteRetentionHours?: number | null
+  taskCleanupHours?: number | null
+  /** Enterprise PII redaction rules applied to workflow logs on persist. */
+  piiRedaction?: {
+    rules?: PiiRedactionRule[]
+  } | null
+}
 
 export const organization = pgTable('organization', {
   id: text('id').primaryKey(),
@@ -1171,11 +1203,7 @@ export const organization = pgTable('organization', {
     privacyUrl?: string
     hidePoweredBySim?: boolean
   }>(),
-  dataRetentionSettings: json('data_retention_settings').$type<{
-    logRetentionHours?: number | null
-    softDeleteRetentionHours?: number | null
-    taskCleanupHours?: number | null
-  }>(),
+  dataRetentionSettings: json('data_retention_settings').$type<DataRetentionSettings>(),
   orgUsageLimit: decimal('org_usage_limit'),
   /**
    * Storage upload/delete hot-path tracker for org-scoped plans.
@@ -1320,6 +1348,16 @@ export const workspace = pgTable(
     name: text('name').notNull(),
     color: text('color').notNull().default('#33C482'),
     logoUrl: text('logo_url'),
+    /**
+     * @deprecated Not a permission or identity concept — do not use for admin/access
+     * checks. The owner→admin derivation is redundant: every workspace owner already
+     * has an explicit `admin` row in `permissions` (verified across all production
+     * workspaces) and all creation paths add one. Retained only as the lifecycle
+     * anchor — `onDelete: 'cascade'` cleans up a user's workspaces on account
+     * deletion — and the ownership-transfer target when an owner is removed. For
+     * admin checks use explicit `permissions` rows; for the workspace's principal
+     * billing identity use `billedAccountUserId`.
+     */
     ownerId: text('owner_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -1478,6 +1516,45 @@ export const workspaceFiles = pgTable(
   })
 )
 
+/**
+ * Public share links for workspace resources. Polymorphic on `resourceType` so a
+ * single mechanism serves files now and folders later. One row per resource
+ * (disable/re-enable flips `isActive` and keeps the same token).
+ */
+export const publicShare = pgTable(
+  'public_share',
+  {
+    id: text('id').primaryKey(),
+    resourceType: text('resource_type').notNull(), // 'file' | 'folder' (folder reserved for future)
+    resourceId: text('resource_id').notNull(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    // SET NULL (not CASCADE) so a share — and its public link — outlives the user
+    // who created it; the file still belongs to the workspace.
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    token: text('token').notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    // 'public' (anyone with the link) | 'password' | 'email' (OTP) | 'sso'.
+    authType: text('auth_type').notNull().default('public'),
+    // AES-256-GCM encrypted share password; null unless authType is 'password'.
+    password: text('password'),
+    // Allowed emails/domains (e.g. '@acme.com') when authType is 'email' or 'sso'.
+    allowedEmails: json('allowed_emails').default('[]'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenIdx: uniqueIndex('public_share_token_unique').on(table.token),
+    resourceUniqueIdx: uniqueIndex('public_share_resource_unique').on(
+      table.resourceType,
+      table.resourceId
+    ),
+    resourceIdIdx: index('public_share_resource_id_idx').on(table.resourceId),
+    workspaceIdIdx: index('public_share_workspace_id_idx').on(table.workspaceId),
+  })
+)
+
 export const permissionTypeEnum = pgEnum('permission_type', ['admin', 'write', 'read'])
 
 export const invitationWorkspaceGrant = pgTable(
@@ -1503,6 +1580,17 @@ export const invitationWorkspaceGrant = pgTable(
   })
 )
 
+/**
+ * Polymorphic access grants: `entityType` + `entityId` reference a workspace,
+ * workflow, organization, etc. by id, but `entityId` is **not a foreign key** —
+ * so deleting the referenced entity does NOT cascade-delete these rows. Soft
+ * deletes (e.g. workspace archive) intentionally keep them: the entity is blocked
+ * everywhere by its `archivedAt`, so the rows are harmless, and a future restore
+ * would need them. Only a **hard** delete/purge of an entity must remove its
+ * grants explicitly — e.g.
+ * `DELETE FROM permissions WHERE entity_type = 'workspace' AND entity_id = $id` —
+ * or they orphan.
+ */
 export const permissions = pgTable(
   'permissions',
   {
@@ -1584,7 +1672,7 @@ export const knowledgeBase = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id').references(() => workspace.id),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     description: text('description'),
 
@@ -2575,6 +2663,10 @@ export const workflowMcpTool = pgTable(
     toolName: text('tool_name').notNull(),
     toolDescription: text('tool_description'),
     parameterSchema: json('parameter_schema').notNull().default('{}'),
+    parameterDescriptionOverrides: json('parameter_description_overrides')
+      .$type<Record<string, string>>()
+      .notNull()
+      .default(sql`'{}'::json`),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -3342,6 +3434,21 @@ export const credentialSetInvitation = pgTable(
   })
 )
 
+/**
+ * A named set of access-control restrictions (`config`) governing users within
+ * an organization.
+ *
+ * Scope invariant: the organization's single default group (`isDefault`) is
+ * org-wide (`appliesToAllWorkspaces = true`) and governs everyone not covered by
+ * another group, including external workspace members. Every non-default group
+ * targets specific workspaces (`appliesToAllWorkspaces = false` with rows in
+ * `permission_group_workspace`) — the all-workspaces scope is reserved for the
+ * default group. Enforced by the API contracts/routes, not a DB constraint.
+ *
+ * Member invariant: a non-default group with no `permission_group_member` rows
+ * governs every member of its workspaces (including external members); adding
+ * members narrows it to only those users. The default group ignores membership.
+ */
 export const permissionGroup = pgTable(
   'permission_group',
   {
@@ -3394,9 +3501,6 @@ export const permissionGroupWorkspace = pgTable(
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => ({
-    permissionGroupIdIdx: index('permission_group_workspace_group_id_idx').on(
-      table.permissionGroupId
-    ),
     workspaceIdIdx: index('permission_group_workspace_workspace_id_idx').on(table.workspaceId),
     groupWorkspaceUnique: uniqueIndex('permission_group_workspace_group_workspace_unique').on(
       table.permissionGroupId,
@@ -3405,6 +3509,12 @@ export const permissionGroupWorkspace = pgTable(
   })
 )
 
+/**
+ * Explicit members of a `permission_group`. Membership narrows a non-default
+ * group to only these users; a non-default group with no rows here governs every
+ * member of its workspaces (including external members). The default group
+ * ignores these rows.
+ */
 export const permissionGroupMember = pgTable(
   'permission_group_member',
   {
@@ -3576,6 +3686,14 @@ export const userTableDefinitions = pgTable(
     metadata: jsonb('metadata'),
     maxRows: integer('max_rows').notNull().default(10000),
     rowCount: integer('row_count').notNull().default(0),
+    /**
+     * @remarks
+     * Monotonic counter bumped by a statement-level trigger on `user_table_rows`
+     * (INSERT/UPDATE/DELETE). Keys the versioned table-snapshot cache so a stored
+     * CSV under `v{rows_version}` is reused until the table mutates. Never written
+     * from application code — the trigger is the only writer (bypass-proof).
+     */
+    rowsVersion: bigint('rows_version', { mode: 'number' }).notNull().default(0),
     archivedAt: timestamp('archived_at'),
     createdBy: text('created_by')
       .notNull()
@@ -3626,7 +3744,6 @@ export const userTableRows = pgTable(
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
   },
   (table) => ({
-    tableIdIdx: index('user_table_rows_table_id_idx').on(table.tableId),
     /**
      * Tenant-scoped containment index (requires the `btree_gin` extension,
      * created in migration 0232). A plain GIN on `data` matches `@>` candidates
@@ -3733,6 +3850,13 @@ export const tableRowExecutions = pgTable(
     runningBlockIds: text('running_block_ids').array().notNull().default(sql`'{}'::text[]`),
     blockErrors: jsonb('block_errors').notNull().default({}),
     cancelledAt: timestamp('cancelled_at'),
+    /**
+     * Enrichment cascade breakdown (provider outcomes, cost, timing) for
+     * `enrichment`-type groups. Null for workflow groups and pre-feature runs.
+     * Deliberately excluded from the hot grid read (`loadExecutionsByRow`) — read
+     * on demand for the enrichment details panel.
+     */
+    enrichmentDetails: jsonb('enrichment_details'),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
@@ -4030,5 +4154,47 @@ export const dataDrainRuns = pgTable(
   },
   (table) => ({
     drainStartedIdx: index('data_drain_runs_drain_started_idx').on(table.drainId, table.startedAt),
+  })
+)
+
+export const helpSupportIssueTypeEnum = pgEnum('help_support_issue_type', [
+  'bug',
+  'feedback',
+  'feature_request',
+  'other',
+])
+
+export type HelpSupportIssueAttachment = {
+  filename: string
+  content_type: string
+  file_url: string
+  storage_key: string
+}
+
+export const helpSupportIssue = pgTable(
+  'help_support_issue',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    userEmail: text('user_email').notNull(),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    type: helpSupportIssueTypeEnum('type').notNull(),
+    subject: text('subject').notNull(),
+    message: text('message').notNull(),
+    attachments: jsonb('attachments')
+      .$type<HelpSupportIssueAttachment[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index('help_support_issue_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('help_support_issue_workspace_id_idx').on(table.workspaceId),
+    workflowIdIdx: index('help_support_issue_workflow_id_idx').on(table.workflowId),
+    typeIdx: index('help_support_issue_type_idx').on(table.type),
+    createdAtIdx: index('help_support_issue_created_at_idx').on(table.createdAt),
   })
 )

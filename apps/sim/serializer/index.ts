@@ -533,13 +533,19 @@ export function extractBlockParams(block: BlockState, workspaceId?: string): Rec
   }
 
   Object.values(canonicalIndex.groupsById).forEach((group) => {
-    const { basicValue, advancedValue } = getCanonicalValues(group, params)
+    const { basicValue, advancedValue } = getCanonicalValues(group, allValues)
     const hasExplicitOverride = canonicalModeOverrides?.[group.canonicalId] != null
     const pairMode =
       hasExplicitOverride || !legacyAdvancedMode
         ? resolveCanonicalMode(group, allValues, canonicalModeOverrides)
         : 'advanced'
-    const chosen = pairMode === 'advanced' ? advancedValue : basicValue
+    let chosen = pairMode === 'advanced' ? advancedValue : basicValue
+    if (!isNonEmptyValue(chosen)) {
+      const fallback = isNonEmptyValue(advancedValue) ? advancedValue : basicValue
+      if (isNonEmptyValue(fallback)) {
+        chosen = fallback
+      }
+    }
 
     const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
     sourceIds.forEach((id) => delete params[id])

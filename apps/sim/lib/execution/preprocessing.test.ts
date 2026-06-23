@@ -5,12 +5,17 @@
 import { loggingSessionMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetWorkspaceBilledAccountUserId, mockCheckRateLimit, mockGetActivelyBannedUserIds } =
-  vi.hoisted(() => ({
-    mockGetWorkspaceBilledAccountUserId: vi.fn(),
-    mockCheckRateLimit: vi.fn(),
-    mockGetActivelyBannedUserIds: vi.fn().mockResolvedValue([]),
-  }))
+const {
+  mockGetWorkspaceBilledAccountUserId,
+  mockGetScheduleExecutionActorUserId,
+  mockCheckRateLimit,
+  mockGetActivelyBannedUserIds,
+} = vi.hoisted(() => ({
+  mockGetWorkspaceBilledAccountUserId: vi.fn(),
+  mockGetScheduleExecutionActorUserId: vi.fn(),
+  mockCheckRateLimit: vi.fn(),
+  mockGetActivelyBannedUserIds: vi.fn().mockResolvedValue([]),
+}))
 
 vi.mock('@sim/db', () => ({ db: {} }))
 vi.mock('drizzle-orm', () => ({ eq: vi.fn() }))
@@ -28,14 +33,19 @@ vi.mock('@/lib/core/execution-limits', () => ({
   getExecutionTimeout: vi.fn(() => 0),
 }))
 vi.mock('@/lib/core/rate-limiter/rate-limiter', () => ({
-  RateLimiter: vi.fn(() => ({ checkRateLimitWithSubscription: mockCheckRateLimit })),
+  // Regular function (not an arrow) so `new RateLimiter()` is constructable under
+  // vitest 4.x, which rejects `new` on an arrow-implemented mock.
+  RateLimiter: vi.fn(function (this: unknown) {
+    return { checkRateLimitWithSubscription: mockCheckRateLimit }
+  }),
 }))
 vi.mock('@/lib/logs/execution/logging-session', () => loggingSessionMock)
 vi.mock('@/lib/workspaces/utils', () => ({
   getWorkspaceBilledAccountUserId: mockGetWorkspaceBilledAccountUserId,
+  getScheduleExecutionActorUserId: mockGetScheduleExecutionActorUserId,
 }))
 
-vi.mock('@sim/workflow-authz', () => ({
+vi.mock('@sim/platform-authz/workflow', () => ({
   getActiveWorkflowRecord: vi.fn().mockResolvedValue({
     id: 'workflow-1',
     userId: 'creator-1',
@@ -50,7 +60,7 @@ import { preprocessExecution } from './preprocessing'
 
 describe('preprocessExecution correlation logging', () => {
   it('preserves trigger correlation when logging preprocessing failures', async () => {
-    mockGetWorkspaceBilledAccountUserId.mockResolvedValueOnce(null)
+    mockGetScheduleExecutionActorUserId.mockResolvedValueOnce(null)
 
     const loggingSession = {
       safeStart: vi.fn().mockResolvedValue(true),
@@ -152,6 +162,47 @@ describe('preprocessExecution logPreprocessingErrors option', () => {
   })
 })
 
+describe('preprocessExecution schedule actor resolution', () => {
+  const scheduleOptions = {
+    workflowId: 'workflow-1',
+    userId: 'unknown',
+    triggerType: 'schedule' as const,
+    executionId: 'execution-1',
+    requestId: 'request-1',
+    checkDeployment: false,
+    checkRateLimit: false,
+    workflowRecord: {
+      id: 'workflow-1',
+      userId: 'creator-1',
+      workspaceId: 'workspace-1',
+      isDeployed: true,
+    } as any,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetScheduleExecutionActorUserId.mockImplementation(
+      async (_workspaceId: string, workflowUserId?: string | null) => workflowUserId ?? null
+    )
+    mockGetActivelyBannedUserIds.mockResolvedValue([])
+    vi.mocked(getHighestPrioritySubscription).mockResolvedValue({ plan: 'free' } as any)
+    vi.mocked(checkServerSideUsageLimits).mockResolvedValue({
+      isExceeded: false,
+      currentUsage: 1,
+      limit: 10,
+    } as any)
+  })
+
+  it('uses the workflow owner for scheduled runs instead of the billed account', async () => {
+    const result = await preprocessExecution(scheduleOptions)
+
+    expect(result.success).toBe(true)
+    expect(result.actorUserId).toBe('creator-1')
+    expect(mockGetScheduleExecutionActorUserId).toHaveBeenCalledWith('workspace-1', 'creator-1')
+    expect(mockGetWorkspaceBilledAccountUserId).not.toHaveBeenCalled()
+  })
+})
+
 describe('preprocessExecution ban gate', () => {
   const baseOptions = {
     workflowId: 'workflow-1',
@@ -176,7 +227,7 @@ describe('preprocessExecution ban gate', () => {
     } as any)
   })
 
-  it('blocks execution with 403 when the actor is banned, before any billing queries', async () => {
+  it('blocks execution with 403 when the actor is banned (ban wins over the parallel gates)', async () => {
     mockGetActivelyBannedUserIds.mockResolvedValue(['billed-account-1'])
 
     const loggingSession = {
@@ -194,8 +245,79 @@ describe('preprocessExecution ban gate', () => {
       error: { statusCode: 403, logCreated: true, message: 'Account suspended' },
     })
     expect(loggingSession.safeStart).toHaveBeenCalled()
-    expect(getHighestPrioritySubscription).not.toHaveBeenCalled()
-    expect(checkServerSideUsageLimits).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 (ban precedence) when ban, usage, and rate limit all fail simultaneously', async () => {
+    mockGetActivelyBannedUserIds.mockResolvedValue(['billed-account-1'])
+    vi.mocked(checkServerSideUsageLimits).mockResolvedValue({
+      isExceeded: true,
+      currentUsage: 20,
+      limit: 10,
+      message: 'Usage limit exceeded. Please upgrade your plan to continue.',
+    } as any)
+    mockCheckRateLimit.mockResolvedValue({
+      allowed: false,
+      remaining: 0,
+      resetAt: new Date(),
+    })
+
+    const loggingSession = {
+      safeStart: vi.fn().mockResolvedValue(true),
+      safeCompleteWithError: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const result = await preprocessExecution({
+      ...baseOptions,
+      checkRateLimit: true,
+      loggingSession: loggingSession as any,
+    })
+
+    // Ban (403) takes precedence over usage (402) and rate limit (429),
+    // independent of which parallel gate's promise settled first.
+    expect(result).toMatchObject({
+      success: false,
+      error: { statusCode: 403, logCreated: true, message: 'Account suspended' },
+    })
+  })
+
+  it('does not debit rate-limit quota when the ban gate rejects', async () => {
+    // The rate-limit gate consumes a token, so it must not run for a request
+    // an earlier gate (ban) already rejects.
+    mockGetActivelyBannedUserIds.mockResolvedValue(['billed-account-1'])
+
+    const result = await preprocessExecution({ ...baseOptions, checkRateLimit: true })
+
+    expect(result).toMatchObject({ success: false, error: { statusCode: 403 } })
+    expect(mockCheckRateLimit).not.toHaveBeenCalled()
+  })
+
+  it('does not debit rate-limit quota when the usage gate rejects', async () => {
+    vi.mocked(checkServerSideUsageLimits).mockResolvedValue({
+      isExceeded: true,
+      currentUsage: 20,
+      limit: 10,
+      message: 'Usage limit exceeded. Please upgrade your plan to continue.',
+    } as any)
+
+    const result = await preprocessExecution({ ...baseOptions, checkRateLimit: true })
+
+    expect(result).toMatchObject({ success: false, error: { statusCode: 402 } })
+    expect(mockCheckRateLimit).not.toHaveBeenCalled()
+  })
+
+  it('consumes the rate-limit gate exactly once when the ban and usage gates pass', async () => {
+    mockCheckRateLimit.mockResolvedValue({ allowed: true, remaining: 5, resetAt: new Date() })
+
+    // skipConcurrencyReservation bypasses the STEP 7 admission reservation so the
+    // assertion isolates the rate gate and does not depend on Redis availability.
+    const result = await preprocessExecution({
+      ...baseOptions,
+      checkRateLimit: true,
+      skipConcurrencyReservation: true,
+    })
+
+    expect(result.success).toBe(true)
+    expect(mockCheckRateLimit).toHaveBeenCalledTimes(1)
   })
 
   it('checks the billing actor, caller-provided userId, and workflow owner in one call', async () => {
@@ -234,6 +356,5 @@ describe('preprocessExecution ban gate', () => {
       success: false,
       error: { statusCode: 500, logCreated: true },
     })
-    expect(checkServerSideUsageLimits).not.toHaveBeenCalled()
   })
 })

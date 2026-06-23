@@ -35,6 +35,10 @@ function formatAdAccountId(raw: string): string {
   return `act_${trimmed.replace(/-/g, '')}`
 }
 
+function normalizeFacebookAccountId(raw: string): string {
+  return raw.trim().replace(/^act_/, '').replace(/-/g, '')
+}
+
 async function resolveAccountForRequest(
   body: FacebookAdsRequest,
   useAdminCredentials: boolean
@@ -46,14 +50,19 @@ async function resolveAccountForRequest(
     }
 
     const facebookAccounts = await getFacebookAdsAccounts()
-    const accountData = facebookAccounts[accountKey]
+    const normalizedAccountId = normalizeFacebookAccountId(accountKey)
+    const accountData =
+      facebookAccounts[accountKey] ??
+      Object.values(facebookAccounts).find(
+        (account) => normalizeFacebookAccountId(account.id) === normalizedAccountId
+      )
 
     if (!accountData) {
       throw new Error(`Account '${accountKey}' not found in database`)
     }
 
     return {
-      accountId: `act_${accountData.id}`,
+      accountId: formatAdAccountId(accountData.id),
       accountName: accountData.name,
     }
   }

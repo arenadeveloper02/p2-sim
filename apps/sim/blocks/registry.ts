@@ -47,12 +47,14 @@ import { CursorBlock, CursorBlockMeta, CursorV2Block } from '@/blocks/blocks/cur
 import { DagsterBlock, DagsterBlockMeta } from '@/blocks/blocks/dagster'
 import { DatabricksBlock, DatabricksBlockMeta } from '@/blocks/blocks/databricks'
 import { DatadogBlock, DatadogBlockMeta } from '@/blocks/blocks/datadog'
+import { DatagmaBlock, DatagmaBlockMeta } from '@/blocks/blocks/datagma'
 import { DaytonaBlock, DaytonaBlockMeta } from '@/blocks/blocks/daytona'
 import { DeploymentsBlock } from '@/blocks/blocks/deployments'
 import { DevinBlock, DevinBlockMeta } from '@/blocks/blocks/devin'
 import { DiscordBlock, DiscordBlockMeta } from '@/blocks/blocks/discord'
 import { DocuSignBlock, DocuSignBlockMeta } from '@/blocks/blocks/docusign'
 import { DropboxBlock, DropboxBlockMeta } from '@/blocks/blocks/dropbox'
+import { DropcontactBlock, DropcontactBlockMeta } from '@/blocks/blocks/dropcontact'
 import { DSPyBlock, DSPyBlockMeta } from '@/blocks/blocks/dspy'
 import { DubBlock, DubBlockMeta } from '@/blocks/blocks/dub'
 import { DuckDuckGoBlock, DuckDuckGoBlockMeta } from '@/blocks/blocks/duckduckgo'
@@ -62,6 +64,7 @@ import { ElevenLabsBlock, ElevenLabsBlockMeta } from '@/blocks/blocks/elevenlabs
 import { EmailBisonBlock, EmailBisonBlockMeta } from '@/blocks/blocks/emailbison'
 import { EnrichBlock, EnrichBlockMeta } from '@/blocks/blocks/enrich'
 import { EnrichmentBlock, EnrichmentBlockMeta } from '@/blocks/blocks/enrichment'
+import { EnrowBlock, EnrowBlockMeta } from '@/blocks/blocks/enrow'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { EvernoteBlock, EvernoteBlockMeta } from '@/blocks/blocks/evernote'
 import { ExaBlock, ExaBlockMeta } from '@/blocks/blocks/exa'
@@ -136,6 +139,7 @@ import { HuggingFaceBlock, HuggingFaceBlockMeta } from '@/blocks/blocks/huggingf
 import { HumanInTheLoopBlock } from '@/blocks/blocks/human_in_the_loop'
 import { HunterBlock, HunterBlockMeta } from '@/blocks/blocks/hunter'
 import { IAMBlock, IAMBlockMeta } from '@/blocks/blocks/iam'
+import { IcypeasBlock, IcypeasBlockMeta } from '@/blocks/blocks/icypeas'
 import { IdentityCenterBlock, IdentityCenterBlockMeta } from '@/blocks/blocks/identity_center'
 import { ImageFusionBlock } from '@/blocks/blocks/image_fusion'
 import { ImageGeneratorBlock, ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
@@ -167,6 +171,7 @@ import { KnowledgeBlock } from '@/blocks/blocks/knowledge'
 import { LangsmithBlock, LangsmithBlockMeta } from '@/blocks/blocks/langsmith'
 import { LatexBlock, LatexBlockMeta } from '@/blocks/blocks/latex'
 import { LaunchDarklyBlock, LaunchDarklyBlockMeta } from '@/blocks/blocks/launchdarkly'
+import { LeadMagicBlock, LeadMagicBlockMeta } from '@/blocks/blocks/leadmagic'
 import { LemlistBlock, LemlistBlockMeta } from '@/blocks/blocks/lemlist'
 import { LinearBlock, LinearBlockMeta, LinearV2Block } from '@/blocks/blocks/linear'
 import { LinkedInBlock, LinkedInBlockMeta } from '@/blocks/blocks/linkedin'
@@ -221,6 +226,7 @@ import { OneDriveBlock, OneDriveBlockMeta } from '@/blocks/blocks/onedrive'
 import { OnePasswordBlock, OnePasswordBlockMeta } from '@/blocks/blocks/onepassword'
 import { OpenAIBlock, OpenAIBlockMeta } from '@/blocks/blocks/openai'
 import { OutlookBlock, OutlookBlockMeta } from '@/blocks/blocks/outlook'
+import { P2DocsBlock } from '@/blocks/blocks/p2_docs'
 import { PagerDutyBlock, PagerDutyBlockMeta } from '@/blocks/blocks/pagerduty'
 import { ParallelBlock, ParallelBlockMeta } from '@/blocks/blocks/parallel'
 import { PeopleDataLabsBlock, PeopleDataLabsBlockMeta } from '@/blocks/blocks/peopledatalabs'
@@ -273,6 +279,7 @@ import { SimilarwebBlock, SimilarwebBlockMeta } from '@/blocks/blocks/similarweb
 import { SixtyfourBlock, SixtyfourBlockMeta } from '@/blocks/blocks/sixtyfour'
 import { SlackBlock, SlackBlockMeta } from '@/blocks/blocks/slack'
 import { SmtpBlock } from '@/blocks/blocks/smtp'
+import { SportmonksBlock, SportmonksBlockMeta } from '@/blocks/blocks/sportmonks'
 import { SpotifyBlock, SpotifyBlockMeta } from '@/blocks/blocks/spotify'
 import { SpyfuBlock } from '@/blocks/blocks/spyfu'
 import { SQSBlock, SQSBlockMeta } from '@/blocks/blocks/sqs'
@@ -389,12 +396,14 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   dagster: DagsterBlock,
   databricks: DatabricksBlock,
   datadog: DatadogBlock,
+  datagma: DatagmaBlock,
   daytona: DaytonaBlock,
   deployments: DeploymentsBlock,
   devin: DevinBlock,
   discord: DiscordBlock,
   docusign: DocuSignBlock,
   dropbox: DropboxBlock,
+  dropcontact: DropcontactBlock,
   dspy: DSPyBlock,
   dub: DubBlock,
   duckduckgo: DuckDuckGoBlock,
@@ -404,6 +413,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   emailbison: EmailBisonBlock,
   enrich: EnrichBlock,
   enrichment: EnrichmentBlock,
+  enrow: EnrowBlock,
   evaluator: EvaluatorBlock,
   evernote: EvernoteBlock,
   exa: ExaBlock,
@@ -469,6 +479,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   hunter: HunterBlock,
   image_fusion: ImageFusionBlock,
   iam: IAMBlock,
+  icypeas: IcypeasBlock,
   identity_center: IdentityCenterBlock,
   image_generator: ImageGeneratorBlock,
   image_generator_v2: ImageGeneratorV2Block,
@@ -489,6 +500,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   langsmith: LangsmithBlock,
   latex: LatexBlock,
   launchdarkly: LaunchDarklyBlock,
+  leadmagic: LeadMagicBlock,
   lemlist: LemlistBlock,
   linear: LinearBlock,
   linear_v2: LinearV2Block,
@@ -530,6 +542,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   onepassword: OnePasswordBlock,
   openai: OpenAIBlock,
   outlook: OutlookBlock,
+  p2_docs: P2DocsBlock,
   pagerduty: PagerDutyBlock,
   parallel_ai: ParallelBlock,
   peopledatalabs: PeopleDataLabsBlock,
@@ -586,6 +599,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   slack: SlackBlock,
   spyfu: SpyfuBlock,
   smtp: SmtpBlock,
+  sportmonks: SportmonksBlock,
   spotify: SpotifyBlock,
   sqs: SQSBlock,
   square: SquareBlock,
@@ -697,11 +711,13 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   dagster: DagsterBlockMeta,
   databricks: DatabricksBlockMeta,
   datadog: DatadogBlockMeta,
+  datagma: DatagmaBlockMeta,
   daytona: DaytonaBlockMeta,
   devin: DevinBlockMeta,
   discord: DiscordBlockMeta,
   docusign: DocuSignBlockMeta,
   dropbox: DropboxBlockMeta,
+  dropcontact: DropcontactBlockMeta,
   dspy: DSPyBlockMeta,
   dub: DubBlockMeta,
   duckduckgo: DuckDuckGoBlockMeta,
@@ -711,6 +727,7 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   emailbison: EmailBisonBlockMeta,
   enrich: EnrichBlockMeta,
   enrichment: EnrichmentBlockMeta,
+  enrow: EnrowBlockMeta,
   evernote: EvernoteBlockMeta,
   exa: ExaBlockMeta,
   extend: ExtendBlockMeta,
@@ -757,6 +774,7 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   huggingface: HuggingFaceBlockMeta,
   hunter: HunterBlockMeta,
   iam: IAMBlockMeta,
+  icypeas: IcypeasBlockMeta,
   identity_center: IdentityCenterBlockMeta,
   imap: ImapBlockMeta,
   incidentio: IncidentioBlockMeta,
@@ -773,6 +791,7 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   langsmith: LangsmithBlockMeta,
   latex: LatexBlockMeta,
   launchdarkly: LaunchDarklyBlockMeta,
+  leadmagic: LeadMagicBlockMeta,
   lemlist: LemlistBlockMeta,
   linear: LinearBlockMeta,
   linkedin: LinkedInBlockMeta,
@@ -846,6 +865,7 @@ const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   similarweb: SimilarwebBlockMeta,
   sixtyfour: SixtyfourBlockMeta,
   slack: SlackBlockMeta,
+  sportmonks: SportmonksBlockMeta,
   spotify: SpotifyBlockMeta,
   sqs: SQSBlockMeta,
   square: SquareBlockMeta,

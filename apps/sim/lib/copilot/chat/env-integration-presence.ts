@@ -4,27 +4,14 @@
  * matches runtime reality when tokens live in env vars instead of OAuth rows.
  */
 
-import { getBlock } from '@/blocks'
+import { listHubSpotSharedAccountAliases } from '@/lib/hubspot/env-aliases'
 
 /**
- * HubSpot block in this app uses a shared **accounts** dropdown; values are mapped to
- * `oauthCredential` in `tools.config.params` (see `hubspot.ts`). Mothership should treat
- * HubSpot as available when these options exist, even without OAuth credential rows.
+ * HubSpot shared portal aliases from `account_tokens` (see `list-account-options.ts`).
+ * Mothership treats HubSpot as available when these exist, even without per-user OAuth rows.
  */
 export function getHubSpotSharedAccountOptionIds(): string[] {
-  const block = getBlock('hubspot')
-  if (!block?.subBlocks) return []
-  const accountsSb = block.subBlocks.find((s) => s.id === 'accounts')
-  const raw = accountsSb?.options
-  if (!Array.isArray(raw) || raw.length === 0) return []
-  const ids: string[] = []
-  for (const o of raw) {
-    if (o && typeof o === 'object' && 'id' in o) {
-      const id = String((o as { id: unknown }).id).trim()
-      if (id) ids.push(id)
-    }
-  }
-  return ids
+  return listHubSpotSharedAccountAliases()
 }
 
 /**
