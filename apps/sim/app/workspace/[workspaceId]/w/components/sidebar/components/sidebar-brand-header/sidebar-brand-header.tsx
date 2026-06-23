@@ -56,26 +56,29 @@ export function SidebarBrandHeader({
               )}
               aria-label={brandName}
             >
-              {expandedBrandUrl ? (
-                <Image
-                  src={expandedBrandUrl}
-                  alt={brandName || ''}
-                  width={140}
-                  height={44}
-                  className='sidebar-collapse-hide sidebar-collapse-remove h-[44px] w-auto max-w-[220px] object-contain object-left'
-                  unoptimized
-                />
-              ) : null}
-              {brandLogoUrl ? (
-                <Image
-                  src={brandLogoUrl}
-                  alt={brandName || ''}
-                  width={34}
-                  height={34}
-                  className='sidebar-collapse-show absolute inset-0 m-auto size-[34px] object-contain'
-                  unoptimized
-                />
-              ) : null}
+              {isCollapsed ? (
+                (brandLogoUrl || expandedBrandUrl) && (
+                  <Image
+                    src={brandLogoUrl || expandedBrandUrl!}
+                    alt={brandName || ''}
+                    width={34}
+                    height={34}
+                    className='size-[34px] object-contain'
+                    unoptimized
+                  />
+                )
+              ) : (
+                expandedBrandUrl && (
+                  <Image
+                    src={expandedBrandUrl}
+                    alt={brandName || ''}
+                    width={140}
+                    height={44}
+                    className='h-[44px] w-auto max-w-[220px] object-contain object-left'
+                    unoptimized
+                  />
+                )
+              )}
             </Link>
           </div>
           <div className='border-[var(--border)] border-b' />
