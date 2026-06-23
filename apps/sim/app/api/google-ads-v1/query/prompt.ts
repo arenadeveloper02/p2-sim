@@ -3,8 +3,7 @@
  *
  * The prompt is stored in the `prompts` table (name = 'gaql_system_prompt').
  * At runtime, `getGaqlSystemPrompt()` reads from the DB so the prompt can be
- * updated without redeploying. There is no in-code fallback — the DB row must
- * exist for query generation to work.
+ * updated without redeploying. The DB row must exist for query generation to work.
  */
 
 import { db } from '@sim/db'
@@ -17,45 +16,11 @@ const logger = createLogger('GoogleAdsV1Prompt')
 export const GAQL_PROMPT_NAME = 'gaql_system_prompt'
 
 /**
- * Hardcoded addendum appended to the DB-backed prompt.
- *
- * The DB prompt does not cover the change_event resource, so change-history
- * requests fail. This addendum adds change_event support in code without
- * modifying the stored DB prompt. Remove once the DB prompt includes it.
- */
-const CHANGE_EVENT_ADDENDUM = `
-
-## CHANGE HISTORY (change_event) — IN-CODE ADDENDUM
-
-Use the change_event resource for "change history", "who changed", "audit log", or "what was modified" requests.
-
-**Fields:**
-- change_event.change_date_time, change_event.user_email, change_event.change_resource_type, change_event.change_resource_name, change_event.client_type, change_event.resource_change_operation, change_event.changed_fields, change_event.old_resource, change_event.new_resource, campaign.name, ad_group.name
-
-**Rules (CRITICAL):**
-- change_event does NOT use segments.date. Filter on change_event.change_date_time BETWEEN 'YYYY-MM-DD' AND 'YYYY-MM-DD'.
-- ALWAYS add LIMIT 10000 (mandatory for change_event).
-- Do NOT add campaign.status = 'ENABLED'.
-- The date range cannot exceed 30 days.
-- change_event.user_email = who made the change.
-- change_event.resource_change_operation values: CREATE, UPDATE, REMOVE.
-- change_event.change_resource_type values: CAMPAIGN, AD_GROUP, AD_GROUP_CRITERION (keywords), AD_GROUP_AD, CAMPAIGN_CRITERION, CAMPAIGN_BUDGET, etc.
-- change_event.old_resource / change_event.new_resource = old and new values of the changed fields.
-- Changed keywords appear as rows where change_resource_type = AD_GROUP_CRITERION.
-
-**Example:**
-User: "Show change history from yesterday to today with who made the change, what resource, operation type, campaign name, old and new values for all fields changed within the campaign. Include changed keywords as well."
-Query: SELECT change_event.change_date_time, change_event.user_email, change_event.change_resource_type, change_event.change_resource_name, change_event.resource_change_operation, change_event.changed_fields, change_event.old_resource, change_event.new_resource, campaign.name, ad_group.name FROM change_event WHERE change_event.change_date_time BETWEEN '[CALCULATED_START_DATE]' AND '[CALCULATED_END_DATE]' ORDER BY change_event.change_date_time DESC LIMIT 10000
-Calculation: Yesterday (CURRENT_DATE - 1, which is ${CURRENT_DATE} minus 1 day) to today (${CURRENT_DATE}).`
-
-/**
  * Loads the active GAQL system prompt from the database.
  *
  * Looks up the row in `prompts` keyed by name = 'gaql_system_prompt' and
  * returns its `content`. Throws if the DB row is missing or the query fails.
  * Any `${CURRENT_DATE}` tokens in the stored content are replaced with today's date.
- * A hardcoded change_event addendum is appended so change-history queries work
- * without modifying the stored DB prompt.
  */
 export async function getGaqlSystemPrompt(): Promise<string> {
   // Raw SQL via Drizzle's sql template tag
@@ -73,6 +38,5 @@ export async function getGaqlSystemPrompt(): Promise<string> {
     )
   }
 
-  const dbPrompt = row.content.replace(/\$\{CURRENT_DATE\}/g, CURRENT_DATE)
-  return `${dbPrompt}${CHANGE_EVENT_ADDENDUM}`
+  return row.content.replace(/\$\{CURRENT_DATE\}/g, CURRENT_DATE)
 }
