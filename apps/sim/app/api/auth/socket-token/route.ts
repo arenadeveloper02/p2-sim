@@ -38,7 +38,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     // session token stored in the verification table. If the row is missing
     // (e.g. the DB was replaced but old cookies are still active), recreate it
     // so the realtime server can find it without forcing the user to re-login.
-    const dbSession = await auth.api.getSession({
+    let dbSession = await auth.api.getSession({
       headers: hdrs,
       query: { disableCookieCache: true },
     })
@@ -63,10 +63,39 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           impersonatedBy: null,
         })
         .onConflictDoNothing()
+
+      dbSession = await auth.api.getSession({
+        headers: hdrs,
+        query: { disableCookieCache: true },
+      })
+    }
+
+    if (!dbSession?.user?.id) {
+      logger.warn('Could not resolve DB session for socket token after restore attempt', {
+        userId: cookieSession.user.id,
+      })
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    if (new Date(dbSession.session.expiresAt) <= new Date()) {
+      logger.warn('DB session expired for socket token request', {
+        userId: cookieSession.user.id,
+      })
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+
+    if (dbSession.session.token !== cookieSession.session.token) {
+      // After deploys or cookie-domain migrations, `session_data` (24h cache) can
+      // disagree with the DB row keyed by `session_token`. Mint from the DB session
+      // so verifyOneTimeToken succeeds; log for observability.
+      logger.warn('Session token mismatch between cookie cache and DB — minting from DB session', {
+        userId: cookieSession.user.id,
+      })
     }
 
     const response = await auth.api.generateOneTimeToken({
       headers: hdrs,
+      query: { disableCookieCache: true },
     })
 
     if (!response?.token) {
