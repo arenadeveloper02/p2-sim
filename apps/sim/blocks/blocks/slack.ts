@@ -701,7 +701,6 @@ Do not include any explanations, markdown formatting, or other text outside the 
       id: 'listUsersAutoPaginate',
       title: 'Auto Paginate',
       type: 'dropdown',
-      canonicalParamId: 'autoPaginate',
       description: 'Fetch all pages automatically. Always enabled for List Users.',
       options: [
         { label: 'Yes', id: 'true' },
@@ -1832,6 +1831,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
           listMembersCursor,
           includeDeleted,
           userLimit,
+          listUsersAutoPaginate,
           // listUsersCursor,
           userId,
           clientId,
@@ -2070,8 +2070,14 @@ Do not include any explanations, markdown formatting, or other text outside the 
               console.log(`[Slack Block] No cursor value, not setting baseParams.cursor`)
             }
 
-            const effectiveAutoPaginate = autoPaginate ?? true
-            const effectiveIncludeThreads = includeThreads ?? true
+            const effectiveAutoPaginate =
+              autoPaginate === undefined || autoPaginate === null
+                ? true
+                : autoPaginate === true || autoPaginate === 'true'
+            const effectiveIncludeThreads =
+              includeThreads === undefined || includeThreads === null
+                ? true
+                : includeThreads === true || includeThreads === 'true'
             baseParams.autoPaginate = effectiveAutoPaginate
             baseParams.includeThreads = effectiveIncludeThreads
 
@@ -2216,6 +2222,10 @@ Do not include any explanations, markdown formatting, or other text outside the 
           case 'list_users': {
             baseParams.includeDeleted = includeDeleted === 'true'
             baseParams.limit = userLimit ? Number.parseInt(userLimit, 10) : 100
+            baseParams.autoPaginate =
+              listUsersAutoPaginate === undefined || listUsersAutoPaginate === null
+                ? true
+                : listUsersAutoPaginate === true || listUsersAutoPaginate === 'true'
             if (paginationCursor) {
               baseParams.cursor = String(paginationCursor).trim()
             }

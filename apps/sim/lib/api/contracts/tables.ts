@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { type ContractJsonResponse, defineRouteContract } from '@/lib/api/contracts/types'
 import type {
   CsvHeaderMapping,
+  EnrichmentRunDetail,
   Filter,
   RowData,
   Sort,
@@ -397,6 +398,12 @@ export const importTableAsyncBodySchema = z.object({
   workspaceId: z.string().min(1, 'Workspace ID is required'),
   fileKey: z.string().min(1, 'fileKey is required'),
   fileName: z.string().min(1, 'fileName is required'),
+  /**
+   * Whether the source object is deleted once the import is terminal. Defaults to true (the upload
+   * flow stores a single-use temp object); pass false when importing an existing workspace file
+   * (e.g. the file viewer's "Import as a table") that must survive the import.
+   */
+  deleteSourceFile: z.boolean().optional(),
 })
 
 export type ImportTableAsyncBody = z.input<typeof importTableAsyncBodySchema>
@@ -898,6 +905,29 @@ export const deleteTableRowContract = defineRouteContract({
     ),
   },
 })
+
+export const enrichmentDetailParamsSchema = tableRowParamsSchema.extend({
+  groupId: z.string().min(1),
+})
+
+/**
+ * Per-(row, group) enrichment cascade breakdown. Modeled as a domain object so
+ * the `EnrichmentRunDetail` TS type stays the single source of truth (matching
+ * `tableRowSchema` / `tableDefinitionSchema`). `null` when the cell has no
+ * recorded run or the run predates this feature.
+ */
+export const getEnrichmentDetailContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/table/[tableId]/rows/[rowId]/enrichment/[groupId]',
+  params: enrichmentDetailParamsSchema,
+  response: {
+    mode: 'json',
+    schema: successResponseSchema(
+      z.object({ detail: domainObjectSchema<EnrichmentRunDetail>().nullable() })
+    ),
+  },
+})
+export type GetEnrichmentDetailResponse = ContractJsonResponse<typeof getEnrichmentDetailContract>
 
 export const deleteTableRowsContract = defineRouteContract({
   method: 'DELETE',

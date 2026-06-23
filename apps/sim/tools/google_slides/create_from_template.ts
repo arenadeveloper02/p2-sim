@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
-import type { ToolConfig } from '@/tools/types'
 import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
+import type { ToolConfig } from '@/tools/types'
 import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
 
@@ -74,10 +74,7 @@ function getKnownImageSourceFromUrl(url: string): KnownImageSource | null {
   return null
 }
 
-function isKnownCatalogImage(
-  blockSource: BlockLike['source'],
-  imageUrl: string
-): boolean {
+function isKnownCatalogImage(blockSource: BlockLike['source'], imageUrl: string): boolean {
   if (blockSource === 'icon_library' || blockSource === 'p2_users') return true
   return getKnownImageSourceFromUrl(imageUrl) !== null
 }
