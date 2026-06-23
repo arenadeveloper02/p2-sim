@@ -802,26 +802,26 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-08-05',
         deprecated: true,
       },
-      {
-        id: 'claude-opus-4-0',
-        pricing: {
-          input: 15.0,
-          cachedInput: 1.5,
-          output: 75.0,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 32000,
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'high',
-          },
-        },
-        contextWindow: 200000,
-        releaseDate: '2025-05-22',
-        deprecated: true,
-      },
+      // {
+      //   id: 'claude-opus-4-0',
+      //   pricing: {
+      //     input: 15.0,
+      //     cachedInput: 1.5,
+      //     output: 75.0,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 32000,
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'high',
+      //     },
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2025-05-22',
+      //   deprecated: true,
+      // },
       {
         id: 'claude-sonnet-4-5',
         pricing: {
@@ -842,26 +842,26 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 200000,
         releaseDate: '2025-09-29',
       },
-      {
-        id: 'claude-sonnet-4-0',
-        pricing: {
-          input: 3.0,
-          cachedInput: 0.3,
-          output: 15.0,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 64000,
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'high',
-          },
-        },
-        contextWindow: 200000,
-        releaseDate: '2025-05-22',
-        deprecated: true,
-      },
+      // {
+      //   id: 'claude-sonnet-4-0',
+      //   pricing: {
+      //     input: 3.0,
+      //     cachedInput: 0.3,
+      //     output: 15.0,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 64000,
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'high',
+      //     },
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2025-05-22',
+      //   deprecated: true,
+      // },
       {
         id: 'claude-haiku-4-5',
         pricing: {
