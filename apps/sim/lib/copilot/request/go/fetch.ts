@@ -140,8 +140,14 @@ async function fetchGoWithCopilotKeyFailover(
       const shouldFailover = !isLastKey && isCopilotApiKeyFailoverStatus(response.status)
 
       if (!shouldFailover) {
-        if (index > 0) {
+        if (index > 0 && !isCopilotApiKeyFailoverStatus(response.status)) {
           logger.info('Copilot API key failover succeeded', {
+            keyIndex: index + 1,
+            totalKeys: keys.length,
+            status: response.status,
+          })
+        } else if (index > 0 && isCopilotApiKeyFailoverStatus(response.status)) {
+          logger.error('Copilot API key failover exhausted: all keys rejected', {
             keyIndex: index + 1,
             totalKeys: keys.length,
             status: response.status,
