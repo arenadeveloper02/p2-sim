@@ -498,6 +498,7 @@ export async function executeWorkflowCore(
         'PRESENTATION_API_BASE_URL',
         'EXA_API_KEY',
         'COPILOT_API_KEY',
+        'COPILOT_API_KEY_2',
         'S3_PROFILE_PICTURES_BUCKET_NAME',
         'S3_COPILOT_BUCKET_NAME',
         'S3_CHAT_BUCKET_NAME',

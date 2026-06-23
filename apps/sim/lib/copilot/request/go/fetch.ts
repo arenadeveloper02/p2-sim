@@ -1,8 +1,19 @@
 import { type Context, context, SpanStatusCode, trace } from '@opentelemetry/api'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { CopilotLeg } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { traceHeaders } from '@/lib/copilot/request/go/propagation'
 import { isActionableErrorStatus, markSpanForError } from '@/lib/copilot/request/otel'
+import {
+  isCopilotApiKeyFailoverNetworkError,
+  isCopilotApiKeyFailoverStatus,
+  listCopilotApiKeys,
+  requestUsesCopilotApiKey,
+  stripCopilotApiKeyHeader,
+} from '@/lib/copilot/server/copilot-api-keys'
+
+const logger = createLogger('CopilotFetchGo')
 
 // Lazy tracer resolution: module-level `trace.getTracer()` can be evaluated
 // before `instrumentation-node.ts` installs the TracerProvider under
@@ -10,7 +21,7 @@ import { isActionableErrorStatus, markSpanForError } from '@/lib/copilot/request
 // every outbound Sim → Go span. Resolving per-call avoids the race.
 const getTracer = () => trace.getTracer('sim-copilot-http', '1.0.0')
 
-interface OutboundFetchOptions extends RequestInit {
+export interface OutboundFetchOptions extends RequestInit {
   otelContext?: Context
   spanName?: string
   operation?: string
@@ -22,9 +33,9 @@ interface OutboundFetchOptions extends RequestInit {
  * call shows up as a distinct segment in Jaeger, and propagates the W3C
  * traceparent so the Go-side span joins the same trace.
  *
- * The span captures generic attributes (method, status, duration, response
- * size, error code) so any future latency investigation — not just images or
- * Bedrock — has uniform metadata to work with.
+ * When the request includes an `x-api-key` header and multiple copilot keys
+ * are configured (`COPILOT_API_KEY`, `COPILOT_API_KEY_2`), automatically
+ * retries with the backup key on auth, rate-limit, and transient server errors.
  */
 export async function fetchGo(url: string, options: OutboundFetchOptions = {}): Promise<Response> {
   const {
@@ -64,15 +75,29 @@ export async function fetchGo(url: string, options: OutboundFetchOptions = {}): 
     ...propagatedHeaders,
   }
 
+  const headerRecord = mergedHeaders as Record<string, string>
+  const copilotKeys =
+    requestUsesCopilotApiKey(headerRecord) && listCopilotApiKeys().length > 0
+      ? listCopilotApiKeys()
+      : []
+
   const start = performance.now()
-  try {
-    const response = await context.with(activeContext, () =>
+
+  const executeFetch = (headers: Record<string, string>) =>
+    context.with(activeContext, () =>
       fetch(url, {
         ...init,
         method,
-        headers: mergedHeaders,
+        headers,
       })
     )
+
+  try {
+    const response =
+      copilotKeys.length > 0
+        ? await fetchGoWithCopilotKeyFailover(executeFetch, headerRecord, copilotKeys)
+        : await executeFetch(mergedHeaders)
+
     const elapsedMs = performance.now() - start
     const contentLength = Number(response.headers.get('content-length') ?? 0)
     span.setAttribute(TraceAttr.HttpStatusCode, response.status)
@@ -80,11 +105,6 @@ export async function fetchGo(url: string, options: OutboundFetchOptions = {}): 
     if (contentLength > 0) {
       span.setAttribute(TraceAttr.HttpResponseContentLength, contentLength)
     }
-    // Only mark ERROR for actionable status codes. 4xx that represent
-    // normal auth/validation rejections (400/401/403/404/405/422/etc.)
-    // stay UNSET so error dashboards don't drown in expected rejection
-    // paths. See `isActionableErrorStatus` in Go's telemetry middleware
-    // for the mirror rule (5xx + 402/409/429).
     if (isActionableErrorStatus(response.status)) {
       span.setStatus({
         code: SpanStatusCode.ERROR,
@@ -101,6 +121,56 @@ export async function fetchGo(url: string, options: OutboundFetchOptions = {}): 
   } finally {
     span.end()
   }
+}
+
+async function fetchGoWithCopilotKeyFailover(
+  executeFetch: (headers: Record<string, string>) => Promise<Response>,
+  headers: Record<string, string>,
+  keys: string[]
+): Promise<Response> {
+  const baseHeaders = stripCopilotApiKeyHeader(headers)
+  let lastResponse: Response | undefined
+
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index]
+    const isLastKey = index === keys.length - 1
+
+    try {
+      const response = await executeFetch({ ...baseHeaders, 'x-api-key': key })
+      const shouldFailover = !isLastKey && isCopilotApiKeyFailoverStatus(response.status)
+
+      if (!shouldFailover) {
+        if (index > 0) {
+          logger.info('Copilot API key failover succeeded', {
+            keyIndex: index + 1,
+            totalKeys: keys.length,
+            status: response.status,
+          })
+        }
+        return response
+      }
+
+      logger.warn('Copilot API key failover: trying next key', {
+        keyIndex: index + 1,
+        totalKeys: keys.length,
+        status: response.status,
+      })
+      lastResponse = response
+    } catch (error) {
+      const shouldFailover = !isLastKey && isCopilotApiKeyFailoverNetworkError(error)
+      if (!shouldFailover) {
+        throw error
+      }
+
+      logger.warn('Copilot API key failover: retrying after network error', {
+        keyIndex: index + 1,
+        totalKeys: keys.length,
+        error: getErrorMessage(error),
+      })
+    }
+  }
+
+  return lastResponse!
 }
 
 function safeParseUrl(url: string): URL | null {

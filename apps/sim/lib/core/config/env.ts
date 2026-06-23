@@ -42,7 +42,8 @@ export const env = createEnv({
     INTERNAL_JWT_SECRET:                   z.string().min(32).optional(),          // Dedicated signing key for internal JWTs (falls back to INTERNAL_API_SECRET); separating limits blast radius if one leaks
 
     // Copilot
-    COPILOT_API_KEY:                       z.string().min(1).optional(),           // Secret for internal sim agent API authentication
+    COPILOT_API_KEY:                       z.string().min(1).optional(),           // Primary secret for internal sim agent API authentication
+    COPILOT_API_KEY_2:                     z.string().min(1).optional(),           // Optional backup sim agent API key (failover when primary is rate-limited or rejected)
     SIM_AGENT_API_URL:                     z.string().url().optional(),            // URL for internal sim agent API
     COPILOT_SOURCE_ENV:                    z.enum(['dev', 'staging', 'prod']).optional(), // Source Sim environment sent to mothership for callbacks
     COPILOT_DEV_URL:                       z.string().url().optional(),            // Sim agent API URL for the dev mothership environment
