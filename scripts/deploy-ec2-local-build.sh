@@ -30,6 +30,9 @@ fi
 docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" build "${BUILD_FLAGS[@]}" simstudio
 docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" build realtime migrations
 docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" up -d --remove-orphans
+
+# If simstudio build OOMs on an 8GB host, add swap (example):
+#   sudo fallocate -l 8G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
 docker image prune -f
 
 cd ~
