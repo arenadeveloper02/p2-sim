@@ -1,6 +1,6 @@
 'use server'
 import { existsSync, promises as fs } from 'fs'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { createLogger } from '@sim/logger'
 import { generateShortId } from '@sim/utils/id'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -11,6 +11,11 @@ const logger = createLogger('ImageStorage')
 
 // Store images at /apps/sim/agent-generated-images
 const LOCAL_STORAGE_DIR = 'agent-generated-images'
+
+// turbopackIgnore: see setup.server.ts — unscoped process.cwd() widens file tracing into
+// conflicting server chunks during `next build`.
+const PROJECT_ROOT = resolve(/*turbopackIgnore: true*/ process.cwd())
+const LOCAL_STORAGE_BASE_DIR = join(/*turbopackIgnore: true*/ PROJECT_ROOT, LOCAL_STORAGE_DIR)
 
 /** Sanitise segment for use in storage path (no slashes, no parent refs, no empty). */
 function sanitisePathSegment(value: string): string {
@@ -35,7 +40,7 @@ export async function ensureAgentGeneratedImagesDirectory(): Promise<boolean> {
 
   try {
     // Store at /apps/sim/agent-generated-images
-    const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR)
+    const baseDir = LOCAL_STORAGE_BASE_DIR
 
     if (!existsSync(baseDir)) {
       await fs.mkdir(baseDir, { recursive: true })
@@ -144,8 +149,8 @@ export async function saveGeneratedImage(
     logger.info(`Saving generated image to local storage (agent S3 not configured): ${key}`)
 
     // Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
-    const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR, safeWorkflowId, safeUserId)
-    if (!existsSync(join(process.cwd(), LOCAL_STORAGE_DIR))) {
+    const baseDir = join(LOCAL_STORAGE_BASE_DIR, safeWorkflowId, safeUserId)
+    if (!existsSync(LOCAL_STORAGE_BASE_DIR)) {
       const success = await ensureAgentGeneratedImagesDirectory()
       if (!success) {
         throw new Error(

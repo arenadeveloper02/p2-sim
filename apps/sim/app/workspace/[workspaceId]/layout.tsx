@@ -20,7 +20,6 @@ import { getBrandConfig } from '@/ee/whitelabeling/branding'
 import { BrandingProvider } from '@/ee/whitelabeling/components/branding-provider'
 import {
   getActiveOrgWhitelabelSettings,
-  getOrgWhitelabelSettings,
 } from '@/ee/whitelabeling/org-branding'
 import { resolveOrgFaviconUrl } from '@/ee/whitelabeling/org-branding-utils'
 
@@ -77,9 +76,7 @@ async function WorkspaceLayoutInner({
   const queryClient = getQueryClient()
   const sidebarPrefetch = prefetchWorkspaceSidebar(queryClient, workspaceId, session.user.id)
 
-  // The organization plugin is conditionally spread so TS can't infer activeOrganizationId on the base session type.
-  const orgId = (session?.session as { activeOrganizationId?: string } | null)?.activeOrganizationId
-  const initialOrgSettings = orgId ? await getOrgWhitelabelSettings(orgId) : null
+  const initialOrgSettings = await getActiveOrgWhitelabelSettings()
 
   await sidebarPrefetch
 
