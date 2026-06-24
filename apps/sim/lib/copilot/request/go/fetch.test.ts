@@ -5,6 +5,16 @@ import {
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mockEnv = vi.hoisted(() => ({
+  COPILOT_API_KEY: undefined as string | undefined,
+  COPILOT_API_KEY_2: undefined as string | undefined,
+}))
+
+vi.mock('@/lib/core/config/env', () => ({
+  env: mockEnv,
+}))
+
 import { fetchGo } from '@/lib/copilot/request/go/fetch'
 
 describe('fetchGo', () => {
@@ -17,6 +27,8 @@ describe('fetchGo', () => {
     exporter.reset()
     trace.setGlobalTracerProvider(provider)
     vi.restoreAllMocks()
+    mockEnv.COPILOT_API_KEY = undefined
+    mockEnv.COPILOT_API_KEY_2 = undefined
   })
 
   it('emits a client span with http.* attrs and injects traceparent', async () => {
@@ -75,5 +87,46 @@ describe('fetchGo', () => {
     expect(spans).toHaveLength(1)
     expect(spans[0].status.code).toBe(2)
     expect(spans[0].events.some((e) => e.name === 'exception')).toBe(true)
+  })
+
+  it('retries with the backup copilot key when primary auth fails', async () => {
+    mockEnv.COPILOT_API_KEY = 'primary-key'
+    mockEnv.COPILOT_API_KEY_2 = 'backup-key'
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await fetchGo('https://backend.example.com/api/copilot', {
+      method: 'POST',
+      headers: { 'x-api-key': 'primary-key' },
+    })
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({ 'x-api-key': 'backup-key' })
+    expect(exporter.getFinishedSpans()).toHaveLength(1)
+  })
+
+  it('returns the last 401 when both copilot keys are rejected', async () => {
+    mockEnv.COPILOT_API_KEY = 'primary-key'
+    mockEnv.COPILOT_API_KEY_2 = 'backup-key'
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(new Response('still unauthorized', { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await fetchGo('https://backend.example.com/api/copilot', {
+      method: 'POST',
+      headers: { 'x-api-key': 'primary-key' },
+    })
+
+    expect(response.status).toBe(401)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({ 'x-api-key': 'backup-key' })
   })
 })

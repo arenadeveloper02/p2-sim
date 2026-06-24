@@ -1357,13 +1357,35 @@ export async function transferOrganizationOwnership(
 
       await tx.update(member).set({ role: 'owner' }).where(eq(member.id, newOwnerMember.id))
 
+      const [orgRow] = await tx
+        .select({ metadata: organization.metadata })
+        .from(organization)
+        .where(eq(organization.id, organizationId))
+        .limit(1)
+
+      if (
+        orgRow?.metadata &&
+        typeof orgRow.metadata === 'object' &&
+        !Array.isArray(orgRow.metadata) &&
+        'originalUserId' in orgRow.metadata
+      ) {
+        const metadata = orgRow.metadata as Record<string, unknown>
+        await tx
+          .update(organization)
+          .set({
+            metadata: { ...metadata, originalUserId: newOwnerUserId },
+            updatedAt: new Date(),
+          })
+          .where(eq(organization.id, organizationId))
+      }
+
       const billedUpdate = await tx
         .update(workspace)
-        .set({ billedAccountUserId: newOwnerUserId })
+        .set({ billedAccountUserId: newOwnerUserId, updatedAt: new Date() })
         .where(
           and(
             eq(workspace.organizationId, organizationId),
-            eq(workspace.billedAccountUserId, currentOwnerUserId)
+            ne(workspace.billedAccountUserId, newOwnerUserId)
           )
         )
         .returning({ id: workspace.id })
