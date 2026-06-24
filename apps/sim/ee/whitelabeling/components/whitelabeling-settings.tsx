@@ -6,7 +6,6 @@ import { isOrgAdminRole } from '@sim/platform-authz/predicates'
 import { toError } from '@sim/utils/errors'
 import { Image as ImageIcon, X } from 'lucide-react'
 import Image from 'next/image'
-import { useParams } from 'next/navigation'
 import { Button, ChipInput, Label, Loader, toast } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client/utils'
@@ -115,7 +114,6 @@ function ColorInput({ label, value, onChange, placeholder = '#000000' }: ColorIn
 }
 
 export function WhitelabelingSettings() {
-  const params = useParams<{ workspaceId: string }>()
   const { data: session } = useSession()
   const { data: orgsData } = useOrganizations()
   const { data: subscriptionData } = useSubscriptionData()
@@ -143,7 +141,8 @@ export function WhitelabelingSettings() {
   const [privacyUrl, setPrivacyUrl] = useState('')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [wordmarkUrl, setWordmarkUrl] = useState<string | null>(null)
-  const formInitializedRef = useRef(false)
+  const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
+  const formInitializedRef = useRef<string | null>(null)
   const [savedBrandName, setSavedBrandName] = useState('')
   const [savedPrimaryColor, setSavedPrimaryColor] = useState('')
   const [savedPrimaryHoverColor, setSavedPrimaryHoverColor] = useState('')
@@ -155,9 +154,11 @@ export function WhitelabelingSettings() {
   const [savedPrivacyUrl, setSavedPrivacyUrl] = useState('')
   const [savedLogoUrl, setSavedLogoUrl] = useState<string | null>(null)
   const [savedWordmarkUrl, setSavedWordmarkUrl] = useState<string | null>(null)
+  const [savedFaviconUrl, setSavedFaviconUrl] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!savedSettings || formInitializedRef.current) return
+    if (!savedSettings || !orgId) return
+    if (formInitializedRef.current === orgId) return
     const brand = savedSettings.brandName ?? ''
     const primary = savedSettings.primaryColor ?? ''
     const primaryHover = savedSettings.primaryHoverColor ?? ''
@@ -169,6 +170,7 @@ export function WhitelabelingSettings() {
     const privacy = savedSettings.privacyUrl ?? ''
     const logo = savedSettings.logoUrl ?? null
     const wordmark = savedSettings.wordmarkUrl ?? null
+    const favicon = savedSettings.faviconUrl ?? null
     setBrandName(brand)
     setPrimaryColor(primary)
     setPrimaryHoverColor(primaryHover)
@@ -180,6 +182,7 @@ export function WhitelabelingSettings() {
     setPrivacyUrl(privacy)
     setLogoUrl(logo)
     setWordmarkUrl(wordmark)
+    setFaviconUrl(favicon)
     setSavedBrandName(brand)
     setSavedPrimaryColor(primary)
     setSavedPrimaryHoverColor(primaryHover)
@@ -191,27 +194,37 @@ export function WhitelabelingSettings() {
     setSavedPrivacyUrl(privacy)
     setSavedLogoUrl(logo)
     setSavedWordmarkUrl(wordmark)
-    formInitializedRef.current = true
-  }, [savedSettings])
+    setSavedFaviconUrl(favicon)
+    formInitializedRef.current = orgId
+  }, [savedSettings, orgId])
 
   const logoUpload = useProfilePictureUpload({
     currentImage: logoUrl,
     onUpload: (url) => setLogoUrl(url),
     onError: (error) => toast.error(error),
-    context: 'workspace-logos',
-    workspaceId: params.workspaceId,
+    context: 'org-logos',
+    organizationId: orgId,
   })
 
   const wordmarkUpload = useProfilePictureUpload({
     currentImage: wordmarkUrl,
     onUpload: (url) => setWordmarkUrl(url),
     onError: (error) => toast.error(error),
-    context: 'workspace-logos',
-    workspaceId: params.workspaceId,
+    context: 'org-logos',
+    organizationId: orgId,
+  })
+
+  const faviconUpload = useProfilePictureUpload({
+    currentImage: faviconUrl,
+    onUpload: (url) => setFaviconUrl(url),
+    onError: (error) => toast.error(error),
+    context: 'org-logos',
+    organizationId: orgId,
   })
 
   const hasChanges =
-    formInitializedRef.current &&
+    Boolean(orgId) &&
+    formInitializedRef.current === orgId &&
     (brandName !== savedBrandName ||
       primaryColor !== savedPrimaryColor ||
       primaryHoverColor !== savedPrimaryHoverColor ||
@@ -222,7 +235,8 @@ export function WhitelabelingSettings() {
       termsUrl !== savedTermsUrl ||
       privacyUrl !== savedPrivacyUrl ||
       (logoUpload.previewUrl || null) !== savedLogoUrl ||
-      (wordmarkUpload.previewUrl || null) !== savedWordmarkUrl)
+      (wordmarkUpload.previewUrl || null) !== savedWordmarkUrl ||
+      (faviconUpload.previewUrl || null) !== savedFaviconUrl)
 
   async function handleSave() {
     if (!orgId) return
@@ -245,6 +259,7 @@ export function WhitelabelingSettings() {
       brandName: brandName || null,
       logoUrl: logoUpload.previewUrl || null,
       wordmarkUrl: wordmarkUpload.previewUrl || null,
+      faviconUrl: faviconUpload.previewUrl || null,
       primaryColor: primaryColor || null,
       primaryHoverColor: primaryHoverColor || null,
       accentColor: accentColor || null,
@@ -268,6 +283,7 @@ export function WhitelabelingSettings() {
       setSavedPrivacyUrl(privacyUrl)
       setSavedLogoUrl(logoUpload.previewUrl || null)
       setSavedWordmarkUrl(wordmarkUpload.previewUrl || null)
+      setSavedFaviconUrl(faviconUpload.previewUrl || null)
       toast.success('Whitelabeling settings saved.')
     } catch (error) {
       logger.error('Failed to save whitelabel settings', { error })
@@ -305,7 +321,8 @@ export function WhitelabelingSettings() {
     return null
   }
 
-  const isUploading = logoUpload.isUploading || wordmarkUpload.isUploading
+  const isUploading =
+    logoUpload.isUploading || wordmarkUpload.isUploading || faviconUpload.isUploading
 
   return (
     <div className='flex h-full flex-col bg-[var(--bg)]'>
@@ -454,6 +471,63 @@ export function WhitelabelingSettings() {
                   </div>
                 </SettingRow>
               </div>
+              <SettingRow
+                label='Favicon'
+                labelTooltip='Browser tab icon. Square PNG or SVG (32×32 or 64×64 recommended). Optional — falls back to your logo when unset.'
+              >
+                <div className='flex items-center gap-4'>
+                  <DropZone onDrop={faviconUpload.handleFileDrop}>
+                    <button
+                      type='button'
+                      onClick={faviconUpload.handleThumbnailClick}
+                      disabled={faviconUpload.isUploading}
+                      className='group relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-2)] transition-colors hover:bg-[var(--surface-3)] disabled:opacity-50'
+                    >
+                      {faviconUpload.isUploading ? (
+                        <Loader className='size-5 text-[var(--text-muted)]' animate />
+                      ) : faviconUpload.previewUrl ? (
+                        <Image
+                          src={faviconUpload.previewUrl}
+                          alt='Favicon'
+                          fill
+                          className='object-contain p-1'
+                          unoptimized
+                        />
+                      ) : (
+                        <ImageIcon className='size-5 text-[var(--text-muted)]' />
+                      )}
+                    </button>
+                  </DropZone>
+                  <div className='flex gap-2'>
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={faviconUpload.handleThumbnailClick}
+                      disabled={faviconUpload.isUploading}
+                      className='text-[13px]'
+                    >
+                      {faviconUpload.previewUrl ? 'Change' : 'Upload'}
+                    </Button>
+                    {faviconUpload.previewUrl && (
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        onClick={faviconUpload.handleRemove}
+                        className='text-[13px] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                      >
+                        <X className='size-[14px]' />
+                      </Button>
+                    )}
+                  </div>
+                  <input
+                    ref={faviconUpload.fileInputRef}
+                    type='file'
+                    accept='image/png,image/jpeg,image/jpg,image/svg+xml,image/webp'
+                    onChange={faviconUpload.handleFileChange}
+                    className='hidden'
+                  />
+                </div>
+              </SettingRow>
             </div>
           </SettingsSection>
 
