@@ -493,7 +493,6 @@ export async function executeWorkflowCore(
         'XAI_API_KEY_2',
         'XAI_API_KEY_3',
         'AZURE_OPENAI_API_KEY',
-        'SEMRUSH_API_KEY',
         'BROWSERBASE_API_KEY',
         'PRESENTATION_API_BASE_URL',
         'EXA_API_KEY',
