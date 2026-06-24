@@ -18,6 +18,7 @@ import {
   patchPackageJsonContent,
   patchPrismaSchemaContent,
   dedupeActionsTypeConflicts,
+  DEFAULT_LIB_AUTH_CONTENT,
   reconcileActionsTypeExports,
   reconcileClientComponentProps,
   reconcileComponentExportStyles,
@@ -451,6 +452,20 @@ export default function DashboardClient() { return null }
     expect(pkg?.content).toContain('jsonwebtoken')
   })
 
+  it('adds jsonwebtoken to package.json when lib/auth exists without @/lib/auth imports', () => {
+    const files = reconcileAuthExports(
+      [
+        { path: 'lib/auth.ts', content: DEFAULT_LIB_AUTH_CONTENT },
+        { path: 'package.json', content: JSON.stringify({ name: 'demo-app' }) },
+      ],
+      { requiresDatabase: true }
+    )
+
+    const pkg = files.find((file) => file.path === 'package.json')
+    expect(pkg?.content).toContain('jsonwebtoken')
+    expect(pkg?.content).toContain('@types/jsonwebtoken')
+  })
+
   it('scaffolds README.md when missing', () => {
     const files = ensureReadmeFile(
       [
@@ -729,7 +744,9 @@ export interface DashboardStats {
       scripts: Record<string, string>
     }
     expect(pkg.dependencies['@prisma/client']).toBeDefined()
+    expect(pkg.dependencies.jsonwebtoken).toBeDefined()
     expect(pkg.devDependencies.prisma).toBeDefined()
+    expect(pkg.devDependencies['@types/jsonwebtoken']).toBeDefined()
     expect(pkg.scripts.postinstall).toBeUndefined()
     expect(pkg.scripts.build).toContain('prisma generate')
     expect(pkg.scripts.build).toContain('prisma db push')

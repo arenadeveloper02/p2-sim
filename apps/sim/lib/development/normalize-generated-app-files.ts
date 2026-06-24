@@ -29,6 +29,14 @@ const PINNED_DEPENDENCIES: Record<string, string> = {
   'react-dom': PINNED_REACT_VERSION,
 }
 
+const AUTH_PACKAGE_DEPENDENCIES: Record<string, string> = {
+  jsonwebtoken: '^9.0.2',
+}
+
+const AUTH_PACKAGE_DEV_DEPENDENCIES: Record<string, string> = {
+  '@types/jsonwebtoken': '^9.0.9',
+}
+
 export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these exact versions:
 - "next": "${PINNED_NEXT_VERSION}"
 - "react": "${PINNED_REACT_VERSION}"
@@ -322,10 +330,12 @@ export function patchPackageJsonContent(
       pkg.dependencies = {
         ...pkg.dependencies,
         '@prisma/client': PINNED_PRISMA_VERSION,
+        ...AUTH_PACKAGE_DEPENDENCIES,
       }
       pkg.devDependencies = {
         ...pkg.devDependencies,
         prisma: PINNED_PRISMA_VERSION,
+        ...AUTH_PACKAGE_DEV_DEPENDENCIES,
       }
       const existingBuild = pkg.scripts?.build ?? 'next build'
       const { postinstall: _removedPostinstall, ...remainingScripts } = pkg.scripts ?? {}
@@ -1322,16 +1332,34 @@ function patchPackageJsonForAuth(content: string): string {
     }
     pkg.dependencies = {
       ...pkg.dependencies,
-      jsonwebtoken: '^9.0.2',
+      ...AUTH_PACKAGE_DEPENDENCIES,
     }
     pkg.devDependencies = {
       ...pkg.devDependencies,
-      '@types/jsonwebtoken': '^9.0.9',
+      ...AUTH_PACKAGE_DEV_DEPENDENCIES,
     }
     return `${JSON.stringify(pkg, null, 2)}\n`
   } catch {
     return content
   }
+}
+
+function libAuthUsesJsonWebToken(files: GeneratedAppFile[]): boolean {
+  const authContent = files.find((file) => normalizePath(file.path) === 'lib/auth.ts')?.content
+  return Boolean(authContent?.includes('jsonwebtoken'))
+}
+
+function ensureAuthPackageDependencies(files: GeneratedAppFile[]): GeneratedAppFile[] {
+  if (!libAuthUsesJsonWebToken(files)) {
+    return files
+  }
+
+  return files.map((file) => {
+    if (normalizePath(file.path) !== 'package.json') {
+      return file
+    }
+    return { ...file, content: patchPackageJsonForAuth(file.content) }
+  })
 }
 
 /**
@@ -1347,11 +1375,12 @@ export function reconcileAuthExports(
 
   const { types, values } = collectAuthImports(files)
   const requiredNames = new Set([...types, ...values])
-  if (requiredNames.size === 0) {
-    return files
-  }
 
   let updated = [...files]
+
+  if (requiredNames.size === 0) {
+    return ensureAuthPackageDependencies(updated)
+  }
   const authIndex = updated.findIndex((file) => normalizePath(file.path) === 'lib/auth.ts')
 
   if (authIndex < 0) {
@@ -1375,17 +1404,7 @@ export function reconcileAuthExports(
     }
   }
 
-  const usesAuth = updated.some((file) => normalizePath(file.path) === 'lib/auth.ts')
-  if (!usesAuth) {
-    return updated
-  }
-
-  return updated.map((file) => {
-    if (normalizePath(file.path) !== 'package.json') {
-      return file
-    }
-    return { ...file, content: patchPackageJsonForAuth(file.content) }
-  })
+  return ensureAuthPackageDependencies(updated)
 }
 
 function collectTypesImportedInActions(content: string): Set<string> {
