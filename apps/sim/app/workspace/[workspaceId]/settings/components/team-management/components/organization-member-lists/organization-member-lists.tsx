@@ -206,11 +206,14 @@ export function OrganizationMemberLists({
                 Remove
               </DropdownMenuItem>
             )}
-            {isSelf && isOwner && onTransferOwnership && (
+            {/**
+             * Temporarily hidden: transfer ownership is disabled for owners until the flow is re-enabled.
+             */}
+            {/* {isSelf && isOwner && onTransferOwnership && (
               <DropdownMenuItem onSelect={() => onTransferOwnership()}>
                 Transfer ownership
               </DropdownMenuItem>
-            )}
+            )} */}
             {isSelf && !isOwner && (
               <DropdownMenuItem
                 className='text-[var(--text-error)]'
