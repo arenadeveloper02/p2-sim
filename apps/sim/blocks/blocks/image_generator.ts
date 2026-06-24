@@ -12,6 +12,7 @@ import {
   parseOptionalBooleanInput,
 } from '@/blocks/utils'
 import type { ImageGenerationResponse } from '@/tools/image/types'
+import { START_FILES_REF } from '@/executor/constants'
 
 function normalizeReferenceFiles(input: unknown): unknown[] {
   const normalizedFiles = normalizeFileInput(input)
@@ -344,7 +345,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
       multiple: true,
       uploadContext: 'image-fusion',
       allowStartFilesReference: true,
-      defaultValue: '<start.files>',
+      defaultValue: START_FILES_REF,
       condition: {
         field: 'model',
         value: NANO_BANANA_MODELS,
@@ -565,7 +566,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   description: 'Generate images',
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Generate images using OpenAI GPT Image, Google Nano Banana, or Fal.ai image models.',
+    'Generate images using OpenAI GPT Image or Google Nano Banana image models.',
   docsLink: 'https://docs.sim.ai/integrations/image_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
@@ -579,10 +580,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       options: [
         { label: 'OpenAI', id: 'openai' },
         { label: 'Google Gemini', id: 'gemini' },
-        { label: 'Fal.ai (Multi-Model)', id: 'falai' },
+        // { label: 'Fal.ai (Multi-Model)', id: 'falai' },
       ],
       commandSearchable: true,
-      value: () => 'falai',
+      value: () => 'gemini',
     },
     {
       id: 'model',
@@ -602,15 +603,15 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       condition: { field: 'provider', value: 'gemini' },
       dependsOn: ['provider'],
     },
-    {
-      id: 'model',
-      title: 'Model',
-      type: 'dropdown',
-      options: FALAI_IMAGE_MODELS,
-      value: () => 'nano-banana-2',
-      condition: { field: 'provider', value: 'falai' },
-      dependsOn: ['provider'],
-    },
+    // {
+    //   id: 'model',
+    //   title: 'Model',
+    //   type: 'dropdown',
+    //   options: FALAI_IMAGE_MODELS,
+    //   value: () => 'nano-banana-2',
+    //   condition: { field: 'provider', value: 'falai' },
+    //   dependsOn: ['provider'],
+    // },
     {
       id: 'prompt',
       title: 'Prompt',
@@ -1025,10 +1026,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       multiple: true,
       uploadContext: 'image-fusion',
       allowStartFilesReference: true,
-      defaultValue: '<start.files>',
+      defaultValue: START_FILES_REF,
       condition: {
         field: 'provider',
-        value: ['openai', 'gemini', 'falai'],
+        value: ['openai', 'gemini'],
         and: { field: 'model', value: REFERENCE_IMAGE_MODELS },
       },
       dependsOn: ['provider', 'model'],
@@ -1042,7 +1043,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       mode: 'advanced',
       condition: {
         field: 'provider',
-        value: ['openai', 'gemini', 'falai'],
+        value: ['openai', 'gemini'],
         and: { field: 'model', value: REFERENCE_IMAGE_MODELS },
       },
       dependsOn: ['provider', 'model'],
@@ -1146,49 +1147,49 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       },
       dependsOn: ['provider', 'model'],
     },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      required: true,
-      placeholder: 'Enter your provider API key',
-      password: true,
-      connectionDroppable: false,
-      hideWhenHosted: true,
-      condition: { field: 'provider', value: 'falai' },
-    },
+    // {
+    //   id: 'apiKey',
+    //   title: 'API Key',
+    //   type: 'short-input',
+    //   required: true,
+    //   placeholder: 'Enter your provider API key',
+    //   password: true,
+    //   connectionDroppable: false,
+    //   hideWhenHosted: true,
+    //   condition: { field: 'provider', value: 'falai' },
+    // },
   ],
   tools: {
     access: ['image_generate'],
     config: {
       tool: () => 'image_generate',
       params: (params) => {
-        const provider = params.provider || 'openai'
+        const provider = params.provider || 'gemini'
         if (!params.prompt) {
           throw new Error('Prompt is required')
         }
         const defaultModel =
           provider === 'gemini'
             ? 'gemini-3.1-flash-image-preview'
-            : provider === 'falai'
-              ? 'nano-banana-2'
-              : 'gpt-image-1.5'
+            : 'gpt-image-1.5'
+        // provider === 'falai' ? 'nano-banana-2' : ...
 
         const model = params.model || defaultModel
         const referenceInputs =
-          provider === 'falai' && model === 'nano-banana-2'
-            ? resolveFalaiNanoBanana2References(params)
-            : provider === 'openai' || provider === 'gemini'
-              ? resolveNanoBananaReferences({
-                  model: params.model,
-                  uploadedReferences: [
-                    ...normalizeReferenceFiles(params.inputImage),
-                    ...normalizeReferenceFiles(params.inputImages),
-                  ],
-                  inputImageUrl: params.inputImageUrl,
-                  inputImageUrls: params.inputImageUrls,
-                })
-              : {}
+          provider === 'openai' || provider === 'gemini'
+            ? resolveNanoBananaReferences({
+                model: params.model,
+                uploadedReferences: [
+                  ...normalizeReferenceFiles(params.inputImage),
+                  ...normalizeReferenceFiles(params.inputImages),
+                ],
+                inputImageUrl: params.inputImageUrl,
+                inputImageUrls: params.inputImageUrls,
+              })
+            : {}
+        // provider === 'falai' && model === 'nano-banana-2'
+        //   ? resolveFalaiNanoBanana2References(params)
+        //   : ...
 
         return {
           provider,
