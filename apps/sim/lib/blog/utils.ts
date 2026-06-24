@@ -1,10 +1,8 @@
 import fs from 'fs/promises'
 import path from 'path'
 
-// turbopackIgnore: see lib/uploads/core/setup.server.ts
-const PROJECT_ROOT = path.resolve(/*turbopackIgnore: true*/ process.cwd())
-export const BLOG_DIR = path.join(/*turbopackIgnore: true*/ PROJECT_ROOT, 'content', 'blog')
-export const AUTHORS_DIR = path.join(/*turbopackIgnore: true*/ PROJECT_ROOT, 'content', 'authors')
+export const BLOG_DIR = path.join(process.cwd(), 'content', 'blog')
+export const AUTHORS_DIR = path.join(process.cwd(), 'content', 'authors')
 
 export async function ensureContentDirs() {
   await fs.mkdir(BLOG_DIR, { recursive: true })

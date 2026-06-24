@@ -21,18 +21,7 @@ git pull --rebase origin "$BRANCH"
 
 docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" down --remove-orphans
 docker image rm -f p2-sim-simstudio p2-sim-realtime p2-sim-migrations 2>/dev/null || true
-
-BUILD_FLAGS=()
-if [ "${SIMSTUDIO_NO_CACHE:-}" = "1" ]; then
-  BUILD_FLAGS=(--no-cache)
-fi
-
-docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" build "${BUILD_FLAGS[@]}" simstudio
-docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" build realtime migrations
-docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" up -d --remove-orphans
-
-# If simstudio build OOMs on an 8GB host, add swap (example):
-#   sudo fallocate -l 8G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" up -d --build --remove-orphans
 docker image prune -f
 
 cd ~

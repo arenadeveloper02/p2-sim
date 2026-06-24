@@ -5,14 +5,6 @@ import { sanitizeFileKey } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('FilesUtils')
 
-// turbopackIgnore: see setup.server.ts — unscoped process.cwd() widens file tracing into
-// conflicting server chunks during `next build`.
-const PROJECT_ROOT = path.resolve(/*turbopackIgnore: true*/ process.cwd())
-const AGENT_GENERATED_IMAGES_DIR = path.join(
-  /*turbopackIgnore: true*/ PROJECT_ROOT,
-  'agent-generated-images'
-)
-
 export interface ApiSuccessResponse {
   success: true
   [key: string]: any
@@ -142,7 +134,7 @@ export async function findLocalFile(filename: string): Promise<string | null> {
       if (segments.length === 0 || segments.some((part) => part === '..')) {
         return null
       }
-      const appAllowedDir = AGENT_GENERATED_IMAGES_DIR
+      const appAllowedDir = path.join(process.cwd(), 'agent-generated-images')
       const appPath = path.join(appAllowedDir, ...segments)
       const normalizedAllowed = path.resolve(appAllowedDir) + path.sep
       const normalizedPath = path.resolve(appPath)

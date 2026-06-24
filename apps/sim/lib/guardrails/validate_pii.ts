@@ -6,10 +6,6 @@ import { createLogger } from '@sim/logger'
 const logger = createLogger('PIIValidator')
 const DEFAULT_TIMEOUT = 30000 // 30 seconds
 
-// turbopackIgnore: see lib/uploads/core/setup.server.ts
-const PROJECT_ROOT = path.resolve(/*turbopackIgnore: true*/ process.cwd())
-const GUARDRAILS_DIR = path.join(/*turbopackIgnore: true*/ PROJECT_ROOT, 'lib/guardrails')
-
 /**
  * Max total bytes of text sent to a single Presidio subprocess. spaCy NER is the
  * bottleneck, so large payloads are split into multiple short calls instead of
@@ -140,7 +136,7 @@ export async function maskPIIBatch(
  */
 function runPythonScript<T>(payload: Record<string, unknown>): Promise<T> {
   return new Promise((resolve, reject) => {
-    const guardrailsDir = GUARDRAILS_DIR
+    const guardrailsDir = path.join(process.cwd(), 'lib/guardrails')
     const scriptPath = path.join(guardrailsDir, 'validate_pii.py')
     const venvPython = path.join(guardrailsDir, 'venv/bin/python3')
     const pythonCmd = fs.existsSync(venvPython) ? venvPython : 'python3'
@@ -214,7 +210,7 @@ async function executePythonPIIDetection(
   return new Promise((resolve, reject) => {
     // Use path relative to project root
     // In Next.js, process.cwd() returns the project root
-    const guardrailsDir = GUARDRAILS_DIR
+    const guardrailsDir = path.join(process.cwd(), 'lib/guardrails')
     const scriptPath = path.join(guardrailsDir, 'validate_pii.py')
     const venvPython = path.join(guardrailsDir, 'venv/bin/python3')
 
