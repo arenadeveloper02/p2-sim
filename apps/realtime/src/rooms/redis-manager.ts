@@ -2,12 +2,18 @@ import { createLogger } from '@sim/logger'
 import { createClient, type RedisClientType } from 'redis'
 import type { Server } from 'socket.io'
 import type { IRoomManager, UserPresence, UserSession } from '@/rooms/types'
+import {
+  healCorruptedWorkflowRoomKeys,
+  workflowMetaKey,
+  workflowUsersKey,
+} from '@/rooms/workflow-room-keys'
 
 const logger = createLogger('RedisRoomManager')
 
+//this users key is a hash of socketId to user presence
 const KEYS = {
-  workflowUsers: (wfId: string) => `workflow:${wfId}:users`,
-  workflowMeta: (wfId: string) => `workflow:${wfId}:meta`,
+  workflowUsers: workflowUsersKey,
+  workflowMeta: workflowMetaKey,
   socketWorkflow: (socketId: string) => `socket:${socketId}:workflow`,
   socketSession: (socketId: string) => `socket:${socketId}:session`,
   socketPresenceWorkflow: (socketId: string) => `socket:${socketId}:presence-workflow`,
@@ -171,8 +177,31 @@ export class RedisRoomManager implements IRoomManager {
     }
   }
 
+  /**
+   * Workflow room keys must be Redis hashes. A STRING (or other type) at the same
+   * key — e.g. from a shared cache collision or manual SET — causes WRONGTYPE on
+   * join and leaves clients stuck retrying.
+   */
+  private async ensureHealthyWorkflowRoomKeys(workflowId: string): Promise<void> {
+    const result = await healCorruptedWorkflowRoomKeys(this.redis, workflowId)
+    if (!result.healed) {
+      return
+    }
+
+    for (const entry of result.corrupted) {
+      logger.warn('Deleted corrupted workflow room Redis key before hash write', {
+        workflowId,
+        key: entry.key,
+        actualType: entry.actualType,
+        preview: entry.preview,
+      })
+    }
+  }
+
   async addUserToRoom(workflowId: string, socketId: string, presence: UserPresence): Promise<void> {
     try {
+      await this.ensureHealthyWorkflowRoomKeys(workflowId)
+
       const pipeline = this.redis.multi()
 
       pipeline.hSet(KEYS.workflowUsers(workflowId), socketId, JSON.stringify(presence))
@@ -332,6 +361,7 @@ export class RedisRoomManager implements IRoomManager {
   }
 
   async updateRoomLastModified(workflowId: string): Promise<void> {
+    await this.ensureHealthyWorkflowRoomKeys(workflowId)
     await this.redis.hSet(KEYS.workflowMeta(workflowId), 'lastModified', Date.now().toString())
   }
 
