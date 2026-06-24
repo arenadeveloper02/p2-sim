@@ -46,7 +46,8 @@ export const DevelopmentBlock: BlockConfig<DevelopmentGenerateAppResponse> = {
   - Set Repository Name (generate mode) to control the folder name under generated-apps/ (kebab-case).
   - Generated apps are always pushed to GitHub and deployed to Vercel (requires DEVELOPMENT_GITHUB_TOKEN and DEVELOPMENT_VERCEL_TOKEN in .env).
   - Optional .env: DEVELOPMENT_GITHUB_OWNER, DEVELOPMENT_VERCEL_TEAM_ID.
-  - Neon Postgres is always provisioned per app (requires DEVELOPMENT_NEON_API_KEY or Vercel Neon integration). Use a console-managed Neon org — not Vercel-managed Neon.
+  - Neon Postgres is always provisioned per app on Generate (requires DEVELOPMENT_NEON_API_KEY or Vercel Neon integration). Use a console-managed Neon org — not Vercel-managed Neon.
+  - Edit mode reuses the existing Neon database when DATABASE_URL is already on the Vercel project; otherwise it provisions Neon like Generate. Schema edits are additive (new models/fields via prisma db push).
   - Connect User Input from a Starter block or upstream Agent output for dynamic generation or edits.
   `,
   docsLink: 'https://docs.sim.ai/blocks/development',

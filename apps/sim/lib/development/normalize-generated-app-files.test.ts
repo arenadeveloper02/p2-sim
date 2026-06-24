@@ -3,8 +3,11 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  buildRepoSummaryContent,
   collectJsxPropNamesForComponent,
   ensureReadmeFile,
+  ensureRepoSummaryFile,
+  GENERATED_APP_REPO_SUMMARY_PATH,
   PINNED_NEXT_VERSION,
   PINNED_REACT_VERSION,
   ensureDatabaseScaffold,
@@ -21,9 +24,12 @@ import {
   reconcileMissingAliasImports,
   reconcilePrismaRelationIncludes,
   reconcileTypesExports,
+  reconcileAuthExports,
+  reconcileSplitImportStatements,
   removeConflictingModuleStubs,
   sanitizeComponentFileImports,
   stripExternalGoogleFontReferences,
+  hasOrphanImportBlock,
 } from '@/lib/development/normalize-generated-app-files'
 
 describe('normalize-generated-app-files', () => {
@@ -352,6 +358,99 @@ export default function AppProviders({ children }: { children: ReactNode }) {
     expect(toaster?.content).toContain('export { Toaster }')
   })
 
+  it('repairs split imports where a second package specifiers follow the first import close', () => {
+    const broken = `"use client";
+
+import {
+  CheckSquare,
+  BarChart2,
+} from 'lucide-react';
+  BarChart,
+  Bar,
+  XAxis,
+} from 'recharts';
+
+export default function DashboardClient() { return null }
+`
+    const fixed = reconcileSplitImportStatements(broken)
+    expect(fixed).toContain("} from 'lucide-react';")
+    expect(fixed).toContain("import {\nBarChart,")
+    expect(fixed).toContain("} from 'recharts';")
+    expect(fixed).not.toMatch(/\} from 'lucide-react';\s*\n\s*BarChart,/)
+  })
+
+  it('repairs orphan specifiers after a complete import when the last specifier has no trailing comma', () => {
+    const broken = `import {
+  BarChart,
+  Bar,
+} from 'recharts';
+  CheckCircle,
+  Clock,
+  Tag
+} from 'lucide-react';
+`
+    const fixed = reconcileSplitImportStatements(broken)
+    expect(fixed).toContain("import {\nCheckCircle,")
+    expect(fixed).toContain("} from 'lucide-react';")
+    expect(fixed).not.toMatch(/\} from 'recharts';\s*\n\s*CheckCircle,/)
+  })
+
+  it('repairs chained split imports during normalizeGeneratedAppFiles', () => {
+    const brokenDashboard = `"use client";
+
+import {
+useState
+} from 'react';
+BarChart,
+  Bar,
+} from 'recharts';
+CheckCircle,
+  Clock,
+} from 'lucide-react';
+import type { TaskData } from '@/lib/types';
+
+export default function DashboardClient() { return null }
+`
+    const files = normalizeGeneratedAppFiles(
+      [
+        { path: 'components/DashboardClient.tsx', content: brokenDashboard },
+        { path: 'package.json', content: JSON.stringify({ name: 'demo-app' }) },
+        { path: 'app/layout.tsx', content: 'export default function Layout() { return null }' },
+        { path: 'app/page.tsx', content: 'export default function Page() { return null }' },
+      ],
+      { appName: 'Demo App', repoName: 'demo-app', requiresDatabase: true }
+    )
+
+    const dashboard = files.find((file) => file.path === 'components/DashboardClient.tsx')
+    expect(dashboard?.content).toContain("import {\nBarChart,")
+    expect(dashboard?.content).toContain("import {\nCheckCircle,")
+    expect(hasOrphanImportBlock(dashboard?.content ?? '')).toBe(false)
+  })
+
+  it('adds missing lib/auth exports when API routes import verifyToken', () => {
+    const files = reconcileAuthExports(
+      [
+        {
+          path: 'lib/auth.ts',
+          content: `export async function getAuthUser() { return null }\n`,
+        },
+        {
+          path: 'app/api/tasks/route.ts',
+          content: `import { verifyToken } from '@/lib/auth'\nexport async function GET() { return Response.json({}) }\n`,
+        },
+        { path: 'package.json', content: JSON.stringify({ name: 'demo-app' }) },
+      ],
+      { requiresDatabase: true }
+    )
+
+    const auth = files.find((file) => file.path === 'lib/auth.ts')
+    expect(auth?.content).toContain('export function verifyToken')
+    expect(auth?.content).toContain("from 'jsonwebtoken'")
+
+    const pkg = files.find((file) => file.path === 'package.json')
+    expect(pkg?.content).toContain('jsonwebtoken')
+  })
+
   it('scaffolds README.md when missing', () => {
     const files = ensureReadmeFile(
       [
@@ -385,6 +484,47 @@ export default function AppProviders({ children }: { children: ReactNode }) {
     const readme = files.find((file) => file.path === 'README.md')
     expect(readme?.content).toContain('## Getting Started')
     expect(readme?.content).toContain('## Tech Stack')
+  })
+
+  it('scaffolds REPO_SUMMARY.md when missing', () => {
+    const files = ensureRepoSummaryFile(
+      [
+        { path: 'package.json', content: JSON.stringify({ name: 'taskmaster' }) },
+        { path: 'app/page.tsx', content: 'export default function Page() { return null }' },
+        { path: 'app/dashboard/page.tsx', content: 'export default function Page() { return null }' },
+        { path: 'prisma/schema.prisma', content: 'model Task { id String @id }' },
+      ],
+      {
+        appName: 'Taskmaster',
+        description: 'Team task management app.',
+        features: ['Dashboard', 'Tasks'],
+        repoName: 'taskmaster',
+        requiresDatabase: true,
+        latestUserRequest: 'Add a settings page',
+      }
+    )
+
+    const summary = files.find((file) => file.path === GENERATED_APP_REPO_SUMMARY_PATH)
+    expect(summary).toBeDefined()
+    expect(summary?.content).toContain('# Repository Summary: Taskmaster')
+    expect(summary?.content).toContain('`/dashboard`')
+    expect(summary?.content).toContain('`Task`')
+    expect(summary?.content).toContain('Add a settings page')
+    expect(summary?.content).toContain('## File Inventory')
+  })
+
+  it('includes REPO_SUMMARY.md after normalizeGeneratedAppFiles', () => {
+    const files = normalizeGeneratedAppFiles(
+      [
+        { path: 'package.json', content: JSON.stringify({ name: 'demo-app' }) },
+        { path: 'app/layout.tsx', content: 'export default function Layout() { return null }' },
+        { path: 'app/page.tsx', content: 'export default function Page() { return null }' },
+      ],
+      { appName: 'Demo App', description: 'Demo', repoName: 'demo-app', requiresDatabase: true }
+    )
+
+    expect(files.some((file) => file.path === GENERATED_APP_REPO_SUMMARY_PATH)).toBe(true)
+    expect(buildRepoSummaryContent(files, { appName: 'Demo App' })).toContain('Demo App')
   })
 
   it('scaffolds lib/types.ts when imports exist but file is missing', () => {
@@ -425,6 +565,111 @@ export default function AppProviders({ children }: { children: ReactNode }) {
     expect(page?.content).toContain('c.user.id')
     expect(page?.content).toContain('user: { id:')
     expect(page?.content).not.toContain('author: true')
+  })
+
+  it('aligns lib/actions.ts with Task user relation and removes phantom fields', () => {
+    const schema = `model User {
+  id String @id
+  email String
+  name String
+  password String
+  role String
+  createdAt DateTime
+  updatedAt DateTime
+  tasks Task[]
+}
+
+model Category {
+  id String @id
+  name String
+  color String
+  createdAt DateTime
+  updatedAt DateTime
+  tasks Task[]
+}
+
+model Task {
+  id String @id
+  title String
+  description String?
+  status String
+  priority String
+  dueDate DateTime?
+  createdAt DateTime
+  updatedAt DateTime
+  userId String
+  user User @relation(fields: [userId], references: [id])
+  categoryId String?
+  category Category? @relation(fields: [categoryId], references: [id])
+}
+`
+    const actions = `'use server'
+import { prisma } from '@/lib/prisma'
+
+export async function getTasks() {
+  const tasks = await prisma.task.findMany({
+    include: { assignee: true, creator: true, category: true }
+  })
+  return tasks.map(t => ({
+    id: t.id,
+    assigneeId: t.assigneeId,
+    assignee: t.assignee ? { id: t.assignee.id, name: t.assignee.name, email: t.assignee.email } : null,
+    creatorId: t.creatorId,
+    creator: t.creator ? { id: t.creator.id, name: t.creator.name, email: t.creator.email } : null,
+    categoryId: t.categoryId,
+    category: t.category ? { id: t.category.id, name: t.category.name, color: t.category.color } : null
+  }))
+}
+
+export async function getUsers() {
+  const users = await prisma.user.findMany()
+  return users.map(u => ({ id: u.id, avatar: u.avatar }))
+}
+
+export async function getCategories() {
+  const cats = await prisma.category.findMany()
+  return cats.map(c => ({ id: c.id, icon: c.icon }))
+}
+`
+    const files = reconcilePrismaRelationIncludes([
+      { path: 'prisma/schema.prisma', content: schema },
+      { path: 'lib/actions.ts', content: actions },
+    ])
+
+    const result = files.find((file) => file.path === 'lib/actions.ts')?.content ?? ''
+    expect(result).toContain('include: { user: true, category: true }')
+    expect(result).not.toContain('assignee: true')
+    expect(result).not.toContain('creator: true')
+    expect(result).toContain('userId: t.userId')
+    expect(result).toContain('user: t.user')
+    expect(result).not.toContain('creatorId')
+    expect(result).not.toContain('creator:')
+    expect(result).not.toContain('avatar:')
+    expect(result).not.toContain('icon:')
+  })
+
+  it('replaces malformed DashboardStats auto-stub with aggregate shape', () => {
+    const files = reconcileTypesExports([
+      {
+        path: 'lib/types.ts',
+        content: `export interface TaskData { id: string }
+
+// Auto-added exports so imports resolve during typecheck
+export interface DashboardStats {
+  id: string
+  [key: string]: unknown
+}
+`,
+      },
+      {
+        path: 'lib/actions.ts',
+        content: "import type { DashboardStats } from '@/lib/types'\n",
+      },
+    ])
+
+    const types = files.find((file) => file.path === 'lib/types.ts')?.content ?? ''
+    expect(types).toContain('totalTasks: number')
+    expect(types).not.toContain('[key: string]: unknown')
   })
 
   it('scaffolds next-env.d.ts for JSX type resolution', () => {

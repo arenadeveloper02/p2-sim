@@ -151,6 +151,81 @@ describe('validate-generated-app-structure', () => {
     expect(result.issues.some((issue) => issue.includes('scripts.build'))).toBe(true)
   })
 
+  it('reports return newline before JSX (TS1005)', () => {
+    const result = validateGeneratedAppStructure([
+      ...baseFiles,
+      {
+        path: 'components/SettingsClient.tsx',
+        content: `"use client"
+
+import type { UserData } from '@/lib/types'
+
+export default function SettingsClient({ user }: { user: UserData }) {
+  return
+    <div>{user.name}</div>
+}
+`,
+      },
+    ])
+
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('newline between return and JSX'))).toBe(true)
+  })
+
+  it('flags split import statements that cause TS1109', () => {
+    const result = validateGeneratedAppStructure([
+      ...baseFiles,
+      {
+        path: 'components/DashboardClient.tsx',
+        content: `import {
+  CheckSquare,
+} from 'lucide-react';
+  BarChart,
+} from 'recharts';
+`,
+      },
+    ])
+
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('split/broken import'))).toBe(true)
+  })
+
+  it('does not flag valid config files with const after import', () => {
+    const result = validateGeneratedAppStructure([
+      ...baseFiles,
+      {
+        path: 'tailwind.config.ts',
+        content: `import type { Config } from 'tailwindcss';
+
+const config: Config = {
+  content: ['./app/**/*.{js,ts,jsx,tsx}'],
+  theme: { extend: {} },
+  plugins: [],
+};
+
+export default config;
+`,
+      },
+      {
+        path: 'next.config.ts',
+        content: `import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {};
+export default nextConfig;
+`,
+      },
+      {
+        path: 'lib/prisma.ts',
+        content: `import { PrismaClient } from '@prisma/client';
+
+export const prisma = new PrismaClient();
+`,
+      },
+    ])
+
+    expect(result.issues.some((issue) => issue.includes('split/broken import'))).toBe(false)
+  })
+
   it('formats issues for repair prompts', () => {
     const formatted = formatStructureValidationIssues(['Missing file for import @/components/Footer'])
     expect(formatted).toBe('1. Missing file for import @/components/Footer')

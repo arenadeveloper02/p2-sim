@@ -131,6 +131,18 @@ export async function upsertVercelProjectDatabaseUrl(
 }
 
 /**
+ * Returns whether the Vercel project already has DATABASE_URL for production.
+ */
+export async function projectHasDatabaseUrl(
+  token: string,
+  projectId: string,
+  teamId?: string
+): Promise<boolean> {
+  const envs = await listProjectEnvVars(token, projectId, teamId)
+  return hasDatabaseUrlForProduction(envs)
+}
+
+/**
  * Waits until Vercel exposes DATABASE_URL on the project production target.
  */
 export async function waitForProjectDatabaseUrl(

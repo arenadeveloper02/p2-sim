@@ -39,11 +39,13 @@ next.config.ts MUST NOT include an eslint property (removed in Next.js 16 — bu
 
 export const GENERATED_APP_TYPESCRIPT_GUIDANCE = `TypeScript and Next.js structure (zero errors required):
 - Use strict TypeScript: strict true in tsconfig.json, no @ts-ignore, no implicit any, no unused variables
-- Every React component props interface must be explicit (e.g. interface HeroProps { title: string })
+- Every identifier in a file must be declared or imported — NEVER use a type, interface, or variable name without defining it in the same file or importing it (e.g. TS2304 "Cannot find name 'UserData'" means add \`import type { UserData } from '@/lib/types'\` or define the interface locally)
+- Every React component props interface must be explicit (e.g. interface HeroProps { title: string }) and every type in that interface must be imported or defined in the file
 - Server pages fetch data; Client components receive it via props. If app/foo/page.tsx renders <FooClient data={data} />, components/FooClient.tsx MUST declare interface FooClientProps { data: DataType } and use ({ data }: FooClientProps) — NEVER () with no parameters when the page passes props
-- Share types between pages and Client components via exports from lib/actions.ts (e.g. export interface AnalyticsData)
-- lib/types.ts MUST export every type imported via @/lib/types across the app (e.g. TaskWithRelations, MemberData) — use consistent names everywhere
-- Name interactive Client components with a Client suffix (DashboardClient, AnalyticsClient) and add "use client" at the top
+- Share domain types in lib/types.ts only — pages and Client components import types with \`import type { UserData, CategoryData } from '@/lib/types'\`
+- lib/types.ts MUST export every shared type (UserData, CategoryData, TaskWithRelations, etc.) with \`export interface\` or \`export type\`
+- lib/actions.ts exports server actions (functions) only — import runtime values with \`import { getCategories } from '@/lib/actions'\`; do NOT import types from @/lib/actions unless that file explicitly re-exports them with \`export type { CategoryData } from '@/lib/types'\`
+- Name interactive Client components with a Client suffix (DashboardClient, AnalyticsClient, SettingsClient) and add "use client" at the top
 - CRITICAL: Every named Client component MUST contain complete, real UI code — JSX with actual elements, logic, and state. NEVER write a stub like \`export default function DashboardClient() { return <div>DashboardClient</div> }\` — this renders as literal text and is a broken app
 - Use Next.js 16 App Router only: app/layout.tsx (root layout with html/body), app/page.tsx, app/globals.css, and app/<route>/page.tsx for pages
 - Do NOT mix app/ and src/app/ — use app/ at project root only; path alias "@/*" maps to "./*" in tsconfig paths
@@ -59,20 +61,69 @@ export const GENERATED_APP_VALIDATION_GUIDANCE = `Pre-build validation requireme
 - Client components rendered with props must declare matching props interfaces
 - "use client" must be the first statement in files that use hooks, event handlers, useState, useEffect, or onClick; server modules (lib/actions.ts, lib/prisma.ts) must not use it
 - No browser APIs in Server Components; no Prisma/database imports in Client Components
-- No unused imports, missing exports, or duplicate default exports
+- No unused imports, missing exports, duplicate default exports, or bare type names without import type
+- Types must be imported from the module that exports them — lib/types.ts for interfaces; never import a type from lib/actions.ts unless actions re-exports it
+- JSX: return (\` or \`return <\` on one line — never \`return\` newline then \`<\`; all tags closed; "use client" first line in Client files
 - Include Prisma files and dependencies only when requiresDatabase is true; static apps must not include prisma/ or @prisma/client
 - Include tailwind.config.ts and package.json scripts.build
 - NEVER use localStorage.setItem or sessionStorage.setItem to store app data — when requiresDatabase is true use Prisma server actions; when requiresDatabase is false keep state in-memory with useState only for UI interactions, never for cross-session persistence
 - Final code must pass: npm install && npm run build`
 
-export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and modules (critical for Vercel build):
+export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failures — avoid ALL of these (structure validation will reject the app):
+1. localStorage / sessionStorage persistence (database apps):
+   - NEVER use localStorage.setItem or sessionStorage.setItem in ANY file — especially AppShell, LoginClient, RegisterClient, ForgotPasswordClient, DashboardClient, TasksClient, UsersClient, CategoriesClient, SettingsClient, ProfileClient
+   - Auth: fetch('/api/auth/me') + cookies/server session — NOT localStorage.getItem('user') or setItem('token', ...)
+   - Login/register: POST to app/api/auth routes — do not stash user JSON in browser storage
+   - Dark mode / sidebar: useState + document.documentElement.classList only — never persist theme to localStorage
+2. Split / broken imports (TS1109 Expression expected) — affects pages, components, lib/, and config files:
+   - EVERY package needs its own complete block: \`import { A, B } from 'package';\`
+   - WRONG: close lucide-react then list recharts symbols without \`import {\`
+   - WRONG: close recharts then list lucide symbols without \`import {\`
+   - lucide-react icons and recharts components MUST be two separate import statements
+   - After any \`} from 'module';\` the next line must be \`const\`, \`export\`, \`function\`, or a new \`import\` — NEVER bare symbol names like \`BarChart,\` or \`CheckCircle,\`
+3. Types vs actions imports (TS2459):
+   - Import types from @/lib/types only — never \`import type { X } from '@/lib/actions'\` unless actions re-exports the type
+4. lib/auth exports (TS2305):
+   - Every API route importing from @/lib/auth must match exports in lib/auth.ts — export signToken, verifyToken, getAuthUser, and JwtPayload together
+   - If you add app/api/*/route.ts files, update lib/auth.ts in the same edit so imports resolve
+5. Config / server files stay simple:
+   - next.config.ts, tailwind.config.ts, lib/prisma.ts: minimal imports then const/export — no split import blocks
+   - lib/prisma.ts: only \`import { PrismaClient } from '@prisma/client'\` plus singleton export
+6. Prisma schema drift (TS2353 / TS2339 / TS2551 in lib/actions.ts):
+   - include/select keys MUST match exact relation names in prisma/schema.prisma — use \`user\` not \`assignee\` or \`creator\` unless those fields exist on the model
+   - lib/actions.ts field access MUST match the schema: Task.userId + Task.user, not assigneeId/assignee/creatorId/creator unless defined in schema
+   - lib/types.ts TaskData (and other DTOs) MUST stay aligned with schema + actions — same field names on every edit
+   - Do NOT reference scalar fields absent from the model (e.g. User.avatar, Category.icon) unless you add them to schema.prisma first
+   - Aggregate types like DashboardStats are NOT database rows — do not add a required \`id\` field unless the return object includes one`
+
+export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — every import must resolve to an exported symbol):
 - tsconfig paths MUST be "@/*": ["./*"] with app/ at project root (not src/app/)
-- EVERY import from "@/..." MUST have a matching file in the generated files list
-- If app/layout.tsx imports Footer from "@/components/Footer", you MUST include components/Footer.tsx (same for Navbar, ContactForm, Hero, etc.)
-- Do not import components, lib, or hooks that you did not generate
-- Prefer default exports in components/ (export default function Footer) matching the import style in pages
-- shadcn/ui-style components under components/ui/ MUST export named members when imported as \`import { Button } from '@/components/ui/button'\` — use \`export function Button\` plus \`export default Button\` or matching named export
-- Pages should only import files that exist in the project; run a mental checklist: layout + every page imports ⊆ files array`
+- EVERY symbol in a file must be imported or defined in that file — no bare type names, no missing imports
+- Canonical type location: lib/types.ts — ALL shared interfaces/types live here and are exported with \`export interface\` or \`export type\`
+- Components and pages import types ONLY from lib/types.ts: \`import type { CategoryData, UserData } from '@/lib/types'\`
+- lib/actions.ts imports types from lib/types.ts for its own use — that does NOT export them. Other files must NOT do \`import type { CategoryData } from '@/lib/actions'\` unless actions.ts contains \`export type { CategoryData } from '@/lib/types'\`
+- TS2459 "declares X locally, but it is not exported" means you imported a type from the wrong module — change the import to lib/types.ts where the type is actually exported
+- Runtime imports from actions: \`import { getCategories, createTask } from '@/lib/actions'\` (functions only, not types)
+- Type-only imports: always \`import type { Foo } from '@/lib/types'\` — never mix type imports into value import lines without the \`type\` keyword
+- Export/import pairing MUST match: default export → \`import Foo from '...'\`; named export → \`import { Foo } from '...'\`; exported type → \`import type { Foo } from '@/lib/types'\`
+- If you add a type to lib/types.ts, export it and update every file that uses it to import from '@/lib/types'
+- If you add a server action to lib/actions.ts, export it with \`export async function\` and import only the function name in pages/components
+- EVERY @/ import must resolve to a generated file with a matching export of the correct kind (default, named, or type)
+- shadcn/ui components under components/ui/ MUST use named exports matching imports: \`export function Button\` when imported as \`import { Button } from '@/components/ui/button'\`
+- Before finishing, verify each file: every import has a corresponding export in the target file; every exported symbol used elsewhere is imported correctly
+- Each import statement must be complete: \`import { Foo, Bar } from 'package';\` — NEVER close with \`} from 'lucide-react';\` and then list more symbols (BarChart, Pie, etc.) without a new \`import {\` line (causes TS1109 Expression expected)
+- When using both lucide-react and recharts (or any two packages), write TWO separate import blocks — one per package`
+
+export const GENERATED_APP_JSX_GUIDANCE = `JSX and TSX syntax (zero TS1005 / TS17008 errors):
+- TS1005 "'>' expected" almost always means broken JSX or a line break before JSX — fix the syntax, do not leave the file half-edited
+- When returning JSX, use \`return (\` on the SAME line as the opening tag, or put the opening \`<\` immediately after \`return\` — NEVER put a newline between \`return\` and \`<\` (ASI makes TypeScript parse \`<\` as less-than, causing TS1005)
+- Every JSX tag must be properly closed: \`<div>...</div>\`, \`<input />\`, \`<Component />\` — no stray \`<\` or half-written tags
+- "use client" MUST be the very first line of Client component files (before imports), exactly: \`"use client"\` with double quotes
+- Each \`import\` / \`import type\` must be a complete statement on one or valid multi-line form ending with \`from '...'\` — never leave \`import type { UserData }\` without a \`from '@/lib/types'\` clause
+- TS1109 "Expression expected" after imports often means a split import: specifiers listed after \`} from 'other-package';\` without \`import {\` — fix by adding a separate import block per package
+- Props interfaces belong OUTSIDE the component function — define \`interface SettingsClientProps { ... }\` then \`export default function SettingsClient({ user }: SettingsClientProps) { return ( <div>...</div> ) }\`
+- In .tsx files, wrap multiline JSX in parentheses: \`return (\n  <div>...</div>\n)\`
+- Do not use TypeScript generics with a bare \`<T>\` at the start of a line in .tsx without a trailing comma (\`<T,>\`) — prefer explicit prop interfaces instead of inline generic components`
 
 export const GENERATED_APP_STYLING_GUIDANCE = `Fonts and CSS:
 - NEVER use @import url('https://fonts.googleapis.com/...') or any external font CDN URL in .css files
@@ -80,8 +131,21 @@ export const GENERATED_APP_STYLING_GUIDANCE = `Fonts and CSS:
 - Load fonts ONLY with next/font/google in app/layout.tsx (e.g. Inter from 'next/font/google'), export const inter = Inter({ subsets: ['latin'] }), apply inter.className on <body>
 - Reference the font via Tailwind (font-sans on body) or CSS variables from next/font — not remote @import`
 
+export const GENERATED_APP_AUTH_GUIDANCE = `Authentication and session (database apps — no browser storage):
+- NEVER call localStorage.setItem or sessionStorage.setItem for user, token, session, or app data
+- Load auth state with fetch('/api/auth/me') in Client layout/shell components; logout via fetch('/api/auth/logout', { method: 'POST' })
+- Store credentials and sessions server-side (Prisma User model + cookies) — not in browser storage
+- Dark mode and sidebar UI state: useState only — toggle document.documentElement.classList, do not write theme to localStorage
+- lib/auth.ts is the ONLY auth module — it MUST export every symbol imported elsewhere: JwtPayload, signToken, verifyToken, getAuthUser
+- API routes MUST import auth helpers from @/lib/auth — if a route uses verifyToken or getAuthUser, lib/auth.ts MUST export that exact function (TS2305 means you added an import without exporting it from lib/auth.ts)
+- Prefer getAuthUser() in API routes/pages; use verifyToken(token) only when reading a raw token string`
+
 export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for Development block apps):
 - ALWAYS set requiresDatabase to true — every generated app uses Neon Postgres + Prisma, even for marketing or portfolio sites
+- NEVER use localStorage.setItem, sessionStorage.setItem, or browser storage to persist app data, users, sessions, or tokens — use Prisma server actions or app/api routes
+- Auth and session state MUST use server-side storage (database + httpOnly cookies) and client fetch (e.g. fetch('/api/auth/me')) — NEVER localStorage.setItem('user', ...) or sessionStorage for login state
+- AppShell, layout, and auth providers MUST load the current user via fetch('/api/auth/me') or server props — not from localStorage.getItem
+- UI-only state (sidebar open, dark mode toggle) MUST use useState and document.documentElement.classList — do NOT persist theme or layout prefs to localStorage
 - NEVER use localStorage, sessionStorage, or in-memory state to store app data between page loads — use Prisma server actions or API routes
 - ALWAYS include:
   - prisma/schema.prisma with at least one model matching the app domain
@@ -93,7 +157,18 @@ export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for De
   - At least one Prisma model, even for simple sites (e.g. ContactSubmission, SiteSetting, or PageContent)
 - On Vercel + Neon, DATABASE_URL is injected when the database is connected to the project — reference process.env only in server code
 - package.json build script should run prisma generate and prisma db push before next build when using Prisma
-- Prisma include/select MUST use exact relation field names from schema.prisma (e.g. if Comment has \`user User @relation\`, use include: { user: true } — never invent aliases like author unless that field exists on the model)`
+- Prisma include/select MUST use exact relation field names from schema.prisma (e.g. if Comment has \`user User @relation\`, use include: { user: true } — never invent aliases like author unless that field exists on the model)
+- lib/actions.ts, lib/types.ts, and prisma/schema.prisma MUST agree on every edit: foreign keys (userId not assigneeId), relation includes (user not assignee/creator), and DTO shapes
+- TS2353 on include means you invented a relation name — read schema.prisma and use the real field name
+- TS2339 on t.assignee / t.creatorId means the Task model uses different names — align actions with schema, not the other way around during edits`
+
+export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Neon Postgres — additive only):
+- NEVER provision, replace, or reset the database connection — the app already has DATABASE_URL on Vercel
+- When editing prisma/schema.prisma: preserve every existing model and field unless the user explicitly asks to remove or rename them
+- ADD new models, fields, relations, and enums for new features; use optional fields (?) or defaults when extending existing models
+- Do NOT drop tables, rename models in breaking ways, or replace the datasource block — prisma db push on deploy only adds schema changes
+- Keep lib/prisma.ts and the existing DATABASE_URL / .env.example pattern unchanged unless fixing a bug
+- New features must read/write through the same Prisma client against the existing database — never switch to localStorage or a new database`
 
 export const GENERATED_APP_DATABASE_FILE_PATHS = [
   'prisma/schema.prisma',
@@ -102,13 +177,22 @@ export const GENERATED_APP_DATABASE_FILE_PATHS = [
 
 const PINNED_PRISMA_VERSION = '^6.9.0'
 
+export const GENERATED_APP_REPO_SUMMARY_PATH = 'REPO_SUMMARY.md' as const
+
 export interface NormalizeGeneratedAppFilesOptions {
   requiresDatabase?: boolean
   appName?: string
   description?: string
   features?: string[]
   repoName?: string
+  /** Latest user generate/edit request — recorded in REPO_SUMMARY.md. */
+  latestUserRequest?: string
 }
+
+export const GENERATED_APP_REPO_SUMMARY_GUIDANCE = `REPO_SUMMARY.md (required, auto-maintained):
+- Living repository summary: purpose, features, tech stack, routes, API routes, Prisma models, components, and a complete file index
+- Sim Development regenerates this file after generate and edit — do not omit it from new apps
+- During edits, read REPO_SUMMARY.md first to understand architecture before changing code`
 
 export const GENERATED_APP_README_GUIDANCE = `README.md (required):
 - Include a clear project title, 1–2 sentence description, feature list, tech stack, local setup steps, and deploy notes
@@ -131,6 +215,80 @@ export function stripExternalGoogleFontReferences(content: string): string {
     .replace(/\n{3,}/g, '\n\n')
 
   return stripped.endsWith('\n') || stripped.length === 0 ? stripped : `${stripped}\n`
+}
+
+const SPLIT_IMPORT_PATTERN =
+  /import\s*\{([\s\S]*?)\}\s*from\s*(['"][^'"]+['"])\s*;\s*((?:[ \t]*[A-Za-z_$][\w$]*\s*,?\s*\n)+)\}\s*from\s*(['"][^'"]+['"])\s*;/
+
+/** Orphan specifiers after a closed import, missing `import {` before the next `} from`. */
+const ORPHAN_IMPORT_SPECIFIERS_PATTERN =
+  /(\}\s*from\s*(['"][^'"]+['"])\s*;\s*\n)((?:[ \t]*[A-Za-z_$][\w$]*\s*,?\s*\n)+)(\}\s*from\s*(['"][^'"]+['"])\s*;)/
+
+/** Orphan specifiers at line start before `} from` with no `import {`. */
+const LEADING_ORPHAN_IMPORT_PATTERN =
+  /^((?:[ \t]*[A-Za-z_$][\w$]*\s*,?\s*\n)+)(\}\s*from\s*(['"][^'"]+['"])\s*;)/m
+
+/**
+ * Repairs LLM-split imports where specifiers for a second package appear after the first import closes.
+ */
+export function reconcileSplitImportStatements(content: string): string {
+  let result = content
+  let previous = ''
+
+  while (previous !== result) {
+    previous = result
+
+    result = result.replace(
+      SPLIT_IMPORT_PATTERN,
+      (_match, firstSpecifiers, firstModule, orphanSpecifiers, secondModule) => {
+        const first = String(firstSpecifiers).trim()
+        const second = String(orphanSpecifiers).trim().replace(/,\s*$/, '')
+        return `import {\n${first}\n} from ${firstModule};\nimport {\n${second}\n} from ${secondModule};`
+      }
+    )
+
+    result = result.replace(
+      ORPHAN_IMPORT_SPECIFIERS_PATTERN,
+      (_match, firstClose, _firstModule, orphanSpecifiers, secondClose) => {
+        const second = String(orphanSpecifiers).trim().replace(/,\s*$/, '')
+        return `${firstClose}import {\n${second}\n${secondClose}`
+      }
+    )
+
+    result = result.replace(
+      LEADING_ORPHAN_IMPORT_PATTERN,
+      (_match, orphanSpecifiers, secondClose) => {
+        const second = String(orphanSpecifiers).trim().replace(/,\s*$/, '')
+        return `import {\n${second}\n${secondClose}`
+      }
+    )
+  }
+
+  return result.endsWith('\n') || result.length === 0 ? result : `${result}\n`
+}
+
+/** Detects orphan import specifiers between two \`} from 'module';\` closers. */
+export function hasOrphanImportBlock(content: string): boolean {
+  return /(\}\s*from\s*(['"][^'"]+['"])\s*;\s*\n)((?:[ \t]*[A-Za-z_$][\w$]*\s*,?\s*\n)+)(\}\s*from\s*(['"][^'"]+['"])\s*;)/.test(
+    content
+  )
+}
+
+function reconcileSplitImportsInFiles(files: GeneratedAppFile[]): GeneratedAppFile[] {
+  return files.map((file) => {
+    const path = normalizePath(file.path)
+    if (!/\.(tsx|ts|jsx|js)$/.test(path)) {
+      return file
+    }
+
+    const fixed = reconcileSplitImportStatements(file.content)
+    if (fixed === file.content) {
+      return file
+    }
+
+    logger.warn('Fixed split import statements in generated file', { path })
+    return { ...file, content: fixed }
+  })
 }
 
 function shouldSanitizeFontReferences(path: string): boolean {
@@ -1038,6 +1196,198 @@ function collectActionsImports(files: GeneratedAppFile[]): { types: Set<string>;
   return { types, values }
 }
 
+function collectAuthImports(files: GeneratedAppFile[]): { types: Set<string>; values: Set<string> } {
+  const types = new Set<string>()
+  const values = new Set<string>()
+
+  for (const file of files) {
+    if (normalizePath(file.path) === 'lib/auth.ts') {
+      continue
+    }
+
+    for (const match of file.content.matchAll(
+      /import\s+type\s*\{([^}]+)\}\s*from\s*['"]@\/lib\/auth['"]/g
+    )) {
+      for (const name of parseImportNames(match[1] ?? '')) {
+        types.add(name)
+      }
+    }
+
+    for (const match of file.content.matchAll(
+      /import\s*\{([^}]+)\}\s*from\s*['"]@\/lib\/auth['"]/g
+    )) {
+      if (match[0].includes('import type')) {
+        continue
+      }
+
+      for (const part of (match[1] ?? '').split(',').map((entry) => entry.trim())) {
+        if (!part) {
+          continue
+        }
+        if (part.startsWith('type ')) {
+          types.add(part.replace(/^type\s+/, ''))
+        } else {
+          values.add(part)
+        }
+      }
+    }
+  }
+
+  return { types, values }
+}
+
+function isExportedInAuthModule(content: string, name: string): boolean {
+  return (
+    new RegExp(`export\\s+(?:async\\s+)?(?:function|const|interface|type|enum)\\s+${name}\\b`).test(
+      content
+    ) ||
+    new RegExp(`export\\s+type\\s*\\{[^}]*\\b${name}\\b`).test(content) ||
+    new RegExp(`export\\s*\\{[^}]*\\b${name}\\b`).test(content)
+  )
+}
+
+export const DEFAULT_LIB_AUTH_CONTENT = `import jwt from 'jsonwebtoken';
+import { cookies } from 'next/headers';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
+
+export interface JwtPayload {
+  userId: string;
+  email: string;
+  role: string;
+}
+
+export function signToken(payload: JwtPayload): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+}
+
+export function verifyToken(token: string): JwtPayload | null {
+  try {
+    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
+export async function getAuthUser(): Promise<JwtPayload | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('token')?.value;
+  if (!token) return null;
+  return verifyToken(token);
+}
+`
+
+const AUTH_EXPORT_SNIPPETS: Record<string, string> = {
+  JwtPayload: `export interface JwtPayload {
+  userId: string;
+  email: string;
+  role: string;
+}`,
+  signToken: `export function signToken(payload: JwtPayload): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+}`,
+  verifyToken: `export function verifyToken(token: string): JwtPayload | null {
+  try {
+    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  } catch {
+    return null;
+  }
+}`,
+  getAuthUser: `export async function getAuthUser(): Promise<JwtPayload | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('token')?.value;
+  if (!token) return null;
+  return verifyToken(token);
+}`,
+}
+
+function ensureAuthJwtImports(content: string): string {
+  if (content.includes("from 'jsonwebtoken'") || content.includes('from "jsonwebtoken"')) {
+    return content
+  }
+
+  return `import jwt from 'jsonwebtoken';
+import { cookies } from 'next/headers';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
+
+${content.trimStart()}`
+}
+
+function patchPackageJsonForAuth(content: string): string {
+  try {
+    const pkg = JSON.parse(content) as {
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+    }
+    pkg.dependencies = {
+      ...pkg.dependencies,
+      jsonwebtoken: '^9.0.2',
+    }
+    pkg.devDependencies = {
+      ...pkg.devDependencies,
+      '@types/jsonwebtoken': '^9.0.9',
+    }
+    return `${JSON.stringify(pkg, null, 2)}\n`
+  } catch {
+    return content
+  }
+}
+
+/**
+ * Ensures lib/auth.ts exports every symbol imported from @/lib/auth across the app.
+ */
+export function reconcileAuthExports(
+  files: GeneratedAppFile[],
+  options: NormalizeGeneratedAppFilesOptions = {}
+): GeneratedAppFile[] {
+  if (!options.requiresDatabase) {
+    return files
+  }
+
+  const { types, values } = collectAuthImports(files)
+  const requiredNames = new Set([...types, ...values])
+  if (requiredNames.size === 0) {
+    return files
+  }
+
+  let updated = [...files]
+  const authIndex = updated.findIndex((file) => normalizePath(file.path) === 'lib/auth.ts')
+
+  if (authIndex < 0) {
+    logger.warn('Added lib/auth.ts for imported auth helpers')
+    updated = [...updated, { path: 'lib/auth.ts', content: DEFAULT_LIB_AUTH_CONTENT }]
+  } else {
+    const authFile = updated[authIndex]
+    const additions: string[] = []
+
+    for (const name of requiredNames) {
+      if (!isExportedInAuthModule(authFile.content, name) && AUTH_EXPORT_SNIPPETS[name]) {
+        additions.push(AUTH_EXPORT_SNIPPETS[name])
+      }
+    }
+
+    if (additions.length > 0) {
+      logger.warn('Added missing lib/auth exports for typecheck', { exports: [...requiredNames] })
+      let content = ensureAuthJwtImports(authFile.content)
+      content = `${content.trimEnd()}\n\n// Auto-added exports so @/lib/auth imports resolve during typecheck\n${additions.join('\n\n')}\n`
+      updated[authIndex] = { ...authFile, content }
+    }
+  }
+
+  const usesAuth = updated.some((file) => normalizePath(file.path) === 'lib/auth.ts')
+  if (!usesAuth) {
+    return updated
+  }
+
+  return updated.map((file) => {
+    if (normalizePath(file.path) !== 'package.json') {
+      return file
+    }
+    return { ...file, content: patchPackageJsonForAuth(file.content) }
+  })
+}
+
 function collectTypesImportedInActions(content: string): Set<string> {
   const imported = new Set<string>()
   for (const match of content.matchAll(/import\s+type\s+\{([^}]+)\}\s+from\s+['"]@\/lib\/types['"]/g)) {
@@ -1227,6 +1577,20 @@ export interface RecordItem {
 }
 `
 
+const LIB_TYPES_KNOWN_STUBS: Record<string, string> = {
+  DashboardStats: `export interface DashboardStats {
+  totalTasks: number
+  completedTasks: number
+  inProgressTasks: number
+  overdueTasks: number
+  totalUsers: number
+  totalCategories: number
+  recentTasks: TaskData[]
+  tasksByStatus: { status: string; count: number }[]
+  tasksByPriority: { priority: string; count: number }[]
+}`,
+}
+
 /**
  * Adds missing exports to lib/types.ts so @/lib/types imports typecheck.
  */
@@ -1268,20 +1632,43 @@ export function reconcileTypesExports(files: GeneratedAppFile[]): GeneratedAppFi
       continue
     }
 
+    if (LIB_TYPES_KNOWN_STUBS[typeName]) {
+      additions.push(LIB_TYPES_KNOWN_STUBS[typeName])
+      continue
+    }
+
     additions.push(`export interface ${typeName} {\n  id: string\n  [key: string]: unknown\n}`)
   }
 
-  if (additions.length === 0) {
+  let typesContent = typesFile.content
+  for (const [typeName, stub] of Object.entries(LIB_TYPES_KNOWN_STUBS)) {
+    const malformed = new RegExp(
+      `export interface ${typeName} \\{\\s*id: string\\s*\\[key: string\\]: unknown\\s*\\}`,
+      's'
+    )
+    if (malformed.test(typesContent)) {
+      typesContent = typesContent.replace(malformed, stub)
+    }
+  }
+
+  if (additions.length === 0 && typesContent === typesFile.content) {
     return updated
   }
 
-  logger.warn('Added missing lib/types exports for typecheck', {
-    types: [...importedTypes],
-  })
+  if (additions.length > 0) {
+    logger.warn('Added missing lib/types exports for typecheck', {
+      types: [...importedTypes],
+    })
+  }
+
+  const suffix =
+    additions.length > 0
+      ? `\n\n// Auto-added exports so imports resolve during typecheck\n${additions.join('\n\n')}\n`
+      : '\n'
 
   updated[typesIndex] = {
     ...typesFile,
-    content: `${typesFile.content.trimEnd()}\n\n// Auto-added exports so imports resolve during typecheck\n${additions.join('\n\n')}\n`,
+    content: `${typesContent.trimEnd()}${suffix}`,
   }
   return updated
 }
@@ -1300,23 +1687,100 @@ function readPackageName(files: GeneratedAppFile[]): string | undefined {
   }
 }
 
+function pagePathToRoute(pagePath: string): string | undefined {
+  const path = normalizePath(pagePath)
+  if (path === 'app/page.tsx') {
+    return '/'
+  }
+
+  const match = path.match(/^app\/(.+)\/page\.tsx$/)
+  if (!match?.[1]) {
+    return undefined
+  }
+
+  const routeSegments = match[1]
+    .split('/')
+    .map((segment) => (segment.startsWith('[') && segment.endsWith(']') ? `:${segment.slice(1, -1)}` : segment))
+    .join('/')
+
+  return `/${routeSegments}`
+}
+
 function collectAppRoutes(files: GeneratedAppFile[]): string[] {
   const routes = new Set<string>()
 
   for (const file of files) {
-    const path = normalizePath(file.path)
-    if (path === 'app/page.tsx') {
-      routes.add('/')
-      continue
-    }
-
-    const match = path.match(/^app\/([^/]+)\/page\.tsx$/)
-    if (match?.[1]) {
-      routes.add(`/${match[1]}`)
+    const route = pagePathToRoute(file.path)
+    if (route) {
+      routes.add(route)
     }
   }
 
   return [...routes].sort()
+}
+
+function collectAppRouteEntries(
+  files: GeneratedAppFile[]
+): Array<{ route: string; file: string }> {
+  const entries: Array<{ route: string; file: string }> = []
+
+  for (const file of files) {
+    const path = normalizePath(file.path)
+    const route = pagePathToRoute(path)
+    if (route) {
+      entries.push({ route, file: path })
+    }
+  }
+
+  return entries.sort((left, right) => left.route.localeCompare(right.route))
+}
+
+function extractPrismaModels(files: GeneratedAppFile[]): string[] {
+  const schemaFile = files.find((file) => normalizePath(file.path) === 'prisma/schema.prisma')
+  if (!schemaFile) {
+    return []
+  }
+
+  return [...schemaFile.content.matchAll(/^model\s+(\w+)\s*\{/gm)].map((match) => match[1])
+}
+
+function groupFilePaths(paths: string[]): Record<string, string[]> {
+  const groups: Record<string, string[]> = {
+    'App pages': [],
+    'API routes': [],
+    Components: [],
+    Libraries: [],
+    Config: [],
+    Other: [],
+  }
+
+  for (const path of paths) {
+    if (path.startsWith('app/api/')) {
+      groups['API routes'].push(path)
+    } else if (path.startsWith('app/')) {
+      groups['App pages'].push(path)
+    } else if (path.startsWith('components/')) {
+      groups.Components.push(path)
+    } else if (path.startsWith('lib/') || path.startsWith('prisma/')) {
+      groups.Libraries.push(path)
+    } else if (
+      path.endsWith('.json') ||
+      path.endsWith('.ts') ||
+      path.endsWith('.mjs') ||
+      path === '.env.example' ||
+      path === '.gitignore'
+    ) {
+      groups.Config.push(path)
+    } else {
+      groups.Other.push(path)
+    }
+  }
+
+  for (const key of Object.keys(groups)) {
+    groups[key].sort()
+  }
+
+  return groups
 }
 
 function isMinimalReadme(content: string): boolean {
@@ -1425,6 +1889,113 @@ export function ensureReadmeFile(
   }
 
   return files
+}
+
+/**
+ * Builds a living repository summary used as the primary edit reference.
+ */
+export function buildRepoSummaryContent(
+  files: GeneratedAppFile[],
+  options: NormalizeGeneratedAppFilesOptions = {}
+): string {
+  const appName =
+    options.appName?.trim() ||
+    options.repoName?.trim() ||
+    readPackageName(files)?.replace(/-/g, ' ') ||
+    'Generated App'
+  const description =
+    options.description?.trim() ||
+    `${appName} — a Next.js app generated with Sim Development.`
+  const features =
+    options.features && options.features.length > 0
+      ? options.features
+      : ['Responsive UI with Tailwind CSS', 'Next.js App Router pages and components']
+  const routeEntries = collectAppRouteEntries(files)
+  const prismaModels = extractPrismaModels(files)
+  const paths = files.map((file) => normalizePath(file.path)).sort()
+  const groupedPaths = groupFilePaths(paths)
+  const updatedAt = new Date().toISOString()
+
+  const techStack = [
+    `Next.js ${PINNED_NEXT_VERSION} (App Router)`,
+    `React ${PINNED_REACT_VERSION}`,
+    'Tailwind CSS v3',
+    'TypeScript',
+  ]
+  if (options.requiresDatabase) {
+    techStack.push('Prisma + PostgreSQL (Neon on Vercel)')
+  }
+
+  const routesSection =
+    routeEntries.length > 0
+      ? `\n## Routes & Pages\n\n${routeEntries.map((entry) => `- \`${entry.route}\` — \`${entry.file}\``).join('\n')}\n`
+      : ''
+
+  const databaseSection =
+    options.requiresDatabase && prismaModels.length > 0
+      ? `\n## Database Models\n\n${prismaModels.map((model) => `- \`${model}\``).join('\n')}\n`
+      : options.requiresDatabase
+        ? '\n## Database\n\n- Prisma + PostgreSQL (`DATABASE_URL`)\n'
+        : ''
+
+  const inventorySections = Object.entries(groupedPaths)
+    .filter(([, groupPaths]) => groupPaths.length > 0)
+    .map(([label, groupPaths]) => `### ${label}\n\n${groupPaths.map((path) => `- \`${path}\``).join('\n')}`)
+    .join('\n\n')
+
+  const latestChangeSection = options.latestUserRequest?.trim()
+    ? `\n## Latest Change\n\n- **Updated at:** ${updatedAt}\n- **Request:** ${options.latestUserRequest.trim()}\n`
+    : ''
+
+  return `# Repository Summary: ${appName}
+
+> Auto-maintained by Sim Development. Last updated: ${updatedAt}.
+
+## Overview
+
+${description}
+
+**Repository:** \`${options.repoName ?? readPackageName(files) ?? 'unknown'}\`  
+**File count:** ${paths.length}
+
+## Features
+
+${features.map((feature) => `- ${feature}`).join('\n')}
+
+## Tech Stack
+
+${techStack.map((item) => `- ${item}`).join('\n')}
+${routesSection}${databaseSection}
+## File Inventory
+
+${inventorySections}
+
+## Complete File Index
+
+${paths.map((path) => `- \`${path}\``).join('\n')}
+${latestChangeSection}`
+}
+
+/**
+ * Ensures REPO_SUMMARY.md exists and reflects the current repository state.
+ */
+export function ensureRepoSummaryFile(
+  files: GeneratedAppFile[],
+  options: NormalizeGeneratedAppFilesOptions = {}
+): GeneratedAppFile[] {
+  const summaryContent = buildRepoSummaryContent(files, options)
+  const summaryIndex = files.findIndex(
+    (file) => normalizePath(file.path) === GENERATED_APP_REPO_SUMMARY_PATH
+  )
+
+  if (summaryIndex < 0) {
+    logger.warn('Added REPO_SUMMARY.md for generated app')
+    return [...files, { path: GENERATED_APP_REPO_SUMMARY_PATH, content: summaryContent }]
+  }
+
+  const updated = [...files]
+  updated[summaryIndex] = { ...files[summaryIndex], content: summaryContent }
+  return updated
 }
 
 /**
@@ -1652,6 +2223,151 @@ const PRISMA_SCALAR_TYPES = new Set([
 /** Common wrong relation aliases mapped to schema field names per model. */
 const PRISMA_RELATION_ALIASES: Record<string, Record<string, string>> = {
   Comment: { author: 'user' },
+  Task: { assignee: 'user', author: 'user' },
+}
+
+/** Relation names LLMs often invent that should be removed when absent from schema. */
+const PRISMA_PHANTOM_RELATIONS = ['creator'] as const
+
+/**
+ * Parses scalar field names from a Prisma schema.
+ */
+export function parsePrismaModelScalars(schemaContent: string): Record<string, Set<string>> {
+  const scalars: Record<string, Set<string>> = {}
+
+  for (const block of schemaContent.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)) {
+    const modelName = block[1]
+    const fields = new Set<string>()
+
+    for (const line of block[2].split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@@')) {
+        continue
+      }
+
+      const match = trimmed.match(/^(\w+)\s+([A-Za-z][\w]*)(\[\])?(\s+|$|@)/)
+      if (!match) {
+        continue
+      }
+
+      const [, fieldName, typeName] = match
+      if (PRISMA_SCALAR_TYPES.has(typeName)) {
+        fields.add(fieldName)
+      }
+    }
+
+    scalars[modelName] = fields
+  }
+
+  return scalars
+}
+
+function buildPrismaRelationRewriteRules(
+  relations: Record<string, Set<string>>
+): Array<{ wrong: string; correct: string | null }> {
+  const rules: Array<{ wrong: string; correct: string | null }> = []
+  const seen = new Set<string>()
+
+  for (const [modelName, aliases] of Object.entries(PRISMA_RELATION_ALIASES)) {
+    const modelRelations = relations[modelName]
+    if (!modelRelations) {
+      continue
+    }
+
+    for (const [wrong, correct] of Object.entries(aliases)) {
+      if (!modelRelations.has(wrong) && modelRelations.has(correct) && !seen.has(wrong)) {
+        rules.push({ wrong, correct })
+        seen.add(wrong)
+      }
+    }
+  }
+
+  for (const phantom of PRISMA_PHANTOM_RELATIONS) {
+    if (seen.has(phantom)) {
+      continue
+    }
+
+    const existsOnAnyModel = Object.values(relations).some((modelRelations) => modelRelations.has(phantom))
+    if (!existsOnAnyModel) {
+      rules.push({ wrong: phantom, correct: null })
+      seen.add(phantom)
+    }
+  }
+
+  return rules
+}
+
+function fixPrismaIncludeClause(inner: string, rules: Array<{ wrong: string; correct: string | null }>): string {
+  let result = inner
+
+  for (const { wrong, correct } of rules) {
+    if (correct) {
+      result = result.replace(new RegExp(`\\b${wrong}\\s*:\\s*true`, 'g'), `${correct}: true`)
+      continue
+    }
+
+    result = result.replace(new RegExp(`,?\\s*${wrong}\\s*:\\s*true\\s*,?`, 'g'), ',')
+    result = result.replace(new RegExp(`\\{\\s*${wrong}\\s*:\\s*true\\s*,?`, 'g'), '{')
+  }
+
+  result = result.replace(/(user:\s*true\s*,\s*)+user:\s*true/g, 'user: true')
+  result = result.replace(/,\s*,+/g, ',').replace(/,\s*$/g, '').replace(/^\s*,/g, '')
+  return result
+}
+
+function reconcilePrismaSchemaDriftInContent(
+  content: string,
+  relations: Record<string, Set<string>>,
+  scalars: Record<string, Set<string>>,
+  relationRules: Array<{ wrong: string; correct: string | null }>
+): string {
+  let next = content
+
+  next = next.replace(/include:\s*\{([^}]*)\}/g, (_match, inner: string) => {
+    return `include: {${fixPrismaIncludeClause(inner, relationRules)}}`
+  })
+
+  const taskScalars = scalars.Task
+  if (taskScalars) {
+    if (!taskScalars.has('assigneeId') && taskScalars.has('userId')) {
+      next = next.replaceAll('assigneeId', 'userId')
+    }
+
+    if (!taskScalars.has('creatorId')) {
+      next = next.replace(/\s*creatorId:\s*t\.userId,?\n/g, '\n')
+      next = next.replace(/\s*creatorId:\s*t\.creatorId,?\n/g, '\n')
+    }
+  }
+
+  next = next.replaceAll('t.assignee', 't.user')
+  next = next.replace(/\bassignee:\s*t\.user/g, 'user: t.user')
+  next = next.replace(
+    /\s*creator:\s*t\.creator\s*\?\s*\{[^}]+\}\s*:\s*null,?\n/g,
+    '\n'
+  )
+
+  const userScalars = scalars.User
+  if (userScalars && !userScalars.has('avatar')) {
+    next = next.replace(/\s*avatar:\s*u\.avatar,?\n/g, '\n')
+    next = next.replace(/,\s*avatar:\s*u\.avatar/g, '')
+  }
+
+  const categoryScalars = scalars.Category
+  if (categoryScalars && !categoryScalars.has('icon')) {
+    next = next.replace(/\s*icon:\s*c\.icon,?\n/g, '\n')
+    next = next.replace(/,\s*icon:\s*c\.icon/g, '')
+  }
+
+  for (const { wrong, correct } of relationRules) {
+    if (!correct) {
+      continue
+    }
+
+    next = next.replaceAll(`.${wrong}.`, `.${correct}.`)
+    next = next.replaceAll(`, ${wrong}: { id:`, `, ${correct}: { id:`)
+  }
+
+  return next
 }
 
 /**
@@ -1688,7 +2404,7 @@ export function parsePrismaModelRelations(schemaContent: string): Record<string,
 }
 
 /**
- * Fixes Prisma include/select blocks that use invented relation names instead of schema fields.
+ * Fixes Prisma include/select blocks and action mappings that use invented relation or field names.
  */
 export function reconcilePrismaRelationIncludes(files: GeneratedAppFile[]): GeneratedAppFile[] {
   const schema = files.find((file) => normalizePath(file.path) === 'prisma/schema.prisma')?.content
@@ -1697,22 +2413,10 @@ export function reconcilePrismaRelationIncludes(files: GeneratedAppFile[]): Gene
   }
 
   const relations = parsePrismaModelRelations(schema)
-  const replacements: Array<{ wrong: string; correct: string }> = []
+  const scalars = parsePrismaModelScalars(schema)
+  const relationRules = buildPrismaRelationRewriteRules(relations)
 
-  for (const [modelName, aliases] of Object.entries(PRISMA_RELATION_ALIASES)) {
-    const modelRelations = relations[modelName]
-    if (!modelRelations) {
-      continue
-    }
-
-    for (const [wrong, correct] of Object.entries(aliases)) {
-      if (!modelRelations.has(wrong) && modelRelations.has(correct)) {
-        replacements.push({ wrong, correct })
-      }
-    }
-  }
-
-  if (replacements.length === 0) {
+  if (relationRules.length === 0 && Object.keys(scalars).length === 0) {
     return files
   }
 
@@ -1721,13 +2425,12 @@ export function reconcilePrismaRelationIncludes(files: GeneratedAppFile[]): Gene
       return file
     }
 
-    let content = file.content
-    for (const { wrong, correct } of replacements) {
-      content = content.replaceAll(`include: { ${wrong}: true`, `include: { ${correct}: true`)
-      content = content.replaceAll(`.${wrong}.`, `.${correct}.`)
-      content = content.replaceAll(`, ${wrong}: { id:`, `, ${correct}: { id:`)
-    }
-
+    const content = reconcilePrismaSchemaDriftInContent(
+      file.content,
+      relations,
+      scalars,
+      relationRules
+    )
     return content === file.content ? file : { ...file, content }
   })
 }
@@ -1774,7 +2477,8 @@ export function normalizeGeneratedAppFiles(
     reconcileActionsTypeExports(withoutConflictingStubs)
   )
   const withTypeExports = reconcileTypesExports(withActionExports)
-  const withNextEnv = ensureNextEnvFile(withTypeExports)
+  const withAuthExports = reconcileAuthExports(withTypeExports, options)
+  const withNextEnv = ensureNextEnvFile(withAuthExports)
   const withClientProps = reconcileClientComponentProps(withNextEnv)
   const withExportStyles = reconcileComponentExportStyles(withClientProps)
   const withClientPropsAfterExports = reconcileClientComponentProps(withExportStyles)
@@ -1785,5 +2489,7 @@ export function normalizeGeneratedAppFiles(
     ? ensureDatabasePagesAreDynamic(withPrismaRelations)
     : withPrismaRelations
   const withSanitizedImports = sanitizeGeneratedComponentFiles(withDynamicPages)
-  return ensureReadmeFile(withSanitizedImports, options)
+  const withReadme = ensureReadmeFile(withSanitizedImports, options)
+  const withSummary = ensureRepoSummaryFile(withReadme, options)
+  return reconcileSplitImportsInFiles(withSummary)
 }

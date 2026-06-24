@@ -3,6 +3,7 @@ import { sleep } from '@sim/utils/helpers'
 import { toError } from '@sim/utils/errors'
 import { provisionNeonDatabase } from '@/lib/development/provision-vercel-neon-database'
 import { DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
+import { projectHasDatabaseUrl } from '@/lib/development/vercel-project-env'
 import { logGeneratedAppValidationErrors } from '@/lib/development/format-generated-app-build-errors'
 
 const logger = createLogger('DeployGeneratedAppToVercel')
@@ -35,6 +36,8 @@ export interface PrepareVercelProjectInput {
   neonIntegrationConfigurationId?: string
   neonApiKey?: string
   neonOrgId?: string
+  /** When true (edit mode), reuse existing DATABASE_URL if present; provision Neon only when missing. */
+  skipDatabaseProvisioning?: boolean
 }
 
 export interface PrepareVercelProjectResult {
@@ -447,7 +450,25 @@ export async function prepareVercelProjectForDeploy(
     let databaseProvisioned = false
     let neonProjectId: string | undefined
 
-    if (input.requiresDatabase !== false && DEVELOPMENT_REQUIRES_DATABASE) {
+    const needsDatabase = input.requiresDatabase !== false && DEVELOPMENT_REQUIRES_DATABASE
+    let shouldProvisionDatabase = needsDatabase
+
+    if (needsDatabase && input.skipDatabaseProvisioning) {
+      const hasExistingDatabase = await projectHasDatabaseUrl(token, project.id, input.vercelTeamId)
+      if (hasExistingDatabase) {
+        databaseProvisioned = true
+        shouldProvisionDatabase = false
+        logger.info('Reusing existing DATABASE_URL on Vercel project (edit mode)', {
+          projectId: project.id,
+        })
+      } else {
+        logger.info('No DATABASE_URL on Vercel project — provisioning Neon for edit mode', {
+          projectId: project.id,
+        })
+      }
+    }
+
+    if (shouldProvisionDatabase) {
       const neonResult = await provisionNeonDatabase({
         vercelToken: token,
         vercelProjectId: project.id,

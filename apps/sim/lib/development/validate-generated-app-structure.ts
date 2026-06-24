@@ -3,6 +3,7 @@ import type { GeneratedAppFile } from '@/lib/development/normalize-generated-app
 import {
   collectJsxPropNamesForComponent,
   GENERATED_APP_DATABASE_FILE_PATHS,
+  hasOrphanImportBlock,
 } from '@/lib/development/normalize-generated-app-files'
 
 const logger = createLogger('ValidateGeneratedAppStructure')
@@ -294,29 +295,55 @@ function checkStubComponents(files: GeneratedAppFile[]): string[] {
   return issues
 }
 
-const LOCAL_STORAGE_WRITE_PATTERNS = [
-  /localStorage\.setItem\s*\(/,
-  /sessionStorage\.setItem\s*\(/,
-]
+const RETURN_JSX_LINE_BREAK_PATTERN = /return\s*\n\s*</
+const INCOMPLETE_IMPORT_TYPE_PATTERN = /^import\s+type\s+\{[^}]+\}\s*$/m
 
-function checkLocalStorageUsage(
-  files: GeneratedAppFile[],
-  requiresDatabase: boolean
-): string[] {
-  if (!requiresDatabase) return []
-
+function checkImportSyntax(files: GeneratedAppFile[]): string[] {
   const issues: string[] = []
 
   for (const file of files) {
     const path = normalizePath(file.path)
-    if (!/\.(tsx|ts|jsx|js)$/.test(path)) continue
+    if (!/\.(tsx|ts|jsx|js)$/.test(path)) {
+      continue
+    }
 
-    for (const pattern of LOCAL_STORAGE_WRITE_PATTERNS) {
-      if (pattern.test(file.content)) {
+    if (hasOrphanImportBlock(file.content)) {
+      issues.push(
+        `${path}: split/broken import — specifiers appear after } from 'module'; without a new import { (causes TS1109 Expression expected). Use one complete import block per package`
+      )
+    }
+  }
+
+  return issues
+}
+
+function checkJsxSyntax(files: GeneratedAppFile[]): string[] {
+  const issues: string[] = []
+
+  for (const file of files) {
+    const path = normalizePath(file.path)
+    if (!path.endsWith('.tsx') && !path.endsWith('.jsx')) continue
+
+    if (RETURN_JSX_LINE_BREAK_PATTERN.test(file.content)) {
+      issues.push(
+        `${path}: newline between return and JSX — use return ( <div>...</div> ) or return <div> on the same line (prevents TS1005 "'>' expected")`
+      )
+    }
+
+    if (INCOMPLETE_IMPORT_TYPE_PATTERN.test(file.content)) {
+      issues.push(
+        `${path}: incomplete import type statement — every import type must include from '@/...' (prevents TS1005 parse errors)`
+      )
+    }
+
+    const lines = file.content.split('\n')
+    const useClientIndex = lines.findIndex((line) => line.trim() === '"use client"' || line.trim() === "'use client'")
+    if (useClientIndex > 0) {
+      const before = lines.slice(0, useClientIndex).some((line) => line.trim().length > 0)
+      if (before) {
         issues.push(
-          `${path}: uses localStorage/sessionStorage for data storage — replace with Prisma server actions or API routes since this app has requiresDatabase=true`
+          `${path}: "use client" must be the first line of the file (before imports) in Client components`
         )
-        break
       }
     }
   }
@@ -360,8 +387,9 @@ export function validateGeneratedAppStructure(
     ...checkMissingPropsInterfaces(files),
     ...checkUseClientPlacement(files),
     ...checkPrismaUsage(files, requiresDatabase),
-    ...checkLocalStorageUsage(files, requiresDatabase),
     ...checkStubComponents(files),
+    ...checkImportSyntax(files),
+    ...checkJsxSyntax(files),
     ...checkTailwindConfig(files),
     ...checkBuildScript(files),
   ]

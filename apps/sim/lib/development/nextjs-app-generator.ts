@@ -13,15 +13,23 @@ import {
 import { resolveDevelopmentDeployEnv, DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import {
   GENERATED_APP_DATABASE_FILE_PATHS,
+  GENERATED_APP_AUTH_GUIDANCE,
+  GENERATED_APP_COMMON_FAILURES_GUIDANCE,
   GENERATED_APP_DATABASE_GUIDANCE,
+  GENERATED_APP_DATABASE_EDIT_GUIDANCE,
   GENERATED_APP_DEPENDENCY_GUIDANCE,
   GENERATED_APP_IMPORT_GUIDANCE,
+  GENERATED_APP_JSX_GUIDANCE,
   GENERATED_APP_README_GUIDANCE,
+  GENERATED_APP_REPO_SUMMARY_GUIDANCE,
+  GENERATED_APP_REPO_SUMMARY_PATH,
   GENERATED_APP_STYLING_GUIDANCE,
   GENERATED_APP_TYPESCRIPT_GUIDANCE,
   GENERATED_APP_VALIDATION_GUIDANCE,
   PINNED_NEXT_VERSION,
   PINNED_REACT_VERSION,
+  buildRepoSummaryContent,
+  ensureRepoSummaryFile,
   normalizeGeneratedAppFiles,
 } from '@/lib/development/normalize-generated-app-files'
 import {
@@ -62,6 +70,7 @@ const REQUIRED_APP_FILE_PATHS = [
   'app/globals.css',
   '.gitignore',
   'README.md',
+  GENERATED_APP_REPO_SUMMARY_PATH,
   '.env.example',
 ] as const
 /** Max LLM repair rounds after a failed TypeScript check before deploy. */
@@ -328,7 +337,71 @@ function resolveRequiresDatabase(
   return DEVELOPMENT_REQUIRES_DATABASE
 }
 
-function normalizeAppSpec(parsed: LlmAppSpec, repoNameHint?: string): LlmAppSpec {
+interface NormalizeAppSpecOptions {
+  /** Skip the file-count cap — use for edit/repair flows that merge with an existing repo. */
+  preserveAllFiles?: boolean
+  /** Recorded in REPO_SUMMARY.md when the spec is normalized. */
+  latestUserRequest?: string
+}
+
+/**
+ * Caps file count for LLM-generated apps while always keeping required scaffolding
+ * (package.json, Tailwind config, Prisma files, etc.).
+ */
+export function capGeneratedAppFiles(
+  files: GeneratedAppFile[],
+  maxFiles: number,
+  requiresDatabase: boolean
+): GeneratedAppFile[] {
+  if (files.length <= maxFiles) {
+    return files
+  }
+
+  const requiredPaths = new Set<string>(REQUIRED_APP_FILE_PATHS)
+  requiredPaths.add('next-env.d.ts')
+  requiredPaths.add(GENERATED_APP_REPO_SUMMARY_PATH)
+  if (requiresDatabase) {
+    for (const path of GENERATED_APP_DATABASE_FILE_PATHS) {
+      requiredPaths.add(path)
+    }
+  }
+
+  const required: GeneratedAppFile[] = []
+  const optional: GeneratedAppFile[] = []
+  const seen = new Set<string>()
+
+  for (const file of files) {
+    const path = file.path.replace(/\\/g, '/')
+    if (seen.has(path)) {
+      continue
+    }
+    seen.add(path)
+
+    if (requiredPaths.has(path)) {
+      required.push({ ...file, path })
+    } else {
+      optional.push({ ...file, path })
+    }
+  }
+
+  const optionalBudget = Math.max(0, maxFiles - required.length)
+  const capped = [...required, ...optional.slice(0, optionalBudget)]
+
+  logger.warn('Capped generated file list while preserving required scaffolding', {
+    before: files.length,
+    after: capped.length,
+    max: maxFiles,
+    dropped: files.length - capped.length,
+  })
+
+  return capped
+}
+
+function normalizeAppSpec(
+  parsed: LlmAppSpec,
+  repoNameHint?: string,
+  options: NormalizeAppSpecOptions = {}
+): LlmAppSpec {
   if (!parsed.appName || !parsed.files?.length) {
     throw new Error('LLM response missing required appName or files')
   }
@@ -336,12 +409,12 @@ function normalizeAppSpec(parsed: LlmAppSpec, repoNameHint?: string): LlmAppSpec
   parsed.repoName = slugifyRepoName(parsed.repoName || repoNameHint || parsed.appName)
   parsed.requiresDatabase = resolveRequiresDatabase(parsed)
 
-  if (parsed.files.length > MAX_GENERATED_FILES) {
-    logger.warn('Truncating generated file list to max file count', {
-      requested: parsed.files.length,
-      max: MAX_GENERATED_FILES,
-    })
-    parsed.files = parsed.files.slice(0, MAX_GENERATED_FILES)
+  if (!options.preserveAllFiles && parsed.files.length > MAX_GENERATED_FILES) {
+    parsed.files = capGeneratedAppFiles(
+      parsed.files,
+      MAX_GENERATED_FILES,
+      parsed.requiresDatabase ?? DEVELOPMENT_REQUIRES_DATABASE
+    )
   }
 
   parsed.files = normalizeGeneratedAppFiles(parsed.files, {
@@ -350,6 +423,7 @@ function normalizeAppSpec(parsed: LlmAppSpec, repoNameHint?: string): LlmAppSpec
     description: parsed.description,
     features: parsed.features,
     repoName: parsed.repoName,
+    latestUserRequest: options.latestUserRequest,
   })
 
   return parsed
@@ -479,12 +553,16 @@ Constraints:
 - Every component MUST contain complete, real, working UI code — NEVER a stub, placeholder, or a component that renders only its own name as text
 - Reuse components; keep page files short; put shared styles in app/globals.css
 - app/ at project root only (not src/app/)
+- ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
+- ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
 - Valid TypeScript, zero build errors, no secrets`
@@ -498,11 +576,15 @@ Constraints:
 - Include every required path: ${REQUIRED_APP_FILE_PATHS.join(', ')}
 - Add up to ${MAX_OPTIONAL_PAGE_PATHS} optional page/component paths — for multi-page apps, list all page routes and shared components
 - Use app/ at project root (not src/app/)
+- ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
+- ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
 - Never include secrets`
@@ -516,12 +598,16 @@ Constraints:
 - Every component file must render actual UI — buttons, inputs, text, layout — not placeholder content like "<div>ComponentName</div>"
 - TypeScript strict, no any, no @ts-ignore
 - Keep individual files concise; share styles in app/globals.css
+- ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
+- ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
 - Code must compile with zero errors when combined with other project files
@@ -710,7 +796,8 @@ async function requestBatchedAppSpecFromLlm(
 async function requestFullAppSpecFromLlm(
   systemPrompt: string,
   userPrompt: string,
-  repoNameHint?: string
+  repoNameHint?: string,
+  options: NormalizeAppSpecOptions = {}
 ): Promise<LlmAppSpec> {
   const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
 
@@ -722,7 +809,7 @@ async function requestFullAppSpecFromLlm(
     (text) => parseAppSpecJson(text)
   )
 
-  return normalizeAppSpec(parsed, repoNameHint)
+  return normalizeAppSpec(parsed, repoNameHint, options)
 }
 
 async function generateAppSpecWithLlm(
@@ -753,14 +840,18 @@ Respond ONLY with JSON matching the provided schema. Return the full corrected f
 
 Fix ALL errors in the build log so npm install && npx tsc --noEmit succeed with ZERO TypeScript errors.
 Fix ALL structure validation issues listed in the build log, including missing @/ imports, props interfaces, "use client" placement, Prisma usage, Tailwind config, and build scripts.
-Pay special attention to: missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
+Pay special attention to: TS2305 "has no exported member" (export the symbol from the module that defines it — e.g. add verifyToken/getAuthUser to lib/auth.ts when API routes import them), TS1109 "Expression expected" (usually a split import — add \`import {\` before orphan specifiers after \`} from 'package';\`), TS2459 "declares X locally, but it is not exported" (import the type from @/lib/types, not @/lib/actions), TS2304 "Cannot find name" (add missing import type from @/lib/types), TS1005 "'>' expected" (fix JSX — use return ( with opening tag, never return newline then <), missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
 If the build log flags localStorage/sessionStorage usage, replace every occurrence with Prisma server actions or API routes — NEVER store app data in localStorage.
+${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 ${GENERATED_APP_STYLING_GUIDANCE}
 ${GENERATED_APP_IMPORT_GUIDANCE}
+${GENERATED_APP_JSX_GUIDANCE}
 ${GENERATED_APP_DATABASE_GUIDANCE}
+${GENERATED_APP_AUTH_GUIDANCE}
 ${GENERATED_APP_README_GUIDANCE}
+${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 ${GENERATED_APP_VALIDATION_GUIDANCE}
 Keep the same app purpose and repo name unless a rename is required to fix the build.
 Prefer minimal, targeted file changes over rewriting unrelated files.
@@ -776,7 +867,25 @@ ${truncateBuildLog(buildLog)}
 
 Return corrected files that pass npm install && npx tsc --noEmit.`
 
-  return requestFullAppSpecFromLlm(repairSystemPrompt, userPrompt, spec.repoName)
+  const repaired = await requestFullAppSpecFromLlm(repairSystemPrompt, userPrompt, spec.repoName, {
+    preserveAllFiles: spec.files.length > MAX_GENERATED_FILES,
+  })
+
+  const mergedFiles = mergeEditedFiles(spec.files, repaired.files)
+
+  return normalizeAppSpec(
+    {
+      ...spec,
+      appName: repaired.appName || spec.appName,
+      description: repaired.description || spec.description,
+      features: repaired.features?.length ? repaired.features : spec.features,
+      requiresDatabase: repaired.requiresDatabase ?? spec.requiresDatabase,
+      repoName: spec.repoName,
+      files: mergedFiles,
+    },
+    spec.repoName,
+    { preserveAllFiles: true, latestUserRequest: userInput }
+  )
 }
 
 async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Promise<number> {
@@ -825,6 +934,7 @@ async function validateAndRepairUntilTypecheckPasses(
       description: currentSpec.description,
       features: currentSpec.features,
       repoName: currentSpec.repoName,
+      latestUserRequest: userInput,
     })
     await writeAppFiles(outputDir, currentSpec.files)
 
@@ -1218,12 +1328,20 @@ Constraints:
 - Apply the user's requested changes while preserving working architecture and unrelated code
 - Return ONLY files you create or modify (do not echo unchanged files)
 - Every returned file must contain complete, real, working code — no stubs or placeholders
+- ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_AUTH_GUIDANCE}
+- ${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
+- When editing prisma/schema.prisma or lib/types.ts, keep exports in sync — export every type from lib/types.ts and import it with \`import type\` in components; import server actions (not types) from lib/actions.ts
 - ${GENERATED_APP_README_GUIDANCE}
+- ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
+- Read REPO_SUMMARY.md in the user message before editing — it is the primary architecture reference
+- Do not return REPO_SUMMARY.md unless you must fix it manually; Sim regenerates it after your edits
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data
 - Valid TypeScript, zero build errors, no secrets`
@@ -1278,6 +1396,52 @@ function inferAppMetadataFromFiles(
   }
 }
 
+function buildEditReferenceContext(
+  repoName: string,
+  metadata: Pick<LlmAppSpec, 'appName' | 'description' | 'features' | 'requiresDatabase'>,
+  existingFiles: GeneratedAppFile[]
+): string {
+  const summaryOptions = {
+    appName: metadata.appName,
+    description: metadata.description,
+    features: metadata.features,
+    repoName,
+    requiresDatabase: metadata.requiresDatabase,
+  }
+
+  const filesWithSummary = ensureRepoSummaryFile(existingFiles, summaryOptions)
+  const repoSummary =
+    filesWithSummary.find((file) => file.path === GENERATED_APP_REPO_SUMMARY_PATH)?.content ??
+    buildRepoSummaryContent(filesWithSummary, summaryOptions)
+
+  const supplementalPaths = [
+    'prisma/schema.prisma',
+    'lib/types.ts',
+    'lib/actions.ts',
+    'lib/auth.ts',
+  ]
+  const supplementalFiles = existingFiles
+    .filter((file) => supplementalPaths.includes(file.path.replace(/\\/g, '/')))
+    .map((file) => `--- ${file.path} ---\n${file.content}`)
+    .join('\n\n')
+
+  const fileIndex = existingFiles
+    .map((file) => file.path.replace(/\\/g, '/'))
+    .sort()
+    .join('\n')
+
+  const supplementalSection = supplementalFiles
+    ? `\n\nKey shared files (for schema/types/actions context):\n${supplementalFiles}`
+    : ''
+
+  return `Repository summary (read this first — primary reference for architecture, routes, and scope):
+
+${repoSummary}
+
+Complete file index (${existingFiles.length} paths):
+${fileIndex}${supplementalSection}`
+}
+
 async function requestAppEditsFromLlm(
   userInput: string,
   repoName: string,
@@ -1286,19 +1450,16 @@ async function requestAppEditsFromLlm(
   const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
   const metadata = inferAppMetadataFromFiles(repoName, existingFiles)
 
-  const contextSummary = existingFiles
-    .map((file) => `--- ${file.path} ---\n${file.content}`)
-    .join('\n\n')
+  const editReference = buildEditReferenceContext(repoName, metadata, existingFiles)
 
   const userPrompt = `Repository: ${repoName}
 App name: ${metadata.appName}
 Description: ${metadata.description}
 
+${editReference}
+
 User edit request:
 ${userInput}
-
-Existing project files (read-only context):
-${contextSummary}
 
 Return JSON with app metadata and ONLY the files you changed or added.`
 
@@ -1325,7 +1486,8 @@ Return JSON with app metadata and ONLY the files you changed or added.`
       requiresDatabase: parsed.requiresDatabase ?? metadata.requiresDatabase,
       files: mergedFiles,
     },
-    repoName
+    repoName,
+    { preserveAllFiles: true, latestUserRequest: userInput }
   )
 }
 
@@ -1458,6 +1620,7 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
           githubRepoName,
           vercelTeamId,
           requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+          skipDatabaseProvisioning: false,
           neonIntegrationConfigurationId,
           neonApiKey,
           neonOrgId,

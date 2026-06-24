@@ -12,7 +12,7 @@ export const developmentEditAppTool: ToolConfig<
   id: 'development_edit_app',
   name: 'Edit Next.js App',
   description:
-    'Edit an existing generated Next.js application using its repository context, then push to GitHub and deploy to Vercel',
+    'Edit an existing generated Next.js application using its repository context, then push to GitHub and deploy to Vercel. Reuses the existing Neon database when present; otherwise provisions one. Prisma schema changes are additive.',
   version: '1.0.0',
 
   params: {
