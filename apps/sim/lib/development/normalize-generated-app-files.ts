@@ -80,18 +80,17 @@ export const GENERATED_APP_STYLING_GUIDANCE = `Fonts and CSS:
 - Load fonts ONLY with next/font/google in app/layout.tsx (e.g. Inter from 'next/font/google'), export const inter = Inter({ subsets: ['latin'] }), apply inter.className on <body>
 - Reference the font via Tailwind (font-sans on body) or CSS variables from next/font — not remote @import`
 
-export const GENERATED_APP_DATABASE_GUIDANCE = `Database (only when the app needs persistence):
-- Set requiresDatabase to true ONLY when the user needs saved data: auth, CRUD, admin panels, forms that persist submissions, blogs with stored posts, user accounts, dashboards with live records, etc.
-- Set requiresDatabase to false for marketing sites, landing pages, portfolios, and static content with no server-side persistence
-- NEVER use localStorage, sessionStorage, or in-memory state to store app data between page loads — if data must persist across sessions, set requiresDatabase to true and use Prisma server actions or API routes
-- When requiresDatabase is true, include:
+export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for Development block apps):
+- ALWAYS set requiresDatabase to true — every generated app uses Neon Postgres + Prisma, even for marketing or portfolio sites
+- NEVER use localStorage, sessionStorage, or in-memory state to store app data between page loads — use Prisma server actions or API routes
+- ALWAYS include:
   - prisma/schema.prisma with at least one model matching the app domain
   - lib/prisma.ts exporting a PrismaClient singleton (globalForPrisma pattern for dev hot reload)
   - package.json dependencies: @prisma/client; devDependencies: prisma
   - .env.example with DATABASE_URL placeholder only (no real credentials)
   - prisma/schema.prisma datasource MUST use only url = env("DATABASE_URL") — do NOT add directUrl (Vercel Neon injects DATABASE_URL on connect)
   - Server Actions or app/api routes that use prisma — never import prisma in client components
-- When requiresDatabase is false: do NOT include prisma/, lib/prisma.ts, @prisma/client, or DATABASE_URL in generated code
+  - At least one Prisma model, even for simple sites (e.g. ContactSubmission, SiteSetting, or PageContent)
 - On Vercel + Neon, DATABASE_URL is injected when the database is connected to the project — reference process.env only in server code
 - package.json build script should run prisma generate and prisma db push before next build when using Prisma
 - Prisma include/select MUST use exact relation field names from schema.prisma (e.g. if Comment has \`user User @relation\`, use include: { user: true } — never invent aliases like author unless that field exists on the model)`

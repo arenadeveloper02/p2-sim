@@ -39,20 +39,19 @@ export const DevelopmentBlock: BlockConfig<DevelopmentGenerateAppResponse> = {
   name: 'Development',
   description: 'Generate or edit a production-ready Next.js app from your idea',
   longDescription:
-    'Full-stack automation block that generates a Next.js App Router app, pushes to GitHub, deploys to Vercel from that repository, optionally provisions Neon Postgres + Prisma when persistence is needed, and returns the live deployment URL in block outputs. Edit mode loads an existing repository, applies your changes with full code context, then republishes.',
+    'Full-stack automation block that generates a Next.js App Router app with Neon Postgres + Prisma, pushes to GitHub, deploys to Vercel from that repository, and returns the live deployment URL in block outputs. Edit mode loads an existing repository, applies your changes with full code context, then republishes.',
   bestPractices: `
   - Use Generate mode for new apps. Describe the app name, main features, pages, UI style, authentication needs, and API routes in User Input.
   - Use Edit mode to update an existing generated app. Pick a repository from the list, then describe the changes you want in User Input.
   - Set Repository Name (generate mode) to control the folder name under generated-apps/ (kebab-case).
   - Generated apps are always pushed to GitHub and deployed to Vercel (requires DEVELOPMENT_GITHUB_TOKEN and DEVELOPMENT_VERCEL_TOKEN in .env).
   - Optional .env: DEVELOPMENT_GITHUB_OWNER, DEVELOPMENT_VERCEL_TEAM_ID.
-  - For database apps: set DEVELOPMENT_NEON_API_KEY (personal key from Neon Account settings) to auto-create a Neon DB per app. Use a console-managed org — not Vercel-managed Neon.
+  - Neon Postgres is always provisioned per app (requires DEVELOPMENT_NEON_API_KEY or Vercel Neon integration). Use a console-managed Neon org — not Vercel-managed Neon.
   - Connect User Input from a Starter block or upstream Agent output for dynamic generation or edits.
   `,
   docsLink: 'https://docs.sim.ai/blocks/development',
   category: 'blocks',
-  integrationType: IntegrationType.DeveloperTools,
-  tags: ['automation', 'agentic'],
+  integrationType: IntegrationType.DevOps,
   bgColor: '#0F172A',
   icon: DevelopmentIcon,
   subBlocks: [

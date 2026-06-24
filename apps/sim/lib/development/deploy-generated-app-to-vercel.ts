@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { sleep } from '@sim/utils/helpers'
 import { toError } from '@sim/utils/errors'
 import { provisionNeonDatabase } from '@/lib/development/provision-vercel-neon-database'
+import { DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import { logGeneratedAppValidationErrors } from '@/lib/development/format-generated-app-build-errors'
 
 const logger = createLogger('DeployGeneratedAppToVercel')
@@ -446,7 +447,7 @@ export async function prepareVercelProjectForDeploy(
     let databaseProvisioned = false
     let neonProjectId: string | undefined
 
-    if (input.requiresDatabase === true) {
+    if (input.requiresDatabase !== false && DEVELOPMENT_REQUIRES_DATABASE) {
       const neonResult = await provisionNeonDatabase({
         vercelToken: token,
         vercelProjectId: project.id,

@@ -1,5 +1,8 @@
 import { getEnv } from '@/lib/core/config/env'
 
+/** Development block always generates Prisma-backed apps and provisions Neon Postgres per repo. */
+export const DEVELOPMENT_REQUIRES_DATABASE = true
+
 export interface DevelopmentDeployEnv {
   githubToken?: string
   githubOwner?: string

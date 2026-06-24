@@ -10,7 +10,7 @@ import {
   deployPreparedVercelProject,
   prepareVercelProjectForDeploy,
 } from '@/lib/development/deploy-generated-app-to-vercel'
-import { resolveDevelopmentDeployEnv } from '@/lib/development/resolve-development-env'
+import { resolveDevelopmentDeployEnv, DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import {
   GENERATED_APP_DATABASE_FILE_PATHS,
   GENERATED_APP_DATABASE_GUIDANCE,
@@ -321,18 +321,11 @@ function truncateBuildLog(output: string): string {
   return `${output.slice(-MAX_BUILD_LOG_CHARS)}\n…(truncated)`
 }
 
-function resolveRequiresDatabase(spec: Pick<LlmAppSpec, 'requiresDatabase' | 'files'>): boolean {
-  if (spec.requiresDatabase === true) {
-    return true
-  }
-  if (spec.requiresDatabase === false) {
-    return false
-  }
-
-  return spec.files.some((file) => {
-    const path = file.path.replace(/\\/g, '/')
-    return path.startsWith('prisma/') || path === 'lib/prisma.ts'
-  })
+/** Development block always provisions Neon Postgres + Prisma for generated apps. */
+function resolveRequiresDatabase(
+  _spec: Pick<LlmAppSpec, 'requiresDatabase' | 'files'>
+): boolean {
+  return DEVELOPMENT_REQUIRES_DATABASE
 }
 
 function normalizeAppSpec(parsed: LlmAppSpec, repoNameHint?: string): LlmAppSpec {
@@ -390,7 +383,7 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 
 function mergeManifestFilePaths(
   manifestPaths: string[],
-  requiresDatabase = false
+  requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
 ): string[] {
   const normalized = manifestPaths
     .map((p) => p.replace(/\\/g, '/').trim())
@@ -825,8 +818,9 @@ async function validateAndRepairUntilTypecheckPasses(
   let repairRounds = 0
 
   for (let round = 0; round <= MAX_BUILD_REPAIR_ROUNDS; round++) {
+    currentSpec.requiresDatabase = resolveRequiresDatabase(currentSpec)
     currentSpec.files = normalizeGeneratedAppFiles(currentSpec.files, {
-      requiresDatabase: currentSpec.requiresDatabase === true,
+      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
       appName: currentSpec.appName,
       description: currentSpec.description,
       features: currentSpec.features,
@@ -835,7 +829,7 @@ async function validateAndRepairUntilTypecheckPasses(
     await writeAppFiles(outputDir, currentSpec.files)
 
     const structureResult = validateGeneratedAppStructure(currentSpec.files, {
-      requiresDatabase: currentSpec.requiresDatabase === true,
+      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
     })
 
     if (!structureResult.valid) {
@@ -866,7 +860,7 @@ async function validateAndRepairUntilTypecheckPasses(
     }
 
     const buildResult = await validateGeneratedAppTypecheck(outputDir, currentSpec.files, {
-      requiresDatabase: currentSpec.requiresDatabase === true,
+      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
     })
     buildOutput = `[${buildResult.method}] ${buildResult.output}`
 
@@ -928,7 +922,7 @@ export async function generateNextjsApp(
     logger.info('LLM app generation finished', {
       durationMs: Date.now() - generationStartedAt,
       fileCount: spec.files.length,
-      requiresDatabase: spec.requiresDatabase,
+      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
     })
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
@@ -948,6 +942,7 @@ export async function generateNextjsApp(
 
     const buildRepair = await validateAndRepairUntilTypecheckPasses(outputDir, spec, userInput)
     spec = buildRepair.spec
+    spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
     buildValidated = buildRepair.buildValidated
     buildOutput = buildRepair.buildOutput
 
@@ -1028,7 +1023,7 @@ export async function generateNextjsApp(
           githubOwner,
           githubRepoName,
           vercelTeamId,
-          requiresDatabase: spec.requiresDatabase === true,
+          requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
           neonIntegrationConfigurationId,
           neonApiKey,
           neonOrgId,
@@ -1113,7 +1108,7 @@ export async function generateNextjsApp(
         gitPushError,
         vercelDeployed: false,
         vercelDeployError,
-        requiresDatabase: spec.requiresDatabase,
+        requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
         databaseProvisioned,
         neonProjectId,
         databaseProvisionError,
@@ -1174,7 +1169,7 @@ export async function generateNextjsApp(
       vercelDeploymentId,
       vercelInspectorUrl,
       vercelDeployError,
-      requiresDatabase: spec.requiresDatabase,
+      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
       databaseProvisioned,
       neonProjectId,
       databaseProvisionError,
@@ -1371,7 +1366,7 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
     logger.info('LLM app edit finished', {
       durationMs: Date.now() - generationStartedAt,
       changedFiles: spec.files.length,
-      requiresDatabase: spec.requiresDatabase,
+      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
     })
 
     const fileCount = await writeAppFiles(outputDir, spec.files)
@@ -1384,6 +1379,7 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
 
     const buildRepair = await validateAndRepairUntilTypecheckPasses(outputDir, spec, userInput)
     spec = buildRepair.spec
+    spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
     buildValidated = buildRepair.buildValidated
     buildOutput = buildRepair.buildOutput
 
@@ -1461,7 +1457,7 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
           githubOwner,
           githubRepoName,
           vercelTeamId,
-          requiresDatabase: spec.requiresDatabase === true,
+          requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
           neonIntegrationConfigurationId,
           neonApiKey,
           neonOrgId,
@@ -1550,7 +1546,7 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
         gitPushError,
         vercelDeployed: false,
         vercelDeployError,
-        requiresDatabase: spec.requiresDatabase,
+        requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
         databaseProvisioned,
         neonProjectId,
         databaseProvisionError,
@@ -1597,7 +1593,7 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
       vercelDeploymentId,
       vercelInspectorUrl,
       vercelDeployError,
-      requiresDatabase: spec.requiresDatabase,
+      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
       databaseProvisioned,
       neonProjectId,
       databaseProvisionError,
