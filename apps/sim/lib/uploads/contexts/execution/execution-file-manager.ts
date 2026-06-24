@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 import { isPayloadSizeLimitError } from '@/lib/core/utils/stream-limits'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import type { ExecutionContext } from '@/lib/uploads/contexts/execution/utils'
@@ -106,18 +107,12 @@ export async function uploadExecutionFile(
       metadata, // Pass metadata for cloud storage and database tracking
     })
 
-    const presignedUrl = await StorageService.generatePresignedDownloadUrl(
-      fileInfo.key,
-      'execution',
-      5 * 60
-    )
-
     const userFile: UserFile = {
       id: fileId,
       name: fileName,
       size: fileBuffer.length,
       type: contentType,
-      url: presignedUrl,
+      url: `${getBaseUrl()}${fileInfo.path}`,
       key: fileInfo.key,
       context: 'execution',
     }

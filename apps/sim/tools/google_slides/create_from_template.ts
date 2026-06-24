@@ -1,3 +1,4 @@
+import { SignJWT } from 'jose'
 import { createLogger } from '@sim/logger'
 import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
 import type { ToolConfig } from '@/tools/types'
@@ -153,6 +154,81 @@ async function resolveAccessibleImageUrl(
   }
 
   return null
+}
+
+/**
+ * Returns true for URLs served through the Sim file-serve proxy
+ * (`/api/files/serve/…`), which require a Sim bearer token.
+ */
+function isSimInternalImageUrl(url: string): boolean {
+  try {
+    return new URL(url).pathname.includes('/api/files/serve/')
+  } catch {
+    return false
+  }
+}
+
+
+/**
+ * Generates a short-lived internal JWT that satisfies `checkSessionOrInternalAuth` on
+ * Sim API routes. Uses only `jose` (browser-safe) so this file stays client-bundle-safe.
+ */
+async function generateInternalFetchToken(): Promise<string> {
+  const secret = new TextEncoder().encode(
+    process.env.INTERNAL_JWT_SECRET || process.env.INTERNAL_API_SECRET || ''
+  )
+  return new SignJWT({ type: 'internal' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .setIssuer('sim-internal')
+    .setAudience('sim-api')
+    .sign(secret)
+}
+
+/**
+ * Converts a Sim file-serve URL into a 1-hour presigned S3 URL that Google Slides
+ * can fetch anonymously during `replaceImage`.
+ *
+ * Calls the internal `/api/tools/google_slides/presign-image` endpoint (server-only,
+ * no Node.js imports in this file). Uses a short-lived internal JWT for auth.
+ *
+ * Returns `null` if any step fails (errors are logged as warnings, not thrown).
+ */
+async function resolveSimImageToPresignedUrl(imageUrl: string): Promise<string | null> {
+  let internalToken: string
+  try {
+    internalToken = await generateInternalFetchToken()
+  } catch (err) {
+    logger.warn('Failed to generate internal token for presign request', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const presignRes = await fetch(`${appUrl}/api/tools/google_slides/presign-image`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${internalToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ imageUrl }),
+  })
+
+  if (!presignRes.ok) {
+    const err = await presignRes.json().catch(() => ({}))
+    logger.warn('Failed to get presigned URL for Sim image', {
+      imageUrl,
+      status: presignRes.status,
+      error: (err as { error?: string }).error,
+    })
+    return null
+  }
+
+  const { url } = (await presignRes.json()) as { url: string }
+  logger.info('Resolved Sim image to presigned S3 URL', { imageUrl })
+  return url
 }
 
 // --- Exponential Backoff Wrapper ---
@@ -503,6 +579,7 @@ export const createFromTemplateTool: ToolConfig<
       source?: BlockLike['source']
     }[] = []
 
+
     for (let s = 0; s < slidesOrdered.length; s++) {
       const slideSchema = slidesOrdered[s] as SlideLike
       const shapeMap = slideIndexToShapeMap[s] ?? {}
@@ -547,6 +624,12 @@ export const createFromTemplateTool: ToolConfig<
 
       const checkResults = await Promise.all(
         imageCheckQueue.map(async ({ objectId, imageUrl, source }) => {
+          // Sim-internal URLs: resolve to a presigned S3 URL via internal endpoint
+          if (isSimInternalImageUrl(imageUrl)) {
+            const presignedUrl = await resolveSimImageToPresignedUrl(imageUrl)
+            return { objectId, imageUrl: presignedUrl, accessible: presignedUrl !== null }
+          }
+
           const resolvedUrl = await resolveAccessibleImageUrl(imageUrl, source)
           return {
             objectId,
