@@ -127,7 +127,53 @@ function repoSlug(): { owner: string; repo: string } {
 
 export function comparePullRequestUrl(mergeBase: string, branch: string): string {
   const { owner, repo } = repoSlug()
-  return `https://github.com/${owner}/${repo}/compare/${mergeBase}...${branch}?expand=1`
+  const base = encodeURIComponent(mergeBase).replace(/%2F/g, '/')
+  const head = encodeURIComponent(branch).replace(/%2F/g, '/')
+  return `https://github.com/${owner}/${repo}/compare/${base}...${head}?expand=1`
+}
+
+/** Actionable hint when `gh pr create` fails — usually not an auth issue. */
+export function explainPrCreateFailure(
+  error: unknown,
+  mergeBase: string,
+  branch: string
+): string {
+  const message = error instanceof Error ? error.message : String(error)
+
+  if (isSyncBranch(mergeBase)) {
+    return [
+      `Invalid PR base "${mergeBase}" — sync branches cannot be merge targets.`,
+      `Set TARGET_BRANCH to the fork branch (e.g. feat/github-merge-agent).`,
+      'This often happens when a push to upstream-sync/* re-triggers the workflow.',
+    ].join(' ')
+  }
+
+  if (message.includes('No commits between')) {
+    return [
+      `No commits between base "${mergeBase}" and head "${branch}" on the remote.`,
+      'Ensure the sync branch is pushed and has commits ahead of the base branch.',
+    ].join(' ')
+  }
+
+  if (message.includes('Head ref must be a branch') || message.includes("Head sha can't be blank")) {
+    return [
+      `Head branch "${branch}" was not found on GitHub after push.`,
+      'Confirm `git push -u origin` succeeded and the branch name has no remote/ prefix.',
+    ].join(' ')
+  }
+
+  if (message.includes('Base ref must be a branch') || message.includes("Base sha can't be blank")) {
+    return [
+      `Base branch "${mergeBase}" was not found on GitHub.`,
+      'Push the target branch to origin or set TARGET_BRANCH to an existing remote branch.',
+    ].join(' ')
+  }
+
+  if (message.includes('403') || message.includes('Resource not accessible')) {
+    return 'GitHub API denied PR creation — set GH_PAT (classic ghp_* token with repo scope) on the fork.'
+  }
+
+  return message
 }
 
 interface PrComment {
@@ -416,17 +462,49 @@ function releaseBodyFromCommit(entry: ReleaseNotesEntry): string | null {
   return null
 }
 
+export const SYNC_BRANCH_PREFIX = 'upstream-sync/'
+
+/** True when the branch name is a harness sync branch (not a valid PR base). */
+export function isSyncBranch(name: string): boolean {
+  return name.startsWith(SYNC_BRANCH_PREFIX)
+}
+
 /**
- * PR base / fork source.
- * TEMP: defaults to current branch for harness validation on feat/github-merge-agent.
- * Restore `TARGET_BRANCH=version-4.2-main` in the workflow when ready.
+ * PR base / fork source — the branch upstream changes merge into (e.g. feat/github-merge-agent).
+ * Never returns a sync branch; those are PR heads only.
  */
 export function baseBranch(): string {
-  if (process.env.TARGET_BRANCH) return process.env.TARGET_BRANCH
-  if (process.env.GITHUB_HEAD_REF) return process.env.GITHUB_HEAD_REF
-  const branch = runGit(['branch', '--show-current'])
-  if (!branch) throw new Error('Could not determine current git branch')
-  return branch
+  const candidates = [
+    process.env.TARGET_BRANCH,
+    process.env.GITHUB_HEAD_REF,
+    process.env.GITHUB_REF_NAME,
+  ].filter((name): name is string => Boolean(name && name !== 'HEAD' && !isSyncBranch(name)))
+
+  if (candidates.length > 0) return candidates[0]
+
+  try {
+    const state = readState()
+    if (state.activeMergeBase && !isSyncBranch(state.activeMergeBase)) {
+      return state.activeMergeBase
+    }
+  } catch {
+    /* state not initialized yet */
+  }
+
+  const current = runGit(['branch', '--show-current'])
+  if (current && !isSyncBranch(current)) return current
+
+  throw new Error(
+    'Could not determine merge target branch. Set TARGET_BRANCH (or run from a non upstream-sync/* branch).'
+  )
+}
+
+/** Merge target for this run — persisted on resume, otherwise resolved from env/git. */
+export function resolveMergeBase(state: SyncState, resume: boolean): string {
+  if (resume && state.activeMergeBase && !isSyncBranch(state.activeMergeBase)) {
+    return state.activeMergeBase
+  }
+  return baseBranch()
 }
 
 /** @deprecated Use baseBranch() */

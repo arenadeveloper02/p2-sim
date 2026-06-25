@@ -10,7 +10,6 @@ on:
   push:
     branches:
       - feat/github-merge-agent
-      - 'upstream-sync/**'
     paths:
       - '.github/workflows/upstream-sync.yml'
       - '.sandcastle/**'
@@ -52,8 +51,9 @@ env:
   UPSTREAM_REMOTE: upstream
   UPSTREAM_REPO: simstudioai/sim
   UPSTREAM_BRANCH: main
-  # TEMP: merge into the branch that triggered the run (feat/github-merge-agent).
+  # TEMP: explicit merge target while validating on feat/github-merge-agent.
   # Restore when validated: TARGET_BRANCH: version-4.2-main
+  TARGET_BRANCH: feat/github-merge-agent
   # GitHub usernames (comma-separated). Set repo variable UPSTREAM_SYNC_PR_REVIEWERS
   # to the GitHub login for utcarsh.srivastava@position2.com (emails cannot be used).
   UPSTREAM_SYNC_PR_REVIEWERS: ${{ vars.UPSTREAM_SYNC_PR_REVIEWERS }}
@@ -94,6 +94,9 @@ jobs:
             else
               should_run=false
             fi
+          elif [ "$EVENT" = "push" ] && echo "${{ github.ref_name }}" | grep -q '^upstream-sync/'; then
+            # Harness pushes sync branches — do not re-enter the pipeline (wrong PR base).
+            should_run=false
           else
             should_run=true
           fi
@@ -174,6 +177,8 @@ jobs:
           UPSTREAM_SYNC_SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_HEAD_REF: ${{ github.head_ref || github.ref_name }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
         run: bun run upstream-sync
 
       - name: Upload Sandcastle logs (if any)

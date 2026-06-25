@@ -24,6 +24,9 @@ import {
   baseBranch,
   closeSupersededPr,
   comparePullRequestUrl,
+  explainPrCreateFailure,
+  isSyncBranch,
+  resolveMergeBase,
   commitsSince,
   detectReleaseVersions,
   ensureUpstreamSyncScaffold,
@@ -120,8 +123,24 @@ async function runAgentPrompt(options: {
 }
 
 function createDraftPr(mergeBase: string, branch: string, runId: string, body: string): number {
+  if (isSyncBranch(mergeBase)) {
+    const hint = explainPrCreateFailure(
+      new Error(`No commits between ${mergeBase} and ${branch}`),
+      mergeBase,
+      branch
+    )
+    console.warn(`Could not create draft PR via gh: ${hint}`)
+    return 0
+  }
+
   const title = `upstream-sync: merge simstudioai/sim main into ${mergeBase} (${runId})`
   runGit(['push', '-u', 'origin', branch])
+
+  try {
+    runGit(['fetch', 'origin', mergeBase, branch])
+  } catch {
+    console.warn(`Could not fetch origin/${mergeBase} and origin/${branch} before PR create`)
+  }
 
   try {
     const prUrl = runGh([
@@ -153,14 +172,14 @@ function createDraftPr(mergeBase: string, branch: string, runId: string, body: s
     return prNumber
   } catch (error) {
     const compareUrl = comparePullRequestUrl(mergeBase, branch)
-    console.warn(
-      'Could not create draft PR via gh. Fork repos need GH_PAT (classic ghp_* token with repo scope).'
-    )
+    const hint = explainPrCreateFailure(error, mergeBase, branch)
+    console.warn(`Could not create draft PR via gh: ${hint}`)
     console.warn(`Create manually: ${compareUrl}`)
     writeRunLog(runId, {
       Status: 'pr_create_failed',
       'Compare URL': compareUrl,
       Error: error instanceof Error ? error.message : String(error),
+      Hint: hint,
     })
     return 0
   }
@@ -218,8 +237,8 @@ async function main(): Promise<void> {
   fetchUpstream()
 
   const state = readState()
-  const mergeBase = RESUME && state.activeMergeBase ? state.activeMergeBase : baseBranch()
-  console.log(`Sync target: ${mergeBase} ← simstudioai/sim main`)
+  const mergeBase = resolveMergeBase(state, RESUME)
+  console.log(`Sync target: ${mergeBase} ← simstudioai/sim main (PR base)`)
   const headSha = upstreamHeadSha()
   const runId = todayRunId()
   const upstreamCommits = commitsSince(state.lastSyncedUpstreamSha, headSha)
