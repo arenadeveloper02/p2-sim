@@ -4,6 +4,7 @@ import type { ToolConfig } from '@/tools/types'
 import {
   buildTableCellTextEndIndexMap,
   buildTableContentRequests,
+  findTableColumnLayout,
   findTableDimensions,
 } from '@/tools/google_slides/create-from-template-table'
 import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
@@ -551,6 +552,8 @@ export const createFromTemplateTool: ToolConfig<
             continue
           }
 
+          const layout = findTableColumnLayout(presData, tableObjectId)
+
           const tableContent = Array.isArray(content) ? content : []
           if (tableContent.length === 0) {
             logger.info('Skipping empty table content; leaving template placeholders', {
@@ -571,6 +574,7 @@ export const createFromTemplateTool: ToolConfig<
               minRows: block.minRows,
               minColumns: block.minColumns,
               cellTextEndIndexMap: tableCellTextEndIndexMap,
+              layout: layout ?? undefined,
             })
           )
         } else if (block.type === 'IMAGE' && content) {

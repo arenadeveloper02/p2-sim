@@ -37,6 +37,28 @@ export type TableBatchRequest =
         cellLocation: { rowIndex: number; columnIndex: number }
       }
     }
+  | {
+      updateTableColumnProperties: {
+        objectId: string
+        columnIndices: number[]
+        tableColumnProperties: {
+          columnWidth: { magnitude: number; unit: 'EMU' }
+        }
+        fields: string
+      }
+    }
+
+/** Google Slides API minimum column width (32 pt). */
+const MIN_COLUMN_WIDTH_EMU = 406_400
+
+interface Dimension {
+  magnitude?: number
+  unit?: string
+}
+
+export interface TableColumnLayout {
+  columnWidths: number[]
+}
 
 interface TableTextElement {
   endIndex?: number
@@ -47,12 +69,17 @@ interface TableCell {
   text?: { textElements?: TableTextElement[] }
 }
 
+interface TableRowPayload {
+  tableCells?: TableCell[]
+}
+
 interface PresentationElement {
   objectId?: string
   table?: {
     rows?: number
     columns?: number
-    tableRows?: { tableCells?: TableCell[] }[]
+    tableColumns?: { columnWidth?: Dimension }[]
+    tableRows?: TableRowPayload[]
   }
 }
 
@@ -82,6 +109,71 @@ export function normalizeTableContent(
       return String(cell)
     })
   })
+}
+
+function readDimensionEmu(dimension?: Dimension): number {
+  if (dimension?.magnitude == null || dimension.magnitude <= 0) return 0
+  if (dimension.unit === 'PT') return dimension.magnitude * 12_700
+  return dimension.magnitude
+}
+
+function distributeTotalDimension(total: number, count: number, minUnit: number): number {
+  if (count <= 0) return minUnit
+  return Math.max(minUnit, total / count)
+}
+
+/** Reads per-column widths (EMU) from a fetched presentation payload. */
+export function findTableColumnLayout(
+  presentationData: PresentationPayload,
+  tableObjectId: string
+): TableColumnLayout | null {
+  for (const slide of presentationData.slides ?? []) {
+    for (const element of slide.pageElements ?? []) {
+      if (element.objectId !== tableObjectId || !element.table) continue
+
+      const columnWidths = (element.table.tableColumns ?? []).map((column) =>
+        readDimensionEmu(column.columnWidth)
+      )
+
+      if (columnWidths.length === 0) return null
+      return { columnWidths }
+    }
+  }
+  return null
+}
+
+/**
+ * Expands remaining columns to fill the original table width after trimming.
+ * Google Slides shrinks the table on deleteTableColumn without redistributing width.
+ */
+export function buildTableExpandColumnWidthRequests(input: {
+  tableObjectId: string
+  keepColumns: number
+  templateColumns: number
+  layout: TableColumnLayout
+}): TableBatchRequest[] {
+  const { tableObjectId, keepColumns, templateColumns, layout } = input
+
+  if (keepColumns >= templateColumns || layout.columnWidths.length === 0) {
+    return []
+  }
+
+  const totalWidth = layout.columnWidths.reduce((sum, width) => sum + width, 0)
+  if (totalWidth <= 0) return []
+
+  const columnWidth = distributeTotalDimension(totalWidth, keepColumns, MIN_COLUMN_WIDTH_EMU)
+  return [
+    {
+      updateTableColumnProperties: {
+        objectId: tableObjectId,
+        columnIndices: Array.from({ length: keepColumns }, (_, index) => index),
+        tableColumnProperties: {
+          columnWidth: { magnitude: columnWidth, unit: 'EMU' },
+        },
+        fields: 'columnWidth',
+      },
+    },
+  ]
 }
 
 /** Reads table row/column counts from a fetched presentation payload. */
@@ -156,6 +248,7 @@ export function buildTableContentRequests(input: {
   minRows?: number
   minColumns?: number
   cellTextEndIndexMap?: Record<string, number>
+  layout?: TableColumnLayout
 }): TableBatchRequest[] {
   const { tableObjectId, templateRows, templateColumns } = input
   const rowCap = Math.min(input.maxRows ?? templateRows, templateRows)
@@ -186,6 +279,17 @@ export function buildTableContentRequests(input: {
         cellLocation: { rowIndex: 0, columnIndex },
       },
     })
+  }
+
+  if (input.layout) {
+    requests.push(
+      ...buildTableExpandColumnWidthRequests({
+        tableObjectId,
+        keepColumns,
+        templateColumns,
+        layout: input.layout,
+      })
+    )
   }
 
   for (let rowIndex = 0; rowIndex < contentRows; rowIndex += 1) {

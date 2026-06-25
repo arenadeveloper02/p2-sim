@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildTableCellTextEndIndexMap,
   buildTableContentRequests,
+  buildTableExpandColumnWidthRequests,
+  findTableColumnLayout,
   findTableDimensions,
   normalizeTableContent,
 } from '@/tools/google_slides/create-from-template-table'
@@ -85,6 +87,74 @@ describe('buildTableCellTextEndIndexMap', () => {
   })
 })
 
+describe('findTableColumnLayout', () => {
+  it('returns column widths in EMU', () => {
+    const layout = findTableColumnLayout(
+      {
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                table: {
+                  tableColumns: [
+                    { columnWidth: { magnitude: 800_000, unit: 'EMU' } },
+                    { columnWidth: { magnitude: 1_200_000, unit: 'EMU' } },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    expect(layout).toEqual({
+      columnWidths: [800_000, 1_200_000],
+    })
+  })
+})
+
+describe('buildTableExpandColumnWidthRequests', () => {
+  it('redistributes original total column width after trimming', () => {
+    const requests = buildTableExpandColumnWidthRequests({
+      tableObjectId: 'table_1',
+      templateColumns: 8,
+      keepColumns: 2,
+      layout: {
+        columnWidths: Array.from({ length: 8 }, () => 1_000_000),
+      },
+    })
+
+    expect(requests).toEqual([
+      {
+        updateTableColumnProperties: {
+          objectId: 'table_1',
+          columnIndices: [0, 1],
+          tableColumnProperties: {
+            columnWidth: { magnitude: 4_000_000, unit: 'EMU' },
+          },
+          fields: 'columnWidth',
+        },
+      },
+    ])
+  })
+
+  it('skips expand requests when no columns were removed', () => {
+    const requests = buildTableExpandColumnWidthRequests({
+      tableObjectId: 'table_1',
+      templateColumns: 2,
+      keepColumns: 2,
+      layout: {
+        columnWidths: [1_000_000, 1_000_000],
+      },
+    })
+
+    expect(requests).toEqual([])
+  })
+})
+
 describe('buildTableContentRequests', () => {
   it('deletes unused trailing rows/columns then replaces cell text', () => {
     const requests = buildTableContentRequests({
@@ -118,6 +188,36 @@ describe('buildTableContentRequests', () => {
         objectId: 'table_1',
         cellLocation: { rowIndex: 0, columnIndex: 0 },
         text: 'Row 1',
+      },
+    })
+  })
+
+  it('expands remaining column widths when layout is provided after trimming', () => {
+    const requests = buildTableContentRequests({
+      tableObjectId: 'table_1',
+      templateRows: 8,
+      templateColumns: 8,
+      minRows: 2,
+      minColumns: 2,
+      content: [
+        ['A', 'B'],
+        ['C', 'D'],
+      ],
+      layout: {
+        columnWidths: Array.from({ length: 8 }, () => 1_000_000),
+      },
+    })
+
+    expect(requests.some((r) => 'updateTableColumnProperties' in r)).toBe(true)
+    expect(requests.some((r) => 'updateTableRowProperties' in r)).toBe(false)
+
+    const columnUpdate = requests.find((r) => 'updateTableColumnProperties' in r)
+    expect(columnUpdate).toMatchObject({
+      updateTableColumnProperties: {
+        columnIndices: [0, 1],
+        tableColumnProperties: {
+          columnWidth: { magnitude: 4_000_000, unit: 'EMU' },
+        },
       },
     })
   })
