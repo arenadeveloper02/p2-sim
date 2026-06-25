@@ -26,8 +26,10 @@ import {
   comparePullRequestUrl,
   explainPrCreateFailure,
   isSyncBranch,
+  repoSlug,
   resolveMergeBase,
   commitsSince,
+  commitSyncBranchScaffold,
   detectReleaseVersions,
   ensureUpstreamSyncScaffold,
   ensureSandcastleEnvFile,
@@ -122,7 +124,74 @@ async function runAgentPrompt(options: {
   })
 }
 
-function createDraftPr(mergeBase: string, branch: string, runId: string, body: string): number {
+function createDraftPrViaApi(
+  mergeBase: string,
+  branch: string,
+  title: string,
+  body: string
+): number {
+  const { owner, repo } = repoSlug()
+  const raw = runGh([
+    'api',
+    '-X',
+    'POST',
+    `repos/${owner}/${repo}/pulls`,
+    '-f',
+    `title=${title}`,
+    '-f',
+    `head=${branch}`,
+    '-f',
+    `base=${mergeBase}`,
+    '-f',
+    `body=${body}`,
+    '-f',
+    'draft=true',
+  ])
+  const parsed = JSON.parse(raw) as { number: number }
+  return parsed.number
+}
+
+function findOpenSyncPr(mergeBase: string, branch: string): number {
+  const { owner, repo } = repoSlug()
+  try {
+    const raw = runGh([
+      'pr',
+      'list',
+      '--repo',
+      `${owner}/${repo}`,
+      '--base',
+      mergeBase,
+      '--head',
+      `${owner}:${branch}`,
+      '--state',
+      'open',
+      '--json',
+      'number',
+    ])
+    const prs = JSON.parse(raw) as Array<{ number: number }>
+    return prs[0]?.number ?? 0
+  } catch {
+    return 0
+  }
+}
+
+function attachPrReviewers(prNumber: number): void {
+  const reviewers = getPrReviewers()
+  if (prNumber <= 0 || reviewers.length === 0) return
+  try {
+    runGh(['pr', 'edit', String(prNumber), '--add-reviewer', reviewers.join(',')])
+  } catch (error) {
+    console.warn(`Could not add reviewers (${reviewers.join(', ')}):`, error)
+  }
+}
+
+function createDraftPr(
+  mergeBase: string,
+  branch: string,
+  runId: string,
+  body: string,
+  upstreamSha: string
+): number {
   if (isSyncBranch(mergeBase)) {
     const hint = explainPrCreateFailure(
       new Error(`No commits between ${mergeBase} and ${branch}`),
@@ -134,53 +203,65 @@ function createDraftPr(mergeBase: string, branch: string, runId: string, body: s
   }
 
   const title = `upstream-sync: merge simstudioai/sim main into ${mergeBase} (${runId})`
-  runGit(['push', '-u', 'origin', branch])
+  const { owner, repo } = repoSlug()
+  const currentBranch = runGit(['branch', '--show-current'])
 
-  try {
-    runGit(['fetch', 'origin', mergeBase, branch])
-  } catch {
-    console.warn(`Could not fetch origin/${mergeBase} and origin/${branch} before PR create`)
+  commitSyncBranchScaffold({ runId, syncBranch: branch, mergeBase, upstreamSha })
+  runGit(['push', '-u', 'origin', branch])
+  runGit(['fetch', 'origin', mergeBase, branch])
+
+  const existing = findOpenSyncPr(mergeBase, branch)
+  if (existing > 0) {
+    console.log(`Reusing open PR #${existing} for ${branch} → ${mergeBase}.`)
+    updateDraftPrBody(existing, body)
+    return existing
+  }
+
+  const prCreateArgs = [
+    'pr',
+    'create',
+    '--repo',
+    `${owner}/${repo}`,
+    '--base',
+    mergeBase,
+    '--title',
+    title,
+    '--body',
+    body,
+    '--draft',
+  ]
+  if (currentBranch !== branch) {
+    prCreateArgs.push('--head', `${owner}:${branch}`)
   }
 
   try {
-    const prUrl = runGh([
-      'pr',
-      'create',
-      '--base',
-      mergeBase,
-      '--head',
-      branch,
-      '--title',
-      title,
-      '--body',
-      body,
-      '--draft',
-    ])
-
+    const prUrl = runGh(prCreateArgs)
     const match = prUrl.match(/\/pull\/(\d+)/)
     const prNumber = match ? Number(match[1]) : 0
-
-    const reviewers = getPrReviewers()
-    if (prNumber > 0 && reviewers.length > 0) {
-      try {
-        runGh(['pr', 'edit', String(prNumber), '--add-reviewer', reviewers.join(',')])
-      } catch (error) {
-        console.warn(`Could not add reviewers (${reviewers.join(', ')}):`, error)
-      }
-    }
-
+    attachPrReviewers(prNumber)
     return prNumber
-  } catch (error) {
-    const compareUrl = comparePullRequestUrl(mergeBase, branch)
-    const hint = explainPrCreateFailure(error, mergeBase, branch)
-    console.warn(`Could not create draft PR via gh: ${hint}`)
-    console.warn(`Create manually: ${compareUrl}`)
-    writeRunLog(runId, {
-      Status: 'pr_create_failed',
-      'Compare URL': compareUrl,
-      Error: error instanceof Error ? error.message : String(error),
-      Hint: hint,
-    })
+  } catch (cliError) {
+    try {
+      const prNumber = createDraftPrViaApi(mergeBase, branch, title, body)
+      if (prNumber > 0) {
+        console.log(`Opened draft PR #${prNumber} via GitHub REST API.`)
+        attachPrReviewers(prNumber)
+        return prNumber
+      }
+    } catch (apiError) {
+      const compareUrl = comparePullRequestUrl(mergeBase, branch)
+      const hint = explainPrCreateFailure(apiError, mergeBase, branch)
+      console.warn(`Could not create draft PR via gh: ${hint}`)
+      console.warn(`CLI error: ${cliError instanceof Error ? cliError.message : String(cliError)}`)
+      console.warn(`Create manually: ${compareUrl}`)
+      writeRunLog(runId, {
+        Status: 'pr_create_failed',
+        'Compare URL': compareUrl,
+        Error: apiError instanceof Error ? apiError.message : String(apiError),
+        Hint: hint,
+      })
+      return 0
+    }
     return 0
   }
 }
@@ -191,7 +272,8 @@ function resolveDraftPr(
   mergeBase: string,
   branch: string,
   runId: string,
-  body: string
+  body: string,
+  upstreamSha: string
 ): number {
   if (existingPrNumber && existingPrNumber > 0) {
     try {
@@ -201,7 +283,7 @@ function resolveDraftPr(
       console.warn(`Could not update draft PR #${existingPrNumber}:`, error)
     }
   }
-  return createDraftPr(mergeBase, branch, runId, body)
+  return createDraftPr(mergeBase, branch, runId, body, upstreamSha)
 }
 
 function commitUpstreamLedger(message: string): boolean {
@@ -314,7 +396,7 @@ async function main(): Promise<void> {
       `- [.upstream-sync/ledger/${runId}/fbi-report.md](.upstream-sync/ledger/${runId}/fbi-report.md)`,
       `- [.upstream-sync/ledger/${runId}/release-notes.md](.upstream-sync/ledger/${runId}/release-notes.md)`,
     ].join('\n')
-    activePrNumber = createDraftPr(mergeBase, syncBranch, runId, earlyPrBody)
+    activePrNumber = createDraftPr(mergeBase, syncBranch, runId, earlyPrBody, headSha)
   }
 
   writeState({
@@ -393,7 +475,7 @@ async function main(): Promise<void> {
       `Reply with \`${RESUME_COMMAND}\` after answering open questions.`,
     ].join('\n')
 
-    const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody)
+    const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody, headSha)
     logHarnessQuestion(
       runId,
       prNumber,
@@ -428,7 +510,7 @@ async function main(): Promise<void> {
       '',
       `Fix failures on \`${syncBranch}\`, then reply \`${RESUME_COMMAND}\`.`,
     ].join('\n')
-    const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody)
+    const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody, headSha)
     logHarnessQuestion(
       runId,
       prNumber,
@@ -471,7 +553,7 @@ async function main(): Promise<void> {
     '**Draft** — mark ready for review when satisfied.',
   ].join('\n')
 
-  const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody)
+  const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody, headSha)
   if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
   commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
   runGit(['push', 'origin', syncBranch])

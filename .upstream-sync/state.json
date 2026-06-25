@@ -2,7 +2,7 @@
   "lastSyncedUpstreamSha": null,
   "lastSyncedAt": null,
   "lastRunId": null,
-  "status": "idle",
+  "status": "failed",
   "openQuestions": [],
   "activeBranch": null,
   "activePrNumber": null,

@@ -9,6 +9,7 @@ export const QA_HISTORY_PATH = join(UPSTREAM_SYNC_ROOT, 'qa-history.jsonl')
 export const GRILL_LOG_PATH = join(UPSTREAM_SYNC_ROOT, 'grill-log.md')
 export const MERGE_POLICY_PATH = join(UPSTREAM_SYNC_ROOT, 'merge-policy.json')
 export const EXTENSIBILITY_PATH = join(UPSTREAM_SYNC_ROOT, 'extensibility-notes.md')
+export const SYNC_BRANCH_README_PATH = join(UPSTREAM_SYNC_ROOT, 'SYNC-BRANCH.md')
 
 export const COMPLETION_SIGNAL = '<promise>UPSTREAM_SYNC_COMPLETE</promise>'
 export const GRILL_COMPLETION_SIGNAL = '<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>'
@@ -117,7 +118,7 @@ export function appendGrillQa(entry: GrillQaEntry): void {
   writeFileSync(runGrillPath, `${existing.trim()}\n\n${parts.join('\n')}\n`)
 }
 
-function repoSlug(): { owner: string; repo: string } {
+export function repoSlug(): { owner: string; repo: string } {
   const slug =
     process.env.GITHUB_REPOSITORY ??
     runGh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
@@ -326,11 +327,70 @@ export function runGit(args: string[], cwd = process.cwd()): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
+function resolveGhToken(): string | undefined {
+  for (const key of ['GH_PAT', 'UPSTREAM_SYNC_GH_TOKEN', 'GH_TOKEN'] as const) {
+    const value = process.env[key]?.trim()
+    if (value) return value
+  }
+  return undefined
+}
+
 export function runGh(args: string[]): string {
-  const token =
-    process.env.GH_PAT ?? process.env.UPSTREAM_SYNC_GH_TOKEN ?? process.env.GH_TOKEN
-  const env = token ? { ...process.env, GH_TOKEN: token } : process.env
+  const token = resolveGhToken()
+  const env = { ...process.env }
+  if (token) {
+    env.GH_TOKEN = token
+  } else {
+    delete env.GH_TOKEN
+  }
   return execFileSync('gh', args, { encoding: 'utf8', env }).trim()
+}
+
+/**
+ * Short readme on the sync branch so GitHub always sees at least one commit ahead of the merge target.
+ */
+export function writeSyncBranchReadme(options: {
+  runId: string
+  syncBranch: string
+  mergeBase: string
+  upstreamSha: string
+}): void {
+  mkdirSync(UPSTREAM_SYNC_ROOT, { recursive: true })
+  const content = [
+    '# Upstream sync branch',
+    '',
+    `Draft PR: \`${options.syncBranch}\` → \`${options.mergeBase}\`.`,
+    '',
+    '| | |',
+    '|---|---|',
+    `| Run | \`${options.runId}\` |`,
+    `| Sync branch | \`${options.syncBranch}\` |`,
+    `| Merge into | \`${options.mergeBase}\` |`,
+    `| Upstream | [simstudioai/sim@${options.upstreamSha.slice(0, 8)}](https://github.com/simstudioai/sim/commit/${options.upstreamSha}) |`,
+    `| Opened | ${new Date().toISOString()} |`,
+    '',
+    'This note exists so the sync branch is always one commit ahead of the merge target when the draft PR opens.',
+    'See `.upstream-sync/ledger/` for the full run ledger.',
+    '',
+  ].join('\n')
+  writeFileSync(SYNC_BRANCH_README_PATH, content)
+}
+
+/** Commit the sync-branch readme so branch-to-branch PR creation succeeds on GitHub. */
+export function commitSyncBranchScaffold(options: {
+  runId: string
+  syncBranch: string
+  mergeBase: string
+  upstreamSha: string
+}): void {
+  writeSyncBranchReadme(options)
+  runGit(['add', SYNC_BRANCH_README_PATH])
+  try {
+    runGit(['diff', '--cached', '--quiet'])
+    runGit(['commit', '--allow-empty', '-m', `upstream-sync(${options.runId}): sync branch note`])
+  } catch {
+    runGit(['commit', '-m', `upstream-sync(${options.runId}): sync branch note`])
+  }
 }
 
 /** Update an existing draft PR body (e.g. after grill phase or on blocked/success). */
