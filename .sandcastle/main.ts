@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { run } from '@ai-hero/sandcastle'
 import { noSandbox } from '@ai-hero/sandcastle/sandboxes/no-sandbox'
-import { resolveAgents } from './lib/agents'
+import { resolveAgents, assertAgentCredentials } from './lib/agents'
 import {
   COMPLETION_SIGNAL,
   MERGE_POLICY_PATH,
@@ -26,6 +26,7 @@ import {
   commitsSince,
   detectReleaseVersions,
   ensureUpstreamSyncScaffold,
+  ensureSandcastleEnvFile,
   fetchAllUpstreamReleaseNotes,
   fetchUpstream,
   formatReleaseNotesMarkdown,
@@ -172,6 +173,8 @@ function commitUpstreamLedger(message: string): void {
 
 async function main(): Promise<void> {
   ensureUpstreamSyncScaffold()
+  assertAgentCredentials()
+  ensureSandcastleEnvFile()
   fetchUpstream()
 
   const state = readState()
@@ -307,7 +310,7 @@ async function main(): Promise<void> {
       `${remaining.length} unresolved merge conflict(s). Review ledger and reply with ${RESUME_COMMAND}.`,
       remaining.join(', ')
     )
-    if (prNumber > 0)     if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
+    if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
     commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
     writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
     process.exitCode = 1
