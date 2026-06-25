@@ -1659,3 +1659,69 @@ describe('transformBlockTool knowledge-base multi-instance unique IDs', () => {
     expect(result?.id).toBe('knowledge_search')
   })
 })
+
+describe('transformBlockTool image generator agent tool', () => {
+  const imageGeneratorBlockDef = {
+    type: 'image_generator_v2',
+    inputs: {
+      inputImage: { type: 'json' },
+      inputImageUrl: { type: 'string' },
+    },
+    subBlocks: [
+      { id: 'provider', type: 'dropdown' },
+      { id: 'model', type: 'dropdown' },
+      { id: 'prompt', type: 'long-input' },
+    ],
+    tools: {
+      access: ['image_generate'],
+      config: {
+        tool: () => 'image_generate',
+        params: (params: Record<string, unknown>) => ({
+          provider: params.provider || 'openai',
+          model: params.model || 'gpt-image-2',
+          prompt: params.prompt,
+        }),
+      },
+    },
+  }
+
+  const getAllBlocks = () => [imageGeneratorBlockDef]
+  const getTool = (id: string) => ({
+    id,
+    name: 'Image Generator',
+    description: 'Generate images',
+    params: {
+      provider: { type: 'string', required: true, visibility: 'user-only' },
+      model: { type: 'string', required: true, visibility: 'user-or-llm' },
+      prompt: { type: 'string', required: true, visibility: 'user-or-llm' },
+    },
+  })
+
+  it('exposes image_generate to the LLM with block paramsTransform applied', async () => {
+    const result = await transformBlockTool(
+      {
+        type: 'image_generator_v2',
+        title: 'Image Generator',
+        params: {
+          provider: 'openai',
+          model: 'gpt-image-2',
+          prompt: 'A red sports car',
+        },
+      },
+      { getAllBlocks, getTool }
+    )
+
+    expect(result?.id).toBe('image_generate')
+    expect(result?.name).toBe('Image Generator')
+    expect(result?.params).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-image-2',
+      prompt: 'A red sports car',
+    })
+    expect(result?.paramsTransform?.({ prompt: 'Updated prompt' })).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-image-2',
+      prompt: 'Updated prompt',
+    })
+  })
+})

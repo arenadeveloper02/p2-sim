@@ -12,6 +12,7 @@ import {
   isValidBlockType,
 } from '@/blocks/registry'
 import { AuthMode } from '@/blocks/types'
+import { START_FILES_REF } from '@/executor/constants'
 
 describe.concurrent('Blocks Module', () => {
   describe('Registry', () => {
@@ -172,7 +173,11 @@ describe.concurrent('Blocks Module', () => {
         'file_fetch',
         'file_write',
         'file_append',
+        'file_compress',
+        'file_decompress',
       ])
+      expect(block?.tools.config?.tool({ operation: 'file_compress' })).toBe('file_compress')
+      expect(block?.tools.config?.tool({ operation: 'file_decompress' })).toBe('file_decompress')
       expect(block?.subBlocks.find((subBlock) => subBlock.id === 'readFile')?.multiple).toBe(true)
       expect(block?.tools.config?.tool({ operation: 'file_read' })).toBe('file_read')
       expect(block?.tools.config?.tool({ operation: 'file_get_content' })).toBe('file_get_content')
@@ -576,6 +581,7 @@ describe.concurrent('Blocks Module', () => {
         'text',
         'router-input',
         'table-selector',
+        'column-selector',
         'filter-builder',
         'sort-builder',
         'skill-input',
@@ -815,11 +821,11 @@ describe.concurrent('Blocks Module', () => {
       expect(videoGeneratorBlock?.hideFromToolbar).not.toBe(true)
       expect(imageProviderSubBlock?.commandSearchable).toBe(true)
       expect(videoProviderSubBlock?.commandSearchable).toBe(true)
-      expect(imageProviderSubBlock?.value?.()).toBe('falai')
+      expect(imageProviderSubBlock?.value?.()).toBe('gemini')
       expect(videoProviderSubBlock?.value?.()).toBe('falai')
       expect(
         Array.isArray(imageProviderOptions) ? imageProviderOptions.map((option) => option.id) : []
-      ).toContain('falai')
+      ).not.toContain('falai')
       expect(
         Array.isArray(videoProviderOptions) ? videoProviderOptions.map((option) => option.id) : []
       ).toContain('falai')
@@ -843,7 +849,7 @@ describe.concurrent('Blocks Module', () => {
 
       expect(openAIModelSubBlock?.options?.map((option) => option.id)).toContain('gpt-image-2')
       expect(nonFalApiKeySubBlock).toBeUndefined()
-      expect(geminiReferenceSubBlock?.condition?.value).toBe('gemini')
+      expect(geminiReferenceSubBlock?.condition?.value).toEqual(['openai', 'gemini'])
     })
 
     it('should mark the agent model combobox as command-searchable', () => {
@@ -858,12 +864,8 @@ describe.concurrent('Blocks Module', () => {
     it('should hide generator API keys on hosted only for Fal.ai providers', () => {
       const imageBlock = getBlock('image_generator_v2')
       const imageApiKeySubBlocks = imageBlock?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
-      const imageFalApiKeySubBlock = imageApiKeySubBlocks.find(
-        (sb) => sb.condition?.field === 'provider' && sb.condition.value === 'falai'
-      )
 
-      expect(imageApiKeySubBlocks).toHaveLength(1)
-      expect(imageFalApiKeySubBlock?.hideWhenHosted).toBe(true)
+      expect(imageApiKeySubBlocks).toHaveLength(0)
 
       const videoBlock = getBlock('video_generator_v3')
       const videoApiKeySubBlocks = videoBlock?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
@@ -888,6 +890,7 @@ describe.concurrent('Blocks Module', () => {
       const referenceImageUrls = block?.subBlocks.find((sb) => sb.id === 'inputImageUrl')
 
       expect(referenceImages?.allowStartFilesReference).toBe(true)
+      expect(referenceImages?.defaultValue).toBe(START_FILES_REF)
       expect(referenceImages?.condition?.value).toEqual(['openai', 'gemini'])
       expect(referenceImageUrls?.condition?.value).toEqual(['openai', 'gemini'])
       expect(block?.outputs.images).toBeDefined()

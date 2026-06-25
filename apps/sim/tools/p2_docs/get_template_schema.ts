@@ -24,8 +24,7 @@ export const getTemplateSchemaTool: ToolConfig<GetTemplateSchemaParams, GetTempl
         type: 'string',
         required: false,
         visibility: 'user-or-llm',
-        description:
-          'Template id (e.g. position2_2026). Defaults to position2_2026 when omitted.',
+        description: 'Template id (e.g. position2_2026). Defaults to position2_2026 when omitted.',
       },
     },
 
@@ -38,7 +37,7 @@ export const getTemplateSchemaTool: ToolConfig<GetTemplateSchemaParams, GetTempl
     directExecution: async (
       params: GetTemplateSchemaParams
     ): Promise<GetTemplateSchemaResponse> => {
-      const templateId = (params.template?.trim() || 'position2_2026')
+      const templateId = params.template?.trim() || 'position2_2026'
       const schema = getTemplateMasterSchema(templateId)
       return {
         success: true,

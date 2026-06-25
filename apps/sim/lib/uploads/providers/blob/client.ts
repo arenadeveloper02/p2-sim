@@ -1,8 +1,8 @@
 import type { Readable } from 'node:stream'
 import type { BlobServiceClient as BlobServiceClientType } from '@azure/storage-blob'
 import { createLogger } from '@sim/logger'
-import { generateId } from '@sim/utils/id'
 import { env } from '@/lib/core/config/env'
+import { generateId } from '@sim/utils/id'
 import {
   assertKnownSizeWithinLimit,
   readNodeStreamToBufferWithLimit,
@@ -628,6 +628,69 @@ export async function getMultipartPartUrls(
       blockId,
       url: `${blockBlobClient.url}?comp=block&blockid=${encodeURIComponent(blockId)}&${sasToken}`,
     }
+  })
+}
+
+async function getBlockBlobClientFor(key: string, customConfig?: BlobConfig) {
+  const { BlobServiceClient, StorageSharedKeyCredential } = await import('@azure/storage-blob')
+  let blobServiceClient: BlobServiceClientType
+  let containerName: string
+
+  if (customConfig) {
+    if (customConfig.connectionString) {
+      blobServiceClient = BlobServiceClient.fromConnectionString(customConfig.connectionString)
+    } else if (customConfig.accountName && customConfig.accountKey) {
+      const credential = new StorageSharedKeyCredential(
+        customConfig.accountName,
+        customConfig.accountKey
+      )
+      blobServiceClient = new BlobServiceClient(
+        `https://${customConfig.accountName}.blob.core.windows.net`,
+        credential
+      )
+    } else {
+      throw new Error('Invalid custom blob configuration')
+    }
+    containerName = customConfig.containerName
+  } else {
+    blobServiceClient = await getBlobServiceClient()
+    containerName = BLOB_CONFIG.containerName
+  }
+
+  return blobServiceClient.getContainerClient(containerName).getBlockBlobClient(key)
+}
+
+/**
+ * Stage a single block from the server (body in hand), returning its
+ * `{ partNumber, blockId }`. The server-side streaming counterpart to the
+ * presigned {@link getMultipartPartUrls}.
+ */
+export async function stageBlobPart(
+  key: string,
+  partNumber: number,
+  body: Buffer,
+  customConfig?: BlobConfig
+): Promise<AzureMultipartPart> {
+  const blockBlobClient = await getBlockBlobClientFor(key, customConfig)
+  const blockId = deriveBlobBlockId(partNumber)
+  await blockBlobClient.stageBlock(blockId, body, body.length)
+  return { partNumber, blockId }
+}
+
+/**
+ * Commit staged blocks into the final blob, setting the content type. Used by the
+ * server-side streaming uploader (the KB flow uses {@link completeMultipartUpload}).
+ */
+export async function commitBlobBlockList(
+  key: string,
+  parts: AzureMultipartPart[],
+  contentType: string,
+  customConfig?: BlobConfig
+): Promise<void> {
+  const blockBlobClient = await getBlockBlobClientFor(key, customConfig)
+  const sortedBlockIds = parts.sort((a, b) => a.partNumber - b.partNumber).map((p) => p.blockId)
+  await blockBlobClient.commitBlockList(sortedBlockIds, {
+    blobHTTPHeaders: { blobContentType: contentType },
   })
 }
 

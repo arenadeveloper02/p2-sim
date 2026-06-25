@@ -12,7 +12,7 @@ import {
 import { formatDuration } from '@sim/utils/formatting'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
-import { useShallow } from 'zustand/react/shallow'
+import { useQueryState } from 'nuqs'
 import {
   Button,
   ChipCombobox,
@@ -53,7 +53,13 @@ import type {
   SortConfig,
 } from '@/app/workspace/[workspaceId]/components'
 import { Resource } from '@/app/workspace/[workspaceId]/components'
+import { useLogFilters } from '@/app/workspace/[workspaceId]/logs/hooks/use-log-filters'
 import { useSearchState } from '@/app/workspace/[workspaceId]/logs/hooks/use-search-state'
+import {
+  executionIdParam,
+  logDetailsTabParam,
+  logDetailsTabUrlKeys,
+} from '@/app/workspace/[workspaceId]/logs/search-params'
 import type { Suggestion } from '@/app/workspace/[workspaceId]/logs/types'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { getBlock } from '@/blocks/registry'
@@ -202,14 +208,7 @@ export default function Logs() {
   const params = useParams()
   const workspaceId = params.workspaceId as string
 
-  useState(() => {
-    useFilterStore.getState().initializeFromURL()
-    return null
-  })
-
   const {
-    setWorkspaceId,
-    initializeFromURL,
     timeRange,
     startDate,
     endDate,
@@ -217,10 +216,9 @@ export default function Logs() {
     workflowIds,
     folderIds,
     setWorkflowIds,
-    setSearchQuery: setStoreSearchQuery,
+    searchQuery: urlSearchQuery,
+    setSearchQuery: setUrlSearchQuery,
     triggers,
-    viewMode,
-    setViewMode,
     resetFilters,
     setLevel,
     setFolderIds,
@@ -228,50 +226,35 @@ export default function Logs() {
     setTimeRange,
     setDateRange,
     clearDateRange,
-  } = useFilterStore(
-    useShallow((s) => ({
-      setWorkspaceId: s.setWorkspaceId,
-      initializeFromURL: s.initializeFromURL,
-      timeRange: s.timeRange,
-      startDate: s.startDate,
-      endDate: s.endDate,
-      level: s.level,
-      workflowIds: s.workflowIds,
-      folderIds: s.folderIds,
-      setWorkflowIds: s.setWorkflowIds,
-      setSearchQuery: s.setSearchQuery,
-      triggers: s.triggers,
-      viewMode: s.viewMode,
-      setViewMode: s.setViewMode,
-      resetFilters: s.resetFilters,
-      setLevel: s.setLevel,
-      setFolderIds: s.setFolderIds,
-      setTriggers: s.setTriggers,
-      setTimeRange: s.setTimeRange,
-      setDateRange: s.setDateRange,
-      clearDateRange: s.clearDateRange,
-    }))
-  )
+  } = useLogFilters()
 
-  useEffect(() => {
-    setWorkspaceId(workspaceId)
-  }, [workspaceId, setWorkspaceId])
+  const viewMode = useFilterStore((s) => s.viewMode)
+  const setViewMode = useFilterStore((s) => s.setViewMode)
 
   const [{ selectedLogId, isSidebarOpen }, dispatch] = useReducer(logSelectionReducer, {
     selectedLogId: null,
     isSidebarOpen: false,
   })
-  const [pendingExecutionId, setPendingExecutionId] = useState<string | null>(() =>
-    typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('executionId')
-      : null
-  )
 
-  const [searchQuery, setSearchQuery] = useState(() => {
-    if (typeof window === 'undefined') return ''
-    return new URLSearchParams(window.location.search).get('search') ?? ''
+  const [executionId] = useQueryState(executionIdParam.key, executionIdParam.parser)
+  const [pendingExecutionId, setPendingExecutionId] = useState<string | null>(() => executionId)
+
+  /**
+   * The log-details `tab` param is owned/written by the details panel, but the
+   * orchestrator must clear it when the panel closes so a lingering `?tab=trace`
+   * never carries over to the next log opened from the list.
+   */
+  const [, setLogDetailsTab] = useQueryState(logDetailsTabParam.key, {
+    ...logDetailsTabParam.parser,
+    ...logDetailsTabUrlKeys,
   })
-  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+
+  /**
+   * `urlSearchQuery` is the instant nuqs value (its URL write is debounced inside
+   * `useLogFilters`); the query/filtering still debounce off it to avoid
+   * per-keystroke fetches.
+   */
+  const debouncedSearchQuery = useDebounce(urlSearchQuery, 300)
 
   const isLive = true
   const [isVisuallyRefreshing, setIsVisuallyRefreshing] = useState(false)
@@ -422,10 +405,6 @@ export default function Logs() {
     }
   }, [])
 
-  useEffect(() => {
-    setStoreSearchQuery(debouncedSearchQuery)
-  }, [debouncedSearchQuery, setStoreSearchQuery])
-
   // Track search event when search query is applied (after debounce or enter)
   const prevSearchQueryRef = useRef<string>('')
   const isSearchTrackingInitializedRef = useRef(false)
@@ -500,6 +479,23 @@ export default function Logs() {
     activeLogTabRef.current = 'overview'
   }, [])
 
+  /**
+   * Strip the `tab` param whenever the detail panel transitions from open to
+   * closed — by the X button, toggling the same row, or the keyboard — so
+   * reopening another log starts on overview rather than inheriting the closed
+   * log's tab. Guarded on a prior-open ref so an initial deep-linked `?tab=` is
+   * preserved (the panel isn't open yet on first mount).
+   */
+  const wasSidebarOpenRef = useRef(false)
+  useEffect(() => {
+    if (isSidebarOpen) {
+      wasSidebarOpenRef.current = true
+    } else if (wasSidebarOpenRef.current) {
+      wasSidebarOpenRef.current = false
+      setLogDetailsTab(null)
+    }
+  }, [isSidebarOpen, setLogDetailsTab])
+
   const handleActiveTabChange = useCallback((tab: string) => {
     activeLogTabRef.current = tab
   }, [])
@@ -546,10 +542,13 @@ export default function Logs() {
     }
   }, [contextMenuLog, workflowIds, setWorkflowIds])
 
+  /**
+   * `resetFilters()` already clears `search` (sets it to null), so no separate
+   * search reset is needed here.
+   */
   const handleClearAllFilters = useCallback(() => {
     resetFilters()
-    setSearchQuery('')
-  }, [resetFilters, setSearchQuery])
+  }, [resetFilters])
 
   const handleOpenPreview = useCallback(() => {
     if (contextMenuLog?.id) {
@@ -557,7 +556,7 @@ export default function Logs() {
     }
   }, [contextMenuLog])
 
-  const cancelExecution = useCancelExecution()
+  const cancelExecution = useCancelExecution(workspaceId)
   const retryExecution = useRetryExecution()
 
   const handleCancelExecution = useCallback(() => {
@@ -577,7 +576,7 @@ export default function Logs() {
 
       try {
         const detailLog = await queryClient.fetchQuery({
-          queryKey: logKeys.detail(logId),
+          queryKey: logKeys.detail(workspaceId, logId),
           queryFn: ({ signal }) => fetchLogDetail(logId, workspaceId, signal),
           staleTime: 30 * 1000,
         })
@@ -699,17 +698,6 @@ export default function Logs() {
     endDate,
     debouncedSearchQuery,
   ])
-
-  useEffect(() => {
-    const handlePopState = () => {
-      initializeFromURL()
-      const params = new URLSearchParams(window.location.search)
-      setSearchQuery(params.get('search') || '')
-    }
-
-    window.addEventListener('popstate', handlePopState)
-    return () => window.removeEventListener('popstate', handlePopState)
-  }, [initializeFromURL])
 
   const loadMoreLogs = useCallback(() => {
     const { isFetching, hasNextPage, fetchNextPage } = logsQueryRef.current
@@ -917,13 +905,16 @@ export default function Logs() {
     [workflowsData, foldersData, triggersData]
   )
 
-  const handleFiltersChange = useCallback((filters: ParsedFilter[], textSearch: string) => {
-    const filterStrings = filters.map(
-      (f) => `${f.field}:${f.operator !== '=' ? f.operator : ''}${f.originalValue}`
-    )
-    const fullQuery = [...filterStrings, textSearch].filter(Boolean).join(' ')
-    setSearchQuery(fullQuery)
-  }, [])
+  const handleFiltersChange = useCallback(
+    (filters: ParsedFilter[], textSearch: string) => {
+      const filterStrings = filters.map(
+        (f) => `${f.field}:${f.operator !== '=' ? f.operator : ''}${f.originalValue}`
+      )
+      const fullQuery = [...filterStrings, textSearch].filter(Boolean).join(' ')
+      setUrlSearchQuery(fullQuery)
+    },
+    [setUrlSearchQuery]
+  )
 
   const getSuggestions = useCallback(
     (input: string) => suggestionEngine.getSuggestions(input),
@@ -957,14 +948,14 @@ export default function Logs() {
 
   const lastExternalSearchValue = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (searchQuery === lastExternalSearchValue.current) return
+    if (urlSearchQuery === lastExternalSearchValue.current) return
     const isMount = lastExternalSearchValue.current === undefined
-    lastExternalSearchValue.current = searchQuery
+    lastExternalSearchValue.current = urlSearchQuery
     // On mount with no initial query, skip the no-op parse
-    if (isMount && !searchQuery) return
-    const parsed = parseQuery(searchQuery)
+    if (isMount && !urlSearchQuery) return
+    const parsed = parseQuery(urlSearchQuery)
     initializeFromQuery(parsed.textSearch, parsed.filters)
-  }, [searchQuery, initializeFromQuery])
+  }, [urlSearchQuery, initializeFromQuery])
 
   useEffect(() => {
     if (!isSuggestionsOpen || highlightedIndex < 0) return
@@ -1160,7 +1151,10 @@ export default function Logs() {
           sort={sortConfig}
           filter={{
             content: (
-              <LogsFilterPanel searchQuery={searchQuery} onSearchQueryChange={setSearchQuery} />
+              <LogsFilterPanel
+                searchQuery={urlSearchQuery}
+                onSearchQueryChange={setUrlSearchQuery}
+              />
             ),
           }}
           filterTags={filterTags}
@@ -1172,6 +1166,7 @@ export default function Logs() {
                 stats={dashboardStatsQuery.data}
                 isLoading={dashboardStatsQuery.isLoading}
                 error={dashboardStatsQuery.error}
+                searchQuery={debouncedSearchQuery}
               />
             </div>
             {sidebarOverlay}
@@ -1248,25 +1243,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
     setDateRange,
     clearDateRange,
     resetFilters,
-  } = useFilterStore(
-    useShallow((s) => ({
-      level: s.level,
-      setLevel: s.setLevel,
-      workflowIds: s.workflowIds,
-      setWorkflowIds: s.setWorkflowIds,
-      folderIds: s.folderIds,
-      setFolderIds: s.setFolderIds,
-      triggers: s.triggers,
-      setTriggers: s.setTriggers,
-      timeRange: s.timeRange,
-      setTimeRange: s.setTimeRange,
-      startDate: s.startDate,
-      endDate: s.endDate,
-      setDateRange: s.setDateRange,
-      clearDateRange: s.clearDateRange,
-      resetFilters: s.resetFilters,
-    }))
-  )
+  } = useLogFilters()
 
   const [datePickerOpen, setDatePickerOpen] = useState(false)
   const previousTimeRangeRef = useRef(timeRange)

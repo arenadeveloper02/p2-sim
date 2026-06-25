@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useRef } from 'react'
-import { generateId } from '@sim/utils/id'
 import { Plus } from 'lucide-react'
 import { Trash } from '@/components/emcn/icons/trash'
 import 'prismjs/components/prism-json'
@@ -21,6 +20,7 @@ import {
 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
+import { createDefaultInputFormatField } from '@/lib/workflows/input-format'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { TagDropdown } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tag-dropdown/tag-dropdown'
 import { getActiveWorkflowSearchHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
@@ -97,18 +97,6 @@ const DEFAULT_MENTION_TARGET_OPTIONS: ComboboxOption[] = [
 ]
 
 /**
- * Creates a new field with default values
- */
-const createDefaultField = (): Field => ({
-  id: generateId(),
-  name: '',
-  type: 'string',
-  value: '',
-  description: '',
-  collapsed: false,
-})
-
-/**
  * Validates and sanitizes field names by removing control characters and quotes
  */
 const validateFieldName = (name: string): string => name.replace(/[\x00-\x1F"\\]/g, '').trim()
@@ -158,7 +146,7 @@ export function FieldFormat({
    * When the collaborative store has no rows yet, we must not synthesize a new default row on
    * every render (`generateId()` would churn keys and break add / tag UI until the first persist).
    */
-  const stableEmptyRowTemplate = useMemo(() => [createDefaultField()], [blockId, subBlockId])
+  // const stableEmptyRowTemplate = useMemo(() => [createDefaultField()], [blockId, subBlockId])
   const valueInputRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement>>({})
   const nameInputRefs = useRef<Record<string, HTMLInputElement>>({})
   const overlayRefs = useRef<Record<string, HTMLDivElement>>({})
@@ -177,9 +165,17 @@ export function FieldFormat({
     disabled,
   })
 
-  const value = isPreview ? previewValue : storeValue
-  const fields: Field[] = Array.isArray(value) && value.length > 0 ? value : stableEmptyRowTemplate
+  /**
+   * Stable fallback field used while the store value is still empty (e.g. a
+   * newly added block). Caching it in a ref keeps the field id constant across
+   * renders, so the inputs don't remount on each keystroke and edits commit to
+   * the same id instead of a freshly generated one.
+   */
+  const fallbackFieldRef = useRef<Field | null>(null)
+  const fallbackField = (fallbackFieldRef.current ??= createDefaultInputFormatField())
 
+  const value = isPreview ? previewValue : storeValue
+  const fields: Field[] = Array.isArray(value) && value.length > 0 ? value : [fallbackField]
   const isReadOnly = isPreview || disabled
 
   const renderFieldLabel = (label: string) => <Label>{label}</Label>
@@ -189,7 +185,7 @@ export function FieldFormat({
    */
   const addField = () => {
     if (isReadOnly) return
-    setStoreValue([...fields, createDefaultField()])
+    setStoreValue([...fields, createDefaultInputFormatField()])
   }
 
   /**
@@ -199,15 +195,19 @@ export function FieldFormat({
     if (isReadOnly) return
 
     if (fields.length === 1) {
-      setStoreValue([createDefaultField()])
+      setStoreValue([createDefaultInputFormatField()])
       return
     }
 
     setStoreValue(fields.filter((field) => field.id !== id))
   }
 
-  const storeValueRef = useRef(storeValue)
-  storeValueRef.current = storeValue
+  /**
+   * Mirrors the rendered fields (store value or stable fallback) so updateField
+   * always commits against the same ids the UI is currently showing.
+   */
+  const fieldsRef = useRef(fields)
+  fieldsRef.current = fields
 
   const isReadOnlyRef = useRef(isReadOnly)
   isReadOnlyRef.current = isReadOnly
@@ -226,17 +226,11 @@ export function FieldFormat({
             : validateFieldName(fieldValue)
           : fieldValue
 
-      const currentStoreValue = storeValueRef.current
-      const currentFields: Field[] =
-        Array.isArray(currentStoreValue) && currentStoreValue.length > 0
-          ? currentStoreValue
-          : stableEmptyRowTemplate
-
       setStoreValueRef.current(
-        currentFields.map((f) => (f.id === id ? { ...f, [fieldKey]: updatedValue } : f))
+        fieldsRef.current.map((f) => (f.id === id ? { ...f, [fieldKey]: updatedValue } : f))
       )
     },
-    [stableEmptyRowTemplate, variant]
+    [variant]
   )
 
   const editorValueChangeHandlersRef = useRef<Record<string, (newValue: string) => void>>({})

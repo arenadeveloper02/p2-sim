@@ -1,9 +1,11 @@
 import { createLogger } from '@sim/logger'
+import {
+  getWorkspaceOAuthCredentialsForUserProvider,
+  syncWorkspaceOAuthCredentialsForUser,
+} from '@/lib/credentials/oauth'
+import { getServiceConfigByProviderId } from '@/lib/oauth/utils'
 import type { BlockOutput } from '@/blocks/types'
 import type { ExecutionContext } from '@/executor/types'
-import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
-import { syncWorkspaceOAuthCredentialsForUser } from '@/lib/credentials/oauth'
-import { getServiceConfigByProviderId } from '@/lib/oauth/utils'
 
 const logger = createLogger('GetMyCredential')
 
@@ -11,10 +13,10 @@ export async function resolveMyCredential(
   ctx: ExecutionContext,
   inputs: Record<string, unknown>
 ): Promise<BlockOutput> {
-  const workspaceId = ctx.workspaceId
-  const userId = ctx.userId
+  const userId = ctx.metadata?.sessionUserId?.trim() || ctx.userId?.trim() || undefined
   const providerId = typeof inputs.myProviderId === 'string' ? inputs.myProviderId.trim() : ''
 
+  const workspaceId = ctx.workspaceId
   if (!workspaceId) {
     throw new Error('workspaceId is required for credential resolution')
   }
@@ -29,10 +31,9 @@ export async function resolveMyCredential(
 
   await syncWorkspaceOAuthCredentialsForUser({ workspaceId, userId })
 
-  const accessibleCredentials = await getAccessibleOAuthCredentials(workspaceId, userId)
-  const matches = accessibleCredentials
-    .filter((row) => row.providerId === providerId)
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+  const matches = (
+    await getWorkspaceOAuthCredentialsForUserProvider({ workspaceId, userId, providerId })
+  ).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
 
   if (matches.length === 0) {
     const providerName = getServiceConfigByProviderId(providerId)?.name ?? providerId

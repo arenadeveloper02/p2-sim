@@ -13,6 +13,7 @@ import {
   getHostedModels,
   getProviderIcon,
   getProviderModels,
+  orderModelIdsByReleaseDate,
 } from '@/providers/models'
 import { useProvidersStore } from '@/stores/providers/store'
 
@@ -48,7 +49,7 @@ export const SERVICE_ACCOUNT_SUBBLOCKS: SubBlockConfig[] = [
  */
 export function getModelOptions() {
   const providersState = useProvidersStore.getState()
-  const baseModels = providersState.providers.base.models
+  const baseModels = orderModelIdsByReleaseDate(providersState.providers.base.models)
   const ollamaModels = providersState.providers.ollama.models
   const ollamaCloudModels = providersState.providers['ollama-cloud'].models
   const vllmModels = providersState.providers.vllm.models
@@ -612,6 +613,21 @@ export function normalizeFileInput(
 
   return files
 }
+
+/**
+ * Block types available as tools inside the Agent block tool picker.
+ * These remain canvas blocks (`category: 'blocks'`) but are also selectable as agent tools.
+ */
+export const AGENT_TOOL_BLOCK_TYPES = new Set([
+  'api',
+  'webhook_request',
+  'workflow',
+  'workflow_input',
+  'knowledge',
+  'function',
+  'table',
+  'image_generator_v2',
+])
 
 /**
  * Block types that are built-in to the platform (as opposed to third-party integrations).

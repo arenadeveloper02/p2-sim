@@ -46,9 +46,7 @@ export function resolveGoogleSheetsV2RangeParams(params: {
   range?: unknown
 }): { sheetName: string; cellRange?: string } {
   let sheetName =
-    typeof params.sheetName === 'string' && params.sheetName.trim()
-      ? params.sheetName.trim()
-      : ''
+    typeof params.sheetName === 'string' && params.sheetName.trim() ? params.sheetName.trim() : ''
 
   let cellRange =
     typeof params.cellRange === 'string' && params.cellRange.trim()
