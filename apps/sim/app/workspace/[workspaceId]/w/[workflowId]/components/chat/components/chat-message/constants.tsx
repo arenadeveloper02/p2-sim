@@ -339,6 +339,22 @@ const overlayButtonClass =
  * Preview opens a modal with the full-size image; Download and Select trigger the provided callbacks.
  */
 export function ImageWithViewFullOverlay({
+  src,
+  wrapperClassName,
+  children,
+  onDownload,
+  onSelect,
+  selectLabel,
+  compactActions = false,
+}: {
+  src: string
+  wrapperClassName: string
+  children: React.ReactNode
+  onDownload?: () => void
+  onSelect?: () => void
+  selectLabel?: string
+  compactActions?: boolean
+}) {
   const [modalOpen, setModalOpen] = useState(false)
   const [isModalImageLoading, setIsModalImageLoading] = useState(false)
   const handleViewFull = useCallback(() => setModalOpen(true), [])
@@ -592,7 +608,10 @@ export type ChatMessageImageSelectionProps = {
 /**
  * Renders a chat markdown or content-block image with preview, download, and optional select overlay.
  */
-export function renderChatMessageImage(src: string, selectionProps?: ChatMessageImageSelectionProps) {
+export function renderChatMessageImage(
+  src: string,
+  selectionProps?: ChatMessageImageSelectionProps
+) {
   const trimmed = src.trim()
   if (!trimmed) {
     return null

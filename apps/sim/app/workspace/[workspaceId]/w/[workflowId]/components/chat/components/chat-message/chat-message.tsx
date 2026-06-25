@@ -418,16 +418,11 @@ export function ChatMessage({
           )
         }
 
-        return (
-          <ArenaCopilotMarkdownRenderer content={content} renderImage={renderMarkdownImage} />
-        )
+        return <ArenaCopilotMarkdownRenderer content={content} renderImage={renderMarkdownImage} />
       }
 
       return (
-        <ArenaCopilotMarkdownRenderer
-          content={String(content)}
-          renderImage={renderMarkdownImage}
-        />
+        <ArenaCopilotMarkdownRenderer content={String(content)} renderImage={renderMarkdownImage} />
       )
     } catch (error) {
       return (
