@@ -4,7 +4,7 @@
   "lastRunId": "2026-06-25",
   "status": "running",
   "openQuestions": [],
-  "activeBranch": "upstream-sync/2026-06-25T18-06-15",
+  "activeBranch": "upstream-sync/2026-06-25T18-07-18",
   "activePrNumber": null,
-  "activeMergeBase": "feat/github-merge-agent"
+  "activeMergeBase": "upstream-sync/2026-06-25T18-06-15"
 }
