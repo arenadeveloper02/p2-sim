@@ -243,6 +243,27 @@ function checkPrismaUsage(
     if (!hasPrismaDep) {
       issues.push('Database app package.json is missing @prisma/client and/or prisma dependencies')
     }
+
+    const schemaContent = files.find((file) => normalizePath(file.path) === 'prisma/schema.prisma')?.content
+    if (schemaContent) {
+      if (/\bdirectUrl\b/.test(schemaContent)) {
+        issues.push(
+          'prisma/schema.prisma must not use directUrl — use only url = env("DATABASE_URL") for Vercel Neon'
+        )
+      }
+      if (!/env\s*\(\s*["']DATABASE_URL["']\s*\)/.test(schemaContent)) {
+        issues.push('prisma/schema.prisma datasource must use url = env("DATABASE_URL")')
+      }
+      if (!/^\s*model\s+\w+/m.test(schemaContent)) {
+        issues.push('prisma/schema.prisma must define at least one model block')
+      }
+    }
+
+    const envExample = files.find((file) => normalizePath(file.path) === '.env.example')?.content
+    if (envExample && /DATABASE_URL_UNPOOLED|DIRECT_URL/.test(envExample)) {
+      issues.push('.env.example must only use DATABASE_URL — remove DATABASE_URL_UNPOOLED and DIRECT_URL')
+    }
+
     return issues
   }
 

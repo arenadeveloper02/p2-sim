@@ -36,8 +36,11 @@ export interface PrepareVercelProjectInput {
   neonIntegrationConfigurationId?: string
   neonApiKey?: string
   neonOrgId?: string
-  /** When true (edit mode), reuse existing DATABASE_URL if present; provision Neon only when missing. */
-  skipDatabaseProvisioning?: boolean
+  /**
+   * When true, always provision a new Neon database even if DATABASE_URL already exists.
+   * Default: reuse existing DATABASE_URL when present.
+   */
+  forceDatabaseProvisioning?: boolean
 }
 
 export interface PrepareVercelProjectResult {
@@ -46,6 +49,7 @@ export interface PrepareVercelProjectResult {
   vercelProjectName?: string
   databaseProvisioned?: boolean
   neonProjectId?: string
+  databaseUrl?: string
   databaseProvisionError?: string
   error?: string
 }
@@ -449,20 +453,17 @@ export async function prepareVercelProjectForDeploy(
 
     let databaseProvisioned = false
     let neonProjectId: string | undefined
+    let databaseUrl: string | undefined
 
     const needsDatabase = input.requiresDatabase !== false && DEVELOPMENT_REQUIRES_DATABASE
     let shouldProvisionDatabase = needsDatabase
 
-    if (needsDatabase && input.skipDatabaseProvisioning) {
+    if (needsDatabase && !input.forceDatabaseProvisioning) {
       const hasExistingDatabase = await projectHasDatabaseUrl(token, project.id, input.vercelTeamId)
       if (hasExistingDatabase) {
         databaseProvisioned = true
         shouldProvisionDatabase = false
-        logger.info('Reusing existing DATABASE_URL on Vercel project (edit mode)', {
-          projectId: project.id,
-        })
-      } else {
-        logger.info('No DATABASE_URL on Vercel project — provisioning Neon for edit mode', {
+        logger.info('Reusing existing DATABASE_URL on Vercel project', {
           projectId: project.id,
         })
       }
@@ -494,10 +495,12 @@ export async function prepareVercelProjectForDeploy(
 
       databaseProvisioned = true
       neonProjectId = neonResult.neonProjectId ?? neonResult.storeResourceId
+      databaseUrl = neonResult.databaseUrl
       logger.info('Neon Postgres linked to Vercel project via marketplace integration', {
         projectId: project.id,
         neonProjectId,
         storeResourceId: neonResult.storeResourceId,
+        hasDatabaseUrl: Boolean(databaseUrl),
       })
     }
 
@@ -507,6 +510,7 @@ export async function prepareVercelProjectForDeploy(
       vercelProjectName: project.name,
       databaseProvisioned,
       neonProjectId,
+      databaseUrl,
     }
   } catch (error) {
     const message = toError(error).message

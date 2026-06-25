@@ -51,6 +51,7 @@ describe('provisionNeonDatabaseViaApi', () => {
 
     expect(result.success).toBe(true)
     expect(result.neonProjectId).toBe('neon-proj-1')
+    expect(result.databaseUrl).toContain('postgresql://')
 
     expect(mockFetch).toHaveBeenCalledWith(
       'https://console.neon.tech/api/v2/users/me/organizations',

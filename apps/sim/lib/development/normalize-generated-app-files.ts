@@ -98,11 +98,14 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
    - next.config.ts, tailwind.config.ts, lib/prisma.ts: minimal imports then const/export — no split import blocks
    - lib/prisma.ts: only \`import { PrismaClient } from '@prisma/client'\` plus singleton export
 6. Prisma schema drift (TS2353 / TS2339 / TS2551 in lib/actions.ts):
-   - include/select keys MUST match exact relation names in prisma/schema.prisma — use \`user\` not \`assignee\` or \`creator\` unless those fields exist on the model
-   - lib/actions.ts field access MUST match the schema: Task.userId + Task.user, not assigneeId/assignee/creatorId/creator unless defined in schema
-   - lib/types.ts TaskData (and other DTOs) MUST stay aligned with schema + actions — same field names on every edit
-   - Do NOT reference scalar fields absent from the model (e.g. User.avatar, Category.icon) unless you add them to schema.prisma first
-   - Aggregate types like DashboardStats are NOT database rows — do not add a required \`id\` field unless the return object includes one`
+   - Read prisma/schema.prisma FIRST — use the exact relation and scalar field names defined there
+   - include/select keys MUST match schema relation names exactly (never mix assignee vs user vs creator unless all three exist on the model)
+   - lib/actions.ts Prisma queries and DTO mapping MUST use the same names as schema.prisma (include keys AND t.field access AND returned object keys)
+   - lib/types.ts interfaces MUST match what lib/actions.ts returns — update all three files together on every schema change
+   - Do NOT reference scalar fields absent from the model (e.g. User.avatar) unless defined in schema.prisma
+   - Aggregate types like DashboardStats are NOT database rows — do not add a required \`id\` field unless the return object includes one
+7. package.json auth deps (TS2307 Cannot find module 'jsonwebtoken'):
+   - When lib/auth.ts imports jsonwebtoken, package.json MUST include jsonwebtoken in dependencies and @types/jsonwebtoken in devDependencies`
 
 export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — every import must resolve to an exported symbol):
 - tsconfig paths MUST be "@/*": ["./*"] with app/ at project root (not src/app/)
@@ -146,7 +149,38 @@ export const GENERATED_APP_AUTH_GUIDANCE = `Authentication and session (database
 - Dark mode and sidebar UI state: useState only — toggle document.documentElement.classList, do not write theme to localStorage
 - lib/auth.ts is the ONLY auth module — it MUST export every symbol imported elsewhere: JwtPayload, signToken, verifyToken, getAuthUser
 - API routes MUST import auth helpers from @/lib/auth — if a route uses verifyToken or getAuthUser, lib/auth.ts MUST export that exact function (TS2305 means you added an import without exporting it from lib/auth.ts)
-- Prefer getAuthUser() in API routes/pages; use verifyToken(token) only when reading a raw token string`
+- Prefer getAuthUser() in API routes/pages; use verifyToken(token) only when reading a raw token string
+- When lib/auth.ts imports jsonwebtoken, package.json MUST list jsonwebtoken in dependencies and @types/jsonwebtoken in devDependencies`
+
+export const GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE = `Prisma schema ↔ actions ↔ types alignment (YOU must get this right — no post-processing fixes broken code):
+- prisma/schema.prisma is the source of truth for Prisma field names
+- Before writing lib/actions.ts, read every model field in schema.prisma — relations AND scalar FK columns
+- include/select MUST use exact relation names from schema (if Task has \`assignee User?\` use include: { assignee: true }, NOT user; if Task has \`user User\` use user, NOT assignee)
+- After prisma queries, access included relations with the SAME name: t.assignee when include has assignee, t.user when include has user — never mix
+- Map to DTOs using lib/types.ts field names; if types say assigneeId/assignee, read t.assigneeId and t.assignee from Prisma results
+- When schema uses assigneeId + assignee + creatorId + creator, do NOT use userId/user anywhere in actions or types
+- When schema uses userId + user only, do NOT use assigneeId/assignee/creatorId/creator
+- If you change prisma/schema.prisma, ALWAYS return updated lib/actions.ts AND lib/types.ts in the same response with matching field names
+- Every scalar you read (u.avatar, c.icon, t.assigneeId) must exist on that model in schema.prisma
+- DashboardStats and other aggregates: no spurious id field; shape must match the return object in getDashboardStats()`
+
+export const GENERATED_APP_NEON_DATABASE_GUIDANCE = `Neon Postgres + Prisma (YOU generate all database files — Sim does not inject or patch schema/models):
+- Generate prisma/schema.prisma with domain-specific models matching the app (User, Task, Category, etc.) — never rely on a generic Record placeholder
+- Datasource block MUST be exactly:
+  datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+  }
+  Do NOT add directUrl, DATABASE_URL_UNPOOLED, or DIRECT_URL — Vercel Neon injects DATABASE_URL only
+- Generate lib/prisma.ts with the PrismaClient singleton (globalForPrisma pattern for dev hot reload)
+- Generate .env.example with a single DATABASE_URL= placeholder (no UNPOOLED/DIRECT_URL lines)
+- package.json must include @prisma/client (dependencies) and prisma (devDependencies); build script runs prisma generate && prisma db push before next build
+- Generate prisma/seed.ts with realistic demo data OR db/seed.sql with INSERT statements for every model — at least one seed path is required for non-empty tables on first deploy
+- When using prisma/seed.ts, add to package.json: "prisma": { "seed": "tsx prisma/seed.ts" } and devDependency tsx — seed must be idempotent (upsert/skipDuplicates) so redeploys do not fail
+- db/seed.sql is executed on deploy via prisma db execute — use INSERT ... ON CONFLICT DO NOTHING where appropriate
+- Server pages that import @/lib/actions or @/lib/prisma at module scope MUST include: export const dynamic = 'force-dynamic'
+- lib/actions.ts queries MUST use exact field/relation names from your schema; lib/types.ts DTOs MUST match actions output
+- On edit: read existing prisma/schema.prisma before changing models; return schema + lib/actions.ts + lib/types.ts together when models change`
 
 export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for Development block apps):
 - ALWAYS set requiresDatabase to true — every generated app uses Neon Postgres + Prisma, even for marketing or portfolio sites
@@ -165,10 +199,8 @@ export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for De
   - At least one Prisma model, even for simple sites (e.g. ContactSubmission, SiteSetting, or PageContent)
 - On Vercel + Neon, DATABASE_URL is injected when the database is connected to the project — reference process.env only in server code
 - package.json build script should run prisma generate and prisma db push before next build when using Prisma
-- Prisma include/select MUST use exact relation field names from schema.prisma (e.g. if Comment has \`user User @relation\`, use include: { user: true } — never invent aliases like author unless that field exists on the model)
-- lib/actions.ts, lib/types.ts, and prisma/schema.prisma MUST agree on every edit: foreign keys (userId not assigneeId), relation includes (user not assignee/creator), and DTO shapes
-- TS2353 on include means you invented a relation name — read schema.prisma and use the real field name
-- TS2339 on t.assignee / t.creatorId means the Task model uses different names — align actions with schema, not the other way around during edits`
+- ${GENERATED_APP_NEON_DATABASE_GUIDANCE}
+- ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}`
 
 export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Neon Postgres — additive only):
 - NEVER provision, replace, or reset the database connection — the app already has DATABASE_URL on Vercel
@@ -176,7 +208,11 @@ export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Ne
 - ADD new models, fields, relations, and enums for new features; use optional fields (?) or defaults when extending existing models
 - Do NOT drop tables, rename models in breaking ways, or replace the datasource block — prisma db push on deploy only adds schema changes
 - Keep lib/prisma.ts and the existing DATABASE_URL / .env.example pattern unchanged unless fixing a bug
-- New features must read/write through the same Prisma client against the existing database — never switch to localStorage or a new database`
+- New features must read/write through the same Prisma client against the existing database — never switch to localStorage or a new database
+- ${GENERATED_APP_NEON_DATABASE_GUIDANCE}
+- ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
+- MANDATORY on schema edits: return prisma/schema.prisma + lib/actions.ts + lib/types.ts together whenever any model/field/relation changes
+- Read the provided lib/actions.ts and lib/types.ts in context before editing — extend their patterns, do not invent conflicting field names`
 
 export const GENERATED_APP_DATABASE_FILE_PATHS = [
   'prisma/schema.prisma',
@@ -195,6 +231,8 @@ export interface NormalizeGeneratedAppFilesOptions {
   repoName?: string
   /** Latest user generate/edit request — recorded in REPO_SUMMARY.md. */
   latestUserRequest?: string
+  /** Neon project id — recorded in REPO_SUMMARY.md for edit-time connection reuse. */
+  neonProjectId?: string
 }
 
 export const GENERATED_APP_REPO_SUMMARY_GUIDANCE = `REPO_SUMMARY.md (required, auto-maintained):
@@ -339,11 +377,13 @@ export function patchPackageJsonContent(
       }
       const existingBuild = pkg.scripts?.build ?? 'next build'
       const { postinstall: _removedPostinstall, ...remainingScripts } = pkg.scripts ?? {}
+      const defaultDbBuild =
+        'prisma generate && prisma db push && (npx prisma db execute --file db/seed.sql --schema prisma/schema.prisma 2>/dev/null || true) && (npx prisma db seed 2>/dev/null || true)'
       pkg.scripts = {
         ...remainingScripts,
         build: existingBuild.includes('prisma')
           ? existingBuild
-          : `prisma generate && prisma db push && ${existingBuild}`,
+          : `${defaultDbBuild} && ${existingBuild}`,
       }
     }
 
@@ -1945,6 +1985,15 @@ export function buildRepoSummaryContent(
     techStack.push('Prisma + PostgreSQL (Neon on Vercel)')
   }
 
+  const infrastructureSection =
+    options.neonProjectId?.trim() || options.requiresDatabase
+      ? `\n## Infrastructure\n\n${
+          options.neonProjectId?.trim()
+            ? `- **Neon project ID:** \`${options.neonProjectId.trim()}\` — managed by Sim Development; do not delete or replace\n`
+            : ''
+        }- **DATABASE_URL:** set on Vercel when Neon is connected — do not commit real credentials\n`
+      : ''
+
   const routesSection =
     routeEntries.length > 0
       ? `\n## Routes & Pages\n\n${routeEntries.map((entry) => `- \`${entry.route}\` — \`${entry.file}\``).join('\n')}\n`
@@ -1984,7 +2033,7 @@ ${features.map((feature) => `- ${feature}`).join('\n')}
 ## Tech Stack
 
 ${techStack.map((item) => `- ${item}`).join('\n')}
-${routesSection}${databaseSection}
+${infrastructureSection}${routesSection}${databaseSection}
 ## File Inventory
 
 ${inventorySections}
@@ -2077,385 +2126,8 @@ export default ${name}
 }
 
 /**
- * Strips directUrl from Prisma schema so builds only require DATABASE_URL (set by Vercel Neon).
- */
-export function patchPrismaSchemaContent(content: string): string {
-  const patched = content
-    .replace(/\n\s*directUrl\s*=\s*env\([^)]+\)/g, '')
-    .replace(/\r\n\s*directUrl\s*=\s*env\([^)]+\)/g, '')
-
-  return patched.endsWith('\n') || patched.length === 0 ? patched : `${patched}\n`
-}
-
-const DEFAULT_PRISMA_SCHEMA = `generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-model Record {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  title     String
-  content   String?
-}
-`
-
-const DEFAULT_PRISMA_CLIENT = `import { PrismaClient } from '@prisma/client'
-
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined }
-
-export const prisma = globalForPrisma.prisma ?? new PrismaClient()
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma
-}
-`
-
-function patchEnvExampleForDatabase(content: string): string {
-  const stripped = content
-    .replace(/^.*DATABASE_URL_UNPOOLED=.*\n?/gm, '')
-    .replace(/^.*DIRECT_URL=.*\n?/gm, '')
-
-  if (stripped.includes('DATABASE_URL')) {
-    return stripped
-  }
-
-  const prefix = stripped.endsWith('\n') || stripped.length === 0 ? stripped : `${stripped}\n`
-  return `${prefix}# Neon Postgres (set automatically on Vercel when the database is connected)
-DATABASE_URL="postgresql://USER:PASSWORD@HOST/neondb?sslmode=require"
-`
-}
-
-/**
- * Ensures Prisma scaffold files exist when the app requires a database.
- */
-export function ensureDatabaseScaffold(
-  files: GeneratedAppFile[],
-  options: NormalizeGeneratedAppFilesOptions = {}
-): GeneratedAppFile[] {
-  if (!options.requiresDatabase) {
-    return files
-  }
-
-  const normalized = files.map((file) => ({ ...file, path: normalizePath(file.path) }))
-  const pathSet = new Set(normalized.map((file) => file.path))
-  const additions: GeneratedAppFile[] = []
-
-  for (const requiredPath of GENERATED_APP_DATABASE_FILE_PATHS) {
-    if (!pathSet.has(requiredPath)) {
-      additions.push({
-        path: requiredPath,
-        content: requiredPath.endsWith('schema.prisma')
-          ? DEFAULT_PRISMA_SCHEMA
-          : DEFAULT_PRISMA_CLIENT,
-      })
-      pathSet.add(requiredPath)
-    }
-  }
-
-  const patched = normalized.map((file) => {
-    if (file.path === '.env.example') {
-      return { ...file, content: patchEnvExampleForDatabase(file.content) }
-    }
-    if (file.path === 'prisma/schema.prisma') {
-      return { ...file, content: patchPrismaSchemaContent(file.content) }
-    }
-    return file
-  })
-
-  if (additions.length > 0) {
-    logger.warn('Added Prisma scaffold files for database-enabled app', {
-      paths: additions.map((file) => file.path),
-    })
-  }
-
-  return additions.length > 0 ? [...patched, ...additions] : patched
-}
-
-/**
- * Ensures every @/ import in generated sources has a matching file (adds stubs if the model omitted them).
- */
-export function reconcileMissingAliasImports(
-  files: GeneratedAppFile[],
-  useSrcDir = false
-): GeneratedAppFile[] {
-  const normalized = files.map((f) => ({ ...f, path: normalizePath(f.path) }))
-  const pathSet = new Set(normalized.map((f) => f.path))
-  const neededImports = new Set<string>()
-
-  for (const file of normalized) {
-    if (!/\.(tsx|ts|jsx|js|mjs|cjs)$/.test(file.path)) {
-      continue
-    }
-    for (const importPath of collectAliasImportsFromSource(file.content)) {
-      neededImports.add(importPath)
-    }
-  }
-
-  const stubs: GeneratedAppFile[] = []
-
-  for (const importPath of neededImports) {
-    const candidates = resolveAliasToCandidatePaths(importPath, useSrcDir)
-    if (candidates.some((candidate) => pathSet.has(candidate))) {
-      continue
-    }
-
-    const stubPath = candidates[0]
-    const stub = stubPath.endsWith('.ts')
-      ? createStubModuleFile(stubPath, importPath)
-      : (() => {
-          const componentName = toComponentName(stubPath)
-          const propNames = collectJsxPropNamesForComponent(componentName, normalized)
-          const propTypes = inferComponentPropTypes(componentName, propNames, normalized)
-          return createStubComponentFile(stubPath, propNames, propTypes)
-        })()
-    stubs.push(stub)
-    pathSet.add(stubPath)
-  }
-
-  if (stubs.length > 0) {
-    logger.warn('Added stub files for missing @/ imports', {
-      paths: stubs.map((stub) => stub.path),
-    })
-  }
-
-  return stubs.length > 0 ? [...normalized, ...stubs] : normalized
-}
-
-const PRISMA_SCALAR_TYPES = new Set([
-  'String',
-  'Int',
-  'Float',
-  'Boolean',
-  'DateTime',
-  'Json',
-  'Bytes',
-  'BigInt',
-  'Decimal',
-])
-
-/** Common wrong relation aliases mapped to schema field names per model. */
-const PRISMA_RELATION_ALIASES: Record<string, Record<string, string>> = {
-  Comment: { author: 'user' },
-  Task: { assignee: 'user', author: 'user' },
-}
-
-/** Relation names LLMs often invent that should be removed when absent from schema. */
-const PRISMA_PHANTOM_RELATIONS = ['creator'] as const
-
-/**
- * Parses scalar field names from a Prisma schema.
- */
-export function parsePrismaModelScalars(schemaContent: string): Record<string, Set<string>> {
-  const scalars: Record<string, Set<string>> = {}
-
-  for (const block of schemaContent.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)) {
-    const modelName = block[1]
-    const fields = new Set<string>()
-
-    for (const line of block[2].split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@@')) {
-        continue
-      }
-
-      const match = trimmed.match(/^(\w+)\s+([A-Za-z][\w]*)(\[\])?(\s+|$|@)/)
-      if (!match) {
-        continue
-      }
-
-      const [, fieldName, typeName] = match
-      if (PRISMA_SCALAR_TYPES.has(typeName)) {
-        fields.add(fieldName)
-      }
-    }
-
-    scalars[modelName] = fields
-  }
-
-  return scalars
-}
-
-function buildPrismaRelationRewriteRules(
-  relations: Record<string, Set<string>>
-): Array<{ wrong: string; correct: string | null }> {
-  const rules: Array<{ wrong: string; correct: string | null }> = []
-  const seen = new Set<string>()
-
-  for (const [modelName, aliases] of Object.entries(PRISMA_RELATION_ALIASES)) {
-    const modelRelations = relations[modelName]
-    if (!modelRelations) {
-      continue
-    }
-
-    for (const [wrong, correct] of Object.entries(aliases)) {
-      if (!modelRelations.has(wrong) && modelRelations.has(correct) && !seen.has(wrong)) {
-        rules.push({ wrong, correct })
-        seen.add(wrong)
-      }
-    }
-  }
-
-  for (const phantom of PRISMA_PHANTOM_RELATIONS) {
-    if (seen.has(phantom)) {
-      continue
-    }
-
-    const existsOnAnyModel = Object.values(relations).some((modelRelations) => modelRelations.has(phantom))
-    if (!existsOnAnyModel) {
-      rules.push({ wrong: phantom, correct: null })
-      seen.add(phantom)
-    }
-  }
-
-  return rules
-}
-
-function fixPrismaIncludeClause(inner: string, rules: Array<{ wrong: string; correct: string | null }>): string {
-  let result = inner
-
-  for (const { wrong, correct } of rules) {
-    if (correct) {
-      result = result.replace(new RegExp(`\\b${wrong}\\s*:\\s*true`, 'g'), `${correct}: true`)
-      continue
-    }
-
-    result = result.replace(new RegExp(`,?\\s*${wrong}\\s*:\\s*true\\s*,?`, 'g'), ',')
-    result = result.replace(new RegExp(`\\{\\s*${wrong}\\s*:\\s*true\\s*,?`, 'g'), '{')
-  }
-
-  result = result.replace(/(user:\s*true\s*,\s*)+user:\s*true/g, 'user: true')
-  result = result.replace(/,\s*,+/g, ',').replace(/,\s*$/g, '').replace(/^\s*,/g, '')
-  return result
-}
-
-function reconcilePrismaSchemaDriftInContent(
-  content: string,
-  relations: Record<string, Set<string>>,
-  scalars: Record<string, Set<string>>,
-  relationRules: Array<{ wrong: string; correct: string | null }>
-): string {
-  let next = content
-
-  next = next.replace(/include:\s*\{([^}]*)\}/g, (_match, inner: string) => {
-    return `include: {${fixPrismaIncludeClause(inner, relationRules)}}`
-  })
-
-  const taskScalars = scalars.Task
-  if (taskScalars) {
-    if (!taskScalars.has('assigneeId') && taskScalars.has('userId')) {
-      next = next.replaceAll('assigneeId', 'userId')
-    }
-
-    if (!taskScalars.has('creatorId')) {
-      next = next.replace(/\s*creatorId:\s*t\.userId,?\n/g, '\n')
-      next = next.replace(/\s*creatorId:\s*t\.creatorId,?\n/g, '\n')
-    }
-  }
-
-  next = next.replaceAll('t.assignee', 't.user')
-  next = next.replace(/\bassignee:\s*t\.user/g, 'user: t.user')
-  next = next.replace(
-    /\s*creator:\s*t\.creator\s*\?\s*\{[^}]+\}\s*:\s*null,?\n/g,
-    '\n'
-  )
-
-  const userScalars = scalars.User
-  if (userScalars && !userScalars.has('avatar')) {
-    next = next.replace(/\s*avatar:\s*u\.avatar,?\n/g, '\n')
-    next = next.replace(/,\s*avatar:\s*u\.avatar/g, '')
-  }
-
-  const categoryScalars = scalars.Category
-  if (categoryScalars && !categoryScalars.has('icon')) {
-    next = next.replace(/\s*icon:\s*c\.icon,?\n/g, '\n')
-    next = next.replace(/,\s*icon:\s*c\.icon/g, '')
-  }
-
-  for (const { wrong, correct } of relationRules) {
-    if (!correct) {
-      continue
-    }
-
-    next = next.replaceAll(`.${wrong}.`, `.${correct}.`)
-    next = next.replaceAll(`, ${wrong}: { id:`, `, ${correct}: { id:`)
-  }
-
-  return next
-}
-
-/**
- * Parses relation field names from a Prisma schema.
- */
-export function parsePrismaModelRelations(schemaContent: string): Record<string, Set<string>> {
-  const relations: Record<string, Set<string>> = {}
-
-  for (const block of schemaContent.matchAll(/model\s+(\w+)\s*\{([\s\S]*?)\n\}/g)) {
-    const modelName = block[1]
-    const fields = new Set<string>()
-
-    for (const line of block[2].split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@@')) {
-        continue
-      }
-
-      const match = trimmed.match(/^(\w+)\s+([A-Za-z][\w]*)(\[\])?(\s+|$|@)/)
-      if (!match) {
-        continue
-      }
-
-      const [, fieldName, typeName] = match
-      if (!PRISMA_SCALAR_TYPES.has(typeName)) {
-        fields.add(fieldName)
-      }
-    }
-
-    relations[modelName] = fields
-  }
-
-  return relations
-}
-
-/**
- * Fixes Prisma include/select blocks and action mappings that use invented relation or field names.
- */
-export function reconcilePrismaRelationIncludes(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  const schema = files.find((file) => normalizePath(file.path) === 'prisma/schema.prisma')?.content
-  if (!schema) {
-    return files
-  }
-
-  const relations = parsePrismaModelRelations(schema)
-  const scalars = parsePrismaModelScalars(schema)
-  const relationRules = buildPrismaRelationRewriteRules(relations)
-
-  if (relationRules.length === 0 && Object.keys(scalars).length === 0) {
-    return files
-  }
-
-  return files.map((file) => {
-    if (!/\.(ts|tsx)$/.test(file.path)) {
-      return file
-    }
-
-    const content = reconcilePrismaSchemaDriftInContent(
-      file.content,
-      relations,
-      scalars,
-      relationRules
-    )
-    return content === file.content ? file : { ...file, content }
-  })
-}
-
-/**
  * Normalizes generated files for reliable local and Vercel builds.
+ * Content fixes (Prisma models, actions, imports) are the LLM's responsibility — see GENERATED_APP_*_GUIDANCE.
  */
 export function normalizeGeneratedAppFiles(
   files: GeneratedAppFile[],
@@ -2478,10 +2150,6 @@ export function normalizeGeneratedAppFiles(
       return { ...file, content: patchTsconfigContent(file.content, useSrcDir) }
     }
 
-    if (options.requiresDatabase && path === 'prisma/schema.prisma') {
-      return { ...file, content: patchPrismaSchemaContent(file.content) }
-    }
-
     if (shouldSanitizeFontReferences(path)) {
       return { ...file, content: stripExternalGoogleFontReferences(file.content) }
     }
@@ -2489,26 +2157,7 @@ export function normalizeGeneratedAppFiles(
     return file
   })
 
-  const withDatabase = ensureDatabaseScaffold(patched, options)
-  const withImports = reconcileMissingAliasImports(withDatabase, useSrcDir)
-  const withoutConflictingStubs = removeConflictingModuleStubs(withImports)
-  const withActionExports = dedupeActionsTypeConflicts(
-    reconcileActionsTypeExports(withoutConflictingStubs)
-  )
-  const withTypeExports = reconcileTypesExports(withActionExports)
-  const withAuthExports = reconcileAuthExports(withTypeExports, options)
-  const withNextEnv = ensureNextEnvFile(withAuthExports)
-  const withClientProps = reconcileClientComponentProps(withNextEnv)
-  const withExportStyles = reconcileComponentExportStyles(withClientProps)
-  const withClientPropsAfterExports = reconcileClientComponentProps(withExportStyles)
-  const withPrismaRelations = options.requiresDatabase
-    ? reconcilePrismaRelationIncludes(withClientPropsAfterExports)
-    : withClientPropsAfterExports
-  const withDynamicPages = options.requiresDatabase
-    ? ensureDatabasePagesAreDynamic(withPrismaRelations)
-    : withPrismaRelations
-  const withSanitizedImports = sanitizeGeneratedComponentFiles(withDynamicPages)
-  const withReadme = ensureReadmeFile(withSanitizedImports, options)
-  const withSummary = ensureRepoSummaryFile(withReadme, options)
-  return reconcileSplitImportsInFiles(withSummary)
+  const withNextEnv = ensureNextEnvFile(patched)
+  const withReadme = ensureReadmeFile(withNextEnv, options)
+  return ensureRepoSummaryFile(withReadme, options)
 }

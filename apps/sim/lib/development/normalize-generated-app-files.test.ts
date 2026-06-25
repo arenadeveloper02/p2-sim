@@ -10,24 +10,15 @@ import {
   GENERATED_APP_REPO_SUMMARY_PATH,
   PINNED_NEXT_VERSION,
   PINNED_REACT_VERSION,
-  ensureDatabaseScaffold,
   ensureNextEnvFile,
   inferComponentPropTypes,
   normalizeGeneratedAppFiles,
   patchNextConfigContent,
   patchPackageJsonContent,
-  patchPrismaSchemaContent,
-  dedupeActionsTypeConflicts,
-  DEFAULT_LIB_AUTH_CONTENT,
   reconcileActionsTypeExports,
   reconcileClientComponentProps,
-  reconcileComponentExportStyles,
-  reconcileMissingAliasImports,
-  reconcilePrismaRelationIncludes,
-  reconcileTypesExports,
-  reconcileAuthExports,
   reconcileSplitImportStatements,
-  removeConflictingModuleStubs,
+  reconcileTypesExports,
   sanitizeComponentFileImports,
   stripExternalGoogleFontReferences,
   hasOrphanImportBlock,
@@ -59,34 +50,6 @@ body { margin: 0; }
     const result = stripExternalGoogleFontReferences(css)
     expect(result).not.toContain('fonts.googleapis.com')
     expect(result).toContain('body { margin: 0; }')
-  })
-
-  it('adds stub files for missing @/ component imports', () => {
-    const files = reconcileMissingAliasImports([
-      {
-        path: 'app/layout.tsx',
-        content: "import Footer from '@/components/Footer'\nexport default function Layout({ children }: { children: React.ReactNode }) { return <html><body>{children}</body></html> }\n",
-      },
-      { path: 'components/Navbar.tsx', content: 'export default function Navbar() { return null }' },
-    ])
-
-    expect(files.some((f) => f.path === 'components/Footer.tsx')).toBe(true)
-  })
-
-  it('adds stub props inferred from JSX usage so TypeScript build passes', () => {
-    const files = reconcileMissingAliasImports([
-      {
-        path: 'app/analytics/page.tsx',
-        content:
-          "import AnalyticsClient from '@/components/AnalyticsClient'\nexport default async function Page() { const data = {}; return <AnalyticsClient data={data} /> }\n",
-      },
-    ])
-
-    const stub = files.find((file) => file.path === 'components/AnalyticsClient.tsx')
-    expect(stub).toBeDefined()
-    expect(stub?.content).toContain('interface AnalyticsClientProps')
-    expect(stub?.content).toContain('data: unknown')
-    expect(stub?.content).toContain('data: _data')
   })
 
   it('infers prop types from lib/actions return types', () => {
@@ -192,31 +155,12 @@ export default function AppProviders({ children }: { children: ReactNode }) {
     expect(sanitized.match(/import type \{ ReactNode \} from 'react'/g)?.length).toBe(1)
   })
 
-  it('normalizes duplicate ReactNode imports in AppProviders through the full pipeline', () => {
-    const files = normalizeGeneratedAppFiles([
-      {
-        path: 'app/layout.tsx',
-        content:
-          "import AppProviders from '@/components/layout/AppProviders'\nexport default function RootLayout({ children }: { children: React.ReactNode }) {\n  return <html><body><AppProviders>{children}</AppProviders></body></html>\n}\n",
-      },
-      {
-        path: 'components/layout/AppProviders.tsx',
-        content:
-          "'use client'\n\nimport type { ReactNode } from 'react'\nimport type { ReactNode } from '@/lib/actions'\n\nexport default function AppProviders({ children }: { children: ReactNode }) {\n  return <>{children}</>\n}\n",
-      },
-      {
-        path: 'package.json',
-        content: JSON.stringify({ name: 'test', scripts: { build: 'next build' } }),
-      },
-      {
-        path: 'tsconfig.json',
-        content: JSON.stringify({ compilerOptions: { jsx: 'preserve' }, include: ['**/*'] }),
-      },
-    ])
-
-    const providers = files.find((file) => file.path === 'components/layout/AppProviders.tsx')
-    expect(providers?.content.match(/import type \{ ReactNode \} from 'react'/g)?.length).toBe(1)
-    expect(providers?.content).not.toContain("from '@/lib/actions'")
+  it('sanitizeComponentFileImports dedupes duplicate ReactNode imports', () => {
+    const content =
+      "'use client'\n\nimport type { ReactNode } from 'react'\nimport type { ReactNode } from '@/lib/actions'\n\nexport default function AppProviders({ children }: { children: ReactNode }) {\n  return <>{children}</>\n}\n"
+    const sanitized = sanitizeComponentFileImports(content)
+    expect(sanitized.match(/import type \{ ReactNode \} from 'react'/g)?.length).toBe(1)
+    expect(sanitized).not.toContain("from '@/lib/actions'")
   })
 
   it('patches existing Client components that omit props used by pages', () => {
@@ -396,7 +340,7 @@ export default function DashboardClient() { return null }
     expect(fixed).not.toMatch(/\} from 'recharts';\s*\n\s*CheckCircle,/)
   })
 
-  it('repairs chained split imports during normalizeGeneratedAppFiles', () => {
+  it('does not auto-repair split imports during normalizeGeneratedAppFiles', () => {
     const brokenDashboard = `"use client";
 
 import {
@@ -423,47 +367,15 @@ export default function DashboardClient() { return null }
     )
 
     const dashboard = files.find((file) => file.path === 'components/DashboardClient.tsx')
-    expect(dashboard?.content).toContain("import {\nBarChart,")
-    expect(dashboard?.content).toContain("import {\nCheckCircle,")
-    expect(hasOrphanImportBlock(dashboard?.content ?? '')).toBe(false)
+    expect(hasOrphanImportBlock(dashboard?.content ?? '')).toBe(true)
   })
 
-  it('adds missing lib/auth exports when API routes import verifyToken', () => {
-    const files = reconcileAuthExports(
-      [
-        {
-          path: 'lib/auth.ts',
-          content: `export async function getAuthUser() { return null }\n`,
-        },
-        {
-          path: 'app/api/tasks/route.ts',
-          content: `import { verifyToken } from '@/lib/auth'\nexport async function GET() { return Response.json({}) }\n`,
-        },
-        { path: 'package.json', content: JSON.stringify({ name: 'demo-app' }) },
-      ],
-      { requiresDatabase: true }
-    )
-
-    const auth = files.find((file) => file.path === 'lib/auth.ts')
-    expect(auth?.content).toContain('export function verifyToken')
-    expect(auth?.content).toContain("from 'jsonwebtoken'")
-
-    const pkg = files.find((file) => file.path === 'package.json')
-    expect(pkg?.content).toContain('jsonwebtoken')
-  })
-
-  it('adds jsonwebtoken to package.json when lib/auth exists without @/lib/auth imports', () => {
-    const files = reconcileAuthExports(
-      [
-        { path: 'lib/auth.ts', content: DEFAULT_LIB_AUTH_CONTENT },
-        { path: 'package.json', content: JSON.stringify({ name: 'demo-app' }) },
-      ],
-      { requiresDatabase: true }
-    )
-
-    const pkg = files.find((file) => file.path === 'package.json')
-    expect(pkg?.content).toContain('jsonwebtoken')
-    expect(pkg?.content).toContain('@types/jsonwebtoken')
+  it('adds jsonwebtoken via patchPackageJsonContent when database is required', () => {
+    const patched = patchPackageJsonContent(JSON.stringify({ name: 'demo-app' }), {
+      requiresDatabase: true,
+    })
+    expect(patched).toContain('jsonwebtoken')
+    expect(patched).toContain('@types/jsonwebtoken')
   })
 
   it('scaffolds README.md when missing', () => {
@@ -556,113 +468,6 @@ export default function DashboardClient() { return null }
     )
   })
 
-  it('fixes Prisma include aliases that do not match schema relation names', () => {
-    const schema = `model Comment {
-  id String @id
-  taskId String
-  comment String
-  createdBy String
-  task Task @relation(fields: [taskId], references: [id])
-  user User @relation(fields: [createdBy], references: [id])
-}
-`
-    const files = reconcilePrismaRelationIncludes([
-      { path: 'prisma/schema.prisma', content: schema },
-      {
-        path: 'app/dashboard/page.tsx',
-        content:
-          'const tasks = await prisma.task.findMany({ include: { comments: { include: { author: true } } } })\ncomments: t.comments.map((c) => ({ id: c.id, author: { id: c.author.id, name: c.author.name } }))',
-      },
-    ])
-
-    const page = files.find((file) => file.path === 'app/dashboard/page.tsx')
-    expect(page?.content).toContain('include: { user: true }')
-    expect(page?.content).toContain('c.user.id')
-    expect(page?.content).toContain('user: { id:')
-    expect(page?.content).not.toContain('author: true')
-  })
-
-  it('aligns lib/actions.ts with Task user relation and removes phantom fields', () => {
-    const schema = `model User {
-  id String @id
-  email String
-  name String
-  password String
-  role String
-  createdAt DateTime
-  updatedAt DateTime
-  tasks Task[]
-}
-
-model Category {
-  id String @id
-  name String
-  color String
-  createdAt DateTime
-  updatedAt DateTime
-  tasks Task[]
-}
-
-model Task {
-  id String @id
-  title String
-  description String?
-  status String
-  priority String
-  dueDate DateTime?
-  createdAt DateTime
-  updatedAt DateTime
-  userId String
-  user User @relation(fields: [userId], references: [id])
-  categoryId String?
-  category Category? @relation(fields: [categoryId], references: [id])
-}
-`
-    const actions = `'use server'
-import { prisma } from '@/lib/prisma'
-
-export async function getTasks() {
-  const tasks = await prisma.task.findMany({
-    include: { assignee: true, creator: true, category: true }
-  })
-  return tasks.map(t => ({
-    id: t.id,
-    assigneeId: t.assigneeId,
-    assignee: t.assignee ? { id: t.assignee.id, name: t.assignee.name, email: t.assignee.email } : null,
-    creatorId: t.creatorId,
-    creator: t.creator ? { id: t.creator.id, name: t.creator.name, email: t.creator.email } : null,
-    categoryId: t.categoryId,
-    category: t.category ? { id: t.category.id, name: t.category.name, color: t.category.color } : null
-  }))
-}
-
-export async function getUsers() {
-  const users = await prisma.user.findMany()
-  return users.map(u => ({ id: u.id, avatar: u.avatar }))
-}
-
-export async function getCategories() {
-  const cats = await prisma.category.findMany()
-  return cats.map(c => ({ id: c.id, icon: c.icon }))
-}
-`
-    const files = reconcilePrismaRelationIncludes([
-      { path: 'prisma/schema.prisma', content: schema },
-      { path: 'lib/actions.ts', content: actions },
-    ])
-
-    const result = files.find((file) => file.path === 'lib/actions.ts')?.content ?? ''
-    expect(result).toContain('include: { user: true, category: true }')
-    expect(result).not.toContain('assignee: true')
-    expect(result).not.toContain('creator: true')
-    expect(result).toContain('userId: t.userId')
-    expect(result).toContain('user: t.user')
-    expect(result).not.toContain('creatorId')
-    expect(result).not.toContain('creator:')
-    expect(result).not.toContain('avatar:')
-    expect(result).not.toContain('icon:')
-  })
-
   it('replaces malformed DashboardStats auto-stub with aggregate shape', () => {
     const files = reconcileTypesExports([
       {
@@ -695,21 +500,21 @@ export interface DashboardStats {
     )
   })
 
-  it('marks database-backed pages as force-dynamic', () => {
+  it('does not auto-inject force-dynamic on database-backed pages', () => {
+    const pageContent =
+      "import { getAnalytics } from '@/lib/actions'\nexport const metadata = { title: 'Analytics' }\nexport default async function Page() { await getAnalytics(); return null }\n"
     const files = normalizeGeneratedAppFiles(
       [
-        {
-          path: 'app/analytics/page.tsx',
-          content:
-            "import { getAnalytics } from '@/lib/actions'\nexport const metadata = { title: 'Analytics' }\nexport default async function Page() { await getAnalytics(); return null }\n",
-        },
+        { path: 'app/analytics/page.tsx', content: pageContent },
         { path: 'package.json', content: JSON.stringify({ name: 'demo' }) },
+        { path: 'app/layout.tsx', content: 'export default function Layout() { return null }' },
+        { path: 'app/page.tsx', content: 'export default function Page() { return null }' },
       ],
-      { requiresDatabase: true }
+      { requiresDatabase: true, appName: 'Demo', repoName: 'demo' }
     )
 
     const page = files.find((file) => file.path === 'app/analytics/page.tsx')
-    expect(page?.content).toContain("export const dynamic = 'force-dynamic'")
+    expect(page?.content).not.toContain("export const dynamic = 'force-dynamic'")
   })
 
   it('pins latest Next.js and React versions in package.json', () => {
@@ -750,38 +555,16 @@ export interface DashboardStats {
     expect(pkg.scripts.postinstall).toBeUndefined()
     expect(pkg.scripts.build).toContain('prisma generate')
     expect(pkg.scripts.build).toContain('prisma db push')
+    expect(pkg.scripts.build).toContain('prisma db seed')
+    expect(pkg.scripts.build).toContain('db/seed.sql')
   })
 
-  it('removes Prisma directUrl so only DATABASE_URL is required on Vercel', () => {
-    const schema = `datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DATABASE_URL_UNPOOLED")
-}
-`
-    const result = patchPrismaSchemaContent(schema)
-    expect(result).toContain('env("DATABASE_URL")')
-    expect(result).not.toContain('directUrl')
-    expect(result).not.toContain('DATABASE_URL_UNPOOLED')
-  })
-
-  it('scaffolds Prisma files when database is required', () => {
-    const files = ensureDatabaseScaffold(
-      [{ path: 'package.json', content: '{}' }],
-      { requiresDatabase: true }
-    )
-    const schema = files.find((file) => file.path === 'prisma/schema.prisma')
-    expect(schema).toBeDefined()
-    expect(schema?.content).toContain('env("DATABASE_URL")')
-    expect(schema?.content).not.toContain('directUrl')
-    expect(files.some((file) => file.path === 'lib/prisma.ts')).toBe(true)
-  })
-
-  it('does not scaffold Prisma files for static apps', () => {
+  it('does not inject Prisma schema or client during normalize', () => {
     const files = normalizeGeneratedAppFiles(
       [{ path: 'package.json', content: JSON.stringify({ name: 'demo' }) }],
-      { requiresDatabase: false }
+      { requiresDatabase: true, appName: 'Demo', repoName: 'demo' }
     )
     expect(files.some((file) => file.path === 'prisma/schema.prisma')).toBe(false)
+    expect(files.some((file) => file.path === 'lib/prisma.ts')).toBe(false)
   })
 })

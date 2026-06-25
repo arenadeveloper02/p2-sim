@@ -10,8 +10,11 @@ import {
   deployPreparedVercelProject,
   prepareVercelProjectForDeploy,
 } from '@/lib/development/deploy-generated-app-to-vercel'
+import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
 import { resolveDevelopmentDeployEnv, DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import {
+  GENERATED_APP_NEON_DATABASE_GUIDANCE,
+  GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE,
   GENERATED_APP_DATABASE_FILE_PATHS,
   GENERATED_APP_AUTH_GUIDANCE,
   GENERATED_APP_COMMON_FAILURES_GUIDANCE,
@@ -560,6 +563,7 @@ Constraints:
 - ${GENERATED_APP_IMPORT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
@@ -582,6 +586,7 @@ Constraints:
 - ${GENERATED_APP_IMPORT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
@@ -605,6 +610,7 @@ Constraints:
 - ${GENERATED_APP_IMPORT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
@@ -849,6 +855,7 @@ ${GENERATED_APP_STYLING_GUIDANCE}
 ${GENERATED_APP_IMPORT_GUIDANCE}
 ${GENERATED_APP_JSX_GUIDANCE}
 ${GENERATED_APP_DATABASE_GUIDANCE}
+${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 ${GENERATED_APP_AUTH_GUIDANCE}
 ${GENERATED_APP_README_GUIDANCE}
 ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
@@ -1148,6 +1155,30 @@ export async function generateNextjsApp(
         if (!prepareResult.success || !vercelProjectId || !preparedVercelProjectName) {
           vercelDeployError = prepareResult.error ?? 'Failed to prepare Vercel project'
         } else {
+          const dbPrepareResult = await prepareGeneratedAppForDatabaseDeploy({
+            outputDir,
+            files: spec.files,
+            summaryOptions: {
+              appName: spec.appName,
+              description: spec.description,
+              features: spec.features,
+              repoName,
+              requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+              latestUserRequest: userInput,
+              neonProjectId: prepareResult.neonProjectId,
+            },
+            databaseUrl: prepareResult.databaseUrl,
+            neonProjectId: prepareResult.neonProjectId,
+            neonApiKey,
+          })
+
+          if (dbPrepareResult.error) {
+            logger.warn('Database schema sync before deploy failed', {
+              repoName,
+              error: dbPrepareResult.error,
+            })
+          }
+
           logger.info('Pushing generated app to GitHub', { repoName })
           const pushResult = await pushGeneratedAppToGitHub({
             outputDir,
@@ -1335,8 +1366,10 @@ Constraints:
 - ${GENERATED_APP_IMPORT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
+- ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
+- When editing prisma/schema.prisma you MUST return lib/actions.ts and lib/types.ts in the same response — aligned includes, t.field access, and DTO field names
 - When editing prisma/schema.prisma or lib/types.ts, keep exports in sync — export every type from lib/types.ts and import it with \`import type\` in components; import server actions (not types) from lib/actions.ts
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
@@ -1620,7 +1653,6 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
           githubRepoName,
           vercelTeamId,
           requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
-          skipDatabaseProvisioning: false,
           neonIntegrationConfigurationId,
           neonApiKey,
           neonOrgId,
@@ -1634,6 +1666,30 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
         if (!prepareResult.success || !vercelProjectId || !prepareResult.vercelProjectName) {
           vercelDeployError = prepareResult.error ?? 'Failed to prepare Vercel project'
         } else {
+          const dbPrepareResult = await prepareGeneratedAppForDatabaseDeploy({
+            outputDir,
+            files: spec.files,
+            summaryOptions: {
+              appName: spec.appName,
+              description: spec.description,
+              features: spec.features,
+              repoName,
+              requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+              latestUserRequest: userInput,
+              neonProjectId: prepareResult.neonProjectId,
+            },
+            databaseUrl: prepareResult.databaseUrl,
+            neonProjectId: prepareResult.neonProjectId,
+            neonApiKey,
+          })
+
+          if (dbPrepareResult.error) {
+            logger.warn('Database schema sync before edit deploy failed', {
+              repoName,
+              error: dbPrepareResult.error,
+            })
+          }
+
           logger.info('Pushing edited app to GitHub', { repoName })
           const pushResult = await pushRepoChangesToGitHub({
             outputDir,

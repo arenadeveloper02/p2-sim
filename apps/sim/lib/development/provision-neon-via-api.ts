@@ -231,7 +231,10 @@ async function createNeonProject(
   }
 }
 
-async function resolveNeonConnectionUri(apiKey: string, projectId: string): Promise<string> {
+/**
+ * Fetches the pooled connection URI for an existing Neon project.
+ */
+export async function resolveNeonConnectionUri(apiKey: string, projectId: string): Promise<string> {
   const deadline = Date.now() + CONNECTION_POLL_TIMEOUT_MS
   const query =
     'database_name=neondb&role_name=neondb_owner&pooled=true'
@@ -301,6 +304,7 @@ export async function provisionNeonDatabaseViaApi(
       success: true,
       storeResourceId: created.projectId,
       neonProjectId: created.projectId,
+      databaseUrl: connectionUri,
     }
   } catch (error) {
     const message = toError(error).message

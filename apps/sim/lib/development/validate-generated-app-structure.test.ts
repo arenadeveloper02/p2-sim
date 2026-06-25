@@ -226,6 +226,38 @@ export const prisma = new PrismaClient();
     expect(result.issues.some((issue) => issue.includes('split/broken import'))).toBe(false)
   })
 
+  it('reports invalid Prisma schema for database apps', () => {
+    const result = validateGeneratedAppStructure(
+      [
+        ...baseFiles,
+        {
+          path: 'package.json',
+          content: JSON.stringify({
+            name: 'demo',
+            scripts: { build: 'next build' },
+            dependencies: { '@prisma/client': '^6.9.0', next: '16.0.0', react: '19.0.0' },
+            devDependencies: { prisma: '^6.9.0' },
+          }),
+        },
+        {
+          path: 'prisma/schema.prisma',
+          content: `datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+`,
+        },
+        { path: 'lib/prisma.ts', content: 'export const prisma = {}\n' },
+        { path: 'app/page.tsx', content: 'export default function Page() { return null }\n' },
+      ],
+      { requiresDatabase: true }
+    )
+
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('directUrl'))).toBe(true)
+  })
+
   it('formats issues for repair prompts', () => {
     const formatted = formatStructureValidationIssues(['Missing file for import @/components/Footer'])
     expect(formatted).toBe('1. Missing file for import @/components/Footer')

@@ -30,6 +30,8 @@ export interface ProvisionNeonDatabaseResult {
   success: boolean
   storeResourceId?: string
   neonProjectId?: string
+  /** Pooled Postgres connection string when provisioned via Neon API. */
+  databaseUrl?: string
   error?: string
 }
 
