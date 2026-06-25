@@ -281,7 +281,8 @@ export function runGit(args: string[], cwd = process.cwd()): string {
 }
 
 export function runGh(args: string[]): string {
-  const token = process.env.UPSTREAM_SYNC_GH_TOKEN ?? process.env.GH_TOKEN
+  const token =
+    process.env.GH_PAT ?? process.env.UPSTREAM_SYNC_GH_TOKEN ?? process.env.GH_TOKEN
   const env = token ? { ...process.env, GH_TOKEN: token } : process.env
   return execFileSync('gh', args, { encoding: 'utf8', env }).trim()
 }

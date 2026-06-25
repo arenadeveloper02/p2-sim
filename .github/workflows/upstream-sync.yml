@@ -115,14 +115,14 @@ jobs:
       pull-requests: write
       issues: write
     env:
-      # Fork repos: GITHUB_TOKEN often cannot create PRs — set UPSTREAM_SYNC_GH_TOKEN (classic PAT, repo scope).
-      GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
+      # Fork repos: GITHUB_TOKEN often cannot create PRs — set GH_PAT (classic ghp_* token, repo scope).
+      GH_TOKEN: ${{ secrets.GH_PAT || secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
+          token: ${{ secrets.GH_PAT || secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
 
       - name: Checkout resume PR branch
         if: needs.gate.outputs.resume == 'true'
@@ -166,6 +166,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_PAT: ${{ secrets.GH_PAT }}
           UPSTREAM_SYNC_GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN }}
           UPSTREAM_SYNC_AGENT: ${{ needs.gate.outputs.agent_provider }}
           UPSTREAM_SYNC_FORCE: ${{ needs.gate.outputs.force }}

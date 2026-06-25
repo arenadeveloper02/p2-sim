@@ -154,7 +154,7 @@ function createDraftPr(mergeBase: string, branch: string, runId: string, body: s
   } catch (error) {
     const compareUrl = comparePullRequestUrl(mergeBase, branch)
     console.warn(
-      'Could not create draft PR via gh. Fork repos need UPSTREAM_SYNC_GH_TOKEN (PAT with repo scope).'
+      'Could not create draft PR via gh. Fork repos need GH_PAT (classic ghp_* token with repo scope).'
     )
     console.warn(`Create manually: ${compareUrl}`)
     writeRunLog(runId, {
