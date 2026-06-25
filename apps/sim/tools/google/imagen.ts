@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import type { ToolConfig } from '@/tools/types'
 
@@ -139,7 +140,7 @@ export const imagenTool: ToolConfig = {
   },
 
   request: {
-    timeout: 120000,
+    timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
     url: (params) => {
       // Try the Generative Language API first
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${params.model}:predict`

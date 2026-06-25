@@ -69,11 +69,15 @@ const {
   mockSetChatAuthCookie,
   mockValidateAuthToken,
   mockAssertChatEmbedAllowed,
+  mockProcessChatFiles,
+  mockUpdateExecutionHistoryData,
 } = vi.hoisted(() => ({
   mockValidateChatAuth: vi.fn().mockResolvedValue({ authorized: true }),
   mockSetChatAuthCookie: vi.fn(),
   mockValidateAuthToken: vi.fn().mockReturnValue(false),
   mockAssertChatEmbedAllowed: vi.fn().mockResolvedValue(null),
+  mockProcessChatFiles: vi.fn().mockResolvedValue([]),
+  mockUpdateExecutionHistoryData: vi.fn().mockResolvedValue(undefined),
 }))
 
 const mockCreateErrorResponse = workflowsApiUtilsMockFns.mockCreateErrorResponse
@@ -121,6 +125,35 @@ vi.mock('@/lib/core/utils/sse', () => ({
 }))
 
 vi.mock('@/lib/core/security/encryption', () => encryptionMock)
+
+vi.mock('@/lib/uploads', () => ({
+  ChatFiles: {
+    processChatFiles: mockProcessChatFiles,
+  },
+}))
+
+vi.mock('@/lib/chat/history-persistence', () => ({
+  toPersistedChatAttachment: vi.fn((file: {
+    id: string
+    key: string
+    name: string
+    type: string
+    size: number
+  }): {
+    id: string
+    key: string
+    filename: string
+    media_type: string
+    size: number
+  } => ({
+    id: file.id,
+    key: file.key,
+    filename: file.name,
+    media_type: file.type,
+    size: file.size,
+  })),
+  updateExecutionHistoryData: mockUpdateExecutionHistoryData,
+}))
 
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { createStreamingResponse } from '@/lib/workflows/streaming/streaming'
@@ -188,6 +221,8 @@ describe('Chat Identifier API Route', () => {
 
     mockValidateChatAuth.mockResolvedValue({ authorized: true })
     mockValidateAuthToken.mockReturnValue(false)
+    mockProcessChatFiles.mockResolvedValue([])
+    mockUpdateExecutionHistoryData.mockResolvedValue(undefined)
     mockCreateErrorResponse.mockImplementation((message: string, status: number, code?: string) => {
       return new Response(
         JSON.stringify({
@@ -534,6 +569,76 @@ describe('Chat Identifier API Route', () => {
           executeFn: expect.any(Function),
         })
       )
+    })
+
+    it('should accept URL-only generated image attachments and process them', async () => {
+      mockProcessChatFiles.mockResolvedValueOnce([
+        {
+          id: 'file-1',
+          name: 'generated.png',
+          size: 872_519,
+          type: 'image/png',
+          url: 'http://localhost:3000/api/files/serve/agent-generated-images/workflow/user/image.png',
+          key: 'agent-generated-images/workflow/user/image.png',
+          context: 'agent-generated-images',
+        },
+      ])
+
+      const req = createMockNextRequest('POST', {
+        input: 'Use this image as a reference',
+        files: [
+          {
+            name: 'generated.png',
+            type: 'image/png',
+            size: 872_519,
+            url: 'http://localhost:3000/api/files/serve/agent-generated-images%2Fworkflow%2Fuser%2Fimage.png',
+          },
+        ],
+      })
+      const params = Promise.resolve({ identifier: 'test-chat' })
+
+      const response = await POST(req, { params })
+
+      expect(response.status).toBe(200)
+      expect(mockProcessChatFiles).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            name: 'generated.png',
+            type: 'image/png',
+            url: 'http://localhost:3000/api/files/serve/agent-generated-images%2Fworkflow%2Fuser%2Fimage.png',
+          }),
+        ],
+        expect.objectContaining({
+          workspaceId: 'test-workspace-id',
+          workflowId: 'workflow-id',
+        }),
+        expect.any(String),
+        'user-id'
+      )
+    })
+
+    it('should reject file attachments missing both data and url', async () => {
+      const req = createMockNextRequest('POST', {
+        input: 'Hello',
+        files: [
+          {
+            name: 'generated.png',
+            type: 'image/png',
+            size: 872_519,
+          },
+        ],
+      })
+      const params = Promise.resolve({ identifier: 'test-chat' })
+
+      const response = await POST(req, { params })
+
+      expect(response.status).toBe(400)
+      expect(mockProcessChatFiles).not.toHaveBeenCalled()
+
+      const data = await response.json()
+      expect(data).toHaveProperty('message')
+      expect(String(data.message)).toContain('files.0.data')
+      expect(String(data.message)).toContain('Either file data or file URL is required')
     })
   })
 })

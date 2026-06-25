@@ -615,6 +615,21 @@ export function normalizeFileInput(
 }
 
 /**
+ * Block types available as tools inside the Agent block tool picker.
+ * These remain canvas blocks (`category: 'blocks'`) but are also selectable as agent tools.
+ */
+export const AGENT_TOOL_BLOCK_TYPES = new Set([
+  'api',
+  'webhook_request',
+  'workflow',
+  'workflow_input',
+  'knowledge',
+  'function',
+  'table',
+  'image_generator_v2',
+])
+
+/**
  * Block types that are built-in to the platform (as opposed to third-party integrations).
  * Used to categorize tools in the tool selection dropdown.
  */

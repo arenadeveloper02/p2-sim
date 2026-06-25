@@ -121,7 +121,7 @@ export async function getToolAsync(
   toolId: string,
   context: GetToolAsyncContext = {}
 ): Promise<ToolConfig | undefined> {
-  const builtInTool = tools[resolveToolId(toolId)]
+  const builtInTool = tools[toolId]
   if (builtInTool) return builtInTool
 
   if (isCustomTool(toolId)) {

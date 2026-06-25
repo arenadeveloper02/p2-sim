@@ -96,3 +96,6 @@ i18n.cache
 
 # Personal Cursor Skills
 .cursor/skills/ask-sim/
+
+# Local DB scripts (not for migration)
+packages/db/scripts/*.sql

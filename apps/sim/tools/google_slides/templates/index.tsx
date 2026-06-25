@@ -143,7 +143,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'TWO_COLUMN_IMAGE_TEXT',
         order: 4,
         templateSlideObjectId: 'g3bd983d1368_1_0',
-        description: 'Two-column layout with images, headers, and bulleted text content',
+        description:
+          'Two-column layout — each column has an ultra-wide AI-generated hero photo (top) with a bold subheading and two bullet points below. Left header uses ACCENT2 color, right header uses ACCENT3.',
         blocks: [
           {
             key: 'title',
@@ -152,18 +153,25 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3bd983d1368_1_3',
             minChars: 15,
             maxChars: 40,
-            description: 'Slide title describing the two-column content',
+            description: 'Slide title spanning both columns (top of slide)',
             content: '',
           },
+          // ── Left column ──
           {
             key: 'left_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
             source: 'ai_photo',
             replaceable: true,
-            usage: ['contextual_photo', 'illustration', 'ai_generated'],
+            usage: ['hero', 'wide_landscape', 'left_column'],
+            // Shape: scaleX 1.7365 / scaleY 0.7248 → 2.396:1 → '21:9' is closest supported ratio
+            aspectRatio: '21:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, ultra-wide landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g3bd983d1368_1_5',
-            description: 'Left column AI-generated photo',
+            description:
+              'Hero photo for the left column. Visually represents the left section topic.',
             content: '',
           },
           {
@@ -191,15 +199,22 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Left column bulleted list with body text only',
             content: [],
           },
+          // ── Right column ──
           {
             key: 'right_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
             source: 'ai_photo',
             replaceable: true,
-            usage: ['contextual_photo', 'illustration', 'ai_generated'],
+            usage: ['hero', 'wide_landscape', 'right_column'],
+            // Same shape dimensions as left image → '21:9'
+            aspectRatio: '21:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, ultra-wide landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g3bd983d1368_1_7',
-            description: 'Right column AI-generated photo',
+            description:
+              'Hero photo for the right column. Visually represents the right section topic.',
             content: '',
           },
           {

@@ -113,6 +113,16 @@ function parseAIResponse(aiResponse: any): GAQLResponse {
  * @returns Response with validated/fixed date filtering
  */
 function validateDateFiltering(response: GAQLResponse): GAQLResponse {
+  // change_event uses change_event.change_date_time instead of segments.date.
+  // Skip segments.date injection for these queries, otherwise the query breaks.
+  const isChangeEvent =
+    response.gaql_query.includes('change_event') ||
+    response.gaql_query.includes('change_date_time')
+
+  if (isChangeEvent) {
+    return response
+  }
+
   const hasDateFilter =
     response.gaql_query.includes('segments.date') && response.gaql_query.includes('BETWEEN')
 
