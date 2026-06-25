@@ -68,9 +68,20 @@ function readPrompt(name: string): string {
   return readFileSync(join(PROMPTS_DIR, name), 'utf8')
 }
 
-function syncBranchName(runId: string): string {
+function syncBranchName(): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  return `upstream-sync/${runId}-${stamp}`
+  return `upstream-sync/${stamp}`
+}
+
+function checkoutSyncBranch(syncBranch: string, resume: boolean): void {
+  if (resume) {
+    runGit(['fetch', 'origin', syncBranch])
+    runGit(['checkout', syncBranch])
+    return
+  }
+
+  runGit(['fetch', 'origin', targetBranch()])
+  runGit(['checkout', '-B', syncBranch, `origin/${targetBranch()}`])
 }
 
 async function runAgentPrompt(options: {
@@ -171,7 +182,6 @@ async function main(): Promise<void> {
 
   if (RESUME && state.activePrNumber) {
     syncGrillQaFromPr(state.activePrNumber, state.lastRunId ?? runId)
-    commitUpstreamLedger(`upstream-sync(${state.lastRunId ?? runId}): log resume Q&A`)
   }
 
   let syncBranch: string
@@ -182,10 +192,16 @@ async function main(): Promise<void> {
       closeSupersededPr(state.activePrNumber, {
         newUpstreamSha: headSha,
         runId,
-        newBranch: syncBranchName(runId),
+        newBranch: syncBranchName(),
       })
     }
-    syncBranch = syncBranchName(runId)
+    syncBranch = syncBranchName()
+  }
+
+  checkoutSyncBranch(syncBranch, RESUME && Boolean(state.activeBranch))
+
+  if (RESUME && state.activePrNumber) {
+    commitUpstreamLedger(`upstream-sync(${state.lastRunId ?? runId}): log resume Q&A`)
   }
 
   writeState({
@@ -195,13 +211,6 @@ async function main(): Promise<void> {
     activeBranch: syncBranch,
     activePrNumber: RESUME ? state.activePrNumber : null,
   })
-
-  runGit(['fetch', 'origin', targetBranch()])
-  if (RESUME && state.activeBranch) {
-    runGit(['checkout', syncBranch])
-  } else {
-    runGit(['checkout', '-B', syncBranch, `origin/${targetBranch()}`])
-  }
 
   writeFbiReport(
     runId,
