@@ -72,7 +72,9 @@ vi.mock('@/lib/core/config/env', () => ({
     if (typeof value === 'boolean') return value
     if (value === undefined || value === null || value === '') return undefined
     const normalized = String(value).trim().toLowerCase()
-    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on'
+    return (
+      normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on'
+    )
   },
 }))
 
