@@ -38,11 +38,21 @@ export type TableBatchRequest =
       }
     }
 
+interface TableTextElement {
+  endIndex?: number
+}
+
+interface TableCell {
+  location?: { rowIndex?: number; columnIndex?: number }
+  text?: { textElements?: TableTextElement[] }
+}
+
 interface PresentationElement {
   objectId?: string
   table?: {
     rows?: number
     columns?: number
+    tableRows?: { tableCells?: TableCell[] }[]
   }
 }
 
@@ -91,6 +101,47 @@ export function findTableDimensions(
   return null
 }
 
+function tableCellTextKey(tableObjectId: string, rowIndex: number, columnIndex: number): string {
+  return `${tableObjectId}:${rowIndex}:${columnIndex}`
+}
+
+/**
+ * Maps table cell coordinates to the max text endIndex from a fetched presentation.
+ * Cells with no text content are omitted (treated as endIndex 0).
+ */
+export function buildTableCellTextEndIndexMap(
+  presentationData: PresentationPayload
+): Record<string, number> {
+  const map: Record<string, number> = {}
+
+  for (const slide of presentationData.slides ?? []) {
+    for (const element of slide.pageElements ?? []) {
+      if (!element.objectId || !element.table?.tableRows) continue
+
+      for (const tableRow of element.table.tableRows) {
+        for (const cell of tableRow.tableCells ?? []) {
+          const textElements = cell.text?.textElements
+          if (!textElements?.length) continue
+
+          const rowIndex = cell.location?.rowIndex ?? 0
+          const columnIndex = cell.location?.columnIndex ?? 0
+          let maxIndex = 0
+          for (const textElement of textElements) {
+            if (textElement.endIndex != null && textElement.endIndex > maxIndex) {
+              maxIndex = textElement.endIndex
+            }
+          }
+          if (maxIndex > 0) {
+            map[tableCellTextKey(element.objectId, rowIndex, columnIndex)] = maxIndex
+          }
+        }
+      }
+    }
+  }
+
+  return map
+}
+
 /**
  * Builds batchUpdate requests to trim a template table down to the content grid,
  * then replace text in each populated cell. Deletes rows/columns from the end.
@@ -100,6 +151,7 @@ export function buildTableContentRequests(input: {
   content: string[][]
   templateRows: number
   templateColumns: number
+  cellTextEndIndexMap?: Record<string, number>
 }): TableBatchRequest[] {
   const { tableObjectId, templateRows, templateColumns } = input
   const content = normalizeTableContent(input.content, templateRows, templateColumns)
@@ -130,13 +182,19 @@ export function buildTableContentRequests(input: {
     const row = content[rowIndex] ?? []
     for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
       const text = row[columnIndex] ?? ''
-      requests.push({
-        deleteText: {
-          objectId: tableObjectId,
-          cellLocation: { rowIndex, columnIndex },
-          textRange: { type: 'ALL' },
-        },
-      })
+      const cellKey = tableCellTextKey(tableObjectId, rowIndex, columnIndex)
+      const cellEndIndex = input.cellTextEndIndexMap?.[cellKey] ?? 0
+
+      if (cellEndIndex > 0) {
+        requests.push({
+          deleteText: {
+            objectId: tableObjectId,
+            cellLocation: { rowIndex, columnIndex },
+            textRange: { type: 'ALL' },
+          },
+        })
+      }
+
       if (text) {
         requests.push({
           insertText: {
