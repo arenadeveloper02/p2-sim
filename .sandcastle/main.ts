@@ -164,11 +164,30 @@ function createDraftPr(mergeBase: string, branch: string, runId: string, body: s
   }
 }
 
-function commitUpstreamLedger(message: string): void {
-  runGit(['add', '.upstream-sync'])
-  if (hasStagedChanges()) {
-    runGit(['commit', '-m', message])
+function commitUpstreamLedger(message: string): boolean {
+  const unmerged = listConflictFiles()
+  if (unmerged.length > 0) {
+    console.warn(
+      `Skipping ledger commit "${message}" — ${unmerged.length} unresolved merge conflict(s). Ledger files are staged locally only.`
+    )
+    try {
+      runGit(['add', '.upstream-sync'])
+    } catch {
+      // staging may also fail during a messy merge state
+    }
+    return false
   }
+
+  try {
+    runGit(['add', '.upstream-sync'])
+    if (hasStagedChanges()) {
+      runGit(['commit', '-m', message])
+      return true
+    }
+  } catch (error) {
+    console.warn(`Ledger commit failed (${message}):`, error)
+  }
+  return false
 }
 
 async function main(): Promise<void> {
@@ -258,6 +277,8 @@ async function main(): Promise<void> {
     maxIterations: 2,
   })
 
+  commitUpstreamLedger(`upstream-sync(${runId}): pre-merge ledger`)
+
   try {
     runGit(['merge', '--no-edit', `${upstreamRemote()}/${upstreamBranch()}`])
   } catch {
@@ -292,7 +313,6 @@ async function main(): Promise<void> {
       Status: 'blocked',
       'Remaining conflicts': remaining.map((f) => `- ${f}`).join('\n'),
     })
-    writeState({ ...readState(), status: 'awaiting_input' })
 
     const prBody = [
       QUESTION_MARKER,
