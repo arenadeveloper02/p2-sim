@@ -11,7 +11,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createSandbox } from '@ai-hero/sandcastle'
+import { run } from '@ai-hero/sandcastle'
 import { noSandbox } from '@ai-hero/sandcastle/sandboxes/no-sandbox'
 import { resolveAgents } from './lib/agents'
 import {
@@ -95,23 +95,19 @@ async function runAgentPrompt(options: {
     return
   }
 
-  await using sandbox = await createSandbox({
-    branch: options.branch,
-    sandbox: noSandbox(),
-    hooks: {
-      sandbox: {
-        onSandboxReady: [{ command: 'bun install --frozen-lockfile' }],
-      },
-    },
-  })
-
-  await sandbox.run({
+  await run({
     agent: options.agent,
     prompt: options.prompt,
     name: options.name,
     maxIterations: options.maxIterations ?? 3,
     completionSignal: COMPLETION_SIGNAL,
-    branchStrategy: { type: 'branch', branch: options.branch },
+    sandbox: noSandbox(),
+    branchStrategy: { type: 'head' },
+    hooks: {
+      sandbox: {
+        onSandboxReady: [{ command: 'bun install --frozen-lockfile' }],
+      },
+    },
     logging: {
       type: 'file',
       path: join('.sandcastle', 'logs', `${options.name}.log`),

@@ -333,6 +333,55 @@ export function upstreamBranch(): string {
   return process.env.UPSTREAM_BRANCH ?? 'main'
 }
 
+export function upstreamRepo(): string {
+  return process.env.UPSTREAM_REPO ?? 'simstudioai/sim'
+}
+
+let releaseBodiesCache: Map<string, string> | null = null
+
+/** One paginated GitHub API call (uses `gh` + GH_TOKEN) instead of N unauthenticated curls. */
+function loadUpstreamReleaseBodies(): Map<string, string> {
+  if (releaseBodiesCache) return releaseBodiesCache
+
+  releaseBodiesCache = new Map()
+
+  try {
+    const raw = runGh([
+      'api',
+      `repos/${upstreamRepo()}/releases`,
+      '--paginate',
+      '-f',
+      'per_page=100',
+    ])
+    const releases = JSON.parse(raw) as Array<{ tag_name?: string; body?: string | null }>
+    for (const release of releases) {
+      if (release.tag_name) {
+        releaseBodiesCache.set(release.tag_name, release.body?.trim() ?? '')
+      }
+    }
+  } catch {
+    console.warn('Could not list upstream releases via gh api; falling back to commit bodies.')
+  }
+
+  return releaseBodiesCache
+}
+
+function releaseBodyFromCommit(entry: ReleaseNotesEntry): string | null {
+  if (!entry.releaseCommitSha) return null
+  try {
+    const body = runGit(['show', '-s', '--format=%B', entry.releaseCommitSha])
+    const lines = body.split('\n')
+    const first = lines[0]?.trim() ?? ''
+    if (first.startsWith(`${entry.version}:`)) {
+      const rest = lines.slice(1).join('\n').trim()
+      return rest || `_Release ${entry.version} — no release body on GitHub; commit has no details._`
+    }
+  } catch {
+    // commit may not exist locally
+  }
+  return null
+}
+
 /**
  * PR base / fork source.
  * TEMP: defaults to current branch for harness validation on feat/github-merge-agent.
@@ -470,14 +519,11 @@ export function writeClusterManifest(runId: string, clusters: ConflictCluster[])
 }
 
 export function fetchReleaseNotesForVersion(version: string): string {
-  try {
-    const url = `https://api.github.com/repos/simstudioai/sim/releases/tags/${version}`
-    const res = execFileSync('curl', ['-fsSL', url], { encoding: 'utf8' })
-    const data = JSON.parse(res) as { body?: string; name?: string }
-    return data.body?.trim() || `_Release ${version} has no body._`
-  } catch {
-    return `_Could not fetch release notes for ${version}._`
+  const fromApi = loadUpstreamReleaseBodies().get(version)
+  if (fromApi !== undefined) {
+    return fromApi || `_Release ${version} has no body._`
   }
+  return `_Could not fetch release notes for ${version}._`
 }
 
 /** @deprecated Use detectReleaseVersions + fetchAllUpstreamReleaseNotes */
@@ -517,10 +563,18 @@ export function detectReleaseVersions(commits: UpstreamCommit[]): ReleaseNotesEn
 }
 
 export function fetchAllUpstreamReleaseNotes(entries: ReleaseNotesEntry[]): ReleaseNotesEntry[] {
-  return entries.map((entry) => ({
-    ...entry,
-    body: fetchReleaseNotesForVersion(entry.version),
-  }))
+  const apiBodies = loadUpstreamReleaseBodies()
+  return entries.map((entry) => {
+    const fromApi = apiBodies.get(entry.version)
+    if (fromApi !== undefined) {
+      return { ...entry, body: fromApi || `_Release ${entry.version} has no body._` }
+    }
+    const fromCommit = releaseBodyFromCommit(entry)
+    return {
+      ...entry,
+      body: fromCommit ?? `_Could not fetch release notes for ${entry.version}._`,
+    }
+  })
 }
 
 export function formatReleaseNotesMarkdown(entries: ReleaseNotesEntry[]): string {

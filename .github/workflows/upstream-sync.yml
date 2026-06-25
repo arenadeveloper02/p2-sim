@@ -89,6 +89,7 @@ jobs:
           if [ "$EVENT" = "issue_comment" ]; then
             if echo "$COMMENT" | grep -q '/upstream-sync resume'; then
               resume=true
+              skip_agent=false
               should_run=true
             else
               should_run=false
@@ -164,4 +165,6 @@ jobs:
           UPSTREAM_SYNC_RESUME: ${{ needs.gate.outputs.resume }}
           UPSTREAM_SYNC_SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_HEAD_REF: ${{ github.head_ref || github.ref_name }}
         run: bun run upstream-sync
