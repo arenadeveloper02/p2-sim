@@ -1,4 +1,7 @@
-import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
+import {
+  IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
+  MAX_IMAGES_TO_GENERATE,
+} from '@/lib/image-generation/constants'
 import { sanitizeImageGenerationWrapperParams } from '@/lib/image-generation/nano-banana-inputs'
 import type {
   ImageGenerationWrapperParams,
@@ -92,7 +95,7 @@ export function createImageGenerationWrapperTool(
     request: {
       url: '/api/tools/image-generation',
       method: 'POST',
-      timeout: 300000,
+      timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
       headers: () => ({
         'Content-Type': 'application/json',
       }),
@@ -104,7 +107,6 @@ export function createImageGenerationWrapperTool(
       },
     },
     postProcess: undefined,
-    directExecution: undefined,
     transformResponse: async (response) => {
       return (await response.json()) as ImageGenerationWrapperResponse
     },
