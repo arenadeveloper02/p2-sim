@@ -26,6 +26,7 @@ import {
   comparePullRequestUrl,
   explainPrCreateFailure,
   isSyncBranch,
+  repoSlug,
   resolveMergeBase,
   commitsSince,
   detectReleaseVersions,
@@ -122,6 +123,49 @@ async function runAgentPrompt(options: {
   })
 }
 
+function commitsAheadOnRemote(mergeBase: string, branch: string): number {
+  try {
+    runGit(['fetch', 'origin', mergeBase, branch])
+    return Number(runGit(['rev-list', '--count', `origin/${mergeBase}..origin/${branch}`]))
+  } catch {
+    return 0
+  }
+}
+
+/** GitHub rejects PRs when head and base point at the same commit on the remote. */
+function ensureSyncBranchAheadOfBase(mergeBase: string, runId: string): void {
+  runGit(['fetch', 'origin', mergeBase])
+  const localAhead = Number(runGit(['rev-list', '--count', `origin/${mergeBase}..HEAD`]))
+  if (localAhead === 0) {
+    console.log(`Sync branch has no commits ahead of origin/${mergeBase} — creating scaffold commit.`)
+    runGit(['commit', '--allow-empty', '-m', `upstream-sync(${runId}): open sync branch`])
+  }
+}
+
+function findOpenSyncPr(mergeBase: string, branch: string): number {
+  const { owner, repo } = repoSlug()
+  try {
+    const raw = runGh([
+      'pr',
+      'list',
+      '--repo',
+      `${owner}/${repo}`,
+      '--base',
+      mergeBase,
+      '--head',
+      `${owner}:${branch}`,
+      '--state',
+      'open',
+      '--json',
+      'number',
+    ])
+    const prs = JSON.parse(raw) as Array<{ number: number }>
+    return prs[0]?.number ?? 0
+  } catch {
+    return 0
+  }
+}
+
 function createDraftPr(mergeBase: string, branch: string, runId: string, body: string): number {
   if (isSyncBranch(mergeBase)) {
     const hint = explainPrCreateFailure(
@@ -134,28 +178,47 @@ function createDraftPr(mergeBase: string, branch: string, runId: string, body: s
   }
 
   const title = `upstream-sync: merge simstudioai/sim main into ${mergeBase} (${runId})`
+  const { owner, repo } = repoSlug()
+  const currentBranch = runGit(['branch', '--show-current'])
+
+  ensureSyncBranchAheadOfBase(mergeBase, runId)
   runGit(['push', '-u', 'origin', branch])
 
-  try {
-    runGit(['fetch', 'origin', mergeBase, branch])
-  } catch {
-    console.warn(`Could not fetch origin/${mergeBase} and origin/${branch} before PR create`)
+  if (commitsAheadOnRemote(mergeBase, branch) === 0) {
+    console.warn(
+      `origin/${branch} still matches origin/${mergeBase} after push — adding another scaffold commit.`
+    )
+    runGit(['commit', '--allow-empty', '-m', `upstream-sync(${runId}): publish sync branch`])
+    runGit(['push', '-u', 'origin', branch])
+  }
+
+  const existing = findOpenSyncPr(mergeBase, branch)
+  if (existing > 0) {
+    console.log(`Reusing open PR #${existing} for ${branch} → ${mergeBase}.`)
+    updateDraftPrBody(existing, body)
+    return existing
+  }
+
+  const prCreateArgs = [
+    'pr',
+    'create',
+    '--repo',
+    `${owner}/${repo}`,
+    '--base',
+    mergeBase,
+    '--title',
+    title,
+    '--body',
+    body,
+    '--draft',
+  ]
+  // When checked out on the head branch, omit --head (gh handles slash names reliably).
+  if (currentBranch !== branch) {
+    prCreateArgs.push('--head', `${owner}:${branch}`)
   }
 
   try {
-    const prUrl = runGh([
-      'pr',
-      'create',
-      '--base',
-      mergeBase,
-      '--head',
-      branch,
-      '--title',
-      title,
-      '--body',
-      body,
-      '--draft',
-    ])
+    const prUrl = runGh(prCreateArgs)
 
     const match = prUrl.match(/\/pull\/(\d+)/)
     const prNumber = match ? Number(match[1]) : 0

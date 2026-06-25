@@ -117,7 +117,7 @@ export function appendGrillQa(entry: GrillQaEntry): void {
   writeFileSync(runGrillPath, `${existing.trim()}\n\n${parts.join('\n')}\n`)
 }
 
-function repoSlug(): { owner: string; repo: string } {
+export function repoSlug(): { owner: string; repo: string } {
   const slug =
     process.env.GITHUB_REPOSITORY ??
     runGh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
