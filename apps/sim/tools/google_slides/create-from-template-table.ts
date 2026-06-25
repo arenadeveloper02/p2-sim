@@ -1,0 +1,154 @@
+/** Table helpers shared by create-from-template and its tests. */
+
+export interface TableDimensions {
+  rows: number
+  columns: number
+}
+
+export interface TableCellTextRequest {
+  deleteText: {
+    objectId: string
+    cellLocation: { rowIndex: number; columnIndex: number }
+    textRange: { type: 'ALL' }
+  }
+}
+
+export interface TableCellInsertRequest {
+  insertText: {
+    objectId: string
+    cellLocation: { rowIndex: number; columnIndex: number }
+    insertionIndex: number
+    text: string
+  }
+}
+
+export type TableBatchRequest =
+  | TableCellTextRequest
+  | TableCellInsertRequest
+  | {
+      deleteTableRow: {
+        tableObjectId: string
+        cellLocation: { rowIndex: number; columnIndex: number }
+      }
+    }
+  | {
+      deleteTableColumn: {
+        tableObjectId: string
+        cellLocation: { rowIndex: number; columnIndex: number }
+      }
+    }
+
+interface PresentationElement {
+  objectId?: string
+  table?: {
+    rows?: number
+    columns?: number
+  }
+}
+
+interface PresentationSlide {
+  pageElements?: PresentationElement[]
+}
+
+interface PresentationPayload {
+  slides?: PresentationSlide[]
+}
+
+/**
+ * Normalizes LLM/user table content to a bounded string grid.
+ */
+export function normalizeTableContent(
+  content: unknown,
+  maxRows: number,
+  maxColumns: number
+): string[][] {
+  if (!Array.isArray(content)) return []
+
+  return content.slice(0, maxRows).map((row) => {
+    if (!Array.isArray(row)) return []
+    return row.slice(0, maxColumns).map((cell) => {
+      if (typeof cell === 'string') return cell
+      if (cell == null) return ''
+      return String(cell)
+    })
+  })
+}
+
+/** Reads table row/column counts from a fetched presentation payload. */
+export function findTableDimensions(
+  presentationData: PresentationPayload,
+  tableObjectId: string
+): TableDimensions | null {
+  for (const slide of presentationData.slides ?? []) {
+    for (const element of slide.pageElements ?? []) {
+      if (element.objectId !== tableObjectId || !element.table) continue
+      const rows = element.table.rows ?? 0
+      const columns = element.table.columns ?? 0
+      if (rows <= 0 || columns <= 0) return null
+      return { rows, columns }
+    }
+  }
+  return null
+}
+
+/**
+ * Builds batchUpdate requests to trim a template table down to the content grid,
+ * then replace text in each populated cell. Deletes rows/columns from the end.
+ */
+export function buildTableContentRequests(input: {
+  tableObjectId: string
+  content: string[][]
+  templateRows: number
+  templateColumns: number
+}): TableBatchRequest[] {
+  const { tableObjectId, templateRows, templateColumns } = input
+  const content = normalizeTableContent(input.content, templateRows, templateColumns)
+  const contentRows = content.length
+  const contentColumns = content.reduce((max, row) => Math.max(max, row.length), 0)
+
+  const requests: TableBatchRequest[] = []
+
+  for (let rowIndex = templateRows - 1; rowIndex >= contentRows; rowIndex -= 1) {
+    requests.push({
+      deleteTableRow: {
+        tableObjectId,
+        cellLocation: { rowIndex, columnIndex: 0 },
+      },
+    })
+  }
+
+  for (let columnIndex = templateColumns - 1; columnIndex >= contentColumns; columnIndex -= 1) {
+    requests.push({
+      deleteTableColumn: {
+        tableObjectId,
+        cellLocation: { rowIndex: 0, columnIndex },
+      },
+    })
+  }
+
+  for (let rowIndex = 0; rowIndex < contentRows; rowIndex += 1) {
+    const row = content[rowIndex] ?? []
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      const text = row[columnIndex] ?? ''
+      requests.push({
+        deleteText: {
+          objectId: tableObjectId,
+          cellLocation: { rowIndex, columnIndex },
+          textRange: { type: 'ALL' },
+        },
+      })
+      if (text) {
+        requests.push({
+          insertText: {
+            objectId: tableObjectId,
+            cellLocation: { rowIndex, columnIndex },
+            insertionIndex: 0,
+            text,
+          },
+        })
+      }
+    }
+  }
+
+  return requests
+}

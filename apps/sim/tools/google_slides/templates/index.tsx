@@ -7003,6 +7003,83 @@ function buildTemplateSchema(): PresentationSchema {
           },
         ],
       },
+      {
+        slideKey: 'TABLE_FORMAT',
+        order: 54,
+        templateSlideObjectId: 'g3ef485f0cbc_0_8',
+        description:
+          'Table slide with title and a styled grid. Column 0 holds row labels; remaining columns hold data values.',
+        blocks: [
+          {
+            key: 'title',
+            type: 'TEXT',
+            role: 'TITLE',
+            shapeId: 'g3ef485f0cbc_0_9',
+            minChars: 5,
+            maxChars: 40,
+            description: 'Slide title above the table (e.g. "Table Format")',
+            content: '',
+          },
+          {
+            key: 'data_table',
+            type: 'TABLE',
+            role: 'DATA_TABLE',
+            shapeId: 'g3ef485f0cbc_0_11',
+            maxRows: 6,
+            maxColumns: 5,
+            minRows: 2,
+            minColumns: 2,
+            rowLabelColumn: true,
+            description:
+              'Styled data table. Use column 0 for row labels and columns 1–4 for values. Only fill the rows/columns you need (up to 6×5); unused rows/columns are removed automatically.',
+            content: [],
+            cellConstraints: {
+              minChars: 1,
+              maxChars: 80,
+              description: 'Short label or data cell text',
+            },
+          },
+        ],
+      },
+      {
+        slideKey: 'TABLE_FORMAT_WITH_HEADERS',
+        order: 55,
+        templateSlideObjectId: 'g3ef485f0cbc_0_0',
+        description:
+          'Table slide with title and a header row plus row labels. Row 0 holds column headers; column 0 on subsequent rows holds row labels.',
+        blocks: [
+          {
+            key: 'title',
+            type: 'TEXT',
+            role: 'TITLE',
+            shapeId: 'g3ef485f0cbc_0_1',
+            minChars: 5,
+            maxChars: 40,
+            description: 'Slide title above the table (e.g. "Table Format")',
+            content: '',
+          },
+          {
+            key: 'data_table',
+            type: 'TABLE',
+            role: 'DATA_TABLE',
+            shapeId: 'g3ef485f0cbc_0_2',
+            maxRows: 6,
+            maxColumns: 5,
+            minRows: 2,
+            minColumns: 2,
+            headerRow: true,
+            rowLabelColumn: true,
+            description:
+              'Styled table with a header row. Row 0: optional corner cell in column 0, then column headers in columns 1–4. Rows 1+: column 0 = row label ("Title 1" style), columns 1–4 = data. Only fill the rows/columns you need (up to 6×5); unused rows/columns are removed automatically.',
+            content: [],
+            cellConstraints: {
+              minChars: 1,
+              maxChars: 80,
+              description: 'Header, row label, or data cell text',
+            },
+          },
+        ],
+      },
     ],
   }
 }
