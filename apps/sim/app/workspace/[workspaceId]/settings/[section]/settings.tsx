@@ -57,7 +57,9 @@ const RecentlyDeleted = dynamic(() =>
   ).then((m) => m.RecentlyDeleted)
 )
 const Billing = dynamic(() =>
-  import('@/app/workspace/[workspaceId]/settings/components/billing/billing').then((m) => m.Billing)
+  import('@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-page-shell').then(
+    (m) => m.BillingPageShell
+  )
 )
 const Teammates = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/teammates/teammates').then(
