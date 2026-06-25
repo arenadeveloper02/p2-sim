@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
 import type { ToolConfig } from '@/tools/types'
 import {
+  buildTableCellTextEndIndexMap,
   buildTableContentRequests,
   findTableDimensions,
 } from '@/tools/google_slides/create-from-template-table'
@@ -480,6 +481,7 @@ export const createFromTemplateTool: ToolConfig<
       throw new Error(presData.error?.message || 'Failed to read presentation state for mapping')
     }
     const textEndIndexMap = buildTextEndIndexMap(presData)
+    const tableCellTextEndIndexMap = buildTableCellTextEndIndexMap(presData)
 
     // Build shape geometry map for image size restoration
     const shapeGeometryMap: Record<string, { size: any; transform: any }> = {}
@@ -562,6 +564,7 @@ export const createFromTemplateTool: ToolConfig<
               content: tableContent,
               templateRows: dimensions.rows,
               templateColumns: dimensions.columns,
+              cellTextEndIndexMap: tableCellTextEndIndexMap,
             })
           )
         } else if (block.type === 'IMAGE' && content) {
