@@ -7,6 +7,14 @@ description: Grilling analysis for upstream sync harness runs. Reads grill-log a
 
 Grilling adapted for **automated** upstream sync (not interactive chat). Based on [mattpocock/skills](https://github.com/mattpocock/skills) `grilling`, with ledger-backed memory.
 
+## Draft PR (created before this agent runs)
+
+The harness creates a **draft PR before grill analysis**. Use that PR for all human questions:
+
+- PR number is passed in the parent prompt as `{{PR_NUMBER}}` (or `PR #N` in run context).
+- Post questions as **PR comments** on that PR — not as issue comments elsewhere.
+- Reviewers reply on the same PR with `/upstream-sync resume` and their answers.
+
 ## Before asking anything
 
 1. Read `.upstream-sync/grill-log.md` and `.upstream-sync/qa-history.jsonl`.
@@ -29,10 +37,10 @@ Produce a written analysis (append to `.upstream-sync/ledger/<RUN_ID>/run.md` un
 
 When you must ask:
 
-1. Post **one PR comment** containing `<!-- upstream-sync-question -->` with all unresolved questions grouped clearly.
+1. Post **one PR comment on PR #{{PR_NUMBER}}** containing `<!-- upstream-sync-question -->` with all unresolved questions grouped clearly.
 2. Log questions via the harness (they land in `grill-log.md` automatically when synced).
-3. Stop and output status `awaiting_input` — do **not** guess on fork-first vs upstream-first for ambiguous conflicts.
-4. Tell the reviewer to reply with `/upstream-sync resume` and their answers.
+3. Stop and output `<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>` — do **not** guess on fork-first vs upstream-first for ambiguous conflicts.
+4. Tell the reviewer to reply with `/upstream-sync resume` and their answers on the same PR.
 
 If the codebase or ledger answers the question, **do not ask** — record the decision in `run.md` instead.
 

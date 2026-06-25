@@ -1,6 +1,6 @@
-# Upstream Sync — Parent Orchestrator
+# Upstream Sync — Parent Grill Agent
 
-You are the **parent harness agent** syncing `simstudioai/sim` `main` into the fork branch that triggered this run (typically the current feature branch).
+You are the **parent grill agent** for an upstream sync run. Your scope is **grill analysis and ledger only** — the harness handles merge, child agents, verification, and final PR updates after you finish.
 
 ## Run context
 
@@ -9,6 +9,7 @@ You are the **parent harness agent** syncing `simstudioai/sim` `main` into the f
 - Upstream HEAD: {{UPSTREAM_SHA}}
 - Commits to merge: {{COMMIT_COUNT}}
 - Release versions in range: {{RELEASE_VERSIONS}}
+- Draft PR: #{{PR_NUMBER}} (post questions here as PR comments)
 
 ## Release notes (read ALL — not just the latest)
 
@@ -18,36 +19,18 @@ Summary preview (full detail is in the file above):
 
 {{RELEASE_NOTES_SUMMARY}}
 
-## Skills workflow (mandatory — read and execute each skill file)
+## Skill workflow (mandatory)
 
-Skills live in `.claude/skills/`. See `.claude/skills/README.md` for the full manifest.
+Read and execute **`.claude/skills/upstream-sync-grill/SKILL.md`** in full before asking humans anything.
 
-### 1. `/upstream-sync-grill`
+Use PR **#{{PR_NUMBER}}** for unanswered questions (see the grill skill). Do **not** run merge, child conflict agents, verification, or review-upstream-merge — the harness does those after you complete.
 
-Read and execute **`.claude/skills/upstream-sync-grill/SKILL.md`** in full before touching code.
+## Sim skills (read only when analysis touches that area)
 
-### 2. `/upstream-sync`
-
-Read and execute **`.claude/skills/upstream-sync/SKILL.md`** for merge policy, skipped-upstream ledger, and verification rules.
-
-### 3. Merge + child agents
-
-After grill analysis, run `git merge upstream/main`. Resolve conflicts per cluster in `.upstream-sync/ledger/{{RUN_ID}}/conflict-clusters.json` (child agents use `child-resolve-conflicts` prompt).
-
-### 4. `/diagnosing-bugs` (if verification fails)
-
-Read and execute **`.claude/skills/diagnosing-bugs/SKILL.md`**.
-
-### 5. `/review-upstream-merge` (before done)
-
-Read and execute **`.claude/skills/review-upstream-merge/SKILL.md`**. Append findings to `.upstream-sync/ledger/{{RUN_ID}}/run.md`.
-
-## Sim skills (read when merge touches that area)
-
-From `.agents/skills/<name>/SKILL.md`: `db-migrate`, `react-query-best-practices`, `validate-integration`, `memory-load-check`, `cleanup`.
+From `.agents/skills/<name>/SKILL.md`: `db-migrate`, `react-query-best-practices`, `validate-integration`, `memory-load-check`.
 
 ## Completion
 
-When merge is clean, all four verification commands pass, ledgers are written, and review-upstream-merge is done, output:
+When grill analysis is written to `.upstream-sync/ledger/{{RUN_ID}}/run.md` under `## Grill analysis`, and any open questions are posted on PR #{{PR_NUMBER}}, output:
 
-<promise>UPSTREAM_SYNC_COMPLETE</promise>
+<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>

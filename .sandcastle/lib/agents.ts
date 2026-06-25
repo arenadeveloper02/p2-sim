@@ -44,8 +44,12 @@ export function resolveAgents(): AgentBundle {
   }
 
   return {
-    parent: claudeCode(process.env.UPSTREAM_SYNC_ANTHROPIC_PARENT_MODEL ?? 'claude-opus-4-8'),
-    child: claudeCode(process.env.UPSTREAM_SYNC_ANTHROPIC_CHILD_MODEL ?? 'claude-sonnet-4-6'),
+    parent: claudeCode(process.env.UPSTREAM_SYNC_ANTHROPIC_PARENT_MODEL ?? 'claude-opus-4-8', {
+      permissionMode: 'bypassPermissions',
+    }),
+    child: claudeCode(process.env.UPSTREAM_SYNC_ANTHROPIC_CHILD_MODEL ?? 'claude-sonnet-4-6', {
+      permissionMode: 'bypassPermissions',
+    }),
     provider: 'anthropic',
   }
 }

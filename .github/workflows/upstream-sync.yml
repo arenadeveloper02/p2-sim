@@ -109,6 +109,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.should_run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     permissions:
       contents: write
       pull-requests: write
@@ -173,3 +174,21 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_HEAD_REF: ${{ github.head_ref || github.ref_name }}
         run: bun run upstream-sync
+
+      - name: Upload Sandcastle logs (if any)
+        if: always()
+        run: |
+          if [ -d .sandcastle/logs ] && [ -n "$(ls -A .sandcastle/logs 2>/dev/null)" ]; then
+            echo "has_logs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_logs=false" >> "$GITHUB_OUTPUT"
+          fi
+        id: sandcastle_logs
+
+      - name: Upload Sandcastle log artifact
+        if: always() && steps.sandcastle_logs.outputs.has_logs == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sandcastle-logs-${{ github.run_id }}
+          path: .sandcastle/logs/
+          retention-days: 14

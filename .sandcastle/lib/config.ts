@@ -11,6 +11,7 @@ export const MERGE_POLICY_PATH = join(UPSTREAM_SYNC_ROOT, 'merge-policy.json')
 export const EXTENSIBILITY_PATH = join(UPSTREAM_SYNC_ROOT, 'extensibility-notes.md')
 
 export const COMPLETION_SIGNAL = '<promise>UPSTREAM_SYNC_COMPLETE</promise>'
+export const GRILL_COMPLETION_SIGNAL = '<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>'
 export const QUESTION_MARKER = '<!-- upstream-sync-question -->'
 export const RESUME_COMMAND = '/upstream-sync resume'
 
@@ -283,6 +284,11 @@ export function runGh(args: string[]): string {
   const token = process.env.UPSTREAM_SYNC_GH_TOKEN ?? process.env.GH_TOKEN
   const env = token ? { ...process.env, GH_TOKEN: token } : process.env
   return execFileSync('gh', args, { encoding: 'utf8', env }).trim()
+}
+
+/** Update an existing draft PR body (e.g. after grill phase or on blocked/success). */
+export function updateDraftPrBody(prNumber: number, body: string): void {
+  runGh(['pr', 'edit', String(prNumber), '--body', body])
 }
 
 export function getPrReviewers(): string[] {

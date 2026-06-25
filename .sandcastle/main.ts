@@ -2,12 +2,12 @@
  * Upstream sync harness — merges simstudioai/sim main into the current branch.
  *
  * Phased pipeline:
- * 1. Detect upstream changes
- * 2. Parent agent: grill-me analysis + FBI report
+ * 1. Detect upstream changes + scaffold ledger
+ * 2. Early draft PR + parent grill agent (ledger analysis only)
  * 3. Git merge upstream/main
  * 4. Child agents per conflict cluster
  * 5. Verification (check, lint, test, build)
- * 6. Draft PR + ledger commit
+ * 6. Update draft PR body + final ledger commit
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -16,6 +16,7 @@ import { noSandbox } from '@ai-hero/sandcastle/sandboxes/no-sandbox'
 import { resolveAgents, assertAgentCredentials } from './lib/agents'
 import {
   COMPLETION_SIGNAL,
+  GRILL_COMPLETION_SIGNAL,
   MERGE_POLICY_PATH,
   QUESTION_MARKER,
   RESUME_COMMAND,
@@ -40,6 +41,7 @@ import {
   substitutePrompt,
   syncGrillQaFromPr,
   todayRunId,
+  updateDraftPrBody,
   upstreamBranch,
   upstreamHeadSha,
   upstreamRemote,
@@ -91,6 +93,7 @@ async function runAgentPrompt(options: {
   branch: string
   agent: ReturnType<typeof resolveAgents>['parent']
   maxIterations?: number
+  completionSignal?: string
 }): Promise<void> {
   if (SKIP_AGENT) {
     console.log(`[skip-agent] ${options.name}`)
@@ -102,18 +105,17 @@ async function runAgentPrompt(options: {
     prompt: options.prompt,
     name: options.name,
     maxIterations: options.maxIterations ?? 3,
-    completionSignal: COMPLETION_SIGNAL,
+    completionSignal: options.completionSignal ?? COMPLETION_SIGNAL,
     sandbox: noSandbox(),
     branchStrategy: { type: 'head' },
+    idleTimeoutSeconds: Number(process.env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS ?? 7200),
+    completionTimeoutSeconds: 120,
     hooks: {
       sandbox: {
         onSandboxReady: [{ command: 'bun install --frozen-lockfile' }],
       },
     },
-    logging: {
-      type: 'file',
-      path: join('.sandcastle', 'logs', `${options.name}.log`),
-    },
+    logging: { type: 'stdout', verbose: true },
   })
 }
 
@@ -162,6 +164,25 @@ function createDraftPr(mergeBase: string, branch: string, runId: string, body: s
     })
     return 0
   }
+}
+
+/** Reuse an existing draft PR when present; otherwise create one. */
+function resolveDraftPr(
+  existingPrNumber: number | null | undefined,
+  mergeBase: string,
+  branch: string,
+  runId: string,
+  body: string
+): number {
+  if (existingPrNumber && existingPrNumber > 0) {
+    try {
+      updateDraftPrBody(existingPrNumber, body)
+      return existingPrNumber
+    } catch (error) {
+      console.warn(`Could not update draft PR #${existingPrNumber}:`, error)
+    }
+  }
+  return createDraftPr(mergeBase, branch, runId, body)
 }
 
 function commitUpstreamLedger(message: string): boolean {
@@ -244,7 +265,6 @@ async function main(): Promise<void> {
     lastRunId: runId,
     activeBranch: syncBranch,
     activeMergeBase: mergeBase,
-    activePrNumber: RESUME ? state.activePrNumber : null,
   })
 
   writeFbiReport(
@@ -258,6 +278,35 @@ async function main(): Promise<void> {
   const releaseNotesMarkdown = formatReleaseNotesMarkdown(releaseEntries)
   writeReleaseNotesReport(runId, releaseNotesMarkdown, releaseEntries.length)
 
+  commitUpstreamLedger(`upstream-sync(${runId}): pre-merge ledger`)
+
+  let activePrNumber = RESUME && state.activePrNumber ? state.activePrNumber : 0
+  if (!activePrNumber) {
+    const earlyPrBody = [
+      QUESTION_MARKER,
+      `## Upstream sync in progress — grill/analysis phase (${runId})`,
+      '',
+      `Branch \`${syncBranch}\` · merging [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${mergeBase}\`.`,
+      '',
+      'The parent grill agent will post questions here. Reply with `/upstream-sync resume` after answering.',
+      '',
+      `### Ledger (in progress)`,
+      `- [.upstream-sync/ledger/${runId}/run.md](.upstream-sync/ledger/${runId}/run.md)`,
+      `- [.upstream-sync/ledger/${runId}/fbi-report.md](.upstream-sync/ledger/${runId}/fbi-report.md)`,
+      `- [.upstream-sync/ledger/${runId}/release-notes.md](.upstream-sync/ledger/${runId}/release-notes.md)`,
+    ].join('\n')
+    activePrNumber = createDraftPr(mergeBase, syncBranch, runId, earlyPrBody)
+  }
+
+  writeState({
+    ...readState(),
+    status: 'running',
+    lastRunId: runId,
+    activeBranch: syncBranch,
+    activeMergeBase: mergeBase,
+    activePrNumber: activePrNumber || null,
+  })
+
   const agents = resolveAgents()
   const parentPrompt = substitutePrompt(readPrompt('parent-orchestrator.md'), {
     RUN_ID: runId,
@@ -267,6 +316,7 @@ async function main(): Promise<void> {
     RELEASE_VERSIONS: releaseEntries.map((e) => e.version).join(', ') || 'none',
     RELEASE_NOTES_PATH: `.upstream-sync/ledger/${runId}/release-notes.md`,
     RELEASE_NOTES_SUMMARY: releaseNotesMarkdown.slice(0, 4000),
+    PR_NUMBER: activePrNumber > 0 ? String(activePrNumber) : 'none',
   })
 
   await runAgentPrompt({
@@ -274,10 +324,11 @@ async function main(): Promise<void> {
     name: 'parent-grill-analysis',
     branch: syncBranch,
     agent: agents.parent,
-    maxIterations: 2,
+    maxIterations: 1,
+    completionSignal: GRILL_COMPLETION_SIGNAL,
   })
 
-  commitUpstreamLedger(`upstream-sync(${runId}): pre-merge ledger`)
+  commitUpstreamLedger(`upstream-sync(${runId}): grill analysis`)
 
   try {
     runGit(['merge', '--no-edit', `${upstreamRemote()}/${upstreamBranch()}`])
@@ -323,7 +374,7 @@ async function main(): Promise<void> {
       `Reply with \`${RESUME_COMMAND}\` after answering open questions.`,
     ].join('\n')
 
-    const prNumber = state.activePrNumber ?? createDraftPr(mergeBase, syncBranch, runId, prBody)
+    const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody)
     logHarnessQuestion(
       runId,
       prNumber,
@@ -358,7 +409,7 @@ async function main(): Promise<void> {
       '',
       `Fix failures on \`${syncBranch}\`, then reply \`${RESUME_COMMAND}\`.`,
     ].join('\n')
-    const prNumber = state.activePrNumber ?? createDraftPr(mergeBase, syncBranch, runId, prBody)
+    const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody)
     logHarnessQuestion(
       runId,
       prNumber,
@@ -401,7 +452,7 @@ async function main(): Promise<void> {
     '**Draft** — mark ready for review when satisfied.',
   ].join('\n')
 
-  const prNumber = state.activePrNumber ?? createDraftPr(mergeBase, syncBranch, runId, prBody)
+  const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody)
   if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
   commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
   runGit(['push', 'origin', syncBranch])
