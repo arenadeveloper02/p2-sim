@@ -101,6 +101,7 @@ export function Billing() {
     refetch: refetchSubscription,
   } = useSubscriptionData({
     includeOrg: true,
+    workspaceId,
   })
   const { data: usageLimitResponse, isLoading: isUsageLimitLoading } = useUsageLimitData()
   const { data: workspaceData, isLoading: isWorkspaceLoading } = useWorkspaceSettings(workspaceId)

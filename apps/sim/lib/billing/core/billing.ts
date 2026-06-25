@@ -2,7 +2,6 @@ import { db } from '@sim/db'
 import {
   member,
   organization,
-  organizationMemberUsageLimit,
   subscription,
   userStats,
 } from '@sim/db/schema'
@@ -15,7 +14,6 @@ import { getOrgUsageLimit, getUserUsageData } from '@/lib/billing/core/usage'
 import {
   COPILOT_USAGE_SOURCES,
   getBillingPeriodUsageCost,
-  getBillingPeriodUsageCostByUser,
 } from '@/lib/billing/core/usage-log'
 import { getCreditBalance } from '@/lib/billing/credits/balance'
 import {
@@ -39,63 +37,9 @@ import { createLogger } from '@sim/logger'
 
 const logger = createLogger('Billing')
 
-interface OrgMemberIndividualUsage {
-  currentUsage: number
-  limit: number
-}
-
-/**
- * Per-member usage and allowance for an org-scoped subscriber's personal
- * billing view (`/api/billing?context=user`). Matches the org members roster
- * (`getOrganizationBillingData`) — not the pooled org total shown to admins.
- */
-async function resolveOrgMemberIndividualUsage(
-  organizationId: string,
-  userId: string,
-  billingPeriod: { start: Date; end: Date } | null,
-  executor: DbClient
-): Promise<OrgMemberIndividualUsage> {
-  const [statsRow, usageByUser, hostedCapRow] = await Promise.all([
-    executor
-      .select({
-        currentPeriodCost: userStats.currentPeriodCost,
-        currentUsageLimit: userStats.currentUsageLimit,
-      })
-      .from(userStats)
-      .where(eq(userStats.userId, userId))
-      .limit(1),
-    billingPeriod
-      ? getBillingPeriodUsageCostByUser(
-          { type: 'organization', id: organizationId },
-          billingPeriod,
-          undefined,
-          executor
-        )
-      : Promise.resolve(new Map<string, number>()),
-    executor
-      .select({ usageLimit: organizationMemberUsageLimit.usageLimit })
-      .from(organizationMemberUsageLimit)
-      .where(
-        and(
-          eq(organizationMemberUsageLimit.organizationId, organizationId),
-          eq(organizationMemberUsageLimit.userId, userId)
-        )
-      )
-      .limit(1),
-  ])
-
-  const currentUsage =
-    Number(statsRow[0]?.currentPeriodCost ?? 0) + (usageByUser.get(userId) ?? 0)
-
-  const hostedCap =
-    hostedCapRow.length > 0 ? toNumber(toDecimal(hostedCapRow[0].usageLimit)) : null
-  const personalLimit = statsRow[0]?.currentUsageLimit
-    ? toNumber(toDecimal(statsRow[0].currentUsageLimit))
-    : null
-
-  const limit = hostedCap ?? personalLimit ?? getFreeTierLimit()
-
-  return { currentUsage, limit }
+interface GetSimplifiedBillingSummaryOptions {
+  /** Personal (non-org-linked) workspace: use `user_stats` limits instead of the org pool. */
+  personalWorkspace?: boolean
 }
 
 interface GetOrganizationSubscriptionOptions {
@@ -463,7 +407,8 @@ export async function calculateSubscriptionOverage(sub: {
 export async function getSimplifiedBillingSummary(
   userId: string,
   organizationId?: string,
-  executor: DbClient = db
+  executor: DbClient = db,
+  options?: GetSimplifiedBillingSummaryOptions
 ): Promise<{
   type: 'individual' | 'organization'
   plan: string
@@ -506,12 +451,18 @@ export async function getSimplifiedBillingSummary(
   }
 }> {
   try {
+    const usePersonalAccount = Boolean(options?.personalWorkspace && !organizationId)
+
     // Get subscription and usage data upfront
     const [subscription, usageData] = await Promise.all([
       organizationId
         ? getOrganizationSubscription(organizationId, { executor })
         : getHighestPrioritySubscription(userId, { executor }),
-      getUserUsageData(userId, executor),
+      getUserUsageData(
+        userId,
+        executor,
+        usePersonalAccount ? { personalAccount: true } : undefined
+      ),
     ])
 
     const plan = subscription?.plan || 'free'
@@ -675,27 +626,10 @@ export async function getSimplifiedBillingSummary(
     const currentUsage = usageData.currentUsage
     let totalCopilotCost = copilotCost
     let totalLastPeriodCopilotCost = lastPeriodCopilotCost
-    if (orgScoped && subscription?.referenceId) {
+    if (orgScoped && subscription?.referenceId && !usePersonalAccount) {
       const pooled = await aggregateOrgMemberStats(subscription.referenceId, executor)
       totalCopilotCost = pooled.currentPeriodCopilotCost
       totalLastPeriodCopilotCost = pooled.lastPeriodCopilotCost
-    }
-
-    // Org members viewing their own billing page should see per-member allowance
-    // and usage (user_stats + attributed usage_log), not the pooled org totals.
-    let displayUsage = currentUsage
-    let displayLimit = usageData.limit
-    if (orgScoped && subscriptionOrgId && !organizationId) {
-      const memberUsage = await resolveOrgMemberIndividualUsage(
-        subscriptionOrgId,
-        userId,
-        usageData.billingPeriodStart && usageData.billingPeriodEnd
-          ? { start: usageData.billingPeriodStart, end: usageData.billingPeriodEnd }
-          : null,
-        executor
-      )
-      displayUsage = memberUsage.currentUsage
-      displayLimit = memberUsage.limit
     }
 
     // Add the copilot-family ledger (COPILOT_USAGE_SOURCES: copilot/workspace-chat/
@@ -707,7 +641,7 @@ export async function getSimplifiedBillingSummary(
         : null
     if (copilotBillingPeriod) {
       const copilotEntity =
-        orgScoped && subscription?.referenceId
+        orgScoped && subscription?.referenceId && !usePersonalAccount
           ? ({ type: 'organization', id: subscription.referenceId } as const)
           : ({ type: 'user', id: userId } as const)
       totalCopilotCost += await getBillingPeriodUsageCost(
@@ -718,7 +652,7 @@ export async function getSimplifiedBillingSummary(
       )
     }
 
-    const percentUsed = displayLimit > 0 ? (displayUsage / displayLimit) * 100 : 0
+    const percentUsed = usageData.limit > 0 ? (currentUsage / usageData.limit) * 100 : 0
 
     const daysRemaining = usageData.billingPeriodEnd
       ? Math.max(
@@ -733,11 +667,11 @@ export async function getSimplifiedBillingSummary(
     return {
       type: 'individual',
       plan,
-      currentUsage: displayUsage,
-      usageLimit: displayLimit,
+      currentUsage,
+      usageLimit: usageData.limit,
       percentUsed,
       isWarning: percentUsed >= 80 && percentUsed < 100,
-      isExceeded: displayUsage >= displayLimit,
+      isExceeded: currentUsage >= usageData.limit,
       daysRemaining,
       creditBalance: userCredits.balance,
       billingInterval: individualBillingInterval,
@@ -756,11 +690,11 @@ export async function getSimplifiedBillingSummary(
       cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd || undefined,
       // Usage details
       usage: {
-        current: displayUsage,
-        limit: displayLimit,
+        current: currentUsage,
+        limit: usageData.limit,
         percentUsed,
         isWarning: percentUsed >= 80 && percentUsed < 100,
-        isExceeded: displayUsage >= displayLimit,
+        isExceeded: currentUsage >= usageData.limit,
         billingPeriodStart: usageData.billingPeriodStart,
         billingPeriodEnd: usageData.billingPeriodEnd,
         lastPeriodCost: usageData.lastPeriodCost,

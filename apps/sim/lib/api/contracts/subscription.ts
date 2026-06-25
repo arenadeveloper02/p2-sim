@@ -43,6 +43,8 @@ export const billingQuerySchema = z.object({
   context: z.enum(['user', 'organization']).optional().default('user'),
   id: z.string().min(1).optional(),
   includeOrg: booleanQueryParamSchema,
+  /** When set, personal (non-org-linked) workspaces use `user_stats` limits instead of the org pool. */
+  workspaceId: z.string().min(1).optional(),
 })
 
 export const billingUsageDataSchema = z

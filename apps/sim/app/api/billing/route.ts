@@ -1,5 +1,5 @@
 import { db, dbReplica } from '@sim/db'
-import { member } from '@sim/db/schema'
+import { member, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -28,6 +28,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       context: searchParams.get('context') || undefined,
       id: searchParams.get('id') || undefined,
       includeOrg: searchParams.get('includeOrg') === 'true',
+      workspaceId: searchParams.get('workspaceId') || undefined,
     })
 
     if (!parsedQuery.success) {
@@ -37,7 +38,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    const { context, id: contextId, includeOrg } = parsedQuery.data
+    const { context, id: contextId, includeOrg, workspaceId } = parsedQuery.data
 
     // For organization context, require contextId
     if (context === 'organization' && !contextId) {
@@ -64,8 +65,21 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         }
       }
 
+      let personalWorkspace = false
+      if (workspaceId) {
+        const [workspaceRow] = await db
+          .select({ organizationId: workspace.organizationId })
+          .from(workspace)
+          .where(eq(workspace.id, workspaceId))
+          .limit(1)
+
+        personalWorkspace = workspaceRow != null && workspaceRow.organizationId == null
+      }
+
       const [billingResult, billingStatus] = await Promise.all([
-        getSimplifiedBillingSummary(session.user.id, contextId || undefined, dbReplica),
+        getSimplifiedBillingSummary(session.user.id, contextId || undefined, dbReplica, {
+          personalWorkspace,
+        }),
         getEffectiveBillingStatus(session.user.id),
       ])
       billingData = billingResult

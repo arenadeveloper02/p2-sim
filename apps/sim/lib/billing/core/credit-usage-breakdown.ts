@@ -261,7 +261,13 @@ async function getPersonalCreditUsageSummary(
     }
   }
 
-  const usageData = await getUserUsageData(userId, executor)
+  const subscription = await getHighestPrioritySubscription(userId, { executor })
+  const orgScoped = isOrgScopedSubscription(subscription, userId)
+  const usageData = await getUserUsageData(
+    userId,
+    executor,
+    orgScoped ? { personalAccount: true } : undefined
+  )
   const billingPeriod =
     usageData.billingPeriodStart && usageData.billingPeriodEnd
       ? { start: usageData.billingPeriodStart, end: usageData.billingPeriodEnd }
@@ -298,7 +304,6 @@ async function getPersonalCreditUsageSummary(
     workflowLedger,
   })
 
-  const subscription = await getHighestPrioritySubscription(userId, { executor })
   let refreshDeduction = 0
   if (
     subscription &&
@@ -491,32 +496,6 @@ export async function getCreditUsageSummary(params: {
       }
 
       return getPersonalCreditUsageSummary(params.userId, organizationId, executor)
-    }
-
-    const subscription = await getHighestPrioritySubscription(params.userId, { executor })
-    if (isOrgScopedSubscription(subscription, params.userId) && subscription) {
-      const [membership] = await executor
-        .select({ role: member.role })
-        .from(member)
-        .where(
-          and(
-            eq(member.organizationId, subscription.referenceId),
-            eq(member.userId, params.userId)
-          )
-        )
-        .limit(1)
-
-      if (membership) {
-        if (isOrgAdminRole(membership.role)) {
-          return getOrganizationCreditUsageSummary(subscription.referenceId, executor)
-        }
-
-        // Personal workspace with no `workspace.organizationId` still bills through
-        // the org — attribute usage to org workspaces but keep the solo layout.
-        return getPersonalCreditUsageSummary(params.userId, subscription.referenceId, executor, {
-          viewer: 'solo',
-        })
-      }
     }
 
     return getPersonalCreditUsageSummary(params.userId, null, executor)

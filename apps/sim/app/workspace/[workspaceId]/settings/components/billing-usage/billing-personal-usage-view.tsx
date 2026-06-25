@@ -33,8 +33,7 @@ interface BillingPersonalUsageViewProps {
 
 function resolvePersonalAllowance(
   usageLimitDollars: number | undefined,
-  memberLimitDollars: number | null | undefined,
-  isOrgScopedMember?: boolean
+  memberLimitDollars: number | null | undefined
 ): { totalCredits: number | null; hint: string; isUnlimited: boolean } {
   if (memberLimitDollars != null) {
     return {
@@ -54,7 +53,7 @@ function resolvePersonalAllowance(
 
   return {
     totalCredits: dollarsToCredits(usageLimitDollars ?? 0),
-    hint: isOrgScopedMember ? 'Your member allowance' : 'Included in your plan',
+    hint: 'Included in your plan',
     isUnlimited: false,
   }
 }
@@ -65,17 +64,13 @@ function resolvePersonalAllowance(
  */
 export function BillingPersonalUsageView({ data }: BillingPersonalUsageViewProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data: subscriptionData } = useSubscriptionData()
+  const { data: subscriptionData } = useSubscriptionData({ workspaceId })
   const { data: memberCredits } = useMyMemberCredits(workspaceId)
 
   const consumed = data.summary.totalCredits
-  const isOrgScopedMember =
-    Boolean(subscriptionData?.data?.isOrgScoped) &&
-    subscriptionData?.data?.organization?.role === 'member'
   const { totalCredits, hint, isUnlimited } = resolvePersonalAllowance(
     subscriptionData?.data?.usage?.limit,
-    memberCredits?.limitDollars,
-    isOrgScopedMember
+    memberCredits?.limitDollars
   )
 
   const remaining =
