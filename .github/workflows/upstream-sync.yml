@@ -109,17 +109,22 @@ jobs:
     needs: gate
     if: needs.gate.outputs.should_run == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      # Fork repos: GITHUB_TOKEN often cannot create PRs — set UPSTREAM_SYNC_GH_TOKEN (classic PAT, repo scope).
+      GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
 
       - name: Checkout resume PR branch
         if: needs.gate.outputs.resume == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           pr_number="${{ github.event.issue.number }}"
           branch=$(gh pr view "$pr_number" --json headRefName --jq .headRefName)
@@ -160,11 +165,11 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          UPSTREAM_SYNC_GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN }}
           UPSTREAM_SYNC_AGENT: ${{ needs.gate.outputs.agent_provider }}
           UPSTREAM_SYNC_FORCE: ${{ needs.gate.outputs.force }}
           UPSTREAM_SYNC_RESUME: ${{ needs.gate.outputs.resume }}
           UPSTREAM_SYNC_SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_HEAD_REF: ${{ github.head_ref || github.ref_name }}
         run: bun run upstream-sync

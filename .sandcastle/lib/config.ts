@@ -124,6 +124,11 @@ function repoSlug(): { owner: string; repo: string } {
   return { owner, repo }
 }
 
+export function comparePullRequestUrl(mergeBase: string, branch: string): string {
+  const { owner, repo } = repoSlug()
+  return `https://github.com/${owner}/${repo}/compare/${mergeBase}...${branch}?expand=1`
+}
+
 interface PrComment {
   id: number
   body: string
@@ -255,7 +260,9 @@ export function runGit(args: string[], cwd = process.cwd()): string {
 }
 
 export function runGh(args: string[]): string {
-  return execFileSync('gh', args, { encoding: 'utf8' }).trim()
+  const token = process.env.UPSTREAM_SYNC_GH_TOKEN ?? process.env.GH_TOKEN
+  const env = token ? { ...process.env, GH_TOKEN: token } : process.env
+  return execFileSync('gh', args, { encoding: 'utf8', env }).trim()
 }
 
 export function getPrReviewers(): string[] {

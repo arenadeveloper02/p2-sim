@@ -22,6 +22,7 @@ import {
   appendExtensibilityNote,
   baseBranch,
   closeSupersededPr,
+  comparePullRequestUrl,
   commitsSince,
   detectReleaseVersions,
   ensureUpstreamSyncScaffold,
@@ -119,33 +120,47 @@ function createDraftPr(mergeBase: string, branch: string, runId: string, body: s
   const title = `upstream-sync: merge simstudioai/sim main into ${mergeBase} (${runId})`
   runGit(['push', '-u', 'origin', branch])
 
-  const prUrl = runGh([
-    'pr',
-    'create',
-    '--base',
-    mergeBase,
-    '--head',
-    branch,
-    '--title',
-    title,
-    '--body',
-    body,
-    '--draft',
-  ])
+  try {
+    const prUrl = runGh([
+      'pr',
+      'create',
+      '--base',
+      mergeBase,
+      '--head',
+      branch,
+      '--title',
+      title,
+      '--body',
+      body,
+      '--draft',
+    ])
 
-  const match = prUrl.match(/\/pull\/(\d+)/)
-  const prNumber = match ? Number(match[1]) : 0
+    const match = prUrl.match(/\/pull\/(\d+)/)
+    const prNumber = match ? Number(match[1]) : 0
 
-  const reviewers = getPrReviewers()
-  if (prNumber > 0 && reviewers.length > 0) {
-    try {
-      runGh(['pr', 'edit', String(prNumber), '--add-reviewer', reviewers.join(',')])
-    } catch (error) {
-      console.warn(`Could not add reviewers (${reviewers.join(', ')}):`, error)
+    const reviewers = getPrReviewers()
+    if (prNumber > 0 && reviewers.length > 0) {
+      try {
+        runGh(['pr', 'edit', String(prNumber), '--add-reviewer', reviewers.join(',')])
+      } catch (error) {
+        console.warn(`Could not add reviewers (${reviewers.join(', ')}):`, error)
+      }
     }
-  }
 
-  return prNumber
+    return prNumber
+  } catch (error) {
+    const compareUrl = comparePullRequestUrl(mergeBase, branch)
+    console.warn(
+      'Could not create draft PR via gh. Fork repos need UPSTREAM_SYNC_GH_TOKEN (PAT with repo scope).'
+    )
+    console.warn(`Create manually: ${compareUrl}`)
+    writeRunLog(runId, {
+      Status: 'pr_create_failed',
+      'Compare URL': compareUrl,
+      Error: error instanceof Error ? error.message : String(error),
+    })
+    return 0
+  }
 }
 
 function commitUpstreamLedger(message: string): void {
@@ -292,9 +307,9 @@ async function main(): Promise<void> {
       `${remaining.length} unresolved merge conflict(s). Review ledger and reply with ${RESUME_COMMAND}.`,
       remaining.join(', ')
     )
-    syncGrillQaFromPr(prNumber, runId)
+    if (prNumber > 0)     if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
     commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
-    writeState({ ...readState(), activePrNumber: prNumber, status: 'awaiting_input' })
+    writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
     process.exitCode = 1
     return
   }
@@ -327,9 +342,9 @@ async function main(): Promise<void> {
       `Verification failed on sync branch. Fix and reply with ${RESUME_COMMAND}.`,
       verifyResults.filter((r) => !r.success).map((r) => r.command).join(', ')
     )
-    syncGrillQaFromPr(prNumber, runId)
+    if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
     commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
-    writeState({ ...readState(), activePrNumber: prNumber, status: 'awaiting_input' })
+    writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
     process.exitCode = 1
     return
   }
@@ -364,7 +379,7 @@ async function main(): Promise<void> {
   ].join('\n')
 
   const prNumber = state.activePrNumber ?? createDraftPr(mergeBase, syncBranch, runId, prBody)
-  syncGrillQaFromPr(prNumber, runId)
+  if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
   commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
   runGit(['push', 'origin', syncBranch])
 
