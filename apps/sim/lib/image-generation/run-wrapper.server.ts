@@ -5,7 +5,6 @@ import {
   applyNanoBananaPromptImageParams,
   normalizeOptionalString,
 } from '@/lib/image-generation/nano-banana-inputs'
-import { resolveImageGenerationCount } from '@/lib/image-generation/resolve-image-count.server'
 
 const logger = createLogger('ImageGenerationWrapper')
 const GPT_IMAGE_2_MODEL = 'gpt-image-2'
@@ -69,7 +68,11 @@ async function runWithConcurrency<T>(
   return results
 }
 
-function clampImageCount(value: unknown): number {
+/**
+ * Resolves how many times to run the same prompt (1–5). Accepts `variations` or legacy `imageCount`.
+ */
+export function resolveVariationsCount(params: Record<string, unknown>): number {
+  const value = params.variations ?? params.imageCount ?? 1
   const numericValue = Number(value)
   if (!Number.isFinite(numericValue)) return 1
   return Math.min(MAX_IMAGES_TO_GENERATE, Math.max(1, Math.round(numericValue)))
@@ -237,31 +240,6 @@ function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
   )
 }
 
-async function resolveRequestedImageCount(params: Record<string, unknown>): Promise<{
-  imageCount: number
-  promptImageUrl?: string
-  singleImagePrompt?: string
-  singleImagePrompts?: string[]
-}> {
-  const prompt = String(params.prompt ?? '').trim()
-
-  if (!prompt) {
-    return { imageCount: 1 }
-  }
-
-  const { imageCount, promptImageUrl, singleImagePrompt, singleImagePrompts } =
-    await resolveImageGenerationCount({
-      prompt,
-    })
-
-  return {
-    imageCount: clampImageCount(imageCount),
-    promptImageUrl,
-    singleImagePrompt,
-    singleImagePrompts,
-  }
-}
-
 /**
  * Runs the smart image-generation wrapper in-process.
  * Avoids nested internal HTTP calls that can deadlock single-worker dev servers.
@@ -270,8 +248,13 @@ export async function runImageGenerationWrapper(
   input: ImageGenerationWrapperInput
 ): Promise<ImageGenerationWrapperResult> {
   const validated = ImageGenerationWrapperSchema.parse(input)
-  const { imageCount, promptImageUrl } = await resolveRequestedImageCount(validated.params)
-  const { imageCount: _imageCount, inputImageUrl, ...baseParams } = validated.params
+  const imageCount = resolveVariationsCount(validated.params)
+  const {
+    imageCount: _imageCount,
+    variations: _variations,
+    inputImageUrl,
+    ...baseParams
+  } = validated.params
   const inputImageWarning = normalizeOptionalString(validated.params.inputImageWarning)
   const originalPrompt = String(baseParams.prompt ?? '')
   const requestedModel = getStringParam(validated.params, 'model') ?? ''
@@ -287,7 +270,6 @@ export async function runImageGenerationWrapper(
       promptLength: originalPrompt.length,
       requestedImageCountParam: validated.params.imageCount,
       resolvedImageCount: imageCount,
-      hasPromptImageUrl: Boolean(promptImageUrl),
       hasInputImageUrl: Boolean(inputImageUrl),
       inputImageUrl: summarizeReferenceInput(inputImageUrl),
       inputImage: summarizeReferenceInput(validated.params.inputImage),
@@ -309,7 +291,6 @@ export async function runImageGenerationWrapper(
     },
     inputImageUrl,
     inputImages: validated.params.inputImages,
-    promptImageUrl,
   })
 
   if (isGptImage2) {
@@ -337,7 +318,6 @@ export async function runImageGenerationWrapper(
     baseToolId: executionToolId,
     requestedBaseToolId: validated.baseToolId,
     imageCount,
-    hasPromptImageUrl: Boolean(promptImageUrl),
     workflowId: resolvedContext?.workflowId,
     concurrency: Math.min(MAX_CONCURRENT_GENERATIONS, imageCount),
   })
