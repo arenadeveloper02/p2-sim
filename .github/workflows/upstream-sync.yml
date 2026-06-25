@@ -1,6 +1,6 @@
 name: Upstream Sync
 
-# Merges simstudioai/sim main into version-4.2-main via the Sandcastle harness.
+# Merges simstudioai/sim main into the branch that triggered the run via the Sandcastle harness.
 # Polls daily; resumes when a reviewer replies `/upstream-sync resume` on the draft PR.
 #
 # push: activates workflow_dispatch on feature branches (must run once before
@@ -52,7 +52,8 @@ env:
   UPSTREAM_REMOTE: upstream
   UPSTREAM_REPO: simstudioai/sim
   UPSTREAM_BRANCH: main
-  TARGET_BRANCH: version-4.2-main
+  # TEMP: merge into the branch that triggered the run (feat/github-merge-agent).
+  # Restore when validated: TARGET_BRANCH: version-4.2-main
   # GitHub usernames (comma-separated). Set repo variable UPSTREAM_SYNC_PR_REVIEWERS
   # to the GitHub login for utcarsh.srivastava@position2.com (emails cannot be used).
   UPSTREAM_SYNC_PR_REVIEWERS: ${{ vars.UPSTREAM_SYNC_PR_REVIEWERS }}

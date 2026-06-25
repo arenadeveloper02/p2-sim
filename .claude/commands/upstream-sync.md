@@ -1,5 +1,5 @@
 ---
-description: Run the upstream sync harness workflow — merge simstudioai/sim main into version-4.2-main
+description: Run the upstream sync harness workflow — merge simstudioai/sim main into the current branch (temp; version-4.2-main later)
 ---
 
 Read and execute `.claude/skills/upstream-sync/SKILL.md` in full.

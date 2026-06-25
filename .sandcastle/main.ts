@@ -1,5 +1,5 @@
 /**
- * Upstream sync harness — merges simstudioai/sim main into version-4.2-main.
+ * Upstream sync harness — merges simstudioai/sim main into the current branch.
  *
  * Phased pipeline:
  * 1. Detect upstream changes
@@ -20,15 +20,16 @@ import {
   QUESTION_MARKER,
   RESUME_COMMAND,
   appendExtensibilityNote,
+  baseBranch,
   closeSupersededPr,
   commitsSince,
   detectReleaseVersions,
+  ensureUpstreamSyncScaffold,
   fetchAllUpstreamReleaseNotes,
   fetchUpstream,
   formatReleaseNotesMarkdown,
   getPrReviewers,
   groupConflictClusters,
-  initLedgerDir,
   listConflictFiles,
   logHarnessQuestion,
   readState,
@@ -36,7 +37,6 @@ import {
   runGh,
   substitutePrompt,
   syncGrillQaFromPr,
-  targetBranch,
   todayRunId,
   upstreamBranch,
   upstreamHeadSha,
@@ -80,8 +80,7 @@ function checkoutSyncBranch(syncBranch: string, resume: boolean): void {
     return
   }
 
-  runGit(['fetch', 'origin', targetBranch()])
-  runGit(['checkout', '-B', syncBranch, `origin/${targetBranch()}`])
+  runGit(['checkout', '-B', syncBranch])
 }
 
 async function runAgentPrompt(options: {
@@ -120,15 +119,15 @@ async function runAgentPrompt(options: {
   })
 }
 
-function createDraftPr(branch: string, runId: string, body: string): number {
-  const title = `upstream-sync: merge simstudioai/sim main (${runId})`
+function createDraftPr(mergeBase: string, branch: string, runId: string, body: string): number {
+  const title = `upstream-sync: merge simstudioai/sim main into ${mergeBase} (${runId})`
   runGit(['push', '-u', 'origin', branch])
 
   const prUrl = runGh([
     'pr',
     'create',
     '--base',
-    targetBranch(),
+    mergeBase,
     '--head',
     branch,
     '--title',
@@ -161,10 +160,12 @@ function commitUpstreamLedger(message: string): void {
 }
 
 async function main(): Promise<void> {
-  initLedgerDir()
+  ensureUpstreamSyncScaffold()
   fetchUpstream()
 
   const state = readState()
+  const mergeBase = RESUME && state.activeMergeBase ? state.activeMergeBase : baseBranch()
+  console.log(`Sync target: ${mergeBase} ← simstudioai/sim main`)
   const headSha = upstreamHeadSha()
   const runId = todayRunId()
   const upstreamCommits = commitsSince(state.lastSyncedUpstreamSha, headSha)
@@ -209,6 +210,7 @@ async function main(): Promise<void> {
     status: 'running',
     lastRunId: runId,
     activeBranch: syncBranch,
+    activeMergeBase: mergeBase,
     activePrNumber: RESUME ? state.activePrNumber : null,
   })
 
@@ -287,7 +289,7 @@ async function main(): Promise<void> {
       `Reply with \`${RESUME_COMMAND}\` after answering open questions.`,
     ].join('\n')
 
-    const prNumber = state.activePrNumber ?? createDraftPr(syncBranch, runId, prBody)
+    const prNumber = state.activePrNumber ?? createDraftPr(mergeBase, syncBranch, runId, prBody)
     logHarnessQuestion(
       runId,
       prNumber,
@@ -322,7 +324,7 @@ async function main(): Promise<void> {
       '',
       `Fix failures on \`${syncBranch}\`, then reply \`${RESUME_COMMAND}\`.`,
     ].join('\n')
-    const prNumber = state.activePrNumber ?? createDraftPr(syncBranch, runId, prBody)
+    const prNumber = state.activePrNumber ?? createDraftPr(mergeBase, syncBranch, runId, prBody)
     logHarnessQuestion(
       runId,
       prNumber,
@@ -349,7 +351,7 @@ async function main(): Promise<void> {
   const prBody = [
     `## Upstream sync — ${runId}`,
     '',
-    `Merges [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${targetBranch()}\`.`,
+    `Merges [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${mergeBase}\`.`,
     '',
     `### Ledger`,
     `- [.upstream-sync/ledger/${runId}/run.md](.upstream-sync/ledger/${runId}/run.md)`,
@@ -365,7 +367,7 @@ async function main(): Promise<void> {
     '**Draft** — mark ready for review when satisfied.',
   ].join('\n')
 
-  const prNumber = state.activePrNumber ?? createDraftPr(syncBranch, runId, prBody)
+  const prNumber = state.activePrNumber ?? createDraftPr(mergeBase, syncBranch, runId, prBody)
   syncGrillQaFromPr(prNumber, runId)
   commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
   runGit(['push', 'origin', syncBranch])
@@ -378,6 +380,7 @@ async function main(): Promise<void> {
     openQuestions: [],
     activeBranch: null,
     activePrNumber: prNumber,
+    activeMergeBase: null,
   })
 
   console.log(`Upstream sync complete. Draft PR #${prNumber} on ${syncBranch}.`)
@@ -385,6 +388,10 @@ async function main(): Promise<void> {
 
 main().catch((error) => {
   console.error(error)
-  writeState({ ...readState(), status: 'failed' })
+  try {
+    writeState({ ...readState(), status: 'failed' })
+  } catch {
+    // state file may not exist if bootstrap failed early
+  }
   process.exitCode = 1
 })

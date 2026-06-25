@@ -1,11 +1,11 @@
 ---
 name: upstream-sync
-description: Merge simstudioai/sim main into version-4.2-main with fork-first conflict resolution, FBI tracking, skipped-upstream ledger, and Sandcastle child agents. Primary skill for the upstream sync harness.
+description: Merge simstudioai/sim main into the current branch with fork-first conflict resolution, FBI tracking, skipped-upstream ledger, and Sandcastle child agents. Primary skill for the upstream sync harness.
 ---
 
 # Upstream Sync
 
-Sync parent repo `simstudioai/sim` `main` into fork branch `version-4.2-main`.
+Sync parent repo `simstudioai/sim` `main` into the branch that triggered the run (current branch / `GITHUB_HEAD_REF`). Set `TARGET_BRANCH` to override.
 
 ## Skill workflow (run in order)
 

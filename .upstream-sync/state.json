@@ -5,5 +5,6 @@
   "status": "idle",
   "openQuestions": [],
   "activeBranch": null,
-  "activePrNumber": null
+  "activePrNumber": null,
+  "activeMergeBase": null
 }

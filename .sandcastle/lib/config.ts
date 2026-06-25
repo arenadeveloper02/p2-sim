@@ -24,6 +24,7 @@ export interface SyncState {
   openQuestions: Array<{ id: string; question: string; context?: string }>
   activeBranch: string | null
   activePrNumber: number | null
+  activeMergeBase: string | null
 }
 
 export interface UpstreamCommit {
@@ -205,8 +206,40 @@ export function logHarnessQuestion(
   })
 }
 
+export function defaultSyncState(): SyncState {
+  return {
+    lastSyncedUpstreamSha: null,
+    lastSyncedAt: null,
+    lastRunId: null,
+    status: 'idle',
+    openQuestions: [],
+    activeBranch: null,
+    activePrNumber: null,
+    activeMergeBase: null,
+  }
+}
+
+export function ensureUpstreamSyncScaffold(): void {
+  initLedgerDir()
+  try {
+    readFileSync(STATE_PATH, 'utf8')
+  } catch {
+    writeState(defaultSyncState())
+  }
+  ensureGrillLogExists()
+  try {
+    readFileSync(QA_HISTORY_PATH, 'utf8')
+  } catch {
+    writeFileSync(QA_HISTORY_PATH, '')
+  }
+}
+
 export function readState(): SyncState {
-  return JSON.parse(readFileSync(STATE_PATH, 'utf8')) as SyncState
+  try {
+    return JSON.parse(readFileSync(STATE_PATH, 'utf8')) as SyncState
+  } catch {
+    return defaultSyncState()
+  }
 }
 
 export function writeState(state: SyncState): void {
@@ -264,7 +297,7 @@ export function closeSupersededPr(
     '',
     `Closed automatically: \`simstudioai/sim\` \`main\` advanced to [\`${options.newUpstreamSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${options.newUpstreamSha}) before this PR was merged.`,
     '',
-    `A fresh sync (\`${options.runId}\`) is opening \`${options.newBranch}\` → \`${targetBranch()}\`.`,
+    `A fresh sync (\`${options.runId}\`) will open \`${options.newBranch}\` → \`${baseBranch()}\`.`,
     '',
     'Cherry-pick anything you still need from this branch into the new sync PR.',
   ].join('\n')
@@ -300,8 +333,22 @@ export function upstreamBranch(): string {
   return process.env.UPSTREAM_BRANCH ?? 'main'
 }
 
+/**
+ * PR base / fork source.
+ * TEMP: defaults to current branch for harness validation on feat/github-merge-agent.
+ * Restore `TARGET_BRANCH=version-4.2-main` in the workflow when ready.
+ */
+export function baseBranch(): string {
+  if (process.env.TARGET_BRANCH) return process.env.TARGET_BRANCH
+  if (process.env.GITHUB_HEAD_REF) return process.env.GITHUB_HEAD_REF
+  const branch = runGit(['branch', '--show-current'])
+  if (!branch) throw new Error('Could not determine current git branch')
+  return branch
+}
+
+/** @deprecated Use baseBranch() */
 export function targetBranch(): string {
-  return process.env.TARGET_BRANCH ?? 'version-4.2-main'
+  return baseBranch()
 }
 
 export function fetchUpstream(): void {

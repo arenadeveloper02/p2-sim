@@ -1,6 +1,6 @@
 # Upstream Sync — Parent Orchestrator
 
-You are the **parent harness agent** syncing `simstudioai/sim` `main` into this fork's `version-4.2-main`.
+You are the **parent harness agent** syncing `simstudioai/sim` `main` into the fork branch that triggered this run (typically the current feature branch).
 
 ## Run context
 
