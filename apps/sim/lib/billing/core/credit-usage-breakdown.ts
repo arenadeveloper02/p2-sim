@@ -446,13 +446,28 @@ async function getOrganizationCreditUsageSummary(
     executor
   )
 
+  const summary = applyRefreshAndConvertToCredits(orgDollarBreakdown, refreshDeduction)
+
+  const { limit: orgLimitDollars } = await getOrgUsageLimit(
+    organizationId,
+    subscription.plan,
+    subscription.seats ?? null,
+    executor
+  )
+  const isUnlimited = orgLimitDollars >= ON_DEMAND_UNLIMITED
+
   return {
     scope: 'organization',
     viewer: 'solo',
     billingPeriodStart: billingPeriod.start.toISOString(),
     billingPeriodEnd: billingPeriod.end.toISOString(),
     billingInterval: resolveBillingInterval(subscription),
-    summary: applyRefreshAndConvertToCredits(orgDollarBreakdown, refreshDeduction),
+    summary,
+    orgPool: {
+      totalCredits: isUnlimited ? 0 : dollarsToCredits(orgLimitDollars),
+      usedCredits: summary.totalCredits,
+      isUnlimited,
+    },
     members: memberRows,
   }
 }

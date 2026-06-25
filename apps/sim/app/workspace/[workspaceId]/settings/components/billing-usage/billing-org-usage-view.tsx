@@ -39,6 +39,10 @@ interface BillingOrgUsageViewProps {
   data: CreditUsageSummary
 }
 
+function formatCreditsValue(value: number | 'unlimited'): string {
+  return value === 'unlimited' ? 'Unlimited' : `${formatCreditCount(value)} credits`
+}
+
 function sortMembers(
   members: MemberCreditUsageRow[],
   column: SortColumn,
@@ -98,6 +102,11 @@ export function BillingOrgUsageView({ data }: BillingOrgUsageViewProps) {
   }
 
   const activeUsers = members.length
+  const totalCreditsDisplay: string | 'unlimited' | null = data.orgPool?.isUnlimited
+    ? 'unlimited'
+    : data.orgPool != null
+      ? data.orgPool.totalCredits
+      : null
 
   return (
     <div className='flex flex-col gap-7'>
@@ -106,7 +115,16 @@ export function BillingOrgUsageView({ data }: BillingOrgUsageViewProps) {
         description={USAGE_SOURCE_DESCRIPTION}
         headerAccessory={<Info className='size-[14px] text-[var(--text-icon)]' />}
       >
-        <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+        <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-5'>
+          {totalCreditsDisplay != null ? (
+            <BillingUsageMetricCard
+              label='Total credits'
+              value={formatCreditsValue(totalCreditsDisplay)}
+              hint='Organization credit pool'
+              icon={<Credit className='size-[14px] text-emerald-700' />}
+              iconClassName='bg-emerald-500/10'
+            />
+          ) : null}
           <BillingUsageMetricCard
             label='Total credits consumed'
             value={`${formatCreditCount(data.summary.totalCredits)} credits`}
