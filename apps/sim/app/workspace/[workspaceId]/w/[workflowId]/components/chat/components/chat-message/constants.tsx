@@ -339,22 +339,6 @@ const overlayButtonClass =
  * Preview opens a modal with the full-size image; Download and Select trigger the provided callbacks.
  */
 export function ImageWithViewFullOverlay({
-  src,
-  wrapperClassName,
-  children,
-  onDownload,
-  onSelect,
-  selectLabel,
-  compactActions = false,
-}: {
-  src: string
-  wrapperClassName: string
-  children: React.ReactNode
-  onDownload?: () => void
-  onSelect?: () => void
-  selectLabel?: string
-  compactActions?: boolean
-}) {
   const [modalOpen, setModalOpen] = useState(false)
   const [isModalImageLoading, setIsModalImageLoading] = useState(false)
   const handleViewFull = useCallback(() => setModalOpen(true), [])
@@ -596,6 +580,47 @@ export const renderBs64Img = ({
       </div>
     )
   }
+}
+
+export type ChatMessageImageSelectionProps = {
+  onSelect?: () => void
+  selectLabel?: string
+  isSelected?: boolean
+  compactActions?: boolean
+}
+
+/**
+ * Renders a chat markdown or content-block image with preview, download, and optional select overlay.
+ */
+export function renderChatMessageImage(src: string, selectionProps?: ChatMessageImageSelectionProps) {
+  const trimmed = src.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  if (trimmed.startsWith('data:image/')) {
+    const [, base64Data = ''] = trimmed.split(',', 2)
+    return renderBs64Img({
+      isBase64: true,
+      imageData: base64Data || trimmed,
+      ...selectionProps,
+    })
+  }
+
+  if (isBase64(trimmed)) {
+    return renderBs64Img({
+      isBase64: true,
+      imageData: trimmed.replace(/\s+/g, ''),
+      ...selectionProps,
+    })
+  }
+
+  return renderBs64Img({
+    isBase64: false,
+    imageData: '',
+    imageUrl: trimmed,
+    ...selectionProps,
+  })
 }
 
 /**
