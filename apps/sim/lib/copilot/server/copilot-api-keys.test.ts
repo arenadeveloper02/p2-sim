@@ -67,8 +67,8 @@ describe('copilot-api-keys', () => {
   })
 
   it('strips caller-provided x-api-key headers', () => {
-    expect(stripCopilotApiKeyHeader({ 'x-api-key': 'old', 'Content-Type': 'application/json' })).toEqual(
-      { 'Content-Type': 'application/json' }
-    )
+    expect(
+      stripCopilotApiKeyHeader({ 'x-api-key': 'old', 'Content-Type': 'application/json' })
+    ).toEqual({ 'Content-Type': 'application/json' })
   })
 })

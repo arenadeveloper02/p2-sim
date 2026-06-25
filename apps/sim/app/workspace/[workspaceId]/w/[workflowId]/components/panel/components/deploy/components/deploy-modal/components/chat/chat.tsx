@@ -19,6 +19,7 @@ import {
 import { GeneratedPasswordInput } from '@/components/ui'
 import { CustomSelect } from '@/components/ui/native-select'
 import { useSession } from '@/lib/auth/auth-client'
+import { AGENT_DEPARTMENTS } from '@/lib/chat/arena-departments'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl, getEmailDomain } from '@/lib/core/utils/urls'
@@ -98,17 +99,6 @@ interface FormErrors {
   outputBlocks?: string
   general?: string
 }
-
-const CATEGORIES = [
-  { value: 'creative', label: 'Creative' },
-  { value: 'ma', label: 'MA' },
-  { value: 'ppc', label: 'PPC' },
-  { value: 'sales', label: 'Sales' },
-  { value: 'seo', label: 'SEO' },
-  { value: 'strategy', label: 'Strategy' },
-  { value: 'waas', label: 'WAAS' },
-  { value: 'hr', label: 'HR' },
-] as const
 
 const initialFormData: ChatFormData = {
   identifier: '',
@@ -495,7 +485,7 @@ export function ChatDeploy({
               onChange={(value) => updateField('department', value)}
               disabled={chatSubmitting}
               placeholder='Select category'
-              options={CATEGORIES.map((cat) => ({ value: cat.value, label: cat.label }))}
+              options={AGENT_DEPARTMENTS.map((cat) => ({ value: cat.value, label: cat.label }))}
             />
           </div>
           {errors.department && (

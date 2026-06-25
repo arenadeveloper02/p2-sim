@@ -3,19 +3,9 @@ import { chat, user, webhook, workflow, workflowSchedule } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
+import { getAgentDepartmentLabel } from '@/lib/chat/arena-departments'
 
 const logger = createLogger('ChatAgentsAPI')
-
-export const categories = [
-  { value: 'creative', label: 'Creative' },
-  { value: 'ma', label: 'MA' },
-  { value: 'ppc', label: 'PPC' },
-  { value: 'sales', label: 'Sales' },
-  { value: 'seo', label: 'SEO' },
-  { value: 'strategy', label: 'Strategy' },
-  { value: 'waas', label: 'WAAS' },
-  { value: 'hr', label: 'HR' },
-] as const
 
 /**
  * GET /api/chat/agents
@@ -154,10 +144,7 @@ export async function GET(request: NextRequest) {
       workflow_name: chatRecord.name,
       workflow_description: chatRecord.templateDescription || chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
-      department: chatRecord.department
-        ? categories.find((category) => category.value === chatRecord.department)?.label ||
-          chatRecord.department
-        : null,
+      department: getAgentDepartmentLabel(chatRecord.department),
       created_at: chatRecord.createdAt.toISOString(),
     }))
 
