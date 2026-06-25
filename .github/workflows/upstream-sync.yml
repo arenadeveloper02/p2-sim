@@ -2,8 +2,21 @@ name: Upstream Sync
 
 # Merges simstudioai/sim main into version-4.2-main via the Sandcastle harness.
 # Polls daily; resumes when a reviewer replies `/upstream-sync resume` on the draft PR.
+#
+# push: activates workflow_dispatch on feature branches (must run once before
+# `gh workflow run upstream-sync.yml --ref <branch>` works off default branch).
 
 on:
+  push:
+    branches:
+      - feat/github-merge-agent
+      - 'upstream-sync/**'
+    paths:
+      - '.github/workflows/upstream-sync.yml'
+      - '.sandcastle/**'
+      - '.upstream-sync/**'
+      - 'package.json'
+      - 'bun.lock'
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch:
@@ -62,9 +75,15 @@ jobs:
           COMMENT: ${{ github.event.comment.body }}
         run: |
           resume=false
-          force="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force == 'true' && 'true' || 'false' }}"
-          skip_agent="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip_agent == 'true' && 'true' || 'false' }}"
-          agent_provider="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.agent_provider || 'anthropic' }}"
+          force=false
+          skip_agent=true
+          agent_provider=anthropic
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            force="${{ github.event.inputs.force == 'true' && 'true' || 'false' }}"
+            skip_agent="${{ github.event.inputs.skip_agent == 'true' && 'true' || 'false' }}"
+            agent_provider="${{ github.event.inputs.agent_provider || 'anthropic' }}"
+          fi
 
           if [ "$EVENT" = "issue_comment" ]; then
             if echo "$COMMENT" | grep -q '/upstream-sync resume'; then
