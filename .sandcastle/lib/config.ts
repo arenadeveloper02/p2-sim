@@ -348,10 +348,10 @@ function loadUpstreamReleaseBodies(): Map<string, string> {
   try {
     const raw = runGh([
       'api',
-      `repos/${upstreamRepo()}/releases`,
+      '--method',
+      'GET',
+      `repos/${upstreamRepo()}/releases?per_page=100`,
       '--paginate',
-      '-f',
-      'per_page=100',
     ])
     const releases = JSON.parse(raw) as Array<{ tag_name?: string; body?: string | null }>
     for (const release of releases) {
