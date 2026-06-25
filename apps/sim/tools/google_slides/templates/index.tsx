@@ -7025,13 +7025,13 @@ function buildTemplateSchema(): PresentationSchema {
             type: 'TABLE',
             role: 'DATA_TABLE',
             shapeId: 'g3ef485f0cbc_0_11',
-            maxRows: 6,
+            maxRows: 8,
             maxColumns: 5,
             minRows: 2,
             minColumns: 2,
             rowLabelColumn: true,
             description:
-              'Styled data table. Use column 0 for row labels and columns 1–4 for values. Only fill the rows/columns you need (up to 6×5); unused rows/columns are removed automatically.',
+              'Styled data table bounded by maxRows and maxColumns. Put row labels in the first column; put values in the remaining columns. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically.',
             content: [],
             cellConstraints: {
               minChars: 1,
@@ -7063,14 +7063,14 @@ function buildTemplateSchema(): PresentationSchema {
             type: 'TABLE',
             role: 'DATA_TABLE',
             shapeId: 'g3ef485f0cbc_0_2',
-            maxRows: 6,
+            maxRows: 8,
             maxColumns: 5,
             minRows: 2,
             minColumns: 2,
             headerRow: true,
             rowLabelColumn: true,
             description:
-              'Styled table with a header row. Row 0: optional corner cell in column 0, then column headers in columns 1–4. Rows 1+: column 0 = row label ("Title 1" style), columns 1–4 = data. Only fill the rows/columns you need (up to 6×5); unused rows/columns are removed automatically.',
+              'Styled table with header row and row labels, bounded by maxRows and maxColumns. Header row: leave the first column empty (corner), put column headers in the remaining columns. Body rows: first column = row label, remaining columns = data. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically.',
             content: [],
             cellConstraints: {
               minChars: 1,
