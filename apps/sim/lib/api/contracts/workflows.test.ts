@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { executeWorkflowBodySchema } from '@/lib/api/contracts/workflows'
+import {
+  executeWorkflowBodySchema,
+  getWorkflowResponseDataSchema,
+} from '@/lib/api/contracts/workflows'
 
 describe('workflow contracts', () => {
   it('normalizes null React Flow edge handles in execution overrides', () => {
@@ -42,5 +45,52 @@ describe('workflow contracts', () => {
 
     expect(parsed.workflowStateOverride?.edges[0].sourceHandle).toBeUndefined()
     expect(parsed.workflowStateOverride?.edges[0].targetHandle).toBeUndefined()
+  })
+
+  it('normalizes null optional block booleans in workflow GET responses', () => {
+    const parsed = getWorkflowResponseDataSchema.parse({
+      id: 'workflow-1',
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      folderId: null,
+      sortOrder: 0,
+      name: 'Test workflow',
+      description: null,
+      lastSynced: '2026-01-01T00:00:00.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      isDeployed: false,
+      deployedAt: null,
+      isPublicApi: false,
+      locked: false,
+      runCount: 0,
+      lastRunAt: null,
+      archivedAt: null,
+      state: {
+        blocks: {
+          'block-1': {
+            id: 'block-1',
+            type: 'agent',
+            name: 'Agent',
+            position: { x: 0, y: 0 },
+            subBlocks: {},
+            outputs: {},
+            enabled: true,
+            triggerMode: null,
+            advancedMode: null,
+            horizontalHandles: null,
+            locked: null,
+          },
+        },
+        edges: [],
+        loops: {},
+        parallels: {},
+      },
+    })
+
+    expect(parsed.state.blocks['block-1'].triggerMode).toBeUndefined()
+    expect(parsed.state.blocks['block-1'].advancedMode).toBeUndefined()
+    expect(parsed.state.blocks['block-1'].horizontalHandles).toBeUndefined()
+    expect(parsed.state.blocks['block-1'].locked).toBeUndefined()
   })
 })

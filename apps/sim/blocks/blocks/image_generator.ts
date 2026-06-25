@@ -11,8 +11,8 @@ import {
   normalizeFileInput,
   parseOptionalBooleanInput,
 } from '@/blocks/utils'
-import type { ImageGenerationResponse } from '@/tools/image/types'
 import { START_FILES_REF } from '@/executor/constants'
+import type { ImageGenerationResponse } from '@/tools/image/types'
 
 function normalizeReferenceFiles(input: unknown): unknown[] {
   const normalizedFiles = normalizeFileInput(input)
@@ -565,8 +565,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   name: 'Image Generator',
   description: 'Generate images',
   authMode: AuthMode.ApiKey,
-  longDescription:
-    'Generate images using OpenAI GPT Image or Google Nano Banana image models.',
+  longDescription: 'Generate images using OpenAI GPT Image or Google Nano Banana image models.',
   docsLink: 'https://docs.sim.ai/integrations/image_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
@@ -1169,9 +1168,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
           throw new Error('Prompt is required')
         }
         const defaultModel =
-          provider === 'gemini'
-            ? 'gemini-3.1-flash-image-preview'
-            : 'gpt-image-1.5'
+          provider === 'gemini' ? 'gemini-3.1-flash-image-preview' : 'gpt-image-1.5'
         // provider === 'falai' ? 'nano-banana-2' : ...
 
         const model = params.model || defaultModel

@@ -32,6 +32,7 @@
     "check:react-query": "bun run scripts/check-react-query-patterns.ts --check",
     "check:utils": "bun run scripts/check-utils-enforcement.ts",
     "check:migrations": "bun run scripts/check-migrations-safety.ts",
+    "repair:workflow-room-redis-keys": "bun run scripts/repair-workflow-room-redis-keys.ts",
     "mship-contracts:generate": "bun run scripts/sync-mothership-stream-contract.ts",
     "mship-contracts:check": "bun run scripts/sync-mothership-stream-contract.ts --check",
     "mship-tools:generate": "bun run scripts/sync-tool-catalog.ts",

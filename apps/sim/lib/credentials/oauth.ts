@@ -13,6 +13,56 @@ interface SyncWorkspaceOAuthCredentialsForUserParams {
   userId: string
 }
 
+export interface UserOAuthCredentialRecord {
+  id: string
+  providerId: string
+  displayName: string
+  updatedAt: Date
+}
+
+/**
+ * Returns workspace OAuth credentials linked to the given user's own OAuth accounts.
+ * Unlike `getAccessibleOAuthCredentials`, this never includes other members' credentials
+ * when the caller is a workspace admin.
+ */
+export async function getWorkspaceOAuthCredentialsForUserProvider(params: {
+  workspaceId: string
+  userId: string
+  providerId: string
+}): Promise<UserOAuthCredentialRecord[]> {
+  const { workspaceId, userId, providerId } = params
+
+  const userAccounts = await db
+    .select({ id: account.id })
+    .from(account)
+    .where(and(eq(account.userId, userId), eq(account.providerId, providerId)))
+
+  if (userAccounts.length === 0) {
+    return []
+  }
+
+  const accountIds = userAccounts.map((row) => row.id)
+
+  const rows = await db
+    .select({
+      id: credential.id,
+      providerId: credential.providerId,
+      displayName: credential.displayName,
+      updatedAt: credential.updatedAt,
+    })
+    .from(credential)
+    .where(
+      and(
+        eq(credential.workspaceId, workspaceId),
+        eq(credential.type, 'oauth'),
+        eq(credential.providerId, providerId),
+        inArray(credential.accountId, accountIds)
+      )
+    )
+
+  return rows.filter((row): row is UserOAuthCredentialRecord => Boolean(row.providerId))
+}
+
 interface SyncWorkspaceOAuthCredentialsForUserResult {
   updatedMemberships: number
 }

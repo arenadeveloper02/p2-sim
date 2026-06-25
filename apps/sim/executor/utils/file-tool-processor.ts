@@ -39,10 +39,7 @@ export class FileToolProcessor {
         continue
       }
 
-      if (
-        !isUserFile(fileData) &&
-        !FileToolProcessor.normalizeToolFileData(fileData)
-      ) {
+      if (!isUserFile(fileData) && !FileToolProcessor.normalizeToolFileData(fileData)) {
         logger.warn(`File-typed output '${outputKey}' is present but not processable`, {
           outputKey,
           valueType: typeof fileData,
@@ -249,7 +246,10 @@ export class FileToolProcessor {
           : typeof candidate.type === 'string' && candidate.type.trim().length > 0
             ? candidate.type
             : 'application/octet-stream'
-    const url = typeof candidate.url === 'string' && candidate.url.trim().length > 0 ? candidate.url : undefined
+    const url =
+      typeof candidate.url === 'string' && candidate.url.trim().length > 0
+        ? candidate.url
+        : undefined
     const data =
       candidate.data !== undefined && candidate.data !== null
         ? (candidate.data as ToolFileData['data'])
