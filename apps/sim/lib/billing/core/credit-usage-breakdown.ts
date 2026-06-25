@@ -21,6 +21,7 @@ import { apportionCredits, dollarsToCredits } from '@/lib/billing/credits/conver
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { getPlanTierDollars, isPaid } from '@/lib/billing/plan-helpers'
 import { getHighestPrioritySubscription, resolveBillingInterval } from '@/lib/billing/core/subscription'
+import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
 import type { DbClient } from '@/lib/db/types'
 
 const logger = createLogger('CreditUsageBreakdown')
@@ -217,7 +218,8 @@ async function getOrganizationPoolSnapshot(
 async function getPersonalCreditUsageSummary(
   userId: string,
   organizationId: string | null,
-  executor: DbClient
+  executor: DbClient,
+  options?: { viewer?: 'solo' | 'org_member' }
 ): Promise<CreditUsageSummaryResult> {
   if (organizationId) {
     const subscription = await getOrganizationSubscription(organizationId, { executor })
@@ -250,7 +252,7 @@ async function getPersonalCreditUsageSummary(
 
     return {
       scope: 'personal',
-      viewer: 'org_member',
+      viewer: options?.viewer ?? 'org_member',
       billingPeriodStart: billingPeriod.start.toISOString(),
       billingPeriodEnd: billingPeriod.end.toISOString(),
       billingInterval: resolveBillingInterval(subscription),
@@ -489,6 +491,32 @@ export async function getCreditUsageSummary(params: {
       }
 
       return getPersonalCreditUsageSummary(params.userId, organizationId, executor)
+    }
+
+    const subscription = await getHighestPrioritySubscription(params.userId, { executor })
+    if (isOrgScopedSubscription(subscription, params.userId) && subscription) {
+      const [membership] = await executor
+        .select({ role: member.role })
+        .from(member)
+        .where(
+          and(
+            eq(member.organizationId, subscription.referenceId),
+            eq(member.userId, params.userId)
+          )
+        )
+        .limit(1)
+
+      if (membership) {
+        if (isOrgAdminRole(membership.role)) {
+          return getOrganizationCreditUsageSummary(subscription.referenceId, executor)
+        }
+
+        // Personal workspace with no `workspace.organizationId` still bills through
+        // the org — attribute usage to org workspaces but keep the solo layout.
+        return getPersonalCreditUsageSummary(params.userId, subscription.referenceId, executor, {
+          viewer: 'solo',
+        })
+      }
     }
 
     return getPersonalCreditUsageSummary(params.userId, null, executor)

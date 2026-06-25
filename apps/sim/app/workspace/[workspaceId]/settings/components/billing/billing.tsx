@@ -368,13 +368,19 @@ export function Billing() {
   if (isLoading) return null
   if (!subscriptionData?.data) return null
 
-  const plan = subscription.plan
-  const planName = getDisplayPlanName(plan)
+  /** Personal workspaces are not org-linked; show Community/Free plan chrome only there. */
+  const isOrgLinkedWorkspace = workspaceOrganizationId != null
+  const displayPlan = isOrgLinkedWorkspace ? subscription.plan : 'free'
+  const displayPlanName = getDisplayPlanName(displayPlan)
+  const displayIsEnterprise = isOrgLinkedWorkspace && subscription.isEnterprise
+
   const billingPeriod =
     subscriptionData.data.billingInterval === 'year' ? 'billed annually' : 'billed monthly'
-  const priceText = subscription.isEnterprise
+  const priceText = displayIsEnterprise
     ? 'Custom pricing'
-    : `$${getPlanTierDollars(plan)} per user/month, ${billingPeriod}`
+    : isFree(displayPlan)
+      ? 'Included credits to get started'
+      : `$${getPlanTierDollars(displayPlan)} per user/month, ${billingPeriod}`
 
   const periodEnd = subscriptionData.data.periodEnd ?? null
   const isCancelledAtPeriodEnd = subscriptionData.data.cancelAtPeriodEnd === true
@@ -427,12 +433,12 @@ export function Billing() {
               </div>
               <div className='flex min-w-0 flex-col'>
                 <span className='truncate text-[14px] text-[var(--text-body)]'>
-                  {planName} plan
+                  {displayPlanName} plan
                 </span>
                 <span className='truncate text-[12px] text-[var(--text-muted)]'>{priceText}</span>
               </div>
             </div>
-            {!subscription.isEnterprise &&
+            {!displayIsEnterprise &&
               (canManageBilling ? (
                 <ChipLink
                   href={upgradeHref}
