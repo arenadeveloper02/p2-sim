@@ -53,7 +53,8 @@
     "mship:check": "bun run scripts/generate-mship-contracts.ts --check",
     "prepare": "bun husky",
     "type-check": "turbo run type-check",
-    "release": "bun run scripts/create-single-release.ts"
+    "release": "bun run scripts/create-single-release.ts",
+    "upstream-sync": "bun run .sandcastle/main.ts"
   },
   "overrides": {
     "react": "19.2.4",
@@ -66,6 +67,7 @@
     "mermaid": "11.15.0"
   },
   "devDependencies": {
+    "@ai-hero/sandcastle": "0.10.0",
     "@biomejs/biome": "2.0.0-beta.5",
     "@octokit/rest": "^21.0.0",
     "glob": "13.0.0",
