@@ -4,8 +4,8 @@ import { generateNanoBananaImage } from '@/app/api/google/api-service'
 
 export const runtime = 'nodejs'
 
-/** Allow up to 5 minutes for image generation (same as image-generator; 4K/fusion can be slow). */
-export const maxDuration = 300
+/** Allow up to 10 minutes for image generation (same as image-generator; 4K/fusion can be slow). */
+export const maxDuration = 1200
 
 /** Outgoing request timeout is enforced in generateNanoBananaImage (see api-service). */
 

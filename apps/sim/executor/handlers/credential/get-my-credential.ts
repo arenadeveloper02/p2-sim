@@ -13,8 +13,7 @@ export async function resolveMyCredential(
   ctx: ExecutionContext,
   inputs: Record<string, unknown>
 ): Promise<BlockOutput> {
-  const userId =
-    ctx.metadata?.sessionUserId?.trim() || ctx.userId?.trim() || undefined
+  const userId = ctx.metadata?.sessionUserId?.trim() || ctx.userId?.trim() || undefined
   const providerId = typeof inputs.myProviderId === 'string' ? inputs.myProviderId.trim() : ''
 
   const workspaceId = ctx.workspaceId

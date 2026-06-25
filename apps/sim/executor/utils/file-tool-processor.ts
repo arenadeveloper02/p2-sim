@@ -39,6 +39,14 @@ export class FileToolProcessor {
         continue
       }
 
+      if (!isUserFile(fileData) && !FileToolProcessor.normalizeToolFileData(fileData)) {
+        logger.warn(`File-typed output '${outputKey}' is present but not processable`, {
+          outputKey,
+          valueType: typeof fileData,
+        })
+        continue
+      }
+
       try {
         processedOutput[outputKey] = await FileToolProcessor.processFileOutput(
           fileData,
@@ -100,7 +108,7 @@ export class FileToolProcessor {
    * If the input is already a UserFile, returns it unchanged.
    */
   private static async processFileData(
-    fileData: ToolFileData | UserFile,
+    fileData: ToolFileData | UserFile | string,
     context: ExecutionContext
   ): Promise<UserFile> {
     // If already a UserFile (e.g., from tools that handle their own file storage),
@@ -109,7 +117,12 @@ export class FileToolProcessor {
       return fileData as UserFile
     }
 
-    const data = fileData as ToolFileData
+    const normalizedFileData = FileToolProcessor.normalizeToolFileData(fileData)
+    if (!normalizedFileData) {
+      throw new Error('File data must have either data (Buffer/base64) or url property')
+    }
+
+    const data = normalizedFileData
     try {
       let buffer: Buffer | null = null
 
@@ -181,6 +194,77 @@ export class FileToolProcessor {
     } catch (error) {
       logger.error(`Error processing file data for '${data.name}':`, error)
       throw error
+    }
+  }
+
+  /**
+   * Normalize tool file payloads that may arrive as bare URLs/base64 strings or partial objects.
+   */
+  private static normalizeToolFileData(fileData: unknown): ToolFileData | null {
+    if (fileData === undefined || fileData === null || fileData === '') {
+      return null
+    }
+
+    if (typeof fileData === 'string') {
+      const trimmed = fileData.trim()
+      if (!trimmed) {
+        return null
+      }
+
+      if (trimmed.startsWith('data:')) {
+        const mimeType = trimmed.slice(5, trimmed.indexOf(';')) || 'application/octet-stream'
+        return {
+          name: 'generated-image.png',
+          mimeType,
+          data: trimmed,
+        }
+      }
+
+      return {
+        name: 'generated-image.png',
+        mimeType: 'application/octet-stream',
+        url: trimmed,
+      }
+    }
+
+    if (!fileData || typeof fileData !== 'object' || Array.isArray(fileData)) {
+      return null
+    }
+
+    const candidate = fileData as Record<string, unknown>
+    const name =
+      typeof candidate.name === 'string' && candidate.name.trim().length > 0
+        ? candidate.name
+        : typeof candidate.filename === 'string' && candidate.filename.trim().length > 0
+          ? candidate.filename
+          : 'file'
+    const mimeType =
+      typeof candidate.mimeType === 'string' && candidate.mimeType.trim().length > 0
+        ? candidate.mimeType
+        : typeof candidate.contentType === 'string' && candidate.contentType.trim().length > 0
+          ? candidate.contentType
+          : typeof candidate.type === 'string' && candidate.type.trim().length > 0
+            ? candidate.type
+            : 'application/octet-stream'
+    const url =
+      typeof candidate.url === 'string' && candidate.url.trim().length > 0
+        ? candidate.url
+        : undefined
+    const data =
+      candidate.data !== undefined && candidate.data !== null
+        ? (candidate.data as ToolFileData['data'])
+        : undefined
+
+    if (!url && data === undefined) {
+      return null
+    }
+
+    return {
+      name,
+      mimeType,
+      ...(url ? { url } : {}),
+      ...(data !== undefined ? { data } : {}),
+      ...(typeof candidate.size === 'number' ? { size: candidate.size } : {}),
     }
   }
 
