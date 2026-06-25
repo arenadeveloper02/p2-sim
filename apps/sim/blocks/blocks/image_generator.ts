@@ -619,6 +619,19 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       placeholder: 'Describe the image you want to generate...',
     },
     {
+      id: 'variations',
+      title: 'Variations',
+      type: 'dropdown',
+      options: [
+        { label: '1', id: '1' },
+        { label: '2', id: '2' },
+        { label: '3', id: '3' },
+        { label: '4', id: '4' },
+        { label: '5', id: '5' },
+      ],
+      value: () => '1',
+    },
+    {
       id: 'size',
       title: 'Size',
       type: 'dropdown',
@@ -1192,6 +1205,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
           provider,
           model,
           prompt: params.prompt,
+          variations: Number(params.variations) || 1,
           apiKey: params.apiKey,
           ...(params.size && { size: params.size }),
           ...(params.aspectRatio && { aspectRatio: params.aspectRatio }),
@@ -1224,6 +1238,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   inputs: {
     provider: { type: 'string', description: 'Image generation provider' },
     prompt: { type: 'string', description: 'Image description prompt' },
+    variations: { type: 'number', description: 'Number of image variations to generate (1-5)' },
     model: { type: 'string', description: 'Image generation model' },
     size: { type: 'string', description: 'Image size' },
     aspectRatio: { type: 'string', description: 'Image aspect ratio' },

@@ -15,6 +15,22 @@ describe('ImageGeneratorV2Block', () => {
     expect(ImageGeneratorV2Block.tools?.config.tool?.({})).toBe('image_generate')
   })
 
+  it('maps variations from block params to tool params', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-image-preview',
+      prompt: 'A sunset over mountains',
+      variations: '3',
+    })
+
+    expect(params).toMatchObject({
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-image-preview',
+      prompt: 'A sunset over mountains',
+      variations: 3,
+    })
+  })
+
   it.skip('preserves multiple uploaded references for Fal.ai Nano Banana 2', () => {
     const params = ImageGeneratorV2Block.tools.config.params?.({
       provider: 'falai',

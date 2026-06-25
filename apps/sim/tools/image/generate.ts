@@ -264,6 +264,12 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       description:
         'Warning emitted when multiple input images were provided and the latest one was used',
     },
+    variations: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Number of image variations to generate with the same prompt (1-5)',
+    },
   },
 
   hosting: {
@@ -335,6 +341,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         inputImageUrls: params.inputImageUrls,
         inputImageMimeType: params.inputImageMimeType,
         inputImageWarning: params.inputImageWarning,
+        variations: params.variations,
         workspaceId: params._context?.workspaceId ?? params.workspaceId,
         workflowId: params._context?.workflowId ?? params.workflowId,
         executionId: params._context?.executionId ?? params.executionId,
