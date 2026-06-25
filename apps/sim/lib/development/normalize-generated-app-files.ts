@@ -175,9 +175,8 @@ export const GENERATED_APP_NEON_DATABASE_GUIDANCE = `Neon Postgres + Prisma (YOU
 - Generate lib/prisma.ts with the PrismaClient singleton (globalForPrisma pattern for dev hot reload)
 - Generate .env.example with a single DATABASE_URL= placeholder (no UNPOOLED/DIRECT_URL lines)
 - package.json must include @prisma/client (dependencies) and prisma (devDependencies); build script runs prisma generate && prisma db push before next build
-- Generate prisma/seed.ts with realistic demo data OR db/seed.sql with INSERT statements for every model — at least one seed path is required for non-empty tables on first deploy
-- When using prisma/seed.ts, add to package.json: "prisma": { "seed": "tsx prisma/seed.ts" } and devDependency tsx — seed must be idempotent (upsert/skipDuplicates) so redeploys do not fail
-- db/seed.sql is executed on deploy via prisma db execute — use INSERT ... ON CONFLICT DO NOTHING where appropriate
+- NEVER seed or pre-populate the database with dummy, demo, fake, sample, or placeholder data — no prisma/seed.ts, no db/seed.sql, no INSERT scripts, and no createMany/insert loops in lib/actions.ts or startup code unless the user explicitly asks for seed data
+- Empty tables on first deploy are correct — real data comes from user signup, forms, and in-app CRUD only
 - Server pages that import @/lib/actions or @/lib/prisma at module scope MUST include: export const dynamic = 'force-dynamic'
 - lib/actions.ts queries MUST use exact field/relation names from your schema; lib/types.ts DTOs MUST match actions output
 - On edit: read existing prisma/schema.prisma before changing models; return schema + lib/actions.ts + lib/types.ts together when models change`
@@ -199,6 +198,7 @@ export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for De
   - At least one Prisma model, even for simple sites (e.g. ContactSubmission, SiteSetting, or PageContent)
 - On Vercel + Neon, DATABASE_URL is injected when the database is connected to the project — reference process.env only in server code
 - package.json build script should run prisma generate and prisma db push before next build when using Prisma
+- NEVER add dummy/demo/fake/sample rows to the database — schema + empty tables only; no seed files unless the user explicitly requests seed data
 - ${GENERATED_APP_NEON_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}`
 
@@ -209,6 +209,7 @@ export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Ne
 - Do NOT drop tables, rename models in breaking ways, or replace the datasource block — prisma db push on deploy only adds schema changes
 - Keep lib/prisma.ts and the existing DATABASE_URL / .env.example pattern unchanged unless fixing a bug
 - New features must read/write through the same Prisma client against the existing database — never switch to localStorage or a new database
+- NEVER insert dummy, demo, fake, or sample data into the database on edit — preserve existing user data; only add seed data when the user explicitly asks
 - ${GENERATED_APP_NEON_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - MANDATORY on schema edits: return prisma/schema.prisma + lib/actions.ts + lib/types.ts together whenever any model/field/relation changes
