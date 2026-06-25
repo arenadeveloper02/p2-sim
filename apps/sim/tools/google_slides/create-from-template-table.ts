@@ -151,16 +151,26 @@ export function buildTableContentRequests(input: {
   content: string[][]
   templateRows: number
   templateColumns: number
+  maxRows?: number
+  maxColumns?: number
+  minRows?: number
+  minColumns?: number
   cellTextEndIndexMap?: Record<string, number>
 }): TableBatchRequest[] {
   const { tableObjectId, templateRows, templateColumns } = input
-  const content = normalizeTableContent(input.content, templateRows, templateColumns)
+  const rowCap = Math.min(input.maxRows ?? templateRows, templateRows)
+  const columnCap = Math.min(input.maxColumns ?? templateColumns, templateColumns)
+  const content = normalizeTableContent(input.content, rowCap, columnCap)
   const contentRows = content.length
   const contentColumns = content.reduce((max, row) => Math.max(max, row.length), 0)
+  const minRows = Math.max(1, input.minRows ?? 1)
+  const minColumns = Math.max(1, input.minColumns ?? 1)
+  const keepRows = Math.min(templateRows, Math.max(contentRows, minRows))
+  const keepColumns = Math.min(templateColumns, Math.max(contentColumns, minColumns))
 
   const requests: TableBatchRequest[] = []
 
-  for (let rowIndex = templateRows - 1; rowIndex >= contentRows; rowIndex -= 1) {
+  for (let rowIndex = templateRows - 1; rowIndex >= keepRows; rowIndex -= 1) {
     requests.push({
       deleteTableRow: {
         tableObjectId,
@@ -169,7 +179,7 @@ export function buildTableContentRequests(input: {
     })
   }
 
-  for (let columnIndex = templateColumns - 1; columnIndex >= contentColumns; columnIndex -= 1) {
+  for (let columnIndex = templateColumns - 1; columnIndex >= keepColumns; columnIndex -= 1) {
     requests.push({
       deleteTableColumn: {
         tableObjectId,

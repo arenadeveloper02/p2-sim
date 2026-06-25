@@ -46,6 +46,8 @@ interface BlockLike {
   source?: 'icon_library' | 'stock_photo' | 'ai_photo' | 'generated' | 'p2_users'
   maxRows?: number
   maxColumns?: number
+  minRows?: number
+  minColumns?: number
 }
 
 interface SlideLike {
@@ -564,6 +566,10 @@ export const createFromTemplateTool: ToolConfig<
               content: tableContent,
               templateRows: dimensions.rows,
               templateColumns: dimensions.columns,
+              maxRows: block.maxRows,
+              maxColumns: block.maxColumns,
+              minRows: block.minRows,
+              minColumns: block.minColumns,
               cellTextEndIndexMap: tableCellTextEndIndexMap,
             })
           )

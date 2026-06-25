@@ -71,7 +71,9 @@ export interface TableBlock extends BaseBlock {
   maxRows: number
   /** Maximum columns the template table supports (trim/delete extras beyond content). */
   maxColumns: number
+  /** Minimum rows to retain after trimming (template must include at least this many). */
   minRows?: number
+  /** Minimum columns to retain after trimming (template must include at least this many). */
   minColumns?: number
   /** When true, column 0 holds row labels (e.g. "Title 1", "Title 2"). */
   rowLabelColumn?: boolean

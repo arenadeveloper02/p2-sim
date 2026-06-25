@@ -122,6 +122,20 @@ describe('buildTableContentRequests', () => {
     })
   })
 
+  it('respects minRows and minColumns when trimming trailing rows/columns', () => {
+    const requests = buildTableContentRequests({
+      tableObjectId: 'table_1',
+      templateRows: 10,
+      templateColumns: 10,
+      minRows: 2,
+      minColumns: 2,
+      content: [['Only', 'Row']],
+    })
+
+    expect(requests.filter((r) => 'deleteTableRow' in r)).toHaveLength(8)
+    expect(requests.filter((r) => 'deleteTableColumn' in r)).toHaveLength(8)
+  })
+
   it('skips deleteText for empty template cells and inserts new text', () => {
     const requests = buildTableContentRequests({
       tableObjectId: 'table_1',
