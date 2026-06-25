@@ -4,10 +4,27 @@
 import { describe, expect, it } from 'vitest'
 import type { StoredTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/types'
 import {
+  isAgentToolPickerBlock,
   isCustomToolAlreadySelected,
   isMcpToolAlreadySelected,
   isWorkflowAlreadySelected,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/utils'
+import { AgentBlock } from '@/blocks/blocks/agent'
+import { ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
+
+describe('isAgentToolPickerBlock', () => {
+  it('includes image_generator_v2 even though it is a blocks-category block', () => {
+    expect(isAgentToolPickerBlock(ImageGeneratorV2Block)).toBe(true)
+  })
+
+  it('excludes the agent block itself', () => {
+    expect(isAgentToolPickerBlock(AgentBlock)).toBe(false)
+  })
+
+  it('maps image_generator_v2 to image_generate tool access', () => {
+    expect(ImageGeneratorV2Block.tools?.access).toEqual(['image_generate'])
+  })
+})
 
 describe('isMcpToolAlreadySelected', () => {
   describe('basic functionality', () => {
