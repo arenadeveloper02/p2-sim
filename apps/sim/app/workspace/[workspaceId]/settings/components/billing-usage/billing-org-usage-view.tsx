@@ -30,7 +30,7 @@ import {
 const USAGE_SOURCE_DESCRIPTION =
   'Credits include combined usage from Mothership and Workflow Runs.'
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 10
 
 type SortColumn = 'userName' | 'mothershipCredits' | 'workflowCredits' | 'totalCredits'
 type SortDirection = 'asc' | 'desc'
