@@ -242,10 +242,38 @@ describe.concurrent('Blocks Module', () => {
       expect(uploadSubBlock?.type).toBe('file-upload')
       expect(uploadSubBlock?.canonicalParamId).toBe('files')
       expect(uploadSubBlock?.multiple).toBe(true)
+      expect(uploadSubBlock?.allowStartFilesReference).toBe(true)
+      expect(uploadSubBlock?.conversationFileMode).toBe('all')
+      expect(uploadSubBlock?.defaultValue).toBe(START_FILES_REF)
       expect(advancedSubBlock?.canonicalParamId).toBe('files')
       expect(block?.inputs.files).toEqual({
         type: 'array',
         description: 'Files to include with the latest user message',
+      })
+
+      expect(
+        block?.tools.config?.params?.({
+          model: 'gpt-4o',
+          files: [
+            START_FILES_REF,
+            {
+              source: 'conversation-image',
+              id: 'att-1',
+              messageId: 'msg-1',
+              name: 'notes.pdf',
+              url: '/api/files/serve/workspace%2Fws-1%2Fnotes.pdf?context=workspace',
+              type: 'application/pdf',
+            },
+          ],
+        })
+      ).toMatchObject({
+        files: [
+          START_FILES_REF,
+          expect.objectContaining({
+            id: 'att-1',
+            name: 'notes.pdf',
+          }),
+        ],
       })
 
       expect(

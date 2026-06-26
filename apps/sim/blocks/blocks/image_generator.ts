@@ -1,9 +1,16 @@
 import { ImageIcon } from '@/components/icons'
 import {
+  GEMINI_IMAGE_MODELS,
+  getReferenceImageModelIds,
+  IMAGE_BLOCK_PROVIDER_OPTIONS,
+  OPENAI_GPT_IMAGE_MODELS,
+} from '@/lib/image-generation/block-model-config'
+import {
   NANO_BANANA_MODELS,
   NANO_BANANA_PRO_MODEL,
   resolveNanoBananaReferences,
 } from '@/lib/image-generation/nano-banana-inputs'
+import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-files'
 import { mergeUrlsAndDeduplicate, parseImageUrls } from '@/lib/utils/parse-image-urls'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import {
@@ -15,14 +22,7 @@ import { START_FILES_REF } from '@/executor/constants'
 import type { ImageGenerationResponse } from '@/tools/image/types'
 
 function normalizeReferenceFiles(input: unknown): unknown[] {
-  const normalizedFiles = normalizeFileInput(input)
-  if (Array.isArray(normalizedFiles)) {
-    return normalizedFiles
-  }
-  if (normalizedFiles) {
-    return [normalizedFiles]
-  }
-  return []
+  return normalizeReferenceFileParams(input) ?? []
 }
 
 function resolveFalaiNanoBanana2References(params: Record<string, unknown>): {
@@ -40,29 +40,7 @@ function resolveFalaiNanoBanana2References(params: Record<string, unknown>): {
   return references.length > 0 ? { inputImages: references } : {}
 }
 
-const REFERENCE_IMAGE_MODELS = [
-  'gpt-image-2',
-  'gpt-image-1.5',
-  'gpt-image-1',
-  'gpt-image-1-mini',
-  'gemini-3.1-flash-image-preview',
-  'gemini-3-pro-image-preview',
-  'gemini-2.5-flash-image',
-  'nano-banana-2',
-]
-
-const OPENAI_GPT_IMAGE_MODELS = [
-  { label: 'GPT Image 2', id: 'gpt-image-2' },
-  { label: 'GPT Image 1.5', id: 'gpt-image-1.5' },
-  { label: 'GPT Image 1', id: 'gpt-image-1' },
-  { label: 'GPT Image 1 Mini', id: 'gpt-image-1-mini' },
-]
-
-const GEMINI_IMAGE_MODELS = [
-  { label: 'Nano Banana 2', id: 'gemini-3.1-flash-image-preview' },
-  { label: 'Nano Banana Pro', id: 'gemini-3-pro-image-preview' },
-  { label: 'Nano Banana', id: 'gemini-2.5-flash-image' },
-]
+const REFERENCE_IMAGE_MODELS = getReferenceImageModelIds()
 
 const FALAI_IMAGE_MODELS = [
   { label: 'Nano Banana 2', id: 'nano-banana-2' },
@@ -576,11 +554,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       id: 'provider',
       title: 'Provider',
       type: 'dropdown',
-      options: [
-        { label: 'OpenAI', id: 'openai' },
-        { label: 'Google Gemini', id: 'gemini' },
-        // { label: 'Fal.ai (Multi-Model)', id: 'falai' },
-      ],
+      options: IMAGE_BLOCK_PROVIDER_OPTIONS,
       commandSearchable: true,
       value: () => 'gemini',
     },

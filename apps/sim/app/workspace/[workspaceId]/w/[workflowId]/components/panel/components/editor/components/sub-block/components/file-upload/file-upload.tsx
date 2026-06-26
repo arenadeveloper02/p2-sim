@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateShortId } from '@sim/utils/id'
@@ -27,6 +27,17 @@ import {
 } from '@/hooks/queries/workspace-files'
 import { getProviderAttachmentMaxBytes } from '@/providers/attachments'
 import { getProviderFromModel } from '@/providers/utils'
+import {
+  ConversationImagePicker,
+  ConversationImagePickerActions,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/conversation-image-picker'
+import { listConversationFileOptions, getConversationImageRefKey } from '@/lib/chat/conversation-image-catalog'
+import {
+  buildReferenceFileValue,
+  type ConversationImageRef,
+  parseReferenceFileValue,
+} from '@/lib/image-generation/reference-files'
+import { useChatStore } from '@/stores/chat/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -42,6 +53,8 @@ interface FileUploadProps {
   uploadContext?: 'image-fusion'
   /** When true, show option to use Start block files (e.g. chat-uploaded images) via <start.files>. */
   allowStartFilesReference?: boolean
+  /** Limits conversation picker to images or all attachments when allowStartFilesReference is enabled. */
+  conversationFileMode?: 'images' | 'all'
   defaultValue?: string | number | boolean | Record<string, unknown> | Array<unknown>
   isPreview?: boolean
   previewValue?: any | null
@@ -171,6 +184,7 @@ export function FileUpload({
   multiple = false, // Default to single file for backward compatibility
   uploadContext,
   allowStartFilesReference = false,
+  conversationFileMode = 'images',
   defaultValue,
   isPreview = false,
   previewValue,
@@ -185,12 +199,24 @@ export function FileUpload({
   const [inputValue, setInputValue] = useState('')
 
   const [deletingFiles, setDeletingFiles] = useState<Record<string, boolean>>({})
+  const [showConversationPicker, setShowConversationPicker] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
+  const chatMessages = useChatStore((state) => state.messages)
   const params = useParams()
   const workspaceId = params?.workspaceId as string
+
+  const useCombinedChatReferenceMode = allowStartFilesReference && multiple
+
+  const applyReferenceValue = useCallback(
+    (nextValue: ReturnType<typeof parseReferenceFileValue>) => {
+      setStoreValue(buildReferenceFileValue(nextValue))
+      useWorkflowStore.getState().triggerUpdate()
+    },
+    [setStoreValue]
+  )
 
   const {
     data: workspaceFiles = [],
@@ -202,6 +228,23 @@ export function FileUpload({
   const queryClient = useQueryClient()
 
   const value = isPreview ? previewValue : storeValue
+
+  const parsedReferenceValue = useMemo(
+    () => (useCombinedChatReferenceMode ? parseReferenceFileValue(value) : null),
+    [useCombinedChatReferenceMode, value]
+  )
+
+  const conversationImageOptions = useMemo(() => {
+    if (!useCombinedChatReferenceMode) {
+      return []
+    }
+    return listConversationFileOptions(
+      activeWorkflowId
+        ? chatMessages.filter((message) => message.workflowId === activeWorkflowId)
+        : chatMessages,
+      { mode: conversationFileMode }
+    )
+  }, [activeWorkflowId, chatMessages, conversationFileMode, useCombinedChatReferenceMode])
 
   useEffect(() => {
     if (isPreview || defaultValue === undefined) {
@@ -254,7 +297,14 @@ export function FileUpload({
   }
 
   const availableWorkspaceFiles = workspaceFiles.filter((workspaceFile) => {
-    const existingFiles = Array.isArray(value) ? value : value ? [value] : []
+    const existingFiles =
+      useCombinedChatReferenceMode && parsedReferenceValue
+        ? parsedReferenceValue.workspaceFiles
+        : Array.isArray(value)
+          ? value
+          : value
+            ? [value]
+            : []
 
     const isAlreadySelected = existingFiles.some(
       (existing) =>
@@ -419,21 +469,36 @@ export function FileUpload({
       }
 
       if (multiple) {
-        const existingFiles = Array.isArray(value) ? value : value ? [value] : []
-        const uniqueFiles = new Map()
+        if (useCombinedChatReferenceMode && parsedReferenceValue) {
+          const workspaceMap = new Map<string, Record<string, unknown>>()
+          parsedReferenceValue.workspaceFiles.forEach((file) => {
+            const key = String(file.path || file.url || file.name)
+            workspaceMap.set(key, file)
+          })
+          uploadedFiles.forEach((file) => {
+            workspaceMap.set(file.path, file)
+          })
+          applyReferenceValue({
+            ...parsedReferenceValue,
+            workspaceFiles: Array.from(workspaceMap.values()),
+          })
+        } else {
+          const existingFiles = Array.isArray(value) ? value : value ? [value] : []
+          const uniqueFiles = new Map()
 
-        existingFiles.forEach((file) => {
-          uniqueFiles.set(file.url || file.path, file)
-        })
+          existingFiles.forEach((file) => {
+            uniqueFiles.set(file.url || file.path, file)
+          })
 
-        uploadedFiles.forEach((file) => {
-          uniqueFiles.set(file.path, file)
-        })
+          uploadedFiles.forEach((file) => {
+            uniqueFiles.set(file.path, file)
+          })
 
-        const newFiles = Array.from(uniqueFiles.values())
+          const newFiles = Array.from(uniqueFiles.values())
 
-        setStoreValue(newFiles)
-        useWorkflowStore.getState().triggerUpdate()
+          setStoreValue(newFiles)
+          useWorkflowStore.getState().triggerUpdate()
+        }
       } else {
         setStoreValue(uploadedFiles[0] || null)
         useWorkflowStore.getState().triggerUpdate()
@@ -468,17 +533,31 @@ export function FileUpload({
     }
 
     if (multiple) {
-      const existingFiles = Array.isArray(value) ? value : value ? [value] : []
-      const uniqueFiles = new Map()
+      if (useCombinedChatReferenceMode && parsedReferenceValue) {
+        const workspaceMap = new Map<string, Record<string, unknown>>()
+        parsedReferenceValue.workspaceFiles.forEach((file) => {
+          const key = String(file.path || file.url || file.name)
+          workspaceMap.set(key, file)
+        })
+        workspaceMap.set(uploadedFile.path, uploadedFile)
+        applyReferenceValue({
+          ...parsedReferenceValue,
+          workspaceFiles: Array.from(workspaceMap.values()),
+        })
+      } else {
+        const existingFiles = Array.isArray(value) ? value : value ? [value] : []
+        const uniqueFiles = new Map()
 
-      existingFiles.forEach((file) => {
-        uniqueFiles.set(file.url || file.path, file)
-      })
+        existingFiles.forEach((file) => {
+          uniqueFiles.set(file.url || file.path, file)
+        })
 
-      uniqueFiles.set(uploadedFile.path, uploadedFile)
-      const newFiles = Array.from(uniqueFiles.values())
+        uniqueFiles.set(uploadedFile.path, uploadedFile)
+        const newFiles = Array.from(uniqueFiles.values())
 
-      setStoreValue(newFiles)
+        setStoreValue(newFiles)
+        useWorkflowStore.getState().triggerUpdate()
+      }
     } else {
       setStoreValue(uploadedFile)
     }
@@ -518,9 +597,20 @@ export function FileUpload({
       }
 
       if (multiple) {
-        const filesArray = Array.isArray(value) ? value : value ? [value] : []
-        const updatedFiles = filesArray.filter((f) => f.path !== file.path)
-        setStoreValue(updatedFiles.length > 0 ? updatedFiles : null)
+        if (useCombinedChatReferenceMode && parsedReferenceValue) {
+          const updatedWorkspaceFiles = parsedReferenceValue.workspaceFiles.filter(
+            (entry) => entry.path !== file.path
+          )
+          applyReferenceValue({
+            ...parsedReferenceValue,
+            workspaceFiles: updatedWorkspaceFiles,
+          })
+        } else {
+          const filesArray = Array.isArray(value) ? value : value ? [value] : []
+          const updatedFiles = filesArray.filter((f) => f.path !== file.path)
+          setStoreValue(updatedFiles.length > 0 ? updatedFiles : null)
+          useWorkflowStore.getState().triggerUpdate()
+        }
       } else {
         setStoreValue(null)
       }
@@ -594,15 +684,76 @@ export function FileUpload({
     )
   }
 
-  const isUsingStartFiles = value === START_FILES_REF
-  const filesArray = isUsingStartFiles ? [] : Array.isArray(value) ? value : value ? [value] : []
-  const hasFiles = filesArray.length > 0
+  const isUsingStartFiles = useCombinedChatReferenceMode
+    ? Boolean(parsedReferenceValue?.includeStartFiles)
+    : value === START_FILES_REF
+  const filesArray = useCombinedChatReferenceMode
+    ? ((parsedReferenceValue?.workspaceFiles as UploadedFile[]) ?? [])
+    : isUsingStartFiles
+      ? []
+      : Array.isArray(value)
+        ? value
+        : value
+          ? [value]
+          : []
+  const conversationImages = parsedReferenceValue?.conversationImages ?? []
+  const hasFiles = useCombinedChatReferenceMode
+    ? isUsingStartFiles || filesArray.length > 0 || conversationImages.length > 0
+    : filesArray.length > 0
   const isUploading = uploadingFiles.length > 0
 
   const handleSetUseStartFiles = (use: boolean) => {
+    if (useCombinedChatReferenceMode && parsedReferenceValue) {
+      applyReferenceValue({ ...parsedReferenceValue, includeStartFiles: use })
+      return
+    }
     setStoreValue(use ? START_FILES_REF : null)
     useWorkflowStore.getState().triggerUpdate()
   }
+
+  const handleToggleConversationImage = (ref: ConversationImageRef) => {
+    if (!parsedReferenceValue) {
+      return
+    }
+    const exists = parsedReferenceValue.conversationImages.some((image) => image.id === ref.id)
+    applyReferenceValue({
+      ...parsedReferenceValue,
+      conversationImages: exists
+        ? parsedReferenceValue.conversationImages.filter((image) => image.id !== ref.id)
+        : [...parsedReferenceValue.conversationImages, ref],
+    })
+  }
+
+  const handleRemoveConversationImage = (ref: ConversationImageRef) => {
+    if (!parsedReferenceValue) {
+      return
+    }
+    applyReferenceValue({
+      ...parsedReferenceValue,
+      conversationImages: parsedReferenceValue.conversationImages.filter(
+        (image) => image.id !== ref.id
+      ),
+    })
+  }
+
+  const renderConversationImageItem = (image: ConversationImageRef) => (
+    <div
+      key={getConversationImageRefKey(image)}
+      className='relative size-[56px] overflow-hidden rounded-md border border-[var(--border-1)] bg-[var(--surface-2)]'
+      title={image.name}
+    >
+      <img src={image.url} alt={image.name} className='size-full object-cover' />
+      <Button
+        type='button'
+        variant='ghost'
+        className='absolute top-0.5 right-0.5 size-5 p-0'
+        onClick={() => handleRemoveConversationImage(image)}
+        disabled={disabled}
+      >
+        <X className='size-3 opacity-80' />
+      </Button>
+    </div>
+  )
 
   const comboboxOptions = useMemo(
     () => [
@@ -702,65 +853,134 @@ export function FileUpload({
             disabled={disabled}
             className='h-4 w-4 rounded border-[var(--border-1)]'
           />
-          <span className='text-[var(--text-primary)]'>Use Start block files (chat uploads)</span>
+          <span className='text-[var(--text-primary)]'>
+            {useCombinedChatReferenceMode
+              ? 'Include chat uploads from the current message'
+              : 'Use Start block files (chat uploads)'}
+          </span>
         </label>
       )}
 
-      {isUsingStartFiles && (
+      {useCombinedChatReferenceMode && (
+        <>
+          <ConversationImagePickerActions
+            hasConversationImages={conversationImageOptions.length > 0}
+            showConversationPicker={showConversationPicker}
+            onToggleConversationPicker={() => setShowConversationPicker((open) => !open)}
+            disabled={disabled}
+            actionLabel='Select from conversation'
+            hideLabel={
+              conversationFileMode === 'all' ? 'Hide conversation files' : 'Hide conversation images'
+            }
+          />
+          {showConversationPicker && (
+            <ConversationImagePicker
+              messages={chatMessages}
+              workflowId={activeWorkflowId}
+              selectedConversationImages={conversationImages}
+              onToggleConversationImage={handleToggleConversationImage}
+              disabled={disabled}
+              mode={conversationFileMode}
+              emptyLabel={
+                conversationFileMode === 'all'
+                  ? 'No conversation files yet. Upload files in chat, then select them here.'
+                  : undefined
+              }
+              sectionLabel={
+                conversationFileMode === 'all'
+                  ? 'Select files from this conversation'
+                  : undefined
+              }
+            />
+          )}
+        </>
+      )}
+
+      {isUsingStartFiles && !useCombinedChatReferenceMode && (
         <p className='mb-2 text-[var(--text-muted)] text-xs'>
           Files attached in deployed chat will be passed as input. Leave unchecked to upload or
           select files here.
         </p>
       )}
 
+      {useCombinedChatReferenceMode && isUsingStartFiles && (
+        <p className='mb-2 text-[var(--text-muted)] text-xs'>
+          Files attached in the current chat message will be included alongside your selected
+          references.
+        </p>
+      )}
+
       {/* Error message */}
       {uploadError && <div className='mb-2 text-red-600 text-sm'>{uploadError}</div>}
 
-      {/* File list with consistent spacing */}
-      {!isUsingStartFiles && (hasFiles || isUploading) && (
-        <div className={cn('space-y-2', multiple && 'mb-2')}>
-          {/* Only show files that aren't currently uploading (for multiple mode only) */}
-          {multiple &&
-            filesArray.map((file, index) => {
-              const isCurrentlyUploading = uploadingFiles.some(
-                (uploadingFile) => uploadingFile.name === file.name
-              )
-              return !isCurrentlyUploading && renderFileItem(file, index)
-            })}
-          {isUploading && (
-            <>
-              {uploadingFiles.map(renderUploadingItem)}
-              <div className='mt-1'>
-                <Progress
-                  value={uploadProgress}
-                  className='h-2 w-full'
-                  indicatorClassName='bg-foreground'
-                />
-                <div className='mt-1 text-center text-muted-foreground text-xs'>
-                  {uploadProgress < 100 ? 'Uploading...' : 'Upload complete!'}
-                </div>
+      {/* Selected reference thumbnails and file list */}
+      {!isUsingStartFiles || useCombinedChatReferenceMode ? (
+        (hasFiles || isUploading) && (
+          <div className={cn('space-y-2', multiple && 'mb-2')}>
+            {useCombinedChatReferenceMode && (conversationImages.length > 0 || isUsingStartFiles) && (
+              <div className='flex flex-wrap gap-2'>
+                {isUsingStartFiles && (
+                  <div className='flex h-[56px] min-w-[120px] items-center rounded-md border border-[var(--border-1)] bg-[var(--surface-5)] px-2 text-[var(--text-primary)] text-xs'>
+                    Chat uploads
+                  </div>
+                )}
+                {conversationImages.map(renderConversationImageItem)}
               </div>
-            </>
-          )}
-        </div>
-      )}
+            )}
+            {multiple &&
+              filesArray.map((file, index) => {
+                const isCurrentlyUploading = uploadingFiles.some(
+                  (uploadingFile) => uploadingFile.name === file.name
+                )
+                return !isCurrentlyUploading && renderFileItem(file, index)
+              })}
+            {isUploading && (
+              <>
+                {uploadingFiles.map(renderUploadingItem)}
+                <div className='mt-1'>
+                  <Progress
+                    value={uploadProgress}
+                    className='h-2 w-full'
+                    indicatorClassName='bg-foreground'
+                  />
+                  <div className='mt-1 text-center text-muted-foreground text-xs'>
+                    {uploadProgress < 100 ? 'Uploading...' : 'Upload complete!'}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )
+      ) : null}
 
-      {/* Add More dropdown for multiple files */}
-      {!isUsingStartFiles && hasFiles && multiple && !isUploading && (
-        <Combobox
-          options={comboboxOptions}
-          value={inputValue}
-          onChange={handleComboboxChange}
-          onOpenChange={(open) => {
-            if (open) void refetchWorkspaceFiles()
-          }}
-          placeholder={loadingWorkspaceFiles ? 'Loading files...' : '+ Add More'}
-          disabled={disabled || loadingWorkspaceFiles}
-          editable={true}
-          filterOptions={true}
-          isLoading={loadingWorkspaceFiles}
-        />
-      )}
+      {(() => {
+        const canSelectWorkspaceFiles = !isUsingStartFiles || useCombinedChatReferenceMode
+        if (!canSelectWorkspaceFiles || !multiple || isUploading) {
+          return null
+        }
+
+        return (
+          <Combobox
+            options={comboboxOptions}
+            value={inputValue}
+            onChange={handleComboboxChange}
+            onOpenChange={(open) => {
+              if (open) void refetchWorkspaceFiles()
+            }}
+            placeholder={
+              loadingWorkspaceFiles
+                ? 'Loading files...'
+                : filesArray.length > 0
+                  ? '+ Add More'
+                  : 'Select or upload file'
+            }
+            disabled={disabled || loadingWorkspaceFiles}
+            editable={true}
+            filterOptions={true}
+            isLoading={loadingWorkspaceFiles}
+          />
+        )
+      })()}
 
       {/* Single file mode with file selected: show combobox-style UI with X and chevron */}
       {hasFiles && !multiple && !isUploading && (
@@ -789,8 +1009,8 @@ export function FileUpload({
         />
       )}
 
-      {/* Show dropdown selector if no files and not uploading */}
-      {!isUsingStartFiles && !hasFiles && !isUploading && (
+      {/* Show dropdown selector if no files and not uploading (single-file mode only) */}
+      {!useCombinedChatReferenceMode && !isUsingStartFiles && !hasFiles && !isUploading && !multiple && (
         <Combobox
           options={comboboxOptions}
           value={inputValue}
