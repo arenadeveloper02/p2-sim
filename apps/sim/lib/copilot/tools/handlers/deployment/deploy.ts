@@ -16,6 +16,7 @@ import {
   getMeaningfulWorkflowDescription,
   sanitizeToolName,
 } from '@/lib/mcp/workflow-tool-schema'
+import { resolveChatDeployAccess } from '@/lib/workflows/orchestration/chat-deploy-access'
 import {
   performChatDeploy,
   performChatUndeploy,
@@ -375,13 +376,27 @@ export async function executeDeployChat(
         | { primaryColor?: string; welcomeMessage?: string; imageUrl?: string }
         | undefined) || {}
     const resolvedDescription = String(params.description || existingDeployment?.description || '')
-    const resolvedAuthType = (params.authType || existingDeployment?.authType || 'public') as
-      | 'public'
-      | 'password'
-      | 'email'
-      | 'sso'
-    const resolvedAllowedEmails =
-      params.allowedEmails || (existingDeployment?.allowedEmails as string[]) || []
+    const { authType: resolvedAuthType, allowedEmails: resolvedAllowedEmails } =
+      await resolveChatDeployAccess({
+        userId: context.userId,
+        workspaceId: workflowRecord.workspaceId,
+        authType: params.authType,
+        allowedEmails: params.allowedEmails,
+        existingAuthType: existingDeployment?.authType,
+        existingAllowedEmails: (existingDeployment?.allowedEmails as string[]) || null,
+        shareWithOrg: params.shareWithOrg,
+      })
+
+    if (
+      (resolvedAuthType === 'email' || resolvedAuthType === 'sso') &&
+      resolvedAllowedEmails.length === 0
+    ) {
+      return {
+        success: false,
+        error:
+          'At least one allowed email is required for email access control. The deploying user must have a valid email address.',
+      }
+    }
     const resolvedOutputConfigs = (params.outputConfigs ||
       existingDeployment?.outputConfigs ||
       []) as Array<{

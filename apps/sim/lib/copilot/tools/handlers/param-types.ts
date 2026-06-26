@@ -155,6 +155,8 @@ export interface DeployChatParams {
   password?: string
   subdomain?: string
   allowedEmails?: string[]
+  /** When true, include the organization internal email domain in allowedEmails. */
+  shareWithOrg?: boolean
   outputConfigs?: unknown[]
 }
 
