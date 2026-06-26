@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sim.local/schemas/vendor-pricing.schema.json",
+  "title": "VendorPricing",
+  "type": "object",
+  "required": ["meta", "subscriptions", "skus"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "meta": {
+      "type": "object",
+      "required": ["updatedAt", "currency"],
+      "additionalProperties": false,
+      "properties": {
+        "updatedAt": { "type": "string", "format": "date" },
+        "currency": { "type": "string", "const": "USD" },
+        "maintainer": { "type": "string" },
+        "creditConversion": {
+          "type": "object",
+          "required": ["simCreditsPerUsd"],
+          "properties": {
+            "simCreditsPerUsd": { "type": "number" },
+            "note": { "type": "string" }
+          }
+        }
+      }
+    },
+    "subscriptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/subscription" }
+    },
+    "skus": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sku" }
+    }
+  },
+  "$defs": {
+    "plan": {
+      "type": "object",
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "monthlyUsd": { "type": ["number", "null"] },
+        "includedCredits": { "type": ["number", "null"] },
+        "notes": { "type": ["string", "null"] },
+        "knownTiers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "monthlyUsd"],
+            "properties": {
+              "name": { "type": "string" },
+              "monthlyUsd": { "type": "number" },
+              "includedUnits": { "type": "string" },
+              "effectiveUnitUsd": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "subscription": {
+      "type": "object",
+      "required": [
+        "id",
+        "vendor",
+        "active",
+        "envVars",
+        "category",
+        "billingModel",
+        "simUsage",
+        "simCostRecorded"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "vendor": { "type": "string" },
+        "active": { "type": "boolean" },
+        "envVars": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "category": {
+          "type": "string",
+          "enum": ["llm", "tool", "platform", "infra", "analytics", "ads"]
+        },
+        "billingModel": {
+          "type": "string",
+          "enum": [
+            "pay_as_you_go",
+            "subscription_credits",
+            "license_credits",
+            "fixed_monthly",
+            "hybrid",
+            "oauth_user_account"
+          ]
+        },
+        "pricingUrl": { "type": ["string", "null"], "format": "uri" },
+        "plan": { "$ref": "#/$defs/plan" },
+        "simUsage": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "simCostRecorded": { "type": "boolean" },
+        "usageLogSources": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "pricingSource": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["vendor_website", "sim_models_ts", "sim_tool_hosting", "sim_billing_constants"]
+        },
+        "url": { "type": "string", "format": "uri" },
+        "path": { "type": "string" },
+        "verifiedAt": { "type": "string", "format": "date" }
+      }
+    },
+    "sku": {
+      "type": "object",
+      "required": ["id", "subscriptionId", "type", "unit", "pricingSource", "usedIn"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "subscriptionId": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": [
+            "llm_tokens",
+            "embedding_tokens",
+            "rerank_unit",
+            "api_credits",
+            "fixed_per_run",
+            "per_request",
+            "per_page",
+            "per_hour",
+            "per_gb",
+            "api_units"
+          ]
+        },
+        "modelId": { "type": "string" },
+        "unit": { "type": "string" },
+        "inputUsd": { "type": "number" },
+        "outputUsd": { "type": "number" },
+        "cachedInputUsd": { "type": "number" },
+        "usdPerUnit": { "type": "number" },
+        "pricingSource": { "$ref": "#/$defs/pricingSource" },
+        "simReference": { "type": "string" },
+        "vendorPlanNote": { "type": "string" },
+        "usedIn": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}
