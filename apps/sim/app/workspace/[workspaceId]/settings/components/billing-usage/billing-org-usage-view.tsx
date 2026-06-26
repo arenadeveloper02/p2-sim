@@ -113,7 +113,11 @@ export function BillingOrgUsageView({ data }: BillingOrgUsageViewProps) {
       <BillingUsageSection
         label='Usage summary'
         description={USAGE_SOURCE_DESCRIPTION}
-        headerAccessory={<Info className='size-[14px] text-[var(--text-icon)]' />}
+        headerAccessory={
+          <Info side='top' align='start' className='flex-shrink-0 text-[var(--text-icon)]'>
+            {USAGE_SOURCE_DESCRIPTION}
+          </Info>
+        }
       >
         <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-5'>
           {totalCreditsDisplay != null ? (
