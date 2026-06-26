@@ -1032,12 +1032,13 @@ function buildTagFilterCondition(filter: TagFilterCondition): SQL | undefined {
   const col = document[filter.tagSlot as keyof typeof document]
 
   if (filter.fieldType === 'text') {
-    const v = String(filter.value ?? '')
+    const v = String(filter.value ?? '').trim()
+    if (!v) return undefined
     switch (filter.operator) {
       case 'eq':
-        return eq(col as typeof document.tag1, v)
+        return sql`LOWER(${col}) = LOWER(${v})`
       case 'neq':
-        return ne(col as typeof document.tag1, v)
+        return sql`LOWER(${col}) != LOWER(${v})`
       case 'contains': {
         const escaped = escapeLikePattern(v)
         return sql`LOWER(${col}) LIKE LOWER(${`%${escaped}%`}) ESCAPE '\\'`
