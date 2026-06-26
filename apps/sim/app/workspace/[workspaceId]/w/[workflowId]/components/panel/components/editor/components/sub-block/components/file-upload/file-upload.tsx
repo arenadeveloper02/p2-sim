@@ -36,12 +36,25 @@ import {
   buildReferenceFileValue,
   type ConversationImageRef,
   parseReferenceFileValue,
+  type ParsedReferenceFileValue,
 } from '@/lib/image-generation/reference-files'
+import {
+  getImageBlockModelDefinition,
+  supportsMultipleReferenceImages,
+} from '@/lib/image-generation/block-model-config'
 import { useChatStore } from '@/stores/chat/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 const logger = createLogger('FileUpload')
+
+function countCombinedReferenceSelections(parsed: ParsedReferenceFileValue): number {
+  return (
+    parsed.workspaceFiles.length +
+    parsed.conversationImages.length +
+    (parsed.includeStartFiles ? 1 : 0)
+  )
+}
 
 interface FileUploadProps {
   blockId: string
@@ -196,6 +209,7 @@ export function FileUpload({
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [referenceLimitError, setReferenceLimitError] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
 
   const [deletingFiles, setDeletingFiles] = useState<Record<string, boolean>>({})
@@ -210,12 +224,44 @@ export function FileUpload({
 
   const useCombinedChatReferenceMode = allowStartFilesReference && multiple
 
+  const imageModelDefinition = useMemo(() => {
+    if (typeof modelValue !== 'string' || !modelValue) {
+      return undefined
+    }
+    return getImageBlockModelDefinition(modelValue)
+  }, [modelValue])
+
+  const maxReferenceImages = imageModelDefinition?.maxReferenceImages
+  const enforceReferenceLimit = Boolean(imageModelDefinition && useCombinedChatReferenceMode)
+
+  const effectiveMultiple = useMemo(() => {
+    if (!imageModelDefinition) {
+      return multiple
+    }
+    return supportsMultipleReferenceImages(imageModelDefinition.id)
+  }, [imageModelDefinition, multiple])
+
   const applyReferenceValue = useCallback(
     (nextValue: ReturnType<typeof parseReferenceFileValue>) => {
       setStoreValue(buildReferenceFileValue(nextValue))
       useWorkflowStore.getState().triggerUpdate()
     },
     [setStoreValue]
+  )
+
+  const showReferenceLimitMessage = useCallback((message: string) => {
+    setReferenceLimitError(message)
+    setTimeout(() => setReferenceLimitError(null), 5000)
+  }, [])
+
+  const canAddReferenceSelections = useCallback(
+    (parsed: ParsedReferenceFileValue, additionalCount: number): boolean => {
+      if (!enforceReferenceLimit || maxReferenceImages === undefined) {
+        return true
+      }
+      return countCombinedReferenceSelections(parsed) + additionalCount <= maxReferenceImages
+    },
+    [enforceReferenceLimit, maxReferenceImages]
   )
 
   const {
@@ -468,14 +514,37 @@ export function FileUpload({
         }
       }
 
-      if (multiple) {
+      if (effectiveMultiple) {
         if (useCombinedChatReferenceMode && parsedReferenceValue) {
+          const slotsRemaining =
+            enforceReferenceLimit && maxReferenceImages !== undefined
+              ? maxReferenceImages - countCombinedReferenceSelections(parsedReferenceValue)
+              : uploadedFiles.length
+          if (enforceReferenceLimit && slotsRemaining <= 0) {
+            showReferenceLimitMessage(
+              `This model supports up to ${maxReferenceImages} reference image${maxReferenceImages === 1 ? '' : 's'}.`
+            )
+            return
+          }
+          const filesToAdd =
+            enforceReferenceLimit && maxReferenceImages !== undefined
+              ? uploadedFiles.slice(0, Math.max(0, slotsRemaining))
+              : uploadedFiles
+          if (
+            enforceReferenceLimit &&
+            maxReferenceImages !== undefined &&
+            uploadedFiles.length > filesToAdd.length
+          ) {
+            showReferenceLimitMessage(
+              `Only ${filesToAdd.length} file${filesToAdd.length === 1 ? '' : 's'} were added. This model supports up to ${maxReferenceImages} reference images.`
+            )
+          }
           const workspaceMap = new Map<string, Record<string, unknown>>()
           parsedReferenceValue.workspaceFiles.forEach((file) => {
             const key = String(file.path || file.url || file.name)
             workspaceMap.set(key, file)
           })
-          uploadedFiles.forEach((file) => {
+          filesToAdd.forEach((file) => {
             workspaceMap.set(file.path, file)
           })
           applyReferenceValue({
@@ -500,8 +569,16 @@ export function FileUpload({
           useWorkflowStore.getState().triggerUpdate()
         }
       } else {
-        setStoreValue(uploadedFiles[0] || null)
-        useWorkflowStore.getState().triggerUpdate()
+        if (useCombinedChatReferenceMode && parsedReferenceValue) {
+          applyReferenceValue({
+            includeStartFiles: false,
+            workspaceFiles: uploadedFiles[0] ? [uploadedFiles[0]] : [],
+            conversationImages: [],
+          })
+        } else {
+          setStoreValue(uploadedFiles[0] || null)
+          useWorkflowStore.getState().triggerUpdate()
+        }
       }
     } catch (error) {
       logger.error(getErrorMessage(error, 'Failed to upload file(s)'), activeWorkflowId)
@@ -532,8 +609,14 @@ export function FileUpload({
       type: selectedFile.type,
     }
 
-    if (multiple) {
+    if (effectiveMultiple) {
       if (useCombinedChatReferenceMode && parsedReferenceValue) {
+        if (!canAddReferenceSelections(parsedReferenceValue, 1)) {
+          showReferenceLimitMessage(
+            `This model supports up to ${maxReferenceImages} reference image${maxReferenceImages === 1 ? '' : 's'}.`
+          )
+          return
+        }
         const workspaceMap = new Map<string, Record<string, unknown>>()
         parsedReferenceValue.workspaceFiles.forEach((file) => {
           const key = String(file.path || file.url || file.name)
@@ -559,7 +642,15 @@ export function FileUpload({
         useWorkflowStore.getState().triggerUpdate()
       }
     } else {
-      setStoreValue(uploadedFile)
+      if (useCombinedChatReferenceMode && parsedReferenceValue) {
+        applyReferenceValue({
+          includeStartFiles: false,
+          workspaceFiles: [uploadedFile],
+          conversationImages: [],
+        })
+      } else {
+        setStoreValue(uploadedFile)
+      }
     }
 
     useWorkflowStore.getState().triggerUpdate()
@@ -596,7 +687,7 @@ export function FileUpload({
         }
       }
 
-      if (multiple) {
+      if (effectiveMultiple) {
         if (useCombinedChatReferenceMode && parsedReferenceValue) {
           const updatedWorkspaceFiles = parsedReferenceValue.workspaceFiles.filter(
             (entry) => entry.path !== file.path
@@ -612,7 +703,14 @@ export function FileUpload({
           useWorkflowStore.getState().triggerUpdate()
         }
       } else {
-        setStoreValue(null)
+        if (useCombinedChatReferenceMode && parsedReferenceValue) {
+          applyReferenceValue({
+            ...parsedReferenceValue,
+            workspaceFiles: [],
+          })
+        } else {
+          setStoreValue(null)
+        }
       }
 
       useWorkflowStore.getState().triggerUpdate()
@@ -704,6 +802,12 @@ export function FileUpload({
 
   const handleSetUseStartFiles = (use: boolean) => {
     if (useCombinedChatReferenceMode && parsedReferenceValue) {
+      if (use && !canAddReferenceSelections(parsedReferenceValue, 1)) {
+        showReferenceLimitMessage(
+          `This model supports up to ${maxReferenceImages} reference image${maxReferenceImages === 1 ? '' : 's'}.`
+        )
+        return
+      }
       applyReferenceValue({ ...parsedReferenceValue, includeStartFiles: use })
       return
     }
@@ -716,11 +820,22 @@ export function FileUpload({
       return
     }
     const exists = parsedReferenceValue.conversationImages.some((image) => image.id === ref.id)
+    if (!exists && !canAddReferenceSelections(parsedReferenceValue, 1)) {
+      showReferenceLimitMessage(
+        `This model supports up to ${maxReferenceImages} reference image${maxReferenceImages === 1 ? '' : 's'}.`
+      )
+      return
+    }
     applyReferenceValue({
       ...parsedReferenceValue,
       conversationImages: exists
         ? parsedReferenceValue.conversationImages.filter((image) => image.id !== ref.id)
-        : [...parsedReferenceValue.conversationImages, ref],
+        : effectiveMultiple
+          ? [...parsedReferenceValue.conversationImages, ref]
+          : [ref],
+      ...(exists || effectiveMultiple
+        ? {}
+        : { includeStartFiles: false, workspaceFiles: [] }),
     })
   }
 
@@ -790,7 +905,7 @@ export function FileUpload({
 
   // Find the selected file's workspace ID for highlighting in single file mode
   const selectedFileId = useMemo(() => {
-    if (!hasFiles || multiple) return ''
+    if (!hasFiles || effectiveMultiple) return ''
     const currentFile = filesArray[0]
     if (!currentFile) return ''
     // Match by key or path
@@ -801,7 +916,7 @@ export function FileUpload({
         currentFile.path?.includes(wf.key)
     )
     return matchedWorkspaceFile?.id || ''
-  }, [filesArray, workspaceFiles, hasFiles, multiple])
+  }, [filesArray, workspaceFiles, hasFiles, effectiveMultiple])
 
   const handleComboboxChange = (value: string) => {
     setInputValue(value)
@@ -840,7 +955,7 @@ export function FileUpload({
         onChange={handleFileChange}
         style={{ display: 'none' }}
         accept={acceptedTypes}
-        multiple={multiple}
+        multiple={effectiveMultiple}
         data-testid='file-input-element'
       />
 
@@ -912,11 +1027,14 @@ export function FileUpload({
 
       {/* Error message */}
       {uploadError && <div className='mb-2 text-red-600 text-sm'>{uploadError}</div>}
+      {referenceLimitError && (
+        <div className='mb-2 text-red-600 text-sm'>{referenceLimitError}</div>
+      )}
 
       {/* Selected reference thumbnails and file list */}
       {!isUsingStartFiles || useCombinedChatReferenceMode ? (
         (hasFiles || isUploading) && (
-          <div className={cn('space-y-2', multiple && 'mb-2')}>
+          <div className={cn('space-y-2', effectiveMultiple && 'mb-2')}>
             {useCombinedChatReferenceMode && (conversationImages.length > 0 || isUsingStartFiles) && (
               <div className='flex flex-wrap gap-2'>
                 {isUsingStartFiles && (
@@ -927,7 +1045,7 @@ export function FileUpload({
                 {conversationImages.map(renderConversationImageItem)}
               </div>
             )}
-            {multiple &&
+            {effectiveMultiple &&
               filesArray.map((file, index) => {
                 const isCurrentlyUploading = uploadingFiles.some(
                   (uploadingFile) => uploadingFile.name === file.name
@@ -955,7 +1073,7 @@ export function FileUpload({
 
       {(() => {
         const canSelectWorkspaceFiles = !isUsingStartFiles || useCombinedChatReferenceMode
-        if (!canSelectWorkspaceFiles || !multiple || isUploading) {
+        if (!canSelectWorkspaceFiles || !effectiveMultiple || isUploading) {
           return null
         }
 
@@ -983,7 +1101,7 @@ export function FileUpload({
       })()}
 
       {/* Single file mode with file selected: show combobox-style UI with X and chevron */}
-      {hasFiles && !multiple && !isUploading && (
+      {hasFiles && !effectiveMultiple && !isUploading && (
         <SingleFileSelector
           file={filesArray[0]}
           options={singleFileOptions}
@@ -1010,7 +1128,7 @@ export function FileUpload({
       )}
 
       {/* Show dropdown selector if no files and not uploading (single-file mode only) */}
-      {!useCombinedChatReferenceMode && !isUsingStartFiles && !hasFiles && !isUploading && !multiple && (
+      {!useCombinedChatReferenceMode && !isUsingStartFiles && !hasFiles && !isUploading && !effectiveMultiple && (
         <Combobox
           options={comboboxOptions}
           value={inputValue}

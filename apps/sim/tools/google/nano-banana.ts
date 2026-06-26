@@ -73,7 +73,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Multiple reference images for fusion (Nano Banana Pro). Use image URLs or uploaded file reference objects; do not pass inline base64 image data. When provided, used instead of inputImage.',
+        'Multiple reference images for fusion. Supported on Gemini image models (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana). Use image URLs or uploaded file reference objects; do not pass inline base64 image data. When provided, used instead of inputImage.',
     },
     inputImageUrls: {
       type: 'string',
@@ -168,7 +168,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
         },
         hasInputImages: {
           type: 'boolean',
-          description: 'Whether multiple images were provided for fusion (Nano Banana Pro)',
+          description: 'Whether multiple images were provided for fusion',
         },
         inputImageCount: {
           type: 'number',
@@ -208,7 +208,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
             },
             hasInputImages: {
               type: 'boolean',
-              description: 'Whether multiple images were provided for fusion (Nano Banana Pro)',
+              description: 'Whether multiple images were provided for fusion',
             },
             inputImageCount: {
               type: 'number',

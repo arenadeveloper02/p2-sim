@@ -126,7 +126,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     provider: {
       type: 'string',
       required: true,
-      visibility: 'user-only',
+      visibility: 'user-or-llm',
       description: 'Image generation provider: openai, gemini, or falai',
     },
     apiKey: {
@@ -237,7 +237,8 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Multiple reference images for fusion',
+      description:
+        'Multiple reference images for fusion. Supported on Gemini models (up to 14) and subject to per-model limits.',
     },
     inputImageUrl: {
       type: 'string',

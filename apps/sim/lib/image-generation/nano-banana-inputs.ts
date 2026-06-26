@@ -1,4 +1,8 @@
 import {
+  getMaxReferenceImages,
+  supportsMultipleReferenceImages,
+} from '@/lib/image-generation/block-model-config'
+import {
   isS3Uri,
   mergeUrlsAndDeduplicate,
   parseImageUrls,
@@ -7,6 +11,9 @@ import {
 
 export const MULTIPLE_INPUT_IMAGES_WARNING =
   'Multiple input images were provided. Using the latest image.'
+
+export const REFERENCE_IMAGES_TRUNCATED_WARNING =
+  'Only the first {count} reference images were used.'
 
 export const NANO_BANANA_PRO_MODEL = 'gemini-3-pro-image-preview'
 
@@ -121,8 +128,24 @@ export function resolveNanoBananaReferences({
     return { inputImage: references[0] }
   }
 
-  if (model === NANO_BANANA_PRO_MODEL) {
-    return { inputImages: references }
+  const modelId = typeof model === 'string' ? model : ''
+  const maxReferenceImages = getMaxReferenceImages(modelId)
+
+  if (supportsMultipleReferenceImages(modelId)) {
+    const cappedReferences = references.slice(0, maxReferenceImages)
+    const result: {
+      inputImages: unknown[]
+      inputImageWarning?: string
+    } = { inputImages: cappedReferences }
+
+    if (references.length > maxReferenceImages) {
+      result.inputImageWarning = REFERENCE_IMAGES_TRUNCATED_WARNING.replace(
+        '{count}',
+        String(maxReferenceImages)
+      )
+    }
+
+    return result
   }
 
   return {

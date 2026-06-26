@@ -334,7 +334,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
       title: 'Reference Image URLs',
       type: 'long-input',
       placeholder:
-        'Optional: add one or more image URLs or references. One image edits, multiple images fuse.',
+        'Optional: add one or more image URLs or references. Limits vary by model (up to 14 for Nano Banana 2, 11 for Pro, 3 for Nano Banana).',
       mode: 'advanced',
       condition: {
         field: 'model',
@@ -498,12 +498,12 @@ export const ImageGeneratorBlockV2: BlockConfig = {
     inputImage: {
       type: 'json',
       description:
-        'Reference images for Nano Banana as uploaded UserFiles, Start block files, or file references. One image edits; multiple images fuse on Nano Banana Pro.',
+        'Reference images for Nano Banana as uploaded UserFiles, Start block files, or file references. Multi-image fusion limits vary by model (up to 3 for Nano Banana, 11 for Pro).',
     },
     inputImageUrl: {
       type: 'string',
       description:
-        'Reference image URLs or refs for Nano Banana. One image edits; multiple images fuse on Nano Banana Pro.',
+        'Reference image URLs or refs for Nano Banana. Multi-image fusion limits vary by model (up to 3 for Nano Banana, 11 for Pro).',
     },
     inputImages: {
       type: 'json',
@@ -1025,7 +1025,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       title: 'Reference Image URLs',
       type: 'long-input',
       placeholder:
-        'Optional: add one or more image URLs or references. One image edits, multiple images fuse.',
+        'Optional: add one or more image URLs or references. Limits vary by model (up to 14 for Nano Banana 2, 11 for Pro, 3 for Nano Banana).',
       mode: 'advanced',
       condition: {
         field: 'provider',
@@ -1228,12 +1228,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     inputImage: {
       type: 'json',
       description:
-        'Reference images as uploaded files, Start block files, or file references. One image edits; multiple images fuse on supported models.',
+        'Reference images as uploaded files, Start block files, or file references. OpenAI models accept one image; Gemini models support multi-image fusion (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana).',
     },
     inputImageUrl: {
       type: 'string',
       description:
-        'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
+        'Reference image URLs or refs. OpenAI models accept one image; Gemini models support multi-image fusion (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana).',
     },
     inputImages: {
       type: 'json',

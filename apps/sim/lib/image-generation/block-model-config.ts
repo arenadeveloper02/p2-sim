@@ -11,13 +11,42 @@ export interface ImageBlockModelDefinition {
   provider: ImageBlockProvider
   maxVariations: number
   supportsReferenceImages: boolean
+  maxReferenceImages: number
 }
 
 const OPENAI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
-  { id: 'gpt-image-2', label: 'GPT Image 2', provider: 'openai', maxVariations: 5, supportsReferenceImages: true },
-  { id: 'gpt-image-1.5', label: 'GPT Image 1.5', provider: 'openai', maxVariations: 5, supportsReferenceImages: true },
-  { id: 'gpt-image-1', label: 'GPT Image 1', provider: 'openai', maxVariations: 5, supportsReferenceImages: true },
-  { id: 'gpt-image-1-mini', label: 'GPT Image 1 Mini', provider: 'openai', maxVariations: 5, supportsReferenceImages: true },
+  {
+    id: 'gpt-image-2',
+    label: 'GPT Image 2',
+    provider: 'openai',
+    maxVariations: 5,
+    supportsReferenceImages: true,
+    maxReferenceImages: 1,
+  },
+  {
+    id: 'gpt-image-1.5',
+    label: 'GPT Image 1.5',
+    provider: 'openai',
+    maxVariations: 5,
+    supportsReferenceImages: true,
+    maxReferenceImages: 1,
+  },
+  {
+    id: 'gpt-image-1',
+    label: 'GPT Image 1',
+    provider: 'openai',
+    maxVariations: 5,
+    supportsReferenceImages: true,
+    maxReferenceImages: 1,
+  },
+  {
+    id: 'gpt-image-1-mini',
+    label: 'GPT Image 1 Mini',
+    provider: 'openai',
+    maxVariations: 5,
+    supportsReferenceImages: true,
+    maxReferenceImages: 1,
+  },
 ]
 
 const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
@@ -27,6 +56,7 @@ const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     provider: 'gemini',
     maxVariations: 5,
     supportsReferenceImages: true,
+    maxReferenceImages: 14,
   },
   {
     id: 'gemini-3-pro-image-preview',
@@ -34,6 +64,7 @@ const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     provider: 'gemini',
     maxVariations: 5,
     supportsReferenceImages: true,
+    maxReferenceImages: 11,
   },
   {
     id: 'gemini-2.5-flash-image',
@@ -41,6 +72,7 @@ const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     provider: 'gemini',
     maxVariations: 5,
     supportsReferenceImages: true,
+    maxReferenceImages: 3,
   },
 ]
 
@@ -72,6 +104,14 @@ export function getReferenceImageModelIds(): string[] {
   return IMAGE_BLOCK_MODEL_DEFINITIONS.filter((model) => model.supportsReferenceImages).map(
     (model) => model.id
   )
+}
+
+export function getMaxReferenceImages(modelId: string): number {
+  return getImageBlockModelDefinition(modelId)?.maxReferenceImages ?? 1
+}
+
+export function supportsMultipleReferenceImages(modelId: string): boolean {
+  return getMaxReferenceImages(modelId) > 1
 }
 
 export const OPENAI_GPT_IMAGE_MODELS = toModelDropdownOptions(OPENAI_MODEL_DEFINITIONS)
