@@ -125,7 +125,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
   params: {
     provider: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
       description: 'Image generation provider: openai, gemini, or falai',
     },
@@ -138,7 +138,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     },
     model: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
       description:
         'Provider model ID, such as gpt-image-1.5, gemini-3.1-flash-image-preview, or nano-banana-2',

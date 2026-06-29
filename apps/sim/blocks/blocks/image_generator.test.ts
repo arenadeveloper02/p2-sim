@@ -17,7 +17,7 @@ describe('ImageGeneratorV2Block', () => {
     expect(ImageGeneratorV2Block.tools?.config.tool?.({})).toBe('image_generate')
   })
 
-  it('exposes all unset image_generate params to the agent except apiKey', async () => {
+  it('exposes unset image_generate params to the agent except apiKey', async () => {
     const { schema } = await createLLMToolSchema(imageGenerateTool, {})
 
     expect(schema.properties).toHaveProperty('provider')
@@ -25,7 +25,22 @@ describe('ImageGeneratorV2Block', () => {
     expect(schema.properties).toHaveProperty('prompt')
     expect(schema.properties).toHaveProperty('aspectRatio')
     expect(schema.properties).not.toHaveProperty('apiKey')
-    expect(schema.required).toEqual(expect.arrayContaining(['provider', 'model', 'prompt']))
+    expect(schema.required).toEqual(expect.arrayContaining(['prompt']))
+    expect(schema.required).not.toEqual(expect.arrayContaining(['provider', 'model']))
+  })
+
+  it('uses combobox for provider, model, aspect ratio, and resolution fields', () => {
+    const comboboxIds = new Set(['provider', 'model', 'aspectRatio', 'resolution'])
+    const comboboxSubBlocks = ImageGeneratorV2Block.subBlocks.filter(
+      (subBlock) => comboboxIds.has(subBlock.id) && subBlock.type === 'combobox'
+    )
+
+    expect(comboboxSubBlocks.length).toBeGreaterThan(0)
+    expect(
+      comboboxSubBlocks.every(
+        (subBlock) => typeof subBlock.placeholder === 'string' && subBlock.placeholder.length > 0
+      )
+    ).toBe(true)
   })
 
   it('hides preconfigured image_generate params from the agent schema', async () => {
