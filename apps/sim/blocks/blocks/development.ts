@@ -1,6 +1,7 @@
 import { DevelopmentIcon } from '@/components/icons'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import type { DevelopmentGenerateAppResponse } from '@/tools/development/types'
 
 let _inflightRepoFetch: Promise<Array<{ label: string; id: string }>> | null = null
@@ -42,6 +43,7 @@ export const DevelopmentBlock: BlockConfig<DevelopmentGenerateAppResponse> = {
     'Full-stack automation block that generates a Next.js App Router app with Neon Postgres + Prisma, pushes to GitHub, deploys to Vercel from that repository, and returns the live deployment URL in block outputs. Edit mode loads an existing repository, applies your changes with full code context, then republishes.',
   bestPractices: `
   - Use Generate mode for new apps. Describe the app name, main features, pages, UI style, authentication needs, and API routes in User Input.
+  - Optional: upload a Reference Design PDF (mockup, wireframe, or design spec) in Generate or Edit mode — layout, colors, typography, and visible copy will follow the PDF.
   - Use Edit mode to update an existing generated app. Pick a repository from the list, then describe the changes you want in User Input.
   - Set Repository Name (generate mode) to control the folder name under generated-apps/ (kebab-case).
   - Generated apps are always pushed to GitHub and deployed to Vercel (requires DEVELOPMENT_GITHUB_TOKEN and DEVELOPMENT_VERCEL_TOKEN in .env).
@@ -108,6 +110,19 @@ Return ONLY the specification text. No markdown wrappers.`,
       },
     },
     {
+      id: 'referenceImage',
+      title: 'Reference Design PDF',
+      type: 'file-upload',
+      canonicalParamId: 'referenceImage',
+      placeholder: 'Upload a mockup, wireframe, or design spec (PDF only)',
+      mode: 'basic',
+      multiple: false,
+      required: false,
+      acceptedTypes: '.pdf',
+      description:
+        'Optional design PDF — layout, theme, typography, and copy will match the PDF (Generate or Edit).',
+    },
+    {
       id: 'repoName',
       title: 'Repository Name',
       type: 'short-input',
@@ -133,11 +148,13 @@ Return ONLY the specification text. No markdown wrappers.`,
           ? {
               userInput: params.userInput,
               repoName: params.existingRepo,
+              referenceImage: normalizeFileInput(params.referenceImage, { single: true }),
             }
           : {
               userInput: params.userInput,
               repoName: params.repoName,
               privateRepo: params.privateRepo === true,
+              referenceImage: normalizeFileInput(params.referenceImage, { single: true }),
             },
     },
   },
@@ -157,6 +174,10 @@ Return ONLY the specification text. No markdown wrappers.`,
     repoName: {
       type: 'string',
       description: 'Repository folder name for a new app (kebab-case, generate mode)',
+    },
+    referenceImage: {
+      type: 'json',
+      description: 'Optional reference design PDF for layout and theming (Generate or Edit mode)',
     },
     privateRepo: { type: 'boolean', description: 'Whether the GitHub repository is private' },
   },

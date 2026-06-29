@@ -108,6 +108,7 @@ async function executeDevelopmentEditAppDirect(params: Record<string, any>): Pro
     await editNextjsApp({
       userInput: params.userInput,
       repoName: params.repoName,
+      referenceImage: params.referenceImage,
     })
   )
 }

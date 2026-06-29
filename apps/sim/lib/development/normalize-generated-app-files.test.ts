@@ -535,6 +535,37 @@ export interface DashboardStats {
     expect(pkg.devDependencies['eslint-config-next']).toBe(PINNED_NEXT_VERSION)
   })
 
+  it('overrides lucide-react to a React 19 compatible version when present', () => {
+    const patched = patchPackageJsonContent(
+      JSON.stringify({
+        name: 'demo',
+        dependencies: { 'lucide-react': '^0.395.0' },
+      })
+    )
+    const pkg = JSON.parse(patched) as { dependencies: Record<string, string> }
+    expect(pkg.dependencies['lucide-react']).toBe('^0.479.0')
+  })
+
+  it('adds lucide-react when imported in source but omitted from package.json', () => {
+    const files = normalizeGeneratedAppFiles(
+      [
+        {
+          path: 'package.json',
+          content: JSON.stringify({ name: 'demo', dependencies: {}, devDependencies: {} }),
+        },
+        {
+          path: 'components/Icon.tsx',
+          content: "import { Check } from 'lucide-react'\nexport default function Icon() { return <Check /> }\n",
+        },
+      ],
+      { requiresDatabase: false, appName: 'demo', description: 'demo', features: [], repoName: 'demo' }
+    )
+    const pkg = JSON.parse(files.find((file) => file.path === 'package.json')?.content ?? '{}') as {
+      dependencies: Record<string, string>
+    }
+    expect(pkg.dependencies['lucide-react']).toBe('^0.479.0')
+  })
+
   it('adds Prisma deps and build scripts when database is required', () => {
     const patched = patchPackageJsonContent(
       JSON.stringify({

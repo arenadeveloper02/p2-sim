@@ -28,6 +28,12 @@ export const developmentEditAppTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Repository name of the existing generated app to edit',
     },
+    referenceImage: {
+      type: 'json',
+      required: false,
+      visibility: 'user-only',
+      description: 'Optional design PDF — layout, theme, and styling follow the reference when editing UI',
+    },
   },
 
   request: {
@@ -38,6 +44,7 @@ export const developmentEditAppTool: ToolConfig<
     body: (params) => ({
       userInput: params.userInput,
       repoName: params.repoName,
+      referenceImage: params.referenceImage,
     }),
   },
 

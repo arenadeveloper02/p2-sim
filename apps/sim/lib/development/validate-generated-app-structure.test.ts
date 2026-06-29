@@ -68,6 +68,42 @@ describe('validate-generated-app-structure', () => {
     expect(result.issues.some((issue) => issue.includes('props interface'))).toBe(true)
   })
 
+  it('reports prop name drift between pages and Client props interfaces', () => {
+    const result = validateGeneratedAppStructure([
+      ...baseFiles,
+      {
+        path: 'app/categories/page.tsx',
+        content:
+          "import CategoriesClient from '@/components/CategoriesClient'\nexport default function Page() { const categories = []; const currentUser = { id: '1' }; return <CategoriesClient categories={categories} currentUser={currentUser} /> }\n",
+      },
+      {
+        path: 'components/CategoriesClient.tsx',
+        content:
+          'interface CategoriesClientProps { initialCategories: unknown[] }\nexport default function CategoriesClient({ initialCategories }: CategoriesClientProps) { return null }\n',
+      },
+    ])
+
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('missing fields passed by pages: categories'))).toBe(
+      true
+    )
+  })
+
+  it('reports imports of server actions that are not exported from lib/actions.ts', () => {
+    const result = validateGeneratedAppStructure([
+      ...baseFiles,
+      { path: 'lib/actions.ts', content: 'export async function getCategories() { return [] }\n' },
+      {
+        path: 'app/dashboard/page.tsx',
+        content:
+          "import { getRecentTasks } from '@/lib/actions'\nexport default async function Page() { const tasks = await getRecentTasks(); return null }\n",
+      },
+    ])
+
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('getRecentTasks'))).toBe(true)
+  })
+
   it('reports wrong use client placement', () => {
     const result = validateGeneratedAppStructure([
       ...baseFiles,

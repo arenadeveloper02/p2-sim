@@ -4,11 +4,13 @@ export interface DevelopmentGenerateAppParams {
   userInput: string
   repoName?: string
   privateRepo?: boolean
+  referenceImage?: object
 }
 
 export interface DevelopmentEditAppParams {
   userInput: string
   repoName: string
+  referenceImage?: object
 }
 
 export interface DevelopmentGenerateAppResponse extends ToolResponse {

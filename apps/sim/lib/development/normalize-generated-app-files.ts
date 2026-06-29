@@ -29,6 +29,17 @@ const PINNED_DEPENDENCIES: Record<string, string> = {
   'react-dom': PINNED_REACT_VERSION,
 }
 
+/** Overrides LLM-picked versions that break npm install with React 19. Applied when the dep is present. */
+const REACT19_COMPAT_DEPENDENCY_OVERRIDES: Record<string, string> = {
+  'lucide-react': '^0.479.0',
+}
+
+/** Added to package.json when source files import the package but the LLM omitted it from dependencies. */
+const AUTO_ADD_DEPENDENCIES: Record<string, string> = {
+  'lucide-react': '^0.479.0',
+  recharts: '^2.15.3',
+}
+
 const AUTH_PACKAGE_DEPENDENCIES: Record<string, string> = {
   jsonwebtoken: '^9.0.2',
 }
@@ -42,6 +53,8 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - "react": "${PINNED_REACT_VERSION}"
 - "react-dom": "${PINNED_REACT_VERSION}"
 - devDependencies: typescript ^5.8, @types/node ^22, @types/react ^19, @types/react-dom ^19, tailwindcss ^3.4.17, postcss ^8, autoprefixer ^10, eslint ^9, eslint-config-next ${PINNED_NEXT_VERSION}
+- When using lucide-react, pin "lucide-react": "^0.479.0" or newer (React 19 compatible) — never ^0.395.x
+- If ANY file imports from lucide-react or recharts, package.json dependencies MUST include that package — missing deps cause TS2307 at typecheck
 Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use Tailwind v4-only setup.
 next.config.ts MUST NOT include an eslint property (removed in Next.js 16 — builds no longer run ESLint from next.config)`
 
@@ -66,6 +79,7 @@ export const GENERATED_APP_VALIDATION_GUIDANCE = `Pre-build validation requireme
 - package.json has scripts: dev, build, start, lint
 - app/layout.tsx exists and exports metadata; app/page.tsx and app/globals.css exist (globals.css imported only in layout)
 - Every @/ import must resolve to a generated file — no placeholder imports like @/components/ui/... unless those files are generated
+- Structure validation fails when a page imports @/components/X but components/X.tsx is missing from the output — generate every imported component with full JSX
 - Client components rendered with props must declare matching props interfaces
 - "use client" must be the first statement in files that use hooks, event handlers, useState, useEffect, or onClick; server modules (lib/actions.ts, lib/prisma.ts) must not use it
 - No browser APIs in Server Components; no Prisma/database imports in Client Components
@@ -105,7 +119,22 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
    - Do NOT reference scalar fields absent from the model (e.g. User.avatar) unless defined in schema.prisma
    - Aggregate types like DashboardStats are NOT database rows — do not add a required \`id\` field unless the return object includes one
 7. package.json auth deps (TS2307 Cannot find module 'jsonwebtoken'):
-   - When lib/auth.ts imports jsonwebtoken, package.json MUST include jsonwebtoken in dependencies and @types/jsonwebtoken in devDependencies`
+   - When lib/auth.ts imports jsonwebtoken, package.json MUST include jsonwebtoken in dependencies and @types/jsonwebtoken in devDependencies
+8. Missing component files ("Missing file for import @/components/X" in structure validation):
+   - Every page/layout that imports @/components/Foo MUST have components/Foo.tsx in files[] with complete UI — generate the component, do not delete the import
+   - app/layout.tsx → Navbar, Footer; app/login/page.tsx → LoginClient; shared ServicePageClient across service routes — one components/ServicePageClient.tsx file
+   - Fix by ADDING the missing components/*.tsx files in the same JSON response — never submit pages that reference components you did not generate
+9. Page ↔ Client prop name drift (TS2322 IntrinsicAttributes & XxxClientProps):
+   - Server page and Client component MUST use identical prop names — if page passes \`categories={data}\`, interface CategoriesClientProps MUST declare \`categories\`, NOT \`initialCategories\`
+   - Generate the Client component and its \`interface XxxClientProps\` BEFORE writing the page that renders it
+   - WRONG: page \`<TasksClient tasks={tasks} currentUser={user} />\` + component \`interface TasksClientProps { initialTasks: ... }\`
+   - RIGHT: same names on both sides; update page AND component together in one response
+10. Auth session vs database user (TS2739 JwtPayload missing UserData fields):
+   - getAuthUser() returns JwtPayload: \`{ id, name, email, role }\` — use \`user.id\`, NEVER \`user.userId\`
+   - Profile/settings pages needing full UserData MUST call a server action (e.g. getUserById(auth.id)) and pass that result — do NOT pass JwtPayload where UserData is expected
+11. Missing server actions (TS2305 has no exported member):
+   - Every \`import { getFoo } from '@/lib/actions'\` MUST match an \`export async function getFoo\` in lib/actions.ts
+   - When a page needs getRecentTasks, getDashboardStats, etc., ADD the function to lib/actions.ts in the same response — never import actions that do not exist`
 
 export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — every import must resolve to an exported symbol):
 - tsconfig paths MUST be "@/*": ["./*"] with app/ at project root (not src/app/)
@@ -120,10 +149,53 @@ export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — 
 - If you add a type to lib/types.ts, export it and update every file that uses it to import from '@/lib/types'
 - If you add a server action to lib/actions.ts, export it with \`export async function\` and import only the function name in pages/components
 - EVERY @/ import must resolve to a generated file with a matching export of the correct kind (default, named, or type)
+- See COMPONENT FILES rules — missing components/ files are the most common validation failure
 - shadcn/ui components under components/ui/ MUST use named exports matching imports: \`export function Button\` when imported as \`import { Button } from '@/components/ui/button'\`
 - Before finishing, verify each file: every import has a corresponding export in the target file; every exported symbol used elsewhere is imported correctly
 - Each import statement must be complete: \`import { Foo, Bar } from 'package';\` — NEVER close with \`} from 'lucide-react';\` and then list more symbols (BarChart, Pie, etc.) without a new \`import {\` line (causes TS1109 Expression expected)
 - When using both lucide-react and recharts (or any two packages), write TWO separate import blocks — one per package`
+
+export const GENERATED_APP_COMPONENT_FILES_GUIDANCE = `Component files (CRITICAL — pages import components that MUST exist in files[]):
+
+Generation order (follow every time):
+1. List every route/page you will create and every @/components/* name each file will import
+2. Add components/<Name>.tsx to files[] for EACH import — full UI, not a stub
+3. Then write app/**/page.tsx and app/layout.tsx that import those components
+
+Hard rules:
+- NEVER emit \`import Navbar from '@/components/Navbar'\` unless components/Navbar.tsx is in files[] with complete JSX
+- app/layout.tsx importing Navbar/Footer/AppShell → generate components/Navbar.tsx, components/Footer.tsx, etc. in the same response
+- Interactive routes: thin app/<route>/page.tsx (server) + components/<Name>Client.tsx with "use client" (forms, useState, onClick)
+- Reuse one component across routes (e.g. ServicePageClient for grooming and veterinary) → ONE file components/ServicePageClient.tsx
+- Export style must match imports: default export if page uses \`import Foo from '@/components/Foo'\`; named export if \`import { Foo } from '@/components/Foo'\`
+- Layout chrome (nav, footer, shell) are real components — never skip them to save files
+
+Multi-page / marketing sites:
+- A site with login, register, profile, services, store, contact needs ~8–15 component files — budget for them
+- Reuse generic components (PageHero, ServicePageClient, Section) instead of unique missing imports per page
+- If you cannot fit every component within the file limit, reduce the number of routes — never leave imports dangling
+
+Self-check before submitting JSON:
+- Scan every file for @/ imports
+- For each @/components/X, confirm components/X.tsx (or .ts) exists in files[]
+- For each @/lib/* import, confirm that lib file exists
+- If validation would say "Missing file for import @/components/X", ADD components/X.tsx — do not remove the import`
+
+export const GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE = `Page ↔ Client contract (CRITICAL — prevents TS2322 / TS2305 / TS2739):
+
+Generation order (strict):
+1. lib/types.ts — all DTOs (UserData, TaskData, CategoryData, DashboardStats, etc.)
+2. lib/actions.ts — export every get*/create*/update* function pages will import
+3. components/<Name>Client.tsx — declare \`interface <Name>ClientProps { ... }\` FIRST, then the component destructuring those exact field names
+4. app/**/page.tsx — thin server pages that fetch via actions and pass props using the SAME names as step 3
+
+Hard rules:
+- Prop names on the page JSX MUST exactly match fields in the Client's Props interface (categories not initialCategories, tasks not initialTasks, user not currentUser unless both sides use currentUser)
+- When adding or renaming a prop, update the page AND the Client component in the same response
+- getAuthUser() returns JwtPayload { id, name, email, role } — for profile pages needing UserData, call getUserById(auth.id) from lib/actions.ts and pass that
+- AppShell/layout: if AppShellProps requires \`user\`, the layout MUST pass \`user={await getAuthUser()}\` (or fetched UserData)
+- Never import a function from @/lib/actions unless you also export it from lib/actions.ts in the same batch
+- Prisma enum fields (TaskStatus, Priority): type props and useState as the enum union from lib/types.ts, not bare string`
 
 export const GENERATED_APP_JSX_GUIDANCE = `JSX and TSX syntax (zero TS1005 / TS17008 errors):
 - TS1005 "'>' expected" almost always means broken JSX or a line break before JSX — fix the syntax, do not leave the file half-edited
@@ -163,6 +235,18 @@ export const GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE = `Prisma schema ↔ action
 - If you change prisma/schema.prisma, ALWAYS return updated lib/actions.ts AND lib/types.ts in the same response with matching field names
 - Every scalar you read (u.avatar, c.icon, t.assigneeId) must exist on that model in schema.prisma
 - DashboardStats and other aggregates: no spurious id field; shape must match the return object in getDashboardStats()`
+
+export const GENERATED_APP_REFERENCE_PDF_GUIDANCE = `Reference design PDF provided (mockup, wireframe, or design spec):
+- The attached PDF is the visual source of truth — read every page before generating code
+- Match layout, color palette, typography, spacing, borders, shadows, component hierarchy, and visible copy exactly
+- Extract theme tokens from the PDF: primary/secondary/accent colors, background, surface, text, muted text, border radius, and font families — define them in app/globals.css as CSS variables and wire through tailwind.config.ts (extend colors, fontFamily, borderRadius)
+- For multi-page PDFs, implement each main screen shown — navigation, hero, cards, tables, forms, sidebars, charts, footers, and modals
+- Use visible text from the PDF for headings, labels, button text, nav items, placeholders, and empty states where appropriate
+- Do NOT substitute a generic Tailwind default theme when a PDF reference exists — the deployed app should look like the PDF
+- If the PDF shows a dashboard or multi-page app, implement the corresponding routes and functional UI — wire data through Prisma when persistence is required`
+
+/** @deprecated Use GENERATED_APP_REFERENCE_PDF_GUIDANCE */
+export const GENERATED_APP_REFERENCE_IMAGE_GUIDANCE = GENERATED_APP_REFERENCE_PDF_GUIDANCE
 
 export const GENERATED_APP_NEON_DATABASE_GUIDANCE = `Neon Postgres + Prisma (YOU generate all database files — Sim does not inject or patch schema/models):
 - Generate prisma/schema.prisma with domain-specific models matching the app (User, Task, Category, etc.) — never rely on a generic Record placeholder
@@ -353,7 +437,7 @@ function shouldSanitizeFontReferences(path: string): boolean {
  */
 export function patchPackageJsonContent(
   content: string,
-  options: NormalizeGeneratedAppFilesOptions = {}
+  options: NormalizeGeneratedAppFilesOptions & { usedPackages?: Iterable<string> } = {}
 ): string {
   try {
     const pkg = JSON.parse(content) as {
@@ -364,6 +448,21 @@ export function patchPackageJsonContent(
 
     pkg.dependencies = { ...pkg.dependencies, ...PINNED_DEPENDENCIES }
     pkg.devDependencies = { ...pkg.devDependencies, ...PINNED_DEV_DEPENDENCIES }
+
+    for (const [dep, version] of Object.entries(REACT19_COMPAT_DEPENDENCY_OVERRIDES)) {
+      if (pkg.dependencies?.[dep]) {
+        pkg.dependencies[dep] = version
+      }
+    }
+
+    if (options.usedPackages) {
+      for (const usedPackage of options.usedPackages) {
+        const version = AUTO_ADD_DEPENDENCIES[usedPackage]
+        if (version) {
+          pkg.dependencies = { ...pkg.dependencies, [usedPackage]: version }
+        }
+      }
+    }
 
     if (options.requiresDatabase) {
       pkg.dependencies = {
@@ -630,6 +729,59 @@ export function reconcileComponentExportStyles(files: GeneratedAppFile[]): Gener
 /**
  * Collects JSX prop names passed to a component across generated sources.
  */
+/**
+ * Collects external npm package names imported across generated source files.
+ */
+export function collectUsedNpmPackageNames(files: GeneratedAppFile[]): Set<string> {
+  const packages = new Set<string>()
+  const patterns = [/from\s+['"]([^'"]+)['"]/g, /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g]
+
+  for (const file of files) {
+    if (!/\.(tsx|ts|jsx|js|mjs|cjs)$/.test(file.path)) {
+      continue
+    }
+
+    for (const pattern of patterns) {
+      for (const match of file.content.matchAll(pattern)) {
+        const spec = match[1]
+        if (!spec || spec.startsWith('.') || spec.startsWith('@/')) {
+          continue
+        }
+
+        const pkg = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
+        packages.add(pkg)
+      }
+    }
+  }
+
+  return packages
+}
+
+/**
+ * Returns field names declared on a component's Props interface, if present.
+ */
+export function extractComponentPropsInterfaceFields(
+  content: string,
+  componentName: string
+): string[] {
+  const propsTypeName = `${componentName}Props`
+  const interfacePattern = new RegExp(`interface\\s+${propsTypeName}\\s*\\{([^}]*)\\}`, 's')
+  const interfaceMatch = interfacePattern.exec(content)
+  if (!interfaceMatch?.[1]) {
+    return []
+  }
+
+  const fields: string[] = []
+  for (const line of interfaceMatch[1].split('\n')) {
+    const fieldMatch = /^\s*(\w+)(\?)?:/.exec(line)
+    if (fieldMatch?.[1]) {
+      fields.push(fieldMatch[1])
+    }
+  }
+
+  return fields
+}
+
 export function collectJsxPropNamesForComponent(
   componentName: string,
   files: GeneratedAppFile[]
@@ -2160,5 +2312,17 @@ export function normalizeGeneratedAppFiles(
 
   const withNextEnv = ensureNextEnvFile(patched)
   const withReadme = ensureReadmeFile(withNextEnv, options)
-  return ensureRepoSummaryFile(withReadme, options)
+  const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
+  const usedPackages = collectUsedNpmPackageNames(withRepoSummary)
+
+  return withRepoSummary.map((file) => {
+    if (normalizePath(file.path) !== 'package.json') {
+      return file
+    }
+
+    return {
+      ...file,
+      content: patchPackageJsonContent(file.content, { ...options, usedPackages }),
+    }
+  })
 }

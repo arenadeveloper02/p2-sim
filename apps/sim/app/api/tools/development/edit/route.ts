@@ -2,23 +2,40 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { editNextjsApp } from '@/lib/development/nextjs-app-generator'
+import {
+  getDevelopmentReferenceImageErrorMessage,
+  resolveDevelopmentReferenceImage,
+} from '@/lib/development/resolve-development-reference-image'
 
 const logger = createLogger('DevelopmentEditAPI')
 
 export const runtime = 'nodejs'
 export const maxDuration = 600
 
+const ReferencePdfFileSchema = z
+  .object({
+    name: z.string(),
+    key: z.string().optional(),
+    url: z.string().optional(),
+    type: z.string().optional(),
+    base64: z.string().optional(),
+  })
+  .passthrough()
+
 const RequestSchema = z.object({
   userInput: z.string().min(1, 'userInput is required'),
   repoName: z.string().min(1, 'repoName is required'),
+  referenceImage: ReferencePdfFileSchema.optional(),
 })
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
+  const requestId = generateRequestId()
   const auth = await checkInternalAuth(request, { requireWorkflowId: false })
-  if (!auth.success) {
-    return NextResponse.json({ success: false, error: auth.error }, { status: 401 })
+  if (!auth.success || !auth.userId) {
+    return NextResponse.json({ success: false, error: auth.error ?? 'Authentication required' }, { status: 401 })
   }
 
   let body: unknown
@@ -36,9 +53,30 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     )
   }
 
-  logger.info('Editing Next.js app', { repoName: parsed.data.repoName })
+  let referenceImage
+  try {
+    referenceImage = await resolveDevelopmentReferenceImage({
+      referenceImage: parsed.data.referenceImage,
+      userId: auth.userId,
+      requestId,
+      logger,
+    })
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: getDevelopmentReferenceImageErrorMessage(error) },
+      { status: 400 }
+    )
+  }
 
-  const result = await editNextjsApp(parsed.data)
+  logger.info('Editing Next.js app', {
+    repoName: parsed.data.repoName,
+    hasReferencePdf: Boolean(referenceImage),
+  })
+
+  const result = await editNextjsApp({
+    ...parsed.data,
+    referenceImage,
+  })
 
   if (!result.success) {
     return NextResponse.json(result, { status: 500 })

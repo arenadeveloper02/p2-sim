@@ -156,7 +156,7 @@ export async function applyGeneratedAppDatabase(
       logs.push(
         await runNpmInDir(
           outputDir,
-          ['install', '--include=dev', '--no-audit', '--no-fund'],
+          ['install', '--include=dev', '--legacy-peer-deps', '--no-audit', '--no-fund'],
           databaseEnv
         )
       )

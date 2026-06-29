@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import type { GeneratedAppFile } from '@/lib/development/normalize-generated-app-files'
 import {
   collectJsxPropNamesForComponent,
+  extractComponentPropsInterfaceFields,
   GENERATED_APP_DATABASE_FILE_PATHS,
   hasOrphanImportBlock,
 } from '@/lib/development/normalize-generated-app-files'
@@ -76,6 +77,29 @@ function collectAliasImports(content: string): string[] {
     }
   }
   return imports
+}
+
+/**
+ * Returns file paths in the bundle that are referenced by @/ imports from other files.
+ * Used to avoid dropping imported components during file-cap trimming.
+ */
+export function collectReferencedAliasPathsInFiles(files: GeneratedAppFile[]): Set<string> {
+  const pathSet = new Set(files.map((file) => normalizePath(file.path)))
+  const useSrcDir = projectUsesSrcAppDir(files)
+  const referenced = new Set<string>()
+
+  for (const file of files) {
+    for (const importPath of collectAliasImports(file.content)) {
+      const candidates = resolveAliasToCandidatePaths(importPath, useSrcDir)
+      for (const candidate of candidates) {
+        if (pathSet.has(candidate)) {
+          referenced.add(candidate)
+        }
+      }
+    }
+  }
+
+  return referenced
 }
 
 function toComponentName(filePath: string): string {
@@ -162,6 +186,95 @@ function checkMissingPropsInterfaces(files: GeneratedAppFile[]): string[] {
       issues.push(
         `${path}: component ${componentName} is rendered with props (${propNames.join(', ')}) but has no matching props interface`
       )
+    }
+  }
+
+  return issues
+}
+
+function checkPropsNameAlignment(files: GeneratedAppFile[]): string[] {
+  const issues: string[] = []
+
+  for (const file of files) {
+    const path = normalizePath(file.path)
+    if (!path.startsWith('components/') || !path.endsWith('.tsx')) {
+      continue
+    }
+
+    const componentName = toComponentName(path)
+    const jsxPropNames = collectJsxPropNamesForComponent(componentName, files)
+    if (jsxPropNames.length === 0) {
+      continue
+    }
+
+    const interfaceFields = extractComponentPropsInterfaceFields(file.content, componentName)
+    if (interfaceFields.length === 0) {
+      continue
+    }
+
+    const interfaceSet = new Set(interfaceFields)
+    const missingFromInterface = jsxPropNames.filter((prop) => !interfaceSet.has(prop))
+    if (missingFromInterface.length > 0) {
+      issues.push(
+        `${path}: ${componentName}Props is missing fields passed by pages: ${missingFromInterface.join(', ')} (pages use different prop names than the component interface)`
+      )
+    }
+  }
+
+  return issues
+}
+
+function collectExportedActionNames(actionsContent: string): Set<string> {
+  const exported = new Set<string>()
+  const patterns = [
+    /export\s+async\s+function\s+(\w+)/g,
+    /export\s+function\s+(\w+)/g,
+    /export\s+const\s+(\w+)\s*=/g,
+  ]
+
+  for (const pattern of patterns) {
+    for (const match of actionsContent.matchAll(pattern)) {
+      if (match[1]) {
+        exported.add(match[1])
+      }
+    }
+  }
+
+  return exported
+}
+
+function checkActionImports(files: GeneratedAppFile[]): string[] {
+  const actionsFile = files.find((file) => normalizePath(file.path) === 'lib/actions.ts')
+  if (!actionsFile) {
+    return []
+  }
+
+  const exportedActions = collectExportedActionNames(actionsFile.content)
+  const issues: string[] = []
+
+  for (const file of files) {
+    const path = normalizePath(file.path)
+    if (!/\.(tsx|ts)$/.test(path) || path === 'lib/actions.ts') {
+      continue
+    }
+
+    for (const match of file.content.matchAll(
+      /import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+['"]@\/lib\/actions['"]/g
+    )) {
+      const symbols = (match[1] ?? '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => part.replace(/^type\s+/, '').split(/\s+as\s+/)[0]?.trim())
+        .filter((symbol): symbol is string => Boolean(symbol))
+
+      for (const symbol of symbols) {
+        if (!exportedActions.has(symbol)) {
+          issues.push(
+            `${path}: imports ${symbol} from @/lib/actions but lib/actions.ts does not export it`
+          )
+        }
+      }
     }
   }
 
@@ -406,6 +519,8 @@ export function validateGeneratedAppStructure(
   const issues = [
     ...checkMissingImportFiles(files),
     ...checkMissingPropsInterfaces(files),
+    ...checkPropsNameAlignment(files),
+    ...checkActionImports(files),
     ...checkUseClientPlacement(files),
     ...checkPrismaUsage(files, requiresDatabase),
     ...checkStubComponents(files),

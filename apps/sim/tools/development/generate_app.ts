@@ -35,6 +35,12 @@ export const developmentGenerateAppTool: ToolConfig<
       description: 'Create the GitHub repository as private',
       default: false,
     },
+    referenceImage: {
+      type: 'json',
+      required: false,
+      visibility: 'user-only',
+      description: 'Optional design PDF — layout, theme, and styling follow the reference',
+    },
   },
 
   request: {
@@ -47,6 +53,7 @@ export const developmentGenerateAppTool: ToolConfig<
       userInput: params.userInput,
       repoName: params.repoName,
       privateRepo: params.privateRepo,
+      referenceImage: params.referenceImage,
     }),
   },
 

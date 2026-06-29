@@ -37,7 +37,7 @@ export interface ValidateGeneratedAppBuildOptions {
 }
 
 const DUMMY_DATABASE_URL = 'postgresql://user:pass@localhost:5432/validate?sslmode=disable'
-const NPM_INSTALL_ARGS = ['install', '--include=dev', '--no-audit', '--no-fund'] as const
+const NPM_INSTALL_ARGS = ['install', '--include=dev', '--legacy-peer-deps', '--no-audit', '--no-fund'] as const
 
 function formatExecError(error: unknown): string {
   const err = error as { stdout?: string; stderr?: string; message?: string }
@@ -148,7 +148,7 @@ async function validateAppTypecheckInE2b(
     'set -euo pipefail',
     'cd /home/user/app',
     options.requiresDatabase ? `export DATABASE_URL="${DUMMY_DATABASE_URL}"` : '',
-    'npm install --include=dev --prefer-offline --no-audit --no-fund 2>&1',
+    'npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1',
     options.requiresDatabase && hasPrisma ? 'npx prisma generate 2>&1' : '',
     'npx tsc --noEmit 2>&1',
     'echo "__SIM_RESULT__={\\"typecheckOk\\":true}"',
@@ -190,7 +190,7 @@ async function validateAppBuildInE2b(
     'set -euo pipefail',
     'cd /home/user/app',
     options.requiresDatabase ? `export DATABASE_URL="${DUMMY_DATABASE_URL}"` : '',
-    'npm install --include=dev --prefer-offline --no-audit --no-fund 2>&1',
+    'npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1',
     'npm run build 2>&1',
     'echo "__SIM_RESULT__={\\"buildOk\\":true}"',
   ]

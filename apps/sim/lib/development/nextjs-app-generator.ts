@@ -11,6 +11,7 @@ import {
   prepareVercelProjectForDeploy,
 } from '@/lib/development/deploy-generated-app-to-vercel'
 import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
+import type { DevelopmentReferenceMedia } from '@/lib/development/resolve-development-reference-image'
 import { resolveDevelopmentDeployEnv, DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import {
   GENERATED_APP_NEON_DATABASE_GUIDANCE,
@@ -22,8 +23,11 @@ import {
   GENERATED_APP_DATABASE_EDIT_GUIDANCE,
   GENERATED_APP_DEPENDENCY_GUIDANCE,
   GENERATED_APP_IMPORT_GUIDANCE,
+  GENERATED_APP_COMPONENT_FILES_GUIDANCE,
+  GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE,
   GENERATED_APP_JSX_GUIDANCE,
   GENERATED_APP_README_GUIDANCE,
+  GENERATED_APP_REFERENCE_PDF_GUIDANCE,
   GENERATED_APP_REPO_SUMMARY_GUIDANCE,
   GENERATED_APP_REPO_SUMMARY_PATH,
   GENERATED_APP_STYLING_GUIDANCE,
@@ -47,6 +51,7 @@ import { validateGeneratedAppTypecheck } from '@/lib/development/validate-genera
 import {
   formatStructureValidationIssues,
   validateGeneratedAppStructure,
+  collectReferencedAliasPathsInFiles,
 } from '@/lib/development/validate-generated-app-structure'
 
 const logger = createLogger('NextjsAppGenerator')
@@ -57,10 +62,10 @@ const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-11-13'
 /** Sonnet 4.6 supports large outputs; streaming is used above the SDK non-streaming cap. */
 const MAX_OUTPUT_TOKENS = 64_000
 /** More files allow complex multi-page apps without stub components. */
-const MAX_GENERATED_FILES = 30
+const MAX_GENERATED_FILES = 45
 const FILES_PER_BATCH = 10
 const MAX_LLM_CONTINUATION_TURNS = 1
-const MAX_OPTIONAL_PAGE_PATHS = 16
+const MAX_OPTIONAL_PAGE_PATHS = 24
 
 const REQUIRED_APP_FILE_PATHS = [
   'package.json',
@@ -157,6 +162,7 @@ export interface GenerateNextjsAppInput {
   userInput: string
   repoName?: string
   privateRepo?: boolean
+  referenceImage?: DevelopmentReferenceMedia
 }
 
 export interface GeneratedAppFile {
@@ -369,6 +375,11 @@ export function capGeneratedAppFiles(
     }
   }
 
+  const importReferencedPaths = collectReferencedAliasPathsInFiles(files)
+  for (const path of importReferencedPaths) {
+    requiredPaths.add(path)
+  }
+
   const required: GeneratedAppFile[] = []
   const optional: GeneratedAppFile[] = []
   const seen = new Set<string>()
@@ -508,6 +519,50 @@ async function requestStructuredLlm(
   })
 }
 
+function augmentSystemPromptForReferenceImage(
+  systemPrompt: string,
+  referenceMedia?: DevelopmentReferenceMedia
+): string {
+  if (!referenceMedia) {
+    return systemPrompt
+  }
+  return `${systemPrompt}\n\n- ${GENERATED_APP_REFERENCE_PDF_GUIDANCE}`
+}
+
+function buildReferenceContentBlock(
+  referenceMedia: DevelopmentReferenceMedia
+): Anthropic.Messages.ContentBlockParam {
+  if (referenceMedia.mediaType !== 'application/pdf') {
+    throw new Error('Reference media must be a PDF')
+  }
+
+  return {
+    type: 'document',
+    source: {
+      type: 'base64',
+      media_type: 'application/pdf',
+      data: referenceMedia.base64,
+    },
+  }
+}
+
+function buildUserMessageContent(
+  text: string,
+  referenceMedia?: DevelopmentReferenceMedia
+): Anthropic.Messages.MessageParam['content'] {
+  if (!referenceMedia) {
+    return text
+  }
+
+  return [
+    buildReferenceContentBlock(referenceMedia),
+    {
+      type: 'text',
+      text: `Reference design PDF attached — read every page and treat it as the visual source of truth. Match layout, color palette, typography, spacing, borders, component hierarchy, and visible copy. Define theme tokens in app/globals.css and tailwind.config.ts from the PDF colors and fonts — do not use a generic default theme.\n\n${text}`,
+    },
+  ]
+}
+
 /**
  * Requests JSON from the model; on max_tokens, continues the same JSON across turns and merges text.
  */
@@ -516,15 +571,24 @@ async function requestStructuredJsonWithContinuations<T>(
   systemPrompt: string,
   initialUserPrompt: string,
   schema: Record<string, unknown>,
-  parse: (text: string) => T
+  parse: (text: string) => T,
+  referenceImage?: DevelopmentReferenceMedia
 ): Promise<T> {
   const messages: Anthropic.Messages.MessageParam[] = [
-    { role: 'user', content: initialUserPrompt },
+    {
+      role: 'user',
+      content: buildUserMessageContent(initialUserPrompt, referenceImage),
+    },
   ]
   let accumulated = ''
 
   for (let turn = 0; turn <= MAX_LLM_CONTINUATION_TURNS; turn++) {
-    const message = await requestStructuredLlm(anthropic, systemPrompt, messages, schema)
+    const message = await requestStructuredLlm(
+      anthropic,
+      augmentSystemPromptForReferenceImage(systemPrompt, referenceImage),
+      messages,
+      schema
+    )
     const text = getMessageText(message)
 
     accumulated = turn === 0 ? text : `${accumulated}${text}`
@@ -553,6 +617,7 @@ Respond ONLY with JSON matching the provided schema. No markdown or code fences.
 Constraints:
 - At most ${MAX_GENERATED_FILES} files total — use as many as needed but no more
 - Required: ${REQUIRED_APP_FILE_PATHS.join(', ')} plus pages and components (max ${MAX_OPTIONAL_PAGE_PATHS} extra files)
+- Generate ALL components/*.tsx files BEFORE or WITH the pages that import them — never leave dangling @/components imports
 - Every component MUST contain complete, real, working UI code — NEVER a stub, placeholder, or a component that renders only its own name as text
 - Reuse components; keep page files short; put shared styles in app/globals.css
 - app/ at project root only (not src/app/)
@@ -561,6 +626,8 @@ Constraints:
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
+- ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
@@ -578,12 +645,15 @@ Respond ONLY with JSON matching the provided schema. List file paths only — do
 Constraints:
 - At most ${MAX_GENERATED_FILES} file paths — list EVERY file the app truly needs so no component is left as a stub
 - Include every required path: ${REQUIRED_APP_FILE_PATHS.join(', ')}
+- List ALL components/*.tsx paths first (Navbar, Footer, *Client components) — then list app routes that import them
 - Add up to ${MAX_OPTIONAL_PAGE_PATHS} optional page/component paths — for multi-page apps, list all page routes and shared components
 - Use app/ at project root (not src/app/)
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
+- ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
@@ -608,6 +678,8 @@ Constraints:
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
+- ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
@@ -622,7 +694,8 @@ Constraints:
 async function requestAppManifestFromLlm(
   anthropic: Anthropic,
   userInput: string,
-  repoNameHint?: string
+  repoNameHint?: string,
+  referenceImage?: DevelopmentReferenceMedia
 ): Promise<LlmAppManifest> {
   const userPrompt = repoNameHint
     ? `User request:\n${userInput}\n\nPreferred repository folder name: ${repoNameHint}`
@@ -633,7 +706,8 @@ async function requestAppManifestFromLlm(
     MANIFEST_SYSTEM_PROMPT,
     userPrompt,
     APP_MANIFEST_JSON_SCHEMA,
-    (text) => JSON.parse(extractJsonFromLlmText(text)) as LlmAppManifest
+    (text) => JSON.parse(extractJsonFromLlmText(text)) as LlmAppManifest,
+    referenceImage
   )
 
   if (!manifest.appName || !manifest.filePaths?.length) {
@@ -658,10 +732,11 @@ async function requestFileBatchFromLlm(
     appName: string
     description: string
     existingPaths?: string[]
+    referenceImage?: DevelopmentReferenceMedia
   },
   allowBatchRetry = true
 ): Promise<GeneratedAppFile[]> {
-  const { paths, userInput, appName, description } = options
+  const { paths, userInput, appName, description, referenceImage } = options
 
   const existingPaths = options.existingPaths ?? []
 
@@ -685,7 +760,8 @@ ${
     FILE_BATCH_SYSTEM_PROMPT,
     userPrompt,
     FILE_BATCH_JSON_SCHEMA,
-    (text) => JSON.parse(extractJsonFromLlmText(text)) as { files: GeneratedAppFile[] }
+    (text) => JSON.parse(extractJsonFromLlmText(text)) as { files: GeneratedAppFile[] },
+    referenceImage
   )
 
   const byPath = new Map<string, GeneratedAppFile>()
@@ -722,7 +798,7 @@ ${
   logger.warn('Batch missing files; retrying batch once', { missing })
   const retryFiles = await requestFileBatchFromLlm(
     anthropic,
-    { paths: missing, userInput, appName, description },
+    { paths: missing, userInput, appName, description, referenceImage },
     false
   )
   files.push(...retryFiles)
@@ -732,21 +808,25 @@ ${
 
 async function requestSingleShotAppSpecFromLlm(
   userInput: string,
-  repoNameHint?: string
+  repoNameHint?: string,
+  referenceImage?: DevelopmentReferenceMedia
 ): Promise<LlmAppSpec> {
   const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
   const userPrompt = repoNameHint
     ? `User request:\n${userInput}\n\nPreferred repository folder name: ${repoNameHint}`
     : `User request:\n${userInput}`
 
-  logger.info('Generating app in a single LLM request')
+  logger.info('Generating app in a single LLM request', {
+    hasReferenceImage: Boolean(referenceImage),
+  })
 
   const parsed = await requestStructuredJsonWithContinuations(
     anthropic,
     SINGLE_SHOT_SYSTEM_PROMPT,
     userPrompt,
     APP_SPEC_JSON_SCHEMA,
-    (text) => parseAppSpecJson(text)
+    (text) => parseAppSpecJson(text),
+    referenceImage
   )
 
   return normalizeAppSpec(parsed, repoNameHint)
@@ -757,10 +837,11 @@ async function requestSingleShotAppSpecFromLlm(
  */
 async function requestBatchedAppSpecFromLlm(
   userInput: string,
-  repoNameHint?: string
+  repoNameHint?: string,
+  referenceImage?: DevelopmentReferenceMedia
 ): Promise<LlmAppSpec> {
   const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
-  const manifest = await requestAppManifestFromLlm(anthropic, userInput, repoNameHint)
+  const manifest = await requestAppManifestFromLlm(anthropic, userInput, repoNameHint, referenceImage)
 
   const pathBatches = chunkArray(manifest.filePaths, FILES_PER_BATCH)
 
@@ -781,6 +862,7 @@ async function requestBatchedAppSpecFromLlm(
         ...manifest.filePaths,
         ...allFiles.map((f) => f.path.replace(/\\/g, '/')),
       ],
+      referenceImage,
     })
     allFiles.push(...batchFiles)
   }
@@ -820,18 +902,20 @@ async function requestFullAppSpecFromLlm(
 
 async function generateAppSpecWithLlm(
   userInput: string,
-  repoNameHint?: string
+  repoNameHint?: string,
+  referenceImage?: DevelopmentReferenceMedia
 ): Promise<LlmAppSpec> {
   try {
-    return await requestSingleShotAppSpecFromLlm(userInput, repoNameHint)
+    return await requestSingleShotAppSpecFromLlm(userInput, repoNameHint, referenceImage)
   } catch (error) {
     if (!isLikelyTruncationOrParseFailure(error)) {
       throw error
     }
     logger.warn('Single-shot app generation failed; using batched fallback', {
       error: toError(error).message,
+      hasReferenceImage: Boolean(referenceImage),
     })
-    return requestBatchedAppSpecFromLlm(userInput, repoNameHint)
+    return requestBatchedAppSpecFromLlm(userInput, repoNameHint, referenceImage)
   }
 }
 
@@ -846,13 +930,16 @@ Respond ONLY with JSON matching the provided schema. Return the full corrected f
 
 Fix ALL errors in the build log so npm install && npx tsc --noEmit succeed with ZERO TypeScript errors.
 Fix ALL structure validation issues listed in the build log, including missing @/ imports, props interfaces, "use client" placement, Prisma usage, Tailwind config, and build scripts.
-Pay special attention to: TS2305 "has no exported member" (export the symbol from the module that defines it — e.g. add verifyToken/getAuthUser to lib/auth.ts when API routes import them), TS1109 "Expression expected" (usually a split import — add \`import {\` before orphan specifiers after \`} from 'package';\`), TS2459 "declares X locally, but it is not exported" (import the type from @/lib/types, not @/lib/actions), TS2304 "Cannot find name" (add missing import type from @/lib/types), TS1005 "'>' expected" (fix JSX — use return ( with opening tag, never return newline then <), missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
+When the build log says "Missing file for import @/components/X", ADD components/X.tsx with full UI — every imported component must exist in files[].
+Pay special attention to: TS2305 "has no exported member" (export the symbol from the module that defines it — e.g. add getRecentTasks/getUserById to lib/actions.ts when pages import them), TS2322 IntrinsicAttributes & XxxClientProps (page prop names must match XxxClientProps fields exactly — update page AND component together), TS2739 JwtPayload missing UserData fields (use getUserById(auth.id), do not pass getAuthUser() result as UserData), TS1109 "Expression expected" (usually a split import — add \`import {\` before orphan specifiers after \`} from 'package';\`), TS2459 "declares X locally, but it is not exported" (import the type from @/lib/types, not @/lib/actions), TS2304 "Cannot find name" (add missing import type from @/lib/types), TS2307 Cannot find module 'lucide-react' (add lucide-react to package.json dependencies), TS1005 "'>' expected" (fix JSX — use return ( with opening tag, never return newline then <), missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
 If the build log flags localStorage/sessionStorage usage, replace every occurrence with Prisma server actions or API routes — NEVER store app data in localStorage.
 ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 ${GENERATED_APP_STYLING_GUIDANCE}
 ${GENERATED_APP_IMPORT_GUIDANCE}
+${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
+${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 ${GENERATED_APP_JSX_GUIDANCE}
 ${GENERATED_APP_DATABASE_GUIDANCE}
 ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
@@ -1035,11 +1122,16 @@ export async function generateNextjsApp(
 
   try {
     const generationStartedAt = Date.now()
-    let spec = await generateAppSpecWithLlm(userInput, input.repoName?.trim())
+    let spec = await generateAppSpecWithLlm(
+      userInput,
+      input.repoName?.trim(),
+      input.referenceImage
+    )
     logger.info('LLM app generation finished', {
       durationMs: Date.now() - generationStartedAt,
       fileCount: spec.files.length,
       requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+      hasReferenceImage: Boolean(input.referenceImage),
     })
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
@@ -1325,6 +1417,7 @@ export async function generateNextjsApp(
 export interface EditNextjsAppInput {
   userInput: string
   repoName: string
+  referenceImage?: DevelopmentReferenceMedia
 }
 
 const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
@@ -1364,6 +1457,8 @@ Constraints:
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
+- ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
+- ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
@@ -1478,7 +1573,8 @@ ${fileIndex}${supplementalSection}`
 async function requestAppEditsFromLlm(
   userInput: string,
   repoName: string,
-  existingFiles: GeneratedAppFile[]
+  existingFiles: GeneratedAppFile[],
+  referenceImage?: DevelopmentReferenceMedia
 ): Promise<LlmAppSpec> {
   const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
   const metadata = inferAppMetadataFromFiles(repoName, existingFiles)
@@ -1501,7 +1597,8 @@ Return JSON with app metadata and ONLY the files you changed or added.`
     EDIT_APP_SYSTEM_PROMPT,
     userPrompt,
     EDIT_APP_JSON_SCHEMA,
-    (text) => JSON.parse(extractJsonFromLlmText(text)) as LlmAppSpec
+    (text) => JSON.parse(extractJsonFromLlmText(text)) as LlmAppSpec,
+    referenceImage
   )
 
   if (!parsed.files?.length) {
@@ -1557,11 +1654,12 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
 
     const existingFiles = await readGeneratedAppFiles(outputDir)
     const generationStartedAt = Date.now()
-    let spec = await requestAppEditsFromLlm(userInput, repoName, existingFiles)
+    let spec = await requestAppEditsFromLlm(userInput, repoName, existingFiles, input.referenceImage)
     logger.info('LLM app edit finished', {
       durationMs: Date.now() - generationStartedAt,
       changedFiles: spec.files.length,
       requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+      hasReferencePdf: Boolean(input.referenceImage),
     })
 
     const fileCount = await writeAppFiles(outputDir, spec.files)
