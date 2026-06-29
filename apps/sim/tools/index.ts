@@ -23,7 +23,10 @@ import { isUserFile } from '@/lib/core/utils/user-file'
 import { isSameOrigin } from '@/lib/core/utils/validation'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
-import { sanitizeImageGenerationWrapperParams, stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
+import {
+  sanitizeImageGenerationWrapperParams,
+  stripInlinePayloadFromFileReference,
+} from '@/lib/image-generation/nano-banana-inputs'
 import { generateOpenAIImageToolResponse } from '@/lib/image-generation/openai-generate.server'
 import { parseMcpToolId } from '@/lib/mcp/utils'
 import { hostedKeyMetrics } from '@/lib/monitoring/metrics'
@@ -86,7 +89,6 @@ async function executeNanoBananaDirect(params: Record<string, any>): Promise<Too
 }
 
 async function executeImageGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
-
   if (params.__skipSmartWrapper === true) {
     logger.info('Running direct image generation provider in-process')
     const { buildImageToolBodyFromExecutionParams, runImageToolGeneration } = await import(

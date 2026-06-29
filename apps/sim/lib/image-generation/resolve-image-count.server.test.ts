@@ -125,8 +125,7 @@ describe('resolveImageGenerationCount', () => {
   })
 
   it('honors repeat multipliers for combined side-by-side compositions', async () => {
-    const originalPrompt =
-      'Give me three variations side by side in a single image three times'
+    const originalPrompt = 'Give me three variations side by side in a single image three times'
     mockSlmImageCount(1)
 
     const result = await resolveImageGenerationCount({ prompt: originalPrompt })

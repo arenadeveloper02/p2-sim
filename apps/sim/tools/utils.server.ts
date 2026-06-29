@@ -11,12 +11,7 @@ import { extractErrorMessage } from '@/tools/error-extractors'
 import { tools } from '@/tools/registry'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 import type { RequestParams } from '@/tools/utils'
-import {
-  createCustomToolRequestBody,
-  createParamSchema,
-  createToolConfig,
-  resolveToolId,
-} from '@/tools/utils'
+import { createCustomToolRequestBody, createParamSchema, createToolConfig } from '@/tools/utils'
 
 const logger = createLogger('ToolsUtils')
 

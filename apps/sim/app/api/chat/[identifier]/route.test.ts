@@ -133,25 +133,27 @@ vi.mock('@/lib/uploads', () => ({
 }))
 
 vi.mock('@/lib/chat/history-persistence', () => ({
-  toPersistedChatAttachment: vi.fn((file: {
-    id: string
-    key: string
-    name: string
-    type: string
-    size: number
-  }): {
-    id: string
-    key: string
-    filename: string
-    media_type: string
-    size: number
-  } => ({
-    id: file.id,
-    key: file.key,
-    filename: file.name,
-    media_type: file.type,
-    size: file.size,
-  })),
+  toPersistedChatAttachment: vi.fn(
+    (file: {
+      id: string
+      key: string
+      name: string
+      type: string
+      size: number
+    }): {
+      id: string
+      key: string
+      filename: string
+      media_type: string
+      size: number
+    } => ({
+      id: file.id,
+      key: file.key,
+      filename: file.name,
+      media_type: file.type,
+      size: file.size,
+    })
+  ),
   updateExecutionHistoryData: mockUpdateExecutionHistoryData,
 }))
 

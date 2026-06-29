@@ -19,7 +19,10 @@ vi.mock('@/lib/uploads/utils/file-utils.server', () => ({
   resolveInternalFileUrl: vi.fn(),
 }))
 
-import { buildImageToolBodyFromExecutionParams, runImageToolGeneration } from '@/lib/image-generation/run-image-tool.server'
+import {
+  buildImageToolBodyFromExecutionParams,
+  runImageToolGeneration,
+} from '@/lib/image-generation/run-image-tool.server'
 
 describe('buildImageToolBodyFromExecutionParams', () => {
   it('maps execution context and reference image fields onto the image tool body', () => {

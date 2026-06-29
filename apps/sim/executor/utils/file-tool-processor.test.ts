@@ -17,8 +17,8 @@ vi.mock('@/lib/uploads/utils/file-utils.server', () => ({
   downloadFileFromUrl: mockDownloadFileFromUrl,
 }))
 
-import { FileToolProcessor } from '@/executor/utils/file-tool-processor'
 import type { ExecutionContext } from '@/executor/types'
+import { FileToolProcessor } from '@/executor/utils/file-tool-processor'
 import type { ToolConfig } from '@/tools/types'
 
 describe('FileToolProcessor', () => {
