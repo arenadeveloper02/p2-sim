@@ -3,8 +3,7 @@
  *
  * The prompt is stored in the `prompts` table (name = 'gaql_system_prompt').
  * At runtime, `getGaqlSystemPrompt()` reads from the DB so the prompt can be
- * updated without redeploying. There is no in-code fallback — the DB row must
- * exist for query generation to work.
+ * updated without redeploying. The DB row must exist for query generation to work.
  */
 
 import { db } from '@sim/db'
