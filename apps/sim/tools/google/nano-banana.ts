@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
@@ -89,7 +90,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
       return '/api/google'
     },
     method: 'POST',
-    timeout: 180000,
+    timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
     headers: () => {
       return {
         'Content-Type': 'application/json',

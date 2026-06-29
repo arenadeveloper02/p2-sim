@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateShortId } from '@sim/utils/id'
@@ -42,6 +42,7 @@ interface FileUploadProps {
   uploadContext?: 'image-fusion'
   /** When true, show option to use Start block files (e.g. chat-uploaded images) via <start.files>. */
   allowStartFilesReference?: boolean
+  defaultValue?: string | number | boolean | Record<string, unknown> | Array<unknown>
   isPreview?: boolean
   previewValue?: any | null
   disabled?: boolean
@@ -170,6 +171,7 @@ export function FileUpload({
   multiple = false, // Default to single file for backward compatibility
   uploadContext,
   allowStartFilesReference = false,
+  defaultValue,
   isPreview = false,
   previewValue,
   disabled = false,
@@ -200,6 +202,15 @@ export function FileUpload({
   const queryClient = useQueryClient()
 
   const value = isPreview ? previewValue : storeValue
+
+  useEffect(() => {
+    if (isPreview || defaultValue === undefined) {
+      return
+    }
+    if (storeValue === null || storeValue === undefined || storeValue === '') {
+      setStoreValue(defaultValue)
+    }
+  }, [storeValue, defaultValue, setStoreValue, isPreview])
 
   const maxSizeInBytes = useMemo(() => {
     const fallback = maxSize * 1024 * 1024

@@ -12,20 +12,10 @@ import type { SQL } from 'drizzle-orm'
 import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
+import { getAgentDepartmentLabel, resolveAgentDepartmentValue } from '@/lib/chat/arena-departments'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 const logger = createLogger('DeployedChatAgentsListAPI')
-
-export const categories = [
-  { value: 'creative', label: 'Creative' },
-  { value: 'ma', label: 'MA' },
-  { value: 'ppc', label: 'PPC' },
-  { value: 'sales', label: 'Sales' },
-  { value: 'seo', label: 'SEO' },
-  { value: 'strategy', label: 'Strategy' },
-  { value: 'waas', label: 'WAAS' },
-  { value: 'hr', label: 'HR' },
-] as const
 
 interface AgentChatRow {
   chatId: string
@@ -60,27 +50,6 @@ function hasAllowedEmailStartingWithAtSymbol(
   )
 }
 
-/**
- * Resolves departmentName param (e.g. 'WAAS' or 'waas') to category value for DB filter.
- * Matches case-insensitively against category value or label.
- */
-function resolveDepartmentValue(departmentName: string | null): string | undefined {
-  if (!departmentName?.trim()) return undefined
-  const normalized = departmentName.trim().toLowerCase()
-  const found = categories.find(
-    (c) => c.value.toLowerCase() === normalized || c.label.toLowerCase() === normalized
-  )
-  return found?.value
-}
-
-/**
- * Returns the display label for a department value (stored in DB as category `value`).
- */
-function toDepartmentLabel(departmentValue: string | null): string | null {
-  if (!departmentValue) return null
-  return categories.find((c) => c.value === departmentValue)?.label ?? departmentValue
-}
-
 /** Maps a DB row to the response agent list item shape. */
 function toAgentListItem(row: AgentChatRow) {
   return {
@@ -90,7 +59,7 @@ function toAgentListItem(row: AgentChatRow) {
     workflow_id: row.workflowId,
     workflow_name: row.workflowName,
     workspace_id: row.workspaceId,
-    department: toDepartmentLabel(row.department),
+    department: getAgentDepartmentLabel(row.department),
     created_at: row.createdAt.toISOString(),
     workflow_description: row.description,
     status: 'published',
@@ -432,7 +401,7 @@ export async function GET(request: NextRequest) {
       }
 
       const departmentName = searchParams.get('departmentName')
-      const departmentValue = resolveDepartmentValue(departmentName)
+      const departmentValue = resolveAgentDepartmentValue(departmentName)
 
       return await getGlobalAgentsList(emailId.trim(), departmentValue)
     }
