@@ -553,16 +553,20 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'provider',
       title: 'Provider',
-      type: 'dropdown',
+      type: 'combobox',
       options: IMAGE_BLOCK_PROVIDER_OPTIONS,
+      placeholder: 'Type, select, or reference a provider...',
+      searchable: true,
       commandSearchable: true,
       value: () => 'gemini',
     },
     {
       id: 'model',
       title: 'Model',
-      type: 'dropdown',
+      type: 'combobox',
       options: OPENAI_GPT_IMAGE_MODELS,
+      placeholder: 'Type, select, or reference a model...',
+      searchable: true,
       value: () => 'gpt-image-1.5',
       condition: { field: 'provider', value: 'openai' },
       dependsOn: ['provider'],
@@ -570,8 +574,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'model',
       title: 'Model',
-      type: 'dropdown',
+      type: 'combobox',
       options: GEMINI_IMAGE_MODELS,
+      placeholder: 'Type, select, or reference a model...',
+      searchable: true,
       value: () => 'gemini-3.1-flash-image-preview',
       condition: { field: 'provider', value: 'gemini' },
       dependsOn: ['provider'],
@@ -692,8 +698,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: [...BASE_ASPECT_RATIO_OPTIONS, ...EXTREME_ASPECT_RATIO_OPTIONS],
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
       value: () => '1:1',
       condition: {
         field: 'provider',
@@ -705,8 +713,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: BASE_ASPECT_RATIO_OPTIONS,
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
       value: () => '1:1',
       condition: {
         field: 'provider',
@@ -721,12 +731,14 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: 'Auto', id: 'auto' },
         ...BASE_ASPECT_RATIO_OPTIONS,
         ...EXTREME_ASPECT_RATIO_OPTIONS,
       ],
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
       value: () => 'auto',
       condition: {
         field: 'provider',
@@ -738,8 +750,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: [{ label: 'Auto', id: 'auto' }, ...BASE_ASPECT_RATIO_OPTIONS],
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
       value: () => '1:1',
       condition: {
         field: 'provider',
@@ -751,8 +765,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: BASE_ASPECT_RATIO_OPTIONS,
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
       value: () => '1:1',
       condition: {
         field: 'provider',
@@ -764,7 +780,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '1:1', id: '1:1' },
         { label: '16:9', id: '16:9' },
@@ -780,6 +796,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: '19.5:9', id: '19.5:9' },
         { label: '9:19.5', id: '9:19.5' },
       ],
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
       value: () => '1:1',
       condition: {
         field: 'provider',
@@ -791,13 +809,15 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '512', id: '512' },
         { label: '1K', id: '1K' },
         { label: '2K', id: '2K' },
         { label: '4K', id: '4K' },
       ],
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
       value: () => '1K',
       condition: {
         field: 'provider',
@@ -809,12 +829,14 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '1K', id: '1K' },
         { label: '2K', id: '2K' },
         { label: '4K', id: '4K' },
       ],
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
       value: () => '1K',
       condition: {
         field: 'provider',
@@ -826,13 +848,15 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '0.5K', id: '0.5K' },
         { label: '1K', id: '1K' },
         { label: '2K', id: '2K' },
         { label: '4K', id: '4K' },
       ],
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
       value: () => '1K',
       condition: {
         field: 'provider',
@@ -844,12 +868,14 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '1K', id: '1K' },
         { label: '2K', id: '2K' },
         { label: '4K', id: '4K' },
       ],
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
       value: () => '1K',
       condition: {
         field: 'provider',
@@ -861,11 +887,13 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '1k', id: '1k' },
         { label: '2k', id: '2k' },
       ],
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
       value: () => '1k',
       condition: {
         field: 'provider',

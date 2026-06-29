@@ -33,16 +33,16 @@ describe('buildInitialAgentToolParams', () => {
       {
         id: 'provider',
         type: 'string',
-        required: true,
+        required: false,
         visibility: 'user-or-llm',
-        uiComponent: { type: 'dropdown', value: () => 'gemini' },
+        uiComponent: { type: 'combobox', value: () => 'gemini' },
       },
       {
         id: 'model',
         type: 'string',
-        required: true,
+        required: false,
         visibility: 'user-or-llm',
-        uiComponent: { type: 'dropdown', value: () => 'gemini-3.1-flash-image-preview' },
+        uiComponent: { type: 'combobox', value: () => 'gemini-3.1-flash-image-preview' },
       },
     ])
 

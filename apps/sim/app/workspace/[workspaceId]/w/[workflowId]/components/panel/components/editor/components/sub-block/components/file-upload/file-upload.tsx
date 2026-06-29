@@ -216,6 +216,8 @@ export function FileUpload({
   const [showConversationPicker, setShowConversationPicker] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fieldKey = `${blockId}:${subBlockId}`
+  const appliedDefaultForFieldRef = useRef<string | null>(null)
 
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const chatMessages = useChatStore((state) => state.messages)
@@ -296,10 +298,15 @@ export function FileUpload({
     if (isPreview || defaultValue === undefined) {
       return
     }
+    if (appliedDefaultForFieldRef.current === fieldKey) {
+      return
+    }
+    appliedDefaultForFieldRef.current = fieldKey
+
     if (storeValue === null || storeValue === undefined || storeValue === '') {
       setStoreValue(defaultValue)
     }
-  }, [storeValue, defaultValue, setStoreValue, isPreview])
+  }, [fieldKey, storeValue, defaultValue, setStoreValue, isPreview])
 
   const maxSizeInBytes = useMemo(() => {
     const fallback = maxSize * 1024 * 1024
