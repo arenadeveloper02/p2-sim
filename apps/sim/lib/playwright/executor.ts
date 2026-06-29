@@ -136,9 +136,11 @@ export async function runPlaywrightSteps(options: PlaywrightRunOptions): Promise
 
   try {
     try {
+      const chromeBin = process.env.CHROME_BIN?.trim()
       browser = await chromium.launch({
         headless: options.headless !== false,
         timeout: 60_000,
+        ...(chromeBin ? { executablePath: chromeBin } : {}),
       })
     } catch (error) {
       throw new Error(
