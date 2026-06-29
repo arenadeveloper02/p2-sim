@@ -143,19 +143,37 @@ export const goldenQueriesSchema = z.object({
 
 const MAX_CHAT_INPUT_CHARS = 1_000_000
 const MAX_CHAT_FILE_DATA_CHARS = 14 * 1024 * 1024
+const MAX_CHAT_FILE_URL_CHARS = 8192
 const MAX_CHAT_FILES = 15
 
-export const deployedChatFileSchema = z.object({
-  name: z.string().min(1, 'File name is required').max(255, 'File name is too long'),
-  type: z.string().min(1, 'File type is required').max(255, 'File type is too long'),
-  size: z.number().positive('File size must be positive'),
-  data: z
-    .string()
-    .min(1, 'File data is required')
-    .max(MAX_CHAT_FILE_DATA_CHARS, 'File data exceeds the maximum allowed size'),
-  url: z.string().optional(),
-  lastModified: z.number().optional(),
-})
+export const deployedChatFileSchema = z
+  .object({
+    name: z.string().min(1, 'File name is required').max(255, 'File name is too long'),
+    type: z.string().min(1, 'File type is required').max(255, 'File type is too long'),
+    size: z.number().positive('File size must be positive'),
+    data: z
+      .string()
+      .min(1, 'File data must not be empty')
+      .max(MAX_CHAT_FILE_DATA_CHARS, 'File data exceeds the maximum allowed size')
+      .optional(),
+    url: z
+      .string()
+      .min(1, 'File URL must not be empty')
+      .max(MAX_CHAT_FILE_URL_CHARS, 'File URL is too long')
+      .optional(),
+    lastModified: z.number().optional(),
+  })
+  .superRefine((file, ctx) => {
+    const hasData = typeof file.data === 'string' && file.data.trim().length > 0
+    const hasUrl = typeof file.url === 'string' && file.url.trim().length > 0
+    if (!hasData && !hasUrl) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['data'],
+        message: 'Either file data or file URL is required',
+      })
+    }
+  })
 
 export const deployedChatPostBodySchema = z.object({
   input: z.string().max(MAX_CHAT_INPUT_CHARS, 'Input is too long').optional(),

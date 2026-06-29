@@ -802,26 +802,26 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-08-05',
         deprecated: true,
       },
-      {
-        id: 'claude-opus-4-0',
-        pricing: {
-          input: 15.0,
-          cachedInput: 1.5,
-          output: 75.0,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 32000,
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'high',
-          },
-        },
-        contextWindow: 200000,
-        releaseDate: '2025-05-22',
-        deprecated: true,
-      },
+      // {
+      //   id: 'claude-opus-4-0',
+      //   pricing: {
+      //     input: 15.0,
+      //     cachedInput: 1.5,
+      //     output: 75.0,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 32000,
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'high',
+      //     },
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2025-05-22',
+      //   deprecated: true,
+      // },
       {
         id: 'claude-sonnet-4-5',
         pricing: {
@@ -842,26 +842,26 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 200000,
         releaseDate: '2025-09-29',
       },
-      {
-        id: 'claude-sonnet-4-0',
-        pricing: {
-          input: 3.0,
-          cachedInput: 0.3,
-          output: 15.0,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 64000,
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'high',
-          },
-        },
-        contextWindow: 200000,
-        releaseDate: '2025-05-22',
-        deprecated: true,
-      },
+      // {
+      //   id: 'claude-sonnet-4-0',
+      //   pricing: {
+      //     input: 3.0,
+      //     cachedInput: 0.3,
+      //     output: 15.0,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 64000,
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'high',
+      //     },
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2025-05-22',
+      //   deprecated: true,
+      // },
       {
         id: 'claude-haiku-4-5',
         pricing: {
@@ -3136,6 +3136,73 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
 
 export function getProviderModels(providerId: string): string[] {
   return PROVIDER_DEFINITIONS[providerId]?.models.map((m) => m.id) || []
+}
+
+interface ModelCatalogEntry {
+  providerId: string
+  declIndex: number
+  releaseTime: number
+}
+
+/**
+ * Lowercased model ID → catalog position metadata, built once from the static
+ * provider catalog. Dynamic providers contribute nothing here because their model
+ * lists are populated at runtime (not at module load), and only catalog models are
+ * ever reordered by release date.
+ */
+const MODEL_CATALOG_INDEX: Map<string, ModelCatalogEntry> = new Map(
+  Object.entries(PROVIDER_DEFINITIONS).flatMap(([providerId, provider]) =>
+    provider.models.map((model, declIndex): [string, ModelCatalogEntry] => {
+      const parsed = model.releaseDate ? Date.parse(model.releaseDate) : Number.NaN
+      return [
+        model.id.toLowerCase(),
+        {
+          providerId,
+          declIndex,
+          releaseTime: Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed,
+        },
+      ]
+    })
+  )
+)
+
+/**
+ * Reorders model IDs so that, within each provider, newer models (by release date)
+ * come first — while preserving the caller's existing provider grouping order. The
+ * relative order of providers is taken from the order they first appear in `modelIds`,
+ * so the cross-provider layout the user already sees is never reshuffled.
+ *
+ * Models without a known release date keep their declaration order and sort after
+ * dated models within the same provider. IDs not found in the catalog (e.g.
+ * dynamically-discovered provider models) are left in their original order at the end.
+ */
+export function orderModelIdsByReleaseDate(modelIds: string[]): string[] {
+  const groups = new Map<string, string[]>()
+  const unknown: string[] = []
+
+  for (const id of modelIds) {
+    const meta = MODEL_CATALOG_INDEX.get(id.toLowerCase())
+    if (!meta) {
+      unknown.push(id)
+      continue
+    }
+    const bucket = groups.get(meta.providerId)
+    if (bucket) bucket.push(id)
+    else groups.set(meta.providerId, [id])
+  }
+
+  const ordered: string[] = []
+  for (const bucket of groups.values()) {
+    bucket.sort((a, b) => {
+      const ma = MODEL_CATALOG_INDEX.get(a.toLowerCase())!
+      const mb = MODEL_CATALOG_INDEX.get(b.toLowerCase())!
+      if (ma.releaseTime !== mb.releaseTime) return mb.releaseTime - ma.releaseTime
+      return ma.declIndex - mb.declIndex
+    })
+    ordered.push(...bucket)
+  }
+  ordered.push(...unknown)
+  return ordered
 }
 
 export const DYNAMIC_MODEL_PROVIDERS = [

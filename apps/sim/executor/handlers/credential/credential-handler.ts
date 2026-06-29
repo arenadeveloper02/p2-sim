@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import type { BlockOutput } from '@/blocks/types'
 import { BlockType } from '@/executor/constants'
+import { resolveMyCredential } from '@/executor/handlers/credential/get-my-credential'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import type { SerializedBlock } from '@/serializer/types'
 
@@ -24,6 +25,10 @@ export class CredentialBlockHandler implements BlockHandler {
     }
 
     const operation = typeof inputs.operation === 'string' ? inputs.operation : 'select'
+
+    if (operation === 'get_mine') {
+      return resolveMyCredential(ctx, inputs)
+    }
 
     if (operation === 'list') {
       return this.listCredentials(ctx.workspaceId, inputs)

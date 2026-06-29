@@ -1,5 +1,5 @@
 import { CredentialIcon } from '@/components/icons'
-import { getServiceConfigByProviderId } from '@/lib/oauth/utils'
+import { getAllOAuthServices, getServiceConfigByProviderId } from '@/lib/oauth/utils'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import type { BlockConfig } from '@/blocks/types'
 import { fetchWorkspaceCredentialList, workspaceCredentialKeys } from '@/hooks/queries/credentials'
@@ -29,6 +29,7 @@ export const CredentialBlock: BlockConfig<CredentialBlockOutput> = {
   bestPractices: `
   - Use "Select Credential" to define an OAuth credential once and reference <CredentialBlock.credentialId> in multiple downstream blocks instead of repeating credential IDs.
   - Use "List Credentials" with a ForEach loop to iterate over all OAuth accounts (e.g. all Gmail accounts).
+  - Use "Get My Credential" to resolve the current user's OAuth credential for a provider (e.g. Google Docs) without exposing other workspace members' accounts.
   - Use the Provider filter to narrow results to specific services (e.g. Gmail, Slack).
   - The outputs are credential ID references, not secret values — they are safe to log and inspect.
   - To switch credentials across environments, replace the single Credential block rather than updating every downstream block.
@@ -44,9 +45,27 @@ export const CredentialBlock: BlockConfig<CredentialBlockOutput> = {
       type: 'dropdown',
       options: [
         { label: 'Select Credential', id: 'select' },
+        { label: 'Get My Credential', id: 'get_mine' },
         { label: 'List Credentials', id: 'list' },
       ],
       value: () => 'select',
+    },
+    {
+      id: 'myProviderId',
+      title: 'Provider',
+      type: 'dropdown',
+      required: { field: 'operation', value: 'get_mine' },
+      condition: { field: 'operation', value: 'get_mine' },
+      options: [],
+      fetchOptions: async () =>
+        getAllOAuthServices()
+          .map((service) => ({ label: service.name, id: service.providerId }))
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      fetchOptionById: async (_blockId: string, optionId: string) => {
+        const serviceConfig = getServiceConfigByProviderId(optionId)
+        const label = serviceConfig?.name ?? optionId
+        return { label, id: optionId }
+      },
     },
     {
       id: 'providerFilter',
@@ -114,6 +133,10 @@ export const CredentialBlock: BlockConfig<CredentialBlockOutput> = {
       type: 'string',
       description: 'The OAuth credential ID to resolve (select operation)',
     },
+    myProviderId: {
+      type: 'string',
+      description: 'OAuth provider ID for the get_mine operation (e.g. google-docs)',
+    },
     providerFilter: {
       type: 'json',
       description:
@@ -135,6 +158,21 @@ export const CredentialBlock: BlockConfig<CredentialBlockOutput> = {
       type: 'string',
       description: 'OAuth provider ID (e.g. google-email, slack)',
       condition: { field: 'operation', value: 'select' },
+    },
+    myCredentialId: {
+      type: 'string',
+      description: "Current user's credential ID for the selected provider",
+      condition: { field: 'operation', value: 'get_mine' },
+    },
+    myDisplayName: {
+      type: 'string',
+      description: "Current user's credential display name",
+      condition: { field: 'operation', value: 'get_mine' },
+    },
+    myProviderId: {
+      type: 'string',
+      description: 'OAuth provider ID resolved for get_mine',
+      condition: { field: 'operation', value: 'get_mine' },
     },
     credentials: {
       type: 'json',

@@ -3,16 +3,19 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockUploadFile, mockGeneratePresignedDownloadUrl } = vi.hoisted(() => ({
+const { mockUploadFile, mockGetBaseUrl } = vi.hoisted(() => ({
   mockUploadFile: vi.fn(),
-  mockGeneratePresignedDownloadUrl: vi.fn(),
+  mockGetBaseUrl: vi.fn(),
 }))
 
 vi.mock('@/lib/uploads', () => ({
   StorageService: {
     uploadFile: mockUploadFile,
-    generatePresignedDownloadUrl: mockGeneratePresignedDownloadUrl,
   },
+}))
+
+vi.mock('@/lib/core/utils/urls', () => ({
+  getBaseUrl: mockGetBaseUrl,
 }))
 
 import { uploadExecutionFile } from '@/lib/uploads/contexts/execution/execution-file-manager'
@@ -20,10 +23,11 @@ import { uploadExecutionFile } from '@/lib/uploads/contexts/execution/execution-
 describe('uploadExecutionFile', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockGetBaseUrl.mockReturnValue('https://agent.thearena.ai')
     mockUploadFile.mockResolvedValue({
       key: 'execution/workspace-1/workflow-1/execution-1/generated.png',
+      path: '/api/files/serve/execution%2Fworkspace-1%2Fworkflow-1%2Fexecution-1%2Fgenerated.png',
     })
-    mockGeneratePresignedDownloadUrl.mockResolvedValue('https://files.example.com/generated.png')
   })
 
   it('returns storage metadata without eager base64 payload', async () => {
@@ -43,7 +47,7 @@ describe('uploadExecutionFile', () => {
       name: 'generated.png',
       size: 11,
       type: 'image/png',
-      url: 'https://files.example.com/generated.png',
+      url: 'https://agent.thearena.ai/api/files/serve/execution%2Fworkspace-1%2Fworkflow-1%2Fexecution-1%2Fgenerated.png',
       key: 'execution/workspace-1/workflow-1/execution-1/generated.png',
       context: 'execution',
     })

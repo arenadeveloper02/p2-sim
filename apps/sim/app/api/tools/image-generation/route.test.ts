@@ -112,23 +112,20 @@ describe('Image Generation Wrapper API Route', () => {
     )
   })
 
-  it('should use per-image prompts for repeated Nano Banana generations', async () => {
+  it('should use the original prompt for repeated Nano Banana generations', async () => {
+    const originalPrompt = 'Give me three variations of this image'
     mockResolveImageGenerationCount.mockResolvedValue({
       imageCount: 3,
       promptImageUrl: undefined,
-      singleImagePrompt: 'Give me a variation of this image',
-      singleImagePrompts: [
-        'Give me variation 1 with a blue jersey',
-        'Give me variation 2 with a red jersey',
-        'Give me variation 3 with a green jersey',
-      ],
+      singleImagePrompt: originalPrompt,
+      singleImagePrompts: [originalPrompt, originalPrompt, originalPrompt],
     })
 
     const request = createMockRequest('POST', {
       baseToolId: 'google_nano_banana',
       params: {
         model: 'gemini-3-pro-image-preview',
-        prompt: 'Give me three variations of this image',
+        prompt: originalPrompt,
         imageCount: 1,
         inputImageUrl: 'https://example.com/source.png',
       },
@@ -142,7 +139,7 @@ describe('Image Generation Wrapper API Route', () => {
       1,
       'google_nano_banana',
       expect.objectContaining({
-        prompt: 'Give me variation 1 with a blue jersey',
+        prompt: originalPrompt,
         inputImage: 'https://example.com/source.png',
       })
     )
@@ -150,7 +147,7 @@ describe('Image Generation Wrapper API Route', () => {
       2,
       'google_nano_banana',
       expect.objectContaining({
-        prompt: 'Give me variation 2 with a red jersey',
+        prompt: originalPrompt,
         inputImage: 'https://example.com/source.png',
       })
     )
@@ -158,7 +155,7 @@ describe('Image Generation Wrapper API Route', () => {
       3,
       'google_nano_banana',
       expect.objectContaining({
-        prompt: 'Give me variation 3 with a green jersey',
+        prompt: originalPrompt,
         inputImage: 'https://example.com/source.png',
       })
     )
@@ -182,7 +179,6 @@ describe('Image Generation Wrapper API Route', () => {
     expect(mockExecuteTool).toHaveBeenCalledWith(
       'openai_image',
       expect.objectContaining({
-        provider: 'openai',
         model: 'gpt-image-2',
         prompt: 'Generate one product hero image',
         size: '1024x1024',
@@ -192,11 +188,12 @@ describe('Image Generation Wrapper API Route', () => {
   })
 
   it('should route unified Gemini requests through Nano Banana with prompt image refs', async () => {
+    const originalPrompt = 'Edit https://example.com/source.png into a studio shot'
     mockResolveImageGenerationCount.mockResolvedValue({
       imageCount: 1,
       promptImageUrl: 'https://example.com/source.png',
-      singleImagePrompt: 'Edit this product image',
-      singleImagePrompts: ['Edit this product image'],
+      singleImagePrompt: originalPrompt,
+      singleImagePrompts: [originalPrompt],
     })
 
     const request = createMockRequest('POST', {
@@ -204,7 +201,7 @@ describe('Image Generation Wrapper API Route', () => {
       params: {
         provider: 'gemini',
         model: 'gemini-3-pro-image-preview',
-        prompt: 'Edit https://example.com/source.png into a studio shot',
+        prompt: originalPrompt,
         resolution: '2K',
       },
     })
@@ -217,7 +214,7 @@ describe('Image Generation Wrapper API Route', () => {
       expect.objectContaining({
         provider: 'gemini',
         model: 'gemini-3-pro-image-preview',
-        prompt: 'Edit this product image',
+        prompt: originalPrompt,
         inputImage: 'https://example.com/source.png',
         imageSize: '2K',
       })

@@ -14,6 +14,7 @@ import { deployedChatPostContract, goldenQueriesSchema } from '@/lib/api/contrac
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
+import { getAgentDepartmentLabel } from '@/lib/chat/arena-departments'
 import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
 import {
   toPersistedChatAttachment,
@@ -34,26 +35,6 @@ import { assertChatEmbedAllowed, setChatAuthCookie, validateChatAuth } from '@/a
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatIdentifierAPI')
-
-// Agent department mapping
-const agentDepartments = [
-  { value: 'creative', label: 'Creative' },
-  { value: 'ma', label: 'MA' },
-  { value: 'ppc', label: 'PPC' },
-  { value: 'sales', label: 'Sales' },
-  { value: 'seo', label: 'SEO' },
-  { value: 'strategy', label: 'Strategy' },
-  { value: 'waas', label: 'WAAS' },
-  { value: 'hr', label: 'HR' },
-] as const
-
-const departmentLabelMap: Record<string, string> = agentDepartments.reduce(
-  (acc, dept) => {
-    acc[dept.value] = dept.label
-    return acc
-  },
-  {} as Record<string, string>
-)
 
 function isRenderableImageUrlString(value: string): boolean {
   const trimmed = value.trim()
@@ -1213,8 +1194,7 @@ export const GET = withRouteHandler(
        */
       const buildChatConfigData = (userWorkspaceIds?: string[]) => {
         const departmentValue = deployment.department ?? null
-        const departmentLabel =
-          departmentValue != null ? (departmentLabelMap[departmentValue] ?? departmentValue) : null
+        const departmentLabel = getAgentDepartmentLabel(departmentValue)
 
         return {
           id: deployment.id,
@@ -1241,7 +1221,7 @@ export const GET = withRouteHandler(
         deployment.authType !== 'public' &&
         deployment.authType !== 'sso' &&
         authCookie &&
-        validateAuthToken(authCookie.value, deployment.id, deployment.password)
+        validateAuthToken(authCookie.value, deployment.id, deployment.authType, deployment.password)
       ) {
         let userWorkspaceIds: string[] | undefined
         try {

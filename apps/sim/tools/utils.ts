@@ -479,11 +479,9 @@ export function createCustomToolRequestBody(customTool: any, isClient = true, wo
 
 // Get a tool by its ID
 export function getTool(toolId: string, _workspaceId?: string): ToolConfig | undefined {
-  // Check for built-in tools
-  const builtInTool = tools[resolveToolId(toolId)]
+  const builtInTool = tools[toolId]
   if (builtInTool) return builtInTool
 
-  // If not found or running on the server, return undefined
   return undefined
 }
 

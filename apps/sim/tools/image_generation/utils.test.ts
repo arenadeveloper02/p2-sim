@@ -2,11 +2,19 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { googleImagenV2Tool } from '@/tools/image_generation/google-imagen-v2'
 import { googleNanoBananaV2Tool } from '@/tools/image_generation/google-nano-banana-v2'
+import { openAIImageV2Tool } from '@/tools/image_generation/openai-image-v2'
 
 const INTERNAL_ROUTE_MAX_BYTES = 9.5 * 1024 * 1024
 
 describe('createImageGenerationWrapperTool', () => {
+  it('keeps server-only direct execution out of client-bundled v2 tool configs', () => {
+    expect(openAIImageV2Tool.directExecution).toBeUndefined()
+    expect(googleImagenV2Tool.directExecution).toBeUndefined()
+    expect(googleNanoBananaV2Tool.directExecution).toBeUndefined()
+  })
+
   it('sanitizes wrapper request bodies before they hit the internal 9.5MB guard', () => {
     const largeInlinePayload = 'x'.repeat(10 * 1024 * 1024)
     const body = googleNanoBananaV2Tool.request.body?.({

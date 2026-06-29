@@ -44,6 +44,12 @@ const workflowEdgeHandleSchema = z
   .nullish()
   .transform((value) => value ?? undefined)
 
+/** Accepts legacy `null` on optional block booleans; omits them after parse. */
+const workflowOptionalBooleanSchema = z
+  .boolean()
+  .nullish()
+  .transform((value) => value ?? undefined)
+
 const workflowBlockStateSchema = z.object({
   id: z.string(),
   type: z.string(),
@@ -52,12 +58,12 @@ const workflowBlockStateSchema = z.object({
   subBlocks: z.record(z.string(), workflowSubBlockStateSchema),
   outputs: z.record(z.string(), workflowBlockOutputSchema),
   enabled: z.boolean(),
-  horizontalHandles: z.boolean().optional(),
+  horizontalHandles: workflowOptionalBooleanSchema,
   height: z.number().optional(),
-  advancedMode: z.boolean().optional(),
-  triggerMode: z.boolean().optional(),
+  advancedMode: workflowOptionalBooleanSchema,
+  triggerMode: workflowOptionalBooleanSchema,
   data: workflowBlockDataSchema.optional(),
-  locked: z.boolean().optional(),
+  locked: workflowOptionalBooleanSchema,
 })
 
 const workflowEdgeSchema = z.object({
@@ -219,6 +225,7 @@ export const workflowListItemSchema = z.object({
   updatedAt: z.string(),
   archivedAt: z.string().nullable(),
   locked: z.boolean(),
+  isDeployed: z.boolean().optional(),
 })
 
 export const createWorkflowBodySchema = z.object({

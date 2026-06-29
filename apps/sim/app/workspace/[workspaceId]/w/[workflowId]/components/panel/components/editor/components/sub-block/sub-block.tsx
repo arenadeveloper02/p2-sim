@@ -1037,6 +1037,7 @@ function SubBlockComponent({
             maxSize={config.maxSize}
             uploadContext={config.uploadContext}
             allowStartFilesReference={config.allowStartFilesReference}
+            defaultValue={config.defaultValue}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -1061,6 +1062,7 @@ function SubBlockComponent({
       case 'file-selector':
       case 'sheet-selector':
       case 'project-selector':
+      case 'column-selector':
         return (
           <SelectorInput
             blockId={blockId}
