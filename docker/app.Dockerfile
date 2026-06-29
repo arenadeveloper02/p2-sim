@@ -159,6 +159,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/content ./apps/sim/conte
 # Copy isolated-vm native module (compiled for Node.js in deps stage)
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules/isolated-vm ./node_modules/isolated-vm
 
+# Playwright needs the full playwright-core package (browsers.json at package root).
+# Next.js standalone tracing can omit it when deps are hoisted to the monorepo root.
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/playwright-core ./node_modules/playwright-core
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/playwright ./node_modules/playwright
+
 # Copy the isolated-vm worker script
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/execution/isolated-vm-worker.cjs ./apps/sim/lib/execution/isolated-vm-worker.cjs
 
