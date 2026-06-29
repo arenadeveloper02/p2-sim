@@ -55,6 +55,7 @@ import {
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
 import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components'
+import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
 import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
 import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
@@ -988,23 +989,29 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
                   </div>
                 </div>
 
-                <MothershipChat
-                  className='min-h-0 flex-1'
-                  messages={copilotMessages}
-                  isSending={copilotIsSending}
-                  isReconnecting={copilotIsReconnecting}
-                  onSubmit={handleCopilotSubmit}
-                  onStopGeneration={handleCopilotStopGeneration}
-                  messageQueue={copilotMessageQueue}
-                  editingQueuedId={copilotEditingQueuedId}
-                  dispatchingHeadId={copilotDispatchingHeadId}
-                  onRemoveQueuedMessage={copilotRemoveFromQueue}
-                  onSendQueuedMessage={copilotSendNow}
-                  onEditQueuedMessage={copilotEditQueuedMessage}
-                  onCancelQueueEdit={copilotCancelQueueEdit}
-                  userId={session?.user?.id}
-                  chatId={copilotResolvedChatId}
-                  layout='copilot-view'
+                <WorkflowCopilotShell
+                  workspaceId={workspaceId}
+                  workflowId={activeWorkflowId || ''}
+                  mothershipChat={
+                    <MothershipChat
+                      className='min-h-0 flex-1'
+                      messages={copilotMessages}
+                      isSending={copilotIsSending}
+                      isReconnecting={copilotIsReconnecting}
+                      onSubmit={handleCopilotSubmit}
+                      onStopGeneration={handleCopilotStopGeneration}
+                      messageQueue={copilotMessageQueue}
+                      editingQueuedId={copilotEditingQueuedId}
+                      dispatchingHeadId={copilotDispatchingHeadId}
+                      onRemoveQueuedMessage={copilotRemoveFromQueue}
+                      onSendQueuedMessage={copilotSendNow}
+                      onEditQueuedMessage={copilotEditQueuedMessage}
+                      onCancelQueueEdit={copilotCancelQueueEdit}
+                      userId={session?.user?.id}
+                      chatId={copilotResolvedChatId}
+                      layout='copilot-view'
+                    />
+                  }
                 />
               </div>
             )}

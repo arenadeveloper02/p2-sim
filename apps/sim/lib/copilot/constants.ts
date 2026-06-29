@@ -1,14 +1,10 @@
-import { env } from '@/lib/core/config/env'
+import { resolveSimAgentApiUrl } from '@/local-copilot/lib/routing'
 
 export const SIM_AGENT_API_URL_DEFAULT = 'https://www.copilot.sim.ai'
 export const SIM_AGENT_VERSION = '3.0.0'
 
-/** Resolved copilot backend URL — reads from env with fallback to default. */
-const rawAgentUrl = env.SIM_AGENT_API_URL || SIM_AGENT_API_URL_DEFAULT
-export const SIM_AGENT_API_URL =
-  rawAgentUrl.startsWith('http://') || rawAgentUrl.startsWith('https://')
-    ? rawAgentUrl
-    : SIM_AGENT_API_URL_DEFAULT
+/** Resolved copilot backend URL — Arena Copilot uses the app origin; otherwise env/default. */
+export const SIM_AGENT_API_URL = resolveSimAgentApiUrl(SIM_AGENT_API_URL_DEFAULT)
 
 /** Default timeout for the copilot orchestration stream loop (60 min). */
 export const ORCHESTRATION_TIMEOUT_MS = 3_600_000

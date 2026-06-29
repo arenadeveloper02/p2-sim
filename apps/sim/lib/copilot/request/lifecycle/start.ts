@@ -42,6 +42,7 @@ import { SSE_RESPONSE_HEADERS } from '@/lib/copilot/request/session/sse'
 import { TraceCollector } from '@/lib/copilot/request/trace'
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
 import { env } from '@/lib/core/config/env'
+import { isLocalCopilotBackendActive } from '@/local-copilot/lib/routing'
 
 export { SSE_RESPONSE_HEADERS }
 
@@ -482,6 +483,11 @@ export async function requestChatTitle(params: {
 }): Promise<string | null> {
   const { message, model, provider, userId, workspaceId, otelContext } = params
   if (!message || !model) return null
+
+  if (isLocalCopilotBackendActive()) {
+    const trimmed = message.trim().replace(/\s+/g, ' ')
+    return trimmed.length > 60 ? `${trimmed.slice(0, 57)}...` : trimmed
+  }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

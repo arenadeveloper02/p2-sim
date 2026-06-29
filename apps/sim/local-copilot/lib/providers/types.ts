@@ -1,0 +1,39 @@
+import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
+  toolCallId?: string
+  toolCalls?: Array<{
+    id: string
+    name: string
+    arguments: string
+  }>
+}
+
+export interface ChatCompletionRequest {
+  model: string
+  messages: ChatMessage[]
+  tools?: LocalCopilotToolDefinition[]
+  temperature?: number
+  maxTokens?: number
+  signal?: AbortSignal
+}
+
+export interface ChatCompletionChunk {
+  type: 'text' | 'tool_call' | 'done'
+  content?: string
+  toolCall?: {
+    id: string
+    name: string
+    arguments: string
+  }
+  finishReason?: string
+}
+
+export interface LocalCopilotProvider {
+  id: string
+  chatCompletionStream(
+    request: ChatCompletionRequest
+  ): AsyncGenerator<ChatCompletionChunk, void, undefined>
+}

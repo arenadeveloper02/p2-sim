@@ -1,0 +1,33 @@
+import { createLogger } from '@sim/logger'
+import type { NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
+import { getSession } from '@/lib/auth'
+import { parseRequest } from '@/lib/api/server'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import {
+  getLocalCopilotConfig,
+  isSelfHostedDeployment,
+} from '@/local-copilot/lib/config'
+import { getLocalCopilotConfigContract } from '@/local-copilot/contracts/local-copilot'
+
+const logger = createLogger('LocalCopilotConfigAPI')
+
+export const GET = withRouteHandler(async (request: NextRequest) => {
+  const session = await getSession()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const parsed = await parseRequest(getLocalCopilotConfigContract, request, {})
+  if (!parsed.success) return parsed.response
+
+  const config = getLocalCopilotConfig()
+  logger.info('Returning Arena Copilot config', { enabled: config.enabled })
+
+  return NextResponse.json({
+    enabled: config.enabled,
+    provider: config.provider,
+    model: config.model,
+    selfHosted: isSelfHostedDeployment(),
+  })
+})

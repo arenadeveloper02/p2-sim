@@ -45,6 +45,7 @@ import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copil
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
 import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
+import { shouldRouteToLocalCopilot } from '@/local-copilot/lib/routing'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 
 const logger = createLogger('CopilotLifecycle')
@@ -161,7 +162,25 @@ export async function runCopilotLifecycle(
       }
     }
 
-    await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
+    if (
+      shouldRouteToLocalCopilot({
+        workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId,
+        workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId,
+        userId: lifecycleOptions.userId,
+      })
+    ) {
+      const { runLocalCopilotMothershipLifecycle } = await import(
+        '@/local-copilot/integration/mothership-lifecycle'
+      )
+      await runLocalCopilotMothershipLifecycle(
+        requestPayload,
+        context,
+        execContext,
+        lifecycleOptions
+      )
+    } else {
+      await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
+    }
 
     const result: OrchestratorResult = {
       success: context.errors.length === 0 && !context.wasAborted,

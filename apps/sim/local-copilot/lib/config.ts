@@ -1,0 +1,73 @@
+import { isHosted } from '@/lib/core/config/env-flags'
+import type { LocalCopilotConfig, LocalCopilotProviderId } from '@/local-copilot/lib/types'
+
+/** Latest Claude model registered in `@/providers/models`. */
+const DEFAULT_MODEL = 'claude-opus-4-8'
+const DEFAULT_PROVIDER: LocalCopilotProviderId = 'anthropic'
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value.trim() === '') return fallback
+  return value === 'true' || value === '1'
+}
+
+function resolveProvider(value: string | undefined): LocalCopilotProviderId {
+  const normalized = (value ?? DEFAULT_PROVIDER).trim().toLowerCase()
+  const allowed: LocalCopilotProviderId[] = [
+    'openai',
+    'anthropic',
+    'azure-openai',
+    'bedrock',
+    'gemini',
+    'openai-compatible',
+  ]
+  return allowed.includes(normalized as LocalCopilotProviderId)
+    ? (normalized as LocalCopilotProviderId)
+    : DEFAULT_PROVIDER
+}
+
+/**
+ * Reads Arena Copilot configuration from environment variables.
+ * All LLM traffic goes directly to the configured provider — no Sim cloud relay.
+ */
+function resolveApiKey(provider: LocalCopilotProviderId): string | undefined {
+  const copilotKey = process.env.COPILOT_API_KEY?.trim()
+  if (copilotKey) return copilotKey
+
+  if (provider === 'anthropic') {
+    return (
+      process.env.ANTHROPIC_API_KEY?.trim() ||
+      process.env.ANTHROPIC_API_KEY_1?.trim() ||
+      undefined
+    )
+  }
+
+  return undefined
+}
+
+export function getLocalCopilotConfig(): LocalCopilotConfig {
+  const provider = resolveProvider(process.env.COPILOT_PROVIDER)
+  return {
+    enabled: parseBoolean(process.env.COPILOT_ENABLED, true),
+    provider,
+    model: process.env.COPILOT_MODEL?.trim() || DEFAULT_MODEL,
+    apiKey: resolveApiKey(provider),
+    baseUrl: process.env.COPILOT_BASE_URL?.trim() || undefined,
+  }
+}
+
+export function assertLocalCopilotEnabled(config: LocalCopilotConfig = getLocalCopilotConfig()): void {
+  if (!config.enabled) {
+    throw new Error('Arena Copilot is disabled. Set COPILOT_ENABLED=true to enable.')
+  }
+  if (!config.apiKey && config.provider !== 'openai-compatible') {
+    const hint =
+      config.provider === 'anthropic'
+        ? 'Set COPILOT_API_KEY or ANTHROPIC_API_KEY.'
+        : 'Set COPILOT_API_KEY.'
+    throw new Error(`Arena Copilot requires an API key for the configured provider. ${hint}`)
+  }
+}
+
+export function isSelfHostedDeployment(): boolean {
+  return !isHosted
+}

@@ -1,0 +1,135 @@
+import type { WorkflowState } from '@sim/workflow-types/workflow'
+
+export type LocalCopilotProviderId =
+  | 'openai'
+  | 'anthropic'
+  | 'azure-openai'
+  | 'bedrock'
+  | 'gemini'
+  | 'openai-compatible'
+
+export interface LocalCopilotConfig {
+  enabled: boolean
+  provider: LocalCopilotProviderId
+  model: string
+  apiKey?: string
+  baseUrl?: string
+}
+
+export interface LocalCopilotWorkspaceContext {
+  id: string
+  name: string
+  environment: 'cloud' | 'self_hosted'
+}
+
+export interface LocalCopilotCredentialMetadata {
+  credentialId: string
+  provider: string
+  status: 'connected' | 'missing' | 'expired'
+  scopes?: string[]
+  displayName?: string
+}
+
+export interface LocalCopilotExecutionContext {
+  lastRunStatus: 'success' | 'failed' | 'running' | 'unknown'
+  logs: LocalCopilotLogEntry[]
+  failedBlockId: string | null
+  error: string | null
+  executionId?: string
+}
+
+export interface LocalCopilotLogEntry {
+  blockId?: string
+  blockName?: string
+  level: 'info' | 'warn' | 'error'
+  message: string
+  timestamp?: string
+}
+
+export interface LocalCopilotStructuredContext {
+  workspace: LocalCopilotWorkspaceContext
+  workflow?: {
+    id: string
+    name: string
+    blocks: WorkflowState['blocks']
+    edges: WorkflowState['edges']
+    variables: WorkflowState['variables']
+    loops: WorkflowState['loops']
+    parallels: WorkflowState['parallels']
+    credentials: LocalCopilotCredentialMetadata[]
+  }
+  /** Present on home chat when no workflow is open. */
+  workspaceWorkflows?: Array<{ id: string; name: string }>
+  execution: LocalCopilotExecutionContext
+  availableIntegrations: string[]
+  availableBlocks: LocalCopilotBlockSummary[]
+  selectedBlockId?: string
+}
+
+export interface LocalCopilotBlockSummary {
+  id: string
+  name: string
+  category: string
+  description: string
+  authMode?: string
+}
+
+export type WorkflowPatchOperation =
+  | { operation: 'add_block'; block: Record<string, unknown> }
+  | { operation: 'update_block'; blockId: string; updates: Record<string, unknown> }
+  | { operation: 'remove_block'; blockId: string }
+  | { operation: 'add_edge'; edge: Record<string, unknown> }
+  | { operation: 'remove_edge'; edgeId: string }
+  | { operation: 'update_variable'; variableId: string; updates: Record<string, unknown> }
+  | { operation: 'add_variable'; variable: Record<string, unknown> }
+  | { operation: 'remove_variable'; variableId: string }
+
+export interface WorkflowPatch {
+  type: 'workflow_patch'
+  summary: string
+  changes: WorkflowPatchOperation[]
+  requiresConfirmation: true
+  warnings?: string[]
+  recommendations?: string[]
+}
+
+export interface PatchValidationResult {
+  valid: boolean
+  errors: string[]
+  warnings: string[]
+}
+
+export interface LocalCopilotToolDefinition {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+export interface LocalCopilotToolCallRecord {
+  toolCallId: string
+  toolName: string
+  arguments: Record<string, unknown>
+  result?: unknown
+  status: 'pending' | 'completed' | 'failed'
+}
+
+export type LocalCopilotStreamEvent =
+  | { type: 'text_delta'; content: string }
+  | {
+      type: 'tool_call_start'
+      toolCallId: string
+      toolName: string
+      args?: Record<string, unknown>
+    }
+  | { type: 'tool_call_result'; toolCallId: string; toolName: string; success: boolean; output: unknown; error?: string }
+  | { type: 'patch_proposed'; patch: WorkflowPatch; patchId: string }
+  | { type: 'recommendations'; items: string[] }
+  | { type: 'error'; message: string }
+  | { type: 'done'; messageId: string }
+
+export interface LocalCopilotMessageContent {
+  text: string
+  patchId?: string
+  recommendations?: string[]
+  toolCalls?: LocalCopilotToolCallRecord[]
+}
