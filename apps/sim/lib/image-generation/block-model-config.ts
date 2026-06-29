@@ -9,7 +9,6 @@ export interface ImageBlockModelDefinition {
   id: string
   label: string
   provider: ImageBlockProvider
-  maxVariations: number
   supportsReferenceImages: boolean
   maxReferenceImages: number
 }
@@ -19,7 +18,6 @@ const OPENAI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     id: 'gpt-image-2',
     label: 'GPT Image 2',
     provider: 'openai',
-    maxVariations: 5,
     supportsReferenceImages: true,
     maxReferenceImages: 1,
   },
@@ -27,7 +25,6 @@ const OPENAI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     id: 'gpt-image-1.5',
     label: 'GPT Image 1.5',
     provider: 'openai',
-    maxVariations: 5,
     supportsReferenceImages: true,
     maxReferenceImages: 1,
   },
@@ -35,7 +32,6 @@ const OPENAI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     id: 'gpt-image-1',
     label: 'GPT Image 1',
     provider: 'openai',
-    maxVariations: 5,
     supportsReferenceImages: true,
     maxReferenceImages: 1,
   },
@@ -43,7 +39,6 @@ const OPENAI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     id: 'gpt-image-1-mini',
     label: 'GPT Image 1 Mini',
     provider: 'openai',
-    maxVariations: 5,
     supportsReferenceImages: true,
     maxReferenceImages: 1,
   },
@@ -54,7 +49,6 @@ const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     id: 'gemini-3.1-flash-image-preview',
     label: 'Nano Banana 2',
     provider: 'gemini',
-    maxVariations: 5,
     supportsReferenceImages: true,
     maxReferenceImages: 14,
   },
@@ -62,7 +56,6 @@ const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     id: 'gemini-3-pro-image-preview',
     label: 'Nano Banana Pro',
     provider: 'gemini',
-    maxVariations: 5,
     supportsReferenceImages: true,
     maxReferenceImages: 11,
   },
@@ -70,7 +63,6 @@ const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     id: 'gemini-2.5-flash-image',
     label: 'Nano Banana',
     provider: 'gemini',
-    maxVariations: 5,
     supportsReferenceImages: true,
     maxReferenceImages: 3,
   },

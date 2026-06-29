@@ -24,7 +24,6 @@ export interface ImageGenerationParams {
   inputImageUrls?: string
   inputImageMimeType?: string
   inputImageWarning?: string
-  variations?: number
 }
 
 export interface ImageGenerationResponse extends ToolResponse {

@@ -41,22 +41,6 @@ describe('ImageGeneratorV2Block', () => {
     expect(schema.properties).toHaveProperty('prompt')
   })
 
-  it('maps variations from block params to tool params', () => {
-    const params = ImageGeneratorV2Block.tools.config.params?.({
-      provider: 'gemini',
-      model: 'gemini-3.1-flash-image-preview',
-      prompt: 'A sunset over mountains',
-      variations: '3',
-    })
-
-    expect(params).toMatchObject({
-      provider: 'gemini',
-      model: 'gemini-3.1-flash-image-preview',
-      prompt: 'A sunset over mountains',
-      variations: 3,
-    })
-  })
-
   const referenceFileA = {
     id: 'file-a',
     name: 'a.png',
