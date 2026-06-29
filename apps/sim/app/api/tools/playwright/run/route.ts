@@ -17,7 +17,7 @@ export const maxDuration = 120
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
 
-  const auth = await checkInternalAuth(request, requestId)
+  const auth = await checkInternalAuth(request, { requireWorkflowId: false })
   if (!auth.success) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
   }

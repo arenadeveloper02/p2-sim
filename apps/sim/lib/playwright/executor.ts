@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { buildAccessibilitySnapshot } from '@/lib/playwright/snapshot'
+import { annotateAriaSnapshotWithRefs } from '@/lib/playwright/snapshot'
 import type {
   PlaywrightRefEntry,
   PlaywrightRunOptions,
@@ -50,18 +50,18 @@ async function executeStep(
       case 'navigate': {
         if (!step.url) throw new Error('navigate step requires url')
         const urlValidation = await validateUrlWithDNS(step.url, 'url', { allowHttp: true })
-        if (!urlValidation.valid) {
+        if (!urlValidation.isValid) {
           throw new Error(urlValidation.error ?? 'Invalid navigation URL')
         }
-        await page.goto(urlValidation.normalizedUrl ?? step.url, {
+        await page.goto(step.url, {
           waitUntil: 'domcontentloaded',
         })
         return { ...base, url: page.url() }
       }
       case 'snapshot': {
         refs.clear()
-        const tree = await page.accessibility.snapshot({ interestingOnly: true })
-        const snapshot = buildAccessibilitySnapshot(tree, refs)
+        const rawSnapshot = await page.ariaSnapshot()
+        const snapshot = annotateAriaSnapshotWithRefs(rawSnapshot, refs)
         return { ...base, snapshot, url: page.url() }
       }
       case 'click': {
@@ -135,9 +135,16 @@ export async function runPlaywrightSteps(options: PlaywrightRunOptions): Promise
   const stepResults: PlaywrightStepResult[] = []
 
   try {
-    browser = await chromium.launch({
-      headless: options.headless !== false,
-    })
+    try {
+      browser = await chromium.launch({
+        headless: options.headless !== false,
+        timeout: 60_000,
+      })
+    } catch (error) {
+      throw new Error(
+        `Failed to launch Chromium. Install browsers with "bunx playwright install chromium". ${getErrorMessage(error)}`
+      )
+    }
     const context = await browser.newContext()
     const page = await context.newPage()
     page.setDefaultTimeout(timeoutMs)
