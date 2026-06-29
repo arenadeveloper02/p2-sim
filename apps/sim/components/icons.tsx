@@ -2378,6 +2378,31 @@ export function BrightDataIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function PlaywrightIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      xmlns='http://www.w3.org/2000/svg'
+      width='16'
+      height='16'
+      viewBox='0 0 16 16'
+      fill='none'
+    >
+      <path
+        d='M3.5 2.5C2.67 2.5 2 3.17 2 4v5.5c0 .83.67 1.5 1.5 1.5h1.05l1.2 2.4a.75.75 0 0 0 1.34 0l1.2-2.4H10c.83 0 1.5-.67 1.5-1.5V4c0-.83-.67-1.5-1.5-1.5H3.5Z'
+        fill='currentColor'
+        opacity='0.85'
+      />
+      <path
+        d='M12.5 2.5C11.67 2.5 11 3.17 11 4v5.5c0 .83.67 1.5 1.5 1.5h.55l.7 1.4a.75.75 0 0 0 1.34 0l.7-1.4h.55c.83 0 1.5-.67 1.5-1.5V4c0-.83-.67-1.5-1.5-1.5h-4Z'
+        fill='currentColor'
+      />
+      <circle cx='5.25' cy='6.25' r='1' fill='white' />
+      <circle cx='13.25' cy='6.25' r='1' fill='white' />
+    </svg>
+  )
+}
+
 export function BrowserUseIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg

@@ -87,6 +87,7 @@ const nextConfig: NextConfig = {
     'cpu-features',
     'chromium-bidi',
     'playwright-core',
+    'playwright',
     'pino',
     'pino-pretty',
     'thread-stream',
@@ -99,6 +100,7 @@ const nextConfig: NextConfig = {
   ],
   outputFileTracingIncludes: {
     '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
+    '/api/tools/playwright/*': ['./node_modules/playwright-core/**/*'],
     '/*': [
       './node_modules/sharp/**/*',
       './node_modules/@img/**/*',

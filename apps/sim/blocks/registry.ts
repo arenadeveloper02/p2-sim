@@ -234,6 +234,7 @@ import { PerplexityBlock, PerplexityBlockMeta } from '@/blocks/blocks/perplexity
 import { PersonaBlock, PersonaBlockMeta } from '@/blocks/blocks/persona'
 import { PineconeBlock, PineconeBlockMeta } from '@/blocks/blocks/pinecone'
 import { PipedriveBlock, PipedriveBlockMeta } from '@/blocks/blocks/pipedrive'
+import { PlaywrightBlock } from '@/blocks/blocks/playwright'
 import { PolymarketBlock, PolymarketBlockMeta } from '@/blocks/blocks/polymarket'
 import { PostgreSQLBlock } from '@/blocks/blocks/postgresql'
 import { PostHogBlock, PostHogBlockMeta } from '@/blocks/blocks/posthog'
@@ -550,6 +551,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   persona: PersonaBlock,
   pinecone: PineconeBlock,
   pipedrive: PipedriveBlock,
+  playwright: PlaywrightBlock,
   polymarket: PolymarketBlock,
   postgresql: PostgreSQLBlock,
   posthog: PostHogBlock,

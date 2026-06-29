@@ -2491,6 +2491,7 @@ import {
   postgresQueryTool,
   postgresUpdateTool,
 } from '@/tools/postgresql'
+import { playwrightRunTool } from '@/tools/playwright'
 import {
   posthogBatchEventsTool,
   posthogCaptureEventTool,
@@ -6168,6 +6169,7 @@ export const tools: Record<string, ToolConfig> = {
   quiver_image_to_svg: quiverImageToSvgTool,
   quiver_list_models: quiverListModelsTool,
   quiver_text_to_svg: quiverTextToSvgTool,
+  playwright_run: playwrightRunTool,
   posthog_capture_event: posthogCaptureEventTool,
   posthog_batch_events: posthogBatchEventsTool,
   posthog_list_persons: posthogListPersonsTool,
