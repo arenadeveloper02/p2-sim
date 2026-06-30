@@ -57,7 +57,12 @@ export async function buildLocalCopilotContext(
 
   if (!workflowId) {
     const workspaceWorkflows = await db
-      .select({ id: workflow.id, name: workflow.name })
+      .select({
+        id: workflow.id,
+        name: workflow.name,
+        isDeployed: workflow.isDeployed,
+        lastRunAt: workflow.lastRunAt,
+      })
       .from(workflow)
       .where(eq(workflow.workspaceId, workspaceId))
       .orderBy(desc(workflow.updatedAt))
@@ -81,6 +86,8 @@ export async function buildLocalCopilotContext(
       workspaceWorkflows: workspaceWorkflows.map((row) => ({
         id: row.id,
         name: row.name ?? 'Untitled workflow',
+        isDeployed: row.isDeployed,
+        lastRunAt: row.lastRunAt?.toISOString() ?? null,
       })),
     }
 

@@ -10,6 +10,10 @@ import {
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
 import { getToolDefinition } from '@/local-copilot/lib/tools/definitions'
+import {
+  executeMothershipDelegatedTool,
+  isMothershipDelegatedTool,
+} from '@/local-copilot/lib/tools/mothership-delegated-tools'
 import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
 
@@ -53,6 +57,10 @@ export async function executeLocalCopilotTool(
   }
 
   logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
+
+  if (isMothershipDelegatedTool(toolName)) {
+    return executeMothershipDelegatedTool(toolName, args, ctx)
+  }
 
   switch (toolName) {
     case 'create_workflow': {

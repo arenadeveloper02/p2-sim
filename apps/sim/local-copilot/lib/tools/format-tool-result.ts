@@ -4,6 +4,9 @@ import type { WorkflowState } from '@sim/workflow-types/workflow'
 const TOOL_EXECUTION_ORDER: Record<string, number> = {
   create_workflow: 0,
   edit_workflow: 1,
+  get_workflow_run_options: 2,
+  run_workflow: 3,
+  run_workflow_until_block: 3,
 }
 
 /**

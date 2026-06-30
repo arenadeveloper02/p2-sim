@@ -71,7 +71,12 @@ export interface LocalCopilotStructuredContext {
     credentials: LocalCopilotCredentialMetadata[]
   }
   /** Present on home chat when no workflow is open. */
-  workspaceWorkflows?: Array<{ id: string; name: string }>
+  workspaceWorkflows?: Array<{
+    id: string
+    name: string
+    isDeployed?: boolean
+    lastRunAt?: string | null
+  }>
   execution: LocalCopilotExecutionContext
   availableIntegrations: string[]
   availableBlocks: LocalCopilotBlockSummary[]

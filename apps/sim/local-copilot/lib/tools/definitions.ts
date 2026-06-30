@@ -1,6 +1,7 @@
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
+import { buildMothershipDelegatedToolDefinitions } from '@/local-copilot/lib/tools/mothership-delegated-tools'
 
-export const LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
+const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'create_workflow',
     description:
@@ -71,7 +72,8 @@ export const LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   },
   {
     name: 'get_available_integrations',
-    description: 'Lists integration categories available for workflow building.',
+    description:
+      'Lists integration categories, connected OAuth integrations, configured env key names, and hosted-key availability. Use list_integration_tools for operations within a specific service.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -156,6 +158,11 @@ export const LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
       additionalProperties: false,
     },
   },
+]
+
+export const LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
+  ...CORE_LOCAL_COPILOT_TOOLS,
+  ...buildMothershipDelegatedToolDefinitions(),
 ]
 
 export function getToolDefinition(name: string): LocalCopilotToolDefinition | undefined {

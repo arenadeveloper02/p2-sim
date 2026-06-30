@@ -26,6 +26,7 @@ import {
   executeLocalCopilotTool,
   refreshToolContext,
 } from '@/local-copilot/lib/tools/executor'
+import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tools'
 import {
   formatToolResultForLlm,
   sortToolCallsForExecution,
@@ -63,7 +64,14 @@ Rules:
   - For OAuth blocks, pass the \`credentialId\` from \`connectedIntegrations\`. For api_key blocks backed by env vars, omit api-key subblock values — execution reads workspace env automatically.
   - Only ask the user to configure a key when it is missing from both \`connectedIntegrations\` and \`envVariables\` and hosted keys do not apply.
 - For open workflows, propose incremental changes via workflow patches (requiresConfirmation). For new workflows from home chat, use create_workflow + edit_workflow.
-- Use tools to inspect context, validate workflows, fetch logs, and build or edit workflows.
+- Running and testing workflows:
+  - On home chat there is no open workflow — always pass \`workflowId\` from \`workspaceWorkflows\` (or the workflow name; it will be resolved automatically when unambiguous).
+  - Use \`get_workflow_run_options\` first to discover triggers, required \`workflow_input\`, and mock payloads.
+  - Use \`run_workflow\` to execute a workflow and inspect block outputs. Pass \`workflowId\` from \`workspaceWorkflows\` on home chat, or omit it when a workflow is already open.
+  - After a run, summarize key block outputs for the user in plain language. Use \`query_logs\` with the returned \`executionId\` for deeper debugging.
+  - Use \`list_integration_tools\` to see operations available for a connected integration service.
+  - Use \`get_workflow_data\` to load workflow structure when you need details for a workflow that is not currently open.
+- Use tools to inspect context, validate workflows, fetch logs, run tests, and build or edit workflows.
 - When debugging failures, identify root cause, failing block, suggested fix, and test steps.
 - Be concise and actionable.`
 
@@ -227,6 +235,20 @@ export async function* runLocalCopilotAgent(
       } else if (call.name === 'edit_workflow' && result.success) {
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
+      } else if (result.success && isWorkflowScopedDelegatedTool(call.name)) {
+        const output =
+          result.result && typeof result.result === 'object'
+            ? (result.result as Record<string, unknown>)
+            : {}
+        const resolvedWorkflowId =
+          typeof output.workflowId === 'string' && output.workflowId.trim()
+            ? output.workflowId.trim()
+            : typeof parsedArgs.workflowId === 'string' && parsedArgs.workflowId.trim()
+              ? parsedArgs.workflowId.trim()
+              : undefined
+        if (resolvedWorkflowId) {
+          toolCtx.workflowId = resolvedWorkflowId
+        }
       }
 
       yield {
