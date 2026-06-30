@@ -95,6 +95,46 @@ describe('runImageToolGeneration validation', () => {
       )
     ).rejects.toThrow('Invalid resolution')
   })
+
+  it('coerces gemini provider to openai for gpt-image-2 before calling the provider API', async () => {
+    mockSaveGeneratedImage.mockResolvedValue({
+      url: 'https://agent.thearena.ai/api/files/serve/agent-generated-images/workflow-123/user-123/image.png',
+    })
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ b64_json: Buffer.from('fake-image').toString('base64') }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    )
+
+    await runImageToolGeneration(
+      buildImageToolBodyFromExecutionParams({
+        provider: 'gemini',
+        model: 'gpt-image-2',
+        prompt: 'A scenic mountain landscape',
+        _context: {
+          userId: 'user-123',
+          workflowId: 'workflow-123',
+        },
+      }),
+      { userId: 'user-123', requestId: 'req-coerce-provider' }
+    )
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/images/generations',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    )
+
+    fetchMock.mockRestore()
+  })
 })
 
 describe('runImageToolGeneration storage', () => {

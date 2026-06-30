@@ -17,6 +17,7 @@ import {
   readResponseToBufferWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { reconcileImageProviderAndModel } from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
@@ -218,34 +219,51 @@ export async function runImageToolGeneration(
   options: RunImageToolOptions
 ): Promise<StoredImageResponse> {
   const requestId = options.requestId ?? generateId().slice(0, 8)
+  const reconciled = reconcileImageProviderAndModel({
+    provider: body.provider,
+    model: body.model,
+  })
+  if (reconciled.coerced) {
+    logger.warn(`[${requestId}] Coerced image generation provider to match model`, {
+      requestedProvider: body.provider,
+      model: reconciled.model,
+      resolvedProvider: reconciled.provider,
+    })
+  }
+
   const provider = resolveAllowedParam(
-    body.provider,
+    reconciled.provider,
     imageProviders,
     'openai',
     'provider'
   ) as ImageProvider
-  const { model, prompt } = body
+  const prompt = body.prompt
+  const resolvedBody: ImageToolBody = {
+    ...body,
+    provider,
+    ...(reconciled.model ? { model: reconciled.model } : {}),
+  }
 
   if (prompt.length < 3 || prompt.length > 4000) {
     throw new Error('Prompt must be between 3 and 4000 characters')
   }
 
-  logger.info(`[${requestId}] Generating image with ${provider}, model: ${model || 'default'}`)
+  logger.info(`[${requestId}] Generating image with ${provider}, model: ${resolvedBody.model || 'default'}`)
 
-  const apiKey = resolveImageProviderApiKey(provider, body.apiKey)
+  const apiKey = resolveImageProviderApiKey(provider, resolvedBody.apiKey)
   let imageResult: GeneratedImageResult
 
   if (provider === 'openai') {
-    imageResult = await generateWithOpenAI(apiKey, body, requestId, logger, options.userId)
+    imageResult = await generateWithOpenAI(apiKey, resolvedBody, requestId, logger, options.userId)
   } else if (provider === 'gemini') {
-    imageResult = await generateWithGemini(apiKey, body, requestId, logger)
+    imageResult = await generateWithGemini(apiKey, resolvedBody, requestId, logger)
   } else if (provider === 'falai') {
-    imageResult = await generateWithFalAI(apiKey, body, requestId, logger, options.userId)
+    imageResult = await generateWithFalAI(apiKey, resolvedBody, requestId, logger, options.userId)
   } else {
     throw new Error(`Unknown provider: ${provider}`)
   }
 
-  const storedImage = await storeGeneratedImage(imageResult, body, options.userId, requestId)
+  const storedImage = await storeGeneratedImage(imageResult, resolvedBody, options.userId, requestId)
 
   logger.info(`[${requestId}] Image generation completed successfully`, {
     provider,
@@ -261,6 +279,7 @@ const OPENAI_IMAGE_MODELS = [
   'gpt-image-1.5',
   'gpt-image-1',
   'gpt-image-1-mini',
+  'chatgpt-image-latest',
 ] as const
 const OPENAI_IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536'] as const
 const OPENAI_IMAGE_2_SIZES = [...OPENAI_IMAGE_SIZES, '2560x1440', '3840x2160'] as const

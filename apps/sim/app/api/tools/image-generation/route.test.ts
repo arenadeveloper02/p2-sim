@@ -122,6 +122,28 @@ describe('Image Generation Wrapper API Route', () => {
     )
   })
 
+  it('should coerce gpt-image-2 to openai_image when provider is gemini', async () => {
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'gemini',
+        model: 'gpt-image-2',
+        prompt: 'Generate one product hero image',
+      },
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'openai_image',
+      expect.objectContaining({
+        model: 'gpt-image-2',
+        prompt: 'Generate one product hero image',
+      })
+    )
+  })
+
   it('should route unified Gemini requests through Nano Banana with block reference images', async () => {
     const originalPrompt = 'Edit this into a studio shot'
     const request = createMockRequest('POST', {

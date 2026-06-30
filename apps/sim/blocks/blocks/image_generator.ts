@@ -4,6 +4,7 @@ import {
   getReferenceImageModelIds,
   IMAGE_BLOCK_PROVIDER_OPTIONS,
   OPENAI_GPT_IMAGE_MODELS,
+  reconcileImageProviderAndModel,
 } from '@/lib/image-generation/block-model-config'
 import {
   NANO_BANANA_MODELS,
@@ -1165,15 +1166,14 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     config: {
       tool: () => 'image_generate',
       params: (params) => {
-        const provider = params.provider || 'gemini'
         if (!params.prompt) {
           throw new Error('Prompt is required')
         }
-        const defaultModel =
-          provider === 'gemini' ? 'gemini-3.1-flash-image-preview' : 'gpt-image-1.5'
-        // provider === 'falai' ? 'nano-banana-2' : ...
 
-        const model = params.model || defaultModel
+        const { provider, model } = reconcileImageProviderAndModel({
+          provider: typeof params.provider === 'string' ? params.provider : undefined,
+          model: typeof params.model === 'string' ? params.model : undefined,
+        })
         const referenceInputs =
           provider === 'openai' || provider === 'gemini'
             ? resolveNanoBananaReferences({

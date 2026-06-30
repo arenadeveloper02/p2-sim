@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { z } from 'zod'
 import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
+import { reconcileImageProviderAndModel } from '@/lib/image-generation/block-model-config'
 import {
   applyNanoBananaPromptImageParams,
   normalizeOptionalString,
@@ -183,7 +184,19 @@ function resolveExecutionToolId(
     return baseToolId
   }
 
-  const provider = getStringParam(params, 'provider') ?? 'openai'
+  const reconciled = reconcileImageProviderAndModel({
+    provider: getStringParam(params, 'provider'),
+    model: getStringParam(params, 'model'),
+  })
+  if (reconciled.coerced) {
+    logger.warn('Coerced image generation provider to match model', {
+      requestedProvider: getStringParam(params, 'provider'),
+      model: reconciled.model,
+      resolvedProvider: reconciled.provider,
+    })
+  }
+
+  const provider = reconciled.provider
   if (provider === 'openai' && hasReferenceImages(params)) {
     return 'image_generate'
   }

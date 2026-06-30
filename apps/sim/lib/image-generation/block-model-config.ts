@@ -1,5 +1,7 @@
 export type ImageBlockProvider = 'openai' | 'gemini'
 
+export type ImageProvider = ImageBlockProvider | 'falai'
+
 export interface ImageBlockModelOption {
   label: string
   id: string
@@ -68,6 +70,31 @@ const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
   },
 ]
 
+export const FALAI_IMAGE_MODEL_IDS = [
+  'nano-banana-2',
+  'nano-banana-pro',
+  'nano-banana',
+  'gpt-image-1.5',
+  'seedream-v4.5',
+  'flux-2-pro',
+  'grok-imagine-image',
+] as const
+
+export const OPENAI_IMAGE_MODEL_IDS = [
+  'gpt-image-2',
+  'gpt-image-1.5',
+  'gpt-image-1',
+  'gpt-image-1-mini',
+  'chatgpt-image-latest',
+  'dall-e-3',
+] as const
+
+export const GEMINI_IMAGE_MODEL_IDS = [
+  'gemini-3.1-flash-image-preview',
+  'gemini-3-pro-image-preview',
+  'gemini-2.5-flash-image',
+] as const
+
 export const IMAGE_BLOCK_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
   ...OPENAI_MODEL_DEFINITIONS,
   ...GEMINI_MODEL_DEFINITIONS,
@@ -77,6 +104,129 @@ export const IMAGE_BLOCK_PROVIDER_OPTIONS: Array<{ label: string; id: ImageBlock
   { label: 'OpenAI', id: 'openai' },
   { label: 'Google Gemini', id: 'gemini' },
 ]
+
+export interface ReconcileImageProviderAndModelInput {
+  provider?: string
+  model?: string
+}
+
+export interface ReconcileImageProviderAndModelResult {
+  provider: ImageProvider
+  model: string | undefined
+  coerced: boolean
+}
+
+function normalizeModelId(model: string | undefined): string | undefined {
+  const trimmed = typeof model === 'string' ? model.trim() : ''
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function normalizeProviderId(provider: string | undefined): ImageProvider | undefined {
+  const trimmed = typeof provider === 'string' ? provider.trim() : ''
+  if (trimmed === 'openai' || trimmed === 'gemini' || trimmed === 'falai') {
+    return trimmed
+  }
+  return undefined
+}
+
+/**
+ * Resolves the image provider for a model ID using the block catalog and known aliases.
+ */
+export function resolveImageProviderForModel(modelId: string): ImageProvider | undefined {
+  const normalized = normalizeModelId(modelId)
+  if (!normalized) {
+    return undefined
+  }
+
+  const definition = getImageBlockModelDefinition(normalized)
+  if (definition) {
+    return definition.provider
+  }
+
+  if ((FALAI_IMAGE_MODEL_IDS as readonly string[]).includes(normalized)) {
+    return 'falai'
+  }
+
+  if ((OPENAI_IMAGE_MODEL_IDS as readonly string[]).includes(normalized)) {
+    return 'openai'
+  }
+
+  if (normalized.startsWith('gemini-') || normalized.startsWith('imagen-')) {
+    return 'gemini'
+  }
+
+  if (normalized.startsWith('gpt-image') || normalized.startsWith('dall-e')) {
+    return 'openai'
+  }
+
+  return undefined
+}
+
+/**
+ * Returns a default model for a provider when the caller did not specify one.
+ */
+export function getDefaultImageModelForProvider(provider: ImageProvider): string {
+  if (provider === 'gemini') {
+    return 'gemini-3.1-flash-image-preview'
+  }
+  if (provider === 'falai') {
+    return 'nano-banana-2'
+  }
+  return 'gpt-image-1.5'
+}
+
+/**
+ * Reconciles provider and model so OpenAI models route to OpenAI and Gemini models route to Google.
+ * When the model implies a provider, the model wins over a conflicting or missing provider.
+ */
+export function reconcileImageProviderAndModel(
+  input: ReconcileImageProviderAndModelInput
+): ReconcileImageProviderAndModelResult {
+  const model = normalizeModelId(input.model)
+  const requestedProvider = normalizeProviderId(input.provider)
+  const modelProvider = model ? resolveImageProviderForModel(model) : undefined
+
+  if (modelProvider) {
+    const coerced = requestedProvider !== undefined && requestedProvider !== modelProvider
+    return {
+      provider: modelProvider,
+      model,
+      coerced,
+    }
+  }
+
+  const provider = requestedProvider ?? 'openai'
+  return {
+    provider,
+    model: model ?? getDefaultImageModelForProvider(provider),
+    coerced: false,
+  }
+}
+
+/**
+ * Validates that a model is allowed for the Gemini generateContent API.
+ */
+export function assertGeminiImageModel(modelId: string): void {
+  const normalized = normalizeModelId(modelId)
+  if (!normalized) {
+    throw new Error('Gemini model is required')
+  }
+
+  if ((GEMINI_IMAGE_MODEL_IDS as readonly string[]).includes(normalized)) {
+    return
+  }
+
+  const modelProvider = resolveImageProviderForModel(normalized)
+  if (modelProvider && modelProvider !== 'gemini') {
+    throw new Error(
+      `Model "${normalized}" requires provider "${modelProvider}". Received a Gemini request. Set provider to "${modelProvider}" or choose a Gemini model such as "gemini-3.1-flash-image-preview".`
+    )
+  }
+
+  throw new Error(
+    `Invalid Gemini model: "${normalized}". Must be one of: ${GEMINI_IMAGE_MODEL_IDS.join(', ')}`
+  )
+}
 
 export function toModelDropdownOptions(
   models: ImageBlockModelDefinition[]

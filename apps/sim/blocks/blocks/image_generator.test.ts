@@ -56,6 +56,32 @@ describe('ImageGeneratorV2Block', () => {
     expect(schema.properties).toHaveProperty('prompt')
   })
 
+  it('infers openai provider when agent passes gpt-image-2 without provider', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      model: 'gpt-image-2',
+      prompt: 'A pricing card with readable text',
+    })
+
+    expect(params).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-image-2',
+      prompt: 'A pricing card with readable text',
+    })
+  })
+
+  it('coerces provider to openai when block defaults conflict with gpt-image-2', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'gemini',
+      model: 'gpt-image-2',
+      prompt: 'A poster with headline copy',
+    })
+
+    expect(params).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-image-2',
+    })
+  })
+
   const referenceFileA = {
     id: 'file-a',
     name: 'a.png',

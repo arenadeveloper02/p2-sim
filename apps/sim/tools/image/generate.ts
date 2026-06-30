@@ -127,7 +127,8 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Image generation provider: openai, gemini, or falai',
+      description:
+        'Image generation provider. Use openai for gpt-image-* and chatgpt-image-latest; gemini for gemini-*-image* models; falai for nano-banana-*, flux-2-pro, seedream-v4.5, and grok-imagine-image. When omitted, provider is inferred from model.',
     },
     apiKey: {
       type: 'string',
@@ -141,7 +142,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Provider model ID, such as gpt-image-1.5, gemini-3.1-flash-image-preview, or nano-banana-2',
+        'Provider model ID. OpenAI: gpt-image-2, gpt-image-1.5, gpt-image-1, gpt-image-1-mini, chatgpt-image-latest. Gemini: gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, gemini-2.5-flash-image. Fal.ai: nano-banana-2, nano-banana-pro, nano-banana, flux-2-pro, seedream-v4.5, grok-imagine-image.',
     },
     prompt: {
       type: 'string',
