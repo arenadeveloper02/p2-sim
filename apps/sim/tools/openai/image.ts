@@ -1,5 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import {
+  IMAGE_GENERATION_DOWNLOAD_TIMEOUT_MS,
+  IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
+} from '@/lib/image-generation/constants'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import type { BaseImageRequestBody } from '@/tools/openai/types'
@@ -84,7 +88,7 @@ export const imageTool: ToolConfig = {
   request: {
     url: 'https://api.openai.com/v1/images/generations',
     method: 'POST',
-    timeout: 120000,
+    timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
     headers: () => {
       const apiKey = getRotatingApiKey('openai')
       return {
@@ -190,6 +194,7 @@ export const imageTool: ToolConfig = {
             headers: {
               Accept: 'image/*',
             },
+            signal: AbortSignal.timeout(IMAGE_GENERATION_DOWNLOAD_TIMEOUT_MS),
           })
 
           if (!imageResponse.ok) {

@@ -18,13 +18,15 @@ import {
 } from '@/components/emcn'
 import { ManageWorkspace, PanelLeft } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
-import { env } from '@/lib/core/config/env'
+// import { env } from '@/lib/core/config/env'
 import { cn } from '@/lib/core/utils/cn'
+import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
 import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal'
+import { useOrganizations } from '@/hooks/queries/organization'
 import type { Workspace, WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -116,37 +118,42 @@ function WorkspaceHeaderImpl({
   const contextMenuClosedRef = useRef(true)
   const hasInputFocusedRef = useRef(false)
   const { data: session } = useSession()
+  const { data: organizationsData } = useOrganizations()
+  const isOrganizationAdmin = isAdminOrOwner(
+    organizationsData?.activeOrganization,
+    session?.user?.email
+  )
 
   /**
    * Check if current user is a platform admin
    */
-  const isPlatformAdmin = (() => {
-    if (!session?.user?.email) return false
+  // const isPlatformAdmin = (() => {
+  //   if (!session?.user?.email) return false
 
-    const adminEmailsEnv = env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS
-    if (!adminEmailsEnv) return false
+  //   const adminEmailsEnv = env.NEXT_PUBLIC_PLATFORM_ADMIN_EMAILS
+  //   if (!adminEmailsEnv) return false
 
-    // Parse admin emails (can be array, JSON string array, or comma-separated string)
-    let adminEmails: string[] = []
+  //   // Parse admin emails (can be array, JSON string array, or comma-separated string)
+  //   let adminEmails: string[] = []
 
-    if (Array.isArray(adminEmailsEnv)) {
-      adminEmails = adminEmailsEnv.map((email) => email.toLowerCase())
-    } else if (typeof adminEmailsEnv === 'string') {
-      const emailsStr = adminEmailsEnv as string
-      // Try to parse as JSON array first
-      try {
-        const parsed = JSON.parse(emailsStr)
-        if (Array.isArray(parsed)) {
-          adminEmails = parsed.map((email: string) => email.toLowerCase())
-        }
-      } catch {
-        // Fallback to comma-separated string
-        adminEmails = emailsStr.split(',').map((email: string) => email.trim().toLowerCase())
-      }
-    }
+  //   if (Array.isArray(adminEmailsEnv)) {
+  //     adminEmails = adminEmailsEnv.map((email) => email.toLowerCase())
+  //   } else if (typeof adminEmailsEnv === 'string') {
+  //     const emailsStr = adminEmailsEnv as string
+  //     // Try to parse as JSON array first
+  //     try {
+  //       const parsed = JSON.parse(emailsStr)
+  //       if (Array.isArray(parsed)) {
+  //         adminEmails = parsed.map((email: string) => email.toLowerCase())
+  //       }
+  //     } catch {
+  //       // Fallback to comma-separated string
+  //       adminEmails = emailsStr.split(',').map((email: string) => email.trim().toLowerCase())
+  //     }
+  //   }
 
-    return adminEmails.includes(session.user.email.toLowerCase())
-  })()
+  //   return adminEmails.includes(session.user.email.toLowerCase())
+  // })()
 
   // Client-only rendering for Popover to prevent Radix ID hydration mismatch
   const [isMounted, setIsMounted] = useState(false)
@@ -564,7 +571,7 @@ function WorkspaceHeaderImpl({
 
                 <DropdownMenuSeparator className='mx-0' />
 
-                {isPlatformAdmin && (
+                {isOrganizationAdmin && (
                   <div className='flex flex-col gap-0.5'>
                     <Chip
                       leftIcon={Plus}
