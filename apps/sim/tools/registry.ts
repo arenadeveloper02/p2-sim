@@ -1628,7 +1628,7 @@ import {
   identityCenterListInstancesTool,
   identityCenterListPermissionSetsTool,
 } from '@/tools/identity_center'
-import { imageGenerateTool } from '@/tools/image'
+import { imageCreatorTool, imageGenerateTool } from '@/tools/image'
 import {
   googleImagenV2Tool,
   googleNanoBananaV2Tool,
@@ -6814,6 +6814,7 @@ export const tools: Record<string, ToolConfig> = {
   datadog_list_downtimes: datadogListDowntimesTool,
   datadog_cancel_downtime: datadogCancelDowntimeTool,
   image_generate: imageGenerateTool,
+  image_creator: imageCreatorTool,
   openai_image: openAIImageTool,
   openai_image_v2: openAIImageV2Tool,
   microsoft_ad_list_users: microsoftAdListUsersTool,

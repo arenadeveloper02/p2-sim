@@ -88,6 +88,27 @@ async function executeNanoBananaDirect(params: Record<string, any>): Promise<Too
   return toolResponse
 }
 
+async function executeImageCreatorDirect(params: Record<string, any>): Promise<ToolResponse> {
+  logger.info('Running image creator wrapper in-process')
+  const { runImageCreatorWrapper } = await import('@/lib/image-generation/run-image-creator-wrapper.server')
+  const result = await runImageCreatorWrapper({
+    params: sanitizeImageGenerationWrapperParams(params as Record<string, unknown>),
+  })
+
+  if (!result.success) {
+    return {
+      success: false,
+      output: {},
+      error: result.error,
+    }
+  }
+
+  return {
+    success: true,
+    output: result.output,
+  }
+}
+
 async function executeImageGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
   if (params.__skipSmartWrapper === true) {
     logger.info('Running direct image generation provider in-process')
@@ -1406,7 +1427,9 @@ export async function executeTool(
         ? executeNanoBananaDirect
         : normalizedToolId === 'image_generate'
           ? executeImageGenerateDirect
-          : normalizedToolId === 'openai_image'
+          : normalizedToolId === 'image_creator'
+            ? executeImageCreatorDirect
+            : normalizedToolId === 'openai_image'
             ? executeOpenAIImageDirect
             : wrapperBaseToolId
               ? (params: Record<string, any>) =>

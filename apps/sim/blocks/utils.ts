@@ -627,6 +627,7 @@ export const AGENT_TOOL_BLOCK_TYPES = new Set([
   'function',
   'table',
   'image_generator_v2',
+  'image_creator',
 ])
 
 /**
@@ -642,6 +643,7 @@ export const BUILT_IN_TOOL_TYPES = new Set([
   'thinking',
   'image_generator',
   'image_generator_v2',
+  'image_creator',
   'video_generator',
   'video_generator_v2',
   'video_generator_v3',
