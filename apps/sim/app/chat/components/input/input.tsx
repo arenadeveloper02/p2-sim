@@ -2,15 +2,13 @@
 
 import type React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Badge, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { ArrowUp, Mic, Paperclip, X } from 'lucide-react'
-import { Badge, Tooltip } from '@/components/emcn'
-import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
-import { cn } from '@/lib/core/utils/cn'
-import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
+import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 
 const logger = createLogger('ChatInput')
 

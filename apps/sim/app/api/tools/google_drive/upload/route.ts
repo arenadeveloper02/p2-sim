@@ -8,7 +8,8 @@ import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { processSingleFileToUserFile } from '@/lib/uploads/utils/file-utils'
-import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { downloadServableFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { docNotReadyResponse } from '@/lib/uploads/utils/servable-file-response'
 import { assertToolFileAccess } from '@/app/api/files/authorization'
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
@@ -120,116 +121,30 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     if (denied) return denied
 
     let fileBuffer: Buffer
-    let requestedMimeType: string
-    let finalFileName: string
+    let finalFileName = validatedData.fileName || fileData.name || 'file'
+    let downloadedContentType = ''
 
-    // Check if file has raw data property (ToolFileData format)
-    const hasRawFileData =
-      fileData && typeof fileData === 'object' && 'data' in fileData && fileData.data
-
-    if (hasRawFileData) {
-      // Handle raw file data (Buffer or base64 string)
-      logger.info(`[${requestId}] Processing file with raw data`, {
-        fileName: fileData.name || validatedData.fileName,
-        dataType: Buffer.isBuffer(fileData.data) ? 'Buffer' : 'string',
-      })
-
-      try {
-        // Handle Buffer or base64 string
-        if (Buffer.isBuffer(fileData.data)) {
-          fileBuffer = fileData.data
-          logger.info(`[${requestId}] Using Buffer directly`)
-        } else if (typeof fileData.data === 'string') {
-          let base64Data = fileData.data
-
-          // Convert base64url to base64 if needed
-          if (base64Data.includes('-') || base64Data.includes('_')) {
-            base64Data = base64Data.replace(/-/g, '+').replace(/_/g, '/')
-            logger.info(`[${requestId}] Converted base64url to base64`)
-          }
-
-          fileBuffer = Buffer.from(base64Data, 'base64')
-          logger.info(`[${requestId}] Decoded base64 to Buffer`)
-        } else {
-          throw new Error('File data must be a Buffer or base64 string')
-        }
-
-        if (fileBuffer.length === 0) {
-          return NextResponse.json(
-            {
-              success: false,
-              error: 'File data is empty',
-            },
-            { status: 400 }
-          )
-        }
-
-        const rawFileMimeType =
-          typeof fileData.type === 'string'
-            ? fileData.type
-            : typeof fileData.mimeType === 'string'
-              ? fileData.mimeType
-              : undefined
-
-        requestedMimeType = validatedData.mimeType ?? rawFileMimeType ?? 'application/octet-stream'
-
-        // Prefer user-entered fileName when provided; fall back to file's own name
-        finalFileName = validatedData.fileName || fileData.name || 'file'
-
-        logger.info(`[${requestId}] Processed raw file data`, {
-          size: fileBuffer.length,
-          fileName: finalFileName,
-          mimeType: requestedMimeType,
-        })
-      } catch (error) {
-        logger.error(`[${requestId}] Failed to process file data:`, error)
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Failed to process file data: ${error instanceof Error ? error.message : 'Invalid data format'}`,
-          },
-          { status: 400 }
-        )
-      }
-    } else {
-      // Handle UserFile format (with storage key)
-      let userFile
-      try {
-        userFile = processSingleFileToUserFile(fileData, requestId, logger)
-      } catch (error) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: error instanceof Error ? error.message : 'Failed to process file',
-          },
-          { status: 400 }
-        )
-      }
-
-      logger.info(`[${requestId}] Downloading file from storage`, {
-        fileName: userFile.name,
-        key: userFile.key,
-        size: userFile.size,
-      })
-
-      try {
-        fileBuffer = await downloadFileFromStorage(userFile, requestId, logger)
-      } catch (error) {
-        logger.error(`[${requestId}] Failed to download file:`, error)
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Failed to download file: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          },
-          { status: 500 }
-        )
-      }
-
-      requestedMimeType = validatedData.mimeType || userFile.type || 'application/octet-stream'
-      finalFileName = validatedData.fileName
+    try {
+      const result = await downloadServableFileFromStorage(userFile, requestId, logger)
+      fileBuffer = result.buffer
+      downloadedContentType = result.contentType
+    } catch (error) {
+      const notReady = docNotReadyResponse(error)
+      if (notReady) return notReady
+      logger.error(`[${requestId}] Failed to download file:`, error)
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Failed to download file: ${getErrorMessage(error, 'Unknown error')}`,
+        },
+        { status: 500 }
+      )
     }
 
-    let uploadMimeType = requestedMimeType
+    let uploadMimeType =
+      validatedData.mimeType || downloadedContentType || userFile.type || 'application/octet-stream'
+    const requestedMimeType =
+      validatedData.mimeType || downloadedContentType || userFile.type || 'application/octet-stream'
 
     if (GOOGLE_WORKSPACE_MIME_TYPES.includes(requestedMimeType)) {
       uploadMimeType = SOURCE_MIME_TYPES[requestedMimeType] || 'text/plain'

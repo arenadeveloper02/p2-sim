@@ -1,8 +1,9 @@
 import React, { type HTMLAttributes, memo, type ReactNode, useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Streamdown } from 'streamdown'
-import { Code, Tooltip } from '@/components/emcn'
 import 'streamdown/styles.css'
+import { CopyCodeButton, Tooltip, Code } from '@sim/emcn'
+import { extractTextContent } from '@/lib/core/utils/react-node-text'
 
 export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
   return (

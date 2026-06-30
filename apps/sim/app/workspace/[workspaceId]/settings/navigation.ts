@@ -17,7 +17,7 @@ import {
   User,
   Users,
   Wrench,
-} from '@/components/emcn'
+} from '@sim/emcn'
 import { McpIcon } from '@/components/icons'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 
