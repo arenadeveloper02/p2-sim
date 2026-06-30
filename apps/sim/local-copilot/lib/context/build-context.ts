@@ -7,9 +7,9 @@ import { getAllBlocks } from '@/blocks/registry'
 import type { BlockConfig } from '@/blocks/types'
 import { listLogs } from '@/lib/logs/list-logs'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
-import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { isSelfHostedDeployment, getLocalCopilotConfig } from '@/local-copilot/lib/config'
+import { buildContextPromptPayload } from '@/local-copilot/lib/context/context-budget'
 import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type {
   LocalCopilotBlockSummary,
@@ -144,36 +144,11 @@ export async function buildLocalCopilotContext(
   return sanitizeForLlm(context)
 }
 
-export function contextToPromptJson(context: LocalCopilotStructuredContext): string {
-  const workflowPayload = context.workflow
-    ? {
-        id: context.workflow.id,
-        name: context.workflow.name,
-        state: sanitizeForExport({
-          blocks: context.workflow.blocks,
-          edges: context.workflow.edges,
-          loops: context.workflow.loops,
-          parallels: context.workflow.parallels,
-          variables: context.workflow.variables,
-          metadata: { name: context.workflow.name },
-        }).state,
-        credentials: context.workflow.credentials,
-      }
-    : null
-
-  return JSON.stringify(
-    {
-      workspace: context.workspace,
-      workflow: workflowPayload,
-      workspaceWorkflows: context.workspaceWorkflows,
-      execution: context.execution,
-      availableIntegrations: context.availableIntegrations,
-      availableBlocks: context.availableBlocks,
-      selectedBlockId: context.selectedBlockId,
-    },
-    null,
-    2
-  )
+export function contextToPromptJson(
+  context: LocalCopilotStructuredContext,
+  options?: { workflowDetail?: 'full' | 'compact' }
+): string {
+  return buildContextPromptPayload(context, options)
 }
 
 async function loadCredentialMetadata(

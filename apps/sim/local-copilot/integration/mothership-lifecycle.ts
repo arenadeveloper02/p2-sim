@@ -19,6 +19,7 @@ import type {
   StreamingContext,
 } from '@/lib/copilot/request/types'
 import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
+import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotMothershipLifecycle')
@@ -256,6 +257,21 @@ export async function runLocalCopilotMothershipLifecycle(
   })
 
   const toolArgsByCallId = new Map<string, Record<string, unknown>>()
+  const userMessageId =
+    typeof requestPayload.messageId === 'string' ? requestPayload.messageId : undefined
+
+  let priorMessages: Awaited<ReturnType<typeof loadMothershipChatHistoryForLocalCopilot>> = []
+  if (options.chatId) {
+    priorMessages = await loadMothershipChatHistoryForLocalCopilot({
+      chatId: options.chatId,
+      userId,
+      excludeMessageId: userMessageId,
+    })
+    logger.info('Loaded mothership chat history for Arena Copilot', {
+      chatId: options.chatId,
+      turns: priorMessages.length,
+    })
+  }
 
   try {
     for await (const event of runLocalCopilotAgent({
@@ -263,6 +279,8 @@ export async function runLocalCopilotMothershipLifecycle(
       workspaceId,
       message,
       chatId: options.chatId,
+      priorMessages,
+      persistLocally: false,
       ...(workflowId ? { workflowId } : {}),
       signal: options.abortSignal,
     })) {

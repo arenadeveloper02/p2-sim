@@ -68,6 +68,8 @@ function resultContent(context: StreamingContext, options: CopilotLifecycleOptio
 
 export interface CopilotLifecycleOptions extends OrchestratorOptions {
   userId: string
+  userEmail?: string
+  copilotBackend?: 'local' | 'external'
   workflowId?: string
   workspaceId?: string
   chatId?: string
@@ -167,6 +169,8 @@ export async function runCopilotLifecycle(
         workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId,
         workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId,
         userId: lifecycleOptions.userId,
+        userEmail: lifecycleOptions.userEmail,
+        copilotBackend: lifecycleOptions.copilotBackend,
       })
     ) {
       const { runLocalCopilotMothershipLifecycle } = await import(

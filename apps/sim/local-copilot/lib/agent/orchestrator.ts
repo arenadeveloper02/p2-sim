@@ -2,6 +2,13 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { buildLocalCopilotContext, contextToPromptJson } from '@/local-copilot/lib/context/build-context'
+import {
+  compactChatHistory,
+  estimateChatMessagesTokens,
+  fitPromptToTokenBudget,
+  LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
+  resolveWorkflowContextDetail,
+} from '@/local-copilot/lib/context/context-budget'
 import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
 import {
   appendMessage,
@@ -50,6 +57,10 @@ export interface RunAgentParams {
   selectedBlockId?: string
   executionId?: string
   signal?: AbortSignal
+  /** Prior turns from mothership chat (`copilot_messages`). */
+  priorMessages?: ChatMessage[]
+  /** When false, skip `local_copilot_*` persistence (mothership chat owns the transcript). */
+  persistLocally?: boolean
 }
 
 export async function* runLocalCopilotAgent(
@@ -64,48 +75,69 @@ export async function* runLocalCopilotAgent(
     executionId: params.executionId,
   })
 
+  const persistLocally = params.persistLocally !== false
+
   let conversationId = params.conversationId
-  if (!conversationId) {
-    conversationId = await createConversation({
+  if (persistLocally) {
+    if (!conversationId) {
+      conversationId = await createConversation({
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        workflowId: params.workflowId,
+        model: config.model,
+        provider: config.provider,
+      })
+    }
+
+    await appendMessage({
+      conversationId,
+      role: 'user',
+      content: { text: params.message },
+    })
+
+    await logCopilotAction({
       userId: params.userId,
       workspaceId: params.workspaceId,
       workflowId: params.workflowId,
-      model: config.model,
-      provider: config.provider,
+      conversationId,
+      action: 'chat_message',
+      summary: params.message.slice(0, 200),
     })
   }
 
-  await appendMessage({
-    conversationId,
-    role: 'user',
-    content: { text: params.message },
+  const historyMessages: ChatMessage[] = params.priorMessages?.length
+    ? compactChatHistory(params.priorMessages)
+    : conversationId
+      ? compactChatHistory(
+          (await getMessages(conversationId)).slice(0, -1).flatMap((row) => {
+            const content = row.content as { text?: string }
+            if (!content.text) return []
+            return [{ role: row.role as 'user' | 'assistant', content: content.text }]
+          })
+        )
+      : []
+
+  const workflowDetail = resolveWorkflowContextDetail(structuredContext)
+  const contextJson = contextToPromptJson(structuredContext, { workflowDetail })
+
+  const messages: ChatMessage[] = fitPromptToTokenBudget(
+    [
+      { role: 'system', content: SYSTEM_PROMPT },
+      {
+        role: 'system',
+        content: `Current context:\n${contextJson}`,
+      },
+      ...historyMessages,
+      { role: 'user', content: params.message },
+    ],
+    LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
+  )
+
+  logger.info('Arena Copilot prompt budget applied', {
+    workflowDetail,
+    historyTurns: historyMessages.length,
+    estimatedPromptTokens: estimateChatMessagesTokens(messages),
   })
-
-  await logCopilotAction({
-    userId: params.userId,
-    workspaceId: params.workspaceId,
-    workflowId: params.workflowId,
-    conversationId,
-    action: 'chat_message',
-    summary: params.message.slice(0, 200),
-  })
-
-  const history = await getMessages(conversationId)
-  const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    {
-      role: 'system',
-      content: `Current context:\n${contextToPromptJson(structuredContext)}`,
-    },
-  ]
-
-  for (const row of history.slice(0, -1)) {
-    const content = row.content as { text?: string }
-    if (content.text) {
-      messages.push({ role: row.role as 'user' | 'assistant', content: content.text })
-    }
-  }
-  messages.push({ role: 'user', content: params.message })
 
   const provider = getLocalCopilotProvider()
   const toolCtx = {
@@ -186,13 +218,15 @@ export async function* runLocalCopilotAgent(
         ...(result.error ? { error: result.error } : {}),
       }
 
-      await recordToolCall({
-        conversationId,
-        toolCallId: call.id,
-        toolName: call.name,
-        arguments: parsedArgs,
-        result: result.result,
-      })
+      if (persistLocally && conversationId) {
+        await recordToolCall({
+          conversationId,
+          toolCallId: call.id,
+          toolName: call.name,
+          arguments: parsedArgs,
+          result: result.result,
+        })
+      }
 
       if (result.patch) {
         proposedPatch = result.patch
@@ -215,13 +249,15 @@ export async function* runLocalCopilotAgent(
 
   let patchId: string | undefined
   if (proposedPatch && params.workflowId) {
-    patchId = await savePatch({
-      conversationId,
-      userId: params.userId,
-      workflowId: params.workflowId,
-      patch: proposedPatch,
-    })
-    yield { type: 'patch_proposed', patch: proposedPatch, patchId }
+    if (persistLocally && conversationId) {
+      patchId = await savePatch({
+        conversationId,
+        userId: params.userId,
+        workflowId: params.workflowId,
+        patch: proposedPatch,
+      })
+    }
+    yield { type: 'patch_proposed', patch: proposedPatch, patchId: patchId ?? '' }
   } else if (proposedPatch) {
     yield {
       type: 'text_delta',
@@ -230,18 +266,26 @@ export async function* runLocalCopilotAgent(
     }
   }
 
-  const messageId = await appendMessage({
-    conversationId,
-    role: 'assistant',
-    content: {
-      text: assistantText,
-      patchId,
-      recommendations: recommendations.length ? recommendations : undefined,
-    },
-  })
+  let messageId = ''
+  if (persistLocally && conversationId) {
+    messageId = await appendMessage({
+      conversationId,
+      role: 'assistant',
+      content: {
+        text: assistantText,
+        patchId,
+        recommendations: recommendations.length ? recommendations : undefined,
+      },
+    })
+  }
 
-  logger.info('Arena Copilot turn complete', { conversationId, messageId, patchId })
-  yield { type: 'done', messageId }
+  logger.info('Arena Copilot turn complete', {
+    conversationId: conversationId ?? null,
+    messageId: messageId || null,
+    patchId: patchId ?? null,
+    historyTurns: historyMessages.length,
+  })
+  yield { type: 'done', messageId: messageId || generateId() }
 }
 
 export function formatSSE(event: LocalCopilotStreamEvent): string {

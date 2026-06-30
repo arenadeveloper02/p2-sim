@@ -28,6 +28,7 @@ import {
   UserInput,
 } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
+import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
 
 const logger = createLogger('HomeEmbed')
@@ -142,6 +143,8 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
     }
   }, [])
 
+  const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
+
   const {
     messages,
     isSending,
@@ -173,6 +176,7 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
       initialActiveResourceId: initialResourceId,
       resolveWorkspaceBeforeSend,
       isEmbedPage: true,
+      getCopilotBackend: () => copilotBackend,
     }),
     true
   )
@@ -371,6 +375,9 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
               userId={session?.user?.id}
               onContextAdd={handleContextAdd}
               onContextRemove={handleInitialContextRemove}
+              canSwitchCopilotBackend={canSwitchBackend}
+              copilotBackend={copilotBackend}
+              setCopilotBackend={setCopilotBackend}
             >
               <UserInput
                 defaultValue={initialPrompt}
@@ -412,6 +419,9 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
           chatId={resolvedChatId}
           onContextAdd={handleContextAdd}
           onWorkspaceResourceSelect={handleWorkspaceResourceSelect}
+          canSwitchCopilotBackend={canSwitchBackend}
+          copilotBackend={copilotBackend}
+          setCopilotBackend={setCopilotBackend}
           animateInput={isInputEntering}
           onInputAnimationEnd={isInputEntering ? () => setIsInputEntering(false) : undefined}
           initialScrollBlocked={resources.length > 0 && isResourceCollapsed}

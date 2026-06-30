@@ -1013,6 +1013,8 @@ export interface UseChatOptions {
   activeResourceState?: [string | null, Dispatch<SetStateAction<string | null>>]
   /** Fired when the server's `traceparent` response header arrives, before any stream content. */
   onRequestStarted?: (info: { requestId: string; userMessageId: string }) => void
+  /** Home chat: user-selected local vs external copilot backend. */
+  getCopilotBackend?: () => 'local' | 'external'
 }
 
 interface ActiveStreamRecovery {
@@ -1049,7 +1051,12 @@ export function getMothershipUseChatOptions(
 export function getWorkflowCopilotUseChatOptions(
   options: Pick<
     UseChatOptions,
-    'workflowId' | 'onToolResult' | 'onTitleUpdate' | 'onStreamEnd' | 'onRequestStarted'
+    | 'workflowId'
+    | 'onToolResult'
+    | 'onTitleUpdate'
+    | 'onStreamEnd'
+    | 'onRequestStarted'
+    | 'getCopilotBackend'
   > = {}
 ): UseChatOptions {
   return {
@@ -1109,7 +1116,9 @@ export function useChat(
   const onStreamEndRef = useRef(options?.onStreamEnd)
   onStreamEndRef.current = options?.onStreamEnd
   const onRequestStartedRef = useRef(options?.onRequestStarted)
+  const getCopilotBackendRef = useRef(options?.getCopilotBackend)
   onRequestStartedRef.current = options?.onRequestStarted
+  getCopilotBackendRef.current = options?.getCopilotBackend
 
   const getCurrentRequestId = useCallback(() => {
     const traceId = streamTraceparentRef.current?.split('-')[1] ?? ''
@@ -3359,6 +3368,9 @@ export function useChat(
                 ...(workflowIdRef.current ? { workflowId: workflowIdRef.current } : {}),
                 userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                 effectiveWorkspaceId,
+                ...(getCopilotBackendRef.current
+                  ? { copilotBackend: getCopilotBackendRef.current() }
+                  : {}),
               }),
               signal: abortController.signal,
             })

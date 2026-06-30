@@ -1,4 +1,6 @@
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
+import { isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
+import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { env } from '@/lib/core/config/env'
 
 export const LOCAL_COPILOT_CHAT_API_PATH = '/api/local-copilot/chat'
@@ -22,9 +24,17 @@ export function shouldRouteToLocalCopilot(params: {
   workflowId?: unknown
   workspaceId?: unknown
   userId?: unknown
+  userEmail?: unknown
+  copilotBackend?: unknown
 }): boolean {
-  if (!isLocalCopilotBackendActive()) return false
-  return Boolean(extractNonEmpty(params.workspaceId) && extractNonEmpty(params.userId))
+  if (!extractNonEmpty(params.workspaceId) || !extractNonEmpty(params.userId)) return false
+
+  const userEmail = typeof params.userEmail === 'string' ? params.userEmail : undefined
+  if (!isLocalCopilotEnabledForUser(userEmail)) return false
+
+  const preference = parseCopilotBackendPreference(params.copilotBackend)
+  if (preference === 'external') return false
+  return true
 }
 
 /**
@@ -38,6 +48,6 @@ export function resolveSimAgentApiUrl(fallbackDefault: string): string {
   return fallbackDefault
 }
 
-export function shouldUseLocalCopilotChat(): boolean {
-  return isLocalCopilotBackendActive()
+export function shouldUseLocalCopilotChat(userEmail?: string | null): boolean {
+  return isLocalCopilotEnabledForUser(userEmail)
 }

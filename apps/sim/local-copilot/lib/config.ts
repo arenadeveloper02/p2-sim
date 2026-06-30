@@ -1,4 +1,5 @@
 import { isHosted } from '@/lib/core/config/env-flags'
+import { isEmailAllowed } from '@/lib/core/security/deployment'
 import type { LocalCopilotConfig, LocalCopilotProviderId } from '@/local-copilot/lib/types'
 
 /** Latest Claude model registered in `@/providers/models`. */
@@ -42,6 +43,33 @@ function resolveApiKey(provider: LocalCopilotProviderId): string | undefined {
   }
 
   return undefined
+}
+
+/**
+ * Parses `COPILOT_ALLOWED_EMAILS` — comma-separated exact emails or `@domain` entries.
+ */
+export function getLocalCopilotAllowedEmails(): string[] {
+  const raw = process.env.COPILOT_ALLOWED_EMAILS?.trim()
+  if (!raw) return []
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
+/**
+ * When `COPILOT_ALLOWED_EMAILS` is unset, all users may use local copilot (if enabled).
+ * When set, only listed emails/domains may use local copilot; everyone else uses Mothership.
+ */
+export function isUserAllowedForLocalCopilot(userEmail: string | undefined | null): boolean {
+  const config = getLocalCopilotConfig()
+  if (!config.enabled) return false
+
+  const allowedEmails = getLocalCopilotAllowedEmails()
+  if (allowedEmails.length === 0) return true
+
+  if (!userEmail?.trim()) return false
+  return isEmailAllowed(userEmail, allowedEmails)
 }
 
 export function getLocalCopilotConfig(): LocalCopilotConfig {

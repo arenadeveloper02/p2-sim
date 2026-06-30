@@ -5,6 +5,7 @@ import { getSession } from '@/lib/auth'
 import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
+import { requireLocalCopilotAccess } from '@/local-copilot/lib/access'
 import { listConversations } from '@/local-copilot/lib/persistence/store'
 import { listLocalCopilotConversationsContract } from '@/local-copilot/contracts/local-copilot'
 
@@ -15,6 +16,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const accessDenied = requireLocalCopilotAccess(session.user.email)
+  if (accessDenied) return accessDenied
 
   const parsed = await parseRequest(listLocalCopilotConversationsContract, request, {})
   if (!parsed.success) return parsed.response

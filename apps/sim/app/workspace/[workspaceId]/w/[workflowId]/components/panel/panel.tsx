@@ -56,6 +56,7 @@ import {
 import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
 import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components'
 import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
+import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
 import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
@@ -422,6 +423,8 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
     [activeWorkflowId]
   )
 
+  const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
+
   const {
     messages: copilotMessages,
     isSending: copilotIsSending,
@@ -441,6 +444,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
     copilotChatId,
     getWorkflowCopilotUseChatOptions({
       workflowId: activeWorkflowId || undefined,
+      getCopilotBackend: () => copilotBackend,
       onTitleUpdate: loadCopilotChats,
       onToolResult: handleCopilotToolResult,
       onRequestStarted: ({ requestId, userMessageId }) => {
@@ -1010,6 +1014,9 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
                       userId={session?.user?.id}
                       chatId={copilotResolvedChatId}
                       layout='copilot-view'
+                      canSwitchCopilotBackend={canSwitchBackend}
+                      copilotBackend={copilotBackend}
+                      setCopilotBackend={setCopilotBackend}
                     />
                   }
                 />

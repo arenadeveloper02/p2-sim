@@ -7,10 +7,8 @@ import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import { formatSSE, runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
-import {
-  assertLocalCopilotEnabled,
-  getLocalCopilotConfig,
-} from '@/local-copilot/lib/config'
+import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
+import { requireLocalCopilotAccess } from '@/local-copilot/lib/access'
 import { localCopilotChatContract } from '@/local-copilot/contracts/local-copilot'
 
 const logger = createLogger('LocalCopilotChatAPI')
@@ -21,11 +19,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  try {
-    assertLocalCopilotEnabled()
-  } catch (error) {
-    return NextResponse.json({ error: getErrorMessage(error) }, { status: 503 })
-  }
+  const accessDenied = requireLocalCopilotAccess(session.user.email)
+  if (accessDenied) return accessDenied
 
   const parsed = await parseRequest(localCopilotChatContract, request, {})
   if (!parsed.success) return parsed.response

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { requireLocalCopilotAccess } from '@/local-copilot/lib/access'
 import { getConversation, getMessages } from '@/local-copilot/lib/persistence/store'
 import { getLocalCopilotConversationContract } from '@/local-copilot/contracts/local-copilot'
 
@@ -15,6 +16,9 @@ export const GET = withRouteHandler(
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const accessDenied = requireLocalCopilotAccess(session.user.email)
+    if (accessDenied) return accessDenied
 
     const routeParams = await params
     const parsed = await parseRequest(getLocalCopilotConversationContract, request, {

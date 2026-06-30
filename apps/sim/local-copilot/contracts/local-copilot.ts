@@ -34,6 +34,7 @@ export type WorkflowPatchWire = z.output<typeof workflowPatchSchema>
 
 export const localCopilotConfigResponseSchema = z.object({
   enabled: z.boolean(),
+  canSwitchBackend: z.boolean(),
   provider: z.string(),
   model: z.string(),
   selfHosted: z.boolean(),
