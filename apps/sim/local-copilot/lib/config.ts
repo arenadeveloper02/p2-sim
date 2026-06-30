@@ -29,15 +29,27 @@ function resolveProvider(value: string | undefined): LocalCopilotProviderId {
 /**
  * Reads Arena Copilot configuration from environment variables.
  * All LLM traffic goes directly to the configured provider — no Sim cloud relay.
+ *
+ * `COPILOT_API_KEY` authenticates requests to Sim Cloud Mothership and must not
+ * be used for direct provider calls (it is typically `sk-sim-copilot-*`).
  */
 function resolveApiKey(provider: LocalCopilotProviderId): string | undefined {
-  const copilotKey = process.env.COPILOT_API_KEY?.trim()
-  if (copilotKey) return copilotKey
-
   if (provider === 'anthropic') {
     return (
       process.env.ANTHROPIC_API_KEY?.trim() ||
       process.env.ANTHROPIC_API_KEY_1?.trim() ||
+      process.env.ANTHROPIC_API_KEY_2?.trim() ||
+      process.env.ANTHROPIC_API_KEY_3?.trim() ||
+      undefined
+    )
+  }
+
+  if (provider === 'openai' || provider === 'openai-compatible') {
+    return (
+      process.env.OPENAI_API_KEY?.trim() ||
+      process.env.OPENAI_API_KEY_1?.trim() ||
+      process.env.OPENAI_API_KEY_2?.trim() ||
+      process.env.OPENAI_API_KEY_3?.trim() ||
       undefined
     )
   }
@@ -90,8 +102,8 @@ export function assertLocalCopilotEnabled(config: LocalCopilotConfig = getLocalC
   if (!config.apiKey && config.provider !== 'openai-compatible') {
     const hint =
       config.provider === 'anthropic'
-        ? 'Set COPILOT_API_KEY or ANTHROPIC_API_KEY.'
-        : 'Set COPILOT_API_KEY.'
+        ? 'Set ANTHROPIC_API_KEY or ANTHROPIC_API_KEY_1 (not COPILOT_API_KEY).'
+        : 'Set OPENAI_API_KEY or OPENAI_API_KEY_1.'
     throw new Error(`Arena Copilot requires an API key for the configured provider. ${hint}`)
   }
 }

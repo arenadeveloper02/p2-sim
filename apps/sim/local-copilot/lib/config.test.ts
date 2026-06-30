@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   getLocalCopilotAllowedEmails,
+  getLocalCopilotConfig,
   isUserAllowedForLocalCopilot,
 } from '@/local-copilot/lib/config'
 
@@ -11,6 +12,26 @@ const ORIGINAL_ENV = { ...process.env }
 
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV }
+})
+
+describe('getLocalCopilotConfig api key resolution', () => {
+  it('uses Anthropic keys for anthropic provider and ignores COPILOT_API_KEY', () => {
+    process.env.COPILOT_PROVIDER = 'anthropic'
+    process.env.COPILOT_API_KEY = 'sk-sim-copilot-test'
+    process.env.ANTHROPIC_API_KEY_1 = 'sk-ant-test-key'
+    delete process.env.ANTHROPIC_API_KEY
+
+    expect(getLocalCopilotConfig().apiKey).toBe('sk-ant-test-key')
+  })
+
+  it('prefers ANTHROPIC_API_KEY over numbered fallbacks', () => {
+    process.env.COPILOT_PROVIDER = 'anthropic'
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-primary'
+    process.env.ANTHROPIC_API_KEY_1 = 'sk-ant-backup'
+    delete process.env.COPILOT_API_KEY
+
+    expect(getLocalCopilotConfig().apiKey).toBe('sk-ant-primary')
+  })
 })
 
 describe('getLocalCopilotAllowedEmails', () => {

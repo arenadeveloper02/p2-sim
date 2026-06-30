@@ -8,7 +8,7 @@ let cachedProviderKey = ''
 
 export function getLocalCopilotProvider(): LocalCopilotProvider {
   const config = getLocalCopilotConfig()
-  const cacheKey = `${config.provider}:${config.baseUrl ?? ''}:${config.model}`
+  const cacheKey = `${config.provider}:${config.baseUrl ?? ''}:${config.model}:${config.apiKey ?? ''}`
 
   if (cachedProvider && cachedProviderKey === cacheKey) {
     return cachedProvider
