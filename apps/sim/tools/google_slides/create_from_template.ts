@@ -2,6 +2,12 @@ import { SignJWT } from 'jose'
 import { createLogger } from '@sim/logger'
 import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
 import type { ToolConfig } from '@/tools/types'
+import {
+  buildTableCellTextEndIndexMap,
+  buildTableContentRequests,
+  findTableColumnLayout,
+  findTableDimensions,
+} from '@/tools/google_slides/create-from-template-table'
 import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
 
@@ -38,8 +44,12 @@ interface BlockLike {
   type: string
   role?: string
   shapeId: string
-  content?: string | string[]
+  content?: string | string[] | string[][]
   source?: 'icon_library' | 'stock_photo' | 'ai_photo' | 'generated' | 'p2_users'
+  maxRows?: number
+  maxColumns?: number
+  minRows?: number
+  minColumns?: number
 }
 
 interface SlideLike {
@@ -550,6 +560,7 @@ export const createFromTemplateTool: ToolConfig<
       throw new Error(presData.error?.message || 'Failed to read presentation state for mapping')
     }
     const textEndIndexMap = buildTextEndIndexMap(presData)
+    const tableCellTextEndIndexMap = buildTableCellTextEndIndexMap(presData)
 
     // Build shape geometry map for image size restoration
     const shapeGeometryMap: Record<string, { size: any; transform: any }> = {}
@@ -598,6 +609,51 @@ export const createFromTemplateTool: ToolConfig<
             batchRequests.push({ deleteText: { objectId, textRange: { type: 'ALL' } } })
             batchRequests.push({ insertText: { objectId, insertionIndex: 0, text } })
           }
+        } else if (block.type === 'TABLE') {
+          const tableObjectId = objectId
+          const maxRows = block.maxRows ?? 0
+          const maxColumns = block.maxColumns ?? 0
+          if (!maxRows || !maxColumns) {
+            logger.warn('Skipping table block with missing maxRows/maxColumns', {
+              shapeId: block.shapeId,
+            })
+            continue
+          }
+
+          const dimensions = findTableDimensions(presData, tableObjectId)
+          if (!dimensions) {
+            logger.warn('Table element not found after duplication', {
+              tableObjectId,
+              shapeId: block.shapeId,
+            })
+            continue
+          }
+
+          const layout = findTableColumnLayout(presData, tableObjectId)
+
+          const tableContent = Array.isArray(content) ? content : []
+          if (tableContent.length === 0) {
+            logger.info('Skipping empty table content; leaving template placeholders', {
+              tableObjectId,
+              shapeId: block.shapeId,
+            })
+            continue
+          }
+
+          batchRequests.push(
+            ...buildTableContentRequests({
+              tableObjectId,
+              content: tableContent,
+              templateRows: dimensions.rows,
+              templateColumns: dimensions.columns,
+              maxRows: block.maxRows,
+              maxColumns: block.maxColumns,
+              minRows: block.minRows,
+              minColumns: block.minColumns,
+              cellTextEndIndexMap: tableCellTextEndIndexMap,
+              layout: layout ?? undefined,
+            })
+          )
         } else if (block.type === 'IMAGE' && content) {
           const imageUrl = typeof content === 'string' ? content : ''
           if (imageUrl) {

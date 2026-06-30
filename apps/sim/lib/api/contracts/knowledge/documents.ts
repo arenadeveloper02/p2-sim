@@ -41,10 +41,11 @@ export const listKnowledgeDocumentsQuerySchema = z.object({
     .optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
   tagFilters: z
-    .string()
+    .union([z.string(), z.array(documentTagFilterSchema)])
     .optional()
     .transform((value, ctx) => {
-      if (!value) return undefined
+      if (value === undefined) return undefined
+      if (Array.isArray(value)) return value
       try {
         return z.array(documentTagFilterSchema).parse(JSON.parse(value))
       } catch {
