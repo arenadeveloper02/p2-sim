@@ -66,6 +66,10 @@ import { isWorkflowToolName } from '@/lib/copilot/tools/workflow-tools'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { useFilePreviewController } from '@/app/workspace/[workspaceId]/home/hooks/preview'
 import {
+  getMothershipChatPath,
+  readMothershipChatSearch,
+} from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
+import {
   applyTurnTerminal,
   createStreamLoopContext,
   dispatchStreamEvent,
@@ -1474,7 +1478,15 @@ export function useChat(
         !workflowIdRef.current &&
         typeof window !== 'undefined'
       ) {
-        window.history.replaceState(null, '', `/workspace/${workspaceId}/chat/${chatId}`)
+        // Embed → /task/:id/embed; home → /chat/:id (see getMothershipChatPath).
+        window.history.replaceState(
+          null,
+          '',
+          getMothershipChatPath(workspaceId, chatId, {
+            embed: effectiveIsEmbedPageRef.current,
+            search: readMothershipChatSearch(),
+          })
+        )
       }
       if (options?.invalidateList) {
         queryClient.invalidateQueries({ queryKey: mothershipChatKeys.list(workspaceId) })
@@ -1992,6 +2004,8 @@ export function useChat(
         activeTurnRef,
         resourcesRef,
         workflowIdRef,
+        // Passed into handleSessionEvent for embed-aware URL updates on new chats.
+        isEmbedPageRef: effectiveIsEmbedPageRef,
         activeResourceIdRef,
         onTitleUpdateRef,
         onToolResultRef,
@@ -3324,12 +3338,12 @@ export function useChat(
                 const createChatData = await createChatResponse.json()
                 if (typeof createChatData.id === 'string' && createChatData.id.length > 0) {
                   requestChatId = createChatData.id
-                  chatIdRef.current = createChatData.id
-                  setResolvedChatId(createChatData.id)
-                  applyOptimisticSend()
-                  queryClient.invalidateQueries({
-                    queryKey: taskKeys.list(workspaceId),
+                  // Adopt chat id + embed URL before the workflow execution stream starts.
+                  adoptResolvedChatId(createChatData.id, {
+                    replaceHomeHistory: true,
+                    invalidateList: true,
                   })
+                  applyOptimisticSend()
                 }
               }
             } catch (error) {

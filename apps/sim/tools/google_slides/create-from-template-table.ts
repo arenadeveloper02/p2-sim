@@ -117,9 +117,46 @@ function readDimensionEmu(dimension?: Dimension): number {
   return dimension.magnitude
 }
 
-function distributeTotalDimension(total: number, count: number, minUnit: number): number {
-  if (count <= 0) return minUnit
-  return Math.max(minUnit, total / count)
+/**
+ * Weight per column from the longest cell in that column (minimum 1).
+ * Columns with more text receive a larger share of total table width.
+ */
+export function computeColumnContentWeights(content: string[][], columnCount: number): number[] {
+  const weights = Array.from({ length: columnCount }, () => 1)
+
+  for (const row of content) {
+    for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+      const cellLength = (row[columnIndex] ?? '').length
+      if (cellLength > weights[columnIndex]!) {
+        weights[columnIndex] = cellLength
+      }
+    }
+  }
+
+  return weights
+}
+
+/** Splits total width across columns proportionally to content weights, respecting API minimums. */
+export function distributeColumnWidthsByContent(
+  totalWidth: number,
+  weights: number[],
+  minWidth = MIN_COLUMN_WIDTH_EMU
+): number[] {
+  const count = weights.length
+  if (count === 0 || totalWidth <= 0) return []
+
+  const minTotal = minWidth * count
+  if (minTotal >= totalWidth) {
+    return Array.from({ length: count }, () => totalWidth / count)
+  }
+
+  const normalizedWeights = weights.map((weight) => Math.max(weight, 1))
+  const weightSum = normalizedWeights.reduce((sum, weight) => sum + weight, 0)
+  const flexibleWidth = totalWidth - minTotal
+
+  return normalizedWeights.map(
+    (weight) => minWidth + (flexibleWidth * weight) / weightSum
+  )
 }
 
 /** Reads per-column widths (EMU) from a fetched presentation payload. */
@@ -143,37 +180,35 @@ export function findTableColumnLayout(
 }
 
 /**
- * Expands remaining columns to fill the original table width after trimming.
- * Google Slides shrinks the table on deleteTableColumn without redistributing width.
+ * Sets column widths to fill the template table width, allocated by content density.
+ * Runs after column trimming so wide-content columns expand and narrow columns shrink.
  */
-export function buildTableExpandColumnWidthRequests(input: {
+export function buildTableColumnWidthRequests(input: {
   tableObjectId: string
+  content: string[][]
   keepColumns: number
-  templateColumns: number
   layout: TableColumnLayout
 }): TableBatchRequest[] {
-  const { tableObjectId, keepColumns, templateColumns, layout } = input
+  const { tableObjectId, keepColumns, layout, content } = input
 
-  if (keepColumns >= templateColumns || layout.columnWidths.length === 0) {
-    return []
-  }
+  if (keepColumns <= 0 || layout.columnWidths.length === 0) return []
 
   const totalWidth = layout.columnWidths.reduce((sum, width) => sum + width, 0)
   if (totalWidth <= 0) return []
 
-  const columnWidth = distributeTotalDimension(totalWidth, keepColumns, MIN_COLUMN_WIDTH_EMU)
-  return [
-    {
-      updateTableColumnProperties: {
-        objectId: tableObjectId,
-        columnIndices: Array.from({ length: keepColumns }, (_, index) => index),
-        tableColumnProperties: {
-          columnWidth: { magnitude: columnWidth, unit: 'EMU' },
-        },
-        fields: 'columnWidth',
+  const weights = computeColumnContentWeights(content, keepColumns)
+  const columnWidths = distributeColumnWidthsByContent(totalWidth, weights)
+
+  return columnWidths.map((columnWidth, columnIndex) => ({
+    updateTableColumnProperties: {
+      objectId: tableObjectId,
+      columnIndices: [columnIndex],
+      tableColumnProperties: {
+        columnWidth: { magnitude: Math.round(columnWidth), unit: 'EMU' },
       },
+      fields: 'columnWidth',
     },
-  ]
+  }))
 }
 
 /** Reads table row/column counts from a fetched presentation payload. */
@@ -283,11 +318,11 @@ export function buildTableContentRequests(input: {
 
   if (input.layout) {
     requests.push(
-      ...buildTableExpandColumnWidthRequests({
+      ...buildTableColumnWidthRequests({
         tableObjectId,
         keepColumns,
-        templateColumns,
         layout: input.layout,
+        content,
       })
     )
   }
