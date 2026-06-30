@@ -121,7 +121,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     if (denied) return denied
 
     let fileBuffer: Buffer
-    let finalFileName = validatedData.fileName || fileData.name || 'file'
+    const finalFileName = validatedData.fileName || fileData.name || 'file'
     let downloadedContentType = ''
 
     try {

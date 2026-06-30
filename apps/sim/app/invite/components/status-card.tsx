@@ -1,7 +1,6 @@
 'use client'
 import { cn, Loader } from '@sim/emcn'
 import { useRouter } from 'next/navigation'
-import { AUTH_PRIMARY_CTA_BASE } from '@/app/(auth)/components/auth-button-classes'
 
 interface InviteStatusCardProps {
   type: 'login' | 'loading' | 'error' | 'success' | 'invitation' | 'warning'

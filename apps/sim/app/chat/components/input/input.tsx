@@ -6,9 +6,9 @@ import { Badge, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { ArrowUp, Mic, Paperclip, X } from 'lucide-react'
+import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
-import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 
 const logger = createLogger('ChatInput')
 

@@ -288,7 +288,7 @@ export function General() {
 
   return (
     <>
-      <SettingsPanel 
+      <SettingsPanel
       // actions={actions}
       >
         <SettingsSection label='Profile'>

@@ -3069,7 +3069,6 @@ export const workflowStatsMonthly = pgTable(
   })
 )
 
-
 export const auditLog = pgTable(
   'audit_log',
   {

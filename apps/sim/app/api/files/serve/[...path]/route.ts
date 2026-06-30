@@ -9,7 +9,6 @@ import {
   resolveServableDocBytes,
 } from '@/lib/copilot/tools/server/files/doc-compile'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { runSandboxTask } from '@/lib/execution/sandbox/run-task'
 import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { parseWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
