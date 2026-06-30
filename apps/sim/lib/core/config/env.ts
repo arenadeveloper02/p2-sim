@@ -20,6 +20,8 @@ export const env = createEnv({
     // Core Database & Authentication
     DATABASE_URL:                          z.string().url(),                       // Primary database connection string
     DATABASE_REPLICA_URL:                  z.string().url().optional(),            // Read-replica connection string; opt-in reads fall back to the primary when unset
+    DB_APP_NAME:                           z.string().optional(),                  // Postgres application_name for query attribution (sim-app/sim-trigger/sim-realtime)
+    SIM_DB_ROLE:                           z.enum(['web', 'trigger', 'realtime']).optional(), // Per-process pool profile selector (read directly by @sim/db)
     BETTER_AUTH_URL:                       z.string().url(),                       // Base URL for Better Auth service
     BETTER_AUTH_SECRET:                    z.string().min(32),                     // Secret key for Better Auth JWT signing
     BETTER_AUTH_COOKIE_DOMAIN:             z.string().optional(),                  // Parent domain for session cookies (e.g. thearena.ai); enables sharing across subdomains. Ignored on localhost. Omit for host-only cookies.
@@ -79,6 +81,8 @@ export const env = createEnv({
     TABLES_FRACTIONAL_ORDERING:            z.boolean().optional(),                 // Order table rows by fractional order_key (O(1) insert/delete) instead of integer position
     TABLE_SNAPSHOT_CACHE:                  z.boolean().optional(),                 // Mount tables into sandboxes by reference via a version-keyed CSV snapshot in object storage instead of draining the whole table into web-process heap
     PII_REDACTION:                         z.boolean().optional(),                 // Redact PII from workflow logs via configurable Data Retention rules (Presidio at the logger persist choke point) and expose the Data Retention config UI
+    TRIGGER_EU_REGION:                     z.boolean().optional(),                 // Route Trigger.dev runs to eu-central-1 instead of the default us-east-1 (fallback for the trigger-eu-region flag when AppConfig is not the source of truth)
+    REDIS_PROGRESS_MARKERS:                z.boolean().optional(),                 // Write per-block live progress markers to Redis instead of jsonb_set UPDATEs on workflow_execution_logs (fallback for the redis-progress-markers flag when AppConfig is not the source of truth)
 
     // Table feature limits (per plan). Apply when billing is disabled (free tier defaults) or for billed plans.
     FREE_TABLES_LIMIT:                     z.number().optional(),                  // Max user tables per workspace on free tier (default: 5)
@@ -234,7 +238,10 @@ export const env = createEnv({
     TRIGGER_DEV_ENABLED:                   z.boolean().optional(),                 // Toggle to enable/disable Trigger.dev for async jobs
     CRON_SECRET:                           z.string().optional(),                  // Secret for authenticating cron job requests
     JOB_RETENTION_DAYS:                    z.string().optional().default('1'),     // Days to retain job logs/data
-    SCHEDULE_EXECUTION_CONCURRENCY_LIMIT:  z.string().optional().default('50'),
+    SCHEDULE_EXECUTION_CONCURRENCY_LIMIT:  z.string().optional().default('30'),
+    WORKFLOW_EXECUTION_CONCURRENCY_LIMIT:  z.string().optional().default('75'),
+    WEBHOOK_EXECUTION_CONCURRENCY_LIMIT:   z.string().optional().default('75'),
+    RESUME_EXECUTION_CONCURRENCY_LIMIT:    z.string().optional().default('50'),
     SCHEDULE_ENQUEUE_BUDGET_MULTIPLIER:    z.string().optional().default('2'),
     SCHEDULE_JITTER_MAX_MS:                z.string().optional().default('30000'),
     SCHEDULE_INFRA_RETRY_BASE_MS:          z.string().optional().default('60000'),
@@ -351,6 +358,7 @@ export const env = createEnv({
     ANALYTICS_WORKSPACE_IDS:               z.string().optional(),                  // JSON array or comma-separated workspace IDs with access to shared channel accounts
     /** Comma-separated origins (e.g. http://localhost:3001) allowed as Better Auth OAuth `callbackURL` when Arena embeds Sim (`from=arena_v3` + `callbackURL` query). */
     ARENA_V3_OAUTH_CALLBACK_ORIGINS:       z.string().optional(),
+    PII_URL:                               z.string().optional(),                  // Presidio PII sidecar base URL serving /analyze + /anonymize (default http://localhost:5001)
 
     // OAuth Integration Credentials - All optional, enables third-party integrations
     GOOGLE_CLIENT_ID:                      z.string().optional(),                  // Google OAuth client ID for Google services
@@ -437,6 +445,7 @@ export const env = createEnv({
     E2B_API_KEY:                           z.string().optional(),                  // E2B API key for sandbox creation
     MOTHERSHIP_E2B_TEMPLATE_ID:             z.string().optional(),                  // Custom E2B template with pre-installed CLI tools for shell execution
     MOTHERSHIP_E2B_DOC_TEMPLATE_ID:         z.string().optional(),                  // Dedicated E2B template with python-pptx/docx/openpyxl/reportlab for document generation; when set (and E2B enabled), docs compile via Python instead of the JS isolated-vm path
+    E2B_PI_TEMPLATE_ID:                     z.string().optional(),                  // E2B template ID/alias with the Pi CLI + git baked in (Pi Coding Agent cloud mode)
 
     // Credential Sets (Email Polling) - for self-hosted deployments
     CREDENTIAL_SETS_ENABLED:               z.boolean().optional(),                 // Enable credential sets on self-hosted (bypasses plan requirements)

@@ -37,6 +37,13 @@ import {
   replaceLargeValueReferenceKeysWithClient,
 } from '@/lib/execution/payloads/large-value-metadata'
 import { type RedactablePayload, redactPIIFromExecution } from '@/lib/logs/execution/pii-redaction'
+import {
+  clearProgressMarkers,
+  type ExecutionProgressMarkers,
+  getProgressMarkers,
+  pickLatestCompletedMarker,
+  pickLatestStartedMarker,
+} from '@/lib/logs/execution/progress-markers'
 import { snapshotService } from '@/lib/logs/execution/snapshot/service'
 import {
   externalizeExecutionData,
@@ -417,8 +424,15 @@ export class ExecutionLogger implements IExecutionLoggerService {
     return minimalWithSize.executionData
   }
 
+  /**
+   * Assemble the final `execution_data` for the terminal UPDATE. Live progress
+   * markers are sourced from `progressMarkers` (Redis, current run) and fall back
+   * to markers already on the row — the legacy SQL path and resumed rows that
+   * folded markers in at their prior pause boundary.
+   */
   private buildCompletedExecutionData(params: {
     existingExecutionData?: WorkflowExecutionLog['executionData']
+    progressMarkers?: ExecutionProgressMarkers
     traceSpans?: TraceSpan[]
     finalOutput: BlockOutputData
     finalizationPath?: ExecutionFinalizationPath
@@ -436,6 +450,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
   }): WorkflowExecutionLog['executionData'] {
     const {
       existingExecutionData,
+      progressMarkers,
       traceSpans,
       finalOutput,
       finalizationPath,
@@ -445,6 +460,15 @@ export class ExecutionLogger implements IExecutionLoggerService {
       workflowInput,
     } = params
     const traceSpanCount = countTraceSpans(traceSpans)
+
+    const lastStartedBlock = pickLatestStartedMarker(
+      progressMarkers?.lastStartedBlock,
+      existingExecutionData?.lastStartedBlock
+    )
+    const lastCompletedBlock = pickLatestCompletedMarker(
+      progressMarkers?.lastCompletedBlock,
+      existingExecutionData?.lastCompletedBlock
+    )
 
     return {
       ...(existingExecutionData?.environment
@@ -459,12 +483,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
           }
         : {}),
       ...(existingExecutionData?.error ? { error: existingExecutionData.error } : {}),
-      ...(existingExecutionData?.lastStartedBlock
-        ? { lastStartedBlock: existingExecutionData.lastStartedBlock }
-        : {}),
-      ...(existingExecutionData?.lastCompletedBlock
-        ? { lastCompletedBlock: existingExecutionData.lastCompletedBlock }
-        : {}),
+      ...(lastStartedBlock ? { lastStartedBlock } : {}),
+      ...(lastCompletedBlock ? { lastCompletedBlock } : {}),
       ...(Array.isArray(existingExecutionData?.userAttachments) &&
       existingExecutionData.userAttachments.length > 0
         ? { userAttachments: existingExecutionData.userAttachments }
@@ -647,7 +667,10 @@ export class ExecutionLogger implements IExecutionLoggerService {
     const config = resolveEffectivePiiRedaction({ orgSettings: row.orgSettings, workspaceId })
     if (!config.enabled) return payload
 
-    return redactPIIFromExecution(payload, { entityTypes: config.entityTypes })
+    return redactPIIFromExecution(payload, {
+      entityTypes: config.entityTypes,
+      language: config.language,
+    })
   }
 
   async completeWorkflowExecution(params: {
@@ -684,6 +707,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     isResume?: boolean
     level?: 'info' | 'error'
     status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
+    readProgressMarkers?: boolean
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,
@@ -700,6 +724,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       finalChatOutput,
       level: levelOverride,
       status: statusOverride,
+      readProgressMarkers = true,
     } = params
 
     let execLog = logger.withMetadata({ executionId })
@@ -778,8 +803,11 @@ export class ExecutionLogger implements IExecutionLoggerService {
       models: costSummary.models,
     }
 
+    const progressMarkers = readProgressMarkers ? await getProgressMarkers(executionId) : null
+
     const builtExecutionData = this.buildCompletedExecutionData({
       existingExecutionData,
+      progressMarkers: progressMarkers ?? undefined,
       traceSpans: mergedTraceSpans,
       finalOutput,
       finalizationPath,
@@ -940,6 +968,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
       return log
     })
 
+    if (progressMarkers !== null) void clearProgressMarkers(executionId)
+
     try {
       // Skip workflow lookup if workflow was deleted.
       const wf = updatedLog.workflowId
@@ -1053,6 +1083,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           userEmail: emailContext.userEmail,
           userName: emailContext.userName || undefined,
           planName: emailContext.planName,
+          workspaceId: updatedLog.workspaceId,
           percentBefore,
           percentAfter,
           currentUsageAfter,
@@ -1069,6 +1100,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           scope: 'organization',
           organizationId: emailContext.organizationId,
           planName: emailContext.planName,
+          workspaceId: updatedLog.workspaceId,
           percentBefore,
           percentAfter,
           currentUsageAfter,

@@ -101,7 +101,10 @@ describe('buildTableCellTextEndIndexMap', () => {
                       {
                         location: { columnIndex: 1 },
                         text: {
-                          textElements: [{ endIndex: 9 }, { endIndex: 9, textRun: { content: 'Header 1\n' } }],
+                          textElements: [
+                            { endIndex: 9 },
+                            { endIndex: 9, textRun: { content: 'Header 1\n' } },
+                          ],
                         },
                       },
                     ],
@@ -171,7 +174,9 @@ describe('buildTableColumnWidthRequests', () => {
       updateTableColumnProperties: { tableColumnProperties: { columnWidth: { magnitude: number } } }
     }
 
-    expect(wideColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude).toBeGreaterThan(
+    expect(
+      wideColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+    ).toBeGreaterThan(
       narrowColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
   })
@@ -189,8 +194,13 @@ describe('buildTableColumnWidthRequests', () => {
     expect(requests).toHaveLength(3)
     const widths = requests.map(
       (request) =>
-        (request as { updateTableColumnProperties: { tableColumnProperties: { columnWidth: { magnitude: number } } } })
-          .updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+        (
+          request as {
+            updateTableColumnProperties: {
+              tableColumnProperties: { columnWidth: { magnitude: number } }
+            }
+          }
+        ).updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
     expect(widths[1]).toBeGreaterThan(widths[0])
     expect(widths[1]).toBeGreaterThan(widths[2])
@@ -255,8 +265,13 @@ describe('buildTableContentRequests', () => {
 
     const widths = columnUpdates.map(
       (request) =>
-        (request as { updateTableColumnProperties: { tableColumnProperties: { columnWidth: { magnitude: number } } } })
-          .updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+        (
+          request as {
+            updateTableColumnProperties: {
+              tableColumnProperties: { columnWidth: { magnitude: number } }
+            }
+          }
+        ).updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
     expect(widths[1]).toBeGreaterThan(widths[0]!)
   })

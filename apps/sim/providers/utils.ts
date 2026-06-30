@@ -154,6 +154,7 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
   xai: buildProviderMetadata('xai'),
   cerebras: buildProviderMetadata('cerebras'),
   groq: buildProviderMetadata('groq'),
+  sakana: buildProviderMetadata('sakana'),
   mistral: buildProviderMetadata('mistral'),
   bedrock: buildProviderMetadata('bedrock'),
   openrouter: buildProviderMetadata('openrouter'),
