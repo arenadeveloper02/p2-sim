@@ -1,6 +1,6 @@
 'use client'
 
-import { DatePicker } from '@sim/emcn'
+import { ChipDatePicker } from '@sim/emcn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 
 interface DateInputProps {
@@ -33,7 +33,7 @@ export function DateInput({
   }
 
   return (
-    <DatePicker
+    <ChipDatePicker
       value={value || ''}
       onChange={handleDateChange}
       placeholder={placeholder || 'Pick a date'}
