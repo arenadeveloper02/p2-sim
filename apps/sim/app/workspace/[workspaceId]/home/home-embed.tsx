@@ -1,11 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button } from '@sim/emcn'
+import { ArrowLeft, PanelLeft } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
-import { Button } from '@/components/emcn'
-import { ArrowLeft, PanelLeft } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import {
   LandingPromptStorage,

@@ -1,8 +1,8 @@
 'use client'
 
+import { Tooltip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { ArrowLeft, ThumbsDown, ThumbsUp } from 'lucide-react'
-import { Tooltip } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import MarkdownRenderer from '@/app/chat/components/message/components/markdown-renderer'
 

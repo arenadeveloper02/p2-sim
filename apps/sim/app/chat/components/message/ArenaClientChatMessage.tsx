@@ -11,11 +11,11 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Tooltip } from '@sim/emcn'
 // import MarkdownRenderer from './components/markdown-renderer'
 // import { toastError, toastSuccess } from '@/components/ui'
 import { createLogger } from '@sim/logger'
 import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
-import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'

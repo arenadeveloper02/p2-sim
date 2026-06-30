@@ -1,8 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
+import { Modal, ModalBody, ModalContent, ModalHeader } from '@sim/emcn'
 import { ExternalLink } from 'lucide-react'
-import { Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 import type { KnowledgeResultChunk } from '@/app/chat/components/message/message'
 
 interface KnowledgeResultsModalProps {

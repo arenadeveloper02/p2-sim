@@ -1,7 +1,7 @@
 'use client'
 
-import { DatePicker } from '@/components/emcn'
-import { Combobox, type ComboboxOption } from '@/components/emcn/components'
+import { DatePicker } from '@sim/emcn'
+import { Combobox, type ComboboxOption } from '@sim/emcn/components'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 
 interface SlackDateRangeSelectorProps {
