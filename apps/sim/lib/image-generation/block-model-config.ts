@@ -44,6 +44,13 @@ const OPENAI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     supportsReferenceImages: true,
     maxReferenceImages: 1,
   },
+  {
+    id: 'chatgpt-image-latest',
+    label: 'ChatGPT Image Latest',
+    provider: 'openai',
+    supportsReferenceImages: true,
+    maxReferenceImages: 1,
+  },
 ]
 
 const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
@@ -86,7 +93,6 @@ export const OPENAI_IMAGE_MODEL_IDS = [
   'gpt-image-1',
   'gpt-image-1-mini',
   'chatgpt-image-latest',
-  'dall-e-3',
 ] as const
 
 export const GEMINI_IMAGE_MODEL_IDS = [
@@ -116,9 +122,30 @@ export interface ReconcileImageProviderAndModelResult {
   coerced: boolean
 }
 
+const IMAGE_MODEL_ALIASES: Record<string, string> = {
+  'gpt-images-2': 'gpt-image-2',
+  'gpt-image2': 'gpt-image-2',
+  'chatgpt-image-2': 'gpt-image-2',
+  'gpt-image-1-5': 'gpt-image-1.5',
+  'gpt-image15': 'gpt-image-1.5',
+  'gpt-images-1.5': 'gpt-image-1.5',
+}
+
 function normalizeModelId(model: string | undefined): string | undefined {
   const trimmed = typeof model === 'string' ? model.trim() : ''
   return trimmed.length > 0 ? trimmed : undefined
+}
+
+/**
+ * Normalizes common image model typos and aliases to canonical block model IDs.
+ */
+export function normalizeImageModelId(modelId: string | undefined): string | undefined {
+  const trimmed = normalizeModelId(modelId)
+  if (!trimmed) {
+    return undefined
+  }
+
+  return IMAGE_MODEL_ALIASES[trimmed.toLowerCase()] ?? trimmed
 }
 
 function normalizeProviderId(provider: string | undefined): ImageProvider | undefined {
@@ -133,7 +160,7 @@ function normalizeProviderId(provider: string | undefined): ImageProvider | unde
  * Resolves the image provider for a model ID using the block catalog and known aliases.
  */
 export function resolveImageProviderForModel(modelId: string): ImageProvider | undefined {
-  const normalized = normalizeModelId(modelId)
+  const normalized = normalizeImageModelId(modelId)
   if (!normalized) {
     return undefined
   }
@@ -182,7 +209,7 @@ export function getDefaultImageModelForProvider(provider: ImageProvider): string
 export function reconcileImageProviderAndModel(
   input: ReconcileImageProviderAndModelInput
 ): ReconcileImageProviderAndModelResult {
-  const model = normalizeModelId(input.model)
+  const model = normalizeImageModelId(input.model)
   const requestedProvider = normalizeProviderId(input.provider)
   const modelProvider = model ? resolveImageProviderForModel(model) : undefined
 
@@ -258,3 +285,5 @@ export function supportsMultipleReferenceImages(modelId: string): boolean {
 
 export const OPENAI_GPT_IMAGE_MODELS = toModelDropdownOptions(OPENAI_MODEL_DEFINITIONS)
 export const GEMINI_IMAGE_MODELS = toModelDropdownOptions(GEMINI_MODEL_DEFINITIONS)
+export const IMAGE_BLOCK_ALL_MODEL_OPTIONS = toModelDropdownOptions(IMAGE_BLOCK_MODEL_DEFINITIONS)
+export const IMAGE_BLOCK_MODEL_IDS = IMAGE_BLOCK_MODEL_DEFINITIONS.map((model) => model.id)

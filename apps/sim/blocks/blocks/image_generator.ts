@@ -1,9 +1,9 @@
 import { ImageIcon } from '@/components/icons'
 import {
-  GEMINI_IMAGE_MODELS,
   getReferenceImageModelIds,
+  IMAGE_BLOCK_ALL_MODEL_OPTIONS,
   IMAGE_BLOCK_PROVIDER_OPTIONS,
-  OPENAI_GPT_IMAGE_MODELS,
+  normalizeImageModelId,
   reconcileImageProviderAndModel,
 } from '@/lib/image-generation/block-model-config'
 import {
@@ -559,29 +559,19 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       placeholder: 'Type, select, or reference a provider...',
       searchable: true,
       commandSearchable: true,
-      value: () => 'gemini',
+      clearable: true,
+      value: () => '',
     },
     {
       id: 'model',
       title: 'Model',
       type: 'combobox',
-      options: OPENAI_GPT_IMAGE_MODELS,
+      options: IMAGE_BLOCK_ALL_MODEL_OPTIONS,
       placeholder: 'Type, select, or reference a model...',
       searchable: true,
-      value: () => 'gpt-image-1.5',
-      condition: { field: 'provider', value: 'openai' },
-      dependsOn: ['provider'],
-    },
-    {
-      id: 'model',
-      title: 'Model',
-      type: 'combobox',
-      options: GEMINI_IMAGE_MODELS,
-      placeholder: 'Type, select, or reference a model...',
-      searchable: true,
-      value: () => 'gemini-3.1-flash-image-preview',
-      condition: { field: 'provider', value: 'gemini' },
-      dependsOn: ['provider'],
+      commandSearchable: true,
+      clearable: true,
+      value: () => '',
     },
     // {
     //   id: 'model',
@@ -1172,7 +1162,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
 
         const { provider, model } = reconcileImageProviderAndModel({
           provider: typeof params.provider === 'string' ? params.provider : undefined,
-          model: typeof params.model === 'string' ? params.model : undefined,
+          model:
+            typeof params.model === 'string'
+              ? normalizeImageModelId(params.model)
+              : undefined,
         })
         const referenceInputs =
           provider === 'openai' || provider === 'gemini'

@@ -69,6 +69,38 @@ describe('ImageGeneratorV2Block', () => {
     })
   })
 
+  it('coerces provider from gpt-images-2 typo when provider is gemini', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'gemini',
+      model: 'gpt-images-2',
+      prompt: 'A poster with headline copy',
+    })
+
+    expect(params).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-image-2',
+    })
+  })
+
+  it('uses a single always-visible model combobox with all block models', () => {
+    const modelSubBlocks = ImageGeneratorV2Block.subBlocks.filter((subBlock) => subBlock.id === 'model')
+
+    expect(modelSubBlocks).toHaveLength(1)
+    expect(modelSubBlocks[0]?.condition).toBeUndefined()
+    expect(modelSubBlocks[0]?.options?.map((option) => option.id)).toEqual(
+      expect.arrayContaining(['gpt-image-2', 'gpt-image-1.5', 'gemini-3.1-flash-image-preview'])
+    )
+  })
+
+  it('allows clearing provider without hiding the model field', () => {
+    const providerSubBlock = ImageGeneratorV2Block.subBlocks.find((subBlock) => subBlock.id === 'provider')
+    const modelSubBlock = ImageGeneratorV2Block.subBlocks.find((subBlock) => subBlock.id === 'model')
+
+    expect(providerSubBlock?.clearable).toBe(true)
+    expect(providerSubBlock?.value?.({})).toBe('')
+    expect(modelSubBlock?.condition).toBeUndefined()
+  })
+
   it('coerces provider to openai when block defaults conflict with gpt-image-2', () => {
     const params = ImageGeneratorV2Block.tools.config.params?.({
       provider: 'gemini',

@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { z } from 'zod'
 import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
-import { reconcileImageProviderAndModel } from '@/lib/image-generation/block-model-config'
+import { reconcileImageProviderAndModel, normalizeImageModelId } from '@/lib/image-generation/block-model-config'
 import {
   applyNanoBananaPromptImageParams,
   normalizeOptionalString,
@@ -186,7 +186,7 @@ function resolveExecutionToolId(
 
   const reconciled = reconcileImageProviderAndModel({
     provider: getStringParam(params, 'provider'),
-    model: getStringParam(params, 'model'),
+    model: normalizeImageModelId(getStringParam(params, 'model')),
   })
   if (reconciled.coerced) {
     logger.warn('Coerced image generation provider to match model', {

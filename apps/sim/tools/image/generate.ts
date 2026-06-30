@@ -1,4 +1,5 @@
 import { isUserFile } from '@/lib/core/utils/user-file'
+import { IMAGE_BLOCK_MODEL_IDS } from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 import type { ImageGenerationParams, ImageGenerationResponse } from '@/tools/image/types'
@@ -116,6 +117,8 @@ function normalizeImagesOutput(
   return primary ? [primary] : []
 }
 
+const IMAGE_GENERATE_MODEL_IDS = IMAGE_BLOCK_MODEL_IDS.join(', ')
+
 export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGenerationResponse> = {
   id: 'image_generate',
   name: 'Image Generator',
@@ -142,7 +145,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Provider model ID. OpenAI: gpt-image-2, gpt-image-1.5, gpt-image-1, gpt-image-1-mini, chatgpt-image-latest. Gemini: gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, gemini-2.5-flash-image. Fal.ai: nano-banana-2, nano-banana-pro, nano-banana, flux-2-pro, seedream-v4.5, grok-imagine-image.',
+        `Provider model ID. Supported models: ${IMAGE_GENERATE_MODEL_IDS}. Provider is inferred from model when omitted.`,
     },
     prompt: {
       type: 'string',

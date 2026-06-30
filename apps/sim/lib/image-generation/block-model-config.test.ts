@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assertGeminiImageModel,
   getDefaultImageModelForProvider,
+  normalizeImageModelId,
   reconcileImageProviderAndModel,
   resolveImageProviderForModel,
 } from '@/lib/image-generation/block-model-config'
@@ -28,6 +29,11 @@ describe('resolveImageProviderForModel', () => {
   it('maps OpenAI aliases to openai', () => {
     expect(resolveImageProviderForModel('chatgpt-image-latest')).toBe('openai')
     expect(resolveImageProviderForModel('dall-e-3')).toBe('openai')
+  })
+
+  it('normalizes common model typos', () => {
+    expect(normalizeImageModelId('gpt-images-2')).toBe('gpt-image-2')
+    expect(normalizeImageModelId(' GPT-IMAGE-1-5 ')).toBe('gpt-image-1.5')
   })
 })
 

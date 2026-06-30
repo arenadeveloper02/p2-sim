@@ -17,7 +17,7 @@ import {
   readResponseToBufferWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { reconcileImageProviderAndModel } from '@/lib/image-generation/block-model-config'
+import { reconcileImageProviderAndModel, normalizeImageModelId } from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
@@ -221,7 +221,7 @@ export async function runImageToolGeneration(
   const requestId = options.requestId ?? generateId().slice(0, 8)
   const reconciled = reconcileImageProviderAndModel({
     provider: body.provider,
-    model: body.model,
+    model: normalizeImageModelId(body.model),
   })
   if (reconciled.coerced) {
     logger.warn(`[${requestId}] Coerced image generation provider to match model`, {
