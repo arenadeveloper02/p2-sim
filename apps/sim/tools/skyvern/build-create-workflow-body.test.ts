@@ -69,6 +69,7 @@ describe('buildSkyvernCreateWorkflowBody', () => {
       url: '{{starting_url}}',
       navigation_goal: 'Find slots for {{appointment_type}}',
       parameter_keys: ['starting_url', 'appointment_type', 'days_to_search'],
+      max_steps_per_run: 100,
     })
   })
 

@@ -57,6 +57,7 @@ function buildSkyvernWorkflowBlocks(params: {
     engine: 'skyvern-1.0',
     parameter_keys: params.parameterKeys,
     max_retries: 0,
+    max_steps_per_run: 100,
   }
 
   const blocks: Array<Record<string, unknown>> = []
