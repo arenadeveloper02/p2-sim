@@ -5,7 +5,7 @@ services:
       dockerfile: docker/app.Dockerfile
     restart: unless-stopped
     ports:
-      - '3000:3000'
+      - "3000:3000"
     deploy:
       resources:
         limits:
@@ -53,7 +53,7 @@ services:
       realtime:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3000']
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3000"]
       interval: 90s
       timeout: 5s
       retries: 3
@@ -65,7 +65,7 @@ services:
       dockerfile: docker/realtime.Dockerfile
     restart: unless-stopped
     ports:
-      - '3002:3002'
+      - "3002:3002"
     deploy:
       resources:
         limits:
@@ -79,38 +79,11 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3002/health']
+      test:
+        ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3002/health"]
       interval: 90s
       timeout: 5s
       retries: 3
-      start_period: 10s
-
-  migrations:
-    image: ghcr.io/simstudioai/migrations:latest
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
-    depends_on:
-      db:
-        condition: service_healthy
-    command: ['bun', 'run', 'db:migrate']
-    restart: 'no'
-
-  db:
-    image: pgvector/pgvector:pg17
-    restart: unless-stopped
-    ports:
-      - '5432:5432'
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-simstudio}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres']
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
 volumes:
   postgres_data:

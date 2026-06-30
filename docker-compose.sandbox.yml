@@ -8,7 +8,7 @@ services:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
     restart: unless-stopped
     ports:
-      - '3000:3000'
+      - "3000:3000"
     deploy:
       resources:
         limits:
@@ -57,7 +57,14 @@ services:
       realtime:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3000/api/health']
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "--quiet",
+          "http://127.0.0.1:3000/api/health",
+        ]
       interval: 90s
       timeout: 5s
       retries: 3
@@ -69,7 +76,7 @@ services:
       dockerfile: docker/realtime.Dockerfile
     restart: unless-stopped
     ports:
-      - '3002:3002'
+      - "3002:3002"
     deploy:
       resources:
         limits:
@@ -83,7 +90,8 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3002/health']
+      test:
+        ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3002/health"]
       interval: 90s
       timeout: 5s
       retries: 3
@@ -96,25 +104,4 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: ['bun', 'run', 'db:migrate']
-    restart: 'no'
-
-  db:
-    image: pgvector/pgvector:pg17
-    restart: unless-stopped
-    ports:
-      - '${POSTGRES_PORT:-5432}:5432'
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-simstudio}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres']
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  postgres_data:
+    command: ["bun", "run", "db:migrate"]
