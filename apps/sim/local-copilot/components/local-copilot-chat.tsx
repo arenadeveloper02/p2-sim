@@ -3,6 +3,7 @@
 import { Bug, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react'
 import { Button, Chip, ChipTextarea } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
+import { ChatContent } from '@/app/workspace/[workspaceId]/home/components/message-content/components/chat-content'
 import { PatchPreview } from '@/local-copilot/components/patch-preview'
 import type { LocalCopilotMessage } from '@/local-copilot/hooks/use-local-copilot'
 
@@ -11,7 +12,8 @@ interface LocalCopilotChatProps {
   isStreaming: boolean
   input: string
   onInputChange: (value: string) => void
-  onSend: () => void
+  /** Sends the current input, or an explicit message when a follow-up option is clicked. */
+  onSend: (message?: string) => void
   onClear: () => void
   onDebugLastRun: () => void
   onExplainBlock: () => void
@@ -74,26 +76,34 @@ export function LocalCopilotChat({
             </p>
           </div>
         ) : (
-          messages.map((message) => (
-            <div
-              key={message.id}
-              className={cn(
-                'max-w-[95%] rounded-lg px-3 py-2 text-[13px]',
-                message.role === 'user'
-                  ? 'ml-auto bg-[var(--surface-accent)] text-[var(--text-body)]'
-                  : 'mr-auto bg-[var(--surface-2)] text-[var(--text-body)]'
-              )}
-            >
-              <p className='whitespace-pre-wrap'>{message.text || (message.streaming ? '…' : '')}</p>
-              {message.recommendations?.length ? (
-                <ul className='mt-2 list-disc pl-4 text-[12px] text-[var(--text-muted)]'>
-                  {message.recommendations.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          ))
+          messages.map((message, index) => {
+            const isLast = index === messages.length - 1
+            const isStreamingAssistant =
+              message.role === 'assistant' && isLast && Boolean(message.streaming)
+            return (
+              <div
+                key={message.id}
+                className={cn(
+                  'max-w-[95%] rounded-lg px-3 py-2 text-[13px]',
+                  message.role === 'user'
+                    ? 'ml-auto bg-[var(--surface-accent)] text-[var(--text-body)]'
+                    : 'mr-auto bg-[var(--surface-2)] text-[var(--text-body)]'
+                )}
+              >
+                {message.role === 'assistant' ? (
+                  <ChatContent
+                    content={message.text || (message.streaming ? '…' : '')}
+                    isStreaming={isStreamingAssistant}
+                    onOptionSelect={
+                      isLast && !isStreaming ? (title) => onSend(title) : undefined
+                    }
+                  />
+                ) : (
+                  <p className='whitespace-pre-wrap'>{message.text}</p>
+                )}
+              </div>
+            )
+          })
         )}
 
         {pendingPatch?.patch ? (
@@ -129,7 +139,7 @@ export function LocalCopilotChat({
               }
             }}
           />
-          <Button onClick={onSend} disabled={isStreaming || !input.trim()}>
+          <Button onClick={() => onSend()} disabled={isStreaming || !input.trim()}>
             Send
           </Button>
         </div>

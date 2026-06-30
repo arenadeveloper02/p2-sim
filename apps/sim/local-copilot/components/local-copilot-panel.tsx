@@ -89,8 +89,10 @@ export function LocalCopilotPanel({
         isStreaming={copilot.isStreaming}
         input={input}
         onInputChange={setInput}
-        onSend={() => {
-          void copilot.sendMessage(input)
+        onSend={(message) => {
+          const text = message?.trim() || input.trim()
+          if (!text) return
+          void copilot.sendMessage(text)
           setInput('')
         }}
         onClear={copilot.clearChat}

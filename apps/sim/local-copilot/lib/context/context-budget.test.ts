@@ -64,6 +64,9 @@ describe('resolveWorkflowContextDetail', () => {
     const hugeValue = 'x'.repeat(LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET * 4 + 10_000)
     const context: LocalCopilotStructuredContext = {
       workspace: { id: 'ws-1', name: 'Workspace', environment: 'self_hosted' },
+      connectedIntegrations: [],
+      envVariables: [],
+      hostedKeysAvailable: false,
       workflow: {
         id: 'wf-1',
         name: 'Large workflow',

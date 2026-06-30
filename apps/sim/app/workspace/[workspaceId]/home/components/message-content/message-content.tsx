@@ -5,6 +5,7 @@ import { Read as ReadTool, WorkspaceFile } from '@/lib/copilot/generated/tool-ca
 import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
 import { resolveToolDisplay } from '@/lib/copilot/tools/client/store-utils'
 import { ClientToolCallState } from '@/lib/copilot/tools/client/tool-call-state'
+import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
 import { getToolDisplayTitle, humanizeToolName } from '@/lib/copilot/tools/tool-display'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
 import type { ContentBlock, OptionItem, ToolCallData } from '../../types'
@@ -184,8 +185,10 @@ function isHiddenToolCall(toolName: string | undefined): boolean {
 }
 
 function resolveAgentLabel(key: string): string {
-  if (key === 'mothership') return 'Sim'
-  return SUBAGENT_LABELS[key] ?? humanizeToolName(key)
+  if (key === 'mothership') return resolveAssistantDisplayLabel('mothership')
+  const mapped = SUBAGENT_LABELS[key]
+  if (mapped) return mapped
+  return resolveAssistantDisplayLabel(humanizeToolName(key))
 }
 
 function isDelegatingTool(tc: NonNullable<ContentBlock['toolCall']>): boolean {

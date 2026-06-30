@@ -111,7 +111,12 @@ export async function executeLocalCopilotTool(
       return {
         toolName,
         success: true,
-        result: { integrations: ctx.structuredContext.availableIntegrations },
+        result: {
+          integrations: ctx.structuredContext.availableIntegrations,
+          connectedIntegrations: ctx.structuredContext.connectedIntegrations,
+          envVariables: ctx.structuredContext.envVariables,
+          hostedKeysAvailable: ctx.structuredContext.hostedKeysAvailable,
+        },
       }
 
     case 'validate_workflow': {

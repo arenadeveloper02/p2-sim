@@ -7,13 +7,15 @@ import { getAllBlocks } from '@/blocks/registry'
 import type { BlockConfig } from '@/blocks/types'
 import { listLogs } from '@/lib/logs/list-logs'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
-import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
+import {
+  loadWorkspaceIntegrations,
+  oauthIntegrationsToCredentialMetadata,
+} from '@/local-copilot/lib/context/load-workspace-integrations'
 import { isSelfHostedDeployment, getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { buildContextPromptPayload } from '@/local-copilot/lib/context/context-budget'
 import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type {
   LocalCopilotBlockSummary,
-  LocalCopilotCredentialMetadata,
   LocalCopilotStructuredContext,
 } from '@/local-copilot/lib/types'
 
@@ -42,9 +44,16 @@ export async function buildLocalCopilotContext(
     throw new Error('Workspace not found')
   }
 
-  const credentials = await loadCredentialMetadata(workspaceId, userId)
+  const integrations = await loadWorkspaceIntegrations(workspaceId, userId)
+  const credentials = oauthIntegrationsToCredentialMetadata(integrations.connectedIntegrations)
   const availableBlocks = summarizeBlocks(getAllBlocks())
   const availableIntegrations = [...new Set(availableBlocks.map((block) => block.category))].sort()
+
+  const integrationContext = {
+    connectedIntegrations: integrations.connectedIntegrations,
+    envVariables: integrations.envVariables,
+    hostedKeysAvailable: integrations.hostedKeysAvailable,
+  }
 
   if (!workflowId) {
     const workspaceWorkflows = await db
@@ -60,6 +69,7 @@ export async function buildLocalCopilotContext(
         name: workspaceRow.name,
         environment: isSelfHostedDeployment() ? 'self_hosted' : 'cloud',
       },
+      ...integrationContext,
       execution: {
         lastRunStatus: 'unknown',
         logs: [],
@@ -77,6 +87,8 @@ export async function buildLocalCopilotContext(
     logger.info('Built Arena Copilot workspace context', {
       workspaceId,
       workflowCount: workspaceWorkflows.length,
+      envVariableCount: integrations.envVariables.length,
+      connectedIntegrationCount: integrations.connectedIntegrations.length,
       provider: getLocalCopilotConfig().provider,
     })
 
@@ -119,6 +131,7 @@ export async function buildLocalCopilotContext(
       name: workspaceRow.name,
       environment: isSelfHostedDeployment() ? 'self_hosted' : 'cloud',
     },
+    ...integrationContext,
     workflow: {
       id: workflowRow.id,
       name: workflowRow.name ?? 'Untitled workflow',
@@ -138,6 +151,8 @@ export async function buildLocalCopilotContext(
   logger.info('Built Arena Copilot context', {
     workflowId,
     blockCount: Object.keys(normalized.blocks).length,
+    envVariableCount: integrations.envVariables.length,
+    connectedIntegrationCount: integrations.connectedIntegrations.length,
     provider: getLocalCopilotConfig().provider,
   })
 
@@ -149,19 +164,6 @@ export function contextToPromptJson(
   options?: { workflowDetail?: 'full' | 'compact' }
 ): string {
   return buildContextPromptPayload(context, options)
-}
-
-async function loadCredentialMetadata(
-  workspaceId: string,
-  userId: string
-): Promise<LocalCopilotCredentialMetadata[]> {
-  const oauthCreds = await getAccessibleOAuthCredentials(workspaceId, userId)
-  return oauthCreds.map((cred) => ({
-    credentialId: cred.id,
-    provider: cred.providerId,
-    status: 'connected' as const,
-    displayName: cred.displayName,
-  }))
 }
 
 async function loadExecutionContext(params: {

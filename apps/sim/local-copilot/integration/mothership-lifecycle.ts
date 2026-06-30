@@ -156,23 +156,6 @@ async function dispatchLocalCopilotEvent(
     return
   }
 
-  if (event.type === 'recommendations' && event.items.length) {
-    const recText = `\n\n**Recommendations:**\n${event.items.map((item) => `- ${item}`).join('\n')}`
-    await dispatchStreamEvent(
-      {
-        type: MothershipStreamV1EventType.text,
-        payload: {
-          channel: MothershipStreamV1TextChannel.assistant,
-          text: recText,
-        },
-      },
-      context,
-      execContext,
-      options
-    )
-    return
-  }
-
   if (event.type === 'error') {
     context.errors.push(event.message)
     await dispatchStreamEvent(

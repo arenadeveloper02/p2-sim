@@ -30,6 +30,13 @@ export interface LocalCopilotCredentialMetadata {
   displayName?: string
 }
 
+export interface LocalCopilotConnectedIntegration {
+  credentialId: string
+  providerId: string
+  displayName?: string | null
+  role?: string | null
+}
+
 export interface LocalCopilotExecutionContext {
   lastRunStatus: 'success' | 'failed' | 'running' | 'unknown'
   logs: LocalCopilotLogEntry[]
@@ -48,6 +55,11 @@ export interface LocalCopilotLogEntry {
 
 export interface LocalCopilotStructuredContext {
   workspace: LocalCopilotWorkspaceContext
+  connectedIntegrations: LocalCopilotConnectedIntegration[]
+  /** Configured workspace/personal env key names (values never included). */
+  envVariables: string[]
+  /** When true, platform-hosted API keys may be injected at execution time. */
+  hostedKeysAvailable: boolean
   workflow?: {
     id: string
     name: string

@@ -152,6 +152,9 @@ export function buildContextPromptPayload(
   return JSON.stringify(
     {
       workspace: context.workspace,
+      connectedIntegrations: context.connectedIntegrations,
+      envVariables: context.envVariables,
+      hostedKeysAvailable: context.hostedKeysAvailable,
       workflow: workflowPayload,
       workspaceWorkflows: context.workspaceWorkflows,
       execution: context.execution,
