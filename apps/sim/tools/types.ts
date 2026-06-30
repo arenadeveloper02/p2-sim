@@ -245,7 +245,13 @@ interface SchemaEnrichmentConfig {
     properties?: Record<string, { type: string; description?: string }>
     description?: string
     required?: string[]
+    enum?: string[]
   } | null>
+  /**
+   * When true (default), omit this param from the LLM schema if the dependency value is unset.
+   * When false, fall back to the base param description and enrich only when the dependency is set.
+   */
+  omitWithoutDependency?: boolean
 }
 
 /**

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as environmentModule from '@/lib/core/config/env-flags'
+import { imageGenerateTool } from '@/tools/image/generate'
 import {
   calculateCost,
   extractAndParseJSON,
@@ -1686,17 +1687,22 @@ describe('transformBlockTool image generator agent tool', () => {
   }
 
   const getAllBlocks = () => [imageGeneratorBlockDef]
-  const getTool = (id: string) => ({
-    id,
-    name: 'Image Generator',
-    description: 'Generate images',
-    params: {
-      provider: { type: 'string', required: false, visibility: 'user-or-llm' },
-      apiKey: { type: 'string', required: false, visibility: 'user-only' },
-      model: { type: 'string', required: false, visibility: 'user-or-llm' },
-      prompt: { type: 'string', required: true, visibility: 'user-or-llm' },
-    },
-  })
+  const getTool = (id: string) => {
+    if (id === 'image_generate') {
+      return imageGenerateTool
+    }
+    return {
+      id,
+      name: 'Image Generator',
+      description: 'Generate images',
+      params: {
+        provider: { type: 'string', required: false, visibility: 'user-or-llm' },
+        apiKey: { type: 'string', required: false, visibility: 'user-only' },
+        model: { type: 'string', required: false, visibility: 'user-or-llm' },
+        prompt: { type: 'string', required: true, visibility: 'user-or-llm' },
+      },
+    }
+  }
 
   it('exposes image_generate to the LLM with block paramsTransform applied', async () => {
     const result = await transformBlockTool(
@@ -1745,5 +1751,28 @@ describe('transformBlockTool image generator agent tool', () => {
     expect(result?.parameters?.properties).not.toHaveProperty('apiKey')
     expect(result?.parameters?.required).toEqual(expect.arrayContaining(['prompt']))
     expect(result?.parameters?.required).not.toEqual(expect.arrayContaining(['provider', 'model']))
+    expect(result?.parameters?.properties?.provider?.description).toContain('openai')
+    expect(result?.parameters?.properties?.model?.description).toContain('gpt-image-1.5')
+  })
+
+  it('enriches image_generate model enum when provider is set in agent tool params', async () => {
+    const result = await transformBlockTool(
+      {
+        type: 'image_generator_v2',
+        title: 'Image Generator',
+        params: {
+          provider: 'openai',
+          prompt: 'A red sports car',
+        },
+      },
+      { getAllBlocks, getTool }
+    )
+
+    expect(result?.parameters?.properties).toHaveProperty('model')
+    expect(result?.parameters?.properties?.model?.enum).toEqual(
+      expect.arrayContaining(['gpt-image-2', 'gpt-image-1.5'])
+    )
+    expect(result?.parameters?.properties).not.toHaveProperty('provider')
+    expect(result?.parameters?.properties).not.toHaveProperty('prompt')
   })
 })

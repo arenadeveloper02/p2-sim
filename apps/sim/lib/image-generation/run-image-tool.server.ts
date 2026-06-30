@@ -18,6 +18,7 @@ import {
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
+import { NANO_BANANA_PRO_MODEL } from '@/lib/image-generation/nano-banana-inputs'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
 import { generateFileId } from '@/lib/uploads/contexts/execution/utils'
@@ -551,7 +552,7 @@ async function generateWithOpenAI(
   logger: ReturnType<typeof createLogger>,
   userId: string
 ): Promise<GeneratedImageResult> {
-  const model = resolveAllowedParam(body.model, OPENAI_IMAGE_MODELS, 'gpt-image-1.5', 'model')
+  const model = resolveAllowedParam(body.model, OPENAI_IMAGE_MODELS, 'gpt-image-2', 'model')
   const inputImage = (body as Record<string, unknown>).inputImage
   const inputImageMimeType = (body as Record<string, unknown>).inputImageMimeType
   const isGptImage2 = model === GPT_IMAGE_2_MODEL
@@ -801,7 +802,7 @@ async function generateWithGemini(
   const model = resolveAllowedParam(
     body.model,
     GEMINI_IMAGE_MODELS,
-    'gemini-3.1-flash-image-preview',
+    NANO_BANANA_PRO_MODEL,
     'model'
   )
   const aspectRatios =

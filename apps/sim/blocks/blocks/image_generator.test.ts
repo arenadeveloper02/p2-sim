@@ -70,6 +70,20 @@ describe('ImageGeneratorV2Block', () => {
     type: 'image/png',
   }
 
+  it('defaults to GPT Image 2 for OpenAI and Nano Banana Pro for Gemini when model is omitted', () => {
+    const openAIParams = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'openai',
+      prompt: 'A red car',
+    })
+    const geminiParams = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'gemini',
+      prompt: 'A blue car',
+    })
+
+    expect(openAIParams?.model).toBe('gpt-image-2')
+    expect(geminiParams?.model).toBe('gemini-3-pro-image-preview')
+  })
+
   it('maps multiple Gemini reference uploads to inputImages for Nano Banana 2', () => {
     const params = ImageGeneratorV2Block.tools.config.params?.({
       provider: 'gemini',

@@ -1107,8 +1107,12 @@ export function FileUpload({
         )
       })()}
 
-      {/* Single file mode with file selected: show combobox-style UI with X and chevron */}
-      {hasFiles && !effectiveMultiple && !isUploading && (
+      {/* Single file mode with a workspace file selected (not start-files / conversation refs) */}
+      {!useCombinedChatReferenceMode &&
+        hasFiles &&
+        !effectiveMultiple &&
+        !isUploading &&
+        filesArray[0] && (
         <SingleFileSelector
           file={filesArray[0]}
           options={singleFileOptions}

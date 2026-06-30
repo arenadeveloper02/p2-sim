@@ -563,21 +563,27 @@ export async function createLLMToolSchema(
     if (enrichmentConfig) {
       const dependencyValue = userProvidedParams[enrichmentConfig.dependsOn] as string
       if (!dependencyValue) {
+        if (enrichmentConfig.omitWithoutDependency !== false) {
+          continue
+        }
+      } else {
+        if (isNonEmpty(userProvidedParams[paramId])) {
+          continue
+        }
+
+        const propertySchema = buildParameterSchema(toolConfig.id, paramId, param)
+        const enrichedSchema = await enrichmentConfig.enrichSchema(dependencyValue)
+
+        if (enrichedSchema) {
+          safeAssign(propertySchema, enrichedSchema as Record<string, unknown>)
+          schema.properties[paramId] = propertySchema
+
+          if (param.required) {
+            schema.required.push(paramId)
+          }
+        }
         continue
       }
-
-      const propertySchema = buildParameterSchema(toolConfig.id, paramId, param)
-      const enrichedSchema = await enrichmentConfig.enrichSchema(dependencyValue)
-
-      if (enrichedSchema) {
-        safeAssign(propertySchema, enrichedSchema as Record<string, unknown>)
-        schema.properties[paramId] = propertySchema
-
-        if (param.required) {
-          schema.required.push(paramId)
-        }
-      }
-      continue
     }
 
     if (!isWorkflowInputMapping) {

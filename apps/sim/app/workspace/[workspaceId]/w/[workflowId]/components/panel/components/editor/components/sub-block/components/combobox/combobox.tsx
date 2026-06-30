@@ -97,7 +97,11 @@ export const ComboBox = memo(function ComboBox({
   const dependsOnFields = useMemo(() => getDependsOnFields(dependsOn), [dependsOn])
   const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
   const blockState = useWorkflowStore((state) => state.blocks[blockId])
-  const blockConfig = blockState?.type ? getBlock(blockState.type) : null
+  const blockType = blockState?.type
+  const blockConfig = blockType ? getBlock(blockType) : null
+  const shouldFilterModelPermissions =
+    subBlockId === 'model' &&
+    (blockType === 'agent' || blockType === 'router' || blockType === 'evaluator')
   const canonicalIndex = useMemo(
     () => buildCanonicalIndex(blockConfig?.subBlocks || []),
     [blockConfig?.subBlocks]
@@ -160,7 +164,7 @@ export const ComboBox = memo(function ComboBox({
   const staticOptions = useMemo(() => {
     const opts = typeof options === 'function' ? options() : options
 
-    if (subBlockId === 'model') {
+    if (shouldFilterModelPermissions) {
       return opts.filter((opt) => {
         const modelId = typeof opt === 'string' ? opt : opt.id
         if (!isModelAllowed(modelId)) return false
@@ -173,7 +177,7 @@ export const ComboBox = memo(function ComboBox({
     }
 
     return opts
-  }, [options, subBlockId, isProviderAllowed, isModelAllowed])
+  }, [options, shouldFilterModelPermissions, isProviderAllowed, isModelAllowed])
 
   // Normalize fetched options to match ComboBoxOption format
   const normalizedFetchedOptions = useMemo((): ComboBoxOption[] => {
@@ -185,7 +189,7 @@ export const ComboBox = memo(function ComboBox({
     let opts: ComboBoxOption[] =
       fetchOptions && normalizedFetchedOptions.length > 0 ? normalizedFetchedOptions : staticOptions
 
-    if (subBlockId === 'model' && fetchOptions && normalizedFetchedOptions.length > 0) {
+    if (shouldFilterModelPermissions && fetchOptions && normalizedFetchedOptions.length > 0) {
       opts = opts.filter((opt) => {
         const modelId = typeof opt === 'string' ? opt : opt.id
         if (!isModelAllowed(modelId)) return false
@@ -213,7 +217,7 @@ export const ComboBox = memo(function ComboBox({
     normalizedFetchedOptions,
     staticOptions,
     hydratedOption,
-    subBlockId,
+    shouldFilterModelPermissions,
     isProviderAllowed,
     isModelAllowed,
   ])
@@ -251,8 +255,8 @@ export const ComboBox = memo(function ComboBox({
       // Default not available (e.g. provider disabled) — fall through to other fallbacks
     }
 
-    // For model field, default to gpt-5 if available
-    if (subBlockId === 'model') {
+    // For agent model field, default to gpt-5 if available
+    if (shouldFilterModelPermissions) {
       const gpt5 = evaluatedOptions.find((opt) => getOptionValue(opt) === DEFAULT_MODEL)
       if (gpt5) {
         return getOptionValue(gpt5)
@@ -264,7 +268,7 @@ export const ComboBox = memo(function ComboBox({
     }
 
     return undefined
-  }, [defaultValue, evaluatedOptions, subBlockId, getOptionValue])
+  }, [defaultValue, evaluatedOptions, shouldFilterModelPermissions, getOptionValue])
 
   /**
    * Resolve the user-facing text for the current stored value.

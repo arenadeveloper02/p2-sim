@@ -1,6 +1,13 @@
 import { isUserFile } from '@/lib/core/utils/user-file'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
+import {
+  enrichImageAspectRatioSchema,
+  enrichImageModelSchema,
+  enrichImageResolutionSchema,
+  IMAGE_MODEL_DESCRIPTION,
+  IMAGE_PROVIDER_DESCRIPTION,
+} from '@/tools/image/schema-enrichment'
 import type { ImageGenerationParams, ImageGenerationResponse } from '@/tools/image/types'
 import type { ToolConfig, ToolFileData } from '@/tools/types'
 
@@ -127,7 +134,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Image generation provider: openai, gemini, or falai',
+      description: IMAGE_PROVIDER_DESCRIPTION,
     },
     apiKey: {
       type: 'string',
@@ -140,8 +147,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description:
-        'Provider model ID, such as gpt-image-1.5, gemini-3.1-flash-image-preview, or nano-banana-2',
+      description: IMAGE_MODEL_DESCRIPTION,
     },
     prompt: {
       type: 'string',
@@ -159,13 +165,15 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Aspect ratio, such as auto, 1:1, 16:9, or 9:16',
+      description:
+        'Aspect ratio when supported (e.g. 1:1, 16:9, 9:16, auto). OpenAI GPT Image models use size instead.',
     },
     resolution: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Provider-specific image resolution, such as 1K, 2K, 4K, 1k, or 2k',
+      description:
+        'Output resolution when supported by the model (e.g. 1K, 2K, 4K, 512, 0.5K, 1k, 2k).',
     },
     quality: {
       type: 'string',
@@ -264,6 +272,24 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       visibility: 'hidden',
       description:
         'Warning emitted when multiple input images were provided and the latest one was used',
+    },
+  },
+
+  schemaEnrichment: {
+    model: {
+      dependsOn: 'provider',
+      omitWithoutDependency: false,
+      enrichSchema: enrichImageModelSchema,
+    },
+    aspectRatio: {
+      dependsOn: 'model',
+      omitWithoutDependency: false,
+      enrichSchema: enrichImageAspectRatioSchema,
+    },
+    resolution: {
+      dependsOn: 'model',
+      omitWithoutDependency: false,
+      enrichSchema: enrichImageResolutionSchema,
     },
   },
 

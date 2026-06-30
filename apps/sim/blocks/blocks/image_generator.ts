@@ -567,7 +567,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       options: OPENAI_GPT_IMAGE_MODELS,
       placeholder: 'Type, select, or reference a model...',
       searchable: true,
-      value: () => 'gpt-image-1.5',
+      value: () => 'gpt-image-2',
       condition: { field: 'provider', value: 'openai' },
       dependsOn: ['provider'],
     },
@@ -578,7 +578,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       options: GEMINI_IMAGE_MODELS,
       placeholder: 'Type, select, or reference a model...',
       searchable: true,
-      value: () => 'gemini-3.1-flash-image-preview',
+      value: () => NANO_BANANA_PRO_MODEL,
       condition: { field: 'provider', value: 'gemini' },
       dependsOn: ['provider'],
     },
@@ -1170,7 +1170,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
           throw new Error('Prompt is required')
         }
         const defaultModel =
-          provider === 'gemini' ? 'gemini-3.1-flash-image-preview' : 'gpt-image-1.5'
+          provider === 'gemini' ? NANO_BANANA_PRO_MODEL : 'gpt-image-2'
         // provider === 'falai' ? 'nano-banana-2' : ...
 
         const model = params.model || defaultModel
