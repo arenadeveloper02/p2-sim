@@ -11,6 +11,7 @@ https://github.com/arenadeveloper02/p2-sim/compare/feat/github-merge-agent...ups
 ## Error
 
 Command failed: gh api -X POST repos/arenadeveloper02/p2-sim/pulls -f title=upstream-sync: merge simstudioai/sim main into feat/github-merge-agent (2026-07-01) -f head=upstream-sync/2026-07-01T06-53-53 -f base=feat/github-merge-agent -f body=<!-- upstream-sync-question -->
+
 ## Upstream sync in progress — grill/analysis phase (2026-07-01)
 
 Branch `upstream-sync/2026-07-01T06-53-53` · merging [`simstudioai/sim@6e426f85`](https://github.com/simstudioai/sim/commit/6e426f853912178077203e5ad076ac73177a0a29) into `feat/github-merge-agent`.
@@ -28,19 +29,6 @@ gh: Validation Failed (HTTP 422)
 ## Hint
 
 Command failed: gh api -X POST repos/arenadeveloper02/p2-sim/pulls -f title=upstream-sync: merge simstudioai/sim main into feat/github-merge-agent (2026-07-01) -f head=upstream-sync/2026-07-01T06-53-53 -f base=feat/github-merge-agent -f body=<!-- upstream-sync-question -->
-## Upstream sync in progress — grill/analysis phase (2026-07-01)
-
-Branch `upstream-sync/2026-07-01T06-53-53` · merging [`simstudioai/sim@6e426f85`](https://github.com/simstudioai/sim/commit/6e426f853912178077203e5ad076ac73177a0a29) into `feat/github-merge-agent`.
-
-**Sync range:** 127 commit(s) since `aaca7505` (merge-base).
-
-The parent grill agent will post questions here. Reply with `/upstream-sync resume` after answering.
-
-### Ledger (in progress)
-- [.upstream-sync/ledger/2026-07-01/run.md](.upstream-sync/ledger/2026-07-01/run.md)
-- [.upstream-sync/ledger/2026-07-01/fbi-report.md](.upstream-sync/ledger/2026-07-01/fbi-report.md)
-- [.upstream-sync/ledger/2026-07-01/release-notes.md](.upstream-sync/ledger/2026-07-01/release-notes.md) -f draft=true
-gh: Validation Failed (HTTP 422)
 
 ## Grill analysis
 
@@ -97,3 +85,12 @@ Upstream #5257 moved the design system to `packages/emcn` (`@sim/emcn`), **delet
 - permission-groups / emcn / workflow-renderer → upstream-owned collided files taken; fork additions are orthogonal or mechanically re-pathed.
 
 One **discretionary** (non-blocking) item for reviewer awareness, default already chosen: the fork inherits upstream's permission-groups overhaul (#5216) rather than diverging — if the fork intends its own permission-group model long-term, revisit; the safe default is adopt-upstream since the fork never forked those files. No PR exists to post to (`#none`); if a reviewer wants to override any default, reply on a future PR with `/upstream-sync resume`.
+
+## Sync topology
+
+- **Target branch:** `feat/github-merge-agent`
+- **Upstream HEAD:** `6e426f85`
+- **Merge-base (target ↔ upstream):** `aaca7505`
+- **Analysis baseline:** `aaca7505` (merge-base)
+- **Commits in sync range:** 127
+
