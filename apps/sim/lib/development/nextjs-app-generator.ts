@@ -1289,6 +1289,7 @@ export async function generateNextjsApp(
 
           if (!gitPushed || !githubOwner || !githubRepoName) {
             vercelDeployError =
+              gitPushError ??
               'Vercel deploy requires a successful GitHub push. Check DEVELOPMENT_GITHUB_TOKEN in .env and git push errors.'
           } else {
             logger.info('Deploying to Vercel (can take several minutes)', { repoName })

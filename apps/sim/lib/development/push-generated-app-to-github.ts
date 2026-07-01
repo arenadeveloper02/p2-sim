@@ -213,6 +213,27 @@ async function initCommitAndPush(
   }
 
   await runGit(outputDir, ['remote', 'add', 'origin', remoteUrl])
+
+  try {
+    await runGit(outputDir, ['fetch', 'origin', defaultBranch])
+    try {
+      await runGit(outputDir, [
+        'pull',
+        '--rebase',
+        '--allow-unrelated-histories',
+        'origin',
+        defaultBranch,
+      ])
+    } catch (error) {
+      logger.warn('Rebase before initial push failed; attempting direct push', {
+        defaultBranch,
+        error: toError(error).message,
+      })
+    }
+  } catch {
+    // Remote branch may not exist yet on a freshly created repository.
+  }
+
   await runGit(outputDir, ['push', '-u', 'origin', defaultBranch])
 }
 

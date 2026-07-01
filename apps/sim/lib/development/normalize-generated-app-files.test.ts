@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildRepoSummaryContent,
   collectJsxPropNamesForComponent,
+  extractJsxAttributeNames,
   ensureReadmeFile,
   ensureRepoSummaryFile,
   GENERATED_APP_REPO_SUMMARY_PATH,
@@ -80,6 +81,39 @@ body { margin: 0; }
     ]
 
     expect(collectJsxPropNamesForComponent('Providers', files)).toEqual(['children'])
+  })
+
+  it('does not treat words inside quoted attribute values as prop names', () => {
+    const attrs =
+      ' message="Are you sure you want to delete all selected tasks? This action cannot be undone" onConfirm={handleDelete} open onClose={handleClose} '
+    expect(extractJsxAttributeNames(attrs)).toEqual(['message', 'onConfirm', 'open', 'onClose'])
+  })
+
+  it('collects only real prop names when pages pass long confirmation copy', () => {
+    const files = [
+      {
+        path: 'app/tasks/page.tsx',
+        content: `import ConfirmModal from '@/components/ConfirmModal'
+export default function Page() {
+  return (
+    <ConfirmModal
+      message="Are you sure you want to delete all selected tasks? This action cannot be undone and you will lose your data permanently"
+      onConfirm={() => {}}
+      open
+      onClose={() => {}}
+    />
+  )
+}
+`,
+      },
+    ]
+
+    expect(collectJsxPropNamesForComponent('ConfirmModal', files)).toEqual([
+      'message',
+      'onClose',
+      'onConfirm',
+      'open',
+    ])
   })
 
   it('patches components that omit children used in layout', () => {

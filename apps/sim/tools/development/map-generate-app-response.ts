@@ -17,13 +17,19 @@ export function mapGenerateAppResultToToolResponse(
       : ''
     const buildErrorsLabel = buildErrorSummary ? `\n\nBuild errors:\n${buildErrorSummary}` : ''
     const vercelErrorLabel = data.vercelDeployError ? `\n\nVercel: ${data.vercelDeployError}` : ''
+    const gitPushErrorLabel =
+      data.gitPushError &&
+      !data.vercelDeployError?.includes(data.gitPushError) &&
+      data.gitPushError !== data.vercelDeployError
+        ? `\n\nGit push: ${data.gitPushError}`
+        : ''
     const baseError = data.error ?? 'Failed to generate Next.js app'
     return {
       success: false,
       output: {
         content: wroteFiles
-          ? `Wrote ${data.fileCount} files to ${pathHint}, but generation failed: ${baseError}${buildErrorsLabel}${vercelErrorLabel}`
-          : `${baseError}${buildErrorsLabel}${vercelErrorLabel}`,
+          ? `Wrote ${data.fileCount} files to ${pathHint}, but generation failed: ${baseError}${buildErrorsLabel}${vercelErrorLabel}${gitPushErrorLabel}`
+          : `${baseError}${buildErrorsLabel}${vercelErrorLabel}${gitPushErrorLabel}`,
         appName: data.appName ?? null,
         repoName: data.repoName ?? null,
         description: data.description ?? null,

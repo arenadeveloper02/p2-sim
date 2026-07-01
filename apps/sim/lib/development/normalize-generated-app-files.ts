@@ -782,12 +782,176 @@ export function extractComponentPropsInterfaceFields(
   return fields
 }
 
+/**
+ * Collects attribute strings from opening JSX tags, skipping `>` inside strings or braces.
+ */
+function collectOpeningTagAttributeStrings(
+  content: string,
+  componentName: string
+): Array<{ attrs: string; selfClosing: boolean }> {
+  const attributeStrings: Array<{ attrs: string; selfClosing: boolean }> = []
+  const tagStart = new RegExp(`<${componentName}(?=[\\s/>])`, 'g')
+
+  for (const match of content.matchAll(tagStart)) {
+    const startIndex = (match.index ?? 0) + match[0].length
+    let index = startIndex
+    let braceDepth = 0
+    let inString: '"' | "'" | null = null
+    let escaped = false
+
+    while (index < content.length) {
+      const char = content[index]
+
+      if (inString) {
+        if (escaped) {
+          escaped = false
+          index += 1
+          continue
+        }
+        if (char === '\\') {
+          escaped = true
+          index += 1
+          continue
+        }
+        if (char === inString) {
+          inString = null
+        }
+        index += 1
+        continue
+      }
+
+      if (char === '"' || char === "'") {
+        inString = char
+        index += 1
+        continue
+      }
+
+      if (char === '{') {
+        braceDepth += 1
+        index += 1
+        continue
+      }
+
+      if (char === '}') {
+        braceDepth = Math.max(0, braceDepth - 1)
+        index += 1
+        continue
+      }
+
+      if (char === '>' && braceDepth === 0) {
+        const rawAttrs = content.slice(startIndex, index)
+        attributeStrings.push({
+          attrs: rawAttrs.replace(/\/\s*$/, ''),
+          selfClosing: /\/\s*$/.test(rawAttrs),
+        })
+        break
+      }
+
+      index += 1
+    }
+  }
+
+  return attributeStrings
+}
+
+/**
+ * Extracts JSX attribute names from an opening tag's attribute string.
+ * Ignores words inside quoted values and braced expressions so message copy
+ * like message="Are you sure..." is not mistaken for boolean props.
+ */
+export function extractJsxAttributeNames(attrs: string): string[] {
+  const names: string[] = []
+  let index = 0
+
+  const skipWhitespace = (): void => {
+    while (index < attrs.length && /\s/.test(attrs[index] ?? '')) {
+      index += 1
+    }
+  }
+
+  const skipQuoted = (quote: '"' | "'"): void => {
+    index += 1
+    while (index < attrs.length) {
+      const char = attrs[index]
+      if (char === '\\') {
+        index += 2
+        continue
+      }
+      if (char === quote) {
+        index += 1
+        return
+      }
+      index += 1
+    }
+  }
+
+  const skipBracedExpression = (): void => {
+    let depth = 0
+    while (index < attrs.length) {
+      const char = attrs[index]
+      if (char === '{') {
+        depth += 1
+      } else if (char === '}') {
+        depth -= 1
+        index += 1
+        if (depth === 0) {
+          return
+        }
+        continue
+      } else if (char === '"' || char === "'") {
+        skipQuoted(char)
+        continue
+      }
+      index += 1
+    }
+  }
+
+  while (index < attrs.length) {
+    skipWhitespace()
+    if (index >= attrs.length) {
+      break
+    }
+
+    if (attrs[index] === '{') {
+      skipBracedExpression()
+      continue
+    }
+
+    const nameMatch = /^[\w$]+/.exec(attrs.slice(index))
+    if (!nameMatch) {
+      index += 1
+      continue
+    }
+
+    const name = nameMatch[0]
+    index += name.length
+
+    if (index < attrs.length && attrs[index] === '=') {
+      index += 1
+      skipWhitespace()
+      const valueStart = attrs[index]
+      if (valueStart === '"') {
+        skipQuoted('"')
+      } else if (valueStart === "'") {
+        skipQuoted("'")
+      } else if (valueStart === '{') {
+        skipBracedExpression()
+      }
+      names.push(name)
+      continue
+    }
+
+    names.push(name)
+  }
+
+  return names
+}
+
 export function collectJsxPropNamesForComponent(
   componentName: string,
   files: GeneratedAppFile[]
 ): string[] {
   const propNames = new Set<string>()
-  const tagPattern = new RegExp(`<${componentName}([^>]*)(/?)>`, 'g')
   const closingTagPattern = new RegExp(`</${componentName}>`)
   const ignoredProps = new Set(['className', 'key', 'ref'])
 
@@ -796,17 +960,16 @@ export function collectJsxPropNamesForComponent(
       continue
     }
 
-    for (const match of file.content.matchAll(tagPattern)) {
-      const attrs = match[1] ?? ''
-      const isSelfClosing = match[2] === '/'
+    const openingTags = collectOpeningTagAttributeStrings(file.content, componentName)
+    const hasClosingTag = closingTagPattern.test(file.content)
 
-      if (!isSelfClosing && closingTagPattern.test(file.content)) {
+    for (const { attrs, selfClosing } of openingTags) {
+      if (!selfClosing && hasClosingTag) {
         propNames.add('children')
       }
 
-      for (const propMatch of attrs.matchAll(/(\w+)(?:=|\s)/g)) {
-        const propName = propMatch[1]
-        if (propName && !ignoredProps.has(propName)) {
+      for (const propName of extractJsxAttributeNames(attrs)) {
+        if (!ignoredProps.has(propName)) {
           propNames.add(propName)
         }
       }

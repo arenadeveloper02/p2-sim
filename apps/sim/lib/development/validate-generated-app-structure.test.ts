@@ -89,6 +89,43 @@ describe('validate-generated-app-structure', () => {
     )
   })
 
+  it('does not report prop drift for quoted confirmation copy in modal messages', () => {
+    const result = validateGeneratedAppStructure([
+      ...baseFiles,
+      {
+        path: 'app/tasks/page.tsx',
+        content: `import ConfirmModal from '@/components/ConfirmModal'
+export default function Page() {
+  return (
+    <ConfirmModal
+      message="Are you sure you want to delete all selected tasks? This action cannot be undone"
+      onConfirm={() => {}}
+      open
+      onClose={() => {}}
+    />
+  )
+}
+`,
+      },
+      {
+        path: 'components/ConfirmModal.tsx',
+        content: `interface ConfirmModalProps {
+  message: string
+  onConfirm: () => void
+  open: boolean
+  onClose: () => void
+}
+export default function ConfirmModal({ message, onConfirm, open, onClose }: ConfirmModalProps) {
+  return null
+}
+`,
+      },
+    ])
+
+    expect(result.valid).toBe(true)
+    expect(result.issues).toHaveLength(0)
+  })
+
   it('reports imports of server actions that are not exported from lib/actions.ts', () => {
     const result = validateGeneratedAppStructure([
       ...baseFiles,
