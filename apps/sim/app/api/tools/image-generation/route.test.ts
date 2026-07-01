@@ -96,48 +96,6 @@ describe('Image Generation Wrapper API Route', () => {
     )
   })
 
-  it('should run the same prompt multiple times when variations is set', async () => {
-    const originalPrompt = 'Give me three variations of this image'
-    const request = createMockRequest('POST', {
-      baseToolId: 'google_nano_banana',
-      params: {
-        model: 'gemini-3-pro-image-preview',
-        prompt: originalPrompt,
-        variations: 3,
-        inputImageUrl: 'https://example.com/source.png',
-      },
-    })
-
-    const response = await POST(request)
-
-    expect(response.status).toBe(200)
-    expect(mockExecuteTool).toHaveBeenCalledTimes(3)
-    expect(mockExecuteTool).toHaveBeenNthCalledWith(
-      1,
-      'google_nano_banana',
-      expect.objectContaining({
-        prompt: originalPrompt,
-        inputImage: 'https://example.com/source.png',
-      })
-    )
-    expect(mockExecuteTool).toHaveBeenNthCalledWith(
-      2,
-      'google_nano_banana',
-      expect.objectContaining({
-        prompt: originalPrompt,
-        inputImage: 'https://example.com/source.png',
-      })
-    )
-    expect(mockExecuteTool).toHaveBeenNthCalledWith(
-      3,
-      'google_nano_banana',
-      expect.objectContaining({
-        prompt: originalPrompt,
-        inputImage: 'https://example.com/source.png',
-      })
-    )
-  })
-
   it('should route unified OpenAI requests through the server-key OpenAI image tool', async () => {
     const request = createMockRequest('POST', {
       baseToolId: 'image_generate',
@@ -160,6 +118,28 @@ describe('Image Generation Wrapper API Route', () => {
         prompt: 'Generate one product hero image',
         size: '1024x1024',
         quality: 'low',
+      })
+    )
+  })
+
+  it('should coerce gpt-image-2 to openai_image when provider is gemini', async () => {
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'gemini',
+        model: 'gpt-image-2',
+        prompt: 'Generate one product hero image',
+      },
+    })
+
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'openai_image',
+      expect.objectContaining({
+        model: 'gpt-image-2',
+        prompt: 'Generate one product hero image',
       })
     )
   })

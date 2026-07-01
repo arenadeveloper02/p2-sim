@@ -3,6 +3,7 @@ import {
   knowledgeBase,
   knowledgeConnector,
   mcpServers,
+  user,
   userTableDefinitions,
   workflow,
   workflowFolder,
@@ -578,6 +579,29 @@ async function buildWorkspaceMdData(
 const WORKSPACE_CONTEXT_UNAVAILABLE_MD =
   '## Workspace\n(unavailable)\n\n## Workflows\n(unavailable)\n\n## Knowledge Bases\n(unavailable)\n\n## Tables\n(unavailable)\n\n## Files\n(unavailable)\n\n## Connected Integrations\n(unavailable)'
 
+const POSITION2_SLACK_TESTING_NOTE = `## Slack — testing default (position2.com)
+
+When building or testing workflows that send Slack messages, use **#slack-testing** if no channel, user, or DM was specified. If the user names a destination, use that instead — never override it with #slack-testing.`
+
+async function appendPosition2SlackNote(markdown: string, userId: string): Promise<string> {
+  try {
+    const rows = await db
+      .select({ email: user.email })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1)
+    const email = rows[0]?.email
+    if (!email?.toLowerCase().includes('position2.com')) return markdown
+    return `${markdown}\n\n${POSITION2_SLACK_TESTING_NOTE}`
+  } catch (error) {
+    logger.warn('Failed to resolve user email for position2 Slack note', {
+      userId,
+      error: toError(error).message,
+    })
+    return markdown
+  }
+}
+
 /**
  * Generate WORKSPACE.md markdown from current DB state (primary db). The LLM
  * reads dynamic workspace state from VFS files; it never writes this file.
@@ -587,7 +611,8 @@ export async function generateWorkspaceContext(
   userId: string
 ): Promise<string> {
   const data = await buildWorkspaceMdData(workspaceId, userId)
-  return data ? buildWorkspaceMd(data) : WORKSPACE_CONTEXT_UNAVAILABLE_MD
+  if (!data) return WORKSPACE_CONTEXT_UNAVAILABLE_MD
+  return appendPosition2SlackNote(buildWorkspaceMd(data), userId)
 }
 
 /**
@@ -602,7 +627,11 @@ export async function generateWorkspaceSnapshot(
 ): Promise<{ markdown: string; snapshot: VfsSnapshotV1 } | null> {
   const data = await buildWorkspaceMdData(workspaceId, userId)
   if (!data) return null
-  return { markdown: buildWorkspaceMd(data), snapshot: buildVfsSnapshot(data) }
+  const markdown = await appendPosition2SlackNote(buildWorkspaceMd(data), userId)
+  return {
+    markdown,
+    snapshot: buildVfsSnapshot(data),
+  }
 }
 
 /**
