@@ -184,6 +184,36 @@ async function executeImageGenerationWrapperV2Direct(
   }
 }
 
+async function executeDevelopmentGenerateAppDirect(
+  params: Record<string, any>
+): Promise<ToolResponse> {
+  const [{ generateNextjsApp }, { mapGenerateAppResultToToolResponse }] = await Promise.all([
+    import('@/lib/development/nextjs-app-generator'),
+    import('@/tools/development/map-generate-app-response'),
+  ])
+  return mapGenerateAppResultToToolResponse(
+    await generateNextjsApp({
+      userInput: params.userInput,
+      repoName: params.repoName,
+      privateRepo: params.privateRepo,
+    })
+  )
+}
+
+async function executeDevelopmentEditAppDirect(params: Record<string, any>): Promise<ToolResponse> {
+  const [{ editNextjsApp }, { mapGenerateAppResultToToolResponse }] = await Promise.all([
+    import('@/lib/development/nextjs-app-generator'),
+    import('@/tools/development/map-generate-app-response'),
+  ])
+  return mapGenerateAppResultToToolResponse(
+    await editNextjsApp({
+      userInput: params.userInput,
+      repoName: params.repoName,
+      referenceImage: params.referenceImage,
+    })
+  )
+}
+
 function resolveToolScope(
   params: Record<string, unknown>,
   executionContext?: ExecutionContext
@@ -1411,7 +1441,11 @@ export async function executeTool(
             : wrapperBaseToolId
               ? (params: Record<string, any>) =>
                   executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-              : tool.directExecution
+        : normalizedToolId === 'development_generate_app'
+          ? executeDevelopmentGenerateAppDirect
+          : normalizedToolId === 'development_edit_app'
+            ? executeDevelopmentEditAppDirect
+            : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)
@@ -1989,6 +2023,15 @@ async function executeToolRequest(
                 throw error
               }
               throw new Error(`Request timed out after ${timeout}ms`)
+            }
+            if (
+              error instanceof TypeError &&
+              error.message === 'fetch failed' &&
+              timeout >= DEFAULT_EXECUTION_TIMEOUT_MS
+            ) {
+              throw new Error(
+                `Internal tool request failed (connection closed or timed out after ${timeout}ms). Long-running tools may need a workflow with a Development block or async execution mode.`
+              )
             }
             throw error
           } finally {

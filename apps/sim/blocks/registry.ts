@@ -50,6 +50,7 @@ import { DatadogBlock, DatadogBlockMeta } from '@/blocks/blocks/datadog'
 import { DatagmaBlock, DatagmaBlockMeta } from '@/blocks/blocks/datagma'
 import { DaytonaBlock, DaytonaBlockMeta } from '@/blocks/blocks/daytona'
 import { DeploymentsBlock } from '@/blocks/blocks/deployments'
+import { DevelopmentBlock } from '@/blocks/blocks/development'
 import { DevinBlock, DevinBlockMeta } from '@/blocks/blocks/devin'
 import { DiscordBlock, DiscordBlockMeta } from '@/blocks/blocks/discord'
 import { DocuSignBlock, DocuSignBlockMeta } from '@/blocks/blocks/docusign'
@@ -400,6 +401,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   daytona: DaytonaBlock,
   deployments: DeploymentsBlock,
   devin: DevinBlock,
+  development: DevelopmentBlock,
   discord: DiscordBlock,
   docusign: DocuSignBlock,
   dropbox: DropboxBlock,
