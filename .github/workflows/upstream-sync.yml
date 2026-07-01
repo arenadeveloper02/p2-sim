@@ -2,6 +2,8 @@ name: Upstream Sync
 
 # Merges simstudioai/sim main into the branch that triggered the run via the Sandcastle harness.
 # Polls daily; resumes when a reviewer replies `/upstream-sync resume` on the draft PR.
+# Note: issue_comment events only run workflows present on the repository default branch.
+# While validating this workflow from a feature branch, use workflow_dispatch with resume=true.
 #
 # push: activates workflow_dispatch on feature branches (must run once before
 # `gh workflow run upstream-sync.yml --ref <branch>` works off default branch).
@@ -24,6 +26,14 @@ on:
         description: Run even when upstream SHA is unchanged
         type: boolean
         default: false
+      resume:
+        description: Resume an existing upstream-sync PR
+        type: boolean
+        default: false
+      resume_pr:
+        description: PR number to resume when using workflow_dispatch
+        type: string
+        required: false
       skip_agent:
         description: Skip Sandcastle agents (git merge + verify only)
         type: boolean
@@ -82,6 +92,7 @@ jobs:
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
             force="${{ github.event.inputs.force == 'true' && 'true' || 'false' }}"
+            resume="${{ github.event.inputs.resume == 'true' && 'true' || 'false' }}"
             skip_agent="${{ github.event.inputs.skip_agent == 'true' && 'true' || 'false' }}"
             agent_provider="${{ github.event.inputs.agent_provider || 'anthropic' }}"
           fi
@@ -129,8 +140,15 @@ jobs:
 
       - name: Checkout resume PR branch
         if: needs.gate.outputs.resume == 'true'
+        env:
+          COMMENT_PR_NUMBER: ${{ github.event.issue.number }}
+          DISPATCH_PR_NUMBER: ${{ github.event.inputs.resume_pr }}
         run: |
-          pr_number="${{ github.event.issue.number }}"
+          pr_number="${COMMENT_PR_NUMBER:-$DISPATCH_PR_NUMBER}"
+          if [ -z "$pr_number" ]; then
+            echo "resume=true requires resume_pr when using workflow_dispatch"
+            exit 1
+          fi
           branch=$(gh pr view "$pr_number" --json headRefName --jq .headRefName)
           git fetch origin "$branch"
           git checkout "$branch"

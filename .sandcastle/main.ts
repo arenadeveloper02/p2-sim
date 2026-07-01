@@ -10,40 +10,40 @@
  * 6. Update draft PR body + final ledger commit
  */
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { run } from '@ai-hero/sandcastle'
 import { noSandbox } from '@ai-hero/sandcastle/sandboxes/no-sandbox'
-import { resolveAgents, assertAgentCredentials } from './lib/agents'
+import { assertAgentCredentials, resolveAgents } from './lib/agents'
 import {
-  COMPLETION_SIGNAL,
-  GRILL_COMPLETION_SIGNAL,
-  MERGE_POLICY_PATH,
-  QUESTION_MARKER,
-  RESUME_COMMAND,
   appendExtensibilityNote,
-  baseBranch,
+  COMPLETION_SIGNAL,
   closeSupersededPr,
-  comparePullRequestUrl,
-  explainPrCreateFailure,
-  isSyncBranch,
-  repoSlug,
-  resolveMergeBase,
-  commitsSince,
   commitSyncBranchScaffold,
+  commitsSince,
+  comparePullRequestUrl,
   detectReleaseVersions,
-  ensureUpstreamSyncScaffold,
   ensureSandcastleEnvFile,
+  ensureUpstreamSyncScaffold,
+  explainPrCreateFailure,
   fetchAllUpstreamReleaseNotes,
   fetchUpstream,
   formatReleaseNotesMarkdown,
+  GRILL_COMPLETION_SIGNAL,
   getPrReviewers,
   groupConflictClusters,
+  isSyncBranch,
   listConflictFiles,
   logHarnessQuestion,
+  MERGE_POLICY_PATH,
+  QUESTION_MARKER,
+  RESUME_COMMAND,
   readState,
+  repoSlug,
   requestPrReviewers,
-  runGit,
+  resolveMergeBase,
   runGh,
+  runGit,
   substitutePrompt,
   syncGrillQaFromPr,
   todayRunId,
@@ -60,7 +60,7 @@ import {
 } from './lib/config'
 import { allVerificationPassed, formatVerifyResults, runVerification } from './lib/verify'
 
-const PROMPTS_DIR = join(import.meta.dir, 'prompts')
+const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'prompts')
 const SKIP_AGENT = process.env.UPSTREAM_SYNC_SKIP_AGENT === 'true'
 const FORCE_RUN = process.env.UPSTREAM_SYNC_FORCE === 'true'
 const RESUME = process.env.UPSTREAM_SYNC_RESUME === 'true'
@@ -116,11 +116,6 @@ async function runAgentPrompt(options: {
     branchStrategy: { type: 'head' },
     idleTimeoutSeconds: Number(process.env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS ?? 7200),
     completionTimeoutSeconds: 120,
-    hooks: {
-      sandbox: {
-        onSandboxReady: [{ command: 'bun install --frozen-lockfile' }],
-      },
-    },
     logging: { type: 'stdout', verbose: true },
   })
 }
@@ -516,7 +511,10 @@ async function main(): Promise<void> {
       runId,
       prNumber,
       `Verification failed on sync branch. Fix and reply with ${RESUME_COMMAND}.`,
-      verifyResults.filter((r) => !r.success).map((r) => r.command).join(', ')
+      verifyResults
+        .filter((r) => !r.success)
+        .map((r) => r.command)
+        .join(', ')
     )
     if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
     commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
