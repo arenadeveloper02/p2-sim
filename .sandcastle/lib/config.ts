@@ -81,26 +81,32 @@ export function readQaHistory(): GrillQaEntry[] {
 
 export function findOpenSyncPr(mergeBase: string, branch: string): number {
   const { owner, repo } = repoSlug()
-  try {
-    const raw = runGh([
-      'pr',
-      'list',
-      '--repo',
-      `${owner}/${repo}`,
-      '--base',
-      mergeBase,
-      '--head',
-      `${owner}:${branch}`,
-      '--state',
-      'open',
-      '--json',
-      'number',
-    ])
-    const prs = JSON.parse(raw) as Array<{ number: number }>
-    return prs[0]?.number ?? 0
-  } catch {
-    return 0
+  const headRefs = [branch, `${owner}:${branch}`]
+
+  for (const headRef of headRefs) {
+    try {
+      const raw = runGh([
+        'pr',
+        'list',
+        '--repo',
+        `${owner}/${repo}`,
+        '--base',
+        mergeBase,
+        '--head',
+        headRef,
+        '--state',
+        'open',
+        '--json',
+        'number',
+      ])
+      const prs = JSON.parse(raw) as Array<{ number: number }>
+      const prNumber = prs[0]?.number ?? 0
+      if (prNumber > 0) return prNumber
+    } catch {
+      continue
+    }
   }
+  return 0
 }
 
 export function readLoggedCommentIds(): Set<number> {
