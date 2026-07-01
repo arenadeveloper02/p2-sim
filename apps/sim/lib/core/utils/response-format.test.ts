@@ -2,7 +2,11 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { extractFieldValues, traverseObjectPath } from '@/lib/core/utils/response-format'
+import {
+  extractFieldsFromSchema,
+  extractFieldValues,
+  traverseObjectPath,
+} from '@/lib/core/utils/response-format'
 import {
   LARGE_ARRAY_MANIFEST_VERSION,
   type LargeArrayManifest,
@@ -33,6 +37,44 @@ function createManifest(totalCount = 100_000): LargeArrayManifest {
     preview: [{ key: 'SIM-0' }],
   }
 }
+
+describe('extractFieldsFromSchema', () => {
+  it('filters null and undefined entries from legacy fields arrays', () => {
+    const fields = extractFieldsFromSchema({
+      fields: [
+        { name: 'score', type: 'number', description: 'A score' },
+        null,
+        undefined,
+        { name: '', type: 'string' },
+        { name: '  ', type: 'string' },
+        { type: 'string' },
+        { name: 'comment', type: 'string' },
+      ],
+    })
+
+    expect(fields).toEqual([
+      { name: 'score', type: 'number', description: 'A score' },
+      { name: 'comment', type: 'string', description: undefined },
+    ])
+  })
+
+  it('extracts fields from JSON Schema properties', () => {
+    const fields = extractFieldsFromSchema({
+      schema: {
+        type: 'object',
+        properties: {
+          min: { type: 'number' },
+          max: { type: 'number', description: 'Upper bound' },
+        },
+      },
+    })
+
+    expect(fields).toEqual([
+      { name: 'min', type: 'number', description: undefined },
+      { name: 'max', type: 'number', description: 'Upper bound' },
+    ])
+  })
+})
 
 describe('response format traversal', () => {
   it('returns whole large array manifest metadata without materializing chunks', () => {
