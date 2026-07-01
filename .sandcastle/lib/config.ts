@@ -383,6 +383,14 @@ export function commitSyncBranchScaffold(options: {
   mergeBase: string
   upstreamSha: string
 }): void {
+  const unmerged = listConflictFiles()
+  if (unmerged.length > 0) {
+    console.warn(
+      `Skipping sync branch scaffold commit — ${unmerged.length} unresolved merge conflict(s).`
+    )
+    return
+  }
+
   writeSyncBranchReadme(options)
   runGit(['add', SYNC_BRANCH_README_PATH])
   try {
@@ -393,9 +401,32 @@ export function commitSyncBranchScaffold(options: {
   }
 }
 
-/** Update an existing draft PR body (e.g. after grill phase or on blocked/success). */
+/** Update an existing draft PR body via REST (avoids GraphQL UpdatePullRequest). */
 export function updateDraftPrBody(prNumber: number, body: string): void {
-  runGh(['pr', 'edit', String(prNumber), '--body', body])
+  const { owner, repo } = repoSlug()
+  runGh([
+    'api',
+    '-X',
+    'PATCH',
+    `repos/${owner}/${repo}/pulls/${prNumber}`,
+    '-f',
+    `body=${body}`,
+  ])
+}
+
+/** Request PR reviewers via REST (avoids GraphQL UpdatePullRequest). */
+export function requestPrReviewers(prNumber: number, reviewers: string[]): void {
+  if (prNumber <= 0 || reviewers.length === 0) return
+
+  const { owner, repo } = repoSlug()
+  const args = [
+    'api',
+    '-X',
+    'POST',
+    `repos/${owner}/${repo}/pulls/${prNumber}/requested_reviewers`,
+    ...reviewers.flatMap((reviewer) => ['-f', `reviewers[]=${reviewer}`]),
+  ]
+  runGh(args)
 }
 
 export function getPrReviewers(): string[] {

@@ -41,6 +41,7 @@ import {
   listConflictFiles,
   logHarnessQuestion,
   readState,
+  requestPrReviewers,
   runGit,
   runGh,
   substitutePrompt,
@@ -179,7 +180,7 @@ function attachPrReviewers(prNumber: number): void {
   const reviewers = getPrReviewers()
   if (prNumber <= 0 || reviewers.length === 0) return
   try {
-    runGh(['pr', 'edit', String(prNumber), '--add-reviewer', reviewers.join(',')])
+    requestPrReviewers(prNumber, reviewers)
   } catch (error) {
     console.warn(`Could not add reviewers (${reviewers.join(', ')}):`, error)
   }
@@ -278,10 +279,10 @@ function resolveDraftPr(
   if (existingPrNumber && existingPrNumber > 0) {
     try {
       updateDraftPrBody(existingPrNumber, body)
-      return existingPrNumber
     } catch (error) {
       console.warn(`Could not update draft PR #${existingPrNumber}:`, error)
     }
+    return existingPrNumber
   }
   return createDraftPr(mergeBase, branch, runId, body, upstreamSha)
 }

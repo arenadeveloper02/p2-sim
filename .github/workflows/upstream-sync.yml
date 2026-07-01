@@ -165,6 +165,20 @@ jobs:
         if: needs.gate.outputs.skip_agent != 'true' && needs.gate.outputs.agent_provider == 'openai'
         run: bun add -g @openai/codex
 
+      - name: Diagnose GitHub token
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
+        run: |
+          if [ -n "${{ secrets.GH_PAT }}" ]; then
+            echo "Token source: GH_PAT"
+          elif [ -n "${{ secrets.UPSTREAM_SYNC_GH_TOKEN }}" ]; then
+            echo "Token source: UPSTREAM_SYNC_GH_TOKEN"
+          else
+            echo "Token source: github.token"
+          fi
+          gh api user --jq '{login: .login, type: .type}'
+          gh api -i user 2>&1 | grep -i '^x-oauth-scopes:' || echo "No x-oauth-scopes header (fine-grained or GITHUB_TOKEN)"
+
       - name: Run upstream sync harness
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
