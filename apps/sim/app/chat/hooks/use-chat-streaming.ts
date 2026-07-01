@@ -407,6 +407,10 @@ export function useChatStreaming() {
                       continue
                     }
 
+                    if (config.path === 'visualizations') {
+                      continue
+                    }
+
                     const directImages = extractGeneratedImagesFromData(value)
                     if (directImages.length > 0) {
                       generatedImages = extractGeneratedImagesFromData(value, generatedImages)

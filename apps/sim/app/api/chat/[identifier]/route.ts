@@ -920,6 +920,9 @@ export const POST = withRouteHandler(
                           if (config.path === 'results' && isKnowledgeResultsArray(value)) {
                             continue
                           }
+                          if (config.path === 'visualizations') {
+                            continue
+                          }
                           const formatted = formatValue(value)
                           if (formatted) {
                             formattedOutputs.push(formatted)
@@ -1079,7 +1082,8 @@ export const PATCH = withRouteHandler(
       const authCookie = request.cookies.get(cookieName)
       if (
         deployment.authType !== 'public' &&
-        (!authCookie || !validateAuthToken(authCookie.value, deployment.id, deployment.password))
+        (!authCookie ||
+          !validateAuthToken(authCookie.value, deployment.id, deployment.password ?? ''))
       ) {
         const authResult = await validateChatAuth(requestId, deployment, request)
         if (!authResult.authorized) {
