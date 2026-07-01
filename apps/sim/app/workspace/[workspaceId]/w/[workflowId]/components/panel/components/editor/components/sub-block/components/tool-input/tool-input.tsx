@@ -42,6 +42,7 @@ import {
 import { ToolCredentialSelector } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/tools/credential-selector'
 import { ParameterWithLabel } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/tools/parameter'
 import { ToolSubBlockRenderer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/tools/sub-block-renderer'
+import { clearDependentToolParams } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/param-dependents'
 import type { StoredTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/types'
 import {
   isAgentToolPickerBlock,
@@ -60,6 +61,7 @@ import {
   useActiveSearchTarget,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { getAllBlocks } from '@/blocks'
+import { getTileIconColorClass } from '@/blocks/icon-color'
 import type { SubBlockConfig as BlockSubBlockConfig } from '@/blocks/types'
 import { BUILT_IN_TOOL_TYPES } from '@/blocks/utils'
 import { useMcpOauthPopup } from '@/hooks/mcp/use-mcp-oauth-popup'
@@ -107,6 +109,7 @@ import {
   resolveCanonicalMode,
   resolveDependencyValue,
   type SubBlockCondition,
+  scopeCanonicalModesForTool,
 } from '@/tools/params-resolver'
 
 /**
@@ -136,41 +139,6 @@ function shouldIncludeUncoveredToolParam(toolType: string | undefined, paramId: 
 }
 
 const logger = createLogger('ToolInput')
-
-/**
- * Extracts canonical mode overrides scoped to a specific tool type.
- * Canonical modes are stored with `{blockType}:{canonicalId}` keys to prevent
- * cross-tool collisions when multiple tools share the same canonicalParamId.
- */
-function scopeCanonicalOverrides(
-  overrides: CanonicalModeOverrides | undefined,
-  blockType: string | undefined
-): CanonicalModeOverrides | undefined {
-  if (!overrides || !blockType) return undefined
-  const prefix = `${blockType}:`
-  let scoped: CanonicalModeOverrides | undefined
-  for (const [key, val] of Object.entries(overrides)) {
-    if (key.startsWith(prefix) && val) {
-      if (!scoped) scoped = {}
-      scoped[key.slice(prefix.length)] = val
-    }
-  }
-  return scoped
-}
-
-/**
- * Merges `tool.params` with the block `operation` for subblock `dependsOn` / conditions.
- * `operation` is only stored on the tool; any stray `operation` key in params is dropped.
- */
-function subBlockDependencyValues(
-  params: Record<string, unknown> | undefined,
-  operation: string | undefined
-): Record<string, unknown> {
-  const withoutOp = Object.fromEntries(
-    Object.entries({ ...(params ?? {}) }).filter(([k]) => k !== 'operation')
-  )
-  return { ...withoutOp, operation }
-}
 
 /**
  * Renders the input for workflow_executor's inputMapping parameter.
@@ -468,7 +436,7 @@ function createToolIcon(
       className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm'
       style={{ background: bgColor }}
     >
-      <IconComponent className='size-[10px] text-white' />
+      <IconComponent className={cn('size-[10px]', getTileIconColorClass(bgColor))} />
     </div>
   )
 }
@@ -576,15 +544,7 @@ export const ToolInput = memo(function ToolInput({
       const blockConfig = allBlocks.find((b: { type: string }) => b.type === tool.type)
       if (!blockConfig?.subBlocks) continue
       const toolCanonical = buildCanonicalIndex(blockConfig.subBlocks)
-      const scopedOverrides: CanonicalModeOverrides = {}
-      if (canonicalModeOverrides) {
-        for (const [key, val] of Object.entries(canonicalModeOverrides)) {
-          const prefix = `${tool.type}:`
-          if (key.startsWith(prefix) && val) {
-            scopedOverrides[key.slice(prefix.length)] = val as 'basic' | 'advanced'
-          }
-        }
-      }
+      const scopedOverrides = scopeCanonicalModesForTool(canonicalModeOverrides, tool.type)
       const reactiveSubBlock = blockConfig.subBlocks.find(
         (sb: { reactiveCondition?: unknown }) => sb.reactiveCondition
       )
@@ -1020,17 +980,17 @@ export const ToolInput = memo(function ToolInput({
           : selectedTools
 
       setStoreValue(
-        baseTools.map((tool, index) =>
-          index === toolIndex
-            ? {
-                ...tool,
-                params: {
-                  ...tool.params,
-                  [paramId]: paramValue,
-                },
-              }
-            : tool
-        )
+        selectedTools.map((tool, index) => {
+          if (index !== toolIndex) return tool
+          // Clear the changed param's transitive `dependsOn` descendants (mirrors the top-level
+          // block clear), so a child scoped to the old parent isn't left stale.
+          const params = clearDependentToolParams(
+            tool.type,
+            { ...tool.params, [paramId]: paramValue },
+            paramId
+          )
+          return { ...tool, params }
+        })
       )
     },
     [isPreview, disabled, blockId, subBlockId, selectedTools, setStoreValue]
@@ -1762,7 +1722,7 @@ export const ToolInput = memo(function ToolInput({
                 })
               : null
 
-          const toolScopedOverrides = scopeCanonicalOverrides(canonicalModeOverrides, tool.type)
+          const toolScopedOverrides = scopeCanonicalModesForTool(canonicalModeOverrides, tool.type)
 
           const subBlocksResult: SubBlocksForToolInput | null =
             !isCustomTool && !isMcpTool && currentToolId
@@ -1787,6 +1747,7 @@ export const ToolInput = memo(function ToolInput({
                 subBlocks: toolBlock!.subBlocks,
                 canonicalIndex: toolCanonicalIndex,
                 values: { operation: tool.operation, ...tool.params },
+                overrides: toolScopedOverrides,
               })
             : tool.params || {}
 
@@ -1913,13 +1874,25 @@ export const ToolInput = memo(function ToolInput({
                     }}
                   >
                     {isCustomTool ? (
-                      <WrenchIcon className='size-[10px] text-white' />
+                      <WrenchIcon className={cn('size-[10px]', getTileIconColorClass('#3B82F6'))} />
                     ) : isMcpTool ? (
-                      <IconComponent icon={McpIcon} className='size-[10px] text-white' />
+                      <IconComponent
+                        icon={McpIcon}
+                        className={cn(
+                          'size-[10px]',
+                          getTileIconColorClass(mcpTool?.bgColor || '#6366F1')
+                        )}
+                      />
                     ) : isWorkflowTool ? (
-                      <IconComponent icon={WorkflowIcon} className='size-[10px] text-white' />
+                      <IconComponent
+                        icon={WorkflowIcon}
+                        className={cn('size-[10px]', getTileIconColorClass('#6366F1'))}
+                      />
                     ) : (
-                      <IconComponent icon={toolBlock?.icon} className='size-[10px] text-white' />
+                      <IconComponent
+                        icon={toolBlock?.icon}
+                        className={cn('size-[10px]', getTileIconColorClass(toolBlock?.bgColor))}
+                      />
                     )}
                   </div>
                   <span className='truncate font-medium text-[var(--text-primary)] text-small'>
