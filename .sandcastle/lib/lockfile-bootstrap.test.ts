@@ -1,6 +1,7 @@
 /**
  * Run with: bun test .sandcastle/lib/lockfile-bootstrap.test.ts
  */
+import { existsSync } from 'node:fs'
 import { describe, expect, test } from 'bun:test'
 import {
   conflictResolutionSide,
@@ -41,5 +42,9 @@ describe('lockfile bootstrap helpers', () => {
   test('needsPackageManagerBootstrap is true during merge', () => {
     expect(typeof needsPackageManagerBootstrap()).toBe('boolean')
     expect(typeof mergeInProgress()).toBe('boolean')
+  })
+
+  test('mergeInProgress reflects whether MERGE_HEAD exists', () => {
+    expect(mergeInProgress()).toBe(existsSync('.git/MERGE_HEAD'))
   })
 })

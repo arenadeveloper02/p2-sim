@@ -137,7 +137,13 @@ export function ensureInstallableWorkspace(runId: string): boolean {
     runGit(['add', LOCKFILE_PATH, ...manifestConflicts])
 
     if (hasStagedChanges()) {
-      runGit(['commit', '-m', `upstream-sync(${runId}): bootstrap package manager after merge`])
+      if (mergeInProgress()) {
+        console.log(
+          '[lockfile-bootstrap] Staged package manager files; merge still in progress — skipping commit until all conflicts resolve.'
+        )
+      } else {
+        runGit(['commit', '-m', `upstream-sync(${runId}): bootstrap package manager after merge`])
+      }
     }
   }
 
