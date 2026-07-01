@@ -8,6 +8,7 @@ import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
+import { type ChartSpec, extractVisualizations } from '@/lib/chat/chart-types'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import type { ChatMessage } from '@/app/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
@@ -484,6 +485,11 @@ export function useChatStreaming() {
                       ? extractGeneratedImagesFromData(contentToSet)
                       : []
 
+                // Backend-provided interactive charts ride along in block outputs.
+                const visualizations: ChartSpec[] = finalData.output
+                  ? extractVisualizations(finalData.output)
+                  : []
+
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === messageId
@@ -499,6 +505,7 @@ export function useChatStreaming() {
                               ? resolvedGeneratedImages
                               : undefined,
                           knowledgeResults: pendingKnowledgeResults,
+                          visualizations: visualizations.length > 0 ? visualizations : undefined,
                         }
                       : msg
                   )

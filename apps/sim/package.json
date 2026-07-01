@@ -141,6 +141,7 @@
     "docx-preview": "^0.3.7",
     "drizzle-orm": "^0.45.2",
     "echarts": "6.0.0",
+    "echarts-gl": "2.1.0",
     "electron": "^39.2.5",
     "es-toolkit": "1.45.1",
     "escape-html": "1.0.3",

@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { buildFacebookAdsVisualizations } from '@/lib/chat/ads-visualizations'
 import { getFacebookAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
@@ -171,9 +172,14 @@ export async function POST(request: NextRequest) {
         )
       : await makeFacebookAdsOAuthRequest(resolvedAccessToken as string, requestOptions)
 
+    // Build interactive chart specs from the insights (deterministic; no LLM).
+    // Rendered by the shared ChartRenderer in both the deployed and workflow chats.
+    const visualizations = buildFacebookAdsVisualizations(result)
+
     const response: FacebookAdsResponse = {
       success: true,
       data: result,
+      visualizations,
       requestId,
       account_id: accountId,
       account_name: accountName,

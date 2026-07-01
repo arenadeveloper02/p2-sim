@@ -40,6 +40,8 @@ export interface ParsedFacebookQuery {
 export interface FacebookAdsResponse {
   success: boolean
   data?: any
+  /** Backend-built interactive chart specs (rendered by the chat ChartRenderer). */
+  visualizations?: import('@/lib/chat/chart-types').ChartSpec[]
   error?: string
   requestId: string
   account_id: string

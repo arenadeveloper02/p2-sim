@@ -3,6 +3,8 @@ import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
+import { extractVisualizations } from '@/lib/chat/chart-types'
+import { ChartRenderer } from '@/app/chat/components/message/components/chart-renderer'
 import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components'
@@ -198,6 +200,10 @@ export function ChatMessage({
 
   const throttled = useThrottledValue(rawContent)
   const formattedContent = message.type === 'user' ? rawContent : throttled
+  const visualizations = useMemo(
+    () => (message.type === 'user' ? [] : extractVisualizations(message.content)),
+    [message.type, message.content]
+  )
   const generatedImagesByUrl = useMemo(() => {
     const entries = (message.generatedImages ?? []).map(
       (image): [string, AssistantGeneratedImage] => [normalizeImageUrlForCompare(image.url), image]
@@ -400,6 +406,11 @@ export function ChatMessage({
         {renderContent(message?.content)}
         {message?.isStreaming && <StreamingIndicator className='mt-1 text-[#E8E8E8]' />}
       </div>
+      {visualizations.length > 0 && (
+        <div className='mt-3'>
+          <ChartRenderer specs={visualizations} />
+        </div>
+      )}
       {message.files && message.files.length > 0 && (
         <div className='mt-2 flex flex-wrap gap-2'>
           {message.files.map((file) => (

@@ -7,6 +7,8 @@ import type {
   AssistantGeneratedImage,
   AssistantChatFile as ChatFile,
 } from '@/lib/chat/assistant-assets'
+import type { ChartSpec } from '@/lib/chat/chart-types'
+import { ChartRenderer } from '@/app/chat/components/message/components/chart-renderer'
 import {
   ChatFileDownload,
   ChatFileDownloadAll,
@@ -66,6 +68,8 @@ export interface ChatMessage {
   knowledgeResults?: KnowledgeResultChunk[]
   /** Persisted refs for history: document name + chunk link only; no chunks */
   knowledgeRefs?: KnowledgeRef[]
+  /** Backend-provided interactive chart specs rendered under the message. */
+  visualizations?: ChartSpec[]
 }
 
 const HTML_ESCAPES: Record<string, string> = {
@@ -256,6 +260,9 @@ export const ClientChatMessage = memo(
                   )}
                 </div>
               </div>
+              {message.visualizations && message.visualizations.length > 0 && (
+                <ChartRenderer specs={message.visualizations} />
+              )}
               {message.files && message.files.length > 0 && (
                 <div className='flex flex-wrap gap-2'>
                   {message.files.map((file) => (
@@ -313,7 +320,8 @@ export const ClientChatMessage = memo(
       prevProps.message.isStreaming === nextProps.message.isStreaming &&
       prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
       prevProps.message.files?.length === nextProps.message.files?.length &&
-      prevProps.message.generatedImages?.length === nextProps.message.generatedImages?.length
+      prevProps.message.generatedImages?.length === nextProps.message.generatedImages?.length &&
+      prevProps.message.visualizations === nextProps.message.visualizations
     )
   }
 )

@@ -5,6 +5,7 @@
 
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
+import { buildGoogleAdsVisualizations } from '@/lib/chat/ads-visualizations'
 import type { ChannelAccount } from '@/lib/channel-accounts'
 import { getGoogleAdsAccounts } from '@/lib/channel-accounts'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
     const googleAdsAccounts = await getGoogleAdsAccounts(workspaceId, userId)
 
     // Resolve account input (supports both keys and numeric IDs)
-    const resolvedAccountKey = resolveAccountKey(accounts, googleAdsAccounts)
+    const resolvedAccountKey = resolveAccountKey(accounts ?? '', googleAdsAccounts)
 
     // Get account information
     const accountInfo = googleAdsAccounts[resolvedAccountKey]
@@ -136,6 +137,10 @@ export async function POST(request: NextRequest) {
     // Extract date range from GAQL query
     const dateRange = extractDateRange(queryResult.gaql_query)
 
+    // Build interactive chart specs from the result rows (deterministic; no LLM).
+    // Rendered by the shared ChartRenderer in both the deployed and workflow chats.
+    const visualizations = buildGoogleAdsVisualizations(processedResults.rows)
+
     // Build response with pagination info
     const response = {
       success: true,
@@ -158,6 +163,7 @@ export async function POST(request: NextRequest) {
       row_count: processedResults.row_count,
       total_rows: processedResults.total_rows,
       totals: processedResults.totals,
+      visualizations,
       execution_time_ms: executionTime,
     }
 
