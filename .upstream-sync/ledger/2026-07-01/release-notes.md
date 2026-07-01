@@ -1,6 +1,6 @@
 # Release Notes — 2026-07-01
 
-All upstream release notes from the last synced `main` SHA through the current sync (304 versions).
+All upstream release notes from the last synced `main` SHA through the current sync (305 versions).
 
 ## v0.2.1
 
@@ -9772,3 +9772,24 @@ _Released 2026-06-30 · commit `fabf6964`_
 - @waleedlatif1
 
 [View changes on GitHub](https://github.com/simstudioai/sim/compare/v0.7.17...v0.7.18)
+
+---
+
+## v0.7.19
+
+_Released 2026-07-01 · commit `6e426f85`_
+
+## Features
+
+- feat(careers): careers page backed by the Ashby job board (#5316)
+- feat(landing): reintroduce /contact page styled like /demo (#5315)
+
+## Improvements
+
+- improvement(broadcast): white canvas, LinkedIn footer, hi-res logo (#5317)
+
+## Contributors
+
+- @waleedlatif1
+
+[View changes on GitHub](https://github.com/simstudioai/sim/compare/v0.7.18...v0.7.19)

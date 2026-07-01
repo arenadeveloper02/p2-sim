@@ -5253,6 +5253,10 @@
 - **2026-06-30** | `ff16b1b8` | simstudioai/sim#5313 | fix(hitl): build the full enabled-block DAG so any persisted resume target exists (#5313)
 - **2026-06-30** | `ca34301d` | simstudioai/sim#5312 | fix(mailer): permissions entitlements for enabling/disabling (#5312)
 - **2026-06-30** | `fabf6964` | no-pr | v0.7.18: landing, tools depth, media embeds in md editor, sonnet 5
+- **2026-07-01** | `43ed80c7` | simstudioai/sim#5317 | improvement(broadcast): white canvas, LinkedIn footer, hi-res logo (#5317)
+- **2026-07-01** | `af53eda5` | simstudioai/sim#5315 | feat(landing): reintroduce /contact page styled like /demo (#5315)
+- **2026-07-01** | `2393b72e` | simstudioai/sim#5316 | feat(careers): careers page backed by the Ashby job board (#5316)
+- **2026-07-01** | `6e426f85` | no-pr | v0.7.19: newsletter, contact, careers
 
 ## Fork-only notes
 
