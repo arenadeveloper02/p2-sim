@@ -1,0 +1,5259 @@
+# FBI Report — 2026-07-01
+
+## Upstream commits in this sync
+
+- **2025-01-05** | `5b171905` | no-pr | first commit
+- **2025-01-07** | `1edb3574` | no-pr | Finished tabs for basic and advanced in toolbar and will work on building block UI
+- **2025-01-07** | `1ef494a1` | no-pr | Added blocks to toolbar
+- **2025-01-07** | `ec1d8e00` | no-pr | Drag and drop function works with canvas scrolling
+- **2025-01-07** | `27fdf4a2` | no-pr | Created icons instead of svgs for the blocks
+- **2025-01-07** | `31760f1a` | no-pr | Deleted svgs
+- **2025-01-09** | `28c07881` | no-pr | Cleaned up repo
+- **2025-01-09** | `173d6315` | no-pr | Added folder for sidebar
+- **2025-01-10** | `de1a71b8` | no-pr | Started scaffolding for sub blocks and created first workflow blocks
+- **2025-01-10** | `0b82426b` | no-pr | Completely set up scaffolding for project blocks
+- **2025-01-11** | `60a9fb8c` | no-pr | Added bias term to fix slider text slightly
+- **2025-01-11** | `46659e9d` | no-pr | Deleted public icon
+- **2025-01-11** | `5d23cf81` | no-pr | Style change on workflow block
+- **2025-01-11** | `a59b5bcf` | no-pr | Implemented ability to drag blocks
+- **2025-01-11** | `ed96a88d` | no-pr | Took out unnecessary state
+- **2025-01-11** | `bc7af8c3` | no-pr | Better naming for blocks
+- **2025-01-11** | `ef5c809c` | no-pr | Created table sub block
+- **2025-01-12** | `ee9e1e08` | no-pr | Added code sub-block
+- **2025-01-12** | `b8b551e2` | no-pr | Updated readme
+- **2025-01-12** | `fa1df8f2` | no-pr | Updated readme
+- **2025-01-12** | `772fdeab` | no-pr | Updated readme
+- **2025-01-12** | `51d47394` | no-pr | Updated readme clone link
+- **2025-01-13** | `a5418f9b` | no-pr | Improved quality for code editing
+- **2025-01-13** | `e640541c` | no-pr | Fixed making entire code width clickable
+- **2025-01-13** | `e5506188` | no-pr | Added api key field to agent block
+- **2025-01-13** | `e3a7a309` | no-pr | Fixed highlighting text on drag
+- **2025-01-13** | `1450dbda` | no-pr | Set up scaffolding for connections
+- **2025-01-13** | `57b1fce8` | no-pr | Fix dependency conflict between react and cmdk
+- **2025-01-13** | `23610f4f` | no-pr | Added coordinates library
+- **2025-01-14** | `0d64ae7a` | no-pr | Sub block import fixed
+- **2025-01-14** | `3740b78f` | no-pr | Converted canvas to React Flow
+- **2025-01-14** | `9177e197` | no-pr | Removed old files
+- **2025-01-14** | `55d07fdb` | no-pr | Implemented connection UI
+- **2025-01-14** | `176303a8` | no-pr | Added select edge color change
+- **2025-01-14** | `0da44d7c` | no-pr | Better file structure for workflow file
+- **2025-01-14** | `f0e3270b` | no-pr | Re-organized files for clarity
+- **2025-01-14** | `88494a48` | no-pr | Fixed import
+- **2025-01-14** | `26b59d51` | no-pr | Removed react flow watermark
+- **2025-01-14** | `4ea867ac` | no-pr | Added model service under tools directory for LLM calls, added unit testing framework jest
+- **2025-01-14** | `abd52dd6` | no-pr | Added http service to tools
+- **2025-01-14** | `04d3208d` | no-pr | Updated tsconfig.json
+- **2025-01-14** | `28c2f95b` | no-pr | Icons library starter
+- **2025-01-14** | `ee044cf6` | no-pr | Updated readme to include icons
+- **2025-01-14** | `9a4e13f4` | no-pr | Alphabetically sorted icons
+- **2025-01-15** | `d8ac75ca` | no-pr | Added agent properties
+- **2025-01-15** | `fac078de` | no-pr | Fixed code editing bug and shortened agent input
+- **2025-01-15** | `000a58e8` | no-pr | Added placeholders for long inputs and for agent and api
+- **2025-01-16** | `71892594` | no-pr | Added barebones serializer with tests
+- **2025-01-16** | `9ded8a17` | no-pr | Updated block config structure
+- **2025-01-16** | `6d7e8a3c` | no-pr | Finalized output type structure
+- **2025-01-16** | `ee6cd284` | no-pr | Implemented state with logger
+- **2025-01-16** | `aed596f1` | no-pr | Changed inputs to sub blocks for consistency and made better comments on workflow
+- **2025-01-16** | `1a95e763` | no-pr | Updated serializer to be agnostic of block type
+- **2025-01-16** | `65c7e213` | no-pr | Added executor that is block-agnostic and executes serialized workflow
+- **2025-01-16** | `0313f24a` | no-pr | State works without subblock state
+- **2025-01-16** | `3f840bbf` | no-pr | Completed subblock state for all except table and code
+- **2025-01-16** | `c5f755b9` | no-pr | Updated state for table subblock
+- **2025-01-16** | `483fa354` | no-pr | Created code subblock state
+- **2025-01-16** | `1287fd33` | no-pr | Simplified block types and changed conditional to function
+- **2025-01-16** | `49fbf801` | no-pr | Updated providers to latest models, tested in frontend with running agent block
+- **2025-01-16** | `87b8c606` | no-pr | Added action bar to workflow block
+- **2025-01-16** | `e6965cfc` | no-pr | Added available tools to block configs, added ability to run workflow
+- **2025-01-17** | `5c0ea3f6` | no-pr | Finalized action bar for now
+- **2025-01-17** | `4c939880` | no-pr | Added notifications and check notification history
+- **2025-01-17** | `1820a9be` | no-pr | Removed notification testing
+- **2025-01-17** | `a14e9fc8` | no-pr | Simplified blocks file structure
+- **2025-01-17** | `232c4531` | no-pr | Fixed block import in notification store
+- **2025-01-17** | `56407f7b` | no-pr | Added types file for notifications store
+- **2025-01-17** | `85a2528e` | no-pr | Fixed notifications import
+- **2025-01-17** | `07cb2952` | no-pr | Modified tools directory to be more generic, updated serializer and executor accordingly
+- **2025-01-17** | `ca2711b7` | no-pr | Fixed import for toolbar
+- **2025-01-17** | `bb9d8f94` | no-pr | Rename registry to index
+- **2025-01-17** | `0c905b10` | no-pr | Reduced toolbar width
+- **2025-01-18** | `7c8e6574` | no-pr | Decoupled selected state
+- **2025-01-18** | `3d5d631a` | no-pr | Added history tracking with middleware and works with workflow
+- **2025-01-18** | `36faf1f9` | no-pr | Control bar state history implemented. Need to fix indexing
+- **2025-01-18** | `f0ac39a4` | no-pr | Fixed indexing on version history and now state history fully works
+- **2025-01-18** | `472282a8` | no-pr | Fixed subblock input bug with state
+- **2025-01-18** | `9e3a4400` | no-pr | Turned autocomplete off on short input
+- **2025-01-18** | `f9764816` | no-pr | Modified workflow, serializer, and executor to use block state from stores instead of ReactFlow nodes
+- **2025-01-18** | `9b59d682` | no-pr | Moved execution helper function to lib/ directory, removed unused functions
+- **2025-01-19** | `2f3fa0c0` | no-pr | Moved tools property out of workflows in block definitions, updated serializer & tests accordingly
+- **2025-01-19** | `f23350e6` | no-pr | Added ToolResponse interface to standardize block response format, updated executor to use response transformation specified in the tool it is using, confirmed agent & api tool working individually
+- **2025-01-19** | `1075f836` | no-pr | Update all the models to take in context as user prompt
+- **2025-01-20** | `4675cc6e` | no-pr | Completed connection UI without subblock logic
+- **2025-01-20** | `ef72e527` | no-pr | Created functional protocol for output type dependencies
+- **2025-01-20** | `f4507bf8` | no-pr | Fixed bug with table cursor disappearing
+- **2025-01-20** | `203333ae` | no-pr | Commented out state logger
+- **2025-01-21** | `d87e5e07` | no-pr | Scaffolding for drag and drop connection block set up
+- **2025-01-21** | `b423cc0b` | no-pr | Added notification as example for console interaction
+- **2025-01-21** | `2b553546` | no-pr | Fixed scrolling on long input and short input
+- **2025-01-21** | `d4033842` | no-pr | Fixed allow scroll on all components
+- **2025-01-21** | `9600627a` | no-pr | Fixed auto scroll on input typing when cursor goes outside of the input width for sub blocks
+- **2025-01-21** | `7b11c958` | no-pr | Fixed dropdown default value and styling issue when text was too long
+- **2025-01-21** | `c61ac72b` | no-pr | Added accurate last saved in control bar
+- **2025-01-21** | `cc68272b` | no-pr | Fixed block deletion bug
+- **2025-01-21** | `51835e9a` | no-pr | Set up basic drag connection block into sub block. For now only finished short-input.
+- **2025-01-21** | `428ec5a4` | no-pr | Prevent dragging into other blocks for connection block
+- **2025-01-21** | `7f8a1e3b` | no-pr | Added code execution functionality for function block
+- **2025-01-22** | `edcea150` | no-pr | Created hook to run workflow, attached to run button in control bar
+- **2025-01-27** | `7ffdfff1` | no-pr | Added deepseek-v3 and deepseek-r1 to agent block
+- **2025-01-27** | `af26d926` | no-pr | Add openAI reasoning models to agent block
+- **2025-01-27** | `1fda706d` | no-pr | Storing connection typing and styling changes before implementation in state
+- **2025-01-27** | `c71b6aa1` | no-pr | Input sub block connection UI complete with cursor disappear error and scroll right error
+- **2025-01-28** | `f0f88dec` | no-pr | Removed extraneous semicolons
+- **2025-01-28** | `4d3aead2` | no-pr | Added output to workflow state, since it can dynamically change based on what fields are filled/not filled out. Simplified execution by removing interface validation, moved to serializer. Modified unit tests accordingly
+- **2025-01-28** | `58d5a831` | no-pr | Took out input styling but kept state logic for dropping into input
+- **2025-01-28** | `70c5b9e1` | no-pr | Pushed correct files into toolbar
+- **2025-01-28** | `5ccf55cb` | no-pr | Extended and simplified executor and workflow execution hook, connections work. Added new unit test for Agent -> Function -> API and it passes. Tested Agent -> API in workflow UI, succeeds.
+- **2025-01-28** | `1ce6a1ec` | no-pr | Fixed hydration error from mismatched server-rendered HTML and client-side rendered content by unifying initial timestamp
+- **2025-01-28** | `ce3da9b7` | no-pr | Added toolbar block search
+- **2025-01-28** | `293aff85` | no-pr | Added search to toolbar and added collapse/open toggle
+- **2025-01-28** | `1152f6f4` | no-pr | Toolbar expand and collapse does not influence workflow
+- **2025-01-28** | `87f49a42` | no-pr | Fixed sidebar toggle height on open
+- **2025-01-29** | `2a55ae95` | no-pr | Made sidebar tooltips above toolbar
+- **2025-01-29** | `5ee1a8c2` | no-pr | Fixed history id error
+- **2025-01-29** | `7330c6fe` | no-pr | Fixed history timestamp bug
+- **2025-01-29** | `d31d19f6` | no-pr | Added CrewAI vision block, not functional
+- **2025-01-29** | `9c473bb8` | no-pr | Added Salesforce & Hubspot Icons, changed CrewAI block bg color
+- **2025-01-29** | `13e30eb0` | no-pr | Added ability to add/delete workflows and persist state and history
+- **2025-01-29** | `e336aea7` | no-pr | Fixed workflow naming and added to control bar
+- **2025-01-29** | `47dc2e78` | no-pr | Added persistence and localization of notifications to each workflow
+- **2025-01-29** | `0984a60c` | no-pr | Added state persistence before unload
+- **2025-01-29** | `55b1a41d` | no-pr | Added dummy settings page
+- **2025-01-29** | `8058e367` | no-pr | Fixed minor styling on settings page
+- **2025-01-29** | `c5545397` | no-pr | Made CrewAI vision block functional
+- **2025-01-29** | `3d97f1df` | no-pr | Solved hydration error
+- **2025-01-29** | `006a4523` | no-pr | Added logic for when user is entering platform with no workflow history, and adding checks for validating current workflow id
+- **2025-01-29** | `8b9522d0` | no-pr | Fixed refresh duplicating workflows bug
+- **2025-01-29** | `9b8f124e` | no-pr | Added block enable/disable state
+- **2025-01-29** | `c22d612f` | no-pr | Created visual effect for disabled workflow block
+- **2025-01-29** | `dc570703` | no-pr | Added disabled tag to disabled workflow block
+- **2025-01-29** | `c37be5c8` | no-pr | Toggle enable/disabled doesnt go into history
+- **2025-01-29** | `38e37311` | no-pr | Added duplicate block function
+- **2025-01-29** | `dc64f0b3` | no-pr | Added Firecrawl web scrape tool/block and switch toggle sub-block
+- **2025-01-29** | `04fb16ce` | no-pr | Fixed switch and deleted unnecessary page
+- **2025-01-29** | `dd2caee5` | no-pr | Fixed hydration error
+- **2025-01-29** | `90c28c93` | no-pr | Made horizontal action bar to the right of the workflow block
+- **2025-01-29** | `d170872b` | no-pr | Fixed connection block spacing
+- **2025-01-30** | `b32957ab` | no-pr | Added edges focusable and delete UI
+- **2025-01-30** | `9defa59c` | no-pr | Separated workflow into components
+- **2025-01-30** | `c8123903` | no-pr | Added comments to workflow
+- **2025-01-30** | `a6cb2ae0` | no-pr | Deleted some unnecessary comments
+- **2025-01-30** | `e879a64d` | no-pr | Added hover to X on edge
+- **2025-01-30** | `36921b65` | no-pr | Set selected block null on edge click
+- **2025-01-30** | `d73a8957` | no-pr | Fixed and improved version history
+- **2025-01-30** | `b25af5cf` | no-pr | Changed hover over to ring instead of outline for short input
+- **2025-01-30** | `f9abc43d` | no-pr | Fixed spacing of tag inside short input on drop
+- **2025-01-30** | `dc7b00e0` | no-pr | Fixed error on workflow store with history middleware changes
+- **2025-01-30** | `2dc677b4` | no-pr | Added ability for horizontal ports
+- **2025-01-30** | `ffc6cb06` | no-pr | Special tag works on short input
+- **2025-01-30** | `32faaf6d` | no-pr | Fixed short input comments
+- **2025-01-30** | `15b42c7d` | no-pr | Fixed comment on short input
+- **2025-01-30** | `3850c112` | no-pr | Standardized output format for blocks/tools. Updated executor so we can now resolve sub-json values for tagged inputs. Updated serializer to match new block output format.
+- **2025-01-30** | `f686b407` | no-pr | Fixed edge midpoint calculation
+- **2025-01-30** | `985db94d` | no-pr | Modified block implementation so block output format relies on tool outputs
+- **2025-01-30** | `ecd41e26` | no-pr | Added delete workflow confirmation
+- **2025-01-30** | `c7ee96df` | no-pr | Extended notifications time
+- **2025-01-30** | `49a9dcaa` | no-pr | Added jina block
+- **2025-01-30** | `087a1095` | no-pr | Tag works on long input
+- **2025-01-30** | `cb4d5f8d` | no-pr | Fixed textarea whitespace visual bug
+- **2025-01-30** | `3d147dc8` | no-pr | Added code ability to be dropped in and added ability to prevent drop in block config
+- **2025-01-30** | `678134b5` | no-pr | Changed droppable to connectionDroppable
+- **2025-01-30** | `f0a84490` | no-pr | Workflow names can be edited
+- **2025-01-31** | `ddf29b0e` | no-pr | Added textarea resizeable
+- **2025-01-31** | `f50334ee` | no-pr | Fixed index increasing and allow block name changes
+- **2025-01-31** | `d7b63cbf` | no-pr | Fixed delete workflow
+- **2025-01-31** | `80e1c426` | no-pr | Reorganized state files
+- **2025-01-31** | `fb4808c0` | no-pr | Modified executor to log at block-level granularity, and support parallel block execution
+- **2025-01-31** | `0d0464e4` | no-pr | Added console sidebar
+- **2025-01-31** | `ae4ae535` | no-pr | Created console store and console items
+- **2025-01-31** | `058865f5` | no-pr | Added block name and changed structure of console component
+- **2025-01-31** | `4e7116c4` | no-pr | Removed final console output
+- **2025-01-31** | `282d4a62` | no-pr | If no duration data, console -1
+- **2025-01-31** | `5a5450f1` | no-pr | Organized the console better and added the icon from the block
+- **2025-01-31** | `d84f53d7` | no-pr | Clear console only clears from current console
+- **2025-01-31** | `cdb646e1` | no-pr | Removed terminal if error shown in entry
+- **2025-01-31** | `88f25bb0` | no-pr | Do not propogate state change unless block name actually changed
+- **2025-01-31** | `71a4d53d` | no-pr | Do not propagate state change unless workflow name changed
+- **2025-01-31** | `e39a926d` | no-pr | Fixed icons and colors
+- **2025-01-31** | `7ce6fac6` | no-pr | Fixed jina color
+- **2025-01-31** | `1c87d393` | no-pr | Allow single & multi-line paste of envvars in settings modal
+- **2025-01-31** | `68b1e3c3` | no-pr | Fixed icons showing in console for every block
+- **2025-01-31** | `61cf06c9` | no-pr | Made settings modal scrollable
+- **2025-01-31** | `d70379ac` | no-pr | Added autoscrolling to add variable
+- **2025-01-31** | `d31cc9cc` | no-pr | Added spacing to bottom of toolbar
+- **2025-01-31** | `e4a6c8b1` | no-pr | Console should be collapsed by default
+- **2025-01-31** | `f188ebb0` | no-pr | Improved json view on console
+- **2025-01-31** | `9f7c6fc1` | no-pr | Allowed ability to copy json object
+- **2025-01-31** | `4f56de60` | no-pr | Added console open state and made it open on run
+- **2025-01-31** | `6293874b` | no-pr | Set default to false on console open
+- **2025-01-31** | `b7aa70b8` | no-pr | Added translate block, added ability to add default value during block definition
+- **2025-01-31** | `d0a3ad71` | no-pr | Consolidated common consts into consts.ts
+- **2025-01-31** | `ea823539` | no-pr | Added support for disabled blocks, throw warning at runtime
+- **2025-01-31** | `c6267eb3` | no-pr | Added console support for warning
+- **2025-01-31** | `d5d38fc2` | no-pr | Fixed search z index over blocks
+- **2025-01-31** | `e5c67b7d` | no-pr | Fixed search input ring on toolbar
+- **2025-01-31** | `823f89ba` | no-pr | Moved block log initilization earlier in executor, before inputs are resolved. Throw errors instead of warnings at runtime during execution
+- **2025-01-31** | `2b08e2d8` | no-pr | Made reliable type passdown from executor to console
+- **2025-02-01** | `9755f691` | no-pr | Reorganized files for workflow block
+- **2025-02-01** | `78fa6b44` | no-pr | Fixed failing executor tests
+- **2025-02-01** | `4e445949` | no-pr | Added envvar store, resolves values in short-input, long-input, code sub-blocks. Resolves value at execution time
+- **2025-02-01** | `66770482` | no-pr | Modified envvar detection & evaluation criteria to be text inside of {{}} instead of {}
+- **2025-02-01** | `3fa92e24` | no-pr | Added a dropdown selector for envvars to enhance UX for short-input and long-input sub-blocks
+- **2025-02-01** | `23d49983` | no-pr | Added comment store and beginning of comment UI block
+- **2025-02-01** | `6eadc0ae` | no-pr | Added tag dropdown when user drags in connection tag or types in '<' that shows them what fields are available. Works for short-input and long-input
+- **2025-02-02** | `c35cb81c` | no-pr | Allowed single input paste into settings modal. Close modal on save changes
+- **2025-02-02** | `a0407089` | no-pr | Rolled back comments into separate branch
+- **2025-02-02** | `0e99fdd3` | no-pr | Added Slack post message tool. Tested, publishes message correctly but proxy needs to be setup
+- **2025-02-02** | `8f958c31` | no-pr | Added spacing at bottom of toolbar
+- **2025-02-03** | `207bd7b4` | no-pr | Added reverse proxy to resolve CORS issues, now all external API calls are routed through /api/proxy, API keys & credentials are now all on the server
+- **2025-02-03** | `1e79deab` | no-pr | Fixed small envvar bug where old envvar would get overwritten if new batch were pasted
+- **2025-02-03** | `6c29d616` | no-pr | Fixed failing executor unit tests, tests include mocks for /api/proxy calls
+- **2025-02-03** | `b67494ee` | no-pr | Fixed error handling in reverse proxy, use executor as centralized place to handle errors. Error bubbles up to proxy -> executor -> block log -> custom console
+- **2025-02-03** | `a47c50c6` | no-pr | Added github repo block and tool
+- **2025-02-03** | `838fee32` | no-pr | Switched from basic/advanced to blocks/tools and added toolbar tabs dynamic width calculation
+- **2025-02-03** | `08fe6f2d` | no-pr | Added tool UI to agent
+- **2025-02-03** | `38a8a7c2` | no-pr | Deleted unnecessary type for output in block types
+- **2025-02-03** | `be29142f` | no-pr | Allowed for envvars and tagvars inside of tools input
+- **2025-02-03** | `a0dacfd9` | no-pr | Fixed styling on github block
+- **2025-02-03** | `c17272f2` | no-pr | Fixed dragging a connection block into an input when multiple connection blocks. Added filter for tag dropdown while typing
+- **2025-02-03** | `2f2587f9` | no-pr | Prevent zoom everywhere (ReactFlow is zoomable by default)
+- **2025-02-03** | `080b62c2` | no-pr | Fixed sidebar colors ordering when creating new workflow
+- **2025-02-03** | `58fc54f8` | no-pr | Fixed long-input cursor spacing bug on wrap
+- **2025-02-04** | `d419e987` | no-pr | Added checkbox list subblock; added checkbox list to Jina; reorganized block configs to have API subblock last
+- **2025-02-04** | `98c39afe` | no-pr | Created new providers/ directory for model providers, modified tool names to have '_' instead of '.', added support for function/tool calling by agent block. Works for OpenAI w firecrawl tool, needs to be implemented still for other providers
+- **2025-02-04** | `47b49843` | no-pr | Changed code editor subblock to react-simple-code-editor
+- **2025-02-04** | `832a3535` | no-pr | Generalized provider implementation so adding other providers will be easier
+- **2025-02-04** | `7486039b` | no-pr | Fixed seralizer test error
+- **2025-02-04** | `56af328f` | no-pr | Changed agent description
+- **2025-02-04** | `1e3beec3` | no-pr | Added password for api key in tool input
+- **2025-02-04** | `5ae95bbe` | no-pr | Added gemini tool calling support
+- **2025-02-04** | `a154e8f3` | no-pr | Added anthropic tool calling functionality
+- **2025-02-04** | `a823d6e2` | no-pr | Added deepseek-v3 function calling
+- **2025-02-04** | `204469d3` | no-pr | Added xai function calling support
+- **2025-02-04** | `d3abd849` | no-pr | Changed o1-mini to o3-mini, supports calls without function calling now
+- **2025-02-04** | `e430bee5` | no-pr | Add the ability to resolve envvar values and connection tags inside of tools sub-block
+- **2025-02-04** | `22e695ee` | no-pr | Added dynamic handles; added conditional block; changed function block
+- **2025-02-04** | `e75dca43` | no-pr | Fixed position of handle in subblock
+- **2025-02-04** | `3bcf1fed` | no-pr | Added serper web search tool/block
+- **2025-02-04** | `1a1c83d9` | no-pr | Fixed line number spacing on code block
+- **2025-02-04** | `7e3d7bd8` | no-pr | Fixed line spacing in code for special characters <>
+- **2025-02-04** | `13ed3174` | no-pr | Added tavily search/extract blocks/tools
+- **2025-02-04** | `70aa3741` | no-pr | Added some svgs
+- **2025-02-05** | `5b274dad` | no-pr | Modified jina block/tool, simplified checklist to evaluate each item as an individual sub-block for serializer/executor consistency
+- **2025-02-05** | `578a4a94` | no-pr | Made firecrawl bg slightly lighter
+- **2025-02-05** | `9493055c` | no-pr | Added prettier, added husky pre-commit hook to ensure formatting
+- **2025-02-05** | `c4559429` | no-pr | Fixed typo in tavily tool, acknowledge known error in deepseek-v3 function calling with infinite loops, consolidate providers in registry under providers directory, fixed error handing from 3P APIs
+- **2025-02-05** | `4f3fa900` | no-pr | Fixed small bug with envvar dropdown text replacement that resulted in extra '}}'
+- **2025-02-05** | `707b7fd8` | no-pr | Added router block; fixed hidden rendering on workflow block
+- **2025-02-05** | `51e70b28` | no-pr | Fixed if block handle late render error
+- **2025-02-05** | `a2f2ebaf` | no-pr | Changed web search to serper serach
+- **2025-02-05** | `4b887fca` | no-pr | Reorganized block ordering
+- **2025-02-05** | `ac079cc2` | no-pr | Added logic in executor to execute router block, traversing down one of the paths. Use BFS to determine available paths, continue down the one that the router decides. If there is no router, we can still continue with parallel block execution. Added recursive envvar resolution in executor as well
+- **2025-02-05** | `4df1c826` | no-pr | Removed duplicate logic to map model name onto provider
+- **2025-02-05** | `429a98e9` | no-pr | Added code placeholder
+- **2025-02-05** | `34715203` | no-pr | Stashing condition and code changes before proceeding with final implementation
+- **2025-02-05** | `51e08194` | no-pr | Reverted code block and removed conditional-input; trying solution with codeblock params
+- **2025-02-05** | `361a51df` | no-pr | Pushed state-workable if block
+- **2025-02-05** | `a4065f4d` | no-pr | Each handle has a unique id: id-position-id
+- **2025-02-05** | `563f770c` | no-pr | Organized types in blocks better
+- **2025-02-05** | `c0981c3f` | no-pr | Deleted global types folder
+- **2025-02-06** | `bc5dba71` | no-pr | Updated tool descriptions to be more descriptive
+- **2025-02-06** | `5c34f82d` | no-pr | Added youtube search tool/block
+- **2025-02-06** | `e89a3204` | no-pr | Added envvar resolution for code sub-block
+- **2025-02-06** | `c415467d` | no-pr | Added chat UI
+- **2025-02-06** | `f42882e3` | no-pr | Added functional chat for simply adding blocks and connections
+- **2025-02-06** | `2ca3d29c` | no-pr | Storing workflow canvas changes for getting location of viewport and changing viewport location
+- **2025-02-06** | `a10a724a` | no-pr | Added support for response format in agent block. Works in all but deepseek (will fix) and gemini (does not support for this model). If responseformat is not specified, we get the response back wrapped in 'content' like before
+- **2025-02-07** | `660b8887` | no-pr | Updated gemini model to 2.0 flash
+- **2025-02-07** | `01d2a8ac` | no-pr | Added support for structured response format from agent block in the target block's connectio tags & connection dropdown menu. Tested, resolves values when response format is specified, and when it isn't
+- **2025-02-07** | `893954dd` | no-pr | Add support for arrays in schema
+- **2025-02-07** | `70e41584` | no-pr | Make response format minimizable
+- **2025-02-08** | `4783d142` | no-pr | Made ports slightly more obvious
+- **2025-02-08** | `cea1d938` | no-pr | Added border change for subblock handles as well
+- **2025-02-08** | `2999176c` | no-pr | Fixed minimize to show past 3 lines and changed color to align with rest of application
+- **2025-02-08** | `1e627af9` | no-pr | Finished if block completely
+- **2025-02-08** | `e807c9b1` | no-pr | Fixed tag dropdown on condition input
+- **2025-02-08** | `e14164db` | no-pr | Fixed envvar dropdown on condition input
+- **2025-02-08** | `f366b557` | no-pr | Fixed small bug that didn't render tools in agent blocks
+- **2025-02-08** | `30d3e934` | no-pr | Added function execution logic locally instead of 3P API using vm, modified executor to handle connection block (still testing)
+- **2025-02-08** | `16a8982f` | no-pr | Renamed to chat instead of aichat
+- **2025-02-08** | `33ce4867` | no-pr | Switched context to user
+- **2025-02-08** | `ee733fe7` | no-pr | Small improvement to executor return format
+- **2025-02-08** | `6f904dc9` | no-pr | Fixed edge re-render on handle port toggle
+- **2025-02-08** | `82a82740` | no-pr | Added block horizontal/vertical mode
+- **2025-02-09** | `a2305da9` | no-pr | Added tool collapsable
+- **2025-02-09** | `0a09e9a6` | no-pr | Made tool expanding on isWide nicer
+- **2025-02-09** | `ee328185` | no-pr | Deleted lib file unused
+- **2025-02-09** | `e537a2a1` | no-pr | Added perplexity icon
+- **2025-02-09** | `121ea36b` | no-pr | Disable run block in action bar for now
+- **2025-02-09** | `da1d2adf` | no-pr | Added company icons
+- **2025-02-10** | `46a4a305` | no-pr | Added notion tool/block
+- **2025-02-10** | `9a3378d3` | no-pr | Adding multiple blocks now spaces them out on the screen
+- **2025-02-10** | `3cf6e1a2` | no-pr | Fixed conditional if/else UI
+- **2025-02-10** | `fde430ff` | no-pr | Fixed YouTube icon
+- **2025-02-10** | `980ca6d1` | no-pr | Horizontal blocks by default
+- **2025-02-10** | `4b92eb02` | no-pr | Added gmail tool to send/reach/search gmail, added condition display of sub-blocks. Need to integrate oauth2 credentials for gmail
+- **2025-02-10** | `83c88f39` | no-pr | Added x block/tools, added additional check in executor to check for disconnected, disabled blocks at execution time
+- **2025-02-10** | `05ad0846` | no-pr | Consolidated separate tavily blocks into one
+- **2025-02-10** | `bb5ca1ad` | no-pr | Added evaluator block
+- **2025-02-10** | `85b35eac` | no-pr | Changed evaluator block
+- **2025-02-10** | `c4999463` | no-pr | Created state edge detection on edge connect
+- **2025-02-10** | `100e7110` | no-pr | Updated evaluator block
+- **2025-02-10** | `a0b26120` | no-pr | Added loops to state across stores
+- **2025-02-10** | `3ba2164d` | no-pr | Added loops to logs
+- **2025-02-10** | `f42bfdfd` | no-pr | Removed duplicates from loop state
+- **2025-02-10** | `d6e53ffd` | no-pr | Correct handling for multiple loops
+- **2025-02-10** | `daa294a0` | no-pr | Treat conditional block as pass-through for source blocks' output
+- **2025-02-10** | `7fb47f43` | no-pr | Turn off dev indicator
+- **2025-02-10** | `ff4fee0c` | no-pr | Added loop block to workflow canvas; need to fix height calculation
+- **2025-02-10** | `8469601d` | no-pr | Consolidated workflow and workflow-block for simplicity and clarity with ReactFlow
+- **2025-02-11** | `5100e2e2` | no-pr | Modified evaluator, runs similar to router and selects correct route but doesn't actually continue down that route. WIP
+- **2025-02-11** | `3d52dec7` | no-pr | Added loops to serialized blob sent to executor, loop between evaluator -> agent works
+- **2025-02-11** | `7ddb4ca0` | no-pr | Removed extraneous logs, and treat evaluator block as a pass-through. Added jsdoc annotations to executor functions
+- **2025-02-11** | `bddc6cb7` | no-pr | Fixed delete block in loop error
+- **2025-02-11** | `2f818116` | no-pr | Fixed custom edge implementation to match ReactFlow
+- **2025-02-11** | `866ce994` | no-pr | Fixed re-render edge bug
+- **2025-02-11** | `867a4f82` | no-pr | Added back border transition for handles
+- **2025-02-11** | `dbfc9df4` | no-pr | Added loop label
+- **2025-02-11** | `a7339b51` | no-pr | Fix: removed shadow from loop label
+- **2025-02-11** | `611ed7da` | no-pr | Removed vm2 dependency
+- **2025-02-11** | `ddfa8664` | no-pr | Added block height to state and made loop relative to block height and position
+- **2025-02-11** | `06a360b2` | no-pr | Added max iterations update to state for loop
+- **2025-02-12** | `1f9acf31` | no-pr | Feature: added max iterations to loop UI; will add adjustable
+- **2025-02-12** | `660a203c` | no-pr | Fix: table subblock input
+- **2025-02-12** | `ac28e09b` | no-pr | Added maxIterations to serialized loops, executor now uses provided max iterations for each loop from workflow store
+- **2025-02-12** | `11cbd1da` | no-pr | Feature: max iterations can be updated from UI
+- **2025-02-12** | `ec2150ac` | no-pr | Modify evaluator to just loop back and forth if there is only one destination in loop
+- **2025-02-12** | `3fb861b8` | no-pr | Added case for when evaluator does not have any target blocks
+- **2025-02-12** | `e5223389` | no-pr | Include justification in evaluator response
+- **2025-02-12** | `c203fbf1` | no-pr | Include prior history with responses/justifications in later calls to agent block
+- **2025-02-12** | `2818cd91` | no-pr | Added code to trim gemini response of any markdown/whitespace
+- **2025-02-12** | `322b2bec` | no-pr | Reiterate in evaluator system prompt that if no blocks are available, return end
+- **2025-02-12** | `0cba346c` | no-pr | Fix: subblock rendering based on condition of other subblock
+- **2025-02-12** | `4e998f53` | no-pr | Feature: added eval input
+- **2025-02-12** | `a4cf9bf8` | no-pr | Removed range restriction
+- **2025-02-12** | `e2a5e39b` | no-pr | Fix: range input experience
+- **2025-02-13** | `af323a71` | no-pr | Modify executor to treat evaluator as an 'output' block instead of a 'router' block, looping logic still needs to be updated but forward path works
+- **2025-02-13** | `0dbd7a7f` | no-pr | Updated executor to account for new evaluator logic and to count backward edges in loops in inDegree calculation
+- **2025-02-13** | `281e8504` | no-pr | Updated executor to account for new evaluator logic and to count backward edges in loops in inDegree calculation
+- **2025-02-13** | `fce83935` | no-pr | Updated executor to account for new evaluator logic and to count backward edges in loops in inDegree calculation
+- **2025-02-13** | `f74aa815` | no-pr | Cleanup extra, unnecessary logs
+- **2025-02-13** | `4291d79f` | no-pr | Fix bug in executor that always assumed target block for conditional in loop was an agent block
+- **2025-02-13** | `a1f7407e` | no-pr | Add arbitrary 1s wait after condition block to diagnose the out-of-order execution in production
+- **2025-02-13** | `8fd25fd8` | no-pr | Add arbitrary 5s wait after condition block to diagnose the out-of-order execution in production
+- **2025-02-13** | `f7dbbf1c` | no-pr | Fix: eval-input input ref and styling
+- **2025-02-13** | `26e7b1c1` | no-pr | Try temp fix to out of order execution
+- **2025-02-13** | `03d1d724` | no-pr | Revert temp fix to executor, didn't work
+- **2025-02-13** | `e0736870` | no-pr | Improvement: input styling on evaluator and placeholder
+- **2025-02-13** | `9ad71b88` | no-pr | Fix: conditional input handle error on delete
+- **2025-02-13** | `08cd1d6a` | no-pr | Fix: edge connection logic (self-connect and duplicate connections)
+- **2025-02-13** | `487248a8` | no-pr | Reiterate in evaluator prompt to only resond with JSOn
+- **2025-02-13** | `ffd1373a` | no-pr | Fix: key error on multiple connect
+- **2025-02-13** | `79b55a08` | no-pr | Fix: tag dropdown on no filtered tag avail
+- **2025-02-13** | `b79f5a49` | no-pr | Resolved failed to evaluate condition error by adding util to wrap strings before evaluating them
+- **2025-02-13** | `32a1cd71` | no-pr | Improvement: expanded min zoom
+- **2025-02-13** | `92838c8b` | no-pr | Allow conditional block to have multiple outputs going to the same destination block
+- **2025-02-13** | `d1c71e92` | no-pr | Adjusted min zoom
+- **2025-02-13** | `5dc45509` | no-pr | Added memory block
+- **2025-02-13** | `071e370d` | no-pr | Revert utils.ts back so evalator doesn't have JSON issue
+- **2025-02-13** | `d99bd1e0` | no-pr | Add more thorough check for JSON in providers/
+- **2025-02-13** | `e9be164d` | no-pr | Fixed executor utils to only stringify resolved values for conditional blocks and not for any other blocks
+- **2025-02-13** | `11a830f7` | no-pr | Deleted memory block; added input block
+- **2025-02-13** | `9686f8cf` | no-pr | Fix: collapsed state on code block
+- **2025-02-13** | `12ac7761` | no-pr | Fixed config error with code block
+- **2025-02-13** | `deea0209` | no-pr | Fixed agent config
+- **2025-02-14** | `0aeeb65b` | no-pr | Added starter block with options; added nesting ability for subblock config
+- **2025-02-14** | `73e4bbc3` | no-pr | Changed block types config for simplicity
+- **2025-02-14** | `058b6818` | no-pr | Enforce start with starter block
+- **2025-02-14** | `bf6e91fc` | no-pr | Remove extra logs from OpenAI provider
+- **2025-02-14** | `627a2754` | no-pr | Fixed out-of-order execution in executor
+- **2025-02-14** | `4fd1cac0` | no-pr | npm run format
+- **2025-02-15** | `f4773d1c` | no-pr | Fix: block naming +1
+- **2025-02-15** | `5c8bd055` | no-pr | Changed id back to type on config
+- **2025-02-15** | `17bca0bc` | no-pr | Added check to throw error if starter block is disabled
+- **2025-02-15** | `5e2c3806` | no-pr | Fix: agent temperature
+- **2025-02-15** | `ca322170` | no-pr | Create LICENSE
+- **2025-02-15** | `94fa08ec` | no-pr | Updated README
+- **2025-02-15** | `a1d29813` | no-pr | Update README.md
+- **2025-02-15** | `98e795df` | no-pr | Update README.md
+- **2025-02-15** | `4e9d5039` | no-pr | Added contributing guide
+- **2025-02-15** | `28051da0` | no-pr | Add .github/
+- **2025-02-15** | `5184953a` | no-pr | Remove old tests, outdated
+- **2025-02-15** | `cc89e80b` | no-pr | fix(file-structure): moved registry to file in workflow
+- **2025-02-15** | `4c2764f0` | no-pr | feature(console): stream console messages back from executor
+- **2025-02-15** | `6896f745` | no-pr | feature(workflow-ui): show current block being executed
+- **2025-02-16** | `dc85adc4` | no-pr | fix(execution-store): allowed for multiple concurrent block executions
+- **2025-02-16** | `cef91e14` | no-pr | improvement(settings): added sections to settings and improved layout
+- **2025-02-16** | `8fbdd8ba` | no-pr | refactor(settings): changed name to environment
+- **2025-02-16** | `c40798b8` | no-pr | feature(settings-reset): ability to reset all state
+- **2025-02-16** | `ad546519` | no-pr | fix(ui): settings labels
+- **2025-02-16** | `51f26d4e` | no-pr | feature(auth): added basic scaffolding for auth using better-auth, drizzle ORM, resend for email verification
+- **2025-02-16** | `d95d3ca9` | no-pr | docs: update README.md
+- **2025-02-16** | `92f22c2f` | no-pr | docs: include .env.example
+- **2025-02-16** | `94c41035` | no-pr | Merge pull request #52 from simstudioai/feature/auth
+- **2025-02-16** | `639f86bc` | no-pr | feature(app): error handling
+- **2025-02-16** | `04e0a76c` | no-pr | improvement(ux): starter block added automatically on workflow create
+- **2025-02-16** | `2ba99984` | no-pr | fix(store): block named starter not start
+- **2025-02-16** | `472ea892` | no-pr | fix(bug): memory block bug
+- **2025-02-16** | `715c69d7` | no-pr | fix: verify page prerendering issue
+- **2025-02-16** | `9201e783` | no-pr | fix(ui): added reliable favicon
+- **2025-02-16** | `bd4168c5` | no-pr | fix: use postgres_url provided by supabase/vercel config instead of database_url
+- **2025-02-16** | `3b1788a4` | no-pr | fix(auth): remove ssl enforcement in prod for supabase db
+- **2025-02-16** | `6004c8d0` | no-pr | fix(registry-state): fixed bug on add workflow / improvement(ux): added autoconnect
+- **2025-02-16** | `fcf2fe5a` | no-pr | fix(auth): remove ssl enforcement in prod for supabase db
+- **2025-02-16** | `3db68629` | no-pr | feat(auth): general auth improvements, added signin/up with google
+- **2025-02-16** | `f85106d0` | no-pr | gitignore: edited comment
+- **2025-02-16** | `eeaf8b0d` | no-pr | improvement(ui): execution border slightly larger
+- **2025-02-16** | `71a66c6a` | no-pr | feat(auth): added better error handling for login/signup flow
+- **2025-02-16** | `d2250b20` | no-pr | docs: modified feature request template
+- **2025-02-16** | `a3b7cfb3` | no-pr | docs: modified feature request template
+- **2025-02-16** | `ddd2aa5d` | no-pr | feat(dbsync): created new 'workflow' table to hold workflow state
+- **2025-02-16** | `763ea8bb` | no-pr | feat(dbsync): added workflow sync wrapper to workflow, combine debounce, period, and unload syncing to sync local state store to workflow pg table
+- **2025-02-16** | `5e2a212a` | no-pr | feature(landing): created temp landing page
+- **2025-02-16** | `4e758adf` | no-pr | improvement(landing): made title slightly larger
+- **2025-02-16** | `9f16692d` | no-pr | fix(landing): added github link
+- **2025-02-16** | `ef47aa5e` | no-pr | feat(dbsync): protect workflow routes by redirecting user to login if they are not logged in, confirmed syncing to supabase is working
+- **2025-02-16** | `3ef4e48e` | no-pr | fix(landing): image background
+- **2025-02-16** | `b76073fd` | no-pr | Merge pull request #55 from simstudioai/feature/dbsync
+- **2025-02-16** | `153baaba` | no-pr | improvement(landing): edges animated
+- **2025-02-16** | `a27ef945` | no-pr | improvement(landing): added fetch priority high to image
+- **2025-02-16** | `7fabe4c8` | no-pr | feat(waitlist): made waitlist function, added waitlist table
+- **2025-02-16** | `20702813` | no-pr | fix(landing): submit UI
+- **2025-02-16** | `1bade9d3` | no-pr | fix(landing): success wording
+- **2025-02-16** | `c9374ad9` | no-pr | fix(landing): success wording
+- **2025-02-17** | `78e210f9` | no-pr | fix(landing): landing layout for reactflow canvas
+- **2025-02-17** | `c4149b92` | no-pr | feat(auth): created logs, user_environment, and user_settings tables and associated routes
+- **2025-02-17** | `f62a0d26` | no-pr | feat(dbsync): add is_debug_mode_enabled to settings schema
+- **2025-02-17** | `ef5ec1f4` | no-pr | fix(landing): mobile friendly
+- **2025-02-17** | `6f0a2967` | no-pr | merged changes
+- **2025-02-17** | `eb6812aa` | no-pr | fix(dbsync): only sync with db on exit
+- **2025-02-17** | `b5b8f554` | no-pr | feat(auth): improve error handling for invalid credentials on login, redirect to workspace on successful social login
+- **2025-02-17** | `5e0998dc` | no-pr | edited console msg
+- **2025-02-17** | `59dda992` | no-pr | Merge pull request #56 from simstudioai/feature/dbsync
+- **2025-02-17** | `50d03c68` | no-pr | feat(auth): enforce SSL for db connection to prevent MITM & snooping
+- **2025-02-17** | `9f3c4986` | no-pr | fix(db): remove ssl verification
+- **2025-02-17** | `2d77590d` | no-pr | feat(memory): added pinecone block/tools
+- **2025-02-17** | `7c40f241` | no-pr | feature(blocks): added github dropdown for actions
+- **2025-02-17** | `c1f975dd` | no-pr | Update CONTRIBUTING.md
+- **2025-02-17** | `807105a3` | no-pr | Update CONTRIBUTING.md
+- **2025-02-18** | `b10f2e30` | no-pr | fix(landing): slightly smaller description text and changed title
+- **2025-02-18** | `5c86d1de` | no-pr | feat(memory): add openai embeddings tool/block
+- **2025-02-18** | `fb5272cb` | no-pr | fix(stores): consolidated some store values
+- **2025-02-18** | `d3a042ac` | no-pr | improvement(stores): standardized quality of stores and added max history to relevant stores
+- **2025-02-18** | `de6b9ebc` | no-pr | feat(memory): modified pinecone tools, adjusted pinecone block
+- **2025-02-18** | `8e3c5db2` | no-pr | feat(memory): pinecone generate embeddings working
+- **2025-02-18** | `6d0de865` | simstudioai/sim#45 | dark mode (#45)
+- **2025-02-18** | `15c991e0` | no-pr | fix(ui): expanded settings
+- **2025-02-18** | `2b6d36b6` | no-pr | fix(landing): wording & styling
+- **2025-02-18** | `c7e07b4d` | no-pr | feat(memory): all pinecone tools/blocks work
+- **2025-02-18** | `8787f2db` | no-pr | fix(memory): include namespace and index host in pinecone search text tool
+- **2025-02-18** | `0893090a` | no-pr | improvement(API): added query params, fixed cursor ref, code placeholder
+- **2025-02-18** | `2de52416` | no-pr | feat(table): dropdown tags and envvar
+- **2025-02-18** | `3d132927` | no-pr | fix(table): fixed resolution of query params & headers
+- **2025-02-18** | `f38c147c` | no-pr | fix(ui/table): fix the way we display envvars, use formatdisplay like we do for other sub-blocks
+- **2025-02-18** | `2de38680` | no-pr | feat(executor): improve executor to allow bi-directional dependencies if the block is in the loop
+- **2025-02-18** | `0edbc7b7` | no-pr | Merge pull request #61 from simstudioai/feature/looping
+- **2025-02-18** | `756d748b` | simstudioai/sim#59 | Fix/prod ref (#59) (#65)
+- **2025-02-18** | `460e44a0` | no-pr | feat(executor): modified the condition/router blocks to not further wrap blocks since they are pass-through blocks
+- **2025-02-18** | `4c7630d7` | simstudioai/sim#66 | feat(sync): added batch sync for registry (#66)
+- **2025-02-18** | `4c9b0e9e` | no-pr | feat(starter): added workflow_schedule table and helper to convert date to cron expression
+- **2025-02-18** | `1ae81bfc` | no-pr | Merge pull request #68 from simstudioai/feature/starter
+- **2025-02-18** | `0c2439fc` | no-pr | improve(sync): added periodic sync
+- **2025-02-18** | `666e23fc` | no-pr | feat(sync): syncing workflow deletion
+- **2025-02-18** | `77f671c1` | simstudioai/sim#69 | feat(sync): updated db and fixed syncing value (#69)
+- **2025-02-18** | `f710d35f` | simstudioai/sim#70 | fix(bug): deployment with route (#70)
+- **2025-02-18** | `d5d39c2b` | no-pr | fix(bug): sync-manager bug
+- **2025-02-18** | `edb7d68d` | no-pr | improvement(sync): organized sync-manager
+- **2025-02-19** | `1c8a51de` | no-pr | feat(starter): add routes for scheduled workflows
+- **2025-02-19** | `9de0d6fb` | no-pr | Merge pull request #71 from simstudioai/feature/starter
+- **2025-02-19** | `c8a8d960` | no-pr | feat(starter): add GET for vercel cron job to execute scheduled workflows
+- **2025-02-19** | `d5f102d4` | no-pr | feat(starter): sync encrypted envvars to db on-save in settings modal, fetch during scheduled execution & decrypt
+- **2025-02-19** | `384b79ef` | no-pr | fix(starter): updated table variable names in schema.ts to match actual supabase table names
+- **2025-02-19** | `d8f34f15` | no-pr | fix(starter): add temp logging to debug executor inability to resolve envvars
+- **2025-02-19** | `47abb35a` | no-pr | fix(starter): add temp logging to debug executor inability to resolve envvars
+- **2025-02-19** | `f6a63930` | no-pr | fix(starter): add temp logging to debug executor inability to resolve envvars
+- **2025-02-19** | `b3d8da1e` | no-pr | feat(starter): extended time-cron converter to include weekly, removed extraneous logs, add all workflow logs to db instead of just success/fail
+- **2025-02-19** | `8dc28230` | no-pr | feat(starter): added duration column to logs db, track duration of entire workflow
+- **2025-02-19** | `22887211` | no-pr | feat(starter): update starter block placeholders to make it clear that it accepts 24-hr values
+- **2025-02-19** | `abee3090` | no-pr | improvement(middleware): added /w to route to /w/1
+- **2025-02-19** | `4edd0ee3` | no-pr | improvement(starter): added date/time picker
+- **2025-02-19** | `bcedcdf7` | no-pr | fix(schedules): removed timezone column from db
+- **2025-02-19** | `5029c99c` | no-pr | fix: redirect to /w after google/github signin
+- **2025-02-19** | `49614a4e` | no-pr | fix(scheduling): fix error where scheduled executions were not actually executed
+- **2025-02-20** | `4e010794` | no-pr | fix(error): resolved hydration error
+- **2025-02-20** | `4f0deb50` | no-pr | improvement(start): only allow one starter block
+- **2025-02-20** | `feb8ba3b` | no-pr | fix(stores): fixed duplicate block bug to merge with subblock store
+- **2025-02-20** | `4470a549` | no-pr | fix(ui/ux): date/time styling and input validation
+- **2025-02-21** | `04ebb834` | no-pr | feat(docs): added instructions for adding a tool/block to contributing guidelines
+- **2025-02-21** | `054777d0` | no-pr | fix(ux): autofill off for certain inputs
+- **2025-02-22** | `3d1ba81c` | no-pr | improvement(landing): landing animation/styling improvements
+- **2025-02-22** | `892b2975` | no-pr | fix(landing): input ui
+- **2025-02-23** | `48a89521` | no-pr | improvement(ux): action bar hover and cursor ref on click in prod
+- **2025-02-23** | `99a645cf` | no-pr | fix(ui/connections): fixed tag dropdown and connection block not accurately reflecting source block response format by changing reference from workflow/subblock response format to dedicated subblock store
+- **2025-02-23** | `2b874e09` | no-pr | fix(workflow-block): removed console on render
+- **2025-02-23** | `3a95c5ed` | no-pr | fix(landing): modified landing page link to go to sim directory
+- **2025-02-23** | `f2460dff` | no-pr | Update CONTRIBUTING.md
+- **2025-02-23** | `48b6095d` | no-pr | fix(dependencies): cleanup unused testing dependencies
+- **2025-02-23** | `f52de5d1` | simstudioai/sim#82 | Feature/api (#82)
+- **2025-02-23** | `3f4e6041` | no-pr | fix(dbsync): sync state right before deploying as API to enusre localStorage & db workflow state are the same as soon as the endpoint is deployed
+- **2025-02-24** | `9ff1783d` | no-pr | feat(github): add github read pr & write comment tools to the github block, tested & works
+- **2025-02-24** | `529910dc` | no-pr | fix(ui): deployment ui slight fixes; will need deeper cleaning
+- **2025-02-24** | `1309c710` | no-pr | fix(github): add missing pr number to comment tool
+- **2025-02-24** | `1ad9746b` | no-pr | feat(pinecone): added pinecone search by vector tool & fixed dropdown tag for evaluator
+- **2025-02-24** | `b2d92d78` | no-pr | fix(executor/conditional): fixed typo in the conditional block response format
+- **2025-02-24** | `ee1932c8` | no-pr | feat(models): added claude-3-7-sonnet
+- **2025-02-24** | `f1a2f399` | no-pr | fix(ui): toolbar search placeholder
+- **2025-02-26** | `8218a88c` | simstudioai/sim#87 | Feature/execution (#87)
+- **2025-02-26** | `4d4fbdd2` | no-pr | fix(executor): fix nested resolution of envvars for agents' tools
+- **2025-02-26** | `b1cc571d` | no-pr | Update README.md
+- **2025-02-27** | `f8e3665b` | no-pr | fix(ui): dark mode loop styling and looping touch-ups
+- **2025-02-27** | `fa67494f` | no-pr | feat(providers): removed providers from tools directory, added cerebras sdk
+- **2025-02-27** | `a08efa3d` | no-pr | feat(providers): added openai-sdk in place of custom business logic
+- **2025-02-27** | `5c11e9da` | no-pr | feat(providers): modified all providers to use SDK rather than creating an HTTP request
+- **2025-02-27** | `18c16c21` | simstudioai/sim#89 | Feat/api input (#89)
+- **2025-02-27** | `07469f19` | no-pr | fix(sync): fixed disappearing subblock value on sync
+- **2025-02-27** | `4158dd33` | no-pr | feat(custom-functions): completed UI
+- **2025-02-27** | `16f50656` | no-pr | feat(custom-functions): add support for custom functions, tested with & without code provided
+- **2025-02-27** | `0380a395` | no-pr | fix(sync-manager): fixed sync
+- **2025-02-27** | `9fa05511` | no-pr | feat(providers/cerebras): use dedicated cerebras sdk
+- **2025-02-27** | `199ccf5d` | no-pr | fix(dropdown-bug): resolved subblock value for dropdown
+- **2025-02-27** | `d7285940` | no-pr | added openai timer
+- **2025-02-27** | `b12652a2` | no-pr | added first request start time
+- **2025-02-27** | `9a05faa1` | no-pr | improvement(tool-calling): adding parameter-only mode
+- **2025-02-28** | `07aebc25` | no-pr | fix(openai): removed parameter mode tool calling
+- **2025-02-28** | `f97cfddc` | no-pr | fix(providers): remove flag to skip proxy for external API calls
+- **2025-02-28** | `87bb34e0` | no-pr | feat(logging): standardize logging across manual, scheduled, and api executions. persist manual executions to db
+- **2025-02-28** | `6125b2f0` | no-pr | improvement(sync): added backwards sync from db
+- **2025-02-28** | `7774b720` | no-pr | Revert "improvement(sync): added backwards sync from db"
+- **2025-02-28** | `75024347` | no-pr | improvement(ux): autocomplete off on envvars and toolbar
+- **2025-02-28** | `47a3a165` | no-pr | improvement(ux): autocomplete off on envvars and toolbar
+- **2025-02-28** | `96f48766` | no-pr | improvement(stores/ui): consolidated init/create of workflows and fixed hydration error
+- **2025-02-28** | `756c3293` | no-pr | improvement(ui): theme matches user system
+- **2025-02-28** | `cad3db9c` | no-pr | improvement(stores): added deploy store and added subblock value to history
+- **2025-02-28** | `478db6aa` | no-pr | improvement(store): cleaned up deploy store
+- **2025-02-28** | `a4eefd1f` | no-pr | improvement(deploy): ui/ux improvement, added deletion to API, added handling when inactive
+- **2025-02-28** | `86e1f2d8` | no-pr | fix(ui): close button improvement on notifications
+- **2025-03-01** | `ae226e97` | no-pr | fix(agent): add dropdown for specific tool selection for blocks that have more than one tool, give that tool to the agent instead of arbitrarily selecting the first tool
+- **2025-03-01** | `8171706f` | no-pr | feat(code): updated nextjs, added webcontainer dependencies, added more complex code execution for the function block. use secure, sandboxed webcontainer and fallback to vm
+- **2025-03-01** | `f48884aa` | no-pr | improvement(ui): tool input subblock title and x placeholder
+- **2025-03-01** | `9d55ec4e` | no-pr | feat(code): additional cleanup for stdout response from WebContainer
+- **2025-03-01** | `a345b2ff` | no-pr | feat(code): added complex code execution for agents' custom tools, added envvar resolution/styling/dropdown for agent custom tool code modal
+- **2025-03-01** | `90a3f618` | no-pr | fix(code): fix styling for dark mode code block
+- **2025-03-02** | `4771541d` | no-pr | fix(code): removed deprecated flags from next config, removed unused webcontainer provider
+- **2025-03-02** | `12c2566f` | no-pr | feat: added exa ai blocks/tools
+- **2025-03-03** | `db3c7113` | no-pr | fix: removed unneeded txt file
+- **2025-03-03** | `890e380c` | no-pr | feat(docker): added docker + scripts to get started
+- **2025-03-03** | `02875385` | no-pr | feat(docs): Update README.md and CONTRIBUTING.md
+- **2025-03-03** | `619839bb` | no-pr | fix: update package.json to remove deprecated drizzle-kit command
+- **2025-03-03** | `2f58ff0f` | no-pr | feat: Update README.md and CONTRIBUTING.md
+- **2025-03-03** | `9ad75b53` | no-pr | feat: added dev container as an option to run & develop sim studio
+- **2025-03-03** | `4e51d252` | no-pr | feat: Update README.md and CONTRIBUTING.md
+- **2025-03-03** | `7b5168fd` | no-pr | feat: added groq as a provider
+- **2025-03-03** | `76dbc4a5` | simstudioai/sim#94 | Feat/db sync (#94)
+- **2025-03-03** | `0a7684c5` | no-pr | feat(loops): allow user to specify min number of loops, on top of the existing maxIterations functionality
+- **2025-03-03** | `9825e467` | no-pr | feat(loops): additional logic to ensure we enforce min and max loops, removed unused type
+- **2025-03-03** | `3b28f7c6` | no-pr | fix(db-sync): runtime type error
+- **2025-03-03** | `0708663b` | no-pr | fix(executor-workflows): min loop error
+- **2025-03-03** | `39b3c61d` | no-pr | fix(deployment: fixed api key get
+- **2025-03-03** | `2472e28f` | no-pr | fix(api): make api key check case insensitive
+- **2025-03-04** | `790d73d4` | no-pr | fix(tool-input): search fixed
+- **2025-03-04** | `d117be87` | no-pr | improvement(ui): loop-input badge padding
+- **2025-03-04** | `2799651f` | no-pr | fix(ui): minor changes; max zoom
+- **2025-03-04** | `3470036a` | no-pr | improvement(file-structure): standardized components in folders
+- **2025-03-04** | `d309176c` | no-pr | feat: tested & refined devcontainer
+- **2025-03-04** | `b3347afa` | no-pr | feat(npx): added scaffolding for 'npx sim' command that relies on localStorage only, can be ran from anywhere with Nodejs
+- **2025-03-04** | `23e3c377` | no-pr | feat: updated README.md and CONTRIBUTING.md to match new paths for scripts
+- **2025-03-04** | `d0f0f479` | no-pr | fix(npx): remove dependency on ora and test command, runs smooth
+- **2025-03-04** | `f41750ed` | no-pr | feat: updated README.md
+- **2025-03-04** | `fd08e7e5` | no-pr | fix: build issues with npx sim
+- **2025-03-04** | `6e7c3499` | no-pr | fix(executor/function): fix resolution of tag inputs to function block
+- **2025-03-04** | `7d50d914` | no-pr | feat(auth): added cookie cache since session changes are infrequent
+- **2025-03-04** | `74180549` | no-pr | fix: renamed /api/execute to /api/function/execute
+- **2025-03-04** | `9d4b3edb` | no-pr | fix: enforce proxy use for all exa endpoints
+- **2025-03-04** | `2eb02a33` | no-pr | feat(account): added account to settings
+- **2025-03-04** | `301b1561` | no-pr | feat(npm): added logic to disable auth, middleware validation, & db syncing for npm package
+- **2025-03-04** | `93b292f5` | no-pr | improvement(ui): account styling
+- **2025-03-04** | `4f3e771e` | no-pr | fix(ux): zoom in/out on inputs
+- **2025-03-04** | `743c4fd0` | no-pr | fix(ui): notifications fade out remove flash
+- **2025-03-04** | `440b2878` | no-pr | improvement(ux): added slight running animation
+- **2025-03-04** | `2d005ec9` | no-pr | feat(long-description): added long description to blocks and info in workflow bloc kheader
+- **2025-03-04** | `0a7bd68c` | no-pr | improvement(ui): added links to landing
+- **2025-03-05** | `34dfdf31` | no-pr | fix: moved migrations script into scripts/ dir
+- **2025-03-05** | `cac85c6c` | no-pr | feat(npm): Rename CLI package from @sim/cli to @simstudio/cli and update references
+- **2025-03-05** | `1485a9e4` | no-pr | fix(landing): updated stars
+- **2025-03-05** | `630033b8` | no-pr | fix(db): keep db connections alive for longer to prevent issues in dev
+- **2025-03-05** | `f56d2d1f` | no-pr | feat(logs/folders): moved file structure and added relevant layouts
+- **2025-03-05** | `9af2d212` | no-pr | fix(landing): programatically fetch github stars
+- **2025-03-05** | `350a0dca` | no-pr | fix(build): ignore the cli package when building our core project in vercel
+- **2025-03-05** | `07780800` | no-pr | fix(starter): change starter block output format from .type.input to .input, tested
+- **2025-03-05** | `43d22d2f` | no-pr | feat(logs): added logs structure; connecting to DB now
+- **2025-03-05** | `7efe569a` | no-pr | improvement(ui): sidebar consistency
+- **2025-03-05** | `5d838e62` | no-pr | feat(logs): added logs fetch and UI; connecting filters and control bar
+- **2025-03-05** | `3810db2b` | no-pr | feat(logs): added responsive columns
+- **2025-03-05** | `8851beea` | no-pr | feat(logs): added block output to db
+- **2025-03-05** | `bbea7b6a` | no-pr | feat(logs): completed filters
+- **2025-03-05** | `b7a80ecd` | no-pr | fix(ui): short input overlay
+- **2025-03-05** | `8d5ecb53` | no-pr | feat(logs): added searching, refresh, live updates
+- **2025-03-05** | `2b1bd507` | no-pr | fix(landing): static stars
+- **2025-03-05** | `154c789f` | no-pr | improvement(logs): loading animation
+- **2025-03-05** | `28cfb7ea` | no-pr | fix(notifications): resizeable based on content
+- **2025-03-05** | `259e2707` | no-pr | improvement(ui): error on logs dark mode
+- **2025-03-06** | `49e3b625` | no-pr | feat(npm): added logic to skip db syncing logic if we are in local storage mode
+- **2025-03-06** | `721fedfc` | no-pr | feat(npm): simplify project structure by moving from @simstudio/cli to simstudio package
+- **2025-03-06** | `d6310754` | no-pr | feat: update README.md and CONTRIBUTING.md
+- **2025-03-06** | `88f7490a` | no-pr | fix(npm): broken npx simstudio download by handling HTTP redirects
+- **2025-03-06** | `fb8a7802` | no-pr | chore: bump version to 0.1.2 with fixed HTTP redirect handling for downloads
+- **2025-03-06** | `400ee145` | no-pr | fix(cli): improve root path redirect and bump version to 0.1.3
+- **2025-03-06** | `cb9f46c9` | no-pr | fix(cli): improve root path redirect and bump version to 0.1.3
+- **2025-03-06** | `384da370` | no-pr | fix(npm): download issues and improve CLI messaging
+- **2025-03-06** | `64ebe4ed` | no-pr | docs: updated README.md and CONTRIBUTING.md
+- **2025-03-06** | `4d702cfd` | no-pr | feat(tools): added reddit hot subreddit posts tool/block
+- **2025-03-06** | `3df326f8` | no-pr | feat(oauth): add oauth as param for tool, if required & user doesn't have access, modal will popup that allows user to grant access for that group of scopes
+- **2025-03-06** | `2cb724ea` | no-pr | feat(oauth): clean up oauth authorization flow
+- **2025-03-06** | `a1a16ec4` | no-pr | feat(oauth): added credentials tab to settings modal, added credential-selector sub-block, added routes for connecting/disconnecting/listing credentials
+- **2025-03-06** | `0e20e340` | no-pr | feat(oauth): modified google drive/gmail icons, added credentials selector sub-block to gmail tool
+- **2025-03-06** | `0af9d05b` | no-pr | feat(oauth): cleanup UI in scopes requested subsection
+- **2025-03-06** | `f244c96f` | no-pr | feat(oauth): add multiple credentials per provider
+- **2025-03-06** | `3d9d125b` | no-pr | feat(oauth): simplified logic for oauth, tested with send email and it works
+- **2025-03-06** | `caca8046` | no-pr | updated README
+- **2025-03-06** | `fdbc0134` | no-pr | Update README.md
+- **2025-03-06** | `26bcdd7b` | no-pr | feat(oauth): added google drive credentials, fixed some oauth bugs
+- **2025-03-06** | `b66ba1ce` | no-pr | fix(oauth): removed oauth-input sub-block
+- **2025-03-07** | `d7337069` | no-pr | docs: updated README.md
+- **2025-03-07** | `c2406c4e` | no-pr | feat(oauth): added google docs, added icons for other oauth providers, removed client side oauth utils
+- **2025-03-07** | `cee341ff` | no-pr | feat(webhook): added whatsapp block/tool, added scaffolding for webhooks with modal, added webhooks table and ran migrations
+- **2025-03-07** | `78233374` | no-pr | improvement(stores): removed environment local storage persistence
+- **2025-03-07** | `a4d51605` | no-pr | feat(webhook): add provider config to webhook db, improve general webhook functionality
+- **2025-03-07** | `83260d0a` | no-pr | feat(webhooks): testing whatsapp webhook in prod
+- **2025-03-07** | `011c2178` | no-pr | feat(webhooks): testing whatsapp webhook in prod
+- **2025-03-07** | `16560d8a` | no-pr | feat(webhooks): testing whatsapp webhook in prod
+- **2025-03-08** | `63724d0c` | no-pr | feat(webhooks): consolidated webhook routes and added logs to debug webhook connection
+- **2025-03-08** | `05a9bfdc` | no-pr | feat(webhooks): added logic to execute workflows from webhooks
+- **2025-03-08** | `e7b3d485` | no-pr | fix: standardized logging for scheduled, webhooks, manual executions, and api endpoints
+- **2025-03-08** | `a4d04c78` | no-pr | feat(oauth): added google sheets scopes and oauth
+- **2025-03-08** | `060cc1fd` | no-pr | feat(tools): added google sheets block, tools. tested read & it works
+- **2025-03-08** | `fd96ddaf` | no-pr | fix(tools): fixed whatsapp send message tool
+- **2025-03-08** | `67f3cc64` | no-pr | feat(tools): fixed google sheets write/update tools
+- **2025-03-08** | `d6d9f30b` | no-pr | improvement: auto-select oauth credential if there is only one detected
+- **2025-03-08** | `6cbb4c00` | no-pr | improvement(ui): add tooltip to show if a field is required
+- **2025-03-08** | `b53177cd` | no-pr | improvement: cleanup style and display for webhooks
+- **2025-03-08** | `6b10c8fe` | no-pr | improvement: standardized oauth implementation & ui
+- **2025-03-09** | `3bb6b5bf` | no-pr | improvement(webhooks): consolidated webhook routes
+- **2025-03-09** | `fd510d58` | no-pr | improvement(logging): created common logging utility for all executions
+- **2025-03-09** | `163cc9bf` | no-pr | feat(tools): added guesty tools/block
+- **2025-03-09** | `c8ab3649` | no-pr | improvement: renamed crewai vision to vision, updated refs
+- **2025-03-09** | `3ddbe194` | no-pr | improvement: added registry for each tools directory for organization
+- **2025-03-09** | `a6802e36` | no-pr | docs: update CONTRIBUTING.md
+- **2025-03-09** | `52350a85` | no-pr | feat(oauth): added supabase oauth, block, & tools
+- **2025-03-09** | `9baaccb4` | no-pr | improvement(ui): fixed some styling for credential selector
+- **2025-03-09** | `31ec93e6` | no-pr | fix(webhook): fix webhook execution to be identical to scheduled, manual executions besides pre-processing
+- **2025-03-09** | `b8c30396` | no-pr | feat(serverless): for serverless executions (webhooks & scheduled), use workflow-id based authentication instead of session based to support OAuth
+- **2025-03-09** | `af30c296` | no-pr | fix(stateless): add support for oauth credentials in stateless executions
+- **2025-03-09** | `d56aaeed` | no-pr | feat: added privacy and terms pages and landing footer
+- **2025-03-10** | `744396c5` | no-pr | feat: added help page and route
+- **2025-03-10** | `56d37e2d` | no-pr | fix: add the ability to select multiple workflows in logs
+- **2025-03-10** | `8fc3048b` | no-pr | fix: un-bold text in credential selector
+- **2025-03-10** | `3d881ead` | no-pr | improvement(ui): logs styling
+- **2025-03-10** | `8124834e` | no-pr | fix(landing): removed dead links
+- **2025-03-10** | `03e1ab84` | no-pr | improvement(ui): block alignment
+- **2025-03-10** | `7db6f8b2` | no-pr | feat(logs): added logs sidebar
+- **2025-03-10** | `25cf7a55` | no-pr | feat: added file selector for google drive
+- **2025-03-10** | `0b0a4e91` | no-pr | feat(file-selector): upgraded sheets block & tools to use file selector
+- **2025-03-10** | `b94e3622` | no-pr | improvement: fixed file selector styling
+- **2025-03-10** | `2fef7324` | no-pr | improvement(ui): agent required params and run button
+- **2025-03-10** | `da710a35` | no-pr | feat(help): switched to modal
+- **2025-03-10** | `58bd4bdf` | no-pr | improvement(ui): sidebar colors
+- **2025-03-10** | `6d9c5f21` | no-pr | improvement(ui): run button hover
+- **2025-03-10** | `d2621844` | no-pr | improvement(ui): loading animation consistent
+- **2025-03-10** | `85175aef` | no-pr | feat(tools): added google docs tools/block
+- **2025-03-10** | `b4930404` | no-pr | fix(tools): fixed docs create & write tools
+- **2025-03-10** | `6688c609` | no-pr | feat: added postprocessing to tools for tools that need multiple api calls in succession
+- **2025-03-10** | `4feff7ea` | no-pr | improvement: add draggable images into help modal
+- **2025-03-10** | `d477f6d1` | no-pr | fix: simplified error response format for google tools
+- **2025-03-10** | `490ba4eb` | no-pr | improvement: actually follow json-schema format for response format and make structured output enforced for providers
+- **2025-03-10** | `aa26ee2e` | no-pr | fix: update evaluator to align with new responseFormat logic
+- **2025-03-10** | `b446a3ce` | no-pr | feat(oauth): added x oauth, needs to be fixed bc twitter doesn't respond with user's email
+- **2025-03-10** | `ff946847` | no-pr | fix: get error messages from nested objects (this fixes google sheets error msg)
+- **2025-03-10** | `9c2c4e33` | no-pr | feat: force google to give us refresh tokens back during oauth
+- **2025-03-11** | `6985b2e1` | no-pr | feat: use OTP instead of email verification on signup
+- **2025-03-11** | `1959b3b2` | no-pr | fix: added check for empty strings in executor to be treated as null, add debug logs for async workflow executions with agent response format
+- **2025-03-11** | `b58b6532` | no-pr | fix: waiting for env vars to resolve before executing
+- **2025-03-11** | `3ac9cf5d` | no-pr | fix: duplicate whatsapp messasge fix
+- **2025-03-11** | `843ab036` | no-pr | improvement(webhook): added redis for processing duplicate requests
+- **2025-03-11** | `18eecbaa` | no-pr | fix: turned off required input for function for ui
+- **2025-03-11** | `5030fdb5` | no-pr | feat(oauth): added token refresh to drive file fetch
+- **2025-03-11** | `8e371723` | no-pr | fix: adding debug logs to figure out response format issue
+- **2025-03-11** | `47f16cd8` | no-pr | fix: webhook response format
+- **2025-03-11** | `f4fdda36` | no-pr | fix(ux): envvar dropdown on focus for api keys in subblock
+- **2025-03-11** | `5e101e4d` | no-pr | fix(agent-block): hide temperature for models without temperature input
+- **2025-03-11** | `3f8999f6` | no-pr | fix: wrap agent response in 'response' for consistency across all blocks
+- **2025-03-11** | `f66d8583` | no-pr | chore: remove unused dependencies
+- **2025-03-11** | `c22b535e` | no-pr | fix(providers): sanitzed temperature from model request for models that don't accept that parameter
+- **2025-03-11** | `9c443bda` | no-pr | fix(ui): panel close icon 180 degree rotate
+- **2025-03-11** | `db5db6f6` | no-pr | improvement(ui): logs layout and styling
+- **2025-03-11** | `2148e24b` | no-pr | fix(landing: GH stars
+- **2025-03-11** | `7d841163` | no-pr | fix: resolve serialization error during build by using memory caching for builds
+- **2025-03-11** | `f64715aa` | no-pr | feat(logger): added new logger
+- **2025-03-12** | `3e02c81e` | no-pr | feat(logger): added new logger to half of the api routes
+- **2025-03-12** | `e87e2304` | no-pr | feat(logger): added new logger for remaining 1/2 of api endpoints
+- **2025-03-12** | `fdfef2d2` | no-pr | fix: remove unused workflow/[id] routeand util functions
+- **2025-03-12** | `decc1383` | no-pr | feat(logger): added logger to remainder of files
+- **2025-03-12** | `600edee8` | no-pr | feat(tools): added folder-selector component, added to gmail read tool
+- **2025-03-12** | `9dc26148` | no-pr | chore: updated privacy policy
+- **2025-03-12** | `7ee1ab1d` | no-pr | fix: remove duplicate verification emails sent on signup
+- **2025-03-13** | `0362bc32` | no-pr | feat(docs): added docs
+- **2025-03-13** | `145bd0cc` | no-pr | feat(docs): added more docs, cleaned up
+- **2025-03-13** | `8bd26159` | no-pr | bomba
+- **2025-03-13** | `2c468fa9` | no-pr | fix: updated gitignore, gitattributes, moved public to sim/
+- **2025-03-13** | `0b6af396` | no-pr | fix: remove Git LFS and restore original docs files
+- **2025-03-13** | `60ee86c7` | no-pr | docs: updated docker + README to reflect new monorepo structure, removed husky
+- **2025-03-13** | `200d6ee0` | no-pr | docs: simplify issue template & pr template
+- **2025-03-14** | `271a296f` | no-pr | fix: redirects /w to /w/1
+- **2025-03-14** | `afb8c9ea` | no-pr | feat(docs): added additional content to docs about execution
+- **2025-03-14** | `4deef0b7` | no-pr | fix: removed multiple account oauth functionality, updated better-auth to acknowledge security vulnerability
+- **2025-03-14** | `42822482` | no-pr | fix: route to /w after signup, remove deprecated getSessionCookie function
+- **2025-03-14** | `c3aa3261` | no-pr | feat: redact api keys from console log for tool calls
+- **2025-03-14** | `13134f80` | no-pr | fix: remove duplicate middleware, add some docs content
+- **2025-03-14** | `ef467537` | no-pr | docs: Updated dockerfile and README
+- **2025-03-14** | `95ce00f5` | no-pr | chore: added husky + ran format
+- **2025-03-14** | `c3f66638` | no-pr | chore: cleanup root of repo by removing unused cli pacakge
+- **2025-03-14** | `1e4b60c0` | no-pr | feat(docs): added connections page
+- **2025-03-15** | `1f71f5cc` | no-pr | feat(docs): added connections + execution docs
+- **2025-03-15** | `dfa9275a` | no-pr | fix(evaluator): fix evaluator block to return lowercase metric names
+- **2025-03-15** | `7c340042` | no-pr | feat(logs): added tool calls + time to execute to logs, updated workflow_logs db to include metadata
+- **2025-03-15** | `58127a00` | no-pr | improvement: consolidated copy button component for reuse
+- **2025-03-15** | `6215a6e8` | no-pr | feat(logs): added gantt chart/trace span for workflow executions
+- **2025-03-15** | `bdf123c2` | no-pr | improvement: added scrolling navigation to logs + general improvements
+- **2025-03-16** | `aebc8e95` | no-pr | improvement: use google file/folder picker instead of custom picker to remove requirement of restricted scopes. co-localize many input components and move them out of general components/ui/
+- **2025-03-16** | `7017cd46` | no-pr | improvement: added picker to google drive block
+- **2025-03-16** | `622e05a4` | no-pr | chore: added code of conduct, security guidelines. updated issue templates, CONTRIBUTING, README
+- **2025-03-16** | `f1c61487` | no-pr | test[executor]: migrated from jest to vitest, added some tests for executor
+- **2025-03-16** | `15121463` | no-pr | tests[executor]: added more tests for executor, removed app/tests directory, added github workflow to run tests upon push to main
+- **2025-03-17** | `b72154ce` | no-pr | test[serializer]: added tests for serializer
+- **2025-03-17** | `44609b49` | no-pr | fix[db]: updated workflow table schema to include collaborators
+- **2025-03-17** | `21105363` | simstudioai/sim#101 | Improvement/sync (#101)
+- **2025-03-17** | `b4198255` | no-pr | chore: updated prettier config and ran format, updated README
+- **2025-03-17** | `4d66494f` | no-pr | tests[tools]: added tests for some specific tools & general execution of tools
+- **2025-03-17** | `ac6f284c` | no-pr | feat: added dependabot weekly, automerges PRs for minor/patch updates
+- **2025-03-17** | `aa960afa` | no-pr | feat[auth]: when no resend key is provided for emails, log instead
+- **2025-03-17** | `b95707f2` | no-pr | feat[docker]: add disable auth option for local development, can freely navigate pages
+- **2025-03-17** | `d904c1e3` | no-pr | feat[agents]: added folder structure for agent builder
+- **2025-03-17** | `d329614c` | no-pr | fix: deployment bug with store types
+- **2025-03-17** | `b10a5903` | no-pr | chore[landing]: updated ghs
+- **2025-03-17** | `9c4b27f5` | no-pr | fix[db]: fix logging for verification code on signup in dev mode
+- **2025-03-17** | `4d07eaf5` | no-pr | docs: update README.md
+- **2025-03-18** | `652e0b20` | no-pr | fix[docker]: fixed devcontainer to match new file structure
+- **2025-03-18** | `ed5f8a93` | simstudioai/sim#125 | fix: docker setup (#125)
+- **2025-03-18** | `eb5d0195` | simstudioai/sim#126 | feat/codegen: added initial outline for sdk, added api keys table & view (#126)
+- **2025-03-19** | `ba36669d` | no-pr | fix[notifications]: error text wrapping
+- **2025-03-19** | `5e11c75c` | no-pr | chore[landing]: update ghs
+- **2025-03-19** | `3d71370e` | simstudioai/sim#127 | improve UX/DX of auth flow (#127)
+- **2025-03-19** | `7b7cca78` | no-pr | feat[auth]: update better-auth, resolved missing refresh token for genericOAuth providers
+- **2025-03-20** | `df0b2d2d` | no-pr | fix[gmail]: removed search & read gmail since they rely on restricted scopes & a security assessment
+- **2025-03-20** | `a12f234a` | simstudioai/sim#129 | added perplexity tool (#129)
+- **2025-03-20** | `cc33b4a2` | no-pr | feat[github]: get commit tool
+- **2025-03-20** | `363d2250` | no-pr | improvement[github]: add file contents
+- **2025-03-20** | `7cdf72b9` | no-pr | fix[auth]: fixed bug where we don't display google/github oauth options on signup/login in prod
+- **2025-03-20** | `2db6c820` | no-pr | fix: env vars process only on api key and openai fallback removed
+- **2025-03-20** | `37567b46` | simstudioai/sim#130 | feat[webhook]: added generic webhook (#130)
+- **2025-03-20** | `20caa0e3` | no-pr | fix[webhook]: added framer-motion dependency
+- **2025-03-20** | `01e1054f` | no-pr | improvement[webhook]: refactored webhook modal into components
+- **2025-03-20** | `73f224de` | no-pr | fix: better error logging in sim console
+- **2025-03-20** | `f5063af1` | simstudioai/sim#132 | fix[ux]: referenced block renaming (#132)
+- **2025-03-20** | `85c1a84f` | no-pr | chore[landing]: update ghs
+- **2025-03-21** | `4128bfe8` | simstudioai/sim#134 | refactor[landing]: use github api to fetch stars instead of hardcoding (#134)
+- **2025-03-21** | `e1466c4f` | simstudioai/sim#135 | feat[logs]: added cost approximations for each model, display in logs sidebar (#135)
+- **2025-03-21** | `65d9f35d` | no-pr | fix: update dependabot configuration to better handle security vulnerabilities
+- **2025-03-21** | `ee3d8bc3` | simstudioai/sim#136 | feat[webhook]: added github webhook (#136)
+- **2025-03-21** | `dc0248de` | no-pr | improvement: update to not use /documents google scope, since it requires extensive approvals
+- **2025-03-21** | `950a03c6` | no-pr | feat[session]: increase session durations for better UX
+- **2025-03-21** | `a2ee0a14` | no-pr | improvement[dependabot]: configure dependabot to auto-resolve security warnings
+- **2025-03-21** | `5cd5d9f8` | simstudioai/sim#137 | chore(deps): bump the npm_and_yarn group across 1 directory with 3 updates (#137)
+- **2025-03-21** | `14020a96` | simstudioai/sim#138 | feat[webhook]: added discord webhook (#138)
+- **2025-03-21** | `017de23b` | simstudioai/sim#141 | feat(marketplace): created workflow marketplace (#141)
+- **2025-03-21** | `0b2eccc6` | simstudioai/sim#142 | fix(drive): ensure list tool only shows files from selected folder (#142)
+- **2025-03-21** | `15534c80` | no-pr | fix(tests): updated file paths
+- **2025-03-22** | `bca29b4e` | simstudioai/sim#144 | feat[password]: added forgot password, reset password, and email templates (#144)
+- **2025-03-22** | `1bc06a36` | no-pr | fix[db]: update db paths to follow new file format
+- **2025-03-22** | `47145993` | no-pr | docs: upgrade from MIT to Apache-2.0 license and update all relevant docs
+- **2025-03-22** | `6c669438` | no-pr | improvement(logs): ui/ux
+- **2025-03-22** | `0f94d83b` | no-pr | improvement(auth): updated email template for auth, general login improvements with pw validation and better error handling
+- **2025-03-22** | `85e44727` | no-pr | improvement(auth): updated email template for auth, general login improvements with pw validation and better error handling
+- **2025-03-22** | `74b23037` | no-pr | improvement: click to add; sidebar colors
+- **2025-03-22** | `8328d92b` | no-pr | fix(auth): emails path to /app/auth
+- **2025-03-22** | `44963d8a` | no-pr | fix(landing): file structure
+- **2025-03-22** | `a8472956` | simstudioai/sim#147 | update styling for schedules to show visual indication that schedule is active, fix cron job to execute scheduled workflows not running (#147)
+- **2025-03-23** | `c38203b5` | no-pr | fix(emails): move emails folder into components, fix styling
+- **2025-03-23** | `c5d537f1` | no-pr | fix(landing): gh stars fetch with token
+- **2025-03-23** | `03e16994` | simstudioai/sim#154 | feat(api): added trace spans for asynchronous executions, modified api route naming convention (#154)
+- **2025-03-23** | `1966c731` | no-pr | improvement(marketplace): sanitize api key from marketplace state
+- **2025-03-23** | `31012fca` | no-pr | feat(marketplace): load workflows into marketplace
+- **2025-03-23** | `02e7a96c` | simstudioai/sim#163 | feat/multipleruns (#163)
+- **2025-03-24** | `fb28a630` | no-pr | fix(notifications): clear on workflow load; remove from DOM after fade
+- **2025-03-24** | `4a35376f` | no-pr | chore: updated dependabot config
+- **2025-03-24** | `8b1e3fb9` | simstudioai/sim#166 | fix(deps): bump @anthropic-ai/sdk from 0.38.0 to 0.39.0 in /sim (#166)
+- **2025-03-24** | `a2ff1204` | simstudioai/sim#169 | fix(deps): bump drizzle-orm from 0.39.3 to 0.41.0 in /sim (#169)
+- **2025-03-24** | `78e701d8` | simstudioai/sim#177 | feat(metrics): add user_stats table that tracks more granular usage information per user (#177)
+- **2025-03-24** | `4fbe825e` | no-pr | fix(security): resolved nextjs middleware vulnerability
+- **2025-03-24** | `91327af5` | no-pr | fix(console): flashing on run
+- **2025-03-24** | `16458c7e` | no-pr | improvement(ui/ux): connections and styling
+- **2025-03-24** | `b33759fc` | simstudioai/sim#178 | feat(debug): added debug mode & tests (#178)
+- **2025-03-24** | `f69b5749` | simstudioai/sim#179 | fix(deps)(deps): bump next in /sim in the dependencies group (#179)
+- **2025-03-24** | `f9bacc37` | no-pr | syncing with og sim
+- **2025-03-24** | `d20b9761` | no-pr | syncing with og
+- **2025-03-24** | `be14c984` | no-pr | Remove package.json files from git tracking
+- **2025-03-25** | `bceab2ce` | no-pr | feat(oauth): added atlassian OAuth2 credentials
+- **2025-03-25** | `c2499f66` | no-pr | improvement(tools): improved formatting of confluence retrieve page tool, added oauth required param
+- **2025-03-25** | `9da64439` | simstudioai/sim#182 | feat(vars) (#182)
+- **2025-03-25** | `289ab47f` | no-pr | improvement(tools): improved formatting of confluence retrieve page tool, added oauth required param
+- **2025-03-25** | `c32dbdcf` | no-pr | fix(notifications): reopen on click
+- **2025-03-25** | `1ab98ca5` | no-pr | fix(oauth): fix bug in atlassian oauth
+- **2025-03-25** | `d5e1560b` | no-pr | improvement(marketplace): loading and viewing
+- **2025-03-25** | `34b2e438` | no-pr | improvement(tools): added file selector for confluence, wip. removed unneccessary restricted google scopes
+- **2025-03-25** | `e6bf5cf5` | no-pr | fix(async): fixed bug where async workflows were not running due to relative path reference
+- **2025-03-25** | `d97641d6` | no-pr | fix(marketplace): rollback open workflow on view mode
+- **2025-03-25** | `28e7be1c` | no-pr | improvement(tag-dropdown): added ancestors
+- **2025-03-25** | `7a2a7219` | no-pr | improvement(tools): fixed some confluence tool issues
+- **2025-03-25** | `01763824` | simstudioai/sim#183 | fix(deps)(deps): bump vite in /sim in the dependencies group (#183)
+- **2025-03-25** | `f6c280f7` | no-pr | improvement(vars): variable rename reference change
+- **2025-03-25** | `891c1f5c` | no-pr | fix(ui): scrollbar styling across all browsers
+- **2025-03-26** | `3e3d370c` | no-pr | feat(error-handling): created error path and upgraded ports
+- **2025-03-26** | `9987df2b` | no-pr | improvement(ui/ux): console
+- **2025-03-26** | `601d77f7` | no-pr | fix(connection-block): spacing
+- **2025-03-26** | `51e2b39c` | simstudioai/sim#186 | feat(oauth): general oauth improvements, added x and supabase oauth (#186)
+- **2025-03-26** | `ea42d6ee` | simstudioai/sim#164 | feat(webhook): added slack webhook support for slack events (#164)
+- **2025-03-26** | `0b404f55` | simstudioai/sim#190 | tests(integration): added additional unit tests for executor, added integration tests for execution API routes (#190)
+- **2025-03-26** | `566af68d` | simstudioai/sim#191 | improvement(api): deprecated /db from /api and moved all routes to their relevant domain location. updated all references to old routes (#191)
+- **2025-03-26** | `fe2b6405` | simstudioai/sim#192 | improvement(keys): make keys account-wide instead of issuing a new one every time a workflow is created (#192)
+- **2025-03-26** | `c47d7041` | no-pr | fix(constants): modify consts to match new api routes, run format
+- **2025-03-26** | `b881eff7` | no-pr | fix(control-bar): fix race condition for displaying notification & running state
+- **2025-03-26** | `3f2f1ad0` | no-pr | fix(ui): workflow edge under handle
+- **2025-03-27** | `8406c05c` | no-pr | fix(ux): connection block render
+- **2025-03-27** | `56bec107` | no-pr | feat(providers): added gemini-2.5-pro-exp model
+- **2025-03-27** | `4eb0f5f6` | simstudioai/sim#199 | feat(image-gen) (#199)
+- **2025-03-27** | `c048a3c1` | no-pr | fix(gitignore): revert
+- **2025-03-28** | `a11cbd92` | simstudioai/sim#200 | feat(waitlist): modified waitlist flow, protected signup in production to ensure only user's who've been let off the waitlist can signup (#200)
+- **2025-03-28** | `0eb99f72` | no-pr | docs: updated docs for variables, added images, added more content
+- **2025-03-29** | `272a486b` | no-pr | improvement(waitlist): add signed_up status to indicate who signed up after being approved off of waitlist
+- **2025-03-29** | `fe2c7d8d` | simstudioai/sim#153 | feat(ollama): Adding ollama for enabling local model agents (#153)
+- **2025-03-29** | `b4f67461` | no-pr | docs: update README.md
+- **2025-03-30** | `b969c37e` | no-pr | fix: update gmail oauth scope description
+- **2025-03-30** | `52ccaf37` | simstudioai/sim#202 | feat(loops) (#202)
+- **2025-03-30** | `554279a8` | no-pr | improvement(images): fixed json view for images not rendering in console, made requirements to display images more strict
+- **2025-03-30** | `39d8e9c0` | no-pr | fix(loops): string loop
+- **2025-03-30** | `7d0f3cf8` | no-pr | improvement(ui): tag dropdown
+- **2025-03-30** | `57d13a27` | no-pr | fix(ui/ux): handles
+- **2025-03-30** | `db8b5642` | simstudioai/sim#204 | feat(starterinput): added option to specify input format for starter block for api triggered executions (#204)
+- **2025-03-30** | `89ba7fa3` | no-pr | improvement(loops): added vars to loop-input
+- **2025-03-30** | `476bccd2` | no-pr | Revert "improvement(loops): added vars to loop-input"
+- **2025-03-30** | `9cbff55a` | no-pr | chore: run format
+- **2025-03-30** | `eed8f165` | no-pr | fix(ui): dark loops
+- **2025-03-30** | `e14bb91b` | simstudioai/sim#207 | feat(typeform): add Typeform integration ref (#207)
+- **2025-03-30** | `945bcd30` | no-pr | fix(ui): colors, icons
+- **2025-03-31** | `f8ad2357` | simstudioai/sim#209 | fix(deps)(deps): bump vite in /sim in the dependencies group (#209)
+- **2025-03-31** | `a41da903` | simstudioai/sim#210 | Update README.md (#210)
+- **2025-03-31** | `4030276c` | no-pr | Update README.md
+- **2025-04-01** | `275183dc` | no-pr | fix(vars): local and api execution
+- **2025-04-01** | `92b20455` | simstudioai/sim#213 | feat(files): local upload, s3 upload for pdf/docx/csv parsing (#213)
+- **2025-04-01** | `b779e46f` | no-pr | Update LICENSE
+- **2025-04-01** | `f835441c` | no-pr | fix(files): use buffer instead of disk for s3 file uploads
+- **2025-04-01** | `7dde4191` | simstudioai/sim#214 | feat(tools): added airtable integration for oauth2 and tools (#214)
+- **2025-04-01** | `24b487d1` | no-pr | fix(api): passing body into workflow
+- **2025-04-01** | `3234a9a8` | no-pr | fix(tools): fixed airtable update tool
+- **2025-04-01** | `25e59ee6` | no-pr | fix: debounce sync on subblock and dropdown zustand load
+- **2025-04-01** | `078f81f8` | no-pr | fix(ui): airtable block/tools
+- **2025-04-01** | `6abd26b3` | no-pr | fix(tests): execute route
+- **2025-04-01** | `be8f4426` | simstudioai/sim#201 | feat(twilio-block): added twilio block/tools (#201)
+- **2025-04-01** | `da7c7e36` | no-pr | improvement(ui): file upload
+- **2025-04-01** | `42936c89` | simstudioai/sim#215 | fix(autoconnect): fixed autoconnect error for conditional block (#215)
+- **2025-04-01** | `e6413ca5` | no-pr | chore: add build as ci step in github workflow
+- **2025-04-01** | `64a8f604` | no-pr | improvement(models): added 3.5 sonnet
+- **2025-04-01** | `86ce7ffc` | no-pr | fix(build): fix ci test & build failure
+- **2025-04-01** | `dcd3b30c` | simstudioai/sim#216 | feat(agent): added credential selector for agent tools that require oauth (#216)
+- **2025-04-02** | `852945b9` | simstudioai/sim#217 | feat(mistral-OCR): added mistral tool and block for parsing pdfs (#217)
+- **2025-04-02** | `8e06c7dd` | no-pr | improvement(mistral-OCR): error handling
+- **2025-04-02** | `79f8f34b` | no-pr | fix(ui/ux): console and notifications
+- **2025-04-02** | `40a917c0` | simstudioai/sim#218 | feat(mistal-ocr): added file upload to mistal ocr tool in production (#218)
+- **2025-04-02** | `f9049581` | no-pr | improvement(tools): modified return type of mistral parser
+- **2025-04-02** | `85466703` | no-pr | fix(ui): fixed issue with params not appearing for blocks that require oauth, ui improvement to truncate text in credential selector
+- **2025-04-02** | `e14c7056` | simstudioai/sim#219 | feat(marketplace): adding marketplace workflow to registry (#219)
+- **2025-04-02** | `c7ad9d5d` | no-pr | improvement: marketplace and sidebar
+- **2025-04-02** | `9d3b2706` | simstudioai/sim#220 | feat(versioning): added api deployment versioning, change detection in workflow, added ci job to run migrations on merge to main (#220)
+- **2025-04-02** | `2df1d13b` | no-pr | fix(ci): fix envvar name
+- **2025-04-03** | `4cd90116` | simstudioai/sim#221 | improvement: marketplace, sidebar, loading (#221)
+- **2025-04-03** | `7811c6e3` | no-pr | fix(tag-dropdown): bug on undefined
+- **2025-04-04** | `7049b5ac` | simstudioai/sim#222 | feat(freestyle): refactored handler in executor, migrated from webcontainer to freestyle for code execution, fixed condition block issues (#222)
+- **2025-04-04** | `378c1b2b` | no-pr | fix(ux): dropdown reload
+- **2025-04-04** | `c30af669` | simstudioai/sim#223 | fix(deps)(deps): bump vite in /sim in the dependencies group (#223)
+- **2025-04-04** | `bc483786` | simstudioai/sim#225 | feat(cancel): allow cancellation of workflow run, fix styling for info notification (#225)
+- **2025-04-04** | `8ff00e42` | no-pr | fix(notifications): dropdown logic and styling
+- **2025-04-04** | `c50e9247` | simstudioai/sim#226 | fix(bugs): fixed evaluator toLowerCase issue, function block error handling, & reverted condition block edges fix (#226)
+- **2025-04-04** | `aa97b4bd` | no-pr | improvement(sidebar): ui/ux
+- **2025-04-04** | `37c4e5e0` | no-pr | fix(airtable): fixed airtable oauth
+- **2025-04-04** | `797c55fc` | no-pr | fix(condition-block): load from DB
+- **2025-04-04** | `f915690b` | no-pr | fix(oauth): fixed airtable oauth by upgrading better-auth
+- **2025-04-04** | `4066707f` | no-pr | fix(condition-block): load from DB after navigation
+- **2025-04-05** | `c5010aae` | no-pr | fix(oauth): fixed airtable oauth
+- **2025-04-05** | `500149e1` | no-pr | fix(oauth): fixed airtable oauth
+- **2025-04-05** | `b765b436` | no-pr | improvement(layout): moved layout components into workflow
+- **2025-04-05** | `965b0666` | no-pr | improvement: schedule, files
+- **2025-04-05** | `d29041d9` | simstudioai/sim#227 | fix(schedule): deletion logic and styling (#227)
+- **2025-04-05** | `33de83b3` | simstudioai/sim#228 | feat(airtable): added airtable tools, block, & webhook and refactored webhooks code into components (#228)
+- **2025-04-05** | `24e9a1b4` | no-pr | fix(api): requests and table
+- **2025-04-05** | `bfd19975` | no-pr | fix: supabase, dropdown, short-input, tool execution
+- **2025-04-06** | `c221aacf` | no-pr | improvement(supabase): response handling
+- **2025-04-06** | `2de6f45f` | no-pr | improvement: dynamically set better auth url based on env
+- **2025-04-06** | `33c5c52a` | simstudioai/sim#229 | feat(parser): added URL upload for our file parser (#229)
+- **2025-04-06** | `d728ae67` | no-pr | improvement(tools): added supabase to tool use and fixed tool search
+- **2025-04-06** | `47ad2bae` | no-pr | feat(models): added llama4 groq
+- **2025-04-06** | `d97ecead` | simstudioai/sim#230 | feat(tools): added thinking tool, hiddenFromSidebar param (#230)
+- **2025-04-06** | `a74c866a` | simstudioai/sim#231 | feat(assistant): added openai to assist in generating js/ts code and json schemas (#231)
+- **2025-04-06** | `d2201151` | no-pr | fix(bug): fix auth client in vercel & fix function block envvar resolution
+- **2025-04-06** | `989dbc6a` | no-pr | fix(tools): removed check in agent block for duplicate tools, since we now allow selecting of operation we have to allow a block's tool to be added to an agent more than once
+- **2025-04-06** | `ca405513` | no-pr | fix(airtable): add logs to debug airtable webhook failure in production only
+- **2025-04-06** | `10641beb` | no-pr | fix(airtable): refactored to remove redis bc of errors w serverless
+- **2025-04-07** | `b70d0903` | no-pr | fix(oauth): for providers using basic oauth, add auth header in token refresh call
+- **2025-04-07** | `8d38627b` | no-pr | fix(tools): add app id to google picker
+- **2025-04-07** | `2f253054` | no-pr | fix(airtable): add back simple dedupe for airtable webhooks
+- **2025-04-07** | `f5612faa` | no-pr | fix: hid marketplace
+- **2025-04-07** | `dcb88e66` | no-pr | fix(streaming): fixed streaming by switching to edge runtime
+- **2025-04-07** | `1f22ed2e` | no-pr | fix(deployment): fixed api key generation during deployment
+- **2025-04-07** | `358434fb` | no-pr | fix(oauth): added extra logging to token refresh and added client_id in token refresh for airtable
+- **2025-04-08** | `1af5dcbb` | no-pr | fix(oauth): fix airtable oauth token refresh
+- **2025-04-08** | `ce046e8f` | no-pr | improvement(ux): decrease delay between execution finishing and control bar refreshing
+- **2025-04-08** | `116120c0` | no-pr | fix(env): update .env.example
+- **2025-04-08** | `b09a387c` | no-pr | fix(db): fix db url
+- **2025-04-08** | `0202f41e` | simstudioai/sim#234 | Fix X handle in the README badge (#234)
+- **2025-04-09** | `7dbb5374` | no-pr | feat(autofill): added settting to autofill api keys for tools and blocks
+- **2025-04-09** | `4f9c70b9` | no-pr | chore: run format
+- **2025-04-09** | `23abb29b` | simstudioai/sim#237 | feat(autofill): consolidated tool-params & sub-block store for one unified store that handles sub-block values (#237)
+- **2025-04-10** | `51dde8cb` | simstudioai/sim#238 | fix(loops) (#238)
+- **2025-04-10** | `ff1166cf` | no-pr | improvement(ux): skip reload warning for sync on auth routes
+- **2025-04-10** | `0f19ee36` | no-pr | feat(agent): allow gpt-4o for free on hosted version
+- **2025-04-10** | `dec29da1` | no-pr | improvement (ux): first sign in starts with agent block
+- **2025-04-10** | `20609130` | no-pr | fix: hoted workflow
+- **2025-04-10** | `7604ecb1` | no-pr | fix(models): allow users to run gpt-4o on hosted version without bringing their own keys
+- **2025-04-10** | `ae626dbb` | simstudioai/sim#241 | refactor(llms): moved llm requests server-side (#241)
+- **2025-04-10** | `32bded7d` | no-pr | fix(landing): show workflows for users that have been approved & logged in
+- **2025-04-10** | `3a12d163` | no-pr | feat: add speed insights
+- **2025-04-10** | `b37e3e6d` | no-pr | fix(github): fixed github oauth for workflows & repo
+- **2025-04-10** | `434d4957` | no-pr | improvement(ux): add/collapse all on console entry
+- **2025-04-10** | `d401551a` | no-pr | improvement(ux): command + enter to run workflow
+- **2025-04-10** | `aa32f9f8` | simstudioai/sim#243 | feat(stagehand): added stagehand cua and extract tools/block (#243)
+- **2025-04-10** | `bc5188a1` | no-pr | fix(stagehand): fix typo in model names for stagehand blocks
+- **2025-04-11** | `6482e5fb` | no-pr | fix: agent output type fixed for workflow on sign up
+- **2025-04-11** | `a45b59ec` | no-pr | fix: workflow execution on api call with /api/providers error
+- **2025-04-11** | `cc9dad92` | simstudioai/sim#249 | fix(deps)(deps): bump vite in /sim in the dependencies group (#249)
+- **2025-04-11** | `0317691a` | no-pr | fix(docs): docs home page link fix
+- **2025-04-11** | `bace01fe` | simstudioai/sim#251 | fix(oauth): fixed oauth server-side vs client-side checking, fixed x_search tool failing, remove unused route (#251)
+- **2025-04-11** | `cec30d07` | no-pr | docs: updated docs with new base url, content, styles
+- **2025-04-12** | `ecf2eab4` | simstudioai/sim#253 | fix(schedules): fixed scheduling logic to allow for updates & respect the start time, moved common utils to lib/schedules (#253)
+- **2025-04-12** | `cd15f8cb` | simstudioai/sim#255 | fix(variables): added new variableType 'plain', resolution logic enhanced (#255)
+- **2025-04-13** | `172dd0da` | simstudioai/sim#256 | improvement(webhooks) (#256)
+- **2025-04-13** | `ea7d71e9` | no-pr | fix(webhooks): airtable
+- **2025-04-13** | `0ec14af3` | simstudioai/sim#258 | feat(tools): added browseruse block/tool with async polling (#258)
+- **2025-04-13** | `4cebb450` | no-pr | fix(ui): fixed placeholder on custom tool modal, changed icon for code generator
+- **2025-04-14** | `7d5654d1` | simstudioai/sim#259 | feat(agent): added granular tool usage control for the model providers that support it (#259)
+- **2025-04-14** | `c4f2261f` | no-pr | fix(webhooks): airtable
+- **2025-04-14** | `61367f20` | no-pr | improvement(ui): no tooltip on theme
+- **2025-04-14** | `887dfb9c` | no-pr | improvement(ux): changed api key in deploy to x-api-key
+- **2025-04-14** | `c614ae0c` | simstudioai/sim#264 | fix(tools): enhanced error handling for some tools, ensured that we have tested everything & fixed parallel execution trace spans (#264)
+- **2025-04-14** | `fd3ee356` | simstudioai/sim#266 | feat(tools): added notion oauth, tools, & block (#266)
+- **2025-04-15** | `4d6a4566` | no-pr | fix(webhooks): long-process webhooks
+- **2025-04-15** | `d3c5b7ca` | no-pr | fix(webhooks): increased time to expire
+- **2025-04-16** | `af97c016` | simstudioai/sim#268 | fix(custom-tools): fixed custom tools for agent, added the ability to delete a custom tool (#268)
+- **2025-04-16** | `b6d5348b` | simstudioai/sim#269 | feat(workflow-chat) (#269)
+- **2025-04-16** | `a1a8dc04` | no-pr | improvement(workflow-chat): removed starter and listed block values by distance from starter
+- **2025-04-16** | `5075b092` | no-pr | feat(workflows-chat): added full-screen chat
+- **2025-04-16** | `d1d3c1ee` | no-pr | fix: return error in logs
+- **2025-04-16** | `6163cfe8` | simstudioai/sim#271 | feat(tools): added mem0 block/tools to add, search, & fetch agent memories (#271)
+- **2025-04-16** | `dd5b2657` | no-pr | feat(models): add o3 and o4-mini models, updated pricing
+- **2025-04-17** | `de581f89` | no-pr | fix(ui): delete modal on notifications
+- **2025-04-17** | `38204697` | simstudioai/sim#274 | fix(blocks): fixed router and evaluator block, added autofill & tests (#274)
+- **2025-04-17** | `8e423ca0` | simstudioai/sim#275 | improvement(api): add default headers for API requests, user can override (#275)
+- **2025-04-17** | `6c1e2669` | no-pr | fix(api): added generic headers, ensure that we wrap response to capture error
+- **2025-04-17** | `e35ba187` | no-pr | improvement(approved-emails): updated styling
+- **2025-04-17** | `baae731e` | no-pr | feat(admin-waitlist): added resend approval email
+- **2025-04-17** | `df68c6b5` | no-pr | feat(models): added xai's grok-3 and grok-3-fast
+- **2025-04-17** | `4e08768a` | no-pr | improvement(admin-waitlist): removed bulk, added reliability and ease of approval
+- **2025-04-19** | `8353f3e3` | simstudioai/sim#282 | feat(tools): added elevenlabs tools/block, added audio-player console component, modified proxy routes (#282)
+- **2025-04-19** | `0c696887` | no-pr | improvement: ui/ux
+- **2025-04-19** | `4800397c` | simstudioai/sim#283 | feat(tools): added google search and linkup search tools/blocks (#283)
+- **2025-04-20** | `90494814` | simstudioai/sim#281 | feat(landing) (#281)
+- **2025-04-20** | `8d6a8925` | no-pr | fix: dependencies
+- **2025-04-20** | `927854f0` | no-pr | fix(ui): mobile landing
+- **2025-04-20** | `95179fcf` | simstudioai/sim#286 | fix(google): moved gemini to google genai sdk instead openai compatibility layer (#286)
+- **2025-04-20** | `613ce55e` | no-pr | fix(ui): mobile landing
+- **2025-04-20** | `2de8f37a` | simstudioai/sim#285 | feat(optional-tool-input): added ability to add optional params (#285)
+- **2025-04-20** | `02657ec2` | no-pr | fix(ui): landing header text
+- **2025-04-20** | `01e5759f` | no-pr | fix(ui): fixed typo in footer, updated privacy & terms pages
+- **2025-04-20** | `855aa73f` | no-pr | fix(code-prompt-bar): make the code prompt bar disappear when we navigate away from the agent block
+- **2025-04-20** | `f82d4b96` | simstudioai/sim#289 | fix(schedule): fixed scheduling (#289)
+- **2025-04-21** | `1338da39` | no-pr | improvement(ui/ux): chat preview
+- **2025-04-21** | `92685d39` | no-pr | chore: update privacy policy
+- **2025-04-22** | `36cbc497` | no-pr | chore: refactored tools to follow standard format
+- **2025-04-22** | `6971e320` | no-pr | fix(landing): updated privacy policy & added start now for users who have logged in before
+- **2025-04-22** | `4b858c99` | no-pr | feat(duplicate): added workflow dupliction
+- **2025-04-22** | `5426314f` | no-pr | fix(api): add support custom headers in request
+- **2025-04-22** | `54e14392` | simstudioai/sim#293 | feat(docs): added script to auto-generate docs for integrations/tools (#293)
+- **2025-04-22** | `884b7181` | no-pr | fix(scripts): removed old script, removed redundant ts-nocheck from ts script, remove deprecated dalle-2 model
+- **2025-04-22** | `d13eeccb` | no-pr | fix(docs): added missing google tools descriptions
+- **2025-04-23** | `2749cebe` | simstudioai/sim#297 | feat(tools): added s3 tools/block (#297)
+- **2025-04-23** | `c7e29192` | simstudioai/sim#298 | feat(tools): added jira tools/block, oauth (#298)
+- **2025-04-23** | `fb0d3d5b` | simstudioai/sim#299 | fix(s3): fixed request to send the timestamp in utc rather than system time (#299)
+- **2025-04-24** | `53641868` | simstudioai/sim#300 |  feat(stripe): added stripe integration, keys for anthropic + openai models (#300)
+- **2025-04-25** | `10bbc72e` | no-pr | fix(stripe): fixed subscription status not showing
+- **2025-04-25** | `a9dfbba5` | no-pr | fix(file-upload): fixed client uploads to s3 by adding presigned url
+- **2025-04-25** | `eec7cc80` | no-pr | improvement(ux): manual run opens console
+- **2025-04-25** | `97f00aa7` | no-pr | fix: Stripe error hidden for local dev
+- **2025-04-25** | `492b5914` | no-pr | improvement(api): added XML support
+- **2025-04-25** | `a5abc825` | no-pr | fix(schedules): added oauth context to schedule execution
+- **2025-04-25** | `11922d24` | no-pr | improvement: updated contributing guide
+- **2025-04-26** | `503e07b5` | simstudioai/sim#301 | feat(security): added additional security measures to next config & middleware (#301)
+- **2025-04-26** | `f2e5d67a` | no-pr | fix(security): static assets not rendering
+- **2025-04-26** | `fc101c3d` | simstudioai/sim#277 | feat(chat-deploy) (#277)
+- **2025-04-27** | `4e14914b` | no-pr | chore: upgrade better-auth
+- **2025-04-27** | `7a36d21e` | simstudioai/sim#303 | fix(chat-deploy): fixed hanging deployment state, fixed x tools, fixed credentials styling (#303)
+- **2025-04-27** | `08c4dc91` | simstudioai/sim#304 | fix(confluence): fixed confluence tools & block (#304)
+- **2025-04-27** | `22036b0b` | simstudioai/sim#305 | improvement(waitlist): added batch send requests, fixed UI (#305)
+- **2025-04-28** | `24859ded` | no-pr | improvement: metadata and docs
+- **2025-04-28** | `41f12d7b` | simstudioai/sim#307 | mem0 styling (#307)
+- **2025-04-28** | `09bbf1d6` | simstudioai/sim#308 | improvement(stripe) (#308): added orgs, teams
+- **2025-04-28** | `4540c417` | no-pr | improvement(ui): expand settings modal, remove teams tab for users that don't have access
+- **2025-04-28** | `b2e583cb` | no-pr | improvement(chat-client): added markdown support
+- **2025-04-28** | `a769c316` | no-pr | feat(tools): added additional reddit tools, docs
+- **2025-04-28** | `4da83a1e` | no-pr | update README
+- **2025-04-28** | `815bb5fc` | no-pr | fix(ollama): allow ollama host in csp
+- **2025-04-29** | `cc6299ce` | no-pr | fix(csp): fixed csp policy to allow for google drive picker, s3, atlassian
+- **2025-04-29** | `0dcd5ee3` | simstudioai/sim#311 | improvement(mem0) (#311)
+- **2025-04-29** | `5d4ddbc7` | simstudioai/sim#310 | Improve(chat): added multiple output option for chat panel & chat deploy (#310)
+- **2025-04-30** | `62fc5b83` | simstudioai/sim#316 | fix(ollama): set OLLAMA_HOST from env variable (#316)
+- **2025-04-30** | `38dbaa24` | simstudioai/sim#315 | fix(deps)(deps): bump vite in /sim in the dependencies group (#315)
+- **2025-04-30** | `209f9ad6` | no-pr | improvement(docs): slack YouTube video
+- **2025-04-30** | `03cde7ed` | simstudioai/sim#318 | feat(otel): added otel, persist settings to db, present user with the telemetry preferences & add privacy tab to settings (#318)
+- **2025-05-01** | `afe7d2a7` | no-pr | fix(otel): remove banner from prod
+- **2025-05-01** | `d410b29a` | no-pr | fix(docs): updated doc generator to handle arrays
+- **2025-05-01** | `ca34c722` | simstudioai/sim#313 | fix(tools): fixed jira and confluence token refresh (#313)
+- **2025-05-01** | `47d3cbe0` | simstudioai/sim#314 | feat(telegram): added telegram webhook, block, tools, & docs (#314)
+- **2025-05-02** | `7488b1fc` | simstudioai/sim#312 | feat(sidebar/workspaces) (#312)
+- **2025-05-02** | `7a385fce` | no-pr | fix(ux): add workflows
+- **2025-05-04** | `3e01258c` | no-pr | fix(picker): fix picker files disappearing on refresh
+- **2025-05-04** | `2fe77dd3` | simstudioai/sim#321 | feat(chat): added streaming from chat panel & chat deploy (#321)
+- **2025-05-04** | `9f1e8e3d` | no-pr | improvement(ux): made agent user prompt resizable and larger
+- **2025-05-04** | `b6468067` | simstudioai/sim#324 | fix(jira): jira project and issue auto loading (#324)
+- **2025-05-04** | `4835782b` | simstudioai/sim#323 | feat(errors): added error tracking in prod using sentry (#323)
+- **2025-05-04** | `f4f5973f` | simstudioai/sim#325 | improvement(speed): refactor to skip proxy now that llm requests are done server-side, skip extra network hop (#325)
+- **2025-05-04** | `8bb500b7` | simstudioai/sim#327 | fix(docs): added the slack demo youtube video (#327)
+- **2025-05-04** | `4be568e3` | simstudioai/sim#326 | feat(tools): added clay tools/block (#326)
+- **2025-05-04** | `75c6582f` | simstudioai/sim#328 | feat(build): added turbopack in dev & fixed circular dependency (#328)
+- **2025-05-04** | `73600fbd` | no-pr | improvement: refactor files, subblock spacing
+- **2025-05-04** | `fd53247f` | simstudioai/sim#329 | fix(long-input): text overlay and resize UI (#329)
+- **2025-05-05** | `d2e91c27` | no-pr | improvement(performance): modify the long-input resize behavior to maintain the same behavior but only update the state once the resize is complete
+- **2025-05-05** | `d8025a25` | no-pr | improvement(chat-client): ui/ux with markdown styling and streaming
+- **2025-05-05** | `feac93fa` | no-pr | improvement(sentry): added tree shaking, reduced bundle size 40%
+- **2025-05-05** | `dce82684` | no-pr | Update README.md
+- **2025-05-05** | `bac4949d` | no-pr | improvement(ux): format json logs response, fix tts and image proxies, fix airtable block
+- **2025-05-06** | `699600fe` | simstudioai/sim#330 | feat(workflow-preview): added workflow preview for version control, with the ability to revert to old states of the workflow (#330)
+- **2025-05-06** | `266c6e3a` | no-pr | fix(build): updated package lock
+- **2025-05-06** | `a1c75653` | no-pr | improvement(landing): fixed icons for tweets, added typeform, added logo
+- **2025-05-06** | `3559593d` | no-pr | fix: waitlist email link
+- **2025-05-06** | `5714441a` | no-pr | fix: twitter link
+- **2025-05-06** | `e706c07e` | simstudioai/sim#331 | feat(tools): added google sheets append tool (#331)
+- **2025-05-07** | `8e0c72a0` | no-pr | fix: otel warning before login
+- **2025-05-07** | `3205f598` | no-pr | improvement(google-sheets): parse input items
+- **2025-05-07** | `c0c444f4` | no-pr | improvement(ui): logs
+- **2025-05-07** | `c5e5c67a` | no-pr | fix(ollama): added ollama host envvar to the csp
+- **2025-05-07** | `01e9016d` | no-pr | fix(google-sheets): update google sheets tools to take in both an array of objects and an array of arrays
+- **2025-05-07** | `fcc590c0` | simstudioai/sim#332 | improvement(deployed preview): fixed webhook config that was causing workflow failure in deployed state (#332)
+- **2025-05-08** | `14380289` | simstudioai/sim#337 | improvement(utils): removed duplicate logic to get base url with fallback, made util (#337)
+- **2025-05-09** | `a92ee8bf` | simstudioai/sim#341 | feat(turbo): restructured repo to be a standard turborepo monorepo (#341)
+- **2025-05-09** | `d79cad4c` | simstudioai/sim#343 | feat(sidebar-controls): added ability to expand on hover (#343)
+- **2025-05-11** | `0fc0f683` | simstudioai/sim#344 | feat(gmail): added gmail polling service to trigger workflow on incoming emails (#344)
+- **2025-05-11** | `3580241d` | simstudioai/sim#347 | feat(discord): added discord block/tools  (#347)
+- **2025-05-11** | `c47f8719` | no-pr | fix(dependabot): updated repo structure for dependabot, manually update outdated packages
+- **2025-05-11** | `5326f2f6` | simstudioai/sim#352 | docs(deps): bump the docs-dependencies group (#352)
+- **2025-05-11** | `c27698f7` | no-pr | fix(dependabot): updated repo structure for dependabot, manually update outdated packages
+- **2025-05-11** | `230143af` | simstudioai/sim#349 | improvement(variables): variable experience and removed execution time (#349)
+- **2025-05-11** | `2c7806fe` | no-pr | fix(gmail): fix unauthorized gmail polling
+- **2025-05-12** | `626dafae` | no-pr | fix(db): fix slow db connection, add redis cache for gmail polling
+- **2025-05-12** | `76c22e91` | simstudioai/sim#348 | feat(docs): added tutorial videos & telegram logic added for user-agent (#348)
+- **2025-05-12** | `db369fed` | no-pr | docs: updated README.md
+- **2025-05-13** | `7010c2d4` | no-pr | feat(models): added gpt-4.1
+- **2025-05-14** | `575a4822` | no-pr | fix(oauth-selector): added oauth selector back for tools that it was missing from
+- **2025-05-14** | `38efb9a8` | simstudioai/sim#358 | feat(invite-workspace) (#358)
+- **2025-05-14** | `38b169cc` | no-pr | fix(duplicate): add workspace ID to prevent cleanup
+- **2025-05-14** | `43cb4cbf` | simstudioai/sim#357 | improvement(subscriptions): added log retention cron, enterprise plan & refactored subscriptions logic (#357)
+- **2025-05-14** | `274ebdf4` | no-pr | fix(invite-workspace): addressed comments
+- **2025-05-15** | `1152a264` | simstudioai/sim#361 | fix(subscriptions): fixed organization creation failure introduced by subscription updates (#361)
+- **2025-05-15** | `f07cffd2` | simstudioai/sim#364 | improvement(logs): added infinite scroll, markdown rendering, and individual block input to logs (#364)
+- **2025-05-15** | `0621caf5` | no-pr | chore: update CSP, add speed insights
+- **2025-05-15** | `4bbc2b24` | no-pr | improvement(variables): changed object validation to support JavaScript object notation in addition to strict JSON
+- **2025-05-15** | `a66c1e3b` | no-pr | feat(logs): added log archive
+- **2025-05-16** | `96fdfbc3` | no-pr | fix(browser-agents): log live URL for stagehand and browser-use
+- **2025-05-16** | `0b055623` | no-pr | fix(ui): fix calendar component for setting schedules
+- **2025-05-17** | `e57d3f79` | simstudioai/sim#368 | fix(schedules): disable schedules after consecutive failures (#368)
+- **2025-05-18** | `717e17d0` | simstudioai/sim#371 | feat(bun): upgrade to bun, reduce docker image size by 95%, upgrade docs & ci (#371)
+- **2025-05-18** | `ef31a2fe` | no-pr | fix(ci): fixed container registry name in ci, modified some routes to be dynamic to avoid nextjs telemetry
+- **2025-05-18** | `c7866c83` | simstudioai/sim#374 | chore(docker): update PostgreSQL environment variables in docker-compose files to support default values (#374)
+- **2025-05-18** | `18ce2661` | simstudioai/sim#375 | improvement(browser-use): added secrets to browser use agent (#375)
+- **2025-05-18** | `f2894e64` | simstudioai/sim#376 | feat(package): added npm package to run sim studio (#376)
+- **2025-05-18** | `fd82b99c` | simstudioai/sim#377 | feat(waitlist): remove waitlist, update login/signup/verify styling to match landing, remove OTP in dev/docker (#377)
+- **2025-05-18** | `c8b2c9ea` | no-pr | improvement(subdomain): added header links
+- **2025-05-19** | `1ec9770d` | no-pr | fix(errors): fix error handling for signup/signin
+- **2025-05-19** | `8f75e795` | no-pr | improvement(ui): auth
+- **2025-05-19** | `b29827c4` | no-pr | fix(errors): fix error handling for signup/signin
+- **2025-05-19** | `0af7fb2a` | simstudioai/sim#372 | feat(memory): added memory block and tool (#372)
+- **2025-05-19** | `533f765c` | no-pr | improvement(chat-deploy): added conversation ID to input
+- **2025-05-19** | `2a4590e6` | simstudioai/sim#379 | fix(invite): allow anyone with access to the workspace to invite others, remove invite from dev environment (#379)
+- **2025-05-19** | `f5cbcfb5` | simstudioai/sim#380 | feat(package): add tsconfig pkg to share across packages in monorepo (#380)
+- **2025-05-19** | `47090713` | simstudioai/sim#381 | Revert "feat(package): add tsconfig pkg to share across packages in monorepo …" (#381)
+- **2025-05-20** | `1ebcaf5b` | no-pr | improvement(reddit): better error logging
+- **2025-05-20** | `6f8f307a` | no-pr | fix(docs): fix docs sidebar
+- **2025-05-20** | `bacf7335` | no-pr | improvement(memory): consolidated expected return value
+- **2025-05-20** | `6170b800` | simstudioai/sim#385 | fix(streaming): added ability to stream back responses for agent even if there are downstream blocks (#385)
+- **2025-05-20** | `33123c63` | no-pr | improvement(memory): return memories in add, adjusted other memory tools
+- **2025-05-20** | `4cd80947` | simstudioai/sim#386 | fix(cors): allow workflow executions via API in the browser (#386)
+- **2025-05-20** | `d2cf31b4` | no-pr | improvement(mem0): tool input options
+- **2025-05-20** | `31ccaa52` | simstudioai/sim#387 | feat(google-drive): added additional tools to interact with google drive (#387)
+- **2025-05-20** | `a5b809c8` | simstudioai/sim#389 | fix(docs): fixed naming semantics for memory tools, updated doc generator, & included docs for memory block (#389)
+- **2025-05-21** | `b9b662bf` | no-pr | update README.md
+- **2025-05-21** | `a94fd870` | simstudioai/sim#392 | fix(api): fixed POST request for API blocks (#392)
+- **2025-05-21** | `6d380c28` | simstudioai/sim#394 | refactor(ollama): ollama host -> url (convention) + readme and compose to reflect the same (#394)
+- **2025-05-21** | `0015dc93` | simstudioai/sim#396 | feat(image-gen): added gpt-image-1 and safe storage for base64 data (#396)
+- **2025-05-21** | `afcc66af` | simstudioai/sim#397 | fix(execution): async executions when envvars are not set (#397)
+- **2025-05-21** | `328d361a` | simstudioai/sim#382 | fix(deployed-workflow): fixed the deployment status changes across workflows. (#382)
+- **2025-05-22** | `56648900` | no-pr | feat(models): added claude sonnet 4 and opus 4
+- **2025-05-23** | `c77a21e9` | simstudioai/sim#404 | fix(chat-rendering): fixed rendering of tables, code. added copy, fixed error for settings sync, added additional formatting and styles to chat (#404)
+- **2025-05-23** | `0c8a773e` | simstudioai/sim#406 | improvement(chat): optimized chat performance & pass/email flow for chat (#406)
+- **2025-05-24** | `8c268e23` | simstudioai/sim#407 | chore(biome): removed prettier, added biome (#407)
+- **2025-05-24** | `45c92067` | simstudioai/sim#405 | feat(tools): added microsoft teams tools/block (#405)
+- **2025-05-24** | `79b761c0` | simstudioai/sim#409 | feat(tools): created outlook tools/block (#409)
+- **2025-05-24** | `950e055a` | simstudioai/sim#408 | fix(file-upload): re-enabled file upload for mistral & url for file upload (#408)
+- **2025-05-24** | `8ec194a6` | simstudioai/sim#412 | feat(tools): added support for ms teams attachments (#412)
+- **2025-05-24** | `ef8ae60a` | no-pr | fix(file-upload): fixed file upload for mistral parse
+- **2025-05-25** | `b1126e3d` | simstudioai/sim#411 | feat(loop): added loop block & parallel block logic (#411)
+- **2025-05-25** | `ae38f203` | no-pr | fix(parallel): fixed dropdown, set active execution block for parallel flow
+- **2025-05-25** | `b74e71a4` | no-pr | chore: update dependabot
+- **2025-05-25** | `911f2881` | simstudioai/sim#414 | chore(deps): bump the actions-updates group with 3 updates (#414)
+- **2025-05-25** | `3f468dc3` | simstudioai/sim#415 | chore(deps): bump lucide-react (#415)
+- **2025-05-26** | `3e809d24` | simstudioai/sim#419 | fix(logs): improve timeline resizing behavior in trace spans (#419)
+- **2025-05-26** | `28dd9e89` | no-pr | fix(lint): resolve CSS class sorting and formatting issues in trace spans
+- **2025-05-26** | `4d03c8b6` | no-pr | feat(search): added search to variables & credentials, fixed missing docs
+- **2025-05-26** | `76253de0` | no-pr | chore: update CONTRIBUTING.md
+- **2025-05-26** | `8e6057a3` | simstudioai/sim#417 | chore(deps-dev): bump @types/node from 20.17.50 to 22.15.21 in /apps/sim (#417)
+- **2025-05-26** | `6afb453f` | simstudioai/sim#423 | improvement(oauth): refactor oauth apis to dedicated tools routes, fix docs (#423)
+- **2025-05-26** | `ad4060aa` | simstudioai/sim#421 | fit(loop-ui): fixed some UI issues, added tests for parallel and loop nodes (#421)
+- **2025-05-26** | `cbfe9a69` | simstudioai/sim#424 | fix(logs): fix log filtering by moving filtering to server-side (#424)
+- **2025-05-26** | `38afdeb8` | no-pr | fix(build): add tailwind dep
+- **2025-05-26** | `819c0cc8` | no-pr | improvement(logs): added filtering by trigger type
+- **2025-05-26** | `334f12c6` | no-pr | improvement(docs): add analytics
+- **2025-05-26** | `80a7bf5e` | no-pr | fix(footer): fix footer in landing page to enter platform
+- **2025-05-26** | `79bea155` | no-pr | fix(parallel): add numbered parallel and loop blocks for multiple instances of sub-nodes
+- **2025-05-27** | `7169f33a` | no-pr | fix(nodes): simplify response format for loops/parallels
+- **2025-05-28** | `84b9d766` | no-pr | fix(subscriptions): fix disabled subs
+- **2025-05-28** | `6e682f5f` | no-pr | fix(doc-generator): added in missing microsoft docs, fixed doc generator
+- **2025-05-28** | `2fb0894c` | simstudioai/sim#429 | fix(persistence): persist collapsed state for responseFormat code subblock (#429)
+- **2025-05-28** | `ca6884cd` | simstudioai/sim#432 | fix(memories): simplified memories, added memories subblock for agent (#432)
+- **2025-05-28** | `3b82e7d2` | no-pr | improvement(providers): added enhanced error logging
+- **2025-05-29** | `b2450530` | simstudioai/sim#437 | refactor(agent-handler): simplify agent handler, update tests, fix resolution of env vars in function execution (#437)
+- **2025-05-29** | `50cbc890` | simstudioai/sim#438 | fix(validation): added validation for inputs for signup & email, added tests (#438)
+- **2025-05-30** | `88d8a1b1` | simstudioai/sim#439 | feat(tools): added linear tools/block (#439)
+- **2025-05-30** | `51120c8f` | no-pr | chore: remove dependabot
+- **2025-05-30** | `a9196314` | no-pr | fix(tools): fix linear block
+- **2025-05-30** | `4239810b` | simstudioai/sim#443 | feat(ux): added auto-layout for workflows (#443)
+- **2025-05-30** | `e17cdc96` | no-pr | fix(formatting): fixed widths & heights for auto-formatting
+- **2025-05-30** | `c5727ef0` | simstudioai/sim#441 | feat(tools): added microsoft excel tools/block (#441)
+- **2025-05-31** | `a94f6170` | simstudioai/sim#444 | feat(contributors): added contributors page (#444)
+- **2025-06-01** | `2e77d462` | simstudioai/sim#447 | feat(email): add customizable "FROM" email for resend (#447)
+- **2025-06-01** | `de2ce6fc` | simstudioai/sim#445 | feat(slack): added slack oauth for sim bot & maintained old custom bot, fixed markdown rendering (#445)
+- **2025-06-01** | `7d640823` | simstudioai/sim#448 | fix(variables): added block/variable name validation to prevent invalid characters, fixed block renaming issue with drag handler (#448)
+- **2025-06-02** | `d9e99a4f` | simstudioai/sim#449 | feat(knowledge) (#449)
+- **2025-06-02** | `dc1433ee` | no-pr | fix: good except for subblocks
+- **2025-06-02** | `0f2dd488` | no-pr | fix: working on subblock rendering
+- **2025-06-02** | `a0f80c81` | no-pr | fix: attempt for subBlocks still failing
+- **2025-06-02** | `590764e5` | no-pr | fix: subblock rerender fixed
+- **2025-06-02** | `a0b27570` | no-pr | fix: added remaining subblock isPreview tag
+- **2025-06-02** | `e9892d7f` | no-pr | fix: removed comments
+- **2025-06-02** | `86d94074` | no-pr | improvement: changed modal to toggle instead of button
+- **2025-06-02** | `8e6101b0` | no-pr | fix: removed debug
+- **2025-06-02** | `d024f8da` | no-pr | fix: removed more debugging
+- **2025-06-02** | `36cd2719` | no-pr | fix: added greptile comments
+- **2025-06-02** | `6986a4ed` | no-pr | fix: undid greptile change
+- **2025-06-02** | `316985c6` | no-pr | fix: removed needsDeployment duplication
+- **2025-06-02** | `ad91e59d` | no-pr | saving checkpoint
+- **2025-06-02** | `9c8e0d8d` | no-pr | fix: deployed state preview persists across workflows
+- **2025-06-02** | `44f10488` | no-pr | fix: styling and rid of 5 second sync
+- **2025-06-02** | `060b6763` | no-pr | Remove package-lock.json and update workflow components
+- **2025-06-02** | `44c8f055` | no-pr | fix: added greptile changes
+- **2025-06-02** | `7b50046f` | no-pr | cleaned up logic
+- **2025-06-02** | `5de5ff5b` | no-pr | fix: added logic for webhook subBlock
+- **2025-06-02** | `43d60e96` | no-pr | added back commented out marketplace logic
+- **2025-06-02** | `798cdd1a` | no-pr | cleaning up
+- **2025-06-02** | `ada5f516` | no-pr | cleaned up comments
+- **2025-06-02** | `6ffe5421` | no-pr | ran lint
+- **2025-06-02** | `3e1d7e71` | no-pr | fix: added preview for subgroup nodes, changed position of child blocks in state
+- **2025-06-02** | `4ed6a703` | no-pr | removed forceRefetch logic
+- **2025-06-02** | `10584e17` | no-pr | fix: consolidated use effects
+- **2025-06-02** | `33ac68ba` | no-pr | simplified useEffect
+- **2025-06-02** | `01881d0d` | no-pr | removed more redundant logic
+- **2025-06-02** | `6946db9e` | no-pr | fix: condensing logic
+- **2025-06-02** | `1c9198c2` | no-pr | fix: removed div
+- **2025-06-02** | `ddac0904` | no-pr | cleaned up
+- **2025-06-02** | `222f97f0` | no-pr | removed unused values
+- **2025-06-02** | `c9d826e7` | no-pr | bun lint
+- **2025-06-02** | `fc93a308` | no-pr | fix: added robust subblock status change
+- **2025-06-02** | `a137df33` | no-pr | got rid of the force sync
+- **2025-06-02** | `81d96ef7` | no-pr | bun lint
+- **2025-06-02** | `78395f6d` | no-pr | fix: removed use deployment hook
+- **2025-06-02** | `2784b968` | no-pr | simplified useEffect
+- **2025-06-02** | `c8bc9dbb` | no-pr | fix: better detection
+- **2025-06-02** | `9b284c82` | no-pr | fix: removed deployment-controls contradicting values
+- **2025-06-02** | `a0893946` | no-pr | changes detected working
+- **2025-06-02** | `46d23bd2` | no-pr | added tests
+- **2025-06-02** | `d829ab27` | no-pr | removed comments
+- **2025-06-02** | `7a5169f0` | no-pr | got rid of comments
+- **2025-06-02** | `2c86679b` | no-pr | added a get function for the currentactiveworkflowid
+- **2025-06-02** | `215e1e98` | no-pr | fix: Shift+L command to work when not in subBlock
+- **2025-06-02** | `0d4849b8` | no-pr | removed comments
+- **2025-06-02** | `f93a1bf8` | no-pr | resolved comments
+- **2025-06-02** | `391925a1` | no-pr | fix: removed sync logic that was causing undefined block error and added isloading
+- **2025-06-02** | `7080b9ec` | no-pr | fixed tool input
+- **2025-06-02** | `dcf6e10b` | simstudioai/sim#452 | fix(docker): added pgvector image to docker builds, modified push to migrate to ameliorate vector data type issue (#452)
+- **2025-06-02** | `87344117` | no-pr | added back sync logic
+- **2025-06-02** | `79d8dcb1` | no-pr | added isPreview to other subBlock types
+- **2025-06-02** | `30f79307` | no-pr | fix(workflow-preview): fixed the workflow preview to pull directly from the state in DB
+- **2025-06-02** | `5febdfbe` | no-pr | fix: root layout metadata
+- **2025-06-02** | `282345b9` | no-pr | fix(emails): fix base URL
+- **2025-06-02** | `1eda44d6` | simstudioai/sim#453 | imrpovement(kb): added client-side store, shared utils, background processing, retry with exponential backoff to knowledge base (#453)
+- **2025-06-03** | `f3a40536` | no-pr | improvements(knowledge): ui/ux
+- **2025-06-03** | `fc7171b0` | simstudioai/sim#455 | fix(providers): fixed xai response format + tool calls not working when used together (#455)
+- **2025-06-03** | `10ab1b40` | simstudioai/sim#454 | feat(tools): added google calendar tools/block, and gcal selector subblock (#454)
+- **2025-06-03** | `10a45666` | no-pr | fix(ui): removed duplicate column for kb
+- **2025-06-03** | `96438c3a` | simstudioai/sim#456 | feat(tools): add firecrawl search, add conditional sub-block rendering to tool input for agents (#456)
+- **2025-06-03** | `77bbdc10` | no-pr | fix(knowledge): ui and infinite load for knowledge
+- **2025-06-03** | `c6907c29` | simstudioai/sim#457 | feat(gcal-invite): added google calendar invite tool (#457)
+- **2025-06-04** | `7bc61702` | simstudioai/sim#458 | improvement(panel): added unique conversationId to chat panel (#458)
+- **2025-06-05** | `b0cc5954` | no-pr | fix(gcal): fixed bug that pulled google calendar info
+- **2025-06-06** | `567f7a5e` | no-pr | feat(telegram-bot): removed trigger phrase
+- **2025-06-08** | `00f893e3` | no-pr | fix(telegram-middleware): modified middleware to not check for user-agent on webhook
+- **2025-06-09** | `c7ee74ec` | simstudioai/sim#465 | improvement(knowledge-upload): upload content from workflow; improve knowledge/base/document (#465)
+- **2025-06-09** | `59b68d21` | no-pr | fix(knowledge): infinite render on 0 kbs
+- **2025-06-09** | `49a8a055` | simstudioai/sim#468 | fix(email): added unsubscribe from email functionality (#468)
+- **2025-06-09** | `726901cb` | simstudioai/sim#467 | feat(voice): speech to speech mode for deployed chat (#467)
+- **2025-06-10** | `aa2577be` | simstudioai/sim#470 | feat(llms): add LLM text processing and routing for MDX and TXT files (#470)
+- **2025-06-10** | `37786d37` | no-pr | added qa to list of reserved subdomains
+- **2025-06-24** | `76df2b9c` | simstudioai/sim#534 | fix(sockets): added throttling, refactor entire socket server, added tests (#534)
+- **2025-06-24** | `d084ecdc` | simstudioai/sim#539 | improvement(permissions): fixed permissions and variables access patterns (#539)
+- **2025-06-24** | `0a5bf5a8` | simstudioai/sim#541 | fix(sockets): smoother throttling + fix re-render bug (#541)
+- **2025-06-25** | `7182f357` | simstudioai/sim#544 | feat(workspace): add workspaceId to url (#544)
+- **2025-06-25** | `d30e1167` | simstudioai/sim#546 | fix(autolayout): fixed autolayout with sockets (#546)
+- **2025-06-25** | `391c3efa` | simstudioai/sim#547 | improvement(sockets): fixed positioning of blocks recalc, hydration issue with workspaceId, and presence (#547)
+- **2025-06-26** | `793e9262` | no-pr | fix: get workspaceId from url, not undefined workflows
+- **2025-06-26** | `c3fe7589` | no-pr | Merge pull request #549 from simstudioai/fix/workspace-undefined
+- **2025-06-26** | `fb40d252` | no-pr | fix user presence
+- **2025-06-26** | `936d2d31` | no-pr | Merge pull request #550 from simstudioai/fix/user-presence
+- **2025-06-26** | `24a3b9a1` | no-pr | move socket to browser tab level
+- **2025-06-26** | `a05ba867` | no-pr | fix lint
+- **2025-06-26** | `c85adf69` | no-pr | Merge pull request #551 from simstudioai/improvement/socket-per-session
+- **2025-06-26** | `70899852` | simstudioai/sim#552 | chore: cleanup hydration logic (#552)
+- **2025-06-26** | `7b50eccc` | no-pr | add global connection to not reinstantiate on every import
+- **2025-06-26** | `92399540` | no-pr | fix lint
+- **2025-06-26** | `9584f3cb` | no-pr | Merge pull request #554 from simstudioai/fix/global-conn
+- **2025-06-26** | `1a719470` | simstudioai/sim#558 | fix(sockets events): remaining sockets events (#558)
+- **2025-06-26** | `0fb2f7c4` | simstudioai/sim#560 | fix switch workspace bug (#560)
+- **2025-06-26** | `99105841` | simstudioai/sim#561 | fix(workspaces init): fix switch workspace fully + first workflow should be selected when you enter app (#561)
+- **2025-06-26** | `76a04251` | simstudioai/sim#562 | Revert "fix(workspaces init): fix switch workspace fully + first workflow sho…" (#562)
+- **2025-06-26** | `87649542` | simstudioai/sim#560 | Revert "fix switch workspace bug (#560)" (#563)
+- **2025-06-26** | `00496442` | simstudioai/sim#564 | fix(workspace url id bug): switch workspace bug  (#564)
+- **2025-06-27** | `00334e50` | simstudioai/sim#565 | feat(ci): socket realtime image for hosting (#565)
+- **2025-06-27** | `02cecd57` | simstudioai/sim#566 | fix(sockets): implement longer token expiration for OTT, preventitive token refresh with retries (#566)
+- **2025-06-27** | `e4523961` | simstudioai/sim#564 | Revert "fix(workspace url id bug): switch workspace bug  (#564)" (#567)
+- **2025-06-27** | `bf9b3fdc` | simstudioai/sim#568 | fix(conn pool separation): conn pool separation test (#568)
+- **2025-06-27** | `bbde2be0` | no-pr | fix(workspace url): race condition
+- **2025-06-27** | `7c00f07d` | no-pr | fix lint
+- **2025-06-27** | `82d491d1` | no-pr | fix sockets token refresh
+- **2025-06-27** | `f8cfdba5` | no-pr | fix lint
+- **2025-06-27** | `244c086e` | no-pr | fix sidebar issue
+- **2025-06-27** | `05c83e27` | no-pr | fix lint
+- **2025-06-27** | `754d7680` | no-pr | fix dup token
+- **2025-06-27** | `f5f65fd8` | no-pr | fix lint
+- **2025-06-27** | `0da8a706` | simstudioai/sim#553 | fix(gmail): gmail webhook synchronous processing (#553)
+- **2025-06-27** | `c43b0393` | simstudioai/sim#570 | fix(function): disabled freestyle, VM by default with node-fetch (#570)
+- **2025-06-27** | `2a7b4da9` | no-pr | fix(reconn): take workflow id from url
+- **2025-06-27** | `5d17ed83` | no-pr | fix lint"
+- **2025-06-27** | `2d5da6e2` | no-pr | Merge branch 'staging' of github.com:simstudioai/sim into staging
+- **2025-06-27** | `5fec8132` | no-pr | fix sourceBlock null check
+- **2025-06-28** | `b42c43ae` | no-pr | fix sourceBlock null check
+- **2025-06-28** | `3a489809` | no-pr | fix(kb): fix kb navigation URLs
+- **2025-06-28** | `fe5ce5a3` | no-pr | fix(csp): update CSP to allow for google drive picker
+- **2025-06-28** | `e93a5ce6` | simstudioai/sim#574 | fix(cli): package type for esm imports, missing realtime (#574)
+- **2025-06-28** | `e37a8681` | no-pr | fix sourceBlock null check
+- **2025-06-28** | `2f8d9eae` | no-pr | fix(kb): fix kb navigation URLs
+- **2025-06-28** | `f08a51cc` | no-pr | fix(csp): update CSP to allow for google drive picker
+- **2025-06-28** | `9be41b4b` | no-pr | Merge branch 'staging'
+- **2025-06-28** | `bf0ea10e` | simstudioai/sim#577 | merge(staging-to-main) (#577)
+- **2025-06-29** | `805b245c` | simstudioai/sim#585 | v0.2.1: fix + chore (#585)
+- **2025-06-30** | `b3960ad7` | simstudioai/sim#588 | v0.2.2: fix  (#588)
+- **2025-06-30** | `d50db1d3` | no-pr | add dot check
+- **2025-06-30** | `9c14f5f8` | no-pr | fix(func var resolution): variable ref codepath triggered
+- **2025-06-30** | `35ac68f5` | no-pr | fix(func var resolution): variable ref codepath triggered - lint fixed
+- **2025-06-30** | `d19632ae` | no-pr | fix typing issue
+- **2025-06-30** | `b0c15471` | no-pr | fix test failure
+- **2025-06-30** | `f4e627a9` | simstudioai/sim#592 | v0.2.3: fix (#592)
+- **2025-06-30** | `7a5aeadb` | no-pr | fix(knowledge base): selector infinite render
+- **2025-06-30** | `5d7fc538` | no-pr | fix lint
+- **2025-06-30** | `86168f1a` | no-pr | fix(dep): dependency for useEffect missing
+- **2025-06-30** | `1604ce4d` | simstudioai/sim#595 | v0.2.4: feat, improvement, fix (#595)
+- **2025-07-02** | `3b982533` | simstudioai/sim#595 | v0.2.5: feat, improvement, fix (#595) (#603)
+- **2025-07-03** | `016cd675` | simstudioai/sim#612 | v0.2.6: fix + feat + improvement (#612)
+- **2025-07-04** | `78b5ae7b` | simstudioai/sim#615 | v0.2.7: fix + feat  (#615)
+- **2025-07-06** | `cac9ad25` | simstudioai/sim#616 | fix(sharing): fixed folders not appearing when sharing workflows (#616)
+- **2025-07-06** | `231bfb9a` | simstudioai/sim#620 | fix(deletions): folder deletions were hanging + use cascade deletions throughout  (#620)
+- **2025-07-06** | `e22f0123` | simstudioai/sim#606 | fix(envvars): t3-env standardization (#606)
+- **2025-07-06** | `0bf9ce0b` | simstudioai/sim#618 | feat(enhanced logs): integration + log visualizer canvas (#618)
+- **2025-07-06** | `f3bc1fc2` | simstudioai/sim#621 | v0.2.8: fix + feat + improvement  (#621)
+- **2025-07-07** | `c635b195` | simstudioai/sim#624 | fix(frozen canvas): don't error if workflow state not available for migrated logs (#624)
+- **2025-07-07** | `60e2e6c7` | simstudioai/sim#627 | fix(reddit): update to oauth endpoints  (#627)
+- **2025-07-07** | `b4eda8fe` | simstudioai/sim#629 | feat(tools): added reordering of tool calls in agent tool input  (#629)
+- **2025-07-07** | `5cf7d025` | simstudioai/sim#628 | fix(oauth): fix oauth to use correct subblock value setter + remove unused local storage code (#628)
+- **2025-07-07** | `ede224a1` | simstudioai/sim#622 | fix(mem-deletion): hard deletion of memory (#622)
+- **2025-07-07** | `7e466910` | simstudioai/sim#630 | feat(build): added turbopack builds to prod (#630)
+- **2025-07-07** | `02b78998` | simstudioai/sim#632 | fix(docs): fixed broken docs links (#632)
+- **2025-07-07** | `5167deb7` | simstudioai/sim#631 | fix(resp format): non-json input was crashing (#631)
+- **2025-07-07** | `3e45d793` | simstudioai/sim#633 | fix(revert-deployed): correctly revert to deployed state as unit op using separate endpoint (#633)
+- **2025-07-08** | `0f21fbf7` | simstudioai/sim#634 | fix(dropdown): simplify & fix tag dropdown for parallel & loop blocks (#634)
+- **2025-07-08** | `850447a6` | no-pr | Initial commit
+- **2025-07-08** | `76c0c566` | no-pr | Initial lint
+- **2025-07-08** | `97021559` | simstudioai/sim#637 | fix(response-format): add response format to tag dropdown, chat panel, and chat client (#637)
+- **2025-07-08** | `b9fa50b4` | no-pr | Add db migration
+- **2025-07-08** | `70a5f4ec` | no-pr | Lint fix
+- **2025-07-08** | `6dc8b17b` | simstudioai/sim#638 | fix(sockets-server-disconnection): on reconnect force sync store to db  (#638)
+- **2025-07-08** | `17513d77` | no-pr | Initial chatbot ui
+- **2025-07-08** | `70a51006` | no-pr | Better formatting
+- **2025-07-08** | `7bc644a4` | no-pr | Better formatting
+- **2025-07-08** | `840a028f` | no-pr | Add footer fullscreen option
+- **2025-07-08** | `3af1a6e1` | no-pr | Lint
+- **2025-07-08** | `b58d8773` | no-pr | Spacing
+- **2025-07-08** | `767b63c5` | no-pr | Fix spacing
+- **2025-07-08** | `2c9a4f4c` | no-pr | fix(build): fixed build
+- **2025-07-08** | `d75751bb` | no-pr | Convo update
+- **2025-07-08** | `3460a7b3` | no-pr | Convo update
+- **2025-07-08** | `537fbdb2` | no-pr | UI fixes
+- **2025-07-08** | `3c7e7949` | no-pr | Lint
+- **2025-07-08** | `caccb613` | no-pr | Tool call version
+- **2025-07-08** | `2354909e` | no-pr | Lint
+- **2025-07-08** | `a3159bce` | no-pr | Fix streaming bug
+- **2025-07-08** | `4fffc66e` | no-pr | Lint
+- **2025-07-08** | `d9046042` | simstudioai/sim#640 | Revert "fix(sockets-server-disconnection): on reconnect force sync store to d…" (#640)
+- **2025-07-08** | `ee66c15e` | no-pr | some fixes
+- **2025-07-08** | `d1fe209d` | no-pr | Big refactor
+- **2025-07-08** | `02c41127` | no-pr | Lint
+- **2025-07-08** | `ccf5c2f6` | no-pr | Works?
+- **2025-07-08** | `776ae066` | no-pr | Lint
+- **2025-07-08** | `4aaa68d2` | no-pr | Better
+- **2025-07-08** | `4b60bba9` | no-pr | Lint
+- **2025-07-08** | `1b3b85f4` | no-pr | Checkpoint
+- **2025-07-08** | `88282378` | no-pr | Lint
+- **2025-07-08** | `2ce68aed` | simstudioai/sim#641 | fix(sockets): force user to refresh on disconnect in order to mkae changes, add read-only offline mode (#641)
+- **2025-07-08** | `c53e9502` | no-pr | Remove dead code
+- **2025-07-08** | `07cd6f9e` | no-pr | Better ui
+- **2025-07-08** | `82cb609b` | no-pr | Lint
+- **2025-07-08** | `c0b8e1ac` | no-pr | Modal fixes
+- **2025-07-08** | `c7b77bd3` | no-pr | Yaml language basics
+- **2025-07-08** | `6cb15a62` | no-pr | Lint
+- **2025-07-08** | `2a0224f6` | no-pr | Initial yaml
+- **2025-07-08** | `bacb6f38` | no-pr | Lint
+- **2025-07-08** | `9097c520` | simstudioai/sim#642 | fix(sockets): added debouncing for sub-block values to prevent overloading socket server, fixed persistence issue during streaming back from LLM response format, removed unused events (#642)
+- **2025-07-08** | `684a8020` | no-pr | Closer
+- **2025-07-08** | `5dc3ba33` | no-pr | Lint
+- **2025-07-08** | `bb9291ae` | no-pr | It works??
+- **2025-07-08** | `e37f3624` | no-pr | Lint
+- **2025-07-08** | `f1734766` | no-pr | Remove logs
+- **2025-07-08** | `cc249c2d` | no-pr | Lint
+- **2025-07-08** | `aa343fb6` | no-pr | Checkpoint
+- **2025-07-08** | `f6b25bf7` | no-pr | Lint
+- **2025-07-08** | `3421eaec` | no-pr | Merge branch 'main' into staging
+- **2025-07-08** | `c2f786e4` | simstudioai/sim#643 | v0.2.9: fix + feat (#643)
+- **2025-07-08** | `a5883171` | no-pr | Get user workflow tool
+- **2025-07-08** | `0b01d4bc` | no-pr | Lint
+- **2025-07-08** | `37c4f835` | no-pr | Read workflow checkpoint
+- **2025-07-08** | `6ca8311a` | no-pr | Lint
+- **2025-07-08** | `a2827a52` | no-pr | Checkpoint
+- **2025-07-09** | `218041db` | no-pr | Handle loops/parallel
+- **2025-07-09** | `3c1914c5` | no-pr | Fix loop/parallel yaml
+- **2025-07-09** | `610ea0b6` | no-pr | Yaml fixes
+- **2025-07-09** | `8176b37d` | no-pr | Lint
+- **2025-07-09** | `4a26b061` | simstudioai/sim#557 | fix(search-chunk): searchbar in knowledge base chunk (#557)
+- **2025-07-09** | `eade867d` | no-pr | Comment instead of ff
+- **2025-07-09** | `763d0de5` | no-pr | Lint
+- **2025-07-09** | `cfc261d6` | no-pr | Move upload button
+- **2025-07-09** | `c45da7b9` | no-pr | Lint
+- **2025-07-09** | `5c487f59` | no-pr | Remove json export
+- **2025-07-09** | `24e19a83` | simstudioai/sim#645 | add 6s timeout (#645)
+- **2025-07-09** | `c65384d7` | no-pr | Merge branch 'main' into staging
+- **2025-07-09** | `f269fc97` | no-pr | Merge pull request #647 from simstudioai/staging
+- **2025-07-09** | `df4971a8` | no-pr | fix(reddit): fixed reddit missing refresh token for oauth
+- **2025-07-09** | `ef681d8a` | no-pr | Greptile fixes
+- **2025-07-09** | `3c61bc16` | no-pr | lint
+- **2025-07-09** | `50595c5c` | no-pr | Merge pull request #646 from simstudioai/feat/ask-docs
+- **2025-07-09** | `e102b6cf` | no-pr | improve logging ui
+- **2025-07-09** | `f27cb188` | no-pr | fix lint
+- **2025-07-09** | `14f422ef` | no-pr | fix frozen canvas trace span interpretation issue
+- **2025-07-09** | `148f0a6d` | no-pr | fix lint
+- **2025-07-09** | `8aa86e0e` | no-pr | remove duplicate info in trace span info for tool calls
+- **2025-07-09** | `717b4dd2` | no-pr | revert
+- **2025-07-09** | `529fd444` | no-pr | Merge pull request #650 from simstudioai/improvement/logging-ui
+- **2025-07-09** | `e5080feb` | simstudioai/sim#625 | feat(billing): add comprehensive usage-based billing system (#625)
+- **2025-07-09** | `31d9e2a4` | simstudioai/sim#648 | feat(kb-tags-filtering): filter kb docs using pre-set tags (#648)
+- **2025-07-10** | `209d822c` | no-pr | fix response format json extraction issues + add warning for invalid json
+- **2025-07-10** | `9ede0012` | no-pr | lint
+- **2025-07-10** | `61494894` | no-pr | Update apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/code.tsx
+- **2025-07-10** | `30538d93` | simstudioai/sim#653 | fix(docs): fixed docs script to reflect the new output format for all blocks (#653)
+- **2025-07-10** | `1f6dcd84` | no-pr | remove regex handling never hit
+- **2025-07-10** | `a0a4b210` | no-pr | remove useless paths
+- **2025-07-10** | `614d8262` | no-pr | Merge pull request #652 from simstudioai/fix/resp-format-json-extraction
+- **2025-07-10** | `3887733d` | simstudioai/sim#654 | feat(kb): added cost for kb blocks (#654)
+- **2025-07-10** | `e83745fc` | simstudioai/sim#655 | feat(models): add grok-4 (#655)
+- **2025-07-10** | `b7d536b7` | no-pr | v0.2.11: fix + feat + improvement
+- **2025-07-10** | `617ea25a` | no-pr | pass reference id to cancel func
+- **2025-07-10** | `af0dcf7e` | no-pr | remove optional chain
+- **2025-07-10** | `7e174f23` | no-pr | Merge pull request #659 from simstudioai/fix/cancel-sub
+- **2025-07-10** | `4c85e34d` | simstudioai/sim#665 | fix(scrollbar): fixed double scrollbar (#665)
+- **2025-07-10** | `f0e605f5` | simstudioai/sim#666 | fix(precommit-hook): fixed pre commit hook to use lint-staged (#666)
+- **2025-07-10** | `e216b176` | simstudioai/sim#667 | fix(text-fields): prevent save password on usage limit change (#667)
+- **2025-07-11** | `1afdeed2` | no-pr | improvement: added gmail draft operation
+- **2025-07-11** | `0bd480cf` | no-pr | improvement: added draft operation
+- **2025-07-11** | `5f9bfdde` | no-pr | feat(queuing): sockets queuing mechanism
+- **2025-07-11** | `91a4c6d5` | no-pr | fix subblock updates
+- **2025-07-11** | `95dfe9e6` | no-pr | remove unused file
+- **2025-07-11** | `f666ccad` | no-pr | remove console log
+- **2025-07-11** | `52ffc391` | no-pr | remove test file
+- **2025-07-11** | `78608940` | no-pr | fix incorrect dep
+- **2025-07-11** | `4d3dee7f` | no-pr | fix field typing
+- **2025-07-11** | `2f726fa9` | no-pr | remove console.log
+- **2025-07-12** | `c81f8818` | no-pr | improvement: fixed docs #670
+- **2025-07-12** | `0023e8df` | no-pr | fix retry mechanism
+- **2025-07-12** | `db4ad80a` | no-pr | fix subflow ops to go through queue
+- **2025-07-12** | `5b7c07c2` | no-pr | Merge pull request #670 from simstudioai/improvement/gmail
+- **2025-07-12** | `b4b6895e` | no-pr | add tool calls to trace span
+- **2025-07-12** | `027614f3` | no-pr | improvement(trace-span): make tool calls separately display in trace span"
+- **2025-07-12** | `6967ac04` | no-pr | improve UI
+- **2025-07-12** | `4285b36a` | no-pr | Merge pull request #673 from simstudioai/fix/trace-spans-tool-calls
+- **2025-07-12** | `dad72e31` | no-pr | fix(ui): fixed loop collection placeholder to match parallel collection placeholder
+- **2025-07-12** | `f16d759d` | no-pr | simplify
+- **2025-07-12** | `9a954d18` | no-pr | working impl
+- **2025-07-12** | `f8000a74` | no-pr | Merge branch 'fix/queuing' of github.com:simstudioai/sim into fix/queuing
+- **2025-07-12** | `36eb04da` | no-pr | fix(stripe): added missing webhook secret for stripe webhook billing endpoint
+- **2025-07-12** | `38f5aae0` | no-pr | v0.2.12: fix + improvement
+- **2025-07-13** | `db22e266` | no-pr | Merge pull request #671 from simstudioai/fix/queuing
+- **2025-07-13** | `ff2b1d33` | simstudioai/sim#674 | fix(tool-input): added tool input, visibility enum for tool params, fixed google provider bugs (#674)
+- **2025-07-14** | `03613978` | simstudioai/sim#676 | fix(voice): added voice functionality back to chat client (#676)
+- **2025-07-14** | `348b524d` | simstudioai/sim#677 | fix(api-timeout): increase timeout for API block to 2 min (#677)
+- **2025-07-14** | `d65bdaf5` | simstudioai/sim#669 | feat(wealthbox): added wealthbox crm (#669)
+- **2025-07-14** | `8a9bc4e9` | simstudioai/sim#678 | fix(permissions): make permissions check case insensitive, resolve hydration issues by consolidating environment checking function (#678)
+- **2025-07-14** | `7192cdef` | no-pr | v0.2.13: fix + improvement + feat
+- **2025-07-14** | `e8c51e99` | simstudioai/sim#682 | fix(queueing): make debouncing native to queue (#682)
+- **2025-07-14** | `29d07320` | simstudioai/sim#683 | fix(unsubscribe): unsubscribe missing suspense boundary (#683)
+- **2025-07-14** | `d13a06e2` | simstudioai/sim#681 | improvement(imports): changed relative to absolute imports (#681)
+- **2025-07-14** | `b1b86542` | simstudioai/sim#685 | fix(console): match by execution & block id when updating console-entry (#685)
+- **2025-07-14** | `1420f485` | simstudioai/sim#684 | remove root-level tailwind v3 override (#684)
+- **2025-07-14** | `a030329f` | simstudioai/sim#687 | fix(kb): auth check for create doc tool (#687)
+- **2025-07-14** | `39444afc` | no-pr | Merge pull request #688 from simstudioai/staging
+- **2025-07-14** | `1213a64e` | simstudioai/sim#686 | improvement(subflow-docs): docs for loops and parallels added under blocks section (#686)
+- **2025-07-14** | `a7a2056b` | simstudioai/sim#680 | Improvement(gmail-tools): added search and read (#680)
+- **2025-07-15** | `bb759368` | simstudioai/sim#689 | improvement(kb): pagination for docs + remove kb token count problematic query  (#689)
+- **2025-07-15** | `0c5e70fc` | simstudioai/sim#691 | max 25 conc connections (#691)
+- **2025-07-15** | `b223e45d` | no-pr | Merge pull request #692 from simstudioai/staging
+- **2025-07-15** | `487f0328` | simstudioai/sim#639 | feat(platform): new UI and templates (#639)
+- **2025-07-15** | `46f84e83` | simstudioai/sim#639 | feat(platform): new UI and templates (#639) (#693)
+- **2025-07-15** | `4bb12370` | no-pr | fix: removed package-lock
+- **2025-07-15** | `8b095105` | no-pr | fix: remove package-lock
+- **2025-07-15** | `fd96e446` | simstudioai/sim#695 | improvement(sockets): increase buffer for connections  (#695)
+- **2025-07-15** | `2d83bbf7` | simstudioai/sim#696 | improvement(db): further increase db limits (#696)
+- **2025-07-15** | `adead633` | simstudioai/sim#690 | improvement(docs): added new docs content, cleanup old content (#690)
+- **2025-07-15** | `ca4b483c` | simstudioai/sim#698 | fix(docs): minor docs typo fix (#698)
+- **2025-07-15** | `b7185c9e` | no-pr | v0.3.1: improvement + fix
+- **2025-07-15** | `aade4bf3` | no-pr | fix(sockets): remove package-lock
+- **2025-07-15** | `b13f3393` | simstudioai/sim#700 | feat(sidebar): sidebar toggle and search (#700)
+- **2025-07-15** | `19ca9c78` | simstudioai/sim#699 | fix(schedule): fix for custom cron (#699)
+- **2025-07-15** | `27c248a7` | simstudioai/sim#703 | fix(sockets): delete block case (#703)
+- **2025-07-15** | `bdfe7e9b` | simstudioai/sim#701 | fix(invitation): allow admins to remove members from workspace (#701)
+- **2025-07-16** | `55a9adfd` | simstudioai/sim#705 | improvement(voice): interrupt UI + mute mic while agent is talking (#705)
+- **2025-07-16** | `4c6c7272` | simstudioai/sim#706 | fix: permissions check for duplicating workflow (#706)
+- **2025-07-16** | `92fe353f` | simstudioai/sim#707 | fix(subflow): fixed subflow execution regardless of path decision (#707)
+- **2025-07-16** | `8f71684d` | no-pr | v0.3.2: improvement + fix + feat
+- **2025-07-16** | `e5286216` | simstudioai/sim#709 | fix: sidebar scroll going over sidebar height (#709)
+- **2025-07-16** | `61deb029` | simstudioai/sim#711 | fix(subflows): fixed subflows not executing (#711)
+- **2025-07-16** | `e142753d` | simstudioai/sim#710 | improvement(permissions): remove the unused workspace_member table in favor of permissions (#710)
+- **2025-07-16** | `1e55a0e0` | no-pr | v0.3.3: fix + improvement
+- **2025-07-16** | `60e905c5` | simstudioai/sim#713 | feat(workspace): add ability to leave joined workspaces (#713)
+- **2025-07-16** | `c436c2e3` | simstudioai/sim#714 | feat(settings): collapse by default (#714)
+- **2025-07-16** | `fe5402a6` | simstudioai/sim#715 | fix: truncate workspace selector (#715)
+- **2025-07-17** | `88668fed` | simstudioai/sim#716 | improvement(starter): added tag dropdown for input fields, fixed response block, remove logs and workflowConnections from api response(#716)
+- **2025-07-17** | `27794e59` | no-pr | v0.3.4: fix + feat + improvement
+- **2025-07-17** | `3d5d7474` | simstudioai/sim#718 | fix(condition): fixed condition block to resolve envvars and vars (#718)
+- **2025-07-17** | `06b1d827` | no-pr | v0.3.5: fix
+- **2025-07-18** | `732df049` | simstudioai/sim#721 | improvement(oauth): added advanced mode for all tools with oauth and selectors (#721)
+- **2025-07-18** | `fb5d5d9e` | simstudioai/sim#722 | improvement(kb): add loading logic for document selector for kb block (#722)
+- **2025-07-18** | `11264edc` | simstudioai/sim#723 | fix(docker): fix runtime vars for docker deployments (#723)
+- **2025-07-18** | `b05a9b14` | simstudioai/sim#702 | feat(execution-queuing): async api mode + ratelimiting by subscription tier  (#702)
+- **2025-07-18** | `ddefbaab` | simstudioai/sim#724 | fix(triggers): remove gitkeep (#724)
+- **2025-07-19** | `24c22537` | simstudioai/sim#729 | improvement(ui/ux): workflow, search modal (#729)
+- **2025-07-19** | `d7a2c074` | simstudioai/sim#730 | fix: shortcuts (#730)
+- **2025-07-19** | `7b73dfb4` | simstudioai/sim#726 | fix(autofill-env-vars): simplify/remove logic to not cause useEffect overwrites (#726)
+- **2025-07-19** | `5ee66252` | simstudioai/sim#725 | feat(webhook-triggers): multiple webhook trigger blocks (#725)
+- **2025-07-19** | `cdfb2fcd` | simstudioai/sim#728 | feat(integrations): added deeper integrations for slack, supabase, firecrawl, exa, notion (#728)
+- **2025-07-19** | `b923c247` | simstudioai/sim#732 | fix(lint): fixed lint (#732)
+- **2025-07-19** | `f2b1c733` | no-pr | v0.3.6: advanced mode for blocks, async api + bg tasks, trigger blocks
+- **2025-07-20** | `80076012` | simstudioai/sim#735 | fix(docker): fixed docker container healthchecks, added instructions to README for pgvector (#735)
+- **2025-07-21** | `d919073b` | simstudioai/sim#737 | fix(config): add t3 to list of transpiled packages to ensure that envvars are picked up correctly (#737)
+- **2025-07-21** | `d94bfd9a` | simstudioai/sim#738 | fix(condition): fixed condition block dropdown (#738)
+- **2025-07-21** | `77399179` | simstudioai/sim#740 | working impl fo ms teams outgoing webhook (#740)
+- **2025-07-21** | `7f0f9022` | simstudioai/sim#739 | fix(router): fixed routing issue with workflow block, added tests (#739)
+- **2025-07-21** | `e4fbb678` | simstudioai/sim#741 | fix(teams-webhook): response json needs type (#741)
+- **2025-07-21** | `560d184c` | no-pr | v0.3.7: ms teams webhook, docker fixes, condition block dropdown, fixed routing with workflow block
+- **2025-07-21** | `919cf0b5` | simstudioai/sim#744 | improvement(docs): updated docs with new videos, new tools (#744)
+- **2025-07-21** | `2ae9cbc1` | simstudioai/sim#745 | fix(webhook): immediate acks from webhooks (#745)
+- **2025-07-22** | `f5a64f40` | simstudioai/sim#746 | fix(docker): use next-runtime instead of accessing next_public vars directly (#746)
+- **2025-07-22** | `8417a98b` | no-pr | v0.3.7: docker fix, docs
+- **2025-07-22** | `31d909bb` | simstudioai/sim#644 | feat(tools): New Qdrant Tool (#644)
+- **2025-07-22** | `5158a00b` | simstudioai/sim#662 | feat(copilot-v1): Copilot v1 (#662)
+- **2025-07-22** | `d8a7aaaf` | simstudioai/sim#748 | fix(qdrant): kebab case to camel case for icon properties (#748)
+- **2025-07-22** | `78f45a58` | no-pr | Revert "v0.3.7: docker fix, docs "
+- **2025-07-22** | `21ffa504` | no-pr | Revert "v0.3.7: docker fix, docs "
+- **2025-07-22** | `a217daca` | simstudioai/sim#751 | fix(envvars): use getEnv on the client-side when we need to inject vars for docker runtime, fix folder container & removed folder/subfolder creation modals (#751)
+- **2025-07-22** | `e392ca43` | simstudioai/sim#752 | fix(csp): created csp utils file that holds the csp for organization (#752)
+- **2025-07-22** | `a7c8f5df` | simstudioai/sim#753 | fix(chat-deploy): fixed permissions to match the workspace permissions, admins can deploy & edit & delete (#753)
+- **2025-07-22** | `92a998df` | simstudioai/sim#756 | improvement(chat-panel): added the ability to reuse queries, focus cursor for continuous conversation (#756)
+- **2025-07-22** | `4433100a` | simstudioai/sim#759 | improvement(logs): make perms workspace scoped (#759)
+- **2025-07-22** | `fe82166e` | simstudioai/sim#760 | fix(condition): fix bug where user can't edit if container when else if is added (#760)
+- **2025-07-23** | `ca468dcb` | no-pr | Merge branch 'main' into staging
+- **2025-07-23** | `a599d3ae` | simstudioai/sim#766 | fix(lint): ran lint (#766)
+- **2025-07-23** | `d783ba6f` | no-pr | v0.3.8: docker fix, docs updates, permissions for logs/chat deploy
+- **2025-07-23** | `e90138a6` | simstudioai/sim#767 | fix(chat-deploy): fix chat deploy URL in prod (#767)
+- **2025-07-23** | `8ddc1d8e` | simstudioai/sim#769 | fix(chat-deploy-url): update tests for getEmailDomain (#769)
+- **2025-07-23** | `0dd77352` | no-pr | v0.3.9: chat deploy
+- **2025-07-23** | `4197e50d` | simstudioai/sim#771 | fix(webhooks): readd immediate acks (#771)
+- **2025-07-23** | `8b35cf55` | simstudioai/sim#770 | improvement(docs): updated docs with new videos, new tools (#770)
+- **2025-07-23** | `dc69ea52` | simstudioai/sim#772 | fix(condition): fixed condition block else routing bug (#772)
+- **2025-07-23** | `258419dd` | simstudioai/sim#773 | fix(logs): added indexes to speed up logs loading time, modified to only display logs for current workspace (#773)
+- **2025-07-23** | `67b0b125` | simstudioai/sim#774 | fix(drizzle): use migrate instead of push for ci (#774)
+- **2025-07-23** | `14e1c179` | simstudioai/sim#761 | improvement(kb): workspace permissions system reused here (#761)
+- **2025-07-24** | `386644e9` | simstudioai/sim#778 | improvement(cleanup): remove workflow_execution_blocks table (#778)
+- **2025-07-24** | `022a61b7` | simstudioai/sim#779 | improvement(cleanup): remove old logging code (#779)
+- **2025-07-24** | `5ddfe1b7` | simstudioai/sim#782 | fix(sockets): permissions to align with normal perms system" (#782)
+- **2025-07-24** | `a84c5577` | simstudioai/sim#783 | fix(workflow-in-workflow): variables not accessible in child workflow  (#783)
+- **2025-07-24** | `17e493b3` | simstudioai/sim#784 | fix(nextjs): add force dynamic exports for new copilot routes (#784)
+- **2025-07-24** | `af1c7dc3` | simstudioai/sim#762 | improvement(ui/ux): logs (#762)
+- **2025-07-24** | `a173f6a7` | no-pr | v0.3.10: docs, logs improvements, kb permissions
+- **2025-07-24** | `2f57d8a8` | simstudioai/sim#786 | fix(kb-perms): search tool perms to use new system  (#786)
+- **2025-07-25** | `b565babe` | simstudioai/sim#787 | fix(nextjs): add force dynamic to 38 routes (#787)
+- **2025-07-25** | `5028930b` | simstudioai/sim#788 | fix(webhooks): immediate acks only for teams (#788)
+- **2025-07-25** | `c91c132e` | no-pr | Merge pull request #789 from simstudioai/staging
+- **2025-07-25** | `eeb1a340` | simstudioai/sim#791 | feat: implement native ARM64 Docker builds with CDN support (#791)
+- **2025-07-25** | `9e8d2f7c` | no-pr | Merge pull request #792 from simstudioai/staging
+- **2025-07-25** | `a2511226` | simstudioai/sim#793 | fix(create-manifest): manifest not using right tags by arch (#793)
+- **2025-07-25** | `40d3ce5e` | no-pr | v0.3.13: fix create-manifest job
+- **2025-07-26** | `4964495a` | simstudioai/sim#797 | fix(picker): fix docs.google.com refused to connect issue (#797)
+- **2025-07-26** | `727e5e87` | simstudioai/sim#796 | feat(workflow): added cancellation after launching manual execution (#796)
+- **2025-07-26** | `93f68a90` | simstudioai/sim#798 | refactor(logger): code cleanup for new execution logger (#798)
+- **2025-07-26** | `0414aa5f` | simstudioai/sim#799 | refactor(imports): added aliased imports everywhere (#799)
+- **2025-07-28** | `27ef45f7` | simstudioai/sim#805 | no immediate acks for ms teams webhook (#805)
+- **2025-07-28** | `9c12ddf4` | no-pr | v0.3.14: aliased imports, logger naming changes, teams webhook synchronization
+- **2025-07-28** | `6f390c0d` | simstudioai/sim#807 | fix(evaluator): fix tag dropdown for evaluator block (#807)
+- **2025-07-28** | `abed816a` | simstudioai/sim#808 | fix(standalone): selectively enable vercel speed insights, add annotations for envvars (#808)
+- **2025-07-28** | `510ce4b7` | simstudioai/sim#809 | improvement(cdn): add cdn for large video assets with fallback to static assets (#809)
+- **2025-07-28** | `b12e415f` | simstudioai/sim#811 | fix(assets): update README.md (#811)
+- **2025-07-28** | `95efae90` | simstudioai/sim#810 | improvement(webhooks): move webhook exeucution to trigger.dev (#810)
+- **2025-07-28** | `c00b1859` | simstudioai/sim#812 | fix(webhook-modal): on copy do not change webhook url, fix auth to use regular perms system (#812)
+- **2025-07-28** | `cb17691c` | simstudioai/sim#813 | feat(helm): added helm charts for self-hosting (#813)
+- **2025-07-28** | `5b1f9486` | simstudioai/sim#800 | feat(kb-tags): natural language pre-filter tag system for knowledge base searches (#800)
+- **2025-07-28** | `308f39e8` | simstudioai/sim#814 | feat(tools): added arXiv and wikipedia tools/blocks & docs (#814)
+- **2025-07-28** | `08720d92` | simstudioai/sim#815 | feat(landing): add rb2b (#815)
+- **2025-07-29** | `95a8d641` | no-pr | v0.3.15: helm charts, evaluator block fixes, ArXiv and Wikipedia tools
+- **2025-07-29** | `13608a8b` | simstudioai/sim#817 | feat(execution): base execution charge of 0.001/execution (#817)
+- **2025-07-29** | `ae43381d` | simstudioai/sim#818 | feat(domain): drop the 'studio' (#818)
+- **2025-07-29** | `b8ad42f5` | no-pr | v0.3.16: domain flip
+- **2025-07-29** | `8d7f3a50` | simstudioai/sim#820 | fix(domain): add redirects to maintain API routes with old host (#820)
+- **2025-07-29** | `c2593900` | no-pr | v0.3.17: domain fix
+- **2025-07-29** | `578129c6` | simstudioai/sim#822 | fix(domain): fix telemetry endpoint, only add redirects for hosted version (#822)
+- **2025-07-29** | `b4faf08c` | simstudioai/sim#823 | fix(search-modal): fixed search modal keyboard nav (#823)
+- **2025-07-30** | `27e49217` | simstudioai/sim#826 | improvement(docs): add base exec charge info to docs (#826)
+- **2025-07-30** | `1b929c72` | simstudioai/sim#827 | improvement(doc-tags-subblock): use table for doc tags subblock in create_document tool for KB (#827)
+- **2025-07-30** | `12bb0b45` | simstudioai/sim#828 | fix(bugs): fixed rb2b csp, fixed overly-verbose logs, fixed x URLs (#828)
+- **2025-07-30** | `03607bbc` | simstudioai/sim#829 | feat(wand): subblock level wand configuration + migrate old wand usage to this (#829)
+- **2025-07-30** | `b2534547` | simstudioai/sim#825 | feat(tools): added hunter.io tools/block, added default values of first option in dropdowns to avoid operation selector issue, added descriptions & param validation & updated docs (#825)
+- **2025-07-31** | `1c68523a` | simstudioai/sim#832 | fix(deployed-chat): trigger blocks should not interfere with deployed chat exec (#832)
+- **2025-07-31** | `bc1c1d17` | simstudioai/sim#833 | fix(deployed-chat): allow non-streaming responses in deployed chat, allow partial failure responses in deployed chat (#833)
+- **2025-07-31** | `84f095d4` | simstudioai/sim#834 | fix(sockets): duplicate block op should go through debounced path (#834)
+- **2025-07-31** | `fb6f5553` | simstudioai/sim#835 | improvement(sockets): add batch subblock updates for duplicate to clear queue faster (#835)
+- **2025-07-31** | `914f1cdd` | simstudioai/sim#836 | improvement(sockets): duplicate op should let addBlock take subblock values instead of separate looped op (#836)
+- **2025-07-31** | `5b53cc2b` | simstudioai/sim#837 | fix(deploy-modal): break down deploy modal into separate components (#837)
+- **2025-07-31** | `608964a8` | simstudioai/sim#838 | fix(kb-tags): docs page kb tags ui (#838)
+- **2025-07-31** | `bab4b9f0` | no-pr | feat(deploy-chat): added a logo upload for the chat, incr font size
+- **2025-08-01** | `fae12375` | simstudioai/sim#839 | fix(chat-deploy): fixed form submission access patterns, fixed kb block filters (#839)
+- **2025-08-01** | `f327d047` | simstudioai/sim#841 | fix(kb-tags): ui fixes, delete persistence for doc page header (#841)
+- **2025-08-01** | `9a565f48` | simstudioai/sim#842 | fix(chat-deploy): added new image upload component, fixed some state issues with success view (#842)
+- **2025-08-01** | `63f3871f` | no-pr | feat(deploy-chat): added a logo upload for the chat, incr font size
+- **2025-08-01** | `7d453069` | simstudioai/sim#837 | fix(deploy-modal): break down deploy modal into separate components (#837)
+- **2025-08-01** | `2e2be9bf` | no-pr | Merge branch 'main' into staging
+- **2025-08-01** | `3bd7a6c4` | simstudioai/sim#844 | fix(sockets): add sockets event for tag / env var dropdown selections (#844)
+- **2025-08-01** | `545ec791` | simstudioai/sim#845 | fix(logs-page): optimize logs retrieval queries, consolidate useEffects to prevent dup calls (#845)
+- **2025-08-01** | `63b4a81a` | simstudioai/sim#846 | fix(logs): forgot dependency for logs breaking pagination' (#846)
+- **2025-08-01** | `9f810e8c` | simstudioai/sim#847 | fix(duplicate): added isWide and advacnedMode to optimistic duplicate, persist collapsed subblock state (#847)
+- **2025-08-02** | `eb79986b` | simstudioai/sim#848 | fix(kb-search): made query optional, so either query or tags or both can be provided (#848)
+- **2025-08-02** | `6161bb8d` | simstudioai/sim#851 | improvement(helm): add additional instructions for AWS deployments (#851)
+- **2025-08-02** | `9c3bcbab` | simstudioai/sim#849 | fix(google-scopes): removed unnecessary google scopes (#849)
+- **2025-08-02** | `ab85c1a2` | simstudioai/sim#850 | feat(copilot): implement copilot (#850)
+- **2025-08-02** | `38e17471` | simstudioai/sim#852 | fix(wand): add shimmer to long-input while isStreaming, better prompt for system prompt generation (#852)
+- **2025-08-02** | `e8b05ae4` | simstudioai/sim#853 | Temp logs (#853)
+- **2025-08-02** | `1e0df746` | no-pr | Lint
+- **2025-08-02** | `f1d6b9ca` | no-pr | Use process.env instead of .env
+- **2025-08-02** | `18332b9d` | no-pr | Lint
+- **2025-08-02** | `9f0673b2` | simstudioai/sim#854 | Remove process.env (#854)
+- **2025-08-02** | `6c12104a` | simstudioai/sim#855 | feat(copilot): add billing endpoint (#855)
+- **2025-08-02** | `f9312c58` | no-pr | Quiet logger
+- **2025-08-02** | `cb48174f` | simstudioai/sim#857 | fix(docs): add hunter (#857)
+- **2025-08-03** | `dc5cccde` | simstudioai/sim#856 | improvement(copilot): code hygiene + tests (#856)
+- **2025-08-04** | `58e764c1` | simstudioai/sim#861 | fix(copilot): fix code block overflow (#861)
+- **2025-08-04** | `e71a7364` | simstudioai/sim#862 | fix(billing): increase free tier credits (#862)
+- **2025-08-04** | `4819b88a` | simstudioai/sim#863 | feat(docs): reindex docs on change (#863)
+- **2025-08-04** | `936705f0` | no-pr | Doc test update
+- **2025-08-04** | `f3880ad8` | simstudioai/sim#865 | fix(gmail-webhook): gmail webhook credential injection issue with webhook block (#865)
+- **2025-08-04** | `eb51d6d3` | simstudioai/sim#864 | improvement(copilot): tool dependency errors show as skipped (#864)
+- **2025-08-04** | `1035aca7` | simstudioai/sim#867 | feat(copilot): add user feedback options (#867)
+- **2025-08-04** | `b613010a` | simstudioai/sim#868 | Add basic personalizatoin (#868)
+- **2025-08-04** | `6ab9fa76` | simstudioai/sim#869 | fix(copilot): make chat history non-interfering (#869)
+- **2025-08-04** | `48b32a34` | simstudioai/sim#870 | improvement(copilot): add subblock enums to block metadata (#870)
+- **2025-08-04** | `221a473c` | simstudioai/sim#871 | fix(copilot): fix state message sent on move to background (#871)
+- **2025-08-04** | `41b1357a` | simstudioai/sim#872 | fix(copilot): added user scrolling, fixed code block, fixed code copying and styling (#872)
+- **2025-08-04** | `063734f0` | simstudioai/sim#831 | improvement(ui/ux) (#831)
+- **2025-08-04** | `696ef12c` | simstudioai/sim#873 | fix(yaml): modules that require agent repo (#873)
+- **2025-08-04** | `64cd60d6` | simstudioai/sim#874 | feat(outlook): add outlook webhook provider (#874)
+- **2025-08-04** | `2bba2012` | simstudioai/sim#875 | fix(file-upload): fixed file upload URL required (#875)
+- **2025-08-05** | `4880d347` | simstudioai/sim#880 | feat(models): add openai oss models (#880)
+- **2025-08-05** | `6ec5cf46` | simstudioai/sim#879 | fix(invite): fixed invite modal, fix search modal keyboard nav (#879)
+- **2025-08-05** | `aeef2b7e` | no-pr | v0.3.19: openai oss models, invite & search modal fixes
+- **2025-08-05** | `be65bf79` | simstudioai/sim#882 | fix(kb-tag-slots): finding next slot, create versus edit differentiation (#882)
+- **2025-08-05** | `9f2ff7e9` | no-pr | Merge pull request #883 from simstudioai/staging
+- **2025-08-05** | `746b8774` | simstudioai/sim#884 | feat(ollama): added streaming & tool call support for ollama, updated docs (#884)
+- **2025-08-05** | `062e2a2c` | simstudioai/sim#885 | fix(deployed-state): use deployed state for API sync and async execs, deployed state modal visual for enabled/disabled (#885)
+- **2025-08-05** | `94368eb1` | simstudioai/sim#886 | Feat/copilot files (#886)
+- **2025-08-05** | `1b0d304a` | simstudioai/sim#888 | fix(dynamic): remove force-dynamic from routes that don't need it (#888)
+- **2025-08-05** | `e43e78fb` | simstudioai/sim#887 | feat(whitelabel): add in the ability to whitelabel via envvars (#887)
+- **2025-08-06** | `a3a5bf1d` | simstudioai/sim#840 | feat(microsoft-tools): added planner, onedrive, and sharepoint (#840)
+- **2025-08-06** | `05e689bc` | simstudioai/sim#889 | fix(agent): export waits for complete workflow state (#889)
+- **2025-08-06** | `f94258ef` | simstudioai/sim#891 | improvement(copilot): incremental edits (#891)
+- **2025-08-06** | `7461ddf8` | simstudioai/sim#892 | feat(rate-limits): make rate limits configurable via environment variables (#892)
+- **2025-08-06** | `e164e32c` | simstudioai/sim#893 | fix(build): fixed build (#893)
+- **2025-08-07** | `d5c13b72` | simstudioai/sim#896 | feat(gpt-5): added gpt-5 models (#896)
+- **2025-08-07** | `ed7d7a71` | simstudioai/sim#897 | fix(gpt-5): updated pricing (#897)
+- **2025-08-07** | `75963eb8` | simstudioai/sim#898 | fix(gpt-5): remove temp, decr socket debounce to 25ms (#898)
+- **2025-08-07** | `85cdca28` | no-pr | v0.3.21: gpt-5, copilot files, configurable rate limits, fix deployed state
+- **2025-08-07** | `de93e167` | simstudioai/sim#866 | feat(execution-filesystem): system to pass files between blocks  (#866)
+- **2025-08-07** | `d264a6ad` | simstudioai/sim#902 | feat(trigger-mode): added trigger-mode to workflow_blocks table (#902)
+- **2025-08-07** | `fd3ca87c` | simstudioai/sim#901 | fix(schedules-perms): use regular perm system to view/edit schedule info (#901)
+- **2025-08-07** | `9bd3491e` | simstudioai/sim#903 | feat(webhooks): deprecate singular webhook block + add trigger mode to blocks (#903)
+- **2025-08-07** | `004cd333` | simstudioai/sim#907 | fix(helm): fix helm charts migrations using wrong image (#907)
+- **2025-08-07** | `9a7c58c8` | simstudioai/sim#908 | feat(whitelist): add email & domain-based whitelisting for signups (#908)
+- **2025-08-08** | `87e0586d` | simstudioai/sim#909 | improvement(helm): fix duplicate SOCKET_SERVER_URL and add additional envvars to template (#909)
+- **2025-08-08** | `db581dc7` | simstudioai/sim#910 | improvement(tag-dropdown): typed tag dropdown values (#910)
+- **2025-08-08** | `0ec91f90` | simstudioai/sim#911 | fix(min-chunk): remove minsize for chunk (#911)
+- **2025-08-08** | `061bd6d5` | simstudioai/sim#913 | improvement(chunk-config): migrate unused default for consistency (#913)
+- **2025-08-08** | `658942de` | simstudioai/sim#914 | fix(mailer): update mailer to use the EMAIL_DOMAIN (#914)
+- **2025-08-08** | `7f39cd0f` | simstudioai/sim#900 | Improvement(cc): added cc to gmail and outlook (#900)
+- **2025-08-08** | `43a34163` | simstudioai/sim#916 | fix(email-validation): add email validation to prevent bouncing, fixed OTP validation (#916)
+- **2025-08-08** | `9a4de1f0` | simstudioai/sim#917 | fix(otp): fix email not sending (#917)
+- **2025-08-08** | `503268eb` | simstudioai/sim#921 | fix(email): manual OTP instead of better-auth (#921)
+- **2025-08-08** | `aedf5e70` | simstudioai/sim#919 | v0.3.22: handle files, trigger mode, email validation, tag dropdown types (#919)
+- **2025-08-08** | `a8be7e9f` | simstudioai/sim#922 | fix(help): fix email for help route (#922)
+- **2025-08-08** | `a2040322` | simstudioai/sim#923 | fix(chat): fix chat attachments style in dark mode (#923)
+- **2025-08-09** | `ebb25469` | simstudioai/sim#924 | fix(apikeys): pinned api key to track API key a workflow is deployed with (#924)
+- **2025-08-09** | `8a08afd7` | simstudioai/sim#926 | improvement(control-bar): standardize styling across all control bar buttons (#926)
+- **2025-08-09** | `e5e8082d` | simstudioai/sim#927 | fix(workflow-block): improvements to pulsing effect, active execution state, and running workflow blocks in parallel (#927)
+- **2025-08-10** | `785b86a3` | simstudioai/sim#929 | fix(tag-dropdown): fix values for parallel & loop blocks (#929)
+- **2025-08-10** | `e271ed86` | simstudioai/sim#930 | improvement(console): added iteration info to console entry for parallel/loop (#930)
+- **2025-08-10** | `df16382a` | simstudioai/sim#931 | improvement(subflow): consolidated parallel/loop tags and collaborativeUpdate (#931)
+- **2025-08-10** | `56ede1c9` | simstudioai/sim#928 | improvement(tools): removed transformError, isInternalRoute, directExecution (#928)
+- **2025-08-10** | `83f11398` | simstudioai/sim#925 | feat(usage-indicator): added ability to see current usage (#925)
+- **2025-08-10** | `70aeb0c2` | simstudioai/sim#932 | fix(sidebar-ui): fix small ui bug to close gap when creating new workflow (#932)
+- **2025-08-11** | `41cc0cda` | simstudioai/sim#935 | fix(webhooks): fixed all webhook structures (#935)
+- **2025-08-11** | `2a333c7c` | simstudioai/sim#937 | fix(kb): added proper pagination for documents in kb (#937)
+- **2025-08-11** | `bc455d5b` | simstudioai/sim#933 | feat(variables): multiplayer variables through sockets, persist server side (#933)
+- **2025-08-11** | `3c7b3e1a` | simstudioai/sim#934 | improvement(performance): use redis for session data (#934)
+- **2025-08-12** | `e1d5e385` | simstudioai/sim#940 | fix(chunks): instantaneous search + server side searching instead of client-side (#940)
+- **2025-08-12** | `1c3e923f` | simstudioai/sim#942 | fix(kb-ui): fixed tags hover effect (#942)
+- **2025-08-12** | `a2dea384` | simstudioai/sim#944 | fix(kb): kb-level deletion should reflect in doc level kb tags sidebar registry (#944)
+- **2025-08-12** | `1a7de84c` | simstudioai/sim#945 | fix(tag-dropdown): last char dropped bug (#945)
+- **2025-08-12** | `1c818b2e` | no-pr | v0.3.23: multiplayer variables, api key fixes, kb improvements, triggers fixes
+- **2025-08-12** | `8de06b63` | simstudioai/sim#934 | Revert "improvement(performance): use redis for session data (#934)" (#947)
+- **2025-08-12** | `8fccd5c2` | no-pr | Merge pull request #948 from simstudioai/staging
+- **2025-08-12** | `8016af60` | simstudioai/sim#951 | fix(api): fix api block (#951)
+- **2025-08-12** | `f7573fad` | no-pr | v0.3.24: api block fixes
+- **2025-08-12** | `8aa0ed19` | simstudioai/sim#951 | Revert "fix(api): fix api block (#951)" (#953)
+- **2025-08-12** | `7ebc8756` | simstudioai/sim#950 | fix(double-read): API Block (#950)
+- **2025-08-12** | `41079485` | no-pr | Merge pull request #954 from simstudioai/staging
+- **2025-08-13** | `5dfe9330` | simstudioai/sim#946 | added file for microsoft verification (#946)
+- **2025-08-13** | `b159d63f` | simstudioai/sim#939 | improvement(oauth): credentials sharing for workflows (#939)
+- **2025-08-13** | `70fa628a` | simstudioai/sim#938 | improvement(uploads): add multipart upload + batching + retries (#938)
+- **2025-08-13** | `d4f412af` | simstudioai/sim#955 | fix(api): fix api post and get without stringifying (#955)
+- **2025-08-13** | `da04ea0e` | simstudioai/sim#956 | fix(subflows): added change detection for parallels, updated deploy and status schemas to match parallel/loop (#956)
+- **2025-08-13** | `472a22cc` | simstudioai/sim#957 | improvement(helm): added template for external db secret (#957)
+- **2025-08-14** | `9f0993ed` | simstudioai/sim#963 | fix(workflow-block): revert change bubbling up error for workflow block (#963)
+- **2025-08-14** | `2e8f051e` | no-pr | fix workflow block test
+- **2025-08-14** | `56ffb538` | no-pr | Merge pull request #964 from simstudioai/staging
+- **2025-08-14** | `ac41bf8c` | simstudioai/sim#965 | Revert "fix(workflow-block): revert change bubbling up error for workflow block" (#965)
+- **2025-08-14** | `f1934fe7` | simstudioai/sim#966 | fix(billing): separate client side and server side envvars for billing (#966)
+- **2025-08-14** | `fd9e61f8` | simstudioai/sim#968 | improvement(credentials-security): use clear credentials sharing helper, fix google sheets block url split bug (#968)
+- **2025-08-14** | `e1f04f42` | no-pr | v0.3.26: fix billing, bubble up workflow block errors, credentials security improvements
+- **2025-08-14** | `72c07e8a` | simstudioai/sim#969 | fix(whitelabel): fix privacy policy & terms, remove unused/unnecessary envvars for whitelabeling (#969)
+- **2025-08-15** | `f081f5a7` | simstudioai/sim#972 | Revert 1a7de84 except tag dropdown changes (keep apps/sim/components/ui/tag-dropdown.tsx) (#972)
+- **2025-08-15** | `0c7a8efc` | simstudioai/sim#974 | feat(copilot): add depths (#974)
+- **2025-08-15** | `bf07240c` | simstudioai/sim#978 | Fix user message color (#978)
+- **2025-08-15** | `7d05999a` | simstudioai/sim#971 | fix(force-dynamic): revert force-dynamic for the 38 routes that we previously added it to (#971)
+- **2025-08-15** | `f1fe2f52` | simstudioai/sim#975 | improvement(billing): add billing enforcement for webhook executions, consolidate helpers (#975)
+- **2025-08-15** | `58613888` | simstudioai/sim#976 | improvement(redirects): move redirects to middleware, push to login if no session and workspace if session exists, remove telemetry consent dialog (#976)
+- **2025-08-15** | `7a171128` | simstudioai/sim#980 | improvement/function: remove unused function execution logic in favor of vm, update turborepo (#980)
+- **2025-08-15** | `9f02f88b` | simstudioai/sim#979 | fix(oauth): webhook + oauthblocks in workflow (#979)
+- **2025-08-15** | `03bb437e` | simstudioai/sim#981 | fix(chat-deploy): fixed chat-deploy (#981)
+- **2025-08-15** | `6133db53` | no-pr | v0.3.27: oauth/webhook fixes, whitelabel fixes, code cleanups
+- **2025-08-15** | `2e027dd7` | simstudioai/sim#985 | attempt to fix build issues (#985)
+- **2025-08-15** | `a0cf003a` | no-pr | Merge pull request #986 from simstudioai/staging
+- **2025-08-15** | `4d4aefa3` | simstudioai/sim#988 | fix(envvar): clear separation between server-side and client-side billing envvar (#988)
+- **2025-08-15** | `0258a1b4` | simstudioai/sim#987 | fix(loading): fix workflow detached on first load (#987)
+- **2025-08-15** | `c6166a94` | simstudioai/sim#989 | feat(copilot): generate agent api key (#989)
+- **2025-08-15** | `16aaa37d` | simstudioai/sim#992 | improvement(agent): enable autolayout, export, copilot (#992)
+- **2025-08-15** | `bab74307` | simstudioai/sim#993 | fix(ishosted): make ishosted true on staging (#993)
+- **2025-08-15** | `5f6d2192` | simstudioai/sim#991 | fix(kb-ui): fixed upload files modal ui, processing ui to match the rest of the kb (#991)
+- **2025-08-15** | `42917ce6` | simstudioai/sim#984 | fix(agent): stringify input into user prompt for agent (#984)
+- **2025-08-16** | `97b6bcc4` | no-pr | v0.3.28: autolayout, export, copilot, kb ui improvements
+- **2025-08-16** | `133a32e6` | simstudioai/sim#998 | Fix abort (#998)
+- **2025-08-16** | `8748e1d5` | simstudioai/sim#994 | improvement(db): remove deprecated 'state' column from workflow table (#994)
+- **2025-08-16** | `f254d706` | simstudioai/sim#999 | improvement(logs): cleanup code (#999)
+- **2025-08-16** | `d972bab2` | simstudioai/sim#1001 | fix(logs-sidebar): remove message and fix race condition for quickly switching b/w logs (#1001)
+- **2025-08-16** | `d7fd4a96` | simstudioai/sim#1002 | feat(copilot): diff improvements (#1002)
+- **2025-08-17** | `bd380627` | simstudioai/sim#1000 | fix(workflow-error): allow users to delete workflows with invalid configs/state (#1000)
+- **2025-08-17** | `5c16e7d3` | simstudioai/sim#983 | fix(subflow): add ability to remove block from subflow and refactor to consolidate subflow code (#983)
+- **2025-08-18** | `570c07bf` | no-pr | Merge pull request #1004 from simstudioai/staging
+- **2025-08-18** | `fdb82564` | simstudioai/sim#1003 | fix(subflow): remove all edges when removing a block from a subflow (#1003)
+- **2025-08-18** | `eb75afd1` | simstudioai/sim#1005 | make logs migration batched to prevent mem issues (#1005)
+- **2025-08-18** | `af60ccd1` | no-pr | fix: migration mem issues bypass
+- **2025-08-18** | `09b95f41` | no-pr | syntax issue in migration
+- **2025-08-18** | `3873f448` | no-pr | Merge pull request #1007 from simstudioai/staging
+- **2025-08-18** | `dc19525a` | no-pr | reduce batch size to prevent timeouts
+- **2025-08-18** | `5c56cbd5` | no-pr | Merge pull request #1008 from simstudioai/staging
+- **2025-08-18** | `52fa388f` | no-pr | update migration file for notekeeping purpose
+- **2025-08-18** | `60a9a255` | no-pr | Merge pull request #1009 from simstudioai/staging
+- **2025-08-18** | `6f64188b` | simstudioai/sim#1010 | fix(control-bar): fix icons styling in disabled state (#1010)
+- **2025-08-18** | `5a8a703e` | simstudioai/sim#1011 | fix(duplicate): fixed detached state on duplication (#1011)
+- **2025-08-18** | `d75cc1ed` | no-pr | v0.3.30: duplication, control bar fixes
+- **2025-08-18** | `445ca783` | simstudioai/sim#1013 | fix(export): swap upload & download icons (#1013)
+- **2025-08-18** | `63c66bfc` | simstudioai/sim#1014 | fix(webhook): pin webhook URL when creating/saving generic webhook trigger (#1014)
+- **2025-08-18** | `091343a1` | simstudioai/sim#1015 | fix(copilot): fix origin (#1015)
+- **2025-08-18** | `871f4e8e` | simstudioai/sim#1017 | fix(copilot): env key validation (#1017)
+- **2025-08-18** | `073030bf` | simstudioai/sim#1018 | improvement(serializer): filter out advanced mode fields when executing in basic mode, persist the values but don't include them in serialized block for execution (#1018)
+- **2025-08-18** | `f924edde` | simstudioai/sim#1020 | improvement(console): redact api keys from console store (#1020)
+- **2025-08-18** | `b40fa3aa` | simstudioai/sim#1016 | fix(picker-ui): picker UI confusing when credential not set + Microsoft OAuth Fixes (#1016)
+- **2025-08-18** | `72e3efa8` | simstudioai/sim#1021 | improvement(settings): ui/ux (#1021)
+- **2025-08-18** | `adfe56c7` | simstudioai/sim#1022 | improvement(logger): restore server-side logs in prod (#1022)
+- **2025-08-18** | `4a7de31e` | simstudioai/sim#1024 | uploaded brandbook (#1024)
+- **2025-08-18** | `bdfb56b2` | simstudioai/sim#1023 | fix(copilot): streaming (#1023)
+- **2025-08-18** | `1b7c111c` | simstudioai/sim#1026 | Update README.md (#1026)
+- **2025-08-19** | `9aa1fe80` | simstudioai/sim#1027 | fix(logger): fixed logger to show prod server-side logs (#1027)
+- **2025-08-19** | `1619d63f` | no-pr | v0.3.31: webhook fixes, advanced mode parameter filtering, credentials fixes, UI/UX improvements
+- **2025-08-19** | `69773c31` | simstudioai/sim#1032 | improvement(console): increase console max entries for larger workflows (#1032)
+- **2025-08-19** | `d58ceb4b` | simstudioai/sim#1033 | improvement(api): add native support for form-urlencoded inputs into API block (#1033)
+- **2025-08-19** | `2771c688` | simstudioai/sim#1035 | improvement(supabase): added more verbose error logging for supabase operations (#1035)
+- **2025-08-19** | `9ad36c0e` | simstudioai/sim#1029 | fix(oauth-block): race condition for rendering credential selectors and other subblocks + gdrive fixes (#1029)
+- **2025-08-19** | `79e932fe` | simstudioai/sim#1037 | feat(logs): added sub-workflow logs, updated trace spans UI, fix scroll behavior in workflow registry sidebar  (#1037)
+- **2025-08-19** | `bbb5e53e` | simstudioai/sim#1038 | improvement(supabase): add supabase upsert tool, insert/replace on PK conflict (#1038)
+- **2025-08-20** | `214a0358` | simstudioai/sim#1045 | fix(billing): fix upgrade to team plan (#1045)
+- **2025-08-20** | `6b185be9` | no-pr | v0.3.32: loop block max increase, url-encoded API calls, subflow logs, new supabase tools
+- **2025-08-20** | `b39bdfd5` | simstudioai/sim#1043 | feat(copilot-docs): update readme and docs with local hosting instructions (#1043)
+- **2025-08-20** | `5d74db53` | no-pr | v0.3.33: update copilot docs
+- **2025-08-20** | `0c0b6bf9` | no-pr | fix(oauth): gdrive picker race condition, token route cleanup
+- **2025-08-20** | `9a5b0358` | no-pr | fix test
+- **2025-08-20** | `7530fb9a` | no-pr | Merge pull request #1055 from simstudioai/fix/picker-race-cond
+- **2025-08-20** | `6fd6f921` | simstudioai/sim#1054 | feat(mailer): consolidated all emailing to mailer service, added support for Azure ACS (#1054)
+- **2025-08-20** | `cea42f51` | simstudioai/sim#1058 | improvement(gpt-5): added reasoning level and verbosity to gpt-5 models (#1058)
+- **2025-08-20** | `c795fc83` | simstudioai/sim#1056 | feat(azure-openai): allow usage of azure-openai for knowledgebase uploads and wand generation (#1056)
+- **2025-08-20** | `26e6286f` | simstudioai/sim#1053 | fix(billing): fix team plan upgrade (#1053)
+- **2025-08-20** | `9ffaf305` | simstudioai/sim#1059 | feat(input-format): add value field to test input formats (#1059)
+- **2025-08-20** | `da707fa4` | simstudioai/sim#1060 | improvement(gh-action): add gh action to deploy to correct environment for trigger.dev (#1060)
+- **2025-08-20** | `1db72dc8` | no-pr | pin version
+- **2025-08-20** | `dd742673` | simstudioai/sim#1062 | feat(nextjs): upgrade nextjs to 15.5 (#1062)
+- **2025-08-20** | `d9e57775` | no-pr | use personal access token
+- **2025-08-20** | `9973b2c1` | no-pr | Merge branch 'staging' of github.com:simstudioai/sim into staging
+- **2025-08-20** | `71e2994f` | simstudioai/sim#1063 | improvement(trigger): upgrade trigger (#1063)
+- **2025-08-20** | `07b0597f` | simstudioai/sim#1065 | improvement(trigger): upgrade import path for trigger (#1065)
+- **2025-08-20** | `a6888da1` | simstudioai/sim#1066 | fix(semantics): fix incorrect imports (#1066)
+- **2025-08-20** | `5caef3a3` | simstudioai/sim#1068 | fix(input-format): first time execution bug (#1068)
+- **2025-08-20** | `cb7ce865` | simstudioai/sim#1057 | fix(msverify): changed consent for microsoft (#1057)
+- **2025-08-20** | `692ba698` | no-pr | fix type
+- **2025-08-20** | `ff43528d` | simstudioai/sim#1069 | fix(gpt-5): fixed verbosity and reasoning params (#1069)
+- **2025-08-20** | `c2ded1f3` | simstudioai/sim#1067 | fix(theme-provider): preventing flash on page load (#1067)
+- **2025-08-20** | `154d9eef` | simstudioai/sim#1070 | fix(gpt-5): fix chat-completions api (#1070)
+- **2025-08-20** | `c6912095` | no-pr | fix placeholder text
+- **2025-08-20** | `db1cf8a6` | simstudioai/sim#1071 | fix(placeholder): fix starter block placeholder (#1071)
+- **2025-08-20** | `2c47cf41` | no-pr | v0.3.34: azure-openai options, billing fixes, mistral OCR via Azure, start block input format changes
+- **2025-08-21** | `4c9fdbe7` | simstudioai/sim#1073 | fix(nextjs): downgrade nextjs due to known issue with bun commonjs module bundling (#1073)
+- **2025-08-21** | `cd1bd959` | simstudioai/sim#1073 | fix(nextjs): downgrade nextjs due to known issue with bun commonjs module bundling (#1073)
+- **2025-08-21** | `a37c6bc8` | simstudioai/sim#1075 | fix(build): clear docker build cache to use correct Next.js version (#1075)
+- **2025-08-21** | `abad3620` | no-pr | fix(build): clear docker build cache to use correct Next.js version
+- **2025-08-21** | `2b52d88c` | simstudioai/sim#1080 | fix(migrations): add missing migration for document table (#1080)
+- **2025-08-21** | `35a37d8b` | simstudioai/sim#1081 | fix(acs): added FROM_EMAIL_ADDRESS envvar for ACS (#1081)
+- **2025-08-21** | `7e364a79` | simstudioai/sim#1082 | fix(emails): remove unused useCustomFromFormat param (#1082)
+- **2025-08-21** | `e107363e` | no-pr | v0.3.35: migrations, custom email address support
+- **2025-08-21** | `0f2a125e` | simstudioai/sim#1084 | improvement(block-error-logs): workflow in workflow (#1084)
+- **2025-08-21** | `53ee9f99` | simstudioai/sim#1086 | fix(templates): added option to delete/keep templates when deleting workspace, updated template modal, sidebar code cleanup (#1086)
+- **2025-08-21** | `33dd59f7` | simstudioai/sim#1087 | fix(db-consts): make the migrations image fully standalone by adding db consts (#1087)
+- **2025-08-21** | `8c9e182e` | simstudioai/sim#1085 | fix(infinite-get-session): pass session once per tree using session provider + multiple fixes (#1085)
+- **2025-08-21** | `f0b07428` | simstudioai/sim#1089 | feat(theme): added custom envvars for themes (#1089)
+- **2025-08-21** | `4cd707fa` | simstudioai/sim#1090 | improvement(emails): fixed email subjects to use provided brand name (#1090)
+- **2025-08-21** | `9ea9f2d5` | simstudioai/sim#1091 | improvement(log-level): make log level configurable via envvar (#1091)
+- **2025-08-21** | `9dbd44e5` | simstudioai/sim#1019 | fix(webhook-payloads): fixed the variable resolution in webhooks (#1019)
+- **2025-08-21** | `77b0c5b9` | simstudioai/sim#1088 | Fix(excel-range): fixed excel range (#1088)
+- **2025-08-21** | `f0643e01` | simstudioai/sim#1092 | fix(logs): make child workflow span errors the same as root level workflow errors (#1092)
+- **2025-08-21** | `f5219d03` | simstudioai/sim#1093 | fix(ms-oauth): oauth edge cases (#1093)
+- **2025-08-21** | `11a7be54` | no-pr | fix circular dependsOn for Jira manualIssueKey
+- **2025-08-21** | `2ebfb576` | simstudioai/sim#1094 | fix(day-picker): remove unused react-day-picker (#1094)
+- **2025-08-21** | `991f0442` | no-pr | v0.3.36: workflow block logs, whitelabeling configurability, session provider
+- **2025-08-22** | `44bc12b4` | simstudioai/sim#1102 | fix(ocr-azure): added OCR_AZURE_API_KEY envvar (#1102)
+- **2025-08-22** | `e13adab1` | simstudioai/sim#1100 | improvement(wand): upgrade wand to use SSE (#1100)
+- **2025-08-22** | `6c606750` | simstudioai/sim#1103 | improvement(signup): modify signup and login pages to not show social sign in when not configured, increase logo size (#1103)
+- **2025-08-22** | `a268fb7c` | simstudioai/sim#1101 | fix(chat-deploy): dark mode ui (#1101)
+- **2025-08-22** | `60c46686` | simstudioai/sim#1105 | fix(naming): prevent identical normalized block names (#1105)
+- **2025-08-22** | `1ee4263e` | simstudioai/sim#1107 | feat(helm): added CRON jobs to helm charts (#1107)
+- **2025-08-22** | `be810013` | simstudioai/sim#1106 | feat(native-bg-tasks): support webhooks and async workflow executions without trigger.dev (#1106)
+- **2025-08-22** | `4846f6c6` | no-pr | v0.3.37: azure OCR api key, wand SSE, CRON helm
+- **2025-08-22** | `917552f0` | simstudioai/sim#1112 | fix(billing): vercel cron not processing billing periods (#1112)
+- **2025-08-22** | `fdfa935a` | no-pr | v0.3.38: billing cron job fix
+- **2025-08-23** | `780870c4` | simstudioai/sim#1114 | fix(billing): make subscription table source of truth for period start and period end (#1114)
+- **2025-08-23** | `25b2c45e` | simstudioai/sim#1116 | fix(billing): change reset user stats func to invoice payment succeeded (#1116)
+- **2025-08-23** | `730164ab` | simstudioai/sim#1117 | fix(custom-tool): fix textarea, param dropdown for available params, validation for invalid schemas, variable resolution in custom tools and subflow tags (#1117)
+- **2025-08-23** | `79dd1ccb` | simstudioai/sim#1109 | fix(ux): minor ux changes (#1109)
+- **2025-08-23** | `833c5fef` | simstudioai/sim#1120 | fix(logs): fix to remove retrieval of execution of data for basic version of call (#1120)
+- **2025-08-23** | `5786909c` | simstudioai/sim#1121 | fix(tag-dropdown): arrow navigation for submenu affecting text input cursor (#1121)
+- **2025-08-23** | `efc487a8` | simstudioai/sim#1123 | improvement(chat-file-upload): add visual indication of file upload exceeding limit (#1123)
+- **2025-08-23** | `bbbf1c29` | simstudioai/sim#1119 | fix(teams-wh): fixed teams wh payload (#1119)
+- **2025-08-23** | `6c9e0ec8` | simstudioai/sim#1124 | improvement(logging): capture pre-execution validation errors in logging session (#1124)
+- **2025-08-23** | `c8f47915` | simstudioai/sim#1118 | Feat/copilot client clean (#1118)
+- **2025-08-23** | `8b782009` | simstudioai/sim#1122 | fix(onedrive): fixed advanced mode (#1122)
+- **2025-08-23** | `1038e148` | simstudioai/sim#1127 | fix autoconnect (#1127)
+- **2025-08-23** | `766279bb` | simstudioai/sim#1126 | feat(integrations): added parallel AI, mySQL, and postgres block/tools (#1126)
+- **2025-08-24** | `ed9b9ad8` | no-pr | v0.3.39: billing fixes, custom tools fixes, copilot client-side migration, new tools
+- **2025-08-25** | `45372aec` | simstudioai/sim#1130 | fix(files): fix vulnerabilities in file uploads/deletes (#1130)
+- **2025-08-25** | `3372829c` | simstudioai/sim#1132 | fix(wand): remove edge runtime for wand (#1132)
+- **2025-08-25** | `1f9b4a8e` | simstudioai/sim#1133 | fix(wand): remove unstable__noStore and remove, add additional logs for wand generation (#1133)
+- **2025-08-25** | `a4955169` | simstudioai/sim#1134 | feat(copilot): enable azure openai and move key validation (#1134)
+- **2025-08-25** | `e5c0b143` | simstudioai/sim#1135 | improvement(help-modal): ui/ux (#1135)
+- **2025-08-26** | `3d3443f6` | simstudioai/sim#1138 | fix(copilot): enterprise api keys (#1138)
+- **2025-08-26** | `5403665f` | simstudioai/sim#1140 | Docs update (#1140)
+- **2025-08-26** | `c68800c7` | simstudioai/sim#1139 | feat(login): add terms and privacy to signup and login pages (#1139)
+- **2025-08-26** | `3b742503` | simstudioai/sim#1141 | fix(subblock-race-condition): check loading state correctly (#1141)
+- **2025-08-26** | `78437c68` | simstudioai/sim#1142 | fix(copilot): send api key to sim agent (#1142)
+- **2025-08-26** | `973a5c64` | simstudioai/sim#1144 | feat: local auto layout (#1144)
+- **2025-08-26** | `9c3b4332` | simstudioai/sim#1145 | feat: added llms.txt and robots.txt (#1145)
+- **2025-08-26** | `b177b291` | simstudioai/sim#1146 | fix(condition-block): edges not following blocks, duplicate issues (#1146)
+- **2025-08-26** | `8226e7b4` | simstudioai/sim#1147 | fix(copilot-cleanup): support azure blob upload in copilot, remove dead code & consolidate other copilot files (#1147)
+- **2025-08-26** | `e6f519a5` | no-pr | fix dependency array
+- **2025-08-26** | `861ab144` | no-pr | Merge branch 'staging' of github.com:simstudioai/sim into staging
+- **2025-08-26** | `ab74b138` | simstudioai/sim#1136 | improvement(forwarding+excel): added forwarding and improve excel read (#1136)
+- **2025-08-26** | `51b1e97f` | simstudioai/sim#1143 | fix(kb-uploads): created knowledge, chunks, tags services and use redis for queueing docs in kb (#1143)
+- **2025-08-26** | `3424a338` | simstudioai/sim#1149 | fix(security): fixed SSRF vulnerability (#1149)
+- **2025-08-26** | `923c0523` | simstudioai/sim#1148 | fix(auto-layout): revert (#1148)
+- **2025-08-27** | `89f7d2b9` | simstudioai/sim#1152 | improvement(sockets): cleanup debounce logic + add flush mechanism to… (#1152)
+- **2025-08-27** | `c720f23d` | simstudioai/sim#1154 | fix(sockets): useCollabWorkflow cleanup, variables store logic simplification (#1154)
+- **2025-08-27** | `389456e0` | simstudioai/sim#1156 | fix(envvars): fix split for pasting envvars with query params (#1156)
+- **2025-08-27** | `fed4e507` | simstudioai/sim#1155 | fix(signup): refetch session data on signup (#1155)
+- **2025-08-27** | `06e9a6b3` | simstudioai/sim#1157 | feat(copilot):  context (#1157)
+- **2025-08-27** | `104d34cc` | simstudioai/sim#1160 | fix(copilot): context filtering (#1160)
+- **2025-08-28** | `bda8ee77` | simstudioai/sim#1162 | fix(security): strengthen email invite validation logic, fix invite page UI (#1162)
+- **2025-08-28** | `3f900947` | simstudioai/sim#1166 | improvement(kb): use trigger.dev for kb tasks (#1166)
+- **2025-08-28** | `7cc45749` | simstudioai/sim#1167 | improvement(knowledge): search returns document name (#1167)
+- **2025-08-28** | `56543daf` | simstudioai/sim#1131 | fix(billing): usage tracking cleanup, shared pool of limits for team/enterprise (#1131)
+- **2025-08-28** | `fcf128f6` | simstudioai/sim#1170 | improvement(knowledge): remove innerJoin and add id identifiers to results, updated docs (#1170)
+- **2025-08-28** | `5ae54292` | simstudioai/sim#1171 | chore(deps): upgrade trigger.dev in gh action (#1171)
+- **2025-08-28** | `bb5f40a0` | simstudioai/sim#1173 | feat(pg): added ability to customize postgres port when running containerized app (#1173)
+- **2025-08-28** | `7c73f5ff` | simstudioai/sim#1174 | feat(debug): create debugger (#1174)
+- **2025-08-28** | `df646256` | simstudioai/sim#1174 | Revert "feat(debug): create debugger (#1174)" (#1175)
+- **2025-08-28** | `7d62c200` | simstudioai/sim#1172 | feat(openrouter): add open router to model block (#1172)
+- **2025-08-28** | `cadfcdbf` | simstudioai/sim#1176 | Fix (#1176)
+- **2025-08-28** | `ebb8cf8b` | simstudioai/sim#1177 | fix(slack): set depends on for slack channel channel subblock (#1177)
+- **2025-08-28** | `aa84c753` | simstudioai/sim#1168 | fix(cursor-and-input): fixes cursor and input canvas error (#1168)
+- **2025-08-28** | `6ac59a32` | simstudioai/sim#1168 | Revert "fix(cursor-and-input): fixes cursor and input canvas error (#1168)" (#1178)
+- **2025-08-28** | `fd6d9272` | no-pr | v0.3.40: copilot improvements, knowledgebase improvements, security improvements, billing fixes
+- **2025-08-28** | `ca015dee` | simstudioai/sim#1179 | fix(ssl): add envvar for optional ssl cert (#1179)
+- **2025-08-28** | `8739a3d3` | simstudioai/sim#1179 | fix(ssl): add envvar for optional ssl cert (#1179)
+- **2025-08-28** | `ed11456d` | simstudioai/sim#1181 | fix(db): accept self-signed certs (#1181)
+- **2025-08-28** | `92132024` | simstudioai/sim#1181 | fix(db): accept self-signed certs (#1181)
+- **2025-08-29** | `5c730380` | simstudioai/sim#1183 | fix(db): attempt parsing cert and db url separately (#1183)
+- **2025-08-29** | `f578f43c` | no-pr | graceful exit for drizzle migration
+- **2025-08-29** | `f3c4f7e2` | no-pr | fix
+- **2025-08-29** | `f2502f5e` | simstudioai/sim#1185 | fix(database): revert changes related to db URL (#1185)
+- **2025-08-29** | `41ec75fc` | simstudioai/sim#1187 | fix(pg): fix POSTGRES_PORT envvar to map external port to 5432 internally (#1187)
+- **2025-08-29** | `921c7557` | no-pr | v0.3.40: drizzle fixes, custom postgres port support
+- **2025-08-29** | `39ad793a` | no-pr | revert package.json
+- **2025-08-29** | `8362fd7a` | no-pr | remove bun lock
+- **2025-08-29** | `69319d21` | no-pr | revert drizzle-orm version
+- **2025-08-29** | `faa09419` | no-pr | change bun install to be based on frozen-lockfile flag" "
+- **2025-08-29** | `7ac89e35` | no-pr | revert(dep-changes): revert drizzle-orm version and change CI yaml script
+- **2025-08-29** | `36773e8c` | simstudioai/sim#1126 | Revert "feat(integrations): added parallel AI, mySQL, and postgres block/tools (#1126)"
+- **2025-08-29** | `4e3a3bd1` | no-pr | run bun install
+- **2025-08-29** | `316c9704` | no-pr | Merge pull request #1189 from simstudioai/staging
+- **2025-08-29** | `1aec32b7` | simstudioai/sim#1190 | Switch to node (#1190)
+- **2025-08-29** | `056dc287` | simstudioai/sim#1191 | Fix/wand (#1191)
+- **2025-08-29** | `7fcbafab` | simstudioai/sim#1193 | Use direct fetch (#1193)
+- **2025-08-29** | `7e23e942` | simstudioai/sim#1194 | fix(billing-ui): open settings when enterprise sub folks press usage indicator (#1194)
+- **2025-08-29** | `813a0fb7` | simstudioai/sim#1192 | feat(tools): add parallel ai, postgres, mysql, slight modifications to dark mode styling (#1192)
+- **2025-08-29** | `4310dd6c` | simstudioai/sim#1197 | imporvement(pg): added wand config for writing sql queries for generic db blocks & supabase postgrest syntax (#1197)
+- **2025-08-29** | `a3838302` | simstudioai/sim#1198 | feat(kb): add adjustable concurrency and batching to uploads and embeddings (#1198)
+- **2025-08-29** | `76fac13f` | no-pr | v0.3.41: wand with azure openai, generic mysql and postgres blocks
+- **2025-08-29** | `f4f8fc05` | simstudioai/sim#1199 | improvement(kb): add fallbacks for kb configs (#1199)
+- **2025-08-29** | `df3d5324` | simstudioai/sim#1200 | fix(deps): downgrade nextjs (#1200)
+- **2025-08-29** | `0bc77813` | no-pr | v0.3.42: kb config defaults, downgrade nextjs
+- **2025-08-30** | `a969d097` | simstudioai/sim#1202 | feat(parsers): added pptx, md, & html parsers (#1202)
+- **2025-08-30** | `4a703a02` | simstudioai/sim#1205 | improvement(tools): update mysql to respect ssl pref (#1205)
+- **2025-08-30** | `7780d9b3` | simstudioai/sim#1196 | fix(enterprise-billing): simplification to be fixed-cost  (#1196)
+- **2025-08-30** | `76889fde` | simstudioai/sim#1206 | fix(permissions): remove permissions granted by org membership (#1206)
+- **2025-08-31** | `43cb124d` | simstudioai/sim#1209 | fix(parsers): fix md, pptx, html kb uploads (#1209)
+- **2025-08-31** | `ee17cf46` | no-pr | v0.3.43: added additional parsers, mysql block improvements, billing fixes, permission fixes
+- **2025-09-01** | `9ccb7600` | simstudioai/sim#1211 | fix(organizations): remove org calls when billing is disabled (#1211)
+- **2025-09-01** | `ea09fcec` | simstudioai/sim#1212 | fix(build): consolidate pdf parsing dependencies, remove extraneous html deps (#1212)
+- **2025-09-01** | `5bbb349d` | simstudioai/sim#1213 | fix(build): add missing pdf-parse dep, add docker build in staging (#1213)
+- **2025-09-01** | `9ea7ea79` | simstudioai/sim#1208 | feat(workspace-vars): add workspace scoped environment + fix cancellation of assoc. workspace invites if org invite cancelled (#1208)
+- **2025-09-01** | `f75c8075` | simstudioai/sim#1215 | improvement(performance): added new indexes for improved session performance (#1215)
+- **2025-09-01** | `12135d2a` | simstudioai/sim#1216 | improvement(copilot): improve context inputs and fix some bugs (#1216)
+- **2025-09-01** | `65e86182` | simstudioai/sim#1214 | fix(ui): dark mode styling for switch, trigger modal UI, signup/login improvements with auto-submit for OTP (#1214)
+- **2025-09-01** | `2c2c32c6` | simstudioai/sim#1217 | improvement(hygiene): refactored routes to be more restful, reduced code surface area and removed redundant code (#1217)
+- **2025-09-02** | `54d42b33` | simstudioai/sim#1221 | fix(wand): remove duplicate transfer encoding header meant to be set by nginx proxy (#1221)
+- **2025-09-02** | `4273161c` | no-pr | fix 80th migration
+- **2025-09-02** | `461d7b23` | no-pr | Merge branch 'staging' of github.com:simstudioai/sim into staging
+- **2025-09-02** | `a618d289` | no-pr | add if not exists check
+- **2025-09-02** | `1f2a317a` | no-pr | fix if not exists check
+- **2025-09-02** | `9ffb48ee` | no-pr | make 79th migration idempotent
+- **2025-09-02** | `3db73ff7` | simstudioai/sim#1222 | fix(whitelabel): make terms and privacy URL envvars available at build time (#1222)
+- **2025-09-02** | `9de0d91f` | simstudioai/sim#1223 | feat(llms): added additional params to llm-based blocks for alternative models (#1223)
+- **2025-09-02** | `1a5d5ddf` | simstudioai/sim#1226 | feat(e2b-execution): add remote code execution to support Python + Imports (#1226)
+- **2025-09-02** | `c2d668c3` | simstudioai/sim#1227 | feat(copilot): stats tracking (#1227)
+- **2025-09-02** | `533b4c53` | simstudioai/sim#1225 | feat(tools): add MongoDB (#1225)
+- **2025-09-02** | `b74ab468` | simstudioai/sim#1228 | fix(e2b-env-var): use isTruthy and getEnv (#1228)
+- **2025-09-02** | `baef8d77` | simstudioai/sim#1229 | fix(styling): fix styling inconsistencies in dark mode, fix invites fetching to show active members (#1229)
+- **2025-09-02** | `0cf87e65` | no-pr | v0.3.44: removing unused routes, whitelabeling terms & policy URLs, e2b remote code execution, copilot improvements
+- **2025-09-03** | `36c98d18` | simstudioai/sim#1232 | fix(team): fix organization invitation URL for teams (#1232)
+- **2025-09-03** | `11d81884` | simstudioai/sim#1233 | fix(rce): always use VM over RCE for custom tools (#1233)
+- **2025-09-03** | `581929bc` | no-pr | v0.3.45: fixes for organization invites, custom tool execution
+- **2025-09-03** | `3656d3d7` | simstudioai/sim#1237 | Updates (#1237)
+- **2025-09-03** | `fce1423d` | no-pr | v0.3.46: fix copilot stats updates
+- **2025-09-03** | `26243b99` | simstudioai/sim#1240 | fix(code-subblock): added validation to not parse non-variables as variables in the code subblock (#1240)
+- **2025-09-03** | `1de59668` | simstudioai/sim#1236 | fix(whitelabel): move redirects (build-time) for whitelabeling to middlware (runtime) (#1236)
+- **2025-09-04** | `a672f171` | no-pr | Add input/output multipliers
+- **2025-09-04** | `59b20231` | no-pr | Lint
+- **2025-09-04** | `95d93a25` | no-pr | change
+- **2025-09-04** | `c68cadfb` | no-pr | Docs
+- **2025-09-04** | `fc558a8e` | no-pr | Lint + tests
+- **2025-09-04** | `56eee2c2` | no-pr | Waring
+- **2025-09-04** | `afc16328` | no-pr | Merge pull request #1245 from simstudioai/fix/copilot-billing
+- **2025-09-04** | `0f7dfe08` | simstudioai/sim#1246 | fix(hydration): duplicate overlay after idle + subblocks race condition (#1246)
+- **2025-09-04** | `57c98d86` | simstudioai/sim#1247 | fix(race-condition-workflow-switching): another race condition between registry and workflow stores (#1247)
+- **2025-09-04** | `e31627c7` | simstudioai/sim#1248 | fix(sidebar): re-ordering based on last edit is confusing (#1248)
+- **2025-09-04** | `37dcde2a` | simstudioai/sim#1250 | feat(enterprise-plan-webhooks): skip webhook queue for enterprise plan users (#1250)
+- **2025-09-04** | `47da5eb6` | simstudioai/sim#1249 | fix(rehydration): consolidate store rehydration code (#1249)
+- **2025-09-04** | `0e8e8c7a` | simstudioai/sim#1251 | fix(sidebar): order by created at (#1251)
+- **2025-09-04** | `53dd277c` | simstudioai/sim#1253 | fix(cost): restored cost reporting for agent block in console entry (#1253)
+- **2025-09-04** | `8668622d` | simstudioai/sim#1254 | feat(duplicate): duplicate variables when duplicating a workflow (#1254)
+- **2025-09-04** | `864622c1` | simstudioai/sim#1255 | fix(ratelimits): enterprise and team checks should be pooled limit (#1255)
+- **2025-09-04** | `ab71fcfc` | simstudioai/sim#1256 | feat(invitations): add ability to resend invitations with cooldown, fixed UI in dark mode issues (#1256)
+- **2025-09-04** | `60a061e3` | no-pr | v0.3.47: race condition fixes, store rehydration consolidation, other bugs
+- **2025-09-04** | `0a86eda8` | simstudioai/sim#1250 | Revert "feat(enterprise-plan-webhooks): skip webhook queue for enterprise plan users (#1250)" (#1257)
+- **2025-09-04** | `21beca8f` | simstudioai/sim#1259 | fix(cleanup): cleanup unused vars + webhook typo (#1259)
+- **2025-09-04** | `bd6d4a91` | no-pr | 0.3.48: revert trigger dev bypass for enterprise users
+- **2025-09-05** | `f2a046ff` | no-pr | improvement(docs): readme.md to mention .env setup for copilot setup
+- **2025-09-05** | `abb835d2` | simstudioai/sim#1260 | fix(schedule-self-host): remove incorrect migration (#1260)
+- **2025-09-05** | `3811b509` | simstudioai/sim#1261 | fix(router): change router block `content` to `prompt` (#1261)
+- **2025-09-05** | `85103123` | simstudioai/sim#1262 | fix(variables): add back ability to reference root block like <start> (#1262)
+- **2025-09-05** | `a0bb754c` | no-pr | 0.3.49: readme updates, router block and variables improvements
+- **2025-09-06** | `1e147433` | simstudioai/sim#1265 | fix(sockets): move debounce to server side (#1265)
+- **2025-09-06** | `ced64129` | simstudioai/sim#1274 | fix(subblock-param-mapping): consolidate resolution of advanced / basic mode params using canonicalParamId (#1274)
+- **2025-09-06** | `d45324bb` | simstudioai/sim#1276 | fix(sidebar): draggable cursor on sidebar when switching workflows (#1276)
+- **2025-09-06** | `07ba1742` | no-pr | Fix(jira): reading multiple issues and write
+- **2025-09-08** | `07e70409` | simstudioai/sim#1266 | feat(notifications): added notifications for usage thresholds, overages, and welcome emails (#1266)
+- **2025-09-08** | `5218dd41` | simstudioai/sim#1283 | fix(notifications): increase precision on billing calculations (#1283)
+- **2025-09-08** | `784992f3` | no-pr | v0.3.50: debounce moved server side, hasWorkflowChanged fixes, advanced mode/serializer fix, jira fix, billing notifs
+- **2025-09-08** | `ebfdb9ce` | no-pr | V1
+- **2025-09-08** | `adf8c224` | no-pr | Fix custom tool save
+- **2025-09-08** | `d3572800` | simstudioai/sim#1285 | feat(usage-api): make external endpoint to query usage (#1285)
+- **2025-09-08** | `521316bb` | no-pr | Lint
+- **2025-09-08** | `cf4a9355` | no-pr | Merge pull request #1286 from simstudioai/fix/copilot-custom-tools
+- **2025-09-09** | `0785f6e9` | simstudioai/sim#1287 | feat(logs-api): expose logs as api + can subscribe to workflow execution using webhook url (#1287)
+- **2025-09-09** | `a5c224e4` | simstudioai/sim#1293 | fix(workflow-block): remove process specific circular dependency check (#1293)
+- **2025-09-09** | `ae670a78` | simstudioai/sim#1294 | fix(start-input): restore tag dropdown in input-format component (#1294)
+- **2025-09-09** | `8f7b11f0` | simstudioai/sim#1297 | feat(account): added user profile pictures in settings (#1297)
+- **2025-09-09** | `c48039f9` | simstudioai/sim#1298 | improvement(subblock-defaults): custom defaults for subblocks if needed (#1298)
+- **2025-09-09** | `3d4b9f06` | simstudioai/sim#1296 | feat(mcp): added support for mcp servers (#1296)
+- **2025-09-09** | `8841e9bd` | simstudioai/sim#1299 | fix(subflow-validation): validate subflow fields correctly + surface serialization errors in the logs correctly (#1299)
+- **2025-09-09** | `4d973ffb` | simstudioai/sim#1300 | Fix(yaml env var): added env var fallback (#1300)
+- **2025-09-10** | `afb99fba` | simstudioai/sim#1301 | fix(webhook-ui): fixed webhook ui (#1301)
+- **2025-09-10** | `abca7310` | simstudioai/sim#1307 | improvement(readme): add e2b reference to readme (#1307)
+- **2025-09-10** | `cff0a871` | simstudioai/sim#1309 | fix(webhooks): made spacing more clear, added copy button for webhook URL & fixed race condition for mcp tools/server fetching in the mcp block (#1309)
+- **2025-09-10** | `ea8762e9` | no-pr | v0.3.51: mcp support, copilot improvements, polling for live execution data, bug fixes
+- **2025-09-10** | `9a6cc783` | simstudioai/sim#1311 | fix(sheets): fixed google sheets update (#1311)
+- **2025-09-10** | `d3f7ef4a` | simstudioai/sim#1313 | fix(serializer): Required-field validation now respects sub-block visibility (#1313)
+- **2025-09-11** | `2dc75b1a` | simstudioai/sim#1317 | feat(docs): overhaul docs  (#1317)
+- **2025-09-11** | `6cf02b9b` | simstudioai/sim#1319 | fix(kb): exclude deleted docs from embeddings/vector search (#1319)
+- **2025-09-11** | `f0186593` | simstudioai/sim#1318 | chore(deployment-versioning): add migration script into repo (#1318)
+- **2025-09-11** | `c5914332` | simstudioai/sim#1321 | fix(file-upload): fix nextjs file upload issue with pdf-parse (#1321)
+- **2025-09-11** | `3798c56e` | simstudioai/sim#1322 | improvement(long-description): modified long description for every block (#1322)
+- **2025-09-12** | `065fc5b8` | simstudioai/sim#1323 | feat(api-keys): add workspace level api keys to share with other workspace members, add encryption for api keys (#1323)
+- **2025-09-12** | `1ad31c92` | no-pr | v0.3.52: docs updates, deployment version tables, workspace-level api keys, knowledgebase improvements
+- **2025-09-13** | `172d51e0` | simstudioai/sim#1325 | fix(security): fix ssrf vuln and path validation for files route (#1325)
+- **2025-09-13** | `3e5d3735` | simstudioai/sim#1327 | changed search for folders and workflows in logs (#1327)
+- **2025-09-13** | `f2ec43e4` | simstudioai/sim#1329 | feat(logs): added intelligent search with suggestions to logs (#1329)
+- **2025-09-15** | `d73a97ff` | simstudioai/sim#1330 | feat(idempotency): added generalized idempotency service for all triggers/webhooks (#1330)
+- **2025-09-15** | `ba21d274` | simstudioai/sim#1328 | improvement(array-index): resolved variables for 2d arrays (#1328)
+- **2025-09-15** | `4ce6bc94` | simstudioai/sim#1336 | fix(stripe): use latest version to fix event mismatch issues (#1336)
+- **2025-09-15** | `994c35f6` | simstudioai/sim#1337 | fix(stripe): revert to stable versioning for better auth plugin (#1337)
+- **2025-09-15** | `d4165f5b` | simstudioai/sim#1339 | feat(docs): added footer for page navigation, i18n for docs (#1339)
+- **2025-09-15** | `ac8bf96e` | simstudioai/sim#1340 | fix(build): upgrade fumadocs (#1340)
+- **2025-09-15** | `ab97ac5a` | simstudioai/sim#1341 | fix(build): upgrade fumadocs to latest (#1341)
+- **2025-09-15** | `a06ae0d2` | no-pr | v0.3.53: logs search, idempotency for webhooks, billing fixes for overage, i18n for docs
+- **2025-09-15** | `4f26a7aa` | simstudioai/sim#1219 | feat(landing): new landing page (#1219)
+- **2025-09-16** | `a31305b7` | simstudioai/sim#1347 | fix(bun): pin bun version for db migrations (#1347)
+- **2025-09-16** | `3122b506` | simstudioai/sim#1348 | feat(tools): add generic mail sending block/tools, updated docs script (#1348)
+- **2025-09-16** | `17cf7283` | simstudioai/sim#1350 | improvement(gh): fix i18n github action to run on merge to staging (#1350)
+- **2025-09-16** | `fd422b5d` | simstudioai/sim#1349 | feat(sms): add generic sms sending block/tool (#1349)
+- **2025-09-16** | `48f86e66` | simstudioai/sim#1352 | fix(better-auth): revert back to version 1.2.9 (#1352)
+- **2025-09-16** | `53792b9a` | simstudioai/sim#1354 | fix bun lock (#1354)
+- **2025-09-16** | `0c30646a` | simstudioai/sim#1351 | improvement: branding; auth; chat-deploy (#1351)
+- **2025-09-16** | `bd402cdd` | simstudioai/sim#1356 | fix(layout): fix layout semantics on invite page (#1356)
+- **2025-09-16** | `4b5c2b43` | simstudioai/sim#1343 | feat(google-forms): added google forms block (#1343)
+- **2025-09-16** | `6101493f` | simstudioai/sim#1358 | fix(next-js): pin version (#1358)
+- **2025-09-16** | `009e1da5` | simstudioai/sim#1357 | improvement(platform): ui/ux (#1357)
+- **2025-09-16** | `2149f5e3` | no-pr | v0.3.54: google forms block, new landing page, generic mail tool, billing fixes
+- **2025-09-17** | `325a666a` | simstudioai/sim#1363 | improvement(landing): insert prompt into copilot panel from landing, open panel on entry (#1363)
+- **2025-09-17** | `9de7a003` | simstudioai/sim#1364 | improvement(code-structure): move db into separate package (#1364)
+- **2025-09-17** | `6312df3a` | simstudioai/sim#1365 | feat(signup): added back to login functionality to OTP page (#1365)
+- **2025-09-17** | `658cf112` | simstudioai/sim#1366 | improvement(idempotency): added atomic claims to prevent duplicate processing for long-running workflows (#1366)
+- **2025-09-17** | `6028b1f5` | simstudioai/sim#1368 | fix(dockerfile): needs dummy db url (#1368)
+- **2025-09-17** | `d0b69455` | simstudioai/sim#1369 | Improvement(sharepoint): added more operations in sharepoint (#1369)
+- **2025-09-17** | `2df65527` | no-pr | v0.3.55: landing page / OTP improvements, DB package separation, Webhooks fixes, Sharepoint Improvement
+- **2025-09-18** | `6747a497` | simstudioai/sim#1374 | fix(migrations): upgrade drizzle-kit in migrations container (#1374)
+- **2025-09-18** | `5d964845` | simstudioai/sim#1375 | fix(variables): remove quote stripping from short & long inputs (#1375)
+- **2025-09-18** | `cd084e82` | simstudioai/sim#1377 | fix(actions): updated i18n gh action to use PAT instead of default token (#1377)
+- **2025-09-18** | `3905d1cb` | simstudioai/sim#1376 | fix(selectors): gdrive and slack selectors inf loops (#1376)
+- **2025-09-18** | `eb1e90bb` | simstudioai/sim#1378 | improvement(search): added more granular logs search, added logs export, improved overall search experience (#1378)
+- **2025-09-18** | `7327b448` | simstudioai/sim#1379 | Improvement(sharepoint): added ability to create list items, different from create list (#1379)
+- **2025-09-18** | `bff1852a` | no-pr | v0.3.56: i18n, sharepoint operations & logs search improvements
+- **2025-09-18** | `abae6b96` | simstudioai/sim#1381 | feat(i18n): update translations (#1381)
+- **2025-09-18** | `8e70a61b` | simstudioai/sim#1382 | fix(docker): added copilot-related keys to docker container definitions (#1382)
+- **2025-09-19** | `04922fe5` | simstudioai/sim#1384 | fix(generic-webhooks): idempotency simplification, generic webhook vars changes (#1384)
+- **2025-09-19** | `a1c518e4` | simstudioai/sim#1386 | feat(file): add more upload types to the file block (#1386)
+- **2025-09-19** | `225571c4` | simstudioai/sim#1387 | improvement(search): improved filters UI and search suggestions (#1387)
+- **2025-09-19** | `b5570c1c` | simstudioai/sim#1388 | fix(cursor): misaligned in long inputs (#1388)
+- **2025-09-20** | `93f9293f` | simstudioai/sim#1395 | fix(verification): add OTP dev skip (#1395)
+- **2025-09-20** | `545e590c` | simstudioai/sim#1398 | fix(emails): updated path for email assets to absolute rather than relative paths (#1398)
+- **2025-09-20** | `1d74ccfe` | simstudioai/sim#1396 | fix(ollama): fix ollama container for CPU vs GPU mode (#1396)
+- **2025-09-20** | `e4d35afe` | simstudioai/sim#1399 | improvement(usage): bar execution if limits cannot be determined, init user stats record on user creation instead of in stripe plugin (#1399)
+- **2025-09-20** | `708321d0` | simstudioai/sim#1400 | fix(tools): added transform response to handle non-json responses for internal tools (#1400)
+- **2025-09-20** | `6b4ebbac` | simstudioai/sim#1401 | feat(404): added 404 page (#1401)
+- **2025-09-21** | `d83865c6` | simstudioai/sim#1403 | fix(tools): fixed arxiv tools (#1403)
+- **2025-09-22** | `16f58199` | simstudioai/sim#1409 | fix(missing-user-stats): missing user stats rows covered via migration' (#1409)
+- **2025-09-22** | `e6401027` | simstudioai/sim#1411 | feat(otp): added environemnt variable to control enforcement of verified accounts (#1411)
+- **2025-09-22** | `6fada45c` | simstudioai/sim#1412 | improvement(readme): update readme.md (#1412)
+- **2025-09-22** | `25781279` | simstudioai/sim#1410 | feat: added favicon (#1410)
+- **2025-09-22** | `73d779ad` | simstudioai/sim#1413 | fix(csp): added terms, privacy, & logo URLs to CSP (#1413)
+- **2025-09-22** | `c0170270` | no-pr | v0.3.57: docs updates, generic webhook variables deconstruction, ollama & docker fixes
+- **2025-09-22** | `cf19c895` | simstudioai/sim#1414 | chore(deps): upgdate trigger.dev cli (#1414)
+- **2025-09-22** | `a3c76da6` | simstudioai/sim#1416 | chore(deps): update trigger.dev sdk (#1416)
+- **2025-09-22** | `aa01e7e5` | simstudioai/sim#1417 | fix(actions): update trigger.dev github action (#1417)
+- **2025-09-22** | `5c92d5d4` | no-pr | v0.3.58: trigger.dev updates
+- **2025-09-22** | `8eaa83fe` | simstudioai/sim#1397 | fix(billing): reset usage on transition from free -> paid plan (#1397)
+- **2025-09-22** | `7cb303e7` | simstudioai/sim#1418 | fix(redirects): move redirects for terms/privacy to client-side redirects (#1418)
+- **2025-09-22** | `2f97782d` | simstudioai/sim#1392 | feat(undo-redo): undo/redo for canvas editing (#1392)
+- **2025-09-22** | `f1b83c19` | simstudioai/sim#1420 | feat(tools): added resend email sender (#1420)
+- **2025-09-22** | `760219dc` | simstudioai/sim#1421 | feat(i18n): update translations (#1421)
+- **2025-09-22** | `68df9590` | simstudioai/sim#1423 | feat(changelog): added changelog and gh action to auto-release (#1423)
+- **2025-09-22** | `b7876ca4` | simstudioai/sim#1362 | improvement(copilot): structured metadata context + start block deprecation (#1362)
+- **2025-09-23** | `6d1b172a` | no-pr | feat(traceroot): add traceroot logger
+- **2025-09-23** | `dd8f633f` | simstudioai/sim#1426 | fix(instrumentation): open telemetry init (#1426)
+- **2025-09-23** | `fbb164db` | simstudioai/sim#1427 | improvement(copilot): add best practices for core blocks (#1427)
+- **2025-09-23** | `994eb8db` | simstudioai/sim#1428 | feat(i18n): added japanese and german translations (#1428)
+- **2025-09-23** | `5bb9b465` | simstudioai/sim#1429 | improvement(subflows): support multiple blocks in parallel subflow, enhance logs to group by iteration for parallels/loop (#1429)
+- **2025-09-23** | `ab8d822e` | simstudioai/sim#1430 | fix(copilot): restore subblock options (#1430)
+- **2025-09-23** | `603b5471` | simstudioai/sim#1431 | fix(copilot): null check simplified (#1431)
+- **2025-09-23** | `aa0a33e6` | simstudioai/sim#1434 | Revert "feat(traceroot): add traceroot logger" (#1434)
+- **2025-09-23** | `0d86eaa3` | simstudioai/sim#1433 | fix(usage): persist cost multiplier at provider level instead of also at the logger level (#1433)
+- **2025-09-23** | `20a272c8` | simstudioai/sim#1436 | chore(deps): remove unused deps, reduce overall dependencies & size (#1436)
+- **2025-09-23** | `2ace06f2` | no-pr | fix build error
+- **2025-09-23** | `8ed2c5ec` | simstudioai/sim#1437 | feat(i18n): update translations (#1437)
+- **2025-09-23** | `67ac3ff8` | simstudioai/sim#1439 | chore(deps): upgrade turborepo (#1439)
+- **2025-09-24** | `0b2ef5e3` | simstudioai/sim#1441 | chore(deps): added entities dependency (#1441)
+- **2025-09-24** | `2ee27f97` | simstudioai/sim#1435 | improvement: remove sentry dependency (#1435)
+- **2025-09-24** | `094dae3d` | simstudioai/sim#1445 | feat(copilot): add training interface  (#1445)
+- **2025-09-24** | `ca6ff7ed` | no-pr | feat(infra): add staging docker image
+- **2025-09-24** | `42687324` | simstudioai/sim#1447 | feat(infra): add ci for aws image push (#1447)
+- **2025-09-24** | `2c7c8d58` | simstudioai/sim#1448 | Add dh login (#1448)
+- **2025-09-24** | `928581f3` | simstudioai/sim#1242 | feat(deployments): make deployed state source of truth for non-manual executions + versioning (#1242)
+- **2025-09-25** | `d381a69c` | simstudioai/sim#1449 | feat(ci): consolidate ci, make db migrations dependent on ecr success, remove turbopack for staging/prod builds (#1449)
+- **2025-09-25** | `c12b3d25` | simstudioai/sim#1450 | Remove double calling of ci (#1450)
+- **2025-09-25** | `7e8ac5c2` | simstudioai/sim#1451 | fix(ci): docker (#1451)
+- **2025-09-25** | `e03c036a` | simstudioai/sim#1452 | feat(manual-trigger): add manual trigger (#1452)
+- **2025-09-25** | `1b7e883b` | simstudioai/sim#1453 | fix(css-config): use correct version (#1453)
+- **2025-09-25** | `7146ce51` | simstudioai/sim#1454 | feat(ci): use blacksmith for ci (#1454)
+- **2025-09-25** | `e49cde77` | simstudioai/sim#1455 | fix(ci): modify docs embeddings ci to only run on english documentation (#1455)
+- **2025-09-25** | `18599ac3` | simstudioai/sim#1456 | fix(tailwind): revert tailwind back to v3 for main app (#1456)
+- **2025-09-25** | `f79e87e4` | simstudioai/sim#1444 | improvement(parallel): update parallel subflow to support conditional routing (#1444)
+- **2025-09-25** | `6daeb777` | simstudioai/sim#1458 | feat(turbo): added turborepo, tailwind v3 (#1458)
+- **2025-09-26** | `97257ca4` | simstudioai/sim#1459 | Feat(google vault): added google vault tool (#1459)
+- **2025-09-26** | `c468ecbc` | simstudioai/sim#1460 | feat(i18n): update translations (#1460)
+- **2025-09-26** | `d1f5c69e` | simstudioai/sim#1461 | fix(envvars): use getEnv for isHosted check since it is client-side (#1461)
+- **2025-09-26** | `0e65a8a3` | simstudioai/sim#1462 | feat(trigger-docs): new trigger docs, function block rce imports fix  (#1462)
+- **2025-09-26** | `2ae30f13` | simstudioai/sim#1464 | add google vault to landing page footer (#1464)
+- **2025-09-26** | `3ff65090` | simstudioai/sim#1465 | feat(i18n): update translations (#1465)
+- **2025-09-26** | `a63f3a3d` | simstudioai/sim#1466 | improvement(copilot): added session context checks in copilot tool calls (#1466)
+- **2025-09-26** | `448e9ea8` | simstudioai/sim#1467 | fix(tools): fixed supabase order by (#1467)
+- **2025-09-26** | `bcc75376` | simstudioai/sim#1463 | feat(permissions): allow users to deploy workflows in all workspaces they are an admin in (#1463)
+- **2025-09-27** | `1ec5b1bd` | simstudioai/sim#1470 | improvement(deps): remove vercel speed insights (#1470)
+- **2025-09-27** | `39356f3d` | simstudioai/sim#1472 | fix(ui): standardized 404, chat, and invite pages (#1472)
+- **2025-09-27** | `dd1985c9` | simstudioai/sim#1474 | improvement(chat): deployed chat no longer uses subdomains, uses sim.ai/chat/[identifier] (#1474)
+- **2025-09-27** | `5ee63451` | simstudioai/sim#1476 | Fix(google drive): google sheets creating a file (#1476)
+- **2025-09-27** | `38dd2d0f` | simstudioai/sim#1477 | improvement(ci): ensure atomicity in trigger deploys, improve overall ci organization (#1477)
+- **2025-09-27** | `67c993d7` | simstudioai/sim#1478 | fix(ci): remove atomic updates for trigger (#1478)
+- **2025-09-29** | `33344290` | simstudioai/sim#1485 | Fix copilot diff (#1485)
+- **2025-09-29** | `6a664663` | simstudioai/sim#1488 | fix(copilot): deprecate yaml, json import/export, deprecate build_workflow tool, convert copilot to json-based (#1488)
+- **2025-09-29** | `bf1c1782` | simstudioai/sim#1489 | feat(sso): add support for login with SAML/SSO (#1489)
+- **2025-09-29** | `010753d1` | simstudioai/sim#1492 | chore(docs): remove remaining yml references from docs (#1492)
+- **2025-09-29** | `10652eb9` | no-pr | v0.4.0: copilot v1, triggers, sso/saml support, version control
+- **2025-09-29** | `7de9e5fb` | no-pr | fix(ci): fix docker manifest build
+- **2025-09-29** | `367189fe` | simstudioai/sim#1495 | fix(ci): fix docker manifest build (#1495)
+- **2025-09-30** | `01ffee8e` | simstudioai/sim#1498 | fix(deployed): support internal JWT for deployed child workflow executions (#1498)
+- **2025-09-30** | `f9f84111` | no-pr | v0.4.1: docker fixes, deployed state improvements
+- **2025-09-30** | `e9150a53` | simstudioai/sim#1496 | feat(i18n): update translations (#1496)
+- **2025-09-30** | `e76fc8c2` | simstudioai/sim#1501 | Remove migrations ci (#1501)
+- **2025-09-30** | `79461840` | no-pr | fix(migrations): make sso migration idempotent
+- **2025-09-30** | `17edf040` | simstudioai/sim#1503 | improvement(triggers): uuid, autolayout, copilot context (#1503)
+- **2025-09-30** | `87c00cec` | simstudioai/sim#1506 | improvement(ci): trigger.dev pushes (#1506)
+- **2025-09-30** | `c35c8d1f` | simstudioai/sim#1505 | improvement(autolayout): use live block heights / widths for autolayout to prevent overlaps (#1505)
+- **2025-09-30** | `dca8745c` | no-pr | fix(ci): add skip promotion to trigger ci
+- **2025-09-30** | `9f6cb1be` | no-pr | fix(ci): trigger permissions
+- **2025-09-30** | `cdfee16b` | simstudioai/sim#1510 | Fix trigger ci creds (#1510)
+- **2025-09-30** | `561b6f27` | no-pr | fix(ci): fix trigger version capture
+- **2025-09-30** | `c1a3500b` | simstudioai/sim#1512 | fix(ci): capture correct deployment version output (#1512)
+- **2025-09-30** | `7e6a5dc7` | simstudioai/sim#1513 | Fix/remove trigger promotion (#1513)
+- **2025-09-30** | `0d881ecc` | simstudioai/sim#1508 | fix(deployed-version-check): check deployed version existence pre-queuing (#1508)
+- **2025-09-30** | `0bf2bce3` | simstudioai/sim#1469 | improvement(var-resolution): resolve variables with block name check and consolidate code (#1469)
+- **2025-10-01** | `4ad9be08` | simstudioai/sim#1515 | fix(router): use getBaseUrl() helper (#1515)
+- **2025-10-01** | `1a2c4040` | simstudioai/sim#1504 | improvement(trigger): increase maxDuration for background tasks to 10 min to match sync API executions (#1504)
+- **2025-10-01** | `97f69a24` | simstudioai/sim#1516 | fix(redirects): update middleware to allow access to /chat regardless of auth status (#1516)
+- **2025-10-01** | `896f7bb0` | simstudioai/sim#1518 | fix(ci): update trigger.dev ci to only push to staging on merge to staging & for prod as well (#1518)
+- **2025-10-01** | `6e63eafb` | simstudioai/sim#1519 | improvement(db): remove vercel, remove railway, remove crons, improve DB connection config (#1519)
+- **2025-10-01** | `35d857ef` | simstudioai/sim#1520 | fix(trigger): inject project id env var in correctly (#1520)
+- **2025-10-01** | `745eaff6` | no-pr | v0.4.2: autolayout improvements, variable resolution, CI/CD, deployed chat, router block fixes
+- **2025-10-01** | `980a6d83` | simstudioai/sim#1522 | improvement(db): enforce SSL everywhere where a DB connection is established (#1522)
+- **2025-10-01** | `7aae108b` | simstudioai/sim#1523 | feat(posthog): added posthog for analytics (#1523)
+- **2025-10-01** | `3509ce8c` | simstudioai/sim#1524 | fix(autolayout): type issue if workflow deployed + remove dead state code (#1524)
+- **2025-10-01** | `4adbae03` | simstudioai/sim#1525 | chore(deps): update fumadocs (#1525)
+- **2025-10-01** | `dc605257` | simstudioai/sim#1527 | fix(kb): removed filename constraint from knowledgebase doc names (#1527)
+- **2025-10-01** | `b33ae5bf` | simstudioai/sim#1529 | fix(fumadocs): fixed client-side export on fumadocs (#1529)
+- **2025-10-01** | `ace83ebc` | simstudioai/sim#1530 | feat(cmdk): added knowledgebases to the cmdk modal (#1530)
+- **2025-10-02** | `15138629` | simstudioai/sim#1531 | improvement(performance): remove writes to workflow updated_at on position updates for blocks, edges, & subflows (#1531)
+- **2025-10-02** | `4bc37db5` | simstudioai/sim#1521 | feat(copilot): JSON sanitization logic + operations sequence diff correctness   (#1521)
+- **2025-10-02** | `fa9c9781` | simstudioai/sim#1533 | fix(db): add more options for SSL connection, add envvar for base64 db cert (#1533)
+- **2025-10-02** | `cae0e858` | no-pr | v0.4.3: posthog, docs updates, search modal improvements
+- **2025-10-02** | `5f1518ff` | simstudioai/sim#1535 | fix(db): added SSL config to migrations container (#1535)
+- **2025-10-02** | `62298bf0` | simstudioai/sim#1536 | fix(db): added database config to drizzle.config in app container (#1536)
+- **2025-10-02** | `10692b5e` | simstudioai/sim#1538 | fix(db): remove overly complex db connection logic (#1538)
+- **2025-10-02** | `2175fd11` | no-pr | v0.4.4: database config updates
+- **2025-10-03** | `4da355d2` | simstudioai/sim#1541 | fix(billing-blocked): block platform usage if payment fails for regular subs as well (#1541)
+- **2025-10-03** | `c42d2a32` | simstudioai/sim#1542 | feat(copilot): fix context / json parsing edge cases (#1542)
+- **2025-10-04** | `7cc9a23f` | no-pr | fix(copilot): tool renaming
+- **2025-10-04** | `0e838940` | simstudioai/sim#1546 | fix(copilot): targeted auto-layout for copilot edits + custom tool persistence (#1546)
+- **2025-10-04** | `86ed32ea` | simstudioai/sim#1539 | feat(kb): added json/yaml parser+chunker, added dedicated csv chunker (#1539)
+- **2025-10-04** | `b768ca84` | no-pr | v0.4.5: copilot updates, kb improvements, payment failure fix
+- **2025-10-05** | `7dde01e7` | simstudioai/sim#1547 | fix(kb): force kb uploads to use serve route (#1547)
+- **2025-10-05** | `223ecda8` | simstudioai/sim#1548 | fix(posthog): add rewrites for posthog reverse proxy routes unconditionally, remove unused POSTHOG_ENABLED envvar (#1548)
+- **2025-10-05** | `377b84e1` | no-pr | v0.4.6: kb improvements, posthog fixes
+- **2025-10-06** | `07fd9c3a` | simstudioai/sim#1555 | feat(posthog): added posthog provider instead of using nextjs instrumentation (#1555)
+- **2025-10-06** | `d9b70087` | simstudioai/sim#1550 | feat(blog): created first page (#1550)
+- **2025-10-06** | `4dc40734` | no-pr | v0.4.7: blog
+- **2025-10-06** | `c2f0a958` | simstudioai/sim#1559 | fix(blog): center footer, fix dark mode, fix avatar (#1559)
+- **2025-10-06** | `174f6a48` | no-pr | v0.4.8: more blog
+- **2025-10-07** | `f03f3952` | simstudioai/sim#1564 | fix(db): enable database connection pooling in production (#1564)
+- **2025-10-07** | `991a0209` | simstudioai/sim#1561 | feat(nested-workflow-spans): nested child workflow spans in logs sidepanel (#1561)
+- **2025-10-07** | `a63a7b02` | simstudioai/sim#1566 | fix(undo-redo): preserve trigger/advanced mode (#1566)
+- **2025-10-07** | `872e0343` | simstudioai/sim#1565 | feat(chat-streaming): added a `stream` option to workflow execute route, updated SDKs, updated docs (#1565)
+- **2025-10-07** | `2d7ba91c` | simstudioai/sim#1567 | fix(workspace-selector-kb): fix selector for assigning workspaces for kbs (#1567)
+- **2025-10-07** | `c6f6c9e2` | simstudioai/sim#1568 | fix(streaming-response): add in handling for the response block when streaming (#1568)
+- **2025-10-07** | `8200e9a8` | simstudioai/sim#1569 | feat(i18n): update translations (#1569)
+- **2025-10-07** | `715f42c1` | simstudioai/sim#1570 | feat(highlighting): added resolved vars highlighting to code subblock, to be consistent with other subblocks (#1570)
+- **2025-10-07** | `8e43774b` | simstudioai/sim#1571 | improvement(sockets): position persistence on drag end, perms call only on joining room (#1571)
+- **2025-10-07** | `7bdf0e94` | simstudioai/sim#1573 | fix(curl-example): fixed curl example in deploy modal to reflect selected option (#1573)
+- **2025-10-07** | `25f5e313` | no-pr | v0.4.9: chat streaming API, DB config changes, sockets improvement, var highlighting, bug fixes
+- **2025-10-08** | `ae3a7f08` | simstudioai/sim#1575 | fix(db): reduce overall number of db max conncetions to incr performance (#1575)
+- **2025-10-08** | `9d45b8df` | simstudioai/sim#1576 | fix(ts-sdk): fix job to publish ts sdk (#1576)
+- **2025-10-08** | `1a0fdb32` | simstudioai/sim#1578 | chore(docs): update docs (#1578)
+- **2025-10-08** | `5d887fdc` | no-pr | v0.4.10: ts-sdk updates, db updates
+- **2025-10-08** | `c04eb01a` | simstudioai/sim#1581 | fix(db): revert to dedicated sockets db connection establishment (#1581)
+- **2025-10-10** | `88d2e7b9` | simstudioai/sim#1582 | fix(env-vars): remove regex parsing from table subblock, add formatDisplayText to various subblocks that didn't have it (#1582)
+- **2025-10-10** | `8ce5a1b7` | simstudioai/sim#1583 | feat(billing): bill by threshold to prevent cancellation edge case (#1583)
+- **2025-10-10** | `2d49892a` | simstudioai/sim#1588 | feat(deployed-chat): added file upload to workflow execute API, added to deployed chat, updated chat panel (#1588)
+- **2025-10-10** | `833e700b` | simstudioai/sim#1592 | feat(sessions): add redis as priority option for session data (#1592)
+- **2025-10-10** | `97a87784` | simstudioai/sim#1594 | fix test webhook url (#1594)
+- **2025-10-10** | `241d9fd1` | simstudioai/sim#1595 | improvement(kb): encode non-ASCII headers for kb uploads (#1595)
+- **2025-10-10** | `923595f5` | simstudioai/sim#1596 | fix(webhooks): use next public app url instead of request origin for webhook registration (#1596)
+- **2025-10-10** | `5a943bca` | simstudioai/sim#1598 | fix(ci): pin all workflows and Dockerfiles to Bun v1.2.22 (#1598)
+- **2025-10-10** | `c0f5ba75` | no-pr | v0.4.11: webhook, knowledgebase, billing fixes & redis for sessions
+- **2025-10-10** | `41ec2294` | simstudioai/sim#1600 | feat(sessions): remove redis as priority option for session data (#1600)
+- **2025-10-11** | `e697e50d` | simstudioai/sim#1603 | improvement(performance): remove unused source/target indices, add index on snapshot id (#1603)
+- **2025-10-11** | `ab63978c` | simstudioai/sim#1604 | fix(blog): rename building to blogs with redirect (#1604)
+- **2025-10-11** | `bba407b5` | simstudioai/sim#1602 | improvement(privacy-policy): updated privacy policy for google (#1602)
+- **2025-10-11** | `ee77dea2` | simstudioai/sim#1605 | feat(guardrails): added guardrails block/tools and docs (#1605)
+- **2025-10-11** | `34fc8f84` | simstudioai/sim#1606 | fix(inference-billing): fix inference billing when stream is true via API, add drag-and-drop functionality to deployed chat (#1606)
+- **2025-10-11** | `b10b2461` | simstudioai/sim#1607 | feat(mistal): added mistral as a provider, updated model prices (#1607)
+- **2025-10-11** | `1de6f090` | simstudioai/sim#1610 | feat(versions): added the ability to rename deployment versions (#1610)
+- **2025-10-11** | `8f06aec6` | simstudioai/sim#1611 | fix(vulns): fix various vulnerabilities and enhanced code security (#1611)
+- **2025-10-12** | `4937d72d` | simstudioai/sim#1614 | fix(devcontainer): fixed devcontainers (#1614)
+- **2025-10-13** | `ec73e2e9` | simstudioai/sim#1615 | fix(posthog): prevent redirects by whitelisting ingest route (#1615)
+- **2025-10-13** | `1e81cd68` | simstudioai/sim#1616 | fix(kb): added tiktoken for embedding token estimation (#1616)
+- **2025-10-13** | `2da7a675` | simstudioai/sim#1617 | feat(helm): added pdb to helm (#1617)
+- **2025-10-13** | `17735303` | simstudioai/sim#1619 | fix(sdk): fixed ts sdk publishing job to use later node version (#1619)
+- **2025-10-13** | `09cccd54` | simstudioai/sim#1620 | feat(helm): added cert-postgresql template to helm (#1620)
+- **2025-10-13** | `3dd36a8a` | simstudioai/sim#1618 | fix(schedules): migrate to trigger dev  (#1618)
+- **2025-10-13** | `6f3df271` | simstudioai/sim#1622 | feat(copilot+canvas rendering): add context window tracking to copilot and selectively render canvas components (#1622)
+- **2025-10-14** | `f147eaee` | simstudioai/sim#1625 | feat(telegram): added additional telegram tools & docs (#1625)
+- **2025-10-14** | `f345c4d1` | simstudioai/sim#1626 | fix(docker): updated docker to use non-root user for k8s/helm deployments (#1626)
+- **2025-10-14** | `9efc08a8` | simstudioai/sim#1627 | fix(telemetry): updated telemetry, added nested sanitization, added granular trace spans for logs and updated UI (#1627)
+- **2025-10-14** | `6723adf3` | simstudioai/sim#1628 | fix(kb-sanitization): add sanitization for kb tags when exporting workflow (#1628)
+- **2025-10-14** | `e83d3a6b` | simstudioai/sim#1630 | fix(tool-calls): remove redundant input/output fields in favor of arguments/response, exclude isExpanded for tools in agents in workflow change detection (#1630)
+- **2025-10-14** | `36f2a62f` | simstudioai/sim#1632 | fix(i18n): add additional youtube tools, sync i18n pipeline, remove dated docs (#1632)
+- **2025-10-14** | `d325fdde` | simstudioai/sim#1634 | fix(i18n): exclude SDK files from automatic translation to prevent corruption (#1634)
+- **2025-10-14** | `b2963237` | simstudioai/sim#1631 | feat(attachments): use filesystem for gmail, outlook triggers to save attachments (#1631)
+- **2025-10-14** | `6c9fce5d` | simstudioai/sim#1590 | Feat(microsoftteams-file): new trigger + file upload (#1590)
+- **2025-10-14** | `7595e54d` | simstudioai/sim#1635 | fix(chat): allow file-only messages with no text to be sent in chat panel and deployed chat (#1635)
+- **2025-10-15** | `1a05ef97` | simstudioai/sim#1639 | feat(test-framework): add executions logs for test framework (#1639)
+- **2025-10-15** | `061c1dff` | simstudioai/sim#1640 | fix(schedules): offload next run calculation to croner (#1640)
+- **2025-10-15** | `fd67fd22` | simstudioai/sim#1641 | improvement(functions): increase function block timeout to 3 min (#1641)
+- **2025-10-15** | `4cceb22f` | simstudioai/sim#1642 | fix(slack): update slack config to support refresh token rotation (#1642)
+- **2025-10-15** | `eb4821ff` | simstudioai/sim#1643 | fix(chat-subs): always use getBaseUrl helper to fetch base url (#1643)
+- **2025-10-15** | `b2009fe4` | simstudioai/sim#1644 | fix build issue (#1644)
+- **2025-10-15** | `2ca9044b` | simstudioai/sim#1645 | fix(layout): layout canvas onInit after node sizes are calculated, remove legacy history code and legacy marking of dirty workflows (#1645)
+- **2025-10-15** | `56d04a95` | simstudioai/sim#1646 | feat(zep): add tools from Zep (#1646)
+- **2025-10-15** | `ba8acbba` | simstudioai/sim#1647 | fix(connection-tags): drag and drop didn't render tag dropdown with input format fields (#1647)
+- **2025-10-15** | `701bf2b5` | simstudioai/sim#1648 | improvement(response-copilot): prefer builder mode + fix builder/editor mode conversions (#1648)
+- **2025-10-15** | `48eab7e7` | simstudioai/sim#1649 | feat(dashboard): update UI for execution dashboard, fix next-runtime-env issues for SSO (#1649)
+- **2025-10-15** | `c6ef5785` | simstudioai/sim#1652 | fix(i18n): fix SDK and guardrails translation corruption, restore i18n gh action for docs (#1652)
+- **2025-10-15** | `b7e0b42d` | simstudioai/sim#1651 | improvement(dashboard): cleanup execution dashboard UI, fix logs trace, and improve performance (#1651)
+- **2025-10-15** | `4cd790b2` | simstudioai/sim#1653 | feat(i18n): update translations (#1653)
+- **2025-10-16** | `82fa4e8b` | simstudioai/sim#1658 | fix(input-format): allow value field to be cleared (#1658)
+- **2025-10-16** | `4b05da31` | simstudioai/sim#1659 | feat(i18n): update translations (#1659)
+- **2025-10-16** | `67e681dd` | simstudioai/sim#1654 | feat(webhooks): added  optioanl input format to webhooks, added support for file uploads (#1654)
+- **2025-10-16** | `74576ec9` | simstudioai/sim#1660 | feat(i18n): update translations (#1660)
+- **2025-10-16** | `0cb61542` | simstudioai/sim#1661 | feat(powershell): add gitattributes to prevent lint issues for powershell users (#1661)
+- **2025-10-16** | `22f9d6e2` | simstudioai/sim#1662 | improvement(dashboard): improve dashboard performance, enrich charts, consolidate routes (#1662)
+- **2025-10-16** | `29c7827d` | simstudioai/sim#1664 | fix(deployed-chat): include workspace id in deployed chat request (#1664)
+- **2025-10-17** | `0fbbbe02` | simstudioai/sim#1670 | fix(execution-counts): execution counts by trigger type recorded accurately (#1670)
+- **2025-10-17** | `64ede7f0` | simstudioai/sim#1665 | added legit urls to the metadata (#1665)
+- **2025-10-17** | `d92d9a02` | simstudioai/sim#1671 | fix(permissions): cannot create workflow with read perms (#1671)
+- **2025-10-17** | `35c55198` | simstudioai/sim#1666 | feat(files): gmail upload attachment, workspace files, file storage limits (#1666)
+- **2025-10-17** | `64eee587` | simstudioai/sim#1674 | improvement(gdrive): remove mime type subblock from upload file tool  (#1674)
+- **2025-10-17** | `c1725c1c` | simstudioai/sim#1676 | improvement(error-messages): make error extraction generalized abstraction (#1676)
+- **2025-10-17** | `22b3dde1` | simstudioai/sim#1678 | fix(env-vars): promotion should never leave a copy in personal vars (#1678)
+- **2025-10-17** | `9bf5f6e1` | simstudioai/sim#1679 | removed raw paylod for gmail and outlook (#1679)
+- **2025-10-17** | `a6122f2b` | simstudioai/sim#1673 | feat(i18n): update translations (#1673)
+- **2025-10-17** | `3a0019bd` | simstudioai/sim#1681 | fix(docker): remove prebuild lint check from docker (#1681)
+- **2025-10-17** | `90c34b2c` | simstudioai/sim#1682 | fix(airtable): fix airtable oauth connection (#1682)
+- **2025-10-17** | `d1c08daa` | simstudioai/sim#1680 | improvement(docs): overhaul docs (#1680)
+- **2025-10-18** | `37f293a7` | simstudioai/sim#1683 | feat(i18n): update translations (#1683)
+- **2025-10-18** | `728a4c82` | simstudioai/sim#1685 | add inline defaults for storage limits by plan (#1685)
+- **2025-10-18** | `de1ac9a7` | simstudioai/sim#1687 | improvement(models): system to blacklist models (#1687)
+- **2025-10-18** | `cc0ace7d` | simstudioai/sim#1689 | improvement(copilot): version update (#1689)
+- **2025-10-18** | `c70c32a3` | simstudioai/sim#1691 | fix(settings-ui): fix settings ui, add upload status (#1691)
+- **2025-10-19** | `9132cd22` | simstudioai/sim#1694 | fix(mcp): add workflow id to agent-handler for mcp tools (#1694)
+- **2025-10-19** | `063bd610` | simstudioai/sim#1693 | fix(jira): issue selector inf render (#1693)
+- **2025-10-19** | `ce660e2d` | simstudioai/sim#1696 | fix(plan-config): align buttons above divider (#1696)
+- **2025-10-21** | `b2694475` | no-pr | fix(internal-req): add internal token to server side
+- **2025-10-21** | `eb8995ee` | simstudioai/sim#1701 | fix(kb): add base URL for kb fetches (#1701)
+- **2025-10-21** | `c178a90f` | simstudioai/sim#1695 | improvement(helm): added additional envvars to helm charts (#1695)
+- **2025-10-21** | `85971199` | simstudioai/sim#1702 | fix(docs): made sidebar directories scrollable, stylistic changes (#1702)
+- **2025-10-21** | `e6ba323d` | no-pr | Merge pull request #1700 from simstudioai/fix/internal-req
+- **2025-10-21** | `d5902e91` | simstudioai/sim#1704 | fix(kb): added internal auth for mistral OCR tool via KB (#1704)
+- **2025-10-21** | `1d4833f4` | simstudioai/sim#1705 | fix case sensitive header (#1705)
+- **2025-10-21** | `89eb1849` | no-pr | fix(external-route): handleInternalRequest should still check if request internal
+- **2025-10-21** | `ca1156a6` | simstudioai/sim#1706 | fix(base-url): use getBaseUrl helper in copilot revert state endpoint (#1706)
+- **2025-10-21** | `4d7ebd8b` | simstudioai/sim#1707 | feat(supabase): added vector search tool and updated docs (#1707)
+- **2025-10-21** | `b8bc632b` | simstudioai/sim#1710 | fix(workflow-auth): adding workflowId param to only internal urls (#1710)
+- **2025-10-21** | `5ab48212` | no-pr | fix(remove-exec-context): tools handle workflow id check themselves
+- **2025-10-22** | `989a7726` | simstudioai/sim#1714 | fix(debug-mode): remove duplicate debug mode flag (#1714)
+- **2025-10-22** | `bcd1a2fa` | simstudioai/sim#1709 | feat(i18n): update translations (#1709)
+- **2025-10-22** | `e425d064` | simstudioai/sim#1718 | improvement(condition): added variable and envvar highlighting for condition input (#1718)
+- **2025-10-22** | `ec034f3f` | simstudioai/sim#1719 | fix(dashboard): add additional context for paginated logs in dashboard, add empty state when selected cell has no data (#1719)
+- **2025-10-23** | `a4e874b2` | simstudioai/sim#1720 | feat(tools): added webflow OAuth + tools (#1720)
+- **2025-10-23** | `e94de1dd` | simstudioai/sim#1721 | feat(i18n): update translations (#1721)
+- **2025-10-23** | `dba75143` | simstudioai/sim#1722 | improvement(schedule): fix UI bug with schedule modal (#1722)
+- **2025-10-25** | `517f1a91` | simstudioai/sim#1532 | fix(google-scopes): added forms and different drive scope (#1532)
+- **2025-10-25** | `ce4893a5` | simstudioai/sim#1729 | feat(sso-chat-deployment): added sso auth option for chat deployment (#1729)
+- **2025-10-25** | `ad7b7912` | simstudioai/sim#1730 | improvement(deployments): simplify deployments for chat and indicate active version (#1730)
+- **2025-10-25** | `c552bb9c` | simstudioai/sim#1732 | fix(elevenlabs): added internal auth helper for proxy routes (#1732)
+- **2025-10-26** | `274d5e3a` | simstudioai/sim#1725 | fix(clay): fixed clay tool (#1725)
+- **2025-10-26** | `ec2cc82b` | simstudioai/sim#1734 | feat(i18n): update translations (#1734)
+- **2025-10-26** | `fb3d6d4c` | simstudioai/sim#1736 | feat(files): added usage indicator for file storage to settings (#1736)
+- **2025-10-26** | `659b46fa` | simstudioai/sim#1737 | improvement(consts): removed redundant default consts in favor of envvar defaults for storage & usage limits (#1737)
+- **2025-10-26** | `98e98496` | simstudioai/sim#1739 | Revert "improvement(consts): removed redundant default consts in favor of env…" (#1739)
+- **2025-10-27** | `6f32aea9` | simstudioai/sim#1738 | feat(kb): added support for local file storage for knowledgebase (#1738)
+- **2025-10-27** | `38614fad` | simstudioai/sim#1735 | fix(mcp): resolve variables & block references in mcp subblocks (#1735)
+- **2025-10-27** | `5d48c278` | simstudioai/sim#1741 | improvement(ui): enhance ring outline for code subblock and mcp tool subblocks in agent (#1741)
+- **2025-10-27** | `47ddfb63` | simstudioai/sim#1742 | fix(dropdown): auto-add character to trigger tag dropdown on connection tag drop in agent tools (#1742)
+- **2025-10-27** | `8620ab25` | simstudioai/sim#1743 | improvement(docs): added a copy page button to the docs pages (#1743)
+- **2025-10-27** | `095a15d7` | simstudioai/sim#1746 | feat(careers): added a careers page (#1746)
+- **2025-10-27** | `99917966` | simstudioai/sim#1747 | fix(docs): added new workflow block image, fixed operator issue on null properties (#1747)
+- **2025-10-27** | `9df886d1` | simstudioai/sim#1748 | feat(kb): added sort ordering to knowledgebase page, styling update (#1748)
+- **2025-10-27** | `ef5b6999` | simstudioai/sim#1749 | fix(migrations): add missing migration for processing columns in documents table (#1749)
+- **2025-10-28** | `aace3066` | simstudioai/sim#1754 | feat(while, vars, wait): add while subflow, variables block, wait block (#1754)
+- **2025-10-28** | `368576b0` | simstudioai/sim#1745 | feat(create-excel): onedrive create excel (#1745)
+- **2025-10-28** | `aef1f18c` | simstudioai/sim#1756 | feat(i18n): update translations (#1756)
+- **2025-10-28** | `807014a5` | simstudioai/sim#1759 | fix(wait, vars, while): var set (#1759)
+- **2025-10-28** | `7be9941b` | simstudioai/sim#1751 | feat(chat): support local file downloads/uploads for chat for parity with kb (#1751)
+- **2025-10-29** | `fcf947df` | simstudioai/sim#1761 | fix(variables): added the same input vars mapping from workflow block, added type validation to variables block, updated UI (#1761)
+- **2025-10-29** | `b95ea914` | simstudioai/sim#1763 | fix(copilot): consolidate usage limit validation (#1763)
+- **2025-10-29** | `da30c25e` | simstudioai/sim#1764 | improvement(chat): increase max files to 15 and resolve workflow variables in webhook execution (#1764)
+- **2025-10-29** | `48f520b3` | simstudioai/sim#1766 | feat(files): added file manager table, enforce permissions for viewing files (#1766)
+- **2025-10-29** | `47913f87` | simstudioai/sim#1767 | fix(kb): fix mistral parse and kb uploads, include userId in internal auth (#1767)
+- **2025-10-29** | `fdefb14e` | simstudioai/sim#1762 | improvement(ms-teams): resolve mentions accurately (#1762)
+- **2025-10-30** | `8b0079b8` | simstudioai/sim#1768 | feat(i18n): update translations (#1768)
+- **2025-10-30** | `61725c2d` | simstudioai/sim#1769 | feat(envvars): use cache for envvar dropdown key names, prevent autofill & suggestions in the settings (#1769)
+- **2025-10-30** | `c99bb0aa` | simstudioai/sim#1770 | feat(cost): added hidden cost breakdown component to settings > subscription, start collecting current period copilot cost and last period copilot cost (#1770)
+- **2025-10-30** | `fe9ebbf8` | simstudioai/sim#1765 | improvement(api-keys): move to workspace level (#1765)
+- **2025-10-30** | `3b901b33` | simstudioai/sim#1771 | fix(webhook-notif): modal positioning (#1771)
+- **2025-10-30** | `a072e6d1` | simstudioai/sim#1772 | improvement(custom-tools): make them workspace scoped + ux to manage them (#1772)
+- **2025-10-30** | `eac358bc` | simstudioai/sim#1775 | feat(live-cursor): live cursor during collaboration  (#1775)
+- **2025-10-30** | `0b16fa4d` | simstudioai/sim#1777 | fix(triggers): incoming edges should be filtered from execution and UI graph (#1777)
+- **2025-10-30** | `4a3c6d17` | simstudioai/sim#1778 | fix(client-directive): fix build error (#1778)
+- **2025-10-30** | `6cd82f07` | simstudioai/sim#1779 | fix(presence): remove presence for a solo user (#1779)
+- **2025-10-31** | `70ff5394` | simstudioai/sim#1780 | improvement(mcp): ditch custom mcp client in favor of mcp sdk (#1780)
+- **2025-10-31** | `e64129c1` | simstudioai/sim#1774 | feat(triggers): modify triggers to use existing subblock system, webhook order of operations improvements (#1774)
+- **2025-10-31** | `f6a5c5c8` | simstudioai/sim#1781 | improvement(cleanup): remove useWorkflowDiff hook (#1781)
+- **2025-10-31** | `44271cd1` | simstudioai/sim#1783 | fix(triggers-persistence): triggers persistence, deletion, updating configs + state management simplifcation (#1783)
+- **2025-10-31** | `86b35702` | simstudioai/sim#1784 | fix(trigger-dup): on duplicate trigger should not point at old webhook row (#1784)
+- **2025-11-01** | `54794616` | simstudioai/sim#1787 | feat(docs): added page nav buttons, static search, TOC footer (#1787)
+- **2025-11-01** | `e4d21568` | simstudioai/sim#1788 | feat(i18n): update translations (#1788)
+- **2025-11-01** | `f9980868` | simstudioai/sim#1791 | improvement(variables): add error context for duplicate variable names, only check for collision when focus is lost (#1791)
+- **2025-11-01** | `7d67ae39` | simstudioai/sim#1792 | fix(evaluator): fix evaluator to handle temperature gracefully like router (#1792)
+- **2025-11-02** | `3bf00cbd` | simstudioai/sim#1790 | improvement(executor): redesign executor + add start block (#1790)
+- **2025-11-03** | `fb445b16` | no-pr | fix(legacy-start): fix legacy start block execution in new executor
+- **2025-11-03** | `2eea3cac` | simstudioai/sim#1799 | feat(import-export): improvements to export workspace, maintain file structure, include workflow variables (#1799)
+- **2025-11-03** | `3af7d136` | simstudioai/sim#1796 | feat(mcp): surface better errors for MCP connection failures (#1796)
+- **2025-11-03** | `d1fcade5` | simstudioai/sim#1800 | fix(conn-status): remove unused connection status inside user avatar stack (#1800)
+- **2025-11-03** | `0363f8a3` | simstudioai/sim#1801 | fix(external-triggers): not passing payload through + incorrect server-side resolver logic (#1801)
+- **2025-11-03** | `1ce834f2` | simstudioai/sim#1794 | feat(i18n): update translations (#1794)
+- **2025-11-03** | `56f64589` | simstudioai/sim#1804 | fix(i18n): fix translation pipeline (#1804)
+- **2025-11-03** | `e9ff94f0` | simstudioai/sim#1803 | chore(deps): upgrade turbopack (#1803)
+- **2025-11-04** | `a29f9fd5` | simstudioai/sim#1805 | feat(schedules): move schedule configuration out of modals into subblocks (#1805)
+- **2025-11-04** | `e62a6357` | simstudioai/sim#1806 | feat(i18n): update translations (#1806)
+- **2025-11-04** | `670e63c1` | simstudioai/sim#1807 | fix(schedules): restore enabling/disabling of schedules, fix premature cron validation (#1807)
+- **2025-11-04** | `f65d62ea` | simstudioai/sim#1808 | improvement(async): improve error capturing for asynchronous workflow executions (#1808)
+- **2025-11-04** | `b0fa3e8a` | simstudioai/sim#1809 | improvement(reply-gmail): added reply to gmail (#1809)
+- **2025-11-04** | `fa323e2e` | simstudioai/sim#1776 | feat(twilio-voice): added twilio voice webhook + tool (#1776)
+- **2025-11-05** | `68056b72` | simstudioai/sim#1811 | feat(i18n): update translations (#1811)
+- **2025-11-05** | `0260dbc3` | simstudioai/sim#1812 | feat(tools): added perplexity search endpoint, updated models list for perplexity block (#1812)
+- **2025-11-05** | `11fd1544` | simstudioai/sim#1813 | feat(i18n): update translations (#1813)
+- **2025-11-05** | `2056e8ae` | simstudioai/sim#1814 | feat(tools): added additional youtube search params, get channel playlists videos and related videos tools (#1814)
+- **2025-11-05** | `21774de2` | simstudioai/sim#1815 | feat(i18n): update translations (#1815)
+- **2025-11-05** | `cf023e4d` | simstudioai/sim#1785 | feat(tools): added download file tool for onedrive, google drive, and slack; added move email tool for gmail and outlook (#1785)
+- **2025-11-05** | `2b78b5ea` | simstudioai/sim#1817 | feat(i18n): update translations (#1817)
+- **2025-11-05** | `5c611c6d` | simstudioai/sim#1819 | improvement(block-outputs): fix chat fields being hidden even if in inputFormat, cleanup code (#1819)
+- **2025-11-05** | `60d53ba1` | simstudioai/sim#1818 | feat(tools): added typeform form submission trigger, added 4 new tools to complete CRUD typeform tools (#1818)
+- **2025-11-05** | `541bdd37` | simstudioai/sim#1820 | feat(i18n): update translations (#1820)
+- **2025-11-06** | `8c9ed34d` | simstudioai/sim#1821 | feat(tools): added 48 new github tools, 12 triggers (#1821)
+- **2025-11-06** | `f9ce65ed` | simstudioai/sim#1831 | feat(i18n): update translations (#1831)
+- **2025-11-06** | `742d59f5` | simstudioai/sim#1832 | feat(hitl): add human in the loop block (#1832)
+- **2025-11-07** | `c3436e99` | simstudioai/sim#1816 | feat(tools): added 50+ stripe tools and trigger and docs (#1816)
+- **2025-11-07** | `a31dc733` | simstudioai/sim#1841 | fix(copilot): fix image auth (#1841)
+- **2025-11-07** | `eb459d0a` | simstudioai/sim#1843 | feat(i18n): update translations (#1843)
+- **2025-11-07** | `c9a8c7e3` | simstudioai/sim#1824 | feat(tools): added 200+ new tools across confluence, discord, exa, firecrawl, jina, jira, linear, linkup, MS suite, parallel, reddit, supabase, & tavily (#1824)
+- **2025-11-07** | `9fd2156e` | simstudioai/sim#1846 | fix(streaming-api): fix streaming api (#1846)
+- **2025-11-07** | `b6c2c745` | simstudioai/sim#1847 | fix(variables): fix variable resolution error and start block outputs (#1847)
+- **2025-11-07** | `c4278266` | simstudioai/sim#1844 | feat(i18n): update translations (#1844)
+- **2025-11-07** | `bb7016a9` | simstudioai/sim#1848 | improvement(routes): type all untyped routes (#1848)
+- **2025-11-07** | `d3e81e97` | simstudioai/sim#1849 | fix(deploy-modal): remove deleted blocks from example curl (#1849)
+- **2025-11-07** | `6cdee535` | simstudioai/sim#1842 | feat(scopes): add scopes warning hook (#1842)
+- **2025-11-07** | `a73e2aaa` | simstudioai/sim#1834 | improvement(templates): make it top-level route and change management/editing process (#1834)
+- **2025-11-07** | `f62568ef` | simstudioai/sim#1851 | fix(variables, webhook): fix variable tag dropdown for escaped < and allow empty webhook payload (#1851)
+- **2025-11-07** | `c8ea08e1` | simstudioai/sim#1852 | fix(file-upload): workspace/chat context not being passed in some forms (#1852)
+- **2025-11-07** | `d17c6270` | simstudioai/sim#1853 | fix(deployed-chat): fix duplication and file uploads (#1853)
+- **2025-11-07** | `e91a8af7` | simstudioai/sim#1850 | fix(files): fix json uploads, disable storage metering when billing is disabled, exclude kb uploads from storage metering, simplify serve path route (#1850)
+- **2025-11-07** | `7a8d47a7` | simstudioai/sim#1854 | fix(schedules): locking schedules to prevent double runs (#1854)
+- **2025-11-07** | `3f435ce5` | simstudioai/sim#1855 | fix(hitl): rename uiurl to url (#1855)
+- **2025-11-07** | `c397f5ac` | simstudioai/sim#1856 | fix(triggers): update filtering logic for edges (#1856)
+- **2025-11-08** | `945405c4` | simstudioai/sim#1857 | feat(blogs): added blogs scaffolding (#1857)
+- **2025-11-08** | `eed20727` | simstudioai/sim#1698 | feat/platform-v3 (#1698)
+- **2025-11-08** | `b3490e91` | simstudioai/sim#1860 | fix(build): remove mdx from transpilation (#1860)
+- **2025-11-08** | `e186ea63` | simstudioai/sim#1861 | improvement(ux): optimistic updates for envvars, custom tools, folder operations, workflow deletions. shared hook for connection tags & tag dropdown, fix for triggers not re-rendering on trigger selected (#1861)
+- **2025-11-08** | `7c6e6d16` | simstudioai/sim#1862 | improvement(code): add wand config and system prompt for python code generation, strip \n from stdout in JS/Python (#1862)
+- **2025-11-08** | `142d3aad` | simstudioai/sim#1833 | feat(helm): add copilot (#1833)
+- **2025-11-08** | `75ce8882` | simstudioai/sim#1863 | improvement(execution): trigger manual execution using mock payloads (#1863)
+- **2025-11-08** | `d0720b85` | simstudioai/sim#1865 | feat(i18n): update translations (#1865)
+- **2025-11-10** | `28b41607` | simstudioai/sim#1868 | improvement(subblocks): fixed trigger save, schedule save, time inp, text subblocks and schedule/workflow badges, can now deploy from the badge itself (#1868)
+- **2025-11-10** | `1e8b4769` | simstudioai/sim#1864 | feat: toolbar, terminal, tool-input, emcn updates, chat, deploy (#1864)
+- **2025-11-10** | `997c4639` | no-pr | fix build
+- **2025-11-10** | `b03f9702` | simstudioai/sim#1869 | feat(permissions): extend hook to detect missing scopes to return those scopes for upgrade, update credential selector subblock (#1869)
+- **2025-11-10** | `81a12e72` | simstudioai/sim#1872 | improvement(performance): added revalidation caches on ollama and openrouter models (#1872)
+- **2025-11-10** | `0d4d9531` | simstudioai/sim#1873 | fixed payload error (#1873)
+- **2025-11-10** | `0ed0a26b` | simstudioai/sim#1875 | feat(workflow-block): added redeploy action to workflow header for workflow block (#1875)
+- **2025-11-10** | `2f9224c1` | simstudioai/sim#1871 | feat(crms): added hubspot, asana, trello, salesforce, pipedrive tools and triggers (#1871)
+- **2025-11-10** | `118c477d` | simstudioai/sim#1874 | fix(copilot): fix triggers unsave on edit (#1874)
+- **2025-11-10** | `170eb36e` | simstudioai/sim#1877 | feat(subflows): editor, block; fix(copilot): stop, mr (#1877)
+- **2025-11-10** | `698717d0` | simstudioai/sim#1876 | feat(i18n): update translations (#1876)
+- **2025-11-10** | `4b37f92f` | simstudioai/sim#1879 | improvement(ci): migrate to blacksmith runners (#1879)
+- **2025-11-10** | `cd48cd4d` | simstudioai/sim#1882 | fix(start): fix start drag from toolbar (#1882)
+- **2025-11-10** | `991b0e31` | simstudioai/sim#1883 | fix(triggers): fix triggers in subflows (#1883)
+- **2025-11-10** | `82731850` | simstudioai/sim#1881 | improvement(display-names): move display name mapping to central store + access pattern via hook (#1881)
+- **2025-11-10** | `37fd21e0` | simstudioai/sim#1884 | fix(agent): tool credential dropdown (#1884)
+- **2025-11-10** | `ec70f6fa` | simstudioai/sim#1885 | improvement(trigger-subflow): reuse helper code (#1885)
+- **2025-11-10** | `68aaedeb` | simstudioai/sim#1886 | fix(dropdown): add dependsOn to dropdown component to dynamically fetch options predicated on another subblock (#1886)
+- **2025-11-11** | `bc25ea28` | simstudioai/sim#1891 | fix(deployed-chat): fix deployed chat page crash (#1891)
+- **2025-11-11** | `fc162ab2` | simstudioai/sim#1892 | fix(deployed-chat): fix page crash on chat stream completion (#1892)
+- **2025-11-11** | `41f3d506` | simstudioai/sim#1893 | fix(deployed-chat): prevent multiple simultaneous messages (#1893)
+- **2025-11-11** | `c86f2a05` | simstudioai/sim#1894 | fix(copilot): fix execute workflow from diff store (#1894)
+- **2025-11-11** | `b6139d6f` | simstudioai/sim#1887 | improvement(docs): simplify docs and add examples/pictures of v5 (#1887)
+- **2025-11-11** | `1130befb` | simstudioai/sim#1895 | fix(local): add missing deps, fix access patterns, update dockerfiles, updated turborepo (#1895)
+- **2025-11-11** | `16bd54c0` | simstudioai/sim#1896 | feat(i18n): update translations (#1896)
+- **2025-11-11** | `a6a9962c` | simstudioai/sim#1897 | feat(registry): support multi-workflow delete (#1897)
+- **2025-11-11** | `7c398e64` | simstudioai/sim#1899 | feat(i18n): update translations (#1899)
+- **2025-11-11** | `1cce4864` | simstudioai/sim#1898 | feat(notes): add notes (#1898)
+- **2025-11-11** | `831ce915` | simstudioai/sim#1900 | fix(trace-spans): fixed small styling bugs (#1900)
+- **2025-11-11** | `f00d5516` | simstudioai/sim#1901 | fix(google-drive-picker): hydration issues with drive picker + dependsOn for trigger subblocks (#1901)
+- **2025-11-11** | `77d897da` | simstudioai/sim#1902 | feat(duplicate): added folder duplication, add duplicate to sidebar context menu (#1902)
+- **2025-11-11** | `77ba4d10` | simstudioai/sim#1904 | fix(copilot): fix sent message width (#1904)
+- **2025-11-11** | `9b702c47` | simstudioai/sim#1903 | improvement(popover): added keyboard nav to tag dropdown popover to iterate over parent & child items (#1903)
+- **2025-11-11** | `b0935506` | simstudioai/sim#1905 | fix(credentials): remove special scopes from additional scopes required hook, remove additionalScopes arg from tool definition (#1905)
+- **2025-11-11** | `7b48d6ed` | simstudioai/sim#1906 | feat(workflow): workflow overhaul (#1906)
+- **2025-11-11** | `679c3418` | simstudioai/sim#1907 | fix(selectors-hydration): confluence, jira, teams (#1907)
+- **2025-11-11** | `76955567` | simstudioai/sim#1909 | Fix start block numbering (#1909)
+- **2025-11-11** | `96f134b1` | simstudioai/sim#1908 | fix(variables): fixed floating variables, added autcomplete off to prevent suggested values (#1908)
+- **2025-11-11** | `1d58fdf2` | simstudioai/sim#1910 | fix(invites): remove uuid validation from inv api (#1910)
+- **2025-11-11** | `d11ee044` | simstudioai/sim#1911 | fix(workspace-popover): added duplicate, import, export workspace; added export multiple workflows (#1911)
+- **2025-11-11** | `81411c73` | simstudioai/sim#1912 | feat(registry): renaming workspace and folders shortcut (#1912)
+- **2025-11-11** | `cbc98ab4` | simstudioai/sim#1915 | fix(variables): display name rendering (#1915)
+- **2025-11-11** | `5cea73fe` | simstudioai/sim#1916 | fix(copilot): show subblocks in diff mode (#1916)
+- **2025-11-12** | `41066b84` | simstudioai/sim#1917 | fix(executor): surface pre-execution errors (#1917)
+- **2025-11-12** | `9a6a6fda` | simstudioai/sim#1918 | improvement(docs): updated with new ss, docs script updated to copy items from main app into docs for tools (#1918)
+- **2025-11-12** | `56835b94` | simstudioai/sim#1920 | fix(executor): duplicate error, cmd+enter (#1920)
+- **2025-11-12** | `e3e95183` | no-pr | v0.4.26
+- **2025-11-12** | `1bd18ee8` | simstudioai/sim#1922 | feat(tag-dropdown): added start block to tag dropdown by default (#1922)
+- **2025-11-12** | `fa42ea44` | no-pr | fix(conflict): resolve merge conflict
+- **2025-11-12** | `413c460a` | simstudioai/sim#1728 | fix(billing): should allow restoring subscription (#1728) (#1925)
+- **2025-11-12** | `64c5f2c4` | simstudioai/sim#1926 | feat(i18n): update translations (#1926)
+- **2025-11-12** | `a0c4bce5` | simstudioai/sim#1927 | feat(studio): added 'studio' blog (#1927)
+- **2025-11-12** | `42e27695` | simstudioai/sim#1923 | feat: place all styles in global vars (#1923)
+- **2025-11-12** | `f4434e30` | simstudioai/sim#1931 | feat: templates, usage indicator, wand, approval, logs, help, settings, deploy template, error UI (#1931)
+- **2025-11-12** | `1201327a` | simstudioai/sim#1933 | fix(comment): fixed comment (#1933)
+- **2025-11-12** | `6747d898` | no-pr | v0.5: platform overhaul, 300+ new tools
+- **2025-11-12** | `af501347` | simstudioai/sim#1935 | feat(blogs): added blog tags (#1935)
+- **2025-11-12** | `63f18995` | no-pr | v0.5.1: blogs
+- **2025-11-12** | `c7560be2` | simstudioai/sim#1938 | fix(presence): fix additional avatars showing for presence (#1938)
+- **2025-11-12** | `e1a46c90` | simstudioai/sim#1937 | fix: table subblock (#1937)
+- **2025-11-12** | `cb39e697` | simstudioai/sim#1940 | fix(templates): fix template details page (#1940)
+- **2025-11-12** | `79b318fd` | simstudioai/sim#1942 | fix(templates): fix templates details page (#1942)
+- **2025-11-12** | `dbf9097a` | simstudioai/sim#1943 | fix(templates-details): restore approval feature, and keep details UI consistent, smoothen out creation of profile (#1943)
+- **2025-11-12** | `61404d48` | simstudioai/sim#1944 | fix(landing): need to propagate landing page copilot prompt (#1944)
+- **2025-11-12** | `6315cc10` | simstudioai/sim#1946 | fix(wand): subblocks should not be overwritten after wand gen (#1946)
+- **2025-11-12** | `2fbe0de5` | simstudioai/sim#1945 | fix(settings): fix broken api keys, help modal, logs, workflow renaming (#1945)
+- **2025-11-12** | `9db969b1` | simstudioai/sim#1947 | fix(files): changed file input value sample from string -> object (#1947)
+- **2025-11-12** | `36bcd758` | simstudioai/sim#1948 | improvement: usage-indicator UI (#1948)
+- **2025-11-12** | `ff081714` | simstudioai/sim#1949 | fix(deploy): fix button (#1949)
+- **2025-11-12** | `01183f17` | simstudioai/sim#1950 | fix(executor): consolidate execution hooks (#1950)
+- **2025-11-12** | `10288111` | simstudioai/sim#1951 | fix(autoconnect): should check if triggermode is set from the toolbar drag event directly (#1951)
+- **2025-11-12** | `ead0db9d` | simstudioai/sim#1952 | improvement: templates styling (#1952)
+- **2025-11-12** | `f414ae19` | simstudioai/sim#1954 | improvement: template use button (#1954)
+- **2025-11-12** | `675c4218` | simstudioai/sim#1953 | feat(newgifs): added new gifs (#1953)
+- **2025-11-12** | `766c7fbf` | simstudioai/sim#1956 | feat(drizzle): added ods for analytics from drizzle (#1956)
+- **2025-11-12** | `66c8fa2a` | no-pr | v0.5.2: templates, wand, settings, table, copilot-landing, files, deploy, autoconnect
+- **2025-11-12** | `74202ce1` | simstudioai/sim#1958 | fix(sheets): file selector had incorrect provider (#1958)
+- **2025-11-12** | `f9e822f6` | simstudioai/sim#1957 | feat(docs): added docs analytics drizzle ods (#1957)
+- **2025-11-12** | `6513cbb7` | simstudioai/sim#1959 | fix provider for docs selector (#1959)
+- **2025-11-12** | `d50aefcc` | simstudioai/sim#1960 | fix(custom-tools): updates to legacy + copilot generated custom tools  (#1960)
+- **2025-11-12** | `07e803cf` | simstudioai/sim#1964 | fix(slack): remove update message incorrect canonical param (#1964)
+- **2025-11-12** | `304fb28b` | simstudioai/sim#1962 | improvement(templates): add share button, serve public templates routes for unauthenticated users and workspace one for authenticated users, improve settings style and organization (#1962)
+- **2025-11-12** | `4e5b8344` | simstudioai/sim#1966 | fix(onedrive): incorrect canonical param (#1966)
+- **2025-11-12** | `53150021` | no-pr | v0.5.3: docs, sheets, slack, custom tools fixes  and templates contexts improvements
+- **2025-11-13** | `a70f2a66` | simstudioai/sim#1963 | fix(executor): streaming after tool calls (#1963)
+- **2025-11-13** | `383b6f05` | simstudioai/sim#1969 | fix(code): readd wand to code subblock (#1969)
+- **2025-11-13** | `3a8f01f3` | simstudioai/sim#1970 | fix(cmd-k): z-index + reoder tools, triggers (#1970)
+- **2025-11-13** | `6f4f8cfa` | simstudioai/sim#1972 | fix(executor): streaming response format (#1972)
+- **2025-11-13** | `b67b4ff8` | simstudioai/sim#1973 | fix(workflow-block): fix redeploy header to not repeatedly show redeploy when redeploy is not necessary (#1973)
+- **2025-11-13** | `80eaeb00` | simstudioai/sim#1974 | improvement(platform): chat, emcn, terminal, usage-limit (#1974)
+- **2025-11-13** | `32a2e09a` | no-pr | fix lint
+- **2025-11-13** | `5457d4bc` | simstudioai/sim#1971 | feat(settings): added reactquery for settings, removed zustand stores, added apollo, added workflow block selector dropdown search, added add environment variable option to empty env var dropdown (#1971)
+- **2025-11-13** | `b3caef1f` | simstudioai/sim#1977 | fix(copilot-subflows): copilot-added subflows id mismatch (#1977)
+- **2025-11-13** | `67d93430` | simstudioai/sim#1978 | feat(i18n): update translations (#1978)
+- **2025-11-13** | `d2c01478` | no-pr | v0.5.4: streaming fixes, deployment bug fixes, resolve ui bugs, tanstack query for settings, copilot subflow edits fixes
+- **2025-11-13** | `dab70a8f` | simstudioai/sim#1979 | fix(logs): show block inputs (#1979)
+- **2025-11-13** | `785f847c` | simstudioai/sim#1981 | fix(onedrive): parse array values correctly (#1981)
+- **2025-11-13** | `d86198ad` | simstudioai/sim#1980 | feat(files): add presigned URL generation support for execution files (#1980)
+- **2025-11-13** | `1e915d54` | simstudioai/sim#1982 | fix(popovers): billed account + async example command (#1982)
+- **2025-11-13** | `3ba33791` | simstudioai/sim#1983 | fix(settings): update usage data in settings > subs to use reactquery hooks (#1983)
+- **2025-11-13** | `948b6575` | simstudioai/sim#1984 | fix(output-selector): z-index in chat deploy modal (#1984)
+- **2025-11-14** | `1082e558` | simstudioai/sim#1985 | improvement(logs): improved logs search (#1985)
+- **2025-11-14** | `6c56d48e` | simstudioai/sim#1987 | feat(slack): added slack full message object in response (#1987)
+- **2025-11-14** | `16a4f37d` | simstudioai/sim#1990 | feat(slack): add better error messages, reminder to add bot to app (#1990)
+- **2025-11-14** | `a9eb91ae` | simstudioai/sim#1989 | feat(i18n): update translations (#1989)
+- **2025-11-14** | `fa18bef6` | simstudioai/sim#1988 | fix(landing): hero stripe icon (#1988)
+- **2025-11-14** | `72a048f3` | simstudioai/sim#1991 | fix(variables): fix double stringification (#1991)
+- **2025-11-14** | `4b4060f6` | simstudioai/sim#1992 | improvement(variables): support dot notation for nested objects (#1992)
+- **2025-11-14** | `ec430abc` | simstudioai/sim#1994 | improvement(tanstack): migrate multiple stores (#1994)
+- **2025-11-14** | `c2ccd51b` | simstudioai/sim#1996 | fix(folders): duplicate (#1996)
+- **2025-11-14** | `6f29e241` | simstudioai/sim#1997 | fix(variables): fix variables block json resolution (#1997)
+- **2025-11-14** | `96958104` | simstudioai/sim#1998 | Improvement(ui/ux): signup, command-list, cursors, search modal, workflow runs, usage indicator (#1998)
+- **2025-11-14** | `aca4d2fc` | no-pr | v0.5.5: slack tool updates, logs search, response block fixes, reactquery migrations
+- **2025-11-14** | `31ed7123` | simstudioai/sim#1999 | test(pr): hackathon (#1999)
+- **2025-11-14** | `de91dc97` | simstudioai/sim#2000 | test(pr): github trigger (#2000)
+- **2025-11-14** | `ad2a3753` | simstudioai/sim#2001 | fix(usage-indicator): conditional rendering, upgrade, and ui/ux (#2001)
+- **2025-11-14** | `8bd75deb` | simstudioai/sim#2002 | fix(notes): fix notes, tighten spacing, update deprecated zustand function, update use mention data to ignore block positon (#2002)
+- **2025-11-14** | `d0767507` | simstudioai/sim#2004 | fix(pdfs): use unpdf instead of pdf-parse (#2004)
+- **2025-11-14** | `f1111ec1` | simstudioai/sim#2005 | fix(modals): fix z-index for various modals and output selector and variables (#2005)
+- **2025-11-14** | `bc8947ca` | simstudioai/sim#2006 | fix(condition): treat condition input the same as the code subblock (#2006)
+- **2025-11-14** | `f8070f90` | simstudioai/sim#2007 | feat(models): added gpt-5.1 (#2007)
+- **2025-11-14** | `4bd0f31f` | simstudioai/sim#2008 | improvement: runpath edges, blocks, active (#2008)
+- **2025-11-14** | `b5d9964c` | simstudioai/sim#2009 | feat(i18n): update translations (#2009)
+- **2025-11-15** | `dccd9e9c` | simstudioai/sim#2011 | fix(triggers): check triggermode and consolidate block type (#2011)
+- **2025-11-15** | `c25ea5c6` | simstudioai/sim#2012 | fix(triggers): disabled trigger shouldn't be added to dag (#2012)
+- **2025-11-15** | `fca92a74` | simstudioai/sim#2013 | fix(tags): only show start block upstream if is ancestor (#2013)
+- **2025-11-15** | `949f9287` | simstudioai/sim#2016 | fix(variables): Fix resolution on double < (#2016)
+- **2025-11-15** | `d99d5fe3` | simstudioai/sim#2015 | feat(billing): add notif for first failed payment, added upgrade email from free, updated providers that supported granular tool control to support them, fixed envvar popover, fixed redirect to wrong workspace after oauth connect (#2015)
+- **2025-11-15** | `5f446ad7` | simstudioai/sim#2017 | feat(performance): added reactquery hooks for workflow operations, for logs, fixed logs reloading, fix subscription UI (#2017)
+- **2025-11-15** | `1c85fe9a` | simstudioai/sim#2018 | fix(copilot): run workflow supports input format and fix run id (#2018)
+- **2025-11-15** | `7e3e38a6` | simstudioai/sim#2019 | fix(router): fix error edge in router block + fix source handle problem (#2019)
+- **2025-11-17** | `e37b01b9` | simstudioai/sim#2024 | improvement: code subblock, action bar, connections (#2024)
+- **2025-11-17** | `bfa7c919` | simstudioai/sim#2027 | fix(response): fix response block http format (#2027)
+- **2025-11-17** | `6f3dee86` | simstudioai/sim#2029 | fix(notes): fix notes block spacing, additional logs for billing transfer route (#2029)
+- **2025-11-17** | `3058e35e` | simstudioai/sim#2028 | v0.5.6: executor fixes, UI improvements, run paths (#2028)
+- **2025-11-17** | `a81f3847` | simstudioai/sim#2032 | fix(usage-data): refetch on usage limit update in settings (#2032)
+- **2025-11-17** | `b5b2855b` | simstudioai/sim#2034 | fix(overage): fix pill calculation in the usage indicator to be consistent across views (#2034)
+- **2025-11-17** | `00d9b45a` | simstudioai/sim#2035 | fix(workflows): fixed workflow loading in without start block, added templates RQ hook, cleaned up unused templates code (#2035)
+- **2025-11-17** | `98908dbf` | simstudioai/sim#2033 | fix(triggers): dedup + not surfacing deployment status log (#2033)
+- **2025-11-17** | `3d1feab5` | simstudioai/sim#2036 | improvement(undo-redo): expand undo-redo store to store 100 ops instead of 15 (#2036)
+- **2025-11-17** | `d51a756c` | simstudioai/sim#2037 | improvement(docs): remove copy page from mobile view on docs (#2037)
+- **2025-11-17** | `25ac9177` | simstudioai/sim#2038 | fix(workflow-block): clearing child workflow input format field must lazy cascade parent workflow state deletion (#2038)
+- **2025-11-17** | `620ce970` | simstudioai/sim#2020 | improvement(selectors): consolidate all integration selectors to use the combobox (#2020)
+- **2025-11-17** | `33ca1483` | no-pr | Merge branch 'main' into staging
+- **2025-11-17** | `8f0ef580` | no-pr | v0.5.7: combobox selectors, usage indicator, workflow loading race condition, other improvements
+- **2025-11-18** | `e0aade85` | simstudioai/sim#2025 | feat: notification store (#2025)
+- **2025-11-18** | `a8a693f1` | simstudioai/sim#2043 | fix(deploy): add sockets op for renaming blocks (#2043)
+- **2025-11-18** | `02d9fedf` | simstudioai/sim#2023 | feat(agent): messages array, memory (#2023)
+- **2025-11-18** | `3faab2cb` | simstudioai/sim#2045 | improvement(notifications): add option to disable error notifications, remove deprecated autoFillEnvVars field (#2045)
+- **2025-11-18** | `a7fe1d3a` | simstudioai/sim#2046 | fix(models): remove unrelease oai models, fix help modal (#2046)
+- **2025-11-18** | `96207d85` | simstudioai/sim#2047 | fix(subflows): add loops/parallels to accessible list of blocks in the tag dropdown when contained withitn a subflow (#2047)
+- **2025-11-18** | `2608f2f1` | simstudioai/sim#2048 | fix(copiolot-ui): fix code markdown rendering in copilot & table (#2048)
+- **2025-11-18** | `5e11e5df` | simstudioai/sim#2044 | fix(ui): live usage indicator, child trace spans, cancel subscription modal z-index (#2044)
+- **2025-11-18** | `7045c4a4` | simstudioai/sim#2049 | fix(dialogs): standardized delete modals (#2049)
+- **2025-11-19** | `570b8d61` | simstudioai/sim#2055 | improvement(runners): added blacksmith optimizations to workflows and dockerfiles to enhance performance (#2055)
+- **2025-11-19** | `2be3007d` | simstudioai/sim#2058 | fix(mcp-preview): server and tool name fetch to use tanstack (#2058)
+- **2025-11-19** | `f609b6ea` | simstudioai/sim#2059 | fix(z-index): deployment versions rename + view active popover (#2059)
+- **2025-11-19** | `3647a3e3` | simstudioai/sim#2061 | improvement(tools): added add worksheet to excel block (#2061)
+- **2025-11-19** | `c93f6620` | simstudioai/sim#2053 | improvement(tools): add eleven_v3 to elevenlabs block (#2053)
+- **2025-11-19** | `becd19bc` | simstudioai/sim#2056 | improvement(ux): added tab key navigation for agent messages, made variables styling match chat, added neo4j and calendly (#2056)
+- **2025-11-19** | `95d5fd9c` | simstudioai/sim#2062 | feat(i18n): update translations (#2062)
+- **2025-11-19** | `3468593f` | simstudioai/sim#2064 | feat(i18n): update translations (#2064)
+- **2025-11-19** | `d9cb63ce` | simstudioai/sim#2057 | feat(chat): add 'add inputs' button to chat window (#2057)
+- **2025-11-19** | `e4ccedc4` | simstudioai/sim#2066 | fix(tools): added stricter aura host db validation check for neo4j tool (#2066)
+- **2025-11-19** | `e5cb6e3d` | simstudioai/sim#2065 | improvement(store-hydration): refactor loading state tracking for workflows (#2065)
+- **2025-11-19** | `7c5d625c` | simstudioai/sim#2067 | fix(blogs): update sitemap and fix loading strat on blogs to prevent mobile crash (#2067)
+- **2025-11-19** | `e64b1c9f` | simstudioai/sim#2068 | feat(tools): added speech to text with openai whisper, elevenlabs, and deepgram (#2068)
+- **2025-11-19** | `f570592a` | simstudioai/sim#2070 | fix(linear): update required fields (#2070)
+- **2025-11-19** | `e7d4afa4` | simstudioai/sim#2071 | feat(i18n): update translations (#2071)
+- **2025-11-19** | `4d5c5743` | simstudioai/sim#2073 | fix(stt): add fallback for ffmpeg (#2073)
+- **2025-11-20** | `472aff5d` | simstudioai/sim#2074 | fix(resolver): json/array field parsing (#2074)
+- **2025-11-20** | `304cafe6` | simstudioai/sim#2075 | improvement(linear): cleanup linear checks (#2075)
+- **2025-11-20** | `31c34b2e` | no-pr | v0.5.8: notifications, billing, ui changes, store loading state machine
+- **2025-11-20** | `f208ff93` | simstudioai/sim#2076 | fix(agent): add backwards compat for agent messages array (#2076)
+- **2025-11-20** | `842ef27e` | no-pr | v0.5.9: add backwards compatibility for agent messages array
+- **2025-11-20** | `d7586cdd` | simstudioai/sim#2079 | fix(undo-redo): eviction policy to not have unbounded undo-redo stacks (#2079)
+- **2025-11-20** | `00ae7186` | simstudioai/sim#2082 | improvement(runners): upgrade runners, remove trigger deploy action (#2082)
+- **2025-11-20** | `4a0450d1` | simstudioai/sim#2078 | fix(embeddings): modified embeddings utils to only index english docs (#2078)
+- **2025-11-20** | `75f55c89` | simstudioai/sim#2081 | fix(logging): add preprocessing util shared by all execution paths (#2081)
+- **2025-11-20** | `768cdec6` | simstudioai/sim#2084 | fix(logs): fixed logs search (#2084)
+- **2025-11-20** | `022b4f64` | simstudioai/sim#2087 | fix(linear): fix remaining ops (#2087)
+- **2025-11-20** | `61875612` | simstudioai/sim#2089 | improvement(chat): ui (#2089)
+- **2025-11-20** | `3dbf0f56` | simstudioai/sim#2083 | feat: keyboard navigation; improvement: SEO/GEO; refactor: file structure, unused fonts; fix: chat streaming, notification stack (#2083)
+- **2025-11-20** | `c5250161` | simstudioai/sim#2088 | feat(i18n): update translations (#2088)
+- **2025-11-20** | `67bd5bd8` | simstudioai/sim#2090 | fix(integ): remove unused oauth providers from list of supported integrations (#2090)
+- **2025-11-21** | `ddd32191` | simstudioai/sim#2086 | improvement(copilot): v0.2 (#2086)
+- **2025-11-21** | `3be57aff` | simstudioai/sim#2092 | improvement(copilot): add gpt5.1 and codex (#2092)
+- **2025-11-21** | `b7e814b7` | no-pr |  v0.5.10: copilot upgrade, preprocessor, logs search, UI, code hygiene
+- **2025-11-21** | `0a4244bc` | simstudioai/sim#2094 | feat(tools): added more tts providers, added stt and videogen models, fixed search modal keyboard nav (#2094)
+- **2025-11-21** | `9fad5860` | simstudioai/sim#2097 | feat(i18n): update translations (#2097)
+- **2025-11-21** | `fa4b34fc` | simstudioai/sim#2098 | removed broken scope (#2098)
+- **2025-11-21** | `29156e3b` | simstudioai/sim#2099 | added missing mcp images (#2099)
+- **2025-11-21** | `33ac828d` | simstudioai/sim#2100 | fix(settings): settings components and behavior consolidation (#2100)
+- **2025-11-22** | `d1f0d21e` | simstudioai/sim#2102 | improvement(logs): surface integration triggers in logs instead of catchall 'webhook' trigger type (#2102)
+- **2025-11-22** | `6114c213` | simstudioai/sim#2103 | feature(models): added vllm provider (#2103)
+- **2025-11-22** | `72776f44` | simstudioai/sim#2105 | improvement(docs): added docs content (#2105)
+- **2025-11-22** | `619cab16` | simstudioai/sim#2106 | feat(i18n): update translations (#2106)
+- **2025-11-24** | `bf1719a2` | simstudioai/sim#2110 | added new scope (#2110)
+- **2025-11-24** | `c6482f29` | simstudioai/sim#2085 | fix(billing): only check owners for billed overages (#2085)
+- **2025-11-24** | `a5b7897b` | simstudioai/sim#2111 | feat(models): added claude opus 4.5 (#2111)
+- **2025-11-24** | `c80827f2` | simstudioai/sim#2107 | feat(agent): added workflow, kb, and function as a tool for agent block, fix keyboard nav in tool input (#2107)
+- **2025-11-24** | `bbaf7e90` | simstudioai/sim#2112 | improvement(autolayout): simplify code to use fixed block widths, height + refactor (#2112)
+- **2025-11-24** | `ff768ca4` | simstudioai/sim#2096 | fix(copilot): fix webhook triggers unsaving in new diff store (#2096)
+- **2025-11-24** | `d413bcdf` | simstudioai/sim#2113 | feat(copilot): add claude opus 4.5 and remove context usage indicator (#2113)
+- **2025-11-25** | `ebcd2439` | no-pr | v0.5.11: stt, videogen, vllm, billing fixes, new models
+- **2025-11-25** | `7b7586d0` | simstudioai/sim#2115 | fix(memory-util): fixed unbounded array of gmail/outlook pollers causing high memory util, added missing db indexes/removed unused ones, auto-disable schedules/webhooks after 10 consecutive failures (#2115)
+- **2025-11-25** | `3a3c9466` | simstudioai/sim#2117 | improvement(teams-plan): seats increase simplification + not triggering checkout session (#2117)
+- **2025-11-25** | `ff79b78b` | simstudioai/sim#2116 | feat(tools): added sentry, incidentio, and posthog tools (#2116)
+- **2025-11-25** | `93e1c513` | simstudioai/sim#2120 | feat(i18n): update translations (#2120)
+- **2025-11-26** | `0830490d` | simstudioai/sim#2119 | improvement(workflow-execution): perf improvements to passing workflow state + decrypted env vars (#2119)
+- **2025-11-26** | `8000394e` | simstudioai/sim#2122 | feat(models): host google gemini models (#2122)
+- **2025-11-26** | `aab1b3f2` | simstudioai/sim#2123 | feat(i18n): update translations (#2123)
+- **2025-11-27** | `1ee49ae6` | simstudioai/sim#2126 | feat(tools): added zendesk, pylon, intercom, & mailchimp (#2126)
+- **2025-11-27** | `be91cd37` | simstudioai/sim#2129 | feat(i18n): update translations (#2129)
+- **2025-11-28** | `a10e1a63` | simstudioai/sim#2130 | fix(permissions): add client-side permissions validation to prevent unauthorized actions, upgraded custom tool modal (#2130)
+- **2025-11-28** | `21a640af` | simstudioai/sim#2131 | fix(custom-tools): add composite index on custom tool names & workspace id (#2131)
+- **2025-11-28** | `1d087968` | simstudioai/sim#2132 | v0.5.12: memory optimizations, sentry, incidentio, posthog, zendesk, pylon, intercom, mailchimp, loading optimizations (#2132)
+- **2025-11-29** | `7bf9251d` | simstudioai/sim#2133 | feat(tools): added smtp, sendgrid, mailgun, linkedin, fixed permissions in context menu (#2133)
+- **2025-11-29** | `fc5f815c` | simstudioai/sim#2118 | fix(team-plans): track departed member usage so value not lost (#2118)
+- **2025-11-29** | `93309406` | simstudioai/sim#2134 | feat(i18n): update translations (#2134)
+- **2025-11-29** | `a8f87f7e` | simstudioai/sim#2135 | feat(creators): add verification for creators (#2135)
+- **2025-11-29** | `d7a650a3` | simstudioai/sim#2136 | feat(tools): added apify block/tools  (#2136)
+- **2025-11-30** | `f56d85bd` | simstudioai/sim#2137 | feat(i18n): update translations (#2137)
+- **2025-11-30** | `08d57b4f` | simstudioai/sim#2138 | feat(env): added more optional env var examples (#2138)
+- **2025-11-30** | `f25db707` | simstudioai/sim#2139 | feat(statuspage): added statuspage, updated list of tools in footer, renamed routes (#2139)
+- **2025-11-30** | `e3a57d30` | simstudioai/sim#2140 | feat(tools): add generic search tool (#2140)
+- **2025-11-30** | `4e9cab39` | simstudioai/sim#2141 | feat(i18n): update translations (#2141)
+- **2025-11-30** | `7b279212` | simstudioai/sim#2142 | fix(sdks): bump sdk versions (#2142)
+- **2025-11-30** | `7f62467f` | simstudioai/sim#2143 | fix(webhooks): count test webhooks towards usage limit (#2143)
+- **2025-11-30** | `e80feee5` | simstudioai/sim#2144 | fix(bill): add requestId to webhook processing (#2144)
+- **2025-11-30** | `3a4f130f` | simstudioai/sim#2145 | improvement(subflow): remove all associated edges when moving a block into a subflow (#2145)
+- **2025-12-01** | `b069034d` | simstudioai/sim#2146 | fix(polling): mark webhook failed on webhook trigger errors (#2146)
+- **2025-12-01** | `1e080e98` | simstudioai/sim#2147 | fix(deps): declare core transient deps explicitly (#2147)
+- **2025-12-01** | `8c32ad4c` | simstudioai/sim#2148 | v0.5.13: polling fixes, generic agent search tool, status page, smtp, sendgrid, linkedin, more tools (#2148)
+- **2025-12-01** | `d22b21c8` | simstudioai/sim#2128 | improvement(selectors): make serviceId sole source of truth (#2128)
+- **2025-12-01** | `54cc9374` | no-pr | v0.5.14: fix issue with teams, google selectors + cleanup code
+- **2025-12-01** | `cb0c55c6` | simstudioai/sim#2150 | feat(tools): added rds, dynamodb, background color gradient (#2150)
+- **2025-12-01** | `ede41af6` | simstudioai/sim#2151 | fix(selector): remove subblock state prop for subblock component (#2151)
+- **2025-12-01** | `774e5d58` | no-pr | v0.5.15: add tools, revert subblock prop change
+- **2025-12-01** | `ee3e1e8c` | simstudioai/sim#2154 | fix(docs): update docs to background instead of backgroundColor (#2154)
+- **2025-12-01** | `304b5d9c` | simstudioai/sim#2153 | feat(i18n): update translations (#2153)
+- **2025-12-01** | `0ae7eb19` | simstudioai/sim#2156 | improvement(agent): switch default model to claude 4.5 sonnet (#2156)
+- **2025-12-02** | `3b4f227e` | simstudioai/sim#2158 | fix(mcp): reuse sessionID for consecutive MCP tool calls, fix dynamic args clearing, fix refreshing tools on save (#2158)
+- **2025-12-02** | `6fda9bd7` | simstudioai/sim#2159 | feat(models): added latest mistral models (#2159)
+- **2025-12-02** | `41c068c0` | simstudioai/sim#2160 | improvement(lib): refactored lib/ to be more aligned with queries and api directory (#2160)
+- **2025-12-02** | `bf54c88a` | simstudioai/sim#2161 | feat(models): added xai models and updated gemini pricing (#2161)
+- **2025-12-02** | `2ab8cec8` | simstudioai/sim#2162 | fix(icons): fix mailgun, restore tts and smtp blocks (#2162)
+- **2025-12-02** | `84c2335a` | simstudioai/sim#2163 | feat(i18n): update translations (#2163)
+- **2025-12-02** | `ffd12e1d` | simstudioai/sim#2164 | fix(subblocks): update guardrails pii selector component to use emcn (#2164)
+- **2025-12-02** | `eb0d4cbd` | simstudioai/sim#2165 | fix(templates): fixed verified creator status displaying & tooltip on templates (#2165)
+- **2025-12-02** | `9670d96e` | simstudioai/sim#2166 | fix(templates-page): loading issue due to loading extensive workflow block in preview for all listings (#2166)
+- **2025-12-02** | `a6e3c92c` | simstudioai/sim#2167 | fix(jira): fixed incorrect dependsOn for jira project/issue subblcks (#2167)
+- **2025-12-02** | `3e83fb39` | simstudioai/sim#2168 | fix(trace-spans): fix input/output token count in trace spans (#2168)
+- **2025-12-02** | `7de721e0` | simstudioai/sim#2169 | fix(logs): logging with error issues for model costs (#2169)
+- **2025-12-02** | `e157ce5f` | no-pr | v0.5.16: MCP fixes, code refactors, jira fixes, new mistral models
+- **2025-12-03** | `3158b62d` | simstudioai/sim#2104 | feat: light, emcn, modals (#2104)
+- **2025-12-03** | `08a11935` | simstudioai/sim#2173 | fix: commented out light mode (#2173)
+- **2025-12-03** | `5630e133` | simstudioai/sim#2175 | feat(tools): added zoom, elasticsearch, dropbox, kalshi, polymarket, datadog, ahrefs, gitlab, shopify, ssh, wordpress (#2175)
+- **2025-12-04** | `5d791cd5` | simstudioai/sim#2178 | feat(i18n): update translations (#2178)
+- **2025-12-04** | `6d4ba6d5` | simstudioai/sim#2180 | chore(deps): upgrade from nextjs 15.4.1 to 15.4.8 and upgrade turborepo (#2180)
+- **2025-12-04** | `36c91f4c` | simstudioai/sim#2176 | feat: terminal serach; fix: delete-modal (#2176)
+- **2025-12-04** | `c864d179` | simstudioai/sim#2181 | chore(deps): upgrade to bun v1.3 (#2181)
+- **2025-12-04** | `9df87d9b` | simstudioai/sim#2182 | fix(mcp): remove client-side cache and reduce server cache from 5m to 30s (#2182)
+- **2025-12-04** | `cd5d1c09` | simstudioai/sim#2184 | fix(executor): nested error activation (#2184)
+- **2025-12-04** | `6bfb643e` | simstudioai/sim#2185 | fix(polling): fixed gmail and outlook polling to respect disabled status (#2185)
+- **2025-12-04** | `f44e7e34` | simstudioai/sim#2186 | fix(input): allow test value if no real value provided for inputs in deployed executions (#2186)
+- **2025-12-04** | `042de6a9` | simstudioai/sim#2187 | fix: modals, settings, panel (#2187)
+- **2025-12-04** | `099e86e3` | simstudioai/sim#2189 | fix(settings): fixed sso form validation (#2189)
+- **2025-12-04** | `a4d4dfaa` | simstudioai/sim#2190 | fix: tooltip on env settings (#2190)
+- **2025-12-04** | `e5816084` | simstudioai/sim#2191 | fix(copilot): fix code viewer in copilot user inp (#2191)
+- **2025-12-04** | `b54ca604` | simstudioai/sim#2192 | fix(chat): fix download & clear popover staying open after pressing in floating chat (#2192)
+- **2025-12-04** | `31874939` | no-pr | v0.5.17: modals, billing fixes, bun update, zoom, dropbox, kalshi, polymarket, datadog, ahrefs, gitlab, shopify, ssh, wordpress integrations
+- **2025-12-04** | `3f84ed9b` | simstudioai/sim#2195 | fix(settings): fix long description on wordpress integration (#2195)
+- **2025-12-04** | `dc5a2b1a` | simstudioai/sim#2196 | fix(envvar): fix envvar dropdown positioning, remove dead code (#2196)
+- **2025-12-04** | `ca3eb5b5` | simstudioai/sim#2198 | fix(subscription): fixed text clipping on subscription panel (#2198)
+- **2025-12-04** | `8e7d8c93` | simstudioai/sim#2199 | fix(profile-pics): remove sharp dependency for serving profile pics in settings (#2199)
+- **2025-12-04** | `d22b5783` | simstudioai/sim#2200 | fix(enterprise-plan): seats should be taken from metadata (#2200)
+- **2025-12-04** | `1642ed75` | simstudioai/sim#2202 | improvement: modal UI (#2202)
+- **2025-12-04** | `dcbdcb43` | simstudioai/sim#2203 | chore(deps): upgrade to nextjs 16 (#2203)
+- **2025-12-04** | `3b9f0f9c` | simstudioai/sim#2157 | feat(error-notifications): workspace-level configuration of slack, email, webhook notifications for workflow execution (#2157)
+- **2025-12-04** | `414a54c3` | simstudioai/sim#2204 | feat(i18n): update translations (#2204)
+- **2025-12-04** | `1b903f2d` | simstudioai/sim#2205 | fix(images): updated helm charts with branding URL guidance, removed additional nextjs image optimizations (#2205)
+- **2025-12-04** | `ca818a65` | simstudioai/sim#2206 | feat(admin): added admin APIs for admin management (#2206)
+- **2025-12-04** | `8ef9a451` | simstudioai/sim#2197 | fix(env-vars): refactor for workspace/personal env vars to work with server side execution correctly (#2197)
+- **2025-12-04** | `58251e28` | simstudioai/sim#2201 | feat(copilot): superagent (#2201)
+- **2025-12-05** | `7101dc58` | simstudioai/sim#2193 | improvement: loading, optimistic actions (#2193)
+- **2025-12-05** | `7752beac` | simstudioai/sim#2211 | fix(import): fix array errors on import/export (#2211)
+- **2025-12-05** | `5d6c1f7b` | simstudioai/sim#2212 | feat(tools): added more slack tools (#2212)
+- **2025-12-05** | `002713ec` | simstudioai/sim#2208 | feat(i18n): update translations (#2208)
+- **2025-12-05** | `4fd5f005` | simstudioai/sim#2215 | fix(copilot): validation (#2215)
+- **2025-12-05** | `fb4c9827` | simstudioai/sim#2214 | fix(custom-bot-slack): dependsOn incorrectly set for bot_token (#2214)
+- **2025-12-05** | `6cd078b0` | no-pr | v0.5.18: ui fixes, nextjs16, workspace notifications, admin APIs, loading improvements, new slack tools
+- **2025-12-05** | `c7b473f5` | simstudioai/sim#2216 | fix(build): added trigger.dev sdk mock to tests (#2216)
+- **2025-12-05** | `929a352e` | simstudioai/sim#2216 | fix(build): added trigger.dev sdk mock to tests (#2216)
+- **2025-12-05** | `75da06ad` | simstudioai/sim#2218 | fix(copilot): fix hanging tool calls (#2218)
+- **2025-12-05** | `9f604f37` | simstudioai/sim#2221 | fix(copilot): fix tool call flash (#2221)
+- **2025-12-05** | `656dfafb` | simstudioai/sim#2222 | fix(copilot): fix function execute tool (#2222)
+- **2025-12-05** | `12c4c2d4` | no-pr | v0.5.19: copilot fix
+- **2025-12-05** | `a50edf81` | simstudioai/sim#2223 | fix(autolayout): subflow calculation (#2223)
+- **2025-12-06** | `0b28128f` | simstudioai/sim#2209 | feat(tools): google slides tool, terminal console virtualization, tool fixes (#2209)
+- **2025-12-06** | `e52bd575` | simstudioai/sim#2226 | feat(i18n): update translations (#2226)
+- **2025-12-06** | `26670e28` | simstudioai/sim#2228 | fix(hosted): fixed hosted providers to exact string match model names rather than check provider names (#2228)
+- **2025-12-06** | `507fc112` | simstudioai/sim#2225 | feat(admin): added more billing, subscriptions, and organization admin API routes (#2225)
+- **2025-12-06** | `23ef39de` | simstudioai/sim#2227 | improvement(ui): revert settings > envvar ui (#2227)
+- **2025-12-06** | `7bfc6ebe` | simstudioai/sim#2230 | fix(copilot): fixed copilot code component overflowing gutter (#2230)
+- **2025-12-06** | `ebef5f3a` | no-pr |  v0.5.20: google slides, ui fixes, subflow resizing improvements
+- **2025-12-06** | `ae793728` | simstudioai/sim#2229 | feat(google-groups): added google groups (#2229)
+- **2025-12-06** | `683b4476` | simstudioai/sim#2232 | fix(google-drive): added support for shared drive (#2232)
+- **2025-12-06** | `6e02a732` | simstudioai/sim#2233 | feat(i18n): update translations (#2233)
+- **2025-12-06** | `22c9384f` | simstudioai/sim#2234 | improvement(code): removed dedicated code-optimized virtualized viewer, baked it into the code component (#2234)
+- **2025-12-06** | `e9d53042` | simstudioai/sim#2235 | fix(inactivity-notif): add cron to helm (#2235)
+- **2025-12-06** | `92c03b82` | simstudioai/sim#2177 | improvement(salesforce): fixed refresh and added endpoints (#2177)
+- **2025-12-06** | `9f884c15` | simstudioai/sim#2174 | feat(credits): prepurchase credits  (#2174)
+- **2025-12-07** | `05022e34` | simstudioai/sim#2236 | fix(copilot-autolayout): more subflow cases and deal with resizing (#2236)
+- **2025-12-07** | `5b9f3d3d` | simstudioai/sim#2237 | feat(docs): added additional self-hosting documentation (#2237)
+- **2025-12-07** | `b49b8eeb` | simstudioai/sim#2238 | feat(i18n): update translations (#2238)
+- **2025-12-07** | `434d1295` | simstudioai/sim#2240 | fix(autolayout): reduce horizontal spacing in autolayout (#2240)
+- **2025-12-07** | `d09fd6cf` | simstudioai/sim#2239 | fix(import): fixed trigger save on export/import flow (#2239)
+- **2025-12-08** | `e2b077f5` | simstudioai/sim#2243 | fix(conditional): don't error in condition blocks when no conditions are satisfied (#2243)
+- **2025-12-08** | `d200f664` | simstudioai/sim#2244 | feat(i18n): update translations (#2244)
+- **2025-12-08** | `01b2f809` | simstudioai/sim#2245 | feat(cursor): add cursor block and tools (#2245)
+- **2025-12-08** | `598c3bc6` | simstudioai/sim#2246 | feat(i18n): update translations (#2246)
+- **2025-12-08** | `feb59186` | simstudioai/sim#2248 | fix(docs): fix salesforce docs & update styling (#2248)
+- **2025-12-08** | `4fb039f3` | simstudioai/sim#2249 | feat(i18n): update translations (#2249)
+- **2025-12-08** | `c27c233d` | no-pr | v0.5.21: google groups, virtualized code viewer, ui, autolayout, docs improvements
+- **2025-12-08** | `c197b04b` | simstudioai/sim#2253 | fix(migration): migration got removed by force push (#2253)
+- **2025-12-08** | `d480057f` | simstudioai/sim#2253 | fix(migration): migration got removed by force push (#2253)
+- **2025-12-08** | `99e0b812` | simstudioai/sim#2247 | improvement(org): remove dead seats get endpoint (#2247)
+- **2025-12-08** | `87084edb` | simstudioai/sim#2256 | fix(timeouts): increased timeouts for function execution & agent (#2256)
+- **2025-12-08** | `e067b584` | simstudioai/sim#2257 | feat(admin): updated admin routes to consolidate duplicate behavior (#2257)
+- **2025-12-08** | `209b0f19` | simstudioai/sim#2258 | feat(tools): added duckduckgo (#2258)
+- **2025-12-08** | `5af67d08` | simstudioai/sim#2259 | feat(i18n): update translations (#2259)
+- **2025-12-08** | `dafd2f5c` | simstudioai/sim#2261 | feat(tools): added sftp tool to accompany smtp and ssh tools (#2261)
+- **2025-12-08** | `17a084cd` | simstudioai/sim#2260 | feat(copilot): updated copilot keys to have names, full parity with API keys page (#2260)
+- **2025-12-08** | `3ce27885` | simstudioai/sim#2262 | feat(i18n): update translations (#2262)
+- **2025-12-08** | `b7a1e8f5` | simstudioai/sim#2250 | fix(pre-proc-checks): deployed checks should precede cost/ratelimit increments" (#2250)
+- **2025-12-08** | `6b4d7629` | simstudioai/sim#2264 | fix(custom-tools, copilot): custom tools state + copilot fixes (#2264)
+- **2025-12-08** | `9f0584a8` | simstudioai/sim#2263 | feat(redis): added redis option for rate limiter, 10x speed improvement in rate limit checks & reduction of DB load (#2263)
+- **2025-12-08** | `2f0509ad` | simstudioai/sim#2265 | fix(nextjs-size-limit): surface 413s accurately (#2265)
+- **2025-12-08** | `e390ba04` | simstudioai/sim#2266 | feat(dropdowns): added searchbox to the operation dropdown for all blocks (#2266)
+- **2025-12-08** | `0db5ba1b` | simstudioai/sim#2255 | fix(org-limits): remove fallbacks for enterprise plan (#2255)
+- **2025-12-08** | `2fcd07e8` | simstudioai/sim#2267 | feat(triggers): added rss feed trigger & poller (#2267)
+- **2025-12-09** | `aa1d896b` | simstudioai/sim#2268 | feat(i18n): update translations (#2268)
+- **2025-12-09** | `52edbea6` | no-pr | v0.5.22: rss feed trigger, sftp tool, billing fixes, 413 surfacing, copilot improvements
+- **2025-12-09** | `22abf988` | simstudioai/sim#2273 | fix(mcp): prevent redundant MCP server discovery calls at runtime, use cached tool schema instead (#2273)
+- **2025-12-09** | `aea32d42` | simstudioai/sim#2270 | feat(rate-limiter): token bucket algorithm  (#2270)
+- **2025-12-09** | `cc66aa5a` | simstudioai/sim#2275 | feat(i18n): update translations (#2275)
+- **2025-12-09** | `569598b3` | simstudioai/sim#2274 | fix(tools): updated kalshi and polymarket tools to accurately reflect outputs (#2274)
+- **2025-12-09** | `306043ee` | simstudioai/sim#2276 | feat(i18n): update translations (#2276)
+- **2025-12-09** | `dd7db6e1` | simstudioai/sim#2277 | fix(autolayout): align by handle (#2277)
+- **2025-12-09** | `c5b3fcb1` | simstudioai/sim#2278 | fix(copilot): fix custom tools (#2278)
+- **2025-12-09** | `3cec4494` | simstudioai/sim#2279 | fix(ime): prevent form submission during IME composition steps (#2279)
+- **2025-12-09** | `0083c89f` | simstudioai/sim#2207 | feat(ui): logs, kb, emcn (#2207)
+- **2025-12-09** | `f421f27d` | simstudioai/sim#2282 | fix(creds): glitch allowing multiple credentials in an integration (#2282)
+- **2025-12-09** | `07135808` | simstudioai/sim#2283 | improvement: custom tools modal, logs-details (#2283)
+- **2025-12-09** | `d06b360b` | simstudioai/sim#2284 | fix(docs): fix copy page button and header hook (#2284)
+- **2025-12-09** | `cb6e7637` | simstudioai/sim#2280 | improvement(chat): add the ability to download files from the deployed chat (#2280)
+- **2025-12-10** | `6fd4087a` | simstudioai/sim#2285 | fix(container): resize heuristic improvement (#2285)
+- **2025-12-10** | `b7bbef86` | simstudioai/sim#2286 | v0.5.23: kb, logs, general ui improvements, token bucket rate limits, docs, mcp, autolayout improvements (#2286)
+- **2025-12-10** | `bbbb13af` | simstudioai/sim#2287 | feat(folders): add the ability to create a folder within a folder in popover (#2287)
+- **2025-12-10** | `163db5cf` | simstudioai/sim#2288 | fix(agent): filter out empty params to ensure LLM can set tool params at runtime (#2288)
+- **2025-12-10** | `6791d968` | simstudioai/sim#2290 | fix(mcp): added backfill effect to add missing descriptions for mcp tools (#2290)
+- **2025-12-10** | `1cfe2290` | simstudioai/sim#2289 | fix(redis): cleanup access pattern across callsites (#2289)
+- **2025-12-10** | `76bc2fae` | simstudioai/sim#2292 | improvement(log-details): polling, trace spans (#2292)
+- **2025-12-10** | `18b70324` | simstudioai/sim#2291 | v0.5.24: agent tool and UX improvements, redis service overhaul (#2291)
+- **2025-12-10** | `bbab2ff7` | simstudioai/sim#2293 | improvement(ui/ux): small styling improvements (#2293)
+- **2025-12-10** | `1d62ece9` | simstudioai/sim#2294 | fix(billing): copilot should directly deduct credit balance (#2294)
+- **2025-12-10** | `b5da6137` | no-pr | v0.5.25: minor ui improvements, copilot billing fix
+- **2025-12-10** | `1e563b1e` | simstudioai/sim#2296 | fix(ui/ux): templates and knowledge pages (#2296)
+- **2025-12-10** | `37d7902f` | simstudioai/sim#2298 | fix(dashboard): prevent dashboard from getting unmounted when on the logs page (#2298)
+- **2025-12-10** | `6c99c841` | simstudioai/sim#2297 | fix(tools): fixed zendesk tools, kb upload failure for md files, stronger typing (#2297)
+- **2025-12-10** | `14846ab0` | simstudioai/sim#2299 | feat(i18n): update translations (#2299)
+- **2025-12-10** | `63582366` | simstudioai/sim#2300 | fix(tools): fix perplexity & parallel ai tag dropdown inaccuracies (#2300)
+- **2025-12-10** | `da36c453` | simstudioai/sim#2303 | feat(i18n): update translations (#2303)
+- **2025-12-10** | `a881dc18` | simstudioai/sim#2302 | feat(sidebar): scroll to workflow/folder (#2302)
+- **2025-12-10** | `c550e459` | simstudioai/sim#2306 | fix(condition): fix condition block for no outgoing edge (#2306)
+- **2025-12-10** | `7fd912d8` | simstudioai/sim#2305 | fix(stagehand): upgraded stagehand sdk to remove deps incomptaible with bun runtime (#2305)
+- **2025-12-11** | `0997989f` | simstudioai/sim#2307 | fix(x): fix x optional tool params (#2307)
+- **2025-12-11** | `207a1497` | simstudioai/sim#2308 | fix(dbs): remove harness from validation on user-provided db creds (#2308)
+- **2025-12-11** | `3db8f824` | simstudioai/sim#2304 | feat(deployment-version): capture deployment version in log (#2304)
+- **2025-12-11** | `3fbd57ca` | no-pr | v0.5.26: tool fixes, templates and knowledgebase fixes, deployment versions in logs
+- **2025-12-11** | `39d5d797` | simstudioai/sim#2313 | fix(workflow-changes): changes detected in autolayout (#2313)
+- **2025-12-11** | `193a15ac` | simstudioai/sim#2312 | improvement(sidebar): auto-scroll (#2312)
+- **2025-12-11** | `b595273c` | simstudioai/sim#2316 | fix(vuln): fix dns rebinding/ssrf vulnerability (#2316)
+- **2025-12-11** | `c0bb8547` | simstudioai/sim#2314 | fix(parallel): variable resolution in collection (#2314)
+- **2025-12-11** | `d02499a9` | simstudioai/sim#2315 | fix(ollama): fixed messages array for ollama, added gpt-5.2 (#2315)
+- **2025-12-11** | `c592e541` | simstudioai/sim#2317 | fix(pg): for pg tools, use count isntead of length for number of rows impacted (#2317)
+- **2025-12-11** | `3b9cbeaa` | simstudioai/sim#2319 | fix(tools): updated browser use and stagehand to use the latest models (#2319)
+- **2025-12-11** | `e24f31cb` | no-pr | v0.5.27: sidebar updates, ssrf patches, gpt-5.2, stagehand fixes
+- **2025-12-11** | `4da5dd7f` | simstudioai/sim#2320 | fix(nextjs): upgrade nextjs to patch security vuln (#2320)
+- **2025-12-11** | `8d4f2e02` | simstudioai/sim#2310 | feat(tools): added sqs integration (#2310)
+- **2025-12-11** | `57b6bc36` | simstudioai/sim#2321 | feat(i18n): update translations (#2321)
+- **2025-12-11** | `31b795f8` | simstudioai/sim#2323 | fix(tools): fixed webflow limit and offset params (#2323)
+- **2025-12-11** | `3bde9e85` | simstudioai/sim#2326 | fix(mistral): remove wrapped output from mistral parse for kb parsing pdfs (#2326)
+- **2025-12-11** | `855e2c41` | simstudioai/sim#2324 | fix(kb): handle larger files in the kb (#2324)
+- **2025-12-11** | `030ae5cc` | simstudioai/sim#2325 | fix(tools): fixed tool outputs (#2325)
+- **2025-12-11** | `516dee14` | simstudioai/sim#2328 | feat(i18n): update translations (#2328)
+- **2025-12-11** | `06d2db78` | simstudioai/sim#2330 | improvement(kb): modals, page layouts (#2330)
+- **2025-12-11** | `c4fd39df` | simstudioai/sim#2329 | fix(firecrawl): fixed optional params for firecrawl (#2329)
+- **2025-12-11** | `3c847840` | simstudioai/sim#2331 | feat(i18n): update translations (#2331)
+- **2025-12-11** | `cb9b8812` | simstudioai/sim#2327 | fix(envvars): added industry standard dotenv parsing regex for adding envvars in settings (#2327)
+- **2025-12-11** | `3334dfee` | simstudioai/sim#2333 | fix(firecrawl): updated output for firecrawl extract (#2333)
+- **2025-12-11** | `045475b9` | simstudioai/sim#2334 | feat(i18n): update translations (#2334)
+- **2025-12-11** | `cd66fa84` | simstudioai/sim#2332 | fix(tools): fixed trello and telegram operations (#2332)
+- **2025-12-12** | `ffcaa655` | simstudioai/sim#2335 | feat(mcp): added the ability to refresh servers to grab new tools (#2335)
+- **2025-12-12** | `323e0352` | simstudioai/sim#2337 | feat(releases): tag releases to main with version numbers, speed up docker builds (#2337)
+- **2025-12-12** | `668118b1` | simstudioai/sim#2338 | fix(tools): remove pylon (#2338)
+- **2025-12-12** | `dda44f73` | simstudioai/sim#2341 | fix(build): remove incompatible --frozen-lockfile and --omit dev from docker (#2341)
+- **2025-12-12** | `deb08588` | simstudioai/sim#2342 | chore(db): remove unused  table and unused route (#2342)
+- **2025-12-12** | `0ea600d0` | simstudioai/sim#2340 | fix(browserbase): consoldiated stagehand agent and extract, updated wand UI to resize based on panel size (#2340)
+- **2025-12-12** | `49d31c80` | simstudioai/sim#2339 | feat(i18n): update translations (#2339)
+- **2025-12-12** | `0415eb47` | simstudioai/sim#2336 | fix(minor-bugs): grafana, zep, video generation, templates fixes (#2336)
+- **2025-12-12** | `e359dc29` | simstudioai/sim#2343 | fix(cron): reject CRON requests when CRON secret is not set (#2343)
+- **2025-12-12** | `cd7fa688` | simstudioai/sim#2344 | fix(build): fix DB dockerfile (#2344)
+- **2025-12-12** | `92db054c` | simstudioai/sim#2345 | feat(i18n): update translations (#2345)
+- **2025-12-12** | `d06d2b01` | simstudioai/sim#2346 | fix(copilot): fix incorrectly sanitizing json state (#2346)
+- **2025-12-12** | `d27f7c23` | simstudioai/sim#2349 | fix(next): remove openai and anthropic sdk's from serverExternalPackages (#2349)
+- **2025-12-12** | `132f4bca` | simstudioai/sim#2348 | fix(validation): don't validate disabled blocks (#2348)
+- **2025-12-12** | `ecf5209e` | simstudioai/sim#2347 | feat(integration): add spotify (#2347)
+- **2025-12-12** | `821d127c` | simstudioai/sim#2350 | fix(build): explicitly install shims module from anthropic and openai in stagehand route (#2350)
+- **2025-12-12** | `9e3e1860` | simstudioai/sim#2352 | fix(next): externalize playwright and ws (#2352)
+- **2025-12-12** | `65ac64c2` | simstudioai/sim#2351 | feat(i18n): update translations (#2351)
+- **2025-12-12** | `9c8d845b` | simstudioai/sim#2354 | feat(ui): added component playground & fixed training modal (#2354)
+- **2025-12-12** | `f526c36f` | no-pr | v0.5.28: tool fixes, sqs, spotify, nextjs update, component playground
+- **2025-12-12** | `4edb3be5` | simstudioai/sim#2355 | fix(spotify): added missing human readable scopes to oauth required modal (#2355)
+- **2025-12-13** | `690be530` | simstudioai/sim#2356 | chore(icons): update spotify icon (#2356)
+- **2025-12-13** | `f111dac0` | simstudioai/sim#2357 | improvement(autolayout): reduce horizontal spacing (#2357)
+- **2025-12-13** | `73940ab3` | simstudioai/sim#2358 | fix(deployed-chat): voice mode (#2358)
+- **2025-12-13** | `f7d1b06d` | simstudioai/sim#2360 | feat(docs): add opengraph to docs for dynamic link preview (#2360)
+- **2025-12-13** | `8d0e50fd` | simstudioai/sim#2363 | improvement(admin-routes): cleanup code that could accidentally desync stripe and DB (#2363)
+- **2025-12-13** | `75a5b432` | simstudioai/sim#2362 | feat(og): update og image (#2362)
+- **2025-12-13** | `746ff68a` | simstudioai/sim#2364 | fix(sub-deletion): subscription deletion handling for pro vs team/enterprise (#2364)
+- **2025-12-13** | `95b9ca46` | simstudioai/sim#2365 | feat(registration): allow self-hosted users to disable registration altogether (#2365)
+- **2025-12-13** | `0fb084b9` | simstudioai/sim#2366 | fix(subflows): prevent cross-boundary connections on autoconnect drop between subflow blocks and regular blocks (#2366)
+- **2025-12-13** | `d5b95cbd` | simstudioai/sim#2367 | fix(organizations): move organization better-auth client to conditionally be included based on FF (#2367)
+- **2025-12-13** | `c962e3b3` | simstudioai/sim#2368 | feat(webflow): added collection, item, & site selectors for webflow (#2368)
+- **2025-12-13** | `7443e280` | simstudioai/sim#2370 | feat(i18n): update translations (#2370)
+- **2025-12-13** | `431f2069` | simstudioai/sim#2371 | fix(tools): add validation for ids in tool routes (#2371)
+- **2025-12-13** | `a0fb8896` | no-pr | v0.5.29: chat voice mode, opengraph for docs, option to disable auth
+- **2025-12-14** | `0acd8602` | simstudioai/sim#2374 | fix(blog): use unoptimized tag for image assets (#2374)
+- **2025-12-15** | `6009a735` | simstudioai/sim#2380 | fix(vllm): remove requirement for api key for vllm (#2380)
+- **2025-12-15** | `842200bc` | simstudioai/sim#2375 | fix(docs): clarify working directory for drizzle migration (#2375)
+- **2025-12-15** | `fcf52ac4` | simstudioai/sim#2376 | fix(landing): prevent url encoding for spaces for footer links (#2376)
+- **2025-12-15** | `e43afc8b` | simstudioai/sim#2381 | fix(subscription): incomplete team subscription race condition (#2381)
+- **2025-12-15** | `9762bbc4` | simstudioai/sim#2383 | fix(wand): validate session before allowing access to wand generation (#2383)
+- **2025-12-15** | `8d38c2f1` | simstudioai/sim#2384 | fix(wand): should not be able to use wand ui without write/admin perms (#2384)
+- **2025-12-15** | `17b2e58c` | simstudioai/sim#2385 | improvement(rce): updated rce to use isolate pkg for RCE (#2385)
+- **2025-12-15** | `3a5363ac` | simstudioai/sim#2386 | feat(i18n): update translations (#2386)
+- **2025-12-15** | `a45bb1bf` | simstudioai/sim#2387 | fix(rce): add 'isolate' to list of trusted deps, fixed custom tools environment resolution (#2387)
+- **2025-12-15** | `bdcc42e5` | simstudioai/sim#2390 | fix(permissions): add client-side hints to prevent read-only users from creating workflows or folders (#2390)
+- **2025-12-15** | `300aaa53` | simstudioai/sim#2388 | feat(slack): ability to have DM channels as destination for slack tools (#2388)
+- **2025-12-15** | `b72e111e` | simstudioai/sim#2389 | fix(vm): use node child process for RCE (#2389)
+- **2025-12-15** | `57e6a0b6` | simstudioai/sim#2392 | fixed jira output (#2392)
+- **2025-12-15** | `a5b71483` | simstudioai/sim#2391 | fix(node): use node subprocess explicitly (#2391)
+- **2025-12-15** | `12d42e29` | simstudioai/sim#2393 | fix(docs): regen docs (#2393)
+- **2025-12-15** | `ab30d370` | simstudioai/sim#2395 | feat(i18n): update translations (#2395)
+- **2025-12-15** | `f0dc8e81` | simstudioai/sim#2394 | fix(build): downgrade nextjs from canary to 16.0.9 (#2394)
+- **2025-12-15** | `0e6a1315` | simstudioai/sim#2322 | improvement: workflow loading, sidebar scrolling (#2322)
+- **2025-12-15** | `25afacb2` | no-pr | v0.5.30: vllm fixes, permissions fixes, isolated vms for code execution, tool fixes
+- **2025-12-15** | `9cf8aaee` | simstudioai/sim#2397 | fix(sockets): add zod as direct sockets server dep (#2397)
+- **2025-12-15** | `f9cfca92` | no-pr | v0.5.31: add zod as direct dep
+- **2025-12-16** | `29befbc5` | simstudioai/sim#2405 | feat(schedule): add input form to schedule (#2405)
+- **2025-12-16** | `f7d2c966` | simstudioai/sim#2410 | fix(serializer): condition check should check if any condition are met (#2410)
+- **2025-12-16** | `837aabca` | no-pr | v0.5.32: google sheets fix, schedule input format
+- **2025-12-16** | `6f4f4e22` | simstudioai/sim#2413 | fix(loop): increased max loop iterations to 1000 (#2413)
+- **2025-12-16** | `fdbf8be7` | simstudioai/sim#2417 | fix(logs-search): restored support for log search queries (#2417)
+- **2025-12-16** | `9861d3a0` | simstudioai/sim#2412 | improvement(helm): added more to helm charts, remove instance selector for various cloud providers (#2412)
+- **2025-12-16** | `27ea3339` | simstudioai/sim#2418 | fix(chat): fix stale closure in workflow runner for chat (#2418)
+- **2025-12-16** | `dcbeca1a` | simstudioai/sim#2419 | fix(subflow): fix json stringification in subflow collections (#2419)
+- **2025-12-16** | `b7228d57` | simstudioai/sim#2404 | feat(service-now): added service now block (#2404)
+- **2025-12-16** | `de330d80` | simstudioai/sim#2416 | improvement(mcp): restructure mcp tools caching/fetching info to improve UX  (#2416)
+- **2025-12-17** | `f4f74da1` | simstudioai/sim#2421 | feat(i18n): update translations (#2421)
+- **2025-12-17** | `08bc1125` | simstudioai/sim#2420 | fix(cmd-k): when navigating to current workspace/workflow, close modal instead of navigating (#2420)
+- **2025-12-17** | `9a6c6878` | no-pr | fix(subflow): resizing live update
+- **2025-12-17** | `8775e76c` | simstudioai/sim#2428 | improvement(subflow): resize vertical height estimate (#2428)
+- **2025-12-17** | `3120a785` | simstudioai/sim#2429 | fix(terminal): fix text wrap for errors and messages with long strings (#2429)
+- **2025-12-17** | `1ae3b47f` | simstudioai/sim#2431 | fix(inactivity-poll): need to respect level and trigger filters (#2431)
+- **2025-12-17** | `7b5405e9` | simstudioai/sim#2430 | feat(vertex): added vertex to list of supported providers (#2430)
+- **2025-12-17** | `c4a6d11c` | simstudioai/sim#2432 | fix(condition): used isolated vms for condition block RCE (#2432)
+- **2025-12-17** | `1d6975db` | no-pr | v0.5.33: loops, chat fixes, subflow resizing refactor, terminal updates
+- **2025-12-17** | `731997f7` | simstudioai/sim#2436 | fix(envvars): cleanup unused envvars (#2436)
+- **2025-12-17** | `26ca3732` | simstudioai/sim#2437 | fix(conditions): make outputs correct (#2437)
+- **2025-12-17** | `21fa92bc` | simstudioai/sim#2438 | feat(i18n): update translations (#2438)
+- **2025-12-17** | `5516fa39` | simstudioai/sim#2439 | fix(graph): prevent cyclic dependencies in graph following ReactFlow examples (#2439)
+- **2025-12-17** | `491bd783` | simstudioai/sim#2435 | fix(servicenow): update servicenow block to use basic auth instead of oauth (#2435)
+- **2025-12-17** | `471cb474` | simstudioai/sim#2441 | fix(oauth): updated oauth providers that had unstable reference IDs leading to duplicate oauth records (#2441)
+- **2025-12-17** | `b4a99779` | simstudioai/sim#2443 | feat(i18n): update translations (#2443)
+- **2025-12-17** | `a337af92` | simstudioai/sim#2445 | fix(custom-tools): added missing _toolSchema to internal param set for agents calling custom tools (#2445)
+- **2025-12-17** | `67cfb21d` | no-pr | v0.5.34: servicenow, code cleanup, prevent cyclic edge connections, custom tool fixes
+- **2025-12-18** | `7ef11503` | simstudioai/sim#2440 | fix(workflow-state, copilot): prevent copilot from setting undefined state, fix order of operations for copilot edit workflow, add sleep tool (#2440)
+- **2025-12-18** | `78b7643e` | simstudioai/sim#2446 | fix(condition): async execution isolated vm error (#2446)
+- **2025-12-18** | `f3ad7750` | simstudioai/sim#2447 | fix(auth): added same-origin validation to forget password route, added confirmation for disable auth FF (#2447)
+- **2025-12-18** | `1720fa87` | simstudioai/sim#2449 | feat(compare-schema): ci check to make sure schema.ts never goes out of sync with migrations (#2449)
+- **2025-12-18** | `e83afc0a` | no-pr | fixing the useWbehookManangement call to only call the loadwebhookorgenerateurl function when the useWebhookurl flag is true
+- **2025-12-18** | `9da19e84` | simstudioai/sim#2441 | fix(salesforce): updated to more flexible oauth that allows production, developer, and custom domain salesforce orgs (#2441) (#2444)
+- **2025-12-18** | `261aa3d7` | no-pr | fixing a react component:
+- **2025-12-18** | `25f7ed20` | simstudioai/sim#2450 | feat(docs): added 404 page for the docs (#2450)
+- **2025-12-18** | `fbde64f0` | no-pr | fixing lint errors
+- **2025-12-18** | `7575cd6f` | no-pr | Merge pull request #2451 from simstudioai/improvement/SIM-514-useWebhookUrl-conditioning
+- **2025-12-18** | `c23130a2` | simstudioai/sim#2441 | Revert "fix(salesforce): updated to more flexible oauth that allows production, developer, and custom domain salesforce orgs (#2441) (#2444)" (#2453)
+- **2025-12-18** | `04cd837e` | simstudioai/sim#2452 | fix(notifs): inactivity polling filters, consolidate trigger types, minor consistency issue with filter parsing (#2452)
+- **2025-12-18** | `f45730a8` | simstudioai/sim#2454 | improvement(helm): added SSO and cloud storage variables to helm charts (#2454)
+- **2025-12-18** | `36bdccb4` | simstudioai/sim#2456 | fix(ui): fixed visibility issue on reset passowrd page (#2456)
+- **2025-12-18** | `0d30676e` | simstudioai/sim#2458 | fix(blog): revert back to using next image tags in blog (#2458)
+- **2025-12-18** | `b5b12ba2` | simstudioai/sim#2426 | fix(teams): webhook notifications crash (#2426)
+- **2025-12-18** | `c6757311` | no-pr | Merge branch 'main' into staging
+- **2025-12-18** | `811c7367` | simstudioai/sim#2459 | fix failing lint from os contributor (#2459)
+- **2025-12-18** | `83d813a7` | simstudioai/sim#2448 | improvement(copilot): add edge handle validation to copilot edit workflow (#2448)
+- **2025-12-18** | `90c3c436` | simstudioai/sim#2461 | fix(blog): add back unoptimized tag, fix styling (#2461)
+- **2025-12-18** | `2a7f51a2` | simstudioai/sim#2460 | adding clamps for subflow drag and drops of blocks (#2460)
+- **2025-12-18** | `eb07a080` | no-pr | v0.5.35: helm updates, copilot improvements, 404 for docs, salesforce fixes, subflow resize clamping
+- **2025-12-18** | `fc40b4f7` | simstudioai/sim#2462 | fix(tools): improved slack output ux and jira params (#2462)
+- **2025-12-18** | `0005c3e4` | simstudioai/sim#2463 | feat(i18n): update translations (#2463)
+- **2025-12-18** | `474762d6` | simstudioai/sim#2464 | improvement(hitl): show resume url in tag dropdown within hitl block (#2464)
+- **2025-12-18** | `a2f14cab` | simstudioai/sim#2466 | feat(og): add opengraph images for templates, blogs, and updated existing opengraph image for all other pages (#2466)
+- **2025-12-18** | `38be2b76` | simstudioai/sim#2469 | fix(slack): respect message limit, remove duplicate canonical representations (#2469)
+- **2025-12-18** | `6de1c045` | simstudioai/sim#2470 | feat(i18n): update translations (#2470)
+- **2025-12-18** | `24356d99` | simstudioai/sim#2467 | fix(unsubscribe): add one-click unsubscribe (#2467)
+- **2025-12-19** | `3a33ec92` | simstudioai/sim#2472 | fix(authentication): added auth checks for various routes, mysql and postgres query validation, csp improvements (#2472)
+- **2025-12-19** | `889b44c9` | simstudioai/sim#2473 | improvement(db): added missing indexes for common access patterns (#2473)
+- **2025-12-19** | `656a6b8a` | simstudioai/sim#2475 | fix(sanitization): added more input sanitization to tool routes (#2475)
+- **2025-12-19** | `4d1a9a3f` | no-pr | v0.5.36: hitl improvements, opengraph, slack fixes, one-click unsubscribe, auth checks, new db indexes
+- **2025-12-19** | `65787d7c` | simstudioai/sim#2476 | fix(api-keys): remove billed account check during api key generation (#2476)
+- **2025-12-19** | `6b15a503` | simstudioai/sim#2477 | improvement(ui): updated subscription and team settings modals to emcn (#2477)
+- **2025-12-19** | `65efa039` | simstudioai/sim#2478 | fix(redaction): consolidate redaction utils, apply them to inputs and outputs before persisting logs (#2478)
+- **2025-12-19** | `094f87fa` | simstudioai/sim#2479 | fix(edges): prevent autoconnect outgoing edges from response block (#2479)
+- **2025-12-19** | `df5f823d` | simstudioai/sim#2482 | fix(autofill): add dummy inputs to prevent browser autofill for various fields, prevent having 0 workflows in workspace (#2482)
+- **2025-12-19** | `50c1c677` | simstudioai/sim#2487 | fix(logs): always capture cost, logging size failures (#2487)
+- **2025-12-19** | `93fe6878` | simstudioai/sim#2489 | fix(subflow): prevent auto-connect across subflow edges with keyboard shortcut block additions, make positioning for auto-drop smarter (#2489)
+- **2025-12-19** | `4431a1a4` | simstudioai/sim#2481 | fix(helm): add custom egress rules to realtime network policy (#2481)
+- **2025-12-19** | `7dc48510` | simstudioai/sim#2495 | fix(tool-input): allow multiple instances of workflow block or kb tools as agent tools (#2495)
+- **2025-12-19** | `a1a189f3` | simstudioai/sim#2496 | fix(condition): remove dead code from condition handler, defer resolution to function execute tool like the function block (#2496)
+- **2025-12-19** | `4f69b171` | simstudioai/sim#2433 | feat(kb): Adding support for more tags to the KB (#2433)
+- **2025-12-19** | `f91beb32` | simstudioai/sim#2497 | fix(condition): fixed deactivated edges when if and else if conditions connected to same destination block, added 100+ unit tests (#2497)
+- **2025-12-19** | `6385d82b` | simstudioai/sim#2498 | improvement(ui): updated kb tag component to match existing table (#2498)
+- **2025-12-19** | `3e697d9e` | no-pr | v0.5.37: redaction utils consolidation, logs updates, autoconnect improvements, additional kb tag types
+- **2025-12-20** | `6247f421` | simstudioai/sim#2471 | improvement(queries): add workspaceId to execution logs, added missing indexes based on query insights (#2471)
+- **2025-12-20** | `0ebb45b2` | simstudioai/sim#2465 | feat(copilot): show inline prompt to increase usage limit or upgrade plan (#2465)
+- **2025-12-20** | `f8678b17` | simstudioai/sim#2501 | fix(migrations): remove duplicate indexes (#2501)
+- **2025-12-20** | `35a57bfa` | simstudioai/sim#2500 | feat(audit): added audit log for billing line items (#2500)
+- **2025-12-20** | `1ddbac1d` | simstudioai/sim#2503 | fix(code): cmd-z after refocus should not clear subblock (#2503)
+- **2025-12-20** | `21463260` | simstudioai/sim#2504 | feat(settings): added snap to grid slider to settings (#2504)
+- **2025-12-20** | `4827866f` | no-pr | v0.5.38: snap to grid, copilot ux improvements, billing line items
+- **2025-12-20** | `942da881` | simstudioai/sim#2507 | fix(notion): remove hyphenation of incoming page ID's (#2507)
+- **2025-12-20** | `f21eaf1f` | simstudioai/sim#2508 | fix(vars): add socket persistence when variable names are changed, update variable name normalization to match block name normalization, added space constraint on envvar names (#2508)
+- **2025-12-20** | `0f4ec962` | no-pr | v0.5.39: notion, workflow variables fixes
+- **2025-12-21** | `e4d211c2` | simstudioai/sim#2511 | improvement(supabase): allow non-public schemas (#2511)
+- **2025-12-21** | `58fcb4ed` | simstudioai/sim#2513 | fix(jira): added uuid (#2513)
+- **2025-12-21** | `3d9d9cbc` | no-pr | v0.5.40: supabase ops to allow non-public schemas, jira uuid
+- **2025-12-21** | `e981b1dc` | simstudioai/sim#2516 | improvement(copilot): improve copilot metadata processing and tool output memory (#2516)
+- **2025-12-22** | `2d4a6602` | simstudioai/sim#2523 | feat(intercom): added additional params to intercom tools (#2523)
+- **2025-12-22** | `2b7807a7` | simstudioai/sim#2526 | feat(i18n): update translations (#2526)
+- **2025-12-22** | `086982c7` | simstudioai/sim#2529 | improvement(docs): update og image (#2529)
+- **2025-12-22** | `8c2c49eb` | simstudioai/sim#2515 | fix(models): memory fixes, provider code typing, cost calculation cleanup (#2515)
+- **2025-12-22** | `e01d4cb9` | simstudioai/sim#2530 | feat(i18n): update translations (#2530)
+- **2025-12-22** | `ab3a3d12` | simstudioai/sim#2414 | improvement(logs): dashboard/logs optimizations and improvements (#2414)
+- **2025-12-22** | `be9ab4c8` | simstudioai/sim#2535 | fix(dashboard): flash based on loading check (#2535)
+- **2025-12-22** | `6af291ca` | simstudioai/sim#2536 | improvement(pricing): increase free user limit to 20 usd (#2536)
+- **2025-12-22** | `ccd92b90` | simstudioai/sim#2537 | improvement(block-metadata): remove references to yaml syntax in best practices (#2537)
+- **2025-12-22** | `827dd046` | simstudioai/sim#2538 | feat(i18n): update translations (#2538)
+- **2025-12-22** | `e0d96e21` | simstudioai/sim#2517 | fix(oauth): add User-Agent header to Reddit token refresh (#2517)
+- **2025-12-22** | `37443a7b` | simstudioai/sim#2539 | improvement(kb): improve chunkers, respect user-specified chunk configurations, added tests (#2539)
+- **2025-12-22** | `f2ef5f08` | simstudioai/sim#2541 | feat(i18n): update translations (#2541)
+- **2025-12-22** | `f5245f3e` | simstudioai/sim#2543 | fix(billing): add line items for wand (#2543)
+- **2025-12-22** | `b0748c82` | simstudioai/sim#2542 | fix(search): removed full text param from built-in search, anthropic provider streaming fix (#2542)
+- **2025-12-23** | `c252e885` | simstudioai/sim#2468 | improvement(logs): fixed logs for parallel and loop execution flow (#2468)
+- **2025-12-23** | `3100daa3` | simstudioai/sim#2546 | feat(copilot): add tools to access block outputs and upstream references (#2546)
+- **2025-12-23** | `621f9a40` | simstudioai/sim#2547 | improvement(landing): free usage limit (#2547)
+- **2025-12-23** | `e12dd204` | no-pr | v0.5.41: memory fixes, copilot improvements, knowledgebase improvements, LLM providers standardization
+- **2025-12-23** | `d1ebad91` | simstudioai/sim#2548 | fix memory migration (#2548)
+- **2025-12-23** | `57e4b49b` | no-pr | v0.5.42: fix memory migration
+- **2025-12-23** | `40e30a11` | simstudioai/sim#2550 | improvement(logs): update logs export route to respect filters (#2550)
+- **2025-12-23** | `6c1e4ff7` | simstudioai/sim#2551 | improvement(oauth): remove unused scope hints (#2551)
+- **2025-12-23** | `641ac580` | simstudioai/sim#2552 | fix(frozen-canvas): need to fetch the deployment version correctly (#2552)
+- **2025-12-23** | `4e09c389` | simstudioai/sim#2553 | improvement(usage): update usage limit in realtime, standardize token output object across providers (#2553)
+- **2025-12-23** | `89c10859` | simstudioai/sim#2555 | improvement(vertex): added vertex to all LLM-based blocks, fixed refresh (#2555)
+- **2025-12-23** | `2c36926a` | simstudioai/sim#2556 | fix(perplexity): remove deprecated perplexity sonar reasoning model (#2556)
+- **2025-12-23** | `6c8f1a81` | simstudioai/sim#2557 | feat(tools): added grain and circleback (#2557)
+- **2025-12-23** | `b23299da` | simstudioai/sim#2558 | feat(i18n): update translations (#2558)
+- **2025-12-23** | `bf8fbebe` | simstudioai/sim#2554 | improvement(code-quality): centralize regex checks, normalization (#2554)
+- **2025-12-23** | `cdf3d759` | simstudioai/sim#2559 | fix(jina): removed conditionally included outputs from jina (#2559)
+- **2025-12-23** | `2d26c0cb` | simstudioai/sim#2561 | feat(i18n): update translations (#2561)
+- **2025-12-23** | `eaca4903` | simstudioai/sim#2563 | fix(ui): remove css transition on popover and dropdown items to avoid flicker (#2563)
+- **2025-12-23** | `31de55cb` | simstudioai/sim#2562 | feat(ux): add expandFolder to auto expand folders on nested folder creation (#2562)
+- **2025-12-23** | `dc4e5d3b` | simstudioai/sim#2564 | fix(dropbox): access type param pass through to get refresh token (#2564)
+- **2025-12-23** | `169dd4a5` | simstudioai/sim#2565 | fix(grafana): tool outputs (#2565)
+- **2025-12-23** | `8c895072` | simstudioai/sim#2560 | improvement(logs): state machine of workflow execution (#2560)
+- **2025-12-23** | `810d2089` | simstudioai/sim#2566 | feat(schedules): remove save button for schedules, couple schedule deployment with workflow deployment (#2566)
+- **2025-12-23** | `3a50ce4d` | simstudioai/sim#2568 | feat(i18n): update translations (#2568)
+- **2025-12-23** | `b3042330` | no-pr | v0.5.43: export logs, circleback, grain, vertex, code hygiene, schedule improvements
+- **2025-12-24** | `1145f5c0` | simstudioai/sim#2569 | fix(shortcut): fixed global keyboard commands provider to follow `latest ref pattern` (#2569)
+- **2025-12-24** | `b1cd8d15` | simstudioai/sim#2571 | fix(executor): workflow abort has to send abort signal to route for correct state update (#2571)
+- **2025-12-24** | `cb8b9c54` | simstudioai/sim#2572 | fix(router): update router to handle azure creds the same way the agent block does (#2572)
+- **2025-12-24** | `77521a3a` | simstudioai/sim#2573 | fix(cancel-workflow-exec): move cancellation tracking for multi-task envs to redis (#2573)
+- **2025-12-24** | `92b2e34d` | simstudioai/sim#2575 | feat(autolayout): add fitToView on autolayout and reduce horizontal spacing between blocks (#2575)
+- **2025-12-24** | `da7eca95` | simstudioai/sim#2576 | fix(change-detection): move change detection logic to client-side to prevent unnecessary API calls, consolidate utils (#2576)
+- **2025-12-24** | `40a6bf5c` | simstudioai/sim#2577 | improvement(variables): update workflows to use deployed variables, not local ones to align with the rest of the canvas components (#2577)
+- **2025-12-24** | `47a259b4` | simstudioai/sim#2574 | feat(byok): byok for hosted model capabilities (#2574)
+- **2025-12-24** | `66766a9d` | simstudioai/sim#2579 | improvement(byok): remove web search block exa (#2579)
+- **2025-12-24** | `97372533` | simstudioai/sim#2578 | feat(i18n): update translations (#2578)
+- **2025-12-25** | `26ec1259` | simstudioai/sim#2581 | improvement(byok): updated styling for byok page (#2581)
+- **2025-12-25** | `f604ca39` | simstudioai/sim#2582 | feat(chat-otp): added db fallback for chat otp (#2582)
+- **2025-12-25** | `d79696be` | simstudioai/sim#2583 | feat(docs): added vector search (#2583)
+- **2025-12-25** | `3201abab` | simstudioai/sim#2584 | improvement(schedules): use tanstack query to fetch schedule data, cleanup ui on schedule info component (#2584)
+- **2025-12-25** | `61e72134` | simstudioai/sim#2585 | feat(i18n): update translations (#2585)
+- **2025-12-25** | `b7f6bab2` | simstudioai/sim#2586 | feat(tests): added testing package, overhauled tests (#2586)
+- **2025-12-26** | `d707d18e` | simstudioai/sim#2591 | fix(build): update dockerfile to contain testing package deps (#2591)
+- **2025-12-26** | `88cda3a9` | simstudioai/sim#2588 | improvement(billing): migrate to decimaljs from number.parseFloat (#2588)
+- **2025-12-26** | `1f0e3f2b` | simstudioai/sim#2457 | feat: light mode (#2457)
+- **2025-12-26** | `27ec4120` | simstudioai/sim#2534 | fix(tools): fixed tool outputs (#2534)
+- **2025-12-26** | `66b84348` | simstudioai/sim#2592 | fix(block-name): updating block name should update downstream var refs (#2592)
+- **2025-12-26** | `7793a6d5` | simstudioai/sim#2589 | feat(kb): added tags information to kb docs table (#2589)
+- **2025-12-26** | `b60b98e4` | simstudioai/sim#2594 | improvement(tag-dropdown): added option to select block in tag dropdown, custom tools modal improvements, light mode fixes (#2594)
+- **2025-12-26** | `298546da` | simstudioai/sim#2593 | fix(parallel): add parallel sentinel to make parallel-parallel and parallel-loop work correctly (#2593)
+- **2025-12-26** | `a60a1fc4` | simstudioai/sim#2596 | improvement(edges): drag edge over block (#2596)
+- **2025-12-26** | `bd0eca04` | simstudioai/sim#2597 | fix(tag-dropdown): fix the way variables are displayed in the tag dropdown (#2597)
+- **2025-12-26** | `5add2613` | simstudioai/sim#2601 | improvement(easyconnect): use native reactflow getIntersectingNodes instead of custom impl for easy connect (#2601)
+- **2025-12-26** | `3d754454` | simstudioai/sim#2603 | feat(tools): added new firecrawl agent endpoint (#2603)
+- **2025-12-26** | `3054d6c1` | simstudioai/sim#2605 | fix: bg styling outside workspace (#2605)
+- **2025-12-26** | `86518962` | simstudioai/sim#2604 | feat(i18n): update translations (#2604)
+- **2025-12-26** | `b6ba3b50` | no-pr | v0.5.44: keyboard shortcuts, autolayout, light mode, byok, testing improvements
+- **2025-12-27** | `2e1ccb16` | simstudioai/sim#2608 | improvement(ui): hide divider when following subblock value is null (#2608)
+- **2025-12-27** | `fdba1cfa` | simstudioai/sim#2609 | improvement: required permissions, oauth modal badge (#2609)
+- **2025-12-27** | `aa9cc560` | simstudioai/sim#2607 | improvement(usage-indicator): update query invalidation for usage to update in realtime (#2607)
+- **2025-12-27** | `cdc1a832` | simstudioai/sim#2610 | fix(docker): add logger package to realtime dockerfile (#2610)
+- **2025-12-27** | `7c0a3c15` | simstudioai/sim#2611 | improvement(build): migrate to blacksmith sticky disks for faster builds, other build improvements (#2611)
+- **2025-12-27** | `dd3209af` | no-pr | v0.5.45: light mode fixes, realtime usage indicator, docker build improvements
+- **2025-12-28** | `71130c8b` | simstudioai/sim#2613 | improvement(monorepo): added tsconfig package, resolved type errors in testing package (#2613)
+- **2025-12-28** | `7761b16b` | simstudioai/sim#2618 | feat(tools): added greptile tools/block, updated copilot panel styling (#2618)
+- **2025-12-28** | `f44fc180` | simstudioai/sim#2617 | fix(build): add tsconfig to db dockerfile (#2617)
+- **2025-12-28** | `132aae16` | simstudioai/sim#2619 | feat(i18n): update translations (#2619)
+- **2025-12-28** | `1c626dfc` | simstudioai/sim#2620 | improvement(globals): light colors (#2620)
+- **2025-12-29** | `88065088` | simstudioai/sim#2623 | fix(deploy): fix workflow change detection to handle old variable reference format (#2623)
+- **2025-12-29** | `f895bf46` | no-pr | v0.5.46: build improvements, greptile, light mode improvements
+- **2025-12-29** | `da1f6682` | simstudioai/sim#2628 | improvement(sidebar): fix workspace name truncation on sidebar preview (#2628)
+- **2025-12-29** | `400178a3` | simstudioai/sim#2630 | fix(templates): only change updatedAt for actual updates to workflow or metadata (#2630)
+- **2025-12-29** | `a08d86d4` | simstudioai/sim#2631 | fix(note): light mode (#2631)
+- **2025-12-29** | `e9e57216` | simstudioai/sim#2633 | improvement: HITL, subblocks, general (#2633)
+- **2025-12-29** | `97a92952` | simstudioai/sim#2634 | feat(kb): added permissions to workspace popover, added kb popover to view tags, edit description and kb name (#2634)
+- **2025-12-29** | `a7a7c860` | simstudioai/sim#2636 | improvement(copilot): ui/ux; refactor: store dimensions (#2636)
+- **2025-12-29** | `f8b18805` | simstudioai/sim#2637 | fix(docker): resolve @sim/logger module not found in realtime container (#2637)
+- **2025-12-30** | `df099e94` | simstudioai/sim#2639 | feat(filtering): added the ability to filter logs by date and date range (#2639)
+- **2025-12-30** | `92083755` | simstudioai/sim#2640 | feat(cursorrules): updated cursorrules and claude md file (#2640)
+- **2025-12-30** | `7356edcc` | simstudioai/sim#2641 | added jsm (#2641)
+- **2025-12-30** | `eca91232` | simstudioai/sim#2642 | improvement(tools): added input validation to jira service management routes (#2642)
+- **2025-12-30** | `2697da5d` | simstudioai/sim#2644 | fix(jsm): combined jira providers for jsm (#2644)
+- **2025-12-30** | `34bc1154` | simstudioai/sim#2643 | feat(i18n): update translations (#2643)
+- **2025-12-30** | `c77268c1` | simstudioai/sim#2415 | feat(workflow-as-mcp): added ability to deploy workflows as mcp servers and mcp tools (#2415)
+- **2025-12-30** | `2cfd75a4` | simstudioai/sim#2646 | fix(tool-input): code subblock should be emptyable (#2646)
+- **2025-12-30** | `776f82c0` | simstudioai/sim#2645 | feat(i18n): update translations (#2645)
+- **2025-12-30** | `47879098` | simstudioai/sim#2647 | improvement(kb): removed zustand cache syncing in kb, added chunk text tokenizer (#2647)
+- **2025-12-30** | `b90cc5b8` | simstudioai/sim#2650 | fix(build): resolve failing build due to symlink issue in main app dockerfile (#2650)
+- **2025-12-30** | `54ab82c8` | no-pr | v0.5.47: deploy workflow as mcp, kb chunks tokenizer, UI improvements, jira service management tools
+- **2025-12-31** | `fb148c62` | simstudioai/sim#2651 | fix(jsm): renamed operation (#2651)
+- **2025-12-31** | `bf5d0a55` | simstudioai/sim#2649 | feat(copy-paste): allow cross workflow selection, paste, move for blocks (#2649)
+- **2025-12-31** | `1ed746ba` | simstudioai/sim#2653 | fix(paste): single instance trigger notification correction (#2653)
+- **2025-12-31** | `56e485d1` | no-pr | feat(i18n): update translations
+- **2025-12-31** | `4301342f` | simstudioai/sim#2654 | fix(mcp): exclude serverUrl from mcp tool call params (#2654)
+- **2025-12-31** | `0c8d05fc` | simstudioai/sim#2656 | feat(workflow): added context menu for block, pane, and multi-block selection on canvas (#2656)
+- **2025-12-31** | `4da128d7` | simstudioai/sim#2657 | improvement(context-menu): gray out undo redo if the stack is empty (#2657)
+- **2025-12-31** | `eb5d1f3e` | no-pr | v0.5.48: copy-paste workflow blocks, docs updates, mcp tool fixes
+- **2026-01-01** | `852562cf` | simstudioai/sim#2659 | feat(logs-context-menu): consolidated logs utils and types, added logs record context menu (#2659)
+- **2026-01-02** | `79be4359` | simstudioai/sim#2658 | feat(email): welcome email; improvement(emails): ui/ux (#2658)
+- **2026-01-02** | `dc3de95c` | simstudioai/sim#2664 | fix(logging): hitl + trigger dev crash protection (#2664)
+- **2026-01-02** | `096af4fd` | simstudioai/sim#2663 | feat(imap): added support for imap trigger (#2663)
+- **2026-01-02** | `385e93f4` | simstudioai/sim#2665 | feat(i18n): update translations (#2665)
+- **2026-01-02** | `7515809d` | simstudioai/sim#2666 | fix(grain): updated grain trigger to auto-establish trigger (#2666)
+- **2026-01-02** | `4df5d56a` | simstudioai/sim#2667 | feat(admin): routes to manage deployments (#2667)
+- **2026-01-02** | `c3adcf31` | simstudioai/sim#2668 | feat(time-picker): added timepicker emcn component, added to playground, added searchable prop for dropdown, added more timezones for schedule, updated license and notice date (#2668)
+- **2026-01-02** | `8d15219c` | simstudioai/sim#2669 | improvement(invite): aligned styling (#2669)
+- **2026-01-03** | `3792bdd2` | simstudioai/sim#2672 | v0.5.49: hitl improvements, new email styles, imap trigger, logs context menu (#2672)
+- **2026-01-03** | `356b473d` | simstudioai/sim#2674 | fix(import): fix missing blocks in import if undefined keys exist (#2674)
+- **2026-01-03** | `1673ef98` | simstudioai/sim#2675 | fix(variables): fix variables block parsing error for json (#2675)
+- **2026-01-03** | `195e0e8e` | simstudioai/sim#2676 | feat(popover): sections; improvement: tooltip, popover; fix(notifications): loading content (#2676)
+- **2026-01-03** | `ac942416` | simstudioai/sim#2677 | fix(kalshi): remove synthetically constructed outputs (#2677)
+- **2026-01-04** | `86bcdcf0` | simstudioai/sim#2678 | fix(grain): save before deploying workflow (#2678)
+- **2026-01-04** | `ed6b9c0c` | simstudioai/sim#2680 | fix(kb): fix styling inconsistencies, add rename capability for documents, added search preview (#2680)
+- **2026-01-05** | `0977ed22` | simstudioai/sim#2681 | improvement(kb): add configurable concurrency to chunks processing, sped up 22x for large docs (#2681)
+- **2026-01-05** | `585f5e36` | no-pr | v0.5.50: import improvements, ui upgrades, kb styling and performance improvements
+- **2026-01-05** | `cc3f565d` | simstudioai/sim#2686 | fix(webhook): strip extraneous fields from trigger processing (#2686)
+- **2026-01-05** | `445932c1` | simstudioai/sim#2685 | fix(grain): fixed output and dropdown (#2685)
+- **2026-01-05** | `d25084e0` | simstudioai/sim#2687 | fix(child-workflow): hosted api key resolution (#2687)
+- **2026-01-05** | `75aca00b` | simstudioai/sim#2684 | improvement(kb): optimize processes, add more robust fallbacks for large file ops (#2684)
+- **2026-01-05** | `964b40de` | simstudioai/sim#2688 | fix(traces): remove child trace spans from workflow block after being merged with parent output (#2688)
+- **2026-01-06** | `46b04a96` | simstudioai/sim#2689 | feat(supabase): added ability so select certain rows in supabase tools (#2689)
+- **2026-01-06** | `f9aef6ae` | simstudioai/sim#2690 | feat(i18n): update translations (#2690)
+- **2026-01-06** | `22f949a4` | simstudioai/sim#2691 | fix(condition): added success check on condition block processor, fixed terminal preventDefault copy bug (#2691)
+- **2026-01-06** | `155f544c` | simstudioai/sim#2692 | feat(terminal): added terminal context menu (#2692)
+- **2026-01-06** | `8215a819` | simstudioai/sim#2673 | improvement(hitl): add webhook notification and resume, add webhook block (#2673)
+- **2026-01-06** | `d2485570` | simstudioai/sim#2694 | fix(settings): added isHosted gate to access homepage from settings, fixed context menu options (#2694)
+- **2026-01-06** | `4fbec0a4` | no-pr | v0.5.51: triggers, kb, condition block improvements, supabase and grain integration updates
+- **2026-01-06** | `74f371cc` | simstudioai/sim#2696 | fix(build): fix type assertion (#2696)
+- **2026-01-06** | `f502f984` | simstudioai/sim#2683 | improvement(router): add ports to router block (#2683)
+- **2026-01-06** | `ba2377f8` | simstudioai/sim#2697 | feat(combobox): added expression support to combobox (#2697)
+- **2026-01-06** | `bfb6fffe` | no-pr | v0.5.52: new port-based router block, combobox expression and variable support
+- **2026-01-06** | `e9aede08` | simstudioai/sim#2699 | improvement(triggers): moved save configuration above instructions for better visibility, fixed styling inconsistencies (#2699)
+- **2026-01-06** | `e5bd5e44` | simstudioai/sim#2701 | fix(canvas): add handler for focus loss for hotkey operations (#2701)
+- **2026-01-06** | `5145ce16` | simstudioai/sim#2700 | improvement(response): removed nested response block output, add docs for webhook block, styling improvements for subblocks (#2700)
+- **2026-01-06** | `6a262f39` | simstudioai/sim#2702 | feat(i18n): update translations (#2702)
+- **2026-01-06** | `a2451ef3` | simstudioai/sim#2703 | feat(locks): add no-op for locking without redis to allow deployments without redis (#2703)
+- **2026-01-06** | `02229f0c` | simstudioai/sim#2705 | fix(agent-tool): fix workflow tool in agent to respect user-provided params, added badge for deployment status (#2705)
+- **2026-01-06** | `f5ab7f21` | no-pr | v0.5.53: hotkey improvements, added redis fallback, fixes for workflow tool
+- **2026-01-07** | `1420bfb7` | no-pr | fix(resolver): add both new and old workflow blocks for backwards compatibility
+- **2026-01-07** | `3ecf7a15` | simstudioai/sim#2708 | feat(seo): updated out-of-date site metadata, removed unused static assets, updated emails (#2708)
+- **2026-01-07** | `261becd1` | simstudioai/sim#2709 | feat(blacklist): added ability to blacklist models & providers (#2709)
+- **2026-01-07** | `833825f0` | simstudioai/sim#2710 | fix(deploy-check): race condition fixes (#2710)
+- **2026-01-07** | `9dc02f37` | simstudioai/sim#2711 | improvement(helm): added missing optional envvars to helm for whitelabeling (#2711)
+- **2026-01-07** | `142c9a04` | simstudioai/sim#2712 | fix(grain): add grain key to idempotency service (#2712)
+- **2026-01-07** | `3b4f7d6a` | simstudioai/sim#2714 | improvement(add-block): intuitive autoconnect + positioning (#2714)
+- **2026-01-07** | `2bd27f9a` | simstudioai/sim#2713 | feat(fireflies): added fireflies tools and trigger (#2713)
+- **2026-01-07** | `ef4bec2c` | simstudioai/sim#2715 | improvement(context-menu): added awareness for chat and variables being open, fixed select calculation to match height calculation for selecting multiple blocks (#2715)
+- **2026-01-07** | `730ddf5a` | simstudioai/sim#2718 | ui improvements for deploy mcp (#2718)
+- **2026-01-07** | `0f32310b` | simstudioai/sim#2717 | feat(i18n): update translations (#2717)
+- **2026-01-07** | `cb12ceb8` | simstudioai/sim#2719 | fix(preproc-errors): should not charge base execution cost in this case (#2719)
+- **2026-01-07** | `13a6e6c3` | no-pr | v0.5.54: seo, model blacklist, helm chart updates, fireflies integration, autoconnect improvements, billing fixes
+- **2026-01-07** | `02003772` | simstudioai/sim#2695 | feat(polling-groups): can invite multiple people to have their gmail/outlook inboxes connected to a workflow (#2695)
+- **2026-01-07** | `26dff7cf` | simstudioai/sim#2722 | feat(bedrock): added aws bedrock as a model provider (#2722)
+- **2026-01-07** | `1b22d2ce` | simstudioai/sim#2723 | fix(devcontainer): use bunx for concurrently command (#2723)
+- **2026-01-08** | `05904a73` | simstudioai/sim#2721 | feat(i18n): update translations (#2721)
+- **2026-01-08** | `a54fcbc0` | simstudioai/sim#2728 | improvement(auth): added ability to inject secrets to kubernetes, server-side ff to disable email registration (#2728)
+- **2026-01-08** | `fdac4314` | simstudioai/sim#2729 | fix(chat): update stream to respect all output select objects (#2729)
+- **2026-01-08** | `c2180bf8` | simstudioai/sim#2730 | improvement(enterprise): feature flagging + runtime checks consolidation (#2730)
+- **2026-01-08** | `b87af80b` | simstudioai/sim#2732 | feat(i18n): update translations (#2732)
+- **2026-01-08** | `e5c95093` | simstudioai/sim#2737 | improvement(autoconnect): click to add paths also autoconnect (#2737)
+- **2026-01-08** | `6b28742b` | simstudioai/sim#2740 | fix(linear): missing params (#2740)
+- **2026-01-08** | `554dcdf0` | simstudioai/sim#2742 | improvement(execution-snapshot): enhance workflow preview in logs and deploy modal (#2742)
+- **2026-01-08** | `13981549` | simstudioai/sim#2739 | fix(grain): grain trigger update (#2739)
+- **2026-01-08** | `f415e5ed` | no-pr | v0.5.55: polling groups, bedrock provider, devcontainer fixes, workflow preview enhancements
+- **2026-01-09** | `9502227f` | simstudioai/sim#2746 | fix(sso): add missing deps to db container for running script (#2746)
+- **2026-01-09** | `4da43d93` | simstudioai/sim#2748 | improvement(docs): multiplier dropped to 1.4 (#2748)
+- **2026-01-09** | `753600ed` | simstudioai/sim#2749 | feat(i18n): update translations (#2749)
+- **2026-01-09** | `05bbf342` | simstudioai/sim#2738 | improvement(canvas): add multi-block select, add batch handle, enabled, and edge operations (#2738)
+- **2026-01-09** | `860610b4` | simstudioai/sim#2751 | improvement(billing): team upgrade + session management (#2751)
+- **2026-01-09** | `d3d6012d` | simstudioai/sim#2753 | fix(tools): updated memory block to throw better errors, removed deprecated posthog route, remove deprecated templates & console helpers (#2753)
+- **2026-01-09** | `796f73ee` | simstudioai/sim#2752 | improvement(google-drive) (#2752)
+- **2026-01-09** | `1f5e8a41` | simstudioai/sim#2750 | fix(tools): fixed workflow tool for agent to respect user provided params, inject at runtime like all other tools (#2750)
+- **2026-01-09** | `38e827b6` | simstudioai/sim#2755 | fix(docs): new router (#2755)
+- **2026-01-09** | `1dbd1611` | simstudioai/sim#2754 | feat(sidebar): context menu for nav items in sidebar, toolbar blocks, added missing docs for various blocks and triggers (#2754)
+- **2026-01-09** | `fd76e98f` | simstudioai/sim#2756 | improvement(wand): added more wands (#2756)
+- **2026-01-09** | `47eb0603` | simstudioai/sim#2736 | feat(enterprise): permission groups, access control  (#2736)
+- **2026-01-09** | `67440432` | simstudioai/sim#2760 | fix(ops): fix subflow resizing on exit (#2760)
+- **2026-01-09** | `6262503b` | simstudioai/sim#2679 | feat(deployed-form): added deployed form input (#2679)
+- **2026-01-10** | `a11d452d` | simstudioai/sim#2761 | fix(build): fixed circular dependencies (#2761)
+- **2026-01-10** | `baa54b4c` | simstudioai/sim#2762 | feat(docs): added circleback docs (#2762)
+- **2026-01-10** | `be578e2e` | no-pr | v0.5.56: batch operations, access control and permission groups, billing fixes
+- **2026-01-10** | `3ed17752` | simstudioai/sim#2757 | fix(router): fix router ports (#2757)
+- **2026-01-10** | `92fabe78` | simstudioai/sim#2763 | fix(perms): copilot checks undefined issue (#2763)
+- **2026-01-10** | `283a5216` | simstudioai/sim#2731 | feat(copilot): subagents (#2731)
+- **2026-01-10** | `9a16e7c2` | simstudioai/sim#2764 | improvement(response): only allow singleton (#2764)
+- **2026-01-10** | `ead2413b` | simstudioai/sim#2766 | fix(context-menu): make divider on context menu aware of available options (#2766)
+- **2026-01-10** | `ab32a19c` | simstudioai/sim#2765 | fix(tag-input): add onInputChange to clear errors when new text is entered (#2765)
+- **2026-01-10** | `e21cc113` | simstudioai/sim#2768 | fix(subflow): updated subflow border to match block border (#2768)
+- **2026-01-10** | `e347486f` | simstudioai/sim#2769 | fix(copilot): fix copilot chat loading (#2769)
+- **2026-01-10** | `7f18d96d` | simstudioai/sim#2770 | feat(popover): add expandOnHover, added the ability to change the color of a workflow icon, new workflow naming convention (#2770)
+- **2026-01-11** | `4941b522` | simstudioai/sim#2771 | fix(resize): fix subflow resize on drag, children deselected in subflow on drag (#2771)
+- **2026-01-11** | `7ffc11a7` | no-pr | v0.5.57: subagents, context menu improvements, bug fixes
+- **2026-01-11** | `cb4db20a` | simstudioai/sim#2776 | fix(color-picker): confirm color change before updating workflow color (#2776)
+- **2026-01-12** | `0aec9ef5` | simstudioai/sim#2777 | feat(export): added the ability to export workflow (#2777)
+- **2026-01-12** | `a3dff102` | simstudioai/sim#2778 | feat(tools): added workflow tools to agent tools dropdown for discoverability, enforce perms on client for redeploying via the agent (#2778)
+- **2026-01-12** | `684ad5ae` | simstudioai/sim#2780 | feat(tool): added introspection tools for all db integrations (#2780)
+- **2026-01-12** | `d55072a4` | simstudioai/sim#2779 | feat(copilot): add context7 (#2779)
+- **2026-01-12** | `91ed5338` | simstudioai/sim#2782 | improvement(byok): make available for all plans (#2782)
+- **2026-01-12** | `b6cbee24` | simstudioai/sim#2772 | improvement(block-outputs): display metadata properties destructured (#2772)
+- **2026-01-12** | `46417ddb` | simstudioai/sim#2783 | feat(invitations): added FF to disable invitations, added to permission groups, added workspace members admin endpoints (#2783)
+- **2026-01-12** | `a05003a2` | simstudioai/sim#2785 | feat(integrations): claude skills to add integrations, lemlist trigger + tools, remove test webhook url (#2785)
+- **2026-01-13** | `6717ce89` | simstudioai/sim#2788 | fix(slack): remove duplicate effect that cleared subblocks on cred change (#2788)
+- **2026-01-13** | `7bf3d73e` | no-pr | v0.5.58: export folders, new tools, permissions groups enhancements
+- **2026-01-13** | `048eddd4` | simstudioai/sim#2789 | fix(ff): add back condition for isHosted FF (#2789)
+- **2026-01-13** | `c9068d04` | simstudioai/sim#2791 | chore(readme): trim readme, add more envvar info (#2791)
+- **2026-01-13** | `40a066f3` | simstudioai/sim#2790 | improvement(FF): CI check to prevent hardcoding of FFs (#2790)
+- **2026-01-13** | `2bc40397` | simstudioai/sim#2784 | feat(a2a): added a2a protocol (#2784)
+- **2026-01-13** | `837405e1` | simstudioai/sim#2792 | chore(docs): update sim references in docs (#2792)
+- **2026-01-13** | `b49ed2fc` | simstudioai/sim#2795 | feat(export): support maintenance of nested folder structure on import/export, added folder export admin route (#2795)
+- **2026-01-13** | `4be42031` | simstudioai/sim#2796 | fix(a2a): removed deployment constraint for redeploying a2a workflows (#2796)
+- **2026-01-13** | `5e8c8432` | no-pr | v0.5.59: a2a support, documentation
+- **2026-01-13** | `64b3f984` | simstudioai/sim#2797 | feat(copilot): add commands (#2797)
+- **2026-01-13** | `eb52f69e` | simstudioai/sim#2800 | improvement(schedule): default schedule timezone (#2800)
+- **2026-01-13** | `3d037c9b` | simstudioai/sim#2802 | fix(executor): pattern match more errors to prevent swallow (#2802)
+- **2026-01-13** | `2b49d15e` | simstudioai/sim#2799 | fix(comparison): add condition to prevent duplicate identical edges (#2799)
+- **2026-01-13** | `ebbe67aa` | simstudioai/sim#2801 | fix(triggers): cleanup trigger outputs formatting, fix display name issues (#2801)
+- **2026-01-13** | `6e0055f8` | simstudioai/sim#2803 | feat(slack): added get message by timestamp and get thread tool (#2803)
+- **2026-01-13** | `e3fa40af` | simstudioai/sim#2804 | fix(sockets): redrawing edges should not lead to socket ops (#2804)
+- **2026-01-13** | `d6e4c91e` | simstudioai/sim#2806 | fix(invitations): preserve tokens after error (#2806)
+- **2026-01-13** | `70ed19fc` | simstudioai/sim#2808 | fix(chat): remove special handling for non-streaming (#2808)
+- **2026-01-13** | `f6b7c15d` | simstudioai/sim#2807 | improvement(oauth): added random identifier in unused accountId to bypass betterauth unique constraint (#2807)
+- **2026-01-13** | `4b026ad5` | simstudioai/sim#2805 | fix(a2a): added file data part and data data part to a2a agents (#2805)
+- **2026-01-13** | `258e96d6` | no-pr | improvement(pricing): drop agent multiplier in docs, change base exec cost
+- **2026-01-13** | `4f04b1ef` | simstudioai/sim#2812 | feat(terminal): migrate from zustand for console terminal logs to indexedDb, incr limit from 5mb to ~GBs (#2812)
+- **2026-01-13** | `bd7009e3` | simstudioai/sim#2811 | fix(copilot): commands (#2811)
+- **2026-01-14** | `d5bd97de` | simstudioai/sim#2781 | feat(tinybird): added tinybird block  (#2781)
+- **2026-01-14** | `a3535639` | simstudioai/sim#2814 | fix(copilot): rewrote user input popover to optimize UX (#2814)
+- **2026-01-14** | `51477c12` | simstudioai/sim#2815 | fix(terminal): pop all entries from a single execution when the limit is exceeded (#2815)
+- **2026-01-14** | `d7e0d9ba` | simstudioai/sim#2816 | fix(i18n): update translations action to run once per week on sunday (#2816)
+- **2026-01-14** | `468ec2ea` | simstudioai/sim#2817 | fix(terminal-colors): change algo to compute colors based on hash of execution id and pointer from bottom (#2817)
+- **2026-01-14** | `3f1dccd6` | simstudioai/sim#2819 | fix(batch-add): on batch add persist subblock values (#2819)
+- **2026-01-14** | `6c8c3d63` | simstudioai/sim#2818 | feat(reorder): allow workflow/folder reordering (#2818)
+- **2026-01-14** | `41f9374b` | simstudioai/sim#2820 | fix(agent-tools): added special handling for workflow tool in agent tool input, added react grab and feature flag (#2820)
+- **2026-01-14** | `2cee30ff` | simstudioai/sim#2821 | feat(langsmith): add langsmith tools for logging, output selector use tool-aware listing (#2821)
+- **2026-01-14** | `4899c284` | simstudioai/sim#2822 | fix(notifications): consolidate notification utils, update email styling (#2822)
+- **2026-01-14** | `5af72ea2` | simstudioai/sim#2823 | feat(dashboard): added stats endpoint to compute stats on server side and avoid limit (#2823)
+- **2026-01-14** | `21293374` | simstudioai/sim#2824 | improvement(langsmith): ugpraded langsmith to use tool names directly in dropdown (#2824)
+- **2026-01-14** | `4195cfe1` | simstudioai/sim#2825 | fix(otp): send welcome email even when user signs up via email/pass along with oauth providers (#2825)
+- **2026-01-14** | `3db9ad2d` | simstudioai/sim#2826 | improvement(emails): update email footer links to link to sim.ai/provider instead of direct provider links (#2826)
+- **2026-01-14** | `5eca660c` | simstudioai/sim#2827 | improvement(langsmith): add wand for batch ingestion schemas (#2827)
+- **2026-01-14** | `ccf26859` | simstudioai/sim#2829 | improvement(copilot): update copilot to match copilot repo (#2829)
+- **2026-01-14** | `85d6e3e3` | simstudioai/sim#2828 | fix(misc): added trace spans back to notifications for webhooks, updated verification code for users signing in with email, updated welcome email (#2828)
+- **2026-01-14** | `45bd1e8c` | simstudioai/sim#2830 | feat(starter): in start block input format, don't prevent deletion if only one field remaining, just clear form (#2830)
+- **2026-01-14** | `26d0799d` | simstudioai/sim#2832 | fix(popover): fix frozen workspace popover (#2832)
+- **2026-01-14** | `d4c171c6` | simstudioai/sim#2833 | fix(sortOrder): initial ordering must be deterministic (#2833)
+- **2026-01-14** | `e53538d0` | simstudioai/sim#2834 | fix(drag): read perms prevent drag (#2834)
+- **2026-01-15** | `929d0d01` | simstudioai/sim#2835 | feat(sheets): added sheet selector for microsoft excel and google sheets tools (#2835)
+- **2026-01-15** | `43728417` | no-pr |  v0.5.60: invitation flow improvements, chat fixes, a2a improvements, additional copilot actions
+- **2026-01-15** | `debcd760` | simstudioai/sim#2837 | improvement(slack): updated docs to include information for slack marketplace submission (#2837)
+- **2026-01-15** | `5e44357b` | simstudioai/sim#2838 | improvement(snapshot): show subblocks for trigger only blocks in frozen canvas (#2838)
+- **2026-01-15** | `e499cc4f` | simstudioai/sim#2831 | improvement(webhooks): lifecycle management with external providers, remove save configuration  (#2831)
+- **2026-01-15** | `1cc489e5` | simstudioai/sim#2767 | feat(workflow-controls): added action bar for workflow controls (#2767)
+- **2026-01-15** | `a35f6eca` | simstudioai/sim#2839 | improvement(tools): use react query to fetch child workflow schema, avoid refetch and duplicated utils, consolidated utils and testing mocks (#2839)
+- **2026-01-15** | `6f469a7f` | simstudioai/sim#2836 | improvement(permissions): added ability to auto-add new org members to existing permission group, disallow disabling of start block (#2836)
+- **2026-01-15** | `f1796d13` | no-pr | fix(start): permission check for executor
+- **2026-01-15** | `87e60570` | simstudioai/sim#2842 | improvement(chat): partialize chat store to only persist image URL instead of full image in floating chat (#2842)
+- **2026-01-15** | `81cc88b2` | simstudioai/sim#2841 | feat(context-menu): added context menu to dead sidebar space and usage indicator (#2841)
+- **2026-01-15** | `b813bf7f` | simstudioai/sim#2840 | improvement: workflow, blocks, preview, avatars, output-select (#2840)
+- **2026-01-15** | `12470a63` | simstudioai/sim#2843 | feat(ocr): added reducto and pulse for OCR (#2843)
+- **2026-01-15** | `feb994c8` | simstudioai/sim#2844 | improvement(presence): show presence for the same user in another tab, fix z-index of multiplayer cursor to fall behind panel,terminal,sidebar but above blocks, improved connection detection (#2844)
+- **2026-01-15** | `51e37684` | simstudioai/sim#2845 | fix(linear): updated linear tools to enforce only required fields per api spec (#2845)
+- **2026-01-15** | `55700b9b` | simstudioai/sim#2847 | improvement(security): added input validation for airtable, lemlist, and more tools to protect against SSRF (#2847)
+- **2026-01-15** | `6ff68b39` | simstudioai/sim#2850 | Improvement: subblocks (#2850)
+- **2026-01-16** | `583f5c4c` | simstudioai/sim#2849 | fix(webflow): fix collection & site dropdown in webflow triggers (#2849)
+- **2026-01-16** | `dba57998` | simstudioai/sim#2851 | improvement(posthog): improve posthog config to be more lightweight (#2851)
+- **2026-01-16** | `fa63af92` | simstudioai/sim#2852 | fix(queries): remove more remaining manual state management and refetching in favor of reactquery (#2852)
+- **2026-01-16** | `c863125c` | simstudioai/sim#2854 | feat(workspace): added option to leave workspace (#2854)
+- **2026-01-16** | `8361931c` | simstudioai/sim#2855 | fix(copilot): fix copilot bugs (#2855)
+- **2026-01-16** | `ce3ddb6b` | simstudioai/sim#2853 | improvement(deployed-mcp): added the ability to make the visibility for deployed mcp tools public, updated UX (#2853)
+- **2026-01-16** | `78e4ca9d` | simstudioai/sim#2848 | improvement(serializer): canonical subblock, serialization cleanups, schedules/webhooks are deployment version friendly (#2848)
+- **2026-01-16** | `aa80116b` | simstudioai/sim#2857 | fix(copilot): copilot edit router block accepts semantic handles (#2857)
+- **2026-01-16** | `3768c637` | simstudioai/sim#2856 | feat(readme): added deepwiki to readme, consolidated utils (#2856)
+- **2026-01-16** | `a8d81097` | simstudioai/sim#2735 | fix(google-vault): error handling improvement and more params (#2735)
+- **2026-01-16** | `fd23220c` | simstudioai/sim#2860 | fix(slack): tool params should be in line with block  (#2860)
+- **2026-01-16** | `af82820a` | no-pr | v0.5.61: webhook improvements, workflow controls, react query for deployment status, chat fixes, reducto and pulse OCR, linear fixes
+- **2026-01-16** | `d75ea37b` | simstudioai/sim#2861 | chore(readme): updated readme (#2861)
+- **2026-01-16** | `d024c1e4` | simstudioai/sim#2863 | fix(shift): fix shift select blue ring fading (#2863)
+- **2026-01-16** | `b1467288` | simstudioai/sim#2862 | fix(sockets): webhooks logic removal from copilot ops (#2862)
+- **2026-01-16** | `75898c69` | simstudioai/sim#2864 | fix(start): seed initial subblock values on batch add (#2864)
+- **2026-01-16** | `5de7228d` | simstudioai/sim#2866 | improvement(avatar): use selection-update as the source of truth for presence, ignore other socket ops (#2866)
+- **2026-01-16** | `a8bb0db6` | no-pr | v0.5.62: webhook bug fixes, seeding default subblock values, block selection fixes
+- **2026-01-17** | `8740566f` | simstudioai/sim#2869 | fix(block-resolver): path lookup check (#2869)
+- **2026-01-17** | `f6960a4b` | simstudioai/sim#2868 | fix(wand): improved flickering for invalid JSON icon while streaming (#2868)
+- **2026-01-17** | `4b8534eb` | simstudioai/sim#2870 | feat(oauth): upgraded all generic oauth plugin providers to use unqiue account ids (#2870)
+- **2026-01-17** | `b8b20576` | simstudioai/sim#2871 | improvement(ui): modal style standardization, select drop improvement, duplication selection fixes (#2871)
+- **2026-01-17** | `0fcd5268` | simstudioai/sim#2872 | improvement(tool-input): general abstraction to enrich agent context, reuse visibility helpers (#2872)
+- **2026-01-17** | `19a8daed` | simstudioai/sim#2873 | improvement(performance): used react scan to identify rerendering issues and react issues (#2873)
+- **2026-01-17** | `ee757218` | simstudioai/sim#2874 | improvement(tools): added visibility for tools that were missing it, added new google and github tools (#2874)
+- **2026-01-18** | `7c0f4330` | simstudioai/sim#2876 | fix(resolver): tool configs must take precedence (#2876)
+- **2026-01-18** | `5e2468cf` | simstudioai/sim#2877 | impovement(slides): add missing properties definitions (#2877)
+- **2026-01-18** | `3a923648` | simstudioai/sim#2875 | feat(ux): more explicit verbiage on some dialog menus, google drive updates, advanved to additional fields, remove general settings store sync in favor of tanstack (#2875)
+- **2026-01-18** | `1dbf92db` | simstudioai/sim#2879 | fix(api): tool input parsing into table from agent output (#2879)
+- **2026-01-18** | `b09f6830` | no-pr | v0.5.63: ui and performance improvements, more google tools
+- **2026-01-18** | `b4c2294e` | simstudioai/sim#2881 | improvement(emails): update unsub page, standardize unsub process (#2881)
+- **2026-01-19** | `932f8fd6` | simstudioai/sim#2882 | feat(mcp): updated mcp subblocks for mcp tools to match subblocks (#2882)
+- **2026-01-19** | `408597e1` | simstudioai/sim#2883 | feat(notifs): added block name to error notifications (#2883)
+- **2026-01-19** | `037dad69` | simstudioai/sim#2884 | fix(undo-redo): preserve subblock values during undo/redo cycles (#2884)
+- **2026-01-19** | `72c2ba74` | simstudioai/sim#2886 | fix(linear): team selector in tool input (#2886)
+- **2026-01-19** | `1861f772` | simstudioai/sim#2885 | feat(terminal): add fix in copilot for errors (#2885)
+- **2026-01-19** | `3c43779b` | simstudioai/sim#2889 | feat(search): added operations to search modal in main app, updated retrieval in docs to use RRF (#2889)
+- **2026-01-19** | `739341b0` | simstudioai/sim#2888 | improvement(router): add resizable textareas for router conditions (#2888)
+- **2026-01-19** | `81cbfe7a` | simstudioai/sim#2890 | feat(browseruse): upgraded browseruse endpoints to v2 (#2890)
+- **2026-01-19** | `5f45db43` | simstudioai/sim#2887 | improvement(copilot): variables, conditions, router (#2887)
+- **2026-01-19** | `e575ba29` | simstudioai/sim#2893 | feat(settings): add debug mode for superusers (#2893)
+- **2026-01-19** | `9efd3d5b` | simstudioai/sim#2895 | improvement(stats): should track mcp and a2a executions like other trigger types (#2895)
+- **2026-01-19** | `6cbadd71` | simstudioai/sim#2892 | feat(api): added workflows api route for dynamic discovery (#2892)
+- **2026-01-19** | `69614d2d` | simstudioai/sim#2894 | improvement(kb): migrate manual fetches in kb module to use reactquery (#2894)
+- **2026-01-19** | `ac991d4b` | simstudioai/sim#2896 | fix(sso): removed provider specific OIDC logic from SSO registration & deregistration scripts (#2896)
+- **2026-01-19** | `2daf3438` | simstudioai/sim#2891 | fix(copilot): ui/ux (#2891)
+- **2026-01-19** | `84691fc8` | simstudioai/sim#2897 | improvement(modal): fixed popover issue in custom tools modal, removed the ability to update if no changes made (#2897)
+- **2026-01-20** | `e4ad31bb` | simstudioai/sim#2899 | fix(kb): align bulk chunk operation with API response (#2899)
+- **2026-01-20** | `dff1c9d0` | no-pr | v0.5.64: unsubscribe, search improvements, metrics, additional SSO configuration
+- **2026-01-20** | `07f0c01d` | simstudioai/sim#2900 | fix(google): wrap primitive tool responses for Gemini API compatibility (#2900)
+- **2026-01-20** | `689037a3` | simstudioai/sim#2901 | fix(canonical): copilot path + update parent (#2901)
+- **2026-01-20** | `a26a1a97` | simstudioai/sim#2902 | fix(rss): add top-level title, link, pubDate fields to RSS trigger output (#2902)
+- **2026-01-20** | `8344d68c` | simstudioai/sim#2903 | improvement(browseruse): add profile id param (#2903)
+- **2026-01-20** | `4afb245f` | simstudioai/sim#2880 | improvement(executor): upgraded abort controller to handle aborts for loops and parallels (#2880)
+- **2026-01-20** | `1f1f0150` | simstudioai/sim#2906 | improvement(files): update execution for passing base64 strings (#2906)
+- **2026-01-20** | `563098ca` | simstudioai/sim#2904 | feat(tools): added textract, added v2 for mistral, updated tag dropdown (#2904)
+- **2026-01-20** | `16716ea2` | simstudioai/sim#2907 | fix(ui): change add inputs button to match output selector (#2907)
+- **2026-01-20** | `c6d408c6` | simstudioai/sim#2908 | fix(canvas): removed invite to workspace from canvas popover (#2908)
+- **2026-01-20** | `1d450578` | simstudioai/sim#2911 | fix(copilot): legacy tool display names (#2911)
+- **2026-01-20** | `0af96d06` | simstudioai/sim#2912 | fix(a2a): canonical merge  (#2912)
+- **2026-01-20** | `fb90c4e9` | simstudioai/sim#2913 | fix(change-detection): copilot diffs have extra field (#2913)
+- **2026-01-20** | `0dc2c1fe` | simstudioai/sim#2910 | improvement(logs): improved logs ui bugs, added subflow disable UI (#2910)
+- **2026-01-20** | `294b168e` | simstudioai/sim#2905 | feat(broadcast): email v0.5 (#2905)
+- **2026-01-20** | `0ce0f98a` | simstudioai/sim#2909 | v0.5.65: gemini updates, textract integration, ui updates (#2909)
+- **2026-01-21** | `145db9d8` | simstudioai/sim#2914 | fix(http): options not parsed accurately (#2914)
+- **2026-01-21** | `5988d0e4` | simstudioai/sim#2916 | fix(ring): duplicate should clear original block (#2916)
+- **2026-01-21** | `45371e52` | no-pr | v0.5.66: external http requests fix, ring highlighting
+- **2026-01-21** | `268e2f11` | simstudioai/sim#2919 | fix(zustand): updated to useShallow from deprecated createWithEqualityFn (#2919)
+- **2026-01-21** | `ea496405` | simstudioai/sim#2920 | fix(logger): use direct env access for webpack inlining (#2920)
+- **2026-01-21** | `fb8868c8` | simstudioai/sim#2921 | fix(notifications): text overflow with line-clamp (#2921)
+- **2026-01-21** | `0ea02566` | simstudioai/sim#2922 | chore(helm): add env vars for Vertex AI, orgs, and telemetry (#2922)
+- **2026-01-21** | `9e814315` | simstudioai/sim#2924 | fix(auth): improve reset password flow and consolidate brand detection (#2924)
+- **2026-01-21** | `8bbcf31b` | simstudioai/sim#2923 | fix(action-bar): duplicate subflows with children (#2923)
+- **2026-01-21** | `5157f0bb` | simstudioai/sim#2925 | fix(resolver): agent response format, input formats, root level (#2925)
+- **2026-01-21** | `004e0583` | simstudioai/sim#2926 | fix(messages-input): fix cursor alignment and auto-resize with overlay (#2926)
+- **2026-01-21** | `103b31a5` | simstudioai/sim#2927 | fix(stores): remove dead code causing log spam on startup (#2927)
+- **2026-01-21** | `e2ccefb2` | simstudioai/sim#2930 | improvement(ui): use BrandedButton and BrandedLink components (#2930)
+- **2026-01-21** | `5987a6d0` | simstudioai/sim#2929 | fix(custom-tools): remove unsafe title fallback in getCustomTool (#2929)
+- **2026-01-21** | `d6814512` | simstudioai/sim#2931 | fix(null-bodies): empty bodies handling (#2931)
+- **2026-01-21** | `7cfdf467` | simstudioai/sim#2933 | fix(token-refresh): microsoft, notion, x, linear (#2933)
+- **2026-01-21** | `f3fcc28f` | simstudioai/sim#2932 | fix(auth): handle EMAIL_NOT_VERIFIED in onError callback (#2932)
+- **2026-01-21** | `900d3ef9` | simstudioai/sim#2934 | fix(workflow-selector): use dedicated selector for workflow dropdown (#2934)
+- **2026-01-21** | `2f0f2460` | simstudioai/sim#2935 | feat(workflow-block): preview (#2935)
+- **2026-01-21** | `42159c23` | simstudioai/sim#2936 | improvement(copilot): tool configs to show nested props (#2936)
+- **2026-01-21** | `376f7cb5` | simstudioai/sim#2937 | fix(auth): add genericOAuth providers to trustedProviders (#2937)
+- **2026-01-21** | `cc2be33d` | simstudioai/sim#2928 | v0.5.67: loading, password reset, ui improvements, helm updates (#2928)
+- **2026-01-22** | `66dfe2c6` | simstudioai/sim#2939 | improvement(workflow-item): stabilize avatar layout and fix name truncation (#2939)
+- **2026-01-22** | `f3ae3f84` | simstudioai/sim#2940 | fix(executor): stop parallel execution when block errors (#2940)
+- **2026-01-22** | `9a8b5912` | simstudioai/sim#2942 | improvement(helm): add per-deployment extraVolumes support (#2942)
+- **2026-01-22** | `4e414979` | simstudioai/sim#2943 | fix(gmail): expose messageId field in read email block (#2943)
+- **2026-01-22** | `fcd0240d` | simstudioai/sim#2941 | fix(resolver): consolidate reference resolution  (#2941)
+- **2026-01-22** | `ab09a5ad` | simstudioai/sim#2945 | feat(router): expose reasoning output in router v2 block (#2945)
+- **2026-01-22** | `91da7e18` | simstudioai/sim#2947 | fix(copilot): always allow, credential masking (#2947)
+- **2026-01-22** | `748793e0` | simstudioai/sim#2944 | fix(executor): handle condition dead-end branches in loops (#2944)
+- **2026-01-22** | `e9c4251c` | simstudioai/sim#2946 | v0.5.68: router block reasoning, executor improvements, variable resolution consolidation, helm updates (#2946)
+- **2026-01-22** | `aa99db6f` | simstudioai/sim#2949 | fix(subflows): tag dropdown + resolution logic (#2949)
+- **2026-01-22** | `f765b83a` | simstudioai/sim#2948 | chore(deps): bump posthog-js to 1.334.1 (#2948)
+- **2026-01-22** | `1b309b50` | simstudioai/sim#2950 | fix(idempotency): add conflict target to atomicallyClaimDb query + remove redundant db namespace tracking (#2950)
+- **2026-01-22** | `7f226285` | simstudioai/sim#2951 | improvement(kb): add document filtering, select all, and React Query migration (#2951)
+- **2026-01-22** | `14678624` | simstudioai/sim#2952 | improvement(logs): trace span, details (#2952)
+- **2026-01-23** | `9b72b52b` | simstudioai/sim#2953 | feat(blog): v0.5 release post (#2953)
+- **2026-01-23** | `64efeaa2` | simstudioai/sim#2954 | feat(admin): add credits endpoint to issue credits to users (#2954)
+- **2026-01-23** | `efef91ec` | simstudioai/sim#2955 | improvement(copilot): fast mode, subagent tool responses and allow preferences (#2955)
+- **2026-01-23** | `7f4edc85` | simstudioai/sim#2956 | fix(billing): handle missing userStats and prevent crashes (#2956)
+- **2026-01-23** | `6464cfa7` | simstudioai/sim#2958 | fix(logs): refresh logic to refresh logs details (#2958)
+- **2026-01-23** | `f44594c3` | simstudioai/sim#2959 | fix(security): add authentication and input validation to API routes (#2959)
+- **2026-01-23** | `f0ee67f3` | simstudioai/sim#2960 | improvement(helm): add internal ingress support and same-host path consolidation (#2960)
+- **2026-01-23** | `428781ce` | simstudioai/sim#2961 | feat(blog): enterprise post (#2961)
+- **2026-01-23** | `b913cff4` | simstudioai/sim#2957 | fix(envvars): resolution standardized (#2957)
+- **2026-01-23** | `23294683` | simstudioai/sim#2963 | fix(copilot): mask credentials fix (#2963)
+- **2026-01-23** | `12100e68` | simstudioai/sim#2965 | improvement(webhooks): remove dead code (#2965)
+- **2026-01-24** | `0f9b6ad1` | simstudioai/sim#2969 | fix(preview): subblock values (#2969)
+- **2026-01-24** | `211a7ac3` | simstudioai/sim#2966 | fix(child-workflow): nested spans handoff (#2966)
+- **2026-01-24** | `48adaa00` | simstudioai/sim#2964 | fix(security): restrict API key access on internal-only routes (#2964)
+- **2026-01-24** | `9c3e663c` | simstudioai/sim#2968 | fix(copilot): update copilot chat title (#2968)
+- **2026-01-24** | `8574e6c7` | simstudioai/sim#2967 | fix(hitl): fix condition blocks after hitl (#2967)
+- **2026-01-24** | `84290409` | simstudioai/sim#2970 | fix(notes): ghost edges (#2970)
+- **2026-01-24** | `fc7f56e2` | simstudioai/sim#2975 | improvement(docs): loop and parallel var reference syntax (#2975)
+- **2026-01-24** | `68683258` | simstudioai/sim#2976 | fix(blog): slash actions description (#2976)
+- **2026-01-24** | `3bbf7f5d` | simstudioai/sim#2977 | fix(auth): copilot routes (#2977)
+- **2026-01-24** | `9f916940` | simstudioai/sim#2978 | fix(copilot): fix edit summary for loops/parallels (#2978)
+- **2026-01-24** | `4d844651` | simstudioai/sim#2544 | fix(integrations): hide from tool bar (#2544)
+- **2026-01-24** | `c7db48e3` | simstudioai/sim#2979 | fix(landing): ui (#2979)
+- **2026-01-24** | `841cb638` | simstudioai/sim#2980 | fix(edge-validation): race condition on collaborative add (#2980)
+- **2026-01-24** | `bcf6dc88` | simstudioai/sim#2981 | fix(variables): boolean type support and input improvements (#2981)
+- **2026-01-24** | `c12931bc` | simstudioai/sim#2973 | v0.5.69: kb upgrades, blog, copilot improvements, auth consolidation (#2973)
+- **2026-01-24** | `6f0a0938` | simstudioai/sim#2986 | fix(llm): update router and llm_chat tool to call providers routes (#2986)
+- **2026-01-24** | `ac91d788` | simstudioai/sim#2988 | fix(anthropic): use anthropic sdk to transform malformed response schemas to anthropic format (#2988)
+- **2026-01-24** | `8bd5d417` | no-pr | v0.5.70: router fix, anthropic agent response format adherence
+- **2026-01-24** | `404d8c00` | simstudioai/sim#2990 | fix(tooltip): add tooltip to canonical toggle button (#2990)
+- **2026-01-24** | `e14cebee` | simstudioai/sim#2991 | fix(context-menu): preserve selection when right-clicking selected block (#2991)
+- **2026-01-24** | `fa03d4d8` | simstudioai/sim#2989 | fix(copilot): canonical modes should be constructed on edit (#2989)
+- **2026-01-24** | `1952b196` | simstudioai/sim#2992 | fix(releases): improve commit categorization and ci security (#2992)
+- **2026-01-25** | `dc0ed842` | simstudioai/sim#2993 | fix(sdk): improve input handling and separate input from options (#2993)
+- **2026-01-25** | `1bf5ed45` | simstudioai/sim#2994 | improvement(docs): add quick reference page and update SDK documentation (#2994)
+- **2026-01-25** | `d63a5cb5` | no-pr | v0.5.71: ux, ci improvements, docs updates
+- **2026-01-25** | `be2a9ef0` | simstudioai/sim#2997 | fix(storage): support Azure connection string for presigned URLs (#2997)
+- **2026-01-25** | `d83c4181` | simstudioai/sim#2996 | fix(supabase): storage upload + add basic mode version (#2996)
+- **2026-01-25** | `c140e905` | simstudioai/sim#3002 | fix(multi-trigger): resolution paths for triggers (#3002)
+- **2026-01-25** | `80f00479` | simstudioai/sim#3004 | improvement(docs): added images and videos to quick references (#3004)
+- **2026-01-25** | `1c58c35b` | no-pr | v0.5.72: azure connection string, supabase improvement, multitrigger resolution, docs quick reference
+- **2026-01-26** | `c7bd4857` | simstudioai/sim#3005 | fix(codegen): function prologue resolution edge cases (#3005)
+- **2026-01-26** | `56bc809c` | simstudioai/sim#3007 | fix(docs): separate local and blob asset resolution for quick-reference (#3007)
+- **2026-01-26** | `d8d85fcc` | simstudioai/sim#3008 | feat(helm): add branding configmap for custom assets (#3008)
+- **2026-01-26** | `12495ef8` | simstudioai/sim#3009 | feat(ci): auto-create github releases and add workflow permissions (#3009)
+- **2026-01-26** | `ebf28527` | simstudioai/sim#3011 | fix(copilot): reliable zoom to changed blocks after diff applied (#3011)
+- **2026-01-26** | `36945dea` | simstudioai/sim#3013 | improvement(preview): consolidate block rendering and fix handle configurations (#3013)
+- **2026-01-26** | `3ccbee18` | simstudioai/sim#3014 | improvement(docs): updated logo, added lightbox to action media, fixed minor styling inconsistencies between themes (#3014)
+- **2026-01-26** | `3cc9b1ae` | simstudioai/sim#3012 | fix(input-format): resolution for blocks with input format fields (#3012)
+- **2026-01-26** | `37900988` | simstudioai/sim#3001 | fix(kb): workspace id required for creation (#3001)
+- **2026-01-26** | `5189473e` | simstudioai/sim#2999 | fix(max-tokens): anthropic models streaming vs non-streaming (#2999)
+- **2026-01-26** | `9dbf56f9` | simstudioai/sim#3016 | feat(note-block): expand media embed support with tuned aspect ratios (#3016)
+- **2026-01-26** | `cb650132` | simstudioai/sim#3015 | fix(executor): fix. convergent error edges (#3015)
+- **2026-01-26** | `9cba8eee` | simstudioai/sim#3010 | improvement(preview): error paths, loops, workflow (#3010)
+- **2026-01-26** | `9ee5dfe1` | simstudioai/sim#3019 | improvement(workflow): hide raw json childworkflow span (#3019)
+- **2026-01-26** | `51891daf` | simstudioai/sim#3018 | feat(code): undo-redo state (#3018)
+- **2026-01-26** | `d8df08d3` | simstudioai/sim#3020 | improvement(mcp): remove mcp-remote for cursor config (#3020)
+- **2026-01-26** | `077e702d` | simstudioai/sim#3021 | improvement(tools): updated kalshi and polymarket tools and blocks (#3021)
+- **2026-01-26** | `46ba3157` | simstudioai/sim#3022 | feat(tools): added more intercom tools (#3022)
+- **2026-01-26** | `ab4e9dc7` | no-pr | v0.5.73: ci, helm updates, kb, ui fixes, note block enhancements
+- **2026-01-27** | `416c0826` | simstudioai/sim#3023 | fix(terminal): persist collapsed state across page refresh (#3023)
+- **2026-01-27** | `be7f3db0` | simstudioai/sim#3025 | fix(badge): add type variant for dark mode contrast (#3025)
+- **2026-01-27** | `dddd0c82` | simstudioai/sim#3024 | fix(workflow): use panel-aware viewport center for paste and block placement (#3024)
+- **2026-01-27** | `6b412c57` | simstudioai/sim#3028 | fix(security): add authentication to remaining tool API routes (#3028)
+- **2026-01-27** | `08942782` | simstudioai/sim#3027 | fix(hitl): add missing fields to block configs (#3027)
+- **2026-01-27** | `bca355c3` | simstudioai/sim#3032 | feat(tools): added clerk tools and block (#3032)
+- **2026-01-27** | `7640fdf7` | simstudioai/sim#3031 | feat(autolayout): add snap-to-grid support (#3031)
+- **2026-01-27** | `20b76e67` | simstudioai/sim#3035 | improvement(skills): extend skills (#3035)
+- **2026-01-27** | `ef613ef0` | simstudioai/sim#3038 | fix(models): update cerebras and groq models (#3038)
+- **2026-01-27** | `65bc2160` | simstudioai/sim#3033 | improvement(block-inputs): must parse json accurately + models max_tokens fix (#3033)
+- **2026-01-27** | `b4a389a7` | simstudioai/sim#3036 | improvement(helm): update GPU device plugin and add cert-manager issuers (#3036)
+- **2026-01-27** | `c8ffda16` | simstudioai/sim#3039 | fix(gemini): token count (#3039)
+- **2026-01-27** | `8bdba373` | simstudioai/sim#3040 | improvement(function): timeout increase to 5 min (#3040)
+- **2026-01-27** | `500dcd47` | simstudioai/sim#3041 | fix(openrouter): ignored when tools are configured but unused (#3041)
+- **2026-01-27** | `0d0209a1` | simstudioai/sim#3042 | fix(autolayout): pass through gridsize (#3042)
+- **2026-01-27** | `11dc18a8` | no-pr | v0.5.74: autolayout improvements, clerk integration, auth enforcements
+- **2026-01-28** | `304cf717` | simstudioai/sim#3044 | improvement(cmdk): refactor search modal to use cmdk + fix icon SVG IDs (#3044)
+- **2026-01-28** | `6814f332` | simstudioai/sim#3046 | fix(helm): move rotationPolicy under privateKey for cert-manager compatibility (#3046)
+- **2026-01-28** | `01e0723a` | simstudioai/sim#3049 | fix(loops): fix loops on empty collection (#3049)
+- **2026-01-28** | `2c2b485f` | simstudioai/sim#3043 | fix(workflow): update container dimensions on keyboard movement (#3043)
+- **2026-01-28** | `72a2f797` | simstudioai/sim#3050 | improvement(search-modal): add quick navigation items and fix cmdk value uniqueness (#3050)
+- **2026-01-28** | `655fe4f3` | simstudioai/sim#3029 | feat(executor): run from/until block (#3029)
+- **2026-01-28** | `78410eef` | simstudioai/sim#3047 | improvement(inputs): sanitize trigger inputs better (#3047)
+- **2026-01-28** | `c00f05c3` | simstudioai/sim#3052 | fix(tests): use UTC methods for timezone-independent schedule assertions (#3052)
+- **2026-01-28** | `8b240475` | simstudioai/sim#3048 | feat(description): add deployment version descriptions (#3048)
+- **2026-01-28** | `5c02d46d` | simstudioai/sim#3026 | feat(terminal): structured output (#3026)
+- **2026-01-28** | `57f0837d` | simstudioai/sim#3054 | fix(child-workflow-error-spans): pass trace-spans accurately in block logs (#3054)
+- **2026-01-28** | `12d529d0` | simstudioai/sim#3055 | fix: terminal spacing, subflow disabled in preview (#3055)
+- **2026-01-28** | `0c0f19c7` | simstudioai/sim#3056 | fix(icons): update strokeWidth of action bar items to match, update run from block icon to match run workflow button (#3056)
+- **2026-01-28** | `9e40342a` | simstudioai/sim#3051 | fix(snapshot): consolidate to use hasWorkflowChanges check (#3051)
+- **2026-01-28** | `1bc476f1` | simstudioai/sim#3057 | fix(copilot): panning on workflow (#3057)
+- **2026-01-28** | `06d7ce76` | simstudioai/sim#3053 | feat(timeout): add API block timeout configuration (#3053)
+- **2026-01-28** | `1469e9c6` | simstudioai/sim#3060 | feat(youtube): add captions, trending, and video categories tools with enhanced API coverage (#3060)
+- **2026-01-28** | `20bb7cde` | simstudioai/sim#3062 | improvement(preview): include current workflow badge in breadcrumb in workflow snapshot (#3062)
+- **2026-01-28** | `e0f1e66f` | simstudioai/sim#3059 | feat(child-workflows): nested execution snapshots (#3059)
+- **2026-01-28** | `0d8d9fb2` | simstudioai/sim#3063 | fix(type): logs workspace delivery (#3063)
+- **2026-01-28** | `c6bf5cd5` | no-pr | v0.5.75: search modal overhaul, helm chart updates, run from block, terminal and visual debugging improvements
+- **2026-01-28** | `0b2b7ed9` | simstudioai/sim#3064 | fix(oauth): use createElement for icon components to fix React hooks error (#3064)
+- **2026-01-28** | `1256a152` | simstudioai/sim#3065 | fix(posthog): move session recording proxy to middleware for large payload support (#3065)
+- **2026-01-28** | `ae17c90b` | simstudioai/sim#3066 | chore(readme): update readme.md (#3066)
+- **2026-01-29** | `028bc652` | no-pr |  v0.5.76: posthog improvements, readme updates
+- **2026-01-29** | `dca07580` | simstudioai/sim#3069 | fix(executor): conditional deactivation for loops/parallels (#3069)
+- **2026-01-29** | `2b026ded` | simstudioai/sim#3000 | fix(copilot): hosted api key validation + credential validation (#3000)
+- **2026-01-29** | `f99518b8` | simstudioai/sim#3070 | feat(calcom): added calcom (#3070)
+- **2026-01-29** | `dd2f0c6a` | simstudioai/sim#3071 | feat(tools): added similarweb (#3071)
+- **2026-01-29** | `f7180795` | simstudioai/sim#3076 | improvement(docs): instant copy button + performance optimizations (#3076)
+- **2026-01-30** | `b0fbf364` | simstudioai/sim#3072 | improvment(sockets): migrate to redis (#3072)
+- **2026-01-30** | `2ec9b7f4` | simstudioai/sim#3077 | feat(deployments): human-readable version descriptions (#3077)
+- **2026-01-30** | `f7c3de05` | simstudioai/sim#3083 | fix(streaming): handle multi-byte UTF-8 chars split across chunks (#3083)
+- **2026-01-30** | `656beb83` | simstudioai/sim#3084 | fix(anthropic): token limits for streaming with tool calls (#3084)
+- **2026-01-30** | `6cf9841b` | simstudioai/sim#3082 | fix(invite-modal): remove custom button heights and useEffect anti-pattern (#3082)
+- **2026-01-30** | `478a5352` | simstudioai/sim#3080 | improvement(docker): update docker-compose env vars (#3080)
+- **2026-01-30** | `a280a530` | simstudioai/sim#3086 | fix(agent-logs): don't filter out agent cost from trace span (#3086)
+- **2026-01-30** | `51565a6e` | simstudioai/sim#3075 | fix(note): remove icon from note block in preview (#3075)
+- **2026-01-30** | `aec0de04` | simstudioai/sim#3073 | feat(note-block): enable body dragging to match workflow block (#3073)
+- **2026-01-30** | `2c4eb9fe` | simstudioai/sim#3078 | fix(terminal): start precision (#3078)
+- **2026-01-30** | `31fdd2be` | no-pr | v0.5.77: room manager redis migration, tool outputs, ui fixes
+- **2026-01-30** | `92403e05` | simstudioai/sim#3089 | fix(editor): advanced toggle respects user edit permissions (#3089)
+- **2026-01-30** | `2d799b32` | simstudioai/sim#3090 | fix(billing): plan should be detected from stripe subscription object (#3090)
+- **2026-01-30** | `37d5e01f` | simstudioai/sim#3093 | fix(mcp): increase timeout from 1m to 10m (#3093)
+- **2026-01-30** | `4109feec` | simstudioai/sim#3092 | feat(invitations): added invitations query hook, migrated all tool files to use absolute imports (#3092)
+- **2026-01-30** | `cf2f1abc` | simstudioai/sim#3094 | fix(executor): condition inside parallel (#3094)
+- **2026-01-31** | `e11758fb` | simstudioai/sim#3098 | feat(tools): added google maps and DSPy (#3098)
+- **2026-01-31** | `6cb3977d` | simstudioai/sim#3095 | fix(visibility): updated visibility for non-sensitive tool params from user only to user or llm (#3095)
+- **2026-01-31** | `8528fbe2` | no-pr | v0.5.78: billing fixes, mcp timeout increase, reactquery migrations, updated tool param visibilities, DSPy and Google Maps integrations
+- **2026-01-31** | `e1ac2019` | simstudioai/sim#3096 | improvement(ratelimits, sockets): increase across all plans, reconnecting notif for sockets (#3096)
+- **2026-01-31** | `3e18b418` | simstudioai/sim#3101 | fix(mcp): pass timeout to SDK callTool to override 60s default (#3101)
+- **2026-01-31** | `b1118935` | simstudioai/sim#3100 | fix(workflow): optimize loop/parallel regeneration and prevent duplicate agent tools (#3100)
+- **2026-01-31** | `c6357f74` | simstudioai/sim#3103 | feat(tools): added enrich so (#3103)
+- **2026-01-31** | `2bb68335` | no-pr | v0.5.79: longer MCP tools timeout, optimize loop/parallel regeneration, enrich.so integration
+- **2026-02-02** | `b7385508` | simstudioai/sim#3113 | fix(cleanup-cron): stale execution cleanup integer overflow (#3113)
+- **2026-02-02** | `c286f3ed` | simstudioai/sim#3114 | fix(mcp): child workflow with response block returns error (#3114)
+- **2026-02-02** | `0449804f` | simstudioai/sim#3107 | improvement(billing): duplicate checks for bypasses, logger billing actor consistency, run from block (#3107)
+- **2026-02-02** | `a9b7d75d` | simstudioai/sim#3116 | feat(editor): added docs link to editor (#3116)
+- **2026-02-02** | `9c3fd1f7` | simstudioai/sim#3121 | feat(ee): add enterprise modules (#3121)
+- **2026-02-02** | `f21fe230` | simstudioai/sim#3118 | fix(formatting): consolidate duration formatting into shared utility (#3118)
+- **2026-02-03** | `710bf75b` | simstudioai/sim#3123 | fix(sidebar): right-click replaces selection, reset popover hover state (#3123)
+- **2026-02-03** | `4ca00810` | simstudioai/sim#3124 | fix(http): serialize nested objects in form-urlencoded body (#3124)
+- **2026-02-03** | `c51f266a` | simstudioai/sim#3125 | fix(logs): use formatDuration utility and align file cards styling (#3125)
+- **2026-02-03** | `4ba22527` | simstudioai/sim#3126 | improvement(tag-dropdown): removed custom styling on tag dropdown popover, fixed execution ordering in terminal and loops entries (#3126)
+- **2026-02-03** | `4db6e556` | simstudioai/sim#3102 | feat(canvas): added the ability to lock blocks (#3102)
+- **2026-02-03** | `5b0c2156` | simstudioai/sim#3119 | improvement(files): pass user file objects around consistently  (#3119)
+- **2026-02-03** | `7977ac88` | simstudioai/sim#3129 | fix(editor): block rename applies to correct block when selection changes (#3129)
+- **2026-02-03** | `0a08ac03` | simstudioai/sim#3130 | fix(import): preserve workflow colors during import (#3130)
+- **2026-02-03** | `0bc245b7` | simstudioai/sim#3127 | feat(note-block): note block preview newlines (#3127)
+- **2026-02-03** | `f8115948` | simstudioai/sim#3115 | improvement(rooms): redis client closed should fail with indicator (#3115)
+- **2026-02-04** | `a627faab` | simstudioai/sim#3120 | feat(timeouts): execution timeout limits (#3120)
+- **2026-02-04** | `c77e3510` | simstudioai/sim#3132 | fix(providers): correct tool calling message format across all providers (#3132)
+- **2026-02-04** | `362f4c29` | simstudioai/sim#3133 | improvement(timeouts): sync to 50 min, self-hosted maxed out (#3133)
+- **2026-02-04** | `8d846c59` | simstudioai/sim#3134 | feat(async-jobs): async execution with job queue backends (#3134)
+- **2026-02-04** | `793adda9` | simstudioai/sim#3136 | fix(limits): updated rate limiter to match execution timeouts, adjusted timeouts fallback to be free plan (#3136)
+- **2026-02-04** | `1933e1aa` | simstudioai/sim#3135 | improvement(openai): migrate to responses api (#3135)
+- **2026-02-04** | `fce566cc` | simstudioai/sim#3138 | fix(mistral): restore mistral configs for v2 version (#3138)
+- **2026-02-04** | `36ec68d9` | simstudioai/sim#3137 | fix(serializer): validate required fields for blocks without tools (#3137)
+- **2026-02-04** | `46822e91` | no-pr | v0.5.80: lock feature, enterprise modules, time formatting consolidation, files, UX and UI improvements, longer timeouts
+- **2026-02-04** | `21473093` | simstudioai/sim#3140 | fix(tracespans): update tracespans tool calls to accurately display inputs for successive identical tool calls (#3140)
+- **2026-02-04** | `552dc56f` | simstudioai/sim#3139 | feat(confluence): added more confluence endpoints (#3139)
+- **2026-02-04** | `ea3bab1f` | simstudioai/sim#3141 | fix(inputs): canonical params + manual validations + params resolution cleanups (#3141)
+- **2026-02-04** | `2d7e6c97` | simstudioai/sim#3143 | fix(client-exec): send correct client workflow state override (#3143)
+- **2026-02-05** | `1d4d61a1` | simstudioai/sim#3145 | feat(azure): added azure anthropic, added backwards compat support for chat completions API, added opus 4.6 (#3145)
+- **2026-02-05** | `1a66d48a` | no-pr | v0.5.81: traces fix, additional confluence tools, azure anthropic support, opus 4.6
+- **2026-02-05** | `9dcf92bd` | simstudioai/sim#3148 | fix(executor):  loop sentinel-end wrongly queued (#3148)
+- **2026-02-05** | `c0b22a64` | simstudioai/sim#3150 | fix(linear): align tool outputs, queries, and pagination with API (#3150)
+- **2026-02-06** | `65de2733` | simstudioai/sim#3152 | fix(resolver): response format and evaluator metrics in deactivated branch (#3152)
+- **2026-02-06** | `ed5ed97c` | simstudioai/sim#3151 | feat(slack): add file attachment support to slack webhook trigger (#3151)
+- **2026-02-06** | `a3a99eda` | no-pr | v0.5.82: slack trigger files, pagination for linear, executor fixes
+- **2026-02-06** | `71bd535d` | simstudioai/sim#3149 | feat(skills): added skills to agent block (#3149)
+- **2026-02-06** | `1e21ec1f` | simstudioai/sim#3079 | feat(airweave): add airweave block (#3079)
+- **2026-02-06** | `474b1af1` | simstudioai/sim#3156 | improvement(ui): improved skills UI, validation, and permissions (#3156)
+- **2026-02-06** | `1edaf197` | simstudioai/sim#3158 | fix(azure): add azure-anthropic support to router, evaluator, copilot, and tokenization (#3158)
+- **2026-02-06** | `0ca25bba` | simstudioai/sim#3155 | fix(function): isolated-vm worker pool to prevent single-worker bottleneck + execution user id resolution  (#3155)
+- **2026-02-06** | `193b95cf` | simstudioai/sim#3160 | fix(auth): swap out hybrid auth in relevant callsites (#3160)
+- **2026-02-06** | `925f06ad` | simstudioai/sim#3154 | improvement(preview): render nested values like input format correctly in workflow execution preview  (#3154)
+- **2026-02-06** | `99ae5435` | simstudioai/sim#3159 | feat(models): updated model configs, updated anthropic provider to propagate errors back to user if any (#3159)
+- **2026-02-07** | `7b36f925` | simstudioai/sim#3164 | improvement(models): reorder models dropdown (#3164)
+- **2026-02-07** | `0cb67144` | simstudioai/sim#3163 | fix(rooms): cleanup edge case for 1hr ttl (#3163)
+- **2026-02-07** | `479cd347` | no-pr | v0.5.83: agent skills, concurrent workers for v8s, airweave integration
+- **2026-02-07** | `f9b885f6` | simstudioai/sim#3165 | fix(models): add request sanitization (#3165)
+- **2026-02-07** | `6c66521d` | no-pr | v0.5.84: model request sanitization
+- **2026-02-08** | `4193007a` | simstudioai/sim#3167 | improvement(ui): deploy modal, terminal (#3167)
+- **2026-02-09** | `c7492299` | simstudioai/sim#3170 | fix(triggers): id resolution for tools with trigger mode (#3170)
+- **2026-02-09** | `654cb2b4` | no-pr | v0.5.85: deployment improvements
+- **2026-02-09** | `622d0cad` | no-pr | Merge pull request #3172 from simstudioai/fix/notifs
+- **2026-02-09** | `b3dbb448` | simstudioai/sim#3174 | improvement(jsm): destructured outputs for jsm, jira, and added 1password integration (#3174)
+- **2026-02-09** | `e5d30494` | simstudioai/sim#3176 | fix(slack): resolve file metadata via files.info when event payload is partial (#3176)
+- **2026-02-09** | `190f12fd` | simstudioai/sim#3173 | feat(copilot): copilot mcp + server side copilot execution (#3173)
+- **2026-02-09** | `8b4b3af1` | simstudioai/sim#3168 | fix(mcp): harden notification system against race conditions (#3168)
+- **2026-02-09** | `e321f883` | simstudioai/sim#3177 | improvement(preview): added trigger mode context for deploy preview (#3177)
+- **2026-02-10** | `73540e39` | simstudioai/sim#3181 | feat(logs): add skill icon to trace spans (#3181)
+- **2026-02-10** | `be3cdcf9` | no-pr | Merge pull request #3179 from simstudioai/improvement/file-download-timeouts
+- **2026-02-10** | `20b230d1` | simstudioai/sim#3175 | improvement(schema): centralize derivation of block schemas (#3175)
+- **2026-02-10** | `c5dd90e7` | simstudioai/sim#3184 | feat(copilot): enterprise configuration (#3184)
+- **2026-02-10** | `f8e9614c` | simstudioai/sim#3185 | improvement(helm): support copilot-only deployments (#3185)
+- **2026-02-10** | `6d16f216` | simstudioai/sim#3182 | improvement(mcp): improved mcp sse events notifs, update jira to handle files, fix UI issues in settings modal, fix org and workspace invitations when bundled (#3182)
+- **2026-02-10** | `78fef22d` | simstudioai/sim#3183 | fix(execution): scope execution state per workflow to prevent cross-workflow bleed (#3183)
+- **2026-02-10** | `f5dc180d` | simstudioai/sim#3186 | fix(memory): upgrade bun from 1.3.3 to 1.3.9 (#3186)
+- **2026-02-10** | `c471627c` | simstudioai/sim#3187 | fix(posthog): replace proxy rewrite with route handler for reliable body streaming (#3187)
+- **2026-02-10** | `8a24b56f` | simstudioai/sim#3188 | improvement(terminal): increase workflow logs limit from 1k to 5k per workflow (#3188)
+- **2026-02-10** | `af01dce2` | simstudioai/sim#3189 | fix(terminal): subflow logs rendering (#3189)
+- **2026-02-10** | `13a91113` | simstudioai/sim#3190 | fix(logs): surface handled errors as info in logs (#3190)
+- **2026-02-10** | `3d5bd003` | simstudioai/sim#3191 | fix(triggers): add copilot as a trigger type (#3191)
+- **2026-02-10** | `50585273` | no-pr | v0.5.86: server side copilot, copilot mcp, error notifications, jira outputs destructuring, slack trigger improvements
+- **2026-02-10** | `5792e7e5` | simstudioai/sim#3193 | fix(auth): workflow system handler (#3193)
+- **2026-02-10** | `27973953` | no-pr | v0.5.87: workflow block auth fix
+- **2026-02-11** | `2f492cac` | simstudioai/sim#3192 | feat(providers): add Gemini Deep Research via Interactions API (#3192)
+- **2026-02-11** | `f3e994ba` | simstudioai/sim#3196 | improvement(oom): increase trigger machine size (#3196)
+- **2026-02-11** | `d5a756c9` | simstudioai/sim#3197 | fix(hotkeys): remove C, T, E tab-switching hotkeys (#3197)
+- **2026-02-11** | `cec74e09` | simstudioai/sim#3199 | fix(variables): fix tag dropdown and cursor alignment in variables block (#3199)
+- **2026-02-11** | `639d50d6` | simstudioai/sim#3201 | feat(confluence): added list space labels, delete label, delete page prop (#3201)
+- **2026-02-11** | `3a3bddd6` | simstudioai/sim#3202 | fix(confl): use recommended query param pattern for confluence route (#3202)
+- **2026-02-11** | `52aff4d6` | no-pr | fix build
+- **2026-02-11** | `07d50f8f` | no-pr | v0.5.88: interactions api for gemini, trigger machine size increase, confluence ops
+- **2026-02-11** | `01577a18` | simstudioai/sim#3204 | fix(change-detection): resolve false positive trigger block change detection (#3204)
+- **2026-02-11** | `81dfeb0b` | simstudioai/sim#3200 | fix(terminal): reconnect to running executions after page refresh (#3200)
+- **2026-02-12** | `2944579d` | simstudioai/sim#3206 | fix(s3): support get-object region override and robust S3 URL parsing (#3206)
+- **2026-02-12** | `c380e59c` | simstudioai/sim#3209 | fix(copilot): make default model opus 4.5 (#3209)
+- **2026-02-12** | `6c006cdf` | no-pr | feat(google books): Add google books integration
+- **2026-02-12** | `fc97ce00` | no-pr | Correct error handling, specify auth mode as api key
+- **2026-02-12** | `ebc2ffa1` | simstudioai/sim#3208 | fix(agent): always fetch latest custom tool from DB when customToolId is present (#3208)
+- **2026-02-12** | `1130f8dd` | no-pr | Remove redundant error handling, move volume item to types file
+- **2026-02-12** | `dce47a10` | no-pr | Migrate last response to types
+- **2026-02-12** | `9a06cae5` | no-pr | Merge pull request #3210 from simstudioai/feat/google-books
+- **2026-02-12** | `602e371a` | simstudioai/sim#3207 | refactor(tool-input): subblock-first rendering, component extraction, bug fixes (#3207)
+- **2026-02-12** | `022e84c4` | simstudioai/sim#3198 | feat(creators): added referrers, code redemption, campaign tracking, etc (#3198)
+- **2026-02-12** | `a337aa7d` | simstudioai/sim#3212 | feat(internal): added internal api base url for internal calls (#3212)
+- **2026-02-13** | `7fbbc7ba` | simstudioai/sim#3214 | fix(tool-input): sync cleared subblock values to tool params (#3214)
+- **2026-02-13** | `b45f3962` | no-pr | v0.5.89: resume execution on refresh, google books, tool input subblock improvements
+- **2026-02-13** | `3ef6b050` | no-pr | fix(model): validate default model against available options
+- **2026-02-14** | `5b0532d4` | simstudioai/sim#3215 | refactor(tool-input): replace bidirectional effects with zustand subscription (#3215)
+- **2026-02-14** | `c44211a9` | simstudioai/sim#3224 | fix(workflow-vars): duplicate, export/import copies (#3224)
+- **2026-02-14** | `92b4f772` | simstudioai/sim#3222 | fix(logs): stabilize callbacks and memo-wrap components to eliminate re-render cascade (#3222)
+- **2026-02-15** | `6f595f6a` | simstudioai/sim#3216 | feat(i18n): change lockfile (#3216)
+- **2026-02-15** | `e204628a` | no-pr | v0.5.90: workflow duplication improvements, model allowlist, logs performance, i18n
+- **2026-02-16** | `d1d43b27` | simstudioai/sim#3216 | feat(i18n): change lockfile (#3216)
+- **2026-02-16** | `40a3962c` | simstudioai/sim#3227 | fix(docs): update docs and disable i18n action, upgrade turborepo (#3227)
+- **2026-02-16** | `8ebe753b` | no-pr | Merge remote-tracking branch 'origin/main' into staging
+- **2026-02-16** | `b7e377ec` | no-pr | v0.5.91: docs i18n, turborepo upgrade
+- **2026-02-17** | `ad0d0ed1` | simstudioai/sim#3231 | feat(shortlink): add Beluga short link rewrite for hosted campaigns (#3231)
+- **2026-02-17** | `48715ff0` | simstudioai/sim#3218 | improvement(copilot): scrolling stickiness (#3218)
+- **2026-02-17** | `299cc266` | simstudioai/sim#3232 | improvement(lint): fix react-doctor errors and warnings (#3232)
+- **2026-02-17** | `08690b29` | simstudioai/sim#3233 | feat(pagination): update pagination for remaining integrations that support it (#3233)
+- **2026-02-17** | `3ce54147` | simstudioai/sim#3236 | fix(pagination): add missing next_page to response interfaces and operator comments (#3236)
+- **2026-02-17** | `cdacb796` | simstudioai/sim#3235 | improvement(providers): replace @ts-ignore with typed ProviderError class (#3235)
+- **2026-02-17** | `a0afb5d0` | simstudioai/sim#3237 | feat(pipedrive): added sort order to endpoints that support it, upgraded turborepo (#3237)
+- **2026-02-17** | `da46a387` | no-pr | v0.5.92: shortlinks, copilot scrolling stickiness, pagination
+- **2026-02-17** | `61a5c987` | simstudioai/sim#3239 | fix(shortlink): use redirect instead of rewrite for Beluga tracking (#3239)
+- **2026-02-17** | `6421b1a0` | simstudioai/sim#3240 | feat(mcp): add ALLOWED_MCP_DOMAINS env var for domain allowlist (#3240)
+- **2026-02-17** | `0ee52df5` | simstudioai/sim#3229 | feat(canvas): allow locked block outbound connections (#3229)
+- **2026-02-17** | `bbcef7ce` | simstudioai/sim#3238 | feat(access-control): add ALLOWED_INTEGRATIONS env var for self-hosted block restrictions (#3238)
+- **2026-02-17** | `eab01e02` | simstudioai/sim#3219 | fix(copilot): copilot shortcut conflict (#3219)
+- **2026-02-18** | `11f3a14c` | simstudioai/sim#3245 | fix(lock): prevent socket crash when locking agent blocks (#3245)
+- **2026-02-18** | `e37b4a92` | simstudioai/sim#3242 | feat(audit-log): add persistent audit log system with comprehensive route instrumentation (#3242)
+- **2026-02-18** | `7c7c0fd9` | simstudioai/sim#3246 | feat(audit-log): add audit events for templates, billing, credentials, env, deployments, passwords (#3246)
+- **2026-02-18** | `e3964624` | simstudioai/sim#3243 | feat(sub): hide usage limits and seats info from enterprise members (non-admin) (#3243)
+- **2026-02-18** | `86ca9849` | simstudioai/sim#3248 | fix(normalization): update allowed integrations checks to be fully lowercase (#3248)
+- **2026-02-18** | `fdca7367` | no-pr | v0.5.93: NextJS config changes, MCP and Blocks whitelisting, copilot keyboard shortcuts, audit logs
+- **2026-02-18** | `cf28822a` | simstudioai/sim#3251 | fix(shortlink): remove isHosted guard from redirects, not available at build time on ECS (#3251)
+- **2026-02-18** | `2979269a` | simstudioai/sim#3250 | fix(sidebar): unify workflow and folder insertion ordering (#3250)
+- **2026-02-18** | `91aa1f9a` | simstudioai/sim#3252 | feat(tools): added vercel block & tools (#3252)
+- **2026-02-18** | `ab487874` | simstudioai/sim#3254 | chore(deps): upgrade next.js from 16.1.0-canary.21 to 16.1.6 (#3254)
+- **2026-02-18** | `15ace5e6` | no-pr | v0.5.94: vercel integration, folder insertion, migrated tracking redirects to rewrites
+- **2026-02-18** | `dcf81372` | simstudioai/sim#3257 | feat(tools): advanced fields for youtube, vercel; added cloudflare and dataverse tools (#3257)
+- **2026-02-19** | `e24c824c` | simstudioai/sim#2867 | feat(tables): added tables (#2867)
+- **2026-02-19** | `2b5e436a` | simstudioai/sim#3259 | fix(snapshot): changed insert to upsert when concurrent identical child workflows are running (#3259)
+- **2026-02-19** | `3c470ab0` | simstudioai/sim#3260 | fix(workflows): disallow duplicate workflow names at the same folder level (#3260)
+- **2026-02-19** | `61c7afc1` | simstudioai/sim#3261 | feat(tools): added redis, upstash, algolia, and revenuecat (#3261)
+- **2026-02-19** | `d7fddb29` | simstudioai/sim#3263 | feat(models): add gemini-3.1-pro-preview and update gemini-3-pro thinking levels (#3263)
+- **2026-02-19** | `9ca5254c` | simstudioai/sim#3262 | fix(audit-log): lazily resolve actor name/email when missing (#3262)
+- **2026-02-19** | `9920882d` | simstudioai/sim#3264 | fix(blocks): move type coercions from tools.config.tool to tools.config.params (#3264)
+- **2026-02-20** | `68f44b8d` | simstudioai/sim#3266 | improvement(resolver): resovled empty sentinel to not pass through unexecuted valid refs to text inputs (#3266)
+- **2026-02-20** | `958dd647` | simstudioai/sim#3268 | fix(blocks): add required constraint for serviceDeskId in JSM block (#3268)
+- **2026-02-20** | `55920e9b` | simstudioai/sim#3269 | fix(trigger): add isolated-vm support to trigger.dev container builds (#3269)
+- **2026-02-20** | `12534163` | simstudioai/sim#3270 | fix(tables): hide tables from sidebar and block registry (#3270)
+- **2026-02-20** | `71942cb5` | simstudioai/sim#3272 | fix(trigger): update node version to align with main app (#3272)
+- **2026-02-20** | `1b8d666c` | simstudioai/sim#3273 | fix(build): fix corrupted sticky disk cache on blacksmith (#3273)
+- **2026-02-20** | `67aa4bb3` | simstudioai/sim#3271 | v0.5.95: gemini 3.1 pro, cloudflare, dataverse, revenuecat, redis, upstash, algolia tools; isolated-vm robustness improvements, tables backend (#3271)
+- **2026-02-20** | `3fa4bb4c` | simstudioai/sim#3274 | feat(auth): add OAuth 2.1 provider for MCP connector support (#3274)
+- **2026-02-20** | `2fc2e12c` | simstudioai/sim#3278 | feat(slack): added ephemeral message send tool, updated ci, updated docs (#3278)
+- **2026-02-20** | `a1400cae` | simstudioai/sim#3279 | fix(logs): replace initialData with placeholderData to fix stale log details (#3279)
+- **2026-02-20** | `765a4818` | simstudioai/sim#3280 | fix(trigger): handle Slack reaction_added/reaction_removed event payloads (#3280)
+- **2026-02-20** | `a98463a4` | simstudioai/sim#3282 | fix(copilot): handle negated operation conditions in block config extraction (#3282)
+- **2026-02-20** | `34d92fae` | no-pr | v0.5.96: sim oauth provider, slack ephemeral message tool and blockkit support
+- **2026-02-21** | `42020c3a` | simstudioai/sim#3283 | fix(mcp): use getBaseUrl for OAuth discovery metadata URLs (#3283)
+- **2026-02-21** | `115f04e9` | no-pr | v0.5.97: oidc discovery for copilot mcp
+- **2026-02-21** | `2a6d4fcb` | simstudioai/sim#3287 | fix(deploy): reuse subblock merge helper in use change detection hook  (#3287)
+- **2026-02-21** | `ccb4f595` | simstudioai/sim#3289 | fix(redis): prevent false rate limits and code execution failures during Redis outages (#3289)
+- **2026-02-21** | `4913799a` | simstudioai/sim#3285 | feat(oauth): add CIMD support for client metadata discovery (#3285)
+- **2026-02-21** | `e318bf2e` | simstudioai/sim#3293 | feat(tools): added hex (#3293)
+- **2026-02-21** | `c52f78c8` | simstudioai/sim#3292 | fix(models): remove retired claude-3-7-sonnet and update default models (#3292)
+- **2026-02-21** | `04286fc1` | simstudioai/sim#3295 | fix(hex): scope param renames to their respective operations (#3295)
+- **2026-02-21** | `0d86ea01` | no-pr | v0.5.98: change detection improvements, rate limit and code execution fixes, removed retired models, hex integration
+- **2026-02-22** | `996dc96d` | simstudioai/sim#3304 | fix(security): allow HTTP for localhost and loopback addresses (#3304)
+- **2026-02-22** | `687c1252` | simstudioai/sim#3305 | fix(parallel): correct active state pulsing and duration display for parallel subflow blocks (#3305)
+- **2026-02-23** | `69ec70af` | simstudioai/sim#3306 | feat(terminal): expandable child workflow blocks in console (#3306)
+- **2026-02-23** | `af592349` | no-pr | v0.5.99: local dev improvements, live workflow logs in terminal
+- **2026-02-23** | `364bb196` | simstudioai/sim#3211 | feat(credentials): multiple credentials per provider (#3211)
+- **2026-02-23** | `e55d41f2` | simstudioai/sim#3309 | fix(credentials): credential dependent endpoints (#3309)
+- **2026-02-23** | `2ae81454` | simstudioai/sim#3310 | improvement(migration): move credential selector automigration logic to server side (#3310)
+- **2026-02-23** | `132fef06` | simstudioai/sim#3311 | fix(redis): tighten stale TCP connection detection and add fast lease deadline (#3311)
+- **2026-02-23** | `eafbb9fe` | simstudioai/sim#3312 | fix(tag-dropdown): exclude downstream blocks in loops and parallel siblings (#3312)
+- **2026-02-23** | `91666491` | simstudioai/sim#3313 | fix(execution): scope X-Sim-Via header to internal routes and enforce depth limit (#3313)
+- **2026-02-23** | `b8dfb4dd` | simstudioai/sim#3315 | fix(copy): preserve block names when pasting into workflows without conflicts (#3315)
+- **2026-02-23** | `fe34d23a` | simstudioai/sim#3316 | feat(gong): add Gong integration with 18 API tools (#3316)
+- **2026-02-23** | `d4a014f4` | simstudioai/sim#3317 | feat(public-api): add env var and permission group controls to disable public API access (#3317)
+- **2026-02-23** | `9bd357f1` | simstudioai/sim#3319 | improvement(audit): enrich metadata across 23 audit log call sites (#3319)
+- **2026-02-23** | `d824ce5b` | simstudioai/sim#3318 | feat(confluence): add webhook triggers for Confluence events (#3318)
+- **2026-02-24** | `9e817bc5` | simstudioai/sim#3297 | fix(auth): make DISABLE_AUTH work in web app (#3297)
+- **2026-02-24** | `9a31c7d8` | simstudioai/sim#3320 | improvement(processing): reduce redundant DB queries in execution preprocessing (#3320)
+- **2026-02-24** | `60f9eb21` | simstudioai/sim#3324 | feat(attio): add Attio CRM integration with 40 tools and 18 webhook triggers (#3324)
+- **2026-02-24** | `8f9b859a` | simstudioai/sim#3322 | improvement(credentials): ui (#3322)
+- **2026-02-24** | `0574427d` | simstudioai/sim#3325 | fix(providers): propagate abort signal to all LLM SDK calls (#3325)
+- **2026-02-24** | `d06459f4` | simstudioai/sim#3327 | fix(attio): automatic webhook lifecycle management and tool fixes (#3327)
+- **2026-02-24** | `ecdb133d` | simstudioai/sim#3328 | improvement(creds): bulk paste functionality, save notification, error notif (#3328)
+- **2026-02-24** | `58d0fda1` | simstudioai/sim#3330 | fix(serializer): default canonical modes construction (#3330)
+- **2026-02-25** | `ff01825b` | simstudioai/sim#3331 | docs(credentials): replace environment variables page with credentials docs (#3331)
+- **2026-02-25** | `43c0f5b1` | simstudioai/sim#3329 | feat(api): retry configuration for api block (#3329)
+- **2026-02-25** | `67f8a687` | no-pr | v0.5.100: multiple credentials, 40% speedup, gong, attio, audit log improvements
+- **2026-02-25** | `774771fd` | simstudioai/sim#3332 | fix(call-chain): x-sim-via propagation for API blocks and MCP tools (#3332)
+- **2026-02-25** | `8b0c47b0` | simstudioai/sim#3334 | chore(executor): extract shared utils and remove dead code from handlers (#3334)
+- **2026-02-25** | `95304b29` | simstudioai/sim#3333 | feat(google-sheets): add filter support to read operation (#3333)
+- **2026-02-25** | `870d4b55` | simstudioai/sim#3335 | fix(templates): show description tagline on template cards (#3335)
+- **2026-02-25** | `063ec87c` | simstudioai/sim#3337 | feat(google-translate): add Google Translate integration (#3337)
+- **2026-02-25** | `16f337f6` | simstudioai/sim#3338 | feat(google): add missing tools for Gmail, Drive, Sheets, and Calendar (#3338)
+- **2026-02-25** | `f625482b` | simstudioai/sim#3344 | feat(confluence): return page content in get page version tool (#3344)
+- **2026-02-25** | `1f3dc52d` | simstudioai/sim#3343 | feat(api): audit log read endpoints for admin and enterprise (#3343)
+- **2026-02-25** | `244e1ee4` | simstudioai/sim#3336 | feat(workflow): lock/unlock workflow from context menu and panel (#3336)
+- **2026-02-25** | `fadbad40` | simstudioai/sim#3345 | feat(confluence): add get user by account ID tool (#3345)
+- **2026-02-25** | `d98545d5` | simstudioai/sim#3346 | fix(terminal): thread executionOrder through child workflow SSE events for loop support (#3346)
+- **2026-02-25** | `e4fb8b2f` | simstudioai/sim#3341 | feat(bigquery): add Google BigQuery integration (#3341)
+- **2026-02-25** | `40016e79` | simstudioai/sim#3342 | feat(google-tasks): add Google Tasks integration (#3342)
+- **2026-02-25** | `ba7d6ff2` | simstudioai/sim#3348 | fix(credential-selector): remove reserved icon space when no credential selected (#3348)
+- **2026-02-25** | `fbafe204` | simstudioai/sim#3351 | fix(confluence): add input validation for SSRF-flagged parameters (#3351)
+- **2026-02-25** | `5ae01154` | simstudioai/sim#3350 | feat(sidebar): add lock/unlock to workflow registry context menu (#3350)
+- **2026-02-26** | `dde098e8` | simstudioai/sim#3347 | fix: prevent raw workflowInput from overwriting coerced start block values (#3347)
+- **2026-02-26** | `25c59e3e` | simstudioai/sim#3352 | feat(devin): add devin integration for autonomous coding sessions (#3352)
+- **2026-02-26** | `e07963f8` | simstudioai/sim#3354 | chore(db): drop 8 redundant indexes and add partial index for stale execution cleanup (#3354)
+- **2026-02-26** | `345a95f4` | simstudioai/sim#3356 | fix(confluence): prevent content erasure on page/blogpost update and fix space update (#3356)
+- **2026-02-26** | `4fd09892` | no-pr | v0.5.101: circular dependency mitigation, confluence enhancements, google tasks and bigquery integrations, workflow lock
+- **2026-02-26** | `c6e147e5` | simstudioai/sim#3353 | feat(agent): add MCP server discovery mode for agent tool input (#3353)
+- **2026-02-26** | `4ccb5737` | simstudioai/sim#3357 | improvement(tests): speed up unit tests by eliminating vi.resetModules anti-pattern (#3357)
+- **2026-02-26** | `c8a0b62a` | simstudioai/sim#3361 | feat(databricks): add Databricks integration with 8 tools (#3361)
+- **2026-02-26** | `50b882a3` | simstudioai/sim#3364 | feat(luma): add Luma integration for event and guest management (#3364)
+- **2026-02-26** | `63fa938d` | simstudioai/sim#3358 | feat(gamma): add gamma integration for AI-powered content generation (#3358)
+- **2026-02-26** | `d4f8ac81` | simstudioai/sim#3363 | feat(greenhouse): add greenhouse integration for managing candidates, jobs, and applications (#3363)
+- **2026-02-26** | `bf0e25c9` | simstudioai/sim#3362 | feat(ashby): add ashby integration for candidate, job, and application management (#3362)
+- **2026-02-26** | `c0f22d77` | simstudioai/sim#3368 | improvement(oauth): reordered oauth modal (#3368)
+- **2026-02-26** | `f193e9eb` | simstudioai/sim#3359 | feat(loops): add Loops email platform integration (#3359)
+- **2026-02-26** | `47fef540` | simstudioai/sim#3366 | feat(resend): expand integration with contacts, domains, and enhanced email ops (#3366)
+- **2026-02-26** | `78901ef5` | simstudioai/sim#3370 | improvement(blocks): update luma styling and linkup field modes (#3370)
+- **2026-02-26** | `9233d4eb` | simstudioai/sim#3365 | feat(x): add 28 new X API v2 tool integrations and expand OAuth scopes (#3365)
+- **2026-02-26** | `e9e5ba2c` | simstudioai/sim#3371 | improvement(docs): audit and standardize tool description sections, update developer count to 70k (#3371)
+- **2026-02-26** | `71ecf6c8` | simstudioai/sim#3372 | improvement(x): align OAuth scopes, add scope descriptions, and set optional fields to advanced mode (#3372)
+- **2026-02-27** | `b3424e20` | simstudioai/sim#3373 | improvement(ci): add sticky disk caches and bump runner for faster builds (#3373)
+- **2026-02-27** | `e3ff595a` | simstudioai/sim#3374 | improvement(selectors): make selectorKeys declarative (#3374)
+- **2026-02-27** | `49db3ca5` | simstudioai/sim#3375 | improvement(selectors): consolidate selector input logic (#3375)
+- **2026-02-27** | `4cfe8be7` | simstudioai/sim#3340 | feat(google-contacts): add google contacts integration (#3340)
+- **2026-02-27** | `38ac86c4` | simstudioai/sim#3376 | improvement(mcp): add all MCP server tools individually instead of as single server entry (#3376)
+- **2026-02-28** | `b42f80e8` | simstudioai/sim#3378 | fix(sse): fix memory leaks in SSE stream cleanup and add memory telemetry (#3378)
+- **2026-02-28** | `0195a4cd` | simstudioai/sim#3381 | improvement(ashby): validate ashby integration and update skill files (#3381)
+- **2026-02-28** | `647a3eb0` | simstudioai/sim#3383 | improvement(luma): expand host response fields and harden event ID inputs (#3383)
+- **2026-02-28** | `96096e0a` | simstudioai/sim#3382 | improvement(resend): add error handling, authMode, and naming consistency (#3382)
+- **2026-02-28** | `40bab773` | simstudioai/sim#3380 | fix(chat-deploy): fix launch chat popup and auth persistence, clean up React anti-patterns (#3380)
+- **2026-02-28** | `9be75e36` | simstudioai/sim#3384 | improvement(loops): validate loops integration and update skill files (#3384)
+- **2026-02-28** | `0d2e6ff3` | no-pr | v0.5.102: new integrations, new tools, ci speedups, memory leak instrumentation
+- **2026-02-28** | `37886603` | simstudioai/sim#3386 | fix(monitoring): set MemoryTelemetry logger to INFO level for production visibility (#3386)
+- **2026-02-28** | `ee20e119` | simstudioai/sim#3385 | feat(integrations): add amplitude, google pagespeed insights, and pagerduty integrations (#3385)
+- **2026-03-01** | `79bb4e5a` | simstudioai/sim#3388 | feat(docs): add API reference with OpenAPI spec and auto-generated endpoint pages (#3388)
+- **2026-03-01** | `e07e3c34` | no-pr | v0.5.103: memory util instrumentation, API docs, amplitude, google pagespeed insights, pagerduty
+- **2026-03-01** | `cd88706e` | simstudioai/sim#3392 | fix(icons): fix pagerduty icon (#3392)
+- **2026-03-02** | `afaa3618` | simstudioai/sim#3396 | improvement(airtable): added more tools (#3396)
+- **2026-03-02** | `e91ab626` | simstudioai/sim#3397 | fix(layout): polyfill crypto.randomUUID for non-secure HTTP contexts (#3397)
+- **2026-03-02** | `61a447ab` | simstudioai/sim#3400 | feat(integrations): add dub.co integration (#3400)
+- **2026-03-02** | `ebb9a2bd` | simstudioai/sim#3399 | fix(memory): fix O(n²) string concatenation and unconsumed fetch response leaks (#3399)
+- **2026-03-02** | `a8e0203a` | simstudioai/sim#3401 | chore(careers): remove careers page, redirect to Ashby jobs portal (#3401)
+- **2026-03-02** | `f0ee492a` | simstudioai/sim#3403 | feat(integrations): add google meet integration (#3403)
+- **2026-03-02** | `6fa4b9b4` | simstudioai/sim#3402 | feat(integrations): add brandfetch integration (#3402)
+- **2026-03-03** | `37bdffed` | simstudioai/sim#3404 | fix(socket): persist outbound edges from locked blocks (#3404)
+- **2026-03-03** | `1cf7fdfc` | simstudioai/sim#3405 | fix(logs): add status field to log detail API for polling (#3405)
+- **2026-03-03** | `2c79d024` | simstudioai/sim#3398 | improvement(executor): support nested loops/parallels (#3398)
+- **2026-03-03** | `46065983` | simstudioai/sim#3406 | fix(editor): restore cursor position after tag/env-var completion in code editors (#3406)
+- **2026-03-03** | `efc1aeed` | simstudioai/sim#3409 | fix(subflows): fix pointer events for nested subflow interaction (#3409)
+- **2026-03-03** | `f1ec5fe8` | no-pr | v0.5.104: memory improvements, nested subflows, careers page redirect, brandfetch, google meet
+- **2026-03-04** | `127994f0` | simstudioai/sim#3414 | feat(slack): add remove reaction tool (#3414)
+- **2026-03-04** | `6b355e9b` | simstudioai/sim#3412 | fix(subflows): recurse into all descendants for lock, enable, and protection checks (#3412)
+- **2026-03-04** | `04fa3186` | simstudioai/sim#3415 | feat(servicenow): add offset and display value params to read records (#3415)
+- **2026-03-04** | `fcdcaed0` | simstudioai/sim#3416 | fix(memory): add Bun.gc, stream cancellation, and unconsumed fetch drains (#3416)
+- **2026-03-04** | `115b4581` | simstudioai/sim#3418 | fix(editor): pass workspaceId to useCredentialName in block preview (#3418)
+- **2026-03-04** | `8579beb1` | simstudioai/sim#3419 | fix(chat): use explicit trigger type check instead of heuristic for chat guard (#3419)
+- **2026-03-04** | `0a6a2ee6` | simstudioai/sim#3420 | feat(slack): add new tools and user selectors (#3420)
+- **2026-03-04** | `70c36cb7` | no-pr | v0.5.105: slack remove reaction, nested subflow locks fix, servicenow pagination, memory improvements
+- **2026-03-05** | `cc38ecaf` | simstudioai/sim#3424 | feat(models): add gpt-5.4 and gpt-5.4-pro model definitions (#3424)
+- **2026-03-05** | `28f8e0fd` | simstudioai/sim#3425 | fix(kbs): legacy subblock id migration + CI check (#3425)
+- **2026-03-05** | `d640fa08` | simstudioai/sim#3429 | fix(condition): execution with subflow sentinels follow-on, snapshot highlighting, duplicate terminal logs  (#3429)
+- **2026-03-05** | `4f45f705` | simstudioai/sim#3432 | improvement(snapshot): exclude sentinel in client side activation detection (#3432)
+- **2026-03-05** | `3ce94756` | no-pr | v0.5.106: condition block and legacy kbs fixes, GPT 5.4
+- **2026-03-05** | `2722f0ef` | simstudioai/sim#3434 | feat(reddit): add 5 new tools, fix bugs, and audit all endpoints against API docs (#3434)
+- **2026-03-05** | `127968d4` | simstudioai/sim#3436 | feat(slack): add views.open, views.update, views.push, views.publish tools (#3436)
+- **2026-03-05** | `6586c5ce` | no-pr | v0.5.107: new reddit, slack tools
+- **2026-03-06** | `06c88441` | simstudioai/sim#3438 | fix(tool-input): restore workflow input mapper visibility (#3438)
+- **2026-03-06** | `ae887185` | simstudioai/sim#3441 | fix(memory): upgrade bun from 1.3.9 to 1.3.10 (#3441)
+- **2026-03-06** | `244cf4ff` | simstudioai/sim#3433 | feat(selectors): add dropdown selectors for 14 integrations (#3433)
+- **2026-03-06** | `f1efc598` | simstudioai/sim#3446 | fix(selectors): resolve env var references at design time for selector context (#3446)
+- **2026-03-06** | `a4d581c7` | simstudioai/sim#3447 | improvement(canonical): backfill for canonical modes on config changes (#3447)
+- **2026-03-06** | `a7130420` | simstudioai/sim#3449 | improvement(oauth): centralize scopes and remove dead scope evaluation code (#3449)
+- **2026-03-06** | `e6a5e7f4` | simstudioai/sim#3453 | improvement(selectors): simplify selector context + add tests (#3453)
+- **2026-03-06** | `1d36b801` | simstudioai/sim#3454 | improvement(selectors): remove dead semantic fallback code (#3454)
+- **2026-03-06** | `0a52b09d` | simstudioai/sim#3451 | feat(jira): add search_users tool for user lookup by email (#3451)
+- **2026-03-06** | `8c0a2e04` | no-pr | v0.5.108: workflow input params in agent tools, bun upgrade, dropdown selectors for 14 blocks
+- **2026-03-06** | `53fd92a3` | simstudioai/sim#3455 | feat(obsidian): add Obsidian integration with 15 tools (#3455)
+- **2026-03-07** | `1ba1bc8e` | simstudioai/sim#3456 | feat(evernote): add Evernote integration with 11 tools (#3456)
+- **2026-03-07** | `158d5236` | simstudioai/sim#3221 | feat(hosted key): Add exa hosted key (#3221)
+- **2026-03-08** | `690b47a0` | simstudioai/sim#3472 | chore(monitoring): remove SSE connection tracking and Bun.gc debug instrumentation (#3472)
+- **2026-03-09** | `f88926a6` | simstudioai/sim#3492 | fix(webhooks): return empty 200 for Slack to close modals cleanly (#3492)
+- **2026-03-09** | `635179d6` | simstudioai/sim#3221 | Revert "feat(hosted key): Add exa hosted key (#3221)" (#3495)
+- **2026-03-09** | `ecd3536a` | no-pr | v0.5.109: obsidian and evernote integrations, slack fixes, remove memory instrumentation
+- **2026-03-09** | `2e1c639a` | simstudioai/sim#3501 | fix(parallel): align integration with Parallel AI API docs (#3501)
+- **2026-03-09** | `ff2a1527` | simstudioai/sim#3500 | fix(security): add SSRF protection to database tools and webhook delivery (#3500)
+- **2026-03-11** | `19ef5268` | simstudioai/sim#3523 | fix(webhooks): eliminate redundant DB queries from webhook execution path (#3523)
+- **2026-03-11** | `1c2c2c65` | no-pr | v0.5.110: webhook execution speedups, SSRF patches
+- **2026-03-11** | `37d524bb` | simstudioai/sim#3526 | fix(gmail): RFC 2047 encode subject headers for non-ASCII characters (#3526)
+- **2026-03-11** | `d5502d60` | simstudioai/sim#3525 | feat(webhooks): dedup and custom ack configuration (#3525)
+- **2026-03-11** | `68d207df` | simstudioai/sim#3527 | improvement(webhooks): move non-polling executions off trigger.dev (#3527)
+- **2026-03-11** | `36612ae4` | simstudioai/sim#3530 | v0.5.111: non-polling webhook execs off trigger.dev, gmail subject headers, webhook trigger configs (#3530)
+- **2026-03-12** | `6bcbd15e` | simstudioai/sim#3533 | fix(blocks): remap condition/router IDs when duplicating blocks (#3533)
+- **2026-03-12** | `92954994` | simstudioai/sim#3534 | fix(traces): prevent condition blocks from rendering source agent's timeSegments (#3534)
+- **2026-03-12** | `97f78c60` | simstudioai/sim#3531 | feat(tools): add Fathom AI Notetaker integration (#3531)
+- **2026-03-12** | `75832ca0` | simstudioai/sim#3541 | fix(jira): add missing write:attachment:jira oauth scope (#3541)
+- **2026-03-12** | `3d5141d8` | simstudioai/sim#3543 | chore(oauth): remove unused github-repo generic OAuth provider (#3543)
+- **2026-03-12** | `0b19ad00` | simstudioai/sim#3542 | improvement(canvas): enable middle mouse button panning in cursor mode (#3542)
+- **2026-03-12** | `c939f8a7` | simstudioai/sim#3544 | fix(jira): add explicit fields parameter to search/jql endpoint (#3544)
+- **2026-03-12** | `aa0101c6` | simstudioai/sim#3546 | fix(blocks): clarify condition ID suffix slicing for readability (#3546)
+- **2026-03-12** | `e7b4da26` | simstudioai/sim#3509 | feat(slack): add email field to get user and list users tools (#3509)
+- **2026-03-12** | `e9bdc576` | no-pr | v0.5.112: trace spans improvements, fathom integration, jira fixes, canvas navigation updates
+- **2026-03-12** | `fdd587d6` | simstudioai/sim#3547 | fix(jira): remove unnecessary projectId dependency from manualIssueKey (#3547)
+- **2026-03-12** | `4cb0f4a2` | simstudioai/sim#3548 | feat(ashby): add webhook triggers with automatic lifecycle management (#3548)
+- **2026-03-12** | `72bb7e69` | simstudioai/sim#3551 | fix(executor): skip Response block formatting for internal JWT callers (#3551)
+- **2026-03-12** | `a8bbab2d` | simstudioai/sim#3360 | feat(google-ads): add google ads integration for campaign and ad performance queries (#3360)
+- **2026-03-12** | `d90f828e` | simstudioai/sim#3556 | fix(grain): update to stable version of API (#3556)
+- **2026-03-12** | `4c12914d` | no-pr | v0.5.113: jira, ashby, google ads, grain updates
+- **2026-03-13** | `d84cba6d` | simstudioai/sim#3562 | chore(self-hosting): add health check endpoint (#3562)
+- **2026-03-13** | `92290029` | simstudioai/sim#3535 | fix(execution): queued execution finalization and async correlation (#3535)
+- **2026-03-13** | `7e740e61` | simstudioai/sim#3569 | improvement(copilot): state persistence, subflow recreation, dynamic handle topologies (#3569)
+- **2026-03-13** | `5b9f0d73` | simstudioai/sim#3411 | feat(mothership): mothership (#3411)
+- **2026-03-14** | `d06aa1de` | simstudioai/sim#3573 | fix(connectors): align connector scopes with oauth config and fix kb modal UX (#3573)
+- **2026-03-14** | `b2d146ca` | simstudioai/sim#3576 | improvement(mothership): message queueing for home chat (#3576)
+- **2026-03-14** | `8f15be23` | simstudioai/sim#3580 | fix(ashby): add secretToken to webhook creation and fix trigger UX (#3580)
+- **2026-03-14** | `c738226c` | simstudioai/sim#3582 | fix(file): bun issues with new file creation (#3582)
+- **2026-03-14** | `9ae656c0` | simstudioai/sim#3585 | fix(files): default file name (#3585)
+- **2026-03-14** | `e6b2b739` | simstudioai/sim#3550 | fix(execution): report cancellation durability truthfully (#3550)
+- **2026-03-14** | `e13f52fe` | simstudioai/sim#3565 | fix(tools): support stringified HTTP request tables (#3565)
+- **2026-03-14** | `f347e3fc` | simstudioai/sim#3583 | fix(firecrawl) fix firecrawl scrape credit usage calculation (#3583)
+- **2026-03-14** | `a2f8ed06` | no-pr | fix lint
+- **2026-03-14** | `00ff21ab` | simstudioai/sim#3587 | fix(workflow) Fix embedded workflow logs (#3587)
+- **2026-03-14** | `5ba31184` | simstudioai/sim#3584 | feat(byok-migration) byok migration script (#3584)
+- **2026-03-14** | `cbc9f424` | simstudioai/sim#3589 | improvement(cleanup): remove unused old ui components (#3589)
+- **2026-03-14** | `952915ab` | simstudioai/sim#3588 | fix(sidebar): collapsed sidebar shows single icons with hover dropdown menus (#3588)
+- **2026-03-14** | `75bdf46e` | simstudioai/sim#3591 | improvement(promos): promo codes should be only stripe codes (#3591)
+- **2026-03-14** | `f077751c` | simstudioai/sim#3586 | fix(mothership): file materialization tools (#3586)
+- **2026-03-14** | `8837f141` | simstudioai/sim#3592 | feat(home): expand template examples with 83 categorized templates (#3592)
+- **2026-03-14** | `f5729493` | simstudioai/sim#3596 | fix(embedded): viewport options breaking autolayout (#3596)
+- **2026-03-14** | `aad620c4` | simstudioai/sim#3595 | fix(mothership): run workflow tools (run from block, run until block) (#3595)
+- **2026-03-14** | `b7b575c4` | simstudioai/sim#3593 | fix(ui) reduce redundant rerenders (#3593)
+- **2026-03-14** | `743742d0` | simstudioai/sim#3594 | Show rendered md by default (#3594)
+- **2026-03-14** | `7ecd377c` | simstudioai/sim#3597 | fix(tasks-ui): update in progress to be amber, added status to dropdown menu, fixed scheduled tasks modal (#3597)
+- **2026-03-15** | `ad68dc16` | simstudioai/sim#3598 | improvement(grain): make trigger names in line with API since resource type not known (#3598)
+- **2026-03-15** | `8906439a` | simstudioai/sim#3599 | fix(notifications): credentials connection notifs showing up in right resource (#3599)
+- **2026-03-15** | `aa1f6054` | simstudioai/sim#3601 | fix(kb): auto-refresh documents after connector sync and remove redundant invalidations (#3601)
+- **2026-03-15** | `38c89223` | simstudioai/sim#3590 | improvement: landing, sidebar, globals, buttons (#3590)
+- **2026-03-15** | `6818c510` | simstudioai/sim#3603 | improvement(connectors): audit and harden all 30 knowledge base connectors (#3603)
+- **2026-03-16** | `680c9cdd` | simstudioai/sim#3604 | improvement(ui): align all public pages with dark landing theme and improve whitelabeling (#3604)
+- **2026-03-16** | `395a61d1` | simstudioai/sim#3606 | fix(deploy): consolidate deployment detection into single source of truth (#3606)
+- **2026-03-16** | `b0870f4a` | simstudioai/sim#3610 | fix(subagent, streaming) fix deploy subagent and task streamnig (#3610)
+- **2026-03-16** | `738d51af` | simstudioai/sim#3611 | fix(ui): render block handles underneath current block content (#3611)
+- **2026-03-16** | `6df65127` | simstudioai/sim#3607 | feat(tables): upload csvs (#3607)
+- **2026-03-16** | `36e502a0` | simstudioai/sim#3614 | fix(workflow) fix mothership double-running workflows (#3614)
+- **2026-03-16** | `c090c821` | simstudioai/sim#3616 | fix(mothership): add promptForToolApproval to prevent tool hang in mothership chat (#3616)
+- **2026-03-16** | `c8678019` | simstudioai/sim#3617 | fix(ui) Live update resources in resource main view (#3617)
+- **2026-03-16** | `974cc66b` | simstudioai/sim#3618 | fix(ui) add embedded workflow notifications, switch tab on workflow run (#3618)
+- **2026-03-17** | `2a7b07e3` | simstudioai/sim#3622 | Fix row_count context (#3622)
+- **2026-03-16** | `e804ea35` | simstudioai/sim#3621 | fix(embedded): block layout should not be dependent on viewport (#3621)
+- **2026-03-17** | `b930ee31` | simstudioai/sim#3615 | improvement(tables): tables multi-select, keyboard shortcuts, and docs (#3615)
+- **2026-03-17** | `b3d9e54b` | simstudioai/sim#3624 | fix(ui) fix task switch causing duplicate text renderings (#3624)
+- **2026-03-17** | `8fa4f3fd` | simstudioai/sim#3613 | fix(mothership): thinking and subagent text (#3613)
+- **2026-03-17** | `3e3c1607` | simstudioai/sim#3629 | fix(embedded): autolayout viewport calculation for resource view (#3629)
+- **2026-03-17** | `1873f2d7` | simstudioai/sim#3631 | improvement(mothership): tool display titles, html sanitization, and ui fixes (#3631)
+- **2026-03-17** | `101fcec1` | simstudioai/sim#3623 | fix(mothership): stream management (#3623)
+- **2026-03-17** | `70d8df5a` | simstudioai/sim#3632 | fix(ui): add back file split view (#3632)
+- **2026-03-17** | `3bd2750d` | simstudioai/sim#3633 | fix(ui): ensure new resource tab button is always visible (#3633)
+- **2026-03-17** | `84d6fdc4` | no-pr | v0.6: mothership, tables, connectors
+- **2026-03-17** | `35c42ba2` | simstudioai/sim#3635 | fix(mothership): fix tool call scheduling (#3635)
+- **2026-03-17** | `25a03f1f` | simstudioai/sim#3612 | feat(auth): migrate to better-auth admin plugin with unified Admin tab (#3612)
+- **2026-03-17** | `4f3bc37f` | no-pr | v0.6.1: added better auth admin plugin
+- **2026-03-17** | `cdd0f75c` | simstudioai/sim#3640 | fix(mothership): fix mothership file uploads (#3640)
+- **2026-03-17** | `75a3e2c3` | no-pr | fix(workspace): prevent stale placeholder data from corrupting workflow registry on switch
+- **2026-03-17** | `c9f082da` | simstudioai/sim#3643 | feat(csp): allow chat UI to be embedded in iframes (#3643)
+- **2026-03-17** | `67478bbc` | simstudioai/sim#3564 | fix(logs): add durable execution diagnostics foundation (#3564)
+- **2026-03-17** | `2bc11a70` | simstudioai/sim#3647 | waleedlatif1/hangzhou v2 (#3647)
+- **2026-03-17** | `5f89c714` | simstudioai/sim#3644 | feat(knowledge): add upsert document operation (#3644)
+- **2026-03-17** | `168cd585` | simstudioai/sim#3645 | feat(mothership): request ids (#3645)
+- **2026-03-17** | `28de2889` | simstudioai/sim#3637 | improvement(landing): added enterprise section (#3637)
+- **2026-03-18** | `b84f30e9` | simstudioai/sim#3649 | fix(db): reduce connection pool sizes to prevent exhaustion (#3649)
+- **2026-03-18** | `8a4c161e` | simstudioai/sim#3648 | feat(home): resizable chat/resource panel divider (#3648)
+- **2026-03-18** | `60bb9422` | simstudioai/sim#3636 | feat(blog): add v0.6 blog post and email broadcast (#3636)
+- **2026-03-18** | `4bd07318` | no-pr | v0.6.2: mothership stability, chat iframe embedding, KB upserts, new blog post
+- **2026-03-18** | `8b245693` | simstudioai/sim#3653 | fix(hubspot): add missing tickets and oauth scopes to OAuth config (#3653)
+- **2026-03-18** | `ff5d90e0` | simstudioai/sim#3651 | fix(knowledge): infer MIME type from file extension in create/upsert tools (#3651)
+- **2026-03-18** | `5332614a` | simstudioai/sim#3634 | fix(mothership): mothership-ran workflows show workflow validation errors (#3634)
+- **2026-03-18** | `30f2d1a0` | no-pr | v0.6.3: hubspot integration, kb block improvements
+- **2026-03-18** | `a2c08e19` | simstudioai/sim#3656 | fix(subflows): subflow-child selection issues, subflow error logs (#3656)
+- **2026-03-18** | `5f7a980c` | simstudioai/sim#3666 | fix(schedules): deployment bug (#3666)
+- **2026-03-18** | `638063ca` | simstudioai/sim#3661 | feat(docusign): add docusign integration (#3661)
+- **2026-03-18** | `12908c14` | simstudioai/sim#3662 | feat(ashby): add 15 new tools and fix existing tool accuracy (#3662)
+- **2026-03-18** | `bc111a6d` | simstudioai/sim#3663 | feat(workday): block + tools  (#3663)
+- **2026-03-18** | `1809b380` | simstudioai/sim#3664 | improvement(billing): immediately charge for billing upgrades (#3664)
+- **2026-03-18** | `cef321bd` | simstudioai/sim#3660 | feat(box): add Box and Box Sign integrations (#3660)
+- **2026-03-18** | `ff7b5b52` | no-pr | v0.6.4: subflows, docusign, ashby new tools, box, workday, billing bug fixes
+- **2026-03-19** | `27a41d4e` | simstudioai/sim#3670 | fix(open-resource): open resource tool to open existing files (#3670)
+- **2026-03-19** | `25789855` | simstudioai/sim#3676 | fix(tool): Fix custom tools spreading out string output (#3676)
+- **2026-03-19** | `507954c2` | simstudioai/sim#3677 | fix(home): stop sidebar collapsing when artifact opens (#3677)
+- **2026-03-19** | `ce3d2d5e` | simstudioai/sim#3678 | fix(oauth): fall back to configured scopes when DB scope is empty (#3678)
+- **2026-03-19** | `c3c22e46` | simstudioai/sim#3675 | improvement(react): replace unnecessary useEffect patterns with better React primitives (#3675)
+- **2026-03-19** | `17bdc80e` | simstudioai/sim#3667 | improvement(platform): added more email validation utils, added integrations page, improved enterprise section, update docs generation script (#3667)
+- **2026-03-19** | `30b7192e` | simstudioai/sim#3680 | improvement(vfs): update custom glob impl to use micromatch, fix vfs filename regex (#3680)
+- **2026-03-19** | `413c45d8` | simstudioai/sim#3683 | improvement(platform): landing page cleanup, MX cache fixes, and auth util extraction (#3683)
+- **2026-03-19** | `0d22cc31` | simstudioai/sim#3684 | feat(infisical): add Infisical secrets management integration (#3684)
+- **2026-03-19** | `d3daab74` | simstudioai/sim#3686 | feat(microsoft-ad): add Azure AD (Entra ID) integration (#3686)
+- **2026-03-19** | `6326353f` | simstudioai/sim#3685 | feat(okta): add complete Okta identity management integration (#3685)
+- **2026-03-19** | `9fcd02fd` | no-pr | v0.6.5: email validation, integrations page, mothership and custom tool fixes
+- **2026-03-19** | `fa181f01` | simstudioai/sim#3687 | fix(landing): update broken links, change colors (#3687)
+- **2026-03-19** | `0be93033` | simstudioai/sim#3688 | improvement(toast): match notification styling with countdown ring and consistent design (#3688)
+- **2026-03-19** | `1eb85dd6` | simstudioai/sim#3689 | fix(preview): show actual nested workflow name in log snapshots (#3689)
+- **2026-03-19** | `e796dfee` | simstudioai/sim#3690 | chore(templates): disable templates page and related UI (#3690)
+- **2026-03-19** | `8d84c305` | simstudioai/sim#3691 | feat(copilot): add rename operation to user_table tool (#3691)
+- **2026-03-19** | `1731a4d7` | no-pr | v0.6.6: landing improvements, styling consistency, mothership table renaming
+- **2026-03-20** | `6d712111` | simstudioai/sim#3671 | feat(loading) show route specific skeleton UI (#3671)
+- **2026-03-20** | `e2707568` | simstudioai/sim#3695 | fix(kb): max depth exceeded chunks page error (#3695)
+- **2026-03-21** | `a64afac0` | simstudioai/sim#3697 | feat(kb): harden sync engine and add connector audit logging (#3697)
+- **2026-03-21** | `cb3cc378` | simstudioai/sim#3698 | fix(canvas): correct z-index layering for selected blocks and connected edges (#3698)
+- **2026-03-21** | `224ff5da` | simstudioai/sim#3701 | chore(trust): replace Delve trust center with Vanta (#3701)
+- **2026-03-21** | `4a34ac30` | simstudioai/sim#3699 | feat(auth): add Turnstile captcha + harmony disposable email blocking (#3699)
+- **2026-03-21** | `951c8fd5` | simstudioai/sim#3702 | feat(integrations): add integrationType and tags classification to all blocks (#3702)
+- **2026-03-21** | `19442f19` | no-pr | v0.6.7: kb improvements, edge z index fix, captcha, new trust center, block classifications
+- **2026-03-21** | `506d3821` | simstudioai/sim#3706 | fix(auth): hide Turnstile widget container to prevent layout gap (#3706)
+- **2026-03-22** | `d6bf12da` | simstudioai/sim#3682 | improvement(mothership): copilot, files, compaction, tools, persistence, duplication constraints (#3682)
+- **2026-03-22** | `16142460` | no-pr | fix migration
+- **2026-03-22** | `59307e22` | simstudioai/sim#3710 | fix(mothership): workflow name constraints (#3710)
+- **2026-03-22** | `4cb5e346` | simstudioai/sim#3709 | fix(mothership): minor followups (#3709)
+- **2026-03-22** | `9d6a7f39` | simstudioai/sim#3711 | fix(mothership): fix edit hashing (#3711)
+- **2026-03-22** | `8e6f1316` | simstudioai/sim#3707 | fix(kb): store filename with .txt extension for connector documents (#3707)
+- **2026-03-22** | `d1310a0c` | simstudioai/sim#3713 | chore: optimize all the images (#3713)
+- **2026-03-23** | `91a0a492` | simstudioai/sim#3715 | feat(sidebar): add right-click context menu to settings nav item (#3715)
+- **2026-03-23** | `694b5306` | simstudioai/sim#3716 | chore: client and server components (#3716)
+- **2026-03-23** | `44ceed4c` | simstudioai/sim#3712 | improvement(mothership): add file patch tool (#3712)
+- **2026-03-23** | `8294d8c8` | simstudioai/sim#3717 | fix(mothership): fix build error (#3717)
+- **2026-03-23** | `9302a1b3` | simstudioai/sim#3718 | fix(auth): use absolute positioning for Turnstile container (#3718)
+- **2026-03-23** | `daed8dbe` | simstudioai/sim#3719 | fix(login): move password reset success message inside the form (#3719)
+- **2026-03-23** | `24ed2ab9` | simstudioai/sim#3721 | improvement(settings): add searchable member selector in integrations and secrets (#3721)
+- **2026-03-23** | `f02f85fd` | simstudioai/sim#3722 | fix(tables): use overflow-clip on header text to allow horizontal scrolling (#3722)
+- **2026-03-23** | `4c839592` | simstudioai/sim#3720 | feat(slack): add conversations.create and conversations.invite tools (#3720)
+- **2026-03-23** | `288aa085` | simstudioai/sim#3723 | fix(copilot) Allow loop-in-loop workflow edits (#3723)
+- **2026-03-23** | `767db1ce` | simstudioai/sim#3724 | fix(autolayout): edits coalesced for same request diffs (#3724)
+- **2026-03-23** | `88bc16b3` | simstudioai/sim#3726 | improvement(settings): add View Invoices button to subscription billing details (#3726)
+- **2026-03-23** | `dc6f3db4` | simstudioai/sim#3727 | fix(oauth): decode ID token instead of calling Graph API for Microsoft providers (#3727)
+- **2026-03-23** | `8f793d9c` | simstudioai/sim#3728 | feat(quiver): add QuiverAI integration for SVG generation and vectorization (#3728)
+- **2026-03-23** | `775daed2` | simstudioai/sim#3729 | fix(mothership): tool call loop (#3729)
+- **2026-03-23** | `5e53757c` | simstudioai/sim#3730 | fix(quiver): build fail (#3730)
+- **2026-03-23** | `852dc93d` | simstudioai/sim#3731 | fix(mothership): tool durability (#3731)
+- **2026-03-23** | `8eb45e30` | simstudioai/sim#3732 | fix(ppt): dep injection (#3732)
+- **2026-03-24** | `092525e8` | simstudioai/sim#3734 | fix(mothership): abort streamlining (#3734)
+- **2026-03-24** | `41a7d247` | no-pr | fix(mothership): parallel tool calls
+- **2026-03-24** | `0c80438e` | simstudioai/sim#3735 | fix(mothership): async resume and tool result ordering (#3735)
+- **2026-03-24** | `c78c870f` | no-pr | v0.6.8: mothership tool loop
+- **2026-03-24** | `a783b9d4` | simstudioai/sim#3739 | fix(integrations): remove outdated trigger mode text from FAQ (#3739)
+- **2026-03-24** | `83eb3ed2` | simstudioai/sim#3737 | fix(home): voice input text persistence bugs (#3737)
+- **2026-03-24** | `8d93c850` | simstudioai/sim#3741 | chore: remove lodash (#3741)
+- **2026-03-24** | `b09a073c` | simstudioai/sim#3738 | feat(table): column drag-and-drop reorder (#3738)
+- **2026-03-24** | `7b6149dc` | simstudioai/sim#3740 | chore: optimize imports and useShallow (#3740)
+- **2026-03-24** | `a7f344bc` | simstudioai/sim#3703 | feat(tour): added product tour (#3703)
+- **2026-03-24** | `34ea99e9` | simstudioai/sim#3743 | feat(home): auth-aware landing page navigation (#3743)
+- **2026-03-24** | `77eafabb` | simstudioai/sim#3744 | feat(billing): add appliesTo plan restriction for coupon codes (#3744)
+- **2026-03-24** | `b9926df8` | simstudioai/sim#3746 | improvement(mothership): show continue options on abort (#3746)
+- **2026-03-24** | `59182d5d` | simstudioai/sim#3742 | feat(admin): Add assume user capability (#3742)
+- **2026-03-24** | `f6975fc0` | simstudioai/sim#3749 | feat(settings): add video tooltip previews for canvas settings (#3749)
+- **2026-03-24** | `ed9a71f0` | no-pr | v0.6.9: general ux improvements for tables, mothership
+- **2026-03-24** | `cdea2404` | simstudioai/sim#3748 | improvement(ui): Merge ui components for mothership chat (#3748)
+- **2026-03-24** | `96b171cf` | simstudioai/sim#3751 | improvement(tour): fix tour auto-start logic and standardize selectors (#3751)
+- **2026-03-24** | `be647469` | simstudioai/sim#3752 | fix(ui): constrain tooltip width and remove question mark cursor (#3752)
+- **2026-03-24** | `228578e2` | simstudioai/sim#3753 | fix(auth): remove captcha from login, fix signup captcha flow (#3753)
+- **2026-03-24** | `7af7a225` | simstudioai/sim#3754 | fix(knowledge): route connector doc processing through queue instead of fire-and-forget (#3754)
+- **2026-03-24** | `666dc67a` | simstudioai/sim#3755 | fix(db): use bigint for token counter columns in user_stats (#3755)
+- **2026-03-24** | `b4970337` | simstudioai/sim#3746 | Revert "improvement(mothership): show continue options on abort (#3746)" (#3756)
+- **2026-03-24** | `7b572f1f` | no-pr | v0.6.10: tour fix, connectors reliability improvements, tooltip gif fixes
+- **2026-03-24** | `8800f03f` | simstudioai/sim#3750 | improvement(billing): treat past_due state correctly (#3750)
+- **2026-03-25** | `668b948f` | simstudioai/sim#3760 | feat(agents): generalize repository guidance for coding agents (#3760)
+- **2026-03-25** | `8caaf013` | simstudioai/sim#3763 | fix(ui): fix kb id extraction logic for resource, sync tags (#3763)
+- **2026-03-25** | `2691c127` | simstudioai/sim#3764 | feat(rippling): add Rippling HR integration with 19 tools (#3764)
+- **2026-03-25** | `e0f2b8fe` | simstudioai/sim#3765 | feat(hubspot): add 27 CRM tools and fix OAuth scope mismatch (#3765)
+- **2026-03-25** | `54a862d5` | simstudioai/sim#3768 | fix(user-input): fix multiple re-renders on user-input and split the file (#3768)
+- **2026-03-25** | `f94be089` | simstudioai/sim#3767 | fix(billing): atomize usage_log and userStats writes via central recordUsage (#3767)
+- **2026-03-25** | `87e8d3ca` | simstudioai/sim#3770 | feat(logs) Add messageId and requestId context to all mothership log messages (#3770)
+- **2026-03-25** | `438defce` | simstudioai/sim#3771 | fix(mothership): key resumes by orchestration id (#3771)
+- **2026-03-25** | `be6b00d9` | simstudioai/sim#3766 | feat(ui): add request a demo modal (#3766)
+- **2026-03-25** | `9d1b9763` | simstudioai/sim#3772 | Feat(logs) upgrade mothership chat messages to error (#3772)
+- **2026-03-25** | `104ad030` | simstudioai/sim#3774 | fix(notifications): auto-dismiss info-level workflow notifications (#3774)
+- **2026-03-25** | `5a5c33d3` | simstudioai/sim#3775 | fix(client): network drops reconnecting behaviour (#3775)
+- **2026-03-25** | `794d5eab` | simstudioai/sim#3776 | fix(explicit-user-abort): separate explicit user abort semantics (#3776)
+- **2026-03-25** | `7b96b0e8` | no-pr | add logs
+- **2026-03-25** | `7583c8fb` | simstudioai/sim#3777 | feat(misc): skills import, MCP modal, workmark, dispatch modals, collapsed tasks and workflows manipulation, README (#3777)
+- **2026-03-25** | `1a14f4c1` | no-pr | fix chatHistory reconnect effect
+- **2026-03-25** | `9e4fc502` | no-pr | fix(retry): extract code into callback
+- **2026-03-25** | `9603fd09` | no-pr | Merge branch 'staging' of github.com:simstudioai/sim into staging
+- **2026-03-25** | `d97e22e3` | simstudioai/sim#3778 | chore(docs): update readme (#3778)
+- **2026-03-25** | `a9fc1a24` | no-pr | fix(guard-change): run finalize at right time
+- **2026-03-25** | `6610c37e` | no-pr | Merge branch 'staging' of github.com:simstudioai/sim into staging
+- **2026-03-25** | `2771b679` | simstudioai/sim#3779 | fix(copilot): expand tool metadata, fix thinking text rendering, clean up display logic (#3779)
+- **2026-03-25** | `6bebbc5e` | no-pr | v0.6.11: billing fixes, rippling, hubspot, UI improvements, demo modal
+- **2026-03-25** | `36bc57f0` | simstudioai/sim#3781 | fix(ui): polish subscription billing settings (#3781)
+- **2026-03-26** | `c5fe9256` | simstudioai/sim#3782 | fix(blog): restore unoptimized prop on blog cover images (#3782)
+- **2026-03-26** | `ca87d7ce` | no-pr | v0.6.12: billing, blogs UI
+- **2026-03-26** | `3597eacd` | simstudioai/sim#3786 | feat(demo-request): block personal email domains (#3786)
+- **2026-03-26** | `3774f33d` | simstudioai/sim#3785 | fix(landing): fix image rendering and navbar blog/docs navigation (#3785)
+- **2026-03-26** | `5aa0b4d5` | simstudioai/sim#3672 | fix: emcn component library design engineering polish (#3672)
+- **2026-03-26** | `bc4b7f57` | simstudioai/sim#3784 | feat: fix rerenders on search input (#3784)
+- **2026-03-26** | `8a481b61` | simstudioai/sim#3788 | chore(config): clean up bun, turbo, and next.js config (#3788)
+- **2026-03-26** | `bf60670c` | simstudioai/sim#3789 | chore: fix cn with tw-merge (#3789)
+- **2026-03-26** | `7a1a4606` | simstudioai/sim#3790 | feat(granola): add Granola meeting notes integration (#3790)
+- **2026-03-26** | `f37e4b67` | simstudioai/sim#3794 | feat(ketch): add Ketch privacy consent integration (#3794)
+- **2026-03-26** | `66ce6736` | simstudioai/sim#3792 | fix(security): harden auth, SSRF, injection, and CORS across API routes (#3792)
+- **2026-03-26** | `b0980b1e` | simstudioai/sim#3799 | fix(light): tag dropdown, code highlight (#3799)
+- **2026-03-26** | `4c474e03` | simstudioai/sim#3793 | fix(connectors): contentDeferred pattern + validation fixes across all connectors (#3793)
+- **2026-03-26** | `e70e1ec8` | simstudioai/sim#3800 | feat(search): add tables, files, knowledge bases, and jobs to cmd-k search (#3800)
+- **2026-03-26** | `50e42c20` | simstudioai/sim#3801 | fix(ui): Change modal field to be company size (#3801)
+- **2026-03-26** | `ed564516` | simstudioai/sim#3796 | improvement(terminal): performance improvements (#3796)
+- **2026-03-27** | `5f1d5e06` | simstudioai/sim#3803 | feat(generic): add generic resource tab, refactor home structure, and UI polish (#3803)
+- **2026-03-27** | `e615816d` | no-pr | v0.6.13: emcn standardization, granola and ketch integrations, security hardening, connectors improvements
+- **2026-03-27** | `db179826` | simstudioai/sim#3804 | feat: update sidebar and knowledge (#3804)
+- **2026-03-27** | `e698f9fe` | simstudioai/sim#3806 | chore: remove font antialiasing (#3806)
+- **2026-03-27** | `ed6e7845` | simstudioai/sim#3805 | chore: fix rerenders on files (#3805)
+- **2026-03-27** | `a489f910` | simstudioai/sim#3808 | fix(knowledge): show spinner on connector chip while syncing (#3808)
+- **2026-03-27** | `23677d41` | simstudioai/sim#3807 | improvement(sidebar): collapsed sidebar UX, quick-create, hover consistency, and UI polish (#3807)
+- **2026-03-27** | `34df3333` | simstudioai/sim#3810 | fix(knowledge): fix search input flicker on clear and plan display name fallback (#3810)
+- **2026-03-27** | `fb233d00` | simstudioai/sim#3811 | fix(flyout): align inline rename with non-rename styling (#3811)
+- **2026-03-27** | `b90bb75c` | simstudioai/sim#3812 | fix(knowledge): connector spinner race condition + connectors column (#3812)
+- **2026-03-27** | `14089f7d` | no-pr | v0.6.14: performance improvements, connectors UX, collapsed sidebar actions
+- **2026-03-27** | `2dd6d3d1` | simstudioai/sim#3813 | fix(import): dedup workflow name (#3813)
+- **2026-03-27** | `dda012ea` | simstudioai/sim#3605 | feat(concurrency): bullmq based concurrency control system (#3605)
+- **2026-03-27** | `271624a4` | simstudioai/sim#3814 | fix(linear): add default null for after cursor (#3814)
+- **2026-03-27** | `a7c1e510` | simstudioai/sim#3816 | fix(knowledge): reject non-alphanumeric file extensions from document names (#3816)
+- **2026-03-27** | `c05e2e0f` | simstudioai/sim#3815 | fix(security): SSRF, access control, and info disclosure (#3815)
+- **2026-03-27** | `21156dd5` | simstudioai/sim#3818 | fix(worker): dockerfile + helm updates (#3818)
+- **2026-03-27** | `33fdb113` | simstudioai/sim#3819 | update dockerfile (#3819)
+- **2026-03-27** | `23c30727` | no-pr | fix dockerfile
+- **2026-03-27** | `8f3e8647` | simstudioai/sim#3820 | fix(security): pentest remediation — condition escaping, SSRF hardening, ReDoS protection (#3820)
+- **2026-03-27** | `d2c3c1c3` | simstudioai/sim#3821 | improvement(worker): configuration defaults (#3821)
+- **2026-03-27** | `eac41ca1` | simstudioai/sim#3823 | improvement(tour): remove auto-start, only trigger on explicit user action (#3823)
+- **2026-03-27** | `b4064c57` | simstudioai/sim#3822 | fix(mcp): use correct modal for creating workflow MCP servers in deploy (#3822)
+- **2026-03-28** | `e4d35735` | simstudioai/sim#3825 | fix(knowledge): give users choice to keep or delete documents when removing connector (#3825)
+- **2026-03-28** | `f6b461ad` | simstudioai/sim#3827 | fix(readme): restore readme gifs (#3827)
+- **2026-03-28** | `e2be9926` | simstudioai/sim#3824 | feat(academy): Sim Academy — interactive partner certification platform (#3824)
+- **2026-03-28** | `edc50238` | simstudioai/sim#3830 | improvement(sidebar): expand sidebar by hovering and clicking the edge (#3830)
+- **2026-03-28** | `0ea73263` | simstudioai/sim#3826 | feat(ui): handle image paste (#3826)
+- **2026-03-28** | `7b0ce806` | simstudioai/sim#3829 | feat(files): interactive markdown checkbox toggling in preview (#3829)
+- **2026-03-28** | `d013132d` | simstudioai/sim#3831 | improvement(home): position @ mention popup at caret and fix icon consistency (#3831)
+- **2026-03-28** | `30377d77` | simstudioai/sim#3832 | improvement(ui): sidebar (#3832)
+- **2026-03-28** | `f1ead2ed` | no-pr | fix docker image build
+- **2026-03-28** | `b9b930bb` | simstudioai/sim#3835 | feat(analytics): add Profound web traffic tracking (#3835)
+- **2026-03-28** | `b3713642` | simstudioai/sim#3834 | feat(resources): add sort and filter to all resource list pages (#3834)
+- **2026-03-29** | `336c0652` | simstudioai/sim#3836 | fix(viewer): image pan/zoom, sort fixes, sidebar dot fixes (#3836)
+- **2026-03-29** | `82e58a50` | simstudioai/sim#3839 | fix(academy): hide academy pages until content is ready (#3839)
+- **2026-03-29** | `1728c370` | simstudioai/sim#3837 | improvement(landing): lighthouse performance and accessibility fixes (#3837)
+- **2026-03-29** | `560fa751` | no-pr | v0.6.15: workers, security hardening, sidebar improvements, chat fixes, profound
+- **2026-03-30** | `c4f4e6b4` | simstudioai/sim#3841 | fix(bullmq): disable temporarily (#3841)
+- **2026-03-30** | `1d7ae906` | no-pr | v0.6.16: bullmq optionality
+- **2026-03-30** | `5c47ea58` | simstudioai/sim#3843 | chore(trigger): update @trigger.dev/sdk and @trigger.dev/build to 4.4.3 (#3843)
+- **2026-03-30** | `73e00f53` | no-pr | v0.6.17: trigger.dev CI, workers FF
+- **2026-03-30** | `35b36463` | simstudioai/sim#3846 | fix(sidebar): cmd+click opens in new tab, shift+click for range select (#3846)
+- **2026-03-30** | `e1359b09` | simstudioai/sim#3665 | feat(block) add block write and append operations (#3665)
+- **2026-03-30** | `1d59eca9` | simstudioai/sim#3848 | fix(analytics): use getBaseDomain for Profound host field (#3848)
+- **2026-03-30** | `d3d58a96` | simstudioai/sim#3833 | Feat/improved logging (#3833)
+- **2026-03-30** | `5c334874` | simstudioai/sim#3850 | fix(auth): use standard 'Unauthorized' error in hybrid auth responses (#3850)
+- **2026-03-30** | `4ae5b1b6` | simstudioai/sim#3851 | improvement(workflow): use DOM hit-testing for edge drop-on-block detection (#3851)
+- **2026-03-30** | `e5aef618` | simstudioai/sim#3849 | feat(profound): add Profound AI visibility and analytics integration (#3849)
+- **2026-03-30** | `c7643198` | simstudioai/sim#3852 | fix(mothership): hang condition (#3852)
+- **2026-03-30** | `27460f84` | simstudioai/sim#3853 | fix(atlassian): harden cloud ID resolution for Confluence and Jira (#3853)
+- **2026-03-30** | `72eea64b` | simstudioai/sim#3854 | improvement(tour): align product tour tooltip styling with emcn and fix spotlight overflow (#3854)
+- **2026-03-30** | `e9c94fa4` | simstudioai/sim#3855 | feat(logs): add copy link and deep link support for log entries (#3855)
+- **2026-03-30** | `0abeac77` | simstudioai/sim#3858 | improvement(platform): standardize perms, audit logging, lifecycle across admin, copilot, ui actions (#3858)
+- **2026-03-30** | `7d4dd267` | simstudioai/sim#3857 | fix(knowledge): fix document processing stuck in processing state (#3857)
+- **2026-03-30** | `d091441e` | simstudioai/sim#3863 | feat(logs): add copy link and deep-link support for log entries (#3863)
+- **2026-03-30** | `90f59279` | simstudioai/sim#3862 | fix(file): use file-upload subblock (#3862)
+- **2026-03-30** | `7d0fdefb` | no-pr | v0.6.18: file operations block, profound integration, edge connection improvements, copy logs, knowledgebase robustness
+- **2026-03-31** | `019630bd` | simstudioai/sim#3865 | fix(vllm): pass env.VLLM_API_KEY to chat requests (#3865)
+- **2026-03-31** | `4544fd45` | simstudioai/sim#3864 | improvement(ui): fix nav loading flash, skeleton mismatches, and React anti-patterns across resource pages (#3864)
+- **2026-03-31** | `1a2aa694` | simstudioai/sim#3866 | feat(secrets-manager): add AWS Secrets Manager integration (#3866)
+- **2026-03-31** | `df625029` | simstudioai/sim#3867 | feat(infra): add dev environment support (#3867)
+- **2026-03-31** | `7898e5d7` | simstudioai/sim#3860 | improvement(workflows): replace Zustand workflow sync with React Query as single source of truth (#3860)
+- **2026-03-31** | `d99dd86b` | simstudioai/sim#3868 | feat(tailscale): add Tailscale integration with 20 API operations (#3868)
+- **2026-03-31** | `72e28baa` | simstudioai/sim#3869 | feat(extend): add Extend AI document processing integration (#3869)
+- **2026-03-31** | `35411e46` | simstudioai/sim#3871 | feat(models): add gpt-5.4-mini and gpt-5.4-nano (#3871)
+- **2026-03-31** | `512558dc` | simstudioai/sim#3870 | feat(launchdarkly): add LaunchDarkly integration for feature flag management (#3870)
+- **2026-03-31** | `e45fbe01` | simstudioai/sim#3872 | improvement(attio): validate integration, fix event bug, add missing tool and triggers (#3872)
+- **2026-03-31** | `282ec8c5` | simstudioai/sim#3874 | fix(reorder): drag and drop hook (#3874)
+- **2026-03-31** | `a79c8a75` | simstudioai/sim#3876 | fix(chat): align floating chat send button colors with home/mothership chat (#3876)
+- **2026-03-31** | `b95a0491` | simstudioai/sim#3877 | fix(kb): chunking config persistence (#3877)
+- **2026-03-31** | `e39c534e` | simstudioai/sim#3873 | feat(providers): add Fireworks AI provider integration (#3873)
+- **2026-03-31** | `dcebe3ae` | simstudioai/sim#3878 | improvement(triggers): add tags to all trigger.dev task invocations (#3878)
+- **2026-03-31** | `d5810090` | no-pr | v0.6.19: vllm fixes, loading improevments, reactquery standardization, new gpt 5.4 models, fireworks provider support, launchdarkly, tailscale, extend integrations
+- **2026-04-01** | `42fb4343` | simstudioai/sim#3883 | fix(encryption): specify authTagLength on all AES-GCM cipher/decipher calls (#3883)
+- **2026-04-01** | `2ede12aa` | simstudioai/sim#3885 | fix(cost): worker crash incremenental case (#3885)
+- **2026-04-01** | `df6ceb61` | no-pr | fix(envvar): remove dead env var
+- **2026-04-01** | `076c835b` | simstudioai/sim#3887 | improvement(credentials): consolidate OAuth modals and auto-fill credential name (#3887)
+- **2026-04-01** | `8527ae5d` | simstudioai/sim#3884 | feat(providers): server-side credential hiding for Azure and Bedrock (#3884)
+- **2026-04-01** | `ac831b85` | simstudioai/sim#3889 | chore(bun): update bunfig.toml (#3889)
+- **2026-04-01** | `2c174ca4` | simstudioai/sim#3888 | feat(landing): added models pages (#3888)
+- **2026-04-01** | `27a11a26` | simstudioai/sim#3890 | improvement(workflow): seed start block on server side (#3890)
+- **2026-04-01** | `4c94f3cf` | simstudioai/sim#3893 | improvement(providers): audit and update all provider model definitions (#3893)
+- **2026-04-02** | `c0165375` | simstudioai/sim#3895 | fix(blog): Fix blog not loading (#3895)
+- **2026-04-02** | `bbc704fe` | simstudioai/sim#3828 | feat(credentials) Add google service account support (#3828)
+- **2026-04-02** | `fc6fe193` | simstudioai/sim#3896 | fix(credential) fix credential migration (#3896)
+- **2026-04-02** | `080a0a61` | simstudioai/sim#3886 | feat(rippling): expand Rippling integration from to 86 tools, landing updates (#3886)
+- **2026-04-02** | `a78f3f9c` | simstudioai/sim#3897 | fix(credential): fix service_account migration to avoid unsafe enum usage in same transaction (#3897)
+- **2026-04-02** | `225d5d55` | simstudioai/sim#3898 | improvement(models): update default to claude-sonnet-4-6 and reorganize OpenAI models (#3898)
+- **2026-04-02** | `45f053a3` | simstudioai/sim#3899 | feat(rootly): add Rootly incident management integration with 14 tools (#3899)
+- **2026-04-02** | `0fdd8ffb` | no-pr | v0.6.20: oauth default credential name, models pages, new models, rippling and rootly integrations
+- **2026-04-02** | `e2e29cef` | simstudioai/sim#3900 | fix(blog): use landing theme variables in MDX components (#3900)
+- **2026-04-02** | `727bb1ca` | simstudioai/sim#3903 | fix(bullmq): restore CONCURRENCY_CONTROL_ENABLED flag guard (#3903)
+- **2026-04-02** | `f0d19504` | no-pr | v0.6.21: concurrency FF, blog theme
+- **2026-04-02** | `e2e53aba` | simstudioai/sim#3901 | feat(agentmail): add AgentMail integration with 21 tools (#3901)
+- **2026-04-02** | `f9d73db6` | simstudioai/sim#3902 | feat(rootly): expand Rootly integration from 14 to 27 tools (#3902)
+- **2026-04-02** | `20c05644` | simstudioai/sim#3905 | fix(enterprise): smooth audit log list animation (#3905)
+- **2026-04-02** | `b0c0ee29` | simstudioai/sim#3906 | feat(email): send onboarding followup email 3 days after signup (#3906)
+- **2026-04-02** | `6866da59` | simstudioai/sim#3875 | fix(tools) Directly query db for custom tool id (#3875)
+- **2026-04-02** | `ec51f735` | simstudioai/sim#3908 | feat(email): abandoned checkout email, 80% free tier warning, credits exhausted email (#3908)
+- **2026-04-02** | `74af4521` | simstudioai/sim#3907 | feat(blocks): add Credential block (#3907)
+- **2026-04-03** | `ace87791` | simstudioai/sim#3910 | feat(analytics): add PostHog product analytics (#3910)
+- **2026-04-03** | `e8f7fe09` | no-pr | v0.6.22: agentmail, rootly, landing fixes, analytics, credentials block
+- **2026-04-03** | `65fc138b` | simstudioai/sim#3923 | improvement(stores): remove deployment state from Zustand in favor of React Query (#3923)
+- **2026-04-03** | `2334f2dc` | simstudioai/sim#3928 | fix(loading): remove jarring workflow loading spinners (#3928)
+- **2026-04-03** | `34d210c6` | simstudioai/sim#3929 | chore(stores): remove Zustand environment store and dead init scaffolding (#3929)
+- **2026-04-03** | `98fe4cd4` | simstudioai/sim#3930 | refactor(stores): consolidate variables stores into stores/variables/ (#3930)
+- **2026-04-03** | `a0796f08` | simstudioai/sim#3927 | improvement(mothership): workflow edits via sockets (#3927)
+- **2026-04-03** | `8ce02994` | simstudioai/sim#3926 | fix(ui) Fix oauth redirect on connector modal (#3926)
+- **2026-04-03** | `57e5bac1` | simstudioai/sim#3932 | fix(mcp): resolve userId before JWT generation for agent block auth (#3932)
+- **2026-04-03** | `2e69f853` | simstudioai/sim#3931 | Fix "fix in copilot" button (#3931)
+- **2026-04-03** | `3267d8cc` | simstudioai/sim#3934 | fix(modals): center modals in visible content area accounting for sidebar and panel (#3934)
+- **2026-04-03** | `6d00d6bf` | simstudioai/sim#3937 | fix(modals): center modals in visible content area and remove open/close animation (#3937)
+- **2026-04-03** | `0b9019d9` | no-pr | v0.6.23: MCP fixes, remove local state in favor of server state, mothership workflow edits via sockets, ui improvements
+- **2026-04-04** | `b0cb95be` | simstudioai/sim#3940 | feat: mothership/copilot feedback (#3940)
+- **2026-04-04** | `893e322a` | simstudioai/sim#3941 | fix(envvars): restore workflowUserId fallback for scheduled execution env var resolution (#3941)
+- **2026-04-04** | `4a9439e9` | simstudioai/sim#3942 | improvement(models): tighten model metadata and crawl discovery (#3942)
+- **2026-04-04** | `c2b12cf2` | simstudioai/sim#3943 | fix(captcha): use getResponsePromise for Turnstile execute-on-submit flow (#3943)
+- **2026-04-04** | `a54dcbe9` | no-pr | v0.6.24: copilot feedback wiring, captcha fixes
+- **2026-04-04** | `75f8c6ad` | simstudioai/sim#3925 | fix(ui): persist active resource tab in url, fix internal markdown links (#3925)
+- **2026-04-04** | `039e5754` | simstudioai/sim#3948 | fix(csp): allow Cloudflare Turnstile domains for script, frame, and connect (#3948)
+- **2026-04-04** | `0ba8ab1e` | simstudioai/sim#3951 | fix(posthog): upgrade SDKs and fix serverless event flushing (#3951)
+- **2026-04-04** | `f39b4c74` | simstudioai/sim#3947 | fix(setup): bun run prepare explicitly (#3947)
+- **2026-04-04** | `7971a64e` | simstudioai/sim#3946 | fix(setup): db migrate hard fail and correct ini env (#3946)
+- **2026-04-04** | `ce53275e` | simstudioai/sim#3959 | feat(knowledge): add Live sync option to KB connectors + fix embedding billing (#3959)
+- **2026-04-04** | `b4d9b8c3` | simstudioai/sim#3960 | feat(analytics): posthog audit — remove noise, add 10 new events (#3960)
+- **2026-04-04** | `a70ccdde` | simstudioai/sim#3961 | fix(kb): fix Linear connector GraphQL type errors and tag slot reuse (#3961)
+- **2026-04-04** | `8ae4b88d` | simstudioai/sim#3962 | fix(integrations): show disabled role combobox for readonly members (#3962)
+- **2026-04-04** | `855c892f` | simstudioai/sim#3953 | feat(block): Add cloudwatch block  (#3953)
+- **2026-04-04** | `d0baf5b1` | simstudioai/sim#3964 | feat(cloudformation): add AWS CloudFormation integration with 7 operations (#3964)
+- **2026-04-04** | `28af223a` | no-pr | v0.6.25: cloudwatch, cloudformation, live kb sync, linear fixes, posthog upgrade
+- **2026-04-04** | `f9a7c453` | simstudioai/sim#3967 | fix(settings): align skeleton loading states with actual page layouts (#3967)
+- **2026-04-04** | `adfcb67d` | simstudioai/sim#3970 | feat(cursor): add list artifacts and download artifact tools (#3970)
+- **2026-04-04** | `33e69219` | simstudioai/sim#3918 | improvement(execution): multiple response blocks (#3918)
+- **2026-04-04** | `ebc19484` | simstudioai/sim#3972 | improvement(landing, blog): ui/ux (#3972)
+- **2026-04-05** | `235f0748` | simstudioai/sim#3971 | feat(files): expand file editor to support more formats, add docx/xlsx preview (#3971)
+- **2026-04-05** | `a680cec7` | simstudioai/sim#3977 | fix(core): consolidate ID generation to prevent HTTP self-hosted crashes (#3977)
+- **2026-04-05** | `7f1efcc7` | simstudioai/sim#3976 | fix(blocks): resolve Ollama models incorrectly requiring API key in Docker (#3976)
+- **2026-04-05** | `d889f326` | no-pr | v0.6.26: ui improvements, multiple response blocks, docx previews, ollama fix
+- **2026-04-06** | `5ca66c38` | simstudioai/sim#3973 | refactor(webhooks): extract provider-specific logic into handler registry (#3973)
+- **2026-04-06** | `925be3d6` | simstudioai/sim#3982 | feat(triggers): add Salesforce webhook triggers (#3982)
+- **2026-04-06** | `c9b45f4f` | simstudioai/sim#3983 | feat(triggers): add HubSpot merge, restore, and generic webhook triggers (#3983)
+- **2026-04-06** | `62a7700e` | simstudioai/sim#3981 | feat(integrations): add Sixtyfour AI integration (#3981)
+- **2026-04-06** | `796384a0` | simstudioai/sim#3986 | feat(triggers): add Resend webhook triggers with auto-registration (#3986)
+- **2026-04-06** | `62ea0f1d` | simstudioai/sim#3984 | feat(triggers): add Gong webhook triggers for call events (#3984)
+- **2026-04-06** | `590f3764` | simstudioai/sim#3990 | feat(triggers): add Intercom webhook triggers (#3990)
+- **2026-04-06** | `7ea06931` | simstudioai/sim#3985 | feat(triggers): add Greenhouse webhook triggers (#3985)
+- **2026-04-06** | `21e5b5c5` | simstudioai/sim#3989 | feat(triggers): add Notion webhook triggers (#3989)
+- **2026-04-06** | `c18f0238` | simstudioai/sim#3993 | feat(analytics): add Google Tag Manager and Google Analytics for hosted environments (#3993)
+- **2026-04-06** | `8b1d749f` | simstudioai/sim#3988 | feat(triggers): add Vercel webhook triggers with automatic registration (#3988)
+- **2026-04-06** | `cd5cee30` | simstudioai/sim#3994 | feat(landing): add PostHog tracking for CTA clicks, demo requests, and prompt submissions (#3994)
+- **2026-04-06** | `18a7868b` | simstudioai/sim#3992 | feat(triggers): add Zoom webhook triggers (#3992)
+- **2026-04-06** | `5ea63f16` | simstudioai/sim#3991 | feat(triggers): add Linear v2 triggers with automatic webhook registration (#3991)
+- **2026-04-06** | `7e0794c9` | simstudioai/sim#3987 | fix(signup): show multiple signup errors at once (#3987)
+- **2026-04-06** | `58571fe7` | simstudioai/sim#3995 | fix(hitl): fix stream endpoint, pause persistence, and resume page (#3995)
+- **2026-04-06** | `2164cef7` | simstudioai/sim#3979 | fix(mothership): fix url keeping markdown hash on resource switch (#3979)
+- **2026-04-06** | `8c8c6277` | simstudioai/sim#3966 | feat(block): Conditionally hide impersonateUser field from block, add service account prompting (#3966)
+- **2026-04-06** | `25b4a3ff` | simstudioai/sim#3998 | feat(posthog): Add posthog log for signup failed (#3998)
+- **2026-04-06** | `df2c47af` | simstudioai/sim#3999 | fix(copilot): fix copilot running workflow stuck on 10mb error (#3999)
+- **2026-04-06** | `8df3f207` | simstudioai/sim#4002 | fix(blocks): allow tool expansion in disabled mode, improve child deploy badge freshness (#4002)
+- **2026-04-06** | `5eb494de` | simstudioai/sim#4003 | fix(secrets): secrets/integrations component code cleanup (#4003)
+- **2026-04-06** | `606477e4` | simstudioai/sim#4000 | feat(home): add folders to resource menu (#4000)
+- **2026-04-06** | `cc8c9e88` | simstudioai/sim#4005 | feat(home): add double-enter to send top queued message (#4005)
+- **2026-04-06** | `c52834b1` | simstudioai/sim#3969 | fix(subflows): make edges inside subflows directly clickable (#3969)
+- **2026-04-06** | `609ba619` | simstudioai/sim#4004 | fix(sockets): joining currently deleted workflow (#4004)
+- **2026-04-06** | `89ae7387` | simstudioai/sim#4001 | feat(folders): soft-delete folders and show in Recently Deleted (#4001)
+- **2026-04-06** | `64c6cd97` | simstudioai/sim#3997 | fix(webhooks): harden audited provider triggers (#3997)
+- **2026-04-06** | `8e11c329` | simstudioai/sim#4007 | fix(resource-menu): consistent height between 1 result and no results (#4007)
+- **2026-04-06** | `1e00a06e` | simstudioai/sim#4008 | fix(home): simplify enter-to-send queued message to single press (#4008)
+- **2026-04-06** | `77935838` | simstudioai/sim#4009 | fix(secrets): restore unsaved-changes guard for settings tab navigation (#4009)
+- **2026-04-06** | `68df7320` | simstudioai/sim#4010 | refactor(triggers): consolidate v2 Linear triggers into same files as v1 (#4010)
+- **2026-04-06** | `316bc8cd` | no-pr | v0.6.27: new triggers, mothership improvements, files archive, queueing improvements, posthog, secrets mutations
+- **2026-04-07** | `ed19fed0` | simstudioai/sim#4012 | fix(blog): stack featured posts vertically on mobile to prevent horizontal overflow (#4012)
+- **2026-04-07** | `f46886e6` | simstudioai/sim#3627 | fix(sso): default tokenEndpointAuthentication to client_secret_post (#3627)
+- **2026-04-07** | `d5bea5f2` | simstudioai/sim#3949 | fix(table): escape LIKE wildcards in $contains filter values (#3949)
+- **2026-04-07** | `0b439ecd` | simstudioai/sim#4014 | chore(stores): remove unused exports and dead code from zustand stores (#4014)
+- **2026-04-07** | `ad100fa8` | simstudioai/sim#4016 | improvement(docs): ui/ux cleanup (#4016)
+- **2026-04-07** | `5c7b0575` | simstudioai/sim#4015 | fix(knowledge): prevent navigation on context menu actions and widen tags modal (#4015)
+- **2026-04-07** | `24af61dc` | simstudioai/sim#4013 | feat(dagster): expand integration with 9 new tools and full GraphQL validation (#4013)
+- **2026-04-07** | `04434ddf` | simstudioai/sim#4017 | fix(modals): consistent text colors and workspace delete confirmation (#4017)
+- **2026-04-07** | `83723329` | simstudioai/sim#4018 | feat(claude): add you-might-not-need-an-effect slash command (#4018)
+- **2026-04-07** | `c89a95d6` | simstudioai/sim#4019 | feat(auth): add DISABLE_GOOGLE_AUTH and DISABLE_GITHUB_AUTH env vars (#4019)
+- **2026-04-07** | `762fbbd3` | simstudioai/sim#4020 | fix(docs): resolve missing tool outputs for spread-inherited V2 tools (#4020)
+- **2026-04-07** | `cd3cb871` | simstudioai/sim#4021 | fix(signup): fix turnstile key loading (#4021)
+- **2026-04-07** | `e2d4d0ed` | simstudioai/sim#4024 | feat(security): add GTM and GA domains to CSP for hosted environments (#4024)
+- **2026-04-07** | `3f508e44` | no-pr | v0.6.28: new docs, delete confirmation standardization, dagster integration, signup method feature flags, SSO improvements
+- **2026-04-07** | `d0d35816` | simstudioai/sim#4023 | feat(posthog): Add tracking on mothership abort (#4023)
+- **2026-04-07** | `0f602f79` | simstudioai/sim#4025 | fix(login): fix captcha headers for manual login  (#4025)
+- **2026-04-07** | `d6ec1153` | simstudioai/sim#4026 | v0.6.29: login improvements, posthog telemetry (#4026)
+- **2026-04-07** | `e0f5cf88` | simstudioai/sim#4030 | feat(slack): add subtype field and signature verification to Slack trigger (#4030)
+- **2026-04-07** | `98be968b` | simstudioai/sim#4032 | improvement(secrets): parallelize save mutations and add admin visibility for workspace secrets (#4032)
+- **2026-04-07** | `6c3caf61` | simstudioai/sim#4028 | feat(chat): drag workflows and folders from sidebar into chat input (#4028)
+- **2026-04-07** | `2504bfba` | simstudioai/sim#4034 | feat(athena): add AWS Athena integration (#4034)
+- **2026-04-07** | `712e58a7` | simstudioai/sim#4029 | fix(admin): delete workspaces on ban (#4029)
+- **2026-04-07** | `6f9f336f` | simstudioai/sim#4033 | feat(ui): Add copy button for code blocks in mothership (#4033)
+- **2026-04-07** | `2760b4bf` | simstudioai/sim#4004 | Revert "fix(sockets): joining currently deleted workflow (#4004)" (#4036)
+- **2026-04-07** | `086b7d9c` | simstudioai/sim#4035 | refactor(polling): consolidate polling services into provider handler pattern (#4035)
+- **2026-04-07** | `a591d7c2` | simstudioai/sim#4037 | fix(manual): mock payloads nested recursion (#4037)
+- **2026-04-07** | `7b81a760` | simstudioai/sim#4039 | fix(kb): show 'pending' instead of past date for overdue next sync (#4039)
+- **2026-04-07** | `9282d1bf` | simstudioai/sim#4040 | feat(secrets): allow admins to view and edit workspace secret values (#4040)
+- **2026-04-08** | `d0d35dd4` | simstudioai/sim#4042 | fix: address PR review comments (#4042)
+- **2026-04-08** | `3c7bfa79` | simstudioai/sim#4044 | improvement(kb): deferred content fetching and metadata-based hashes for connectors (#4044)
+- **2026-04-08** | `d7da35ba` | no-pr | v0.6.30: slack trigger enhancements, connectors performance improvements, secrets performance, polling refactors, drag resources in mothership
+- **2026-04-08** | `efb582e9` | simstudioai/sim#4041 | feat(voice): voice input migration to eleven labs (#4041)
+- **2026-04-08** | `650487c3` | simstudioai/sim#4048 | fix(kb): doc selector (#4048)
+- **2026-04-08** | `04c90572` | simstudioai/sim#4046 | fix(kb): disable connectors after repeated sync failures (#4046)
+- **2026-04-08** | `579d240c` | simstudioai/sim#4045 | fix(parallel): remove broken node-counting completion + resolver claim cross-block (#4045)
+- **2026-04-08** | `a1173ee7` | simstudioai/sim#4051 | debug(log): Add logging on socket token error (#4051)
+- **2026-04-08** | `c21876ab` | simstudioai/sim#4052 | fix(trigger): add react-dom and react-email to additionalPackages (#4052)
+- **2026-04-08** | `621aa65b` | simstudioai/sim#4050 | fix(webhook): throw webhook errors as 4xxs (#4050)
+- **2026-04-08** | `11894001` | simstudioai/sim#4047 | feat(enterprise): cloud whitelabeling for enterprise orgs (#4047)
+- **2026-04-08** | `4700590e` | simstudioai/sim#4054 | fix(editor): stop highlighting start.input as blue when block is not connected to starter (#4054)
+- **2026-04-08** | `cf233bb4` | no-pr | v0.6.31: elevenlabs voice, trigger.dev fixes, cloud whitelabeling for enterprises
+- **2026-04-08** | `694f4a58` | simstudioai/sim#4055 | fix: merge subblock values in auto-layout to prevent losing router context (#4055)
+- **2026-04-08** | `91ce55e5` | simstudioai/sim#4057 | fix(whitelabeling): eliminate logo flash by fetching org settings server-side (#4057)
+- **2026-04-08** | `18566359` | no-pr | fix(whitelabeling): cast activeOrganizationId on session for TS build
+- **2026-04-08** | `c8334920` | simstudioai/sim#4059 | fix(error): catch socket auth error as 4xx (#4059)
+- **2026-04-08** | `5f33432d` | simstudioai/sim#4056 | fix(billing): Skip billing on streamed workflows with byok (#4056)
+- **2026-04-08** | `c5cc3368` | simstudioai/sim#4062 | fix(subscription-state): remove dead code, change token route check (#4062)
+- **2026-04-08** | `3e852181` | simstudioai/sim#4058 | improvement(hitl): streaming, async support + update docs  (#4058)
+- **2026-04-08** | `a8468a60` | simstudioai/sim#4064 | fix(hitl): async resume (#4064)
+- **2026-04-08** | `139213ef` | simstudioai/sim#4027 | feat(block): Add cloudwatch publish operation (#4027)
+- **2026-04-08** | `9fbe514d` | simstudioai/sim#4065 | fix(hitl): resume workflow output async (#4065)
+- **2026-04-08** | `db230785` | simstudioai/sim#4066 | fix(jsm): improve create request error handling, add form-based submission support (#4066)
+- **2026-04-08** | `f8f37586` | no-pr | v0.6.32: BYOK fixes, ui improvements, cloudwatch tools, jsm tools extension
+- **2026-04-08** | `dc7d876a` | simstudioai/sim#4069 | improvement(release): address comments (#4069)
+- **2026-04-08** | `d778b3d3` | simstudioai/sim#4068 | fix(trigger): add @react-email/components to additionalPackages (#4068)
+- **2026-04-09** | `b67c0688` | simstudioai/sim#4075 | improvement(deploy): improve auto-generated version descriptions (#4075)
+- **2026-04-09** | `8e222fa3` | simstudioai/sim#4067 | improvement(polling): fix correctness and efficiency across all polling handlers (#4067)
+- **2026-04-09** | `7bd271ae` | simstudioai/sim#4076 | fix(credentials): add cross-cache invalidation for oauth credential queries (#4076)
+- **2026-04-09** | `70f04c00` | simstudioai/sim#4078 | feat(jsm): add ProForma/JSM Forms discovery tools (#4078)
+- **2026-04-09** | `fc3e762b` | simstudioai/sim#4077 | feat(trigger): add ServiceNow webhook triggers (#4077)
+- **2026-04-09** | `c393791f` | simstudioai/sim#4079 | docs(openapi): add Human in the Loop API endpoints (#4079)
+- **2026-04-09** | `3c8bb407` | no-pr | v0.6.33: polling improvements, jsm forms tools, credentials reactquery invalidation, HITL docs
+- **2026-04-09** | `12deb0f5` | simstudioai/sim#4082 | chore(ci): bump actions/checkout to v6 and dorny/paths-filter to v4 (#4082)
+- **2026-04-09** | `32bdf3cf` | simstudioai/sim#4084 | fix(trigger): use @react-email/render v2 to fix renderToPipeableStream error (#4084)
+- **2026-04-09** | `05b5588a` | simstudioai/sim#4083 | improvement(ci): parallelize Docker builds and fix test timeouts (#4083)
+- **2026-04-09** | `bce638dd` | simstudioai/sim#4085 | fix(tools): add Atlassian error extractor to all Jira, JSM, and Confluence tools (#4085)
+- **2026-04-09** | `d33acf42` | no-pr | v0.6.34: trigger.dev fixes, CI speedup, atlassian error extractor
+- **2026-04-09** | `171485d3` | simstudioai/sim#4088 | fix(tools): handle all Atlassian error formats in parseJsmErrorMessage (#4088)
+- **2026-04-09** | `40741093` | simstudioai/sim#4087 | fix(log): log cleanup sql query (#4087)
+- **2026-04-09** | `476669fd` | simstudioai/sim#4089 | docs(openapi): add Human in the Loop section to API reference sidebar (#4089)
+- **2026-04-09** | `04c1f8e4` | simstudioai/sim#4091 | feat(tools): add fields parameter to Jira search block (#4091)
+- **2026-04-09** | `3efbd1d6` | simstudioai/sim#4092 | fix(agent): include model in structured response output (#4092)
+- **2026-04-09** | `4f40c4ce` | no-pr | v0.6.35: additional jira fields, HITL docs, logs cleanup efficiency
+- **2026-04-09** | `6099683e` | simstudioai/sim#4081 | feat(trigger): add Google Sheets, Drive, and Calendar polling triggers (#4081)
+- **2026-04-10** | `266bc214` | simstudioai/sim#4094 | feat(ui): allow multiselect in resource tabs (#4094)
+- **2026-04-10** | `2b9fb198` | simstudioai/sim#4095 | fix(trigger): resolve dependsOn for trigger-mode subblocks sharing canonical groups with block subblocks (#4095)
+- **2026-04-10** | `59de6bbb` | simstudioai/sim#4097 | fix(trigger): show selector display names on canvas for trigger file/sheet selectors (#4097)
+- **2026-04-10** | `2e85361e` | simstudioai/sim#4099 | fix(tools): use OAuth-compatible URL for JSM Forms API (#4099)
+- **2026-04-10** | `fb5ebd3b` | simstudioai/sim#4096 | fix(ui): support Tab key to select items in tag, env-var, and resource dropdowns (#4096)
+- **2026-04-10** | `34f77e00` | simstudioai/sim#4098 | update(doc): Update hosted key/byok section (#4098)
+- **2026-04-10** | `8bbca9ba` | simstudioai/sim#4101 | fix(trigger): fix polling trigger config defaults, row count, clock-skew, and stale config clearing (#4101)
+- **2026-04-10** | `bad78ccb` | simstudioai/sim#4104 | improvement(sockets): workflow switching state machine (#4104)
+- **2026-04-10** | `c1d788ce` | simstudioai/sim#4105 | improvement(integrations, models): ui/ux (#4105)
+- **2026-04-10** | `1acafe87` | simstudioai/sim#4102 | feat(knowledge): add token, sentence, recursive, and regex chunkers (#4102)
+- **2026-04-10** | `cbfab1ce` | no-pr | v0.6.36: new chunkers, sockets state machine, google sheets/drive/calendar triggers, docs updates, integrations/models pages improvements
+- **2026-04-11** | `20cc0185` | simstudioai/sim#4108 | fix(execution): fix isolated-vm memory leak and add worker recycling (#4108)
+- **2026-04-11** | `c8525852` | simstudioai/sim#4107 | chore(triggers): deprecate trigger-save subblock (#4107)
+- **2026-04-11** | `74d0a475` | simstudioai/sim#4109 | fix(trigger): fix Google Sheets trigger header detection and row index tracking (#4109)
+- **2026-04-11** | `6a4f5f20` | simstudioai/sim#4112 | fix(trigger): handle Drive rate limits, 410 page token expiry, and clean up comments (#4112)
+- **2026-04-11** | `30c5e82a` | simstudioai/sim#4111 | feat(ee): add enterprise audit logs settings page (#4111)
+- **2026-04-11** | `bc31710c` | simstudioai/sim#4116 | improvement(landing): rebrand to AI workspace, add auth modal, harden PostHog tracking (#4116)
+- **2026-04-11** | `85f1d968` | simstudioai/sim#4115 | feat(ee): enterprise feature flags, permission group platform controls, audit logs ui, delete account (#4115)
+- **2026-04-11** | `4309d061` | no-pr | v0.6.37: audit logs page, isolated-vm worker rotation, permission groups ui
+- **2026-04-12** | `6ef40c5b` | simstudioai/sim#4117 | fix(models): exclude reseller providers from model catalog pages (#4117)
+- **2026-04-12** | `8b574769` | no-pr | v0.6.38: models page
+- **2026-04-12** | `10341ae4` | simstudioai/sim#4121 | fix(billing): unblock on payment success (#4121)
+- **2026-04-12** | `6d2deb1b` | simstudioai/sim#4122 | chore(skills): reinforce skill to not guess integration outputs (#4122)
+- **2026-04-12** | `cd3e24b7` | simstudioai/sim#4123 | feat(crowdstrike): add tools + validate whatsapp, shopify, trello (#4123)
+- **2026-04-12** | `ffda3444` | simstudioai/sim#4125 | fix(models): fix mobile overflow and hide cost bars on small screens (#4125)
+- **2026-04-12** | `e3d0e74c` | no-pr | v0.6.39: billing fixes, tools audit, landing fix
+- **2026-04-13** | `cfe55914` | simstudioai/sim#4127 | fix(navbar): eliminate auth button flash using useSyncExternalStore (#4127)
+- **2026-04-13** | `cd7e4136` | simstudioai/sim#4129 | chore(skills): add code quality review skills and cleanup command (#4129)
+- **2026-04-13** | `eba48e81` | simstudioai/sim#4130 | feat(logs): add cancel execution to log row context menu (#4130)
+- **2026-04-13** | `5ab85c69` | simstudioai/sim#4131 | feat(workspaces): add recency-based workspace switching and redirect (#4131)
+- **2026-04-13** | `fb4fb9e8` | simstudioai/sim#4133 | feat(agiloft): add Agiloft CLM integration with token-based auth (#4133)
+- **2026-04-13** | `4375f992` | simstudioai/sim#4135 | fix(atlassian): unify error message extraction across all routes (#4135)
+- **2026-04-13** | `7491d70a` | simstudioai/sim#4136 | feat(workspaces): add workspace logo upload (#4136)
+- **2026-04-13** | `c0db9de0` | simstudioai/sim#4134 | fix(ui): Focus first text input by default (#4134)
+- **2026-04-13** | `d238052f` | simstudioai/sim#4138 | feat(ui): show folder path in search modal (#4138)
+- **2026-04-13** | `0abcc6e8` | simstudioai/sim#4090 | improvement(mothership): restructured stream, tool structures, code typing, file write/patch/append tools, timing issues (#4090)
+- **2026-04-13** | `e23557fd` | simstudioai/sim#4137 | feat(aws): add IAM and STS integrations (#4137)
+- **2026-04-13** | `6587afb9` | simstudioai/sim#4140 | fix(ci): Increase build application memory (#4140)
+- **2026-04-13** | `d6dc9f73` | simstudioai/sim#4143 | fix(ui): fix flash between home and new chat (#4143)
+- **2026-04-13** | `c71ae49d` | simstudioai/sim#4144 | chore(copilot): streaming paths reviewer group (#4144)
+- **2026-04-13** | `c75d7b9d` | simstudioai/sim#4145 | fix(ui): fix home button not working until stream ends (#4145)
+- **2026-04-13** | `6ce299bb` | simstudioai/sim#4142 | feat(jsm): add all Forms API endpoints for jira (#4142)
+- **2026-04-13** | `bd9dcf1e` | simstudioai/sim#4141 | fix(mothership): revert to deployment and set env var tools (#4141)
+- **2026-04-13** | `a4da8beb` | simstudioai/sim#4147 | improvement(docs): remove references to concurrency control (#4147)
+- **2026-04-13** | `85fda999` | simstudioai/sim#4150 | fix(block-card): webhook URL never hydrates due to namespaced subBlock ID (#4150)
+- **2026-04-13** | `0e6ada4b` | simstudioai/sim#4149 | fix(security): resolve ReDoS vulnerability in function execute tag pattern (#4149)
+- **2026-04-13** | `9c1b0bc1` | simstudioai/sim#4148 | improvement(ui): remove anti-patterns, fix follow-up auto-scroll, move CopyCodeButton to emcn (#4148)
+- **2026-04-13** | `48d51011` | simstudioai/sim#4151 | fix(ci): replace dynamic secret access with explicit secret references (#4151)
+- **2026-04-13** | `8a8bc1b0` | simstudioai/sim#4152 | fix(posthog): set email and name on person profile at signup (#4152)
+- **2026-04-13** | `0ac05397` | no-pr | v0.6.40: mothership tool loop, new skills, agiloft, STS, IAM integrations, jira forms endpoints
+- **2026-04-14** | `a51333aa` | simstudioai/sim#4153 | fix(webhooks): non-polling webhook executions silently dropped after BullMQ removal (#4153)
+- **2026-04-14** | `3838b6e8` | no-pr | v0.6.41: webhooks fix, workers removal
+- **2026-04-14** | `64cdab24` | simstudioai/sim#4155 | fix(ui): handle long file paths and names in search modal (#4155)
+- **2026-04-14** | `ff2e369c` | simstudioai/sim#4156 | fix(mothership): fix workflow vfs reads (#4156)
+- **2026-04-14** | `367415f6` | simstudioai/sim#4158 | fix(mothership): tool path for nested folders (#4158)
+- **2026-04-14** | `fc079225` | no-pr | v0.6.42: mothership nested file reads, search modal improvements
+- **2026-04-14** | `6b2e83bf` | simstudioai/sim#4157 | fix(billing): add idempotency to billing (#4157)
+- **2026-04-14** | `7529a75a` | simstudioai/sim#4160 | fix(triggers): env var resolution in provider configs (#4160)
+- **2026-04-14** | `48e174b2` | simstudioai/sim#4161 | fix(google-drive): add auto export format and validate against Drive API docs (#4161)
+- **2026-04-14** | `3d6660ba` | simstudioai/sim#4164 | feat(jira): support raw ADF in description and environment fields (#4164)
+- **2026-04-14** | `3a1b1a80` | no-pr | v0.6.43: mothership billing idempotency, env var resolution fixes
+- **2026-04-14** | `1bf2d958` | simstudioai/sim#4163 | improvement(ui): delegate streaming animation to Streamdown component (#4163)
+- **2026-04-14** | `751eeacc` | simstudioai/sim#4166 | fix(ui): resource tab fixes, add search to workspace modal (#4166)
+- **2026-04-14** | `cbf0a139` | simstudioai/sim#4168 | fix(seo): correct canonical URLs, compress oversized images, add cache headers (#4168)
+- **2026-04-14** | `e281ca0d` | simstudioai/sim#4169 | fix(ui): align PlayOutline icon with filled Play shape (#4169)
+- **2026-04-14** | `29fbad28` | simstudioai/sim#4171 | fix(mothership): fix intelligence regression (#4171)
+- **2026-04-14** | `61b33e59` | simstudioai/sim#4172 | fix(blocks): correct required field validation for Jira and Confluence blocks (#4172)
+- **2026-04-14** | `80095788` | simstudioai/sim#4162 | feat(microsoft-excel): add SharePoint drive support for Excel integration (#4162)
+- **2026-04-14** | `22d4639f` | simstudioai/sim#4174 | refactor(microsoft-excel): export GRAPH_ID_PATTERN and deduplicate validation (#4174)
+- **2026-04-14** | `ff71a07e` | simstudioai/sim#4176 | improvement(ui): rename user-facing "execution" to "run" (#4176)
+- **2026-04-14** | `46ffc490` | no-pr | v0.6.44: streamdown, mothership intelligence, excel extension
+- **2026-04-15** | `842aa2c2` | simstudioai/sim#4179 | fix(csp): add missing analytics domains, remove unsafe-eval, fix workspace CSP gap (#4179)
+- **2026-04-15** | `0b36c8bc` | simstudioai/sim#4182 | fix(landing): return 404 for invalid dynamic route slugs (#4182)
+- **2026-04-15** | `5274efd8` | simstudioai/sim#4170 | improvement(seo): optimize sitemaps, robots.txt, and core web vitals across sim and docs (#4170)
+- **2026-04-15** | `05c1c5b1` | simstudioai/sim#4184 | fix(gemini): support structured output with tools on Gemini 3 models (#4184)
+- **2026-04-15** | `a39dc158` | simstudioai/sim#4183 | feat(brightdata): add Bright Data integration with 8 tools (#4183)
+- **2026-04-15** | `f0285adc` | simstudioai/sim#4185 | fix(mothership): fix superagent credentials (#4185)
+- **2026-04-15** | `cd8c5bd0` | simstudioai/sim#4186 | fix(logs): close sidebar when selected log disappears from filtered list + cleanup (#4186)
+- **2026-04-15** | `010435c5` | no-pr | v0.6.45: superagent, csp, brightdata integration, gemini response format, logs performance improvements
+- **2026-04-15** | `6dddc3f7` | simstudioai/sim#4188 | fix(brightdata): fix async Discover API, echo-back fields, and registry ordering (#4188)
+- **2026-04-15** | `377712c9` | simstudioai/sim#4189 | fix(mothership): chat stream structuring + logs resource post fix (#4189)
+- **2026-04-15** | `c0bc62c5` | no-pr | Merge pull request #4190 from simstudioai/staging
+- **2026-04-15** | `ba6bc916` | simstudioai/sim#4191 | fix(ui): fix attachment logic on queued mothership messages (#4191)
+- **2026-04-15** | `23ccd4a5` | simstudioai/sim#4193 | improvement(landing): optimize core web vitals and accessibility (#4193)
+- **2026-04-15** | `0464a576` | simstudioai/sim#4196 | fix(ui): posthog guard, dynamic import loading, compact variant, rebase cleanup (#4196)
+- **2026-04-16** | `387cc977` | no-pr | v0.6.46: mothership queueing, web vitals
+- **2026-04-16** | `4cdc9414` | simstudioai/sim#4197 | fix(ui): fix focusing bugs while editing files (#4197)
+- **2026-04-16** | `147ac896` | simstudioai/sim#4110 | feat(docs): fill documentation gaps across platform features (#4110)
+- **2026-04-16** | `9f41736d` | simstudioai/sim#4200 | fix(misc): remove duplicate docs page, update clopus 4.7 (#4200)
+- **2026-04-16** | `e16c8e6f` | simstudioai/sim#4201 | fix(ui): stop terminal auto-select from stealing copilot input focus (#4201)
+- **2026-04-16** | `2dbc7fdd` | no-pr | v0.6.47: files focusing, documentation, opus 4.7
+- **2026-04-16** | `1708bbee` | simstudioai/sim#4199 | feat(tables): import csv into existing tables (#4199)
+- **2026-04-16** | `6aa63463` | simstudioai/sim#4202 | fix(executor): subflow edge keys mismatch (#4202)
+- **2026-04-16** | `6fd1767c` | simstudioai/sim#4203 | improvement(ui): remove React anti-patterns, fix CSP violations (#4203)
+- **2026-04-16** | `8a50f184` | no-pr | v0.6.48: import csv into tables, subflow fixes, CSP updates
+- **2026-04-16** | `c06361b1` | simstudioai/sim#4205 | improvement(tables): clean up duplicate types, unnecessary memos, and barrel imports (#4205)
+- **2026-04-16** | `1d0e118e` | simstudioai/sim#4206 | fix(socket): sync deploy button state across collaborators (#4206)
+- **2026-04-16** | `49a1495e` | simstudioai/sim#4207 | improvement(logs): fix trigger badge wrapping, time range picker, status filters, and React anti-patterns (#4207)
+- **2026-04-16** | `3e2a7a2e` | simstudioai/sim#4120 | fix(export): preserve unicode characters in workflow filenames (#4120)
+- **2026-04-16** | `3d909d54` | simstudioai/sim#4208 | fix(resolver): turn off resolver for opaque schema nodes, unrun paths (#4208)
+- **2026-04-16** | `a589c8e3` | simstudioai/sim#4212 | improvement(mothership): whitespace only deltas need to be preserved, update docs for theshold billing (#4212)
+- **2026-04-16** | `2266bb38` | simstudioai/sim#4211 | feat(triggers): add Atlassian triggers for Jira, JSM, and Confluence (#4211)
+- **2026-04-16** | `38864fac` | simstudioai/sim#4210 | feat(monday): add full Monday.com integration (#4210)
+- **2026-04-16** | `dcf33021` | no-pr | v0.6.49: deploy sockets event, resolver, logs improvements, monday.com integration, atlassian triggers
+- **2026-04-17** | `351873ac` | simstudioai/sim#4215 | improvement(sidebar): interleave folders and workflows by sort order in all resource pickers (#4215)
+- **2026-04-17** | `e1018f1c` | simstudioai/sim#4214 | improvement(utils): add shared utility functions and replace inline patterns (#4214)
+- **2026-04-17** | `5e716d74` | simstudioai/sim#4216 | docs(assets): Add pics and videos for mothership (#4216)
+- **2026-04-17** | `948cdbcc` | simstudioai/sim#4218 | fix(chat): prevent @-mention menu focus loss and stabilize render identity (#4218)
+- **2026-04-17** | `003e9315` | simstudioai/sim#4220 | improvement(terminal): resize output panel on any layout change via ResizeObserver (#4220)
+- **2026-04-17** | `319e0db7` | simstudioai/sim#4213 | improvement(mothership): agent model dropdown validations, markers for recommended models (#4213)
+- **2026-04-17** | `2f932054` | simstudioai/sim#4217 | fix(execution): run pptx/docx/pdf generation inside isolated-vm sandbox (#4217)
+- **2026-04-17** | `47519e34` | simstudioai/sim#4221 | fix(fireflies): support V2 webhook payload format for meetingId mapping (#4221)
+- **2026-04-17** | `524f33cc` | simstudioai/sim#4225 | fix(pdf): PDF previews by adding the missing preview endpoint and allowing same-origin blob URLs in iframe CSP (#4225)
+- **2026-04-17** | `bc09865d` | no-pr | v0.6.50: ppt/doc/pdf worker isolation, docs, chat, sidebar improvements
+- **2026-04-18** | `a01f80c6` | simstudioai/sim#4222 | feat(tables): column selection, keyboard shortcuts, drag reorder, and undo improvements (#4222)
+- **2026-04-18** | `32541e79` | simstudioai/sim#4227 | chore(readme): update tech stack section (#4227)
+- **2026-04-18** | `28b4c4cc` | simstudioai/sim#4226 | fix(blocks): resolve variable display in mothership resource preview (#4226)
+- **2026-04-18** | `c246f5c6` | simstudioai/sim#4219 | improvement(billing): route scope by subscription referenceId, sync plan from Stripe, transfer storage on org join, outbox service (#4219)
+- **2026-04-18** | `c1918725` | simstudioai/sim#4139 | fix(ui): stop scrolling on leaving workflow sidebar for drag-drop (#4139)
+- **2026-04-18** | `b5674d9e` | simstudioai/sim#4228 | improvement(codebase): centralize test mocks, extract @sim/utils, remove dead code (#4228)
+- **2026-04-18** | `f91c1b61` | simstudioai/sim#4229 | chore(docker): add packages/utils to app and realtime Dockerfiles (#4229)
+- **2026-04-18** | `951fbd4d` | simstudioai/sim#4232 | fix(landing): render proper 404 for invalid /models and /integrations routes (#4232)
+- **2026-04-18** | `1ced54a7` | simstudioai/sim#4231 | fix(settings): restore paste-to-destructure for workspace secrets, cleanup hooks and design tokens (#4231)
+- **2026-04-19** | `5cf7e8d5` | simstudioai/sim#4235 | improvement(codebase): migrate tests to dbChainMock, extract react-query hooks (#4235)
+- **2026-04-19** | `5f56e467` | no-pr | v0.6.51: tables improvements, billing fixes, 404 pages, code hygiene
+- **2026-04-20** | `febc36ff` | simstudioai/sim#4236 | fix(security): enforce URL validation across connectors, providers, and auth flows (SSRF + open-redirect hardening) (#4236)
+- **2026-04-20** | `2ae1ad29` | simstudioai/sim#4237 | feat(ui): Add slack manifest generator  (#4237)
+- **2026-04-20** | `d9209f95` | simstudioai/sim#4230 | improvement(governance): workspace-org invitation system consolidation  (#4230)
+- **2026-04-20** | `0cd14f4a` | simstudioai/sim#4238 | improvement(sso): fix provider lookup, migrate UI to emcn, add enterprise SSO docs (#4238)
+- **2026-04-20** | `ac4ccfca` | simstudioai/sim#4239 | fix(billing): close TOCTOU race in subscription transfer, centralize stripe test mocks (#4239)
+- **2026-04-20** | `802f4cf0` | simstudioai/sim#4128 | feat(jobs): Add data retention jobs (#4128)
+- **2026-04-20** | `94202ed2` | simstudioai/sim#4240 | improvement(knowledge): show selector with saved option in connector edit modal (#4240)
+- **2026-04-20** | `0e1ff0a1` | simstudioai/sim#4241 | improvement(enterprise): slack wizard UI, enterprise docs, data retention updates (#4241)
+- **2026-04-21** | `699bbfd1` | simstudioai/sim#4061 | feat(log): Add wrapper function for standardized logging (#4061)
+- **2026-04-21** | `2456128f` | simstudioai/sim#4242 | feat(contact): add contact page, migrate help/demo forms to useMutation (#4242)
+- **2026-04-21** | `42ef2b1d` | simstudioai/sim#4243 | fix(landing): resolve error-page crash on invalid /models and /integrations routes (#4243)
+- **2026-04-21** | `d1859532` | simstudioai/sim#4246 | improvement(landing): scope navbar/footer to (shell) route group, align scoped 404s with root (#4246)
+- **2026-04-21** | `3a0e7b89` | simstudioai/sim#4247 | seo(robots): disallow tag-filtered blog URLs from crawlers (#4247)
+- **2026-04-21** | `aee6189d` | simstudioai/sim#4244 | improvement(access-control): migrate to workspace scope (#4244)
+- **2026-04-21** | `2d94b372` | simstudioai/sim#4245 | feat(integrations): AWS SES, IAM Identity Center, and enhanced IAM/STS/CloudWatch/DynamoDB (#4245)
+- **2026-04-21** | `34cfc268` | simstudioai/sim#4248 | improvement(contact): add Turnstile CAPTCHA, honeypot, and robustness fixes (#4248)
+- **2026-04-21** | `193f06fc` | simstudioai/sim#4250 | fix(aws): add validateAwsRegion to all AWS route schemas to prevent SSRF (#4250)
+- **2026-04-21** | `45bf3969` | simstudioai/sim#4252 | fix(deps): bump drizzle-orm 0.45.2 + adopt MCP SDK 1.25.3 native types (#4252)
+- **2026-04-21** | `c2529c3f` | simstudioai/sim#4256 | fix(settings): hide data-retention nav item when user lacks enterprise plan (#4256)
+- **2026-04-21** | `ca3bbf14` | no-pr | v0.6.52: data retention, docs updates, slack manifest generator, security hardening, contact page, 404 page, access control, SES, SNS
+- **2026-04-21** | `51ace655` | simstudioai/sim#4258 | fix(migration): permission group migration error (#4258)
+- **2026-04-21** | `7941dcde` | simstudioai/sim#4257 | fix(docs): update simstudio.ai URLs to sim.ai in SSO docs (#4257)
+- **2026-04-21** | `bbf400ff` | no-pr | v0.6.53: permissions groups migration, docs updates
+- **2026-04-21** | `41a1b50a` | simstudioai/sim#4260 | improvement(migrations): log better errors (#4260)
+- **2026-04-21** | `7c619e78` | no-pr | Merge pull request #4261 from simstudioai/staging
+- **2026-04-22** | `0aeab026` | simstudioai/sim#4253 | feat(observability): add mothership tracing (#4253)
+- **2026-04-22** | `d927d8bd` | simstudioai/sim#4263 | fix(db): raise db pool size (#4263)
+- **2026-04-22** | `8c9ddefc` | simstudioai/sim#4265 | fix(otel): chat root OTel span on all early-return paths (#4265)
+- **2026-04-22** | `64cfda52` | no-pr | v0.6.54: mothership tracing, db pool size increase
+- **2026-04-22** | `8ce56fe1` | simstudioai/sim#4266 | fix(auth): add api key auth via sha256 hash lookup (#4266)
+- **2026-04-22** | `f7ab3998` | simstudioai/sim#4254 | feat(ui): add thinking ui to mothership (#4254)
+- **2026-04-22** | `bed5e957` | simstudioai/sim#4269 | fix(selectors): enable search on all picker and selector subBlocks (#4269)
+- **2026-04-22** | `5f0f0edd` | simstudioai/sim#4262 | improvement(repo): separate realtime into separate app (#4262)
+- **2026-04-22** | `7ca736a7` | no-pr | v0.6.55: standardize monorepo conventions, api key hash, thinking text for mothership
+- **2026-04-23** | `65972f2f` | simstudioai/sim#4270 | fix(retention): switch data retention to be org-level (#4270)
+- **2026-04-23** | `b86ebb35` | simstudioai/sim#4275 | fix(api): Pass archivedAt to list table response (#4275)
+- **2026-04-23** | `3b11c814` | simstudioai/sim#4277 | fix(tables): account for letter-spacing and displayed content in column auto-resize (#4277)
+- **2026-04-23** | `0ae19dab` | simstudioai/sim#4279 | feat(files): default sort by updated and add updated sort option (#4279)
+- **2026-04-23** | `cdde8cbd` | simstudioai/sim#4278 | feat(agentphone): add AgentPhone integration (#4278)
+- **2026-04-23** | `c22ac38a` | simstudioai/sim#4276 | Set statement timeout of 90 seconds (#4276)
+- **2026-04-23** | `dcbe7c69` | simstudioai/sim#4280 | feat(ui): Show subagent logs in bounded vertical view (#4280)
+- **2026-04-23** | `91ccbb99` | simstudioai/sim#4281 | fix(agentphone): fix image (#4281)
+- **2026-04-23** | `6066fc19` | no-pr | v0.6.56: data retention improvements, tables column double click resize, subagent thinking, files sorting, agentphone integration
+- **2026-04-23** | `ccb5f1e6` | simstudioai/sim#4284 | fix(db): revert statement_timeout startup options breaking pooled connections (#4284)
+- **2026-04-23** | `3422f64c` | no-pr | Merge pull request #4285 from simstudioai/staging
+- **2026-04-24** | `04f1d015` | simstudioai/sim#4286 | fix(mothership): Use heartbeat mechanism for chat locks (#4286)
+- **2026-04-24** | `56044776` | simstudioai/sim#4287 | improvement(mothership): stream retry state machine, progressive re-rendering (#4287)
+- **2026-04-24** | `efc86826` | simstudioai/sim#4268 | fix(copilot): replace crypto.randomUUID() with generateId() per project rule (#4268)
+- **2026-04-24** | `f330fe22` | simstudioai/sim#4288 | refactor(ashby): align tools, block, and triggers with Ashby API (#4288)
+- **2026-04-24** | `af4be770` | simstudioai/sim#4290 | improvement(mothership): treat error as terminal event (#4290)
+- **2026-04-24** | `60b80ec1` | simstudioai/sim#4289 | improvement(tables): race-free row-count trigger + scoped tx timeouts (#4289)
+- **2026-04-24** | `5fba7248` | simstudioai/sim#4291 | chore(bun): bump bun to 1.3.13 (#4291)
+- **2026-04-24** | `e6fefc86` | simstudioai/sim#4294 | fix(table-block): resolve canonical tableId in filter/sort builders (#4294)
+- **2026-04-24** | `f16d17ba` | simstudioai/sim#4295 | improvement(mothership): do not silently re-route missing stream id (#4295)
+- **2026-04-24** | `595c4c36` | no-pr | Merge pull request #4293 from simstudioai/staging
+- **2026-04-24** | `df581c3e` | simstudioai/sim#4297 | fix(mothership): queue supersede crash (#4297)
+- **2026-04-24** | `d93a6f57` | simstudioai/sim#4296 | chore(guide): update contributing guide (#4296)
+- **2026-04-24** | `d6c1bc2f` | no-pr | v0.6.58: queue abort state machine improvement, contributing guide
+- **2026-04-25** | `8863f113` | simstudioai/sim#4300 | feat(models): add gpt-5.5 models (#4300)
+- **2026-04-26** | `60652e62` | simstudioai/sim#4302 | fix(security): credential-set invite email check + shopify authorize XSS (#4302)
+- **2026-04-27** | `50e74f75` | simstudioai/sim#4299 | fix(mothership): parallel subagent rendering, exec stream re-attach (#4299)
+- **2026-04-27** | `58a3ae2a` | no-pr | v0.6.59: gpt 5.5, security hardening, parallel subagents rendering
+- **2026-04-27** | `c32c1cb9` | simstudioai/sim#4304 | fix(security): patch copilot tool & multipart upload IDORs (#4304)
+- **2026-04-27** | `76ad59fd` | simstudioai/sim#4255 | fix(stream): Avoid bun memory leak bug from TransformStream (#4255)
+- **2026-04-27** | `2a52141d` | simstudioai/sim#4306 | feat(slack): canvas related operations (#4306)
+- **2026-04-27** | `79ff5d80` | simstudioai/sim#4307 | improvement(slack): channel selector for list canvasses (#4307)
+- **2026-04-27** | `65e17de0` | simstudioai/sim#4305 | fix(retention-job): add chunking strategy for cleanup (#4305)
+- **2026-04-27** | `489f2d3b` | no-pr | v0.6.60: copilot security improvements, slack canvas ops, retention jobs fixes
+- **2026-04-27** | `f62d2744` | simstudioai/sim#4309 | fix(mothership): stabilize task sidebar ordering on selection (#4309)
+- **2026-04-27** | `74946fb1` | simstudioai/sim#4310 | improvement(docker): speed up app image build with cache mounts and parallel node-gyp (#4310)
+- **2026-04-27** | `896a00ae` | simstudioai/sim#4311 | fix(security): require internal API key for copilot training endpoints (#4311)
+- **2026-04-27** | `8266f0af` | simstudioai/sim#4312 | fix(security): rate limit chat OTP + validate mothership proxy endpoint (#4312)
+- **2026-04-27** | `25023691` | simstudioai/sim#4301 | feat(integrations): SAP S/4HANA (#4301)
+- **2026-04-27** | `ca814f02` | simstudioai/sim#4315 | fix(ui): display file upload error messages (#4315)
+- **2026-04-27** | `c95ac3bc` | simstudioai/sim#4314 | improvement(browser-use,stagehand): expose live session URLs (#4314)
+- **2026-04-27** | `154b9d08` | simstudioai/sim#4283 | fix(vm): categorize user or server side errors (#4283)
+- **2026-04-27** | `2e3de9ac` | simstudioai/sim#4313 | feat(governance): external workspace users from outside org (#4313)
+- **2026-04-27** | `c400e59e` | simstudioai/sim#4317 | feat(sap_s4hana): add get_material_document and fix supplier invoice key order (#4317)
+- **2026-04-28** | `3afcad21` | simstudioai/sim#4318 | fix(short-input): hide selected text to prevent overlay collision (#4318)
+- **2026-04-28** | `69dc2f04` | simstudioai/sim#4320 | fix(mcp): Use SDK web-standard transport for copilot mcp  (#4320)
+- **2026-04-28** | `dc202299` | simstudioai/sim#4322 | perf(docker): use turbo prune for app.Dockerfile (#4322)
+- **2026-04-28** | `6a7d5ae8` | simstudioai/sim#4316 | feat(files): extract PDF viewer behind SSR boundary and polish file preview (#4316)
+- **2026-04-28** | `ceb7d20a` | simstudioai/sim#4323 | fix(docker): use full bun.lock + bump deprecated GHA actions (#4323)
+- **2026-04-28** | `feeb0a89` | simstudioai/sim#4325 | fix(workflow): throw 4xx on variable resolution failures (#4325)
+- **2026-04-28** | `18a559bf` | simstudioai/sim#4324 | fix(copilot): use different chats for different workflows (#4324)
+- **2026-04-28** | `9ac73bb4` | simstudioai/sim#4328 | fix(billing): gate org billing query to invite modal open state and allow GA doubleclick in CSP (#4328)
+- **2026-04-28** | `3784f546` | simstudioai/sim#4329 | fix(table): return 400 instead of 500 on empty batch insert (#4329)
+- **2026-04-28** | `ed206ed7` | simstudioai/sim#4326 | feat(table): expose position parameter for row insertion via copilot (#4326)
+- **2026-04-28** | `9a4cd951` | simstudioai/sim#4292 | feat(logs): trace span tree rewrite with resizable split, provider icons, and execution improvements (#4292)
+- **2026-04-28** | `7f12a139` | simstudioai/sim#4327 | fix(knowledge): skip sync and document processing when KB is deleted (#4327)
+- **2026-04-28** | `7b55e605` | simstudioai/sim#4332 | improvement(sap_s4hana): use MERGE for OData v2 updates and enlarge icon (#4332)
+- **2026-04-28** | `e2ded164` | simstudioai/sim#4333 | fix(snapshot): stop markdown preview auto-scroll during patch streams + snapshot styling (#4333)
+- **2026-04-28** | `ed7786d7` | simstudioai/sim#4334 | fix(ui): adjust docx and code rendering (#4334)
+- **2026-04-28** | `61342e25` | simstudioai/sim#4337 | fix(notion): correctly register tool (#4337)
+- **2026-04-29** | `52c93d41` | simstudioai/sim#4339 | improvement(docs): soften video hover opacity (#4339)
+- **2026-04-29** | `94f5411a` | simstudioai/sim#4335 | fix(files): streaming preview invariant + OOXML style extraction (#4335)
+- **2026-04-29** | `6aa3fe3e` | no-pr | v0.6.61: SAP integration, live URLs for browser use, 5xx error categorizations, mothership positional table row insertion, CI improvements, org-external users, file viewer improvements
+- **2026-04-29** | `8d042f7d` | simstudioai/sim#4341 | fix(copilot): fix new task error (#4341)
+- **2026-04-29** | `ecbf5e5e` | no-pr | Merge pull request #4342 from simstudioai/staging
+- **2026-04-29** | `7d8ec247` | simstudioai/sim#4340 | feat(firecrawl): add parse operation and revert short-input selection style (#4340)
+- **2026-04-29** | `1a321c5d` | simstudioai/sim#4343 | feat(fork): fork chat from any assistant message (#4343)
+- **2026-04-29** | `a9d4e2ec` | simstudioai/sim#4344 | fix(trace): normalize keyed tool names and show credits in trace view (#4344)
+- **2026-04-29** | `60816702` | simstudioai/sim#4347 | fix(files): use incremental applyEdits to prevent streaming flicker in Monaco editor (#4347)
+- **2026-04-29** | `36742740` | simstudioai/sim#4348 | fix(cleanup): batch orphaned snapshot deletes to avoid slow-query spike (#4348)
+- **2026-04-29** | `0c693023` | simstudioai/sim#4345 | fix(integrations): harden jira, jsm, ashby, google drive, slack, confluence, notion (#4345)
+- **2026-04-29** | `541c1b58` | simstudioai/sim#4350 | fix(fork): scope task list invalidation to current workspace (#4350)
+- **2026-04-29** | `2bb5c915` | simstudioai/sim#4351 | improvement(kb-selector): add search to knowledge base selector subblock (#4351)
+- **2026-04-29** | `cb43b596` | simstudioai/sim#4353 | feat(fork): optimistic sidebar entry + Fork | prefix for forked tasks (#4353)
+- **2026-04-29** | `cb8ea3a8` | simstudioai/sim#4356 | fix(fork): clear task selection before navigating to fork (#4356)
+- **2026-04-30** | `d94f4c99` | simstudioai/sim#4349 | feat(knowledge): add embedding model selection and Cohere reranker (#4349)
+- **2026-04-30** | `07e7670d` | simstudioai/sim#4357 | improvement(sidebar): remove unnecessary useCallback and useMemo wrappers (#4357)
+- **2026-04-30** | `7377a108` | simstudioai/sim#4360 | fix(custom-tool): include schema parameters in code wand prompt (#4360)
+- **2026-04-30** | `24de32b2` | simstudioai/sim#4359 | fix(secrets): invalidate env queries so dropdown updates without refresh (#4359)
+- **2026-04-30** | `b8959eb2` | simstudioai/sim#4355 | improvement(repo): zod based client-server boundary (#4355)
+- **2026-04-30** | `6b0de362` | simstudioai/sim#4363 | chore(skills): update checklist for boundary e2e checklist (#4363)
+- **2026-04-30** | `d60747d4` | simstudioai/sim#4361 | feat(mothership): draft persistence, new task eager creation, doc preview fix, and loading polish (#4361)
+- **2026-04-30** | `91092842` | simstudioai/sim#4364 | fix(settings): rename credentials to secrets, align role display (#4364)
+- **2026-04-30** | `49c12011` | simstudioai/sim#4362 | feat(ui): update context menu (#4362)
+- **2026-04-30** | `46d6b1d3` | simstudioai/sim#4365 | fix(tasks): fix sidebar tasks skeleton hanging indefinitely (#4365)
+- **2026-04-30** | `dafeaaaa` | simstudioai/sim#4366 | fix(ui): Add warning for organization-wide settings (#4366)
+- **2026-04-30** | `124fe179` | simstudioai/sim#4370 | improvement(toast): widen error toasts and bump line-clamp to 3 (#4370)
+- **2026-04-30** | `220f8c8b` | simstudioai/sim#4368 | feat(knowledge): add chunking strategies and regex strict boundaries (#4368)
+- **2026-04-30** | `60804894` | simstudioai/sim#4371 | fix(ui): fix tasks loading being cancelled, disable fork button (#4371)
+- **2026-04-30** | `0c25fc4e` | simstudioai/sim#4369 | fix(auth): resolve CORS errors for self-hosted deployments behind reverse proxies (#4369)
+- **2026-04-30** | `be9c959f` | simstudioai/sim#4367 | improvement(types): enforce patterns outside just hooks directory and fix CI check + fix tracing billing issue (#4367)
+- **2026-04-30** | `8b6307ae` | simstudioai/sim#4374 | feat(gmail): add edit draft and update label tools (#4374)
+- **2026-04-30** | `e2b3ae43` | simstudioai/sim#4372 | fix(terminal): correct error/cancel block status in logs panel (#4372)
+- **2026-05-01** | `ea2b6abd` | simstudioai/sim#4375 | improvement(trace): billing trace span typing (#4375)
+- **2026-05-01** | `47208e0d` | simstudioai/sim#4376 | improvement(repo): reorganize contracts directory  (#4376)
+- **2026-05-01** | `a9c12a2b` | simstudioai/sim#4373 | feat(tables): add export, import column creation, infinite row pagination (#4373)
+- **2026-05-01** | `b10b4479` | simstudioai/sim#4379 | improvement(repo): update ship skills, flatten internal tools contracts dir (#4379)
+- **2026-05-01** | `a7a941f1` | simstudioai/sim#4380 | improvement(invites): remove confusing copy (#4380)
+- **2026-05-01** | `94dd2e11` | simstudioai/sim#4378 | improvement(workflow): narrow zustand selectors and optimize log tree builds (#4378)
+- **2026-05-01** | `bdaf112d` | simstudioai/sim#4384 | improvement(tables): bump column auto-fit cap from 600px to 1000px (#4384)
+- **2026-05-01** | `add55b4f` | simstudioai/sim#4382 | improvement(executor): correctness-by-construction for workflow logs (#4382)
+- **2026-05-01** | `38aa163b` | simstudioai/sim#4388 | fix(oauth): trim Atlassian OAuth scopes to fix CloudFront 414 (#4388)
+- **2026-05-01** | `da09a2a1` | simstudioai/sim#4389 | improvement(mothership): reuse logs detail panel in resource view (#4389)
+- **2026-05-01** | `cc28ba8c` | simstudioai/sim#4392 | fix(mail): use html-to-text for plaintext email fallback (#4392)
+- **2026-05-01** | `39c6aef1` | simstudioai/sim#4395 | fix(files): unstick monaco find widget tooltips and surface logs in mothership add-resource (#4395)
+- **2026-05-01** | `5863276d` | simstudioai/sim#4394 | fix(csp): allow https images in markdown preview and html sandbox (#4394)
+- **2026-05-01** | `9655e8e9` | simstudioai/sim#4393 | improvement(home): anchor @-mention popup at caret and right-size dropdown widths (#4393)
+- **2026-05-01** | `50e118a0` | simstudioai/sim#4391 | fix(serializer): apply tools.config.params before validating required tool params (#4391)
+- **2026-05-01** | `af859cd5` | simstudioai/sim#4387 | feat(workflows): lock/duplicate improvements for workflows (#4387)
+- **2026-05-01** | `dc195d3a` | simstudioai/sim#4396 | fix(loading): cursor positioning, render-phase defaultValue sync, remove unnecessary useMemo (#4396)
+- **2026-05-01** | `8366a842` | simstudioai/sim#4397 | improvement(home): consolidate chat context kind icon registry (#4397)
+- **2026-05-01** | `9eb55e20` | simstudioai/sim#4318 | revert(short-input): remove selection:text-transparent (#4318) (#4398)
+- **2026-05-01** | `b0881de0` | simstudioai/sim#4401 | improvement(lock): lock icon next to entity (#4401)
+- **2026-05-02** | `778f4a55` | simstudioai/sim#4382 | revert(executor): undo correctness-by-construction for workflow logs (#4382) (#4399)
+- **2026-05-02** | `5f3baa42` | simstudioai/sim#4400 | fix(file): zero byte codegen file format + zoomable preview wrapper + mermaid errors loopback (#4400)
+- **2026-05-02** | `db052970` | simstudioai/sim#4402 | feat(files): embed sim files and render mermaid diagrams in markdown preview (#4402)
+- **2026-05-02** | `2aaf2b71` | no-pr | v0.6.62: firecrawl parse, new gmail tools, trace improvements, tool fixes, db query optimizations, contract boundaries code hygiene, CORS, toast improvements, tables infinite query, executor robustness, reranker support
+- **2026-05-02** | `7601fb4d` | simstudioai/sim#4403 | fix(home): restore folder search in @-mention and plus-menu dropdown (#4403)
+- **2026-05-02** | `1a76a22a` | simstudioai/sim#4404 | improvement(knowledge): tighten column widths for short numeric/badge values (#4404)
+- **2026-05-02** | `d445b9c3` | no-pr | v0.6.63: knowledgebase UI, folder search in mothership
+- **2026-05-02** | `66bab935` | simstudioai/sim#4408 | fix(chat): close SSO auth bypass via checkSSOAccess body flag (#4408)
+- **2026-05-02** | `20ee07c6` | simstudioai/sim#4409 | improvement(blocks): depends on misalignments audit (#4409)
+- **2026-05-02** | `879dab9f` | simstudioai/sim#4406 | feat(table): make plan table limits configurable via env vars (#4406)
+- **2026-05-02** | `31cfb74d` | simstudioai/sim#4338 | feat(table): add workflow execution column type (#4338)
+- **2026-05-02** | `64642d4f` | simstudioai/sim#4410 | fix(connectors): harden 10 KB connectors after audit (#4410)
+- **2026-05-02** | `af55bad4` | simstudioai/sim#4407 | fix(uploads): direct-to-upload workspace files + shared transport (#4407)
+- **2026-05-02** | `23d74ac2` | simstudioai/sim#4412 | improvement(sidebar): overlay lock indicator on leading icon (#4412)
+- **2026-05-02** | `71ebe816` | simstudioai/sim#4414 | feat(table): hide new workflow column feature (#4414)
+- **2026-05-02** | `79214497` | simstudioai/sim#4415 | fix(memories): get memory tool, mem0 integration update (#4415)
+- **2026-05-02** | `a479e887` | simstudioai/sim#4413 | feat(files): export markdown as zip with embedded images (#4413)
+- **2026-05-02** | `68f66ba3` | simstudioai/sim#4418 | fix(credentials): clear stored refs on credential delete to prevent silent cascade orphaning (#4418)
+- **2026-05-02** | `4bc6a173` | no-pr | v0.6.64: table limits env vars, workspace files improvements, integration blocks/connectors updates
+- **2026-05-03** | `f76a10ca` | simstudioai/sim#4421 | fix(memory): return 200 with null data when memory key not found on GET (#4421)
+- **2026-05-03** | `14c93f63` | simstudioai/sim#4419 | feat(files): allow image uploads in workspace files (#4419)
+- **2026-05-03** | `0f09310f` | simstudioai/sim#4423 | fix(files): align upload route image extensions with picker (#4423)
+- **2026-05-03** | `5be12f8d` | no-pr | v0.6.65: memory fix, image uploads in files
+- **2026-05-04** | `4c861225` | simstudioai/sim#4425 | fix(table): return 400 instead of 500 for malformed sort/filter input (#4425)
+- **2026-05-04** | `af8dfbd5` | simstudioai/sim#4427 | fix(knowledge): revert column width multipliers that misaligned Name header (#4427)
+- **2026-05-04** | `5d53847c` | simstudioai/sim#4428 | fix(executor): strip childTraceSpans from block state before LLM tool calls (#4428)
+- **2026-05-04** | `57dc745b` | simstudioai/sim#4429 | feat(knowledge): expose Cohere reranker controls (#4429)
+- **2026-05-04** | `3af6c25b` | simstudioai/sim#4433 | fix(mothership): catch draft restore errors instead of crashing /home (#4433)
+- **2026-05-04** | `578fc505` | simstudioai/sim#4424 | fix(mothership): stop persisting log resources from get_workflow_logs and self-heal stale log panel entries (#4424)
+- **2026-05-04** | `2f90e412` | simstudioai/sim#4435 | feat(mothership): restore attachment previews on draft and add video support (#4435)
+- **2026-05-04** | `ae20d1ce` | simstudioai/sim#4434 | fix(copilot): redact sim_key API keys from persisted Mothership chat messages (#4434)
+- **2026-05-04** | `6d044a92` | simstudioai/sim#4437 | feat(image-generator): add gpt-image-2 model support (#4437)
+- **2026-05-04** | `029ac9fb` | simstudioai/sim#4431 | fix(logs): split summary/detail contracts to make trace tab gate type-safe (#4431)
+- **2026-05-04** | `1dc6f7dd` | simstudioai/sim#4438 | fix: double wrap reponse of guest session handler (#4438)
+- **2026-05-04** | `9eeb1b2c` | simstudioai/sim#4439 | improvement(mothership): streaming state transitions (#4439)
+- **2026-05-04** | `1166d827` | simstudioai/sim#4442 | feat(logs): add Logs block for querying execution logs from workflows (#4442)
+- **2026-05-04** | `51addc57` | simstudioai/sim#4443 | fix(terminal): use wall-clock duration for loop iterations with concurrent children (#4443)
+- **2026-05-04** | `e14a3a5f` | simstudioai/sim#4445 | fix(tables): suppress phantom rows on sort, center gutter numbers, stop select-all viewport jump (#4445)
+- **2026-05-04** | `4253e579` | no-pr | v0.6.66: child trace spans, reranker controls, attachment previews, logs block, parallel-in-loop wall clock, gpt-image-2
+- **2026-05-05** | `ab551ccb` | simstudioai/sim#4448 | refactor(tables): decouple UI display from DB position (#4448)
+- **2026-05-05** | `af840192` | simstudioai/sim#4449 | improvement(logs): increase log details panel max width from 40vw to 60vw (#4449)
+- **2026-05-05** | `6bc34c5a` | simstudioai/sim#4451 | feat(exa): add date filters to search (#4451)
+- **2026-05-05** | `a9e9ecf7` | simstudioai/sim#4453 | feat(posthog): correlate task events with copilot logs via request_id (#4453)
+- **2026-05-05** | `c09e0a04` | simstudioai/sim#4454 | fix(copilot): disambiguate VFS upload paths to prevent stale-row reads (#4454)
+- **2026-05-05** | `8d6b6158` | no-pr | v0.6.67: VFS upload fix, posthog/copilot correlation, exa date filters, logs panel width, tables UI/DB decoupling
+- **2026-05-05** | `0337ccd7` | simstudioai/sim#4432 | feat(credentials): add Atlassian service account credentials (#4432)
+- **2026-05-05** | `1baa5808` | simstudioai/sim#4455 | fix(posthog): align tool params with subBlock canonical to fix missing-field error (#4455)
+- **2026-05-05** | `09f4c94b` | simstudioai/sim#4331 | feat(block): Allow wait block to wait up to 30 days (#4331)
+- **2026-05-05** | `8f78635d` | simstudioai/sim#4457 | fix(ui): grey subagent tool calls and soften failure copy (#4457)
+- **2026-05-05** | `0925e2d2` | simstudioai/sim#4459 | fix(agent): drop temperature param for claude-opus-4-7 (#4459)
+- **2026-05-05** | `bdc42a2d` | simstudioai/sim#4458 | fix(md-render): fix markdown rendering in file viewer (#4458)
+- **2026-05-05** | `d517415c` | simstudioai/sim#4462 | chore(docs): upgrade fumadocs to latest minor versions (#4462)
+- **2026-05-05** | `d721dc33` | simstudioai/sim#4440 | feat(enterprise): add data drains for continuous export to S3 / webhook (#4440)
+- **2026-05-05** | `cef351fa` | simstudioai/sim#4450 | fix(terminal): terminal console update for child spans + hitl state machine (#4450)
+- **2026-05-05** | `3a792898` | simstudioai/sim#4461 | improvement(confluence): expand scopes, persist canonical mode toggle (#4461)
+- **2026-05-05** | `93c0202c` | simstudioai/sim#4465 | fix(md): file streaming patch preview (#4465)
+- **2026-05-05** | `80eb5b9a` | simstudioai/sim#4467 | fix(security): block IPv4-compatible IPv6 SSRF bypass (#4467)
+- **2026-05-05** | `18141057` | simstudioai/sim#4466 | refactor(tables): row selection as discriminated union (#4466)
+- **2026-05-05** | `a24e8518` | simstudioai/sim#4468 | fix(mothership): enforce ownership check on workflow resource attachments (#4468)
+- **2026-05-05** | `ae87481d` | simstudioai/sim#4471 | fix(data-drains): convert unique-name violations to 409 on POST/PUT (#4471)
+- **2026-05-05** | `efcd51a7` | no-pr | v0.6.68: atlassian service accounts, 30 day wait block, markdown rendering upgrades, data drains, security hardening, paginated dropdowns
+- **2026-05-06** | `7b6aa728` | simstudioai/sim#4223 | improvement(resolver): use context variables for block outputs in function block code (#4223)
+- **2026-05-06** | `1989a12f` | simstudioai/sim#4473 | improvement(func-exec): normalize inputs to match schema (#4473)
+- **2026-05-06** | `a945399c` | simstudioai/sim#4472 | feat(models): add grok-4.3 (#4472)
+- **2026-05-06** | `5d38222a` | simstudioai/sim#4474 | fix(function): validate custom tool param keys before code interpolation (#4474)
+- **2026-05-06** | `ad88859d` | simstudioai/sim#4475 | chore(skills): add /add-model and /validate-model commands (#4475)
+- **2026-05-06** | `48331451` | simstudioai/sim#4460 | chore(deps): upgrade next.js to 16.2.4 (#4460)
+- **2026-05-06** | `6d4ffff3` | simstudioai/sim#4477 | fix(agiloft): correct response parsing, add EWGetChoiceLineId tool (#4477)
+- **2026-05-06** | `bfd0f461` | simstudioai/sim#4478 | improvement(next): bundle and CI cache config (#4478)
+- **2026-05-06** | `79ffccc1` | simstudioai/sim#4470 | feat(emailbison): block, tools, sharepoint v2 block with cleaner code (#4470)
+- **2026-05-06** | `369f9b61` | simstudioai/sim#4479 | fix(office-excel): support Office.js add-in embed and surface Graph errors (#4479)
+- **2026-05-06** | `690b7abb` | simstudioai/sim#4480 | improvement(seo): restore explicit AI/search bot allow-list and add link-preview rules (#4480)
+- **2026-05-06** | `00c424ba` | simstudioai/sim#4482 | improvement(executor): reserved keyword errors (#4482)
+- **2026-05-06** | `7953c56a` | simstudioai/sim#4481 | fix(security): xlsx CVE bump and bundled security hardening (#4481)
+- **2026-05-06** | `a251e454` | simstudioai/sim#4483 | feat(sap): add SAP Concur integration block and SAP S/4HANA validation fixes (#4483)
+- **2026-05-06** | `28f1912e` | simstudioai/sim#4411 | feat(files): zoom controls for inline mermaid and images in markdown (#4411)
+- **2026-05-06** | `28e60bfd` | simstudioai/sim#4484 | fix(docker): drop scripts/ from workspaces array (#4484)
+- **2026-05-06** | `76d602fe` | simstudioai/sim#4485 | fix(workday): correct SOAP service routing and reference types (#4485)
+- **2026-05-06** | `8d934f3a` | no-pr | v0.6.69: security hardening, nextjs upgrade, SAP Concur, Emailbison integrations, robots.txt update, workday hardening
+- **2026-05-07** | `09425553` | simstudioai/sim#4490 | fix(sanitize): repair malformed subblock states (#4490)
+- **2026-05-07** | `5ea80a83` | no-pr | v0.6.70: legacy workflow sanitization
+- **2026-05-07** | `49713f88` | simstudioai/sim#4492 | fix(type-error): subblock migrations type error (#4492)
+- **2026-05-07** | `3cc581ea` | no-pr | v0.6.71: build error fix
+- **2026-05-07** | `ec5793fb` | simstudioai/sim#4494 | fix(billing): drop transaction wrapper in recordUsage to relieve pool contention (#4494)
+- **2026-05-07** | `273e6087` | no-pr | Merge pull request #4496 from simstudioai/staging
+- **2026-05-07** | `98f8e854` | simstudioai/sim#4476 | improvement(tables): extract TablesDetail wrapper, ship trigger followups (#4476)
+- **2026-05-07** | `d081ab28` | simstudioai/sim#4495 | fix(logs): relax fileSchema so execution logs with files render again (#4495)
+- **2026-05-07** | `38cbefdc` | simstudioai/sim#4488 | fix(revenuecat): align tools and block with REST v1 API spec (#4488)
+- **2026-05-07** | `f7084622` | simstudioai/sim#4498 | fix(files): skip zip and return plain .md when no embedded images (#4498)
+- **2026-05-07** | `401ebcca` | simstudioai/sim#4497 | fix(auth): Redirect to login if user session doesn't exist (#4497)
+- **2026-05-07** | `b045eae6` | simstudioai/sim#4500 | revert(ci): drop turbopackFileSystemCacheForBuild and restore actions/cache (#4500)
+- **2026-05-07** | `81845ae0` | simstudioai/sim#4499 | fix(table): trigger cascade race fixes, polling, workflow column flag (#4499)
+- **2026-05-07** | `00b5b74c` | simstudioai/sim#4501 | fix(redis): drop cached client and restart PING loop after forced reconnect (#4501)
+- **2026-05-07** | `1e5cc392` | simstudioai/sim#4502 | improvement(deployment): solve multiple client side races, and deployed state management issues (#4502)
+- **2026-05-07** | `408669dd` | simstudioai/sim#4504 | fix(md-render): inline code inherits heading size in mothership/templates/changelog (#4504)
+- **2026-05-07** | `6a006851` | simstudioai/sim#4487 | improvement(apollo): align tools and block with Apollo API docs (#4487)
+- **2026-05-07** | `a2aa648f` | simstudioai/sim#4505 | improvement(sandbox): upgrade pptx/docx/pdf bootstrap with image helpers, MIME guards, and 256 MB isolate limit (#4505)
+- **2026-05-07** | `235a62fd` | simstudioai/sim#4511 | fix(hunter): align tools, block, and outputs with Hunter.io v2 API spec (#4511)
+- **2026-05-07** | `6a927c9c` | simstudioai/sim#4512 | fix(tables): optimistic updates for column delete/update (#4512)
+- **2026-05-07** | `11563cfb` | simstudioai/sim#4509 | improvement(uploads): migrate remaining FormData uploads to presigned PUT (#4509)
+- **2026-05-07** | `6cb77960` | simstudioai/sim#4507 | feat(search-replace): search & replace, cut, deploy modal ui flicker (#4507)
+- **2026-05-08** | `eb871fc0` | simstudioai/sim#4508 | feat(table): live cell updates via SSE + per-table event buffer (#4508)
+- **2026-05-08** | `57f00e2a` | simstudioai/sim#4515 | fix(table): fix table boolean, add dynamic row number col size, search & replace imporvements (#4515)
+- **2026-05-08** | `9e9ddaa1` | simstudioai/sim#4513 | feat(peopledatalabs): add People Data Labs integration (#4513)
+- **2026-05-08** | `29affdac` | simstudioai/sim#4517 | improvement(search-replace): dedupe double indexed segments (#4517)
+- **2026-05-08** | `3c33c203` | simstudioai/sim#4519 | improvement(peopledatalabs): add titlecase, placeholders, and 404 handling on search (#4519)
+- **2026-05-08** | `630db5ce` | simstudioai/sim#4520 | improvement(mothership-chat): memoize message rows for long-transcript load speed (#4520)
+- **2026-05-08** | `50d4afd4` | simstudioai/sim#4525 | fix(logs): include subfolders when filtering logs by folder (#4525)
+- **2026-05-08** | `b74f8dac` | simstudioai/sim#4526 | improvement(sandbox): expand document generation — style extraction, sandbox hardening, OOM errors, task guards (#4526)
+- **2026-05-08** | `d0b0ede3` | simstudioai/sim#4528 | fix(mothership): misc ui bugs (#4528)
+- **2026-05-08** | `cb3a876d` | simstudioai/sim#4533 | feat(knowledge): include sourceUrl in KB search results (#4533)
+- **2026-05-08** | `1d3ca797` | simstudioai/sim#4531 | chore(deps): audit and clean up dependencies (#4531)
+- **2026-05-09** | `773720ec` | simstudioai/sim#4534 | fix(uploads): allow images/video/audio in mothership presigned route (#4534)
+- **2026-05-09** | `4cc00b2e` | simstudioai/sim#4535 | fix(security): enforce workspace scope on workflow middleware and validate shopify shop domain (#4535)
+- **2026-05-09** | `c7130c6b` | simstudioai/sim#4532 | fix(tables): fix bulk ops truncation for tables larger than one page (#4532)
+- **2026-05-09** | `02f381d0` | simstudioai/sim#4536 | feat(pptx): replace viewer with custom preview (#4536)
+- **2026-05-09** | `f122b686` | simstudioai/sim#4537 | fix(uploads): write workspaceFiles row when issuing presigned URL (#4537)
+- **2026-05-09** | `6544e0a7` | simstudioai/sim#4538 | fix(tables): inline editing center alignment in table cells (#4538)
+- **2026-05-09** | `07b8f1be` | no-pr | v0.6.72: tables improvements, search and replace, logs with files, impersonation fixes, md rendering, doc/pdf/pptx generation improvements
+- **2026-05-09** | `13666b16` | simstudioai/sim#4539 | fix(zustand): v5 selector stability issues (#4539)
+- **2026-05-09** | `a1702556` | simstudioai/sim#4541 | fix(script): biome format wrap (#4541)
+- **2026-05-09** | `94f60e79` | simstudioai/sim#4542 | improvement(deps): remove unused remark deps (#4542)
+- **2026-05-09** | `dcaf3e98` | no-pr | v0.6.73: zustand v5 migration fix
+- **2026-05-09** | `aae93f82` | simstudioai/sim#4543 | fix(execution): cap isolate memory at 128MB and recycle workers every 200 executions (#4543)
+- **2026-05-10** | `3ed8615b` | simstudioai/sim#4544 | chore(cleanup): react-doctor dead code elimination, landing + docs overhaul, component modernization (#4544)
+- **2026-05-10** | `10f7d36f` | simstudioai/sim#4546 | fix(settings): accurate View navigation after restore in recently deleted (#4546)
+- **2026-05-10** | `ae680afa` | simstudioai/sim#4547 | improvement(data-drains): docs page, screenshots, and search/UI polish (#4547)
+- **2026-05-10** | `badfeae4` | simstudioai/sim#4548 | fix(security): SSRF fixes (#4548)
+- **2026-05-11** | `c47777fa` | simstudioai/sim#4549 | fix(security): close cross-tenant IDOR gaps in OAuth credential and execution auth (#4549)
+- **2026-05-11** | `3adbde40` | simstudioai/sim#4554 | fix(oauth): persist rotated Microsoft refresh tokens (#4554)
+- **2026-05-11** | `d895e0ef` | simstudioai/sim#4551 | fix(security): authorize MCP subagent IDs, oauth workspace, credential admin demotion (#4551)
+- **2026-05-11** | `8774f5c3` | simstudioai/sim#4557 | fix(deps): patch next-mdx-remote and opentelemetry CVEs (#4557)
+- **2026-05-11** | `0b2cfaf7` | simstudioai/sim#4558 | feat(mothership): add superuser env selection (#4558)
+- **2026-05-11** | `39f74aa3` | simstudioai/sim#4552 | feat(data-drains): add GCS, Azure Blob, BigQuery, Snowflake, and Datadog destinations (#4552)
+- **2026-05-11** | `b7c34d43` | simstudioai/sim#4559 | fix(file-viewer): prevent scroll jump to top during Mothership streaming (#4559)
+- **2026-05-11** | `22b5a1e5` | simstudioai/sim#4562 | fix(tables): cmd+a always selects all cells on the table page (#4562)
+- **2026-05-11** | `9b333eaa` | simstudioai/sim#4564 | fix(mothership): fix tool hidden in ui (#4564)
+- **2026-05-12** | `6aeb9819` | no-pr | v0.6.74: security hardening, workers recycling, next-mdx-remote and opentelemetry updates, data drains to snowflake, blob, datadog, bigquery
+- **2026-05-12** | `1b94424b` | simstudioai/sim#4566 | improvement(mothership): align markdown blockquote, img, em, del with design tokens (#4566)
+- **2026-05-12** | `9d2dd8f5` | simstudioai/sim#4565 | improvement(helm): helm chart updates with security, ESO, and docs overhaul (#4565)
+- **2026-05-12** | `05892f74` | simstudioai/sim#4567 | improvement(scheduler): raise per-tick claim budget to drain backlog (#4567)
+- **2026-05-12** | `3e9849b2` | no-pr | v0.6.75: scheduler claim-budget drain, helm chart hardening, mothership md polish
+- **2026-05-12** | `d1eb79ec` | simstudioai/sim#4569 | fix(helm): preserve STS serviceName + networkPolicy.egress back-compat (#4569)
+- **2026-05-12** | `f6b246ba` | simstudioai/sim#4570 | fix(docs): restore media centering and full-width intro image (#4570)
+- **2026-05-12** | `43f53bb7` | simstudioai/sim#4560 | feat(execution):  payload size bottlenecks with lazy execution value hydration, safer materialization, and batched parallel execution (#4560)
+- **2026-05-12** | `ec936be5` | simstudioai/sim#4573 | improvement(workflow-block): support manual workflow ID via advanced mode (#4573)
+- **2026-05-12** | `65036711` | simstudioai/sim#4571 | fix(security): harden findings — path traversal, SSRF, IDOR, file auth, credential access (#4571)
+- **2026-05-12** | `d5c2ead5` | simstudioai/sim#4575 | fix(console): match child-workflow inner blocks by instanceId when reconciling dropped SSE events (#4575)
+- **2026-05-12** | `773cd84e` | simstudioai/sim#4556 | fix(mothership): reconcile stuck conversation_id against Redis lock to clear stuck-yellow task tiles (#4556)
+- **2026-05-12** | `c21bb915` | simstudioai/sim#4574 | improvement(grafana): align tools and block with Grafana API spec (#4574)
+- **2026-05-12** | `689e1f76` | simstudioai/sim#4577 | feat(mothership): Add conversationId to mship block (#4577)
+- **2026-05-12** | `bdf9ffc7` | simstudioai/sim#4579 | fix(event-buffer): re-compact the event with preserveUserFileBase64: false (#4579)
+- **2026-05-12** | `64d855a4` | no-pr | v0.6.76: helm updates, media centering, lazy loading, security hardening
+- **2026-05-13** | `cdc7513d` | simstudioai/sim#4581 | improvement(mothership): allow mship to send function execute timeout (#4581)
+- **2026-05-13** | `1ed3a4ec` | simstudioai/sim#4582 | feat(mothership): pin tasks to keep them at the top of the sidebar (#4582)
+- **2026-05-13** | `2441d5ad` | simstudioai/sim#4584 | feat(mothership): add files to mship block (#4584)
+- **2026-05-13** | `ed39edb9` | simstudioai/sim#4583 | feat(observability): export Trigger.dev telemetry to Grafana Cloud OTLP (#4583)
+- **2026-05-13** | `4de955d0` | simstudioai/sim#4586 | fix(otel): address staging pr comments for trigger otel (#4586)
+- **2026-05-13** | `ab156b5d` | no-pr | v0.6.77: mothership improvements, trigger.dev telemetry
+- **2026-05-13** | `214355b2` | simstudioai/sim#4588 | improvement(file-block): add get operation (#4588)
+- **2026-05-13** | `ff3c8f76` | simstudioai/sim#4590 | fix(file-block): fix get op (#4590)
+- **2026-05-13** | `1c111ff2` | simstudioai/sim#4587 | fix(mothership): persist @-mentioned resources across send (#4587)
+- **2026-05-13** | `c09a2c92` | no-pr | v0.6.78: file block get
+- **2026-05-13** | `568a552d` | simstudioai/sim#4591 | fix(rate-limit): close rate-limit bypass and tighten public route limits (#4591)
+- **2026-05-13** | `104949bd` | simstudioai/sim#4592 | fix(tables): eliminate checkbox flicker on rapid cell toggle (#4592)
+- **2026-05-13** | `b5dba82a` | simstudioai/sim#4594 | improvement(db): reduce connection saturation and egress hotspots (#4594)
+- **2026-05-13** | `b1a94431` | simstudioai/sim#4595 | improvement(billing): move overage calculations out of txes  (#4595)
+- **2026-05-14** | `c3ac54e0` | simstudioai/sim#4597 | fix(vfs): make copilot message ordering deterministic via WITH ORDINALITY (#4597)
+- **2026-05-14** | `6a5eebcf` | no-pr | v0.6.79: rate limits, tables checkboxes, drizzle config changes, billing txes
+- **2026-05-14** | `4295a5c8` | simstudioai/sim#4593 | improvement(db): add session statement/lock timeouts; simplify KB doc tx (#4593)
+- **2026-05-14** | `8831defd` | simstudioai/sim#4598 | fix(seo): use canonical SITE_URL for robots and sitemap (#4598)
+- **2026-05-14** | `b1a87d53` | simstudioai/sim#4593 | Revert "improvement(db): add session statement/lock timeouts; simplify KB doc tx (#4593)" (#4599)
+- **2026-05-14** | `642231f8` | simstudioai/sim#4578 | improvement(scheduler): drain due schedules in chunks (#4578)
+- **2026-05-14** | `044e0347` | simstudioai/sim#4600 | fix(integrations): gdrive trashed search, slack blocks-with-file, slack get_message ts (#4600)
+- **2026-05-14** | `4a9e248e` | simstudioai/sim#4602 | feat(cloudwatch): add mute and unmute alarm operations (#4602)
+- **2026-05-14** | `80c9a012` | simstudioai/sim#4601 | fix(security): harden file access controls, webhook auth, and input bounds (#4601)
+- **2026-05-14** | `11fa96ca` | simstudioai/sim#4606 | chore(deps): bump next to 16.2.5 for CVE-2026-44578 SSRF fix (#4606)
+- **2026-05-14** | `d0519c15` | simstudioai/sim#4605 | fix(security): supabase rpc path validation, ssh stream byte cap, storage quota coverage (#4605)
+- **2026-05-14** | `922de38d` | simstudioai/sim#4609 | fix(date-picker): eliminate infinite re-render crash on re-open with existing selection (#4609)
+- **2026-05-14** | `e23c20e1` | simstudioai/sim#4611 | fix(gmail): send emails as multipart/alternative so they render full-width (#4611)
+- **2026-05-14** | `62636c7e` | simstudioai/sim#4613 | improvement(gmail): replace custom html-to-text regex with library (#4613)
+- **2026-05-14** | `4efe9997` | no-pr | v0.6.80: security hardening, nextjs minor version bump, cloudwatch tools, seo fixes
+- **2026-05-15** | `9bbbe0ad` | simstudioai/sim#4615 | chore(deps): bump mermaid to 11.15.0 for GHSA-ghcm-xqfw-q4vr (#4615)
+- **2026-05-15** | `bad21cb2` | simstudioai/sim#4610 | improvement(agent, file-block): files in agent block, file block v4 (#4610)
+- **2026-05-15** | `c9118e77` | simstudioai/sim#4572 | feat(files): folders, multiselect, vfs update (#4572)
+- **2026-05-15** | `d3d8f9c8` | simstudioai/sim#4617 | fix(logs,workspace): prevent cancelled status overwrite on race and move impersonation banner (#4617)
+- **2026-05-15** | `a64b3382` | simstudioai/sim#4618 | fix(files): fixed resource spacing on files directories pages (#4618)
+- **2026-05-15** | `cb9c2d54` | simstudioai/sim#4620 | improvement(files): validations (#4620)
+- **2026-05-15** | `0dc1611f` | simstudioai/sim#4619 | improvement(providers): align attachment dispatch to vendor SDK types (#4619)
+- **2026-05-15** | `c403fafd` | simstudioai/sim#4621 | fix(cloudwatch): use PutAlarmMuteRule for mute/unmute with duration window (#4621)
+- **2026-05-15** | `8d7bbbc6` | simstudioai/sim#4623 | chore(utils): migrate to shared random/ID utilities and add enforcement linting (#4623)
+- **2026-05-15** | `93f7be40` | simstudioai/sim#4625 | improvement(redis): strip idempotency body and cap mothership stream zsets (#4625)
+- **2026-05-15** | `674dd8d9` | simstudioai/sim#4628 | fix(mcp): map validation and conflict orchestration errors to 400/409 (#4628)
+- **2026-05-15** | `f76e8e6d` | simstudioai/sim#4629 | improvement(copilot): trim copilot_chats reads to lean projections (#4629)
+- **2026-05-15** | `fffb8790` | simstudioai/sim#4514 | feat(wait): Async toggle, chained-wait resume fix, execution status API (#4514)
+- **2026-05-15** | `f8ae249e` | simstudioai/sim#4630 | improvement(executor): faster, more responsive workflow cancellation (#4630)
+- **2026-05-15** | `3712d1e2` | simstudioai/sim#4626 | feat(mship): make mship block stream output (#4626)
+- **2026-05-15** | `ff23546f` | simstudioai/sim#4631 | fix(workflows): exclude block locked from diff detection (#4631)
+- **2026-05-15** | `f69a9a01` | no-pr | v0.6.81: files in agent block, file block update, mermaid version update, code hygiene, redis fixes
+- **2026-05-16** | `67e18f74` | simstudioai/sim#4632 | fix(migrations): remove duplicate column add (#4632)
+- **2026-05-16** | `db7f1c1b` | no-pr | v0.6.82: fix duplicate migration
+- **2026-05-16** | `bd9e692b` | simstudioai/sim#4635 | feat(redis): TLS SNI override for IP-based REDIS_URL + zod schema fixes (#4635)
+- **2026-05-16** | `dbe8e513` | no-pr | v0.6.83: redis TLS SNI override for IP-based REDIS_URL, zod schema fixes
+- **2026-05-17** | `4945d556` | simstudioai/sim#4638 | fix(redis): apply TLS SNI override to pub/sub clients (#4638)
+- **2026-05-16** | `fd12137c` | simstudioai/sim#4640 | improvement(copilot): drop unused columns from mothership chat detail reads (#4640)
+- **2026-05-16** | `08eeecbe` | simstudioai/sim#4639 | fix(security): KB fileUrl LFI, MCP/Agiloft SSRF pinning, form OTP, KB authz (#4639)
+- **2026-05-16** | `11bcb8f9` | no-pr | v0.6.84: redis pub/sub SNI override, security hardening, copilot reads trimmed
+- **2026-05-17** | `4dc78cb8` | simstudioai/sim#4646 | improvement(redis-cleanup): schedule, async workflow, hitl base64 cache cleanup (#4646)
+- **2026-05-17** | `42bbb8aa` | simstudioai/sim#4647 | improvement(mothership): abort path race preventing persistence (#4647)
+- **2026-05-18** | `39794764` | simstudioai/sim#4645 | improvement(workspace): allocate more space to name column in resource tables (#4645)
+- **2026-05-18** | `268fa0e9` | simstudioai/sim#4643 | fix(knowledge): preserve scroll position when toggling tokenizer in chunk viewer (#4643)
+- **2026-05-18** | `cf146931` | simstudioai/sim#4652 | improvement(memory): replace unbounded server caches with lru-cache to fix heap growth (#4652)
+- **2026-05-18** | `b2766728` | simstudioai/sim#4653 | feat(prospeo): add Prospeo integration for B2B contact enrichment and search (#4653)
+- **2026-05-18** | `f3cf8fc5` | simstudioai/sim#4654 | feat(findymail): add Findymail B2B contact data integration (#4654)
+- **2026-05-18** | `0c1167d7` | simstudioai/sim#4655 | improvement(workspace): fix resource table column proportions and toast stacking (#4655)
+- **2026-05-18** | `a0d9e4dc` | simstudioai/sim#4657 | fix(tables): type-aware SQL casts for range filters on date columns (#4657)
+- **2026-05-18** | `6827be7f` | simstudioai/sim#4656 | feat(google_docs): opt-in Markdown formatting for create operation (#4656)
+- **2026-05-18** | `d14af04d` | no-pr | v0.6.85: mothership stream, resource column spacing, prospeo, findymail integrations, markdown google docs creation
+- **2026-05-18** | `279010a2` | simstudioai/sim#4650 | improvement(execution): memory usage for aggregated results (#4650)
+- **2026-05-19** | `3930485d` | simstudioai/sim#4660 | feat(models): add gemini 3.5 flash (#4660)
+- **2026-05-19** | `ef14b2b5` | simstudioai/sim#4658 | fix(security): remove localhost CORS origin, consolidate CORS in proxy (#4658)
+- **2026-05-19** | `b98164fd` | simstudioai/sim#4662 | feat(wiza): add Wiza integration for B2B prospect enrichment and search (#4662)
+- **2026-05-19** | `6414b938` | simstudioai/sim#4661 | improvement(cleanup): cleanup refs along in logs cleanup job (#4661)
+- **2026-05-19** | `49f70bc6` | simstudioai/sim#4665 | fix(docker): restore NEXT_PUBLIC_APP_URL build arg with dummy fallback (#4665)
+- **2026-05-19** | `df1e2ddc` | simstudioai/sim#4664 | feat(azure-devops): block and trigger (#4664)
+- **2026-05-19** | `6c755cbb` | simstudioai/sim#4663 | feat(integrations): add Gong incident.io Railway and New Relic (#4663)
+- **2026-05-19** | `d7d58cec` | simstudioai/sim#4668 | improvement(workflow-search): include block names in in-workflow search (#4668)
+- **2026-05-19** | `972ec5f2` | simstudioai/sim#4669 | fix(branding): align auth and deploy UI colors (#4669)
+- **2026-05-19** | `e40c9158` | simstudioai/sim#4670 | fix(workflow-search): unclip block-name highlight shadow on the left (#4670)
+- **2026-05-19** | `974a18dd` | simstudioai/sim#4667 | improvement(media-blocks): new versions of image and video gen with latest models + fixes (#4667)
+- **2026-05-19** | `d55f40ce` | simstudioai/sim#4671 | fix(blocks): preserve agent block color (#4671)
+- **2026-05-19** | `e6b3ccea` | no-pr | v0.6.86: gemini 3.5 flash, wiza integration, CORS cleanup, railway and new relic integrations
+- **2026-05-20** | `f0311a6f` | simstudioai/sim#4672 | feat(table): chunked dispatcher + workflow cascade (#4672)
+- **2026-05-20** | `d9dd7a3e` | simstudioai/sim#4673 | fix(cors): re-enable credentials on chat/form embed CORS policy (#4673)
+- **2026-05-20** | `46db4062` | simstudioai/sim#4441 | feat(mcp): OAuth 2.1 + PKCE for outbound MCP servers (#4441)
+- **2026-05-20** | `af8025c4` | simstudioai/sim#4675 | fix(table): dispatcher cold-start, live run counter, smooth typewriter (#4675)
+- **2026-05-20** | `c3815509` | simstudioai/sim#4676 | fix(landing-nav): scroll to top on route change in shared shells (#4676)
+- **2026-05-20** | `a1b21302` | simstudioai/sim#4680 | improvement(knowledge): batch trigger dispatch, prune redundant DB roundtrips (#4680)
+- **2026-05-20** | `7e678552` | simstudioai/sim#4679 | improvement(elevenlabs): wire stability and similarity_boost end-to-end (#4679)
+- **2026-05-20** | `b6679a98` | simstudioai/sim#4678 | feat(google-slides): complete API surface for branded slide generation (#4678)
+- **2026-05-20** | `4ca7651e` | simstudioai/sim#4681 | improvement(knowledge): eliminate N+1 on tag definitions in bulk upload (#4681)
+- **2026-05-20** | `9347da5e` | simstudioai/sim#4683 | improvement(branding): white-background sim wordmark for og image (#4683)
+- **2026-05-20** | `4445e317` | simstudioai/sim#4682 | fix(table): bump run counter on edit/auto-run so Stop shows for queued cells (#4682)
+- **2026-05-20** | `48cf200c` | simstudioai/sim#4686 | fix(helm): allow host[:port][/path] form in global.imageRegistry schema (#4686)
+- **2026-05-20** | `57b9a2fb` | simstudioai/sim#4687 | fix(table): typewriter flash, Run-row completed-skip, dispatch-scope running count (#4687)
+- **2026-05-20** | `e27afaad` | simstudioai/sim#4689 | fix(mcp): probe-based OAuth detection in test-connection (#4689)
+- **2026-05-20** | `11ad8918` | simstudioai/sim#4688 | improvement(cleanup): batchTrigger fan-out, chunked queries, batched S3, faster outlier drain (#4688)
+- **2026-05-20** | `d7300150` | simstudioai/sim#4691 | perf(mcp): per-server tool cache + surface OAuth start errors (#4691)
+- **2026-05-20** | `97a609aa` | no-pr | v0.6.86: CORS updates, OAuth MCP, navigation pinning dynamic pages, google slides endpoints, DB access pattern improvements
+- **2026-05-21** | `896eee37` | simstudioai/sim#4694 | fix(table): derive typewriter slice from elapsed time (no full-text flash) (#4694)
+- **2026-05-21** | `d8921653` | simstudioai/sim#4700 | fix(copilot): default SIM_AGENT_API_URL to www.copilot.sim.ai to avoid redirect path drop (#4700)
+- **2026-05-21** | `89695de8` | simstudioai/sim#4701 | fix(mcp): cache result of discoverServerTools to prevent post-OAuth refetch storm (#4701)
+- **2026-05-21** | `d7ed3c24` | simstudioai/sim#4697 | fix(sidebar): pass showDelete to hide delete menu for non-admin members (#4697)
+- **2026-05-21** | `3f7698c6` | simstudioai/sim#4704 | perf(db): reduce read/write fanout across hot paths (#4704)
+- **2026-05-21** | `47bd7fa3` | simstudioai/sim#4692 | fix(logs-cleanup): listing active workspaces into mem + download time streaming lims (#4692)
+- **2026-05-21** | `4002242d` | simstudioai/sim#4693 | feat(tables): virtualize data grid with bounded copy and chunked delete (#4693)
+- **2026-05-21** | `fde70e2b` | no-pr | v0.6.87: performance improvements
+- **2026-05-21** | `92764631` | simstudioai/sim#4706 | improvement(oauth): coalesce token refresh + cache terminal failures (#4706)
+- **2026-05-21** | `21c956cf` | simstudioai/sim#4705 | improvement(hubspot): OAuth-native polling trigger replacing webhook flow (#4705)
+- **2026-05-21** | `543d2faa` | simstudioai/sim#4713 | fix(files): RFC 5987 encode Content-Disposition filenames (#4713)
+- **2026-05-21** | `1af65381` | simstudioai/sim#4712 | improvement(search-replace): pass down to subblocks (#4712)
+- **2026-05-21** | `952eb121` | simstudioai/sim#4710 | feat(mailer): add AWS SES and SMTP providers with auto-detect fallback (#4710)
+- **2026-05-21** | `e0551b3a` | simstudioai/sim#4711 | improvement(kb-connectors): multi-select fields + Slack bot/app message extraction (#4711)
+- **2026-05-21** | `0c96964f` | simstudioai/sim#4715 | improvement(mcp): per-server tool queries + negative cache (#4715)
+- **2026-05-21** | `3d9a1c44` | simstudioai/sim#4718 | fix(oauth): follower last-chance read after poll deadline (#4718)
+- **2026-05-21** | `e9ee351b` | no-pr | v0.6.88: mutex lock on oauth refresh, files export fix, hubspot trigger, search & replace UX, kb connectors multi-select, mcp negative cache
+- **2026-05-22** | `1afa8815` | simstudioai/sim#4719 | improvement(branding): dark og image matching landing surface (#4719)
+- **2026-05-22** | `1631b36b` | simstudioai/sim#4720 | perf(copilot): narrow getAccessibleCopilotChat projection (#4720)
+- **2026-05-22** | `b6d08fb0` | simstudioai/sim#4721 | fix(combobox): show selected values in multi-select trigger label (#4721)
+- **2026-05-22** | `19b5099d` | simstudioai/sim#4723 | fix(hubspot): selector fetchOptions default + credentialId validation (#4723)
+- **2026-05-22** | `b2ad5e91` | simstudioai/sim#4722 | improvement(mcp): post-merge hardening — protocol negotiation + distributed OAuth lock + typed errors (#4722)
+- **2026-05-22** | `afcbcf2b` | simstudioai/sim#4725 | fix(tools): pin resolved IP in DB connectors to prevent DNS-rebinding SSRF (#4725)
+- **2026-05-22** | `786c6f06` | simstudioai/sim#4714 | fix(db): disable statement_timeout for migrations (#4714)
+- **2026-05-22** | `209ca5f1` | simstudioai/sim#4716 | fix(large-refs): cleanup based on table read (#4716)
+- **2026-05-22** | `500f35ac` | simstudioai/sim#4727 | fix(landing): remove cursor lerp causing laggy tracking in collaboration section (#4727)
+- **2026-05-22** | `5c193442` | simstudioai/sim#4728 | improvement(kb-connectors): align connector UI surfaces (#4728)
+- **2026-05-22** | `a14d3742` | simstudioai/sim#4730 | improvement(kb-connectors): align connector modal controls (#4730)
+- **2026-05-22** | `b5b2d835` | no-pr | v0.6.89: connectors ui, perf improvements, mcp hardening, og image
+- **2026-05-23** | `12865194` | simstudioai/sim#4732 | fix(resource): prevent permission-gated breadcrumb items from flashing on load (#4732)
+- **2026-05-23** | `6b1210b8` | simstudioai/sim#4733 | fix(files): never dedup external URL fetches by path filename (#4733)
+- **2026-05-23** | `4fab03c5` | simstudioai/sim#4684 | improvement(media-gen): retire vision block, add hosted key for fal ai for image/video gen, search visibility in cmd-k (#4684)
+- **2026-05-23** | `f6c99981` | no-pr | v0.6.90: resource breadcrumb flash fix, dedupe external URL fetches, fal-ai hosted key
+- **2026-05-26** | `d62f9cab` | simstudioai/sim#4735 | feat(zoom): add KB connector for cloud recording transcripts, fix refresh token rotation (#4735)
+- **2026-05-26** | `81bf93b1` | simstudioai/sim#4739 | feat(litellm): add LiteLLM as AI gateway provider (#4739)
+- **2026-05-26** | `3b18d3ba` | simstudioai/sim#4740 | fix(api): classify access-denied and sandbox user-code errors with correct HTTP status (#4740)
+- **2026-05-26** | `bc99c457` | simstudioai/sim#4741 | fix(files): zoom file viewer content, not the browser page (#4741)
+- **2026-05-26** | `e07b1ffb` | simstudioai/sim#4604 | improvement(executor): subflows, hitl handling cleanup  (#4604)
+- **2026-05-26** | `5d1aa228` | simstudioai/sim#4744 | fix(files): attach wheel listener before paint and guard SVG src (#4744)
+- **2026-05-26** | `e66daa1b` | simstudioai/sim#4745 | fix(zoom): iteratively strip tags in transcript parser to close incomplete-sanitization gap (#4745)
+- **2026-05-26** | `77c1d24b` | simstudioai/sim#4746 | improvement(api): use HttpError base class for typed-error status mapping (#4746)
+- **2026-05-26** | `2b8068c9` | simstudioai/sim#4742 | feat(hosted-keys): add Hunter.io and People Data Labs hosted key support (#4742)
+- **2026-05-26** | `72181856` | simstudioai/sim#4747 | fix(connectors): repair broken Zoom icon rendering (#4747)
+- **2026-05-26** | `e532e0a6` | no-pr | v0.6.91: file zoom, Zoom KB connector, error classifications, LiteLLM support, executor code cleanup
+- **2026-05-26** | `4fa7e74c` | simstudioai/sim#4416 | feat(tools): queue hosted-key tool calls instead of failing with 429 (#4416)
+- **2026-05-26** | `0fedceb4` | simstudioai/sim#4749 | log(db): Add db failure cause log message (#4749)
+- **2026-05-26** | `a1aa168c` | simstudioai/sim#4750 | improvement(schedules): jitter scheduled execution starts by 0-30s (#4750)
+- **2026-05-27** | `65e2fe81` | simstudioai/sim#4752 | feat(tables): Add enrichment table column type (#4752)
+- **2026-05-27** | `92fd17cd` | simstudioai/sim#4754 | fix(tables): workflow-column run fixes + bounded run-N-rows (#4754)
+- **2026-05-27** | `fd194709` | no-pr | v0.6.92: enrichment table column type, table run fixes, scheduled jitter, hosted-key queueing
+- **2026-05-27** | `90c95901` | simstudioai/sim#4753 | improvement(agentphone): update logo and bgcolor (#4753)
+- **2026-05-27** | `81bcdf25` | simstudioai/sim#4755 | improvement(schedules): retries, concurrency limits (#4755)
+- **2026-05-27** | `23d29227` | simstudioai/sim#4762 | fix(rate-limiter): hosted-key queue follow-up fixes (#4762)
+- **2026-05-27** | `59792c05` | simstudioai/sim#4751 | improvement(mcp): bound MCP memory and lifecycle concurrency (#4751)
+- **2026-05-27** | `41c81935` | simstudioai/sim#4761 | fix(tables): coerce row values to column types on write instead of failing (#4761)
+- **2026-05-27** | `b197bb04` | simstudioai/sim#4765 | improvement(integrations): tighten sixtyfour, agentmail, agentphone outputs (#4765)
+- **2026-05-27** | `28766dda` | simstudioai/sim#4763 | feat(instantly): block, trigger (#4763)
+- **2026-05-27** | `7ddd90be` | simstudioai/sim#4764 | improvement(cron): fire-and-forget for cron-invoked endpoints (#4764)
+- **2026-05-27** | `856182bd` | no-pr | v0.6.93: schedules/mcp performance improvements, integration bugfixes
+- **2026-05-28** | `a693a1e3` | simstudioai/sim#4771 | feat(providers): add Claude Opus 4.8 model (#4771)
+- **2026-05-28** | `34c47f7e` | simstudioai/sim#4766 | chore(auth): upgrade better-auth 1.3.12 → 1.6.11 (#4766)
+- **2026-05-28** | `811ecbd0` | simstudioai/sim#4769 | fix(mothership): persist queued messages, edit-in-place preserves order (#4769)
+- **2026-05-28** | `ddc47eb2` | simstudioai/sim#4726 | feat(copilot): add copilot_messages table with dual-write rollout (#4726)
+- **2026-05-28** | `e78ac0f6` | simstudioai/sim#4772 | improvement(integrations): tighten resend, azure_devops icon, loops trim (#4772)
+- **2026-05-28** | `e62c3ad2` | simstudioai/sim#4773 | improvement(auth): suffix-match BLOCKED_SIGNUP_DOMAINS to catch subdomain rotation (#4773)
+- **2026-05-28** | `53eaa600` | simstudioai/sim#4768 | improvement(billing): migrate hot path writes away from user_stats (#4768)
+- **2026-05-28** | `c898e2e6` | simstudioai/sim#4776 | feat(integrations): add ZoomInfo, align Wiza, audit Apollo, refresh docs (#4776)
+- **2026-05-28** | `7e0c77cf` | simstudioai/sim#4779 | feat(slack): scope private channel visibility to installing user (#4779)
+- **2026-05-28** | `d382df61` | simstudioai/sim#4781 | fix(slack): only parse scoped user id for oauth credentials (#4781)
+- **2026-05-28** | `f778d012` | simstudioai/sim#4778 | improvement(logs): raise execution log size limits to 3MB / 512KB (#4778)
+- **2026-05-28** | `2ede04df` | simstudioai/sim#4782 | fix(workflows): default workflow color when none provided on create (#4782)
+- **2026-05-28** | `2490a3c3` | simstudioai/sim#4783 | fix(auth): return 403 instead of 500 for blocked sign-in/sign-up attempts (#4783)
+- **2026-05-28** | `f2c17d80` | simstudioai/sim#4784 | feat(integrations): add RB2B integration (#4784)
+- **2026-05-28** | `6bf9e960` | no-pr | v0.6.94: 4.8 opus, better auth upgrade, zoominfo integration, copilot messages table, user stats hot path improvements, RB2B
+- **2026-05-28** | `7f24ae12` | simstudioai/sim#4774 | feat(block): Add data enrichment block (#4774)
+- **2026-05-28** | `066cd70a` | simstudioai/sim#4785 | fix(schema) Make workflow description nullable (#4785)
+- **2026-05-28** | `503432c0` | no-pr | v0.6.95: data enrichment block, nullable workflow description fix
+- **2026-05-29** | `6598927a` | simstudioai/sim#4770 | feat(tables): pinned columns (#4770)
+- **2026-05-29** | `dc6073ed` | simstudioai/sim#4790 | fix(auth): block signup spam by denylisting shared MX backends (#4790)
+- **2026-05-29** | `fd77bb40` | simstudioai/sim#4791 | feat(copilot): add seq ordinal to copilot_messages for order-preserving reads (#4791)
+- **2026-05-29** | `8d68c8a0` | simstudioai/sim#4789 | fix(tables): resource-cell icons, embedded filters, run-state + UI fixes (#4789)
+- **2026-05-29** | `8daca91e` | simstudioai/sim#4792 | feat(slack): request channels:manage and groups:write for conversation ops (#4792)
+- **2026-05-29** | `c95aa879` | simstudioai/sim#4794 | feat(access-control): add per-model denylist to permission groups (#4794)
+- **2026-05-29** | `49673055` | simstudioai/sim#4787 | improvement(logs): object storage backed tracespans (#4787)
+- **2026-05-29** | `e533f1b5` | simstudioai/sim#4796 | improvement(providers): harden OpenAI-compatible providers + add tests (#4796)
+- **2026-05-29** | `4b0dab46` | simstudioai/sim#4797 | chore(copilot): deprecate mcp server (#4797)
+- **2026-05-29** | `704362dc` | simstudioai/sim#4777 | feat(integrations): hosted API keys for Findymail, Prospeo, and Wiza (#4777)
+- **2026-05-29** | `925dd871` | simstudioai/sim#4800 | fix(tables): reduce column header chevron size and fix sidebar shadow bleed (#4800)
+- **2026-05-29** | `e1e773f4` | simstudioai/sim#4799 | feat(slack): add install + privacy section to integration landing page (#4799)
+- **2026-05-29** | `f9867c73` | simstudioai/sim#4801 | improvement(enrichments): align enrichments sidebar with design system (#4801)
+- **2026-05-29** | `c51c41f0` | simstudioai/sim#4803 | fix(misc): upgrade path change for new better-auth version, billing issue for workflow block agent usage (#4803)
+- **2026-05-29** | `a8dcdd50` | no-pr | v0.6.96: pinned table columns, sequence number in copilot messages, tables UI improvements, new slack scopes, model-level denylists, object storage tracespans
+- **2026-05-29** | `15ca66f1` | simstudioai/sim#4804 | fix(copilot): seq migration (#4804)
+- **2026-05-29** | `2f1f633d` | no-pr | v0.6.97: migration fix for copilot_messages
+- **2026-05-29** | `75d98739` | simstudioai/sim#4809 | chore(db): drop redundant idx_webhook_on_workflow_id_block_id index (#4809)
+- **2026-05-30** | `640b7e12` | simstudioai/sim#4808 | perf(copilot): read chat transcripts from copilot_messages (R+1 cutover) (#4808)
+- **2026-05-30** | `b4787dd1` | simstudioai/sim#4806 | fix(tables): right-align run/stop in embedded toolbar; workflow cells format like normal cells (#4806)
+- **2026-05-30** | `c6d500d8` | simstudioai/sim#4810 | fix(icons): repair broken integration icon rendering (#4810)
+- **2026-05-30** | `329bf483` | simstudioai/sim#4812 | fix(tables): serialize schema mutations to prevent parallel column clobber (#4812)
+- **2026-05-30** | `1d4a2772` | simstudioai/sim#4814 | fix(wait): resume live/draft async waits and preserve cell context on chained waits (#4814)
+- **2026-05-30** | `a8f86c0c` | simstudioai/sim#4813 | fix(security): harden SSO domain registration, webhook path isolation, and CSV export (#4813)
+- **2026-05-30** | `911586ad` | simstudioai/sim#4818 | fix(security): block private/reserved IPs for hosted 1Password Connect SSRF (#4818)
+- **2026-05-30** | `20a8d85e` | simstudioai/sim#4820 | improvement(integrations): validate and expand devin, cursor, and greptile (#4820)
+- **2026-05-30** | `1ae1afbe` | simstudioai/sim#4819 | fix(search-replace): don't auto-navigate when content edits invalidate the active match (#4819)
+- **2026-05-30** | `97f7fe95` | simstudioai/sim#4817 | improvement(enrichments): limit company-info to fields both providers return (#4817)
+- **2026-05-30** | `6c476cf5` | simstudioai/sim#4821 | fix(files): don't reject external URLs containing '..' in file parse validation (#4821)
+- **2026-05-30** | `f6685cf1` | simstudioai/sim#4822 | feat(google-sheets): add row filtering to read with numeric operators (#4822)
+- **2026-05-30** | `5fa84160` | simstudioai/sim#4823 | fix(selectors): fetch all pages for paginated dropdown list routes (#4823)
+- **2026-05-30** | `e8f64854` | simstudioai/sim#4825 | fix(sso): re-check domain conflict before write and reject IP-address domains (#4825)
+- **2026-05-30** | `e32699d9` | no-pr | v0.6.98: redundant index, security hardening, new copilot messages table, integration icons audit
+- **2026-05-31** | `b399ee0f` | simstudioai/sim#4826 | improvement(copilot): make copilot_messages the sole transcript store, remove JSONB dual-write (#4826)
+- **2026-05-31** | `919fa527` | simstudioai/sim#4827 | feat(tables): expand filter operators (not-contains, starts/ends-with, not-in, empty) (#4827)
+- **2026-06-01** | `3a2ebd12` | simstudioai/sim#4829 | improvement(copilot): stop persisting tool-call result outputs in transcripts (#4829)
+- **2026-06-01** | `403a02c3` | simstudioai/sim#4830 | feat(providers): add Together AI, Baseten, and Ollama Cloud model providers (#4830)
+- **2026-06-01** | `e5a46d79` | simstudioai/sim#4831 | feat(linq): add Linq iMessage/SMS/RCS integration (34 tools, block, attachment upload) (#4831)
+- **2026-06-01** | `2e0f5066` | simstudioai/sim#4503 | fix(table): preserve workflow groups on CSV column-add and dispatch after tx commit (#4503)
+- **2026-06-01** | `9bed8411` | simstudioai/sim#4833 | improvement(kbs): ownership bindings (#4833)
+- **2026-06-01** | `a7b0bd31` | simstudioai/sim#4837 | fix(deps): upgrade vitest to ^4.1.0 to patch critical Vitest UI advisory (GHSA-5xrq-8626-4rwp) (#4837)
+- **2026-06-01** | `8aa74a2d` | simstudioai/sim#4839 | feat(tables): add PostHog events for table-workflow run/stop gestures (#4839)
+- **2026-06-01** | `fc7e35ed` | simstudioai/sim#4832 | fix(tables): enforce plan limits in mothership user_table tool (#4832)
+- **2026-06-01** | `ed19b0bc` | simstudioai/sim#4840 | fix(misc): keep block-tool params selected across store replace, perms parity for delete  (#4840)
+- **2026-06-01** | `3ccb3a39` | simstudioai/sim#4838 | fix(tables): reliable stop-all, accurate "X running", and rate/usage gating for cell runs (#4838)
+- **2026-06-01** | `c786adac` | simstudioai/sim#4842 | chore(access): helper cleanup (#4842)
+- **2026-06-01** | `12ada0ce` | no-pr | v0.6.99: tables filter operators, copilot chat persistence consolidation, together AI, Baseten, Ollama Cloud, Linq integrations, kb doc ownership bindings
+- **2026-06-01** | `590e502a` | simstudioai/sim#4843 | fix(mothership): scope mothership block tool permissions to the executing user (#4843)
+- **2026-06-01** | `a7984bff` | simstudioai/sim#4845 | feat(landing): add AI-generated content disclaimer to integration landing page (#4845)
+- **2026-06-01** | `cf247795` | simstudioai/sim#4846 | fix(hubspot): remove unused scopes (#4846)
+- **2026-06-02** | `3f3efc98` | simstudioai/sim#4847 | chore(auth): remove deprecated OAuth MCP provider plugin and backing tables (#4847)
+- **2026-06-02** | `5d9752d5` | simstudioai/sim#4848 | fix(mothership): connect integrations from chat without `state_mismatch` (#4848)
+- **2026-06-02** | `34ee7f91` | simstudioai/sim#4850 | fix(tables): count dispatcher pre-stamps in "X running" during active dispatch (#4850)
+- **2026-06-02** | `e2c2d9ad` | simstudioai/sim#4851 | feat(apify): add run task, get dataset items, and get run tools (#4851)
+- **2026-06-02** | `e8f09ae6` | no-pr | v0.6.100: auth, mothership, scopes improvements, new apify tools
+- **2026-06-02** | `f56a0e46` | simstudioai/sim#4853 | fix(schedules): count usage lim error schedule as failed run (#4853)
+- **2026-06-02** | `12db7da9` | simstudioai/sim#4849 | feat(connectors): add 11 knowledge base connectors (#4849)
+- **2026-06-02** | `1cb5a165` | simstudioai/sim#4855 | fix(auth): show "account already exists" on duplicate email signup (#4855)
+- **2026-06-02** | `b58cd1f6` | simstudioai/sim#4856 | fix(slack): request reactions:read in OAuth URL, drop im:history (#4856)
+- **2026-06-02** | `ba2e4cca` | simstudioai/sim#4859 | fix(fathom): skip getDocument when header cache is missing instead of emitting a degraded, un-refreshable record (#4859)
+- **2026-06-02** | `3ba86685` | no-pr | v0.6.101: 11 new knowledgebase connectors, slack scopes update, login refinements
+- **2026-06-03** | `928bd911` | simstudioai/sim#4860 | fix(background): recategorize user/recovery failures as errors, not trigger faults (#4860)
+- **2026-06-03** | `1933fc4f` | simstudioai/sim#4862 | fix(env): schema treatment of empty string (#4862)
+- **2026-06-03** | `648a5a11` | simstudioai/sim#4865 | feat(storage): support S3-compatible endpoints (R2, MinIO, B2) for file storage (#4865)
+- **2026-06-03** | `b98fbfeb` | simstudioai/sim#4867 | docs(slack): remove archival reference from Download files per Slack Marketplace guidelines (#4867)
+- **2026-06-03** | `b329c36b` | simstudioai/sim#4866 | fix(auth): link SSO sign-in to existing same-email accounts (#4866)
+- **2026-06-03** | `cd667749` | simstudioai/sim#4864 | feat(gitlab): sync repository files (code/docs) (#4864)
+- **2026-06-03** | `4b84f061` | simstudioai/sim#4870 | fix(mothership): run client-routed workflow tools server-side in headless execution (#4870)
+- **2026-06-03** | `85942a53` | simstudioai/sim#4869 | fix(dev): use globalThis for singleton state to prevent HMR memory leaks (#4869)
+- **2026-06-03** | `80d966d3` | simstudioai/sim#4873 | fix(gitlab): pin pagination cursor to configured host + consolidate isSameOrigin (#4873)
+- **2026-06-03** | `5efb47e8` | simstudioai/sim#4872 | fix(storage): percent-encode object key in multipart fallback URL (#4872)
+- **2026-06-03** | `aed44024` | simstudioai/sim#4868 | fix(tables): surface real error causes on cell-execution failures (diagnostics) (#4868)
+- **2026-06-03** | `1192e20e` | no-pr | v0.6.102: support S3-compatible in object storage, GitLab code knowledgebase connector, SSO provider ID allowlist, singleton memory leak fix
+- **2026-06-03** | `3518b999` | simstudioai/sim#4861 | feat(tables): background import for large CSVs with live progress (#4861)
+- **2026-06-03** | `4076d761` | simstudioai/sim#4876 | chore(api-key): remove legacy scan+decrypt auth fallback (#4876)
+- **2026-06-04** | `c620fdcc` | simstudioai/sim#4877 | fix(security): chat attachment XSS, MCP OAuth SSRF guards, Teams clientState verification (#4877)
+- **2026-06-04** | `402472e4` | simstudioai/sim#4878 | chore(readme): refresh demo GIFs from docs, lead with Mothership (#4878)
+- **2026-06-04** | `d80f0c63` | simstudioai/sim#4879 | fix(mcp): enforce tool name validation in deploy modal (#4879)
+- **2026-06-04** | `e761043d` | simstudioai/sim#4882 | chore(skills): mirror model/enrichment/hosted-key/council skills into .agents/skills and expand add-model touchpoints (#4882)
+- **2026-06-04** | `71f69364` | simstudioai/sim#4884 | fix(polling-tools): pass plan execution timeout to internal polling tool routes (#4884)
+- **2026-06-04** | `55050762` | simstudioai/sim#4886 | chore(db): drop legacy copilot_chats.messages JSONB column (#4886)
+- **2026-06-04** | `2ccd9a3a` | simstudioai/sim#4880 | feat(connectors): add 7 knowledge base connectors (Google Forms, Typeform, Azure DevOps, YouTube, JSM, S3, Sentry) (#4880)
+- **2026-06-04** | `16954e46` | simstudioai/sim#4883 | feat(integrations): add ClickHouse block and expand Dagster + Tinybird tools (#4883)
+- **2026-06-04** | `80ea0ddd` | simstudioai/sim#4888 | fix(autolayout): relocate notes that overlap blocks after layout (#4888)
+- **2026-06-04** | `530b2c00` | simstudioai/sim#4885 | feat(metrics): emit hosted-key metrics to Grafana via OTel (#4885)
+- **2026-06-04** | `ddab1aaa` | simstudioai/sim#4881 | refactor(tables): consolidate row data-access in service.ts (#4881)
+- **2026-06-04** | `ce7ddd18` | simstudioai/sim#4889 | feat(tables): workflow version selection (live/deployed) and not-found/no-output badges (#4889)
+- **2026-06-04** | `f7f7840c` | simstudioai/sim#4891 | fix(otel): make service.instance.id unique per process (#4891)
+- **2026-06-05** | `24a6086d` | simstudioai/sim#4890 | feat(tables): fractional order keys for O(log n) row insert/delete (flag-gated, default off) (#4890)
+- **2026-06-05** | `800f56f7` | simstudioai/sim#4895 | fix(clickhouse): harden read-only query enforcement and centralize WHERE-clause validation (#4895)
+- **2026-06-05** | `1ce8e922` | no-pr | v0.6.103: readme updates, tables lifecycle improvements, new connectors, clickhouse integration
+- **2026-06-06** | `0075ab9c` | simstudioai/sim#4354 | improvement(platform): remove tour, simplify sidebar/header, drop loading skeletons (#4354)
+- **2026-06-06** | `20a00a18` | simstudioai/sim#4899 | fix(security): SSRF pinning, Twilio webhook auth, copilot token leak, audit-log tenant scoping (#4899)
+- **2026-06-06** | `15df5115` | simstudioai/sim#4900 | chore(tables): own fractional-indexing in-house, drop runtime dep (#4900)
+- **2026-06-07** | `c90a1eb4` | simstudioai/sim#4901 | feat(tables): row-gutter drag-select, Cmd+F find, and select-all polish (#4901)
+- **2026-06-08** | `2c7b1ca5` | simstudioai/sim#4906 | improvement(perms): member removal reassignment policies (#4906)
+- **2026-06-08** | `d526b238` | simstudioai/sim#4910 | refactor(mothership-chats): rename task feature to chat, move route, add redirect (#4910)
+- **2026-06-08** | `ec256d24` | simstudioai/sim#4908 | fix(tables): compare order_key bytewise (COLLATE "C") to stop insert collation errors (#4908)
+- **2026-06-08** | `25771358` | simstudioai/sim#4854 | feat(enrichment): add ZeroBounce, NeverBounce, and MillionVerifier email verification (#4854)
+- **2026-06-08** | `27fc6ddc` | simstudioai/sim#4902 | fix(user-input): atomic chip selection, modifier-key handling, and stale overlay ghost (#4902)
+- **2026-06-08** | `e257d067` | simstudioai/sim#4912 | feat(integrations): suggest curated skills per integration with one-click add (#4912)
+- **2026-06-08** | `ffd87a3e` | simstudioai/sim#4916 | fix(home,integrations): optical-center home input + integrations page render fix (#4916)
+- **2026-06-08** | `76774795` | simstudioai/sim#4911 | feat(auth): dynamic signup/login ban lists via AWS AppConfig (#4911)
+- **2026-06-08** | `7434df94` | simstudioai/sim#4914 | improvement(metrics): emit hosted-key metrics to CloudWatch instead of OTel (#4914)
+- **2026-06-08** | `4f00baf6` | simstudioai/sim#4905 | refactor(emcn): make ChipModal footer/header props-driven and migrate all consumers (#4905)
+- **2026-06-08** | `a72e35e2` | simstudioai/sim#4917 | feat(sendblue): add Sendblue iMessage/SMS integration with tools and triggers (#4917)
+- **2026-06-08** | `05408fd1` | simstudioai/sim#4909 | feat(emcn/toast): toast redesign — intent variants, stacking, hover reveal, dismiss-all (#4909)
+- **2026-06-09** | `efeacb9e` | simstudioai/sim#4918 | fix(tables): stop insert-row flicker and return order_key from rows list (#4918)
+- **2026-06-09** | `f7811f8a` | simstudioai/sim#4898 | feat(tables): stable column ids for metadata-only rename (#4898)
+- **2026-06-09** | `b12b0f1d` | simstudioai/sim#4921 | feat(models): add Claude Fable 5 (#4921)
+- **2026-06-09** | `24f04162` | simstudioai/sim#4920 | feat(integrations): expand tool coverage, audit integrations, regen docs (#4920)
+- **2026-06-09** | `37f1141f` | simstudioai/sim#4924 | fix(terminal): truncate console values by size and cycles, not nesting depth (#4924)
+- **2026-06-09** | `2f701880` | simstudioai/sim#4927 | fix(tables): route large CSV imports to the background job instead of 413 (#4927)
+- **2026-06-09** | `1e35656a` | simstudioai/sim#4929 | fix(modal): preserve spacing in workspace delete confirmation label (#4929)
+- **2026-06-09** | `540835a7` | simstudioai/sim#4928 | feat(integrations): add AWS AppConfig integration with tools, block, and docs (#4928)
+- **2026-06-09** | `39418f96` | simstudioai/sim#4923 | improvement(mothership): v0.2 (#4923)
+- **2026-06-09** | `c7689c02` | simstudioai/sim#4930 | fix(tables): key filter UI by stable column id; show column name in delete confirm (#4930)
+- **2026-06-09** | `efa4f270` | simstudioai/sim#4933 | fix(agent): unique tool ids for multi-instance tools + icon updates (#4933)
+- **2026-06-09** | `209501e2` | simstudioai/sim#4934 | feat(slack): assistant thread ops, paginated history/replies, and permalink (#4934)
+- **2026-06-09** | `3bf71048` | simstudioai/sim#4936 | fix(mothership): clear chat input after sending a message mid-conversation (#4936)
+- **2026-06-09** | `192f77ba` | simstudioai/sim#4935 | improvement(emcn): consolidate chip chrome, enforce ChipModalField, paint real chrome in loading fallbacks (#4935)
+- **2026-06-09** | `62c48bfd` | simstudioai/sim#4937 | improvement(tools): validate integrations, add Gong activity tools, regenerate docs (#4937)
+- **2026-06-09** | `0c2df1eb` | no-pr | v0.7.0: vibes improvement, new UI, new tools, chat-first, mothership updates
+- **2026-06-09** | `b2a485e1` | simstudioai/sim#4939 | fix(db): serialize concurrent migrations with a Postgres advisory lock (#4939)
+- **2026-06-09** | `272bad97` | simstudioai/sim#4940 | feat(realtime): preflight schema-compatibility check on startup (#4940)
+- **2026-06-09** | `29ee6a76` | simstudioai/sim#4942 | fix(secrets): keep readonly secret names legible instead of dimming them (#4942)
+- **2026-06-10** | `540e608e` | simstudioai/sim#4943 | improvement(chat-voice): modernize ElevenLabs TTS to Flash v2.5 (#4943)
+- **2026-06-10** | `6abcf82d` | simstudioai/sim#4941 | feat(workflows): sim trigger, logs v2 block, toolbar renaming (#4941)
+- **2026-06-10** | `3cedac8e` | simstudioai/sim#4944 | fix(security): authz, IDOR, and abuse-prevention fixes (#4944)
+- **2026-06-10** | `1ff445ae` | simstudioai/sim#4945 | feat(codepipeline): add AWS CodePipeline integration with tools and block (#4945)
+- **2026-06-10** | `bc371b01` | simstudioai/sim#4946 | fix(file-preview): gate streaming animation to prevent file patch issue with scroll based re-render (#4946)
+- **2026-06-10** | `9aa2a516` | simstudioai/sim#4947 | improvement(mothership): smooth streamed text reveal + dropdown z-index fix (#4947)
+- **2026-06-10** | `20dd6541` | simstudioai/sim#4949 | fix(billing): prevent deadlock with timeout (#4949)
+- **2026-06-10** | `7ffc495f` | no-pr | v0.7.1: chat voice mode model update, sim trigger, codepipeline integration, smooth streaming, security hardening, db fixes
+- **2026-06-10** | `dd3705e9` | simstudioai/sim#4952 | fix(security): neutralize CSV formula injection in logs export (#4952)
+- **2026-06-10** | `3c22e1e2` | simstudioai/sim#4950 | refactor(ui): eliminate prop drilling in editor, home, sidebar, and logs dashboard (#4950)
+- **2026-06-10** | `1a5cf494` | simstudioai/sim#4953 | fix(attribution): workspace id attr should be best-effort for self hosted users (#4953)
+- **2026-06-10** | `d4722f9d` | no-pr | v0.7.2: logs export security, code hygiene, mship cost attribution
+- **2026-06-10** | `02529843` | simstudioai/sim#4957 | feat(ci): run db migrations from github ci with environment-scoped secrets (#4957)
+- **2026-06-10** | `6e5cce6c` | simstudioai/sim#4958 | fix(table): translate column name-keyed wire data for workflow tool calls on internal row routes (#4958)
+- **2026-06-10** | `284edf0b` | simstudioai/sim#4955 | improvement(db): opt-in read-replica client + migration runner hardening (#4955)
+- **2026-06-10** | `167ec5ef` | simstudioai/sim#4960 | fix(oauth): drop ungrantable JSM Forms scopes from Jira scope list (#4960)
+- **2026-06-10** | `bc55fc3b` | simstudioai/sim#4896 | improvement(docs): builder-first IA reorganization of the English docs (#4896)
+- **2026-06-10** | `e54daf79` | simstudioai/sim#4961 | improvement(mship): contract update (#4961)
+- **2026-06-10** | `aa39974d` | simstudioai/sim#4962 | improvement(docs): align docs UI with the platform emcn design system (#4962)
+- **2026-06-10** | `f4d22ff2` | no-pr | v0.7.3: jira oauth scope fix, read-replica client, table wire data fix, db migrations from ci, docs updates, read replicas
+- **2026-06-11** | `9efb7b45` | simstudioai/sim#4963 | feat(byok): support multiple keys per provider with round-robin rotation (#4963)
+- **2026-06-11** | `ac2817d1` | simstudioai/sim#4969 | fix(workflow-block): exclude trigger-advanced subblocks from canvas preview outside trigger mode (#4969)
+- **2026-06-11** | `d41f0a0e` | simstudioai/sim#4971 | fix(workflow): show Remove from Subflow for unconnected blocks pasted into subflows (#4971)
+- **2026-06-11** | `b8daa0f9` | simstudioai/sim#4968 | improvement(logs): add copy raw trace button to trace view header (#4968)
+- **2026-06-11** | `da8e6eef` | simstudioai/sim#4966 | improvement(db): route additional staleness-tolerant reads to the read replica (#4966)
+- **2026-06-11** | `e5d655b1` | simstudioai/sim#4967 | feat(persona): add Persona identity verification integration (#4967)
+- **2026-06-11** | `d2cc13d7` | simstudioai/sim#4973 | fix(integrations): stop browser autofilling the service account API token field (#4973)
+- **2026-06-11** | `5fb37b4a` | simstudioai/sim#4948 | feat(auth): enforce domain and account bans on sign-in and workflow executions (#4948)
+- **2026-06-11** | `354653b8` | simstudioai/sim#4974 | feat(integrations): add Trigger.dev integration (#4974)
+- **2026-06-11** | `5028ef3b` | simstudioai/sim#4976 | feat(temporal): add Temporal integration with workflow, schedule, and task queue tools (#4976)
+- **2026-06-11** | `493c64fe` | simstudioai/sim#4972 | feat(latex): add LaTeX integration with PDF compilation tool, block, and docs (#4972)
+- **2026-06-11** | `b465a3c6` | simstudioai/sim#4977 | fix(deps): dedupe radix focus-scope/dismissable-layer so in-modal dropdowns open (#4977)
+- **2026-06-11** | `d9f78c0f` | simstudioai/sim#4980 | improvement(sockets): make offline mode recoverable and stop transient races tripping it (#4980)
+- **2026-06-11** | `105cb63a` | simstudioai/sim#4984 | fix(modal): center full-size modals against the viewport instead of the content area (#4984)
+- **2026-06-11** | `f7b40fe4` | simstudioai/sim#4975 | fix(db-part-1): eliminate pool self-deadlock from nested checkouts inside transactions (#4975)
+- **2026-06-11** | `5ab6d0d1` | simstudioai/sim#4983 | feat(integrations): add Brex integration (#4983)
+- **2026-06-11** | `9ab64e55` | simstudioai/sim#4981 | feat(integrations): add Convex integration with function execution and data export tools (#4981)
+- **2026-06-11** | `97746797` | simstudioai/sim#4985 | improvement(integrations): overhaul landing FAQs for SEO/GEO and fix dynamic OG images (#4985)
+- **2026-06-11** | `bf2a6cd5` | simstudioai/sim#4988 | fix(docker): logger import (#4988)
+- **2026-06-11** | `8e960368` | simstudioai/sim#4986 | feat(integrations): add Quartr integration with company, event, document, audio, and live event tools (#4986)
+- **2026-06-11** | `c3b98eb1` | simstudioai/sim#4987 | feat(integrations): add Daytona integration with sandbox lifecycle, code execution, and file tools (#4987)
+- **2026-06-11** | `e1af2bf5` | simstudioai/sim#4990 | fix(providers): correct pricing, deprecations, and capabilities across model catalog (#4990)
+- **2026-06-11** | `ebf434f1` | simstudioai/sim#4991 | fix(mship): add tool watchdog (#4991)
+- **2026-06-11** | `1228ebd5` | simstudioai/sim#4989 | fix(db): close optional-executor contract traps (#4989)
+- **2026-06-11** | `d7866dcc` | simstudioai/sim#4992 | fix(files): support Safari < 17.4 in PDF preview (#4992)
+- **2026-06-11** | `75b3efa8` | simstudioai/sim#4994 | fix(mothership): re-arm smooth-text reveal timer every render so streamed text can't freeze mid-sentence (#4994)
+- **2026-06-11** | `a48b4a15` | no-pr | v0.7.4: round-robin byok support, table block fix, db read replica routing, trigger.dev, temporal, latex, quartr, brex, convex integrations
+- **2026-06-12** | `53fdcab5` | simstudioai/sim#4915 | feat(tables): background jobs (delete/export/backfill on trigger.dev) + tenant-scoped query performance (#4915)
+- **2026-06-12** | `2c75a4ac` | simstudioai/sim#4997 | fix(tables): per-batch delete-job commits, real trigger.dev retries, post-index ANALYZE guard (#4997)
+- **2026-06-12** | `e2523e0f` | simstudioai/sim#4995 | improvement(tables): migrate inputs to emcn chip components and clean up tables feature (#4995)
+- **2026-06-12** | `3db7161b` | simstudioai/sim#4993 | feat(integrations): add Vanta integration with compliance, evidence file, people, vendor, vulnerability, and risk tools (#4993)
+- **2026-06-12** | `2c4d9e98` | simstudioai/sim#4998 | improvement(emcn): show per-chip error tooltips on invalid email chips (#4998)
+- **2026-06-12** | `636bd74f` | simstudioai/sim#5001 | fix(integrations): resolve OAuth connect UI by service id instead of display name (#5001)
+- **2026-06-12** | `a5b92b15` | simstudioai/sim#5003 | fix(tables): align sidebar dividers, disclosure spacing, and header height with the editor and page header (#5003)
+- **2026-06-12** | `37e71214` | simstudioai/sim#5000 | improvement(billing): self-heal null usage limits and debounce api-key last-used writes (#5000)
+- **2026-06-12** | `bc92a2cc` | simstudioai/sim#5002 | improvement(files): fit-width previews and chip-chrome viewer controls (#5002)
+- **2026-06-12** | `c02c7b88` | simstudioai/sim#4996 | fix(tables): scope optimistic stop-cancel to the active filtered view (#4996)
+- **2026-06-12** | `ccda764a` | simstudioai/sim#5004 | feat(integrations): add Documentation link to service-account connect modals (#5004)
+- **2026-06-12** | `0c2dbac0` | simstudioai/sim#5007 | fix(tables): header "T…" flicker — emcn barrel Table component shadowed the Table icon in loading fallbacks (#5007)
+- **2026-06-12** | `31e166f7` | simstudioai/sim#5005 | fix(jira): add classic JSM scopes to close granular scope-set gap (#5005)
+- **2026-06-12** | `020baad9` | simstudioai/sim#5008 | improvement(organization): invite validation experience (#5008)
+- **2026-06-12** | `2c0a10a5` | simstudioai/sim#5010 | improvement(auth): layer disposable-email-domains into signup email validation (#5010)
+- **2026-06-12** | `58cff68b` | simstudioai/sim#5009 | feat(deployments): add v1 deployment endpoints and Deployments block (#5009)
+- **2026-06-12** | `cd324d56` | simstudioai/sim#5013 | refactor(deployments): consolidate version reads, status mapping, and v1 auth prologue (#5013)
+- **2026-06-12** | `43017d72` | simstudioai/sim#5010 | Revert "improvement(auth): layer disposable-email-domains into signup email validation (#5010)" (#5014)
+- **2026-06-12** | `98948c0d` | simstudioai/sim#5017 | fix(tables): heartbeat export job before upload so the stale janitor can't kill a live finalize (#5017)
+- **2026-06-12** | `fb9e481f` | simstudioai/sim#5018 | feat(mailer): gate outbound email on AppConfig access-control ban list (#5018)
+- **2026-06-12** | `c3c34163` | simstudioai/sim#5011 | fix(mothership): tenant-check outputTable writes and route them through replaceTableRows (#5011)
+- **2026-06-12** | `26224b8e` | simstudioai/sim#5020 | chore(providers): remove claude-fable-5 model (#5020)
+- **2026-06-12** | `79d98b39` | no-pr | v0.7.5: deployments API and block, vanta integration, performance improvements, styling consolidation
+- **2026-06-12** | `005fa102` | simstudioai/sim#5019 | perf(mothership): virtualize chat transcript and isolate input from stream re-renders (#5019)
+- **2026-06-12** | `9a4c9d2a` | simstudioai/sim#5021 | fix(db-part-3):  bound cross-request shared promises against pool wedge (#5021)
+- **2026-06-13** | `51733b8d` | simstudioai/sim#5023 | fix(db): correct misleading error message when DATABASE_REPLICA_URL is malformed (#5023)
+- **2026-06-13** | `eb1009da` | simstudioai/sim#5024 | improvement(react-query): codebase-wide audit — server-state hooks, webhook coherence, resume migration (#5024)
+- **2026-06-13** | `e51bc571` | simstudioai/sim#5026 | fix(skills): reuse shared upload field in skill import modal; logo-only Quartr icon (#5026)
+- **2026-06-13** | `65c70298` | simstudioai/sim#5028 | fix(chat): escape attachment filename and validate file URL scheme to prevent XSS (#5028)
+- **2026-06-13** | `b74a56dd` | simstudioai/sim#5027 | fix(db-part-4): enforce consistent cross-resource lock ordering (#5027)
+- **2026-06-13** | `746520c1` | simstudioai/sim#5030 | fix(mothership): streaming completion-flash fix + Tavily brand icon (#5030)
+- **2026-06-13** | `1205730c` | simstudioai/sim#5032 | feat(blocks): add external-service url to block metadata (#5032)
+- **2026-06-13** | `7b5c7760` | simstudioai/sim#5033 | improvement(sim-trigger): change execution terminology to run (#5033)
+- **2026-06-13** | `bcedadf1` | simstudioai/sim#4979 | feat(scheduled-tasks): calendar views + persisted, runnable tasks (#4979)
+- **2026-06-13** | `6282b16c` | simstudioai/sim#5037 | feat(hubspot): add notes, emails, properties & associations tools (#5037)
+- **2026-06-13** | `3a796f08` | simstudioai/sim#5035 | improvement(permissions): permission groups scoped to organization level (#5035)
+- **2026-06-13** | `522ba8e8` | simstudioai/sim#5036 | feat(billing): gate programmatic workflow execution behind a paid plan (#5036)
+- **2026-06-13** | `1fdb43fb` | no-pr | improvement(perms): followup to org scoping of permission groups
+- **2026-06-13** | `32b380fd` | simstudioai/sim#5040 | improvement(salesforce): align tools + block with Salesforce API and harden CRUD/analytics (#5040)
+- **2026-06-13** | `4ec26a04` | simstudioai/sim#5038 | feat(scheduled-tasks): minute-granular calendar + user timezone preference (#5038)
+- **2026-06-14** | `6c56a21b` | simstudioai/sim#5043 | improvement(settings): right-align timezone picker, order by popularity, drop tooltip (#5043)
+- **2026-06-14** | `7a33508a` | simstudioai/sim#5044 | feat(scheduled-tasks): pause/resume, mutation toasts, submit guards, empty state (#5044)
+- **2026-06-14** | `3ada4a34` | simstudioai/sim#5046 | fix(chat): fail closed when embed gate cannot resolve workspace (#5046)
+- **2026-06-14** | `e6587ca6` | no-pr | v0.7.6: calendar scheduled tasks, new hubspot tools, virtualized chat, db perf improvements
+- **2026-06-14** | `57b58fd1` | simstudioai/sim#5048 | feat(context-dev): add Context.dev web + brand data integration (#5048)
+- **2026-06-14** | `4ab8760a` | simstudioai/sim#5050 | fix(realtime): re-validate socket role and evict revoked collaborators (#5050)
+- **2026-06-14** | `ae075f87` | simstudioai/sim#5051 | Revert "fix(realtime): re-validate socket role and evict revoked collaborator…" (#5051)
+- **2026-06-15** | `06191a7f` | simstudioai/sim#5052 | refactor(providers,executor): deepen three shallow modules (#5052)
+- **2026-06-15** | `940506ad` | simstudioai/sim#5053 | feat(square): add Square integration with 34 commerce operations (#5053)
+- **2026-06-15** | `1c8ac058` | simstudioai/sim#5054 | improvement(scheduled-tasks): move recurrence into modal body as a section (#5054)
+- **2026-06-15** | `6f4189f0` | simstudioai/sim#5056 | improvement(mship): clean up dead tools, add enrichments (#5056)
+- **2026-06-15** | `17500432` | simstudioai/sim#5056 | Revert "improvement(mship): clean up dead tools, add enrichments (#5056)" (#5057)
+- **2026-06-15** | `cefb2dc2` | simstudioai/sim#5058 | improvement(mship): add enrichment tool, clean up dead tools (#5058)
+- **2026-06-15** | `0673e3c0` | simstudioai/sim#5061 | refactor(sim): consolidate record guards + pure utils into @sim/utils (#5061)
+- **2026-06-15** | `18edc94b` | simstudioai/sim#5055 | fix(billing): deploy modal gates on workspace entitlement, not viewer plan (#5055)
+- **2026-06-15** | `67e02fab` | simstudioai/sim#5062 | fix(execute): block cross-origin session-authenticated workflow runs (#5062)
+- **2026-06-15** | `324299ee` | simstudioai/sim#5063 | fix(access-control): exempt legacy blocks (#5063)
+- **2026-06-15** | `d89824cb` | simstudioai/sim#5062 | Revert "fix(execute): block cross-origin session-authenticated workflow runs (#5062)" (#5065)
+- **2026-06-15** | `8c3706e4` | no-pr | v0.7.7: square, context.dev integrations, scheduled tasks styling changes, code hygiene
+- **2026-06-15** | `318cb5e4` | simstudioai/sim#5067 | chore(deps): bump js-yaml to 4.2.0 and nodemailer to 8.0.9 in apps/sim (#5067)
+- **2026-06-15** | `2cf51725` | simstudioai/sim#5068 | fix(execute): reject only cross-site session execution (CSRF guard) (#5068)
+- **2026-06-15** | `02022e9a` | simstudioai/sim#5060 | fix(providers): pin Azure OpenAI/Anthropic endpoints to validated IP (#5060)
+- **2026-06-15** | `39d0b56e` | simstudioai/sim#5069 | refactor(table): split the 5.3k-line service.ts god-file into per-concern modules (#5069)
+- **2026-06-15** | `3e2b641e` | simstudioai/sim#5074 | fix(credential-sets): stop leaking open-invite tokens to all users (#5074)
+- **2026-06-15** | `d538b76e` | simstudioai/sim#5071 | feat(copilot): server-side mothership tool/vfs/file metrics (#5071)
+- **2026-06-15** | `dd32abef` | simstudioai/sim#5072 | feat(jsm): add Atlassian Assets (Insight/CMDB) tools for asset management (#5072)
+- **2026-06-15** | `4f4ff534` | simstudioai/sim#5049 | fix(uploads): authorize internal file URLs before download (#5049)
+- **2026-06-15** | `a49e7554` | simstudioai/sim#5073 | feat(auth): OAuth-only signup with Microsoft provider (#5073)
+- **2026-06-15** | `f277f5fb` | simstudioai/sim#5041 | feat(db): zero-downtime migration safety lint + db-migrate skill (#5041)
+- **2026-06-15** | `a09e3939` | simstudioai/sim#5075 | fix(webhooks): cap request body size on public webhook receivers (#5075)
+- **2026-06-15** | `4a7c2ef6` | simstudioai/sim#5077 | fix(providers): pin vLLM provider endpoint to validated IP (#5077)
+- **2026-06-15** | `cbd3d222` | simstudioai/sim#5079 | feat(ci): mship companion pr check (#5079)
+- **2026-06-15** | `0c226b9c` | simstudioai/sim#5078 | fix(providers): allow HTTP for self-hosted vLLM endpoints (#5078)
+- **2026-06-15** | `aaeef82e` | simstudioai/sim#5081 | improvement(ci): rename companion tags to be more descriptive (#5081)
+- **2026-06-15** | `3fe061e3` | simstudioai/sim#5059 | feat(feature-flags): AppConfig-backed gated feature flags (#5059)
+- **2026-06-15** | `ed31edf0` | simstudioai/sim#5083 | improvement(ci): fix companion regex (#5083)
+- **2026-06-15** | `324189ed` | simstudioai/sim#5082 | feat(grafana): validate integration and add folder, health, and contact-point tools (#5082)
+- **2026-06-15** | `05e8c7cd` | simstudioai/sim#5076 | refactor(connectors): split client metadata from server runtime (#5076)
+- **2026-06-15** | `06f1e72d` | simstudioai/sim#5086 | feat(feature-flags): migrate 3 env-flags to AppConfig-backed runtime flags (#5086)
+- **2026-06-15** | `b7d30c89` | simstudioai/sim#5084 | feat(google-calendar): wire freebusy, align tools with API v3, add calendar + sharing tools (#5084)
+- **2026-06-15** | `7b4626e5` | simstudioai/sim#5070 | improvement(perm-groups): allow workspace filter for permission groups (#5070)
+- **2026-06-15** | `91666b58` | simstudioai/sim#5090 | feat(scheduled-tasks): migrate jobs agent to scheduled tasks agent (#5090)
+- **2026-06-15** | `6cbaf428` | simstudioai/sim#5091 | fix(scheduled-tasks): fix scheduled tasks schema validation (#5091)
+- **2026-06-15** | `59d94960` | no-pr | v0.7.8: security hardening, code hygiene, MSFT oauth provider, new atlassian assets and google calendar tools
+- **2026-06-15** | `e48c960f` | simstudioai/sim#5093 | fix(chat): keep autoscroll pinned when the virtualizer re-scrolls during streaming (#5093)
+- **2026-06-16** | `e1f22bda` | simstudioai/sim#5092 | feat(providers): support large agent-block attachments via Files APIs and remote URLs (#5092)
+- **2026-06-16** | `2c1392e3` | simstudioai/sim#5094 | fix(chat): autoscroll follow-ups — re-engage threshold + keep end-of-turn options in view (#5094)
+- **2026-06-16** | `2b7f57a7` | simstudioai/sim#5095 | improvement(providers): tighten Gemini and vLLM agent-attachment ceilings (#5095)
+- **2026-06-16** | `d14bc78d` | simstudioai/sim#5080 | fix(realtime): re-check workspace role on mutating socket events (#5080)
+- **2026-06-16** | `73c73ff0` | simstudioai/sim#5096 | fix(kb): canonicalize knowledge-base upload keys (#5096)
+- **2026-06-16** | `56a88a2a` | no-pr | v0.7.9: agent file attachments, chat autoscroll, knowledge base upload, security fixes
+- **2026-06-16** | `c864a928` | simstudioai/sim#5099 | improvement(models): sort model dropdown by latest release date within each provider (#5099)
+- **2026-06-16** | `f238184f` | simstudioai/sim#5100 | feat(file): add Compress and Decompress operations to the File block (#5100)
+- **2026-06-16** | `cc56408b` | simstudioai/sim#5098 | perf(execution): parallelize preflight gates, cache deployed state, memoize Anthropic client (#5098)
+- **2026-06-16** | `feca5fa6` | simstudioai/sim#5089 | improvement(execution, connectors): offload large function inputs, increase connector limits + better error propagation (#5089)
+- **2026-06-16** | `15a970d8` | simstudioai/sim#5087 | feat(integrations): hosted email-enrichment providers + cascade wiring (#5087)
+- **2026-06-16** | `2ffc004a` | simstudioai/sim#5103 | improvement(models): add DeepSeek V4 + Mistral Medium 3.5, fix Codestral context window (#5103)
+- **2026-06-16** | `8fe090a3` | simstudioai/sim#5102 | fix(input-format): field not editable race condition (#5102)
+- **2026-06-16** | `a82b44d3` | simstudioai/sim#5105 | perf(db): logs-list index, drop redundant indexes, replica routing, hot-path write cleanups (#5105)
+- **2026-06-16** | `83531452` | simstudioai/sim#5104 | fix(sidebar): prefetch chats + workflows so cold loads don't flash skeletons (#5104)
+- **2026-06-16** | `80735b42` | simstudioai/sim#5107 | fix(locks): enforce workflow/folder locks on the agent + close manual-UI create gaps (#5107)
+- **2026-06-16** | `8b93e430` | simstudioai/sim#5109 | improvement(integrations): validate BigQuery/Forms/PageSpeed + regenerate integration docs (#5109)
+- **2026-06-17** | `05cd7d92` | simstudioai/sim#5110 | feat(search): actions, fuzzy matching, and highlighting in cmd+k palette (#5110)
+- **2026-06-17** | `9e9f2b9e` | simstudioai/sim#5111 | fix(realtime): debounce the reconnecting toast to stop transient-blip flashes (#5111)
+- **2026-06-17** | `d7fd0405` | simstudioai/sim#5114 | improvement(search): align cmd+k action icons + highlight with the design system (#5114)
+- **2026-06-17** | `11e23131` | simstudioai/sim#5113 | feat(google): Maps Pollen/Solar, Custom Search expansion, and live-API fixes across Google integrations (#5113)
+- **2026-06-17** | `c907b119` | simstudioai/sim#5112 | improvement(supabase): add Edge Functions tool; correct storage output shapes + harden tools (#5112)
+- **2026-06-17** | `ea505f03` | simstudioai/sim#5108 | improvement(tables): versioned CSV snapshot cache for table mounts + parallel multipart uploader (#5108)
+- **2026-06-17** | `4d39b0cb` | simstudioai/sim#5116 | feat(connectors): use resource selectors for KB connector config (#5116)
+- **2026-06-17** | `cae17691` | simstudioai/sim#5117 | improvement(knowledge): align connected-sources rows and move source chip left of filter/sort (#5117)
+- **2026-06-17** | `fcfa41cd` | simstudioai/sim#5118 | fix(azure): replace Azure DevOps icon with Azure icon and remove AzureDevOpsIcon (#5118)
+- **2026-06-17** | `08bcacd7` | simstudioai/sim#5121 | fix(copilot): mount input tables with display-name CSV headers, not column IDs (#5121)
+- **2026-06-17** | `7d46103d` | simstudioai/sim#5119 | chore(deps): remove unused dependencies and harden CI supply chain (#5119)
+- **2026-06-17** | `a028d07e` | simstudioai/sim#5012 | improvement(mothership): user_table speed parity — limit bounds, background import/delete/update jobs (#5012)
+- **2026-06-17** | `63a3e6d2` | simstudioai/sim#5125 | feat(files): stream large CSV previews and add import-as-table (#5125)
+- **2026-06-17** | `badfbc3b` | simstudioai/sim#5128 | fix(resource): left-align table filter/sort when there's no search (#5128)
+- **2026-06-17** | `597d7eaf` | simstudioai/sim#5120 | fix(tables): enforce row limits against the current plan, not a frozen per-table cap (#5120)
+- **2026-06-17** | `db47da58` | no-pr | v0.7.10: models sorting, compress/decompress file block tools, new enrichment providers, deepseek models, db performance
+- **2026-06-18** | `e5f3965e` | simstudioai/sim#5122 | feat(mship): add parallel subagents, improve streaming performance (#5122)
+- **2026-06-18** | `ea83be3b` | simstudioai/sim#5126 | fix(mship): add folder rename tools and locked workflow status (#5126)
+- **2026-06-18** | `58312a10` | simstudioai/sim#5129 | improvement(misc): add more sportmonks tools, improvestreaming ux (#5129)
+- **2026-06-18** | `63fdc472` | simstudioai/sim#5123 | improvement(block): table empty-state filter/sort builders + upsert conflict-column selection (#5123)
+- **2026-06-18** | `267e49c6` | simstudioai/sim#5132 | improvement(workspaces): auto-add without invite if part of organization (#5132)
+- **2026-06-18** | `f0b35507` | simstudioai/sim#5130 | feat(files): public share links for workspace files (#5130)
+- **2026-06-18** | `c419a343` | simstudioai/sim#5135 | feat(tables): raise per-plan table limits (free 5/50k, pro 100/100k, max 1k/500k) (#5135)
+- **2026-06-19** | `91f9dfda` | simstudioai/sim#5134 | improvement(governance): derived access (#5134)
+- **2026-06-19** | `13b5d215` | simstudioai/sim#5141 | improvement(access-controls): docs, terminology, fix delete bug (#5141)
+- **2026-06-19** | `9d2a6ef0` | simstudioai/sim#5136 | feat(logs): redact PII from workflow logs via configurable rules (#5136)
+- **2026-06-19** | `208d135d` | simstudioai/sim#5139 | feat(enrichment): add enrichment details sidebar with cost + provider cascade (#5139)
+- **2026-06-19** | `5925651c` | simstudioai/sim#5138 | feat(vfs): add lazy vfs + remove dynamic fields for prompt caching hits (#5138)
+- **2026-06-19** | `7349bf40` | simstudioai/sim#5140 | feat(files): password, email-OTP, and SSO auth for public file shares (#5140)
+- **2026-06-19** | `ecbe1919` | simstudioai/sim#5133 | feat(files): inline rich markdown editor (#5133)
+- **2026-06-19** | `3b78436a` | simstudioai/sim#5144 | feat(pii): gate data retention PII redaction behind feature flag (#5144)
+- **2026-06-19** | `1248f8ee` | simstudioai/sim#5147 | fix(files): only show Share in context menu for files, not folders (#5147)
+- **2026-06-19** | `ce283fa1` | simstudioai/sim#5146 | feat(scheduled-tasks): expose Google Calendar-style recurrence options (#5146)
+- **2026-06-19** | `3ebb9a50` | simstudioai/sim#5149 | feat(connectors): add Google Meet knowledge base connector (#5149)
+- **2026-06-20** | `35a7bf61` | simstudioai/sim#5152 | fix(executor): stop HITL error edges from firing on successful resume (#5152)
+- **2026-06-20** | `83dc806d` | simstudioai/sim#5154 | fix(file-decompress): enforce decompression caps on inflated stream, not declared zip size (#5154)
+- **2026-06-20** | `2f7d6074` | simstudioai/sim#5155 | fix(uploads): close multipart storage-quota bypass via quota-exempt contexts (#5155)
+- **2026-06-20** | `82cb3246` | simstudioai/sim#5153 | improvement(access-controls): default workspace experience includes all members (#5153)
+- **2026-06-20** | `aa57f10b` | simstudioai/sim#5156 | fix(auth): close nOAuth account takeover via email-based OAuth linking (#5156)
+- **2026-06-20** | `d643be0b` | simstudioai/sim#5150 | feat(triggers): add GitLab, PagerDuty, and Zendesk webhook triggers (#5150)
+- **2026-06-20** | `55f43263` | simstudioai/sim#5157 | improvement(auth): make Microsoft emailVerified derivation total (#5157)
+- **2026-06-20** | `4bf79171` | simstudioai/sim#5148 | improvement(rich-md-editor): streaming, performance, minor bugfixes (#5148)
+- **2026-06-20** | `2bbf70ec` | simstudioai/sim#5158 | improvement(rich-md-editor): stabilize bubble-menu plugin key + comment cleanup (#5158)
+- **2026-06-20** | `39cfae90` | simstudioai/sim#5159 | improvement(scheduled-tasks): render prompt chips in task details and align weekday picker (#5159)
+- **2026-06-20** | `cb172074` | simstudioai/sim#5160 | fix(rich-md-editor): stop the editor flashing during an agent rewrite (#5160)
+- **2026-06-20** | `cf84e051` | simstudioai/sim#5161 | improvement(path): append, patch snapshot based streaming (#5161)
+- **2026-06-20** | `9a2e06e7` | simstudioai/sim#5162 | fix(files): render embedded workspace images in markdown (#5162)
+- **2026-06-21** | `8df34a36` | no-pr | v0.7.11: parallel subagents, new tools, rich markdown editor, governance, file sharing, scheduled tasks granularity
+- **2026-06-21** | `f5d42ce4` | simstudioai/sim#5163 | feat(url-state): adopt nuqs for type-safe URL query-param state (#5163)
+- **2026-06-21** | `951ad42a` | simstudioai/sim#5164 | fix(mcp): missing isDeployed in contract breaking settings, parameter overrides lack of clarity (#5164)
+- **2026-06-21** | `d8da1e25` | simstudioai/sim#5166 | fix(state): align server/client state with best practices (query-key bugs, persist hygiene, useState) (#5166)
+- **2026-06-21** | `aaca7505` | no-pr | v0.7.12: mcp servers ui/ux fixes, nuqs for query param management
+- **2026-06-22** | `e96b150b` | simstudioai/sim#5168 | refactor(frontend-arch): migrate server state to React Query, collapse duplicate workflow-state cache, granular error boundaries (#5168)
+- **2026-06-22** | `844733a5` | simstudioai/sim#5169 | feat(providers): add Sakana AI provider with Fugu models (#5169)
+- **2026-06-22** | `707c3cc2` | simstudioai/sim#5173 | feat(trigger): add trigger-eu-region flag to switch runs to eu-central-1 (#5173)
+- **2026-06-22** | `63339190` | simstudioai/sim#5178 | feat(pi): add pi coding agent harness  (#5178)
+- **2026-06-22** | `ccc69542` | simstudioai/sim#5180 | improvement(pi): prompting to ensure harness knows push is deterministic (#5180)
+- **2026-06-23** | `0191a614` | simstudioai/sim#5176 | feat(pii): build & own combined PII (analyzer + anonymizer) image (#5176)
+- **2026-06-23** | `4d2e7d55` | simstudioai/sim#5182 | fix(pii): listen on 5001 to avoid app :3000 collision (awsvpc) (#5182)
+- **2026-06-23** | `8f312d29` | simstudioai/sim#5174 | feat(guardrails): PII redaction via Presidio sidecar (native VIN, per-rule language) (#5174)
+- **2026-06-23** | `77976bcb` | simstudioai/sim#5171 | feat(billing): unify upgrade routing with reason context + storage/tables limit emails (#5171)
+- **2026-06-23** | `406ae92b` | simstudioai/sim#5185 | fix(trigger): mark cpu-features external to fix deploy build (#5185)
+- **2026-06-23** | `bf5077bf` | simstudioai/sim#5187 | fix(skills): fix skills icon showing up (#5187)
+- **2026-06-23** | `c20d5fc7` | simstudioai/sim#5184 | fix(enrichment): stop PDL billing on no-match via required-field gating (#5184)
+- **2026-06-23** | `43fa5eaa` | simstudioai/sim#5186 | feat(data-retention): workspace-level overrides for retention and PII (#5186)
+- **2026-06-23** | `8b5d746f` | simstudioai/sim#5190 | improvement(access-controls): ui/ux improvements (#5190)
+- **2026-06-23** | `76867062` | simstudioai/sim#5188 | feat(pii): publish PII image to GHCR and add Presidio sidecar to Helm chart (#5188)
+- **2026-06-23** | `4554df9f` | simstudioai/sim#5177 | feat(file): add Manage Sharing operation to the File block (#5177)
+- **2026-06-24** | `8c5da027` | simstudioai/sim#5191 | feat(file): include public share status in File read output (#5191)
+- **2026-06-23** | `ad0b8678` | no-pr | v0.7.13: pii redaction, react query frontend refactor, pi coding agent harness, sakana fugu provider
+- **2026-06-24** | `5d7f7e90` | simstudioai/sim#5192 | improvement(pi): minor improvements to docs (#5192)
+- **2026-06-24** | `b212a5d3` | simstudioai/sim#5193 | improvement(mistral): update OCR pricing to OCR 4 rate ($4/1,000 pages) (#5193)
+- **2026-06-24** | `86dc04d7` | simstudioai/sim#5196 | perf(workspace): server-prefetch home, knowledge, tables, and files list pages (#5196)
+- **2026-06-24** | `b52fcc09` | simstudioai/sim#5197 | refactor(stores): model execution and workflow-diff state as status enums (#5197)
+- **2026-06-24** | `038e8f0d` | simstudioai/sim#5195 | refactor(sse): consolidate client SSE readers behind a single typed primitive (#5195)
+- **2026-06-24** | `067f9e9d` | simstudioai/sim#5200 | feat(gitlab): support self-managed GitLab host across tools, block, triggers, webhook, and connector (#5200)
+- **2026-06-24** | `e1c3c7f6` | simstudioai/sim#5189 | feat(secrets): ingest env secrets at container runtime instead of fanning into ECS taskdef (#5189)
+- **2026-06-24** | `5a938e5d` | simstudioai/sim#5202 | improvement(sandbox): mount workspace files by presigned URL instead of buffering bytes (#5202)
+- **2026-06-24** | `c3a09694` | simstudioai/sim#5204 | fix(tables): SSR crash from tableKeys in a 'use client' module + drop redundant flushChunks (#5204)
+- **2026-06-24** | `ae4bc05e` | simstudioai/sim#5205 | feat(gitlab): add repository, code-review, and CI job tools + validation fixes (#5205)
+- **2026-06-24** | `cff7a493` | simstudioai/sim#5203 | feat(file): workspace-scoped inline images + public-share cascade (#5203)
+- **2026-06-24** | `6260eda2` | simstudioai/sim#5206 | fix(ssr): harden credential query-key factory + fetchers against the 'use client' stub bug (#5206)
+- **2026-06-24** | `9bd8f149` | simstudioai/sim#5207 | fix(workspace): add granular error boundaries to 7 more workspace segments (#5207)
+- **2026-06-24** | `e748a64f` | simstudioai/sim#5208 | refactor(realtime): type the socket event-handler boundary with @sim/realtime-protocol (#5208)
+- **2026-06-25** | `34d32b97` | simstudioai/sim#5209 | feat(salesforce): add Tooling API schema tools (custom field/object) + metadata query (#5209)
+- **2026-06-25** | `11168f91` | no-pr | v0.7.14: perf improvements, code hygiene, GitLab private host support
+- **2026-06-25** | `9e1a4ac5` | simstudioai/sim#5212 | perf(frontend): bound logs DOM, kill editor re-render storms, lazy-load heavy deps (#5212)
+- **2026-06-25** | `a68d38ae` | simstudioai/sim#5211 | feat(db): attribute Postgres connections by runtime via application_name (#5211)
+- **2026-06-25** | `7640af0f` | simstudioai/sim#5199 | improvement(mothership): add workflow lint for custom tool/skills/mcp tool additions to agent block (#5199)
+- **2026-06-25** | `371cc948` | simstudioai/sim#5214 | feat(thrive): add Thrive Learning integration (47 tools + block) (#5214)
+- **2026-06-25** | `d20deedf` | simstudioai/sim#5213 | improvement(docs): add Academy learning surface (#5213)
+- **2026-06-25** | `5db5963f` | simstudioai/sim#5217 | fix(copilot): strip platform-managed apiKey on hosted-tool blocks in edit_workflow (#5217)
+- **2026-06-25** | `6355c8e6` | simstudioai/sim#5172 | improvement(docs): Ask AI chat grounded in the docs vector store (#5172)
+- **2026-06-25** | `7ba0e238` | simstudioai/sim#5216 | feat(access-control): page-based permission groups, tool-level deny-list, settings row-action consistency (#5216)
+- **2026-06-25** | `ca4e07ba` | simstudioai/sim#5218 | chore(deps): bump undici to 7.28.0 and nodemailer to 9.0.1 (#5218)
+- **2026-06-25** | `a1d58706` | simstudioai/sim#5219 | feat(settings): unify all settings pages under a shared SettingsPanel layout (#5219)
+- **2026-06-26** | `365d8be0` | simstudioai/sim#5221 | fix(knowledge): document tag filter matches case-insensitively and by calendar day (#5221)
+- **2026-06-26** | `02d254e2` | simstudioai/sim#5222 | refactor(emcn): consolidate date pickers onto the chip Calendar (range support + retire legacy DatePicker) (#5222)
+- **2026-06-26** | `2fa3dd65` | simstudioai/sim#5226 | fix(db): retry the migration connection on transient slot exhaustion (#5226)
+- **2026-06-26** | `a33c1731` | simstudioai/sim#5220 | fix(copilot): strip hosted apiKey on type-less edit ops + guard hosting.enabled (#5220)
+- **2026-06-26** | `954de055` | simstudioai/sim#5227 | improvement(docs): align components with the platform design system (#5227)
+- **2026-06-26** | `c7eda5b2` | simstudioai/sim#5215 | feat(rich-editor): rich markdown field + @ mentions for skill & deploy modals (#5215)
+- **2026-06-26** | `35acc42d` | simstudioai/sim#5228 | feat(downdetector): add Downdetector outage-monitoring integration (#5228)
+- **2026-06-26** | `3143a15d` | simstudioai/sim#5229 | feat(uptimerobot): add UptimeRobot v3 integration (#5229)
+- **2026-06-26** | `d9da544a` | simstudioai/sim#5230 | feat(triggers): add Twilio SMS, Clerk, incident.io, Rootly, RevenueCat, Loops, and Sentry webhook triggers (#5230)
+- **2026-06-26** | `613e8ea0` | no-pr | v0.7.15: academy, perf improvements, db attribution, kb tags filter fix, settings overhaul, thrive learning integration
+- **2026-06-27** | `e08fb022` | simstudioai/sim#5231 | perf(trigger): cap concurrency on background DB tasks (#5231)
+- **2026-06-27** | `3c6c6b15` | simstudioai/sim#5236 | improvement(webhooks): add trigger-age instrumentation + guard env decryption (#5236)
+- **2026-06-27** | `6264cba5` | simstudioai/sim#5237 | fix(connectors): harden Zendesk connector against SSRF (#5237)
+- **2026-06-27** | `845a6276` | simstudioai/sim#5232 | perf(db): per-role Postgres connection-pool profiles (#5232)
+- **2026-06-27** | `b8a197b9` | simstudioai/sim#5240 | fix(security): cap KB document download size to prevent memory-exhaustion DoS (#5240)
+- **2026-06-27** | `37962a05` | simstudioai/sim#5239 | fix(file-parsers): guard OOXML parsers against decompression-bomb memory exhaustion (#5239)
+- **2026-06-27** | `0420feed` | simstudioai/sim#5235 | chore(data-drains): remove settings callout and unused InfoNote component (#5235)
+- **2026-06-27** | `b2d43c10` | simstudioai/sim#5241 | fix(copilot): gate post-tool output writes behind write permission (#5241)
+- **2026-06-27** | `9b66b40a` | simstudioai/sim#5244 | fix(mcp): pin public IP-literal server URLs to block SSRF redirect bypass (#5244)
+- **2026-06-27** | `ac95a27d` | simstudioai/sim#5243 | fix(security): gate credential-set invitation listing to admins and drop token (#5243)
+- **2026-06-27** | `2554725d` | simstudioai/sim#5242 | improvement(execution): stop rewriting execution snapshots on reuse + skip redundant actor lookup (#5242)
+- **2026-06-27** | `2686f043` | simstudioai/sim#5223 | perf(dev): SIM_DEV_MINIMAL_REGISTRY mode to slash local dev-server RAM (#5223)
+- **2026-06-27** | `d4932631` | simstudioai/sim#5246 | improvement(clickhouse): expand block templates and skills, normalize tool versions (#5246)
+- **2026-06-27** | `b8d0b4f3` | simstudioai/sim#5247 | fix(sso): keep an exit affordance in edit mode when clean (#5247)
+- **2026-06-27** | `7a2103e2` | simstudioai/sim#5248 | improvement(logs): move per-block progress markers to Redis to cut write amplification (#5248)
+- **2026-06-27** | `3e03f8c2` | simstudioai/sim#5249 | fix(webhooks): cast json provider_config for atomic jsonb merge (#5249)
+- **2026-06-27** | `3766582e` | simstudioai/sim#5250 | fix(webhooks): run inactive deployment-version cleanup inline on deploy (#5250)
+- **2026-06-27** | `38c088a8` | no-pr | v0.7.16: security hardening, db o11y and profiling, settings UI
+- **2026-06-28** | `5a813411` | simstudioai/sim#5210 | feat(workspaces): fork + push/pull (#5210)
+- **2026-06-28** | `66315f19` | simstudioai/sim#5253 | improvement(docs): flatten the academy learn/chapters panels (#5253)
+- **2026-06-28** | `c5963169` | simstudioai/sim#5255 | chore(deploy): remove deploy as a2a (#5255)
+- **2026-06-28** | `d878f158` | simstudioai/sim#5256 | feat(integrations): extend Airtable, Google Docs, WhatsApp, and Excel tool depth (#5256)
+- **2026-06-28** | `bcf6a804` | simstudioai/sim#5257 | improvement(emcn): extract design system into shared @sim/emcn package (#5257)
+- **2026-06-28** | `f5f87de9` | simstudioai/sim#5258 | fix(emcn): repair app-wide crash and unstyled UI after package extraction (#5258)
+- **2026-06-29** | `6dea1dc5` | simstudioai/sim#5259 | fix(knowledge): send tag filters as a JSON string so the document filter works (#5259)
+- **2026-06-29** | `f5116f45` | simstudioai/sim#5261 | fix(emcn): resolve Calendar icon/component barrel collision and preserve prism side effects (#5261)
+- **2026-06-29** | `56f9393d` | simstudioai/sim#5262 | fix(prism): load prismjs core before language components (#5262)
+- **2026-06-29** | `23ec96b0` | simstudioai/sim#5264 | feat(pii): add redaction timing metrics across sidecar and persist path (#5264)
+- **2026-06-29** | `27b2a4f5` | simstudioai/sim#5263 | feat(workflow-renderer): extract edge, subflow, and note Views into @sim/workflow-renderer (#5263)
+- **2026-06-29** | `a6196e0c` | simstudioai/sim#5251 | perf(dev): curate SIM_DEV_MINIMAL_REGISTRY to core toolbar blocks (#5251)
+- **2026-06-29** | `950c2602` | simstudioai/sim#5266 | fix(uploads): attach compiled binary for AI-generated docs, not source (#5266)
+- **2026-06-29** | `69e3550a` | simstudioai/sim#5265 | feat(integrations): extend Telegram, Outlook, and Notion tool depth (#5265)
+- **2026-06-29** | `c7bb37d4` | simstudioai/sim#5267 | feat(workflow-renderer): extract pure WorkflowBlockView + SubBlockRowView (#5267)
+- **2026-06-29** | `48c1b453` | simstudioai/sim#5270 | feat(integrations): extend ElevenLabs, Google Drive, Firecrawl, Pinecone, Resend, and S3 tool depth (#5270)
+- **2026-06-29** | `89253348` | simstudioai/sim#5274 | feat(mothership): add secrets input in chat (#5274)
+- **2026-06-29** | `f66d0c78` | simstudioai/sim#5275 | improvement(docs): redesign README (animated hero + product demo) (#5275)
+- **2026-06-29** | `7545391c` | simstudioai/sim#5277 | feat(docs): render workflow previews with the shared editor renderer (#5277)
+- **2026-06-29** | `948a5cb1` | simstudioai/sim#5278 | improvement(settings): persistent layout + locked-down header API (#5278)
+- **2026-06-29** | `98d84f23` | simstudioai/sim#5279 | improvement(slack-trigger): expose view, message, and state on interactivity payloads (#5279)
+- **2026-06-29** | `7bf8dbaf` | simstudioai/sim#5280 | feat(workspaces): gate workspace forking behind runtime workspace-forking feature flag (#5280)
+- **2026-06-29** | `03718568` | no-pr | v0.7.17: emcn and workflow renderer isolated package, popular blocks extension, workspace forking, slack trigger extension, new README
+- **2026-06-30** | `e7635db7` | simstudioai/sim#5287 | chore(logging): remove redis-progress-markers feature flag (#5287)
+- **2026-06-30** | `4298e577` | simstudioai/sim#5288 | fix(workflow-renderer): validate dropbox host in note embed renderer (#5288)
+- **2026-06-30** | `ca0a7ff0` | simstudioai/sim#5290 | feat(rich-markdown-editor): live media embeds + shared embed detection util (#5290)
+- **2026-06-30** | `d0aed14a` | simstudioai/sim#5289 | feat(integrations): wave-4 tool-depth (Slack/Asana/Jira/Google Docs/Trello/Monday) + context.dev validation (#5289)
+- **2026-06-30** | `8bf19890` | simstudioai/sim#5291 | feat(providers): add Claude Sonnet 5 model (#5291)
+- **2026-06-30** | `0613cebf` | simstudioai/sim#5276 | feat(db): resolve DATABASE_URL per role (DATABASE_URL_<ROLE> with fallback) (#5276)
+- **2026-06-30** | `84c22f19` | simstudioai/sim#5293 | fix(emcn): keep Prism grammar registrations in bundle, never throw on missing grammar (#5293)
+- **2026-06-30** | `ccddb629` | simstudioai/sim#5295 | feat(broadcast): add LinkedIn footer social icon (#5295)
+- **2026-06-30** | `ad19f7fc` | simstudioai/sim#5181 | improvement(landing): refine hero and mothership visuals (#5181)
+- **2026-06-30** | `32b6a425` | simstudioai/sim#5298 | improvement(landing): SSR-friendly URL-state filters + cleanup pass + polish (#5298)
+- **2026-06-30** | `c17c003a` | simstudioai/sim#5297 | feat(input-format): upload files in file fields via the file uploader (#5297)
+- **2026-06-30** | `8c8e4b75` | simstudioai/sim#5299 | refactor(landing): DRY page metadata via buildLandingMetadata + derive pricing credits (#5299)
+- **2026-06-30** | `bdaeb652` | simstudioai/sim#5302 | feat(broadcast): add july-1 newsletter (template, assets, font) (#5302)
+- **2026-06-30** | `604d03e4` | simstudioai/sim#5300 | improvement(sendblue): audit fixes for optional group numbers, seat_id, typing state/duration (#5300)
+- **2026-06-30** | `c1b84e4e` | simstudioai/sim#5301 | feat(linq): audit fixes + native auto-registering webhook trigger (#5301)
+- **2026-06-30** | `495460dd` | simstudioai/sim#5303 | perf(landing): defer Features preview, memoize integration grid, trim dead weight (#5303)
+- **2026-06-30** | `ed6e8c2d` | simstudioai/sim#5304 | fix(input-format): file-field mode toggle uses canonical arrow icon on the label row (#5304)
+- **2026-06-30** | `7662ecc1` | simstudioai/sim#5294 | feat(forking): resource copying UX to help with setup speed (#5294)
+- **2026-06-30** | `48752c60` | simstudioai/sim#5305 | fix(media-embed): remove ReDoS-prone regexes in host-gated providers (#5305)
+- **2026-06-30** | `fbcdcd0b` | simstudioai/sim#5306 | fix(sidebar): suppress collapse->expand transition flash on fresh load (#5306)
+- **2026-06-30** | `75c364a9` | simstudioai/sim#5283 | improvement(docs): README redesign — banner + platform screenshot (#5283)
+- **2026-06-30** | `5055b31e` | simstudioai/sim#5307 | improvement(billing): ux around on demand toggling and one-off credits (#5307)
+- **2026-06-30** | `0990a17f` | simstudioai/sim#5308 | fix(settings): chip-consistency + shared credential-style resource row (#5308)
+- **2026-06-30** | `2c38e63c` | simstudioai/sim#5309 | improvement(emails): align transactional emails with the platform neutral design system (#5309)
+- **2026-06-30** | `44a954dc` | simstudioai/sim#5311 | fix(emcn): stop calendar content bleeding through the modal backdrop (#5311)
+- **2026-06-30** | `ff16b1b8` | simstudioai/sim#5313 | fix(hitl): build the full enabled-block DAG so any persisted resume target exists (#5313)
+- **2026-06-30** | `ca34301d` | simstudioai/sim#5312 | fix(mailer): permissions entitlements for enabling/disabling (#5312)
+- **2026-06-30** | `fabf6964` | no-pr | v0.7.18: landing, tools depth, media embeds in md editor, sonnet 5
+
+## Fork-only notes
+
+Fork maintains Arena/P2/Unipile/Facebook/Presentation integrations and mothership admin routes.
