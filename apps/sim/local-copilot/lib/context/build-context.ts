@@ -117,7 +117,7 @@ export async function buildLocalCopilotContext(
       provider: getLocalCopilotConfig().provider,
     })
 
-    return sanitizeForLlm(context)
+    return context
   }
 
   const [workflowRow] = await db
@@ -182,7 +182,7 @@ export async function buildLocalCopilotContext(
     provider: getLocalCopilotConfig().provider,
   })
 
-  return sanitizeForLlm(context)
+  return context
 }
 
 export function contextToPromptJson(

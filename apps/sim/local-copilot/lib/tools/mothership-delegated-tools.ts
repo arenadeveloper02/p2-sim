@@ -1,6 +1,11 @@
 import { createLogger } from '@sim/logger'
+import { db } from '@sim/db'
+import { workflow } from '@sim/db/schema'
+import { desc, eq } from 'drizzle-orm'
 import { executeTool } from '@/lib/copilot/tool-executor/executor'
 import { ensureHandlersRegistered } from '@/lib/copilot/tool-executor/register-handlers'
+import { createServerToolHandler } from '@/lib/copilot/tools/registry/server-tool-adapter'
+import { getRegisteredServerToolNames } from '@/lib/copilot/tools/server/router'
 import { TOOL_RUNTIME_SCHEMAS } from '@/lib/copilot/generated/tool-schemas-v1'
 import type { LocalCopilotToolDefinition, LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
@@ -34,7 +39,15 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Manages knowledge bases — operations include create, get, list, query (semantic search), add_file (ingest document), update, delete, add_connector, sync_connector.',
   open_resource: 'Opens a workspace resource (workflow, file, table, knowledge base) in the UI.',
   materialize_file: 'Materializes chat-uploaded files into workspace files or table imports.',
+  generate_image:
+    'Generates an image from a text prompt (no workflow). Uses hosted/workspace keys automatically. Optional outputs.files path to save under files/.',
+  search_online:
+    'Live web search (Exa or Serper when keys are configured). Use for current events and live data — no workflow required.',
+  enrichment_run:
+    'Runs a one-off table enrichment lookup inline (no table/workflow required).',
 }
+
+const COPILOT_SERVER_TOOL_NAMES = new Set(getRegisteredServerToolNames())
 
 /** Tools delegated to registered Mothership/copilot server handlers. */
 export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
@@ -55,6 +68,9 @@ export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'knowledge_base',
   'open_resource',
   'materialize_file',
+  'generate_image',
+  'search_online',
+  'enrichment_run',
 ] as const
 
 export type MothershipDelegatedToolName = (typeof MOTHERSHIP_DELEGATED_TOOL_NAMES)[number]
@@ -73,22 +89,65 @@ function isUuid(value: string): boolean {
   return UUID_PATTERN.test(value)
 }
 
+function normalizeWorkflowName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[()]/g, ' ')
+    .replace(/\s+/g, ' ')
+}
+
 function matchWorkflowByName(
   workflows: NonNullable<LocalCopilotStructuredContext['workspaceWorkflows']>,
   name: string
 ): string | undefined {
-  const normalized = name.trim().toLowerCase()
+  const normalized = normalizeWorkflowName(name)
   if (!normalized) return undefined
 
-  const exact = workflows.find((workflow) => workflow.name.toLowerCase() === normalized)
+  const exact = workflows.find(
+    (workflowRow) => normalizeWorkflowName(workflowRow.name) === normalized
+  )
   if (exact) return exact.id
 
-  const partialMatches = workflows.filter((workflow) =>
-    workflow.name.toLowerCase().includes(normalized)
-  )
+  const partialMatches = workflows.filter((workflowRow) => {
+    const workflowName = normalizeWorkflowName(workflowRow.name)
+    return workflowName.includes(normalized) || normalized.includes(workflowName)
+  })
   if (partialMatches.length === 1) return partialMatches[0].id
 
   return undefined
+}
+
+async function resolveWorkflowIdFromDatabase(
+  workspaceId: string,
+  args: Record<string, unknown>
+): Promise<string | undefined> {
+  const nameHint =
+    (typeof args.workflowName === 'string' && args.workflowName.trim()) ||
+    (typeof args.name === 'string' && args.name.trim() && !isUuid(args.name.trim())
+      ? args.name.trim()
+      : '') ||
+    (typeof args.workflowId === 'string' &&
+    args.workflowId.trim() &&
+    !isUuid(args.workflowId.trim())
+      ? args.workflowId.trim()
+      : '')
+
+  if (!nameHint) return undefined
+
+  const rows = await db
+    .select({ id: workflow.id, name: workflow.name })
+    .from(workflow)
+    .where(eq(workflow.workspaceId, workspaceId))
+    .orderBy(desc(workflow.updatedAt))
+    .limit(50)
+
+  const workflows = rows.map((row) => ({
+    id: row.id,
+    name: row.name ?? 'Untitled workflow',
+  }))
+
+  return matchWorkflowByName(workflows, nameHint)
 }
 
 /**
@@ -179,6 +238,29 @@ export function buildMothershipDelegatedToolDefinitions(): LocalCopilotToolDefin
   })
 }
 
+async function executeCopilotServerTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext
+): Promise<ToolExecutionResult> {
+  const handler = createServerToolHandler(toolName)
+  const result = await handler(args, {
+    userId: ctx.userId,
+    workspaceId: ctx.workspaceId,
+    userPermission: ctx.userPermission ?? 'write',
+    chatId: ctx.chatId,
+    abortSignal: ctx.abortSignal,
+    copilotToolExecution: true,
+  })
+
+  return {
+    toolName,
+    success: result.success,
+    result: result.output ?? (result.error ? { error: result.error } : {}),
+    error: result.error,
+  }
+}
+
 /**
  * Runs a registered Mothership/copilot server tool handler in-process.
  */
@@ -192,6 +274,10 @@ export async function executeMothershipDelegatedTool(
   const enrichedArgs = { ...args }
   let workflowId = resolveWorkflowIdForDelegatedTool(enrichedArgs, ctx)
 
+  if (!workflowId && ctx.workspaceId) {
+    workflowId = await resolveWorkflowIdFromDatabase(ctx.workspaceId, enrichedArgs)
+  }
+
   if (workflowId) {
     enrichedArgs.workflowId = workflowId
   } else if (WORKFLOW_SCOPED_DELEGATED_TOOLS.has(toolName)) {
@@ -204,6 +290,14 @@ export async function executeMothershipDelegatedTool(
       ...buildMissingWorkflowIdError(ctx.structuredContext),
       toolName,
     }
+  }
+
+  if (COPILOT_SERVER_TOOL_NAMES.has(toolName)) {
+    const result = await executeCopilotServerTool(toolName, enrichedArgs, ctx)
+    if (!result.success) {
+      logger.warn('Copilot server tool failed', { toolName, error: result.error })
+    }
+    return result
   }
 
   const result = await executeTool(toolName, enrichedArgs, {

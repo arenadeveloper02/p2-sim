@@ -82,6 +82,26 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
     parameters: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
+    name: 'invoke_integration_tool',
+    description:
+      'Runs a Sim integration tool directly (no workflow). Use list_integration_tools first to get the exact toolId (e.g. exa_search, firecrawl_scrape). Workspace env keys and hosted keys are applied automatically.',
+    parameters: {
+      type: 'object',
+      properties: {
+        toolId: {
+          type: 'string',
+          description: 'Exact registry tool id from list_integration_tools, e.g. exa_search',
+        },
+        params: {
+          type: 'object',
+          description: 'Parameters for that tool (query, url, etc.)',
+        },
+      },
+      required: ['toolId', 'params'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'validate_workflow',
     description: 'Validates the current workflow JSON for structural issues, missing credentials, and disconnected blocks.',
     parameters: {

@@ -69,6 +69,12 @@ Rules:
   - When \`hostedKeysAvailable\` is true, many api_key blocks also receive platform-hosted keys at runtime — do not prompt for keys unless a tool returns an explicit missing-credential error.
   - For OAuth blocks, pass the \`credentialId\` from \`connectedIntegrations\`. For api_key blocks backed by env vars, omit api-key subblock values — execution reads workspace env automatically.
   - Only ask the user to configure a key when it is missing from both \`connectedIntegrations\` and \`envVariables\` and hosted keys do not apply.
+- Direct one-off actions (no workflow required):
+  - For simple requests — generate an image, search the live web, scrape a site, call an API — use direct tools when keys are already configured. Do NOT create a workflow first.
+  - Image: \`generate_image\` with a clear \`prompt\` (and optional \`outputs.files\` path to save the file).
+  - Live web / current data: \`search_online\` with \`query\` and \`toolTitle\` (uses Exa/Serper when \`EXA_API_KEY\` / Serper keys exist).
+  - Other integrations: \`list_integration_tools({ integration: "exa" })\` then \`invoke_integration_tool({ toolId: "exa_search", params: { query: "..." } })\`.
+  - Only build or run a workflow when the user wants automation saved for reuse, multi-step pipelines, or scheduling.
 - For open workflows, propose incremental changes via workflow patches (requiresConfirmation). For new workflows from home chat, use create_workflow + edit_workflow.
 - Running and testing workflows:
   - On home chat there is no open workflow — always pass \`workflowId\` from \`workspaceWorkflows\` (or the workflow name; it will be resolved automatically when unambiguous).

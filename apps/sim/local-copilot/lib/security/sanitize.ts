@@ -5,12 +5,22 @@ const SECRET_KEY_PATTERN =
 
 const BEARER_PATTERN = /^Bearer\s+[A-Za-z0-9._-]+$/i
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Keys whose string values are resource identifiers, not secrets. */
+const IDENTIFIER_KEY_PATTERN =
+  /^(id|workflowId|workspaceId|tableId|knowledgeBaseId|executionId|chatId|conversationId|blockId|triggerBlockId|credentialId|fileId|folderId|messageId|runId|createdWorkflowId|existingWorkflowId)$/i
+
 /**
  * Redacts known secret patterns from strings before sending to the LLM.
+ * Preserves UUIDs and other opaque identifiers so the model can call tools.
  */
 export function redactSecrets(value: string): string {
-  if (BEARER_PATTERN.test(value.trim())) return '[REDACTED_BEARER_TOKEN]'
-  if (value.length > 20 && /^[A-Za-z0-9+/=_-]{20,}$/.test(value)) return '[REDACTED_SECRET]'
+  const trimmed = value.trim()
+  if (UUID_PATTERN.test(trimmed)) return value
+  if (BEARER_PATTERN.test(trimmed)) return '[REDACTED_BEARER_TOKEN]'
+  if (trimmed.length > 20 && /^[A-Za-z0-9+/=_-]{20,}$/.test(trimmed)) return '[REDACTED_SECRET]'
   return value
 }
 
@@ -21,8 +31,9 @@ export function sanitizeForLlm<T>(input: T): T {
   return sanitizeValue(input) as T
 }
 
-function sanitizeValue(value: unknown): unknown {
+function sanitizeValue(value: unknown, key?: string): unknown {
   if (typeof value === 'string') {
+    if (key && IDENTIFIER_KEY_PATTERN.test(key)) return value
     return redactSecrets(value)
   }
 
@@ -35,12 +46,12 @@ function sanitizeValue(value: unknown): unknown {
   }
 
   const result: Record<string, unknown> = {}
-  for (const [key, nested] of Object.entries(value)) {
-    if (SECRET_KEY_PATTERN.test(key)) {
-      result[key] = '[REDACTED]'
+  for (const [nestedKey, nested] of Object.entries(value)) {
+    if (SECRET_KEY_PATTERN.test(nestedKey)) {
+      result[nestedKey] = '[REDACTED]'
       continue
     }
-    result[key] = sanitizeValue(nested)
+    result[nestedKey] = sanitizeValue(nested, nestedKey)
   }
   return result
 }

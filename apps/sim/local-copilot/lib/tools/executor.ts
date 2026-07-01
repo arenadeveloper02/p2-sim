@@ -14,6 +14,8 @@ import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
 } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import { executeTool as executeCopilotRegistryTool } from '@/lib/copilot/tool-executor/executor'
+import { ensureHandlersRegistered } from '@/lib/copilot/tool-executor/register-handlers'
 import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
 
@@ -59,16 +61,57 @@ function guardCreateWorkflowWhenExistingAvailable(
   const requestedName =
     typeof args.name === 'string' ? args.name.trim().toLowerCase() : ''
 
-  const matchByName = requestedName
+  let target = requestedName
     ? existing.find((workflow) => workflow.name.toLowerCase() === requestedName)
     : undefined
 
-  const target = matchByName ?? (existing.length === 1 ? existing[0] : undefined)
-  if (!target) return null
+  if (!target && requestedName) {
+    const partialMatches = existing.filter(
+      (workflow) =>
+        workflow.name.toLowerCase().includes(requestedName) ||
+        requestedName.includes(workflow.name.toLowerCase())
+    )
+    if (partialMatches.length === 1) target = partialMatches[0]
+  }
 
-  const reason = matchByName
+  if (!target && existing.length === 1) {
+    target = existing[0]
+  }
+
+  const workflowsForResult = existing.map((workflow) => ({
+    id: workflow.id,
+    name: workflow.name,
+    isDeployed: workflow.isDeployed ?? false,
+  }))
+
+  if (!target) {
+    const error = `This workspace already has ${existing.length} workflows. Use get_workflow_run_options + run_workflow on a matching entry from workspaceWorkflows instead of create_workflow. Pass confirmNewWorkflow: true only when the user explicitly wants a brand-new workflow.`
+    logger.info('Blocked create_workflow — workspace already has workflows', {
+      existingCount: existing.length,
+      requestedName: requestedName || null,
+    })
+    return {
+      toolName: 'create_workflow',
+      success: false,
+      error,
+      result: {
+        useRunWorkflowInstead: true,
+        existingWorkflows: workflowsForResult,
+        followUpHint:
+          'Pick the best matching workflowId from existingWorkflows, call get_workflow_run_options, then run_workflow.',
+      },
+    }
+  }
+
+  const exactNameMatch = Boolean(
+    requestedName && target.name.toLowerCase() === requestedName
+  )
+
+  const reason = exactNameMatch
     ? `A workflow named "${target.name}" already exists.`
-    : `This workspace has one existing workflow ("${target.name}").`
+    : existing.length === 1
+      ? `This workspace has one existing workflow ("${target.name}").`
+      : `A similar workflow already exists ("${target.name}").`
 
   const error = `${reason} Use get_workflow_run_options then run_workflow to execute it, or edit_workflow to modify it. Pass confirmNewWorkflow: true only if the user explicitly asked for a separate new workflow.`
 
@@ -85,11 +128,7 @@ function guardCreateWorkflowWhenExistingAvailable(
       useRunWorkflowInstead: true,
       existingWorkflowId: target.id,
       existingWorkflowName: target.name,
-      existingWorkflows: existing.map((workflow) => ({
-        id: workflow.id,
-        name: workflow.name,
-        isDeployed: workflow.isDeployed ?? false,
-      })),
+      existingWorkflows: workflowsForResult,
       followUpHint: `Call get_workflow_run_options({ workflowId: "${target.id}" }) then run_workflow.`,
     },
   }
@@ -178,6 +217,49 @@ export async function executeLocalCopilotTool(
           hostedKeysAvailable: ctx.structuredContext.hostedKeysAvailable,
         },
       }
+
+    case 'invoke_integration_tool': {
+      const toolId =
+        typeof args.toolId === 'string'
+          ? args.toolId.trim()
+          : typeof args.tool_id === 'string'
+            ? args.tool_id.trim()
+            : ''
+      if (!toolId) {
+        return {
+          toolName,
+          success: false,
+          error: 'toolId is required — call list_integration_tools first',
+          result: {},
+        }
+      }
+
+      const params =
+        args.params && typeof args.params === 'object' && !Array.isArray(args.params)
+          ? (args.params as Record<string, unknown>)
+          : { ...args }
+
+      ensureHandlersRegistered()
+      const integrationResult = await executeCopilotRegistryTool(toolId, params, {
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+        workflowId: ctx.workflowId ?? '',
+        chatId: ctx.chatId,
+        abortSignal: ctx.abortSignal,
+        copilotToolExecution: true,
+        userPermission: ctx.userPermission,
+      })
+
+      return {
+        toolName,
+        success: integrationResult.success,
+        result: {
+          toolId,
+          output: integrationResult.output ?? { error: integrationResult.error },
+        },
+        error: integrationResult.error,
+      }
+    }
 
     case 'validate_workflow': {
       const state = requireWorkflowContext(ctx)

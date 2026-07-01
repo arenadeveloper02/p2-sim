@@ -2,6 +2,7 @@ import type { Edge } from 'reactflow'
 import { estimateTokens } from '@/lib/chunkers/utils'
 import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { truncate } from '@sim/utils/string'
+import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 
@@ -150,18 +151,22 @@ export function buildContextPromptPayload(
     : null
 
   return JSON.stringify(
-    {
+    sanitizeForLlm({
       workspace: context.workspace,
       connectedIntegrations: context.connectedIntegrations,
       envVariables: context.envVariables,
       hostedKeysAvailable: context.hostedKeysAvailable,
+      guidance: context.guidance,
       workflow: workflowPayload,
       workspaceWorkflows: context.workspaceWorkflows,
+      knowledgeBases: context.knowledgeBases,
+      tables: context.tables,
+      workspaceFiles: context.workspaceFiles,
       execution: context.execution,
       availableIntegrations: context.availableIntegrations,
       availableBlocks: context.availableBlocks,
       selectedBlockId: context.selectedBlockId,
-    },
+    }),
     null,
     2
   )

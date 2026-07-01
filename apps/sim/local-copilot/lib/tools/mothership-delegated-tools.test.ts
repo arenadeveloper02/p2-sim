@@ -36,7 +36,7 @@ describe('mothership-delegated-tools', () => {
     const structuredContext = {
       workspaceWorkflows: [
         { id: 'wf-1', name: 'Weekly Email Summary' },
-        { id: 'wf-2', name: 'Inbox Triage' },
+        { id: 'wf-2', name: 'Bus Image (Quick)' },
       ],
     } as LocalCopilotStructuredContext
 
@@ -49,6 +49,14 @@ describe('mothership-delegated-tools', () => {
     expect(
       resolveWorkflowIdForDelegatedTool({ workflowId: 'Weekly Email Summary' }, ctx)
     ).toBe('wf-1')
+
+    expect(
+      resolveWorkflowIdForDelegatedTool({ workflowId: 'Bus Image Quick' }, ctx)
+    ).toBe('wf-2')
+
+    expect(
+      resolveWorkflowIdForDelegatedTool({ workflowId: 'bus image quick' }, ctx)
+    ).toBe('wf-2')
 
     expect(
       resolveWorkflowIdForDelegatedTool(
