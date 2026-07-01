@@ -25,6 +25,7 @@ export interface ToolExecutionContext {
   workflowId?: string
   chatId?: string
   abortSignal?: AbortSignal
+  userPermission?: string
   structuredContext: LocalCopilotStructuredContext
   selectedBlockId?: string
 }
@@ -46,6 +47,54 @@ export interface ToolExecutionResult {
   createdWorkflowId?: string
 }
 
+function guardCreateWorkflowWhenExistingAvailable(
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext
+): ToolExecutionResult | null {
+  if (args.confirmNewWorkflow === true) return null
+
+  const existing = ctx.structuredContext.workspaceWorkflows ?? []
+  if (existing.length === 0) return null
+
+  const requestedName =
+    typeof args.name === 'string' ? args.name.trim().toLowerCase() : ''
+
+  const matchByName = requestedName
+    ? existing.find((workflow) => workflow.name.toLowerCase() === requestedName)
+    : undefined
+
+  const target = matchByName ?? (existing.length === 1 ? existing[0] : undefined)
+  if (!target) return null
+
+  const reason = matchByName
+    ? `A workflow named "${target.name}" already exists.`
+    : `This workspace has one existing workflow ("${target.name}").`
+
+  const error = `${reason} Use get_workflow_run_options then run_workflow to execute it, or edit_workflow to modify it. Pass confirmNewWorkflow: true only if the user explicitly asked for a separate new workflow.`
+
+  logger.info('Blocked create_workflow in favor of existing workflow', {
+    existingWorkflowId: target.id,
+    requestedName: requestedName || null,
+  })
+
+  return {
+    toolName: 'create_workflow',
+    success: false,
+    error,
+    result: {
+      useRunWorkflowInstead: true,
+      existingWorkflowId: target.id,
+      existingWorkflowName: target.name,
+      existingWorkflows: existing.map((workflow) => ({
+        id: workflow.id,
+        name: workflow.name,
+        isDeployed: workflow.isDeployed ?? false,
+      })),
+      followUpHint: `Call get_workflow_run_options({ workflowId: "${target.id}" }) then run_workflow.`,
+    },
+  }
+}
+
 export async function executeLocalCopilotTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -64,6 +113,9 @@ export async function executeLocalCopilotTool(
 
   switch (toolName) {
     case 'create_workflow': {
+      const blocked = guardCreateWorkflowWhenExistingAvailable(args, ctx)
+      if (blocked) return blocked
+
       const mutation = await runCreateWorkflowTool(args, {
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,

@@ -265,6 +265,7 @@ export async function runLocalCopilotMothershipLifecycle(
       priorMessages,
       persistLocally: false,
       ...(workflowId ? { workflowId } : {}),
+      ...(execContext.userPermission ? { userPermission: execContext.userPermission } : {}),
       signal: options.abortSignal,
     })) {
       if (options.abortSignal?.aborted) {

@@ -77,6 +77,11 @@ export interface LocalCopilotStructuredContext {
     isDeployed?: boolean
     lastRunAt?: string | null
   }>
+  /** Actionable hint injected when existing workflows should be preferred over creating new ones. */
+  guidance?: string
+  knowledgeBases?: Array<{ id: string; name: string; description?: string | null }>
+  tables?: Array<{ id: string; name: string; description?: string | null }>
+  workspaceFiles?: Array<{ id: string; name: string; path: string; type: string; size: number }>
   execution: LocalCopilotExecutionContext
   availableIntegrations: string[]
   availableBlocks: LocalCopilotBlockSummary[]

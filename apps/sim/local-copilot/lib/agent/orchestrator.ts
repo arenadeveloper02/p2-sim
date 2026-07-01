@@ -46,15 +46,21 @@ Response format:
 - Briefly summarize what you see in the workspace (workflows, files, tables, knowledge bases) in plain prose. Do not greet with a generic capability bullet list.
 - When suggesting next steps, end your message with a clickable options block in this exact format (never use markdown bullet lists for suggestions):
 
-<options>{"1":{"title":"Run the Weekly Email Summary","description":"Execute this workflow and summarize the results"},"2":{"title":"Build a new workflow","description":"Create a new automation from scratch"}}</options>
+<options>{"1":{"title":"Run Weekly Email Summary","description":"Execute the existing workflow and summarize results"},"2":{"title":"Debug the last run","description":"Inspect logs from the most recent execution"},"3":{"title":"Create a brand-new workflow","description":"Only when nothing existing fits"}}</options>
 
 - Each option title is sent as the user's next message when they click it — write titles as clear imperative commands (e.g. "Check my inbox", "Debug the last run").
 - Include 3–4 options when offering follow-ups. Omit the options block when no follow-ups are needed.
 
 Rules:
 - You have awareness of the workspace, available blocks/integrations, and (when open) the current workflow structure, variables, logs, and credential metadata (never secrets).
-- On the workspace home chat there may be no workflow open — use create_workflow then edit_workflow to build new workflows.
-- After create_workflow succeeds, immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId.
+- Existing workflows first (CRITICAL):
+  - \`workspaceWorkflows\` lists every workflow in this workspace (id, name, isDeployed, lastRunAt). Read \`guidance\` in context when present.
+  - When the user asks to run, test, execute, try, debug, check, or use a workflow — or their request matches an existing workflow name or purpose — use \`get_workflow_run_options\` then \`run_workflow\` on that workflow. NEVER call \`create_workflow\`.
+  - When only one workflow exists, assume the user means that workflow unless they explicitly ask for something new.
+  - Only call \`create_workflow\` when the user clearly wants a brand-new workflow with a distinct name and purpose. Pass \`confirmNewWorkflow: true\` in that case.
+  - If a workflow already exists with the same or similar name, run or edit it — do not duplicate it.
+- On the workspace home chat there may be no workflow open — still prefer running or editing \`workspaceWorkflows\` entries before creating new ones.
+- After create_workflow succeeds (only when truly new), immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId.
 - When edit_workflow returns skippedItems, inputValidationErrors, workflowLintMessage, or needsFollowUpEdit, call edit_workflow again with corrected operations. Do not tell the user the workflow is complete until these are resolved.
 - deferredConnections in edit_workflow results are normal — the engine wires them when target blocks exist. Do not re-issue deferred edges unless the target id was a typo.
 - Never expose API keys, tokens, passwords, or secret env values.
@@ -71,6 +77,13 @@ Rules:
   - After a run, summarize key block outputs for the user in plain language. Use \`query_logs\` with the returned \`executionId\` for deeper debugging.
   - Use \`list_integration_tools\` to see operations available for a connected integration service.
   - Use \`get_workflow_data\` to load workflow structure when you need details for a workflow that is not currently open.
+- Files, tables, and knowledge bases:
+  - Context includes \`workspaceFiles\` (id, name, vfs path), \`tables\`, and \`knowledgeBases\`.
+  - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
+  - Create files: \`create_file_folder\` when needed, then \`create_file\` or \`workspace_file\` with paths under \`files/\`.
+  - Read or update tables: \`user_table\` — use \`get\` / \`get_schema\` / \`query_rows\` to read; \`create\`, \`insert_row\`, \`batch_insert_rows\`, \`import_file\`, \`create_from_file\` to write.
+  - Knowledge bases: \`knowledge_base\` — \`query\` to search/retrieve; \`add_file\` to ingest a workspace file or URL; \`create\` for new KBs; \`get\` / \`list\` to inspect.
+  - Prefer existing resources in context before creating duplicates (same as workflows).
 - Use tools to inspect context, validate workflows, fetch logs, run tests, and build or edit workflows.
 - When debugging failures, identify root cause, failing block, suggested fix, and test steps.
 - Be concise and actionable.`
@@ -89,6 +102,8 @@ export interface RunAgentParams {
   priorMessages?: ChatMessage[]
   /** When false, skip `local_copilot_*` persistence (mothership chat owns the transcript). */
   persistLocally?: boolean
+  /** Workspace permission for write tools (create_file, user_table create, knowledge_base add_file). */
+  userPermission?: string
 }
 
 export async function* runLocalCopilotAgent(
@@ -174,6 +189,7 @@ export async function* runLocalCopilotAgent(
     workflowId: params.workflowId,
     chatId: params.chatId,
     abortSignal: params.signal,
+    userPermission: params.userPermission,
     structuredContext,
     selectedBlockId: params.selectedBlockId,
   }
@@ -232,6 +248,18 @@ export async function* runLocalCopilotAgent(
         toolCtx.workflowId = result.createdWorkflowId
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
+      } else if (call.name === 'create_workflow' && !result.success) {
+        const output =
+          result.result && typeof result.result === 'object'
+            ? (result.result as Record<string, unknown>)
+            : {}
+        if (
+          output.useRunWorkflowInstead === true &&
+          typeof output.existingWorkflowId === 'string' &&
+          output.existingWorkflowId.trim()
+        ) {
+          toolCtx.workflowId = output.existingWorkflowId.trim()
+        }
       } else if (call.name === 'edit_workflow' && result.success) {
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext

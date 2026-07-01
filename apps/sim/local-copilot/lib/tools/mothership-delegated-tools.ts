@@ -20,8 +20,23 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Loads workflow structure and metadata by workflowId (useful on home chat when no workflow is open).',
   list_integration_tools:
     'Lists available operations for a connected integration service (e.g. firecrawl, slack).',
+  read: 'Reads a workspace file by canonical VFS path (from glob or workspaceFiles in context).',
+  glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
+  grep: 'Searches file contents under a workspace path pattern.',
+  create_file: 'Creates or overwrites workspace files at canonical VFS paths under files/.',
+  create_file_folder: 'Creates a folder under the workspace files tree.',
+  workspace_file:
+    'Reads, creates, appends, updates, or deletes workspace files by path or file id.',
+  download_to_workspace_file: 'Downloads a URL into a workspace file.',
+  user_table:
+    'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file.',
+  knowledge_base:
+    'Manages knowledge bases — operations include create, get, list, query (semantic search), add_file (ingest document), update, delete, add_connector, sync_connector.',
+  open_resource: 'Opens a workspace resource (workflow, file, table, knowledge base) in the UI.',
+  materialize_file: 'Materializes chat-uploaded files into workspace files or table imports.',
 }
 
+/** Tools delegated to registered Mothership/copilot server handlers. */
 export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'run_workflow',
   'run_workflow_until_block',
@@ -29,6 +44,17 @@ export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'query_logs',
   'get_workflow_data',
   'list_integration_tools',
+  'read',
+  'glob',
+  'grep',
+  'create_file',
+  'create_file_folder',
+  'workspace_file',
+  'download_to_workspace_file',
+  'user_table',
+  'knowledge_base',
+  'open_resource',
+  'materialize_file',
 ] as const
 
 export type MothershipDelegatedToolName = (typeof MOTHERSHIP_DELEGATED_TOOL_NAMES)[number]
@@ -187,6 +213,7 @@ export async function executeMothershipDelegatedTool(
     chatId: ctx.chatId,
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
+    userPermission: ctx.userPermission,
   })
 
   if (!result.success) {

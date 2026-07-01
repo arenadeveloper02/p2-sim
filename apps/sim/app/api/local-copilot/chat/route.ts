@@ -31,6 +31,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json({ error: 'Workspace access denied' }, { status: 403 })
   }
 
+  const userPermission = access.canAdmin ? 'admin' : access.canWrite ? 'write' : 'read'
+
   const config = getLocalCopilotConfig()
   const abortController = new AbortController()
   request.signal.addEventListener('abort', () => abortController.abort())
@@ -47,6 +49,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           conversationId: body.conversationId,
           selectedBlockId: body.selectedBlockId,
           executionId: body.executionId,
+          userPermission,
           signal: abortController.signal,
         })) {
           controller.enqueue(encoder.encode(formatSSE(event)))

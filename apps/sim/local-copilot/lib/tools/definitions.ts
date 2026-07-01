@@ -5,7 +5,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'create_workflow',
     description:
-      'Creates a new empty workflow in the workspace. Use before edit_workflow when building from scratch on the home chat.',
+      'Creates a new empty workflow. ONLY when the user explicitly wants a brand-new workflow — never when an existing workspaceWorkflows entry can run or be edited instead. Pass confirmNewWorkflow: true.',
     parameters: {
       type: 'object',
       properties: {
@@ -13,6 +13,11 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
         description: { type: 'string', description: 'Optional workflow description' },
         folderId: { type: 'string', description: 'Optional folder ID' },
         workspaceId: { type: 'string', description: 'Optional workspace ID (defaults to current workspace)' },
+        confirmNewWorkflow: {
+          type: 'boolean',
+          description:
+            'Required true when creating a workflow while other workflows already exist in the workspace.',
+        },
       },
       required: ['name'],
       additionalProperties: false,

@@ -51,6 +51,17 @@ export function formatToolResultForLlm(toolName: string, result: unknown): strin
   }
 
   const record = asRecord(result)
+  if (toolName === 'create_workflow' && record.useRunWorkflowInstead) {
+    return JSON.stringify({
+      ...record,
+      needsFollowUpRun: true,
+      followUpHint:
+        typeof record.followUpHint === 'string'
+          ? record.followUpHint
+          : 'Use get_workflow_run_options then run_workflow on the existing workflow instead of creating a new one.',
+    })
+  }
+
   const { workflowState, workflowLint: _workflowLint, ...rest } = record
 
   const formatted: Record<string, unknown> = { ...rest }

@@ -11,6 +11,7 @@ import {
   loadWorkspaceIntegrations,
   oauthIntegrationsToCredentialMetadata,
 } from '@/local-copilot/lib/context/load-workspace-integrations'
+import { loadWorkspaceResourceSummaries } from '@/local-copilot/lib/context/load-workspace-resources'
 import { isSelfHostedDeployment, getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { buildContextPromptPayload } from '@/local-copilot/lib/context/context-budget'
 import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
@@ -46,6 +47,7 @@ export async function buildLocalCopilotContext(
 
   const integrations = await loadWorkspaceIntegrations(workspaceId, userId)
   const credentials = oauthIntegrationsToCredentialMetadata(integrations.connectedIntegrations)
+  const resources = await loadWorkspaceResourceSummaries(workspaceId)
   const availableBlocks = summarizeBlocks(getAllBlocks())
   const availableIntegrations = [...new Set(availableBlocks.map((block) => block.category))].sort()
 
@@ -53,6 +55,12 @@ export async function buildLocalCopilotContext(
     connectedIntegrations: integrations.connectedIntegrations,
     envVariables: integrations.envVariables,
     hostedKeysAvailable: integrations.hostedKeysAvailable,
+  }
+
+  const resourceContext = {
+    knowledgeBases: resources.knowledgeBases,
+    tables: resources.tables,
+    workspaceFiles: resources.workspaceFiles,
   }
 
   if (!workflowId) {
@@ -75,6 +83,7 @@ export async function buildLocalCopilotContext(
         environment: isSelfHostedDeployment() ? 'self_hosted' : 'cloud',
       },
       ...integrationContext,
+      ...resourceContext,
       execution: {
         lastRunStatus: 'unknown',
         logs: [],
@@ -89,11 +98,20 @@ export async function buildLocalCopilotContext(
         isDeployed: row.isDeployed,
         lastRunAt: row.lastRunAt?.toISOString() ?? null,
       })),
+      ...(workspaceWorkflows.length > 0
+        ? {
+            guidance:
+              'Existing workflows are listed in workspaceWorkflows. When the user wants to run, test, execute, debug, or use a workflow, call get_workflow_run_options then run_workflow on a matching entry — never create_workflow. Only create_workflow when the user explicitly asks for a brand-new workflow with a distinct purpose and name (pass confirmNewWorkflow: true).',
+          }
+        : {}),
     }
 
     logger.info('Built Arena Copilot workspace context', {
       workspaceId,
       workflowCount: workspaceWorkflows.length,
+      fileCount: resources.workspaceFiles.length,
+      tableCount: resources.tables.length,
+      knowledgeBaseCount: resources.knowledgeBases.length,
       envVariableCount: integrations.envVariables.length,
       connectedIntegrationCount: integrations.connectedIntegrations.length,
       provider: getLocalCopilotConfig().provider,
@@ -139,6 +157,7 @@ export async function buildLocalCopilotContext(
       environment: isSelfHostedDeployment() ? 'self_hosted' : 'cloud',
     },
     ...integrationContext,
+    ...resourceContext,
     workflow: {
       id: workflowRow.id,
       name: workflowRow.name ?? 'Untitled workflow',
