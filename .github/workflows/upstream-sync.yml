@@ -138,8 +138,13 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT || secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
 
+      - name: Snapshot harness (resume)
+        if: needs.gate.outputs.resume == 'true'
+        run: cp -a .sandcastle "$RUNNER_TEMP/upstream-sync-harness"
+
       - name: Checkout resume PR branch
         if: needs.gate.outputs.resume == 'true'
+        id: resume_pr
         env:
           COMMENT_PR_NUMBER: ${{ github.event.issue.number }}
           DISPATCH_PR_NUMBER: ${{ github.event.inputs.resume_pr }}
@@ -152,6 +157,11 @@ jobs:
           branch=$(gh pr view "$pr_number" --json headRefName --jq .headRefName)
           git fetch origin "$branch"
           git checkout "$branch"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Restore harness (resume)
+        if: needs.gate.outputs.resume == 'true'
+        run: cp -a "$RUNNER_TEMP/upstream-sync-harness/." .sandcastle/
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -171,6 +181,10 @@ jobs:
             git remote add upstream "https://github.com/${{ env.UPSTREAM_REPO }}.git"
           fi
           git fetch upstream "${{ env.UPSTREAM_BRANCH }}"
+
+      - name: Bootstrap package manager (resume)
+        if: needs.gate.outputs.resume == 'true'
+        run: bun .sandcastle/bootstrap-lockfile.ts ci-resume
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -207,6 +221,7 @@ jobs:
           UPSTREAM_SYNC_FORCE: ${{ needs.gate.outputs.force }}
           UPSTREAM_SYNC_RESUME: ${{ needs.gate.outputs.resume }}
           UPSTREAM_SYNC_SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
+          RESUME_PR_NUMBER: ${{ steps.resume_pr.outputs.pr_number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_HEAD_REF: ${{ github.head_ref || github.ref_name }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
