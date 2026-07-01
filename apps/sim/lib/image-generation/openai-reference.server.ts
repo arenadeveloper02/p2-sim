@@ -6,6 +6,7 @@ import {
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
+import { GPT_IMAGE_2_MAX_REFERENCE_IMAGES } from '@/lib/image-generation/block-model-config'
 import { resolveProviderInlineImageData } from '@/app/api/google/api-service'
 
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024
@@ -28,7 +29,8 @@ interface OpenAIImageEditParams {
   background?: string
   outputFormat?: string
   moderation?: string
-  inputImage: unknown
+  inputImage?: unknown
+  inputImages?: unknown[]
   inputImageMimeType?: string
 }
 
@@ -127,7 +129,8 @@ interface OpenAIImageEditOptions {
 }
 
 /**
- * Generate an OpenAI GPT Image edit using a single reference image.
+ * Generate an OpenAI GPT Image edit using one or more reference images.
+ * GPT Image 2 accepts up to 16 references; other GPT Image models use a single reference.
  */
 export async function generateOpenAIImageEdit(
   apiKey: string,
@@ -149,49 +152,78 @@ export async function generateOpenAIImageEdit(
       moderation: params.moderation,
       inputImageMimeType: params.inputImageMimeType,
       inputImage: summarizeInputImage(params.inputImage),
+      inputImages: Array.isArray(params.inputImages)
+        ? { length: params.inputImages.length, first: summarizeInputImage(params.inputImages[0]) }
+        : undefined,
       maxImageBytes: MAX_IMAGE_BYTES,
       maxImageJsonBytes: MAX_IMAGE_JSON_BYTES,
     })
   }
 
-  const inline = await resolveProviderInlineImageData(
-    params.inputImage,
-    params.inputImageMimeType,
-    options.userId,
-    options.requestId ?? 'openai-image-edit'
-  )
-  if (shouldLogGptImage2) {
-    logGptImage2('reference resolved', {
-      inlineMimeType: inline?.mimeType,
-      inlineBase64Length: inline?.data.length,
-      estimatedInlineBytes: inline ? Math.floor((inline.data.length * 3) / 4) : null,
-    })
-  }
-  if (!inline) {
+  const referenceSources =
+    Array.isArray(params.inputImages) && params.inputImages.length > 0
+      ? params.inputImages
+      : params.inputImage !== undefined && params.inputImage !== null && params.inputImage !== ''
+        ? [params.inputImage]
+        : []
+
+  const supportsMultipleReferences = model === GPT_IMAGE_2_MODEL
+  const sourcesToResolve = supportsMultipleReferences
+    ? referenceSources.slice(0, GPT_IMAGE_2_MAX_REFERENCE_IMAGES)
+    : referenceSources.slice(-1)
+
+  if (sourcesToResolve.length === 0) {
     throw new Error('Reference image is required for OpenAI image editing')
   }
 
+  const resolvedReferences: Array<{ buffer: Buffer; mimeType: string }> = []
+  for (const [index, source] of sourcesToResolve.entries()) {
+    const inline = await resolveProviderInlineImageData(
+      source,
+      params.inputImageMimeType,
+      options.userId,
+      `${options.requestId ?? 'openai-image-edit'}-${index}`
+    )
+    if (shouldLogGptImage2) {
+      logGptImage2('reference resolved', {
+        referenceIndex: index,
+        inlineMimeType: inline?.mimeType,
+        inlineBase64Length: inline?.data.length,
+        estimatedInlineBytes: inline ? Math.floor((inline.data.length * 3) / 4) : null,
+      })
+    }
+    if (!inline) {
+      throw new Error('Reference image is required for OpenAI image editing')
+    }
+
+    if (shouldLogGptImage2) {
+      logGptImage2('reference buffer decode starting', {
+        referenceIndex: index,
+        inlineMimeType: inline.mimeType,
+        inlineBase64Length: inline.data.length,
+      })
+    }
+    const buffer = Buffer.from(inline.data, 'base64')
+    assertKnownSizeWithinLimit(buffer.length, MAX_IMAGE_BYTES, 'OpenAI reference image')
+    if (shouldLogGptImage2) {
+      logGptImage2('reference buffer decoded', {
+        referenceIndex: index,
+        referenceBytes: buffer.length,
+        referenceMimeType: inline.mimeType,
+        referenceExtension: extensionFromContentType(inline.mimeType),
+      })
+    }
+    resolvedReferences.push({ buffer, mimeType: inline.mimeType })
+  }
+
   const form = new FormData()
-  if (shouldLogGptImage2) {
-    logGptImage2('reference buffer decode starting', {
-      inlineMimeType: inline.mimeType,
-      inlineBase64Length: inline.data.length,
-    })
+  for (const [index, reference] of resolvedReferences.entries()) {
+    form.append(
+      'image',
+      new Blob([reference.buffer], { type: reference.mimeType }),
+      `reference-${index}.${extensionFromContentType(reference.mimeType)}`
+    )
   }
-  const buffer = Buffer.from(inline.data, 'base64')
-  assertKnownSizeWithinLimit(buffer.length, MAX_IMAGE_BYTES, 'OpenAI reference image')
-  if (shouldLogGptImage2) {
-    logGptImage2('reference buffer decoded', {
-      referenceBytes: buffer.length,
-      referenceMimeType: inline.mimeType,
-      referenceExtension: extensionFromContentType(inline.mimeType),
-    })
-  }
-  form.append(
-    'image',
-    new Blob([buffer], { type: inline.mimeType }),
-    `reference.${extensionFromContentType(inline.mimeType)}`
-  )
   form.append('prompt', params.prompt)
   form.append('model', model)
   form.append('n', '1')
@@ -206,6 +238,7 @@ export async function generateOpenAIImageEdit(
     logGptImage2('request dispatching', {
       endpoint: 'https://api.openai.com/v1/images/edits',
       formFields: Array.from(form.keys()),
+      referenceCount: resolvedReferences.length,
       timeoutMs: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
     })
   }

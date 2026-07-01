@@ -40,6 +40,7 @@ import {
 } from '@/lib/image-generation/reference-files'
 import {
   getImageBlockModelDefinition,
+  normalizeImageModelId,
   supportsMultipleReferenceImages,
 } from '@/lib/image-generation/block-model-config'
 import { useChatStore } from '@/stores/chat/store'
@@ -230,7 +231,7 @@ export function FileUpload({
     if (typeof modelValue !== 'string' || !modelValue) {
       return undefined
     }
-    return getImageBlockModelDefinition(modelValue)
+    return getImageBlockModelDefinition(normalizeImageModelId(modelValue) ?? modelValue)
   }, [modelValue])
 
   const maxReferenceImages = imageModelDefinition?.maxReferenceImages
@@ -802,10 +803,20 @@ export function FileUpload({
           ? [value]
           : []
   const conversationImages = parsedReferenceValue?.conversationImages ?? []
+  const selectedWorkspaceFile = filesArray[0]
   const hasFiles = useCombinedChatReferenceMode
     ? isUsingStartFiles || filesArray.length > 0 || conversationImages.length > 0
     : filesArray.length > 0
   const isUploading = uploadingFiles.length > 0
+  const showSingleWorkspaceFileSelector =
+    Boolean(selectedWorkspaceFile) && !effectiveMultiple && !isUploading
+  const showSingleFilePicker =
+    !isUploading &&
+    !effectiveMultiple &&
+    !selectedWorkspaceFile &&
+    conversationImages.length === 0 &&
+    !isUsingStartFiles &&
+    (useCombinedChatReferenceMode || !hasFiles)
 
   const handleSetUseStartFiles = (use: boolean) => {
     if (useCombinedChatReferenceMode && parsedReferenceValue) {
@@ -912,8 +923,8 @@ export function FileUpload({
 
   // Find the selected file's workspace ID for highlighting in single file mode
   const selectedFileId = useMemo(() => {
-    if (!hasFiles || effectiveMultiple) return ''
-    const currentFile = filesArray[0]
+    if (!selectedWorkspaceFile || effectiveMultiple) return ''
+    const currentFile = selectedWorkspaceFile
     if (!currentFile) return ''
     // Match by key or path
     const matchedWorkspaceFile = workspaceFiles.find(
@@ -923,7 +934,7 @@ export function FileUpload({
         currentFile.path?.includes(wf.key)
     )
     return matchedWorkspaceFile?.id || ''
-  }, [filesArray, workspaceFiles, hasFiles, effectiveMultiple])
+  }, [selectedWorkspaceFile, workspaceFiles, effectiveMultiple])
 
   const handleComboboxChange = (value: string) => {
     setInputValue(value)
@@ -1107,15 +1118,15 @@ export function FileUpload({
         )
       })()}
 
-      {/* Single file mode with file selected: show combobox-style UI with X and chevron */}
-      {hasFiles && !effectiveMultiple && !isUploading && (
+      {/* Single file mode with a workspace file selected: show combobox-style UI with X and chevron */}
+      {showSingleWorkspaceFileSelector && selectedWorkspaceFile && (
         <SingleFileSelector
-          file={filesArray[0]}
+          file={selectedWorkspaceFile}
           options={singleFileOptions}
           selectedValue={selectedFileId}
           inputValue={inputValue}
           onInputChange={handleComboboxChange}
-          onClear={(e) => handleRemoveFile(filesArray[0], e)}
+          onClear={(e) => handleRemoveFile(selectedWorkspaceFile, e)}
           onOpenChange={(open) => {
             if (open) void refetchWorkspaceFiles()
           }}
@@ -1123,19 +1134,19 @@ export function FileUpload({
           isLoading={loadingWorkspaceFiles}
           formatFileSize={formatFileSize}
           truncateMiddle={truncateMiddle}
-          isDeleting={deletingFiles[filesArray[0]?.path || '']}
+          isDeleting={deletingFiles[selectedWorkspaceFile.path || '']}
           workflowSearchHighlight={getWorkflowSearchLabelHighlight({
             activeSearchTarget,
             blockId,
             subBlockId,
             valuePath: [],
-            label: `${truncateMiddle(filesArray[0].name, 20, 12)} (${formatFileSize(filesArray[0].size)})`,
+            label: `${truncateMiddle(selectedWorkspaceFile.name, 20, 12)} (${formatFileSize(selectedWorkspaceFile.size)})`,
           })}
         />
       )}
 
-      {/* Show dropdown selector if no files and not uploading (single-file mode only) */}
-      {!useCombinedChatReferenceMode && !isUsingStartFiles && !hasFiles && !isUploading && !effectiveMultiple && (
+      {/* Show dropdown selector if no reference is selected (single-file mode only) */}
+      {showSingleFilePicker && (
         <Combobox
           options={comboboxOptions}
           value={inputValue}

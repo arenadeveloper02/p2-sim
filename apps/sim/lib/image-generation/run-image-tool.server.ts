@@ -571,8 +571,10 @@ async function generateWithOpenAI(
   userId: string
 ): Promise<GeneratedImageResult> {
   const model = resolveAllowedParam(body.model, OPENAI_IMAGE_MODELS, 'gpt-image-1.5', 'model')
-  const inputImage = (body as Record<string, unknown>).inputImage
-  const inputImageMimeType = (body as Record<string, unknown>).inputImageMimeType
+  const bodyRecord = body as Record<string, unknown>
+  const inputImage = bodyRecord.inputImage
+  const inputImages = bodyRecord.inputImages
+  const inputImageMimeType = bodyRecord.inputImageMimeType
   const isGptImage2 = model === GPT_IMAGE_2_MODEL
 
   if (isGptImage2) {
@@ -582,8 +584,11 @@ async function generateWithOpenAI(
       promptLength: body.prompt.length,
       hasReferenceImage: hasReferenceImage(body),
       hasInputImage: inputImage !== undefined && inputImage !== null && inputImage !== '',
-      hasInputImages: Array.isArray((body as Record<string, unknown>).inputImages),
+      hasInputImages: Array.isArray(inputImages) && inputImages.length > 0,
       inputImage: summarizeImageInput(inputImage),
+      inputImages: Array.isArray(inputImages)
+        ? { length: inputImages.length, first: summarizeImageInput(inputImages[0]) }
+        : undefined,
       inputImageMimeType,
       requestedSize: body.size,
       requestedQuality: body.quality,
@@ -596,7 +601,7 @@ async function generateWithOpenAI(
     })
   }
 
-  if (hasReferenceImage(body) && inputImage) {
+  if (hasReferenceImage(body)) {
     const editParams = {
       model,
       prompt: body.prompt,
@@ -615,6 +620,7 @@ async function generateWithOpenAI(
         ? pickAllowed(body.moderation, OPENAI_MODERATION_LEVELS, 'auto')
         : undefined,
       inputImage,
+      inputImages: Array.isArray(inputImages) ? inputImages : undefined,
       inputImageMimeType: typeof inputImageMimeType === 'string' ? inputImageMimeType : undefined,
     }
 

@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest'
 import {
   assertGeminiImageModel,
   getDefaultImageModelForProvider,
+  getMaxReferenceImages,
   normalizeImageModelId,
   reconcileImageProviderAndModel,
   resolveImageProviderForModel,
+  supportsMultipleReferenceImages,
 } from '@/lib/image-generation/block-model-config'
 
 describe('resolveImageProviderForModel', () => {
@@ -34,6 +36,13 @@ describe('resolveImageProviderForModel', () => {
   it('normalizes common model typos', () => {
     expect(normalizeImageModelId('gpt-images-2')).toBe('gpt-image-2')
     expect(normalizeImageModelId(' GPT-IMAGE-1-5 ')).toBe('gpt-image-1.5')
+  })
+
+  it('allows multiple reference images for gpt-image-2 and alias gpt-images-2', () => {
+    expect(getMaxReferenceImages('gpt-image-2')).toBe(16)
+    expect(getMaxReferenceImages('gpt-images-2')).toBe(16)
+    expect(supportsMultipleReferenceImages('gpt-image-2')).toBe(true)
+    expect(supportsMultipleReferenceImages('gpt-image-1.5')).toBe(false)
   })
 })
 

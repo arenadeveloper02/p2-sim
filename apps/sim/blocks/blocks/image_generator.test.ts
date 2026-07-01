@@ -164,7 +164,7 @@ describe('ImageGeneratorV2Block', () => {
     expect(params?.inputImage).toBeUndefined()
   })
 
-  it('maps multiple OpenAI reference uploads to a single inputImage', () => {
+  it('maps multiple GPT Image 2 reference uploads to inputImages', () => {
     const params = ImageGeneratorV2Block.tools.config.params?.({
       provider: 'openai',
       model: 'gpt-image-2',
@@ -172,9 +172,34 @@ describe('ImageGeneratorV2Block', () => {
       inputImage: [referenceFileA, referenceFileB],
     })
 
+    expect(params?.inputImages).toHaveLength(2)
+    expect(params?.inputImage).toBeUndefined()
+    expect(params?.inputImageWarning).toBeUndefined()
+  })
+
+  it('maps multiple OpenAI reference uploads to a single inputImage for GPT Image 1.5', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'openai',
+      model: 'gpt-image-1.5',
+      prompt: 'Edit this image',
+      inputImage: [referenceFileA, referenceFileB],
+    })
+
     expect(params?.inputImage).toEqual(referenceFileB)
     expect(params?.inputImages).toBeUndefined()
     expect(params?.inputImageWarning).toBeDefined()
+  })
+
+  it('normalizes gpt-images-2 alias for multi-reference limits', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'openai',
+      model: 'gpt-images-2',
+      prompt: 'Composite these references',
+      inputImage: [referenceFileA, referenceFileB],
+    })
+
+    expect(params?.model).toBe('gpt-image-2')
+    expect(params?.inputImages).toHaveLength(2)
   })
 
   it.skip('preserves multiple uploaded references for Fal.ai Nano Banana 2', () => {

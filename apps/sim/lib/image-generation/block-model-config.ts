@@ -15,13 +15,16 @@ export interface ImageBlockModelDefinition {
   maxReferenceImages: number
 }
 
+/** OpenAI GPT Image 2 supports up to 16 reference images on the edits endpoint. */
+export const GPT_IMAGE_2_MAX_REFERENCE_IMAGES = 16
+
 const OPENAI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
   {
     id: 'gpt-image-2',
     label: 'GPT Image 2',
     provider: 'openai',
     supportsReferenceImages: true,
-    maxReferenceImages: 1,
+    maxReferenceImages: GPT_IMAGE_2_MAX_REFERENCE_IMAGES,
   },
   {
     id: 'gpt-image-1.5',
@@ -266,7 +269,8 @@ export function getImageBlockModelsForProvider(provider: string): ImageBlockMode
 }
 
 export function getImageBlockModelDefinition(modelId: string): ImageBlockModelDefinition | undefined {
-  return IMAGE_BLOCK_MODEL_DEFINITIONS.find((model) => model.id === modelId)
+  const normalized = normalizeImageModelId(modelId) ?? modelId
+  return IMAGE_BLOCK_MODEL_DEFINITIONS.find((model) => model.id === normalized)
 }
 
 export function getReferenceImageModelIds(): string[] {

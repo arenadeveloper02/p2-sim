@@ -1234,12 +1234,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     inputImage: {
       type: 'json',
       description:
-        'Reference images as uploaded files, Start block files, or file references. OpenAI models accept one image; Gemini models support multi-image fusion (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana).',
+        'Reference images as uploaded files, Start block files, or file references. GPT Image 2 accepts up to 16 references; other OpenAI models accept one. Gemini models support multi-image fusion (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana).',
     },
     inputImageUrl: {
       type: 'string',
       description:
-        'Reference image URLs or refs. OpenAI models accept one image; Gemini models support multi-image fusion (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana).',
+        'Reference image URLs or refs. GPT Image 2 accepts up to 16 references; other OpenAI models accept one. Gemini models support multi-image fusion (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana).',
     },
     inputImages: {
       type: 'json',
