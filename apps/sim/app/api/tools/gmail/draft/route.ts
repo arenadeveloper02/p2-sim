@@ -139,7 +139,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           content: resolved[i].buffer,
         }))
 
-
         const mimeMessage = buildMimeMessage({
           to: validatedData.to,
           cc: validatedData.cc ?? undefined,
