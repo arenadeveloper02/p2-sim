@@ -1,17 +1,12 @@
 'use client'
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { MoreHorizontal, Pin } from 'lucide-react'
-import Image from 'next/image'
-import Link from 'next/link'
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { usePostHog } from 'posthog-js/react'
 import {
   Button,
   Chip,
   ChipLink,
   chipVariants,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -23,7 +18,7 @@ import {
   Skeleton,
   Tooltip,
   Upload,
-} from '@/components/emcn'
+} from '@sim/emcn'
 import {
   ArrowLeft,
   BookOpen,
@@ -39,10 +34,14 @@ import {
   Table,
   Task,
   Workflow,
-} from '@/components/emcn/icons'
+} from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { MoreHorizontal, Pin } from 'lucide-react'
+import Link from 'next/link'
+import { useParams, usePathname, useRouter } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { cn } from '@/lib/core/utils/cn'
 import { isMacPlatform } from '@/lib/core/utils/platform'
 import { buildFolderTree, getFolderPath } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'

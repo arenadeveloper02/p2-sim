@@ -1,5 +1,6 @@
 'use client'
 
+import { cn } from '@sim/emcn'
 import { useBrandConfig } from '@/ee/whitelabeling'
 
 export interface SupportFooterProps {
@@ -11,7 +12,10 @@ export function SupportFooter({ position = 'fixed' }: SupportFooterProps) {
 
   return (
     <div
-      className={`right-0 bottom-0 left-0 z-50 pb-8 text-center font-[340] text-[var(--landing-text-muted)] text-small leading-relaxed ${position}`}
+      className={cn(
+        'right-0 bottom-0 left-0 z-50 pb-8 text-center text-[var(--text-muted)] text-caption leading-relaxed',
+        position
+      )}
     >
       Need help?{' '}
       <a

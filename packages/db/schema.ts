@@ -926,8 +926,6 @@ export const userStats = pgTable('user_stats', {
   /** @deprecated Retired usage counter; derive from usage_log. */
   totalMcpExecutions: integer('total_mcp_executions').notNull().default(0),
   /** @deprecated Retired usage counter; derive from usage_log. */
-  totalA2aExecutions: integer('total_a2a_executions').notNull().default(0),
-  /** @deprecated Retired usage counter; derive from usage_log. */
   totalTokensUsed: bigint('total_tokens_used', { mode: 'number' }).notNull().default(0),
   /** @deprecated Not written (recordUsage appends to usage_log); legacy/admin reads only. Move readers to ledger aggregation. */
   totalCost: decimal('total_cost').notNull().default('0'),
@@ -984,6 +982,21 @@ export const userStats = pgTable('user_stats', {
   lastActive: timestamp('last_active').notNull().defaultNow(),
   billingBlocked: boolean('billing_blocked').notNull().default(false),
   billingBlockedReason: billingBlockedReasonEnum('billing_blocked_reason'),
+  /**
+   * Highest usage-limit threshold already emailed per category (e.g.
+   * `{ storage: 80, tables: 100 }`). Prevents re-spamming the same warning;
+   * re-arms when usage drops back below the re-arm band. Keyed by limit
+   * category ('storage' | 'tables'); seats live on `organization`.
+   *
+   * Dedup granularity is per billing account per category — intentionally NOT
+   * per table, so a user hitting the row limit on several tables gets one
+   * 'tables' warning, not one per table (the email still names the table that
+   * triggered it).
+   */
+  limitNotifications: jsonb('limit_notifications')
+    .$type<Record<string, number>>()
+    .notNull()
+    .default({}),
 })
 
 export const customTools = pgTable(
@@ -1167,12 +1180,28 @@ export interface PiiRedactionRule {
   entityTypes: string[]
   /** `null` = all workspaces; otherwise the single targeted workspace. */
   workspaceId: string | null
+  /** Language whose Presidio recognizers apply (e.g. 'en', 'es'); defaults to English. */
+  language?: string
+}
+
+/**
+ * A per-workspace override of the org-level retention hours. Each field is
+ * tri-state: absent = inherit the org value; a number = that workspace's
+ * retention in hours; `null` = forever (never delete). `workspaceId` is unique
+ * across overrides.
+ */
+export interface RetentionOverride {
+  workspaceId: string
+  logRetentionHours?: number | null
+  softDeleteRetentionHours?: number | null
+  taskCleanupHours?: number | null
 }
 
 /**
  * Org-level data retention + governance settings. Retention-hours fall back to
  * plan defaults when unset. `piiRedaction.rules` are org-scoped; each rule
- * selects which workspaces it applies to.
+ * selects which workspaces it applies to. `retentionOverrides` lets individual
+ * workspaces override the org retention hours (enterprise only).
  */
 export interface DataRetentionSettings {
   logRetentionHours?: number | null
@@ -1182,6 +1211,8 @@ export interface DataRetentionSettings {
   piiRedaction?: {
     rules?: PiiRedactionRule[]
   } | null
+  /** Per-workspace overrides of the retention hours above (enterprise only). */
+  retentionOverrides?: RetentionOverride[] | null
 }
 
 export const organization = pgTable('organization', {
@@ -1212,6 +1243,15 @@ export const organization = pgTable('organization', {
    * changes; personal storage writes update `user_stats.storageUsedBytes`.
    */
   storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull().default(0),
+  /**
+   * Highest usage-limit threshold already emailed per category for this org
+   * (e.g. `{ seats: 80, storage: 100 }`). Mirrors `user_stats.limitNotifications`
+   * for org-scoped (pooled) limits. Re-arms when usage drops below the re-arm band.
+   */
+  limitNotifications: jsonb('limit_notifications')
+    .$type<Record<string, number>>()
+    .notNull()
+    .default({}),
   departedMemberUsage: decimal('departed_member_usage').notNull().default('0'),
   /**
    * Organization credit balance tracker.
@@ -1373,6 +1413,10 @@ export const workspace = pgTable(
     inboxAddress: text('inbox_address'),
     inboxProviderId: text('inbox_provider_id'),
     archivedAt: timestamp('archived_at'),
+    forkedFromWorkspaceId: text('forked_from_workspace_id').references(
+      (): AnyPgColumn => workspace.id,
+      { onDelete: 'set null' }
+    ),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -1380,6 +1424,230 @@ export const workspace = pgTable(
     ownerIdIdx: index('workspace_owner_id_idx').on(table.ownerId),
     organizationIdIdx: index('workspace_organization_id_idx').on(table.organizationId),
     workspaceModeIdx: index('workspace_mode_idx').on(table.workspaceMode),
+    forkedFromWorkspaceIdx: index('workspace_forked_from_workspace_id_idx').on(
+      table.forkedFromWorkspaceId
+    ),
+  })
+)
+
+export const workspaceForkResourceTypeEnum = pgEnum('workspace_fork_resource_type', [
+  'workflow',
+  'oauth_credential',
+  'service_account_credential',
+  'env_var',
+  'table',
+  'knowledge_base',
+  'knowledge_document',
+  'file',
+  'mcp_server',
+  'custom_tool',
+  'skill',
+])
+
+export const workspaceForkResourceMap = pgTable(
+  'workspace_fork_resource_map',
+  {
+    id: text('id').primaryKey(),
+    childWorkspaceId: text('child_workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    resourceType: workspaceForkResourceTypeEnum('resource_type').notNull(),
+    parentResourceId: text('parent_resource_id').notNull(),
+    childResourceId: text('child_resource_id'),
+    // SET NULL (not CASCADE): deleting the creating user must not delete the fork's
+    // identity mappings, which the edge depends on for every future promote.
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    childWorkspaceIdx: index('workspace_fork_resource_map_child_ws_idx').on(table.childWorkspaceId),
+    childWorkspaceTypeIdx: index('workspace_fork_resource_map_child_ws_type_idx').on(
+      table.childWorkspaceId,
+      table.resourceType
+    ),
+    childTypeParentUnique: uniqueIndex('workspace_fork_resource_map_child_type_parent_unique').on(
+      table.childWorkspaceId,
+      table.resourceType,
+      table.parentResourceId
+    ),
+  })
+)
+
+/**
+ * Stable 1:1 block-identity map between a fork (child) and its parent, per edge. Seeded at
+ * fork creation (parent block -> derived child block) and reconciled on every promote.
+ * Promote looks a source block up here to reuse its counterpart's EXISTING id instead of
+ * re-deriving: without it, pushing a fork's workflow over the parent would re-key the
+ * parent's blocks and change their webhook URLs (the path falls back to the block id).
+ *
+ * Each pair records BOTH workflow ids so a lookup can be scoped to the workflow it belongs
+ * to: a target workflow that was archived and re-created gets a fresh id (the pair no longer
+ * matches), which avoids reusing an archived workflow's block id and colliding on the global
+ * `workflow_blocks` primary key. Block ids are plain text (no FK to `workflow_blocks`, which
+ * is rewritten on every deploy); only the edge (`child_workspace_id`) cascades. A parent
+ * block can map to different children across sibling forks, so uniqueness is per (edge,
+ * parent) and per (edge, child).
+ */
+export const workspaceForkBlockMap = pgTable(
+  'workspace_fork_block_map',
+  {
+    id: text('id').primaryKey(),
+    childWorkspaceId: text('child_workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    parentWorkflowId: text('parent_workflow_id').notNull(),
+    parentBlockId: text('parent_block_id').notNull(),
+    childWorkflowId: text('child_workflow_id').notNull(),
+    childBlockId: text('child_block_id').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // Pull resolves parent source block -> child target; one child per parent block per edge.
+    childWsParentBlockUnique: uniqueIndex('workspace_fork_block_map_child_ws_parent_unique').on(
+      table.childWorkspaceId,
+      table.parentBlockId
+    ),
+    // Push resolves child source block -> parent target; one parent per child block per edge.
+    childWsChildBlockUnique: uniqueIndex('workspace_fork_block_map_child_ws_child_unique').on(
+      table.childWorkspaceId,
+      table.childBlockId
+    ),
+    // Reconcile deletes a source workflow's pairs by its (stable) workflow id before
+    // re-inserting the live ones, so index both workflow sides for that sweep.
+    childWsParentWorkflowIdx: index('workspace_fork_block_map_child_ws_parent_wf_idx').on(
+      table.childWorkspaceId,
+      table.parentWorkflowId
+    ),
+    childWsChildWorkflowIdx: index('workspace_fork_block_map_child_ws_child_wf_idx').on(
+      table.childWorkspaceId,
+      table.childWorkflowId
+    ),
+  })
+)
+
+/**
+ * The user's stored dependent-field re-picks for an edge: a (target workflow, target block,
+ * subblock) -> selected value mapping (a Gmail label, a KB document, a sheet tab). The sync
+ * modal reads and writes this, and every promote applies it verbatim - it is the single
+ * source of truth for dependent values, replacing the old implicit "preserve the target's
+ * value if the credential is unchanged" path. Block ids are plain text (no FK to
+ * `workflow_blocks`, which is rewritten on every deploy); only the edge (`child_workspace_id`)
+ * cascades. The target workflow id encodes direction (push -> parent workflow, pull -> child
+ * workflow), so no separate direction column is needed.
+ */
+export const workspaceForkDependentValue = pgTable(
+  'workspace_fork_dependent_value',
+  {
+    id: text('id').primaryKey(),
+    childWorkspaceId: text('child_workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    targetWorkflowId: text('target_workflow_id').notNull(),
+    targetBlockId: text('target_block_id').notNull(),
+    subBlockKey: text('sub_block_key').notNull(),
+    value: text('value').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // Reconcile replaces a workflow's stored values by its id, so index that sweep.
+    childWsWorkflowIdx: index('workspace_fork_dependent_value_child_ws_wf_idx').on(
+      table.childWorkspaceId,
+      table.targetWorkflowId
+    ),
+    // One stored value per (edge, target workflow, target block, subblock).
+    childWsFieldUnique: uniqueIndex('workspace_fork_dependent_value_field_unique').on(
+      table.childWorkspaceId,
+      table.targetWorkflowId,
+      table.targetBlockId,
+      table.subBlockKey
+    ),
+  })
+)
+
+export const workspaceForkPromoteDirectionEnum = pgEnum('workspace_fork_promote_direction', [
+  'push',
+  'pull',
+])
+
+export const workspaceForkPromoteRun = pgTable(
+  'workspace_fork_promote_run',
+  {
+    id: text('id').primaryKey(),
+    childWorkspaceId: text('child_workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    sourceWorkspaceId: text('source_workspace_id').notNull(),
+    targetWorkspaceId: text('target_workspace_id').notNull(),
+    direction: workspaceForkPromoteDirectionEnum('direction').notNull(),
+    snapshot: jsonb('snapshot').notNull(),
+    // SET NULL (not CASCADE): deleting the creating user must not delete a pending
+    // undo point for a target workspace.
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // One undo point per (edge, target) so a push (target=parent) and a pull
+    // (target=child) on the same edge keep independent undo points.
+    childWorkspaceTargetUnique: uniqueIndex('workspace_fork_promote_run_child_ws_target_unique').on(
+      table.childWorkspaceId,
+      table.targetWorkspaceId
+    ),
+    targetWorkspaceIdx: index('workspace_fork_promote_run_target_ws_idx').on(
+      table.targetWorkspaceId
+    ),
+  })
+)
+
+export const backgroundWorkKindEnum = pgEnum('background_work_kind', [
+  'deployment_side_effects',
+  'fork_content_copy',
+  'fork_sync',
+  'fork_rollback',
+])
+
+export const backgroundWorkStatusValueEnum = pgEnum('background_work_status_value', [
+  'pending',
+  'processing',
+  'completed',
+  'completed_with_warnings',
+  'failed',
+])
+
+/**
+ * Durable status for asynchronous background work (post-sync/rollback deployment
+ * side-effects and fork content copy), so the canvas can show a "work in progress"
+ * banner that survives a reload. A row scoped to a single workflow sets `workflowId`;
+ * workspace-spanning work (fork content copy) leaves it null.
+ */
+export const backgroundWorkStatus = pgTable(
+  'background_work_status',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'cascade' }),
+    kind: backgroundWorkKindEnum('kind').notNull(),
+    status: backgroundWorkStatusValueEnum('status').notNull(),
+    message: text('message'),
+    error: text('error'),
+    metadata: jsonb('metadata'),
+    startedAt: timestamp('started_at').notNull().defaultNow(),
+    completedAt: timestamp('completed_at'),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceStatusIdx: index('background_work_status_workspace_status_idx').on(
+      table.workspaceId,
+      table.status
+    ),
+    workflowStatusIdx: index('background_work_status_workflow_status_idx').on(
+      table.workflowId,
+      table.status
+    ),
   })
 )
 
@@ -3439,11 +3707,10 @@ export const credentialSetInvitation = pgTable(
  * an organization.
  *
  * Scope invariant: the organization's single default group (`isDefault`) is
- * org-wide (`appliesToAllWorkspaces = true`) and governs everyone not covered by
- * another group, including external workspace members. Every non-default group
- * targets specific workspaces (`appliesToAllWorkspaces = false` with rows in
- * `permission_group_workspace`) — the all-workspaces scope is reserved for the
- * default group. Enforced by the API contracts/routes, not a DB constraint.
+ * org-wide and governs everyone not covered by another group. Every non-default
+ * group targets specific workspaces (rows in `permission_group_workspace`), and a
+ * non-default group with no rows governs nothing. Being org-wide is definitionally
+ * `isDefault` — there is no separate flag. Enforced by the API contracts/routes.
  *
  * Member invariant: a non-default group with no `permission_group_member` rows
  * governs every member of its workspaces (including external members); adding
@@ -3466,7 +3733,6 @@ export const permissionGroup = pgTable(
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     isDefault: boolean('is_default').notNull().default(false),
-    appliesToAllWorkspaces: boolean('applies_to_all_workspaces').notNull().default(true),
   },
   (table) => ({
     createdByIdx: index('permission_group_created_by_idx').on(table.createdBy),
@@ -3481,9 +3747,9 @@ export const permissionGroup = pgTable(
 )
 
 /**
- * Workspaces a `permission_group` targets when `applies_to_all_workspaces` is
- * false. Rows are absent for organization-wide groups. A group with zero rows
- * while `applies_to_all_workspaces = false` governs no workspace.
+ * Workspaces a non-default `permission_group` targets. Rows are absent for the
+ * organization-wide default group; a non-default group with zero rows governs no
+ * workspace.
  */
 export const permissionGroupWorkspace = pgTable(
   'permission_group_workspace',

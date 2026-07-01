@@ -4,8 +4,8 @@ import { buildSelectorContextFromBlock } from '@/lib/workflows/subblocks/context
 import { getBlock } from '@/blocks/registry'
 import { SELECTOR_TYPES_HYDRATION_REQUIRED, type SubBlockConfig } from '@/blocks/types'
 import { CREDENTIAL_SET, isUuid } from '@/executor/constants'
-import { fetchCredentialSetById } from '@/hooks/queries/credential-sets'
 import { fetchOAuthCredentialDetail } from '@/hooks/queries/oauth/oauth-credentials'
+import { fetchCredentialSetById } from '@/hooks/queries/utils/fetch-credential-set'
 import { getSelectorDefinition, loadAllSelectorOptions } from '@/hooks/selectors/registry'
 import { resolveSelectorForSubBlock } from '@/hooks/selectors/resolution'
 import type { SelectorContext, SelectorKey } from '@/hooks/selectors/types'
@@ -182,7 +182,11 @@ function extractSelectorContext(
 ): SelectorContext {
   const block = currentState.blocks?.[blockId]
   if (!block?.subBlocks) return { workflowId, workspaceId }
-  return buildSelectorContextFromBlock(block.type, block.subBlocks, { workflowId, workspaceId })
+  return buildSelectorContextFromBlock(block.type, block.subBlocks, {
+    workflowId,
+    workspaceId,
+    canonicalModes: block.data?.canonicalModes,
+  })
 }
 
 /**

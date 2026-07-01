@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { maskPIIBatchViaHttp } from '@/lib/guardrails/mask-client'
 
 const logger = createLogger('PiiRedaction')
 
@@ -131,6 +132,7 @@ export async function redactPIIFromExecution(
 ): Promise<RedactablePayload> {
   const { entityTypes } = options
   const language = options.language ?? 'en'
+  const startedAt = performance.now()
 
   const units = REDACTABLE_KEYS.filter((key) => payload[key] !== undefined).map((key) => ({
     key,
@@ -150,25 +152,26 @@ export async function redactPIIFromExecution(
   if (collected.length === 0) return payload
 
   let masked: string[]
+  let scrubbed = false
   if (totalBytes > PII_MAX_TOTAL_BYTES) {
     logger.warn('Execution exceeds PII redaction ceiling; scrubbing text', {
       totalBytes,
       ceiling: PII_MAX_TOTAL_BYTES,
     })
     masked = collected.map(() => REDACTION_FAILED_MARKER)
+    scrubbed = true
   } else {
     try {
-      // Lazy import keeps the Python-spawning guardrails module (child_process +
-      // a `lib/guardrails` dir reference) out of the static middleware/RSC graph;
-      // it's only loaded at runtime on the Node log-persist path.
-      const { maskPIIBatch } = await import('@/lib/guardrails/validate_pii')
-      masked = await maskPIIBatch(collected, entityTypes, language)
+      // Presidio runs only in the app container; the persist path also runs in
+      // the trigger.dev runtime, so masking always goes over HTTP to the app.
+      masked = await maskPIIBatchViaHttp(collected, entityTypes, language)
     } catch (error) {
       logger.error('PII masking failed; scrubbing text to avoid leaking PII', {
         error: getErrorMessage(error),
         stringCount: collected.length,
       })
       masked = collected.map(() => REDACTION_FAILED_MARKER)
+      scrubbed = true
     }
   }
 
@@ -177,5 +180,12 @@ export async function redactPIIFromExecution(
   for (const unit of units) {
     result[unit.key] = transformUnit(unit.key, unit.value, () => masked[index++])
   }
+
+  logger.info('PII redaction completed', {
+    stringCount: collected.length,
+    totalBytes,
+    durationMs: Math.round(performance.now() - startedAt),
+    scrubbed,
+  })
   return result
 }
