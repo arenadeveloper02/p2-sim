@@ -62,7 +62,11 @@ export function buildChartsFromTable(
   const metricNames = collectMetricNames(rows)
   if (metricNames.length === 0) return []
 
-  const hasDates = rows.some((r) => !!r.date)
+  // A time series is only meaningful with 2+ distinct dates. Aggregated
+  // responses (e.g. Facebook time_increment=all_days) share a single date, so
+  // fall back to a by-category chart which is far more useful.
+  const distinctDates = new Set(rows.map((r) => r.date).filter((d): d is string => !!d))
+  const hasDates = distinctDates.size >= 2
   const specs: ChartSpec[] = []
 
   if (hasDates) {

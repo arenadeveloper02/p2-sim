@@ -182,5 +182,9 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
       type: 'string',
       description: 'Original query',
     },
+    visualizations: {
+      type: 'json',
+      description: 'Interactive chart specs auto-rendered in chat (2D/3D)',
+    },
   },
 }

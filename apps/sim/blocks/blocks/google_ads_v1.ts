@@ -177,6 +177,10 @@ Generate a clear, specific prompt for what the user wants to query from Google A
     metrics_used: { type: 'json', description: 'List of metrics used in the query' },
     results: { type: 'json', description: 'Query results with campaigns and totals' },
     account: { type: 'json', description: 'Account information (id, name)' },
+    visualizations: {
+      type: 'json',
+      description: 'Interactive chart specs auto-rendered in chat (2D/3D)',
+    },
     execution_time_ms: { type: 'number', description: 'Query execution time in milliseconds' },
   },
 }
