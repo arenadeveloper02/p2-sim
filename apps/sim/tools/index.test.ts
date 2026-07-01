@@ -68,6 +68,14 @@ vi.mock('@/lib/core/config/env', () => ({
   getEnv: (key: string) => mockEnv[key],
   isTruthy: (val: unknown) => val === true || val === 'true' || val === '1',
   isFalsy: (val: unknown) => val === false || val === 'false' || val === '0',
+  envBoolean: (value: boolean | string | undefined | null): boolean | undefined => {
+    if (typeof value === 'boolean') return value
+    if (value === undefined || value === null || value === '') return undefined
+    const normalized = String(value).trim().toLowerCase()
+    return (
+      normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on'
+    )
+  },
 }))
 
 // Mock getBYOKKey

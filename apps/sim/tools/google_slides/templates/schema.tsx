@@ -4,7 +4,9 @@
 
 /* ---------- Block Types ---------- */
 
-export type BlockType = 'TEXT' | 'IMAGE'
+export type BlockType = 'TEXT' | 'IMAGE' | 'TABLE'
+
+export type BlockContent = string | string[] | string[][]
 
 /* ---------- Base Block ---------- */
 
@@ -13,7 +15,7 @@ export interface BaseBlock {
   type: BlockType
   description: string // Used by LLM to generate content
   shapeId: string // TEMPLATE shapeId (never runtime slide ID)
-  content: string | string[] // Filled by LLM ("" initially)
+  content: BlockContent // Filled by LLM ("" initially)
 }
 
 /* ---------- Text Blocks ---------- */
@@ -59,9 +61,34 @@ export interface ImageBlock extends BaseBlock {
   replaceable: boolean
 }
 
+/* ---------- Table Block ---------- */
+
+export interface TableBlock extends BaseBlock {
+  type: 'TABLE'
+  role: 'DATA_TABLE'
+  content: string[][]
+  /** Maximum rows the template table supports (trim/delete extras beyond content). */
+  maxRows: number
+  /** Maximum columns the template table supports (trim/delete extras beyond content). */
+  maxColumns: number
+  /** Minimum rows to retain after trimming (template must include at least this many). */
+  minRows?: number
+  /** Minimum columns to retain after trimming (template must include at least this many). */
+  minColumns?: number
+  /** When true, column 0 holds row labels (e.g. "Title 1", "Title 2"). */
+  rowLabelColumn?: boolean
+  /** When true, row 0 holds column headers. */
+  headerRow?: boolean
+  cellConstraints: {
+    minChars: number
+    maxChars: number
+    description?: string
+  }
+}
+
 /* ---------- Union Block ---------- */
 
-export type Block = TextBlock | ListBlock | ImageBlock
+export type Block = TextBlock | ListBlock | ImageBlock | TableBlock
 
 /* ---------- Slide Schema ---------- */
 

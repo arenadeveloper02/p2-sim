@@ -108,8 +108,8 @@ const CustomSelect = React.forwardRef<HTMLButtonElement, CustomSelectProps>(
           onKeyDown={handleKeyDown}
           disabled={disabled}
           className={cn(
-            'flex h-[34px] w-full items-center justify-between rounded-[8px] border border-input bg-gray-100 px-2 py-[6px] font-medium font-sans text-base md:text-sm',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'flex h-[34px] w-full items-center justify-between rounded-[8px] border border-input bg-input-background px-2 py-[6px] font-medium font-sans text-base text-foreground md:text-sm',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
             'disabled:cursor-not-allowed disabled:opacity-50',
             'cursor-pointer',
             !selectedValue && 'text-muted-foreground',
@@ -124,7 +124,7 @@ const CustomSelect = React.forwardRef<HTMLButtonElement, CustomSelectProps>(
           </span>
           <ChevronDown
             className={cn(
-              'ml-2 h-4 w-4 flex-shrink-0 opacity-50 transition-transform',
+              'ml-2 size-4 flex-shrink-0 text-muted-foreground transition-transform',
               isOpen && 'rotate-180'
             )}
           />
@@ -134,7 +134,7 @@ const CustomSelect = React.forwardRef<HTMLButtonElement, CustomSelectProps>(
           <div
             ref={dropdownRef}
             className={cn(
-              'absolute z-50 mt-1 w-full overflow-hidden rounded-[8px] border bg-popover text-popover-foreground shadow-md',
+              'absolute z-50 mt-1 w-full overflow-hidden rounded-[8px] border border-input bg-popover text-popover-foreground shadow-md',
               'fade-in-0 zoom-in-95 animate-in'
             )}
             role='listbox'
@@ -158,14 +158,14 @@ const CustomSelect = React.forwardRef<HTMLButtonElement, CustomSelectProps>(
                   aria-selected={selectedValue === option.value}
                   tabIndex={-1}
                   className={cn(
-                    'relative flex w-full cursor-pointer select-none items-center rounded-[4px] px-2 py-1.5 font-medium font-sans text-base outline-none hover:bg-accent hover:text-accent-foreground md:text-sm',
+                    'relative flex w-full cursor-pointer select-none items-center rounded-[4px] px-2 py-1.5 font-medium font-sans text-base text-popover-foreground outline-none hover:bg-accent hover:text-accent-foreground md:text-sm',
                     index === highlightedIndex && 'bg-accent text-accent-foreground',
                     selectedValue === option.value && 'bg-accent/50'
                   )}
                 >
                   <span className='flex-1 truncate'>{option.label}</span>
                   {selectedValue === option.value && (
-                    <Check className='ml-2 h-4 w-4 flex-shrink-0' />
+                    <Check className='ml-2 size-4 flex-shrink-0 text-popover-foreground' />
                   )}
                 </div>
               ))}
