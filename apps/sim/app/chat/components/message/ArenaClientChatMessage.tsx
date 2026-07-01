@@ -19,6 +19,9 @@ import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
+import type { ChartSpec } from '@/lib/chat/chart-types'
+import { extractVisualizations } from '@/lib/chat/chart-types'
+import { ChartRenderer } from '@/app/chat/components/message/components/chart-renderer'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 import type {
@@ -59,6 +62,8 @@ export interface ChatMessage {
   generatedImages?: AssistantGeneratedImage[]
   knowledgeResults?: KnowledgeResultChunk[]
   knowledgeRefs?: KnowledgeRef[]
+  /** Backend-provided interactive chart specs rendered under the message. */
+  visualizations?: ChartSpec[]
 }
 
 // function EnhancedMarkdownRenderer({ content }: { content: string }) {
@@ -651,6 +656,19 @@ export const ArenaClientChatMessage = memo(
     /** Hide during streaming; show only when done and user has access to at least one ref (streaming + history). */
     const showReferencesSection = !message.isStreaming && visibleChunkRefs.length > 0
 
+    /**
+     * Backend-provided chart specs. Prefer the field set by the streaming hook;
+     * fall back to scanning the message content (covers history reload where the
+     * spec is persisted inside the stored output object).
+     */
+    const messageVisualizations = useMemo<ChartSpec[]>(() => {
+      if (message.type !== 'assistant') return []
+      if (Array.isArray(message.visualizations) && message.visualizations.length > 0) {
+        return message.visualizations
+      }
+      return extractVisualizations(message.content)
+    }, [message.type, message.visualizations, message.content])
+
     const openKnowledgeModal = useCallback(
       (documentName: string, chunks: KnowledgeResultChunk[], viewInKbUrl?: string) => {
         setKnowledgeModalDoc({ documentName, chunks, viewInKbUrl })
@@ -919,6 +937,9 @@ export const ArenaClientChatMessage = memo(
                 )} */}
               </div>
             </div>
+            {message.type === 'assistant' && messageVisualizations.length > 0 && (
+              <ChartRenderer specs={messageVisualizations} />
+            )}
             {message.type === 'assistant' && message.isStreaming && (
               <div className='mt-2 flex items-center gap-2 text-muted-foreground text-sm'>
                 <div className='flex gap-1' aria-hidden>
@@ -1176,6 +1197,7 @@ export const ArenaClientChatMessage = memo(
       prevProps.message.generatedImages?.length === nextProps.message.generatedImages?.length &&
       prevProps.message.knowledgeResults?.length === nextProps.message.knowledgeResults?.length &&
       prevProps.message.knowledgeRefs?.length === nextProps.message.knowledgeRefs?.length &&
+      prevProps.message.visualizations === nextProps.message.visualizations &&
       prevProps.workspaceIdsForKbLinks?.length === nextProps.workspaceIdsForKbLinks?.length &&
       prevProps.onCopySegmentToInput === nextProps.onCopySegmentToInput &&
       prevProps.onToggleGeneratedImage === nextProps.onToggleGeneratedImage &&

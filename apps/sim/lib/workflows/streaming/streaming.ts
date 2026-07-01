@@ -457,6 +457,27 @@ async function buildMinimalResult(
     selectedOutputBytes = assertSelectedOutputBytes(minimalResult.output)
   }
 
+  // Chart specs (e.g. Google/Facebook Ads) live on tool block outputs that are
+  // often NOT the selected chat output, so they'd otherwise be filtered out
+  // above. Surface any `visualizations` array so the chat can render charts
+  // regardless of which block output is selected. Additive and defensive: it
+  // never overwrites existing values and no-ops when no visualizations exist.
+  for (const log of result.logs) {
+    const blockId = log.blockId
+    if (!blockId || isDangerousKey(blockId)) continue
+    const blockOutput = log.output as Record<string, unknown> | undefined
+    const viz = blockOutput?.visualizations
+    if (!Array.isArray(viz) || viz.length === 0) continue
+
+    const existing =
+      (minimalResult.output[blockId] as Record<string, unknown> | undefined) ??
+      (Object.create(null) as Record<string, unknown>)
+    if (existing.visualizations === undefined) {
+      existing.visualizations = viz
+      minimalResult.output[blockId] = existing
+    }
+  }
+
   return minimalResult
 }
 
