@@ -68,6 +68,41 @@ export function ensureGrillLogExists(): void {
   }
 }
 
+export function readQaHistory(): GrillQaEntry[] {
+  try {
+    return readFileSync(QA_HISTORY_PATH, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as GrillQaEntry)
+  } catch {
+    return []
+  }
+}
+
+export function findOpenSyncPr(mergeBase: string, branch: string): number {
+  const { owner, repo } = repoSlug()
+  try {
+    const raw = runGh([
+      'pr',
+      'list',
+      '--repo',
+      `${owner}/${repo}`,
+      '--base',
+      mergeBase,
+      '--head',
+      `${owner}:${branch}`,
+      '--state',
+      'open',
+      '--json',
+      'number',
+    ])
+    const prs = JSON.parse(raw) as Array<{ number: number }>
+    return prs[0]?.number ?? 0
+  } catch {
+    return 0
+  }
+}
+
 export function readLoggedCommentIds(): Set<number> {
   const ids = new Set<number>()
   try {
@@ -676,6 +711,32 @@ export function writeRunLog(runId: string, sections: Record<string, string>): vo
     .map(([heading, content]) => `## ${heading}\n\n${content.trim()}\n`)
     .join('\n')
   writeFileSync(join(dir, 'run.md'), `# Upstream Sync Run — ${runId}\n\n${body}\n`)
+}
+
+/** Append or replace sections in the run ledger without dropping prior content. */
+export function appendRunLogSections(runId: string, sections: Record<string, string>): void {
+  const path = join(ensureLedgerRunDir(runId), 'run.md')
+  let existing = ''
+  try {
+    existing = readFileSync(path, 'utf8')
+  } catch {
+    existing = `# Upstream Sync Run — ${runId}\n\n`
+  }
+
+  const merged = { ...parseRunLogSections(existing), ...sections }
+  writeRunLog(runId, merged)
+}
+
+function parseRunLogSections(markdown: string): Record<string, string> {
+  const sections: Record<string, string> = {}
+  const parts = markdown.split(/^## /m).slice(1)
+  for (const part of parts) {
+    const newline = part.indexOf('\n')
+    if (newline === -1) continue
+    const heading = part.slice(0, newline).trim()
+    sections[heading] = part.slice(newline + 1).trim()
+  }
+  return sections
 }
 
 export function writeFbiReport(

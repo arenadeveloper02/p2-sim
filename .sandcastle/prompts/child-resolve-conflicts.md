@@ -17,6 +17,12 @@ If adding a test for the fix: **`.claude/skills/tdd/SKILL.md`**
 - Files:
 {{CLUSTER_FILES}}
 
+## Deterministic rules (do these before asking humans)
+
+- **Never hand-edit `bun.lock`.** If it appears here, the harness should have regenerated it — focus on source manifests and code conflicts only.
+- For generated contracts/registries, prefer upstream structure + re-register fork entries over keeping the fork's old layout.
+- Read `.upstream-sync/grill-log.md` and `.upstream-sync/qa-history.jsonl` — human resume answers on PR #{{PR_NUMBER}} are final; do not re-open settled decisions.
+
 ## Skipped upstream tracking
 
 For each upstream hunk you reject, add to `.upstream-sync/ledger/{{RUN_ID}}/skipped.md`:
