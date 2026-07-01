@@ -1,14 +1,6 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { useQueryClient } from '@tanstack/react-query'
-import { History, Plus, Square, Zap } from 'lucide-react'
-import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
-import { usePostHog } from 'posthog-js/react'
-import { useShallow } from 'zustand/react/shallow'
 import {
   BubbleChatClose,
   BubbleChatPreview,
@@ -30,8 +22,16 @@ import {
   PopoverTrigger,
   Trash,
   toast,
-} from '@/components/emcn'
-import { Download, Lock, Unlock } from '@/components/emcn/icons'
+} from '@sim/emcn'
+import { Download, Lock, Unlock } from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
+import { useQueryClient } from '@tanstack/react-query'
+import { History, Plus, Square, Zap } from 'lucide-react'
+import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
+import { useShallow } from 'zustand/react/shallow'
 import { VariableIcon } from '@/components/icons'
 import { requestJson } from '@/lib/api/client/request'
 import {

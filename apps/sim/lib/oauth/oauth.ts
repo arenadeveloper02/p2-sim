@@ -716,7 +716,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'mpim:write',
           'chat:write',
           'chat:write.public',
-          'assistant:write',
+          // TODO: Add 'assistant:write' once Slack app review is approved
           'im:write',
           'im:read',
           'users:read',

@@ -26,6 +26,7 @@ export enum BlockType {
   FUNCTION = 'function',
   AGENT = 'agent',
   MOTHERSHIP = 'mothership',
+  PI = 'pi',
   API = 'api',
   EVALUATOR = 'evaluator',
   VARIABLES = 'variables',
@@ -244,13 +245,13 @@ export const MEMORY = {
 } as const
 
 export const ROUTER = {
-  DEFAULT_MODEL: 'claude-sonnet-4-6',
+  DEFAULT_MODEL: 'claude-sonnet-5',
   DEFAULT_TEMPERATURE: 0,
   INFERENCE_TEMPERATURE: 0.1,
 } as const
 
 export const EVALUATOR = {
-  DEFAULT_MODEL: 'claude-sonnet-4-6',
+  DEFAULT_MODEL: 'claude-sonnet-5',
   DEFAULT_TEMPERATURE: 0.1,
   RESPONSE_SCHEMA_NAME: 'evaluation_response',
   JSON_INDENT: 2,

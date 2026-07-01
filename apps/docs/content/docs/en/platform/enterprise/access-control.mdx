@@ -64,7 +64,7 @@ Controls which AI model providers members of this group can use.
 
 Controls which workflow blocks members can place and execute.
 
-<Image src="/static/enterprise/access-control-blocks.png" alt="Blocks tab showing Core Blocks (Agent, API, Condition, Function, Knowledge, etc.) and Tools (integrations like 1Password, A2A, Ahrefs, Airtable, and more) with checkboxes to allow or restrict each" width={900} height={500} /> Blocks are split into two sections: **Core Blocks** (Agent, API, Condition, Function, etc.) and **Tools** (all integration blocks).
+<Image src="/static/enterprise/access-control-blocks.png" alt="Blocks tab showing Core Blocks (Agent, API, Condition, Function, Knowledge, etc.) and Tools (integrations like 1Password, Ahrefs, Airtable, and more) with checkboxes to allow or restrict each" width={900} height={500} /> Blocks are split into two sections: **Core Blocks** (Agent, API, Condition, Function, etc.) and **Tools** (all integration blocks).
 
 - **All checked (default):** All blocks are allowed.
 - **Subset checked:** Only the selected blocks are allowed. Workflows that already contain a disallowed block will fail when run — they are not automatically modified.
@@ -116,7 +116,6 @@ Controls visibility of platform features and modules.
 |---------|-------------------|
 | API | Hides the API deployment tab |
 | MCP | Hides the MCP deployment tab |
-| A2A | Hides the A2A deployment tab |
 | Chat | Hides the Chat deployment tab |
 | Template | Hides the Template deployment tab |
 
@@ -145,7 +144,7 @@ A workspace-scoped group applies to **all members of its workspaces by default**
 
 A user is governed by one group per workspace, so adding a user is rejected when it would conflict with another of their groups on a shared workspace (skipped rather than added in bulk). The default group ignores members entirely — it always governs everyone not covered by a workspace group.
 
-Manage which workspaces a group governs from the **Workspaces** list in the group's **Details** view (Add and Remove). A non-default group must always target at least one workspace.
+Manage which workspaces a group governs from the **Workspaces** list in the group's **Details** view (Add and Remove). A non-default group is created targeting at least one workspace, but you can later remove all of them — a group with no workspaces simply governs nothing until you add one back.
 
 External workspace members (people who have access to a workspace but belong to a different organization) can't be added as named members, but a workspace-scoped group with no members — and the organization default group — still governs them.
 

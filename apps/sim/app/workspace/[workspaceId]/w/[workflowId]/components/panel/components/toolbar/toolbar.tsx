@@ -11,12 +11,18 @@ import {
   useRef,
   useState,
 } from 'react'
+import {
+  Button,
+  chipVariants,
+  cn,
+  Expandable,
+  ExpandableContent,
+  handleKeyboardActivation,
+  Info,
+} from '@sim/emcn'
 import clsx from 'clsx'
 import { ChevronDown, Search } from 'lucide-react'
 import { usePostHog } from 'posthog-js/react'
-import { Button, chipVariants, Expandable, ExpandableContent, Info } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
-import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { captureEvent } from '@/lib/posthog/client'
 import { getTriggersForSidebar, hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
 import { selectTriggerEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -24,6 +30,7 @@ import { ToolbarItemContextMenu } from '@/app/workspace/[workspaceId]/w/[workflo
 import { useToolbarItemInteractions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/toolbar/hooks'
 import { LoopTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/loop/loop-config'
 import { ParallelTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/subflows/parallel/parallel-config'
+import { getTileIconColorClass } from '@/blocks/icon-color'
 import { getCanonicalBlocksByCategory } from '@/blocks/registry'
 import type { BlockConfig } from '@/blocks/types'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
@@ -155,7 +162,8 @@ const ToolbarItem = memo(function ToolbarItem({
         {Icon && (
           <Icon
             className={clsx(
-              'toolbar-item-icon text-white transition-transform duration-200',
+              'toolbar-item-icon transition-transform duration-200',
+              getTileIconColorClass(item.bgColor),
               'group-hover:scale-110',
               '!size-[10px]'
             )}

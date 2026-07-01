@@ -1,14 +1,10 @@
 'use client'
 
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { generateId } from '@sim/utils/id'
-import { AlertCircle, ArrowUp, MoreVertical, Paperclip, Square, X } from 'lucide-react'
-import { useParams } from 'next/navigation'
-import { useShallow } from 'zustand/react/shallow'
 import {
   Badge,
   Button,
+  cn,
   Input,
   Popover,
   PopoverContent,
@@ -17,8 +13,13 @@ import {
   PopoverTrigger,
   Tooltip,
   Trash,
-} from '@/components/emcn'
-import { Download } from '@/components/emcn/icons'
+} from '@sim/emcn'
+import { Download } from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { generateId } from '@sim/utils/id'
+import { AlertCircle, ArrowUp, MoreVertical, Paperclip, Square, X } from 'lucide-react'
+import { useParams } from 'next/navigation'
+import { useShallow } from 'zustand/react/shallow'
 import { useSession } from '@/lib/auth/auth-client'
 import {
   extractAssistantFilesFromData,
@@ -26,12 +27,12 @@ import {
   isAssistantImageUrl,
 } from '@/lib/chat/assistant-assets'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
-import { cn } from '@/lib/core/utils/cn'
 import {
   extractBlockIdFromOutputId,
   extractPathFromOutputId,
   parseOutputContentSafely,
 } from '@/lib/core/utils/response-format'
+import { readSSEEvents } from '@/lib/core/utils/sse'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format'
 import { StartBlockPath, TriggerUtils } from '@/lib/workflows/triggers/triggers'
@@ -627,16 +628,10 @@ export function Chat() {
   }, [handleCancelExecution])
 
   const processStreamingResponse = useCallback(
-    async (stream: ReadableStream, responseMessageId: string) => {
+    async (stream: ReadableStream<Uint8Array>, responseMessageId: string) => {
       const reader = stream.getReader()
       streamReaderRef.current = reader
-      const decoder = new TextDecoder()
       let accumulatedContent = ''
-      let buffer = ''
-      let receivedFinalEvent = false
-      let finalEventData: ExecutionResult | null = null
-      let chunkCount = 0
-      const streamedBlockIds = new Set<string>()
 
       const BATCH_MAX_MS = 50
       let pendingChunks = ''
@@ -673,199 +668,37 @@ export function Chat() {
         }
       }
 
+      let finalError: string | null = null
       try {
-        while (true) {
-          const { done, value } = await reader.read()
+        await readSSEEvents<{ event?: string; data?: ExecutionResult; chunk?: string }>(reader, {
+          onParseError: (_data, e) => {
+            logger.error('Error parsing stream data:', e)
+          },
+          onEvent: (json) => {
+            const { event, data: eventData, chunk: contentChunk } = json
 
-          if (done) {
-            // Process any remaining buffer before finalizing
-            if (buffer.trim()) {
-              // Try to process remaining buffer - might contain partial or complete messages
-              const lines = buffer.split('\n\n').filter((line) => line.trim())
-              for (const line of lines) {
-                if (!line.startsWith('data: ')) {
-                  // Try to process as data even without prefix
-                  const trimmed = line.trim()
-                  if (trimmed && trimmed !== '[DONE]') {
-                    try {
-                      const json = JSON.parse(trimmed)
-                      const { event, data: eventData, chunk: contentChunk, blockId } = json
-                      if (event === 'final' && eventData) {
-                        receivedFinalEvent = true
-                        finalEventData = eventData as ExecutionResult
-                      } else if (contentChunk && typeof contentChunk === 'string') {
-                        if (typeof blockId === 'string') {
-                          streamedBlockIds.add(blockId)
-                        }
-                        accumulatedContent += contentChunk
-                        appendMessageContent(responseMessageId, contentChunk)
-                        chunkCount++
-                      }
-                    } catch {
-                      // Ignore parse errors
-                    }
-                  }
-                  continue
-                }
-
-                const data = line.substring(6).trim()
-                if (data === '[DONE]' || !data) continue
-
-                try {
-                  const json = JSON.parse(data)
-                  const { event, data: eventData, chunk: contentChunk, blockId } = json
-
-                  if (event === 'final' && eventData) {
-                    receivedFinalEvent = true
-                    finalEventData = eventData as ExecutionResult
-                  } else if (contentChunk && typeof contentChunk === 'string') {
-                    if (typeof blockId === 'string') {
-                      streamedBlockIds.add(blockId)
-                    }
-                    accumulatedContent += contentChunk
-                    appendMessageContent(responseMessageId, contentChunk)
-                    chunkCount++
-                  }
-                } catch {
-                  // Ignore parse errors for remaining buffer
-                }
+            if (event === 'final' && eventData) {
+              if ('success' in eventData && !eventData.success) {
+                finalError = eventData.error || 'Workflow execution failed'
               }
+              return true
             }
 
-            let contentToSet: string | Record<string, unknown> | undefined
-            if (receivedFinalEvent && finalEventData) {
-              const result = finalEventData as ExecutionResult & {
-                output?: Record<string, Record<string, unknown>>
-              }
-              if ('success' in result && !result.success) {
-                const errorMessage = result.error || 'Workflow execution failed'
-                appendMessageContent(
-                  responseMessageId,
-                  `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
-                )
-              } else if (result.output) {
-                const assetSources = getAssistantAssetSourcesFromResult(
-                  result,
-                  selectedOutputs,
-                  streamedBlockIds
-                )
-                for (const source of assetSources) {
-                  const imageUrls = getImageUrlsFromOutput(source)
-                  if (imageUrls.length > 0) {
-                    const sourceObj = source as Record<string, unknown>
-                    const output = sourceObj.output as Record<string, unknown> | undefined
-                    const s3UploadFailed = output?.s3UploadFailed ?? sourceObj.s3UploadFailed
-                    contentToSet = {
-                      content: accumulatedContent || '',
-                      image: imageUrls[0] ?? '',
-                      images: imageUrls,
-                      ...(s3UploadFailed === true && { s3UploadFailed: true }),
-                    }
-                    break
-                  }
-                }
-              }
+            if (contentChunk) {
+              accumulatedContent += contentChunk
+              pendingChunks += contentChunk
+              scheduleFlush()
             }
-
-            logger.debug('Finalizing stream', {
-              messageId: responseMessageId,
-              finalAccumulatedLength: accumulatedContent.length,
-              totalChunks: chunkCount,
-            })
-
-            flushChunks()
-            const assetSources =
-              receivedFinalEvent && finalEventData
-                ? getAssistantAssetSourcesFromResult(
-                    finalEventData as ExecutionResult & {
-                      output?: Record<string, Record<string, unknown>>
-                    },
-                    selectedOutputs,
-                    streamedBlockIds
-                  )
-                : []
-            finalizeMessageStream(responseMessageId, contentToSet, {
-              files:
-                assetSources.length > 0 ? extractAssistantFilesFromData(assetSources) : undefined,
-              generatedImages: (() => {
-                const fromSources =
-                  assetSources.length > 0 ? extractGeneratedImagesFromData(assetSources) : []
-                if (fromSources.length > 0) {
-                  return fromSources
-                }
-                return contentToSet ? extractGeneratedImagesFromData(contentToSet) : undefined
-              })(),
-            })
-            break
-          }
-
-          const chunk = decoder.decode(value, { stream: true })
-          if (!chunk) continue
-
-          buffer += chunk
-
-          const separatorIndex = buffer.lastIndexOf('\n\n')
-          if (separatorIndex === -1) {
-            // No complete message yet, continue reading
-            continue
-          }
-
-          const processable = buffer.slice(0, separatorIndex)
-          buffer = buffer.slice(separatorIndex + 2)
-
-          // Split by double newlines to get individual SSE messages
-          const lines = processable.split('\n\n').filter((line) => line.trim())
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) {
-              continue
-            }
-
-            const data = line.substring(6).trim()
-            if (data === '[DONE]' || !data) continue
-
-            try {
-              const json = JSON.parse(data)
-              const { event, data: eventData, chunk: contentChunk, blockId } = json
-
-              // Handle final event - mark it but continue processing chunks
-              if (event === 'final' && eventData) {
-                receivedFinalEvent = true
-                finalEventData = eventData as ExecutionResult
-                if (
-                  selectedOutputs.length > 0 &&
-                  'logs' in finalEventData &&
-                  Array.isArray(finalEventData.logs) &&
-                  activeWorkflowId
-                ) {
-                  if ('success' in finalEventData && !finalEventData.success) {
-                    const errorMessage = finalEventData.error || 'Workflow execution failed'
-                    flushChunks()
-                    appendMessageContent(
-                      responseMessageId,
-                      `${accumulatedContent ? '\n\n' : ''}Error: ${errorMessage}`
-                    )
-                    finalizeMessageStream(responseMessageId)
-                    return
-                  }
-                  continue
-                }
-
-                flushChunks()
-                finalizeMessageStream(responseMessageId)
-              } else if (contentChunk) {
-                if (typeof blockId === 'string') {
-                  streamedBlockIds.add(blockId)
-                }
-                accumulatedContent += contentChunk
-                pendingChunks += contentChunk
-                scheduleFlush()
-              }
-            } catch (e) {
-              logger.error('Error parsing stream data:', e)
-            }
-          }
+          },
+        })
+        flushChunks()
+        if (finalError) {
+          appendMessageContent(
+            responseMessageId,
+            `${accumulatedContent ? '\n\n' : ''}Error: ${finalError}`
+          )
         }
+        finalizeMessageStream(responseMessageId)
       } catch (error) {
         if ((error as Error)?.name !== 'AbortError') {
           logger.error('Error processing stream:', error)
