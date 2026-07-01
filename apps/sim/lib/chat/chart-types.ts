@@ -108,6 +108,14 @@ export function isChartSpecArray(value: unknown): value is ChartSpec[] {
 export function extractVisualizations(payload: unknown, depth = 0): ChartSpec[] {
   if (!payload || typeof payload !== 'object' || depth > 4) return []
 
+  if (isChartSpec(payload)) {
+    return [payload]
+  }
+
+  if (isChartSpecArray(payload)) {
+    return payload
+  }
+
   if (Array.isArray(payload)) {
     for (const item of payload) {
       const found = extractVisualizations(item, depth + 1)

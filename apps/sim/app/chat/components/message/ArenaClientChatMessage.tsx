@@ -20,7 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
 import type { ChartSpec } from '@/lib/chat/chart-types'
-import { extractVisualizations } from '@/lib/chat/chart-types'
+import { extractVisualizations, isChartSpec, isChartSpecArray } from '@/lib/chat/chart-types'
 import { ChartRenderer } from '@/app/chat/components/message/components/chart-renderer'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
@@ -669,6 +669,11 @@ export const ArenaClientChatMessage = memo(
       return extractVisualizations(message.content)
     }, [message.type, message.visualizations, message.content])
 
+    const isChartOnlyContent = useMemo(
+      () => isChartSpec(cleanTextContent) || isChartSpecArray(cleanTextContent),
+      [cleanTextContent]
+    )
+
     const openKnowledgeModal = useCallback(
       (documentName: string, chunks: KnowledgeResultChunk[], viewInKbUrl?: string) => {
         setKnowledgeModalDoc({ documentName, chunks, viewInKbUrl })
@@ -927,7 +932,7 @@ export const ArenaClientChatMessage = memo(
             {/* Direct content rendering - tool calls are now handled via SSE events */}
             <div>
               <div className='break-words text-base'>
-                {renderContent(cleanTextContent)}
+                {isChartOnlyContent ? null : renderContent(cleanTextContent)}
                 {/* {isJsonObject ? (
                   <pre className='text-gray-800 dark:text-gray-100'>
                     {JSON.stringify(cleanTextContent, null, 2)}
