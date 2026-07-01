@@ -49,6 +49,18 @@ const markdownFile: UserFile = {
   base64: Buffer.from('# Notes\n\nHello').toString('base64'),
 }
 
+const svgFile: UserFile = {
+  id: 'file-4',
+  name: 'diagram.svg',
+  url: '/api/files/serve/workspace%2Fws-1%2Fdiagram.svg?context=workspace',
+  size: 64,
+  type: 'image/svg+xml',
+  key: 'workspace/ws-1/diagram.svg',
+  base64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>').toString(
+    'base64'
+  ),
+}
+
 describe('provider attachments', () => {
   it('infers MIME type from filename when file type is generic', () => {
     expect(
@@ -255,6 +267,51 @@ describe('provider attachments', () => {
         'anthropic'
       )
     ).toThrow('not a supported model image format')
+  })
+
+  it('sends SVG attachments as text/xml documents on document-capable providers', () => {
+    const attachments = prepareProviderAttachments([svgFile], 'anthropic')
+    expect(attachments).toEqual([
+      expect.objectContaining({
+        filename: 'diagram.svg',
+        mimeType: 'text/xml',
+        providerMimeType: 'text/plain',
+        contentType: 'document',
+        text: '<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>',
+      }),
+    ])
+
+    const content = buildAnthropicMessageContent('Describe this diagram', [svgFile], 'anthropic')
+    expect(content).toEqual([
+      { type: 'text', text: 'Describe this diagram' },
+      {
+        type: 'document',
+        source: {
+          type: 'text',
+          media_type: 'text/plain',
+          data: '<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>',
+        },
+        title: 'diagram.svg',
+      },
+    ])
+  })
+
+  it('formats OpenAI Responses SVG attachments as input_file parts', () => {
+    const content = buildOpenAIMessageContent('Describe this diagram', [svgFile], 'openai')
+    expect(content).toEqual([
+      { type: 'input_text', text: 'Describe this diagram' },
+      {
+        type: 'input_file',
+        filename: 'diagram.svg',
+        file_data: `data:text/xml;base64,${svgFile.base64}`,
+      },
+    ])
+  })
+
+  it('rejects SVG attachments for image-only providers', () => {
+    expect(() => prepareProviderAttachments([svgFile], 'groq')).toThrow(
+      'is an SVG image, which is not supported'
+    )
   })
 
   it('rejects documents for image-only providers', () => {
