@@ -34,6 +34,21 @@ describe('format-generated-app-build-errors', () => {
     ])
   })
 
+  it('extracts Next.js prerender errors from build output', () => {
+    const output = [
+      'Generating static pages (0/14) ...',
+      'Error: <Html> should not be imported outside of pages/_document.',
+      'Error occurred prerendering page "/404".',
+    ].join('\n')
+
+    expect(extractBuildErrorLines(output)).toEqual(
+      expect.arrayContaining([
+        'Error: <Html> should not be imported outside of pages/_document.',
+        'Error occurred prerendering page "/404".',
+      ])
+    )
+  })
+
   it('prefers structure issues in formatBuildErrorsSummary', () => {
     const summary = formatBuildErrorsSummary('ignored output', [
       'Missing file for import @/components/Footer',

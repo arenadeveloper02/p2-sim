@@ -4,7 +4,7 @@ const logger = createLogger('GeneratedAppBuildErrors')
 
 const TS_ERROR_PATTERN = /error TS\d+:/i
 const BUILD_ERROR_PATTERN =
-  /Type error:|Module not found|Failed to compile|Cannot find module|Syntax error/i
+  /Type error:|Module not found|Failed to compile|Cannot find module|Syntax error|should not be imported|prerender-error|Error occurred prerendering/i
 
 /**
  * Pulls TypeScript and Next.js compile error lines from raw build/typecheck output.
@@ -12,7 +12,12 @@ const BUILD_ERROR_PATTERN =
 export function extractBuildErrorLines(output: string): string[] {
   const lines = output.split('\n')
   const errors = lines
-    .filter((line) => TS_ERROR_PATTERN.test(line) || BUILD_ERROR_PATTERN.test(line))
+    .filter(
+      (line) =>
+        TS_ERROR_PATTERN.test(line) ||
+        BUILD_ERROR_PATTERN.test(line) ||
+        (/^Error:/.test(line.trim()) && line.includes('next/document'))
+    )
     .map((line) => line.trim())
 
   if (errors.length > 0) {

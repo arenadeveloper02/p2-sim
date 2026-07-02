@@ -75,6 +75,16 @@ export const GENERATED_APP_TYPESCRIPT_GUIDANCE = `TypeScript and Next.js structu
 - All imports must resolve; no missing modules; prefer named exports for components under components/
 - Code MUST pass "npm install && npm run build" with zero TypeScript errors and zero Next.js compile errors`
 
+export const GENERATED_APP_ZERO_ERRORS_GUIDANCE = `Zero-defect bar (MANDATORY — generate, edit, and repair):
+- Output MUST have zero syntax errors, zero TypeScript semantic errors, and zero Next.js compile/prerender failures — validation rejects the app otherwise
+- Sim runs automated gates before GitHub push: structure checks on all files, then npm install + prisma generate + next build (E2B when configured) or local tsc --noEmit
+- Never submit stubs, placeholders, split imports, dangling @/ imports, or pages that import components missing from files[]
+- Syntax: valid TS/TSX; closed JSX tags; complete \`import ... from '...'\` statements; \`return (\` or \`return <\` on one line; "use client" as the first line when hooks/events are used
+- Semantics: strict types (no any, no @ts-ignore); page and Client prop names match exactly; every type from @/lib/types; server actions from @/lib/actions; Prisma queries use schema field names
+- Next.js App Router: only app/layout.tsx renders <html> and <body>; NEVER import Html/Head/Main/NextScript from next/document in app/**; app/not-found.tsx and app/error.tsx use plain <div>/<main> markup
+- Self-check before responding: trace every import to an exported symbol; every page import has a components/*.tsx file in files[]; edited files stay consistent with importers and lib/types.ts
+- Edits must leave the full repo buildable — update page AND component together when props change; return lib/actions.ts and lib/types.ts when schema changes`
+
 export const GENERATED_APP_VALIDATION_GUIDANCE = `Pre-build validation requirements:
 - package.json has scripts: dev, build, start, lint
 - app/layout.tsx exists and exports metadata; app/page.tsx and app/globals.css exist (globals.css imported only in layout)
@@ -89,7 +99,7 @@ export const GENERATED_APP_VALIDATION_GUIDANCE = `Pre-build validation requireme
 - Include Prisma files and dependencies only when requiresDatabase is true; static apps must not include prisma/ or @prisma/client
 - Include tailwind.config.ts and package.json scripts.build
 - NEVER use localStorage.setItem or sessionStorage.setItem to store app data — when requiresDatabase is true use Prisma server actions; when requiresDatabase is false keep state in-memory with useState only for UI interactions, never for cross-session persistence
-- Final code must pass: npm install && npm run build`
+- Final code must pass structure validation AND pre-deploy compile validation (next build in E2B, or tsc --noEmit locally) with zero errors`
 
 export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failures — avoid ALL of these (structure validation will reject the app):
 1. localStorage / sessionStorage persistence (database apps):
@@ -134,7 +144,12 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
    - Profile/settings pages needing full UserData MUST call a server action (e.g. getUserById(auth.id)) and pass that result — do NOT pass JwtPayload where UserData is expected
 11. Missing server actions (TS2305 has no exported member):
    - Every \`import { getFoo } from '@/lib/actions'\` MUST match an \`export async function getFoo\` in lib/actions.ts
-   - When a page needs getRecentTasks, getDashboardStats, etc., ADD the function to lib/actions.ts in the same response — never import actions that do not exist`
+   - When a page needs getRecentTasks, getDashboardStats, etc., ADD the function to lib/actions.ts in the same response — never import actions that do not exist
+12. next/document in App Router (next build prerender error on /404):
+   - NEVER import \`Html\`, \`Head\`, \`Main\`, or \`NextScript\` from \`next/document\` in app/** files — that API is Pages Router _document only
+   - app/layout.tsx owns \`<html>\` and \`<body>\` via next/font + Tailwind — nowhere else
+   - app/not-found.tsx and app/error.tsx use plain JSX (\`<div>\`, \`<main>\`, \`<h1>\`) — NOT \`<Html>\` from next/document
+   - WRONG: \`import { Html } from 'next/document'\` in app/not-found.tsx — causes "Html should not be imported outside of pages/_document" at build time`
 
 export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — every import must resolve to an exported symbol):
 - tsconfig paths MUST be "@/*": ["./*"] with app/ at project root (not src/app/)
@@ -206,7 +221,8 @@ export const GENERATED_APP_JSX_GUIDANCE = `JSX and TSX syntax (zero TS1005 / TS1
 - TS1109 "Expression expected" after imports often means a split import: specifiers listed after \`} from 'other-package';\` without \`import {\` — fix by adding a separate import block per package
 - Props interfaces belong OUTSIDE the component function — define \`interface SettingsClientProps { ... }\` then \`export default function SettingsClient({ user }: SettingsClientProps) { return ( <div>...</div> ) }\`
 - In .tsx files, wrap multiline JSX in parentheses: \`return (\n  <div>...</div>\n)\`
-- Do not use TypeScript generics with a bare \`<T>\` at the start of a line in .tsx without a trailing comma (\`<T,>\`) — prefer explicit prop interfaces instead of inline generic components`
+- Do not use TypeScript generics with a bare \`<T>\` at the start of a line in .tsx without a trailing comma (\`<T,>\`) — prefer explicit prop interfaces instead of inline generic components
+- App Router: NEVER import from \`next/document\` in app/** — no \`Html\`, \`Head\`, \`Main\`, or \`NextScript\`; only app/layout.tsx renders \`<html>\` and \`<body>\`; app/not-found.tsx uses a simple \`<div>\` or \`<main>\` layout`
 
 export const GENERATED_APP_STYLING_GUIDANCE = `Fonts and CSS:
 - NEVER use @import url('https://fonts.googleapis.com/...') or any external font CDN URL in .css files

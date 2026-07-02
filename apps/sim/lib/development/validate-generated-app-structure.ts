@@ -485,6 +485,38 @@ function checkJsxSyntax(files: GeneratedAppFile[]): string[] {
   return issues
 }
 
+const NEXT_DOCUMENT_IMPORT_PATTERN = /from\s+['"]next\/document['"]/
+
+function checkNextDocumentImports(files: GeneratedAppFile[]): string[] {
+  const issues: string[] = []
+
+  for (const file of files) {
+    const path = normalizePath(file.path)
+    if (!/\.(tsx|jsx)$/.test(path)) {
+      continue
+    }
+
+    if (!NEXT_DOCUMENT_IMPORT_PATTERN.test(file.content)) {
+      continue
+    }
+
+    if (path.startsWith('app/')) {
+      issues.push(
+        `${path}: App Router files must not import from next/document (Html, Head, Main, NextScript). Use plain JSX in app/not-found.tsx and app/error.tsx; only app/layout.tsx may render <html> and <body>`
+      )
+      continue
+    }
+
+    if (path.startsWith('pages/') && !/_document\.(tsx|jsx)$/.test(path)) {
+      issues.push(
+        `${path}: must not import from next/document except pages/_document.tsx (Pages Router legacy)`
+      )
+    }
+  }
+
+  return issues
+}
+
 function checkTailwindConfig(files: GeneratedAppFile[]): string[] {
   const pathSet = new Set(files.map((file) => normalizePath(file.path)))
   if (TAILWIND_CONFIG_PATHS.some((path) => pathSet.has(path))) {
@@ -526,6 +558,7 @@ export function validateGeneratedAppStructure(
     ...checkStubComponents(files),
     ...checkImportSyntax(files),
     ...checkJsxSyntax(files),
+    ...checkNextDocumentImports(files),
     ...checkTailwindConfig(files),
     ...checkBuildScript(files),
   ]

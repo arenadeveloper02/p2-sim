@@ -141,6 +141,26 @@ export default function ConfirmModal({ message, onConfirm, open, onClose }: Conf
     expect(result.issues.some((issue) => issue.includes('getRecentTasks'))).toBe(true)
   })
 
+  it('reports next/document imports in App Router files', () => {
+    const result = validateGeneratedAppStructure([
+      ...baseFiles,
+      {
+        path: 'app/not-found.tsx',
+        content:
+          "import { Html } from 'next/document'\nexport default function NotFound() { return <Html><body>404</body></Html> }\n",
+      },
+      {
+        path: 'app/layout.tsx',
+        content:
+          'export default function Layout({ children }: { children: React.ReactNode }) { return <html><body>{children}</body></html> }',
+      },
+      { path: 'app/page.tsx', content: 'export default function Page() { return null }\n' },
+    ])
+
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('next/document'))).toBe(true)
+  })
+
   it('reports wrong use client placement', () => {
     const result = validateGeneratedAppStructure([
       ...baseFiles,

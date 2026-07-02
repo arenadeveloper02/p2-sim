@@ -33,6 +33,7 @@ import {
   GENERATED_APP_STYLING_GUIDANCE,
   GENERATED_APP_TYPESCRIPT_GUIDANCE,
   GENERATED_APP_VALIDATION_GUIDANCE,
+  GENERATED_APP_ZERO_ERRORS_GUIDANCE,
   PINNED_NEXT_VERSION,
   PINNED_REACT_VERSION,
   buildRepoSummaryContent,
@@ -621,6 +622,7 @@ Constraints:
 - Every component MUST contain complete, real, working UI code — NEVER a stub, placeholder, or a component that renders only its own name as text
 - Reuse components; keep page files short; put shared styles in app/globals.css
 - app/ at project root only (not src/app/)
+- ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
@@ -636,7 +638,8 @@ Constraints:
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
-- Valid TypeScript, zero build errors, no secrets`
+- ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
+- Valid TypeScript, zero syntax/semantic/build errors, no secrets`
 
 const MANIFEST_SYSTEM_PROMPT = `You are a senior full-stack engineer planning a Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
 
@@ -648,6 +651,7 @@ Constraints:
 - List ALL components/*.tsx paths first (Navbar, Footer, *Client components) — then list app routes that import them
 - Add up to ${MAX_OPTIONAL_PAGE_PATHS} optional page/component paths — for multi-page apps, list all page routes and shared components
 - Use app/ at project root (not src/app/)
+- ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
@@ -673,6 +677,7 @@ Constraints:
 - Every component file must render actual UI — buttons, inputs, text, layout — not placeholder content like "<div>ComponentName</div>"
 - TypeScript strict, no any, no @ts-ignore
 - Keep individual files concise; share styles in app/globals.css
+- ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
@@ -688,7 +693,7 @@ Constraints:
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
-- Code must compile with zero errors when combined with other project files
+- Code must compile with zero syntax, semantic, and next build errors when combined with other project files
 - Never include secrets`
 
 async function requestAppManifestFromLlm(
@@ -924,14 +929,16 @@ async function repairAppSpecWithLlm(
   buildLog: string,
   userInput: string
 ): Promise<LlmAppSpec> {
-  const repairSystemPrompt = `You are a senior full-stack engineer fixing a Next.js ${PINNED_NEXT_VERSION} App Router project that failed TypeScript validation (tsc --noEmit).
+  const repairSystemPrompt = `You are a senior full-stack engineer fixing a Next.js ${PINNED_NEXT_VERSION} App Router project that failed pre-deploy validation (structure checks and/or npm install + prisma generate + next build in E2B).
 
 Respond ONLY with JSON matching the provided schema. Return the full corrected file set.
 
-Fix ALL errors in the build log so npm install && npx tsc --noEmit succeed with ZERO TypeScript errors.
+${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
+
+Fix ALL errors in the build log so the app passes: npm install, prisma generate when Prisma is used, and next build with ZERO compile or prerender errors.
 Fix ALL structure validation issues listed in the build log, including missing @/ imports, props interfaces, "use client" placement, Prisma usage, Tailwind config, and build scripts.
 When the build log says "Missing file for import @/components/X", ADD components/X.tsx with full UI — every imported component must exist in files[].
-Pay special attention to: TS2305 "has no exported member" (export the symbol from the module that defines it — e.g. add getRecentTasks/getUserById to lib/actions.ts when pages import them), TS2322 IntrinsicAttributes & XxxClientProps (page prop names must match XxxClientProps fields exactly — update page AND component together), TS2739 JwtPayload missing UserData fields (use getUserById(auth.id), do not pass getAuthUser() result as UserData), TS1109 "Expression expected" (usually a split import — add \`import {\` before orphan specifiers after \`} from 'package';\`), TS2459 "declares X locally, but it is not exported" (import the type from @/lib/types, not @/lib/actions), TS2304 "Cannot find name" (add missing import type from @/lib/types), TS2307 Cannot find module 'lucide-react' (add lucide-react to package.json dependencies), TS1005 "'>' expected" (fix JSX — use return ( with opening tag, never return newline then <), missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
+Pay special attention to: TS2305 "has no exported member" (export the symbol from the module that defines it — e.g. add getRecentTasks/getUserById to lib/actions.ts when pages import them), TS2322 IntrinsicAttributes & XxxClientProps (page prop names must match XxxClientProps fields exactly — update page AND component together), TS2739 JwtPayload missing UserData fields (use getUserById(auth.id), do not pass getAuthUser() result as UserData), TS1109 "Expression expected" (usually a split import — add \`import {\` before orphan specifiers after \`} from 'package';\`), TS2459 "declares X locally, but it is not exported" (import the type from @/lib/types, not @/lib/actions), TS2304 "Cannot find name" (add missing import type from @/lib/types), TS2307 Cannot find module 'lucide-react' (add lucide-react to package.json dependencies), TS1005 "'>' expected" (fix JSX — use return ( with opening tag, never return newline then <), "Html should not be imported outside of pages/_document" (remove ALL next/document imports from app/** — rewrite app/not-found.tsx and app/error.tsx with plain <div>/<main> markup; only app/layout.tsx renders <html> and <body>), missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
 If the build log flags localStorage/sessionStorage usage, replace every occurrence with Prisma server actions or API routes — NEVER store app data in localStorage.
 ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 ${GENERATED_APP_DEPENDENCY_GUIDANCE}
@@ -959,7 +966,7 @@ Repository name: ${spec.repoName}
 Build log:
 ${truncateBuildLog(buildLog)}
 
-Return corrected files that pass npm install && npx tsc --noEmit.`
+Return corrected files that pass npm install, prisma generate (when used), and next build.`
 
   const repaired = await requestFullAppSpecFromLlm(repairSystemPrompt, userPrompt, spec.repoName, {
     preserveAllFiles: spec.files.length > MAX_GENERATED_FILES,
@@ -1455,6 +1462,7 @@ Constraints:
 - Apply the user's requested changes while preserving working architecture and unrelated code
 - Return ONLY files you create or modify (do not echo unchanged files)
 - Every returned file must contain complete, real, working code — no stubs or placeholders
+- ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
@@ -1475,7 +1483,7 @@ Constraints:
 - Do not return REPO_SUMMARY.md unless you must fix it manually; Sim regenerates it after your edits
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data
-- Valid TypeScript, zero build errors, no secrets`
+- Valid TypeScript, zero syntax/semantic/build errors, no secrets`
 
 function mergeEditedFiles(
   existingFiles: GeneratedAppFile[],
