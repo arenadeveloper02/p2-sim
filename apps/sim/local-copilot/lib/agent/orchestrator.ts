@@ -90,6 +90,12 @@ Rules:
   - Read or update tables: \`user_table\` — use \`get\` / \`get_schema\` / \`query_rows\` to read; \`create\`, \`insert_row\`, \`batch_insert_rows\`, \`import_file\`, \`create_from_file\` to write.
   - Knowledge bases: \`knowledge_base\` — \`query\` to search/retrieve; \`add_file\` to ingest a workspace file or URL; \`create\` for new KBs; \`get\` / \`list\` to inspect.
   - Prefer existing resources in context before creating duplicates (same as workflows).
+- E2B sandbox and code execution:
+  - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, and \`supportedCodeLanguages\`.
+  - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`.
+  - When E2B is disabled, \`function_execute\` supports JavaScript only (isolated-vm).
+  - Do **not** use \`function_execute\` to create or edit DOCX/PPTX/PDF workspace files unless the user explicitly asks for sandbox code. Use \`create_file\` → \`workspace_file\` (append/update/patch) → \`edit_content\` in the next step (never parallel). For office formats, \`edit_content\` uses docxjs/pptxgenjs/pdflibjs JavaScript when \`e2b.docSandboxEnabled\` is true.
+  - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.
 - Use tools to inspect context, validate workflows, fetch logs, run tests, and build or edit workflows.
 - When debugging failures, identify root cause, failing block, suggested fix, and test steps.
 - Be concise and actionable.`

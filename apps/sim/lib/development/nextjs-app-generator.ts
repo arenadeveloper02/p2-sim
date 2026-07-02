@@ -47,7 +47,7 @@ import {
   formatBuildErrorsSummary,
   logGeneratedAppValidationErrors,
 } from '@/lib/development/format-generated-app-build-errors'
-import { validateGeneratedAppTypecheck } from '@/lib/development/validate-generated-app-build'
+import { validateGeneratedAppPreDeploy } from '@/lib/development/validate-generated-app-build'
 import {
   formatStructureValidationIssues,
   validateGeneratedAppStructure,
@@ -81,7 +81,7 @@ const REQUIRED_APP_FILE_PATHS = [
   GENERATED_APP_REPO_SUMMARY_PATH,
   '.env.example',
 ] as const
-/** Max LLM repair rounds after a failed TypeScript check before deploy. */
+/** Max LLM repair rounds after a failed pre-deploy build/typecheck before deploy. */
 const MAX_BUILD_REPAIR_ROUNDS = 3
 /** Max redeploy cycles when Vercel build fails after local build passed. */
 const MAX_VERCEL_REPAIR_ROUNDS = 4
@@ -1009,9 +1009,9 @@ interface BuildRepairResult {
 }
 
 /**
- * Runs structure validation, TypeScript validation, and repairs with the LLM until checks pass.
+ * Runs structure validation, pre-deploy build/typecheck, and repairs with the LLM until checks pass.
  */
-async function validateAndRepairUntilTypecheckPasses(
+async function validateAndRepairUntilBuildPasses(
   outputDir: string,
   spec: LlmAppSpec,
   userInput: string
@@ -1057,16 +1057,17 @@ async function validateAndRepairUntilTypecheckPasses(
 
       currentSpec = await repairAppSpecWithLlm(
         currentSpec,
-        `${buildOutput}\n\nFix every structure issue above before TypeScript can pass.`,
+        `${buildOutput}\n\nFix every structure issue above before the app can build.`,
         userInput
       )
       continue
     }
 
-    const buildResult = await validateGeneratedAppTypecheck(outputDir, currentSpec.files, {
+    const buildResult = await validateGeneratedAppPreDeploy(outputDir, currentSpec.files, {
       requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
     })
     buildOutput = `[${buildResult.method}] ${buildResult.output}`
+    const compilePhase = buildResult.method === 'e2b' ? 'build' : 'typecheck'
 
     if (buildResult.validated) {
       return {
@@ -1078,7 +1079,7 @@ async function validateAndRepairUntilTypecheckPasses(
     }
 
     logGeneratedAppValidationErrors({
-      phase: 'typecheck',
+      phase: compilePhase,
       round,
       output: buildResult.output,
     })
@@ -1088,9 +1089,10 @@ async function validateAndRepairUntilTypecheckPasses(
     }
 
     repairRounds += 1
-    logger.warn('Generated app TypeScript check failed, requesting LLM repair', {
+    logger.warn('Generated app pre-deploy validation failed, requesting LLM repair', {
       round: repairRounds,
       maxRounds: MAX_BUILD_REPAIR_ROUNDS,
+      method: buildResult.method,
     })
 
     currentSpec = await repairAppSpecWithLlm(currentSpec, buildResult.output, userInput)
@@ -1149,7 +1151,7 @@ export async function generateNextjsApp(
     let buildOutput: string | undefined
     const outputPath = relative(monorepoRoot, outputDir)
 
-    const buildRepair = await validateAndRepairUntilTypecheckPasses(outputDir, spec, userInput)
+    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput)
     spec = buildRepair.spec
     spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
     buildValidated = buildRepair.buildValidated
@@ -1671,7 +1673,7 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
     let buildValidated: boolean | undefined
     let buildOutput: string | undefined
 
-    const buildRepair = await validateAndRepairUntilTypecheckPasses(outputDir, spec, userInput)
+    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput)
     spec = buildRepair.spec
     spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
     buildValidated = buildRepair.buildValidated

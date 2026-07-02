@@ -45,9 +45,11 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Live web search (Exa or Serper when keys are configured). Use for current events and live data — no workflow required.',
   enrichment_run:
     'Runs a one-off table enrichment lookup inline (no table/workflow required).',
+  function_execute:
+    'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Mount workspace files/tables via inputs; save results with outputs.files or outputPath. Python and shell require e2b.enabled in context.',
+  edit_content:
+    'Writes or patches file content. For pptx/docx/pdf/xlsx, pairs with workspace file patch flows and compiles via E2B when e2b.docSandboxEnabled is true.',
 }
-
-const COPILOT_SERVER_TOOL_NAMES = new Set(getRegisteredServerToolNames())
 
 /** Tools delegated to registered Mothership/copilot server handlers. */
 export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
@@ -71,7 +73,11 @@ export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'generate_image',
   'search_online',
   'enrichment_run',
+  'function_execute',
+  'edit_content',
 ] as const
+
+const COPILOT_SERVER_TOOL_NAMES = new Set(getRegisteredServerToolNames())
 
 export type MothershipDelegatedToolName = (typeof MOTHERSHIP_DELEGATED_TOOL_NAMES)[number]
 

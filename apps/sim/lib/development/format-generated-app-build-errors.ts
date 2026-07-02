@@ -32,6 +32,19 @@ export function extractBuildErrorLines(output: string): string[] {
     }
   }
 
+  const buildMarkerIndex = output.lastIndexOf('=== npm run build')
+  if (buildMarkerIndex >= 0) {
+    const tail = output
+      .slice(buildMarkerIndex)
+      .split('\n')
+      .filter((line) => line.trim() && !line.startsWith('==='))
+      .map((line) => line.trim())
+
+    if (tail.length > 0 && tail.length <= 80) {
+      return tail
+    }
+  }
+
   return []
 }
 
@@ -51,7 +64,7 @@ export function formatBuildErrorsSummary(output: string, issues?: string[]): str
   return output.trim()
 }
 
-export type GeneratedAppValidationPhase = 'structure' | 'typecheck' | 'vercel'
+export type GeneratedAppValidationPhase = 'structure' | 'typecheck' | 'build' | 'vercel'
 
 /**
  * Logs generated-app validation failures line-by-line so errors appear in the dev terminal.

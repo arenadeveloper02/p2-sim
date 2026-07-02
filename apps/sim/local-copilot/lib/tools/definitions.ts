@@ -84,7 +84,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'invoke_integration_tool',
     description:
-      'Runs a Sim integration tool directly (no workflow). Use list_integration_tools first to get the exact toolId (e.g. exa_search, firecrawl_scrape). Workspace env keys and hosted keys are applied automatically.',
+      'Runs a Sim integration tool directly (no workflow). Use list_integration_tools first to get the exact toolId (e.g. exa_search, firecrawl_scrape). For E2B-backed web apps when e2b.enabled is true, use development_generate_app or development_edit_app. Workspace env keys and hosted keys are applied automatically.',
     parameters: {
       type: 'object',
       properties: {

@@ -32,6 +32,14 @@ describe('editWorkflowNeedsFollowUp', () => {
 })
 
 describe('formatToolResultForLlm', () => {
+  it('truncates large function_execute stdout', () => {
+    const stdout = 'x'.repeat(20_000)
+    const json = formatToolResultForLlm('function_execute', { success: true, stdout, result: null })
+    const parsed = JSON.parse(json) as Record<string, unknown>
+    expect(parsed.stdoutTruncated).toBe(true)
+    expect(String(parsed.stdout).length).toBeLessThan(stdout.length)
+  })
+
   it('adds needsFollowUpEdit when edit had skipped items', () => {
     const json = formatToolResultForLlm('edit_workflow', {
       success: true,

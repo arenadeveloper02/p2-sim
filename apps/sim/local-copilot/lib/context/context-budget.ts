@@ -156,6 +156,7 @@ export function buildContextPromptPayload(
       connectedIntegrations: context.connectedIntegrations,
       envVariables: context.envVariables,
       hostedKeysAvailable: context.hostedKeysAvailable,
+      e2b: context.e2b,
       guidance: context.guidance,
       workflow: workflowPayload,
       workspaceWorkflows: context.workspaceWorkflows,

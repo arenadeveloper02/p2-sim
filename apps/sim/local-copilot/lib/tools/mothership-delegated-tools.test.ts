@@ -25,6 +25,13 @@ describe('mothership-delegated-tools', () => {
     const runWorkflow = defs.find((tool) => tool.name === 'run_workflow')
     expect(runWorkflow).toBeDefined()
     expect(runWorkflow?.parameters).toMatchObject({ type: 'object' })
+
+    const functionExecute = defs.find((tool) => tool.name === 'function_execute')
+    expect(functionExecute).toBeDefined()
+    expect(functionExecute?.parameters).toMatchObject({ type: 'object' })
+
+    const editContent = defs.find((tool) => tool.name === 'edit_content')
+    expect(editContent).toBeDefined()
   })
 
   it('identifies delegated tool names', () => {

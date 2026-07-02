@@ -1,5 +1,8 @@
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
+import { truncate } from '@sim/utils/string'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
+
+const FUNCTION_EXECUTE_STDOUT_MAX = 12_000
 
 const TOOL_EXECUTION_ORDER: Record<string, number> = {
   create_workflow: 0,
@@ -46,6 +49,19 @@ export function editWorkflowNeedsFollowUp(output: unknown): boolean {
  * Shapes tool output for the LLM — omits heavy workflowState, keeps repair signals.
  */
 export function formatToolResultForLlm(toolName: string, result: unknown): string {
+  if (toolName === 'function_execute') {
+    const record = asRecord(result)
+    const stdout = record.stdout
+    if (typeof stdout === 'string' && stdout.length > FUNCTION_EXECUTE_STDOUT_MAX) {
+      return JSON.stringify({
+        ...record,
+        stdout: truncate(stdout, FUNCTION_EXECUTE_STDOUT_MAX),
+        stdoutTruncated: true,
+      })
+    }
+    return JSON.stringify(result)
+  }
+
   if (toolName !== 'edit_workflow' && toolName !== 'create_workflow') {
     return JSON.stringify(result)
   }

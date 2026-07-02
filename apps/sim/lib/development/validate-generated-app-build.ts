@@ -18,7 +18,8 @@ function sanitizeRelativeFilePath(filePath: string): string | null {
 const logger = createLogger('ValidateGeneratedAppBuild')
 const execFileAsync = promisify(execFile)
 
-const BUILD_TIMEOUT_MS = 300_000
+const TYPECHECK_TIMEOUT_MS = 300_000
+const FULL_BUILD_TIMEOUT_MS = 600_000
 const NPM_CMD = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 export interface GeneratedAppFile {
@@ -47,13 +48,14 @@ function formatExecError(error: unknown): string {
 async function runNpmInDir(
   outputDir: string,
   args: string[],
-  envOverrides: Record<string, string | undefined> = {}
+  envOverrides: Record<string, string | undefined> = {},
+  timeoutMs: number = TYPECHECK_TIMEOUT_MS
 ): Promise<string> {
   const { stdout, stderr } = await execFileAsync(NPM_CMD, args, {
     cwd: outputDir,
     encoding: 'utf-8',
     maxBuffer: 20 * 1024 * 1024,
-    timeout: BUILD_TIMEOUT_MS,
+    timeout: timeoutMs,
     env: { ...process.env, ...envOverrides },
   })
   return [stdout, stderr].filter(Boolean).join('\n')
@@ -118,11 +120,19 @@ async function validateAppBuildLocally(
   try {
     logger.info('Running local npm install for generated app', { outputDir })
     logs.push('=== npm install ===')
-    logs.push(await runNpmInDir(outputDir, [...NPM_INSTALL_ARGS], databaseEnv))
+    logs.push(await runNpmInDir(outputDir, [...NPM_INSTALL_ARGS], databaseEnv, FULL_BUILD_TIMEOUT_MS))
+
+    if (options.requiresDatabase && existsSync(join(outputDir, 'prisma/schema.prisma'))) {
+      logger.info('Running prisma generate for generated app build', { outputDir })
+      logs.push('=== prisma generate ===')
+      logs.push(
+        await runNpmInDir(outputDir, ['exec', 'prisma', 'generate'], databaseEnv, FULL_BUILD_TIMEOUT_MS)
+      )
+    }
 
     logger.info('Running local npm run build for generated app', { outputDir })
     logs.push('=== npm run build ===')
-    logs.push(await runNpmInDir(outputDir, ['run', 'build'], databaseEnv))
+    logs.push(await runNpmInDir(outputDir, ['run', 'build'], databaseEnv, FULL_BUILD_TIMEOUT_MS))
 
     return { validated: true, output: logs.join('\n'), method: 'local' }
   } catch (error) {
@@ -159,7 +169,7 @@ async function validateAppTypecheckInE2b(
   const result = await executeShellInE2B({
     code: shellScript,
     envs: { NODE_ENV: 'development' },
-    timeoutMs: BUILD_TIMEOUT_MS,
+    timeoutMs: TYPECHECK_TIMEOUT_MS,
     sandboxFiles,
   })
 
@@ -186,11 +196,13 @@ async function validateAppBuildInE2b(
     })
     .filter((entry): entry is SandboxFile => entry !== null)
 
+  const hasPrisma = files.some((file) => file.path === 'prisma/schema.prisma')
   const shellScript = [
     'set -euo pipefail',
     'cd /home/user/app',
     options.requiresDatabase ? `export DATABASE_URL="${DUMMY_DATABASE_URL}"` : '',
     'npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1',
+    options.requiresDatabase && hasPrisma ? 'npx prisma generate 2>&1' : '',
     'npm run build 2>&1',
     'echo "__SIM_RESULT__={\\"buildOk\\":true}"',
   ]
@@ -200,7 +212,7 @@ async function validateAppBuildInE2b(
   const result = await executeShellInE2B({
     code: shellScript,
     envs: { NODE_ENV: 'development' },
-    timeoutMs: BUILD_TIMEOUT_MS,
+    timeoutMs: FULL_BUILD_TIMEOUT_MS,
     sandboxFiles,
   })
 
@@ -265,4 +277,19 @@ export async function validateGeneratedAppBuild(
       method: 'local',
     }
   }
+}
+
+/**
+ * Pre-deploy validation: full npm run build in E2B when configured, otherwise local tsc --noEmit.
+ */
+export async function validateGeneratedAppPreDeploy(
+  outputDir: string,
+  files: GeneratedAppFile[],
+  options: ValidateGeneratedAppBuildOptions = {}
+): Promise<ValidateAppBuildResult> {
+  if (env.E2B_API_KEY) {
+    return validateGeneratedAppBuild(outputDir, files, options)
+  }
+
+  return validateGeneratedAppTypecheck(outputDir, files, options)
 }

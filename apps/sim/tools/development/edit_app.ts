@@ -80,7 +80,8 @@ export const developmentEditAppTool: ToolConfig<
     fileCount: { type: 'number', description: 'Number of files in the edited app' },
     buildValidated: {
       type: 'boolean',
-      description: 'Whether npm install and npm run build succeeded in E2B',
+      description:
+        'Whether pre-deploy validation passed (full npm run build in E2B when E2B_API_KEY is set, otherwise local tsc --noEmit)',
       optional: true,
     },
     buildOutput: {

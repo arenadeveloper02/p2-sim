@@ -12,6 +12,7 @@ import {
   oauthIntegrationsToCredentialMetadata,
 } from '@/local-copilot/lib/context/load-workspace-integrations'
 import { loadWorkspaceResourceSummaries } from '@/local-copilot/lib/context/load-workspace-resources'
+import { getLocalCopilotE2bCapabilities } from '@/local-copilot/lib/context/e2b-capabilities'
 import { isSelfHostedDeployment, getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { buildContextPromptPayload } from '@/local-copilot/lib/context/context-budget'
 import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
@@ -55,6 +56,7 @@ export async function buildLocalCopilotContext(
     connectedIntegrations: integrations.connectedIntegrations,
     envVariables: integrations.envVariables,
     hostedKeysAvailable: integrations.hostedKeysAvailable,
+    e2b: getLocalCopilotE2bCapabilities(),
   }
 
   const resourceContext = {
