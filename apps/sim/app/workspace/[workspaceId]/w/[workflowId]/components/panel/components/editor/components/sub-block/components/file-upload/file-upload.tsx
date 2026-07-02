@@ -30,7 +30,10 @@ import {
   ConversationImagePicker,
   ConversationImagePickerActions,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/conversation-image-picker'
-import { listConversationFileOptions, getConversationImageRefKey } from '@/lib/chat/conversation-image-catalog'
+import {
+  listConversationFileOptions,
+  getConversationImageRefKey,
+} from '@/lib/chat/conversation-image-catalog'
 import {
   buildReferenceFileValue,
   type ConversationImageRef,
@@ -597,7 +600,7 @@ export function FileUpload({
           const newFiles = Array.from(uniqueFiles.values())
 
           commitValue(newFiles)
-          }
+        }
       } else {
         if (useCombinedChatReferenceMode && parsedReferenceValue) {
           applyReferenceValue({
@@ -607,7 +610,7 @@ export function FileUpload({
           })
         } else {
           commitValue(uploadedFiles[0] || null)
-          }
+        }
       }
     } catch (error) {
       logger.error(getErrorMessage(error, 'Failed to upload file(s)'), activeWorkflowId)
@@ -869,9 +872,7 @@ export function FileUpload({
         : effectiveMultiple
           ? [...parsedReferenceValue.conversationImages, ref]
           : [ref],
-      ...(exists || effectiveMultiple
-        ? {}
-        : { includeStartFiles: false, workspaceFiles: [] }),
+      ...(exists || effectiveMultiple ? {} : { includeStartFiles: false, workspaceFiles: [] }),
     })
   }
 
@@ -1021,7 +1022,9 @@ export function FileUpload({
             disabled={disabled}
             actionLabel='Select from conversation'
             hideLabel={
-              conversationFileMode === 'all' ? 'Hide conversation files' : 'Hide conversation images'
+              conversationFileMode === 'all'
+                ? 'Hide conversation files'
+                : 'Hide conversation images'
             }
           />
           {showConversationPicker && (
@@ -1038,9 +1041,7 @@ export function FileUpload({
                   : undefined
               }
               sectionLabel={
-                conversationFileMode === 'all'
-                  ? 'Select files from this conversation'
-                  : undefined
+                conversationFileMode === 'all' ? 'Select files from this conversation' : undefined
               }
             />
           )}
@@ -1068,44 +1069,45 @@ export function FileUpload({
       )}
 
       {/* Selected reference thumbnails and file list */}
-      {!isUsingStartFiles || useCombinedChatReferenceMode ? (
-        (hasFiles || isUploading) && (
-          <div className={cn('space-y-2', effectiveMultiple && 'mb-2')}>
-            {useCombinedChatReferenceMode && (conversationImages.length > 0 || isUsingStartFiles) && (
-              <div className='flex flex-wrap gap-2'>
-                {isUsingStartFiles && (
-                  <div className='flex h-[56px] min-w-[120px] items-center rounded-md border border-[var(--border-1)] bg-[var(--surface-5)] px-2 text-[var(--text-primary)] text-xs'>
-                    Chat uploads
+      {!isUsingStartFiles || useCombinedChatReferenceMode
+        ? (hasFiles || isUploading) && (
+            <div className={cn('space-y-2', effectiveMultiple && 'mb-2')}>
+              {useCombinedChatReferenceMode &&
+                (conversationImages.length > 0 || isUsingStartFiles) && (
+                  <div className='flex flex-wrap gap-2'>
+                    {isUsingStartFiles && (
+                      <div className='flex h-[56px] min-w-[120px] items-center rounded-md border border-[var(--border-1)] bg-[var(--surface-5)] px-2 text-[var(--text-primary)] text-xs'>
+                        Chat uploads
+                      </div>
+                    )}
+                    {conversationImages.map(renderConversationImageItem)}
                   </div>
                 )}
-                {conversationImages.map(renderConversationImageItem)}
-              </div>
-            )}
-            {effectiveMultiple &&
-              filesArray.map((file, index) => {
-                const isCurrentlyUploading = uploadingFiles.some(
-                  (uploadingFile) => uploadingFile.name === file.name
-                )
-                return !isCurrentlyUploading && renderFileItem(file, index)
-              })}
-            {isUploading && (
-              <>
-                {uploadingFiles.map(renderUploadingItem)}
-                <div className='mt-1'>
-                  <Progress
-                    value={uploadProgress}
-                    className='h-2 w-full'
-                    indicatorClassName='bg-foreground'
-                  />
-                  <div className='mt-1 text-center text-muted-foreground text-xs'>
-                    {uploadProgress < 100 ? 'Uploading...' : 'Upload complete!'}
+              {effectiveMultiple &&
+                filesArray.map((file, index) => {
+                  const isCurrentlyUploading = uploadingFiles.some(
+                    (uploadingFile) => uploadingFile.name === file.name
+                  )
+                  return !isCurrentlyUploading && renderFileItem(file, index)
+                })}
+              {isUploading && (
+                <>
+                  {uploadingFiles.map(renderUploadingItem)}
+                  <div className='mt-1'>
+                    <Progress
+                      value={uploadProgress}
+                      className='h-2 w-full'
+                      indicatorClassName='bg-foreground'
+                    />
+                    <div className='mt-1 text-center text-muted-foreground text-xs'>
+                      {uploadProgress < 100 ? 'Uploading...' : 'Upload complete!'}
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
-          </div>
-        )
-      ) : null}
+                </>
+              )}
+            </div>
+          )
+        : null}
 
       {(() => {
         const canSelectWorkspaceFiles = !isUsingStartFiles || useCombinedChatReferenceMode

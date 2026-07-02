@@ -1162,10 +1162,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
 
         const { provider, model } = reconcileImageProviderAndModel({
           provider: typeof params.provider === 'string' ? params.provider : undefined,
-          model:
-            typeof params.model === 'string'
-              ? normalizeImageModelId(params.model)
-              : undefined,
+          model: typeof params.model === 'string' ? normalizeImageModelId(params.model) : undefined,
         })
         const referenceInputs =
           provider === 'openai' || provider === 'gemini'

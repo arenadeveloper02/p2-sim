@@ -3,7 +3,11 @@
 import { useMemo } from 'react'
 import { Button } from '@/components/emcn/components'
 import { cn } from '@/lib/core/utils/cn'
-import { listConversationFileOptions, getConversationImageRefKey, toConversationImageRef } from '@/lib/chat/conversation-image-catalog'
+import {
+  listConversationFileOptions,
+  getConversationImageRefKey,
+  toConversationImageRef,
+} from '@/lib/chat/conversation-image-catalog'
 import type { ConversationImageRef } from '@/lib/image-generation/reference-files'
 import type { ChatMessage } from '@/stores/chat/types'
 
@@ -74,7 +78,9 @@ export function ConversationImagePicker({
               {option.previewUrl ? (
                 <img src={option.previewUrl} alt={option.name} className='size-full object-cover' />
               ) : (
-                <span className='line-clamp-2 text-[var(--text-primary)] text-xs'>{option.name}</span>
+                <span className='line-clamp-2 text-[var(--text-primary)] text-xs'>
+                  {option.name}
+                </span>
               )}
               {isSelected && (
                 <span className='absolute inset-x-0 bottom-0 bg-[var(--selection)]/90 py-0.5 text-[9px] text-white'>

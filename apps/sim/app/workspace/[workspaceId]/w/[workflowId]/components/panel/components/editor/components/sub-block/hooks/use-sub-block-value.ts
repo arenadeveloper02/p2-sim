@@ -184,7 +184,12 @@ export function useSubBlockValue<T = any>(
           }
         }
 
-        if (subBlockId === 'model' && isImageGeneratorBlock && newValue && typeof newValue === 'string') {
+        if (
+          subBlockId === 'model' &&
+          isImageGeneratorBlock &&
+          newValue &&
+          typeof newValue === 'string'
+        ) {
           const normalizedModel = normalizeImageModelId(newValue)
           const resolvedProvider = normalizedModel
             ? resolveImageProviderForModel(normalizedModel)

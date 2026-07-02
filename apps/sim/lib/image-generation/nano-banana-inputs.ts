@@ -129,8 +129,7 @@ export function resolveNanoBananaReferences({
     return { inputImage: references[0] }
   }
 
-  const modelId =
-    typeof model === 'string' ? (normalizeImageModelId(model) ?? model.trim()) : ''
+  const modelId = typeof model === 'string' ? (normalizeImageModelId(model) ?? model.trim()) : ''
   const maxReferenceImages = getMaxReferenceImages(modelId)
 
   if (supportsMultipleReferenceImages(modelId)) {

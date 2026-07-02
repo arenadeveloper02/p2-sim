@@ -83,7 +83,9 @@ describe('ImageGeneratorV2Block', () => {
   })
 
   it('uses a single always-visible model combobox with all block models', () => {
-    const modelSubBlocks = ImageGeneratorV2Block.subBlocks.filter((subBlock) => subBlock.id === 'model')
+    const modelSubBlocks = ImageGeneratorV2Block.subBlocks.filter(
+      (subBlock) => subBlock.id === 'model'
+    )
 
     expect(modelSubBlocks).toHaveLength(1)
     expect(modelSubBlocks[0]?.condition).toBeUndefined()
@@ -93,8 +95,12 @@ describe('ImageGeneratorV2Block', () => {
   })
 
   it('allows clearing provider without hiding the model field', () => {
-    const providerSubBlock = ImageGeneratorV2Block.subBlocks.find((subBlock) => subBlock.id === 'provider')
-    const modelSubBlock = ImageGeneratorV2Block.subBlocks.find((subBlock) => subBlock.id === 'model')
+    const providerSubBlock = ImageGeneratorV2Block.subBlocks.find(
+      (subBlock) => subBlock.id === 'provider'
+    )
+    const modelSubBlock = ImageGeneratorV2Block.subBlocks.find(
+      (subBlock) => subBlock.id === 'model'
+    )
 
     expect(providerSubBlock?.clearable).toBe(true)
     expect(providerSubBlock?.value?.({})).toBe('')
