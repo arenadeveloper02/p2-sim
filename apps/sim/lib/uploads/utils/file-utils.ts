@@ -1,6 +1,7 @@
 import type { Logger } from '@sim/logger'
 import { omit } from '@sim/utils/object'
 import type { StorageContext } from '@/lib/uploads'
+import { ORG_LOGOS_S3_PREFIX } from '@/lib/uploads/contexts/org-logos/utils'
 import { ACCEPTED_FILE_TYPES, SUPPORTED_DOCUMENT_EXTENSIONS } from '@/lib/uploads/utils/validation'
 import { isUuid } from '@/executor/constants'
 import type { UserFile } from '@/executor/types'
@@ -593,10 +594,11 @@ export function inferContextFromKey(key: string): StorageContext {
   if (key.startsWith('og-images/')) return 'og-images'
   if (key.startsWith('agent-generated-images/')) return 'agent-generated-images'
   if (key.startsWith('workspace-logos/')) return 'workspace-logos'
+  if (key.startsWith(`${ORG_LOGOS_S3_PREFIX}/`)) return 'org-logos'
   if (key.startsWith('logs/')) return 'logs'
 
   throw new Error(
-    `File key must start with a context prefix (kb/, knowledge-base/, chat/, copilot/, execution/, workspace/, profile-pictures/, og-images/, workspace-logos/, or logs/). Got: ${key}`
+    `File key must start with a context prefix (kb/, knowledge-base/, chat/, copilot/, execution/, workspace/, profile-pictures/, og-images/, workspace-logos/, ${ORG_LOGOS_S3_PREFIX}/, or logs/). Got: ${key}`
   )
 }
 

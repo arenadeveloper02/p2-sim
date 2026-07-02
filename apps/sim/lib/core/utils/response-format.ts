@@ -23,6 +23,18 @@ export function extractFieldsFromSchema(schema: any): Field[] {
   // Handle legacy format with fields array
   if (Array.isArray(schema.fields)) {
     return schema.fields
+      .filter(
+        (field): field is { name: string; type?: string; description?: string } =>
+          field &&
+          typeof field === 'object' &&
+          typeof field.name === 'string' &&
+          field.name.trim() !== ''
+      )
+      .map((field) => ({
+        name: field.name.trim(),
+        type: field.type || 'string',
+        description: field.description,
+      }))
   }
 
   // Handle new JSON Schema format
