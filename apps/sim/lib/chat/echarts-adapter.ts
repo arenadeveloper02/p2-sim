@@ -77,8 +77,27 @@ function build2DSeries(spec: ChartSpec): Record<string, unknown>[] {
 
     if (type === 'pie') {
       base.radius = ['35%', '70%']
+      base.center = ['50%', '60%']
       base.itemStyle = { borderRadius: 6, borderColor: 'transparent', borderWidth: 2 }
-      base.label = { color: 'inherit' }
+      // Keep donut labels off-slice to avoid long category names overlapping the chart area.
+      base.avoidLabelOverlap = true
+      base.label = { show: false, color: 'inherit' }
+      base.labelLine = { show: false }
+    }
+
+    if (type === 'funnel') {
+      base.left = '10%'
+      base.top = 48
+      base.bottom = 16
+      base.width = '80%'
+      base.minSize = '10%'
+      base.maxSize = '95%'
+      base.sort = 'descending'
+      base.gap = 2
+      base.label = { show: true, position: 'inside', formatter: '{b}: {c}' }
+      base.labelLine = { show: false }
+      base.itemStyle = { borderColor: 'transparent', borderWidth: 1 }
+      base.emphasis = { label: { show: true, fontWeight: 600 } }
     }
 
     return base
@@ -163,6 +182,15 @@ export function specToEChartsOption(
 
   // ---- Pie (no cartesian axes) ----
   if (spec.type === 'pie') {
+    return {
+      ...common,
+      tooltip: { ...(common.tooltip as object), trigger: 'item' },
+      series: build2DSeries(spec),
+    }
+  }
+
+  // ---- Funnel (no cartesian axes) ----
+  if (spec.type === 'funnel') {
     return {
       ...common,
       tooltip: { ...(common.tooltip as object), trigger: 'item' },

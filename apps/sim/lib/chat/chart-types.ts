@@ -9,11 +9,11 @@
  * and avoids shipping raw ECharts option objects from the backend.
  */
 
-export type Chart2DType = 'bar' | 'line' | 'area' | 'pie' | 'scatter'
+export type Chart2DType = 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'funnel'
 export type Chart3DType = 'bar3D' | 'scatter3D' | 'surface' | 'line3D'
 export type ChartType = Chart2DType | Chart3DType
 
-const CHART_2D_TYPES: readonly Chart2DType[] = ['bar', 'line', 'area', 'pie', 'scatter']
+const CHART_2D_TYPES: readonly Chart2DType[] = ['bar', 'line', 'area', 'pie', 'scatter', 'funnel']
 const CHART_3D_TYPES: readonly Chart3DType[] = ['bar3D', 'scatter3D', 'surface', 'line3D']
 const ALL_CHART_TYPES: readonly ChartType[] = [...CHART_2D_TYPES, ...CHART_3D_TYPES]
 

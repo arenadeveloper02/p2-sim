@@ -34,6 +34,11 @@ interface BuildOptions {
   maxCategories?: number
 }
 
+interface FunnelStage {
+  label: string
+  value: number
+}
+
 const DEFAULT_MAX_CATEGORIES = 12
 
 function round2(n: number): number {
@@ -94,6 +99,8 @@ function groupMetrics(metricNames: string[]): MetricGroup[] {
  *  - If rows carry dates → time series → one LINE chart per metric group.
  *  - Else (categories) → one BAR chart per metric group (spend / volume /
  *    efficiency / conversions), plus a PIE for spend-like share.
+ *  - Additionally, when stage metrics exist (reach/impressions/clicks/
+ *    conversions), append a FUNNEL chart.
  *
  * Grouping keeps each chart readable and yields 3–4 charts by default without
  * any LLM involvement, so the data always matches the API response exactly.
@@ -148,6 +155,9 @@ export function buildChartsFromTable(
     }
   }
 
+  const funnel = buildFunnelChart(rows, metricNames, titlePrefix)
+  if (funnel) specs.push(funnel)
+
   return specs.filter((s) => s.series.some((series) => series.data.length > 0))
 }
 
@@ -164,6 +174,60 @@ function collectMetricNames(rows: NormalizedRow[]): string[] {
 function pickShareMetric(metricNames: string[]): string | undefined {
   const preferred = ['Cost ($)', 'Spend ($)', 'Cost', 'Spend', 'Impressions', 'Clicks']
   return preferred.find((p) => metricNames.includes(p)) ?? metricNames[0]
+}
+
+function pickFunnelMetric(metricNames: string[], candidates: string[]): string | undefined {
+  return candidates.find((name) => metricNames.includes(name))
+}
+
+function buildFunnelStages(rows: NormalizedRow[], metricNames: string[]): FunnelStage[] {
+  const stageDefs: ReadonlyArray<{ label: string; candidates: string[] }> = [
+    { label: 'Reach', candidates: ['Reach'] },
+    { label: 'Impressions', candidates: ['Impressions'] },
+    { label: 'Clicks', candidates: ['Clicks'] },
+    { label: 'Conversions', candidates: ['Conversions', 'Conv. Value'] },
+  ]
+
+  const stages: FunnelStage[] = []
+  for (const def of stageDefs) {
+    const metric = pickFunnelMetric(metricNames, def.candidates)
+    if (!metric) continue
+    const total = rows.reduce((sum, row) => {
+      const v = row.metrics[metric]
+      return sum + (isFiniteNumber(v) ? v : 0)
+    }, 0)
+    if (total > 0) stages.push({ label: def.label, value: round2(total) })
+  }
+
+  if (stages.length < 2) return []
+
+  // Keep the sequence monotonic for a clean top-to-bottom funnel shape.
+  const monotonic: FunnelStage[] = []
+  let prev = Number.POSITIVE_INFINITY
+  for (const stage of stages) {
+    const clamped = Math.min(stage.value, prev)
+    monotonic.push({ ...stage, value: round2(clamped) })
+    prev = clamped
+  }
+  return monotonic
+}
+
+function buildFunnelChart(rows: NormalizedRow[], metricNames: string[], titlePrefix: string): ChartSpec | null {
+  const stages = buildFunnelStages(rows, metricNames)
+  if (stages.length < 2) return null
+  return {
+    id: `funnel-${titlePrefix}`,
+    type: 'funnel',
+    title: `${titlePrefix} funnel`,
+    series: [
+      {
+        name: 'Expected',
+        type: 'funnel',
+        data: stages.map((s) => ({ name: s.label, value: s.value })),
+      },
+    ],
+    legend: true,
+  }
 }
 
 function buildTimeSeries(
