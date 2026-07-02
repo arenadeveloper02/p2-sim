@@ -15,7 +15,8 @@ import {
 // import MarkdownRenderer from './components/markdown-renderer'
 // import { toastError, toastSuccess } from '@/components/ui'
 import { createLogger } from '@sim/logger'
-import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { formatRelativeTime } from '@sim/utils/formatting'
+import { Check, Copy, RefreshCw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
@@ -45,6 +46,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
+import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
 
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
@@ -206,6 +208,8 @@ export const ArenaClientChatMessage = memo(
     selectedGeneratedImageIds,
     selectedGeneratedImageIdsKey,
     onWelcomeQueryClick,
+    isLastAssistantMessage = false,
+    onRegenerateMessage,
   }: {
     message: ChatMessage
     setMessages?: Dispatch<SetStateAction<ChatMessage[]>>
@@ -229,6 +233,8 @@ export const ArenaClientChatMessage = memo(
     selectedGeneratedImageIdsKey?: string
     /** When set, welcome-message {{query}} tokens are clickable and execute query */
     onWelcomeQueryClick?: (text: string) => void
+    isLastAssistantMessage?: boolean
+    onRegenerateMessage?: () => void
   }) {
     const [isCopied, setIsCopied] = useState(false)
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
@@ -543,6 +549,16 @@ export const ArenaClientChatMessage = memo(
       }
       return !!cleanTextContent && !isBase64(cleanTextContent)
     }, [cleanTextContent])
+
+    const isErrorResponse = useMemo(() => {
+      if (typeof cleanTextContent !== 'string') return false
+      return (
+        cleanTextContent.includes(CHAT_ERROR_MESSAGES.GENERIC_ERROR) ||
+        cleanTextContent.toLowerCase().includes('sorry, there was an error')
+      )
+    }, [cleanTextContent])
+
+    const timestampLabel = formatRelativeTime(message.timestamp)
 
     const handleCopy = () => {
       const contentToCopy =
@@ -923,14 +939,17 @@ export const ArenaClientChatMessage = memo(
             )}
             {hasUserText && (
               <div className='flex justify-end'>
-                <div className='max-w-[94%] rounded-3xl bg-[#F4F4F4] px-4 py-3 dark:bg-gray-600'>
-                  <div className='whitespace-pre-wrap break-words text-base text-gray-800 leading-relaxed dark:text-gray-100'>
-                    {isJsonObject ? (
-                      <span>{JSON.stringify(message.content as string)}</span>
-                    ) : (
-                      <span>{message.content as string}</span>
-                    )}
+                <div className='max-w-[94%]'>
+                  <div className='rounded-3xl bg-[#F4F4F4] px-4 py-3 dark:bg-gray-600'>
+                    <div className='whitespace-pre-wrap break-words text-base text-gray-800 leading-relaxed dark:text-gray-100'>
+                      {isJsonObject ? (
+                        <span>{JSON.stringify(message.content as string)}</span>
+                      ) : (
+                        <span>{message.content as string}</span>
+                      )}
+                    </div>
                   </div>
+                  <p className='mt-1 text-right text-[var(--text-muted)] text-xs'>{timestampLabel}</p>
                 </div>
               </div>
             )}
@@ -1040,7 +1059,19 @@ export const ArenaClientChatMessage = memo(
             {message.type === 'assistant' &&
               !message.isStreaming &&
               !message.isInitialMessage &&
-              hasRenderableText && (
+              (hasRenderableText || isErrorResponse) && (
+                <div className='flex flex-col gap-1'>
+                  <p className='text-[var(--text-muted)] text-xs'>{timestampLabel}</p>
+                  {isErrorResponse && onRegenerateMessage && (
+                    <button
+                      type='button'
+                      className='flex w-fit items-center gap-1 rounded-md border border-[var(--border-1)] px-2 py-1 text-[var(--text-body)] text-sm hover:bg-[var(--surface-2)]'
+                      onClick={onRegenerateMessage}
+                    >
+                      <RefreshCw className='size-3.5' />
+                      Try again
+                    </button>
+                  )}
                 <div className='flex items-center justify-start space-x-2'>
                   {!isJsonObject && hasRenderableText && !hasImageUrl && (
                     <Tooltip.Provider>
@@ -1063,6 +1094,23 @@ export const ArenaClientChatMessage = memo(
                         <Tooltip.Content>
                           {isCopied ? 'Copied!' : 'Copy to clipboard'}
                         </Tooltip.Content>
+                      </Tooltip.Root>
+                    </Tooltip.Provider>
+                  )}
+                  {isLastAssistantMessage && onRegenerateMessage && !isErrorResponse && (
+                    <Tooltip.Provider>
+                      <Tooltip.Root>
+                        <Tooltip.Trigger asChild>
+                          <button
+                            type='button'
+                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            onClick={onRegenerateMessage}
+                            aria-label='Regenerate response'
+                          >
+                            <RefreshCw className='h-4 w-4' strokeWidth={2} />
+                          </button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>Regenerate</Tooltip.Content>
                       </Tooltip.Root>
                     </Tooltip.Provider>
                   )}
@@ -1196,6 +1244,7 @@ export const ArenaClientChatMessage = memo(
                     </>
                   )}
                 </div>
+                </div>
               )}
           </div>
         </div>
@@ -1218,7 +1267,9 @@ export const ArenaClientChatMessage = memo(
       prevProps.onCopySegmentToInput === nextProps.onCopySegmentToInput &&
       prevProps.onToggleGeneratedImage === nextProps.onToggleGeneratedImage &&
       prevProps.selectedGeneratedImageIdsKey === nextProps.selectedGeneratedImageIdsKey &&
-      prevProps.onWelcomeQueryClick === nextProps.onWelcomeQueryClick
+      prevProps.onWelcomeQueryClick === nextProps.onWelcomeQueryClick &&
+      prevProps.isLastAssistantMessage === nextProps.isLastAssistantMessage &&
+      prevProps.onRegenerateMessage === nextProps.onRegenerateMessage
     )
   }
 )

@@ -38,6 +38,8 @@ export const ChatInput: React.FC<{
   /** Called after insertText has been applied so the parent can clear it */
   onInsertConsumed?: () => void
   sttAvailable?: boolean
+  /** When true, input is positioned within the flex main column instead of fixed viewport offsets */
+  embedded?: boolean
 }> = ({
   onSubmit,
   isStreaming = false,
@@ -49,6 +51,7 @@ export const ChatInput: React.FC<{
   insertText,
   onInsertConsumed,
   sttAvailable = false,
+  embedded = false,
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -231,7 +234,14 @@ export const ChatInput: React.FC<{
 
   return (
     <Tooltip.Provider>
-      <div className='fixed right-0 bottom-0 left-0 ml-[118px] flex w-full items-center justify-center bg-gradient-to-t from-[var(--bg)] to-transparent px-4 pb-4 md:px-0 md:pb-4'>
+      <div
+        className={cn(
+          'flex w-full items-center justify-center bg-gradient-to-t from-[var(--bg)] to-transparent px-4 pb-4 md:px-0 md:pb-4',
+          embedded
+            ? 'relative shrink-0'
+            : 'fixed right-0 bottom-0 left-0 ml-[118px]'
+        )}
+      >
         <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
           {/* Error Messages */}
           {uploadErrors.length > 0 && (

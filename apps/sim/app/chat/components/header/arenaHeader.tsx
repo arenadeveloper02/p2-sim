@@ -1,12 +1,25 @@
 'use client'
 
 import Image from 'next/image'
+import { Download, Menu, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Share2 } from 'lucide-react'
 import { inter } from '@/app/_styles/fonts/inter/inter'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/emcn'
+import { cn } from '@/lib/core/utils/cn'
 import { useBrandConfig } from '@/ee/whitelabeling/branding'
 
-interface ChatHeaderProps {
+const ARENA_LOGO_URL =
+  'https://arenav2image.s3.us-west-1.amazonaws.com/rt/calibrate/Arena_Logo_WebDashboard.svg'
+
+interface ArenaChatHeaderProps {
   chatConfig: {
     title?: string
+    description?: string
     customizations?: {
       headerText?: string
       logoUrl?: string
@@ -14,37 +27,106 @@ interface ChatHeaderProps {
       primaryColor?: string
     }
   } | null
-  starCount: string
   showFeedbackView?: boolean
+  isSidebarCollapsed?: boolean
+  isMobileSidebarOpen?: boolean
+  onToggleSidebar?: () => void
+  onExportChat?: () => void
+  onShareChat?: () => void
+  onShowKeyboardShortcuts?: () => void
 }
 
 export function ArenaChatHeader({
   chatConfig,
-  starCount,
   showFeedbackView = false,
-}: ChatHeaderProps) {
+  isSidebarCollapsed = false,
+  onToggleSidebar,
+  onExportChat,
+  onShareChat,
+  onShowKeyboardShortcuts,
+}: ArenaChatHeaderProps) {
   const brand = useBrandConfig()
-  const primaryColor = chatConfig?.customizations?.primaryColor || 'var(--brand-primary-hex)'
-  const customImage = chatConfig?.customizations?.imageUrl || chatConfig?.customizations?.logoUrl
+  const logoUrl =
+    chatConfig?.customizations?.logoUrl ||
+    chatConfig?.customizations?.imageUrl ||
+    brand.logoUrl ||
+    ARENA_LOGO_URL
+  const title = showFeedbackView
+    ? 'User Feedback'
+    : chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'
+  const description = showFeedbackView ? undefined : chatConfig?.description
 
   return (
     <nav
       aria-label='Chat navigation'
-      className={`mx-6 my-1 flex w-full items-center justify-between sm:mx-6 md:mx-6`}
+      className='flex w-full items-center justify-between gap-3 border-[var(--border-1)] border-b px-4 py-2'
     >
-      <Image
-        src='https://arenav2image.s3.us-west-1.amazonaws.com/rt/calibrate/Arena_Logo_WebDashboard.svg'
-        alt='Arena Logo'
-        width={68}
-        height={70}
-      />
+      <div className='flex min-w-0 flex-1 items-center gap-3'>
+        {onToggleSidebar && (
+          <button
+            type='button'
+            onClick={onToggleSidebar}
+            className='flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--text-icon)] hover:bg-[var(--surface-2)]'
+            aria-label={isSidebarCollapsed ? 'Open sidebar' : 'Close sidebar'}
+          >
+            <Menu className='size-[14px] md:hidden' />
+            <span className='hidden md:inline'>
+              {isSidebarCollapsed ? (
+                <PanelLeftOpen className='size-[14px]' />
+              ) : (
+                <PanelLeftClose className='size-[14px]' />
+              )}
+            </span>
+          </button>
+        )}
 
-      <h2 className={`${inter.className} font-semibold text-[#2C2D33] text-[18px]`}>
-        {showFeedbackView
-          ? 'User Feedback'
-          : chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'}
-      </h2>
-      <div />
+        <Image src={logoUrl} alt='Logo' width={56} height={56} className='h-9 w-auto shrink-0' />
+
+        <div className='min-w-0'>
+          <h2 className={cn(inter.className, 'truncate font-semibold text-[var(--text-body)] text-lg')}>
+            {title}
+          </h2>
+          {description && (
+            <p className='hidden truncate text-[var(--text-muted)] text-sm sm:block'>{description}</p>
+          )}
+        </div>
+      </div>
+
+      {!showFeedbackView && (onExportChat || onShareChat || onShowKeyboardShortcuts) && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type='button'
+              className='flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--text-icon)] hover:bg-[var(--surface-2)]'
+              aria-label='Chat options'
+            >
+              <MoreHorizontal className='size-[14px]' />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align='end'>
+            {onShareChat && (
+              <DropdownMenuItem onClick={onShareChat}>
+                <Share2 className='size-[14px]' />
+                Copy link
+              </DropdownMenuItem>
+            )}
+            {onExportChat && (
+              <DropdownMenuItem onClick={onExportChat}>
+                <Download className='size-[14px]' />
+                Export chat
+              </DropdownMenuItem>
+            )}
+            {onShowKeyboardShortcuts && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={onShowKeyboardShortcuts}>
+                  Keyboard shortcuts
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </nav>
   )
 }

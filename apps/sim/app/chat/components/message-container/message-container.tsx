@@ -48,6 +48,8 @@ interface ChatMessageContainerProps {
   selectedGeneratedImageIdsKey?: string
   /** When welcome message query chips are clicked, trigger execution with this query */
   onWelcomeQueryClick?: (text: string) => void
+  /** Regenerate the last assistant response */
+  onRegenerateMessage?: () => void
 }
 
 export const ChatMessageContainer = memo(function ChatMessageContainer({
@@ -67,6 +69,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   selectedGeneratedImageIds,
   selectedGeneratedImageIdsKey,
   onWelcomeQueryClick,
+  onRegenerateMessage,
 }: ChatMessageContainerProps) {
   const loadingLabel = isStreaming ? 'Fetching' : 'Thinking'
   const [selectionTip, setSelectionTip] = useState<{
@@ -162,7 +165,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   }, [selectionTip])
 
   return (
-    <div className='relative flex flex-1 flex-col overflow-hidden bg-white'>
+    <div className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white'>
       {/* "Ask this in chat" tip - fixed near selection */}
       {selectionTip && onAskInChat && (
         <button
@@ -184,11 +187,11 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
       {/* Scrollable Messages Area */}
       <div
         ref={messagesContainerRef}
-        className='!scroll-smooth absolute inset-0 h-[calc(100%-65px)] touch-pan-y overflow-y-auto overscroll-auto'
+        className='!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto'
       >
-        <div className='ml-64 w-[calc(100%-270px)] px-4 pb-8'>
+        <div className='mx-auto w-full max-w-3xl px-4 pb-8 md:max-w-[748px]'>
           {messages.length === 0 ? (
-            <div className='flex flex-col items-center justify-center py-10'>
+            <div className='flex min-h-full flex-col items-center justify-center py-10'>
               <div className='space-y-2 text-center'>
                 <h3 className='font-medium text-[var(--landing-text)] text-lg'>
                   How can I help you today?
@@ -199,19 +202,26 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
               </div>
             </div>
           ) : (
-            messages.map((message) => (
-              <ArenaClientChatMessage
-                key={message.id}
-                message={message}
-                setMessages={setMessages}
-                workspaceIdsForKbLinks={workspaceIdsForKbLinks}
-                onCopySegmentToInput={onAskInChat}
-                onToggleGeneratedImage={onToggleGeneratedImage}
-                selectedGeneratedImageIds={selectedGeneratedImageIds}
-                selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
-                onWelcomeQueryClick={onWelcomeQueryClick}
-              />
-            ))
+            (() => {
+              const lastAssistantId = [...messages]
+                .reverse()
+                .find((m) => m.type === 'assistant' && !m.isInitialMessage)?.id
+              return messages.map((message) => (
+                <ArenaClientChatMessage
+                  key={message.id}
+                  message={message}
+                  setMessages={setMessages}
+                  workspaceIdsForKbLinks={workspaceIdsForKbLinks}
+                  onCopySegmentToInput={onAskInChat}
+                  onToggleGeneratedImage={onToggleGeneratedImage}
+                  selectedGeneratedImageIds={selectedGeneratedImageIds}
+                  selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+                  onWelcomeQueryClick={onWelcomeQueryClick}
+                  isLastAssistantMessage={message.id === lastAssistantId}
+                  onRegenerateMessage={onRegenerateMessage}
+                />
+              ))
+            })()
           )}
 
           {/* Loading indicator with label and bouncing dots (when executing) */}
@@ -248,7 +258,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
 
       {/* Scroll to bottom button - appears when user scrolls up */}
       {showScrollButton && (
-        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20 ml-[9%] transform'>
+        <div className='-translate-x-1/2 absolute bottom-4 left-1/2 z-20 transform'>
           <Button
             onClick={scrollToBottom}
             size='sm'

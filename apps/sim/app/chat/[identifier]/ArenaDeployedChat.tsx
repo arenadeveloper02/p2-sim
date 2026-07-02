@@ -6,6 +6,7 @@ import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
+import { ChipModal, ChipModalBody, ChipModalHeader } from '@/components/emcn'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
@@ -31,11 +32,18 @@ import {
   VoiceInterface,
 } from '@/app/chat/components'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
-import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
+import { useAudioStreaming, useChatKeyboardShortcuts, useChatStreaming } from '@/app/chat/hooks'
+import { downloadTextFile, exportChatAsMarkdown } from '@/app/chat/utils/export-chat'
+import {
+  useDeleteDeployedChatThread,
+  useDeployedChatThreads,
+  useRenameDeployedChatThread,
+  useSetDeployedChatThreadPinned,
+} from '@/hooks/queries/deployed-chat-threads'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { ArenaChatHeader } from '../components/header/arenaHeader'
 import { FeedbackView } from './FeedbackView'
-import LeftNavThread from './leftNavThread'
+import LeftNavThread, { type ThreadRecord } from './leftNavThread'
 
 const logger = createLogger('ChatClient')
 
@@ -56,14 +64,6 @@ interface ChatConfig {
   inputFormat?: InputFormatField[]
   /** Workspace IDs the current user can access; when set, "View in Knowledge Base" links are shown for KB refs in that workspace */
   userWorkspaceIds?: string[]
-}
-
-interface ThreadRecord {
-  chatId: string
-  title: string
-  workflowId: string
-  createdAt: string
-  updatedAt: string
 }
 
 interface AudioStreamingOptions {
@@ -187,14 +187,21 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const [starCount, setStarCount] = useState('3.4k')
+  const threadSearchInputRef = useRef<HTMLInputElement>(null)
+  const chatInputWrapperRef = useRef<HTMLDivElement>(null)
   const [conversationId, setConversationId] = useState('')
 
-  // Left threads state managed here
-  const [currentChatId, setCurrentChatId] = useState<string | null>()
-  const [threads, setThreads] = useState<ThreadRecord[]>([])
-  const [isThreadsLoading, setIsThreadsLoading] = useState<boolean>(true)
-  const [threadsError, setThreadsError] = useState<string | null>(null)
+  const [currentChatId, setCurrentChatId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    return new URLSearchParams(window.location.search).get('chatId')
+  })
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('deployed-chat-sidebar-collapsed') === 'true'
+  })
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
+  const [showKeyboardShortcutsHint, setShowKeyboardShortcutsHint] = useState(false)
+
   const [isHistoryLoading, setIsHistoryLoading] = useState<any>(true) // Start as true to prevent early modal
   const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
   const [hasCheckedHistory, setHasCheckedHistory] = useState<boolean>(false)
@@ -206,6 +213,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | 'sso' | null>(null)
   const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState<boolean>(false)
+
+  const threadsQuery = useDeployedChatThreads(identifier, Boolean(chatConfig) && !authRequired)
+  const threads = threadsQuery.data ?? []
+  const isThreadsLoading = threadsQuery.isLoading
+  const threadsError = threadsQuery.error?.message ?? null
+  const renameThreadMutation = useRenameDeployedChatThread(identifier)
+  const deleteThreadMutation = useDeleteDeployedChatThread(identifier)
+  const pinThreadMutation = useSetDeployedChatThreadPinned(identifier)
 
   // Start Block input modal state
   const [isInputModalOpen, setIsInputModalOpen] = useState(false)
@@ -313,6 +328,32 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     const workflowId = identifier
 
     const fetchHistory = async (workflowId: string, chatId: string | null) => {
+      const buildWelcomeMessages = (): ChatMessage[] => {
+        const initialMessages: ChatMessage[] = []
+
+        if (userName) {
+          initialMessages.push({
+            id: 'greeting',
+            content: `Hi ${userName}, welcome to the chat!`,
+            type: 'assistant',
+            timestamp: new Date(),
+            isInitialMessage: true,
+          })
+        }
+
+        if (chatConfig?.customizations?.welcomeMessage) {
+          initialMessages.push({
+            id: 'welcome',
+            content: chatConfig.customizations.welcomeMessage,
+            type: 'assistant',
+            isInitialMessage: true,
+            timestamp: new Date(),
+          })
+        }
+
+        return initialMessages
+      }
+
       // Only fetch history if we have a chatId
       if (!chatId) {
         // No chatId means no history - can show modal
@@ -330,35 +371,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
           // Check if there's any chat history in the API response
           if (data?.logs?.length === 0) {
-            // No history found - mark that we can show modal after loading completes
+            setMessages(buildWelcomeMessages())
             hasShownModalRef.current = false
             setIsHistoryLoading(false)
             setHasCheckedHistory(true)
           } else {
-            // History exists - load messages and prevent modal from showing
-            const initialMessages: ChatMessage[] = []
-
-            // Add personalized greeting if user name is available
-            if (userName) {
-              initialMessages.push({
-                id: 'greeting',
-                content: `Hi ${userName}, welcome to the chat!`,
-                type: 'assistant',
-                timestamp: new Date(),
-                isInitialMessage: true,
-              })
-            }
-
-            // Add welcome message if it exists
-            if (chatConfig?.customizations?.welcomeMessage) {
-              initialMessages.push({
-                id: 'welcome',
-                content: chatConfig.customizations.welcomeMessage,
-                type: 'assistant',
-                isInitialMessage: true,
-                timestamp: new Date(),
-              })
-            }
+            const initialMessages = buildWelcomeMessages()
 
             setMessages([
               ...initialMessages,
@@ -406,15 +424,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             setHasCheckedHistory(true)
           }
         } else {
-          // If history fetch fails (404, etc.), treat as no history - can show modal
           logger.warn(`History fetch failed with status ${response.status}, treating as no history`)
+          setMessages(buildWelcomeMessages())
           hasShownModalRef.current = false
           setIsHistoryLoading(false)
           setHasCheckedHistory(true)
         }
       } catch (error) {
-        // If history fetch errors, treat as no history - can show modal
         logger.error('Error fetching history, treating as no history:', error)
+        setMessages(buildWelcomeMessages())
         hasShownModalRef.current = false
         setIsHistoryLoading(false)
         setHasCheckedHistory(true)
@@ -678,7 +696,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       dataUrl?: string
     }>,
     forceExecution = false, // Allow execution even with empty input (e.g., when form is submitted)
-    overrideValues?: Record<string, unknown> // Override values for Start Block inputs (e.g., from form submission)
+    overrideValues?: Record<string, unknown>, // Override values for Start Block inputs (e.g., from form submission)
+    regenerate = false
   ) => {
     const messageToSend = messageParam ?? inputValue
     // Allow execution if forceExecution is true (form submission) or if there's input/files
@@ -723,22 +742,31 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       ]
 
       if (messageToSend.trim() || combinedFiles.length > 0) {
-        // Add the user's message to the chat
-        const userMessage: ChatMessage = {
-          id: generateId(),
-          content: messageToSend,
-          type: 'user',
-          timestamp: new Date(),
-          attachments: combinedFiles.map((file) => ({
-            id: file.id,
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            dataUrl: file.dataUrl || '',
-          })),
+        if (!regenerate) {
+          // Add the user's message to the chat
+          const userMessage: ChatMessage = {
+            id: generateId(),
+            content: messageToSend,
+            type: 'user',
+            timestamp: new Date(),
+            attachments: combinedFiles.map((file) => ({
+              id: file.id,
+              name: file.name,
+              type: file.type,
+              size: file.size,
+              dataUrl: file.dataUrl || '',
+            })),
+          }
+          userMessageId = userMessage.id
+          setMessages((prev) => [...prev, userMessage])
+        } else {
+          setMessages((prev) => {
+            const lastUserIndex = [...prev].reverse().findIndex((m) => m.type === 'user')
+            if (lastUserIndex === -1) return prev
+            const index = prev.length - 1 - lastUserIndex
+            return prev.slice(0, index + 1)
+          })
         }
-        userMessageId = userMessage.id
-        setMessages((prev) => [...prev, userMessage])
       }
 
       setInputValue('')
@@ -1122,83 +1150,17 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }, [messages.length])
 
-  // Get chatId from URL params
+  // Keep chatId in sync when the URL query changes (e.g. back/forward navigation)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const chatId = params.get('chatId')
-    setCurrentChatId(chatId)
+    const syncChatIdFromUrl = () => {
+      const chatId = new URLSearchParams(window.location.search).get('chatId')
+      setCurrentChatId(chatId)
+    }
+
+    syncChatIdFromUrl()
+    window.addEventListener('popstate', syncChatIdFromUrl)
+    return () => window.removeEventListener('popstate', syncChatIdFromUrl)
   }, [])
-
-  const fetchThreads = useCallback(
-    async (workflowId: string, isInitialLoad = false) => {
-      try {
-        if (isInitialLoad) {
-          setIsThreadsLoading(true)
-        }
-        setThreadsError(null)
-        const response = await fetch(`/api/chat/${workflowId}/all-history`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        })
-        if (!response.ok) {
-          throw new Error(`Failed to fetch threads: ${response.status}`)
-        }
-        const data = (await response.json()) as { records: ThreadRecord[]; total: number }
-        const list = data.records || []
-        setThreads(list)
-
-        // Only handle initial navigation on first load
-        if (isInitialLoad) {
-          const params = new URLSearchParams(window.location.search)
-          const urlChatId = params.get('chatId')
-
-          // If no chatId in URL, decide default
-          if (!urlChatId) {
-            if (list.length > 0) {
-              const firstId = list[0].chatId
-              setCurrentChatId(firstId)
-              params.set('chatId', firstId)
-              const newUrl = `/chat/${workflowId}?${params.toString()}`
-              router.push(newUrl)
-            } else {
-              // No threads exist yet: generate a new UUID chatId for a fresh chat
-              const newId = generateId()
-              setCurrentChatId(newId)
-              params.set('chatId', newId)
-              const newUrl = `/chat/${workflowId}?${params.toString()}`
-              router.push(newUrl)
-            }
-          }
-        }
-      } catch (err) {
-        logger.error('Error fetching threads:', err)
-        setThreadsError(err instanceof Error ? err.message : 'Failed to fetch threads')
-        setThreads([])
-      } finally {
-        setIsThreadsLoading(false)
-      }
-    },
-    [router]
-  )
-
-  useEffect(() => {
-    if (identifier && chatConfig && !authRequired) {
-      fetchThreads(identifier, true)
-    }
-  }, [identifier, fetchThreads, chatConfig, authRequired])
-
-  // Check if current chatId exists in threads when conversation is finished
-  useEffect(() => {
-    if (isConversationFinished && currentChatId) {
-      const chatIdExists = threads.some((thread) => thread.chatId === currentChatId)
-
-      if (!chatIdExists) {
-        fetchThreads(identifier, false)
-      }
-      // Reset the flag
-      setIsConversationFinished(false)
-    }
-  }, [isConversationFinished, currentChatId, threads, fetchThreads, identifier])
 
   const updateUrlChatId = useCallback(
     (newChatId: string) => {
@@ -1210,6 +1172,48 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [router, identifier]
   )
 
+  const hasInitializedThreadNavigationRef = useRef(false)
+
+  useEffect(() => {
+    if (!identifier || !chatConfig || authRequired || isThreadsLoading) return
+    if (hasInitializedThreadNavigationRef.current) return
+
+    const params = new URLSearchParams(window.location.search)
+    const urlChatId = params.get('chatId')
+
+    if (!urlChatId) {
+      if (threads.length > 0) {
+        const firstId = threads[0].chatId
+        setCurrentChatId(firstId)
+        updateUrlChatId(firstId)
+      } else {
+        const newId = generateId()
+        setCurrentChatId(newId)
+        updateUrlChatId(newId)
+      }
+    }
+
+    hasInitializedThreadNavigationRef.current = true
+  }, [
+    identifier,
+    chatConfig,
+    authRequired,
+    isThreadsLoading,
+    threads,
+    updateUrlChatId,
+  ])
+
+  useEffect(() => {
+    if (isConversationFinished && currentChatId) {
+      const chatIdExists = threads.some((thread) => thread.chatId === currentChatId)
+
+      if (!chatIdExists) {
+        void threadsQuery.refetch()
+      }
+      setIsConversationFinished(false)
+    }
+  }, [isConversationFinished, currentChatId, threads, threadsQuery])
+
   // Handle thread selection - must be defined before conditional returns
   const handleSelectThread = useCallback(
     (chatId: string) => {
@@ -1217,6 +1221,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setShowFeedbackView(false)
       setFeedbackError(null)
       setShowScrollButton(false)
+      setIsHistoryLoading(true)
+      setHasCheckedHistory(false)
       setCurrentChatId(chatId)
       // Clear messages except greeting and welcome (initial messages)
       setMessages((prev) => {
@@ -1364,6 +1370,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [identifier, feedbackPageSize]
   )
 
+  const handleRegenerateLastResponse = useCallback(() => {
+    const lastUserMessage = [...messages].reverse().find((message) => message.type === 'user')
+    if (!lastUserMessage || typeof lastUserMessage.content !== 'string') return
+    void handleSendMessage(lastUserMessage.content, false, undefined, false, undefined, true)
+  }, [messages, handleSendMessage])
+
   const handleViewFeedback = useCallback(() => {
     setShowFeedbackView(true)
     setFeedbackPage(1)
@@ -1373,6 +1385,82 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const handleViewGoldenQueries = useCallback(() => {
     setIsGoldenQueriesOpen(true)
   }, [])
+
+  const handleToggleSidebar = useCallback(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsMobileSidebarOpen((prev) => !prev)
+      return
+    }
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev
+      window.localStorage.setItem('deployed-chat-sidebar-collapsed', String(next))
+      return next
+    })
+  }, [])
+
+  const handleRenameThread = useCallback(
+    (chatId: string, title: string) => {
+      renameThreadMutation.mutate({ identifier, chatId, title })
+    },
+    [identifier, renameThreadMutation]
+  )
+
+  const handleDeleteThread = useCallback(
+    async (chatId: string) => {
+      await deleteThreadMutation.mutateAsync({ identifier, chatId })
+      if (currentChatId === chatId) {
+        const remaining = threads.filter((thread) => thread.chatId !== chatId)
+        if (remaining.length > 0) {
+          handleSelectThread(remaining[0].chatId)
+        } else {
+          handleNewChat()
+        }
+      }
+    },
+    [
+      identifier,
+      deleteThreadMutation,
+      currentChatId,
+      threads,
+      handleSelectThread,
+      handleNewChat,
+    ]
+  )
+
+  const handleTogglePinThread = useCallback(
+    (chatId: string, pinned: boolean) => {
+      pinThreadMutation.mutate({ identifier, chatId, pinned })
+    },
+    [identifier, pinThreadMutation]
+  )
+
+  const handleExportChat = useCallback(() => {
+    const title =
+      threads.find((thread) => thread.chatId === currentChatId)?.title ||
+      chatConfig?.customizations?.headerText ||
+      chatConfig?.title ||
+      'chat'
+    const markdown = exportChatAsMarkdown(messages, title)
+    downloadTextFile(markdown, `${title.replace(/\s+/g, '-').toLowerCase()}.md`)
+  }, [messages, threads, currentChatId, chatConfig])
+
+  const handleShareChat = useCallback(async () => {
+    if (!currentChatId) return
+    const url = `${window.location.origin}/chat/${identifier}?chatId=${currentChatId}`
+    await navigator.clipboard.writeText(url)
+  }, [currentChatId, identifier])
+
+  const handleFocusChatInput = useCallback(() => {
+    chatInputWrapperRef.current?.querySelector('textarea')?.focus()
+  }, [])
+
+  useChatKeyboardShortcuts({
+    enabled: Boolean(chatConfig) && !authRequired && !showFeedbackView,
+    onNewChat: handleNewChat,
+    onFocusSearch: () => threadSearchInputRef.current?.focus(),
+    onFocusInput: handleFocusChatInput,
+    onCloseSidebar: () => setIsMobileSidebarOpen(false),
+  })
 
   const handleBackFromFeedback = useCallback(() => {
     setShowFeedbackView(false)
@@ -1440,41 +1528,77 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Standard text-based chat interface
   return (
     <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-      {/* Header component */}
       <div className='relative z-[60] shrink-0'>
         <ArenaChatHeader
           chatConfig={chatConfig}
-          starCount={starCount}
           showFeedbackView={showFeedbackView}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={handleToggleSidebar}
+          onExportChat={handleExportChat}
+          onShareChat={handleShareChat}
+          onShowKeyboardShortcuts={() => setShowKeyboardShortcutsHint(true)}
         />
       </div>
 
-      <div className='relative flex min-h-0 flex-1 flex-col'>
+      <div className='relative flex min-h-0 flex-1'>
         {isHistoryLoading && (
-          <div className='absolute inset-y-0 right-0 left-[320px] z-[105] flex items-center justify-center bg-white/60 pb-[6%]'>
+          <div className='absolute inset-0 z-[105] flex items-center justify-center bg-white/60'>
             <LoadingAgentP2 size='lg' />
           </div>
         )}
 
-        <LeftNavThread
-          threads={threads}
-          isLoading={isThreadsLoading}
-          error={threadsError || null}
-          currentChatId={currentChatId || ''}
-          onSelectThread={handleSelectThread}
-          onRefreshThread={handleRefreshThread}
-          onNewChat={handleNewChat}
-          isStreaming={isStreamingResponse || isLoading}
-          workflowId={identifier}
-          showReRun={customFields.length > 0}
-          showFeedbackView={showFeedbackView}
-          onReRun={handleRerun}
-          onViewFeedback={handleViewFeedback}
-          onViewGoldenQueries={handleViewGoldenQueries}
-        />
+        <div className='hidden md:flex'>
+          {!isSidebarCollapsed && (
+            <LeftNavThread
+              threads={threads as ThreadRecord[]}
+              isLoading={isThreadsLoading}
+              error={threadsError || null}
+              currentChatId={currentChatId || ''}
+              onSelectThread={handleSelectThread}
+              onRefreshThread={handleRefreshThread}
+              onNewChat={handleNewChat}
+              onRenameThread={handleRenameThread}
+              onDeleteThread={handleDeleteThread}
+              onTogglePinThread={handleTogglePinThread}
+              isStreaming={isStreamingResponse || isLoading}
+              workflowId={identifier}
+              showReRun={customFields.length > 0}
+              showFeedbackView={showFeedbackView}
+              onReRun={handleRerun}
+              onViewFeedback={handleViewFeedback}
+              onViewGoldenQueries={handleViewGoldenQueries}
+              searchInputRef={threadSearchInputRef}
+            />
+          )}
+        </div>
 
-        {showFeedbackView ? (
-          <div className='absolute inset-0 left-[320px]'>
+        {isMobileSidebarOpen && (
+          <LeftNavThread
+            threads={threads as ThreadRecord[]}
+            isLoading={isThreadsLoading}
+            error={threadsError || null}
+            currentChatId={currentChatId || ''}
+            onSelectThread={handleSelectThread}
+            onRefreshThread={handleRefreshThread}
+            onNewChat={handleNewChat}
+            onRenameThread={handleRenameThread}
+            onDeleteThread={handleDeleteThread}
+            onTogglePinThread={handleTogglePinThread}
+            isStreaming={isStreamingResponse || isLoading}
+            workflowId={identifier}
+            showReRun={customFields.length > 0}
+            showFeedbackView={showFeedbackView}
+            onReRun={handleRerun}
+            onViewFeedback={handleViewFeedback}
+            onViewGoldenQueries={handleViewGoldenQueries}
+            isMobileOpen
+            onCloseMobile={() => setIsMobileSidebarOpen(false)}
+            searchInputRef={threadSearchInputRef}
+          />
+        )}
+
+        <div className='flex min-h-0 min-w-0 flex-1 flex-col'>
+          {showFeedbackView ? (
             <FeedbackView
               feedbackData={feedbackData}
               isLoading={isFeedbackLoading}
@@ -1487,59 +1611,61 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               onPageChange={fetchFeedbackPage}
               onBack={handleBackFromFeedback}
             />
-          </div>
-        ) : (
-          <div className='flex min-h-0 flex-1 flex-col'>
-            {/* Message Container component */}
-            <ChatMessageContainer
-              messages={messages}
-              isLoading={isLoading}
-              isStreaming={isStreamingResponse}
-              showScrollButton={showScrollButton}
-              messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
-              messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-              scrollToBottom={scrollToBottom}
-              scrollToMessage={scrollToMessage}
-              chatConfig={chatConfig}
-              setMessages={setMessages}
-              workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
-              onAskInChat={(text) => setAskInChatText(text)}
-              onToggleGeneratedImage={toggleGeneratedImageSelection}
-              selectedGeneratedImageIds={selectedGeneratedImageIds}
-              selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
-              onWelcomeQueryClick={handleWelcomeQueryClick}
-            />
-
-            {/* Input area (free-standing at the bottom) */}
-            <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
-              <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-                <ChatInput
-                  insertText={askInChatText}
-                  onInsertConsumed={() => setAskInChatText('')}
-                  onSubmit={(
-                    value: string,
-                    isVoiceInput?: boolean,
-                    files?: Array<{
-                      id: string
-                      name: string
-                      size: number
-                      type: string
-                      file: File
-                      dataUrl?: string
-                    }>
-                  ) => {
-                    void handleSendMessage(value, isVoiceInput, files)
-                  }}
-                  isStreaming={isLoading || isStreamingResponse}
-                  onStopStreaming={() => stopStreaming(setMessages)}
-                  onVoiceStart={handleVoiceStart}
-                  selectedGeneratedImages={effectiveGeneratedImages}
-                  onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
+          ) : (
+            <>
+              <div className='relative flex min-h-0 flex-1 flex-col overflow-hidden'>
+                <ChatMessageContainer
+                  messages={messages}
+                  isLoading={isLoading}
+                  isStreaming={isStreamingResponse}
+                  showScrollButton={showScrollButton}
+                  messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
+                  messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
+                  scrollToBottom={scrollToBottom}
+                  scrollToMessage={scrollToMessage}
+                  chatConfig={chatConfig}
+                  setMessages={setMessages}
+                  workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
+                  onAskInChat={(text) => setAskInChatText(text)}
+                  onToggleGeneratedImage={toggleGeneratedImageSelection}
+                  selectedGeneratedImageIds={selectedGeneratedImageIds}
+                  selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+                  onWelcomeQueryClick={handleWelcomeQueryClick}
+                  onRegenerateMessage={handleRegenerateLastResponse}
                 />
               </div>
-            </div>
-          </div>
-        )}
+
+              <div ref={chatInputWrapperRef} className='relative shrink-0 p-3 pb-4 md:p-4 md:pb-6'>
+                <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
+                  <ChatInput
+                    embedded
+                    insertText={askInChatText}
+                    onInsertConsumed={() => setAskInChatText('')}
+                    onSubmit={(
+                      value: string,
+                      isVoiceInput?: boolean,
+                      files?: Array<{
+                        id: string
+                        name: string
+                        size: number
+                        type: string
+                        file: File
+                        dataUrl?: string
+                      }>
+                    ) => {
+                      void handleSendMessage(value, isVoiceInput, files)
+                    }}
+                    isStreaming={isLoading || isStreamingResponse}
+                    onStopStreaming={() => stopStreaming(setMessages)}
+                    onVoiceStart={handleVoiceStart}
+                    selectedGeneratedImages={effectiveGeneratedImages}
+                    onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Start Block Input Modal */}
@@ -1561,6 +1687,32 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         onSaveQueries={handleSaveGoldenQueries}
         disabled={isStreamingResponse || isLoading || isGoldenQueriesSaving}
       />
+
+      <ChipModal open={showKeyboardShortcutsHint} onOpenChange={setShowKeyboardShortcutsHint}>
+        <ChipModalHeader onClose={() => setShowKeyboardShortcutsHint(false)}>
+          Keyboard shortcuts
+        </ChipModalHeader>
+        <ChipModalBody>
+          <ul className='space-y-2 text-[var(--text-body)] text-sm'>
+            <li>
+              <kbd className='rounded bg-[var(--surface-2)] px-1.5 py-0.5'>⌘/Ctrl + Shift + O</kbd>{' '}
+              New chat
+            </li>
+            <li>
+              <kbd className='rounded bg-[var(--surface-2)] px-1.5 py-0.5'>⌘/Ctrl + K</kbd> Search
+              chats
+            </li>
+            <li>
+              <kbd className='rounded bg-[var(--surface-2)] px-1.5 py-0.5'>/</kbd> Focus message
+              input
+            </li>
+            <li>
+              <kbd className='rounded bg-[var(--surface-2)] px-1.5 py-0.5'>Esc</kbd> Close sidebar /
+              cancel rename
+            </li>
+          </ul>
+        </ChipModalBody>
+      </ChipModal>
     </div>
   )
 }
