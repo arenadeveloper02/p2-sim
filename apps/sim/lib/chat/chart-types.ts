@@ -34,7 +34,7 @@ export type ChartDataPoint =
   | string
   | [string | number, number]
   | [number, number, number]
-  | { name: string; value: number | number[] }
+  | { name: string; value: number | number[]; fullName?: string }
 
 export interface ChartSeries {
   name?: string
@@ -64,6 +64,10 @@ export interface ChartSpec {
   height?: number
   /** Explicit 3D flag; also inferred from the chart type. */
   is3D?: boolean
+  /** Render category bar charts horizontally (names on Y-axis). */
+  horizontal?: boolean
+  /** Full category labels for tooltips; parallels `xAxis.data` when shortened. */
+  categoryFullLabels?: string[]
 }
 
 /** True for chart types that require the echarts-gl (WebGL) extension. */

@@ -40,6 +40,7 @@ interface FunnelStage {
 }
 
 const DEFAULT_MAX_CATEGORIES = 12
+const MAX_CATEGORY_LABEL_LEN = 28
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
@@ -47,6 +48,20 @@ function round2(n: number): number {
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v)
+}
+
+/** Short display label for long campaign/ad names; full name kept for tooltips. */
+function shortenCampaignLabel(label: string, maxLen = MAX_CATEGORY_LABEL_LEN): string {
+  let s = String(label).trim()
+  s = s.replace(/^P2_/i, '')
+  s = s.replace(/_/g, ' ')
+  if (s.length <= maxLen) return s
+  return `${s.slice(0, maxLen - 1)}…`
+}
+
+function formatCategoryLabels(labels: string[]): { short: string[]; full: string[] } {
+  const full = labels.map((l) => String(l))
+  return { short: full.map((l) => shortenCampaignLabel(l)), full }
 }
 
 /**
@@ -273,7 +288,7 @@ function buildCategoryBar(
   id: string,
   title: string
 ): ChartSpec {
-  const labels = rows.map((r) => r.label)
+  const { short, full } = formatCategoryLabels(rows.map((r) => r.label))
   const series = metricNames.map((name) => ({
     name,
     type: 'bar' as ChartType,
@@ -284,10 +299,13 @@ function buildCategoryBar(
     id,
     type: 'bar',
     title,
-    xAxis: { type: 'category', data: labels },
+    horizontal: true,
+    categoryFullLabels: full,
+    xAxis: { type: 'category', data: short },
     yAxis: { type: 'value' },
     series,
     legend: series.length > 1,
+    height: Math.min(480, Math.max(280, rows.length * 40 + 100)),
   }
 }
 
@@ -304,10 +322,14 @@ function buildSharePie(
       {
         name: metricName,
         type: 'pie',
-        data: rows.map((r) => ({
-          name: r.label,
-          value: isFiniteNumber(r.metrics[metricName]) ? round2(r.metrics[metricName]) : 0,
-        })),
+        data: rows.map((r) => {
+          const full = String(r.label)
+          return {
+            name: shortenCampaignLabel(full),
+            fullName: full,
+            value: isFiniteNumber(r.metrics[metricName]) ? round2(r.metrics[metricName]) : 0,
+          }
+        }),
       },
     ],
     legend: true,

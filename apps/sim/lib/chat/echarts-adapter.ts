@@ -76,10 +76,10 @@ function build2DSeries(spec: ChartSpec): Record<string, unknown>[] {
     if (type === 'bar') base.barMaxWidth = 48
 
     if (type === 'pie') {
-      base.radius = ['35%', '70%']
-      base.center = ['50%', '60%']
+      base.radius = ['32%', '58%']
+      base.center = ['50%', '44%']
       base.itemStyle = { borderRadius: 6, borderColor: 'transparent', borderWidth: 2 }
-      // Keep donut labels off-slice to avoid long category names overlapping the chart area.
+      // Keep donut labels off-slice; legend + tooltip carry campaign names.
       base.avoidLabelOverlap = true
       base.label = { show: false, color: 'inherit' }
       base.labelLine = { show: false }
@@ -127,6 +127,33 @@ function buildTitle(spec: ChartSpec, theme: ChartTheme): Record<string, unknown>
     textStyle: { color: theme.textColor, fontSize: 14, fontWeight: 600 },
     subtextStyle: { color: theme.textColor, fontSize: 12 },
   }
+}
+
+function pieTooltipFormatter(params: {
+  name?: string
+  seriesName?: string
+  value?: number
+  percent?: number
+  data?: { fullName?: string; value?: number }
+}): string {
+  const fullName = params.data?.fullName ?? params.name ?? ''
+  const value = params.value ?? params.data?.value ?? ''
+  const pct = params.percent != null ? ` (${params.percent}%)` : ''
+  return `${fullName}<br/>${params.seriesName ?? ''}: ${value}${pct}`
+}
+
+function axisBarTooltipFormatter(
+  params: Array<{ dataIndex?: number; name?: string; seriesName?: string; value?: number; marker?: string }>,
+  fullLabels?: string[]
+): string {
+  const items = Array.isArray(params) ? params : [params]
+  const idx = items[0]?.dataIndex ?? 0
+  const fullName = fullLabels?.[idx] ?? items[0]?.name ?? ''
+  let html = `${fullName}<br/>`
+  for (const p of items) {
+    html += `${p.marker ?? ''} ${p.seriesName ?? ''}: ${p.value ?? ''}<br/>`
+  }
+  return html
 }
 
 /**
@@ -184,7 +211,20 @@ export function specToEChartsOption(
   if (spec.type === 'pie') {
     return {
       ...common,
-      tooltip: { ...(common.tooltip as object), trigger: 'item' },
+      legend: showLegend
+        ? {
+            type: 'scroll',
+            bottom: 4,
+            left: 'center',
+            orient: 'horizontal',
+            textStyle: { color: theme.textColor },
+          }
+        : undefined,
+      tooltip: {
+        ...(common.tooltip as object),
+        trigger: 'item',
+        formatter: pieTooltipFormatter,
+      },
       series: build2DSeries(spec),
     }
   }
@@ -194,6 +234,45 @@ export function specToEChartsOption(
     return {
       ...common,
       tooltip: { ...(common.tooltip as object), trigger: 'item' },
+      series: build2DSeries(spec),
+    }
+  }
+
+  // ---- Horizontal bar (categories on Y-axis) ----
+  if (spec.type === 'bar' && spec.horizontal) {
+    const categories = spec.xAxis?.data
+    const fullLabels = spec.categoryFullLabels
+    return {
+      ...common,
+      tooltip: {
+        ...(common.tooltip as object),
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: (params: unknown) =>
+          axisBarTooltipFormatter(
+            params as Array<{ dataIndex?: number; name?: string; seriesName?: string; value?: number; marker?: string }>,
+            fullLabels
+          ),
+      },
+      grid: { left: 12, right: 24, top: title ? 56 : 32, bottom: 24, containLabel: true },
+      xAxis: {
+        type: 'value',
+        axisLine: { lineStyle: { color: theme.axisLineColor } },
+        splitLine: { lineStyle: { color: theme.splitLineColor } },
+        axisLabel: { color: theme.textColor },
+      },
+      yAxis: {
+        type: 'category',
+        ...(categories ? { data: categories } : {}),
+        inverse: true,
+        axisLine: { lineStyle: { color: theme.axisLineColor } },
+        axisLabel: {
+          color: theme.textColor,
+          width: 150,
+          overflow: 'truncate',
+          ellipsis: '…',
+        },
+      },
       series: build2DSeries(spec),
     }
   }
