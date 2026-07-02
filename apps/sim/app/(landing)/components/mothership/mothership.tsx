@@ -7,8 +7,8 @@ import {
 } from '@/app/(landing)/components/mothership/components/iso-marks'
 
 /**
- * Landing Sim section - the high-level "how Sim works" overview that sets up the
- * {@link Features} deep-dive. A two-line heading frames Sim as one workspace for
+ * Landing Arena section - the high-level "how Arena works" overview that sets up the
+ * {@link Features} deep-dive. A two-line heading frames Arena as one workspace for
  * the whole platform; below, four columns call out its main areas (Integrate ·
  * Context · Build · Monitor), each paired with an abstract circle "goo"
  * mark and a one-line definition. These are the same four areas Features then
@@ -55,7 +55,7 @@ const AREAS: Area[] = [
     word: 'Build',
     Mark: IsoBuildIllustration,
     size: 176,
-    definition: 'Compose agent logic in the visual builder, or just describe it to Sim.',
+    definition: 'Compose agent logic in the visual builder, or just describe it to Arena.',
   },
   {
     word: 'Monitor',

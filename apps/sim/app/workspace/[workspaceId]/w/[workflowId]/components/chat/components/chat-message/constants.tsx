@@ -1,8 +1,8 @@
 // file: utils/isBase64.ts
 
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
+import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@sim/emcn'
 import { AlertTriangle, Check, Download, Expand, X } from 'lucide-react'
-import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 import { normalizeImageUrlForCompare } from '@/lib/chat/assistant-assets'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 

@@ -11,12 +11,6 @@ import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
-// import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
-import {
-  deployedChatPromptSentEvent,
-  deployedChatThreadSelectedEvent,
-  deployedNewChatEvent,
-} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
   ChatErrorState,
   ChatInput,
@@ -29,9 +23,15 @@ import {
   // SSOAuth,
   UnauthorizedEmailError,
   VoiceInterface,
-} from '@/app/chat/components'
-import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
-import { useAudioStreaming, useChatStreaming } from '@/app/chat/hooks'
+} from '@/app/(interfaces)/chat/components'
+import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/(interfaces)/chat/constants'
+import { useAudioStreaming, useChatStreaming } from '@/app/(interfaces)/chat/hooks'
+// import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
+import {
+  deployedChatPromptSentEvent,
+  deployedChatThreadSelectedEvent,
+  deployedNewChatEvent,
+} from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { ArenaChatHeader } from '../components/header/arenaHeader'
 import { FeedbackView } from './FeedbackView'

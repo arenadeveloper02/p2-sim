@@ -288,7 +288,9 @@ export function General() {
 
   return (
     <>
-      <SettingsPanel actions={actions}>
+      <SettingsPanel
+      // actions={actions}
+      >
         <SettingsSection label='Profile'>
           <div className='flex flex-col gap-3'>
             <div className='flex items-center gap-3'>

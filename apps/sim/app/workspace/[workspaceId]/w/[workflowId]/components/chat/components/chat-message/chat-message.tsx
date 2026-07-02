@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
+import { Tooltip } from '@sim/emcn'
 import { Check, Copy } from 'lucide-react'
-import { Tooltip } from '@/components/emcn'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
 import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'

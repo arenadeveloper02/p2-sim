@@ -706,7 +706,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     completionFailure?: string
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,

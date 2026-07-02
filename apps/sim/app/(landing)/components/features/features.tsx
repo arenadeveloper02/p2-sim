@@ -8,8 +8,8 @@ import { KnowledgeCallout } from '@/app/(landing)/components/features/components
 import { LogsTablePreview } from '@/app/(landing)/components/features/components/logs-table-preview'
 
 /**
- * Landing features - how Sim works, as a platform lifecycle. Four beats, in the
- * order you actually use Sim: bring your tools in (Integrate), give it data to
+ * Landing features - how Arena works, as a platform lifecycle. Four beats, in the
+ * order you actually use Arena: bring your tools in (Integrate), give it data to
  * reason over (Context), build the agent logic (Build), then watch it run
  * (Monitor). Each beat uses one shared {@link FeatureStage} template: a copy
  * block over a static, edge-faded platform backdrop with an elevated real-UI
@@ -44,7 +44,7 @@ export function Features() {
       className='relative mx-auto w-full max-w-[1446px] px-12 max-sm:px-5 max-lg:px-8'
     >
       <h2 id='features-heading' className='sr-only'>
-        Integrate your tools, give Sim context, build agents, and monitor every run.
+        Integrate your tools, give Arena context, build agents, and monitor every run.
       </h2>
 
       <div className='grid grid-cols-1 gap-[120px] max-sm:grid-cols-1 max-sm:gap-16 max-lg:grid-cols-2 max-lg:gap-x-8 max-lg:gap-y-12'>
@@ -52,7 +52,7 @@ export function Features() {
         <FeatureStage
           eyebrow='Integrate'
           title='Connect the tools your work runs on.'
-          description='Plug in 1,000+ integrations like Slack, HubSpot, Salesforce, and Notion, so Sim agents act across the stack you already use.'
+          description='Plug in 1,000+ integrations like Slack, HubSpot, Salesforce, and Notion, so Arena agents act across the stack you already use.'
           view='workflow'
           workflowId='wf-self-healing-crm'
           callout={<IntegrationsCallout />}
@@ -61,8 +61,8 @@ export function Features() {
         {/* Context: store data semantically. */}
         <FeatureStage
           eyebrow='Context'
-          title='Give Sim data it can reason over.'
-          description='Sim stores your data semantically in tables, files, and knowledge bases your agents read from to ground every answer in your own data.'
+          title='Give Arena data it can reason over.'
+          description='Arena stores your data semantically in tables, files, and knowledge bases your agents read from to ground every answer in your own data.'
           view='tables'
           callout={<KnowledgeCallout />}
         />

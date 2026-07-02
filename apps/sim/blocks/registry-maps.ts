@@ -341,6 +341,19 @@ import { ZoomBlock, ZoomBlockMeta } from '@/blocks/blocks/zoom'
 import { ZoomInfoBlock, ZoomInfoBlockMeta } from '@/blocks/blocks/zoominfo'
 import type { BlockConfig, BlockMeta } from '@/blocks/types'
 
+const ARENA_CUSTOM_BLOCK_REGISTRY: Record<string, BlockConfig> = {
+  arena: ArenaBlock,
+  facebook_ads: FacebookAdsBlock,
+  figma: FigmaBlock,
+  google_ads_v1: GoogleAdsV1Block,
+  image_fusion: ImageFusionBlock,
+  p2_docs: P2DocsBlock,
+  semrush: SemrushBlock,
+  spyfu: SpyfuBlock,
+  unipile: UnipileBlock,
+  // presentation: PresentationBlock,
+}
+
 /** All block configs keyed by block type. The execution source of truth. */
 export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   a2a: A2ABlock,
@@ -655,6 +668,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   zep: ZepBlock,
   zoom: ZoomBlock,
   zoominfo: ZoomInfoBlock,
+  ...ARENA_CUSTOM_BLOCK_REGISTRY,
 }
 
 /**
@@ -670,6 +684,11 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
  * pages) and `getAllBlockMeta()` → `POPULAR_WORKFLOWS` (landing integrations
  * index). The toolbar and search modal read block *configs*, not metas.
  */
+
+const ARENA_CUSTOM_BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
+  unipile: UnipileBlockMeta,
+}
+
 export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   agentmail: AgentMailBlockMeta,
   agentphone: AgentPhoneBlockMeta,
@@ -905,4 +924,5 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   zerobounce: ZeroBounceBlockMeta,
   zoom: ZoomBlockMeta,
   zoominfo: ZoomInfoBlockMeta,
+  ...ARENA_CUSTOM_BLOCK_META_REGISTRY,
 }

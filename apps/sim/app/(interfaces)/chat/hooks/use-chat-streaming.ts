@@ -3,51 +3,17 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import {
+  type AssistantChatFile as ChatFile,
+  extractAssistantFilesFromData,
+  extractGeneratedImagesFromData,
+} from '@/lib/chat/assistant-assets'
 import { readSSEEvents } from '@/lib/core/utils/sse'
-import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
-import type { ChatFile, ChatMessage } from '@/app/(interfaces)/chat/components/message/message'
+import type { ChatMessage } from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
+import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 
 const logger = createLogger('UseChatStreaming')
-
-function extractFilesFromData(
-  data: any,
-  files: ChatFile[] = [],
-  seenIds = new Set<string>()
-): ChatFile[] {
-  if (!data || typeof data !== 'object') {
-    return files
-  }
-
-  if (isUserFileWithMetadata(data)) {
-    if (!seenIds.has(data.id)) {
-      seenIds.add(data.id)
-      files.push({
-        id: data.id,
-        name: data.name,
-        url: data.url,
-        key: data.key,
-        size: data.size,
-        type: data.type,
-        context: data.context,
-      })
-    }
-    return files
-  }
-
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      extractFilesFromData(item, files, seenIds)
-    }
-    return files
-  }
-
-  for (const value of Object.values(data)) {
-    extractFilesFromData(value, files, seenIds)
-  }
-
-  return files
-}
 
 interface VoiceSettings {
   isVoiceEnabled: boolean
@@ -64,6 +30,23 @@ export interface StreamingOptions {
   onAudioEnd?: () => void
   audioStreamHandler?: (text: string) => Promise<void>
   outputConfigs?: Array<{ blockId: string; path?: string }>
+}
+
+type GeneratedImage = ReturnType<typeof extractGeneratedImagesFromData>[number]
+
+interface StreamFinalData {
+  success: boolean
+  error?: string | { message?: string }
+  output?: Record<string, Record<string, unknown>>
+  executionId?: string
+}
+
+type StreamSSEPayload = {
+  blockId?: string
+  chunk?: string
+  event?: string
+  error?: string
+  data?: StreamFinalData | ChatMessage['knowledgeResults']
 }
 
 export function useChatStreaming() {
@@ -134,6 +117,7 @@ export function useChatStreaming() {
 
     let accumulatedText = ''
     let lastAudioPosition = 0
+    let pendingKnowledgeResults: ChatMessage['knowledgeResults']
 
     const messageIdMap = new Map<string, string>()
     const messageId = generateId()
@@ -194,23 +178,19 @@ export function useChatStreaming() {
     let terminated = false
 
     try {
-      await readSSEEvents<{
-        blockId?: string
-        chunk?: string
-        event?: string
-        error?: string
-        data?: {
-          success: boolean
-          error?: string | { message?: string }
-          output?: Record<string, Record<string, any>>
-        }
-      }>(response.body, {
+      await readSSEEvents<StreamSSEPayload>(response.body, {
         signal: abortControllerRef.current.signal,
         onParseError: (_data, parseError) => {
           logger.error('Error parsing stream data:', parseError)
         },
         onEvent: async (json) => {
           const { blockId, chunk: contentChunk, event: eventType } = json
+
+          const forkKnowledgeResults = readForkKnowledgeResultsEvent(json)
+          if (forkKnowledgeResults !== undefined) {
+            pendingKnowledgeResults = forkKnowledgeResults
+            return
+          }
 
           if (eventType === 'error' || json.event === 'error') {
             const errorMessage = json.error || CHAT_ERROR_MESSAGES.GENERIC_ERROR
@@ -231,126 +211,14 @@ export function useChatStreaming() {
             return true
           }
 
-          if (eventType === 'final' && json.data) {
+          if (eventType === 'final' && json.data && !Array.isArray(json.data)) {
             flushUI()
-            const finalData = json.data
-
-            const outputConfigs = streamingOptions?.outputConfigs
-            const formattedOutputs: string[] = []
-            let extractedFiles: ChatFile[] = []
-
-            const formatValue = (value: any): string | null => {
-              if (value === null || value === undefined) {
-                return null
-              }
-
-              if (isUserFileWithMetadata(value)) {
-                return null
-              }
-
-              if (Array.isArray(value) && value.length === 0) {
-                return null
-              }
-
-              if (typeof value === 'string') {
-                return value
-              }
-
-              if (typeof value === 'object') {
-                try {
-                  return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
-                } catch {
-                  return String(value)
-                }
-              }
-
-              return String(value)
-            }
-
-            const getOutputValue = (blockOutputs: Record<string, any>, path?: string) => {
-              if (!path || path === 'content') {
-                if (blockOutputs.content !== undefined) return blockOutputs.content
-                if (blockOutputs.result !== undefined) return blockOutputs.result
-                return blockOutputs
-              }
-
-              if (blockOutputs[path] !== undefined) {
-                return blockOutputs[path]
-              }
-
-              if (path.includes('.')) {
-                return path.split('.').reduce<any>((current, segment) => {
-                  if (current && typeof current === 'object' && segment in current) {
-                    return current[segment]
-                  }
-                  return undefined
-                }, blockOutputs)
-              }
-
-              return undefined
-            }
-
-            if (outputConfigs?.length && finalData.output) {
-              for (const config of outputConfigs) {
-                const blockOutputs = finalData.output[config.blockId]
-                if (!blockOutputs) continue
-
-                const value = getOutputValue(blockOutputs, config.path)
-
-                if (isUserFileWithMetadata(value)) {
-                  extractedFiles.push({
-                    id: value.id,
-                    name: value.name,
-                    url: value.url,
-                    key: value.key,
-                    size: value.size,
-                    type: value.type,
-                    context: value.context,
-                  })
-                  continue
-                }
-
-                const nestedFiles = extractFilesFromData(value)
-                if (nestedFiles.length > 0) {
-                  extractedFiles = [...extractedFiles, ...nestedFiles]
-                  continue
-                }
-
-                const formatted = formatValue(value)
-                if (formatted) {
-                  formattedOutputs.push(formatted)
-                }
-              }
-            }
-
-            let finalContent = accumulatedText
-
-            if (formattedOutputs.length > 0) {
-              const nonEmptyOutputs = formattedOutputs.filter((output) => output.trim())
-              if (nonEmptyOutputs.length > 0) {
-                const combinedOutputs = nonEmptyOutputs.join('\n\n')
-                finalContent = finalContent
-                  ? `${finalContent.trim()}\n\n${combinedOutputs}`
-                  : combinedOutputs
-              }
-            }
-
-            if (!finalContent && extractedFiles.length === 0) {
-              if (finalData.error) {
-                if (typeof finalData.error === 'string') {
-                  finalContent = finalData.error
-                } else if (typeof finalData.error?.message === 'string') {
-                  finalContent = finalData.error.message
-                }
-              } else if (finalData.success && finalData.output) {
-                const fallbackOutput = Object.values(finalData.output)
-                  .map((block) => formatValue(block)?.trim())
-                  .filter(Boolean)[0]
-                if (fallbackOutput) {
-                  finalContent = fallbackOutput
-                }
-              }
-            }
+            const forkFinal = resolveForkFinalStreamState({
+              accumulatedText,
+              finalData: json.data,
+              outputConfigs: streamingOptions?.outputConfigs,
+              pendingKnowledgeResults,
+            })
 
             setMessages((prev) =>
               prev.map((msg) =>
@@ -358,13 +226,18 @@ export function useChatStreaming() {
                   ? {
                       ...msg,
                       isStreaming: false,
-                      content: finalContent ?? msg.content,
-                      files: extractedFiles.length > 0 ? extractedFiles : undefined,
+                      content: forkFinal.content,
+                      executionId: forkFinal.executionId ?? msg.executionId,
+                      liked: null,
+                      files: forkFinal.files,
+                      generatedImages: forkFinal.generatedImages,
+                      knowledgeResults: forkFinal.knowledgeResults,
                     }
                   : msg
               )
             )
 
+            pendingKnowledgeResults = undefined
             accumulatedTextRef.current = ''
             lastStreamedPositionRef.current = 0
             lastDisplayedPositionRef.current = 0
@@ -472,4 +345,235 @@ export function useChatStreaming() {
     stopStreaming,
     handleStreamedResponse,
   }
+}
+
+interface ForkFinalStreamInput {
+  accumulatedText: string
+  finalData: StreamFinalData
+  outputConfigs?: StreamingOptions['outputConfigs']
+  pendingKnowledgeResults?: ChatMessage['knowledgeResults']
+}
+
+interface ForkFinalStreamState {
+  content: string | Record<string, unknown>
+  executionId?: string
+  files?: ChatFile[]
+  generatedImages?: GeneratedImage[]
+  knowledgeResults?: ChatMessage['knowledgeResults']
+}
+
+/**
+ * Reads a fork-specific `knowledgeResults` SSE event without touching the main event dispatch flow.
+ */
+function readForkKnowledgeResultsEvent(
+  json: StreamSSEPayload
+): ChatMessage['knowledgeResults'] | undefined {
+  if (json.event !== 'knowledgeResults' || !Array.isArray(json.data)) {
+    return undefined
+  }
+
+  return json.data as ChatMessage['knowledgeResults']
+}
+
+/**
+ * Resolves the assistant message produced by a `final` SSE event, including fork extensions
+ * for knowledge results, generated images, and assistant file attachments.
+ */
+function resolveForkFinalStreamState(input: ForkFinalStreamInput): ForkFinalStreamState {
+  const { accumulatedText, finalData, outputConfigs, pendingKnowledgeResults } = input
+  const collected = collectForkConfiguredOutputs(outputConfigs, finalData.output)
+
+  let finalContent = accumulatedText
+
+  if (collected.formattedOutputs.length > 0) {
+    const nonEmptyOutputs = collected.formattedOutputs.filter((output) => output.trim())
+    if (nonEmptyOutputs.length > 0) {
+      const combinedOutputs = nonEmptyOutputs.join('\n\n')
+      finalContent = finalContent ? `${finalContent.trim()}\n\n${combinedOutputs}` : combinedOutputs
+    }
+  }
+
+  if (!finalContent && collected.extractedFiles.length === 0) {
+    const fallbackContent = resolveForkFallbackContent(finalData)
+    if (fallbackContent) {
+      finalContent = fallbackContent
+    }
+  }
+
+  const { content, generatedImages } = resolveForkContentWithImages(
+    finalContent,
+    collected.generatedImages
+  )
+
+  return {
+    content,
+    executionId: finalData.executionId,
+    files: collected.extractedFiles.length > 0 ? collected.extractedFiles : undefined,
+    generatedImages,
+    knowledgeResults: pendingKnowledgeResults,
+  }
+}
+
+function collectForkConfiguredOutputs(
+  outputConfigs: StreamingOptions['outputConfigs'],
+  blockOutputMap?: Record<string, Record<string, unknown>>
+) {
+  const formattedOutputs: string[] = []
+  const extractedFiles: ChatFile[] = []
+  let generatedImages: GeneratedImage[] = []
+
+  if (!outputConfigs?.length || !blockOutputMap) {
+    return { formattedOutputs, extractedFiles, generatedImages }
+  }
+
+  for (const config of outputConfigs) {
+    const blockOutputs = blockOutputMap[config.blockId]
+    if (!blockOutputs) continue
+
+    const value = getForkBlockOutputValue(blockOutputs, config.path)
+
+    if (config.path === 'results' && isForkKnowledgeResultsArray(value)) {
+      continue
+    }
+
+    const images = extractGeneratedImagesFromData(value)
+    if (images.length > 0) {
+      generatedImages = extractGeneratedImagesFromData(value, generatedImages)
+      continue
+    }
+
+    const files = extractAssistantFilesFromData(value)
+    if (files.length > 0) {
+      extractedFiles.push(...files)
+      generatedImages = extractGeneratedImagesFromData(value, generatedImages)
+      continue
+    }
+
+    const formatted = formatForkStreamOutputValue(value)
+    if (formatted) {
+      formattedOutputs.push(formatted)
+    }
+  }
+
+  return { formattedOutputs, extractedFiles, generatedImages }
+}
+
+function resolveForkFallbackContent(finalData: StreamFinalData): string | undefined {
+  if (finalData.error) {
+    if (typeof finalData.error === 'string') {
+      return finalData.error
+    }
+
+    if (typeof finalData.error.message === 'string') {
+      return finalData.error.message
+    }
+  }
+
+  if (!finalData.success || !finalData.output) {
+    return undefined
+  }
+
+  return (
+    Object.values(finalData.output)
+      .filter((block) => !isForkKnowledgeResultsArray(block?.results))
+      .map((block) => formatForkStreamOutputValue(block)?.trim())
+      .filter(Boolean)[0] ?? undefined
+  )
+}
+
+function resolveForkContentWithImages(
+  finalContent: string,
+  generatedImages: GeneratedImage[]
+): { content: string | Record<string, unknown>; generatedImages?: GeneratedImage[] } {
+  let content: string | Record<string, unknown> = finalContent
+
+  if (generatedImages.length > 0) {
+    const { prose } = resolveMessageImagesAndProse(finalContent)
+    const imageUrls = generatedImages.map((image) => image.url)
+    content = {
+      content: prose,
+      image: imageUrls[0] ?? '',
+      images: imageUrls,
+    }
+  }
+
+  const resolvedGeneratedImages =
+    generatedImages.length > 0 ? generatedImages : extractGeneratedImagesFromData(content)
+
+  return {
+    content,
+    generatedImages: resolvedGeneratedImages.length > 0 ? resolvedGeneratedImages : undefined,
+  }
+}
+
+function isForkKnowledgeResultsArray(value: unknown): value is Array<Record<string, unknown>> {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) =>
+        item &&
+        typeof item === 'object' &&
+        'documentId' in item &&
+        'documentName' in item &&
+        'content' in item &&
+        'chunkIndex' in item
+    )
+  )
+}
+
+function getForkBlockOutputValue(blockOutputs: Record<string, unknown>, path?: string) {
+  if (!path || path === 'content') {
+    if (blockOutputs.content !== undefined) return blockOutputs.content
+    if (blockOutputs.result !== undefined) return blockOutputs.result
+    return blockOutputs
+  }
+
+  if (blockOutputs[path] !== undefined) {
+    return blockOutputs[path]
+  }
+
+  if (path.includes('.')) {
+    return path.split('.').reduce<unknown>((current, segment) => {
+      if (current && typeof current === 'object' && segment in current) {
+        return (current as Record<string, unknown>)[segment]
+      }
+
+      return undefined
+    }, blockOutputs)
+  }
+
+  return undefined
+}
+
+function formatForkStreamOutputValue(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+
+  if (extractAssistantFilesFromData(value).length > 0) {
+    return null
+  }
+
+  if (extractGeneratedImagesFromData(value).length > 0) {
+    return null
+  }
+
+  if (Array.isArray(value) && value.length === 0) {
+    return null
+  }
+
+  if (typeof value === 'string') {
+    return value
+  }
+
+  if (typeof value === 'object') {
+    try {
+      return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
+    } catch {
+      return String(value)
+    }
+  }
+
+  return String(value)
 }

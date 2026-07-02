@@ -23,12 +23,12 @@ export function HomeStructuredData() {
         '@type': 'WebPage',
         '@id': `${SITE_URL}#webpage`,
         url: SITE_URL,
-        name: 'Sim, The AI Workspace | Build, Deploy & Manage AI Agents',
+        name: 'Arena, The AI Workspace | Build, Deploy & Manage AI Agents',
         isPartOf: { '@id': `${SITE_URL}#website` },
         about: { '@id': `${SITE_URL}#software` },
         datePublished: '2024-01-01T00:00:00+00:00',
         description:
-          'Sim is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work.',
+          'Arena is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work.',
         breadcrumb: { '@id': `${SITE_URL}#breadcrumb` },
         inLanguage: 'en-US',
         speakable: {
@@ -46,9 +46,9 @@ export function HomeStructuredData() {
         '@type': 'WebApplication',
         '@id': `${SITE_URL}#software`,
         url: SITE_URL,
-        name: 'Sim, The AI Workspace',
+        name: 'Arena, The AI Workspace',
         description:
-          'Sim is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work, visually, conversationally, or with code. Trusted by over 100,000 builders. SOC2 compliant.',
+          'Arena is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work, visually, conversationally, or with code. Trusted by over 100,000 builders. SOC2 compliant.',
         applicationCategory: 'BusinessApplication',
         applicationSubCategory: 'AI Workspace',
         operatingSystem: 'Web',

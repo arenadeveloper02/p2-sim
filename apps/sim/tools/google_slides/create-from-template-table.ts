@@ -154,9 +154,7 @@ export function distributeColumnWidthsByContent(
   const weightSum = normalizedWeights.reduce((sum, weight) => sum + weight, 0)
   const flexibleWidth = totalWidth - minTotal
 
-  return normalizedWeights.map(
-    (weight) => minWidth + (flexibleWidth * weight) / weightSum
-  )
+  return normalizedWeights.map((weight) => minWidth + (flexibleWidth * weight) / weightSum)
 }
 
 /** Reads per-column widths (EMU) from a fetched presentation payload. */

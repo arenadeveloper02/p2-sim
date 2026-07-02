@@ -1,3 +1,4 @@
+import Image from 'next/image'
 /**
  * Inline "sim" brand logotype (wordmark, no separate icon mark) - the paths
  * from the v1.0 brand guide's `simLogotype--dark.svg`, inlined so the logo
@@ -28,5 +29,17 @@ export function SimWordmark() {
         <path d='M179.426 212H149.162V49.7551C153.756 51.9119 158.884 53.1178 164.294 53.1178C169.704 53.1178 174.833 51.9119 179.426 49.7551V212Z' />
       </g>
     </svg>
+  )
+}
+
+export function ArenaWordmark() {
+  return (
+    <Image
+      src='/logo/sim-landing.svg'
+      alt='Arena'
+      width={85}
+      height={26}
+      className='h-[26.4px] w-auto'
+    />
   )
 }

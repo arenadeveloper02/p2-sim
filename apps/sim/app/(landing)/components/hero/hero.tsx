@@ -63,17 +63,17 @@ export function Hero() {
       className='relative mx-auto flex h-[min(calc(100vh-62px),960px)] w-full max-w-[1446px] flex-col items-start gap-[22px] px-12 pt-[112px] text-left max-sm:px-5 max-sm:pt-12 max-lg:px-8 max-xl:h-auto max-xl:gap-5 max-xl:pt-20 max-xl:pb-4'
     >
       <p className='sr-only'>
-        Sim is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect
-        1,000+ integrations and every major LLM to create agents that automate real work, visually,
-        conversationally, or with code. Trusted by over 100,000 builders, SOC2 compliant, and
-        production-ready for teams of every size.
+        Arena is the open-source AI workspace where teams build, deploy, and manage AI agents.
+        Connect 1,000+ integrations and every major LLM to create agents that automate real work,
+        visually, conversationally, or with code. Trusted by over 100,000 builders, SOC2 compliant,
+        and production-ready for teams of every size.
       </p>
 
       <h1
         id='hero-heading'
         className='text-balance text-[48px] text-[var(--text-primary)] leading-[1.1] max-sm:text-[32px] max-xl:text-wrap max-xl:text-[40px] [&>br]:max-xl:hidden'
       >
-        Sim is the AI workspace <br />
+        Arena is the AI workspace <br />
         for agentic workflows.
       </h1>
 

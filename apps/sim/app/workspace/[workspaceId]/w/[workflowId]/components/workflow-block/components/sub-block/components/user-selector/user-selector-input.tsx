@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Tooltip } from '@sim/emcn'
 import { useParams } from 'next/navigation'
-import { Tooltip } from '@/components/emcn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import {
   type SlackUserInfo,

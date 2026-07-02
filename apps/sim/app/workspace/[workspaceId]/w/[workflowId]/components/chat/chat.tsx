@@ -886,7 +886,7 @@ export function Chat() {
 
       const fileArray =
         combinedChatFiles.length > 0
-          ? combinedChatFiles.map((chatFile) => ({
+          ? combinedChatFiles.map((chatFile: ChatFile) => ({
               name: chatFile.name,
               size: chatFile.size,
               type: chatFile.type,

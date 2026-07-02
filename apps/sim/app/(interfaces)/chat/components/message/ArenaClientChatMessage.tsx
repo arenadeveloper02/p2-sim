@@ -12,21 +12,21 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Tooltip } from '@sim/emcn'
 // import MarkdownRenderer from './components/markdown-renderer'
 // import { toastError, toastSuccess } from '@/components/ui'
 import { createLogger } from '@sim/logger'
 import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
-import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
-import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
-import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
+import { KnowledgeResultsModal } from '@/app/(interfaces)/chat/components/message/components/knowledge-results-modal'
+import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/components/streaming-indicator'
 import type {
   ChatAttachment,
   KnowledgeRef,
   KnowledgeResultChunk,
-} from '@/app/chat/components/message/message'
+} from '@/app/(interfaces)/chat/components/message/message'
 import {
   downloadImage,
   extractAllBase64Images,

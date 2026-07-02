@@ -98,7 +98,7 @@ export const PATCH = withRouteHandler(
       }
 
       if (!(await hasWorkspaceInboxAccess(workspaceId))) {
-        return NextResponse.json({ error: 'Sim Mailer requires a Max plan' }, { status: 403 })
+        return NextResponse.json({ error: 'Arena Mailer requires a Max plan' }, { status: 403 })
       }
 
       if (body.enabled === true) {

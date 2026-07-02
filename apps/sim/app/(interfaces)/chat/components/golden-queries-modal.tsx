@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, GripVertical, Loader2, Pencil, Trash2, X } from 'lucide-react'
 import {
   Button,
   Modal,
@@ -8,7 +7,8 @@ import {
   ModalFooter,
   ModalHeader,
   Tooltip,
-} from '@/components/emcn'
+} from '@sim/emcn'
+import { Check, GripVertical, Loader2, Pencil, Trash2, X } from 'lucide-react'
 
 interface GoldenQueryItem {
   id?: string

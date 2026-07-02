@@ -1,4 +1,5 @@
 'use client'
+import { Tooltip } from '@sim/emcn'
 import {
   ArrowLeft,
   CirclePlus,
@@ -7,7 +8,6 @@ import {
   RefreshCw,
   Sparkles,
 } from 'lucide-react'
-import { Tooltip } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 
