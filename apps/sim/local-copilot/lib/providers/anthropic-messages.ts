@@ -1,0 +1,104 @@
+import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+
+export type AnthropicContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string; content: string }
+
+export interface AnthropicMessage {
+  role: 'user' | 'assistant'
+  content: string | AnthropicContentBlock[]
+}
+
+/**
+ * Drops tool results that are not preceded by a matching assistant tool_use turn.
+ */
+export function sanitizeToolMessagePairing(messages: ChatMessage[]): ChatMessage[] {
+  const out: ChatMessage[] = []
+  let pendingToolUseIds = new Set<string>()
+
+  for (const message of messages) {
+    if (message.role === 'assistant' && message.toolCalls?.length) {
+      out.push(message)
+      pendingToolUseIds = new Set(message.toolCalls.map((call) => call.id))
+      continue
+    }
+
+    if (message.role === 'tool') {
+      const toolCallId = message.toolCallId ?? ''
+      if (toolCallId && pendingToolUseIds.has(toolCallId)) {
+        out.push(message)
+        pendingToolUseIds.delete(toolCallId)
+      }
+      continue
+    }
+
+    pendingToolUseIds = new Set()
+    out.push(message)
+  }
+
+  return out
+}
+
+/**
+ * Converts internal chat messages to Anthropic `/v1/messages` format.
+ * Batches consecutive tool results into a single user message per Anthropic requirements.
+ */
+export function convertMessagesToAnthropic(messages: ChatMessage[]): {
+  system: string
+  anthropicMessages: AnthropicMessage[]
+} {
+  const systemParts: string[] = []
+  const sanitized = sanitizeToolMessagePairing(messages)
+  const anthropicMessages: AnthropicMessage[] = []
+
+  for (let index = 0; index < sanitized.length; index++) {
+    const message = sanitized[index]
+
+    if (message.role === 'system') {
+      systemParts.push(message.content)
+      continue
+    }
+
+    if (message.role === 'tool') {
+      const toolResults: AnthropicContentBlock[] = []
+      while (index < sanitized.length && sanitized[index].role === 'tool') {
+        const toolMessage = sanitized[index]
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolMessage.toolCallId ?? '',
+          content: toolMessage.content,
+        })
+        index += 1
+      }
+      index -= 1
+
+      if (toolResults.length > 0) {
+        anthropicMessages.push({ role: 'user', content: toolResults })
+      }
+      continue
+    }
+
+    if (message.role === 'assistant' && message.toolCalls?.length) {
+      const content: AnthropicContentBlock[] = []
+      if (message.content.trim()) {
+        content.push({ type: 'text', text: message.content })
+      }
+      for (const call of message.toolCalls) {
+        let input: Record<string, unknown> = {}
+        try {
+          input = JSON.parse(call.arguments || '{}') as Record<string, unknown>
+        } catch {
+          input = {}
+        }
+        content.push({ type: 'tool_use', id: call.id, name: call.name, input })
+      }
+      anthropicMessages.push({ role: 'assistant', content })
+      continue
+    }
+
+    anthropicMessages.push({ role: message.role as 'user' | 'assistant', content: message.content })
+  }
+
+  return { system: systemParts.join('\n\n'), anthropicMessages }
+}

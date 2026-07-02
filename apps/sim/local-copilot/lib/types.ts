@@ -1,3 +1,4 @@
+import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 
 export interface LocalCopilotE2bCapabilities {
@@ -151,7 +152,15 @@ export type LocalCopilotStreamEvent =
       toolName: string
       args?: Record<string, unknown>
     }
-  | { type: 'tool_call_result'; toolCallId: string; toolName: string; success: boolean; output: unknown; error?: string }
+  | {
+      type: 'tool_call_result'
+      toolCallId: string
+      toolName: string
+      success: boolean
+      output: unknown
+      error?: string
+      resources?: MothershipResource[]
+    }
   | { type: 'patch_proposed'; patch: WorkflowPatch; patchId: string }
   | { type: 'recommendations'; items: string[] }
   | { type: 'error'; message: string }

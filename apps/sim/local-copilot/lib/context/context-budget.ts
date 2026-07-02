@@ -93,14 +93,20 @@ export function fitPromptToTokenBudget(
 
   const systemMessages = messages.filter((message) => message.role === 'system')
   const conversational = messages.filter((message) => message.role !== 'system')
+  const turns = groupHistoryTurns(conversational)
 
-  let trimmedConversation = [...conversational]
+  let keptTurns = [...turns]
   while (
-    trimmedConversation.length > 1 &&
-    estimateChatMessagesTokens([...systemMessages, ...trimmedConversation]) > tokenBudget
+    keptTurns.length > 1 &&
+    estimateChatMessagesTokens([
+      ...systemMessages,
+      ...keptTurns.flatMap((turn) => turn.messages),
+    ]) > tokenBudget
   ) {
-    trimmedConversation.shift()
+    keptTurns.shift()
   }
+
+  let trimmedConversation = keptTurns.flatMap((turn) => turn.messages)
 
   if (
     trimmedConversation.length === 1 &&

@@ -2,7 +2,10 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { mothershipMessagesToChatHistory } from '@/local-copilot/lib/mothership-history'
+import {
+  assistantMessageToChatHistory,
+  mothershipMessagesToChatHistory,
+} from '@/local-copilot/lib/mothership-history'
 import type { PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import { MothershipStreamV1EventType } from '@/lib/copilot/generated/mothership-stream-v1'
 
@@ -27,6 +30,8 @@ describe('mothershipMessagesToChatHistory', () => {
               id: 'tool-1',
               name: 'create_workflow',
               state: 'success',
+              params: { name: 'Weekly Email' },
+              result: { success: true, output: { workflowId: 'wf-1' } },
             },
           },
         ],
@@ -45,7 +50,19 @@ describe('mothershipMessagesToChatHistory', () => {
       { role: 'user', content: 'Build a workflow' },
       {
         role: 'assistant',
-        content: 'Sure, I will create one.\n[Tool create_workflow: success]',
+        content: 'Sure, I will create one.',
+        toolCalls: [
+          {
+            id: 'tool-1',
+            name: 'create_workflow',
+            arguments: JSON.stringify({ name: 'Weekly Email' }),
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        toolCallId: 'tool-1',
+        content: JSON.stringify({ success: true, output: { workflowId: 'wf-1' } }),
       },
     ])
   })
@@ -59,6 +76,19 @@ describe('mothershipMessagesToChatHistory', () => {
         timestamp: '2026-01-01T00:00:00.000Z',
       },
     ])
+
+    expect(history).toEqual([])
+  })
+})
+
+describe('assistantMessageToChatHistory', () => {
+  it('strips leaked tool markers from legacy assistant content', () => {
+    const history = assistantMessageToChatHistory({
+      id: 'assistant-legacy',
+      role: 'assistant',
+      content: '[Tool generate_image: success] [Tool open_resource: success]',
+      timestamp: '2026-01-01T00:00:00.000Z',
+    })
 
     expect(history).toEqual([])
   })

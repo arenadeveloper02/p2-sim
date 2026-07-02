@@ -32,10 +32,23 @@ describe('mothership-delegated-tools', () => {
 
     const editContent = defs.find((tool) => tool.name === 'edit_content')
     expect(editContent).toBeDefined()
+
+    const deployChat = defs.find((tool) => tool.name === 'deploy_chat')
+    expect(deployChat).toBeDefined()
+    expect(deployChat?.parameters).toMatchObject({ type: 'object' })
+
+    const createFile = defs.find((tool) => tool.name === 'create_file')
+    expect(createFile?.parameters).toMatchObject({
+      type: 'object',
+      properties: expect.objectContaining({
+        content: expect.objectContaining({ type: 'string' }),
+      }),
+    })
   })
 
   it('identifies delegated tool names', () => {
     expect(isMothershipDelegatedTool('run_workflow')).toBe(true)
+    expect(isMothershipDelegatedTool('deploy_chat')).toBe(true)
     expect(isMothershipDelegatedTool('edit_workflow')).toBe(false)
   })
 

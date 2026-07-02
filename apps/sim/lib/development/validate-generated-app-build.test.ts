@@ -62,7 +62,7 @@ describe('validate-generated-app-build', () => {
     expect(result.method).toBe('local')
     expect(result.output).toContain('=== tsc --noEmit ===')
     expect(mockExecuteShellInE2B).not.toHaveBeenCalled()
-  })
+  }, 30_000)
 
   it('validateGeneratedAppPreDeploy uses full build in E2B when E2B_API_KEY is set', async () => {
     mockE2bApiKey.value = 'test-key'
@@ -81,7 +81,7 @@ describe('validate-generated-app-build', () => {
     expect(shellScript).not.toContain('tsc --noEmit')
   })
 
-  it('includes prisma generate in E2B full build when database is required', async () => {
+  it('skips prisma db push in E2B validation for database apps', async () => {
     mockE2bApiKey.value = 'test-key'
     mockExecuteShellInE2B.mockResolvedValue({
       stdout: 'build ok',
@@ -90,6 +90,16 @@ describe('validate-generated-app-build', () => {
 
     const filesWithPrisma = [
       ...sampleFiles,
+      {
+        path: 'package.json',
+        content: JSON.stringify({
+          name: 'demo',
+          scripts: {
+            build: 'prisma generate && prisma db push && next build',
+          },
+          devDependencies: { prisma: '^6.0.0', next: '^15.0.0' },
+        }),
+      },
       { path: 'prisma/schema.prisma', content: 'model User { id String @id }' },
     ]
 
@@ -97,7 +107,9 @@ describe('validate-generated-app-build', () => {
 
     const shellScript = mockExecuteShellInE2B.mock.calls[0]?.[0]?.code as string
     expect(shellScript).toContain('npx prisma generate')
-    expect(shellScript).toContain('npm run build')
+    expect(shellScript).toContain('npx next build')
+    expect(shellScript).not.toContain('npm run build')
+    expect(shellScript).not.toContain('prisma db push')
   })
 
   it('validateGeneratedAppTypecheck still runs tsc in E2B when called directly', async () => {

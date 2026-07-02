@@ -1,10 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { supportsTemperature } from '@/providers/models'
+import { convertMessagesToAnthropic } from '@/local-copilot/lib/providers/anthropic-messages'
 import type {
   ChatCompletionChunk,
   ChatCompletionRequest,
-  ChatMessage,
   LocalCopilotProvider,
 } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotConfig } from '@/local-copilot/lib/types'
@@ -13,16 +13,6 @@ const logger = createLogger('LocalCopilotAnthropicProvider')
 
 const ANTHROPIC_API_VERSION = '2023-06-01'
 const ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
-
-interface AnthropicMessage {
-  role: 'user' | 'assistant'
-  content: string | AnthropicContentBlock[]
-}
-
-type AnthropicContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'tool_result'; tool_use_id: string; content: string }
 
 function toAnthropicTools(tools: ChatCompletionRequest['tools']) {
   if (!tools?.length) return undefined
@@ -33,64 +23,13 @@ function toAnthropicTools(tools: ChatCompletionRequest['tools']) {
   }))
 }
 
-function convertMessages(messages: ChatMessage[]): {
-  system: string
-  anthropicMessages: AnthropicMessage[]
-} {
-  const systemParts: string[] = []
-  const anthropicMessages: AnthropicMessage[] = []
-
-  for (const message of messages) {
-    if (message.role === 'system') {
-      systemParts.push(message.content)
-      continue
-    }
-
-    if (message.role === 'tool') {
-      anthropicMessages.push({
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: message.toolCallId ?? '',
-            content: message.content,
-          },
-        ],
-      })
-      continue
-    }
-
-    if (message.role === 'assistant' && message.toolCalls?.length) {
-      const content: AnthropicContentBlock[] = []
-      if (message.content.trim()) {
-        content.push({ type: 'text', text: message.content })
-      }
-      for (const call of message.toolCalls) {
-        let input: Record<string, unknown> = {}
-        try {
-          input = JSON.parse(call.arguments || '{}') as Record<string, unknown>
-        } catch {
-          input = {}
-        }
-        content.push({ type: 'tool_use', id: call.id, name: call.name, input })
-      }
-      anthropicMessages.push({ role: 'assistant', content })
-      continue
-    }
-
-    anthropicMessages.push({ role: message.role as 'user' | 'assistant', content: message.content })
-  }
-
-  return { system: systemParts.join('\n\n'), anthropicMessages }
-}
-
 export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilotProvider {
   const baseUrl = (config.baseUrl ?? ANTHROPIC_BASE_URL).replace(/\/$/, '')
 
   return {
     id: 'anthropic',
     async *chatCompletionStream(request: ChatCompletionRequest) {
-      const { system, anthropicMessages } = convertMessages(request.messages)
+      const { system, anthropicMessages } = convertMessagesToAnthropic(request.messages)
       const model = request.model || config.model
       const body = {
         model,

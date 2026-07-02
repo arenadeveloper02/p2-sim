@@ -17,6 +17,7 @@ import {
 import { executeTool as executeCopilotRegistryTool } from '@/lib/copilot/tool-executor/executor'
 import { ensureHandlersRegistered } from '@/lib/copilot/tool-executor/register-handlers'
 import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
+import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotToolExecutor')
@@ -30,6 +31,8 @@ export interface ToolExecutionContext {
   userPermission?: string
   structuredContext: LocalCopilotStructuredContext
   selectedBlockId?: string
+  /** Latest user message — used to preserve variation counts for generate_image. */
+  lastUserMessage?: string
 }
 
 function requireWorkflowContext(ctx: ToolExecutionContext): NonNullable<LocalCopilotStructuredContext['workflow']> {
@@ -45,6 +48,8 @@ export interface ToolExecutionResult {
   result: unknown
   error?: string
   patch?: WorkflowPatch
+  /** Resources to open in the mothership panel (e.g. open_resource, generate_image). */
+  resources?: MothershipResource[]
   /** Set when create_workflow succeeds — subsequent tools use this workflow. */
   createdWorkflowId?: string
 }

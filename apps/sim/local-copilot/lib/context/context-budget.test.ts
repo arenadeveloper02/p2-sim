@@ -44,7 +44,7 @@ describe('compactChatHistory', () => {
 })
 
 describe('fitPromptToTokenBudget', () => {
-  it('drops oldest conversational messages when over budget', () => {
+  it('drops oldest conversational turns when over budget', () => {
     const messages: ChatMessage[] = [
       { role: 'system', content: 'rules' },
       { role: 'user', content: 'a'.repeat(400) },
@@ -56,6 +56,27 @@ describe('fitPromptToTokenBudget', () => {
     expect(fitted.some((message) => message.content === 'latest question')).toBe(true)
     expect(fitted.filter((message) => message.role === 'system')).toHaveLength(1)
     expect(fitted.length).toBeLessThan(messages.length)
+  })
+
+  it('drops whole turns so assistant tool_use and tool_result pairs stay intact', () => {
+    const messages: ChatMessage[] = [
+      { role: 'system', content: 'rules' },
+      { role: 'user', content: 'old turn'.repeat(200) },
+      { role: 'assistant', content: 'old reply'.repeat(200) },
+      { role: 'user', content: 'tool turn' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'toolu_1', name: 'edit_workflow', arguments: '{}' }],
+      },
+      { role: 'tool', toolCallId: 'toolu_1', content: '{"success":true}' },
+      { role: 'user', content: 'latest question' },
+    ]
+
+    const fitted = fitPromptToTokenBudget(messages, 180)
+    expect(fitted.some((message) => message.content === 'latest question')).toBe(true)
+    expect(fitted.some((message) => message.role === 'tool')).toBe(true)
+    expect(fitted.some((message) => message.content === 'old turn'.repeat(200))).toBe(false)
   })
 })
 

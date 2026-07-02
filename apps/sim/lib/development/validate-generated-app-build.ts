@@ -40,6 +40,14 @@ export interface ValidateGeneratedAppBuildOptions {
 const DUMMY_DATABASE_URL = 'postgresql://user:pass@localhost:5432/validate?sslmode=disable'
 const NPM_INSTALL_ARGS = ['install', '--include=dev', '--legacy-peer-deps', '--no-audit', '--no-fund'] as const
 
+function shouldSkipPackageBuildScript(
+  options: ValidateGeneratedAppBuildOptions,
+  hasPrisma: boolean
+): boolean {
+  /** package.json build runs prisma db push — only valid on Vercel/Neon, not in E2B or local sandbox validation */
+  return options.requiresDatabase === true && hasPrisma
+}
+
 function formatExecError(error: unknown): string {
   const err = error as { stdout?: string; stderr?: string; message?: string }
   return [err.stdout, err.stderr, err.message].filter(Boolean).join('\n')
@@ -116,23 +124,30 @@ async function validateAppBuildLocally(
   const databaseEnv = options.requiresDatabase
     ? { DATABASE_URL: process.env.DATABASE_URL ?? DUMMY_DATABASE_URL }
     : {}
+  const hasPrisma = existsSync(join(outputDir, 'prisma/schema.prisma'))
+  const skipPackageBuild = shouldSkipPackageBuildScript(options, hasPrisma)
 
   try {
     logger.info('Running local npm install for generated app', { outputDir })
     logs.push('=== npm install ===')
     logs.push(await runNpmInDir(outputDir, [...NPM_INSTALL_ARGS], databaseEnv, FULL_BUILD_TIMEOUT_MS))
 
-    if (options.requiresDatabase && existsSync(join(outputDir, 'prisma/schema.prisma'))) {
-      logger.info('Running prisma generate for generated app build', { outputDir })
+    if (skipPackageBuild) {
+      logger.info('Running prisma generate for generated app build validation', { outputDir })
       logs.push('=== prisma generate ===')
       logs.push(
         await runNpmInDir(outputDir, ['exec', 'prisma', 'generate'], databaseEnv, FULL_BUILD_TIMEOUT_MS)
       )
+      logger.info('Running next build without prisma db push (validation only)', { outputDir })
+      logs.push('=== next build ===')
+      logs.push(
+        await runNpmInDir(outputDir, ['exec', 'next', 'build'], databaseEnv, FULL_BUILD_TIMEOUT_MS)
+      )
+    } else {
+      logger.info('Running local npm run build for generated app', { outputDir })
+      logs.push('=== npm run build ===')
+      logs.push(await runNpmInDir(outputDir, ['run', 'build'], databaseEnv, FULL_BUILD_TIMEOUT_MS))
     }
-
-    logger.info('Running local npm run build for generated app', { outputDir })
-    logs.push('=== npm run build ===')
-    logs.push(await runNpmInDir(outputDir, ['run', 'build'], databaseEnv, FULL_BUILD_TIMEOUT_MS))
 
     return { validated: true, output: logs.join('\n'), method: 'local' }
   } catch (error) {
@@ -197,13 +212,15 @@ async function validateAppBuildInE2b(
     .filter((entry): entry is SandboxFile => entry !== null)
 
   const hasPrisma = files.some((file) => file.path === 'prisma/schema.prisma')
+  const skipPackageBuild = shouldSkipPackageBuildScript(options, hasPrisma)
+  const compileStep = skipPackageBuild ? 'npx next build 2>&1' : 'npm run build 2>&1'
   const shellScript = [
     'set -euo pipefail',
     'cd /home/user/app',
     options.requiresDatabase ? `export DATABASE_URL="${DUMMY_DATABASE_URL}"` : '',
     'npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1',
-    options.requiresDatabase && hasPrisma ? 'npx prisma generate 2>&1' : '',
-    'npm run build 2>&1',
+    skipPackageBuild ? 'npx prisma generate 2>&1' : '',
+    compileStep,
     'echo "__SIM_RESULT__={\\"buildOk\\":true}"',
   ]
     .filter(Boolean)

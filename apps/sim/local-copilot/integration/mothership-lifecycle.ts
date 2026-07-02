@@ -73,6 +73,7 @@ async function dispatchLocalCopilotEvent(
       success: event.success,
       output: event.output,
       error: event.error,
+      ...(event.resources?.length ? { resources: event.resources } : {}),
     }
 
     await dispatchStreamEvent(

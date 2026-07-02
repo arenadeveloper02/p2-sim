@@ -10,6 +10,11 @@ import {
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
 import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
+import {
+  stripLeakedToolMarkers,
+  synthesizeAssistantSummaryFromTools,
+  type ToolTurnRecord,
+} from '@/local-copilot/lib/synthesize-assistant-summary'
 import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
 import {
   appendMessage,
@@ -28,12 +33,18 @@ import {
 } from '@/local-copilot/lib/tools/executor'
 import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tools'
 import {
+  buildFollowUpContinuationMessage,
+  detectMandatoryFollowUp,
   formatToolResultForLlm,
+  resolveMandatoryFollowUps,
   sortToolCallsForExecution,
+  type MandatoryFollowUp,
 } from '@/local-copilot/lib/tools/format-tool-result'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotAgent')
+
+const MAX_FORCED_FOLLOW_UP_ROUNDS = 5
 
 const SYSTEM_PROMPT = `You are Arena Copilot — the in-app AI assistant for building, debugging, and understanding workflows in this workspace.
 
@@ -61,6 +72,10 @@ Rules:
   - If a workflow already exists with the same or similar name, run or edit it — do not duplicate it.
 - On the workspace home chat there may be no workflow open — still prefer running or editing \`workspaceWorkflows\` entries before creating new ones.
 - After create_workflow succeeds (only when truly new), immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId.
+- Block output references (CRITICAL):
+  - Wire upstream block outputs using angle-bracket tags with the block's **display name**, never its UUID: \`<My Agent.content>\`, not \`<bd80a5a8-ef94-43ef-afcf-f6daa926495f.content>\`.
+  - Before wiring inputs (e.g. Gmail body, Slack message, API payload), call \`get_block_upstream_references\` for the target block and use the exact tags returned (e.g. \`agent1.content\` for a default agent without structured outputs).
+  - Block UUIDs are for \`block_id\` in operations only — never put UUIDs inside \`<...>\` reference tags.
 - When edit_workflow returns skippedItems, inputValidationErrors, workflowLintMessage, or needsFollowUpEdit, call edit_workflow again with corrected operations. Do not tell the user the workflow is complete until these are resolved.
 - deferredConnections in edit_workflow results are normal — the engine wires them when target blocks exist. Do not re-issue deferred edges unless the target id was a typo.
 - Never expose API keys, tokens, passwords, or secret env values.
@@ -72,6 +87,7 @@ Rules:
 - Direct one-off actions (no workflow required):
   - For simple requests — generate an image, search the live web, scrape a site, call an API — use direct tools when keys are already configured. Do NOT create a workflow first.
   - Image: \`generate_image\` with a clear \`prompt\` (and optional \`outputs.files\` path to save the file).
+  - For variations, pass the user's exact wording in \`prompt\` (e.g. "3 variations of a red bus") — do not strip counts or the word "variations".
   - Live web / current data: \`search_online\` with \`query\` and \`toolTitle\` (uses Exa/Serper when \`EXA_API_KEY\` / Serper keys exist).
   - Other integrations: \`list_integration_tools({ integration: "exa" })\` then \`invoke_integration_tool({ toolId: "exa_search", params: { query: "..." } })\`.
   - Only build or run a workflow when the user wants automation saved for reuse, multi-step pipelines, or scheduling.
@@ -83,10 +99,17 @@ Rules:
   - After a run, summarize key block outputs for the user in plain language. Use \`query_logs\` with the returned \`executionId\` for deeper debugging.
   - Use \`list_integration_tools\` to see operations available for a connected integration service.
   - Use \`get_workflow_data\` to load workflow structure when you need details for a workflow that is not currently open.
+- Deploying workflows as chat (CRITICAL):
+  - When the user asks to deploy, publish, or share a workflow as chat — call \`deploy_chat\` directly. Never tell them to open the Deploy tab or click through the UI unless a tool returns an authorization error.
+  - Pass \`workflowId\` from \`workspaceWorkflows\` or the open workflow. Derive \`identifier\` as a lowercase slug (letters, numbers, hyphens) from the workflow name when the user does not specify one.
+  - On deploy, \`versionName\` and \`versionDescription\` are required. For first deploy, use a sensible label (e.g. versionName: "Initial chat deploy", versionDescription: "First chat deployment"). On updates, call \`diff_workflows\` with ref1 "live" and ref2 "draft" first if unsure what changed.
+  - Call \`get_block_outputs\` when you need \`outputConfigs\` (typically the agent block's \`content\` path for chat responses).
+  - On success, return the \`chatUrl\` from the tool result so the user can open the deployed chat.
 - Files, tables, and knowledge bases:
   - Context includes \`workspaceFiles\` (id, name, vfs path), \`tables\`, and \`knowledgeBases\`.
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
-  - Create files: \`create_file_folder\` when needed, then \`create_file\` or \`workspace_file\` with paths under \`files/\`.
+  - Create files: \`create_file_folder\` when needed, then \`create_file\` with \`content\` for markdown/text/json/csv (one step). Never call \`create_file\` without \`content\` for .md files unless you will immediately follow with \`workspace_file\` update + \`edit_content\`.
+  - Read or update existing files: \`workspace_file\` (update/append/patch) then \`edit_content\` in the **next** step with the body — never parallel.
   - Read or update tables: \`user_table\` — use \`get\` / \`get_schema\` / \`query_rows\` to read; \`create\`, \`insert_row\`, \`batch_insert_rows\`, \`import_file\`, \`create_from_file\` to write.
   - Knowledge bases: \`knowledge_base\` — \`query\` to search/retrieve; \`add_file\` to ingest a workspace file or URL; \`create\` for new KBs; \`get\` / \`list\` to inspect.
   - Prefer existing resources in context before creating duplicates (same as workflows).
@@ -94,6 +117,9 @@ Rules:
   - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, and \`supportedCodeLanguages\`.
   - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`.
   - When E2B is disabled, \`function_execute\` supports JavaScript only (isolated-vm).
+  - Code execution results include \`capturedOutput\` (preferred), plus \`stdout\` (prints) and \`result\` (return values). Read \`capturedOutput\` first — empty stdout with a return value is normal, not a failure.
+  - Do **not** use \`function_execute\` or Daytona integration tools for workflow building, deployment, or questions you can answer without running code.
+  - Do **not** tell the user about sandbox names (E2B, Daytona), empty payloads, internal retries, or "result variables" unless they explicitly asked to debug code execution. Give the answer directly.
   - Do **not** use \`function_execute\` to create or edit DOCX/PPTX/PDF workspace files unless the user explicitly asks for sandbox code. Use \`create_file\` → \`workspace_file\` (append/update/patch) → \`edit_content\` in the next step (never parallel). For office formats, \`edit_content\` uses docxjs/pptxgenjs/pdflibjs JavaScript when \`e2b.docSandboxEnabled\` is true.
   - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.
 - Use tools to inspect context, validate workflows, fetch logs, run tests, and build or edit workflows.
@@ -204,11 +230,15 @@ export async function* runLocalCopilotAgent(
     userPermission: params.userPermission,
     structuredContext,
     selectedBlockId: params.selectedBlockId,
+    lastUserMessage: params.message,
   }
   let assistantText = ''
   let proposedPatch: WorkflowPatch | undefined
   let recommendations: string[] = []
+  const turnToolRecords: ToolTurnRecord[] = []
   const maxToolRounds = MAX_TOOL_ITERATIONS
+  let pendingFollowUps: MandatoryFollowUp[] = []
+  let forcedFollowUpRounds = 0
 
   for (let round = 0; round < maxToolRounds; round++) {
     const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
@@ -220,15 +250,41 @@ export async function* runLocalCopilotAgent(
       signal: params.signal,
     })) {
       if (chunk.type === 'text' && chunk.content) {
-        assistantText += chunk.content
-        yield { type: 'text_delta', content: chunk.content }
+        const cleaned = stripLeakedToolMarkers(chunk.content)
+        if (!cleaned) continue
+        assistantText += cleaned
+        yield { type: 'text_delta', content: cleaned }
       }
       if (chunk.type === 'tool_call' && chunk.toolCall) {
         pendingToolCalls.push(chunk.toolCall)
       }
     }
 
-    if (pendingToolCalls.length === 0) break
+    if (pendingToolCalls.length === 0) {
+      if (
+        pendingFollowUps.length > 0 &&
+        forcedFollowUpRounds < MAX_FORCED_FOLLOW_UP_ROUNDS &&
+        round < maxToolRounds - 1
+      ) {
+        forcedFollowUpRounds += 1
+        const continuation = buildFollowUpContinuationMessage(pendingFollowUps)
+        messages.push({ role: 'user', content: continuation })
+        logger.info('Arena Copilot forcing mandatory follow-up continuation', {
+          round,
+          forcedFollowUpRounds,
+          pendingFollowUpIds: pendingFollowUps.map((item) => item.id),
+        })
+        continue
+      }
+
+      if (pendingFollowUps.length > 0) {
+        logger.warn('Arena Copilot ended with unresolved mandatory follow-ups', {
+          round,
+          pendingFollowUpIds: pendingFollowUps.map((item) => item.id),
+        })
+      }
+      break
+    }
 
     const orderedToolCalls = sortToolCallsForExecution(pendingToolCalls)
 
@@ -298,7 +354,14 @@ export async function* runLocalCopilotAgent(
         success: result.success,
         output: result.result,
         ...(result.error ? { error: result.error } : {}),
+        ...(result.resources?.length ? { resources: result.resources } : {}),
       }
+
+      turnToolRecords.push({
+        name: call.name,
+        success: result.success,
+        result: result.result,
+      })
 
       if (persistLocally && conversationId) {
         await recordToolCall({
@@ -317,11 +380,34 @@ export async function* runLocalCopilotAgent(
         }
       }
 
+      const formattedToolResult = formatToolResultForLlm(call.name, result.result)
+      const mandatoryFollowUp = detectMandatoryFollowUp(call.name, formattedToolResult)
+      if (mandatoryFollowUp) {
+        pendingFollowUps = [
+          ...pendingFollowUps.filter((item) => item.id !== mandatoryFollowUp.id),
+          mandatoryFollowUp,
+        ]
+      }
+      pendingFollowUps = resolveMandatoryFollowUps(
+        pendingFollowUps,
+        call.name,
+        result.success,
+        result.result
+      )
+
       messages.push({
         role: 'tool',
         toolCallId: call.id,
-        content: formatToolResultForLlm(call.name, result.result),
+        content: formattedToolResult,
       })
+    }
+  }
+
+  if (!assistantText.trim() && turnToolRecords.length > 0) {
+    const synthesized = synthesizeAssistantSummaryFromTools(turnToolRecords)
+    if (synthesized) {
+      assistantText = synthesized
+      yield { type: 'text_delta', content: synthesized }
     }
   }
 

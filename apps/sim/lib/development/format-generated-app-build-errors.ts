@@ -32,10 +32,23 @@ export function extractBuildErrorLines(output: string): string[] {
     }
   }
 
-  const buildMarkerIndex = output.lastIndexOf('=== npm run build')
+  const buildMarkerIndex = output.lastIndexOf('=== next build')
   if (buildMarkerIndex >= 0) {
     const tail = output
       .slice(buildMarkerIndex)
+      .split('\n')
+      .filter((line) => line.trim() && !line.startsWith('==='))
+      .map((line) => line.trim())
+
+    if (tail.length > 0 && tail.length <= 80) {
+      return tail
+    }
+  }
+
+  const npmBuildMarkerIndex = output.lastIndexOf('=== npm run build')
+  if (npmBuildMarkerIndex >= 0) {
+    const tail = output
+      .slice(npmBuildMarkerIndex)
       .split('\n')
       .filter((line) => line.trim() && !line.startsWith('==='))
       .map((line) => line.trim())

@@ -1,14 +1,15 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
+import { loadCopilotChatMessages } from '@/lib/copilot/chat/lifecycle'
+import type { PersistedContentBlock, PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import {
   MothershipStreamV1EventType,
   MothershipStreamV1TextChannel,
 } from '@/lib/copilot/generated/mothership-stream-v1'
-import { loadCopilotChatMessages } from '@/lib/copilot/chat/lifecycle'
-import type { PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import { LOCAL_COPILOT_MAX_HISTORY_MESSAGES } from '@/local-copilot/lib/context/context-budget'
+import { stripLeakedToolMarkers } from '@/local-copilot/lib/synthesize-assistant-summary'
 
 const MAX_HISTORY_MESSAGES = LOCAL_COPILOT_MAX_HISTORY_MESSAGES
 
@@ -24,44 +25,114 @@ export function mothershipMessagesToChatHistory(
   for (const message of messages) {
     if (options?.excludeMessageId && message.id === options.excludeMessageId) continue
 
-    const text = persistedMessageToChatText(message)
-    if (!text) continue
+    if (message.role === 'user') {
+      const text = message.content?.trim()
+      if (text) out.push({ role: 'user', content: text })
+      continue
+    }
 
-    out.push({ role: message.role, content: text })
+    out.push(...assistantMessageToChatHistory(message))
   }
 
   return out.slice(-MAX_HISTORY_MESSAGES)
 }
 
-function persistedMessageToChatText(message: PersistedMessage): string | undefined {
-  const parts: string[] = []
-  const trimmedContent = message.content?.trim()
-  if (trimmedContent) parts.push(trimmedContent)
+function isAssistantProseBlock(block: PersistedContentBlock): boolean {
+  return (
+    block.type === MothershipStreamV1EventType.text &&
+    block.channel !== MothershipStreamV1TextChannel.thinking &&
+    block.lane !== 'subagent' &&
+    Boolean(block.content?.trim())
+  )
+}
 
-  if (message.role === 'assistant' && message.contentBlocks?.length) {
-    for (const block of message.contentBlocks) {
-      if (block.type === MothershipStreamV1EventType.text) {
-        if (
-          block.channel === MothershipStreamV1TextChannel.thinking ||
-          block.lane === 'subagent'
-        ) {
-          continue
-        }
-        const text = block.content?.trim()
-        if (text && !trimmedContent?.includes(text)) {
-          parts.push(text)
-        }
-      }
+function isToolHistoryBlock(block: PersistedContentBlock): boolean {
+  return (
+    (block.type === MothershipStreamV1EventType.tool || block.type === 'tool_call') &&
+    Boolean(block.toolCall?.id && block.toolCall.name)
+  )
+}
 
-      if (block.type === MothershipStreamV1EventType.tool && block.toolCall?.name) {
-        const state = block.toolCall.state ?? 'completed'
-        parts.push(`[Tool ${block.toolCall.name}: ${state}]`)
+function toolResultContent(block: PersistedContentBlock): string {
+  const toolCall = block.toolCall
+  if (!toolCall) return '{}'
+
+  const result = toolCall.result
+  if (result && typeof result === 'object') {
+    const payload: Record<string, unknown> = { success: result.success }
+    if (result.output !== undefined) payload.output = result.output
+    if (result.error) payload.error = result.error
+    return JSON.stringify(payload)
+  }
+
+  return JSON.stringify({
+    success: toolCall.state === 'success',
+    ...(toolCall.error ? { error: toolCall.error } : {}),
+  })
+}
+
+/**
+ * Reconstructs assistant/tool turns from persisted content blocks instead of
+ * flattening tools into `[Tool name: state]` text (which the model echoed to users).
+ */
+export function assistantMessageToChatHistory(message: PersistedMessage): ChatMessage[] {
+  const blocks = message.contentBlocks ?? []
+  const out: ChatMessage[] = []
+
+  let index = 0
+  let seededMessageContent = Boolean(message.content?.trim() && blocks.length > 0)
+
+  while (index < blocks.length) {
+    let prose = ''
+    if (seededMessageContent) {
+      prose = message.content ?? ''
+      seededMessageContent = false
+    }
+    while (index < blocks.length && isAssistantProseBlock(blocks[index])) {
+      prose += blocks[index].content ?? ''
+      index += 1
+    }
+
+    const toolBatch: PersistedContentBlock[] = []
+    while (index < blocks.length && isToolHistoryBlock(blocks[index])) {
+      toolBatch.push(blocks[index])
+      index += 1
+    }
+
+    if (toolBatch.length > 0) {
+      const cleanedProse = stripLeakedToolMarkers(prose)
+      out.push({
+        role: 'assistant',
+        content: cleanedProse,
+        toolCalls: toolBatch.map((block) => ({
+          id: block.toolCall!.id,
+          name: block.toolCall!.name,
+          arguments: JSON.stringify(block.toolCall!.params ?? {}),
+        })),
+      })
+
+      for (const block of toolBatch) {
+        out.push({
+          role: 'tool',
+          toolCallId: block.toolCall!.id,
+          content: toolResultContent(block),
+        })
       }
+      continue
+    }
+
+    const cleanedProse = stripLeakedToolMarkers(prose)
+    if (cleanedProse) {
+      out.push({ role: 'assistant', content: cleanedProse })
     }
   }
 
-  const combined = parts.join('\n').trim()
-  return combined || undefined
+  if (out.length === 0) {
+    const fallback = stripLeakedToolMarkers(message.content ?? '')
+    if (fallback) out.push({ role: 'assistant', content: fallback })
+  }
+
+  return out
 }
 
 /**

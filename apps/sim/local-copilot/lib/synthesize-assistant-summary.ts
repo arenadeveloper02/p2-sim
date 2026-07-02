@@ -1,0 +1,102 @@
+import { extractCapturedOutput } from '@/local-copilot/lib/tools/format-tool-result'
+
+const LEAKED_TOOL_MARKER_PATTERN = /\[Tool [^\]]+\]/g
+
+export interface ToolTurnRecord {
+  name: string
+  success: boolean
+  result: unknown
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+/**
+ * Removes legacy `[Tool name: state]` markers that must not appear in user-facing text.
+ */
+export function stripLeakedToolMarkers(text: string): string {
+  return text.replace(LEAKED_TOOL_MARKER_PATTERN, '').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/**
+ * Builds a concise assistant reply when the model finishes tool use without prose.
+ */
+export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): string | null {
+  const parts: string[] = []
+
+  for (const record of records) {
+    if (!record.success) {
+      const payload = asRecord(record.result)
+      const error =
+        (typeof payload.error === 'string' && payload.error) ||
+        (typeof payload.message === 'string' && payload.message) ||
+        null
+      parts.push(
+        error
+          ? `I couldn't complete that step: ${error}`
+          : `I couldn't complete ${record.name.replace(/_/g, ' ')}.`
+      )
+      continue
+    }
+
+    if (record.name === 'generate_image') {
+      const payload = asRecord(record.result)
+      const message = typeof payload.message === 'string' ? payload.message.trim() : ''
+      if (message) {
+        parts.push(message)
+        continue
+      }
+
+      const files = Array.isArray(payload.files) ? payload.files : []
+      if (files.length > 1) {
+        const paths = files
+          .map((file) => asRecord(file).vfsPath ?? asRecord(file).fileName)
+          .filter((path): path is string => typeof path === 'string' && path.length > 0)
+        parts.push(
+          paths.length
+            ? `Generated ${files.length} images: ${paths.map((path) => `"${path}"`).join(', ')}.`
+            : `Generated ${files.length} image variations.`
+        )
+        continue
+      }
+
+      const vfsPath =
+        (typeof payload.vfsPath === 'string' && payload.vfsPath) ||
+        (typeof payload.fileName === 'string' && payload.fileName) ||
+        null
+      if (vfsPath) {
+        parts.push(`Image saved to "${vfsPath}".`)
+      }
+      continue
+    }
+
+    if (record.name === 'open_resource') {
+      continue
+    }
+
+    if (record.name === 'search_online') {
+      const payload = asRecord(record.result)
+      const summary = typeof payload.summary === 'string' ? payload.summary.trim() : ''
+      if (summary) parts.push(summary)
+      continue
+    }
+
+    if (record.name === 'run_workflow') {
+      const payload = asRecord(record.result)
+      const status = typeof payload.status === 'string' ? payload.status : 'completed'
+      parts.push(`Workflow run ${status}.`)
+      continue
+    }
+
+    if (record.name === 'function_execute' || record.name === 'invoke_integration_tool') {
+      const captured = extractCapturedOutput(record.result)
+      if (captured) {
+        parts.push(captured.length > 4_000 ? `${captured.slice(0, 4_000)}\n\n[... output truncated]` : captured)
+      }
+    }
+  }
+
+  const summary = parts.map((part) => part.trim()).filter(Boolean).join('\n\n')
+  return summary || null
+}

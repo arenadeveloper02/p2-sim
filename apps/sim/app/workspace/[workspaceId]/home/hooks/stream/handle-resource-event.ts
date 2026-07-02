@@ -61,6 +61,9 @@ export function handleResourceEvent(ctx: StreamLoopContext, parsed: ResourceEven
     type: resource.type as MothershipResourceType,
     id: resource.id,
     title: typeof resource.title === 'string' ? resource.title : resource.id,
+    ...(typeof resource.path === 'string' && resource.path.trim()
+      ? { path: resource.path }
+      : {}),
   }
   const completedPreviewHandoff =
     nextResource.type === 'file'
