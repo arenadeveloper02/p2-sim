@@ -866,7 +866,14 @@ export function FieldFormat({
 
                 {showValueEffective && (
                   <div className='flex flex-col gap-1.5'>
-                    {renderFieldLabel(valueLabelName)}
+                    {isFileFieldType(field.type) ? (
+                      <div className='flex items-center justify-between'>
+                        {renderFieldLabel('Value')}
+                        {renderFileModeToggle(field)}
+                      </div>
+                    ) : (
+                      renderFieldLabel('Value')
+                    )}
                     <div className='relative'>{renderValueInput(field)}</div>
                   </div>
                 )}

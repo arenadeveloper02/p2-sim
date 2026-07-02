@@ -20,8 +20,8 @@ interface ToolSubBlockRendererProps {
   effectiveParamId: string
   /** The tool's block type (e.g. `gmail`), so its params' selectors resolve dependencies. */
   toolType: string
-  toolParams: Record<string, any> | undefined
-  onParamChange: (toolIndex: number, paramId: string, value: any) => void
+  toolParams: Record<string, string> | undefined
+  onParamChange: (toolIndex: number, paramId: string, value: string) => void
   disabled: boolean
   canonicalToggle?: {
     mode: 'basic' | 'advanced'

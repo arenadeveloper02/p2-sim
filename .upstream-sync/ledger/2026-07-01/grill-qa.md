@@ -1,0 +1,58 @@
+# Grill Q&A — 2026-07-01
+
+## 2026-07-01 · PR #612
+
+**Q** (2026-07-01T07:01:45Z, arenadeveloper02): ## Upstream sync 2026-07-01 — grill analysis: 2 open decisions
+
+**Scope note:** despite the ledger listing 5251 commits / all versions (because `lastSyncedUpstreamSha` was `null`), the real git merge-base is **v0.7.12** — the actual delta is **123 upstream commits (v0.7.13 → v0.7.18)**. Full analysis is in `.upstream-sync/ledger/2026-07-01/run.md`.
+
+Everything else resolves mechanically under fork-first policy (block/tool registry re-homing into the new `registry-maps.ts`, keeping the fork's customized `use-chat-streaming.ts` over upstream's deletion, DB journal union-merge for the new migrations 0248–0253, taking upstream on security/deps/shared permission-groups files). These two need a human call:
+
+### 1. Landing-page conflict strategy (not covered by merge-policy)
+Upstream shipped a large landing overhaul (291 files: perf #5303, SSR URL-state #5298, hero visuals #5181, metadata #5299). The fork rebranded 5 of those same files to **Arena** copy/positioning, so they conflict:
+`landing.tsx`, `components/collaboration/collaboration.tsx`, `components/footer/footer.tsx`, `components/structured-data.tsx`, `components/templates/templates.tsx`.
+
+These paths are **not** in `merge-policy.json` `forkFirst`.
+- **(a)** Fork-first — keep Arena landing as-is, forgo upstream's landing perf/visual work on these 5 files, or
+- **(b)** Manually graft Arena copy/branding onto upstream's new landing?
+- **And:** should `apps/sim/app/(landing)/` (or a branding subset) be added to `forkFirst` for future syncs?
+
+### 2. `@sim/emcn` extraction — shim vs import rewrite
+Upstream #5257 **deleted `apps/sim/components/emcn/`** and moved the design system into the new `@sim/emcn` package. The fork has 495 `@/components/emcn` imports; **97 are fork-only files** (landing, chat, changelog, arena UI) that won't produce a git conflict but **will break the build** once the directory is gone. Same pattern for the new `@sim/workflow-renderer` package (#5263/#5267).
+- **(a)** Keep a thin re-export shim at `apps/sim/components/emcn` → `@sim/emcn` (minimal churn, fork imports stay stable), or
+- **(b)** Rewrite the 97 fork imports to `@sim/emcn` (aligns with upstream, larger diff)?
+
+Reply on this PR with `/upstream-sync resume` and your answers.
+
+## 2026-07-01 · PR #612
+
+**A** (2026-07-01T07:12:28Z, utcarshsrivastava-collab): /upstream-sync resume
+1. Keep arena landing page as is. Unless there is something interesting happening there. Make changes in instructions as well to accomodate this in future PRs. Do see if there are any seperate features which can be directly copied.
+2. Lets go with (a) where re-export shim would work for now to ensure that our fork remains stable. Maybe add a techdebt, to have a fork of sim/emcn similar to p2-sim/emcn which can be made seperate as well.
+
+## 2026-07-01 · PR #612
+
+**Q** (2026-07-01T07:24:36Z, arenadeveloper02): ## Upstream sync 2026-07-01 — grill analysis & open decisions
+
+First-ever sync for this fork. Merge-base is upstream **v0.7.12** (`aaca7505`); real delta is **123 commits** (v0.7.13→v0.7.18), **2335** upstream-changed files, **157** changed by both sides. Full analysis is in `.upstream-sync/ledger/2026-07-01/run.md` → `## Grill analysis`.
+
+**Fork exposure is small and mostly mechanical.** Only two fork-owned prefixes are touched by upstream (`app/chat/` — 4 files, fork-first; `lib/permission-groups/types.ts` — fork untouched, take upstream). DB migrations continue cleanly (fork tops at `0247`, upstream adds `0248`–`0253`, no collision). Security fixes, provider/model/integration additions, and DB perf are all additive → take upstream.
+
+**The real risk is two shared-infra refactors, and I need a direction call before the merge/child agents run:**
+
+### Q1 — emcn design system extraction (#5257)
+Upstream **deleted `apps/sim/components/emcn/`** and moved everything to the shared `packages/emcn` (`@sim/emcn`). The fork has **494 files** importing `@/components/emcn` (0 use `@sim/emcn`) plus **124 local icon files** and a legacy `date-picker`. Two paths:
+- **(A) Full adoption** — rewrite the 494 imports to `@sim/emcn`, move the 124 fork icons + any fork-only chrome into the package (or one fork-owned icon module). Aligns with upstream, stops this conflict recurring every sync. *(My recommendation — merge policy says upstream wins on shared infra.)*
+- **(B) Local compat shim** — recreate `apps/sim/components/emcn/index.ts` re-exporting `@sim/emcn` + fork icons, keeping the 494 imports untouched. Lower risk this cycle, but re-conflicts on every future sync.
+
+Which approach? (A) or (B)?
+
+### Q2 — blocks/registry.ts → registry-maps
+Upstream refactored `apps/sim/blocks/registry.ts` (1053→179 lines) to delegate to `@/blocks/registry-maps`. Fork still uses the old explicit-import registry (with `ArenaBlock`, unipile, facebook_ads, presentation, p2_docs). Plan: **adopt upstream's registry-maps structure and re-register the fork blocks there.** Confirm this is acceptable (vs keeping the fork's explicit registry)?
+
+### FYI (no action needed unless you disagree)
+- `@sim/workflow-renderer` extraction (#5263/#5267): fork's 60 editor-file changes are mostly fork-only Arena sub-blocks → mechanical to preserve.
+- Presidio **PII sidecar** (#5174/#5176/#5188) adds a GHCR image + **Helm chart** + ECS-runtime secret changes (#5189). The fork owns `docker-compose.*` and `scripts/deploy-ec2-*` — these deploy additions will be reviewed against the fork's topology, not blind-merged.
+
+Reply on this PR with `/upstream-sync resume` and your answers (e.g. "Q1: A, Q2: yes").
+

@@ -237,6 +237,7 @@ import { PineconeBlock, PineconeBlockMeta } from '@/blocks/blocks/pinecone'
 import { PipedriveBlock, PipedriveBlockMeta } from '@/blocks/blocks/pipedrive'
 import { PolymarketBlock, PolymarketBlockMeta } from '@/blocks/blocks/polymarket'
 import { PostgreSQLBlock } from '@/blocks/blocks/postgresql'
+import { PresentationBlock } from '@/blocks/blocks/presentation'
 import { PostHogBlock, PostHogBlockMeta } from '@/blocks/blocks/posthog'
 import { ProfoundBlock, ProfoundBlockMeta } from '@/blocks/blocks/profound'
 import { ProspeoBlock, ProspeoBlockMeta } from '@/blocks/blocks/prospeo'
@@ -357,6 +358,7 @@ const ARENA_CUSTOM_BLOCK_REGISTRY: Record<string, BlockConfig> = {
 export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   a2a: A2ABlock,
   agent: AgentBlock,
+  arena: ArenaBlock,
   agentmail: AgentMailBlock,
   agentphone: AgentPhoneBlock,
   agiloft: AgiloftBlock,
@@ -428,7 +430,9 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   exa: ExaBlock,
   extend: ExtendBlock,
   extend_v2: ExtendV2Block,
+  facebook_ads: FacebookAdsBlock,
   fathom: FathomBlock,
+  figma: FigmaBlock,
   file: FileBlock,
   file_v2: FileV2Block,
   file_v3: FileV3Block,
@@ -451,6 +455,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   gmail_v2: GmailV2Block,
   gong: GongBlock,
   google_ads: GoogleAdsBlock,
+  google_ads_v1: GoogleAdsV1Block,
   google_bigquery: GoogleBigQueryBlock,
   google_books: GoogleBooksBlock,
   google_calendar: GoogleCalendarBlock,
@@ -485,6 +490,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   iam: IAMBlock,
   icypeas: IcypeasBlock,
   identity_center: IdentityCenterBlock,
+  image_fusion: ImageFusionBlock,
   image_generator: ImageGeneratorBlock,
   image_generator_v2: ImageGeneratorV2Block,
   imap: ImapBlock,
@@ -545,6 +551,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   onepassword: OnePasswordBlock,
   openai: OpenAIBlock,
   outlook: OutlookBlock,
+  p2_docs: P2DocsBlock,
   pagerduty: PagerDutyBlock,
   parallel_ai: ParallelBlock,
   peopledatalabs: PeopleDataLabsBlock,
@@ -556,6 +563,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   polymarket: PolymarketBlock,
   postgresql: PostgreSQLBlock,
   posthog: PostHogBlock,
+  presentation: PresentationBlock,
   profound: ProfoundBlock,
   prospeo: ProspeoBlock,
   pulse: PulseBlock,
@@ -585,6 +593,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   schedule: ScheduleBlock,
   search: SearchBlock,
   secrets_manager: SecretsManagerBlock,
+  semrush: SemrushBlock,
   sendblue: SendblueBlock,
   sendgrid: SendGridBlock,
   sentry: SentryBlock,
@@ -602,6 +611,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   smtp: SmtpBlock,
   sportmonks: SportmonksBlock,
   spotify: SpotifyBlock,
+  spyfu: SpyfuBlock,
   sqs: SQSBlock,
   square: SquareBlock,
   ssh: SSHBlock,
@@ -630,6 +640,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   twilio_sms: TwilioSMSBlock,
   twilio_voice: TwilioVoiceBlock,
   typeform: TypeformBlock,
+  unipile: UnipileBlock,
   upstash: UpstashBlock,
   uptimerobot: UptimeRobotBlock,
   vanta: VantaBlock,
@@ -894,6 +905,7 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   twilio_sms: TwilioSMSBlockMeta,
   twilio_voice: TwilioVoiceBlockMeta,
   typeform: TypeformBlockMeta,
+  unipile: UnipileBlockMeta,
   upstash: UpstashBlockMeta,
   uptimerobot: UptimeRobotBlockMeta,
   vanta: VantaBlockMeta,

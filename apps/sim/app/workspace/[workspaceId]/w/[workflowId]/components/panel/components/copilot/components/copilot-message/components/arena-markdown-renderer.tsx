@@ -131,6 +131,8 @@ interface ArenaCopilotMarkdownRendererProps {
    * and links can render inside one visual line (e.g. pipe-delimited pricing rows).
    */
   variant?: 'block' | 'inline'
+  /** Custom image renderer for preview/download/select overlays in chat */
+  renderImage?: (args: { src: string; alt?: string }) => React.ReactNode
 }
 
 /**
@@ -144,6 +146,7 @@ interface ArenaCopilotMarkdownRendererProps {
 export default function ArenaCopilotMarkdownRenderer({
   content,
   variant = 'block',
+  renderImage,
 }: ArenaCopilotMarkdownRendererProps) {
   const [copiedCodeBlocks, setCopiedCodeBlocks] = useState<Record<string, boolean>>({})
 
@@ -434,16 +437,22 @@ export default function ArenaCopilotMarkdownRenderer({
       ),
 
       // Images
-      img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
-        <img
-          src={src}
-          alt={alt || 'Image'}
-          className='my-3 h-auto max-w-full rounded-md'
-          {...props}
-        />
-      ),
+      img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => {
+        if (src && renderImage) {
+          return <>{renderImage({ src, alt })}</>
+        }
+
+        return (
+          <img
+            src={src}
+            alt={alt || 'Image'}
+            className='my-3 h-auto max-w-full rounded-md'
+            {...props}
+          />
+        )
+      },
     }),
-    [copiedCodeBlocks, variant]
+    [copiedCodeBlocks, variant, renderImage]
   )
 
   const Root = variant === 'inline' ? 'span' : 'div'

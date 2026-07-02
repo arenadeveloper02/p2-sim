@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import ArenaChatClient from '@/app/(interfaces)/chat/[identifier]/ArenaDeployedChat'
-// import ChatClient from '@/app/(interfaces)/chat/[identifier]/chat'
 import { OfficeEmbedInit } from '@/app/(interfaces)/chat/[identifier]/office-embed-init'
 
 export const metadata: Metadata = {

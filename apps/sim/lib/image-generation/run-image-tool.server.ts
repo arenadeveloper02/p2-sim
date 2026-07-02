@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
 import { isRecordLike } from '@sim/utils/object'
-import type { ImageToolBody, imageProviders } from '@/lib/api/contracts/tools/media/image'
+import { type ImageToolBody, imageProviders } from '@/lib/api/contracts/tools/media/image'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
@@ -17,6 +17,10 @@ import {
   readResponseToBufferWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import {
+  reconcileImageProviderAndModel,
+  normalizeImageModelId,
+} from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
@@ -218,29 +222,58 @@ export async function runImageToolGeneration(
   options: RunImageToolOptions
 ): Promise<StoredImageResponse> {
   const requestId = options.requestId ?? generateId().slice(0, 8)
-  const provider = body.provider as ImageProvider
-  const { model, prompt } = body
+  const reconciled = reconcileImageProviderAndModel({
+    provider: body.provider,
+    model: normalizeImageModelId(body.model),
+  })
+  if (reconciled.coerced) {
+    logger.warn(`[${requestId}] Coerced image generation provider to match model`, {
+      requestedProvider: body.provider,
+      model: reconciled.model,
+      resolvedProvider: reconciled.provider,
+    })
+  }
+
+  const provider = resolveAllowedParam(
+    reconciled.provider,
+    imageProviders,
+    'openai',
+    'provider'
+  ) as ImageProvider
+  const prompt = body.prompt
+  const resolvedBody: ImageToolBody = {
+    ...body,
+    provider,
+    ...(reconciled.model ? { model: reconciled.model } : {}),
+  }
 
   if (prompt.length < 3 || prompt.length > 4000) {
     throw new Error('Prompt must be between 3 and 4000 characters')
   }
 
-  logger.info(`[${requestId}] Generating image with ${provider}, model: ${model || 'default'}`)
+  logger.info(
+    `[${requestId}] Generating image with ${provider}, model: ${resolvedBody.model || 'default'}`
+  )
 
-  const apiKey = resolveImageProviderApiKey(provider, body.apiKey)
+  const apiKey = resolveImageProviderApiKey(provider, resolvedBody.apiKey)
   let imageResult: GeneratedImageResult
 
   if (provider === 'openai') {
-    imageResult = await generateWithOpenAI(apiKey, body, requestId, logger, options.userId)
+    imageResult = await generateWithOpenAI(apiKey, resolvedBody, requestId, logger, options.userId)
   } else if (provider === 'gemini') {
-    imageResult = await generateWithGemini(apiKey, body, requestId, logger)
+    imageResult = await generateWithGemini(apiKey, resolvedBody, requestId, logger)
   } else if (provider === 'falai') {
-    imageResult = await generateWithFalAI(apiKey, body, requestId, logger, options.userId)
+    imageResult = await generateWithFalAI(apiKey, resolvedBody, requestId, logger, options.userId)
   } else {
     throw new Error(`Unknown provider: ${provider}`)
   }
 
-  const storedImage = await storeGeneratedImage(imageResult, body, options.userId, requestId)
+  const storedImage = await storeGeneratedImage(
+    imageResult,
+    resolvedBody,
+    options.userId,
+    requestId
+  )
 
   logger.info(`[${requestId}] Image generation completed successfully`, {
     provider,
@@ -256,6 +289,7 @@ const OPENAI_IMAGE_MODELS = [
   'gpt-image-1.5',
   'gpt-image-1',
   'gpt-image-1-mini',
+  'chatgpt-image-latest',
 ] as const
 const OPENAI_IMAGE_SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536'] as const
 const OPENAI_IMAGE_2_SIZES = [...OPENAI_IMAGE_SIZES, '2560x1440', '3840x2160'] as const
@@ -460,6 +494,25 @@ function pickAllowed(
   return value && allowed.includes(value) ? value : fallback
 }
 
+/**
+ * Uses fallback when value is omitted; throws when a non-empty value is not in the allowlist.
+ */
+function resolveAllowedParam(
+  value: string | undefined,
+  allowed: readonly string[],
+  fallback: string,
+  fieldLabel: string
+): string {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  if (!trimmed) {
+    return fallback
+  }
+  if (!allowed.includes(trimmed)) {
+    throw new Error(`Invalid ${fieldLabel}: "${trimmed}". Must be one of: ${allowed.join(', ')}`)
+  }
+  return trimmed
+}
+
 function clampInteger(
   value: number | undefined,
   min: number,
@@ -527,9 +580,11 @@ async function generateWithOpenAI(
   logger: ReturnType<typeof createLogger>,
   userId: string
 ): Promise<GeneratedImageResult> {
-  const model = pickAllowed(body.model, OPENAI_IMAGE_MODELS, 'gpt-image-1.5')
-  const inputImage = (body as Record<string, unknown>).inputImage
-  const inputImageMimeType = (body as Record<string, unknown>).inputImageMimeType
+  const model = resolveAllowedParam(body.model, OPENAI_IMAGE_MODELS, 'gpt-image-1.5', 'model')
+  const bodyRecord = body as Record<string, unknown>
+  const inputImage = bodyRecord.inputImage
+  const inputImages = bodyRecord.inputImages
+  const inputImageMimeType = bodyRecord.inputImageMimeType
   const isGptImage2 = model === GPT_IMAGE_2_MODEL
 
   if (isGptImage2) {
@@ -539,8 +594,11 @@ async function generateWithOpenAI(
       promptLength: body.prompt.length,
       hasReferenceImage: hasReferenceImage(body),
       hasInputImage: inputImage !== undefined && inputImage !== null && inputImage !== '',
-      hasInputImages: Array.isArray((body as Record<string, unknown>).inputImages),
+      hasInputImages: Array.isArray(inputImages) && inputImages.length > 0,
       inputImage: summarizeImageInput(inputImage),
+      inputImages: Array.isArray(inputImages)
+        ? { length: inputImages.length, first: summarizeImageInput(inputImages[0]) }
+        : undefined,
       inputImageMimeType,
       requestedSize: body.size,
       requestedQuality: body.quality,
@@ -553,7 +611,7 @@ async function generateWithOpenAI(
     })
   }
 
-  if (hasReferenceImage(body) && inputImage) {
+  if (hasReferenceImage(body)) {
     const editParams = {
       model,
       prompt: body.prompt,
@@ -572,6 +630,7 @@ async function generateWithOpenAI(
         ? pickAllowed(body.moderation, OPENAI_MODERATION_LEVELS, 'auto')
         : undefined,
       inputImage,
+      inputImages: Array.isArray(inputImages) ? inputImages : undefined,
       inputImageMimeType: typeof inputImageMimeType === 'string' ? inputImageMimeType : undefined,
     }
 
@@ -774,7 +833,12 @@ async function generateWithGemini(
   requestId: string,
   logger: ReturnType<typeof createLogger>
 ): Promise<GeneratedImageResult> {
-  const model = pickAllowed(body.model, GEMINI_IMAGE_MODELS, 'gemini-3.1-flash-image-preview')
+  const model = resolveAllowedParam(
+    body.model,
+    GEMINI_IMAGE_MODELS,
+    'gemini-3.1-flash-image-preview',
+    'model'
+  )
   const aspectRatios =
     model === 'gemini-3.1-flash-image-preview'
       ? [...GEMINI_BASE_ASPECT_RATIOS, ...GEMINI_EXTREME_ASPECT_RATIOS]
@@ -782,13 +846,28 @@ async function generateWithGemini(
   const imageConfig: Record<string, string> = {}
 
   if (body.aspectRatio) {
-    imageConfig.aspectRatio = pickAllowed(body.aspectRatio, aspectRatios, '1:1')
+    imageConfig.aspectRatio = resolveAllowedParam(
+      body.aspectRatio,
+      aspectRatios,
+      '1:1',
+      'aspect ratio'
+    )
   }
 
   if (model === 'gemini-3.1-flash-image-preview' && body.resolution) {
-    imageConfig.imageSize = pickAllowed(body.resolution, GEMINI_IMAGE_SIZES, '1K')
+    imageConfig.imageSize = resolveAllowedParam(
+      body.resolution,
+      GEMINI_IMAGE_SIZES,
+      '1K',
+      'resolution'
+    )
   } else if (model === 'gemini-3-pro-image-preview' && body.resolution) {
-    imageConfig.imageSize = pickAllowed(body.resolution, GEMINI_PRO_IMAGE_SIZES, '1K')
+    imageConfig.imageSize = resolveAllowedParam(
+      body.resolution,
+      GEMINI_PRO_IMAGE_SIZES,
+      '1K',
+      'resolution'
+    )
   }
 
   const requestBody: Record<string, unknown> = {
@@ -990,7 +1069,8 @@ async function generateWithFalAI(
   logger: ReturnType<typeof createLogger>,
   userId: string
 ): Promise<GeneratedImageResult> {
-  const model = body.model || 'nano-banana-2'
+  const falaiModelIds = Object.keys(FALAI_IMAGE_MODEL_CONFIGS)
+  const model = resolveAllowedParam(body.model, falaiModelIds, 'nano-banana-2', 'model')
   const modelConfig = FALAI_IMAGE_MODEL_CONFIGS[model]
   if (!modelConfig) {
     throw new Error(`Unknown Fal.ai image model: ${model}`)
@@ -1043,17 +1123,19 @@ async function generateWithFalAI(
     )
   }
   if (modelConfig.aspectRatios && modelConfig.defaultAspectRatio) {
-    requestBody.aspect_ratio = pickAllowed(
+    requestBody.aspect_ratio = resolveAllowedParam(
       body.aspectRatio,
       modelConfig.aspectRatios,
-      modelConfig.defaultAspectRatio
+      modelConfig.defaultAspectRatio,
+      'aspect ratio'
     )
   }
   if (modelConfig.resolutionOptions && modelConfig.defaultResolution) {
-    requestBody.resolution = pickAllowed(
+    requestBody.resolution = resolveAllowedParam(
       body.resolution,
       modelConfig.resolutionOptions,
-      modelConfig.defaultResolution
+      modelConfig.defaultResolution,
+      'resolution'
     )
   }
   if (modelConfig.outputFormats && modelConfig.defaultOutputFormat) {

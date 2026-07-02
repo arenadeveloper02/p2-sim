@@ -92,24 +92,20 @@ export const listKnowledgeDocumentsQuerySchema = z.object({
     ])
     .optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
-  // A query param is a string on the wire, so `tagFilters` is carried as a JSON
-  // string and decoded by the route via `parseDocumentTagFiltersParam`. It must
-  // NOT be a `.transform()` to an array here: the client's `requestJson` parses
-  // the query before serializing it, so a transform would turn the string into
-  // an array that serializes to `tagFilters=[object Object]` and 400s the route.
-  tagFilters: z.string().optional(),
+  tagFilters: z
+    .union([z.string(), z.array(documentTagFilterSchema)])
+    .optional()
+    .transform((value, ctx) => {
+      if (value === undefined) return undefined
+      if (Array.isArray(value)) return value
+      try {
+        return z.array(documentTagFilterSchema).parse(JSON.parse(value))
+      } catch {
+        ctx.addIssue({ code: 'custom', message: 'tagFilters must be a valid JSON array' })
+        return z.NEVER
+      }
+    }),
 })
-
-/**
- * Decodes the `tagFilters` query string (a JSON array) into validated filters.
- * Throws on malformed JSON or a shape mismatch; callers map that to a 400.
- */
-export function parseDocumentTagFiltersParam(
-  value: string | undefined
-): DocumentTagFilter[] | undefined {
-  if (!value) return undefined
-  return z.array(documentTagFilterSchema).parse(JSON.parse(value))
-}
 
 export const createDocumentBodySchema = z.object({
   filename: z.string().min(1, 'Filename is required'),

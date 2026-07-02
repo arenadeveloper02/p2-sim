@@ -20,7 +20,7 @@ export function SupportFooter({ position = 'fixed' }: SupportFooterProps) {
       Need help?{' '}
       <a
         href={`mailto:${brandConfig.supportEmail}`}
-        className='text-[var(--text-muted)] underline-offset-4 transition-colors hover:text-[var(--text-body)] hover:underline'
+        className='text-[var(--landing-text-muted)] underline-offset-4 transition hover:underline dark:hover:text-[var(--landing-text)]'
       >
         Contact support
       </a>

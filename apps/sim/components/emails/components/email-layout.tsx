@@ -30,8 +30,6 @@ export function EmailLayout({
 }: EmailLayoutProps) {
   const brand = getBrandConfig()
   const baseUrl = getBaseUrl()
-  //email can't load svg, so we use a png
-  const logoPng = 'https://arenav2image.s3.us-west-1.amazonaws.com/arenaLogoTextBlack.png'
   const hasCustomLogo = Boolean(brand.logoUrl)
 
   return (
@@ -55,11 +53,7 @@ export function EmailLayout({
           {/* Header with logo */}
           <Section style={baseStyles.header}>
             <Img
-              // src={logoPng || brand.logoUrl || `${baseUrl}/brand/color/email/type.png`}
-              // width='70'
-              src={logoPng || brand.logoUrl || `${baseUrl}/brand/color/email/wordmark.png`}
-              // width='48'
-              // height='48'
+              src={brand.logoUrl || `${baseUrl}/brand/color/email/wordmark.png`}
               height='34'
               {...(hasCustomLogo ? {} : { width: '70' })}
               alt={brand.name}

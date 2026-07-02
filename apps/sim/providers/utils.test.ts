@@ -1675,8 +1675,8 @@ describe('transformBlockTool image generator agent tool', () => {
       inputImageUrl: { type: 'string' },
     },
     subBlocks: [
-      { id: 'provider', type: 'dropdown' },
-      { id: 'model', type: 'dropdown' },
+      { id: 'provider', type: 'combobox' },
+      { id: 'model', type: 'combobox' },
       { id: 'prompt', type: 'long-input' },
     ],
     tools: {
@@ -1698,8 +1698,9 @@ describe('transformBlockTool image generator agent tool', () => {
     name: 'Image Generator',
     description: 'Generate images',
     params: {
-      provider: { type: 'string', required: true, visibility: 'user-only' },
-      model: { type: 'string', required: true, visibility: 'user-or-llm' },
+      provider: { type: 'string', required: false, visibility: 'user-or-llm' },
+      apiKey: { type: 'string', required: false, visibility: 'user-only' },
+      model: { type: 'string', required: false, visibility: 'user-or-llm' },
       prompt: { type: 'string', required: true, visibility: 'user-or-llm' },
     },
   })
@@ -1730,5 +1731,26 @@ describe('transformBlockTool image generator agent tool', () => {
       model: 'gpt-image-2',
       prompt: 'Updated prompt',
     })
+    expect(result?.parameters?.properties).not.toHaveProperty('provider')
+    expect(result?.parameters?.properties).not.toHaveProperty('model')
+    expect(result?.parameters?.properties).not.toHaveProperty('prompt')
+  })
+
+  it('exposes unset image_generate params to the LLM except apiKey', async () => {
+    const result = await transformBlockTool(
+      {
+        type: 'image_generator_v2',
+        title: 'Image Generator',
+        params: {},
+      },
+      { getAllBlocks, getTool }
+    )
+
+    expect(result?.parameters?.properties).toHaveProperty('provider')
+    expect(result?.parameters?.properties).toHaveProperty('model')
+    expect(result?.parameters?.properties).toHaveProperty('prompt')
+    expect(result?.parameters?.properties).not.toHaveProperty('apiKey')
+    expect(result?.parameters?.required).toEqual(expect.arrayContaining(['prompt']))
+    expect(result?.parameters?.required).not.toEqual(expect.arrayContaining(['provider', 'model']))
   })
 })

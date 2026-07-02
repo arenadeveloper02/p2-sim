@@ -1,19 +1,20 @@
 import {
   ClipboardList,
   Database,
-  // HexSimple,
+  HexSimple,
   Key,
-  // KeySquare,
+  KeySquare,
   Lock,
-  // LogIn,
+  LogIn,
   Mail,
   Palette,
+  Send,
   Server,
   Settings,
   ShieldCheck,
   TerminalWindow,
   TrashOutline,
-  // Upload,
+  Upload,
   User,
   Users,
   Wrench,
@@ -77,14 +78,14 @@ export interface NavigationItem {
   docsLink?: string
 }
 
-// const isSSOEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
+const isSSOEnabled = isTruthy(getEnv('NEXT_PUBLIC_SSO_ENABLED'))
 const isCredentialSetsEnabled = isTruthy(getEnv('NEXT_PUBLIC_CREDENTIAL_SETS_ENABLED'))
 const isAccessControlEnabled = isTruthy(getEnv('NEXT_PUBLIC_ACCESS_CONTROL_ENABLED'))
 const isInboxEnabled = isTruthy(getEnv('NEXT_PUBLIC_INBOX_ENABLED'))
 const isWhitelabelingEnabled = isTruthy(getEnv('NEXT_PUBLIC_WHITELABELING_ENABLED'))
 const isAuditLogsEnabled = isTruthy(getEnv('NEXT_PUBLIC_AUDIT_LOGS_ENABLED'))
 const isDataRetentionEnabled = isTruthy(getEnv('NEXT_PUBLIC_DATA_RETENTION_ENABLED'))
-// const isDataDrainsEnabled = isTruthy(getEnv('NEXT_PUBLIC_DATA_DRAINS_ENABLED'))
+const isDataDrainsEnabled = isTruthy(getEnv('NEXT_PUBLIC_DATA_DRAINS_ENABLED'))
 
 export const isBillingEnabled = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
 export { isCredentialSetsEnabled }
@@ -177,7 +178,7 @@ export const allNavigationItems: NavigationItem[] = [
   {
     id: 'apikeys',
     label: 'Arena API keys',
-    description: 'Create and manage API keys for the Arena API.',
+    description: 'Create and manage API keys for the Sim API.',
     icon: TerminalWindow,
     section: 'system',
   },
@@ -188,33 +189,33 @@ export const allNavigationItems: NavigationItem[] = [
     icon: Server,
     section: 'system',
   },
-  // {
-  //   id: 'byok',
-  //   label: 'BYOK',
-  //   description: 'Bring your own model-provider API keys.',
-  //   icon: KeySquare,
-  //   section: 'system',
-  //   requiresHosted: true,
-  // },
-  // {
-  //   id: 'copilot',
-  //   label: 'Chat keys',
-  //   description: 'Manage the model-provider keys that power Chat.',
-  //   icon: HexSimple,
-  //   section: 'system',
-  //   requiresHosted: true,
-  // },
-  // {
-  //   id: 'inbox',
-  //   label: 'Sim mailer',
-  //   description: 'Trigger and process workflows from incoming email.',
-  //   icon: Send,
-  //   section: 'system',
-  //   requiresMax: true,
-  //   requiresHosted: true,
-  //   selfHostedOverride: isInboxEnabled,
-  //   showWhenLocked: true,
-  // },
+  {
+    id: 'byok',
+    label: 'BYOK',
+    description: 'Bring your own model-provider API keys.',
+    icon: KeySquare,
+    section: 'system',
+    requiresHosted: true,
+  },
+  {
+    id: 'copilot',
+    label: 'Chat keys',
+    description: 'Manage the model-provider keys that power Chat.',
+    icon: HexSimple,
+    section: 'system',
+    requiresHosted: true,
+  },
+  {
+    id: 'inbox',
+    label: 'Sim mailer',
+    description: 'Trigger and process workflows from incoming email.',
+    icon: Send,
+    section: 'system',
+    requiresMax: true,
+    requiresHosted: true,
+    selfHostedOverride: isInboxEnabled,
+    showWhenLocked: true,
+  },
   ...(isCredentialSetsEnabled
     ? [
         {
@@ -233,17 +234,17 @@ export const allNavigationItems: NavigationItem[] = [
     icon: TrashOutline,
     section: 'system',
   },
-  // {
-  //   id: 'sso',
-  //   label: 'Single sign-on',
-  //   description: 'Configure single sign-on for your organization.',
-  //   icon: LogIn,
-  //   section: 'enterprise',
-  //   requiresHosted: true,
-  //   requiresEnterprise: true,
-  //   selfHostedOverride: isSSOEnabled,
-  //   docsLink: 'https://docs.sim.ai/platform/enterprise/sso',
-  // },
+  {
+    id: 'sso',
+    label: 'Single sign-on',
+    description: 'Configure single sign-on for your organization.',
+    icon: LogIn,
+    section: 'enterprise',
+    requiresHosted: true,
+    requiresEnterprise: true,
+    selfHostedOverride: isSSOEnabled,
+    docsLink: 'https://docs.sim.ai/platform/enterprise/sso',
+  },
   {
     id: 'data-retention',
     label: 'Data retention',
@@ -256,17 +257,17 @@ export const allNavigationItems: NavigationItem[] = [
     selfHostedOverride: isDataRetentionEnabled,
     docsLink: 'https://docs.sim.ai/platform/enterprise/data-retention',
   },
-  // {
-  //   id: 'data-drains',
-  //   label: 'Data drains',
-  //   description: 'Stream your logs and events to external destinations.',
-  //   icon: Upload,
-  //   section: 'enterprise',
-  //   requiresHosted: true,
-  //   requiresEnterprise: true,
-  //   selfHostedOverride: isDataDrainsEnabled,
-  //   docsLink: 'https://docs.sim.ai/platform/enterprise/data-drains',
-  // },
+  {
+    id: 'data-drains',
+    label: 'Data drains',
+    description: 'Stream your logs and events to external destinations.',
+    icon: Upload,
+    section: 'enterprise',
+    requiresHosted: true,
+    requiresEnterprise: true,
+    selfHostedOverride: isDataDrainsEnabled,
+    docsLink: 'https://docs.sim.ai/platform/enterprise/data-drains',
+  },
   {
     id: 'whitelabeling',
     label: 'Whitelabeling',
@@ -286,14 +287,14 @@ export const allNavigationItems: NavigationItem[] = [
     section: 'superuser',
     requiresAdminRole: true,
   },
-  // {
-  //   id: 'mothership',
-  //   label: 'Mothership',
-  //   description: 'Internal Sim operations and license management.',
-  //   icon: Server,
-  //   section: 'superuser',
-  //   requiresAdminRole: true,
-  // },
+  {
+    id: 'mothership',
+    label: 'Mothership',
+    description: 'Internal Sim operations and license management.',
+    icon: Server,
+    section: 'superuser',
+    requiresAdminRole: true,
+  },
 ]
 
 /**

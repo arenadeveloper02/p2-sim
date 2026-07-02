@@ -121,7 +121,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     if (denied) return denied
 
     let fileBuffer: Buffer
-    const finalFileName = validatedData.fileName || fileData.name || 'file'
     let downloadedContentType = ''
 
     try {
@@ -141,6 +140,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
+    const finalFileName = validatedData.fileName || userFile.name
     let uploadMimeType =
       validatedData.mimeType || downloadedContentType || userFile.type || 'application/octet-stream'
     const requestedMimeType =

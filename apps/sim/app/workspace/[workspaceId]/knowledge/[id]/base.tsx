@@ -276,8 +276,8 @@ export function KnowledgeBase({
           tagSlot: f.tagSlot,
           fieldType: f.fieldType,
           operator: f.operator,
-          value: f.value,
-          ...(f.operator === 'between' ? { valueTo: f.valueTo } : {}),
+          value: f.value.trim(),
+          ...(f.operator === 'between' && f.valueTo ? { valueTo: f.valueTo.trim() } : {}),
         })),
     [tagFilterEntries]
   )

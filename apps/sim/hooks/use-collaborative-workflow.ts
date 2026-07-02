@@ -27,6 +27,10 @@ import { isSyntheticToolSubBlockId } from '@/lib/workflows/tool-input/synthetic-
 import { useSocket } from '@/app/workspace/providers/socket-provider'
 import { getBlock } from '@/blocks'
 import { getSubBlocksDependingOnChange } from '@/blocks/utils'
+import {
+  normalizeImageModelId,
+  resolveImageProviderForModel,
+} from '@/lib/image-generation/block-model-config'
 import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
 import { invalidateDeploymentQueries } from '@/hooks/queries/deployments'
 import { useUndoRedo } from '@/hooks/use-undo-redo'
@@ -1517,6 +1521,23 @@ export function useCollaborativeWorkflow() {
               continue
             }
             collaborativeSetSubblockValue(blockId, dep.id, '', { _visited: visited })
+          }
+
+          if (blockType === 'image_generator_v2' && subblockId === 'provider') {
+            const modelValue = useSubBlockStore.getState().getValue(blockId, 'model')
+            const normalizedModel =
+              typeof modelValue === 'string' ? normalizeImageModelId(modelValue) : undefined
+            const modelProvider = normalizedModel
+              ? resolveImageProviderForModel(normalizedModel)
+              : undefined
+            const nextProvider = typeof value === 'string' ? value.trim() : ''
+
+            if (
+              normalizedModel &&
+              (!nextProvider || (modelProvider && nextProvider !== modelProvider))
+            ) {
+              collaborativeSetSubblockValue(blockId, 'model', '', { _visited: visited })
+            }
           }
         }
       } catch {

@@ -9,8 +9,6 @@ import { DefaultFileIcon, getDocumentIcon } from '@/components/icons/document-ic
 import type { AssistantChatFile as ChatFile } from '@/lib/chat/assistant-assets'
 import { getBrowserOrigin } from '@/lib/core/utils/urls'
 
-// import type { ChatFile } from '@/app/(interfaces)/chat/components/message/message'
-
 const logger = createLogger('ChatFileDownload')
 
 interface ChatFileDownloadProps {

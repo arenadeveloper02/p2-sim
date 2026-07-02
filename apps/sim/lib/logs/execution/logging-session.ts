@@ -1132,6 +1132,28 @@ export class LoggingSession {
     }
   }
 
+  async safeCompleteAsSkipped(params?: SessionSkippedParams): Promise<void> {
+    try {
+      await this.completeAsSkipped(params)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(
+        `[${this.requestId || 'unknown'}] CompleteAsSkipped failed for execution ${this.executionId}, attempting fallback`,
+        { error: errorMsg }
+      )
+      await this.completeWithCostOnlyLog({
+        traceSpans: params?.traceSpans,
+        endedAt: params?.endedAt,
+        totalDurationMs: params?.totalDurationMs,
+        errorMessage: 'Execution skipped by intent analyzer',
+        isError: false,
+        finalizationPath: 'fallback_completed',
+        finalOutput: { skipped: true },
+        status: 'skipped',
+      })
+    }
+  }
+
   /**
    * Force-fail the execution. Waits for any in-flight completion and drains
    * pending per-block marker writes first, so a force-fail racing

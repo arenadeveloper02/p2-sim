@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArenaWordmark } from '@/app/(landing)/components/navbar/components/sim-wordmark'
+import { SimWordmark } from '@/app/(landing)/components/navbar/components/sim-wordmark'
 import { MODEL_PROVIDERS_WITH_CATALOGS } from '@/app/(landing)/models/utils'
 
 /**
@@ -143,10 +143,16 @@ export function Footer() {
         >
           <Link
             href='/'
-            aria-label='Arena home'
+            aria-label='Sim home'
             className='flex h-[18px] items-center max-lg:col-span-full max-lg:mb-2'
           >
-            <ArenaWordmark />
+            <Image
+              src='/logo/sim-landing.svg'
+              alt='Arena'
+              width={85}
+              height={26}
+              className='h-[26.4px] w-auto'
+            />
           </Link>
 
           <FooterColumn title='Product' items={PRODUCT_LINKS} />

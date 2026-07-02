@@ -1,13 +1,13 @@
 'use client'
 import { cn, Loader } from '@sim/emcn'
 import { useRouter } from 'next/navigation'
+import { AUTH_PRIMARY_CTA_BASE } from '@/app/(auth)/components/auth-button-classes'
 
 interface InviteStatusCardProps {
   type: 'login' | 'loading' | 'error' | 'success' | 'invitation' | 'warning'
   title: string
   description: string | React.ReactNode
   icon?: 'userPlus' | 'mail' | 'users' | 'error' | 'success' | 'warning'
-  logoUrl?: string
   actions?: Array<{
     label: string
     onClick: () => void
@@ -23,7 +23,6 @@ export function InviteStatusCard({
   type,
   title,
   description,
-  logoUrl,
   icon: _icon,
   actions = EMPTY_ACTIONS,
   isExpiredError = false,
@@ -34,7 +33,7 @@ export function InviteStatusCard({
     return (
       <>
         <div className='space-y-1 text-center'>
-          <h1 className='font-[500] text-[32px] text-black tracking-tight dark:text-[var(--landing-text)]'>
+          <h1 className='font-[500] text-[32px] text-[var(--landing-text)] tracking-tight'>
             Loading
           </h1>
           <p className='font-[380] text-[var(--landing-text-muted)] text-md'>{description}</p>
@@ -49,7 +48,7 @@ export function InviteStatusCard({
   return (
     <>
       <div className='space-y-1 text-center'>
-        <h1 className='font-[500] text-[32px] text-black tracking-tight dark:text-[var(--landing-text)]'>
+        <h1 className='font-[500] text-[32px] text-[var(--landing-text)] tracking-tight'>
           {title}
         </h1>
         <p className='font-[380] text-[var(--landing-text-muted)] text-md'>{description}</p>
@@ -57,10 +56,7 @@ export function InviteStatusCard({
 
       <div className='mt-8 w-full max-w-[410px] space-y-3'>
         {isExpiredError && (
-          <button
-            onClick={() => router.push('/')}
-            className='inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] bg-[var(--brand-400)] px-2.5 font-[430] font-season text-sm text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50'
-          >
+          <button onClick={() => router.push('/')} className={`${AUTH_PRIMARY_CTA_BASE} w-full`}>
             Request New Invitation
           </button>
         )}
@@ -71,9 +67,9 @@ export function InviteStatusCard({
             onClick={action.onClick}
             disabled={action.disabled || action.loading}
             className={cn(
-              'inline-flex h-[32px] w-full items-center justify-center gap-2 rounded-[5px] bg-[var(--brand-400)] px-2.5 font-[430] font-season text-sm text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white',
+              `${AUTH_PRIMARY_CTA_BASE} w-full`,
               index !== 0 &&
-                'border-[var(--landing-border-strong)] bg-[var(--brand-400)] text-[var(--landing-text)] hover:bg-[var(--primary-hover)]'
+                'border-[var(--landing-border-strong)] bg-transparent text-[var(--landing-text)] hover:border-[var(--landing-border-strong)] hover:bg-[var(--landing-bg-elevated)] hover:text-[var(--landing-text)]'
             )}
           >
             {action.loading ? (

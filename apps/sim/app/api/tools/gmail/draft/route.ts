@@ -104,6 +104,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
               logger.info(
                 `[${requestId}] Downloading attachment: ${file.name} (${file.size} bytes)`
               )
+
               return await downloadServableFileFromStorage(file, requestId, logger)
             })
           )
@@ -147,7 +148,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           contentType: validatedData.contentType || 'text',
           inReplyTo: originalMessageId,
           references: originalReferences,
-          attachments: attachmentBuffers,
+          attachments: buffers,
         })
 
         logger.info(`[${requestId}] Built MIME message for draft (${mimeMessage.length} bytes)`)

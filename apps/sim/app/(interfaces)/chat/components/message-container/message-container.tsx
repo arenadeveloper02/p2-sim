@@ -14,11 +14,6 @@ import { ArrowDown, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClientChatMessage'
 
-// import {
-//   type ChatMessage,
-//   ClientChatMessage,
-// } from '@/app/(interfaces)/chat/components/message/message'
-
 interface ChatMessageContainerProps {
   messages: ChatMessage[]
   isLoading: boolean

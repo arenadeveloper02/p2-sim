@@ -303,38 +303,6 @@ export async function downloadFileFromStorage(
   return buffer
 }
 
-export interface DownloadFileForDeliveryOptions {
-  raw?: boolean
-  signal?: AbortSignal
-  ownerKey?: string
-}
-
-/**
- * Downloads a file from storage and compiles document source formats (docx/pptx/pdf) when needed.
- * Use this for attachments and other delivery paths that should match the file viewer download.
- */
-export async function downloadFileForDelivery(
-  userFile: UserFile,
-  requestId: string,
-  logger: Logger,
-  options: DownloadFileForDeliveryOptions = {}
-): Promise<{ buffer: Buffer; contentType: string }> {
-  const buffer = await downloadFileFromStorage(userFile, requestId, logger)
-
-  const { compileDocumentIfNeeded, getWorkspaceIdForCompile } = await import(
-    '@/lib/uploads/utils/compile-document'
-  )
-  const workspaceId = userFile.key ? getWorkspaceIdForCompile(userFile.key) : undefined
-
-  return compileDocumentIfNeeded(
-    buffer,
-    userFile.name,
-    workspaceId,
-    options.raw ?? false,
-    options.ownerKey,
-    options.signal
-  )
-}
 /**
  * Result of {@link downloadServableFileFromStorage}: the bytes a consumer should
  * actually attach/upload, plus the content type that matches those bytes.

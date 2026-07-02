@@ -2,10 +2,13 @@ import { createLogger } from '@sim/logger'
 import { z } from 'zod'
 import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
 import {
+  reconcileImageProviderAndModel,
+  normalizeImageModelId,
+} from '@/lib/image-generation/block-model-config'
+import {
   applyNanoBananaPromptImageParams,
   normalizeOptionalString,
 } from '@/lib/image-generation/nano-banana-inputs'
-import { resolveImageGenerationCount } from '@/lib/image-generation/resolve-image-count.server'
 
 const logger = createLogger('ImageGenerationWrapper')
 const GPT_IMAGE_2_MODEL = 'gpt-image-2'
@@ -67,12 +70,6 @@ async function runWithConcurrency<T>(
 
   await Promise.all(workers)
   return results
-}
-
-function clampImageCount(value: unknown): number {
-  const numericValue = Number(value)
-  if (!Number.isFinite(numericValue)) return 1
-  return Math.min(MAX_IMAGES_TO_GENERATE, Math.max(1, Math.round(numericValue)))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -190,7 +187,19 @@ function resolveExecutionToolId(
     return baseToolId
   }
 
-  const provider = getStringParam(params, 'provider') ?? 'openai'
+  const reconciled = reconcileImageProviderAndModel({
+    provider: getStringParam(params, 'provider'),
+    model: normalizeImageModelId(getStringParam(params, 'model')),
+  })
+  if (reconciled.coerced) {
+    logger.warn('Coerced image generation provider to match model', {
+      requestedProvider: getStringParam(params, 'provider'),
+      model: reconciled.model,
+      resolvedProvider: reconciled.provider,
+    })
+  }
+
+  const provider = reconciled.provider
   if (provider === 'openai' && hasReferenceImages(params)) {
     return 'image_generate'
   }
@@ -237,31 +246,6 @@ function getMetadataWarnings(metadata: Record<string, unknown>): string[] {
   )
 }
 
-async function resolveRequestedImageCount(params: Record<string, unknown>): Promise<{
-  imageCount: number
-  promptImageUrl?: string
-  singleImagePrompt?: string
-  singleImagePrompts?: string[]
-}> {
-  const prompt = String(params.prompt ?? '').trim()
-
-  if (!prompt) {
-    return { imageCount: 1 }
-  }
-
-  const { imageCount, promptImageUrl, singleImagePrompt, singleImagePrompts } =
-    await resolveImageGenerationCount({
-      prompt,
-    })
-
-  return {
-    imageCount: clampImageCount(imageCount),
-    promptImageUrl,
-    singleImagePrompt,
-    singleImagePrompts,
-  }
-}
-
 /**
  * Runs the smart image-generation wrapper in-process.
  * Avoids nested internal HTTP calls that can deadlock single-worker dev servers.
@@ -270,8 +254,8 @@ export async function runImageGenerationWrapper(
   input: ImageGenerationWrapperInput
 ): Promise<ImageGenerationWrapperResult> {
   const validated = ImageGenerationWrapperSchema.parse(input)
-  const { imageCount, promptImageUrl } = await resolveRequestedImageCount(validated.params)
-  const { imageCount: _imageCount, inputImageUrl, ...baseParams } = validated.params
+  const imageCount = 1
+  const { inputImageUrl, ...baseParams } = validated.params
   const inputImageWarning = normalizeOptionalString(validated.params.inputImageWarning)
   const originalPrompt = String(baseParams.prompt ?? '')
   const requestedModel = getStringParam(validated.params, 'model') ?? ''
@@ -287,7 +271,6 @@ export async function runImageGenerationWrapper(
       promptLength: originalPrompt.length,
       requestedImageCountParam: validated.params.imageCount,
       resolvedImageCount: imageCount,
-      hasPromptImageUrl: Boolean(promptImageUrl),
       hasInputImageUrl: Boolean(inputImageUrl),
       inputImageUrl: summarizeReferenceInput(inputImageUrl),
       inputImage: summarizeReferenceInput(validated.params.inputImage),
@@ -309,7 +292,6 @@ export async function runImageGenerationWrapper(
     },
     inputImageUrl,
     inputImages: validated.params.inputImages,
-    promptImageUrl,
   })
 
   if (isGptImage2) {
@@ -337,7 +319,6 @@ export async function runImageGenerationWrapper(
     baseToolId: executionToolId,
     requestedBaseToolId: validated.baseToolId,
     imageCount,
-    hasPromptImageUrl: Boolean(promptImageUrl),
     workflowId: resolvedContext?.workflowId,
     concurrency: Math.min(MAX_CONCURRENT_GENERATIONS, imageCount),
   })

@@ -277,7 +277,6 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   // Slack scopes
   'channels:read': 'View public channels',
   'channels:history': 'Read channel messages',
-  'channels:write': 'Create and manage public channels',
   'channels:manage': 'Create, archive, and rename public channels',
   'groups:read': 'View private channels',
   'groups:history': 'Read private messages',

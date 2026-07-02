@@ -1,0 +1,159 @@
+[
+  {
+    "id": "cluster-1",
+    "prefix": "apps/docs/app/",
+    "files": [
+      "apps/docs/app/global.css"
+    ]
+  },
+  {
+    "id": "cluster-2",
+    "prefix": "apps/sim/app/",
+    "files": [
+      "apps/sim/app/(auth)/components/support-footer.tsx",
+      "apps/sim/app/(interfaces)/chat/[identifier]/ArenaDeployedChat.tsx",
+      "apps/sim/app/(interfaces)/chat/[identifier]/FeedbackView.tsx",
+      "apps/sim/app/(interfaces)/chat/[identifier]/chat.tsx",
+      "apps/sim/app/(interfaces)/chat/[identifier]/leftNavThread.tsx",
+      "apps/sim/app/(interfaces)/chat/[identifier]/page.tsx",
+      "apps/sim/app/(interfaces)/chat/components/error-state/unauthorized-email-error.tsx",
+      "apps/sim/app/(interfaces)/chat/components/golden-queries-modal.tsx",
+      "apps/sim/app/(interfaces)/chat/components/header/arenaHeader.tsx",
+      "apps/sim/app/(interfaces)/chat/components/input/input.tsx",
+      "apps/sim/app/(interfaces)/chat/components/message-container/message-container.tsx",
+      "apps/sim/app/(interfaces)/chat/components/message/ArenaClientChatMessage.tsx",
+      "apps/sim/app/(interfaces)/chat/components/message/components/file-download.tsx",
+      "apps/sim/app/(interfaces)/chat/components/message/components/knowledge-results-modal.tsx",
+      "apps/sim/app/(interfaces)/chat/components/message/components/markdown-renderer.tsx",
+      "apps/sim/app/(interfaces)/chat/components/message/components/streaming-indicator.tsx",
+      "apps/sim/app/(interfaces)/chat/components/message/message.tsx",
+      "apps/sim/app/(landing)/components/collaboration/collaboration.tsx",
+      "apps/sim/app/(landing)/components/footer/footer.tsx",
+      "apps/sim/app/(landing)/components/structured-data.tsx",
+      "apps/sim/app/(landing)/components/templates/templates.tsx",
+      "apps/sim/app/(landing)/landing.tsx",
+      "apps/sim/app/(landing)/page.tsx",
+      "apps/sim/app/api/files/serve/[...path]/route.ts",
+      "apps/sim/app/api/tools/gmail/draft/route.ts",
+      "apps/sim/app/api/tools/gmail/send/route.ts",
+      "apps/sim/app/api/tools/google_drive/upload/route.ts",
+      "apps/sim/app/api/workspaces/[id]/inbox/route.ts",
+      "apps/sim/app/chat/hooks/use-chat-streaming.ts",
+      "apps/sim/app/invite/components/layout.tsx",
+      "apps/sim/app/invite/components/status-card.tsx",
+      "apps/sim/app/workspace/[workspaceId]/knowledge/components/base-card/base-card.tsx",
+      "apps/sim/app/workspace/[workspaceId]/layout.tsx",
+      "apps/sim/app/workspace/[workspaceId]/logs/components/logs-toolbar/logs-toolbar.tsx",
+      "apps/sim/app/workspace/[workspaceId]/settings/[section]/settings.tsx",
+      "apps/sim/app/workspace/[workspaceId]/settings/components/general/general.tsx",
+      "apps/sim/app/workspace/[workspaceId]/settings/components/team-management/components/organization-member-lists/organization-member-lists.tsx",
+      "apps/sim/app/workspace/[workspaceId]/settings/navigation.ts",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/chat/chat.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/chat/chat.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/deploy.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/combobox/combobox.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/file-upload.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-combobox/selector-combobox.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/starter/input-format.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/tools/sub-block-renderer.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/tool-input.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/panel.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/workflow-block.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/workflow-item/workflow-item.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/workspace-header.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx"
+    ]
+  },
+  {
+    "id": "cluster-3",
+    "prefix": "apps/sim/blocks/",
+    "files": [
+      "apps/sim/blocks/blocks/agent.ts",
+      "apps/sim/blocks/blocks/firecrawl.ts",
+      "apps/sim/blocks/blocks/slack.ts",
+      "apps/sim/blocks/registry.ts"
+    ]
+  },
+  {
+    "id": "cluster-4",
+    "prefix": "apps/sim/components/",
+    "files": [
+      "apps/sim/components/emails/components/email-footer.tsx",
+      "apps/sim/components/emails/components/email-layout.tsx"
+    ]
+  },
+  {
+    "id": "cluster-5",
+    "prefix": "apps/sim/ee/",
+    "files": [
+      "apps/sim/ee/whitelabeling/inject-theme.ts"
+    ]
+  },
+  {
+    "id": "cluster-6",
+    "prefix": "apps/sim/executor/",
+    "files": [
+      "apps/sim/executor/constants.ts"
+    ]
+  },
+  {
+    "id": "cluster-7",
+    "prefix": "apps/sim/lib/",
+    "files": [
+      "apps/sim/lib/a2a/agent-card.ts",
+      "apps/sim/lib/core/config/env.ts",
+      "apps/sim/lib/core/security/csp.ts",
+      "apps/sim/lib/logs/execution/logger.ts",
+      "apps/sim/lib/logs/execution/logging-session.ts",
+      "apps/sim/lib/oauth/utils.ts",
+      "apps/sim/lib/uploads/utils/file-utils.server.ts",
+      "apps/sim/lib/workflows/input-format.ts"
+    ]
+  },
+  {
+    "id": "cluster-8",
+    "prefix": "apps/sim/providers/",
+    "files": [
+      "apps/sim/providers/models.ts",
+      "apps/sim/providers/registry.ts",
+      "apps/sim/providers/utils.ts"
+    ]
+  },
+  {
+    "id": "cluster-9",
+    "prefix": "apps/sim/tools/",
+    "files": [
+      "apps/sim/tools/google_drive/index.ts",
+      "apps/sim/tools/registry.ts",
+      "apps/sim/tools/slack/index.ts"
+    ]
+  },
+  {
+    "id": "cluster-10",
+    "prefix": "docker/app.Dockerfile/",
+    "files": [
+      "docker/app.Dockerfile"
+    ]
+  },
+  {
+    "id": "cluster-11",
+    "prefix": "packages/db/index.ts/",
+    "files": [
+      "packages/db/index.ts"
+    ]
+  },
+  {
+    "id": "cluster-12",
+    "prefix": "packages/db/schema.ts/",
+    "files": [
+      "packages/db/schema.ts"
+    ]
+  },
+  {
+    "id": "cluster-13",
+    "prefix": "packages/emcn/src/",
+    "files": [
+      "packages/emcn/src/components/code/code.tsx"
+    ]
+  }
+]
