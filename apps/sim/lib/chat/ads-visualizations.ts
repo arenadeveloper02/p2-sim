@@ -45,12 +45,58 @@ function isFiniteNumber(v: unknown): v is number {
 }
 
 /**
+ * A logical grouping of metrics that share a comparable magnitude/meaning, so
+ * each group renders as its own chart. Mixing e.g. Impressions (tens of
+ * thousands) with CTR (~1) on one axis makes the small series invisible, so we
+ * split them into separate, readable charts.
+ */
+interface MetricGroup {
+  key: string
+  title: string
+  metrics: string[]
+}
+
+const METRIC_GROUP_DEFS: ReadonlyArray<{
+  key: string
+  title: string
+  test: (name: string) => boolean
+}> = [
+  { key: 'spend', title: 'Spend', test: (n) => /spend|cost/i.test(n) },
+  { key: 'volume', title: 'Volume', test: (n) => /impression|click|reach/i.test(n) },
+  { key: 'efficiency', title: 'Efficiency', test: (n) => /ctr|cpc|cpm|frequency/i.test(n) },
+  { key: 'conversions', title: 'Conversions', test: (n) => /conv/i.test(n) },
+]
+
+/**
+ * Partition metric names into ordered groups. Each metric lands in the first
+ * group whose test matches; anything unmatched falls into a trailing "Metrics"
+ * group so nothing is dropped.
+ */
+function groupMetrics(metricNames: string[]): MetricGroup[] {
+  const used = new Set<string>()
+  const groups: MetricGroup[] = []
+  for (const def of METRIC_GROUP_DEFS) {
+    const metrics = metricNames.filter((n) => !used.has(n) && def.test(n))
+    if (metrics.length > 0) {
+      metrics.forEach((m) => used.add(m))
+      groups.push({ key: def.key, title: def.title, metrics })
+    }
+  }
+  const rest = metricNames.filter((n) => !used.has(n))
+  if (rest.length > 0) groups.push({ key: 'other', title: 'Metrics', metrics: rest })
+  return groups
+}
+
+/**
  * Shared engine: turn a normalized table into chart specs.
  *
  * Decision rules (deterministic):
- *  - If rows carry dates → time series → LINE chart (x = dates, one series/metric).
- *  - Else if multiple category rows → BAR chart (x = labels, one series/metric).
- *  - Additionally, for a single spend-like metric across categories → PIE (share).
+ *  - If rows carry dates → time series → one LINE chart per metric group.
+ *  - Else (categories) → one BAR chart per metric group (spend / volume /
+ *    efficiency / conversions), plus a PIE for spend-like share.
+ *
+ * Grouping keeps each chart readable and yields 3–4 charts by default without
+ * any LLM involvement, so the data always matches the API response exactly.
  */
 export function buildChartsFromTable(
   rows: NormalizedRow[],
@@ -62,18 +108,38 @@ export function buildChartsFromTable(
   const metricNames = collectMetricNames(rows)
   if (metricNames.length === 0) return []
 
+  const groups = groupMetrics(metricNames)
+
   // A time series is only meaningful with 2+ distinct dates. Aggregated
   // responses (e.g. Facebook time_increment=all_days) share a single date, so
-  // fall back to a by-category chart which is far more useful.
+  // fall back to by-category charts which are far more useful.
   const distinctDates = new Set(rows.map((r) => r.date).filter((d): d is string => !!d))
   const hasDates = distinctDates.size >= 2
   const specs: ChartSpec[] = []
 
   if (hasDates) {
-    specs.push(buildTimeSeries(rows, metricNames, titlePrefix))
+    for (const group of groups) {
+      specs.push(
+        buildTimeSeries(
+          rows,
+          group.metrics,
+          `ts-${titlePrefix}-${group.key}`,
+          `${titlePrefix} — ${group.title} over time`
+        )
+      )
+    }
   } else {
     const limited = rows.slice(0, maxCategories)
-    specs.push(buildCategoryBar(limited, metricNames, titlePrefix))
+    for (const group of groups) {
+      specs.push(
+        buildCategoryBar(
+          limited,
+          group.metrics,
+          `bar-${titlePrefix}-${group.key}`,
+          `${titlePrefix} — ${group.title} by campaign`
+        )
+      )
+    }
 
     // Share pie for a single spend-like metric across categories.
     const shareMetric = pickShareMetric(metricNames)
@@ -103,7 +169,8 @@ function pickShareMetric(metricNames: string[]): string | undefined {
 function buildTimeSeries(
   rows: NormalizedRow[],
   metricNames: string[],
-  titlePrefix: string
+  id: string,
+  title: string
 ): ChartSpec {
   // Aggregate by date (sum metrics for the same date across rows).
   const byDate = new Map<string, Record<string, number>>()
@@ -126,9 +193,9 @@ function buildTimeSeries(
   }))
 
   return {
-    id: `ts-${titlePrefix}`,
+    id,
     type: 'line',
-    title: `${titlePrefix} over time`,
+    title,
     xAxis: { type: 'category', data: dates },
     yAxis: { type: 'value' },
     series,
@@ -139,7 +206,8 @@ function buildTimeSeries(
 function buildCategoryBar(
   rows: NormalizedRow[],
   metricNames: string[],
-  titlePrefix: string
+  id: string,
+  title: string
 ): ChartSpec {
   const labels = rows.map((r) => r.label)
   const series = metricNames.map((name) => ({
@@ -149,9 +217,9 @@ function buildCategoryBar(
   }))
 
   return {
-    id: `bar-${titlePrefix}`,
+    id,
     type: 'bar',
-    title: `${titlePrefix} by ${rows.length > 0 ? 'category' : 'item'}`,
+    title,
     xAxis: { type: 'category', data: labels },
     yAxis: { type: 'value' },
     series,
