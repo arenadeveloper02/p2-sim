@@ -1036,6 +1036,7 @@ function SubBlockComponent({
             maxSize={config.maxSize}
             uploadContext={config.uploadContext}
             allowStartFilesReference={config.allowStartFilesReference}
+            conversationFileMode={config.conversationFileMode}
             defaultValue={config.defaultValue}
             isPreview={isPreview}
             previewValue={previewValue as any}

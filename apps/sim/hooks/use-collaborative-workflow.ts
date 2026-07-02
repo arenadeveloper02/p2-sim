@@ -20,6 +20,10 @@ import { requestJson } from '@/lib/api/client/request'
 import { getWorkflowStateContract } from '@/lib/api/contracts'
 import { useSession } from '@/lib/auth/auth-client'
 import {
+  normalizeImageModelId,
+  resolveImageProviderForModel,
+} from '@/lib/image-generation/block-model-config'
+import {
   type WorkflowSearchSubflowFieldId,
   workflowSearchSubflowFieldMatchesExpected,
 } from '@/lib/workflows/search-replace/subflow-fields'
@@ -1517,6 +1521,23 @@ export function useCollaborativeWorkflow() {
               continue
             }
             collaborativeSetSubblockValue(blockId, dep.id, '', { _visited: visited })
+          }
+
+          if (blockType === 'image_generator_v2' && subblockId === 'provider') {
+            const modelValue = useSubBlockStore.getState().getValue(blockId, 'model')
+            const normalizedModel =
+              typeof modelValue === 'string' ? normalizeImageModelId(modelValue) : undefined
+            const modelProvider = normalizedModel
+              ? resolveImageProviderForModel(normalizedModel)
+              : undefined
+            const nextProvider = typeof value === 'string' ? value.trim() : ''
+
+            if (
+              normalizedModel &&
+              (!nextProvider || (modelProvider && nextProvider !== modelProvider))
+            ) {
+              collaborativeSetSubblockValue(blockId, 'model', '', { _visited: visited })
+            }
           }
         }
       } catch {

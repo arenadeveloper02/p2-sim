@@ -5,13 +5,13 @@ import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { normalizeStringRecord, normalizeWorkflowVariables } from '@/lib/core/utils/records'
+import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-files'
 import { createMcpToolId } from '@/lib/mcp/utils'
 import { processFilesToUserFiles, type RawFileInput } from '@/lib/uploads/utils/file-utils'
 import { hydrateUserFilesWithBase64 } from '@/lib/uploads/utils/user-file-base64.server'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
-import { normalizeFileInput } from '@/blocks/utils'
 import {
   validateBlockType,
   validateCustomToolsAllowed,
@@ -871,7 +871,7 @@ export class AgentBlockHandler implements BlockHandler {
     messages: Message[] | undefined,
     filesInput: unknown
   ): Message[] | undefined {
-    const normalizedFiles = normalizeFileInput(filesInput)
+    const normalizedFiles = normalizeReferenceFileParams(filesInput)
     if (!normalizedFiles || normalizedFiles.length === 0) {
       return messages
     }
