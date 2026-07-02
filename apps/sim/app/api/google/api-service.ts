@@ -4,6 +4,7 @@ import sharp from 'sharp'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { assertKnownSizeWithinLimit } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { assertGeminiImageModel } from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import type { StorageContext } from '@/lib/uploads'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
@@ -902,6 +903,19 @@ export async function generateNanoBananaImage(
         success: false,
         output: {},
         error: 'Missing required fields: model and prompt are required',
+      },
+      httpStatus: 400,
+    }
+  }
+
+  try {
+    assertGeminiImageModel(model)
+  } catch (error) {
+    return {
+      toolResponse: {
+        success: false,
+        output: {},
+        error: toError(error).message,
       },
       httpStatus: 400,
     }
