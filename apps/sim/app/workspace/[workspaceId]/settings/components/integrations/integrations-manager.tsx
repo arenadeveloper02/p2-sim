@@ -45,7 +45,7 @@ import {
   ConnectServiceAccountModal,
   type ServiceAccountProviderId,
 } from '@/app/workspace/[workspaceId]/integrations/components/connect-service-account-modal'
-import { useBrandConfig } from '@/ee/whitelabeling'
+import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import {
   useCreateCredentialDraft,
   useDeleteWorkspaceCredential,
@@ -120,7 +120,7 @@ export function IntegrationsManager() {
   const searchParams = useSearchParams()
   const workspaceId = (params?.workspaceId as string) || ''
   const isArenaV3IntegrationsEmbed = searchParams.get('from') === 'arena_v3'
-  const brandConfig = useBrandConfig()
+  const brandConfig = useOrgBrandConfig()
 
   const requestedIntegrationProviderIds = useMemo(() => {
     const raw = searchParams.get('integrations')
@@ -1310,8 +1310,8 @@ export function IntegrationsManager() {
       <div className='flex w-[52vw] flex-col gap-2 rounded-lg bg-white p-[24px]'>
         <div className='relative right-[2%] mb-4 w-max'>
           <Image
-            src={brandConfig?.logoUrlBlacktext || ''}
-            alt='Vimi Logo'
+            src={brandConfig.logoUrlBlacktext || brandConfig.logoUrl || ''}
+            alt={brandConfig.name}
             width={100}
             height={100}
           />

@@ -1224,6 +1224,8 @@ export const organization = pgTable('organization', {
   whitelabelSettings: json('whitelabel_settings').$type<{
     brandName?: string
     logoUrl?: string
+    wordmarkUrl?: string
+    faviconUrl?: string
     primaryColor?: string
     primaryHoverColor?: string
     accentColor?: string

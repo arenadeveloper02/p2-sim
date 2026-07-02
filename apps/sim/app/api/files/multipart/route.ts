@@ -46,6 +46,10 @@ const ALLOWED_UPLOAD_CONTEXTS = new Set<StorageContext>([
   'mothership',
   'execution',
   'workspace',
+  'profile-pictures',
+  'og-images',
+  'workspace-logos',
+  'org-logos',
 ])
 
 /**

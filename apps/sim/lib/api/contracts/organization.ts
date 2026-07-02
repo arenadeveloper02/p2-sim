@@ -151,6 +151,7 @@ export const updateOrganizationWhitelabelBodySchema = z.object({
     .optional(),
   logoUrl: z.string().min(1).nullable().optional(),
   wordmarkUrl: z.string().min(1).nullable().optional(),
+  faviconUrl: z.string().min(1).nullable().optional(),
   primaryColor: z
     .string()
     .regex(HEX_COLOR_REGEX, 'Primary color must be a valid hex color (e.g. #33c482)')
@@ -530,6 +531,7 @@ export const organizationWhitelabelSettingsResponseSchema = z.object({
   brandName: z.string().optional(),
   logoUrl: z.string().optional(),
   wordmarkUrl: z.string().optional(),
+  faviconUrl: z.string().optional(),
   primaryColor: z.string().optional(),
   primaryHoverColor: z.string().optional(),
   accentColor: z.string().optional(),
