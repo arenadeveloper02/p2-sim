@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { z } from 'zod'
 import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
+import { reconcileImageProviderAndModel, normalizeImageModelId } from '@/lib/image-generation/block-model-config'
 import {
   applyNanoBananaPromptImageParams,
   normalizeOptionalString,
@@ -66,16 +67,6 @@ async function runWithConcurrency<T>(
 
   await Promise.all(workers)
   return results
-}
-
-/**
- * Resolves how many times to run the same prompt (1–5). Accepts `variations` or legacy `imageCount`.
- */
-export function resolveVariationsCount(params: Record<string, unknown>): number {
-  const value = params.variations ?? params.imageCount ?? 1
-  const numericValue = Number(value)
-  if (!Number.isFinite(numericValue)) return 1
-  return Math.min(MAX_IMAGES_TO_GENERATE, Math.max(1, Math.round(numericValue)))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -193,7 +184,19 @@ function resolveExecutionToolId(
     return baseToolId
   }
 
-  const provider = getStringParam(params, 'provider') ?? 'openai'
+  const reconciled = reconcileImageProviderAndModel({
+    provider: getStringParam(params, 'provider'),
+    model: normalizeImageModelId(getStringParam(params, 'model')),
+  })
+  if (reconciled.coerced) {
+    logger.warn('Coerced image generation provider to match model', {
+      requestedProvider: getStringParam(params, 'provider'),
+      model: reconciled.model,
+      resolvedProvider: reconciled.provider,
+    })
+  }
+
+  const provider = reconciled.provider
   if (provider === 'openai' && hasReferenceImages(params)) {
     return 'image_generate'
   }
@@ -248,13 +251,8 @@ export async function runImageGenerationWrapper(
   input: ImageGenerationWrapperInput
 ): Promise<ImageGenerationWrapperResult> {
   const validated = ImageGenerationWrapperSchema.parse(input)
-  const imageCount = resolveVariationsCount(validated.params)
-  const {
-    imageCount: _imageCount,
-    variations: _variations,
-    inputImageUrl,
-    ...baseParams
-  } = validated.params
+  const imageCount = 1
+  const { inputImageUrl, ...baseParams } = validated.params
   const inputImageWarning = normalizeOptionalString(validated.params.inputImageWarning)
   const originalPrompt = String(baseParams.prompt ?? '')
   const requestedModel = getStringParam(validated.params, 'model') ?? ''

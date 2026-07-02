@@ -1,4 +1,5 @@
 import { isUserFile } from '@/lib/core/utils/user-file'
+import { IMAGE_BLOCK_MODEL_IDS } from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 import type { ImageGenerationParams, ImageGenerationResponse } from '@/tools/image/types'
@@ -116,6 +117,8 @@ function normalizeImagesOutput(
   return primary ? [primary] : []
 }
 
+const IMAGE_GENERATE_MODEL_IDS = IMAGE_BLOCK_MODEL_IDS.join(', ')
+
 export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGenerationResponse> = {
   id: 'image_generate',
   name: 'Image Generator',
@@ -125,9 +128,10 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
   params: {
     provider: {
       type: 'string',
-      required: true,
-      visibility: 'user-only',
-      description: 'Image generation provider: openai, gemini, or falai',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Image generation provider. Use openai for gpt-image-* and chatgpt-image-latest; gemini for gemini-*-image* models; falai for nano-banana-*, flux-2-pro, seedream-v4.5, and grok-imagine-image. When omitted, provider is inferred from model.',
     },
     apiKey: {
       type: 'string',
@@ -138,10 +142,10 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     },
     model: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
       description:
-        'Provider model ID, such as gpt-image-1.5, gemini-3.1-flash-image-preview, or nano-banana-2',
+        `Provider model ID. Supported models: ${IMAGE_GENERATE_MODEL_IDS}. Provider is inferred from model when omitted.`,
     },
     prompt: {
       type: 'string',
@@ -237,7 +241,8 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Multiple reference images for fusion',
+      description:
+        'Multiple reference images for fusion. Supported on Gemini models (up to 14) and subject to per-model limits.',
     },
     inputImageUrl: {
       type: 'string',
@@ -263,12 +268,6 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       visibility: 'hidden',
       description:
         'Warning emitted when multiple input images were provided and the latest one was used',
-    },
-    variations: {
-      type: 'number',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Number of image variations to generate with the same prompt (1-5)',
     },
   },
 
@@ -341,7 +340,6 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         inputImageUrls: params.inputImageUrls,
         inputImageMimeType: params.inputImageMimeType,
         inputImageWarning: params.inputImageWarning,
-        variations: params.variations,
         workspaceId: params._context?.workspaceId ?? params.workspaceId,
         workflowId: params._context?.workflowId ?? params.workflowId,
         executionId: params._context?.executionId ?? params.executionId,

@@ -94,6 +94,9 @@ export function shouldUseLargeFilePath(
 }
 
 const PDF_MIME_TYPE = 'application/pdf'
+const SVG_MIME_TYPE = 'image/svg+xml'
+/** Vision APIs reject SVG bytes as images; send SVG XML as a text document instead. */
+const SVG_DOCUMENT_MIME_TYPE = 'text/xml'
 
 const DOCUMENT_MIME_TYPES = new Set(
   Object.entries(MIME_TYPE_MAPPING)
@@ -197,6 +200,15 @@ function isTextDocumentMimeType(mimeType: string): boolean {
 
 function isImageMimeType(mimeType: string): boolean {
   return MODEL_SUPPORTED_IMAGE_MIME_TYPES.has(mimeType)
+}
+
+function isSvgMimeType(mimeType: string): boolean {
+  return mimeType === SVG_MIME_TYPE
+}
+
+/** Providers that accept SVG XML as a document attachment instead of a vision image. */
+function providerSupportsSvgAsDocument(provider: AttachmentProvider): boolean {
+  return provider === 'openai' || provider === 'anthropic' || provider === 'google'
 }
 
 function isOpenAIDocumentMimeType(mimeType: string): boolean {
@@ -351,7 +363,17 @@ export function prepareProviderAttachments(
 
   return files.map((file) => {
     const declaredMimeType = inferAttachmentMimeType(file)
-    const contentType = getAttachmentContentType(declaredMimeType)
+    const treatSvgAsDocument = isSvgMimeType(declaredMimeType)
+
+    if (treatSvgAsDocument && !providerSupportsSvgAsDocument(provider)) {
+      throw new Error(
+        `File "${file.name}" is an SVG image, which is not supported by provider "${providerId}". Convert it to PNG, JPEG, GIF, or WebP, or use a provider that accepts document attachments (OpenAI, Anthropic, or Google).`
+      )
+    }
+
+    const contentType = treatSvgAsDocument
+      ? ('document' as const)
+      : getAttachmentContentType(declaredMimeType)
 
     if (!contentType) {
       throw new Error(
@@ -385,7 +407,9 @@ export function prepareProviderAttachments(
       )
     }
 
-    const mimeType = sniffedImageMimeType || declaredMimeType
+    const mimeType = treatSvgAsDocument
+      ? SVG_DOCUMENT_MIME_TYPE
+      : sniffedImageMimeType || declaredMimeType
     const extension = getAttachmentExtension(file, mimeType)
     const attachment = {
       file,

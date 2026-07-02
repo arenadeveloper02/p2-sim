@@ -201,31 +201,4 @@ describe('image_generate direct execution', () => {
       image: 'https://example.com/wrapper.png',
     })
   })
-
-  it('forwards variations in the smart wrapper request body', async () => {
-    const params = {
-      provider: 'openai',
-      model: 'gpt-image-2',
-      prompt: 'A red sports car',
-      variations: 3,
-      _context: {
-        userId: 'user-123',
-        workflowId: 'workflow-123',
-        workspaceId: 'workspace-123',
-      },
-    }
-
-    const result = await executeTool('image_generate', params)
-
-    expect(result.success).toBe(true)
-    expect(mockRunImageGenerationWrapper).toHaveBeenCalledWith({
-      baseToolId: 'image_generate',
-      params: expect.objectContaining({
-        provider: 'openai',
-        model: 'gpt-image-2',
-        prompt: 'A red sports car',
-        variations: 3,
-      }),
-    })
-  })
 })
