@@ -48,7 +48,10 @@ import {
   formatBuildErrorsSummary,
   logGeneratedAppValidationErrors,
 } from '@/lib/development/format-generated-app-build-errors'
-import { validateGeneratedAppPreDeploy } from '@/lib/development/validate-generated-app-build'
+import {
+  validateGeneratedAppPreDeploy,
+  validateGeneratedAppProductionBuild,
+} from '@/lib/development/validate-generated-app-build'
 import {
   formatStructureValidationIssues,
   validateGeneratedAppStructure,
@@ -1015,8 +1018,33 @@ interface BuildRepairResult {
   repairRounds: number
 }
 
+function startGitHubRepositoryPrepIfConfigured(params: {
+  repoName: string
+  description: string
+  githubToken?: string
+  vercelToken?: string
+  githubOwner?: string
+  privateRepo?: boolean
+}): ReturnType<typeof ensureGitHubRepository> | null {
+  if (!params.githubToken || !params.vercelToken) {
+    return null
+  }
+
+  logger.info('Ensuring GitHub repository in parallel with validation', {
+    repoName: params.repoName,
+  })
+
+  return ensureGitHubRepository({
+    repoName: params.repoName,
+    description: params.description,
+    githubToken: params.githubToken,
+    githubOwner: params.githubOwner,
+    privateRepo: params.privateRepo,
+  })
+}
+
 /**
- * Runs structure validation, pre-deploy build/typecheck, and repairs with the LLM until checks pass.
+ * Runs structure validation, fast compile checks (with LLM repair), then one final production build.
  */
 async function validateAndRepairUntilBuildPasses(
   outputDir: string,
@@ -1026,6 +1054,7 @@ async function validateAndRepairUntilBuildPasses(
   let currentSpec = spec
   let buildOutput = ''
   let repairRounds = 0
+  const validationOptions = { requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE }
 
   for (let round = 0; round <= MAX_BUILD_REPAIR_ROUNDS; round++) {
     currentSpec.requiresDatabase = resolveRequiresDatabase(currentSpec)
@@ -1070,13 +1099,44 @@ async function validateAndRepairUntilBuildPasses(
       continue
     }
 
-    const buildResult = await validateGeneratedAppPreDeploy(outputDir, currentSpec.files, {
-      requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
-    })
-    buildOutput = `[${buildResult.method}] ${buildResult.output}`
-    const compilePhase = buildResult.method === 'e2b' ? 'build' : 'typecheck'
+    const fastResult = await validateGeneratedAppPreDeploy(outputDir, currentSpec.files, validationOptions)
+    buildOutput = `[${fastResult.method}:typecheck] ${fastResult.output}`
 
-    if (buildResult.validated) {
+    if (!fastResult.validated) {
+      logGeneratedAppValidationErrors({
+        phase: 'typecheck',
+        round,
+        output: fastResult.output,
+      })
+
+      if (round >= MAX_BUILD_REPAIR_ROUNDS) {
+        break
+      }
+
+      repairRounds += 1
+      logger.warn('Generated app typecheck failed, requesting LLM repair', {
+        round: repairRounds,
+        maxRounds: MAX_BUILD_REPAIR_ROUNDS,
+        method: fastResult.method,
+      })
+
+      currentSpec = await repairAppSpecWithLlm(currentSpec, fastResult.output, userInput)
+
+      const nextCacheDir = join(outputDir, '.next')
+      if (existsSync(nextCacheDir)) {
+        await rm(nextCacheDir, { recursive: true, force: true })
+      }
+      continue
+    }
+
+    const finalResult = await validateGeneratedAppProductionBuild(
+      outputDir,
+      currentSpec.files,
+      validationOptions
+    )
+    buildOutput = `[${fastResult.method}:typecheck]\n${fastResult.output}\n\n[${finalResult.method}:build]\n${finalResult.output}`
+
+    if (finalResult.validated) {
       return {
         spec: currentSpec,
         buildValidated: true,
@@ -1086,9 +1146,9 @@ async function validateAndRepairUntilBuildPasses(
     }
 
     logGeneratedAppValidationErrors({
-      phase: compilePhase,
+      phase: 'build',
       round,
-      output: buildResult.output,
+      output: finalResult.output,
     })
 
     if (round >= MAX_BUILD_REPAIR_ROUNDS) {
@@ -1096,13 +1156,13 @@ async function validateAndRepairUntilBuildPasses(
     }
 
     repairRounds += 1
-    logger.warn('Generated app pre-deploy validation failed, requesting LLM repair', {
+    logger.warn('Generated app production build failed, requesting LLM repair', {
       round: repairRounds,
       maxRounds: MAX_BUILD_REPAIR_ROUNDS,
-      method: buildResult.method,
+      method: finalResult.method,
     })
 
-    currentSpec = await repairAppSpecWithLlm(currentSpec, buildResult.output, userInput)
+    currentSpec = await repairAppSpecWithLlm(currentSpec, finalResult.output, userInput)
 
     const nextCacheDir = join(outputDir, '.next')
     if (existsSync(nextCacheDir)) {
@@ -1157,6 +1217,16 @@ export async function generateNextjsApp(
     let buildValidated: boolean | undefined
     let buildOutput: string | undefined
     const outputPath = relative(monorepoRoot, outputDir)
+
+    const deployEnvEarly = resolveDevelopmentDeployEnv()
+    const githubRepoPrep = startGitHubRepositoryPrepIfConfigured({
+      repoName,
+      description: spec.description,
+      githubToken: deployEnvEarly.githubToken,
+      vercelToken: deployEnvEarly.vercelToken,
+      githubOwner: deployEnvEarly.githubOwner,
+      privateRepo: input.privateRepo === true,
+    })
 
     const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput)
     spec = buildRepair.spec
@@ -1216,14 +1286,16 @@ export async function generateNextjsApp(
     } else if (!vercelToken) {
       vercelDeployError = 'DEVELOPMENT_VERCEL_TOKEN is not set in the environment.'
     } else {
-      logger.info('Ensuring GitHub repository exists before Vercel setup', { repoName })
-      const repoResult = await ensureGitHubRepository({
-        repoName,
-        description: spec.description,
-        githubToken,
-        githubOwner: githubOwnerHint,
-        privateRepo: input.privateRepo === true,
-      })
+      logger.info('Using GitHub repository prepared during validation', { repoName })
+      const repoResult = githubRepoPrep
+        ? await githubRepoPrep
+        : await ensureGitHubRepository({
+            repoName,
+            description: spec.description,
+            githubToken,
+            githubOwner: githubOwnerHint,
+            privateRepo: input.privateRepo === true,
+          })
 
       if (!repoResult.success || !repoResult.owner || !repoResult.repoName) {
         gitPushError = repoResult.error ?? 'Failed to create or resolve GitHub repository'
@@ -1681,6 +1753,15 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
     let buildValidated: boolean | undefined
     let buildOutput: string | undefined
 
+    const deployEnvEarly = resolveDevelopmentDeployEnv()
+    const githubRepoPrep = startGitHubRepositoryPrepIfConfigured({
+      repoName,
+      description: spec.description,
+      githubToken: deployEnvEarly.githubToken,
+      vercelToken: deployEnvEarly.vercelToken,
+      githubOwner: deployEnvEarly.githubOwner ?? localResult.githubOwner,
+    })
+
     const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput)
     spec = buildRepair.spec
     spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
@@ -1737,13 +1818,15 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
     } else if (!vercelToken) {
       vercelDeployError = 'DEVELOPMENT_VERCEL_TOKEN is not set in the environment.'
     } else {
-      logger.info('Ensuring GitHub repository exists before Vercel setup (edit)', { repoName })
-      const repoResult = await ensureGitHubRepository({
-        repoName,
-        description: spec.description,
-        githubToken,
-        githubOwner: githubOwnerHint ?? githubOwner,
-      })
+      logger.info('Using GitHub repository prepared during edit validation', { repoName })
+      const repoResult = githubRepoPrep
+        ? await githubRepoPrep
+        : await ensureGitHubRepository({
+            repoName,
+            description: spec.description,
+            githubToken,
+            githubOwner: githubOwnerHint ?? githubOwner,
+          })
 
       if (!repoResult.success || !repoResult.owner || !repoResult.repoName) {
         gitPushError = repoResult.error ?? 'Failed to resolve GitHub repository for edit'

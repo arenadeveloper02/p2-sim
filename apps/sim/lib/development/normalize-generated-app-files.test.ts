@@ -632,4 +632,26 @@ export interface DashboardStats {
     expect(files.some((file) => file.path === 'prisma/schema.prisma')).toBe(false)
     expect(files.some((file) => file.path === 'lib/prisma.ts')).toBe(false)
   })
+
+  it('auto-adds missing lib/actions exports like updatePassword during normalize', () => {
+    const files = normalizeGeneratedAppFiles(
+      [
+        {
+          path: 'package.json',
+          content: JSON.stringify({ name: 'demo', scripts: { build: 'next build' } }),
+        },
+        { path: 'tsconfig.json', content: '{"compilerOptions":{"paths":{"@/*":["./*"]}}}' },
+        { path: 'lib/actions.ts', content: 'export async function getUser() { return null }\n' },
+        {
+          path: 'app/api/auth/update-password/route.ts',
+          content:
+            "import { updatePassword } from '@/lib/actions'\nexport async function POST() { await updatePassword('id', 'pass'); return Response.json({ ok: true }) }\n",
+        },
+      ],
+      { requiresDatabase: true }
+    )
+
+    const actions = files.find((file) => file.path === 'lib/actions.ts')
+    expect(actions?.content).toContain('export async function updatePassword')
+  })
 })

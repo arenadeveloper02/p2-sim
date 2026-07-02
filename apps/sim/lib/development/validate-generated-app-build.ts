@@ -40,6 +40,26 @@ export interface ValidateGeneratedAppBuildOptions {
 const DUMMY_DATABASE_URL = 'postgresql://user:pass@localhost:5432/validate?sslmode=disable'
 const NPM_INSTALL_ARGS = ['install', '--include=dev', '--legacy-peer-deps', '--no-audit', '--no-fund'] as const
 
+const E2B_VALIDATION_ENV = {
+  NODE_ENV: 'development',
+  NEXT_TELEMETRY_DISABLED: '1',
+  PRISMA_HIDE_UPDATE_MESSAGE: 'true',
+  CI: '1',
+} as const
+
+function buildE2bValidationShellScript(lines: string[]): string {
+  return [
+    'set -euo pipefail',
+    'cd /home/user/app',
+    'export NEXT_TELEMETRY_DISABLED=1',
+    'export PRISMA_HIDE_UPDATE_MESSAGE=true',
+    'export CI=1',
+    ...lines,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
 function shouldSkipPackageBuildScript(
   options: ValidateGeneratedAppBuildOptions,
   hasPrisma: boolean
@@ -169,21 +189,17 @@ async function validateAppTypecheckInE2b(
     .filter((entry): entry is SandboxFile => entry !== null)
 
   const hasPrisma = files.some((file) => file.path === 'prisma/schema.prisma')
-  const shellScript = [
-    'set -euo pipefail',
-    'cd /home/user/app',
+  const shellScript = buildE2bValidationShellScript([
     options.requiresDatabase ? `export DATABASE_URL="${DUMMY_DATABASE_URL}"` : '',
     'npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1',
     options.requiresDatabase && hasPrisma ? 'npx prisma generate 2>&1' : '',
     'npx tsc --noEmit 2>&1',
     'echo "__SIM_RESULT__={\\"typecheckOk\\":true}"',
-  ]
-    .filter(Boolean)
-    .join('\n')
+  ])
 
   const result = await executeShellInE2B({
     code: shellScript,
-    envs: { NODE_ENV: 'development' },
+    envs: { ...E2B_VALIDATION_ENV },
     timeoutMs: TYPECHECK_TIMEOUT_MS,
     sandboxFiles,
   })
@@ -214,21 +230,17 @@ async function validateAppBuildInE2b(
   const hasPrisma = files.some((file) => file.path === 'prisma/schema.prisma')
   const skipPackageBuild = shouldSkipPackageBuildScript(options, hasPrisma)
   const compileStep = skipPackageBuild ? 'npx next build 2>&1' : 'npm run build 2>&1'
-  const shellScript = [
-    'set -euo pipefail',
-    'cd /home/user/app',
+  const shellScript = buildE2bValidationShellScript([
     options.requiresDatabase ? `export DATABASE_URL="${DUMMY_DATABASE_URL}"` : '',
     'npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1',
     skipPackageBuild ? 'npx prisma generate 2>&1' : '',
     compileStep,
     'echo "__SIM_RESULT__={\\"buildOk\\":true}"',
-  ]
-    .filter(Boolean)
-    .join('\n')
+  ])
 
   const result = await executeShellInE2B({
     code: shellScript,
-    envs: { NODE_ENV: 'development' },
+    envs: { ...E2B_VALIDATION_ENV },
     timeoutMs: FULL_BUILD_TIMEOUT_MS,
     sandboxFiles,
   })
@@ -297,9 +309,20 @@ export async function validateGeneratedAppBuild(
 }
 
 /**
- * Pre-deploy validation: full npm run build in E2B when configured, otherwise local tsc --noEmit.
+ * Fast pre-deploy validation used in repair loops: E2B typecheck or local tsc --noEmit.
  */
 export async function validateGeneratedAppPreDeploy(
+  outputDir: string,
+  files: GeneratedAppFile[],
+  options: ValidateGeneratedAppBuildOptions = {}
+): Promise<ValidateAppBuildResult> {
+  return validateGeneratedAppTypecheck(outputDir, files, options)
+}
+
+/**
+ * Final production compile gate after fast typecheck passes: full next build in E2B when configured.
+ */
+export async function validateGeneratedAppProductionBuild(
   outputDir: string,
   files: GeneratedAppFile[],
   options: ValidateGeneratedAppBuildOptions = {}
@@ -308,5 +331,5 @@ export async function validateGeneratedAppPreDeploy(
     return validateGeneratedAppBuild(outputDir, files, options)
   }
 
-  return validateGeneratedAppTypecheck(outputDir, files, options)
+  return { validated: true, output: 'Skipped final build (E2B not configured)', method: 'skipped' }
 }

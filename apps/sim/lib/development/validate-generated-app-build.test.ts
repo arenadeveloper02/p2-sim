@@ -25,6 +25,7 @@ vi.mock('@/lib/core/config/env', () => ({
 import {
   validateGeneratedAppBuild,
   validateGeneratedAppPreDeploy,
+  validateGeneratedAppProductionBuild,
   validateGeneratedAppTypecheck,
 } from '@/lib/development/validate-generated-app-build'
 
@@ -64,10 +65,10 @@ describe('validate-generated-app-build', () => {
     expect(mockExecuteShellInE2B).not.toHaveBeenCalled()
   }, 30_000)
 
-  it('validateGeneratedAppPreDeploy uses full build in E2B when E2B_API_KEY is set', async () => {
+  it('validateGeneratedAppPreDeploy uses typecheck in E2B when E2B_API_KEY is set', async () => {
     mockE2bApiKey.value = 'test-key'
     mockExecuteShellInE2B.mockResolvedValue({
-      stdout: 'build ok\n__SIM_RESULT__={"buildOk":true}',
+      stdout: 'typecheck ok\n__SIM_RESULT__={"typecheckOk":true}',
       error: undefined,
     })
 
@@ -77,8 +78,32 @@ describe('validate-generated-app-build', () => {
     expect(result.validated).toBe(true)
     expect(mockExecuteShellInE2B).toHaveBeenCalledTimes(1)
     const shellScript = mockExecuteShellInE2B.mock.calls[0]?.[0]?.code as string
+    expect(shellScript).toContain('tsc --noEmit')
+    expect(shellScript).not.toContain('next build')
+    expect(shellScript).toContain('NEXT_TELEMETRY_DISABLED=1')
+  })
+
+  it('validateGeneratedAppProductionBuild runs full next build in E2B', async () => {
+    mockE2bApiKey.value = 'test-key'
+    mockExecuteShellInE2B.mockResolvedValue({
+      stdout: 'build ok\n__SIM_RESULT__={"buildOk":true}',
+      error: undefined,
+    })
+
+    const result = await validateGeneratedAppProductionBuild(outputDir, sampleFiles)
+
+    expect(result.method).toBe('e2b')
+    expect(result.validated).toBe(true)
+    const shellScript = mockExecuteShellInE2B.mock.calls[0]?.[0]?.code as string
     expect(shellScript).toContain('npm run build')
-    expect(shellScript).not.toContain('tsc --noEmit')
+  })
+
+  it('validateGeneratedAppProductionBuild skips when E2B is not configured', async () => {
+    const result = await validateGeneratedAppProductionBuild(outputDir, sampleFiles)
+
+    expect(result.method).toBe('skipped')
+    expect(result.validated).toBe(true)
+    expect(mockExecuteShellInE2B).not.toHaveBeenCalled()
   })
 
   it('skips prisma db push in E2B validation for database apps', async () => {

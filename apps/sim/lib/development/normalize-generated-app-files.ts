@@ -2458,8 +2458,24 @@ export default ${name}
 }
 
 /**
+ * Applies import/export reconcilers so structure validation and typecheck see consistent modules.
+ */
+function reconcileGeneratedAppImportsAndExports(
+  files: GeneratedAppFile[],
+  options: NormalizeGeneratedAppFilesOptions = {}
+): GeneratedAppFile[] {
+  let updated = reconcileSplitImportsInFiles(files)
+  updated = dedupeActionsTypeConflicts(reconcileActionsTypeExports(updated))
+  updated = reconcileTypesExports(updated)
+  updated = reconcileAuthExports(updated, options)
+  updated = reconcileComponentExportStyles(updated)
+  updated = reconcileClientComponentProps(updated)
+  return updated
+}
+
+/**
  * Normalizes generated files for reliable local and Vercel builds.
- * Content fixes (Prisma models, actions, imports) are the LLM's responsibility — see GENERATED_APP_*_GUIDANCE.
+ * Structural import/export gaps are auto-reconciled; domain logic remains the LLM's responsibility.
  */
 export function normalizeGeneratedAppFiles(
   files: GeneratedAppFile[],
@@ -2489,7 +2505,8 @@ export function normalizeGeneratedAppFiles(
     return file
   })
 
-  const withNextEnv = ensureNextEnvFile(patched)
+  const withReconciledSources = reconcileGeneratedAppImportsAndExports(patched, options)
+  const withNextEnv = ensureNextEnvFile(withReconciledSources)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
   const usedPackages = collectUsedNpmPackageNames(withRepoSummary)

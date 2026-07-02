@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { normalizeGeneratedAppFiles } from '@/lib/development/normalize-generated-app-files'
 import {
   formatStructureValidationIssues,
   validateGeneratedAppStructure,
@@ -139,6 +140,24 @@ export default function ConfirmModal({ message, onConfirm, open, onClose }: Conf
 
     expect(result.valid).toBe(false)
     expect(result.issues.some((issue) => issue.includes('getRecentTasks'))).toBe(true)
+  })
+
+  it('passes action import checks after normalize auto-reconciles missing exports', () => {
+    const files = normalizeGeneratedAppFiles(
+      [
+        ...baseFiles,
+        { path: 'lib/actions.ts', content: 'export async function getCategories() { return [] }\n' },
+        {
+          path: 'app/api/auth/update-password/route.ts',
+          content:
+            "import { updatePassword } from '@/lib/actions'\nexport async function POST() { await updatePassword('id', 'pass'); return Response.json({ ok: true }) }\n",
+        },
+      ],
+      { requiresDatabase: true }
+    )
+
+    const result = validateGeneratedAppStructure(files, { requiresDatabase: true })
+    expect(result.issues.some((issue) => issue.includes('updatePassword'))).toBe(false)
   })
 
   it('reports next/document imports in App Router files', () => {
