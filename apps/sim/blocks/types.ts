@@ -389,6 +389,8 @@ export interface SubBlockConfig {
   uploadContext?: 'image-fusion'
   /** When true, show "Use Start block files" so chat-uploaded files can be passed via <start.files>. */
   allowStartFilesReference?: boolean
+  /** When allowStartFilesReference is true, limits conversation picker to images or all attachments. */
+  conversationFileMode?: 'images' | 'all'
   // Slider-specific properties
   step?: number
   integer?: boolean

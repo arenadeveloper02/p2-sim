@@ -2,6 +2,10 @@ import { getLiveAssistantMessageId } from '@/lib/copilot/chat/effective-transcri
 import { MothershipStreamV1SessionKind } from '@/lib/copilot/generated/mothership-stream-v1'
 import type { PersistedStreamEventEnvelope } from '@/lib/copilot/request/session/contract'
 import type { StreamLoopContext } from '@/app/workspace/[workspaceId]/home/hooks/stream/stream-context'
+import {
+  getMothershipChatPath,
+  readMothershipChatSearch,
+} from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
 import { type MothershipChatHistory, mothershipChatKeys } from '@/hooks/queries/mothership-chats'
 
 type SessionEvent = Extract<PersistedStreamEventEnvelope, { type: 'session' }>
@@ -53,10 +57,14 @@ export function handleSessionEvent(ctx: StreamLoopContext, parsed: SessionEvent)
       }
       deps.setPendingMessages([])
       if (!deps.workflowIdRef.current) {
+        // Embed stays on /task/:id/embed so workspace chrome keeps the sidebar hidden.
         window.history.replaceState(
           null,
           '',
-          `/workspace/${deps.workspaceId}/chat/${payloadChatId}`
+          getMothershipChatPath(deps.workspaceId, payloadChatId, {
+            embed: deps.isEmbedPageRef.current,
+            search: readMothershipChatSearch(),
+          })
         )
       }
     }
