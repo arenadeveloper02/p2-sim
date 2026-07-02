@@ -344,7 +344,7 @@ export function WhitelabelingSettings() {
             <div className='flex flex-col gap-5'>
               <SettingRow
                 label='Brand name'
-                description='Replaces "Sim" in the sidebar and select UI elements.'
+                description='Replaces "Arena AI" in the sidebar and select UI elements.'
               >
                 <ChipInput
                   value={brandName}
