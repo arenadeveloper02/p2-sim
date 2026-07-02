@@ -1,0 +1,27 @@
+import type { Metadata } from 'next'
+import ArenaChatClient from '@/app/(interfaces)/chat/[identifier]/ArenaDeployedChat'
+import { OfficeEmbedInit } from '@/app/(interfaces)/chat/[identifier]/office-embed-init'
+
+export const metadata: Metadata = {
+  title: 'Chat',
+}
+
+export default async function ChatPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ identifier: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const { identifier } = await params
+  const { embed } = await searchParams
+  const isOfficeEmbed = embed === 'office' || (Array.isArray(embed) && embed.includes('office'))
+
+  return (
+    <>
+      {isOfficeEmbed && <OfficeEmbedInit />}
+      {/* <ChatClient key={identifier} identifier={identifier} /> */}
+      <ArenaChatClient key={identifier} identifier={identifier} />
+    </>
+  )
+}

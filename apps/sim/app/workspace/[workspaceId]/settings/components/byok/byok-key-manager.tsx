@@ -1,9 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
-import { Eye, EyeOff, Search } from 'lucide-react'
 import {
   Button,
   Chip,
@@ -14,14 +11,19 @@ import {
   ChipModalField,
   ChipModalFooter,
   ChipModalHeader,
-} from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
+  cn,
+} from '@sim/emcn'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
+import { Eye, EyeOff, Search } from 'lucide-react'
 import {
   CHIP_FIELD_INPUT,
   CHIP_FIELD_SHELL,
 } from '@/app/workspace/[workspaceId]/components/credential-detail/components/chip-field'
 import { BYOKProviderKeysModal } from '@/app/workspace/[workspaceId]/settings/components/byok/byok-provider-keys-modal'
 import { BYOKKeySkeleton } from '@/app/workspace/[workspaceId]/settings/components/byok/byok-skeleton'
+import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
+import { SettingsResourceRow } from '@/app/workspace/[workspaceId]/settings/components/settings-resource-row'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 
 const logger = createLogger('BYOKKeyManager')
@@ -277,21 +279,13 @@ export function BYOKKeyManager(props: BYOKKeyManagerProps) {
     const Icon = provider.icon
 
     return (
-      <div key={provider.id} className='flex items-center justify-between gap-2.5'>
-        <div className='flex min-w-0 items-center gap-2.5'>
-          <div className='flex size-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[var(--border-1)] bg-[var(--bg)]'>
-            <Icon className='size-5' />
-          </div>
-          <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
-            <span className='truncate text-[14px] text-[var(--text-body)]'>{provider.name}</span>
-            <span className='truncate text-[12px] text-[var(--text-muted)]'>
-              {provider.description}
-            </span>
-          </div>
-        </div>
-
-        {renderActions(provider)}
-      </div>
+      <SettingsResourceRow
+        key={provider.id}
+        icon={<Icon />}
+        title={provider.name}
+        description={provider.description}
+        trailing={renderActions(provider)}
+      />
     )
   }
 
@@ -323,9 +317,9 @@ export function BYOKKeyManager(props: BYOKKeyManagerProps) {
             ))}
           </div>
         ) : showNoResults ? (
-          <div className='py-4 text-center text-[var(--text-muted)] text-sm'>
+          <SettingsEmptyState variant='inline'>
             No providers found matching "{searchTerm}"
-          </div>
+          </SettingsEmptyState>
         ) : sections ? (
           <div className='flex flex-col gap-7'>
             {sections.map((section) => {
@@ -382,7 +376,6 @@ export function BYOKKeyManager(props: BYOKKeyManagerProps) {
               : `This key will be used for all ${editingMeta?.name} requests in this workspace. Your key is encrypted and stored securely.`}
           </p>
           <ChipModalField type='custom' title='API Key' required>
-            {/* Hidden decoy fields to prevent browser autofill */}
             <input
               type='text'
               name='fakeusernameremembered'

@@ -2,6 +2,7 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import * as schema from '@sim/db'
 import {
   instrumentPoolClient,
+  resolveDbUrl,
   workflow,
   workflowBlocks,
   workflowEdges,
@@ -31,15 +32,20 @@ import { env } from '@/env'
 
 const logger = createLogger('SocketDatabase')
 
-const connectionString = env.DATABASE_URL
+// Both realtime pools (this socketDb + the shared @sim/db pool) resolve the
+// realtime-keyed URL when set, falling back to the shared DATABASE_URL.
+const connectionString =
+  resolveDbUrl('DATABASE_URL', process.env.SIM_DB_ROLE ?? 'realtime') ?? env.DATABASE_URL
+// Realtime process footprint = this socketDb pool + the shared @sim/db pool.
 const socketDb = drizzle(
   instrumentPoolClient(
     postgres(connectionString, {
       prepare: false,
       idle_timeout: 10,
       connect_timeout: 20,
-      max: 15,
+      max: 10,
       onnotice: () => {},
+      connection: { application_name: process.env.DB_APP_NAME ?? 'sim-realtime' },
     }),
     'socketDb'
   ),

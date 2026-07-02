@@ -1,22 +1,22 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { createLogger } from '@sim/logger'
 import {
   Badge,
   Button,
   ChipCombobox,
+  ChipDatePicker,
   ChipInput,
   ChipModal,
   ChipModalBody,
   ChipModalField,
   ChipModalFooter,
   ChipModalHeader,
-  DatePicker,
+  handleKeyboardActivation,
   Label,
   Trash,
-} from '@/components/emcn'
-import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
+} from '@sim/emcn'
+import { createLogger } from '@sim/logger'
 import { ALL_TAG_SLOTS, type AllTagSlot, MAX_TAG_SLOTS } from '@/lib/knowledge/constants'
 import type { DocumentTag } from '@/lib/knowledge/tags/types'
 import type { DocumentData } from '@/lib/knowledge/types'
@@ -428,7 +428,7 @@ export function DocumentTagsModal({
                     {FIELD_TYPE_LABELS[tag.fieldType] || tag.fieldType}
                   </span>
                   <div className='mb-[-1.5px] h-[14px] w-[1.25px] flex-shrink-0 rounded-full bg-[var(--border-1)]' />
-                  <span className='min-w-0 flex-1 truncate text-[var(--text-muted)] text-xs'>
+                  <span className='min-w-0 flex-1 truncate text-[var(--text-muted)] text-caption'>
                     {formatValueForDisplay(tag.value, tag.fieldType)}
                   </span>
                   <div className='flex flex-shrink-0 items-center gap-1'>
@@ -541,10 +541,11 @@ export function DocumentTagsModal({
                           }}
                         />
                       ) : editTagForm.fieldType === 'date' ? (
-                        <DatePicker
+                        <ChipDatePicker
                           value={editTagForm.value || undefined}
                           onChange={(value) => setEditTagForm({ ...editTagForm, value })}
                           placeholder='Select date'
+                          fullWidth
                         />
                       ) : (
                         <ChipInput
@@ -693,10 +694,11 @@ export function DocumentTagsModal({
                       }}
                     />
                   ) : editTagForm.fieldType === 'date' ? (
-                    <DatePicker
+                    <ChipDatePicker
                       value={editTagForm.value || undefined}
                       onChange={(value) => setEditTagForm({ ...editTagForm, value })}
                       placeholder='Select date'
+                      fullWidth
                     />
                   ) : (
                     <ChipInput

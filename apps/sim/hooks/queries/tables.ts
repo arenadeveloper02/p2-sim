@@ -4,6 +4,7 @@
  * React Query hooks for managing user-defined tables.
  */
 
+import { toast } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import {
   type InfiniteData,
@@ -15,7 +16,6 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
-import { toast } from '@/components/emcn'
 import { isValidationError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
 import type { ContractJsonResponse } from '@/lib/api/contracts'
@@ -71,6 +71,7 @@ import {
   updateTableRowContract,
   updateWorkflowGroupContract,
 } from '@/lib/api/contracts/tables'
+import { buildUpgradeHref } from '@/lib/billing/upgrade-reasons'
 import type {
   CsvHeaderMapping,
   EnrichmentRunDetail,
@@ -95,33 +96,9 @@ import {
   optimisticallyScheduleNewlyEligibleGroups,
 } from '@/lib/table/deps'
 import { runUploadStrategy } from '@/lib/uploads/client/direct-upload'
+import { type TableQueryScope, tableKeys } from '@/hooks/queries/utils/table-keys'
 
 const logger = createLogger('TableQueries')
-
-type TableQueryScope = 'active' | 'archived' | 'all'
-
-export const tableKeys = {
-  all: ['tables'] as const,
-  lists: () => [...tableKeys.all, 'list'] as const,
-  list: (workspaceId?: string, scope: TableQueryScope = 'active') =>
-    [...tableKeys.lists(), workspaceId ?? '', scope] as const,
-  details: () => [...tableKeys.all, 'detail'] as const,
-  detail: (tableId: string) => [...tableKeys.details(), tableId] as const,
-  exportJobs: (workspaceId?: string) =>
-    [...tableKeys.all, 'export-jobs', workspaceId ?? ''] as const,
-  rowsRoot: (tableId: string) => [...tableKeys.detail(tableId), 'rows'] as const,
-  infiniteRows: (tableId: string, paramsKey: string) =>
-    [...tableKeys.rowsRoot(tableId), 'infinite', paramsKey] as const,
-  rowWrites: (tableId: string) => [...tableKeys.rowsRoot(tableId), 'write'] as const,
-  find: (tableId: string, paramsKey: string) =>
-    [...tableKeys.rowsRoot(tableId), 'find', paramsKey] as const,
-  activeDispatches: (tableId: string) =>
-    [...tableKeys.detail(tableId), 'active-dispatches'] as const,
-  enrichmentDetails: (tableId: string) =>
-    [...tableKeys.detail(tableId), 'enrichment-detail'] as const,
-  enrichmentDetail: (tableId: string, rowId: string, groupId: string) =>
-    [...tableKeys.enrichmentDetails(tableId), rowId, groupId] as const,
-}
 
 type TableRowsParams = Omit<TableRowsQueryInput, 'filter' | 'sort'> &
   TableIdParamsInput & {
@@ -694,7 +671,7 @@ export function useCreateTableRow({ workspaceId, tableId }: RowMutationContext) 
       })
     },
     onError: (error) =>
-      notifyRowWriteError(error, () => router.push(`/workspace/${workspaceId}/upgrade`)),
+      notifyRowWriteError(error, () => router.push(buildUpgradeHref(workspaceId, 'tables'))),
     onSettled: () => {
       // `reconcileCreatedRow` (onSuccess) is the source of truth for the rows
       // cache + its `totalCount`; only refresh the count surfaces here so a late
@@ -874,7 +851,7 @@ export function useBatchCreateTableRows({ workspaceId, tableId }: RowMutationCon
       })
     },
     onError: (error) =>
-      notifyRowWriteError(error, () => router.push(`/workspace/${workspaceId}/upgrade`)),
+      notifyRowWriteError(error, () => router.push(buildUpgradeHref(workspaceId, 'tables'))),
     onSettled: () => {
       invalidateRowCount(queryClient, tableId)
     },

@@ -42,6 +42,7 @@ dump.rdb
 # env files
 .env
 *.env
+.sandcastle/.env
 .env.local
 .env.development
 .env.test

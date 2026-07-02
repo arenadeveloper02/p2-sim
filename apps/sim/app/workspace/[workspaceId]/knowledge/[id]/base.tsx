@@ -1,14 +1,6 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
-import { generateId } from '@sim/utils/id'
-import { format } from 'date-fns'
-import { AlertCircle, Pencil, Plus, Tag, X } from 'lucide-react'
-import { useParams, useRouter } from 'next/navigation'
-import { debounce, useQueryState, useQueryStates } from 'nuqs'
-import { usePostHog } from 'posthog-js/react'
 import {
   Badge,
   Button,
@@ -25,13 +17,21 @@ import {
   chipContentGap,
   chipContentLabelClass,
   chipVariants,
+  cn,
   Loader,
   Tooltip,
   Trash,
-} from '@/components/emcn'
-import { Database, DatabaseX } from '@/components/emcn/icons'
+} from '@sim/emcn'
+import { Database, DatabaseX } from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
+import { format } from 'date-fns'
+import { AlertCircle, Pencil, Plus, Tag, X } from 'lucide-react'
+import { useParams, useRouter } from 'next/navigation'
+import { debounce, useQueryState, useQueryStates } from 'nuqs'
+import { usePostHog } from 'posthog-js/react'
 import { SearchHighlight } from '@/components/ui/search-highlight'
-import { cn } from '@/lib/core/utils/cn'
 import { ALL_TAG_SLOTS, type AllTagSlot, getFieldTypeForSlot } from '@/lib/knowledge/constants'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
 import { type FilterFieldType, getOperatorsForFieldType } from '@/lib/knowledge/filters/types'
@@ -264,7 +264,14 @@ export function KnowledgeBase({
   const activeTagFilters: DocumentTagFilter[] = useMemo(
     () =>
       tagFilterEntries
-        .filter((f) => f.tagSlot && f.value.trim())
+        .filter((f) => {
+          if (!f.tagSlot || !f.value.trim()) return false
+          // A `between` filter only applies once both bounds are set. Sending it
+          // with just the lower bound would be rejected at the API boundary and
+          // break the whole list while the user is still entering the range.
+          if (f.operator === 'between' && !f.valueTo.trim()) return false
+          return true
+        })
         .map((f) => ({
           tagSlot: f.tagSlot,
           fieldType: f.fieldType,
@@ -926,7 +933,7 @@ export function KnowledgeBase({
                   setSelectedDocuments(new Set())
                   setIsSelectAllMode(false)
                 }}
-                className='-mr-1 h-auto px-1 py-0.5 text-[var(--text-muted)] text-xs hover-hover:text-[var(--text-secondary)]'
+                className='-mr-1 h-auto px-1 py-0.5 text-[var(--text-muted)] text-caption hover-hover:text-[var(--text-secondary)]'
               >
                 Clear
               </Button>
@@ -1480,10 +1487,24 @@ const createEmptyEntry = (): TagFilterEntry => ({
   tagName: '',
   tagSlot: '',
   fieldType: 'text',
-  operator: 'eq',
+  operator: 'contains',
   value: '',
   valueTo: '',
 })
+
+/**
+ * Default operator when a tag is selected. Text filters default to `contains`
+ * so typing part of a value finds matches (exact `equals` stays one click away
+ * in the operator dropdown); other field types keep their first, equality
+ * operator.
+ */
+function getDefaultOperatorForFieldType(
+  fieldType: FilterFieldType,
+  operators: ReturnType<typeof getOperatorsForFieldType>
+): string {
+  if (fieldType === 'text') return 'contains'
+  return operators[0]?.value ?? 'eq'
+}
 
 interface TagFilterSectionProps {
   tagDefinitions: TagDefinition[]
@@ -1513,7 +1534,7 @@ function TagFilterValueControl({ entry, onChange }: TagFilterValueControlProps) 
             fullWidth
             flush
           />
-          <span className='flex-shrink-0 text-[var(--text-muted)] text-xs'>to</span>
+          <span className='flex-shrink-0 text-[var(--text-muted)] text-caption'>to</span>
           <ChipDatePicker
             value={entry.valueTo || undefined}
             onChange={(value) => onChange({ valueTo: value })}
@@ -1544,7 +1565,7 @@ function TagFilterValueControl({ entry, onChange }: TagFilterValueControlProps) 
           onChange={(event) => onChange({ value: event.target.value })}
           placeholder='From'
         />
-        <span className='flex-shrink-0 text-[var(--text-muted)] text-xs'>to</span>
+        <span className='flex-shrink-0 text-[var(--text-muted)] text-caption'>to</span>
         <ChipInput
           value={entry.valueTo}
           onChange={(event) => onChange({ valueTo: event.target.value })}
@@ -1615,7 +1636,7 @@ function TagFilterSection({ tagDefinitions, entries, onChange }: TagFilterSectio
       tagName,
       tagSlot: def?.tagSlot || '',
       fieldType,
-      operator: operators[0]?.value || 'eq',
+      operator: getDefaultOperatorForFieldType(fieldType, operators),
       value: '',
       valueTo: '',
     })
@@ -1639,7 +1660,7 @@ function TagFilterSection({ tagDefinitions, entries, onChange }: TagFilterSectio
         {activeCount > 0 && (
           <Button
             variant='ghost'
-            className='-mr-1 h-auto px-1 py-0.5 text-[var(--text-muted)] text-xs hover-hover:text-[var(--text-secondary)]'
+            className='-mr-1 h-auto px-1 py-0.5 text-[var(--text-muted)] text-caption hover-hover:text-[var(--text-secondary)]'
             onClick={() => onChange([])}
           >
             Clear all
@@ -1662,7 +1683,7 @@ function TagFilterSection({ tagDefinitions, entries, onChange }: TagFilterSectio
             <div key={entry.id} className='flex flex-col gap-2'>
               {index > 0 && (
                 <div className='flex items-center gap-2'>
-                  <span className='shrink-0 text-[var(--text-muted)] text-xs leading-none'>
+                  <span className='shrink-0 text-[var(--text-muted)] text-caption leading-none'>
                     and
                   </span>
                   <div className='h-px flex-1 bg-[var(--border-1)]' />

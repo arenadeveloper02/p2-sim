@@ -7,6 +7,8 @@ import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import { captureEvent } from '@/lib/posthog/client'
 import { General } from '@/app/workspace/[workspaceId]/settings/components/general/general'
+import { SettingsSectionProvider } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
+import { useSettingsBeforeUnload } from '@/app/workspace/[workspaceId]/settings/hooks/use-settings-before-unload'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import {
   isBillingEnabled,
@@ -105,8 +107,9 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const { data: session, isPending: sessionLoading } = useSession()
   const posthog = usePostHog()
 
+  useSettingsBeforeUnload()
+
   const isAdminRole = session?.user?.role === 'admin'
-  // The Subscription tab was replaced by Billing; redirect legacy links there.
   const normalizedSection: SettingsSection =
     (section as string) === 'subscription' ? 'billing' : section
   const effectiveSection =
@@ -126,12 +129,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
   }, [effectiveSection, sessionLoading, posthog])
 
   return (
-    <div
-      className={cn(
-        (effectiveSection === 'access-control' || effectiveSection === 'recently-deleted') &&
-          'flex h-full flex-col'
-      )}
-    >
+    <SettingsSectionProvider section={effectiveSection}>
       {effectiveSection === 'general' && <General />}
       {effectiveSection === 'secrets' && <Secrets />}
       {effectiveSection === 'credential-sets' && <CredentialSets />}
@@ -154,6 +152,6 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {effectiveSection === 'recently-deleted' && <RecentlyDeleted />}
       {effectiveSection === 'admin' && <Admin />}
       {effectiveSection === 'mothership' && <Mothership />}
-    </div>
+    </SettingsSectionProvider>
   )
 }

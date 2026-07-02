@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { cn } from '@sim/emcn'
 import type { JSONContent } from '@tiptap/core'
 import { Image } from '@tiptap/extension-image'
 import type { ReactNodeViewProps } from '@tiptap/react'
 import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
+import { useFileContentSource } from '@/hooks/use-file-content-source'
 import { normalizeLinkHref } from './markdown-fidelity'
 
 const MIN_WIDTH = 64
@@ -27,28 +29,15 @@ function escapeAttr(value: string): string {
 }
 
 /**
- * Rewrite an in-app workspace file path (`/workspace/{id}/files/{fileId}`) to its serving endpoint
- * (`/api/files/view/{fileId}`) for display only — the stored `src` attribute keeps the original path
- * so markdown round-trips unchanged. Absolute and non-workspace URLs pass through untouched.
- */
-export function resolveDisplaySrc(src: string | undefined): string | undefined {
-  if (!src) return src
-  try {
-    const parsed = new URL(src, 'http://placeholder')
-    if (parsed.origin !== 'http://placeholder') return src
-    const [, seg1, , seg3, fileId] = parsed.pathname.split('/')
-    if (seg1 === 'workspace' && seg3 === 'files' && fileId) return `/api/files/view/${fileId}`
-  } catch {
-    // not a parseable URL — render as-is
-  }
-  return src
-}
-
-/**
  * Serialize an image to markdown when it has no explicit size, and to an HTML `<img>` tag when
  * it does — standard markdown has no width syntax, so a resized image must round-trip as HTML to
  * preserve its dimensions. Unsized images stay clean `![alt](src)`. An image with an `href` is
  * wrapped in a markdown link so a linked badge round-trips as `[![alt](src)](href)`.
+ *
+ * A *sized **and** linked* image is the one case markdown can't represent: the linked-image tokenizer
+ * only recognizes `[![alt](src)](href)`, so emitting `[<img …>](href)` would silently drop the link on
+ * reparse (and the round-trip-safety probe wouldn't catch it). We keep the link and fall back to the
+ * unsized `[![alt](src)](href)` form — the link matters more than the exact dimensions for a badge.
  */
 function imageMarkdown(node: JSONContent): string {
   const attrs = node.attrs ?? {}
@@ -60,7 +49,7 @@ function imageMarkdown(node: JSONContent): string {
   const width = attrs.width
   const height = attrs.height
   let image: string
-  if (width || height) {
+  if ((width || height) && !href) {
     const parts = [`src="${escapeAttr(src)}"`]
     if (alt) parts.push(`alt="${escapeAttr(alt)}"`)
     if (title) parts.push(`title="${escapeAttr(title)}"`)
@@ -75,7 +64,9 @@ function imageMarkdown(node: JSONContent): string {
     image = `![${alt.replace(/[\\[\]]/g, '\\$&')}](${safeSrc}${titlePart})`
   }
   if (!href) return image
-  const hrefTitlePart = hrefTitle ? ` "${hrefTitle}"` : ''
+  // Escape `"`/`\` so an href title can't break out of the `[…](href "title")` syntax (mirrors the
+  // image title escaping above).
+  const hrefTitlePart = hrefTitle ? ` "${hrefTitle.replace(/["\\]/g, '\\$&')}"` : ''
   return `[${image}](${href}${hrefTitlePart})`
 }
 
@@ -174,6 +165,7 @@ export const MarkdownImage = Image.extend({
  * commits the new pixel width to the `width` attribute, which serializes to `<img width>`.
  */
 function ResizableImageView({ node, updateAttributes, selected, editor }: ReactNodeViewProps) {
+  const source = useFileContentSource()
   const imageRef = useRef<HTMLImageElement>(null)
   const dragAbortRef = useRef<AbortController | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -232,7 +224,7 @@ function ResizableImageView({ node, updateAttributes, selected, editor }: ReactN
   const image = (
     <img
       ref={imageRef}
-      src={resolveDisplaySrc(attrs.src)}
+      src={source.resolveImageSrc(attrs.src)}
       alt={attrs.alt ?? ''}
       title={attrs.title ?? undefined}
       // When editable, the image itself is the drag handle — grab anywhere on it to reorder. (The node
@@ -241,7 +233,10 @@ function ResizableImageView({ node, updateAttributes, selected, editor }: ReactN
       draggable={editable}
       data-drag-handle={editable ? '' : undefined}
       style={widthStyle}
-      className={`block max-w-full rounded-lg border border-[var(--border)]${editable ? ' cursor-grab' : ''}`}
+      className={cn(
+        'block max-w-full rounded-lg border border-[var(--border)]',
+        editable && 'cursor-grab'
+      )}
     />
   )
 
