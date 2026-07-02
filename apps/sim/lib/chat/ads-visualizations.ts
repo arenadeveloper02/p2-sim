@@ -64,61 +64,71 @@ function formatCategoryLabels(labels: string[]): { short: string[]; full: string
   return { short: full.map((l) => shortenCampaignLabel(l)), full }
 }
 
-/**
- * A logical grouping of metrics that share a comparable magnitude/meaning, so
- * each group renders as its own chart. Mixing e.g. Impressions (tens of
- * thousands) with CTR (~1) on one axis makes the small series invisible, so we
- * split them into separate, readable charts.
- */
-interface MetricGroup {
-  key: string
-  title: string
-  metrics: string[]
-}
-
-const METRIC_GROUP_DEFS: ReadonlyArray<{
-  key: string
-  title: string
-  test: (name: string) => boolean
-}> = [
-  { key: 'spend', title: 'Spend', test: (n) => /spend|cost/i.test(n) },
-  { key: 'volume', title: 'Volume', test: (n) => /impression|click|reach/i.test(n) },
-  { key: 'efficiency', title: 'Efficiency', test: (n) => /ctr|cpc|cpm|frequency/i.test(n) },
-  { key: 'conversions', title: 'Conversions', test: (n) => /conv/i.test(n) },
+/** Professional display order: spend/volume first, efficiency, conversions, then any new metric. */
+const METRIC_ORDER: ReadonlyArray<{ test: RegExp; order: number }> = [
+  { test: /spend|cost/i, order: 0 },
+  { test: /^impressions$/i, order: 10 },
+  { test: /^clicks$/i, order: 11 },
+  { test: /^reach$/i, order: 12 },
+  { test: /ctr/i, order: 20 },
+  { test: /cpc/i, order: 21 },
+  { test: /cpm/i, order: 22 },
+  { test: /frequency/i, order: 23 },
+  { test: /conv/i, order: 30 },
 ]
 
-/**
- * Partition metric names into ordered groups. Each metric lands in the first
- * group whose test matches; anything unmatched falls into a trailing "Metrics"
- * group so nothing is dropped.
- */
-function groupMetrics(metricNames: string[]): MetricGroup[] {
-  const used = new Set<string>()
-  const groups: MetricGroup[] = []
-  for (const def of METRIC_GROUP_DEFS) {
-    const metrics = metricNames.filter((n) => !used.has(n) && def.test(n))
-    if (metrics.length > 0) {
-      metrics.forEach((m) => used.add(m))
-      groups.push({ key: def.key, title: def.title, metrics })
-    }
-  }
-  const rest = metricNames.filter((n) => !used.has(n))
-  if (rest.length > 0) groups.push({ key: 'other', title: 'Metrics', metrics: rest })
-  return groups
+const OVERVIEW_METRIC_COUNT = 2
+const MAX_PIE_SHARE_CHARTS = 3
+
+function metricKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'metric'
+}
+
+function humanizeMetricKey(key: string): string {
+  const cleaned = key.replace(/_/g, ' ').trim()
+  return cleaned.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function orderMetrics(metricNames: string[]): string[] {
+  return [...metricNames].sort((a, b) => {
+    const pa = METRIC_ORDER.find((p) => p.test.test(a))?.order ?? 50
+    const pb = METRIC_ORDER.find((p) => p.test.test(b))?.order ?? 50
+    if (pa !== pb) return pa - pb
+    return a.localeCompare(b)
+  })
+}
+
+function sortRowsByMetric(rows: NormalizedRow[], metricName: string): NormalizedRow[] {
+  return [...rows].sort(
+    (a, b) => (b.metrics[metricName] ?? 0) - (a.metrics[metricName] ?? 0)
+  )
+}
+
+/** Metrics that make sense as campaign share pies (additive totals). */
+function pickPieShareMetrics(metricNames: string[]): string[] {
+  const preferred = [
+    'Spend ($)',
+    'Cost ($)',
+    'Spend',
+    'Cost',
+    'Impressions',
+    'Clicks',
+    'Reach',
+    'Conversions',
+  ]
+  return preferred.filter((m) => metricNames.includes(m)).slice(0, MAX_PIE_SHARE_CHARTS)
 }
 
 /**
  * Shared engine: turn a normalized table into chart specs.
  *
  * Decision rules (deterministic):
- *  - If rows carry dates → time series → one LINE chart per metric group.
- *  - Else (categories) → one BAR chart per metric group (spend / volume /
- *    efficiency / conversions), plus a PIE for spend-like share.
- *  - Additionally, when stage metrics exist (reach/impressions/clicks/
- *    conversions), append a FUNNEL chart.
- *
- * Grouping keeps each chart readable and yields 3–4 charts by default without
- * any LLM involvement, so the data always matches the API response exactly.
+ *  - If rows carry dates → one LINE chart per metric over time.
+ *  - Else (categories):
+ *      START  — overview charts for top 2 metrics (sorted by value)
+ *      MIDDLE — one horizontal BAR per metric (every metric gets its own chart)
+ *      END    — share PIE(s) for additive metrics + FUNNEL when stages exist
+ *  - Any new numeric metric from the API is picked up automatically and charted.
  */
 export function buildChartsFromTable(
   rows: NormalizedRow[],
@@ -127,46 +137,52 @@ export function buildChartsFromTable(
   const { titlePrefix = 'Performance', maxCategories = DEFAULT_MAX_CATEGORIES } = options
   if (!rows || rows.length === 0) return []
 
-  const metricNames = collectMetricNames(rows)
+  const metricNames = orderMetrics(collectMetricNames(rows))
   if (metricNames.length === 0) return []
 
-  const groups = groupMetrics(metricNames)
-
-  // A time series is only meaningful with 2+ distinct dates. Aggregated
-  // responses (e.g. Facebook time_increment=all_days) share a single date, so
-  // fall back to by-category charts which are far more useful.
   const distinctDates = new Set(rows.map((r) => r.date).filter((d): d is string => !!d))
   const hasDates = distinctDates.size >= 2
+  const limited = rows.slice(0, maxCategories)
   const specs: ChartSpec[] = []
 
   if (hasDates) {
-    for (const group of groups) {
+    for (let i = 0; i < metricNames.length; i++) {
+      const metric = metricNames[i]
+      const isOverview = i < OVERVIEW_METRIC_COUNT
       specs.push(
         buildTimeSeries(
           rows,
-          group.metrics,
-          `ts-${titlePrefix}-${group.key}`,
-          `${titlePrefix} — ${group.title} over time`
+          [metric],
+          `ts-${titlePrefix}-${metricKey(metric)}`,
+          isOverview
+            ? `${titlePrefix} — Overview: ${metric} over time`
+            : `${titlePrefix} — ${metric} over time`
         )
       )
     }
   } else {
-    const limited = rows.slice(0, maxCategories)
-    for (const group of groups) {
+    // START + MIDDLE: one dedicated chart per metric, campaigns sorted by that metric.
+    for (let i = 0; i < metricNames.length; i++) {
+      const metric = metricNames[i]
+      const sorted = sortRowsByMetric(limited, metric)
+      const isOverview = i < OVERVIEW_METRIC_COUNT && limited.length > 1
       specs.push(
-        buildCategoryBar(
-          limited,
-          group.metrics,
-          `bar-${titlePrefix}-${group.key}`,
-          `${titlePrefix} — ${group.title} by campaign`
+        buildSingleMetricBar(
+          sorted,
+          metric,
+          `bar-${titlePrefix}-${metricKey(metric)}`,
+          isOverview
+            ? `${titlePrefix} — Overview: ${metric} by campaign`
+            : `${titlePrefix} — ${metric} by campaign`
         )
       )
     }
 
-    // Share pie for a single spend-like metric across categories.
-    const shareMetric = pickShareMetric(metricNames)
-    if (shareMetric && limited.length > 1 && limited.length <= maxCategories) {
-      specs.push(buildSharePie(limited, shareMetric, titlePrefix))
+    // END: share pies for key additive metrics.
+    if (limited.length > 1) {
+      for (const shareMetric of pickPieShareMetrics(metricNames)) {
+        specs.push(buildSharePie(limited, shareMetric, titlePrefix))
+      }
     }
   }
 
@@ -186,10 +202,31 @@ function collectMetricNames(rows: NormalizedRow[]): string[] {
   return Array.from(names)
 }
 
-function pickShareMetric(metricNames: string[]): string | undefined {
-  const preferred = ['Cost ($)', 'Spend ($)', 'Cost', 'Spend', 'Impressions', 'Clicks']
-  return preferred.find((p) => metricNames.includes(p)) ?? metricNames[0]
+/** Merge known metric labels with any extra numeric fields from the API row. */
+function mergeDynamicMetrics(
+  row: Record<string, unknown>,
+  metrics: Record<string, number>,
+  knownKeys: Set<string>,
+  skipKeys: Set<string>
+): void {
+  for (const [key, val] of Object.entries(row)) {
+    if (knownKeys.has(key) || skipKeys.has(key)) continue
+    const n = toNumber(val)
+    if (n !== undefined) metrics[humanizeMetricKey(key)] = n
+  }
 }
+
+const FACEBOOK_SKIP_KEYS = new Set([
+  'campaign_name',
+  'adset_name',
+  'ad_name',
+  'account_name',
+  'account_id',
+  'date_start',
+  'date_stop',
+  'paging',
+  'data',
+])
 
 function pickFunnelMetric(metricNames: string[], candidates: string[]): string | undefined {
   return candidates.find((name) => metricNames.includes(name))
@@ -280,6 +317,15 @@ function buildTimeSeries(
     series,
     legend: series.length > 1,
   }
+}
+
+function buildSingleMetricBar(
+  rows: NormalizedRow[],
+  metricName: string,
+  id: string,
+  title: string
+): ChartSpec {
+  return buildCategoryBar(rows, [metricName], id, title)
 }
 
 function buildCategoryBar(
@@ -374,6 +420,7 @@ function normalizeGoogleRow(row: any): NormalizedRow | null {
     const v = rawMetrics[key]
     if (isFiniteNumber(v)) metrics[display] = v
   }
+  mergeDynamicMetrics(rawMetrics, metrics, new Set(Object.keys(GOOGLE_METRIC_LABELS)), new Set())
 
   if (Object.keys(metrics).length === 0) return null
   return { label: String(label), date, metrics }
@@ -427,6 +474,7 @@ function normalizeFacebookRow(row: any): NormalizedRow | null {
     const n = toNumber(row[key])
     if (n !== undefined) metrics[display] = n
   }
+  mergeDynamicMetrics(row, metrics, new Set(Object.keys(FACEBOOK_METRIC_LABELS)), FACEBOOK_SKIP_KEYS)
 
   if (Object.keys(metrics).length === 0) return null
   return { label: String(label), date, metrics }
