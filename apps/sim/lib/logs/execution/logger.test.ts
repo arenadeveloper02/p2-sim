@@ -5,9 +5,8 @@ import { ExecutionLogger } from '@/lib/logs/execution/logger'
 
 const dbSelectMock = vi.hoisted(() => vi.fn())
 const dbExecuteMock = vi.hoisted(() => vi.fn())
-const txUpdateMock = vi.hoisted(() =>
-  vi.fn(() => ({ set: () => ({ where: () => Promise.resolve() }) }))
-)
+const txUpdateSetMock = vi.hoisted(() => vi.fn(() => ({ where: () => Promise.resolve() })))
+const txUpdateMock = vi.hoisted(() => vi.fn(() => ({ set: txUpdateSetMock })))
 
 vi.mock('@sim/db', () => {
   // The reconcile runs inside db.transaction with an advisory lock. The tx
@@ -589,6 +588,30 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     expect(recorded).toBeCloseTo(1.005, 8)
     // cost_total is refined to the exact ledger sum inside the locked tx.
     expect(txUpdateMock).toHaveBeenCalledTimes(1)
+    expect(txUpdateSetMock).toHaveBeenCalledWith({ costTotal: '1.005' })
+  })
+
+  test('cost_total projection matches SUM(usage_log) for workflow source at completion', async () => {
+    await run(
+      costSummary({
+        models: {
+          'gpt-4o': {
+            total: 2.5,
+            input: 1.5,
+            output: 1,
+            tokens: { input: 10, output: 5, total: 15 },
+          },
+        },
+        charges: { 'Exa Search': { total: 0.02 } },
+      }),
+      []
+    )
+
+    const ledgerSum = vi
+      .mocked(recordUsage)
+      .mock.calls[0][0].entries.reduce((sum: number, entry: { cost: number }) => sum + entry.cost, 0)
+    expect(ledgerSum).toBeCloseTo(2.525, 8)
+    expect(txUpdateSetMock).toHaveBeenCalledWith({ costTotal: ledgerSum.toString() })
   })
 
   test('resume records only the increment over what is already billed', async () => {

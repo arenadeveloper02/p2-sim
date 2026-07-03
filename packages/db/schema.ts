@@ -3015,12 +3015,41 @@ export const usageLog = pgTable(
 
     metadata: jsonb('metadata'),
 
+    /**
+     * Billable amount in USD. Remains the authoritative column for all existing
+     * readers during the expand phase; new writers should mirror
+     * `billableCost` here for backward compatibility.
+     */
     cost: decimal('cost').notNull(),
+    /** Vendor COGS in USD before `USAGE_LOG_COST_MULTIPLIER` / margin. Nullable on legacy rows. */
+    rawCost: decimal('raw_cost'),
+    /**
+     * Customer-facing amount in USD after multiplier. When populated, should
+     * equal `cost`. Nullable on legacy rows.
+     */
+    billableCost: decimal('billable_cost'),
     eventKey: text('event_key'),
     billingEntityType: billingEntityTypeEnum('billing_entity_type'),
     billingEntityId: text('billing_entity_id'),
     billingPeriodStart: timestamp('billing_period_start'),
     billingPeriodEnd: timestamp('billing_period_end'),
+
+    /** Commercial vendor label from vendor-pricing (e.g. "Anthropic"). */
+    vendor: text('vendor'),
+    /** Provider integration slug (e.g. "anthropic", "openai"). */
+    provider: text('provider'),
+    /** Registry tool id for tool-category rows (snake_case). */
+    toolId: text('tool_id'),
+    /** Copilot/mothership chat this row bills against. */
+    chatId: uuid('chat_id').references(() => copilotChats.id, { onDelete: 'set null' }),
+    /** Copilot run this row bills against. */
+    runId: uuid('run_id').references(() => copilotRuns.id, { onDelete: 'set null' }),
+    /** Units consumed (tokens, requests, seconds, etc.). */
+    quantity: decimal('quantity'),
+    /** Unit for `quantity` (e.g. "input_tokens", "output_tokens", "request"). */
+    unit: text('unit'),
+    /** Rates and multipliers applied at write time for COGS reconciliation. */
+    pricingSnapshot: jsonb('pricing_snapshot'),
 
     workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'set null' }),
     workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
@@ -3056,7 +3085,18 @@ export const usageLog = pgTable(
       table.workspaceId,
       table.createdAt
     ),
+    workspaceSourceCreatedAtIdx: index('usage_log_workspace_source_created_at_idx').on(
+      table.workspaceId,
+      table.source,
+      table.createdAt
+    ),
     executionIdIdx: index('usage_log_execution_id_idx').on(table.executionId),
+    chatIdIdx: index('usage_log_chat_id_idx')
+      .on(table.chatId)
+      .where(sql`${table.chatId} IS NOT NULL`),
+    runIdIdx: index('usage_log_run_id_idx')
+      .on(table.runId)
+      .where(sql`${table.runId} IS NOT NULL`),
   })
 )
 

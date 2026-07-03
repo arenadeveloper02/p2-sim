@@ -36,6 +36,16 @@ vi.mock('@sim/db/schema', () => ({
     billingPeriodStart: 'usageLog.billingPeriodStart',
     category: 'usageLog.category',
     cost: 'usageLog.cost',
+    rawCost: 'usageLog.rawCost',
+    billableCost: 'usageLog.billableCost',
+    chatId: 'usageLog.chatId',
+    runId: 'usageLog.runId',
+    vendor: 'usageLog.vendor',
+    provider: 'usageLog.provider',
+    toolId: 'usageLog.toolId',
+    quantity: 'usageLog.quantity',
+    unit: 'usageLog.unit',
+    pricingSnapshot: 'usageLog.pricingSnapshot',
     createdAt: 'usageLog.createdAt',
     description: 'usageLog.description',
     eventKey: 'usageLog.eventKey',
@@ -114,6 +124,11 @@ describe('recordUsage', () => {
     expect(values[0].eventKey).toMatch(/^[a-f0-9]{64}$/)
     expect(values[1].eventKey).toMatch(/^[a-f0-9]{64}$/)
     expect(values[0].eventKey).not.toBe(values[1].eventKey)
+    expect(values[0]).toMatchObject({
+      rawCost: '0.1',
+      billableCost: '0.1',
+      cost: '0.1',
+    })
     expect(mockOnConflictDoNothing).toHaveBeenCalledWith(
       expect.objectContaining({ target: 'usageLog.eventKey' })
     )
@@ -188,7 +203,7 @@ describe('recordCumulativeUsage', () => {
     mockIsOrgScopedSubscription.mockReturnValue(true)
   })
 
-  const setupTx = (existingRow: { id: string; cost: string } | null) => {
+  const setupTx = (existingRow: { id: string; cost: string; rawCost?: string } | null) => {
     const limit = vi.fn().mockResolvedValue(existingRow ? [existingRow] : [])
     const where = vi.fn().mockReturnValue({ limit })
     const from = vi.fn().mockReturnValue({ where })
@@ -241,7 +256,13 @@ describe('recordCumulativeUsage', () => {
     expect(result.billed).toBe(true)
     expect(result.total).toBe(0.4662453)
     expect(result.delta).toBeCloseTo(0.1188006, 9)
-    expect(updateSet).toHaveBeenCalledWith(expect.objectContaining({ cost: '0.4662453' }))
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cost: '0.4662453',
+        rawCost: '0.4662453',
+        billableCost: '0.4662453',
+      })
+    )
     expect(mockInsert).not.toHaveBeenCalled()
   })
 
@@ -291,6 +312,23 @@ describe('recordCumulativeUsage', () => {
     })
   })
 
+  it('stamps chat and run attribution on the first-flush insert', async () => {
+    setupTx(null)
+    await recordCumulativeUsage({
+      userId: 'user-1',
+      source: 'workspace-chat',
+      model: 'claude-opus-4.8',
+      cost: 0.3474447,
+      eventKey: 'update-cost:msg-1-billing',
+      chatId: 'chat-1',
+      runId: 'run-1',
+    })
+    expect(mockValues.mock.calls[0][0][0]).toMatchObject({
+      chatId: 'chat-1',
+      runId: 'run-1',
+    })
+  })
+
   it('bounds the advisory-lock wait and locks on the 64-bit event-key hash', async () => {
     const { tx } = setupTx({ id: 'row-1', cost: '0.3474447' })
     await recordCumulativeUsage({
@@ -303,5 +341,95 @@ describe('recordCumulativeUsage', () => {
     expect(executedSqlContaining(tx, 'lock_timeout')).toBe(true)
     expect(executedSqlContaining(tx, 'pg_advisory_xact_lock')).toBe(true)
     expect(executedSqlContaining(tx, 'hashtextextended')).toBe(true)
+  })
+})
+
+describe('recordCumulativeUsage streaming idempotency with chatId/runId', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockReturning.mockResolvedValue([{ cost: '0.3474447' }])
+    mockOnConflictDoNothing.mockReturnValue({ returning: mockReturning })
+    mockValues.mockReturnValue({ onConflictDoNothing: mockOnConflictDoNothing })
+    mockInsert.mockReturnValue({ values: mockValues })
+    mockGetHighestPrioritySubscription.mockResolvedValue({
+      periodEnd: new Date('2026-06-01T00:00:00.000Z'),
+      periodStart: new Date('2026-05-01T00:00:00.000Z'),
+      referenceId: 'org-1',
+    })
+    mockIsOrgScopedSubscription.mockReturnValue(true)
+  })
+
+  const setupTx = (existingRow: { id: string; cost: string; rawCost?: string } | null) => {
+    const limit = vi.fn().mockResolvedValue(existingRow ? [existingRow] : [])
+    const where = vi.fn().mockReturnValue({ limit })
+    const from = vi.fn().mockReturnValue({ where })
+    const select = vi.fn().mockReturnValue({ from })
+    const updateWhere = vi.fn().mockResolvedValue(undefined)
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere })
+    mockUpdate.mockReturnValue({ set: updateSet })
+    const tx = {
+      execute: vi.fn().mockResolvedValue(undefined),
+      select,
+      update: mockUpdate,
+      insert: mockInsert,
+    }
+    mockTransaction.mockImplementation(async (fn: (t: typeof tx) => unknown) => fn(tx))
+    return { updateSet }
+  }
+
+  const streamFlush = (cost: number, existing: { id: string; cost: string; rawCost?: string } | null) => {
+    setupTx(existing)
+    return recordCumulativeUsage({
+      userId: 'user-1',
+      workspaceId: 'ws-1',
+      source: 'workspace-chat',
+      model: 'claude-opus-4.8',
+      cost,
+      eventKey: 'update-cost:msg-1-billing',
+      chatId: 'chat-1',
+      runId: 'run-1',
+    })
+  }
+
+  it('converges repeated stream flushes to a single ledger row for the eventKey', async () => {
+    const first = await streamFlush(0.3, null)
+    expect(first).toEqual({ billed: true, delta: 0.3, total: 0.3 })
+    expect(mockInsert).toHaveBeenCalledTimes(1)
+    expect(mockUpdate).not.toHaveBeenCalled()
+
+    const duplicate = await streamFlush(0.3, { id: 'row-1', cost: '0.3', rawCost: '0.3' })
+    expect(duplicate).toEqual({ billed: false, delta: 0, total: 0.3 })
+    expect(mockInsert).toHaveBeenCalledTimes(1)
+    expect(mockUpdate).not.toHaveBeenCalled()
+
+    const recovered = await streamFlush(0.5, { id: 'row-1', cost: '0.3', rawCost: '0.3' })
+    expect(recovered.billed).toBe(true)
+    expect(recovered.total).toBe(0.5)
+    expect(recovered.delta).toBeCloseTo(0.2, 9)
+    expect(mockInsert).toHaveBeenCalledTimes(1)
+    expect(mockUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves chatId and runId when topping up an existing cumulative row', async () => {
+    const { updateSet } = setupTx({ id: 'row-1', cost: '0.3', rawCost: '0.3' })
+    await recordCumulativeUsage({
+      userId: 'user-1',
+      workspaceId: 'ws-1',
+      source: 'workspace-chat',
+      model: 'claude-opus-4.8',
+      cost: 0.5,
+      eventKey: 'update-cost:msg-1-billing',
+      chatId: 'chat-1',
+      runId: 'run-1',
+    })
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: 'chat-1',
+        runId: 'run-1',
+        cost: '0.5',
+        rawCost: '0.5',
+        billableCost: '0.5',
+      })
+    )
   })
 })

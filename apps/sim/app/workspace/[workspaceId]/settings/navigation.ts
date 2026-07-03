@@ -1,4 +1,5 @@
 import {
+  Credit,
   ClipboardList,
   Database,
   // HexSimple,
@@ -30,6 +31,7 @@ export type SettingsSection =
   | 'apikeys'
   | 'byok'
   | 'billing'
+  | 'usage'
   | 'teammates'
   | 'organization'
   | 'sso'
@@ -66,6 +68,8 @@ export interface NavigationItem {
   selfHostedOverride?: boolean
   requiresSuperUser?: boolean
   requiresAdminRole?: boolean
+  /** Visible only to workspace admins (viewer.isAdmin). */
+  requiresWorkspaceAdmin?: boolean
   /** Show in the sidebar even when the user lacks the required plan, with an upgrade badge. */
   showWhenLocked?: boolean
   /** Hide for enterprise plans, which manage billing out-of-band. */
@@ -120,6 +124,13 @@ export const allNavigationItems: NavigationItem[] = [
     icon: ClipboardList,
     section: 'subscription',
     hideWhenBillingDisabled: true,
+  },
+  {
+    id: 'usage',
+    label: 'Usage',
+    icon: Credit,
+    section: 'subscription',
+    requiresWorkspaceAdmin: true,
   },
   {
     id: 'teammates',

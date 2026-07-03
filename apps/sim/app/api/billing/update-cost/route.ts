@@ -1,6 +1,6 @@
 import type { Span } from '@opentelemetry/api'
 import { db } from '@sim/db'
-import { workspace } from '@sim/db/schema'
+import { copilotChats, copilotRuns, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getPostgresConstraintName, getPostgresErrorCode, toError } from '@sim/utils/errors'
 import { eq } from 'drizzle-orm'
@@ -50,6 +50,52 @@ async function resolveAttributableWorkspaceId(
 }
 
 /**
+ * Resolves the request-supplied chat to one that exists in this deployment.
+ * Same best-effort FK policy as workspace attribution.
+ */
+async function resolveAttributableChatId(
+  requestId: string,
+  chatId: string | undefined
+): Promise<string | undefined> {
+  if (!chatId) return undefined
+
+  const [row] = await db
+    .select({ id: copilotChats.id })
+    .from(copilotChats)
+    .where(eq(copilotChats.id, chatId))
+    .limit(1)
+  if (row) return row.id
+
+  logger.warn(`[${requestId}] Copilot chat not found in this deployment; recording unattributed`, {
+    chatId,
+  })
+  return undefined
+}
+
+/**
+ * Resolves the request-supplied run to one that exists in this deployment.
+ * Same best-effort FK policy as workspace attribution.
+ */
+async function resolveAttributableRunId(
+  requestId: string,
+  runId: string | undefined
+): Promise<string | undefined> {
+  if (!runId) return undefined
+
+  const [row] = await db
+    .select({ id: copilotRuns.id })
+    .from(copilotRuns)
+    .where(eq(copilotRuns.id, runId))
+    .limit(1)
+  if (row) return row.id
+
+  logger.warn(`[${requestId}] Copilot run not found in this deployment; recording unattributed`, {
+    runId,
+  })
+  return undefined
+}
+
+/**
  * POST /api/billing/update-cost
  * Update user cost with a pre-calculated cost value (internal API key auth required)
  *
@@ -76,20 +122,6 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
 
   try {
     logger.info(`[${requestId}] Update cost request started`)
-
-    if (!isBillingEnabled) {
-      span.setAttribute(TraceAttr.BillingOutcome, BillingRouteOutcome.BillingDisabled)
-      span.setAttribute(TraceAttr.HttpStatusCode, 200)
-      return NextResponse.json({
-        success: true,
-        message: 'Billing disabled, cost update skipped',
-        data: {
-          billingEnabled: false,
-          processedAt: new Date().toISOString(),
-          requestId,
-        },
-      })
-    }
 
     // Check authentication (internal API key)
     // const authResult = checkInternalApiKey(req)
@@ -139,8 +171,18 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
 
     if (!parsed.success) return parsed.response
 
-    const { userId, cost, model, inputTokens, outputTokens, source, idempotencyKey, workspaceId } =
-      parsed.data.body
+    const {
+      userId,
+      cost,
+      model,
+      inputTokens,
+      outputTokens,
+      source,
+      idempotencyKey,
+      workspaceId,
+      chatId,
+      runId,
+    } = parsed.data.body
     const isMcp = source === 'mcp_copilot'
 
     span.setAttributes({
@@ -162,8 +204,10 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
     })
 
     const attributedWorkspaceId = await resolveAttributableWorkspaceId(requestId, workspaceId)
+    const attributedChatId = await resolveAttributableChatId(requestId, chatId)
+    const attributedRunId = await resolveAttributableRunId(requestId, runId)
 
-    // Go sends the request's CUMULATIVE cost, possibly more than once (a
+    // Go sends the request's CUMULATIVE vendor COGS, possibly more than once (a
     // mid-loop provider-error flush, then the recovered terminal flush, plus
     // abort-race duplicates). Record it as a monotonic top-up: one ledger row
     // per request holds the MAX cumulative and we bill only the delta, so
@@ -179,6 +223,8 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
       const result = await recordCumulativeUsage({
         userId,
         workspaceId: attributedWorkspaceId,
+        chatId: attributedChatId,
+        runId: attributedRunId,
         source,
         model,
         cost,
@@ -200,6 +246,8 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
       await recordUsage({
         userId,
         workspaceId: attributedWorkspaceId,
+        chatId: attributedChatId,
+        runId: attributedRunId,
         entries: [
           {
             category: 'model',
@@ -244,13 +292,17 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
 
     // Check if user has hit overage threshold and bill incrementally. Reads the
     // (now topped-up) ledger total and is idempotent against billedOverage, so
-    // it is safe to run on every flush that records new cost.
-    await checkAndBillOverageThreshold(userId)
+    // it is safe to run on every flush that records new cost. Enforcement only
+    // when billing is enabled — the ledger above is always written.
+    if (isBillingEnabled) {
+      await checkAndBillOverageThreshold(userId)
+    }
 
     logger.info(`[${requestId}] Cost update completed successfully`, {
       userId,
       duration,
       cost,
+      billingEnforcement: isBillingEnabled,
     })
 
     span.setAttribute(TraceAttr.BillingOutcome, BillingRouteOutcome.Billed)
@@ -261,6 +313,7 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
       data: {
         userId,
         cost,
+        billingEnabled: isBillingEnabled,
         processedAt: new Date().toISOString(),
         requestId,
       },

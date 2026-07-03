@@ -51,6 +51,9 @@ import { SPYFU_DEFAULT_OPERATION_ID } from '@/tools/spyfu/operations'
 
 const logger = createLogger('ProviderUtils')
 
+/** Log once per unknown model id so streaming paths do not spam warnings. */
+const modelsMissingPricingWarned = new Set<string>()
+
 /**
  * Checks if a workflow description is a default/placeholder description
  */
@@ -844,6 +847,13 @@ export function calculateCost(
   }
 
   if (!pricing) {
+    if (!modelsMissingPricingWarned.has(model)) {
+      modelsMissingPricingWarned.add(model)
+      logger.warn(
+        `calculateCost: no pricing found for model "${model}" in providers/models.ts or embedding pricing; returning $0`,
+        { model }
+      )
+    }
     const defaultPricing = {
       input: 1.0,
       cachedInput: 0.5,

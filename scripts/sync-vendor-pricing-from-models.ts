@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 /**
- * Compare `apps/sim/config/vendor-pricing.json` SKU rates against canonical Sim pricing
+ * Compare `apps/sim/config/vendor-pricing.json` against canonical Sim pricing
  * in `apps/sim/providers/models.ts` and billing constants.
  *
  * Usage:
  *   bun run vendor-pricing:check          # report drift, exit 1 if any
- *   bun run vendor-pricing:sync           # update syncable SKU fields from models.ts
+ *   bun run vendor-pricing:sync           # update syncable rows from models.ts
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -23,39 +23,19 @@ const PRICING_PATH = resolve(ROOT, 'apps/sim/config/vendor-pricing.json')
 
 const RATE_EPSILON = 1e-9
 
-interface PricingSource {
-  kind: string
-  url?: string
-  path?: string
-  verifiedAt?: string
-}
-
-interface VendorSku {
-  id: string
-  subscriptionId: string
-  type: string
-  modelId?: string
-  unit: string
-  inputUsd?: number
-  outputUsd?: number
-  cachedInputUsd?: number
-  usdPerUnit?: number
-  pricingSource: PricingSource
-  simReference?: string
-  vendorPlanNote?: string
-  usedIn: string[]
+interface VendorPricingRow {
+  vendor: string
+  tool: string
+  cost: number | string
 }
 
 interface VendorPricingFile {
-  meta: { updatedAt: string; currency: string; maintainer?: string }
-  subscriptions: unknown[]
-  skus: VendorSku[]
+  pricing: VendorPricingRow[]
 }
 
 interface ModelRates {
   input: number
   output: number
-  cachedInput?: number
 }
 
 function findProviderModelPricing(modelId: string): ModelRates | null {
@@ -65,7 +45,6 @@ function findProviderModelPricing(modelId: string): ModelRates | null {
         return {
           input: model.pricing.input,
           output: model.pricing.output,
-          ...(model.pricing.cachedInput != null ? { cachedInput: model.pricing.cachedInput } : {}),
         }
       }
     }
@@ -83,36 +62,46 @@ function findRerankUsdPerUnit(modelId: string): number | null {
   return RERANK_MODEL_PRICING[modelId]?.perSearchUnit ?? null
 }
 
-function ratesEqual(a: number | undefined, b: number | undefined): boolean {
-  if (a === undefined && b === undefined) return true
-  if (a === undefined || b === undefined) return false
+function parseTokenCost(cost: number | string): ModelRates | null {
+  if (typeof cost !== 'string' || !cost.includes('/')) return null
+  const [inputRaw, outputRaw] = cost.split('/')
+  const input = Number(inputRaw)
+  const output = Number(outputRaw)
+  if (Number.isNaN(input) || Number.isNaN(output)) return null
+  return { input, output }
+}
+
+function formatTokenCost(rates: ModelRates): string {
+  return `${rates.input}/${rates.output}`
+}
+
+function ratesEqual(a: number, b: number): boolean {
   return Math.abs(a - b) <= RATE_EPSILON
 }
 
-function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10)
+function tokenCostsEqual(left: number | string, right: string): boolean {
+  const parsed = parseTokenCost(left)
+  const canonical = parseTokenCost(right)
+  if (!parsed || !canonical) return false
+  return ratesEqual(parsed.input, canonical.input) && ratesEqual(parsed.output, canonical.output)
 }
 
-function resolveCanonicalRates(sku: VendorSku): ModelRates | { usdPerUnit: number } | null {
-  if (sku.id === 'sim/workflow-base-fee') {
-    return { usdPerUnit: BASE_EXECUTION_CHARGE }
+function resolveCanonicalCost(row: VendorPricingRow): number | string | null {
+  if (row.vendor === 'Sim' && row.tool === 'every-workflow-run') {
+    return BASE_EXECUTION_CHARGE
   }
 
-  if (sku.type === 'rerank_unit' && sku.modelId) {
-    const perUnit = findRerankUsdPerUnit(sku.modelId)
-    return perUnit != null ? { usdPerUnit: perUnit } : null
-  }
+  const rerank = findRerankUsdPerUnit(row.tool)
+  if (rerank != null) return rerank
 
-  if (sku.modelId && (sku.type === 'llm_tokens' || sku.type === 'embedding_tokens')) {
-    const rates = findProviderModelPricing(sku.modelId)
-    return rates
-  }
+  const modelRates = findProviderModelPricing(row.tool)
+  if (modelRates) return formatTokenCost(modelRates)
 
   return null
 }
 
-function formatDrift(sku: VendorSku, field: string, jsonValue: number, canonical: number): string {
-  return `  - ${sku.id}: ${field} json=${jsonValue} models.ts=${canonical}`
+function formatDrift(row: VendorPricingRow, jsonValue: number | string, canonical: number | string): string {
+  return `  - ${row.vendor}/${row.tool}: json=${jsonValue} canonical=${canonical}`
 }
 
 async function main(): Promise<void> {
@@ -130,64 +119,37 @@ async function main(): Promise<void> {
   const drifts: string[] = []
   let updated = 0
 
-  for (const sku of pricing.skus) {
-    const canonical = resolveCanonicalRates(sku)
-    if (!canonical) continue
+  for (const row of pricing.pricing) {
+    const canonical = resolveCanonicalCost(row)
+    if (canonical == null) continue
 
-    if ('usdPerUnit' in canonical) {
-      if (sku.usdPerUnit === undefined) continue
-      if (!ratesEqual(sku.usdPerUnit, canonical.usdPerUnit)) {
-        drifts.push(formatDrift(sku, 'usdPerUnit', sku.usdPerUnit, canonical.usdPerUnit))
+    if (typeof canonical === 'number') {
+      if (typeof row.cost !== 'number' || !ratesEqual(row.cost, canonical)) {
+        drifts.push(formatDrift(row, row.cost, canonical))
         if (write) {
-          sku.usdPerUnit = canonical.usdPerUnit
+          row.cost = canonical
           updated++
         }
       }
       continue
     }
 
-    if (sku.inputUsd !== undefined && !ratesEqual(sku.inputUsd, canonical.input)) {
-      drifts.push(formatDrift(sku, 'inputUsd', sku.inputUsd, canonical.input))
-      if (write) sku.inputUsd = canonical.input
-    }
-    if (sku.outputUsd !== undefined && !ratesEqual(sku.outputUsd, canonical.output)) {
-      drifts.push(formatDrift(sku, 'outputUsd', sku.outputUsd, canonical.output))
-      if (write) sku.outputUsd = canonical.output
-    }
-    if (
-      sku.cachedInputUsd !== undefined &&
-      canonical.cachedInput !== undefined &&
-      !ratesEqual(sku.cachedInputUsd, canonical.cachedInput)
-    ) {
-      drifts.push(formatDrift(sku, 'cachedInputUsd', sku.cachedInputUsd, canonical.cachedInput))
-      if (write) sku.cachedInputUsd = canonical.cachedInput
-    }
-
-    if (write && (canonical.input !== undefined || canonical.output !== undefined)) {
-      const touched =
-        sku.inputUsd === canonical.input ||
-        sku.outputUsd === canonical.output ||
-        (canonical.cachedInput != null && sku.cachedInputUsd === canonical.cachedInput)
-      if (touched) {
-        sku.pricingSource = {
-          ...sku.pricingSource,
-          kind: 'sim_models_ts',
-          path: sku.pricingSource.path ?? 'apps/sim/providers/models.ts',
-          verifiedAt: todayIsoDate(),
-        }
+    if (!tokenCostsEqual(row.cost, canonical)) {
+      drifts.push(formatDrift(row, row.cost, canonical))
+      if (write) {
+        row.cost = canonical
         updated++
       }
     }
   }
 
   if (write && updated > 0) {
-    pricing.meta.updatedAt = todayIsoDate()
     await writeFile(PRICING_PATH, `${JSON.stringify(pricing, null, 2)}\n`, 'utf8')
-    console.log(`Updated ${updated} SKU field(s) in ${PRICING_PATH}`)
+    console.log(`Updated ${updated} row(s) in ${PRICING_PATH}`)
   }
 
   if (drifts.length === 0) {
-    console.log('vendor-pricing.json is in sync with models.ts for tracked SKUs.')
+    console.log('vendor-pricing.json is in sync with models.ts for tracked rows.')
     return
   }
 
@@ -195,7 +157,7 @@ async function main(): Promise<void> {
   for (const line of drifts) console.log(line)
 
   if (!write) {
-    console.log('\nRun `bun run vendor-pricing:sync` to update syncable fields from models.ts.')
+    console.log('\nRun `bun run vendor-pricing:sync` to update syncable rows from models.ts.')
   }
 
   if (checkOnly || (!write && drifts.length > 0)) {

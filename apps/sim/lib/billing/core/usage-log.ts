@@ -45,25 +45,33 @@ export function scaleUsageLogCost(cost: number): number {
 }
 
 function scaleUsageEntry<T extends UsageEntry>(entry: T, multiplier: number): T {
-  const scaledCost = multiplier === 1 ? entry.cost : entry.cost * multiplier
+  const rawCost = entry.rawCost ?? entry.cost
+  const billableCost =
+    entry.billableCost ?? (multiplier === 1 ? rawCost : rawCost * multiplier)
 
-  if (!entry.metadata || typeof entry.metadata !== 'object' || Array.isArray(entry.metadata)) {
-    return { ...entry, cost: scaledCost }
-  }
-
-  const metadata = entry.metadata as ModelUsageMetadata
-  if (metadata.toolCost != null && metadata.toolCost > 0) {
-    return {
-      ...entry,
-      cost: scaledCost,
-      metadata: {
-        ...metadata,
-        toolCost: multiplier === 1 ? metadata.toolCost : metadata.toolCost * multiplier,
-      },
+  let metadata = entry.metadata
+  if (
+    metadata &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    (metadata as ModelUsageMetadata).toolCost != null &&
+    (metadata as ModelUsageMetadata).toolCost! > 0
+  ) {
+    const modelMetadata = metadata as ModelUsageMetadata
+    metadata = {
+      ...modelMetadata,
+      toolCost:
+        multiplier === 1 ? modelMetadata.toolCost : modelMetadata.toolCost! * multiplier,
     }
   }
 
-  return { ...entry, cost: scaledCost }
+  return {
+    ...entry,
+    cost: billableCost,
+    rawCost,
+    billableCost,
+    ...(metadata !== undefined ? { metadata } : {}),
+  }
 }
 
 function logUsageCostBreakdown(params: {
@@ -161,6 +169,23 @@ export interface BillingEntity {
 }
 
 /**
+ * Rates and multipliers captured at write time in `usage_log.pricing_snapshot`.
+ * Supports COGS vs billable reconciliation without re-reading vendor-pricing.json.
+ */
+export interface UsagePricingSnapshot {
+  vendor?: string
+  tool?: string
+  model?: string
+  inputRatePerMillion?: number
+  outputRatePerMillion?: number
+  cachedInputRatePerMillion?: number
+  flatRate?: number
+  multiplier?: number
+  pricingSource?: 'vendor-pricing' | 'models-ts' | 'hosted-key' | 'fixed'
+  capturedAt?: string
+}
+
+/**
  * A single usage entry to be recorded in the usage_log table.
  */
 export interface UsageEntry {
@@ -168,9 +193,21 @@ export interface UsageEntry {
   source: UsageLogSource
   description: string
   cost: number
+  /** Vendor COGS before `USAGE_LOG_COST_MULTIPLIER`. When set, `cost` should equal billableCost. */
+  rawCost?: number
+  /** Customer-facing amount after multiplier. When set, should mirror `cost` for legacy readers. */
+  billableCost?: number
   eventKey?: string
   sourceReference?: string
   metadata?: UsageLogMetadata
+  vendor?: string
+  provider?: string
+  toolId?: string
+  chatId?: string
+  runId?: string
+  quantity?: number
+  unit?: string
+  pricingSnapshot?: UsagePricingSnapshot
 }
 
 interface RecordUsageBaseParams {
@@ -184,6 +221,10 @@ interface RecordUsageBaseParams {
   workflowId?: string
   /** Execution context */
   executionId?: string
+  /** Copilot/mothership chat context (entry-level values take precedence). */
+  chatId?: string
+  /** Copilot run context (entry-level values take precedence). */
+  runId?: string
 }
 
 /**
@@ -387,12 +428,20 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
     workspaceId,
     workflowId,
     executionId,
+    chatId,
+    runId,
     billingEntity,
     billingPeriod,
     tx,
   } = params
 
-  const validEntries = entries.filter((e) => e.cost > 0)
+  const scaledEntries = scaleUsageLogCosts(entries, {
+    userId,
+    workspaceId,
+    workflowId,
+    executionId,
+  })
+  const validEntries = scaledEntries.filter((e) => e.cost > 0)
 
   if (validEntries.length === 0) {
     return
@@ -431,11 +480,21 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
           description: entry.description,
           metadata: entry.metadata ?? null,
           cost: entry.cost.toString(),
+          rawCost: entry.rawCost != null ? entry.rawCost.toString() : null,
+          billableCost: entry.billableCost != null ? entry.billableCost.toString() : null,
           eventKey,
           billingEntityType: context.billingEntity.type,
           billingEntityId: context.billingEntity.id,
           billingPeriodStart: context.billingPeriod.start,
           billingPeriodEnd: context.billingPeriod.end,
+          vendor: entry.vendor ?? null,
+          provider: entry.provider ?? null,
+          toolId: entry.toolId ?? null,
+          chatId: entry.chatId ?? chatId ?? null,
+          runId: entry.runId ?? runId ?? null,
+          quantity: entry.quantity != null ? entry.quantity.toString() : null,
+          unit: entry.unit ?? null,
+          pricingSnapshot: entry.pricingSnapshot ?? null,
           workspaceId: workspaceId ?? null,
           workflowId: workflowId ?? null,
           executionId: executionId ?? null,
@@ -511,11 +570,16 @@ export interface RecordCumulativeUsageParams {
   source: UsageLogSource
   /** Model name, stored as the row description. */
   model: string
-  /** The request's CUMULATIVE cost so far (not a per-leg delta). */
+  /** The request's CUMULATIVE vendor COGS so far (not a per-leg delta). */
   cost: number
   /** Stable per-request key; the single ledger row is keyed on this. */
   eventKey: string
   metadata?: UsageLogMetadata
+  chatId?: string
+  runId?: string
+  provider?: string
+  vendor?: string
+  pricingSnapshot?: UsagePricingSnapshot
 }
 
 export interface RecordCumulativeUsageResult {
@@ -557,7 +621,20 @@ const CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS = 3_000
 export async function recordCumulativeUsage(
   params: RecordCumulativeUsageParams
 ): Promise<RecordCumulativeUsageResult> {
-  const { userId, workspaceId, source, model, cost, eventKey, metadata } = params
+  const {
+    userId,
+    workspaceId,
+    source,
+    model,
+    cost,
+    eventKey,
+    metadata,
+    chatId,
+    runId,
+    provider,
+    vendor,
+    pricingSnapshot,
+  } = params
 
   // Resolved before the locked transaction on purpose: resolving inside it
   // ran the subscription lookups on the global pool while this tx already
@@ -577,16 +654,28 @@ export async function recordCumulativeUsage(
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${eventKey}, 0))`)
 
     const [existing] = await tx
-      .select({ id: usageLog.id, cost: usageLog.cost })
+      .select({ id: usageLog.id, cost: usageLog.cost, rawCost: usageLog.rawCost })
       .from(usageLog)
       .where(eq(usageLog.eventKey, eventKey))
       .limit(1)
 
-    const recorded = existing ? Number.parseFloat(existing.cost) : 0
-    const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recorded, cost)
+    const recordedRaw = existing
+      ? Number.parseFloat(existing.rawCost ?? existing.cost)
+      : 0
+    const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recordedRaw, cost)
 
     if (!shouldBill) {
-      return { billed: false, delta: 0, total: recorded }
+      return { billed: false, delta: 0, total: recordedRaw }
+    }
+
+    const billableTotal = scaleUsageLogCost(newTotal)
+    const attributionPatch = {
+      ...(metadata !== undefined ? { metadata } : {}),
+      ...(chatId ? { chatId } : {}),
+      ...(runId ? { runId } : {}),
+      ...(provider ? { provider } : {}),
+      ...(vendor ? { vendor } : {}),
+      ...(pricingSnapshot ? { pricingSnapshot } : {}),
     }
 
     if (existing) {
@@ -594,7 +683,12 @@ export async function recordCumulativeUsage(
       // period total is SUM(usage_log.cost), so this lifts it by the delta.
       await tx
         .update(usageLog)
-        .set({ cost: newTotal.toString(), metadata: metadata ?? null })
+        .set({
+          cost: billableTotal.toString(),
+          rawCost: newTotal.toString(),
+          billableCost: billableTotal.toString(),
+          ...attributionPatch,
+        })
         .where(eq(usageLog.id, existing.id))
     } else {
       // First flush for this request: insert the canonical row with the
@@ -602,6 +696,8 @@ export async function recordCumulativeUsage(
       await recordUsage({
         userId,
         workspaceId,
+        chatId,
+        runId,
         tx,
         billingEntity: billingContext.billingEntity,
         billingPeriod: billingContext.billingPeriod,
@@ -611,9 +707,16 @@ export async function recordCumulativeUsage(
             source,
             description: model,
             cost: newTotal,
+            rawCost: newTotal,
+            billableCost: billableTotal,
             eventKey,
             sourceReference: eventKey,
             ...(metadata ? { metadata } : {}),
+            ...(chatId ? { chatId } : {}),
+            ...(runId ? { runId } : {}),
+            ...(provider ? { provider } : {}),
+            ...(vendor ? { vendor } : {}),
+            ...(pricingSnapshot ? { pricingSnapshot } : {}),
           },
         ],
       })

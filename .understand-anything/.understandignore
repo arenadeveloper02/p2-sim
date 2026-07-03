@@ -1,0 +1,80 @@
+# .understandignore — patterns for files/dirs to exclude from analysis
+# Syntax: same as .gitignore (globs, # comments, ! negation, trailing / for dirs)
+# Lines below are suggestions — uncomment to activate.
+# Use ! prefix to force-include something excluded by defaults.
+#
+# Built-in defaults (always excluded unless negated):
+#   node_modules/, .git/, dist/, build/, obj/, *.lock, *.min.js, etc.
+#
+
+# --- From .gitignore (uncomment to exclude) ---
+
+# /node_modules
+# /apps/**/node_modules
+# /packages/**/node_modules
+# /scripts/node_modules
+# bun-debug.log*
+# .cursor/debug-*.log
+# /coverage
+# /apps/**/coverage
+# /.next/
+# /apps/**/out/
+# /apps/**/.next/
+# /apps/**/build
+# /build
+# /dist
+# **/dist/
+# **/standalone/
+# sim-standalone.tar.gz
+# dump.rdb
+# .DS_Store
+# *.pem
+# .env
+# *.env
+# .env.local
+# .env.development
+# .env.test
+# .env.production
+# *.swp
+# *.swo
+# *.swn
+# .vercel
+# *.tsbuildinfo
+# next-env.d.ts
+# /apps/docs/.source
+# /apps/docs/.contentlayer
+# /apps/docs/.content-collections
+# **/postgres_data/
+# collector-config.yaml
+# docker-compose.collector.yml
+# start-collector.sh
+# helm/sim/test
+# i18n.cache
+# .claude/launch.json
+# .claude/worktrees/
+# .claude/scheduled_tasks.lock
+# .deepsec/
+# .cursor/skills/ask-sim/
+
+# --- Detected directories (uncomment to exclude) ---
+
+# scripts/
+
+# --- Test file patterns (uncomment to exclude) ---
+
+# JS / TS
+# *.test.*
+# *.spec.*
+# *.snap
+# C# / .NET
+# **/*Tests.cs
+# **/*Test.cs
+# **/*Fixture.cs
+# **/*.Tests.csproj
+# Java / Kotlin
+# **/src/test/**
+# **/*Test.java
+# **/*IT.java
+# **/*Spec.kt
+# Go
+# **/*_test.go

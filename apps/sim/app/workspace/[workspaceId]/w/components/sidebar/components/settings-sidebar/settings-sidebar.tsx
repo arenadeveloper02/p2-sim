@@ -26,6 +26,7 @@ import { prefetchWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { prefetchGeneralSettings, useGeneralSettings } from '@/hooks/queries/general-settings'
 import { useOrganizations } from '@/hooks/queries/organization'
 import { prefetchSubscriptionData, useSubscriptionData } from '@/hooks/queries/subscription'
+import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
@@ -64,6 +65,7 @@ export function SettingsSidebar({
     enabled: isBillingEnabled,
     staleTime: 5 * 60 * 1000,
   })
+  const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId)
   const { data: ssoProvidersData, isLoading: isLoadingSSO } = useSSOProviders({
     enabled: !isHosted,
   })
@@ -155,6 +157,10 @@ export function SettingsSidebar({
         return false
       }
 
+      if (item.requiresWorkspaceAdmin && !workspacePermissions?.viewer?.isAdmin) {
+        return false
+      }
+
       return true
     })
   }, [
@@ -168,6 +174,7 @@ export function SettingsSidebar({
     permissionConfig,
     isSuperUser,
     generalSettings?.superUserModeEnabled,
+    workspacePermissions?.viewer?.isAdmin,
   ])
 
   const activeSection = useMemo(() => {
@@ -193,6 +200,9 @@ export function SettingsSidebar({
         case 'billing':
           prefetchSubscriptionData(queryClient)
           void import('@/app/workspace/[workspaceId]/settings/components/billing/billing')
+          break
+        case 'usage':
+          void import('@/app/workspace/[workspaceId]/settings/components/usage/usage')
           break
       }
     },

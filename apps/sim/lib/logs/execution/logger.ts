@@ -1323,6 +1323,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
           cost: number
           eventKey: string
           metadata?: ModelUsageMetadata | null
+          toolId?: string
+          quantity?: number
+          unit?: string
         }> = []
         for (const line of targets) {
           const billed = alreadyBilled.get(`${line.category}::${line.description}`) ?? 0
@@ -1340,6 +1343,13 @@ export class ExecutionLogger implements IExecutionLoggerService {
               billedBefore: billed.toFixed(8),
             }),
             ...(line.metadata !== undefined ? { metadata: line.metadata } : {}),
+            ...(line.category === 'tool' ? { toolId: line.description } : {}),
+            ...(line.category === 'model' && line.metadata
+              ? {
+                  quantity: line.metadata.inputTokens + line.metadata.outputTokens,
+                  unit: 'tokens',
+                }
+              : {}),
           })
         }
         return entries

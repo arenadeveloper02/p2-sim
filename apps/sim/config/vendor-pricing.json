@@ -1,1359 +1,415 @@
 {
   "$schema": "./vendor-pricing.schema.json",
-  "meta": {
-    "updatedAt": "2026-06-26",
-    "currency": "USD",
-    "maintainer": "platform-team",
-    "creditConversion": {
-      "simCreditsPerUsd": 200,
-      "note": "1 Sim credit = $0.005 (see apps/sim/lib/billing/credits/conversion.ts)"
-    }
-  },
-  "subscriptions": [
+  "pricing": [
     {
-      "id": "sim-mothership",
-      "vendor": "Sim",
-      "active": true,
-      "envVars": [
-        "COPILOT_API_KEY"
-      ],
-      "category": "platform",
-      "billingModel": "license_credits",
-      "pricingUrl": null,
-      "plan": {
-        "name": "Sim API (Mothership)",
-        "monthlyUsd": 12000,
-        "includedCredits": 2400000,
-        "notes": "Monthly spend cap on Sim agent API via COPILOT_API_KEY. 2.4M Sim credits at $0.005/credit."
-      },
-      "simUsage": [
-        "mothership-chat",
-        "mothership-block",
-        "copilot",
-        "mcp-copilot"
-      ],
-      "simCostRecorded": true,
-      "usageLogSources": [
-        "workspace-chat",
-        "mothership_block",
-        "copilot",
-        "mcp_copilot"
-      ]
-    },
-    {
-      "id": "openai",
-      "vendor": "OpenAI",
-      "active": true,
-      "envVars": [
-        "OPENAI_API_KEY",
-        "OPENAI_API_KEY_1",
-        "OPENAI_API_KEY_3"
-      ],
-      "category": "llm",
-      "billingModel": "pay_as_you_go",
-      "pricingUrl": "https://platform.openai.com/docs/pricing",
-      "plan": {
-        "name": "Pay as you go",
-        "monthlyUsd": null,
-        "notes": "Per-model token rates in skus[]; sourced from OpenAI API pricing via apps/sim/providers/models.ts."
-      },
-      "simUsage": [
-        "agent-block",
-        "kb-embeddings",
-        "wand",
-        "gmail-summary",
-        "image-generation"
-      ],
-      "simCostRecorded": false
-    },
-    {
-      "id": "anthropic",
       "vendor": "Anthropic",
-      "active": true,
-      "envVars": [
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_API_KEY_1",
-        "ANTHROPIC_API_KEY_2",
-        "ANTHROPIC_API_KEY_3"
-      ],
-      "category": "llm",
-      "billingModel": "pay_as_you_go",
-      "pricingUrl": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-      "plan": {
-        "name": "Pay as you go",
-        "monthlyUsd": null,
-        "notes": "Per-model token rates in skus[]; default Mothership model claude-opus-4-8. Rates from models.ts."
-      },
-      "simUsage": [
-        "agent-block",
-        "mothership-default",
-        "router",
-        "evaluator"
-      ],
-      "simCostRecorded": false
+      "tool": "claude-3-haiku-20240307",
+      "cost": "0.25/1.25"
     },
     {
-      "id": "google-gemini",
-      "vendor": "Google AI (Gemini)",
-      "active": true,
-      "envVars": [
-        "GEMINI_API_KEY"
-      ],
-      "category": "llm",
-      "billingModel": "pay_as_you_go",
-      "pricingUrl": "https://ai.google.dev/gemini-api/docs/pricing",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": null
-      },
-      "simUsage": [
-        "agent-block"
-      ],
-      "simCostRecorded": false
+      "vendor": "Anthropic",
+      "tool": "claude-haiku-4-5",
+      "cost": "1/5"
     },
     {
-      "id": "xai",
-      "vendor": "xAI",
-      "active": true,
-      "envVars": [
-        "XAI_API_KEY",
-        "XAI_API_KEY_1",
-        "XAI_API_KEY_2",
-        "XAI_API_KEY_3"
-      ],
-      "category": "llm",
-      "billingModel": "pay_as_you_go",
-      "pricingUrl": "https://docs.x.ai/developers/models",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": null
-      },
-      "simUsage": [
-        "agent-block"
-      ],
-      "simCostRecorded": false
+      "vendor": "Anthropic",
+      "tool": "claude-opus-4-1",
+      "cost": "15/75"
     },
     {
-      "id": "sambanova",
-      "vendor": "SambaNova",
-      "active": true,
-      "envVars": [
-        "SAMBANOVA_API_KEY",
-        "SAMBANOVA_API_KEY_1",
-        "SAMBANOVA_API_KEY_2",
-        "SAMBANOVA_API_KEY_3"
-      ],
-      "category": "llm",
-      "billingModel": "pay_as_you_go",
-      "pricingUrl": "https://sambanova.ai/pricing",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "Default hosted model DeepSeek-V3.1 in providers/models.ts."
-      },
-      "simUsage": [
-        "agent-block"
-      ],
-      "simCostRecorded": false
+      "vendor": "Anthropic",
+      "tool": "claude-opus-4-5",
+      "cost": "5/25"
     },
     {
-      "id": "firecrawl",
-      "vendor": "Firecrawl",
-      "active": true,
-      "envVars": [
-        "FIRECRAWL_API_KEY"
-      ],
-      "category": "tool",
-      "billingModel": "subscription_credits",
-      "pricingUrl": "https://www.firecrawl.dev/pricing",
-      "plan": {
-        "name": "Hobby",
-        "monthlyUsd": 40,
-        "includedCredits": 8000,
-        "notes": "Hobby plan: 8000 credits/month for $40.",
-        "knownTiers": [
-          {
-            "name": "Hobby",
-            "monthlyUsd": 40,
-            "includedUnits": "8000 credits/mo",
-            "effectiveUnitUsd": 0.005
-          }
-        ]
-      },
-      "simUsage": [
-        "firecrawl_parse",
-        "firecrawl_scrape",
-        "firecrawl_crawl",
-        "firecrawl_search"
-      ],
-      "simCostRecorded": false
+      "vendor": "Anthropic",
+      "tool": "claude-opus-4-6",
+      "cost": "5/25"
     },
     {
-      "id": "browser-use",
+      "vendor": "Anthropic",
+      "tool": "claude-opus-4-7",
+      "cost": "5/25"
+    },
+    {
+      "vendor": "Anthropic",
+      "tool": "claude-opus-4-8",
+      "cost": "5/25"
+    },
+    {
+      "vendor": "Anthropic",
+      "tool": "claude-sonnet-4-0",
+      "cost": "3/15"
+    },
+    {
+      "vendor": "Anthropic",
+      "tool": "claude-sonnet-4-5",
+      "cost": "3/15"
+    },
+    {
+      "vendor": "Anthropic",
+      "tool": "claude-sonnet-4-6",
+      "cost": "3/15"
+    },
+    {
+      "vendor": "Brandfetch",
+      "tool": "brandfetch_get_brand",
+      "cost": 0.04
+    },
+    {
+      "vendor": "Brandfetch",
+      "tool": "brandfetch_search",
+      "cost": 0
+    },
+    {
       "vendor": "Browser Use",
-      "active": true,
-      "envVars": [
-        "BROWSER_USE_API_KEY"
-      ],
-      "category": "tool",
-      "billingModel": "hybrid",
-      "pricingUrl": "https://browser-use.com/pricing",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "Cloud plans from $29/mo Dev; sessions $0.02/hr; proxy $5/GB; agent LLM at 1.2x provider or BYOK + 0.2x orchestration.",
-        "knownTiers": [
-          {
-            "name": "Free",
-            "monthlyUsd": 0,
-            "includedUnits": "3 concurrent sessions"
-          },
-          {
-            "name": "Dev",
-            "monthlyUsd": 29,
-            "includedUnits": "$29 credits/mo"
-          },
-          {
-            "name": "Business",
-            "monthlyUsd": 299,
-            "includedUnits": "$299 credits/mo"
-          }
-        ]
-      },
-      "simUsage": [
-        "browser-use-block"
-      ],
-      "simCostRecorded": false
+      "tool": "browser-use-cloud-sessions",
+      "cost": 0.02
     },
     {
-      "id": "ideogram",
-      "vendor": "Ideogram",
-      "active": true,
-      "envVars": [
-        "IDEOGRAM_API_KEY"
-      ],
-      "category": "tool",
-      "billingModel": "subscription_credits",
-      "pricingUrl": "https://ideogram.ai/pricing",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "Fill from Ideogram dashboard."
-      },
-      "simUsage": [
-        "image-generation"
-      ],
-      "simCostRecorded": false
+      "vendor": "Browser Use",
+      "tool": "browser-use-proxy",
+      "cost": 5
     },
     {
-      "id": "figma",
-      "vendor": "Figma",
-      "active": true,
-      "envVars": [
-        "FIGMA_API_KEY"
-      ],
-      "category": "tool",
-      "billingModel": "fixed_monthly",
-      "pricingUrl": "https://www.figma.com/pricing/",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "Seat-based Figma plan; API usage included on paid seats."
-      },
-      "simUsage": [
-        "figma-tools"
-      ],
-      "simCostRecorded": false
+      "vendor": "Cerebras",
+      "tool": "cerebras/llama-3.3-70b",
+      "cost": "0.11/0.34"
     },
     {
-      "id": "google-maps-public",
-      "vendor": "Google Cloud (Maps)",
-      "active": true,
-      "envVars": [
-        "NEXT_PUBLIC_GOOGLE_API_KEY"
-      ],
-      "category": "tool",
-      "billingModel": "pay_as_you_go",
-      "pricingUrl": "https://cloud.google.com/maps-platform/pricing",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "May overlap with GOOGLE_CLOUD_API_KEY for server-side Maps tools."
-      },
-      "simUsage": [
-        "client-maps"
-      ],
-      "simCostRecorded": false
+      "vendor": "Cerebras",
+      "tool": "cerebras/llama-4-scout",
+      "cost": "0.11/0.34"
     },
     {
-      "id": "meta-ads",
-      "vendor": "Meta (Marketing API)",
-      "active": true,
-      "envVars": [
-        "FB_ACCESS_TOKEN",
-        "FB_CLIENT_ID",
-        "FB_CLIENT_SECRET"
-      ],
-      "category": "ads",
-      "billingModel": "oauth_user_account",
-      "pricingUrl": "https://developers.facebook.com/docs/marketing-api/overview",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "Ad spend billed to linked ad accounts; API access via system user token."
-      },
-      "simUsage": [
-        "facebook-ads-query"
-      ],
-      "simCostRecorded": false
-    },
-    {
-      "id": "google-ads",
-      "vendor": "Google Ads",
-      "active": true,
-      "envVars": [
-        "GOOGLE_ADS_DEVELOPER_TOKEN",
-        "GOOGLE_ADS_CLIENT_ID",
-        "GOOGLE_ADS_CLIENT_SECRET",
-        "GOOGLE_ADS_REFRESH_TOKEN"
-      ],
-      "category": "ads",
-      "billingModel": "oauth_user_account",
-      "pricingUrl": "https://ads.google.com/home/tools/ads-api/",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "Ad spend on Google Ads accounts; developer token required."
-      },
-      "simUsage": [
-        "google-ads-query"
-      ],
-      "simCostRecorded": false
-    },
-    {
-      "id": "mistral",
-      "vendor": "Mistral",
-      "active": false,
-      "envVars": [
-        "MISTRAL_API_KEY"
-      ],
-      "category": "llm",
-      "billingModel": "pay_as_you_go",
-      "pricingUrl": "https://mistral.ai/pricing",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "KB PDF OCR and mistral parser tool when MISTRAL_API_KEY is set."
-      },
-      "simUsage": [
-        "kb-pdf-ocr",
-        "mistral-parse-tool"
-      ],
-      "simCostRecorded": false
-    },
-    {
-      "id": "cohere",
       "vendor": "Cohere",
-      "active": false,
-      "envVars": [
-        "COHERE_API_KEY",
-        "COHERE_API_KEY_1",
-        "COHERE_API_KEY_2",
-        "COHERE_API_KEY_3"
-      ],
-      "category": "llm",
-      "billingModel": "pay_as_you_go",
-      "pricingUrl": "https://cohere.com/pricing",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "Not in .env; enable for KB reranker (rerank-v4.0-fast)."
-      },
-      "simUsage": [
-        "kb-rerank"
-      ],
-      "simCostRecorded": false
+      "tool": "rerank-v4.0-fast",
+      "cost": 0.002
     },
     {
-      "id": "stripe",
-      "vendor": "Stripe",
-      "active": false,
-      "envVars": [
-        "STRIPE_SECRET_KEY",
-        "STRIPE_WEBHOOK_SECRET"
-      ],
-      "category": "platform",
-      "billingModel": "pay_as_you_go",
-      "pricingUrl": "https://stripe.com/pricing",
-      "plan": {
-        "name": null,
-        "monthlyUsd": null,
-        "notes": "Customer billing — not in current .env."
-      },
-      "simUsage": [
-        "customer-subscriptions"
-      ],
-      "simCostRecorded": false
-    }
-  ],
-  "skus": [
-    {
-      "id": "sim/workflow-base-fee",
-      "subscriptionId": "sim-mothership",
-      "type": "fixed_per_run",
-      "unit": "per_execution",
-      "usdPerUnit": 0.005,
-      "pricingSource": {
-        "kind": "sim_billing_constants",
-        "path": "apps/sim/lib/billing/constants.ts",
-        "verifiedAt": "2026-06-26"
-      },
-      "simReference": "BASE_EXECUTION_CHARGE",
-      "usedIn": [
-        "every-workflow-run"
-      ]
+      "vendor": "DeepSeek",
+      "tool": "deepseek-r1",
+      "cost": "0.75/1"
     },
     {
-      "id": "google-gemini/gemini-2.5-pro",
-      "subscriptionId": "google-gemini",
-      "type": "llm_tokens",
-      "modelId": "gemini-2.5-pro",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1.25,
-      "outputUsd": 10,
-      "cachedInputUsd": 0.125,
-      "pricingSource": {
-        "kind": "sim_models_ts",
-        "path": "apps/sim/providers/models.ts",
-        "url": "https://ai.google.dev/gemini-api/docs/pricing",
-        "verifiedAt": "2026-06-26"
-      },
-      "vendorPlanNote": "Google lists $2.50/$15 per 1M when prompt exceeds 200K tokens.",
-      "simReference": "providers/models.ts google.gemini-2.5-pro",
-      "usedIn": [
-        "agent-block",
-        "google-provider-default"
-      ]
+      "vendor": "DeepSeek",
+      "tool": "deepseek-v3",
+      "cost": "0.75/1"
     },
     {
-      "id": "xai/grok-4.3",
-      "subscriptionId": "xai",
-      "type": "llm_tokens",
-      "modelId": "grok-4.3",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1.25,
-      "outputUsd": 2.5,
-      "cachedInputUsd": 0.2,
-      "pricingSource": {
-        "kind": "sim_models_ts",
-        "path": "apps/sim/providers/models.ts",
-        "url": "https://docs.x.ai/developers/models",
-        "verifiedAt": "2026-06-26"
-      },
-      "simReference": "providers/models.ts xai.grok-4.3",
-      "usedIn": [
-        "agent-block",
-        "xai-provider-default"
-      ]
+      "vendor": "ElevenLabs",
+      "tool": "voice-input-deployed-chat",
+      "cost": 0.008
     },
     {
-      "id": "sambanova/DeepSeek-V3.1",
-      "subscriptionId": "sambanova",
-      "type": "llm_tokens",
-      "modelId": "DeepSeek-V3.1",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.3,
-      "outputUsd": 0.45,
-      "pricingSource": {
-        "kind": "sim_models_ts",
-        "path": "apps/sim/providers/models.ts",
-        "url": "https://sambanova.ai/pricing",
-        "verifiedAt": "2026-06-26"
-      },
-      "simReference": "providers/models.ts sambanova.DeepSeek-V3.1",
-      "usedIn": [
-        "agent-block",
-        "sambanova-provider-default"
-      ]
+      "vendor": "ElevenLabs",
+      "tool": "voice-input-mothership",
+      "cost": 0.024
     },
     {
-      "id": "cohere/rerank-v4.0-fast",
-      "subscriptionId": "cohere",
-      "type": "rerank_unit",
-      "modelId": "rerank-v4.0-fast",
-      "unit": "per_search_unit",
-      "usdPerUnit": 0.002,
-      "pricingSource": {
-        "kind": "sim_models_ts",
-        "path": "apps/sim/providers/models.ts RERANK_MODEL_PRICING",
-        "url": "https://cohere.com/pricing",
-        "verifiedAt": "2026-06-26"
-      },
-      "simReference": "RERANK_MODEL_PRICING.rerank-v4.0-fast",
-      "usedIn": [
-        "kb-search-rerank-default"
-      ]
+      "vendor": "Exa",
+      "tool": "exa_search",
+      "cost": 0
     },
     {
-      "id": "mistral/mistral-ocr-latest",
-      "subscriptionId": "mistral",
-      "type": "per_page",
-      "modelId": "mistral-ocr-latest",
-      "unit": "per_page",
-      "usdPerUnit": 0.002,
-      "pricingSource": {
-        "kind": "sim_tool_hosting",
-        "path": "apps/sim/tools/mistral/parser.ts",
-        "url": "https://mistral.ai/pricing",
-        "verifiedAt": "2026-06-26"
-      },
-      "vendorPlanNote": "Billed via MISTRAL_API_KEY when configured; not in current .env.",
-      "usedIn": [
-        "kb-pdf-ocr",
-        "mistral-parse-tool"
-      ]
+      "vendor": "Firecrawl",
+      "tool": "firecrawl_parse",
+      "cost": 0.001
     },
     {
-      "id": "firecrawl/credit",
-      "subscriptionId": "firecrawl",
-      "type": "api_credits",
-      "unit": "per_credit",
-      "usdPerUnit": 0.005,
-      "pricingSource": {
-        "kind": "sim_tool_hosting",
-        "path": "apps/sim/tools/firecrawl/parse.ts",
-        "url": "https://www.firecrawl.dev/pricing",
-        "verifiedAt": "2026-06-26"
-      },
-      "vendorPlanNote": "Hobby plan: $40/8000 credits = $0.005/credit.",
-      "usedIn": [
-        "firecrawl_parse"
-      ]
+      "vendor": "Firecrawl",
+      "tool": "firecrawl_scrape",
+      "cost": 0.001
     },
     {
-      "id": "firecrawl/scrape-page",
-      "subscriptionId": "firecrawl",
-      "type": "api_credits",
-      "unit": "per_page",
-      "usdPerUnit": 0.005,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://www.firecrawl.dev/pricing",
-        "verifiedAt": "2026-06-26"
-      },
-      "vendorPlanNote": "Hobby plan: $40/8000 credits = $0.005/credit.",
-      "usedIn": [
-        "firecrawl_scrape",
-        "firecrawl_crawl",
-        "firecrawl_map"
-      ]
+      "vendor": "Google AI (Gemini)",
+      "tool": "gemini-2.5-flash",
+      "cost": "0.3/2.5"
     },
     {
-      "id": "browser-use/session-hour",
-      "subscriptionId": "browser-use",
-      "type": "per_hour",
-      "unit": "per_browser_session_hour",
-      "usdPerUnit": 0.02,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://browser-use.com/pricing",
-        "verifiedAt": "2026-06-26"
-      },
-      "usedIn": [
-        "browser-use-cloud-sessions"
-      ]
+      "vendor": "Google AI (Gemini)",
+      "tool": "gemini-2.5-pro",
+      "cost": "1.25/10"
     },
     {
-      "id": "browser-use/proxy-gb",
-      "subscriptionId": "browser-use",
-      "type": "per_gb",
-      "unit": "per_gb_egress",
-      "usdPerUnit": 5,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://browser-use.com/pricing",
-        "verifiedAt": "2026-06-26"
-      },
-      "usedIn": [
-        "browser-use-proxy"
-      ]
+      "vendor": "Google AI (Gemini)",
+      "tool": "gemini-3.1-pro-preview",
+      "cost": "2/12"
     },
     {
-      "id": "openai/gpt-4.1",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-4.1",
-      "unit": "per_1m_tokens",
-      "inputUsd": 2,
-      "outputUsd": 8,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-4.1",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.5
+      "vendor": "Google Cloud",
+      "tool": "google_maps_geocode",
+      "cost": 0.005
     },
     {
-      "id": "openai/gpt-4.1-mini",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-4.1-mini",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.4,
-      "outputUsd": 1.6,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-4.1-mini",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.1
+      "vendor": "Google Cloud",
+      "tool": "google_maps_place_details",
+      "cost": 0.017
     },
     {
-      "id": "openai/gpt-4.1-nano",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-4.1-nano",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.1,
-      "outputUsd": 0.4,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-4.1-nano",
-      "usedIn": [
-        "legacy"
-      ],
-      "cachedInputUsd": 0.025,
-      "vendorPlanNote": "Deprecated in Sim model registry."
+      "vendor": "Google Cloud",
+      "tool": "google_maps_places_search",
+      "cost": 0.032
     },
     {
-      "id": "openai/gpt-5.5-pro",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5.5-pro",
-      "unit": "per_1m_tokens",
-      "inputUsd": 30,
-      "outputUsd": 180,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5.5-pro",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ]
+      "vendor": "Google Cloud",
+      "tool": "google_maps_snap_to_roads",
+      "cost": 0.01
     },
     {
-      "id": "openai/gpt-5.5",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5.5",
-      "unit": "per_1m_tokens",
-      "inputUsd": 5,
-      "outputUsd": 30,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5.5",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.5
+      "vendor": "Google Cloud",
+      "tool": "google_translate_text",
+      "cost": 0.00002
     },
     {
-      "id": "openai/gpt-5.4-pro",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5.4-pro",
-      "unit": "per_1m_tokens",
-      "inputUsd": 30,
-      "outputUsd": 180,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5.4-pro",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ]
+      "vendor": "Groq",
+      "tool": "groq/llama-3.3-70b-versatile",
+      "cost": "0.11/0.34"
     },
     {
-      "id": "openai/gpt-5.4",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5.4",
-      "unit": "per_1m_tokens",
-      "inputUsd": 2.5,
-      "outputUsd": 15,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5.4",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.25
+      "vendor": "Groq",
+      "tool": "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+      "cost": "0.11/0.34"
     },
     {
-      "id": "openai/gpt-5.4-mini",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5.4-mini",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.75,
-      "outputUsd": 4.5,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5.4-mini",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.075
+      "vendor": "Jina AI",
+      "tool": "jina_read_url",
+      "cost": "0.2/0.2"
     },
     {
-      "id": "openai/gpt-5.4-nano",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5.4-nano",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.2,
-      "outputUsd": 1.25,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5.4-nano",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.02
+      "vendor": "Jina AI",
+      "tool": "jina_search",
+      "cost": "0.2/0.2"
     },
     {
-      "id": "openai/gpt-5.2-pro",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5.2-pro",
-      "unit": "per_1m_tokens",
-      "inputUsd": 21,
-      "outputUsd": 168,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5.2-pro",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ]
+      "vendor": "Linkup",
+      "tool": "linkup_search",
+      "cost": 0.055
     },
     {
-      "id": "openai/gpt-5.2",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5.2",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1.75,
-      "outputUsd": 14,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5.2",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.175
+      "vendor": "Linkup",
+      "tool": "linkup_search",
+      "cost": 0.006
     },
     {
-      "id": "openai/gpt-5.1",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5.1",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1.25,
-      "outputUsd": 10,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5.1",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.125
+      "vendor": "Mistral",
+      "tool": "mistral-ocr-latest",
+      "cost": 0.002
     },
     {
-      "id": "openai/gpt-5-pro",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5-pro",
-      "unit": "per_1m_tokens",
-      "inputUsd": 15,
-      "outputUsd": 120,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5-pro",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ]
+      "vendor": "OpenAI",
+      "tool": "gpt-4.1",
+      "cost": "2/8"
     },
     {
-      "id": "openai/gpt-5",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1.25,
-      "outputUsd": 10,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.125
+      "vendor": "OpenAI",
+      "tool": "gpt-4.1-mini",
+      "cost": "0.4/1.6"
     },
     {
-      "id": "openai/gpt-5-mini",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5-mini",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.25,
-      "outputUsd": 2,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5-mini",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.025
+      "vendor": "OpenAI",
+      "tool": "gpt-4.1-nano",
+      "cost": "0.1/0.4"
     },
     {
-      "id": "openai/gpt-5-nano",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5-nano",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.05,
-      "outputUsd": 0.4,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5-nano",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.005
+      "vendor": "OpenAI",
+      "tool": "gpt-4o",
+      "cost": "2.5/10"
     },
     {
-      "id": "openai/gpt-5-chat-latest",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-5-chat-latest",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1.25,
-      "outputUsd": 10,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-5-chat-latest",
-      "usedIn": [
-        "legacy"
-      ],
-      "cachedInputUsd": 0.125,
-      "vendorPlanNote": "Deprecated in Sim model registry."
+      "vendor": "OpenAI",
+      "tool": "gpt-4o-search-preview",
+      "cost": "1.25/10"
     },
     {
-      "id": "openai/gpt-4o-search-preview",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-4o-search-preview",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1.25,
-      "outputUsd": 10,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2025-08-07"
-      },
-      "simReference": "providers/models.ts openai.gpt-4o-search-preview",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.125
+      "vendor": "OpenAI",
+      "tool": "gpt-5",
+      "cost": "1.25/10"
     },
     {
-      "id": "openai/o4-mini",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "o4-mini",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1.1,
-      "outputUsd": 4.4,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.o4-mini",
-      "usedIn": [
-        "legacy"
-      ],
-      "cachedInputUsd": 0.275,
-      "vendorPlanNote": "Deprecated in Sim model registry."
+      "vendor": "OpenAI",
+      "tool": "gpt-5-chat-latest",
+      "cost": "1.25/10"
     },
     {
-      "id": "openai/o3-pro",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "o3-pro",
-      "unit": "per_1m_tokens",
-      "inputUsd": 20,
-      "outputUsd": 80,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.o3-pro",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ]
+      "vendor": "OpenAI",
+      "tool": "gpt-5-mini",
+      "cost": "0.25/2"
     },
     {
-      "id": "openai/o3",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "o3",
-      "unit": "per_1m_tokens",
-      "inputUsd": 2,
-      "outputUsd": 8,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.o3",
-      "usedIn": [
-        "legacy"
-      ],
-      "cachedInputUsd": 0.5,
-      "vendorPlanNote": "Deprecated in Sim model registry."
+      "vendor": "OpenAI",
+      "tool": "gpt-5-nano",
+      "cost": "0.05/0.4"
     },
     {
-      "id": "openai/o3-mini",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "o3-mini",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1.1,
-      "outputUsd": 4.4,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.o3-mini",
-      "usedIn": [
-        "legacy"
-      ],
-      "cachedInputUsd": 0.55,
-      "vendorPlanNote": "Deprecated in Sim model registry."
+      "vendor": "OpenAI",
+      "tool": "gpt-5-pro",
+      "cost": "15/120"
     },
     {
-      "id": "openai/o1",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "o1",
-      "unit": "per_1m_tokens",
-      "inputUsd": 15,
-      "outputUsd": 60,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.o1",
-      "usedIn": [
-        "legacy"
-      ],
-      "cachedInputUsd": 7.5,
-      "vendorPlanNote": "Deprecated in Sim model registry."
+      "vendor": "OpenAI",
+      "tool": "gpt-5.1",
+      "cost": "1.25/10"
     },
     {
-      "id": "openai/gpt-4o",
-      "subscriptionId": "openai",
-      "type": "llm_tokens",
-      "modelId": "gpt-4o",
-      "unit": "per_1m_tokens",
-      "inputUsd": 2.5,
-      "outputUsd": 10,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts openai.gpt-4o",
-      "usedIn": [
-        "legacy"
-      ],
-      "cachedInputUsd": 1.25,
-      "vendorPlanNote": "Deprecated in Sim model registry."
+      "vendor": "OpenAI",
+      "tool": "gpt-5.2",
+      "cost": "1.75/14"
     },
     {
-      "id": "anthropic/claude-opus-4-8",
-      "subscriptionId": "anthropic",
-      "type": "llm_tokens",
-      "modelId": "claude-opus-4-8",
-      "unit": "per_1m_tokens",
-      "inputUsd": 5,
-      "outputUsd": 25,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-05-28"
-      },
-      "simReference": "providers/models.ts anthropic.claude-opus-4-8",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.5
+      "vendor": "OpenAI",
+      "tool": "gpt-5.2-pro",
+      "cost": "21/168"
     },
     {
-      "id": "anthropic/claude-opus-4-7",
-      "subscriptionId": "anthropic",
-      "type": "llm_tokens",
-      "modelId": "claude-opus-4-7",
-      "unit": "per_1m_tokens",
-      "inputUsd": 5,
-      "outputUsd": 25,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-04-16"
-      },
-      "simReference": "providers/models.ts anthropic.claude-opus-4-7",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.5
+      "vendor": "OpenAI",
+      "tool": "gpt-5.4",
+      "cost": "2.5/15"
     },
     {
-      "id": "anthropic/claude-opus-4-6",
-      "subscriptionId": "anthropic",
-      "type": "llm_tokens",
-      "modelId": "claude-opus-4-6",
-      "unit": "per_1m_tokens",
-      "inputUsd": 5,
-      "outputUsd": 25,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts anthropic.claude-opus-4-6",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.5
+      "vendor": "OpenAI",
+      "tool": "gpt-5.4-mini",
+      "cost": "0.75/4.5"
     },
     {
-      "id": "anthropic/claude-sonnet-4-6",
-      "subscriptionId": "anthropic",
-      "type": "llm_tokens",
-      "modelId": "claude-sonnet-4-6",
-      "unit": "per_1m_tokens",
-      "inputUsd": 3,
-      "outputUsd": 15,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts anthropic.claude-sonnet-4-6",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.3
+      "vendor": "OpenAI",
+      "tool": "gpt-5.4-nano",
+      "cost": "0.2/1.25"
     },
     {
-      "id": "anthropic/claude-opus-4-5",
-      "subscriptionId": "anthropic",
-      "type": "llm_tokens",
-      "modelId": "claude-opus-4-5",
-      "unit": "per_1m_tokens",
-      "inputUsd": 5,
-      "outputUsd": 25,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts anthropic.claude-opus-4-5",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.5
+      "vendor": "OpenAI",
+      "tool": "gpt-5.4-pro",
+      "cost": "30/180"
     },
     {
-      "id": "anthropic/claude-opus-4-1",
-      "subscriptionId": "anthropic",
-      "type": "llm_tokens",
-      "modelId": "claude-opus-4-1",
-      "unit": "per_1m_tokens",
-      "inputUsd": 15,
-      "outputUsd": 75,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts anthropic.claude-opus-4-1",
-      "usedIn": [
-        "legacy"
-      ],
-      "cachedInputUsd": 1.5,
-      "vendorPlanNote": "Deprecated in Sim model registry."
+      "vendor": "OpenAI",
+      "tool": "gpt-5.5",
+      "cost": "5/30"
     },
     {
-      "id": "anthropic/claude-sonnet-4-5",
-      "subscriptionId": "anthropic",
-      "type": "llm_tokens",
-      "modelId": "claude-sonnet-4-5",
-      "unit": "per_1m_tokens",
-      "inputUsd": 3,
-      "outputUsd": 15,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts anthropic.claude-sonnet-4-5",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.3
+      "vendor": "OpenAI",
+      "tool": "gpt-5.5-pro",
+      "cost": "30/180"
     },
     {
-      "id": "anthropic/claude-haiku-4-5",
-      "subscriptionId": "anthropic",
-      "type": "llm_tokens",
-      "modelId": "claude-haiku-4-5",
-      "unit": "per_1m_tokens",
-      "inputUsd": 1,
-      "outputUsd": 5,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-06-11"
-      },
-      "simReference": "providers/models.ts anthropic.claude-haiku-4-5",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ],
-      "cachedInputUsd": 0.1
+      "vendor": "OpenAI",
+      "tool": "o1",
+      "cost": "15/60"
     },
     {
-      "id": "anthropic/claude-3-haiku-20240307",
-      "subscriptionId": "anthropic",
-      "type": "llm_tokens",
-      "modelId": "claude-3-haiku-20240307",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.25,
-      "outputUsd": 1.25,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://docs.anthropic.com/en/docs/about-claude/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-04-01"
-      },
-      "simReference": "providers/models.ts anthropic.claude-3-haiku-20240307",
-      "usedIn": [
-        "legacy"
-      ],
-      "cachedInputUsd": 0.03,
-      "vendorPlanNote": "Deprecated in Sim model registry."
+      "vendor": "OpenAI",
+      "tool": "o3",
+      "cost": "2/8"
     },
     {
-      "id": "openai/text-embedding-3-small",
-      "subscriptionId": "openai",
-      "type": "embedding_tokens",
-      "modelId": "text-embedding-3-small",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.02,
-      "outputUsd": 0,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-04-01"
-      },
-      "simReference": "providers/models.ts openai.text-embedding-3-small",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ]
+      "vendor": "OpenAI",
+      "tool": "o3-mini",
+      "cost": "1.1/4.4"
     },
     {
-      "id": "openai/text-embedding-3-large",
-      "subscriptionId": "openai",
-      "type": "embedding_tokens",
-      "modelId": "text-embedding-3-large",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.13,
-      "outputUsd": 0,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-04-01"
-      },
-      "simReference": "providers/models.ts openai.text-embedding-3-large",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ]
+      "vendor": "OpenAI",
+      "tool": "o3-pro",
+      "cost": "20/80"
     },
     {
-      "id": "openai/text-embedding-ada-002",
-      "subscriptionId": "openai",
-      "type": "embedding_tokens",
-      "modelId": "text-embedding-ada-002",
-      "unit": "per_1m_tokens",
-      "inputUsd": 0.1,
-      "outputUsd": 0,
-      "pricingSource": {
-        "kind": "vendor_website",
-        "url": "https://platform.openai.com/docs/pricing",
-        "path": "apps/sim/providers/models.ts",
-        "verifiedAt": "2026-04-01"
-      },
-      "simReference": "providers/models.ts openai.text-embedding-ada-002",
-      "usedIn": [
-        "agent-block",
-        "mothership",
-        "system"
-      ]
+      "vendor": "OpenAI",
+      "tool": "o4-mini",
+      "cost": "1.1/4.4"
+    },
+    {
+      "vendor": "OpenAI",
+      "tool": "text-embedding-3-large",
+      "cost": "0.13/0"
+    },
+    {
+      "vendor": "OpenAI",
+      "tool": "text-embedding-3-small",
+      "cost": "0.02/0"
+    },
+    {
+      "vendor": "OpenAI",
+      "tool": "text-embedding-ada-002",
+      "cost": "0.1/0"
+    },
+    {
+      "vendor": "Parallel AI",
+      "tool": "parallel_deep_research",
+      "cost": 0.01
+    },
+    {
+      "vendor": "Parallel AI",
+      "tool": "parallel_deep_research",
+      "cost": 0.025
+    },
+    {
+      "vendor": "Parallel AI",
+      "tool": "parallel_deep_research",
+      "cost": 0.005
+    },
+    {
+      "vendor": "Parallel AI",
+      "tool": "parallel_deep_research",
+      "cost": 0.1
+    },
+    {
+      "vendor": "Parallel AI",
+      "tool": "parallel_deep_research",
+      "cost": 2.4
+    },
+    {
+      "vendor": "Parallel AI",
+      "tool": "parallel_extract",
+      "cost": 0.001
+    },
+    {
+      "vendor": "Parallel AI",
+      "tool": "parallel_search",
+      "cost": 0.001
+    },
+    {
+      "vendor": "Parallel AI",
+      "tool": "parallel_search",
+      "cost": 0.005
+    },
+    {
+      "vendor": "Perplexity",
+      "tool": "perplexity_search",
+      "cost": 0.005
+    },
+    {
+      "vendor": "SambaNova",
+      "tool": "DeepSeek-V3.1",
+      "cost": "0.3/0.45"
+    },
+    {
+      "vendor": "Serper",
+      "tool": "serper_search",
+      "cost": 0.002
+    },
+    {
+      "vendor": "Serper",
+      "tool": "serper_search",
+      "cost": 0.001
+    },
+    {
+      "vendor": "Sim",
+      "tool": "every-workflow-run",
+      "cost": 0.005
+    },
+    {
+      "vendor": "xAI",
+      "tool": "grok-3-latest",
+      "cost": "1.25/2.5"
+    },
+    {
+      "vendor": "xAI",
+      "tool": "grok-4-latest",
+      "cost": "1.25/2.5"
+    },
+    {
+      "vendor": "xAI",
+      "tool": "grok-4.3",
+      "cost": "1.25/2.5"
     }
   ]
 }

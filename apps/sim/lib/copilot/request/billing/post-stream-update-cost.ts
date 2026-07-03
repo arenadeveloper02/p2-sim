@@ -27,6 +27,8 @@ export function resolveCopilotBillingSourceFromGoRoute(
 export interface PostStreamBillingUpdateCostInput {
   userId: string
   workspaceId?: string
+  chatId?: string
+  runId?: string
   messageId: string
   goRoute: string
   model?: string
@@ -61,6 +63,8 @@ export async function postStreamBillingUpdateCost(
     source: resolveCopilotBillingSourceFromGoRoute(input.goRoute),
     idempotencyKey: `${input.messageId}-billing`,
     ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+    ...(input.chatId ? { chatId: input.chatId } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
   }
 
   const url = `${getInternalApiBaseUrl()}/api/billing/update-cost`

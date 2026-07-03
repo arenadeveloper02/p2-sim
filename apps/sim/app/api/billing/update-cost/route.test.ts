@@ -4,6 +4,8 @@
 import { createMockRequest, dbChainMock, dbChainMockFns, resetDbChainMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const billingFlags = vi.hoisted(() => ({ isBillingEnabled: true }))
+
 const {
   mockCheckInternalApiKey,
   mockRecordUsage,
@@ -34,6 +36,8 @@ vi.mock('@/lib/copilot/request/otel', () => ({
 vi.mock('@/lib/billing/core/usage-log', () => ({
   recordUsage: mockRecordUsage,
   recordCumulativeUsage: mockRecordCumulativeUsage,
+  scaleUsageLogCost: (cost: number) => cost,
+  getUsageLogCostMultiplier: () => 1,
 }))
 
 vi.mock('@/lib/billing/threshold-billing', () => ({
@@ -41,7 +45,9 @@ vi.mock('@/lib/billing/threshold-billing', () => ({
 }))
 
 vi.mock('@/lib/core/config/env-flags', () => ({
-  isBillingEnabled: true,
+  get isBillingEnabled() {
+    return billingFlags.isBillingEnabled
+  },
 }))
 
 import { POST } from '@/app/api/billing/update-cost/route'
@@ -50,6 +56,7 @@ describe('POST /api/billing/update-cost — workspaceId attribution', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbChainMock()
+    billingFlags.isBillingEnabled = true
     mockCheckInternalApiKey.mockReturnValue({ success: true })
     mockRecordUsage.mockResolvedValue(undefined)
     mockRecordCumulativeUsage.mockResolvedValue({ billed: true, delta: 0.5, total: 0.5 })
@@ -74,6 +81,10 @@ describe('POST /api/billing/update-cost — workspaceId attribution', () => {
   })
 
   it('records cumulative cost via monotonic top-up when an idempotency key is present', async () => {
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([{ id: 'ws-1' }])
+      .mockResolvedValueOnce([{ id: 'chat-1' }])
+      .mockResolvedValueOnce([{ id: 'run-1' }])
     const res = await POST(
       createMockRequest(
         'POST',
@@ -83,6 +94,8 @@ describe('POST /api/billing/update-cost — workspaceId attribution', () => {
           model: 'claude-opus-4.8',
           source: 'workspace-chat',
           workspaceId: 'ws-1',
+          chatId: '00000000-0000-4000-8000-000000000001',
+          runId: '00000000-0000-4000-8000-000000000002',
           idempotencyKey: 'msg-1-billing',
           inputTokens: 461371,
           outputTokens: 1686,
@@ -96,12 +109,36 @@ describe('POST /api/billing/update-cost — workspaceId attribution', () => {
     expect(mockRecordCumulativeUsage.mock.calls[0][0]).toMatchObject({
       userId: 'user-1',
       workspaceId: 'ws-1',
+      chatId: 'chat-1',
+      runId: 'run-1',
       source: 'workspace-chat',
       model: 'claude-opus-4.8',
       cost: 0.4662453,
       eventKey: 'update-cost:msg-1-billing',
     })
     expect(mockCheckAndBillOverageThreshold).toHaveBeenCalledWith('user-1')
+  })
+
+  it('still records ledger rows when billing enforcement is disabled', async () => {
+    billingFlags.isBillingEnabled = false
+    const res = await POST(
+      createMockRequest(
+        'POST',
+        {
+          userId: 'user-1',
+          cost: 0.5,
+          model: 'gpt',
+          source: 'copilot',
+          idempotencyKey: 'msg-2-billing',
+        },
+        { 'x-api-key': 'internal' }
+      )
+    )
+    expect(res.status).toBe(200)
+    expect(mockRecordCumulativeUsage).toHaveBeenCalledTimes(1)
+    expect(mockCheckAndBillOverageThreshold).not.toHaveBeenCalled()
+    const body = await res.json()
+    expect(body.data.billingEnabled).toBe(false)
   })
 
   it('returns 409 and skips overage when the cumulative is not higher (duplicate flush)', async () => {
