@@ -85,6 +85,7 @@ export interface DeployGeneratedAppToVercelResult {
 
 interface VercelProjectLink {
   type?: string
+  org?: string
   repo?: string
   repoId?: number
 }
@@ -217,6 +218,25 @@ async function createVercelProject(
   throw new Error(vercelErrorMessage(data, status))
 }
 
+/**
+ * True when the project is already git-linked to the given "owner/name" GitHub repo,
+ * in which case the link call can be skipped.
+ */
+function isProjectLinkedToGitHubRepo(project: VercelProject, githubRepo: string): boolean {
+  const link = project.link
+  if (!link || link.type !== 'github' || !link.repoId) {
+    return false
+  }
+  if (!link.org || !link.repo) {
+    return true
+  }
+  return `${link.org}/${link.repo}`.toLowerCase() === githubRepo.toLowerCase()
+}
+
+/**
+ * Connects the project to a GitHub repo via POST /v9/projects/{id}/link —
+ * PATCH /v9/projects no longer accepts a gitRepository property.
+ */
 async function linkVercelProjectToGitHub(
   token: string,
   projectId: string,
@@ -224,20 +244,18 @@ async function linkVercelProjectToGitHub(
   teamId?: string
 ): Promise<VercelProject> {
   const body = JSON.stringify({
-    gitRepository: {
-      type: 'github',
-      repo: githubRepo,
-    },
+    type: 'github',
+    repo: githubRepo,
   })
 
   const { data, status } = await vercelRequest<VercelProject>(
     token,
-    `/v9/projects/${encodeURIComponent(projectId)}`,
-    { method: 'PATCH', body },
+    `/v9/projects/${encodeURIComponent(projectId)}/link`,
+    { method: 'POST', body },
     teamId
   )
 
-  if (status !== 200) {
+  if (status !== 200 && status !== 201) {
     throw new Error(vercelErrorMessage(data, status))
   }
 
@@ -429,19 +447,21 @@ export async function prepareVercelProjectForDeploy(
 
     let project = await createVercelProject(token, projectName, githubRepo, input.vercelTeamId)
 
-    try {
-      project = await linkVercelProjectToGitHub(
-        token,
-        project.id,
-        githubRepo,
-        input.vercelTeamId
-      )
-    } catch (error) {
-      logger.warn('Failed to refresh Vercel project GitHub link', {
-        projectId: project.id,
-        githubRepo,
-        error: toError(error).message,
-      })
+    if (!isProjectLinkedToGitHubRepo(project, githubRepo)) {
+      try {
+        project = await linkVercelProjectToGitHub(
+          token,
+          project.id,
+          githubRepo,
+          input.vercelTeamId
+        )
+      } catch (error) {
+        logger.warn('Failed to refresh Vercel project GitHub link', {
+          projectId: project.id,
+          githubRepo,
+          error: toError(error).message,
+        })
+      }
     }
 
     if (!project.link?.repoId) {
@@ -588,19 +608,21 @@ export async function deployPreparedVercelProject(
       }
     }
 
-    try {
-      project = await linkVercelProjectToGitHub(
-        token,
-        project.id,
-        resolvedGithubRepo,
-        input.vercelTeamId
-      )
-    } catch (error) {
-      logger.warn('Failed to refresh Vercel project GitHub link before deploy', {
-        projectId: project.id,
-        githubRepo: resolvedGithubRepo,
-        error: toError(error).message,
-      })
+    if (!isProjectLinkedToGitHubRepo(project, resolvedGithubRepo)) {
+      try {
+        project = await linkVercelProjectToGitHub(
+          token,
+          project.id,
+          resolvedGithubRepo,
+          input.vercelTeamId
+        )
+      } catch (error) {
+        logger.warn('Failed to refresh Vercel project GitHub link before deploy', {
+          projectId: project.id,
+          githubRepo: resolvedGithubRepo,
+          error: toError(error).message,
+        })
+      }
     }
 
     if (!gitHubRepoId) {
