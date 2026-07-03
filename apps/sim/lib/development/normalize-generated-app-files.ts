@@ -420,6 +420,10 @@ export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Ne
 - NEVER provision, replace, or reset the database connection — the app already has DATABASE_URL on Vercel
 - When editing prisma/schema.prisma: preserve every existing model and field unless the user explicitly asks to remove or rename them
 - ADD new models, fields, relations, and enums for new features; use optional fields (?) or defaults when extending existing models
+- The live database has rows — deploy runs plain \`prisma db push\` (no --force-reset, no --accept-data-loss), so any change it cannot execute against existing data FAILS the whole deploy:
+  - Every NEW field on an EXISTING model MUST be optional (?) or carry @default(...) — a new required column without a default fails with "Added the required column without a default value"
+  - New \`updatedAt DateTime @updatedAt\` fields on existing models MUST also include @default(now())
+  - NEVER remove or rename existing columns/models, change a column's type, or make an optional field required without @default
 - Do NOT drop tables, rename models in breaking ways, or replace the datasource block — prisma db push on deploy only adds schema changes
 - Keep lib/prisma.ts and the existing DATABASE_URL / .env.example pattern unchanged unless fixing a bug
 - New features must read/write through the same Prisma client against the existing database — never switch to localStorage or a new database

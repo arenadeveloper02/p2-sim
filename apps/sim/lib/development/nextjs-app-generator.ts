@@ -1238,10 +1238,16 @@ function startGitHubRepositoryPrepIfConfigured(params: {
 /**
  * Runs structure validation, fast compile checks (with LLM repair), then one final production build.
  */
+interface ValidateAndRepairOptions {
+  /** Deployed prisma/schema.prisma content — enables db push migration-safety checks on edits. */
+  originalPrismaSchema?: string
+}
+
 async function validateAndRepairUntilBuildPasses(
   outputDir: string,
   spec: LlmAppSpec,
-  userInput: string
+  userInput: string,
+  options: ValidateAndRepairOptions = {}
 ): Promise<BuildRepairResult> {
   let currentSpec = spec
   let buildOutput = ''
@@ -1262,6 +1268,7 @@ async function validateAndRepairUntilBuildPasses(
 
     const structureResult = validateGeneratedAppStructure(currentSpec.files, {
       requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+      originalPrismaSchema: options.originalPrismaSchema,
     })
 
     if (!structureResult.valid) {
@@ -1934,6 +1941,9 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
     const outputPath = relative(monorepoRoot, outputDir)
 
     const existingFiles = await readGeneratedAppFiles(outputDir)
+    const originalPrismaSchema = existingFiles.find(
+      (file) => file.path.replace(/\\/g, '/') === 'prisma/schema.prisma'
+    )?.content
     const generationStartedAt = Date.now()
     let spec = await requestAppEditsFromLlm(userInput, repoName, existingFiles, input.referenceImage)
     logger.info('LLM app edit finished', {
@@ -1960,7 +1970,9 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
       githubOwner: deployEnvEarly.githubOwner ?? localResult.githubOwner,
     })
 
-    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput)
+    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput, {
+      originalPrismaSchema,
+    })
     spec = buildRepair.spec
     spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
     buildValidated = buildRepair.buildValidated

@@ -11,6 +11,12 @@ const logger = createLogger('ValidateGeneratedAppStructure')
 
 export interface ValidateGeneratedAppStructureOptions {
   requiresDatabase?: boolean
+  /**
+   * prisma/schema.prisma content as it exists on the deployed app (edit flows only).
+   * When set, schema changes are checked for `prisma db push` safety against a
+   * non-empty live database.
+   */
+  originalPrismaSchema?: string
 }
 
 export interface ValidateGeneratedAppStructureResult {
@@ -515,6 +521,134 @@ function checkNextDocumentImports(files: GeneratedAppFile[]): string[] {
   return issues
 }
 
+interface PrismaFieldInfo {
+  type: string
+  isOptional: boolean
+  isList: boolean
+  hasDefault: boolean
+  attributes: string
+}
+
+type PrismaModelMap = Map<string, Map<string, PrismaFieldInfo>>
+
+const PRISMA_MODEL_BLOCK_PATTERN = /model\s+(\w+)\s*\{([\s\S]*?)\n\}/g
+const PRISMA_FIELD_LINE_PATTERN = /^(\w+)\s+(\w+)(\[\])?(\?)?\s*(.*)$/
+
+function parsePrismaModels(schema: string): PrismaModelMap {
+  const models: PrismaModelMap = new Map()
+
+  for (const match of schema.matchAll(PRISMA_MODEL_BLOCK_PATTERN)) {
+    const modelName = match[1]
+    const fields = new Map<string, PrismaFieldInfo>()
+
+    for (const rawLine of match[2].split('\n')) {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('//') || line.startsWith('@@')) {
+        continue
+      }
+
+      const fieldMatch = PRISMA_FIELD_LINE_PATTERN.exec(line)
+      if (!fieldMatch) {
+        continue
+      }
+
+      const attributes = fieldMatch[5] ?? ''
+      fields.set(fieldMatch[1], {
+        type: fieldMatch[2],
+        isList: Boolean(fieldMatch[3]),
+        isOptional: Boolean(fieldMatch[4]),
+        hasDefault: attributes.includes('@default('),
+        attributes,
+      })
+    }
+
+    models.set(modelName, fields)
+  }
+
+  return models
+}
+
+/**
+ * Diffs the edited prisma/schema.prisma against the deployed schema and flags changes
+ * that make `prisma db push` fail against a live database with existing rows:
+ * new required columns without @default, dropped/retyped columns, and dropped models.
+ */
+function checkPrismaSchemaMigrationSafety(
+  files: GeneratedAppFile[],
+  originalSchema: string | undefined
+): string[] {
+  if (!originalSchema) {
+    return []
+  }
+
+  const newSchemaFile = files.find(
+    (file) => normalizePath(file.path) === 'prisma/schema.prisma'
+  )
+  if (!newSchemaFile || newSchemaFile.content === originalSchema) {
+    return []
+  }
+
+  const oldModels = parsePrismaModels(originalSchema)
+  const newModels = parsePrismaModels(newSchemaFile.content)
+  const issues: string[] = []
+
+  for (const [modelName, oldFields] of oldModels) {
+    const newFields = newModels.get(modelName)
+    if (!newFields) {
+      issues.push(
+        `prisma/schema.prisma: model ${modelName} was removed — prisma db push cannot drop tables with data on deploy. Restore the model (add new models instead of replacing existing ones)`
+      )
+      continue
+    }
+
+    for (const [fieldName, oldField] of oldFields) {
+      const newField = newFields.get(fieldName)
+      if (!newField) {
+        /** Relation fields (typed as another model) create no column, so removing them is safe. */
+        if (!oldModels.has(oldField.type)) {
+          issues.push(
+            `prisma/schema.prisma: field ${modelName}.${fieldName} was removed — prisma db push cannot drop columns with data on deploy. Restore the field (deprecate in code instead of deleting from the schema)`
+          )
+        }
+        continue
+      }
+
+      if (newField.type !== oldField.type && !oldModels.has(oldField.type) && !newModels.has(newField.type)) {
+        issues.push(
+          `prisma/schema.prisma: field ${modelName}.${fieldName} changed type ${oldField.type} -> ${newField.type} — prisma db push cannot cast existing rows on deploy. Keep the original type or add a NEW optional field instead`
+        )
+      }
+
+      if (oldField.isOptional && !newField.isOptional && !newField.hasDefault) {
+        issues.push(
+          `prisma/schema.prisma: field ${modelName}.${fieldName} changed from optional to required without @default — existing NULL rows make prisma db push fail. Keep it optional or add @default(...)`
+        )
+      }
+    }
+
+    for (const [fieldName, newField] of newFields) {
+      if (oldFields.has(fieldName)) {
+        continue
+      }
+      /** Relation fields (typed as another model) and lists create no column, so they are safe. */
+      if (newModels.has(newField.type) || newField.isList) {
+        continue
+      }
+      if (!newField.isOptional && !newField.hasDefault) {
+        const suggestion =
+          newField.type === 'DateTime'
+            ? 'add @default(now()) (keep @updatedAt if present)'
+            : 'add @default(...) or make it optional with ?'
+        issues.push(
+          `prisma/schema.prisma: new required field ${modelName}.${fieldName} has no @default — the live ${modelName} table has rows, so prisma db push fails with "Added the required column without a default value". Fix: ${suggestion}`
+        )
+      }
+    }
+  }
+
+  return issues
+}
+
 function checkTailwindConfig(files: GeneratedAppFile[]): string[] {
   const pathSet = new Set(files.map((file) => normalizePath(file.path)))
   if (TAILWIND_CONFIG_PATHS.some((path) => pathSet.has(path))) {
@@ -559,6 +693,7 @@ export function validateGeneratedAppStructure(
     ...checkNextDocumentImports(files),
     ...checkTailwindConfig(files),
     ...checkBuildScript(files),
+    ...checkPrismaSchemaMigrationSafety(files, options.originalPrismaSchema),
   ]
 
   if (issues.length > 0) {
