@@ -14,9 +14,16 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 /**
  * Removes legacy `[Tool name: state]` markers that must not appear in user-facing text.
+ *
+ * @param options.trim When `false`, preserves leading/trailing whitespace — required
+ *   for streaming deltas where spaces live on chunk boundaries. Defaults to `true`.
  */
-export function stripLeakedToolMarkers(text: string): string {
-  return text.replace(LEAKED_TOOL_MARKER_PATTERN, '').replace(/\n{3,}/g, '\n\n').trim()
+export function stripLeakedToolMarkers(
+  text: string,
+  options?: { trim?: boolean }
+): string {
+  const stripped = text.replace(LEAKED_TOOL_MARKER_PATTERN, '').replace(/\n{3,}/g, '\n\n')
+  return options?.trim === false ? stripped : stripped.trim()
 }
 
 /**

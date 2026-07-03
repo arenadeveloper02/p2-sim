@@ -13,6 +13,11 @@ describe('stripLeakedToolMarkers', () => {
       stripLeakedToolMarkers('[Tool generate_image: success] [Tool open_resource: success]')
     ).toBe('')
   })
+
+  it('preserves boundary whitespace when trim is disabled for stream deltas', () => {
+    expect(stripLeakedToolMarkers(' can ', { trim: false })).toBe(' can ')
+    expect(stripLeakedToolMarkers('Now I ', { trim: false })).toBe('Now I ')
+  })
 })
 
 describe('synthesizeAssistantSummaryFromTools', () => {

@@ -250,7 +250,7 @@ export async function* runLocalCopilotAgent(
       signal: params.signal,
     })) {
       if (chunk.type === 'text' && chunk.content) {
-        const cleaned = stripLeakedToolMarkers(chunk.content)
+        const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
         if (!cleaned) continue
         assistantText += cleaned
         yield { type: 'text_delta', content: cleaned }
