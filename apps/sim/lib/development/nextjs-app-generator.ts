@@ -26,6 +26,7 @@ import {
   GENERATED_APP_COMPONENT_FILES_GUIDANCE,
   GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE,
   GENERATED_APP_JSX_GUIDANCE,
+  GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE,
   GENERATED_APP_README_GUIDANCE,
   GENERATED_APP_REFERENCE_PDF_GUIDANCE,
   GENERATED_APP_REPO_SUMMARY_GUIDANCE,
@@ -652,6 +653,7 @@ Constraints:
 - ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
 - ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
+- ${GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
@@ -680,6 +682,7 @@ Constraints:
 - ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
 - ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
+- ${GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
@@ -707,6 +710,7 @@ Constraints:
 - ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
 - ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
+- ${GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
@@ -959,6 +963,7 @@ ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 Fix ALL errors in the build log so the app passes: npm install, prisma generate when Prisma is used, and next build with ZERO compile or prerender errors.
 Fix ALL structure validation issues listed in the build log, including missing @/ imports, props interfaces, "use client" placement, Prisma usage, Tailwind config, and build scripts.
 When the build log says "Missing file for import @/components/X", ADD components/X.tsx with full UI — every imported component must exist in files[].
+When the build log contains "Html should not be imported outside of pages/_document" or "Error occurred prerendering page \\"/404\\"", REPLACE app/not-found.tsx with the canonical template in APP_ROUTER_DOCUMENT guidance (plain <main> only — no next/document, no <Html>, no <html>/<body>); also fix any components/** file that still uses Html/Head/Main/NextScript.
 Pay special attention to: TS2305 "has no exported member" (export the symbol from the module that defines it — e.g. add getRecentTasks/getUserById to lib/actions.ts when pages import them; add maskKey/encrypt/decrypt to lib/crypto.ts when API routes import from @/lib/crypto), TS2741 Property 'id' is missing (every AgentInfo object in lib/agents.ts must include id when lib/types.ts requires it — use the same value as slug), TS2322 IntrinsicAttributes & XxxClientProps (page prop names must match XxxClientProps fields exactly — include ALL props such as executions and hasApiKey; update page AND component together), TS2322 Type 'unknown' is not assignable to type 'Key' | 'ReactNode' | 'string | undefined' (replace unknown props and .map() params with concrete lib/types.ts interfaces — e.g. AgentField with key/label/value: string; never fields: unknown[] in AgentClient), TS2538 Type 'unknown' cannot be used as an index type / TS2464 computed property name (index keys must be string — type output maps as Record<string, string> not unknown), TS2739 JwtPayload missing UserData fields (use getUserById(auth.id), do not pass getAuthUser() result as UserData), TS1109 "Expression expected" (usually a split import — add \`import {\` before orphan specifiers after \`} from 'package';\`), TS2459 "declares X locally, but it is not exported" (import the type from @/lib/types, not @/lib/actions), TS2304 "Cannot find name" (add missing import type from @/lib/types), TS2307 Cannot find module (add the imported package to package.json dependencies — e.g. lucide-react, recharts, openai), TS2345 Date not assignable to string (widen formatDate/formatRelativeTime helpers to accept string | Date, or pass createdAt.toISOString()), TS1005 "'>' expected" (fix JSX — use return ( with opening tag, never return newline then <), "Html should not be imported outside of pages/_document" (remove ALL next/document imports from app/** — rewrite app/not-found.tsx and app/error.tsx with plain <div>/<main> markup; only app/layout.tsx renders <html> and <body>), missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
 If the build log flags localStorage/sessionStorage usage, replace every occurrence with Prisma server actions or API routes — NEVER store app data in localStorage.
 ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
@@ -969,6 +974,7 @@ ${GENERATED_APP_IMPORT_GUIDANCE}
 ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
 ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 ${GENERATED_APP_JSX_GUIDANCE}
+${GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE}
 ${GENERATED_APP_DATABASE_GUIDANCE}
 ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 ${GENERATED_APP_AUTH_GUIDANCE}
@@ -1561,6 +1567,7 @@ Constraints:
 - ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
 - ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
+- ${GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE}
 - ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}

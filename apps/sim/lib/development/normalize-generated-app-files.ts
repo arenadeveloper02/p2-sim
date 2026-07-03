@@ -85,7 +85,7 @@ export const GENERATED_APP_TYPESCRIPT_GUIDANCE = `TypeScript and Next.js structu
 export const GENERATED_APP_ZERO_ERRORS_GUIDANCE = `Zero-defect bar (MANDATORY — generate, edit, and repair):
 - Output MUST have zero syntax errors, zero TypeScript semantic errors, and zero Next.js compile/prerender failures — validation rejects the app otherwise
 - Arena Copilot runs automated gates before GitHub push: structure checks on all files, then npm install + prisma generate + next build (E2B when configured) or local tsc --noEmit
-- Arena Copilot does NOT post-process your source files to fix imports, exports, types, auth/crypto helpers, Client prop interfaces, split imports, or next/document usage — output correct TypeScript in the JSON response
+- Aren Copilot does NOT post-process your source files to fix imports, exports, types, auth/crypto helpers, Client prop interfaces, split imports, or next/document usage — output correct TypeScript in the JSON response
 - Never submit stubs, placeholders, split imports, dangling @/ imports, or pages that import components missing from files[]
 - Syntax: valid TS/TSX; closed JSX tags; complete \`import ... from '...'\` statements; \`return (\` or \`return <\` on one line; "use client" as the first line when hooks/events are used
 - Semantics: strict types (no any, no @ts-ignore); page and Client prop names match exactly; every type from @/lib/types; server actions from @/lib/actions; Prisma queries use schema field names
@@ -104,6 +104,7 @@ export const GENERATED_APP_VALIDATION_GUIDANCE = `Pre-build validation requireme
 - No unused imports, missing exports, duplicate default exports, or bare type names without import type
 - Types must be imported from the module that exports them — lib/types.ts for interfaces; never import a type from lib/actions.ts unless actions re-exports it
 - JSX: return (\` or \`return <\` on one line — never \`return\` newline then \`<\`; all tags closed; "use client" first line in Client files
+- App Router document shell: only app/layout.tsx uses \`<html>\` and \`<body>\`; app/not-found.tsx and app/error.tsx use plain \`<main>\`/\`<div>\` — never next/document or PascalCase \`<Html>\`
 - Include Prisma files and dependencies only when requiresDatabase is true; static apps must not include prisma/ or @prisma/client
 - Include tailwind.config.ts and package.json scripts.build
 - NEVER use localStorage.setItem or sessionStorage.setItem to store app data — when requiresDatabase is true use Prisma server actions; when requiresDatabase is false keep state in-memory with useState only for UI interactions, never for cross-session persistence
@@ -153,11 +154,13 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
 11. Missing server actions (TS2305 has no exported member):
    - Every \`import { getFoo } from '@/lib/actions'\` MUST match an \`export async function getFoo\` in lib/actions.ts
    - When a page needs getRecentTasks, getDashboardStats, etc., ADD the function to lib/actions.ts in the same response — never import actions that do not exist
-12. next/document in App Router (next build prerender error on /404):
-   - NEVER import \`Html\`, \`Head\`, \`Main\`, or \`NextScript\` from \`next/document\` in app/** files — that API is Pages Router _document only
-   - app/layout.tsx owns \`<html>\` and \`<body>\` via next/font + Tailwind — nowhere else
-   - app/not-found.tsx and app/error.tsx use plain JSX (\`<div>\`, \`<main>\`, \`<h1>\`) — NOT \`<Html>\` from next/document
-   - WRONG: \`import { Html } from 'next/document'\` in app/not-found.tsx — causes "Html should not be imported outside of pages/_document" at build time
+12. next/document in App Router (next build prerender error on /404 — #1 repair failure if ignored):
+   - NEVER import \`Html\`, \`Head\`, \`Main\`, or \`NextScript\` from \`next/document\` — Pages Router \`pages/_document\` only; this repo is App Router
+   - NEVER use PascalCase \`<Html>\`, \`<Head>\`, \`<Main>\`, or \`<NextScript>\` JSX tags anywhere — even without an import (structure validation and next build both fail)
+   - ONLY app/layout.tsx renders the document shell with lowercase \`<html>\` and \`<body>\` — nowhere else
+   - app/not-found.tsx (prerendered as /404) and app/error.tsx: plain \`<main>\` or \`<div>\` only — NO \`<html>\`, NO \`<body>\`, NO next/document
+   - WRONG: \`import { Html } from 'next/document'\` or \`return <Html><body>404</body></Html>\` in app/not-found.tsx
+   - RIGHT: see GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE canonical templates — replace the entire file on repair, do not patch imports only
 13. lib/crypto exports (TS2305 has no exported member 'maskKey'):
    - lib/crypto.ts is the ONLY crypto module — export EVERY symbol imported from @/lib/crypto in the same response
    - Common exports: encrypt, decrypt, encryptApiKey, decryptApiKey, maskKey (redacts API keys for display)
@@ -256,6 +259,44 @@ export const GENERATED_APP_JSX_GUIDANCE = `JSX and TSX syntax (zero TS1005 / TS1
 - In .tsx files, wrap multiline JSX in parentheses: \`return (\n  <div>...</div>\n)\`
 - Do not use TypeScript generics with a bare \`<T>\` at the start of a line in .tsx without a trailing comma (\`<T,>\`) — prefer explicit prop interfaces instead of inline generic components
 - App Router: NEVER import from \`next/document\` in app/** — no \`Html\`, \`Head\`, \`Main\`, or \`NextScript\`; only app/layout.tsx renders \`<html>\` and \`<body>\`; app/not-found.tsx uses a simple \`<div>\` or \`<main>\` layout`
+
+export const GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE = `App Router document shell (CRITICAL — next build fails prerendering /404 if violated):
+- App Router ONLY — \`next/document\` (\`Html\`, \`Head\`, \`Main\`, \`NextScript\`) is forbidden in every file (app/**, components/**, lib/**)
+- FORBIDDEN: \`import { Html, Head, Main, NextScript } from 'next/document'\`; PascalCase JSX \`<Html>\`, \`<Head>\`, \`<Main>\`, \`<NextScript>\` — including tags without an import line
+- ONLY app/layout.tsx may render \`<html lang="en">\` and \`<body>\` (lowercase native elements + next/font + Tailwind)
+- app/not-found.tsx is prerendered as /404 — it MUST NOT import next/document and MUST NOT wrap content in \`<html>\`, \`<body>\`, or \`<Html>\`
+- app/error.tsx and any component imported by not-found/error routes must follow the same rule
+- Build errors "Html should not be imported outside of pages/_document" and "Error occurred prerendering page \\"/404\\"" mean rewrite app/not-found.tsx entirely (and fix any shared component still using Html/Head/Main/NextScript) — partial import removal is not enough
+
+Canonical app/not-found.tsx (use this structure; customize copy/classes only):
+export default function NotFound() {
+  return (
+    <main className="flex min-h-[50vh] flex-col items-center justify-center px-4">
+      <h1 className="text-2xl font-semibold">Page not found</h1>
+      <p className="mt-2 text-sm text-muted-foreground">The page you requested does not exist.</p>
+    </main>
+  )
+}
+
+Canonical app/error.tsx ("use client" MUST be first line; plain markup only — no html/body shell):
+"use client"
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  return (
+    <main className="flex min-h-[50vh] flex-col items-center justify-center px-4">
+      <h1 className="text-2xl font-semibold">Something went wrong</h1>
+      <button type="button" className="mt-4 rounded px-4 py-2" onClick={() => reset()}>
+        Try again
+      </button>
+    </main>
+  )
+}`
 
 export const GENERATED_APP_STYLING_GUIDANCE = `Fonts and CSS:
 - NEVER use @import url('https://fonts.googleapis.com/...') or any external font CDN URL in .css files
