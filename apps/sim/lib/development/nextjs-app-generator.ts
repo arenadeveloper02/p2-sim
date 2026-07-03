@@ -1064,13 +1064,13 @@ async function generateAppSpecWithLlm(
   }
 }
 
-/** Per-file and total char budgets for repair prompt file context. */
+/** Per-file and total char budgets for repair/edit prompt file context. */
 const MAX_REPAIR_CONTEXT_FILE_CHARS = 12_000
 const MAX_REPAIR_CONTEXT_TOTAL_CHARS = 260_000
 
 /**
- * Serializes the current file set for the repair prompt so fixes are grounded
- * in the real code instead of re-guessed from the app description.
+ * Serializes the current file set for repair and edit prompts so changes are
+ * grounded in the real code instead of re-guessed from the app description.
  */
 function buildRepairFileContext(files: GeneratedAppFile[]): string {
   const skipPaths = new Set<string>([GENERATED_APP_REPO_SUMMARY_PATH, 'README.md', 'next-env.d.ts'])
@@ -1822,6 +1822,8 @@ const EDIT_APP_SYSTEM_PROMPT = `You are a senior full-stack engineer editing an 
 
 Respond ONLY with JSON matching the provided schema.
 
+The user message contains the CURRENT contents of the repository files. Treat them as the source of truth: when you modify a file, start from its existing content and apply the requested change — never regenerate a file from scratch based on its name or the summary. Keep every cross-file contract (types, exports, prop names, Prisma fields, function signatures) consistent with the files you are NOT changing.
+
 ${GENERATED_APP_GENERATION_MANDATES}
 
 Constraints:
@@ -1922,32 +1924,21 @@ function buildEditReferenceContext(
     filesWithSummary.find((file) => file.path === GENERATED_APP_REPO_SUMMARY_PATH)?.content ??
     buildRepoSummaryContent(filesWithSummary, summaryOptions)
 
-  const supplementalPaths = [
-    'prisma/schema.prisma',
-    'lib/types.ts',
-    'lib/actions.ts',
-    'lib/auth.ts',
-  ]
-  const supplementalFiles = existingFiles
-    .filter((file) => supplementalPaths.includes(file.path.replace(/\\/g, '/')))
-    .map((file) => `--- ${file.path} ---\n${file.content}`)
-    .join('\n\n')
-
   const fileIndex = existingFiles
     .map((file) => file.path.replace(/\\/g, '/'))
     .sort()
     .join('\n')
-
-  const supplementalSection = supplementalFiles
-    ? `\n\nKey shared files (for schema/types/actions context):\n${supplementalFiles}`
-    : ''
 
   return `Repository summary (read this first — primary reference for architecture, routes, and scope):
 
 ${repoSummary}
 
 Complete file index (${existingFiles.length} paths):
-${fileIndex}${supplementalSection}`
+${fileIndex}
+
+Current repository files (source of truth — base every edit on this exact code; keep cross-file contracts consistent with files you do not change):
+
+${buildRepairFileContext(existingFiles)}`
 }
 
 async function requestAppEditsFromLlm(
