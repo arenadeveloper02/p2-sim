@@ -66,9 +66,9 @@ import { supportsTemperature } from '@/providers/utils'
 const logger = createLogger('NextjsAppGenerator')
 
 const GENERATED_APPS_DIR = 'generated-apps'
-/** Creation (new apps): Claude Fable. Edit/repair: Claude Opus. Override via DEVELOPMENT_ANTHROPIC_CREATION_MODEL / DEVELOPMENT_ANTHROPIC_EDIT_MODEL. */
+/** Creation and edit/repair both use Claude Fable. Override via DEVELOPMENT_ANTHROPIC_CREATION_MODEL / DEVELOPMENT_ANTHROPIC_EDIT_MODEL. */
 const DEFAULT_CREATION_MODEL = 'claude-fable-5'
-const DEFAULT_EDIT_MODEL = 'claude-opus-4-8'
+const DEFAULT_EDIT_MODEL = 'claude-fable-5'
 
 type DevelopmentModelPurpose = 'creation' | 'edit'
 
@@ -393,6 +393,12 @@ interface NormalizeAppSpecOptions {
   preserveAllFiles?: boolean
   /** Recorded in REPO_SUMMARY.md when the spec is normalized. */
   latestUserRequest?: string
+  /**
+   * Skip file patching and scaffold injection — use on PARTIAL file sets (repair
+   * responses) that are merged into the full spec and re-normalized afterwards,
+   * so injected fallbacks (schema, README) cannot clobber real files on merge.
+   */
+  skipFileNormalization?: boolean
 }
 
 /**
@@ -473,14 +479,16 @@ function normalizeAppSpec(
     )
   }
 
-  parsed.files = normalizeGeneratedAppFiles(parsed.files, {
-    requiresDatabase: parsed.requiresDatabase,
-    appName: parsed.appName,
-    description: parsed.description,
-    features: parsed.features,
-    repoName: parsed.repoName,
-    latestUserRequest: options.latestUserRequest,
-  })
+  if (!options.skipFileNormalization) {
+    parsed.files = normalizeGeneratedAppFiles(parsed.files, {
+      requiresDatabase: parsed.requiresDatabase,
+      appName: parsed.appName,
+      description: parsed.description,
+      features: parsed.features,
+      repoName: parsed.repoName,
+      latestUserRequest: options.latestUserRequest,
+    })
+  }
 
   return parsed
 }
@@ -1165,6 +1173,7 @@ Return ONLY the files you changed or added (complete final contents each) so the
 
   const repaired = await requestFullAppSpecFromLlm(repairSystemPrompt, userPrompt, spec.repoName, {
     preserveAllFiles: spec.files.length > MAX_GENERATED_FILES,
+    skipFileNormalization: true,
   })
 
   const mergedFiles = mergeEditedFiles(spec.files, repaired.files)
@@ -1377,6 +1386,98 @@ async function validateAndRepairUntilBuildPasses(
   }
 }
 
+const DB_PUSH_UNEXECUTABLE_PATTERN =
+  /cannot be executed|without a default value|--force-reset|not possible to execute/i
+const MAX_DB_SCHEMA_REPAIR_ROUNDS = 2
+
+interface DatabaseSyncWithRepairResult {
+  spec: LlmAppSpec
+  applied: boolean
+  /** Set when the live database rejects the schema even after repairs — deploy must be blocked. */
+  blockingError?: string
+}
+
+/**
+ * Applies the Prisma schema to the live Neon database before git push. When db push
+ * reports an unexecutable change (e.g. a new required column without @default on a
+ * table with rows), requests LLM schema repair and retries — this is the only check
+ * that can catch drift between the committed schema and the live database.
+ */
+async function syncDatabaseWithSchemaRepair(params: {
+  outputDir: string
+  spec: LlmAppSpec
+  userInput: string
+  repoName: string
+  databaseUrl?: string
+  neonProjectId?: string
+  neonApiKey?: string
+}): Promise<DatabaseSyncWithRepairResult> {
+  let spec = params.spec
+
+  for (let attempt = 0; attempt <= MAX_DB_SCHEMA_REPAIR_ROUNDS; attempt++) {
+    const result = await prepareGeneratedAppForDatabaseDeploy({
+      outputDir: params.outputDir,
+      files: spec.files,
+      summaryOptions: {
+        appName: spec.appName,
+        description: spec.description,
+        features: spec.features,
+        repoName: params.repoName,
+        requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+        latestUserRequest: params.userInput,
+        neonProjectId: params.neonProjectId,
+      },
+      databaseUrl: params.databaseUrl,
+      neonProjectId: params.neonProjectId,
+      neonApiKey: params.neonApiKey,
+    })
+
+    if (!result.error) {
+      return { spec, applied: result.applied }
+    }
+
+    const output = [result.output, result.error].filter(Boolean).join('\n')
+    if (!DB_PUSH_UNEXECUTABLE_PATTERN.test(output)) {
+      logger.warn('Database schema sync failed (non-schema error) — continuing, Vercel build will retry db push', {
+        repoName: params.repoName,
+        error: result.error,
+      })
+      return { spec, applied: false }
+    }
+
+    if (attempt >= MAX_DB_SCHEMA_REPAIR_ROUNDS) {
+      return {
+        spec,
+        applied: false,
+        blockingError: `prisma db push cannot apply the schema to the live database (deploy blocked to avoid a guaranteed Vercel invalid_db_setup failure):\n${truncateBuildLog(output)}`,
+      }
+    }
+
+    logger.warn('Live database rejected schema change, requesting LLM schema repair', {
+      repoName: params.repoName,
+      attempt: attempt + 1,
+      maxAttempts: MAX_DB_SCHEMA_REPAIR_ROUNDS,
+    })
+
+    spec = await repairAppSpecWithLlm(
+      spec,
+      [
+        'prisma db push against the LIVE database failed — the tables have existing rows and the schema change cannot be executed:',
+        truncateBuildLog(output),
+        '',
+        'Fix prisma/schema.prisma so prisma db push succeeds WITHOUT --force-reset and WITHOUT dropping data:',
+        '- Every new required column named in the error MUST get @default(...) — DateTime columns: @default(now()) (keep @updatedAt if present); String/Int/Boolean/enum: a sensible domain default — or become optional with ?',
+        '- Do NOT remove or rename existing models or columns, and do NOT change existing column types',
+        '- Keep lib/actions.ts and lib/types.ts aligned with the corrected schema',
+      ].join('\n'),
+      params.userInput
+    )
+    await writeAppFiles(params.outputDir, spec.files)
+  }
+
+  return { spec, applied: false }
+}
+
 /**
  * Generates a production-ready Next.js app from user input and writes it under generated-apps/.
  */
@@ -1527,75 +1628,67 @@ export async function generateNextjsApp(
         if (!prepareResult.success || !vercelProjectId || !preparedVercelProjectName) {
           vercelDeployError = prepareResult.error ?? 'Failed to prepare Vercel project'
         } else {
-          const dbPrepareResult = await prepareGeneratedAppForDatabaseDeploy({
+          const dbSyncResult = await syncDatabaseWithSchemaRepair({
             outputDir,
-            files: spec.files,
-            summaryOptions: {
-              appName: spec.appName,
-              description: spec.description,
-              features: spec.features,
-              repoName,
-              requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
-              latestUserRequest: userInput,
-              neonProjectId: prepareResult.neonProjectId,
-            },
+            spec,
+            userInput,
+            repoName,
             databaseUrl: prepareResult.databaseUrl,
             neonProjectId: prepareResult.neonProjectId,
             neonApiKey,
           })
+          spec = dbSyncResult.spec
 
-          if (dbPrepareResult.error) {
-            logger.warn('Database schema sync before deploy failed', {
-              repoName,
-              error: dbPrepareResult.error,
-            })
-          }
-
-          logger.info('Pushing generated app to GitHub', { repoName })
-          const pushResult = await pushGeneratedAppToGitHub({
-            outputDir,
-            repoName,
-            description: spec.description,
-            githubToken,
-            githubOwner,
-            privateRepo: input.privateRepo === true,
-          })
-          gitPushed = pushResult.success
-          githubHtmlUrl = pushResult.htmlUrl ?? githubHtmlUrl
-          githubCloneUrl = pushResult.cloneUrl ?? githubCloneUrl
-          githubOwner = pushResult.owner ?? githubOwner
-          githubRepoName = pushResult.repoName ?? githubRepoName
-          gitPushError = pushResult.error
-
-          if (!gitPushed || !githubOwner || !githubRepoName) {
-            vercelDeployError =
-              gitPushError ??
-              'Vercel deploy requires a successful GitHub push. Check DEVELOPMENT_GITHUB_TOKEN in .env and git push errors.'
+          if (dbSyncResult.blockingError) {
+            vercelDeployError = dbSyncResult.blockingError
+            databaseProvisionError = dbSyncResult.blockingError
           } else {
-            logger.info('Deploying to Vercel (can take several minutes)', { repoName })
-            const deployResult = await deployPreparedVercelProject({
-              vercelToken,
-              vercelProjectId,
-              vercelProjectName: preparedVercelProjectName,
-              githubOwner,
-              githubRepoName,
-              githubToken,
+            logger.info('Pushing generated app to GitHub', { repoName })
+            const pushResult = await pushGeneratedAppToGitHub({
               outputDir,
-              vercelTeamId,
-              gitRef: pushResult.defaultBranch ?? 'main',
-              gitCommitSha: pushResult.commitSha,
-              gitHubRepoId: pushResult.repoId,
-              databaseProvisioned,
-              neonProjectId,
+              repoName,
+              description: spec.description,
+              githubToken,
+              githubOwner,
+              privateRepo: input.privateRepo === true,
             })
+            gitPushed = pushResult.success
+            githubHtmlUrl = pushResult.htmlUrl ?? githubHtmlUrl
+            githubCloneUrl = pushResult.cloneUrl ?? githubCloneUrl
+            githubOwner = pushResult.owner ?? githubOwner
+            githubRepoName = pushResult.repoName ?? githubRepoName
+            gitPushError = pushResult.error
 
-            vercelDeployed = deployResult.success
-            vercelUrl = deployResult.vercelUrl
-            vercelDeploymentUrl = deployResult.vercelDeploymentUrl
-            vercelProjectId = deployResult.vercelProjectId ?? vercelProjectId
-            vercelDeploymentId = deployResult.vercelDeploymentId
-            vercelInspectorUrl = deployResult.vercelInspectorUrl
-            vercelDeployError = deployResult.error
+            if (!gitPushed || !githubOwner || !githubRepoName) {
+              vercelDeployError =
+                gitPushError ??
+                'Vercel deploy requires a successful GitHub push. Check DEVELOPMENT_GITHUB_TOKEN in .env and git push errors.'
+            } else {
+              logger.info('Deploying to Vercel (can take several minutes)', { repoName })
+              const deployResult = await deployPreparedVercelProject({
+                vercelToken,
+                vercelProjectId,
+                vercelProjectName: preparedVercelProjectName,
+                githubOwner,
+                githubRepoName,
+                githubToken,
+                outputDir,
+                vercelTeamId,
+                gitRef: pushResult.defaultBranch ?? 'main',
+                gitCommitSha: pushResult.commitSha,
+                gitHubRepoId: pushResult.repoId,
+                databaseProvisioned,
+                neonProjectId,
+              })
+
+              vercelDeployed = deployResult.success
+              vercelUrl = deployResult.vercelUrl
+              vercelDeploymentUrl = deployResult.vercelDeploymentUrl
+              vercelProjectId = deployResult.vercelProjectId ?? vercelProjectId
+              vercelDeploymentId = deployResult.vercelDeploymentId
+              vercelInspectorUrl = deployResult.vercelInspectorUrl
+              vercelDeployError = deployResult.error
+            }
           }
         }
       }
@@ -2068,79 +2161,71 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
         if (!prepareResult.success || !vercelProjectId || !prepareResult.vercelProjectName) {
           vercelDeployError = prepareResult.error ?? 'Failed to prepare Vercel project'
         } else {
-          const dbPrepareResult = await prepareGeneratedAppForDatabaseDeploy({
+          const dbSyncResult = await syncDatabaseWithSchemaRepair({
             outputDir,
-            files: spec.files,
-            summaryOptions: {
-              appName: spec.appName,
-              description: spec.description,
-              features: spec.features,
-              repoName,
-              requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
-              latestUserRequest: userInput,
-              neonProjectId: prepareResult.neonProjectId,
-            },
+            spec,
+            userInput,
+            repoName,
             databaseUrl: prepareResult.databaseUrl,
             neonProjectId: prepareResult.neonProjectId,
             neonApiKey,
           })
+          spec = dbSyncResult.spec
 
-          if (dbPrepareResult.error) {
-            logger.warn('Database schema sync before edit deploy failed', {
-              repoName,
-              error: dbPrepareResult.error,
-            })
-          }
-
-          logger.info('Pushing edited app to GitHub', { repoName })
-          const pushResult = await pushRepoChangesToGitHub({
-            outputDir,
-            repoName,
-            githubToken,
-            githubOwner,
-            commitMessage: `${userInput.slice(0, 72)}`,
-          })
-
-          gitPushed = pushResult.success && pushResult.pushed === true
-          githubHtmlUrl = pushResult.htmlUrl ?? githubHtmlUrl
-          githubCloneUrl = pushResult.cloneUrl ?? githubCloneUrl
-          githubOwner = pushResult.owner ?? githubOwner
-          githubRepoName = pushResult.repoName ?? githubRepoName
-          gitPushError = pushResult.error
-
-          if (!gitPushed || !githubOwner || !githubRepoName || !pushResult.commitSha) {
-            vercelDeployError =
-              gitPushError ??
-              'Vercel deploy requires a successful GitHub push with a new commit. Check DEVELOPMENT_GITHUB_TOKEN in .env and git push errors.'
+          if (dbSyncResult.blockingError) {
+            vercelDeployError = dbSyncResult.blockingError
+            databaseProvisionError = dbSyncResult.blockingError
           } else {
-            logger.info('Deploying edited app to Vercel', {
-              repoName,
-              commitSha: pushResult.commitSha,
-              repoId: pushResult.repoId,
-            })
-            const deployResult = await deployPreparedVercelProject({
-              vercelToken,
-              vercelProjectId,
-              vercelProjectName: prepareResult.vercelProjectName,
-              githubOwner,
-              githubRepoName,
-              githubToken,
+            logger.info('Pushing edited app to GitHub', { repoName })
+            const pushResult = await pushRepoChangesToGitHub({
               outputDir,
-              vercelTeamId,
-              gitRef: pushResult.defaultBranch ?? 'main',
-              gitCommitSha: pushResult.commitSha,
-              gitHubRepoId: pushResult.repoId,
-              databaseProvisioned,
-              neonProjectId,
+              repoName,
+              githubToken,
+              githubOwner,
+              commitMessage: `${userInput.slice(0, 72)}`,
             })
 
-            vercelDeployed = deployResult.success
-            vercelUrl = deployResult.vercelUrl
-            vercelDeploymentUrl = deployResult.vercelDeploymentUrl
-            vercelProjectId = deployResult.vercelProjectId ?? vercelProjectId
-            vercelDeploymentId = deployResult.vercelDeploymentId
-            vercelInspectorUrl = deployResult.vercelInspectorUrl
-            vercelDeployError = deployResult.error
+            gitPushed = pushResult.success && pushResult.pushed === true
+            githubHtmlUrl = pushResult.htmlUrl ?? githubHtmlUrl
+            githubCloneUrl = pushResult.cloneUrl ?? githubCloneUrl
+            githubOwner = pushResult.owner ?? githubOwner
+            githubRepoName = pushResult.repoName ?? githubRepoName
+            gitPushError = pushResult.error
+
+            if (!gitPushed || !githubOwner || !githubRepoName || !pushResult.commitSha) {
+              vercelDeployError =
+                gitPushError ??
+                'Vercel deploy requires a successful GitHub push with a new commit. Check DEVELOPMENT_GITHUB_TOKEN in .env and git push errors.'
+            } else {
+              logger.info('Deploying edited app to Vercel', {
+                repoName,
+                commitSha: pushResult.commitSha,
+                repoId: pushResult.repoId,
+              })
+              const deployResult = await deployPreparedVercelProject({
+                vercelToken,
+                vercelProjectId,
+                vercelProjectName: prepareResult.vercelProjectName,
+                githubOwner,
+                githubRepoName,
+                githubToken,
+                outputDir,
+                vercelTeamId,
+                gitRef: pushResult.defaultBranch ?? 'main',
+                gitCommitSha: pushResult.commitSha,
+                gitHubRepoId: pushResult.repoId,
+                databaseProvisioned,
+                neonProjectId,
+              })
+
+              vercelDeployed = deployResult.success
+              vercelUrl = deployResult.vercelUrl
+              vercelDeploymentUrl = deployResult.vercelDeploymentUrl
+              vercelProjectId = deployResult.vercelProjectId ?? vercelProjectId
+              vercelDeploymentId = deployResult.vercelDeploymentId
+              vercelInspectorUrl = deployResult.vercelInspectorUrl
+              vercelDeployError = deployResult.error
+            }
           }
         }
       }

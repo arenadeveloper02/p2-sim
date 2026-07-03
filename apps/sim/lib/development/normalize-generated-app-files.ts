@@ -1544,6 +1544,71 @@ export function ensureRepoSummaryFile(
   return updated
 }
 
+const DEFAULT_PRISMA_CLIENT_SINGLETON = `import { PrismaClient } from '@prisma/client'
+
+const globalForPrisma = globalThis as { prisma?: PrismaClient }
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient()
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma
+}
+`
+
+const DEFAULT_PRISMA_SCHEMA = `datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String?
+  createdAt DateTime @default(now())
+}
+`
+
+const DEFAULT_ENV_EXAMPLE = 'DATABASE_URL=\n'
+
+/**
+ * Ensures the required database scaffolding exists for database apps:
+ * prisma/schema.prisma, lib/prisma.ts, and .env.example. Fallback templates are
+ * injected only when the LLM omitted them (e.g. edits to legacy apps generated
+ * before the database requirement) so validation and builds do not fail on
+ * missing files. Domain models still come from the LLM.
+ */
+export function ensureDatabaseScaffoldingFiles(
+  files: GeneratedAppFile[],
+  options: NormalizeGeneratedAppFilesOptions = {}
+): GeneratedAppFile[] {
+  if (!options.requiresDatabase) {
+    return files
+  }
+
+  const pathSet = new Set(files.map((file) => normalizePath(file.path)))
+  const result = [...files]
+
+  if (!pathSet.has('prisma/schema.prisma')) {
+    logger.warn('Added fallback prisma/schema.prisma for database app')
+    result.push({ path: 'prisma/schema.prisma', content: DEFAULT_PRISMA_SCHEMA })
+  }
+
+  if (!pathSet.has('lib/prisma.ts')) {
+    logger.warn('Added lib/prisma.ts PrismaClient singleton for database app')
+    result.push({ path: 'lib/prisma.ts', content: DEFAULT_PRISMA_CLIENT_SINGLETON })
+  }
+
+  if (!pathSet.has('.env.example')) {
+    result.push({ path: '.env.example', content: DEFAULT_ENV_EXAMPLE })
+  }
+
+  return result
+}
+
 /**
  * Ensures next-env.d.ts exists so JSX and Next.js types resolve during tsc.
  */
@@ -1589,7 +1654,8 @@ export function normalizeGeneratedAppFiles(
     return file
   })
 
-  const withNextEnv = ensureNextEnvFile(patched)
+  const withDatabase = ensureDatabaseScaffoldingFiles(patched, options)
+  const withNextEnv = ensureNextEnvFile(withDatabase)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
   const usedPackages = collectUsedNpmPackageNames(withRepoSummary)
