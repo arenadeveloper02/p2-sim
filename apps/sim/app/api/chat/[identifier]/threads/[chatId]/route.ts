@@ -13,7 +13,7 @@ import { resolveDeployedChatThreadAccess } from '@/lib/chat/deployed-chat-thread
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { createErrorResponse } from '@/app/api/workflows/utils'
-import { addCorsHeaders } from '../../utils'
+import { addCorsHeaders } from '@/app/api/chat/utils'
 
 const logger = createLogger('DeployedChatThreadAPI')
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatRelativeTime } from '@sim/utils/formatting'
 import {
   ArrowLeft,
@@ -105,7 +105,15 @@ function ThreadRow({
   onDelete,
   onTogglePin,
 }: ThreadRowProps) {
+  const renameInputRef = useRef<HTMLInputElement>(null)
   const isPinned = Boolean(thread.pinnedAt)
+
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
+    }
+  }, [isRenaming])
 
   if (isRenaming) {
     return (
