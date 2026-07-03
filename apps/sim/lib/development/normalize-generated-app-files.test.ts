@@ -18,6 +18,8 @@ import {
   patchPackageJsonContent,
   reconcileActionsTypeExports,
   reconcileClientComponentProps,
+  reconcileDateFormatterSignatures,
+  reconcileNextDocumentImports,
   reconcileSplitImportStatements,
   reconcileTypesExports,
   sanitizeComponentFileImports,
@@ -221,6 +223,25 @@ export default function AppProviders({ children }: { children: ReactNode }) {
     expect(client?.content).toContain('data: AnalyticsData')
     expect(client?.content).toContain('import type { AnalyticsData }')
     expect(client?.content).toContain('data: _data')
+  })
+
+  it('adds missing props to existing Client props interfaces when pages pass extra fields', () => {
+    const files = reconcileClientComponentProps([
+      {
+        path: 'app/dashboard/page.tsx',
+        content:
+          "import DashboardClient from '@/components/DashboardClient'\nexport default async function Page() { const executions = []; const hasApiKey = false; return <DashboardClient executions={executions} hasApiKey={hasApiKey} /> }\n",
+      },
+      {
+        path: 'components/DashboardClient.tsx',
+        content:
+          'interface DashboardClientProps { user: unknown }\nexport default function DashboardClient({ user }: DashboardClientProps) { return <div>{String(user)}</div> }\n',
+      },
+    ])
+
+    const client = files.find((file) => file.path === 'components/DashboardClient.tsx')
+    expect(client?.content).toContain('executions: unknown')
+    expect(client?.content).toContain('hasApiKey: unknown')
   })
 
   it('creates lib/actions.ts stubs instead of lib/actions.tsx component stubs', () => {
@@ -598,6 +619,68 @@ export interface DashboardStats {
       dependencies: Record<string, string>
     }
     expect(pkg.dependencies['lucide-react']).toBe('^0.479.0')
+  })
+
+  it('adds openai when imported in source but omitted from package.json', () => {
+    const files = normalizeGeneratedAppFiles(
+      [
+        {
+          path: 'package.json',
+          content: JSON.stringify({ name: 'demo', dependencies: {}, devDependencies: {} }),
+        },
+        {
+          path: 'app/api/agents/run/route.ts',
+          content: "import OpenAI from 'openai'\nexport async function POST() { return Response.json({ ok: true }) }\n",
+        },
+      ],
+      { requiresDatabase: true, appName: 'demo', description: 'demo', features: [], repoName: 'demo' }
+    )
+    const pkg = JSON.parse(files.find((file) => file.path === 'package.json')?.content ?? '{}') as {
+      dependencies: Record<string, string>
+    }
+    expect(pkg.dependencies.openai).toBe('^4.91.1')
+  })
+
+  it('widens date formatter params to accept Date values from Prisma', () => {
+    const files = reconcileDateFormatterSignatures([
+      {
+        path: 'lib/utils.ts',
+        content:
+          'export function formatDate(value: string): string {\n  return new Date(value).toLocaleDateString()\n}\n',
+      },
+      {
+        path: 'components/AgentHistory.tsx',
+        content:
+          'const formatRelativeTime = (value: string) => value\nexport default function AgentHistory() { return null }\n',
+      },
+    ])
+
+    expect(files[0]?.content).toContain('formatDate(value: string | Date)')
+    expect(files[1]?.content).toContain('formatRelativeTime = (value: string | Date)')
+  })
+
+  it('strips next/document imports and rewrites Html to main for App Router files', () => {
+    const files = reconcileNextDocumentImports([
+      {
+        path: 'app/not-found.tsx',
+        content:
+          "import { Html } from 'next/document'\nexport default function NotFound() { return <Html><body><h1>404</h1></body></Html> }\n",
+      },
+      {
+        path: 'components/ErrorPage.tsx',
+        content:
+          'import { Html, Head } from "next/document"\nexport default function ErrorPage() { return <Html><Head><title>Err</title></Head><main>Oops</main></Html> }\n',
+      },
+    ])
+
+    const notFound = files.find((file) => file.path === 'app/not-found.tsx')
+    expect(notFound?.content).not.toContain('next/document')
+    expect(notFound?.content).toContain('<main')
+    expect(notFound?.content).not.toContain('<body')
+
+    const errorPage = files.find((file) => file.path === 'components/ErrorPage.tsx')
+    expect(errorPage?.content).not.toContain('next/document')
+    expect(errorPage?.content).not.toContain('<Head')
   })
 
   it('adds Prisma deps and build scripts when database is required', () => {

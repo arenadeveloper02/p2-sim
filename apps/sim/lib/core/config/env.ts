@@ -220,6 +220,7 @@ export const env = createEnv({
     DEVELOPMENT_VERCEL_NEON_INTEGRATION_CONFIG_ID: z.string().optional(),          // Development block: optional Neon marketplace config id (icfg_...)
     DEVELOPMENT_NEON_API_KEY:              z.string().optional(),                  // Development block: Neon API key for per-project DBs (no Vercel Neon install)
     DEVELOPMENT_NEON_ORG_ID:               z.string().optional(),                  // Development block: Neon org id when API key belongs to an org
+    DEVELOPMENT_ANTHROPIC_MODEL:             z.string().min(1).optional(),           // Development block: Anthropic model for app generation (default claude-opus-4-8)
 
     // Admin API
     ADMIN_API_KEY:                         z.string().min(32).optional(),          // Admin API key for self-hosted GitOps access (generate with: openssl rand -hex 32)

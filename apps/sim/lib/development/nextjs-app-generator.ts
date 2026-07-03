@@ -61,10 +61,11 @@ import {
 const logger = createLogger('NextjsAppGenerator')
 
 const GENERATED_APPS_DIR = 'generated-apps'
-const MODEL_ID = 'claude-sonnet-4-6'
+/** Claude Opus for complex agentic coding (structured JSON app generation). Override via DEVELOPMENT_ANTHROPIC_MODEL. */
+const DEFAULT_DEVELOPMENT_MODEL = 'claude-opus-4-8'
 const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-11-13'
-/** Sonnet 4.6 supports large outputs; streaming is used above the SDK non-streaming cap. */
-const MAX_OUTPUT_TOKENS = 64_000
+/** Opus 4.8+ supports 128k output; Sonnet 4.6 caps at 64k. */
+const DEFAULT_MAX_OUTPUT_TOKENS = 128_000
 /** More files allow complex multi-page apps without stub components. */
 const MAX_GENERATED_FILES = 45
 const FILES_PER_BATCH = 10
@@ -457,6 +458,21 @@ function getAnthropicApiKey(): string {
   return apiKey
 }
 
+function getDevelopmentModelId(): string {
+  return (
+    env.DEVELOPMENT_ANTHROPIC_MODEL ??
+    process.env.DEVELOPMENT_ANTHROPIC_MODEL ??
+    DEFAULT_DEVELOPMENT_MODEL
+  )
+}
+
+function getMaxOutputTokens(modelId: string): number {
+  if (/claude-sonnet-4-[0-5]/.test(modelId) || modelId === 'claude-sonnet-4-6') {
+    return 64_000
+  }
+  return DEFAULT_MAX_OUTPUT_TOKENS
+}
+
 function getMessageText(message: Anthropic.Messages.Message): string {
   const textBlock = message.content.find((block) => block.type === 'text')
   if (!textBlock || textBlock.type !== 'text') {
@@ -508,9 +524,10 @@ async function requestStructuredLlm(
   messages: Anthropic.Messages.MessageParam[],
   schema: Record<string, unknown>
 ): Promise<Anthropic.Messages.Message> {
+  const modelId = getDevelopmentModelId()
   return createAnthropicMessage(anthropic, {
-    model: MODEL_ID,
-    max_tokens: MAX_OUTPUT_TOKENS,
+    model: modelId,
+    max_tokens: getMaxOutputTokens(modelId),
     temperature: 0.2,
     system: systemPrompt,
     messages,
@@ -941,7 +958,7 @@ ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 Fix ALL errors in the build log so the app passes: npm install, prisma generate when Prisma is used, and next build with ZERO compile or prerender errors.
 Fix ALL structure validation issues listed in the build log, including missing @/ imports, props interfaces, "use client" placement, Prisma usage, Tailwind config, and build scripts.
 When the build log says "Missing file for import @/components/X", ADD components/X.tsx with full UI — every imported component must exist in files[].
-Pay special attention to: TS2305 "has no exported member" (export the symbol from the module that defines it — e.g. add getRecentTasks/getUserById to lib/actions.ts when pages import them), TS2322 IntrinsicAttributes & XxxClientProps (page prop names must match XxxClientProps fields exactly — update page AND component together), TS2739 JwtPayload missing UserData fields (use getUserById(auth.id), do not pass getAuthUser() result as UserData), TS1109 "Expression expected" (usually a split import — add \`import {\` before orphan specifiers after \`} from 'package';\`), TS2459 "declares X locally, but it is not exported" (import the type from @/lib/types, not @/lib/actions), TS2304 "Cannot find name" (add missing import type from @/lib/types), TS2307 Cannot find module 'lucide-react' (add lucide-react to package.json dependencies), TS1005 "'>' expected" (fix JSX — use return ( with opening tag, never return newline then <), "Html should not be imported outside of pages/_document" (remove ALL next/document imports from app/** — rewrite app/not-found.tsx and app/error.tsx with plain <div>/<main> markup; only app/layout.tsx renders <html> and <body>), missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
+Pay special attention to: TS2305 "has no exported member" (export the symbol from the module that defines it — e.g. add getRecentTasks/getUserById to lib/actions.ts when pages import them), TS2322 IntrinsicAttributes & XxxClientProps (page prop names must match XxxClientProps fields exactly — update page AND component together), TS2739 JwtPayload missing UserData fields (use getUserById(auth.id), do not pass getAuthUser() result as UserData), TS1109 "Expression expected" (usually a split import — add \`import {\` before orphan specifiers after \`} from 'package';\`), TS2459 "declares X locally, but it is not exported" (import the type from @/lib/types, not @/lib/actions), TS2304 "Cannot find name" (add missing import type from @/lib/types), TS2307 Cannot find module (add the imported package to package.json dependencies — e.g. lucide-react, recharts, openai), TS2345 Date not assignable to string (widen formatDate/formatRelativeTime helpers to accept string | Date, or pass createdAt.toISOString()), TS1005 "'>' expected" (fix JSX — use return ( with opening tag, never return newline then <), "Html should not be imported outside of pages/_document" (remove ALL next/document imports from app/** — rewrite app/not-found.tsx and app/error.tsx with plain <div>/<main> markup; only app/layout.tsx renders <html> and <body>), missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
 If the build log flags localStorage/sessionStorage usage, replace every occurrence with Prisma server actions or API routes — NEVER store app data in localStorage.
 ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 ${GENERATED_APP_DEPENDENCY_GUIDANCE}

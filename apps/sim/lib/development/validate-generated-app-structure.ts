@@ -500,18 +500,13 @@ function checkNextDocumentImports(files: GeneratedAppFile[]): string[] {
       continue
     }
 
-    if (path.startsWith('app/')) {
-      issues.push(
-        `${path}: App Router files must not import from next/document (Html, Head, Main, NextScript). Use plain JSX in app/not-found.tsx and app/error.tsx; only app/layout.tsx may render <html> and <body>`
-      )
+    if (path.startsWith('pages/') && /_document\.(tsx|jsx)$/.test(path)) {
       continue
     }
 
-    if (path.startsWith('pages/') && !/_document\.(tsx|jsx)$/.test(path)) {
-      issues.push(
-        `${path}: must not import from next/document except pages/_document.tsx (Pages Router legacy)`
-      )
-    }
+    issues.push(
+      `${path}: must not import from next/document (Html, Head, Main, NextScript). App Router: use plain JSX in app/not-found.tsx and app/error.tsx; only app/layout.tsx renders <html> and <body>`
+    )
   }
 
   return issues

@@ -38,7 +38,11 @@ const REACT19_COMPAT_DEPENDENCY_OVERRIDES: Record<string, string> = {
 const AUTO_ADD_DEPENDENCIES: Record<string, string> = {
   'lucide-react': '^0.479.0',
   recharts: '^2.15.3',
+  openai: '^4.91.1',
 }
+
+const DATE_FORMATTER_FUNCTION_NAMES =
+  /^(formatDate|formatTime|formatRelativeTime|formatTimeAgo|timeAgo|formatTimestamp)$/i
 
 const AUTH_PACKAGE_DEPENDENCIES: Record<string, string> = {
   jsonwebtoken: '^9.0.2',
@@ -54,7 +58,7 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - "react-dom": "${PINNED_REACT_VERSION}"
 - devDependencies: typescript ^5.8, @types/node ^22, @types/react ^19, @types/react-dom ^19, tailwindcss ^3.4.17, postcss ^8, autoprefixer ^10, eslint ^9, eslint-config-next ${PINNED_NEXT_VERSION}
 - When using lucide-react, pin "lucide-react": "^0.479.0" or newer (React 19 compatible) — never ^0.395.x
-- If ANY file imports from lucide-react or recharts, package.json dependencies MUST include that package — missing deps cause TS2307 at typecheck
+- If ANY file imports from lucide-react, recharts, or openai, package.json dependencies MUST include that package — missing deps cause TS2307 at typecheck
 Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use Tailwind v4-only setup.
 next.config.ts MUST NOT include an eslint property (removed in Next.js 16 — builds no longer run ESLint from next.config)`
 
@@ -1346,6 +1350,36 @@ function patchComponentReturnForChildren(content: string, renderChildren: boolea
   return content
 }
 
+/**
+ * Adds JSX prop names missing from an existing Props interface so pages and clients align.
+ */
+function appendMissingPropsToComponentInterface(
+  content: string,
+  componentName: string,
+  missingProps: string[],
+  propTypes: Record<string, string>
+): string {
+  if (missingProps.length === 0) {
+    return content
+  }
+
+  const propsTypeName = `${componentName}Props`
+  const interfacePattern = new RegExp(`interface\\s+${propsTypeName}\\s*\\{([^}]*)\\}`, 's')
+  const interfaceMatch = interfacePattern.exec(content)
+  if (!interfaceMatch) {
+    return content
+  }
+
+  const newFieldLines = missingProps
+    .map((prop) => `  ${prop}: ${propTypes[prop] ?? 'unknown'}`)
+    .join('\n')
+  const existingBody = interfaceMatch[1].trimEnd()
+  const separator = existingBody.length > 0 ? '\n' : ''
+  const updatedInterface = `interface ${propsTypeName} {${existingBody}${separator}\n${newFieldLines}\n}`
+
+  return content.replace(interfacePattern, updatedInterface)
+}
+
 function patchComponentToAcceptProps(
   content: string,
   componentName: string,
@@ -1409,6 +1443,99 @@ function buildComponentExportStub(
   return `${interfaceBlock}${exportKeyword} ${exportName}${signature} {\n${returnBody}}`
 }
 
+const NEXT_DOCUMENT_IMPORT_PATTERN = /from\s+['"]next\/document['"]/
+
+function shouldStripNextDocumentImports(filePath: string): boolean {
+  const path = normalizePath(filePath)
+  if (!/\.(tsx|jsx)$/.test(path)) {
+    return false
+  }
+  return !/^pages\/_document\.(tsx|jsx)$/.test(path)
+}
+
+/**
+ * Removes Pages Router next/document imports and rewrites Html/Head/Main/NextScript to App Router-safe JSX.
+ */
+export function stripNextDocumentImports(content: string): string {
+  if (!NEXT_DOCUMENT_IMPORT_PATTERN.test(content)) {
+    return content
+  }
+
+  let result = content
+
+  result = result.replace(
+    /^import\s+(?:type\s+)?\{[^}]*\}\s+from\s+['"]next\/document['"];?\s*\n?/gm,
+    ''
+  )
+  result = result.replace(
+    /^import\s+(?:type\s+)?[\w*]+\s+from\s+['"]next\/document['"];?\s*\n?/gm,
+    ''
+  )
+  result = result.replace(/<Head>[\s\S]*?<\/Head>\s*/g, '')
+  result = result.replace(/<Head\s[^>]*\/>\s*/g, '')
+  result = result.replace(/<NextScript\s*\/>\s*/g, '')
+  result = result.replace(/<NextScript>[\s\S]*?<\/NextScript>\s*/g, '')
+  result = result.replace(/<Html(\s[^>]*)?>/g, '<main$1>')
+  result = result.replace(/<\/Html>/g, '</main>')
+  result = result.replace(/<Main(\s[^>]*)?>/g, '<main$1>')
+  result = result.replace(/<\/Main>/g, '</main>')
+  result = result.replace(/<body(\s[^>]*)?>/gi, '')
+  result = result.replace(/<\/body>/gi, '')
+
+  return result.replace(/\n{3,}/g, '\n\n')
+}
+
+/**
+ * Strips invalid next/document usage from App Router and shared component files.
+ */
+export function reconcileNextDocumentImports(files: GeneratedAppFile[]): GeneratedAppFile[] {
+  return files.map((file) => {
+    if (!shouldStripNextDocumentImports(file.path)) {
+      return file
+    }
+
+    const stripped = stripNextDocumentImports(file.content)
+    if (stripped !== file.content) {
+      logger.warn('Stripped next/document usage from generated file', { path: normalizePath(file.path) })
+      return { ...file, content: stripped }
+    }
+
+    return file
+  })
+}
+
+/**
+ * Widens date-formatting helper params to accept Prisma Date values as well as ISO strings.
+ */
+export function reconcileDateFormatterSignatures(files: GeneratedAppFile[]): GeneratedAppFile[] {
+  return files.map((file) => {
+    if (!/\.(ts|tsx)$/.test(file.path)) {
+      return file
+    }
+
+    let content = file.content
+    content = content.replace(
+      /\bfunction\s+(formatDate|formatTime|formatRelativeTime|formatTimeAgo|timeAgo|formatTimestamp)\s*\(\s*(\w+)\s*:\s*string\s*\)/gi,
+      'function $1($2: string | Date)'
+    )
+    content = content.replace(
+      /\b(formatDate|formatTime|formatRelativeTime|formatTimeAgo|timeAgo|formatTimestamp)\s*=\s*\(\s*(\w+)\s*:\s*string\s*\)/gi,
+      '$1 = ($2: string | Date)'
+    )
+    content = content.replace(
+      /\bfunction\s+(\w+)\s*\(\s*(\w+)\s*:\s*string\s*\)/g,
+      (match, fnName, param) => {
+        if (!DATE_FORMATTER_FUNCTION_NAMES.test(fnName) && !/^format.*(?:Date|Time)/i.test(fnName)) {
+          return match
+        }
+        return `function ${fnName}(${param}: string | Date)`
+      }
+    )
+
+    return content !== file.content ? { ...file, content } : file
+  })
+}
+
 /**
  * Patches Client components so their props match how pages render them.
  */
@@ -1422,14 +1549,31 @@ export function reconcileClientComponentProps(files: GeneratedAppFile[]): Genera
 
     const componentName = toComponentName(file.path)
     const propNames = collectJsxPropNamesForComponent(componentName, normalized)
-    if (propNames.length === 0 || componentAcceptsProps(file.content, componentName)) {
+    if (propNames.length === 0) {
       return file
     }
 
     const propTypes = inferComponentPropTypes(componentName, propNames, normalized)
-    const patchedContent = sanitizeComponentFileImports(
-      patchComponentToAcceptProps(file.content, componentName, propTypes)
-    )
+    let patchedContent = file.content
+
+    if (!componentAcceptsProps(patchedContent, componentName)) {
+      patchedContent = patchComponentToAcceptProps(patchedContent, componentName, propTypes)
+    } else {
+      const interfaceFields = extractComponentPropsInterfaceFields(patchedContent, componentName)
+      const interfaceSet = new Set(interfaceFields)
+      const missingFromInterface = propNames.filter((prop) => !interfaceSet.has(prop))
+      if (missingFromInterface.length > 0) {
+        patchedContent = appendMissingPropsToComponentInterface(
+          patchedContent,
+          componentName,
+          missingFromInterface,
+          propTypes
+        )
+        patchedContent = ensureComponentTypeImports(patchedContent, propTypes)
+      }
+    }
+
+    patchedContent = sanitizeComponentFileImports(patchedContent)
     if (patchedContent !== file.content) {
       return { ...file, content: patchedContent }
     }
@@ -2470,6 +2614,8 @@ function reconcileGeneratedAppImportsAndExports(
   updated = reconcileAuthExports(updated, options)
   updated = reconcileComponentExportStyles(updated)
   updated = reconcileClientComponentProps(updated)
+  updated = reconcileNextDocumentImports(updated)
+  updated = reconcileDateFormatterSignatures(updated)
   return updated
 }
 
