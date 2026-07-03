@@ -25,6 +25,8 @@ import {
   GENERATED_APP_IMPORT_GUIDANCE,
   GENERATED_APP_COMPONENT_FILES_GUIDANCE,
   GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE,
+  GENERATED_APP_GENERATION_MANDATES,
+  GENERATED_APP_NO_TESTS_GUIDANCE,
   GENERATED_APP_JSX_GUIDANCE,
   GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE,
   GENERATED_APP_README_GUIDANCE,
@@ -33,6 +35,7 @@ import {
   GENERATED_APP_REPO_SUMMARY_PATH,
   GENERATED_APP_STYLING_GUIDANCE,
   GENERATED_APP_TYPESCRIPT_GUIDANCE,
+  GENERATED_APP_NULL_SAFETY_GUIDANCE,
   GENERATED_APP_VALIDATION_GUIDANCE,
   GENERATED_APP_ZERO_ERRORS_GUIDANCE,
   PINNED_NEXT_VERSION,
@@ -63,8 +66,39 @@ import { supportsTemperature } from '@/providers/utils'
 const logger = createLogger('NextjsAppGenerator')
 
 const GENERATED_APPS_DIR = 'generated-apps'
-/** Claude Opus for complex agentic coding (structured JSON app generation). Override via DEVELOPMENT_ANTHROPIC_MODEL. */
-const DEFAULT_DEVELOPMENT_MODEL = 'claude-opus-4-8'
+/** Creation (new apps): Claude Fable. Edit/repair: Claude Opus. Override via DEVELOPMENT_ANTHROPIC_CREATION_MODEL / DEVELOPMENT_ANTHROPIC_EDIT_MODEL. */
+const DEFAULT_CREATION_MODEL = 'claude-fable-5'
+const DEFAULT_EDIT_MODEL = 'claude-opus-4-8'
+
+type DevelopmentModelPurpose = 'creation' | 'edit'
+
+function resolveEnvModel(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim()
+    if (trimmed) {
+      return trimmed
+    }
+  }
+  return undefined
+}
+
+function getDevelopmentModelId(purpose: DevelopmentModelPurpose): string {
+  if (purpose === 'edit') {
+    return (
+      resolveEnvModel(env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL, process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL) ??
+      DEFAULT_EDIT_MODEL
+    )
+  }
+
+  return (
+    resolveEnvModel(
+      env.DEVELOPMENT_ANTHROPIC_CREATION_MODEL,
+      process.env.DEVELOPMENT_ANTHROPIC_CREATION_MODEL,
+      env.DEVELOPMENT_ANTHROPIC_MODEL,
+      process.env.DEVELOPMENT_ANTHROPIC_MODEL
+    ) ?? DEFAULT_CREATION_MODEL
+  )
+}
 const STRUCTURED_OUTPUTS_BETA = 'structured-outputs-2025-11-13'
 /** Opus 4.8+ supports 128k output; Sonnet 4.6 caps at 64k. */
 const DEFAULT_MAX_OUTPUT_TOKENS = 128_000
@@ -82,6 +116,7 @@ const REQUIRED_APP_FILE_PATHS = [
   'tailwind.config.ts',
   'app/layout.tsx',
   'app/page.tsx',
+  'app/not-found.tsx',
   'app/globals.css',
   '.gitignore',
   'README.md',
@@ -460,14 +495,6 @@ function getAnthropicApiKey(): string {
   return apiKey
 }
 
-function getDevelopmentModelId(): string {
-  return (
-    env.DEVELOPMENT_ANTHROPIC_MODEL ??
-    process.env.DEVELOPMENT_ANTHROPIC_MODEL ??
-    DEFAULT_DEVELOPMENT_MODEL
-  )
-}
-
 function getMaxOutputTokens(modelId: string): number {
   if (/claude-sonnet-4-[0-5]/.test(modelId) || modelId === 'claude-sonnet-4-6') {
     return 64_000
@@ -491,6 +518,60 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   return chunks
 }
 
+function sortManifestFilePaths(paths: string[]): string[] {
+  const priority = (path: string): [number, string] => {
+    const normalized = path.replace(/\\/g, '/')
+    const exact: Record<string, number> = {
+      'package.json': 0,
+      'tsconfig.json': 1,
+      'next.config.ts': 2,
+      'postcss.config.mjs': 3,
+      'tailwind.config.ts': 4,
+      '.gitignore': 5,
+      '.env.example': 6,
+      'README.md': 7,
+      [GENERATED_APP_REPO_SUMMARY_PATH]: 8,
+      'lib/types.ts': 20,
+      'lib/actions.ts': 21,
+      'lib/auth.ts': 22,
+      'lib/prisma.ts': 23,
+      'lib/crypto.ts': 24,
+      'app/globals.css': 40,
+      'app/layout.tsx': 41,
+      'app/not-found.tsx': 42,
+      'app/error.tsx': 43,
+      'app/page.tsx': 44,
+    }
+    if (exact[normalized] !== undefined) {
+      return [exact[normalized], normalized]
+    }
+    if (normalized.startsWith('prisma/')) {
+      return [15, normalized]
+    }
+    if (normalized.startsWith('lib/')) {
+      return [26, normalized]
+    }
+    if (normalized.startsWith('components/')) {
+      return [35, normalized]
+    }
+    if (normalized.startsWith('app/api/')) {
+      return [55, normalized]
+    }
+    if (normalized.startsWith('app/')) {
+      return [50, normalized]
+    }
+    return [60, normalized]
+  }
+
+  return [...paths].sort((left, right) => {
+    const [leftPriority, leftPath] = priority(left)
+    const [rightPriority, rightPath] = priority(right)
+    return leftPriority !== rightPriority
+      ? leftPriority - rightPriority
+      : leftPath.localeCompare(rightPath)
+  })
+}
+
 function mergeManifestFilePaths(
   manifestPaths: string[],
   requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
@@ -505,7 +586,7 @@ function mergeManifestFilePaths(
     }
   }
   const optional = normalized.filter((p) => !requiredSet.has(p)).slice(0, MAX_OPTIONAL_PAGE_PATHS)
-  const merged = [...new Set([...requiredSet, ...optional])]
+  const merged = sortManifestFilePaths([...new Set([...requiredSet, ...optional])])
   return merged.slice(0, MAX_GENERATED_FILES)
 }
 
@@ -524,9 +605,10 @@ async function requestStructuredLlm(
   anthropic: Anthropic,
   systemPrompt: string,
   messages: Anthropic.Messages.MessageParam[],
-  schema: Record<string, unknown>
+  schema: Record<string, unknown>,
+  purpose: DevelopmentModelPurpose
 ): Promise<Anthropic.Messages.Message> {
-  const modelId = getDevelopmentModelId()
+  const modelId = getDevelopmentModelId(purpose)
   return createAnthropicMessage(anthropic, {
     model: modelId,
     max_tokens: getMaxOutputTokens(modelId),
@@ -595,7 +677,8 @@ async function requestStructuredJsonWithContinuations<T>(
   initialUserPrompt: string,
   schema: Record<string, unknown>,
   parse: (text: string) => T,
-  referenceImage?: DevelopmentReferenceMedia
+  referenceImage?: DevelopmentReferenceMedia,
+  purpose: DevelopmentModelPurpose = 'creation'
 ): Promise<T> {
   const messages: Anthropic.Messages.MessageParam[] = [
     {
@@ -610,7 +693,8 @@ async function requestStructuredJsonWithContinuations<T>(
       anthropic,
       augmentSystemPromptForReferenceImage(systemPrompt, referenceImage),
       messages,
-      schema
+      schema,
+      purpose
     )
     const text = getMessageText(message)
 
@@ -637,6 +721,8 @@ const SINGLE_SHOT_SYSTEM_PROMPT = `You are a senior full-stack engineer. Generat
 
 Respond ONLY with JSON matching the provided schema. No markdown or code fences.
 
+${GENERATED_APP_GENERATION_MANDATES}
+
 Constraints:
 - At most ${MAX_GENERATED_FILES} files total — use as many as needed but no more
 - Required: ${REQUIRED_APP_FILE_PATHS.join(', ')} plus pages and components (max ${MAX_OPTIONAL_PAGE_PATHS} extra files)
@@ -648,6 +734,7 @@ Constraints:
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
+- ${GENERATED_APP_NULL_SAFETY_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
 - ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
@@ -659,19 +746,23 @@ Constraints:
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
+- ${GENERATED_APP_NO_TESTS_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
-- ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 - Valid TypeScript, zero syntax/semantic/build errors, no secrets`
 
 const MANIFEST_SYSTEM_PROMPT = `You are a senior full-stack engineer planning a Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
 
 Respond ONLY with JSON matching the provided schema. List file paths only — do NOT include file contents.
 
+${GENERATED_APP_GENERATION_MANDATES}
+
 Constraints:
 - At most ${MAX_GENERATED_FILES} file paths — list EVERY file the app truly needs so no component is left as a stub
 - Include every required path: ${REQUIRED_APP_FILE_PATHS.join(', ')}
 - List ALL components/*.tsx paths first (Navbar, Footer, *Client components) — then list app routes that import them
+- Always include app/not-found.tsx (required) — list it before other app routes
+- List lib/types.ts and lib/actions.ts before any app/**/page.tsx paths
 - Add up to ${MAX_OPTIONAL_PAGE_PATHS} optional page/component paths — for multi-page apps, list all page routes and shared components
 - Use app/ at project root (not src/app/)
 - ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
@@ -688,6 +779,7 @@ Constraints:
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
+- ${GENERATED_APP_NO_TESTS_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
 - Never include secrets`
@@ -695,6 +787,8 @@ Constraints:
 const FILE_BATCH_SYSTEM_PROMPT = `You are a senior full-stack engineer writing files for a Next.js ${PINNED_NEXT_VERSION} App Router project.
 
 Respond ONLY with JSON matching the provided schema: a "files" array with path and content for each requested path.
+
+${GENERATED_APP_GENERATION_MANDATES}
 
 Constraints:
 - Return EVERY requested path with complete, real, working file content — NEVER a stub or a component that renders only its own name as text
@@ -705,6 +799,7 @@ Constraints:
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
+- ${GENERATED_APP_NULL_SAFETY_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
 - ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
@@ -716,6 +811,7 @@ Constraints:
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
+- ${GENERATED_APP_NO_TESTS_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data — use Prisma server actions when requiresDatabase is true
 - Code must compile with zero syntax, semantic, and next build errors when combined with other project files
@@ -770,6 +866,15 @@ async function requestFileBatchFromLlm(
 
   const existingPaths = options.existingPaths ?? []
 
+  const normalizedPaths = paths.map((path) => path.replace(/\\/g, '/'))
+  const batchHasAppPages = normalizedPaths.some((path) => /^app\/[^/]+\/page\.tsx$/.test(path))
+  const batchHasApiRoutes = normalizedPaths.some((path) => /^app\/api\/.+\/route\.ts$/.test(path))
+  const batchIncludesActions = normalizedPaths.includes('lib/actions.ts')
+  const actionsCoGenerationNote =
+    (batchHasAppPages || batchHasApiRoutes) && !batchIncludesActions
+      ? `\nMANDATORY: This batch includes app pages or API routes. You MUST ALSO return lib/actions.ts in files[] with export async function for EVERY symbol those files import from @/lib/actions. Return the complete lib/actions.ts — merge with patterns from existing files if needed.\n`
+      : ''
+
   const userPrompt = `App name: ${appName}
 Description: ${description}
 
@@ -778,7 +883,7 @@ ${userInput}
 
 Generate complete contents for these paths only:
 ${paths.map((p) => `- ${p}`).join('\n')}
-
+${actionsCoGenerationNote}
 ${
   existingPaths.length > 0
     ? `Already generated paths (you may import from @/ only if the target is in this list or in the batch above):\n${existingPaths.map((p) => `- ${p}`).join('\n')}`
@@ -924,7 +1029,9 @@ async function requestFullAppSpecFromLlm(
     systemPrompt,
     userPrompt,
     APP_SPEC_JSON_SCHEMA,
-    (text) => parseAppSpecJson(text)
+    (text) => parseAppSpecJson(text),
+    undefined,
+    'edit'
   )
 
   return normalizeAppSpec(parsed, repoNameHint, options)
@@ -949,6 +1056,43 @@ async function generateAppSpecWithLlm(
   }
 }
 
+/** Per-file and total char budgets for repair prompt file context. */
+const MAX_REPAIR_CONTEXT_FILE_CHARS = 12_000
+const MAX_REPAIR_CONTEXT_TOTAL_CHARS = 260_000
+
+/**
+ * Serializes the current file set for the repair prompt so fixes are grounded
+ * in the real code instead of re-guessed from the app description.
+ */
+function buildRepairFileContext(files: GeneratedAppFile[]): string {
+  const skipPaths = new Set<string>([GENERATED_APP_REPO_SUMMARY_PATH, 'README.md', 'next-env.d.ts'])
+  const sections: string[] = []
+  let total = 0
+
+  for (const file of files) {
+    const path = file.path.replace(/\\/g, '/')
+    if (skipPaths.has(path)) {
+      continue
+    }
+
+    const content =
+      file.content.length > MAX_REPAIR_CONTEXT_FILE_CHARS
+        ? `${file.content.slice(0, MAX_REPAIR_CONTEXT_FILE_CHARS)}\n…(truncated)`
+        : file.content
+    const section = `--- ${path} ---\n${content}`
+
+    if (total + section.length > MAX_REPAIR_CONTEXT_TOTAL_CHARS) {
+      sections.push(`--- ${path} --- (omitted for length)`)
+      continue
+    }
+
+    total += section.length
+    sections.push(section)
+  }
+
+  return sections.join('\n\n')
+}
+
 async function repairAppSpecWithLlm(
   spec: LlmAppSpec,
   buildLog: string,
@@ -956,19 +1100,38 @@ async function repairAppSpecWithLlm(
 ): Promise<LlmAppSpec> {
   const repairSystemPrompt = `You are a senior full-stack engineer fixing a Next.js ${PINNED_NEXT_VERSION} App Router project that failed pre-deploy validation (structure checks and/or npm install + prisma generate + next build in E2B).
 
-Respond ONLY with JSON matching the provided schema. Return the full corrected file set.
+Respond ONLY with JSON matching the provided schema.
+
+The user message contains the CURRENT contents of every repository file. Treat them as the source of truth: read the files named in the build log, fix the reported errors with minimal targeted edits, and keep every cross-file contract (types, exports, prop names, Prisma fields) consistent with the files you are NOT changing.
+Return ONLY the files you change or add — complete final contents for each returned file. Unchanged files are preserved automatically; do NOT echo them back, and do NOT rewrite files the build log does not implicate unless a fix requires it.
+
+${GENERATED_APP_GENERATION_MANDATES}
 
 ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 
 Fix ALL errors in the build log so the app passes: npm install, prisma generate when Prisma is used, and next build with ZERO compile or prerender errors.
 Fix ALL structure validation issues listed in the build log, including missing @/ imports, props interfaces, "use client" placement, Prisma usage, Tailwind config, and build scripts.
+The build log below is the source of truth — resolve every error it reports, using the exact file names, symbols, and types it names. Do not guess at unrelated changes.
 When the build log says "Missing file for import @/components/X", ADD components/X.tsx with full UI — every imported component must exist in files[].
-When the build log contains "Html should not be imported outside of pages/_document" or "Error occurred prerendering page \\"/404\\"", REPLACE app/not-found.tsx with the canonical template in APP_ROUTER_DOCUMENT guidance (plain <main> only — no next/document, no <Html>, no <html>/<body>); also fix any components/** file that still uses Html/Head/Main/NextScript.
-Pay special attention to: TS2305 "has no exported member" (export the symbol from the module that defines it — e.g. add getRecentTasks/getUserById to lib/actions.ts when pages import them; add maskKey/encrypt/decrypt to lib/crypto.ts when API routes import from @/lib/crypto), TS2741 Property 'id' is missing (every AgentInfo object in lib/agents.ts must include id when lib/types.ts requires it — use the same value as slug), TS2322 IntrinsicAttributes & XxxClientProps (page prop names must match XxxClientProps fields exactly — include ALL props such as executions and hasApiKey; update page AND component together), TS2322 Type 'unknown' is not assignable to type 'Key' | 'ReactNode' | 'string | undefined' (replace unknown props and .map() params with concrete lib/types.ts interfaces — e.g. AgentField with key/label/value: string; never fields: unknown[] in AgentClient), TS2538 Type 'unknown' cannot be used as an index type / TS2464 computed property name (index keys must be string — type output maps as Record<string, string> not unknown), TS2739 JwtPayload missing UserData fields (use getUserById(auth.id), do not pass getAuthUser() result as UserData), TS1109 "Expression expected" (usually a split import — add \`import {\` before orphan specifiers after \`} from 'package';\`), TS2459 "declares X locally, but it is not exported" (import the type from @/lib/types, not @/lib/actions), TS2304 "Cannot find name" (add missing import type from @/lib/types), TS2307 Cannot find module (add the imported package to package.json dependencies — e.g. lucide-react, recharts, openai), TS2345 Date not assignable to string (widen formatDate/formatRelativeTime helpers to accept string | Date, or pass createdAt.toISOString()), TS1005 "'>' expected" (fix JSX — use return ( with opening tag, never return newline then <), "Html should not be imported outside of pages/_document" (remove ALL next/document imports from app/** — rewrite app/not-found.tsx and app/error.tsx with plain <div>/<main> markup; only app/layout.tsx renders <html> and <body>), missing props on Client components, broken @/ imports, implicit any, and type mismatches between pages and components.
+When the build log says "imports X from @/lib/actions but lib/actions.ts does not export it", ADD \`export async function X\` to lib/actions.ts (implement the query the page needs) in the same response.
+When the build log contains "Html should not be imported outside of pages/_document" or "Error occurred prerendering page \\"/404\\"", REPLACE app/not-found.tsx with the canonical zero-import template (plain <main> only — no layout components, no next/document, no <Html>); scan every file for remaining Html/Head/Main/NextScript usage and remove it.
+Common TypeScript error codes and their generic fixes:
+- TS18047 / TS2531 "possibly null": add \`if (!x) return\` guards after getContext('2d'), ref.current, .find(), getElementById, searchParams.get() — never use the \`!\` assertion
+- TS2305 "has no exported member": export the missing symbol from the module that defines it, in the same response as the importer
+- TS2307 "Cannot find module": add the imported package to package.json dependencies (and its @types/* to devDependencies when it ships no types)
+- TS2322 "IntrinsicAttributes & XxxClientProps" / missing prop: make page JSX prop names exactly match the Client component's Props interface; include every prop; update page AND component together
+- TS2322/TS2538/TS2464 involving \`unknown\`: replace \`unknown\`/\`unknown[]\` props and \`.map()\` params with concrete interfaces from lib/types.ts (string ids/labels)
+- TS1109 "Expression expected": usually a split import — give each package its own \`import { ... } from '...'\` block
+- TS2459 "declares X locally, but it is not exported": import the type from @/lib/types, not @/lib/actions
+- TS2304 "Cannot find name": add the missing \`import type\` (from @/lib/types) or define the type locally
+- TS2345 "Date not assignable to string": widen date/time helpers to accept \`string | Date\`, or pass \`.toISOString()\`
+- TS1005 "'>' expected": fix JSX — \`return (\` with the opening tag on one line, never \`return\` then a newline before \`<\`
+- TS2353/TS2339/TS2551 in lib/actions.ts: align Prisma include/select keys and field access with prisma/schema.prisma; keep lib/types.ts in sync
 If the build log flags localStorage/sessionStorage usage, replace every occurrence with Prisma server actions or API routes — NEVER store app data in localStorage.
 ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
+${GENERATED_APP_NULL_SAFETY_GUIDANCE}
 ${GENERATED_APP_STYLING_GUIDANCE}
 ${GENERATED_APP_IMPORT_GUIDANCE}
 ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
@@ -980,6 +1143,7 @@ ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 ${GENERATED_APP_AUTH_GUIDANCE}
 ${GENERATED_APP_README_GUIDANCE}
 ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
+${GENERATED_APP_NO_TESTS_GUIDANCE}
 ${GENERATED_APP_VALIDATION_GUIDANCE}
 Keep the same app purpose and repo name unless a rename is required to fix the build.
 Prefer minimal, targeted file changes over rewriting unrelated files.
@@ -990,10 +1154,14 @@ Do not leave broken imports, invalid JSX, or conflicting app/ and src/app/ direc
 App name: ${spec.appName}
 Repository name: ${spec.repoName}
 
-Build log:
+Build log (errors to fix):
 ${truncateBuildLog(buildLog)}
 
-Return corrected files that pass npm install, prisma generate (when used), and next build.`
+Current repository files (source of truth — fix the errors above IN this code):
+
+${buildRepairFileContext(spec.files)}
+
+Return ONLY the files you changed or added (complete final contents each) so the app passes npm install, prisma generate (when used), and next build.`
 
   const repaired = await requestFullAppSpecFromLlm(repairSystemPrompt, userPrompt, spec.repoName, {
     preserveAllFiles: spec.files.length > MAX_GENERATED_FILES,
@@ -1554,6 +1722,8 @@ const EDIT_APP_SYSTEM_PROMPT = `You are a senior full-stack engineer editing an 
 
 Respond ONLY with JSON matching the provided schema.
 
+${GENERATED_APP_GENERATION_MANDATES}
+
 Constraints:
 - Apply the user's requested changes while preserving working architecture and unrelated code
 - Return ONLY files you create or modify (do not echo unchanged files)
@@ -1562,6 +1732,7 @@ Constraints:
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
 - ${GENERATED_APP_DEPENDENCY_GUIDANCE}
 - ${GENERATED_APP_TYPESCRIPT_GUIDANCE}
+- ${GENERATED_APP_NULL_SAFETY_GUIDANCE}
 - ${GENERATED_APP_STYLING_GUIDANCE}
 - ${GENERATED_APP_IMPORT_GUIDANCE}
 - ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
@@ -1578,6 +1749,7 @@ Constraints:
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 - Read REPO_SUMMARY.md in the user message before editing — it is the primary architecture reference
 - Do not return REPO_SUMMARY.md unless you must fix it manually; Sim regenerates it after your edits
+- ${GENERATED_APP_NO_TESTS_GUIDANCE}
 - ${GENERATED_APP_VALIDATION_GUIDANCE}
 - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data
 - Valid TypeScript, zero syntax/semantic/build errors, no secrets`
@@ -1706,7 +1878,8 @@ Return JSON with app metadata and ONLY the files you changed or added.`
     userPrompt,
     EDIT_APP_JSON_SCHEMA,
     (text) => JSON.parse(extractJsonFromLlmText(text)) as LlmAppSpec,
-    referenceImage
+    referenceImage,
+    'edit'
   )
 
   if (!parsed.files?.length) {

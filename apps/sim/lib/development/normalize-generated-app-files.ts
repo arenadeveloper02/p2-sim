@@ -34,19 +34,19 @@ const REACT19_COMPAT_DEPENDENCY_OVERRIDES: Record<string, string> = {
   'lucide-react': '^0.479.0',
 }
 
-/** Added to package.json when source files import the package but the LLM omitted it from dependencies. */
+/**
+ * Added to package.json when source files import the package but the LLM omitted it.
+ * Import-driven only — nothing here is forced onto apps that do not use it.
+ */
 const AUTO_ADD_DEPENDENCIES: Record<string, string> = {
   'lucide-react': '^0.479.0',
   recharts: '^2.15.3',
-  openai: '^4.91.1',
 }
 
-const AUTH_PACKAGE_DEPENDENCIES: Record<string, string> = {
-  jsonwebtoken: '^9.0.2',
-}
-
-const AUTH_PACKAGE_DEV_DEPENDENCIES: Record<string, string> = {
-  '@types/jsonwebtoken': '^9.0.9',
+/** Runtime packages auto-added only when a generated file imports them. Version-pinned dev types travel with them. */
+const AUTO_ADD_DEPENDENCIES_WITH_TYPES: Record<string, { dep: string; devTypes: string; typesPackage: string }> = {
+  jsonwebtoken: { dep: '^9.0.2', devTypes: '^9.0.9', typesPackage: '@types/jsonwebtoken' },
+  bcryptjs: { dep: '^2.4.3', devTypes: '^2.4.6', typesPackage: '@types/bcryptjs' },
 }
 
 export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these exact versions:
@@ -54,48 +54,97 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - "react": "${PINNED_REACT_VERSION}"
 - "react-dom": "${PINNED_REACT_VERSION}"
 - devDependencies: typescript ^5.8, @types/node ^22, @types/react ^19, @types/react-dom ^19, tailwindcss ^3.4.17, postcss ^8, autoprefixer ^10, eslint ^9, eslint-config-next ${PINNED_NEXT_VERSION}
+- If ANY file imports a third-party package (e.g. lucide-react, recharts, date-fns, zod, bcryptjs, jsonwebtoken), package.json dependencies MUST include that exact package — a missing dependency causes TS2307 "Cannot find module" at typecheck
+- Add matching @types/* devDependencies for packages that ship no bundled types (e.g. @types/jsonwebtoken, @types/bcryptjs)
 - When using lucide-react, pin "lucide-react": "^0.479.0" or newer (React 19 compatible) — never ^0.395.x
-- If ANY file imports from lucide-react, recharts, or openai, package.json dependencies MUST include that package — missing deps cause TS2307 at typecheck
-Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use Tailwind v4-only setup.
+Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use a Tailwind v4-only setup.
 next.config.ts MUST NOT include an eslint property (removed in Next.js 16 — builds no longer run ESLint from next.config)`
 
 export const GENERATED_APP_TYPESCRIPT_GUIDANCE = `TypeScript and Next.js structure (zero errors required):
 - Use strict TypeScript: strict true in tsconfig.json, no @ts-ignore, no implicit any, no unused variables
-- Every identifier in a file must be declared or imported — NEVER use a type, interface, or variable name without defining it in the same file or importing it (e.g. TS2304 "Cannot find name 'UserData'" means add \`import type { UserData } from '@/lib/types'\` or define the interface locally)
+- Every identifier in a file must be declared or imported — NEVER use a type, interface, or variable name without defining it in the same file or importing it (TS2304 "Cannot find name 'X'" means add \`import type { X } from '@/lib/types'\` or define the type locally)
 - Every React component props interface must be explicit (e.g. interface HeroProps { title: string }) and every type in that interface must be imported or defined in the file
-- NEVER type Client component props or \`.map()\` callback parameters as \`unknown\` or \`unknown[]\` when those values are used in JSX, React \`key={...}\`, object indexes (\`obj[field]\`), or computed property names (\`{ [field]: value }\`) — TypeScript rejects unknown for Key, ReactNode, index types (TS2322/TS2538/TS2464)
-- Define concrete DTOs in lib/types.ts (e.g. AgentField { key: string; label: string; value: string }, AgentExecution { id: string; status: string; output: Record<string, string> }) and import them in AgentClient and similar components — never \`fields: unknown[]\` or \`agent: unknown\`
+- NEVER type Client component props or \`.map()\` callback parameters as \`unknown\` or \`unknown[]\` when those values are used in JSX, React \`key={...}\`, object indexes (\`obj[field]\`), or computed property names (\`{ [field]: value }\`) — TypeScript rejects unknown for Key, ReactNode, and index types (TS2322/TS2538/TS2464). Define a concrete interface in lib/types.ts instead
 - Server pages fetch data; Client components receive it via props. If app/foo/page.tsx renders <FooClient data={data} />, components/FooClient.tsx MUST declare interface FooClientProps { data: DataType } and use ({ data }: FooClientProps) — NEVER () with no parameters when the page passes props
-- Share domain types in lib/types.ts only — pages and Client components import types with \`import type { UserData, CategoryData } from '@/lib/types'\`
-- lib/types.ts MUST export every shared type (UserData, CategoryData, TaskWithRelations, etc.) with \`export interface\` or \`export type\`
-- When pages import TaskWithRelations but the model is Task, export \`export type TaskWithRelations = Task\` in lib/types.ts — same for MemberData/Member, TaskWithOwners/Task, Status/TaskStatus, Priority/TaskPriority
-- lib/actions.ts exports server actions (functions) only — import runtime values with \`import { getCategories } from '@/lib/actions'\`; do NOT import types from @/lib/actions unless that file explicitly re-exports them with \`export type { CategoryData } from '@/lib/types'\`
-- Name interactive Client components with a Client suffix (DashboardClient, AnalyticsClient, SettingsClient) and add "use client" at the top
-- CRITICAL: Every named Client component MUST contain complete, real UI code — JSX with actual elements, logic, and state. NEVER write a stub like \`export default function DashboardClient() { return <div>DashboardClient</div> }\` — this renders as literal text and is a broken app
+- Share domain types in lib/types.ts only — pages and Client components import them with \`import type { Foo } from '@/lib/types'\`; export every shared type with \`export interface\` or \`export type\`
+- When a page imports a derived/aliased type (e.g. FooWithRelations) that resolves to a base model, export the alias from lib/types.ts (\`export type FooWithRelations = Foo\`)
+- lib/actions.ts exports server actions (functions) only — import runtime values with \`import { getItems } from '@/lib/actions'\`; do NOT import types from @/lib/actions unless it explicitly re-exports them with \`export type { Foo } from '@/lib/types'\`
+- NEVER name your own types/interfaces after DOM or global built-ins (FormData, Request, Response, Error, Event, File) — TypeScript silently resolves the global (TS2353 "'field' does not exist in type 'FormData'"); use domain names like TripFormInput
+- Every server action a component inspects the result of MUST declare an explicit return type — \`export async function createItem(input: ItemInput): Promise<{ success: boolean; error?: string }>\` — never leave it implicitly \`void\` when callers read \`result.success\` (TS2339 "Property 'success' does not exist on type 'void'")
+- Name interactive Client components with a Client suffix (e.g. DashboardClient) and add "use client" at the top
+- CRITICAL: Every named component MUST contain complete, real UI code — JSX with actual elements, logic, and state. NEVER write a stub like \`export default function DashboardClient() { return <div>DashboardClient</div> }\` — this renders as literal text and is a broken app
 - Use Next.js 16 App Router only: app/layout.tsx (root layout with html/body), app/page.tsx, app/globals.css, and app/<route>/page.tsx for pages
 - Do NOT mix app/ and src/app/ — use app/ at project root only; path alias "@/*" maps to "./*" in tsconfig paths
 - Default to Server Components; add "use client" only for hooks, browser APIs, or event handlers
 - Use next/link for internal navigation, next/image for images, export const metadata in layout/page where appropriate
 - All imports must resolve; no missing modules; prefer named exports for components under components/
-- lib/crypto.ts: export encrypt, decrypt, maskKey, encryptApiKey, decryptApiKey when any file imports them from @/lib/crypto
-- lib/agents.ts: every AgentInfo object MUST include all required fields from lib/types.ts (especially id when AgentInfo requires it)
-- Date helpers (formatDate, formatRelativeTime, etc.): parameter type string | Date when used with Prisma DateTime values
+- Any shared lib module (lib/auth.ts, lib/crypto.ts, lib/utils.ts, etc.) MUST export every symbol another file imports from it — an import without a matching export is TS2305 "has no exported member"
+- Date/time helpers (formatDate, formatRelativeTime, etc.): accept \`string | Date\` when callers pass Prisma DateTime values
 - Code MUST pass "npm install && npm run build" with zero TypeScript errors and zero Next.js compile errors`
+
+export const GENERATED_APP_NULL_SAFETY_GUIDANCE = `Null safety (strictNullChecks — zero TS18047 / TS2531 / TS18048 errors):
+- NEVER use @ts-ignore, @ts-expect-error, or non-null assertion (\`!\`) to silence possibly-null errors — add real guards instead
+- TS18047 "'ctx' is possibly 'null'" (common in chart and canvas components):
+   - \`canvas.getContext('2d')\` returns \`CanvasRenderingContext2D | null\` — ALWAYS narrow before any \`ctx.\` call
+   - WRONG: \`const ctx = canvasRef.current?.getContext('2d'); ctx.fillStyle = '#fff'\` — optional chaining does not narrow ctx
+   - RIGHT:
+     \`const canvas = canvasRef.current\`
+     \`if (!canvas) return\`
+     \`const ctx = canvas.getContext('2d')\`
+     \`if (!ctx) return\`
+     \`ctx.fillStyle = '#fff'\` // safe
+- useRef<HTMLCanvasElement | null>(null) / useRef<HTMLDivElement>(null): inside useEffect or handlers, \`if (!ref.current) return\` before reading \`ref.current\`
+- document.getElementById / querySelector return \`Element | null\` — guard before properties or cast after null check
+- .find() / .findFirst() / optional DB rows may be undefined — guard: \`const item = items.find(...); if (!item) return null\` before \`item.id\`
+- searchParams.get('key') returns \`string | null\` — use \`?? ''\` or \`if (!value) return\` before passing to props expecting string
+- Server actions may return null — check before destructuring: \`const user = await getUserById(id); if (!user) notFound()\`
+- In animation loops (requestAnimationFrame), re-check \`ctx\` and \`canvasRef.current\` at the start of each frame callback
+- Self-check every Client component using canvas, refs, DOM APIs, or .getContext: every nullable value is narrowed with if (!x) return before use`
+
+export const GENERATED_APP_GENERATION_MANDATES = `NON-NEGOTIABLE — every generated app MUST satisfy these before you finish (structure validation + next build reject violations):
+
+1. app/not-found.tsx (REQUIRED file):
+   - Always include app/not-found.tsx in files[] with the canonical plain-<main> template — NO imports, NO @/components, NO Navbar/Footer/AppShell
+   - NEVER use next/document or PascalCase <Html>/<Head>/<Main>/<NextScript> anywhere in the repo
+   - app/not-found.tsx is prerendered as /404 — importing layout components is the #1 cause of recurring "Html should not be imported outside of pages/_document" failures
+
+2. lib/actions.ts exports (structure validation runs BEFORE build):
+   - Scan EVERY app/**/page.tsx and app/api/**/route.ts for \`import { ... } from '@/lib/actions'\`
+   - lib/actions.ts MUST export \`export async function <name>\` for EVERY imported symbol
+   - WRONG: a page imports getItems but lib/actions.ts only exports getCategories — validation fails with "imports getItems from @/lib/actions but lib/actions.ts does not export it"
+   - When adding a new page route, add its server action(s) to lib/actions.ts in the SAME JSON response
+
+3. Generation order (follow on every response):
+   - lib/types.ts → lib/actions.ts (complete exports) → prisma/schema.prisma when DB → components/*.tsx → app/layout.tsx + app/not-found.tsx → app/**/page.tsx last
+   - Never write a page that imports an action you have not yet exported from lib/actions.ts
+
+4. No test files (unless the user explicitly asks for tests):
+   - NEVER generate *.test.ts, *.test.tsx, *.spec.ts, *.spec.tsx, __tests__/ folders, e2e/, or test config (vitest, jest, playwright, cypress)
+   - Do not add vitest, jest, @testing-library/*, playwright, or cypress to package.json dependencies or devDependencies
+   - package.json scripts: dev, build, start, lint only — no "test" script
+   - files[] is production app code only — pages, components, lib, API routes, config`
+
+export const GENERATED_APP_NO_TESTS_GUIDANCE = `Tests — do NOT include unless the user explicitly requests tests:
+- NEVER add test files: no *.test.ts(x), *.spec.ts(x), __tests__/, e2e/, tests/, or test setup files
+- NEVER add test runners or configs: vitest.config.*, jest.config.*, playwright.config.*, cypress.config.*
+- NEVER add test packages to package.json: vitest, jest, @testing-library/react, @testing-library/jest-dom, playwright, cypress, @playwright/test
+- Do not add a "test" script to package.json — use dev, build, start, lint only
+- Generate production application code only; Sim validates with structure checks and next build, not unit tests`
 
 export const GENERATED_APP_ZERO_ERRORS_GUIDANCE = `Zero-defect bar (MANDATORY — generate, edit, and repair):
 - Output MUST have zero syntax errors, zero TypeScript semantic errors, and zero Next.js compile/prerender failures — validation rejects the app otherwise
-- Arena Copilot runs automated gates before GitHub push: structure checks on all files, then npm install + prisma generate + next build (E2B when configured) or local tsc --noEmit
-- Aren Copilot does NOT post-process your source files to fix imports, exports, types, auth/crypto helpers, Client prop interfaces, split imports, or next/document usage — output correct TypeScript in the JSON response
+- Sim runs automated gates before GitHub push: structure checks on all files, then npm install + prisma generate + next build (E2B when configured) or local tsc --noEmit
+- Sim does NOT post-process your source files to fix imports, exports, types, Client prop interfaces, split imports, or next/document usage — output correct TypeScript in the JSON response
 - Never submit stubs, placeholders, split imports, dangling @/ imports, or pages that import components missing from files[]
 - Syntax: valid TS/TSX; closed JSX tags; complete \`import ... from '...'\` statements; \`return (\` or \`return <\` on one line; "use client" as the first line when hooks/events are used
-- Semantics: strict types (no any, no @ts-ignore); page and Client prop names match exactly; every type from @/lib/types; server actions from @/lib/actions; Prisma queries use schema field names
+- Semantics: strict types (no any, no @ts-ignore); page and Client prop names match exactly; every type from @/lib/types; server actions from @/lib/actions; Prisma queries use schema field names; guard all possibly-null values (canvas ctx, refs, .find(), get()) — zero TS18047
 - Next.js App Router: only app/layout.tsx renders <html> and <body>; NEVER import Html/Head/Main/NextScript from next/document in app/**; app/not-found.tsx and app/error.tsx use plain <div>/<main> markup
 - Self-check before responding: trace every import to an exported symbol; every page import has a components/*.tsx file in files[]; edited files stay consistent with importers and lib/types.ts
 - Edits must leave the full repo buildable — update page AND component together when props change; return lib/actions.ts and lib/types.ts when schema changes`
 
 export const GENERATED_APP_VALIDATION_GUIDANCE = `Pre-build validation requirements:
 - package.json has scripts: dev, build, start, lint
-- app/layout.tsx exists and exports metadata; app/page.tsx and app/globals.css exist (globals.css imported only in layout)
+- app/layout.tsx exists and exports metadata; app/page.tsx, app/not-found.tsx, and app/globals.css exist (globals.css imported only in layout)
 - Every @/ import must resolve to a generated file — no placeholder imports like @/components/ui/... unless those files are generated
 - Structure validation fails when a page imports @/components/X but components/X.tsx is missing from the output — generate every imported component with full JSX
 - Client components rendered with props must declare matching props interfaces
@@ -107,80 +156,73 @@ export const GENERATED_APP_VALIDATION_GUIDANCE = `Pre-build validation requireme
 - App Router document shell: only app/layout.tsx uses \`<html>\` and \`<body>\`; app/not-found.tsx and app/error.tsx use plain \`<main>\`/\`<div>\` — never next/document or PascalCase \`<Html>\`
 - Include Prisma files and dependencies only when requiresDatabase is true; static apps must not include prisma/ or @prisma/client
 - Include tailwind.config.ts and package.json scripts.build
+- No test files or test tooling — see NO_TESTS guidance; production code only unless the user explicitly asks for tests
 - NEVER use localStorage.setItem or sessionStorage.setItem to store app data — when requiresDatabase is true use Prisma server actions; when requiresDatabase is false keep state in-memory with useState only for UI interactions, never for cross-session persistence
 - Final code must pass structure validation AND pre-deploy compile validation (next build in E2B, or tsc --noEmit locally) with zero errors`
 
 export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failures — avoid ALL of these (structure validation will reject the app):
-1. localStorage / sessionStorage persistence (database apps):
-   - NEVER use localStorage.setItem or sessionStorage.setItem in ANY file — especially AppShell, LoginClient, RegisterClient, ForgotPasswordClient, DashboardClient, TasksClient, UsersClient, CategoriesClient, SettingsClient, ProfileClient
-   - Auth: fetch('/api/auth/me') + cookies/server session — NOT localStorage.getItem('user') or setItem('token', ...)
-   - Login/register: POST to app/api/auth routes — do not stash user JSON in browser storage
-   - Dark mode / sidebar: useState + document.documentElement.classList only — never persist theme to localStorage
+1. localStorage / sessionStorage persistence:
+   - NEVER use localStorage.setItem or sessionStorage.setItem to persist app data, users, sessions, or tokens in ANY file
+   - When the app has auth: store sessions server-side (database + httpOnly cookies), read state via fetch('/api/auth/me') — not browser storage
+   - UI-only state (dark mode, sidebar open): useState + document.documentElement.classList only — never persist to localStorage
 2. Split / broken imports (TS1109 Expression expected) — affects pages, components, lib/, and config files:
    - EVERY package needs its own complete block: \`import { A, B } from 'package';\`
-   - WRONG: close lucide-react then list recharts symbols without \`import {\`
-   - WRONG: close recharts then list lucide symbols without \`import {\`
-   - lucide-react icons and recharts components MUST be two separate import statements
-   - After any \`} from 'module';\` the next line must be \`const\`, \`export\`, \`function\`, or a new \`import\` — NEVER bare symbol names like \`BarChart,\` or \`CheckCircle,\`
+   - Two different packages (e.g. lucide-react and recharts) MUST be two separate import statements — never close one \`} from 'pkg-a';\` then list pkg-b symbols without a new \`import {\`
+   - After any \`} from 'module';\` the next line must be \`const\`, \`export\`, \`function\`, or a new \`import\` — NEVER a bare symbol name like \`BarChart,\`
 3. Types vs actions imports (TS2459):
    - Import types from @/lib/types only — never \`import type { X } from '@/lib/actions'\` unless actions re-exports the type
-4. lib/auth exports (TS2305):
-   - Every API route importing from @/lib/auth must match exports in lib/auth.ts — export signToken, verifyToken, getAuthUser, and JwtPayload together
-   - If you add app/api/*/route.ts files, update lib/auth.ts in the same edit so imports resolve
+4. Shared lib module exports (TS2305 "has no exported member"):
+   - A lib module (lib/auth.ts, lib/crypto.ts, lib/utils.ts, etc.) MUST export EVERY symbol another file imports from it, in the SAME response
+   - If you add a route/page/component that imports \`{ foo }\` from @/lib/bar, add \`export ... foo\` to lib/bar.ts in the same JSON response
 5. Config / server files stay simple:
    - next.config.ts, tailwind.config.ts, lib/prisma.ts: minimal imports then const/export — no split import blocks
    - lib/prisma.ts: only \`import { PrismaClient } from '@prisma/client'\` plus singleton export
 6. Prisma schema drift (TS2353 / TS2339 / TS2551 in lib/actions.ts):
    - Read prisma/schema.prisma FIRST — use the exact relation and scalar field names defined there
-   - include/select keys MUST match schema relation names exactly (never mix assignee vs user vs creator unless all three exist on the model)
-   - lib/actions.ts Prisma queries and DTO mapping MUST use the same names as schema.prisma (include keys AND t.field access AND returned object keys)
-   - lib/types.ts interfaces MUST match what lib/actions.ts returns — update all three files together on every schema change
-   - Do NOT reference scalar fields absent from the model (e.g. User.avatar) unless defined in schema.prisma
-   - Aggregate types like DashboardStats are NOT database rows — do not add a required \`id\` field unless the return object includes one
-7. package.json auth deps (TS2307 Cannot find module 'jsonwebtoken'):
-   - When lib/auth.ts imports jsonwebtoken, package.json MUST include jsonwebtoken in dependencies and @types/jsonwebtoken in devDependencies
+   - include/select keys MUST match schema relation names exactly; access included relations by the SAME name after the query
+   - lib/actions.ts Prisma queries/DTO mapping and lib/types.ts interfaces MUST match schema.prisma — update all three together on every schema change
+   - Do NOT reference scalar fields absent from the model unless defined in schema.prisma
+   - Aggregate/stat types are NOT database rows — do not add a required \`id\` field unless the return object includes one
+7. Missing third-party dependencies (TS2307 "Cannot find module"):
+   - When any file imports a package (lucide-react, recharts, jsonwebtoken, bcryptjs, zod, etc.), package.json dependencies MUST include it, with matching @types/* in devDependencies when the package ships no types
 8. Missing component files ("Missing file for import @/components/X" in structure validation):
    - Every page/layout that imports @/components/Foo MUST have components/Foo.tsx in files[] with complete UI — generate the component, do not delete the import
-   - app/layout.tsx → Navbar, Footer; app/login/page.tsx → LoginClient; shared ServicePageClient across service routes — one components/ServicePageClient.tsx file
+   - Reuse one shared component across similar routes (one components/Foo.tsx file) rather than dangling per-route imports
    - Fix by ADDING the missing components/*.tsx files in the same JSON response — never submit pages that reference components you did not generate
 9. Page ↔ Client prop name drift (TS2322 IntrinsicAttributes & XxxClientProps):
-   - Server page and Client component MUST use identical prop names — if page passes \`categories={data}\`, interface CategoriesClientProps MUST declare \`categories\`, NOT \`initialCategories\`
-   - Generate the Client component and its \`interface XxxClientProps\` BEFORE writing the page that renders it
-   - WRONG: page \`<TasksClient tasks={tasks} currentUser={user} />\` + component \`interface TasksClientProps { initialTasks: ... }\`
-   - RIGHT: same names on both sides; update page AND component together in one response
-10. Auth session vs database user (TS2739 JwtPayload missing UserData fields):
-   - getAuthUser() returns JwtPayload: \`{ id, name, email, role }\` — use \`user.id\`, NEVER \`user.userId\`
-   - Profile/settings pages needing full UserData MUST call a server action (e.g. getUserById(auth.id)) and pass that result — do NOT pass JwtPayload where UserData is expected
-11. Missing server actions (TS2305 has no exported member):
-   - Every \`import { getFoo } from '@/lib/actions'\` MUST match an \`export async function getFoo\` in lib/actions.ts
-   - When a page needs getRecentTasks, getDashboardStats, etc., ADD the function to lib/actions.ts in the same response — never import actions that do not exist
-12. next/document in App Router (next build prerender error on /404 — #1 repair failure if ignored):
-   - NEVER import \`Html\`, \`Head\`, \`Main\`, or \`NextScript\` from \`next/document\` — Pages Router \`pages/_document\` only; this repo is App Router
-   - NEVER use PascalCase \`<Html>\`, \`<Head>\`, \`<Main>\`, or \`<NextScript>\` JSX tags anywhere — even without an import (structure validation and next build both fail)
+   - Server page and Client component MUST use identical prop names — if page passes \`items={data}\`, interface FooClientProps MUST declare \`items\`, NOT \`initialItems\`
+   - Generate the Client component and its \`interface XxxClientProps\` BEFORE writing the page that renders it; update page AND component together in one response
+10. Missing server actions (structure validation — "imports X from @/lib/actions but lib/actions.ts does not export it"):
+   - Every \`import { getFoo } from '@/lib/actions'\` MUST match \`export async function getFoo\` in lib/actions.ts
+   - Structure validation fails BEFORE next build — an imported-but-unexported action blocks the entire deploy
+   - When a page needs a new query, ADD its full implementation to lib/actions.ts in the SAME response as the page
+   - Batched generation: if this batch includes app/**/page.tsx, return the COMPLETE updated lib/actions.ts with every export those pages import
+11. next/document in App Router (next build prerender error on /404 — #1 recurring build failure):
+   - NEVER import \`Html\`, \`Head\`, \`Main\`, or \`NextScript\` from \`next/document\` — that is Pages Router only; this app is App Router
+   - NEVER use PascalCase \`<Html>\`, \`<Head>\`, \`<Main>\`, or \`<NextScript>\` JSX tags anywhere — even without an import line
    - ONLY app/layout.tsx renders the document shell with lowercase \`<html>\` and \`<body>\` — nowhere else
-   - app/not-found.tsx (prerendered as /404) and app/error.tsx: plain \`<main>\` or \`<div>\` only — NO \`<html>\`, NO \`<body>\`, NO next/document
-   - WRONG: \`import { Html } from 'next/document'\` or \`return <Html><body>404</body></Html>\` in app/not-found.tsx
-   - RIGHT: see GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE canonical templates — replace the entire file on repair, do not patch imports only
-13. lib/crypto exports (TS2305 has no exported member 'maskKey'):
-   - lib/crypto.ts is the ONLY crypto module — export EVERY symbol imported from @/lib/crypto in the same response
-   - Common exports: encrypt, decrypt, encryptApiKey, decryptApiKey, maskKey (redacts API keys for display)
-   - WRONG: app/api/settings/apikey/route.ts imports maskKey but lib/crypto.ts only exports encrypt/decrypt
-   - RIGHT: lib/crypto.ts includes \`export function maskKey(value: string): string { ... }\` before any route imports it
-14. Agent catalog types (TS2741 Property 'id' is missing in type 'AgentInfo'):
-   - If lib/types.ts defines \`interface AgentInfo { id: string; slug: string; ... }\`, EVERY entry in lib/agents.ts MUST include id
-   - Use the same string for id and slug when they match: \`{ id: 'keyword-research', slug: 'keyword-research', name: '...', ... }\`
-   - WRONG: \`{ slug: 'keyword-research', name: '...', description: '...', route: '...' }\` without id
-15. Date/time helpers (TS2345 Date not assignable to string):
-   - Helpers named formatDate, formatTime, formatRelativeTime, formatTimeAgo, timeAgo, formatTimestamp MUST accept \`string | Date\` when components pass Prisma DateTime fields
-   - Inside the helper: \`const d = value instanceof Date ? value : new Date(value)\` — never type the param as string only when callers pass Date
-16. Client props completeness (TS2322 / missing prop on XxxClientProps):
-   - EVERY prop the server page passes in JSX MUST appear in the Client's Props interface — including executions, hasApiKey, stats, items, etc.
-   - When a page adds a new prop, update components/XxxClient.tsx interface AND destructuring in the same response — do not rely on post-processing
-17. unknown in Client components (TS2322 / TS2538 / TS2464 in components/*Client.tsx — common in AgentClient):
-   - WRONG: \`interface AgentClientProps { agent: unknown; fields: unknown[] }\` then \`fields.map((field) => <div key={field.key}>{field.label}</div>)\` — field is unknown, so field.key fails Key/ReactNode/index checks
-   - RIGHT: define \`interface AgentField { key: string; label: string; value: string }\` in lib/types.ts, use \`fields: AgentField[]\`, import with \`import type { AgentField } from '@/lib/types'\`
-   - Any value rendered in JSX (\`{item.name}\`), used as \`key={item.id}\`, indexed (\`output[key]\`), or in computed keys (\`{ [field.key]: field.value }\`) MUST have a concrete type with string/number/boolean fields — never \`unknown\`
-   - For agent UIs: export AgentInfo, AgentField, AgentExecution (or similar) from lib/types.ts with \`id: string\`, \`name: string\`, \`status: string\`, and typed output maps — wire AgentClient props to those types`
+   - app/not-found.tsx (REQUIRED): standalone plain \`<main>\` only — ZERO imports (no @/components — they reintroduce /404 prerender failures)
+   - app/error.tsx: same rule — plain \`<main>\` only, "use client" first line, no layout component imports
+   - RIGHT: copy the canonical app/not-found.tsx template from APP_ROUTER_DOCUMENT guidance verbatim (customize text/classes only)
+12. Date/time helpers (TS2345 Date not assignable to string):
+   - Helpers named formatDate/formatTime/formatRelativeTime/timeAgo MUST accept \`string | Date\` when callers pass Prisma DateTime fields
+   - Inside the helper: \`const d = value instanceof Date ? value : new Date(value)\`
+13. Client props completeness (TS2322 / missing prop on XxxClientProps):
+   - EVERY prop the server page passes in JSX MUST appear in the Client's Props interface — when a page adds a prop, update the component interface AND destructuring in the same response
+14. unknown in Client components (TS2322 / TS2538 / TS2464 in components/*Client.tsx):
+   - WRONG: \`interface FooClientProps { items: unknown[] }\` then \`items.map((item) => <div key={item.id}>{item.label}</div>)\` — item is unknown, so item.id fails Key/ReactNode/index checks
+   - RIGHT: define \`interface FooItem { id: string; label: string }\` in lib/types.ts, use \`items: FooItem[]\`, import with \`import type { FooItem } from '@/lib/types'\`
+   - Any value rendered in JSX, used as \`key={...}\`, indexed, or in computed keys MUST have a concrete type with string/number/boolean fields — never \`unknown\`
+15. Missing null checks (TS18047 / TS2531):
+   - strictNullChecks rejects \`ctx.fillStyle\` when \`ctx\` may be null after getContext('2d')
+   - Guard canvas ref AND ctx before drawing — see NULL_SAFETY guidance; never use \`!\` to force non-null
+   - Same for refs, getElementById, .find() results, and searchParams.get()
+16. Shadowed global type names (TS2353 "'x' does not exist in type 'FormData'"):
+   - NEVER name an interface/type after a DOM or global built-in: FormData, Request, Response, Error, Event, File, Document, Location
+   - TypeScript resolves the browser global instead of your type when the import is missed — use domain-specific names (TripFormInput, ContactFormValues)
+17. Server action return contracts (TS2339 "Property 'success' does not exist on type 'void'"):
+   - Every action whose result is inspected (\`result.success\`, \`result.error\`) MUST declare \`Promise<{ success: boolean; error?: string }>\` (or a named result type in lib/types.ts) and return that object on every code path
+   - The action, its declared return type, and every caller must agree — update all in the same response`
 
 export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — every import must resolve to an exported symbol):
 - tsconfig paths MUST be "@/*": ["./*"] with app/ at project root (not src/app/)
@@ -194,11 +236,10 @@ export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — 
 - Export/import pairing MUST match: default export → \`import Foo from '...'\`; named export → \`import { Foo } from '...'\`; exported type → \`import type { Foo } from '@/lib/types'\`
 - If you add a type to lib/types.ts, export it and update every file that uses it to import from '@/lib/types'
 - If you add a server action to lib/actions.ts, export it with \`export async function\` and import only the function name in pages/components
-- lib/crypto.ts: export encrypt, decrypt, maskKey, encryptApiKey, decryptApiKey when any file imports them from @/lib/crypto
-- lib/agents.ts: every AgentInfo entry must satisfy lib/types.ts — include id when AgentInfo requires it
+- Any shared lib module (lib/auth.ts, lib/crypto.ts, lib/utils.ts, etc.) MUST export every symbol another file imports from it — add the export in the same response as the importer
 - EVERY @/ import must resolve to a generated file with a matching export of the correct kind (default, named, or type)
 - See COMPONENT FILES rules — missing components/ files are the most common validation failure
-- shadcn/ui components under components/ui/ MUST use named exports matching imports: \`export function Button\` when imported as \`import { Button } from '@/components/ui/button'\`
+- Components under components/ui/ MUST use named exports matching imports: \`export function Button\` when imported as \`import { Button } from '@/components/ui/button'\`
 - Before finishing, verify each file: every import has a corresponding export in the target file; every exported symbol used elsewhere is imported correctly
 - Each import statement must be complete: \`import { Foo, Bar } from 'package';\` — NEVER close with \`} from 'lucide-react';\` and then list more symbols (BarChart, Pie, etc.) without a new \`import {\` line (causes TS1109 Expression expected)
 - When using both lucide-react and recharts (or any two packages), write TWO separate import blocks — one per package`
@@ -232,21 +273,21 @@ Self-check before submitting JSON:
 export const GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE = `Page ↔ Client contract (CRITICAL — prevents TS2322 / TS2305 / TS2739):
 
 Generation order (strict):
-1. lib/types.ts — all DTOs (UserData, TaskData, CategoryData, DashboardStats, etc.)
+1. lib/types.ts — all DTOs 
 2. lib/actions.ts — export every get*/create*/update* function pages will import
 3. components/<Name>Client.tsx — declare \`interface <Name>ClientProps { ... }\` FIRST, then the component destructuring those exact field names
 4. app/**/page.tsx — thin server pages that fetch via actions and pass props using the SAME names as step 3
 
 Hard rules:
-- Prop names on the page JSX MUST exactly match fields in the Client's Props interface (categories not initialCategories, tasks not initialTasks, user not currentUser unless both sides use currentUser)
-- Include EVERY prop the page passes — if the page renders \`<DashboardClient executions={executions} hasApiKey={hasApiKey} />\`, DashboardClientProps MUST declare executions AND hasApiKey with correct types
-- NEVER use \`unknown\` or \`unknown[]\` for props that are rendered in JSX or iterated with \`.map()\` — import concrete types from lib/types.ts (AgentField, AgentExecution, TaskData, etc.) with string ids for keys and string labels/values for display
-- AgentClient / agent pages: lib/types.ts MUST export field and execution shapes BEFORE writing components/AgentClient.tsx — props like \`agent\`, \`fields\`, \`executions\` use those interfaces, not unknown
+- Prop names on the page JSX MUST exactly match fields in the Client's Props interface (items not initialItems, user not currentUser unless both sides use currentUser)
+- Include EVERY prop the page passes — if the page renders \`<DashboardClient items={items} total={total} />\`, DashboardClientProps MUST declare items AND total with correct types
+- NEVER use \`unknown\` or \`unknown[]\` for props that are rendered in JSX or iterated with \`.map()\` — import concrete types from lib/types.ts with string ids for keys and string labels/values for display
+- Define shared prop/data shapes in lib/types.ts BEFORE writing the component that consumes them
 - When adding or renaming a prop, update the page AND the Client component in the same response
-- getAuthUser() returns JwtPayload { id, name, email, role } — for profile pages needing UserData, call getUserById(auth.id) from lib/actions.ts and pass that
-- AppShell/layout: if AppShellProps requires \`user\`, the layout MUST pass \`user={await getAuthUser()}\` (or fetched UserData)
+- When an auth session object (e.g. a JWT payload) differs from the full user record, fetch the full record via a server action for pages that need it — do NOT pass the session payload where the richer type is expected
 - Never import a function from @/lib/actions unless you also export it from lib/actions.ts in the same batch
-- Prisma enum fields (TaskStatus, Priority): type props and useState as the enum union from lib/types.ts, not bare string`
+- When this batch includes any app/**/page.tsx or app/api/**/route.ts, you MUST also return lib/actions.ts with \`export async function\` for EVERY action those files import — even if lib/actions.ts was generated in an earlier batch, return the full updated file
+- Prisma enum fields: type props and useState as the enum union from lib/types.ts, not bare string`
 
 export const GENERATED_APP_JSX_GUIDANCE = `JSX and TSX syntax (zero TS1005 / TS17008 errors):
 - TS1005 "'>' expected" almost always means broken JSX or a line break before JSX — fix the syntax, do not leave the file half-edited
@@ -264,11 +305,12 @@ export const GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE = `App Router document s
 - App Router ONLY — \`next/document\` (\`Html\`, \`Head\`, \`Main\`, \`NextScript\`) is forbidden in every file (app/**, components/**, lib/**)
 - FORBIDDEN: \`import { Html, Head, Main, NextScript } from 'next/document'\`; PascalCase JSX \`<Html>\`, \`<Head>\`, \`<Main>\`, \`<NextScript>\` — including tags without an import line
 - ONLY app/layout.tsx may render \`<html lang="en">\` and \`<body>\` (lowercase native elements + next/font + Tailwind)
-- app/not-found.tsx is prerendered as /404 — it MUST NOT import next/document and MUST NOT wrap content in \`<html>\`, \`<body>\`, or \`<Html>\`
-- app/error.tsx and any component imported by not-found/error routes must follow the same rule
-- Build errors "Html should not be imported outside of pages/_document" and "Error occurred prerendering page \\"/404\\"" mean rewrite app/not-found.tsx entirely (and fix any shared component still using Html/Head/Main/NextScript) — partial import removal is not enough
+- app/not-found.tsx is REQUIRED, prerendered as /404 — ZERO imports (no @/components, no Navbar/Footer/AppShell); plain \`<main>\` markup only
+- Importing layout components into not-found.tsx is forbidden — they often pull in next/document patterns and cause recurring repair failures
+- app/error.tsx: "use client" first line, plain \`<main>\` only, no component imports
+- Self-check: grep mentally for "next/document", "<Html", "<Head", "<Main", "<NextScript" — must be zero matches outside app/layout.tsx lowercase html/body
 
-Canonical app/not-found.tsx (use this structure; customize copy/classes only):
+Canonical app/not-found.tsx — COPY THIS FILE EXACTLY (customize heading/copy/classes only; keep zero imports):
 export default function NotFound() {
   return (
     <main className="flex min-h-[50vh] flex-col items-center justify-center px-4">
@@ -304,16 +346,13 @@ export const GENERATED_APP_STYLING_GUIDANCE = `Fonts and CSS:
 - Load fonts ONLY with next/font/google in app/layout.tsx (e.g. Inter from 'next/font/google'), export const inter = Inter({ subsets: ['latin'] }), apply inter.className on <body>
 - Reference the font via Tailwind (font-sans on body) or CSS variables from next/font — not remote @import`
 
-export const GENERATED_APP_AUTH_GUIDANCE = `Authentication and session (database apps — no browser storage):
-- NEVER call localStorage.setItem or sessionStorage.setItem for user, token, session, or app data
-- Load auth state with fetch('/api/auth/me') in Client layout/shell components; logout via fetch('/api/auth/logout', { method: 'POST' })
-- Store credentials and sessions server-side (Prisma User model + cookies) — not in browser storage
-- Dark mode and sidebar UI state: useState only — toggle document.documentElement.classList, do not write theme to localStorage
-- lib/auth.ts is the ONLY auth module — it MUST export every symbol imported elsewhere: JwtPayload, signToken, verifyToken, getAuthUser
-- lib/crypto.ts is the ONLY crypto module — it MUST export every symbol imported elsewhere: encrypt, decrypt, maskKey, encryptApiKey, decryptApiKey (TS2305 on maskKey means you imported it without exporting it from lib/crypto.ts)
-- API routes MUST import auth helpers from @/lib/auth — if a route uses verifyToken or getAuthUser, lib/auth.ts MUST export that exact function (TS2305 means you added an import without exporting it from lib/auth.ts)
-- Prefer getAuthUser() in API routes/pages; use verifyToken(token) only when reading a raw token string
-- When lib/auth.ts imports jsonwebtoken, package.json MUST list jsonwebtoken in dependencies and @types/jsonwebtoken in devDependencies`
+export const GENERATED_APP_AUTH_GUIDANCE = `Authentication and session (ONLY when the app needs login/accounts — skip entirely for apps without users):
+- If the app has no auth requirement, do NOT invent login, sessions, or a User model — keep it simple
+- When auth IS needed: store credentials and sessions server-side (Prisma User model + httpOnly cookies) — NEVER localStorage/sessionStorage for user, token, or session
+- Load auth state via fetch('/api/auth/me'); log out via fetch('/api/auth/logout', { method: 'POST' })
+- Centralize auth helpers in one lib module (e.g. lib/auth.ts) and export EVERY symbol other files import from it (TS2305 means an import has no matching export)
+- Centralize hashing/crypto in one lib module (e.g. lib/crypto.ts) and export every symbol imported from it; implement password hashing with bcryptjs
+- When a file imports jsonwebtoken or bcryptjs, add that package to package.json dependencies and its @types/* to devDependencies in the same response`
 
 export const GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE = `Prisma schema ↔ actions ↔ types alignment (YOU must get this right — no post-processing fixes broken code):
 - prisma/schema.prisma is the source of truth for Prisma field names
@@ -339,8 +378,8 @@ export const GENERATED_APP_REFERENCE_PDF_GUIDANCE = `Reference design PDF provid
 /** @deprecated Use GENERATED_APP_REFERENCE_PDF_GUIDANCE */
 export const GENERATED_APP_REFERENCE_IMAGE_GUIDANCE = GENERATED_APP_REFERENCE_PDF_GUIDANCE
 
-export const GENERATED_APP_NEON_DATABASE_GUIDANCE = `Neon Postgres + Prisma (YOU generate all database files — Arena does not inject or patch schema/models):
-- Generate prisma/schema.prisma with domain-specific models matching the app (User, Task, Category, etc.) — never rely on a generic Record placeholder
+export const GENERATED_APP_NEON_DATABASE_GUIDANCE = `Neon Postgres + Prisma (YOU generate all database files — Sim does not inject or patch schema/models):
+- Generate prisma/schema.prisma with domain-specific models matching the app — never rely on a generic Record placeholder
 - Datasource block MUST be exactly:
   datasource db {
     provider = "postgresql"
@@ -413,7 +452,7 @@ export interface NormalizeGeneratedAppFilesOptions {
 
 export const GENERATED_APP_REPO_SUMMARY_GUIDANCE = `REPO_SUMMARY.md (required, auto-maintained):
 - Living repository summary: purpose, features, tech stack, routes, API routes, Prisma models, components, and a complete file index
-- Arena Development regenerates this file after generate and edit — do not omit it from new apps
+- Sim Development regenerates this file after generate and edit — do not omit it from new apps
 - During edits, read REPO_SUMMARY.md first to understand architecture before changing code`
 
 export const GENERATED_APP_README_GUIDANCE = `README.md (required):
@@ -535,6 +574,15 @@ export function patchPackageJsonContent(
         if (version) {
           pkg.dependencies = { ...pkg.dependencies, [usedPackage]: version }
         }
+
+        const withTypes = AUTO_ADD_DEPENDENCIES_WITH_TYPES[usedPackage]
+        if (withTypes) {
+          pkg.dependencies = { ...pkg.dependencies, [usedPackage]: withTypes.dep }
+          pkg.devDependencies = {
+            ...pkg.devDependencies,
+            [withTypes.typesPackage]: withTypes.devTypes,
+          }
+        }
       }
     }
 
@@ -542,22 +590,18 @@ export function patchPackageJsonContent(
       pkg.dependencies = {
         ...pkg.dependencies,
         '@prisma/client': PINNED_PRISMA_VERSION,
-        ...AUTH_PACKAGE_DEPENDENCIES,
       }
       pkg.devDependencies = {
         ...pkg.devDependencies,
         prisma: PINNED_PRISMA_VERSION,
-        ...AUTH_PACKAGE_DEV_DEPENDENCIES,
       }
       const existingBuild = pkg.scripts?.build ?? 'next build'
       const { postinstall: _removedPostinstall, ...remainingScripts } = pkg.scripts ?? {}
-      const defaultDbBuild =
-        'prisma generate && prisma db push && (npx prisma db execute --file db/seed.sql --schema prisma/schema.prisma 2>/dev/null || true) && (npx prisma db seed 2>/dev/null || true)'
       pkg.scripts = {
         ...remainingScripts,
         build: existingBuild.includes('prisma')
           ? existingBuild
-          : `${defaultDbBuild} && ${existingBuild}`,
+          : `prisma generate && prisma db push && ${existingBuild}`,
       }
     }
 

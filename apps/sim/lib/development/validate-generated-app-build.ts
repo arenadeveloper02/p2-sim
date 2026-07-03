@@ -40,8 +40,14 @@ export interface ValidateGeneratedAppBuildOptions {
 const DUMMY_DATABASE_URL = 'postgresql://user:pass@localhost:5432/validate?sslmode=disable'
 const NPM_INSTALL_ARGS = ['install', '--include=dev', '--legacy-peer-deps', '--no-audit', '--no-fund'] as const
 
+/**
+ * NODE_ENV must be 'production' (never 'development'): `next build` under a
+ * non-standard NODE_ENV fails /404 prerender with a misleading
+ * "<Html> should not be imported outside of pages/_document" error.
+ * Dev dependencies still install because npm runs with --include=dev.
+ */
 const E2B_VALIDATION_ENV = {
-  NODE_ENV: 'development',
+  NODE_ENV: 'production',
   NEXT_TELEMETRY_DISABLED: '1',
   PRISMA_HIDE_UPDATE_MESSAGE: 'true',
   CI: '1',

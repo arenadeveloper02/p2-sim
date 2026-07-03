@@ -1,8 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
+import { createAnthropicMessage } from '@/lib/anthropic/create-message'
+import { getMaxOutputTokensForModel } from '@/providers/utils'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('FigmaToHTMLAI')
+
+const FIGMA_AI_MODEL = 'claude-opus-4-8'
+const FIGMA_AI_MAX_OUTPUT_TOKENS = getMaxOutputTokensForModel(FIGMA_AI_MODEL)
 
 // Parameters for the tool
 export interface FigmaToHTMLAIParams {
@@ -230,9 +235,9 @@ async function callAIService(
       apiKey: apiKey,
     })
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16384, // Large token limit for complex, multi-section designs with detailed HTML/CSS
+    const message = await createAnthropicMessage(anthropic, {
+      model: FIGMA_AI_MODEL,
+      max_tokens: FIGMA_AI_MAX_OUTPUT_TOKENS,
       system:
         'You are an expert frontend developer specializing in converting Figma designs to clean, semantic, and accessible HTML/CSS code. Always respond with a single HTML document that includes embedded CSS in <style> tags within the <head> section. Do NOT generate separate HTML and CSS sections. Return only one complete HTML document with embedded styles. Remove all newline characters from the output.',
       messages: [
@@ -251,7 +256,7 @@ async function callAIService(
 
     return {
       combinedHtml: textContent.text,
-      model: 'claude-sonnet-4-6',
+      model: FIGMA_AI_MODEL,
       tokens: message.usage?.output_tokens || 0,
     }
   } catch (error) {
