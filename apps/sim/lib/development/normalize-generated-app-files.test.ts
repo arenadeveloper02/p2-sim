@@ -16,12 +16,8 @@ import {
   normalizeGeneratedAppFiles,
   patchNextConfigContent,
   patchPackageJsonContent,
-  reconcileActionsTypeExports,
-  reconcileClientComponentProps,
-  reconcileDateFormatterSignatures,
-  reconcileNextDocumentImports,
   reconcileSplitImportStatements,
-  reconcileTypesExports,
+  removeConflictingModuleStubs,
   sanitizeComponentFileImports,
   stripExternalGoogleFontReferences,
   hasOrphanImportBlock,
@@ -118,45 +114,6 @@ export default function Page() {
     ])
   })
 
-  it('patches components that omit children used in layout', () => {
-    const files = reconcileClientComponentProps([
-      {
-        path: 'app/layout.tsx',
-        content:
-          "import Providers from '@/components/Providers'\nexport default function Layout({ children }: { children: React.ReactNode }) {\n  return <Providers><html><body>{children}</body></html></Providers>\n}\n",
-      },
-      {
-        path: 'components/Providers.tsx',
-        content:
-          "'use client'\n\nexport default function Providers() {\n  return <div>Providers</div>\n}\n",
-      },
-    ])
-
-    const providers = files.find((file) => file.path === 'components/Providers.tsx')
-    expect(providers?.content).toContain('interface ProvidersProps')
-    expect(providers?.content).toContain('children: ReactNode')
-    expect(providers?.content).toContain('import type { ReactNode }')
-  })
-
-  it('does not duplicate ReactNode when the component already imports it from react', () => {
-    const files = reconcileClientComponentProps([
-      {
-        path: 'app/layout.tsx',
-        content:
-          "import AppProviders from '@/components/layout/AppProviders'\nexport default function Layout({ children }: { children: React.ReactNode }) {\n  return <AppProviders>{children}</AppProviders>\n}\n",
-      },
-      {
-        path: 'components/layout/AppProviders.tsx',
-        content:
-          "'use client'\n\nimport type { ReactNode } from 'react'\n\nexport default function AppProviders() {\n  return <div>AppProviders</div>\n}\n",
-      },
-    ])
-
-    const providers = files.find((file) => file.path === 'components/layout/AppProviders.tsx')
-    expect(providers?.content.match(/import type \{ ReactNode \} from 'react'/g)?.length).toBe(1)
-    expect(providers?.content).not.toContain("from '@/lib/actions'")
-  })
-
   it('sanitizes duplicate ReactNode imports from react and lib/actions', () => {
     const sanitized = sanitizeComponentFileImports(`'use client'
 
@@ -199,67 +156,6 @@ export default function AppProviders({ children }: { children: ReactNode }) {
     expect(sanitized).not.toContain("from '@/lib/actions'")
   })
 
-  it('patches existing Client components that omit props used by pages', () => {
-    const files = reconcileClientComponentProps([
-      {
-        path: 'lib/actions.ts',
-        content:
-          'export interface AnalyticsData { total: number }\nexport async function getAnalytics(): Promise<AnalyticsData> { return { total: 0 } }\n',
-      },
-      {
-        path: 'app/analytics/page.tsx',
-        content:
-          "import { getAnalytics } from '@/lib/actions'\nimport AnalyticsClient from '@/components/AnalyticsClient'\nexport default async function Page() { const data = await getAnalytics(); return <AnalyticsClient data={data} /> }\n",
-      },
-      {
-        path: 'components/AnalyticsClient.tsx',
-        content:
-          'export default function AnalyticsClient() {\n  return <div>Analytics</div>\n}\n',
-      },
-    ])
-
-    const client = files.find((file) => file.path === 'components/AnalyticsClient.tsx')
-    expect(client?.content).toContain('interface AnalyticsClientProps')
-    expect(client?.content).toContain('data: AnalyticsData')
-    expect(client?.content).toContain('import type { AnalyticsData }')
-    expect(client?.content).toContain('data: _data')
-  })
-
-  it('adds missing props to existing Client props interfaces when pages pass extra fields', () => {
-    const files = reconcileClientComponentProps([
-      {
-        path: 'app/dashboard/page.tsx',
-        content:
-          "import DashboardClient from '@/components/DashboardClient'\nexport default async function Page() { const executions = []; const hasApiKey = false; return <DashboardClient executions={executions} hasApiKey={hasApiKey} /> }\n",
-      },
-      {
-        path: 'components/DashboardClient.tsx',
-        content:
-          'interface DashboardClientProps { user: unknown }\nexport default function DashboardClient({ user }: DashboardClientProps) { return <div>{String(user)}</div> }\n',
-      },
-    ])
-
-    const client = files.find((file) => file.path === 'components/DashboardClient.tsx')
-    expect(client?.content).toContain('executions: unknown')
-    expect(client?.content).toContain('hasApiKey: unknown')
-  })
-
-  it('creates lib/actions.ts stubs instead of lib/actions.tsx component stubs', () => {
-    const files = reconcileMissingAliasImports([
-      {
-        path: 'app/page.tsx',
-        content:
-          "import { getTasks } from '@/lib/actions'\nexport default async function Page() { await getTasks(); return null }\n",
-      },
-    ])
-
-    expect(files.some((file) => file.path === 'lib/actions.ts')).toBe(true)
-    expect(files.some((file) => file.path === 'lib/actions.tsx')).toBe(false)
-    const actions = files.find((file) => file.path === 'lib/actions.ts')
-    expect(actions?.content).toContain("'use server'")
-    expect(actions?.content).not.toContain('<section')
-  })
-
   it('removes conflicting lib/actions.tsx stubs when actions.ts exists', () => {
     const files = removeConflictingModuleStubs([
       {
@@ -275,87 +171,6 @@ export default function AppProviders({ children }: { children: ReactNode }) {
 
     expect(files.some((file) => file.path === 'lib/actions.ts')).toBe(true)
     expect(files.some((file) => file.path === 'lib/actions.tsx')).toBe(false)
-  })
-
-  it('adds missing type exports to lib/actions.ts', () => {
-    const files = reconcileActionsTypeExports([
-      {
-        path: 'lib/actions.ts',
-        content: "export async function getTasks() { return [] }\n",
-      },
-      {
-        path: 'components/TasksClient.tsx',
-        content:
-          "import type { TaskWithOwners, Member } from '@/lib/actions'\nexport default function TasksClient() { return null }\n",
-      },
-    ])
-
-    const actions = files.find((file) => file.path === 'lib/actions.ts')
-    expect(actions?.content).toContain('export interface TaskWithOwners')
-    expect(actions?.content).toContain('export interface Member')
-  })
-
-  it('does not add duplicate lib/actions types already re-exported from lib/types', () => {
-    const files = dedupeActionsTypeConflicts(
-      reconcileActionsTypeExports([
-        {
-          path: 'lib/types.ts',
-          content: 'export interface AnalyticsData { totalTasks: number }\n',
-        },
-        {
-          path: 'lib/actions.ts',
-          content:
-            "import type { AnalyticsData } from '@/lib/types'\nexport type { AnalyticsData }\nexport async function getAnalytics(): Promise<AnalyticsData> { return { totalTasks: 0 } }\n",
-        },
-        {
-          path: 'components/AnalyticsClient.tsx',
-          content:
-            "import type { AnalyticsData } from '@/lib/actions'\nexport default function AnalyticsClient({ analytics }: { analytics: AnalyticsData }) { return null }\n",
-        },
-      ])
-    )
-
-    const actions = files.find((file) => file.path === 'lib/actions.ts')
-    expect(actions?.content).not.toContain('export interface AnalyticsData')
-    expect(actions?.content).not.toContain('Auto-added exports')
-    expect(actions?.content.match(/export interface AnalyticsData/g)).toBeNull()
-  })
-
-  it('adds missing type exports to lib/types.ts', () => {
-    const files = reconcileTypesExports([
-      {
-        path: 'lib/types.ts',
-        content: 'export interface Task { id: string; title: string }\nexport interface Member { id: string; name: string }\n',
-      },
-      {
-        path: 'app/dashboard/page.tsx',
-        content:
-          "import type { TaskWithRelations, MemberData } from '@/lib/types'\nexport default function Page() { return null }\n",
-      },
-    ])
-
-    const types = files.find((file) => file.path === 'lib/types.ts')
-    expect(types?.content).toContain('export type TaskWithRelations = Task')
-    expect(types?.content).toContain('export type MemberData = Member')
-  })
-
-  it('adds named exports for shadcn-style component imports', () => {
-    const files = reconcileComponentExportStyles([
-      {
-        path: 'app/layout.tsx',
-        content: "import { Toaster } from '@/components/ui/toaster'\nexport default function Layout() { return <Toaster /> }\n",
-      },
-      {
-        path: 'components/ui/toaster.tsx',
-        content:
-          '/** Auto-generated stub */\nexport default function toaster() {\n  return null\n}\n',
-      },
-    ])
-
-    const toaster = files.find((file) => file.path === 'components/ui/toaster.tsx')
-    expect(toaster?.content).toContain("'use client'")
-    expect(toaster?.content).toContain('export default function Toaster')
-    expect(toaster?.content).toContain('export { Toaster }')
   })
 
   it('repairs split imports where a second package specifiers follow the first import close', () => {
@@ -509,44 +324,6 @@ export default function DashboardClient() { return null }
     expect(buildRepoSummaryContent(files, { appName: 'Demo App' })).toContain('Demo App')
   })
 
-  it('scaffolds lib/types.ts when imports exist but file is missing', () => {
-    const files = reconcileTypesExports([
-      {
-        path: 'components/TaskCard.tsx',
-        content: "import type { TaskWithRelations } from '@/lib/types'\nexport default function TaskCard() { return null }\n",
-      },
-    ])
-
-    expect(files.some((file) => file.path === 'lib/types.ts')).toBe(true)
-    expect(files.find((file) => file.path === 'lib/types.ts')?.content).toContain(
-      'export interface TaskWithRelations'
-    )
-  })
-
-  it('replaces malformed DashboardStats auto-stub with aggregate shape', () => {
-    const files = reconcileTypesExports([
-      {
-        path: 'lib/types.ts',
-        content: `export interface TaskData { id: string }
-
-// Auto-added exports so imports resolve during typecheck
-export interface DashboardStats {
-  id: string
-  [key: string]: unknown
-}
-`,
-      },
-      {
-        path: 'lib/actions.ts',
-        content: "import type { DashboardStats } from '@/lib/types'\n",
-      },
-    ])
-
-    const types = files.find((file) => file.path === 'lib/types.ts')?.content ?? ''
-    expect(types).toContain('totalTasks: number')
-    expect(types).not.toContain('[key: string]: unknown')
-  })
-
   it('scaffolds next-env.d.ts for JSX type resolution', () => {
     const files = ensureNextEnvFile([{ path: 'package.json', content: '{}' }])
     expect(files.some((file) => file.path === 'next-env.d.ts')).toBe(true)
@@ -639,48 +416,6 @@ export interface DashboardStats {
       dependencies: Record<string, string>
     }
     expect(pkg.dependencies.openai).toBe('^4.91.1')
-  })
-
-  it('widens date formatter params to accept Date values from Prisma', () => {
-    const files = reconcileDateFormatterSignatures([
-      {
-        path: 'lib/utils.ts',
-        content:
-          'export function formatDate(value: string): string {\n  return new Date(value).toLocaleDateString()\n}\n',
-      },
-      {
-        path: 'components/AgentHistory.tsx',
-        content:
-          'const formatRelativeTime = (value: string) => value\nexport default function AgentHistory() { return null }\n',
-      },
-    ])
-
-    expect(files[0]?.content).toContain('formatDate(value: string | Date)')
-    expect(files[1]?.content).toContain('formatRelativeTime = (value: string | Date)')
-  })
-
-  it('strips next/document imports and rewrites Html to main for App Router files', () => {
-    const files = reconcileNextDocumentImports([
-      {
-        path: 'app/not-found.tsx',
-        content:
-          "import { Html } from 'next/document'\nexport default function NotFound() { return <Html><body><h1>404</h1></body></Html> }\n",
-      },
-      {
-        path: 'components/ErrorPage.tsx',
-        content:
-          'import { Html, Head } from "next/document"\nexport default function ErrorPage() { return <Html><Head><title>Err</title></Head><main>Oops</main></Html> }\n',
-      },
-    ])
-
-    const notFound = files.find((file) => file.path === 'app/not-found.tsx')
-    expect(notFound?.content).not.toContain('next/document')
-    expect(notFound?.content).toContain('<main')
-    expect(notFound?.content).not.toContain('<body')
-
-    const errorPage = files.find((file) => file.path === 'components/ErrorPage.tsx')
-    expect(errorPage?.content).not.toContain('next/document')
-    expect(errorPage?.content).not.toContain('<Head')
   })
 
   it('adds Prisma deps and build scripts when database is required', () => {

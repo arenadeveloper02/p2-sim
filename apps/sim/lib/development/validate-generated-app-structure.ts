@@ -486,6 +486,7 @@ function checkJsxSyntax(files: GeneratedAppFile[]): string[] {
 }
 
 const NEXT_DOCUMENT_IMPORT_PATTERN = /from\s+['"]next\/document['"]/
+const NEXT_DOCUMENT_COMPONENT_PATTERN = /<\/?(?:Html|Head|Main|NextScript)\b/
 
 function checkNextDocumentImports(files: GeneratedAppFile[]): string[] {
   const issues: string[] = []
@@ -496,16 +497,18 @@ function checkNextDocumentImports(files: GeneratedAppFile[]): string[] {
       continue
     }
 
-    if (!NEXT_DOCUMENT_IMPORT_PATTERN.test(file.content)) {
-      continue
-    }
-
     if (path.startsWith('pages/') && /_document\.(tsx|jsx)$/.test(path)) {
       continue
     }
 
+    const hasImport = NEXT_DOCUMENT_IMPORT_PATTERN.test(file.content)
+    const hasComponents = NEXT_DOCUMENT_COMPONENT_PATTERN.test(file.content)
+    if (!hasImport && !hasComponents) {
+      continue
+    }
+
     issues.push(
-      `${path}: must not import from next/document (Html, Head, Main, NextScript). App Router: use plain JSX in app/not-found.tsx and app/error.tsx; only app/layout.tsx renders <html> and <body>`
+      `${path}: must not use next/document (Html, Head, Main, NextScript). App Router: use plain JSX in app/not-found.tsx and app/error.tsx; only app/layout.tsx renders <html> and <body>`
     )
   }
 

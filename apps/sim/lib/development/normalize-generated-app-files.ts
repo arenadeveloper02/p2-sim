@@ -41,9 +41,6 @@ const AUTO_ADD_DEPENDENCIES: Record<string, string> = {
   openai: '^4.91.1',
 }
 
-const DATE_FORMATTER_FUNCTION_NAMES =
-  /^(formatDate|formatTime|formatRelativeTime|formatTimeAgo|timeAgo|formatTimestamp)$/i
-
 const AUTH_PACKAGE_DEPENDENCIES: Record<string, string> = {
   jsonwebtoken: '^9.0.2',
 }
@@ -66,9 +63,12 @@ export const GENERATED_APP_TYPESCRIPT_GUIDANCE = `TypeScript and Next.js structu
 - Use strict TypeScript: strict true in tsconfig.json, no @ts-ignore, no implicit any, no unused variables
 - Every identifier in a file must be declared or imported — NEVER use a type, interface, or variable name without defining it in the same file or importing it (e.g. TS2304 "Cannot find name 'UserData'" means add \`import type { UserData } from '@/lib/types'\` or define the interface locally)
 - Every React component props interface must be explicit (e.g. interface HeroProps { title: string }) and every type in that interface must be imported or defined in the file
+- NEVER type Client component props or \`.map()\` callback parameters as \`unknown\` or \`unknown[]\` when those values are used in JSX, React \`key={...}\`, object indexes (\`obj[field]\`), or computed property names (\`{ [field]: value }\`) — TypeScript rejects unknown for Key, ReactNode, index types (TS2322/TS2538/TS2464)
+- Define concrete DTOs in lib/types.ts (e.g. AgentField { key: string; label: string; value: string }, AgentExecution { id: string; status: string; output: Record<string, string> }) and import them in AgentClient and similar components — never \`fields: unknown[]\` or \`agent: unknown\`
 - Server pages fetch data; Client components receive it via props. If app/foo/page.tsx renders <FooClient data={data} />, components/FooClient.tsx MUST declare interface FooClientProps { data: DataType } and use ({ data }: FooClientProps) — NEVER () with no parameters when the page passes props
 - Share domain types in lib/types.ts only — pages and Client components import types with \`import type { UserData, CategoryData } from '@/lib/types'\`
 - lib/types.ts MUST export every shared type (UserData, CategoryData, TaskWithRelations, etc.) with \`export interface\` or \`export type\`
+- When pages import TaskWithRelations but the model is Task, export \`export type TaskWithRelations = Task\` in lib/types.ts — same for MemberData/Member, TaskWithOwners/Task, Status/TaskStatus, Priority/TaskPriority
 - lib/actions.ts exports server actions (functions) only — import runtime values with \`import { getCategories } from '@/lib/actions'\`; do NOT import types from @/lib/actions unless that file explicitly re-exports them with \`export type { CategoryData } from '@/lib/types'\`
 - Name interactive Client components with a Client suffix (DashboardClient, AnalyticsClient, SettingsClient) and add "use client" at the top
 - CRITICAL: Every named Client component MUST contain complete, real UI code — JSX with actual elements, logic, and state. NEVER write a stub like \`export default function DashboardClient() { return <div>DashboardClient</div> }\` — this renders as literal text and is a broken app
@@ -77,11 +77,15 @@ export const GENERATED_APP_TYPESCRIPT_GUIDANCE = `TypeScript and Next.js structu
 - Default to Server Components; add "use client" only for hooks, browser APIs, or event handlers
 - Use next/link for internal navigation, next/image for images, export const metadata in layout/page where appropriate
 - All imports must resolve; no missing modules; prefer named exports for components under components/
+- lib/crypto.ts: export encrypt, decrypt, maskKey, encryptApiKey, decryptApiKey when any file imports them from @/lib/crypto
+- lib/agents.ts: every AgentInfo object MUST include all required fields from lib/types.ts (especially id when AgentInfo requires it)
+- Date helpers (formatDate, formatRelativeTime, etc.): parameter type string | Date when used with Prisma DateTime values
 - Code MUST pass "npm install && npm run build" with zero TypeScript errors and zero Next.js compile errors`
 
 export const GENERATED_APP_ZERO_ERRORS_GUIDANCE = `Zero-defect bar (MANDATORY — generate, edit, and repair):
 - Output MUST have zero syntax errors, zero TypeScript semantic errors, and zero Next.js compile/prerender failures — validation rejects the app otherwise
-- Sim runs automated gates before GitHub push: structure checks on all files, then npm install + prisma generate + next build (E2B when configured) or local tsc --noEmit
+- Arena Copilot runs automated gates before GitHub push: structure checks on all files, then npm install + prisma generate + next build (E2B when configured) or local tsc --noEmit
+- Arena Copilot does NOT post-process your source files to fix imports, exports, types, auth/crypto helpers, Client prop interfaces, split imports, or next/document usage — output correct TypeScript in the JSON response
 - Never submit stubs, placeholders, split imports, dangling @/ imports, or pages that import components missing from files[]
 - Syntax: valid TS/TSX; closed JSX tags; complete \`import ... from '...'\` statements; \`return (\` or \`return <\` on one line; "use client" as the first line when hooks/events are used
 - Semantics: strict types (no any, no @ts-ignore); page and Client prop names match exactly; every type from @/lib/types; server actions from @/lib/actions; Prisma queries use schema field names
@@ -153,7 +157,27 @@ export const GENERATED_APP_COMMON_FAILURES_GUIDANCE = `Common generation failure
    - NEVER import \`Html\`, \`Head\`, \`Main\`, or \`NextScript\` from \`next/document\` in app/** files — that API is Pages Router _document only
    - app/layout.tsx owns \`<html>\` and \`<body>\` via next/font + Tailwind — nowhere else
    - app/not-found.tsx and app/error.tsx use plain JSX (\`<div>\`, \`<main>\`, \`<h1>\`) — NOT \`<Html>\` from next/document
-   - WRONG: \`import { Html } from 'next/document'\` in app/not-found.tsx — causes "Html should not be imported outside of pages/_document" at build time`
+   - WRONG: \`import { Html } from 'next/document'\` in app/not-found.tsx — causes "Html should not be imported outside of pages/_document" at build time
+13. lib/crypto exports (TS2305 has no exported member 'maskKey'):
+   - lib/crypto.ts is the ONLY crypto module — export EVERY symbol imported from @/lib/crypto in the same response
+   - Common exports: encrypt, decrypt, encryptApiKey, decryptApiKey, maskKey (redacts API keys for display)
+   - WRONG: app/api/settings/apikey/route.ts imports maskKey but lib/crypto.ts only exports encrypt/decrypt
+   - RIGHT: lib/crypto.ts includes \`export function maskKey(value: string): string { ... }\` before any route imports it
+14. Agent catalog types (TS2741 Property 'id' is missing in type 'AgentInfo'):
+   - If lib/types.ts defines \`interface AgentInfo { id: string; slug: string; ... }\`, EVERY entry in lib/agents.ts MUST include id
+   - Use the same string for id and slug when they match: \`{ id: 'keyword-research', slug: 'keyword-research', name: '...', ... }\`
+   - WRONG: \`{ slug: 'keyword-research', name: '...', description: '...', route: '...' }\` without id
+15. Date/time helpers (TS2345 Date not assignable to string):
+   - Helpers named formatDate, formatTime, formatRelativeTime, formatTimeAgo, timeAgo, formatTimestamp MUST accept \`string | Date\` when components pass Prisma DateTime fields
+   - Inside the helper: \`const d = value instanceof Date ? value : new Date(value)\` — never type the param as string only when callers pass Date
+16. Client props completeness (TS2322 / missing prop on XxxClientProps):
+   - EVERY prop the server page passes in JSX MUST appear in the Client's Props interface — including executions, hasApiKey, stats, items, etc.
+   - When a page adds a new prop, update components/XxxClient.tsx interface AND destructuring in the same response — do not rely on post-processing
+17. unknown in Client components (TS2322 / TS2538 / TS2464 in components/*Client.tsx — common in AgentClient):
+   - WRONG: \`interface AgentClientProps { agent: unknown; fields: unknown[] }\` then \`fields.map((field) => <div key={field.key}>{field.label}</div>)\` — field is unknown, so field.key fails Key/ReactNode/index checks
+   - RIGHT: define \`interface AgentField { key: string; label: string; value: string }\` in lib/types.ts, use \`fields: AgentField[]\`, import with \`import type { AgentField } from '@/lib/types'\`
+   - Any value rendered in JSX (\`{item.name}\`), used as \`key={item.id}\`, indexed (\`output[key]\`), or in computed keys (\`{ [field.key]: field.value }\`) MUST have a concrete type with string/number/boolean fields — never \`unknown\`
+   - For agent UIs: export AgentInfo, AgentField, AgentExecution (or similar) from lib/types.ts with \`id: string\`, \`name: string\`, \`status: string\`, and typed output maps — wire AgentClient props to those types`
 
 export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — every import must resolve to an exported symbol):
 - tsconfig paths MUST be "@/*": ["./*"] with app/ at project root (not src/app/)
@@ -167,6 +191,8 @@ export const GENERATED_APP_IMPORT_GUIDANCE = `Imports and exports (critical — 
 - Export/import pairing MUST match: default export → \`import Foo from '...'\`; named export → \`import { Foo } from '...'\`; exported type → \`import type { Foo } from '@/lib/types'\`
 - If you add a type to lib/types.ts, export it and update every file that uses it to import from '@/lib/types'
 - If you add a server action to lib/actions.ts, export it with \`export async function\` and import only the function name in pages/components
+- lib/crypto.ts: export encrypt, decrypt, maskKey, encryptApiKey, decryptApiKey when any file imports them from @/lib/crypto
+- lib/agents.ts: every AgentInfo entry must satisfy lib/types.ts — include id when AgentInfo requires it
 - EVERY @/ import must resolve to a generated file with a matching export of the correct kind (default, named, or type)
 - See COMPONENT FILES rules — missing components/ files are the most common validation failure
 - shadcn/ui components under components/ui/ MUST use named exports matching imports: \`export function Button\` when imported as \`import { Button } from '@/components/ui/button'\`
@@ -210,6 +236,9 @@ Generation order (strict):
 
 Hard rules:
 - Prop names on the page JSX MUST exactly match fields in the Client's Props interface (categories not initialCategories, tasks not initialTasks, user not currentUser unless both sides use currentUser)
+- Include EVERY prop the page passes — if the page renders \`<DashboardClient executions={executions} hasApiKey={hasApiKey} />\`, DashboardClientProps MUST declare executions AND hasApiKey with correct types
+- NEVER use \`unknown\` or \`unknown[]\` for props that are rendered in JSX or iterated with \`.map()\` — import concrete types from lib/types.ts (AgentField, AgentExecution, TaskData, etc.) with string ids for keys and string labels/values for display
+- AgentClient / agent pages: lib/types.ts MUST export field and execution shapes BEFORE writing components/AgentClient.tsx — props like \`agent\`, \`fields\`, \`executions\` use those interfaces, not unknown
 - When adding or renaming a prop, update the page AND the Client component in the same response
 - getAuthUser() returns JwtPayload { id, name, email, role } — for profile pages needing UserData, call getUserById(auth.id) from lib/actions.ts and pass that
 - AppShell/layout: if AppShellProps requires \`user\`, the layout MUST pass \`user={await getAuthUser()}\` (or fetched UserData)
@@ -240,6 +269,7 @@ export const GENERATED_APP_AUTH_GUIDANCE = `Authentication and session (database
 - Store credentials and sessions server-side (Prisma User model + cookies) — not in browser storage
 - Dark mode and sidebar UI state: useState only — toggle document.documentElement.classList, do not write theme to localStorage
 - lib/auth.ts is the ONLY auth module — it MUST export every symbol imported elsewhere: JwtPayload, signToken, verifyToken, getAuthUser
+- lib/crypto.ts is the ONLY crypto module — it MUST export every symbol imported elsewhere: encrypt, decrypt, maskKey, encryptApiKey, decryptApiKey (TS2305 on maskKey means you imported it without exporting it from lib/crypto.ts)
 - API routes MUST import auth helpers from @/lib/auth — if a route uses verifyToken or getAuthUser, lib/auth.ts MUST export that exact function (TS2305 means you added an import without exporting it from lib/auth.ts)
 - Prefer getAuthUser() in API routes/pages; use verifyToken(token) only when reading a raw token string
 - When lib/auth.ts imports jsonwebtoken, package.json MUST list jsonwebtoken in dependencies and @types/jsonwebtoken in devDependencies`
@@ -268,7 +298,7 @@ export const GENERATED_APP_REFERENCE_PDF_GUIDANCE = `Reference design PDF provid
 /** @deprecated Use GENERATED_APP_REFERENCE_PDF_GUIDANCE */
 export const GENERATED_APP_REFERENCE_IMAGE_GUIDANCE = GENERATED_APP_REFERENCE_PDF_GUIDANCE
 
-export const GENERATED_APP_NEON_DATABASE_GUIDANCE = `Neon Postgres + Prisma (YOU generate all database files — Sim does not inject or patch schema/models):
+export const GENERATED_APP_NEON_DATABASE_GUIDANCE = `Neon Postgres + Prisma (YOU generate all database files — Arena does not inject or patch schema/models):
 - Generate prisma/schema.prisma with domain-specific models matching the app (User, Task, Category, etc.) — never rely on a generic Record placeholder
 - Datasource block MUST be exactly:
   datasource db {
@@ -342,7 +372,7 @@ export interface NormalizeGeneratedAppFilesOptions {
 
 export const GENERATED_APP_REPO_SUMMARY_GUIDANCE = `REPO_SUMMARY.md (required, auto-maintained):
 - Living repository summary: purpose, features, tech stack, routes, API routes, Prisma models, components, and a complete file index
-- Sim Development regenerates this file after generate and edit — do not omit it from new apps
+- Arena Development regenerates this file after generate and edit — do not omit it from new apps
 - During edits, read REPO_SUMMARY.md first to understand architecture before changing code`
 
 export const GENERATED_APP_README_GUIDANCE = `README.md (required):
@@ -423,23 +453,6 @@ export function hasOrphanImportBlock(content: string): boolean {
   return /(\}\s*from\s*(['"][^'"]+['"])\s*;\s*\n)((?:[ \t]*[A-Za-z_$][\w$]*\s*,?\s*\n)+)(\}\s*from\s*(['"][^'"]+['"])\s*;)/.test(
     content
   )
-}
-
-function reconcileSplitImportsInFiles(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  return files.map((file) => {
-    const path = normalizePath(file.path)
-    if (!/\.(tsx|ts|jsx|js)$/.test(path)) {
-      return file
-    }
-
-    const fixed = reconcileSplitImportStatements(file.content)
-    if (fixed === file.content) {
-      return file
-    }
-
-    logger.warn('Fixed split import statements in generated file', { path })
-    return { ...file, content: fixed }
-  })
 }
 
 function shouldSanitizeFontReferences(path: string): boolean {
@@ -630,125 +643,6 @@ function toComponentName(filePath: string): string {
     .join('')
 }
 
-function filePathToImportPath(filePath: string): string {
-  return normalizePath(filePath).replace(/\.(tsx|ts|jsx|js)$/, '')
-}
-
-function isNamedExport(content: string, name: string): boolean {
-  return (
-    new RegExp(`export\\s+(?:function|const|class)\\s+${name}\\b`).test(content) ||
-    new RegExp(`export\\s*\\{[^}]*\\b${name}\\b`).test(content)
-  )
-}
-
-function hasDefaultExport(content: string, componentName: string): boolean {
-  return (
-    /export\s+default\s+/m.test(content) ||
-    new RegExp(`export\\s+default\\s+function\\s+${componentName}\\b`).test(content)
-  )
-}
-
-function collectComponentImportStyles(
-  files: GeneratedAppFile[]
-): { named: Map<string, Set<string>>; defaultImports: Set<string> } {
-  const named = new Map<string, Set<string>>()
-  const defaultImports = new Set<string>()
-
-  for (const file of files) {
-    for (const match of file.content.matchAll(/import\s+\{([^}]+)\}\s+from\s+['"]@\/(components\/[^'"]+)['"]/g)) {
-      const importPath = match[2]
-      const names = parseImportNames(match[1] ?? '')
-      const existing = named.get(importPath) ?? new Set<string>()
-      for (const name of names) {
-        existing.add(name)
-      }
-      named.set(importPath, existing)
-    }
-
-    for (const match of file.content.matchAll(
-      /import\s+(\w+)\s+from\s+['"]@\/(components\/[^'"]+)['"]/g
-    )) {
-      if (match[0].includes('import type')) {
-        continue
-      }
-      defaultImports.add(match[2])
-    }
-  }
-
-  return { named, defaultImports }
-}
-
-/**
- * Aligns component default/named exports with how they are imported across the app.
- */
-export function reconcileComponentExportStyles(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  const { named, defaultImports } = collectComponentImportStyles(files)
-  const normalized = files.map((file) => ({ ...file, path: normalizePath(file.path) }))
-
-  return normalized.map((file) => {
-    const path = normalizePath(file.path)
-    if (!path.startsWith('components/') || !/\.(tsx|ts)$/.test(path)) {
-      return file
-    }
-
-    const importPath = filePathToImportPath(path)
-    const namedExports = named.get(importPath) ?? new Set<string>()
-    const needsDefault = defaultImports.has(importPath)
-
-    if (namedExports.size === 0 && !needsDefault) {
-      return file
-    }
-
-    const componentName = toComponentName(path)
-    let content = file.content
-    const additions: string[] = []
-
-    content = content.replace(/export\s+default\s+function\s+([a-z]\w*)/g, `export default function ${componentName}`)
-
-    for (const exportName of namedExports) {
-      if (!isNamedExport(content, exportName)) {
-        if (hasDefaultExport(content, componentName) && exportName === componentName) {
-          additions.push(`export { ${exportName} }`)
-        } else {
-          additions.push(buildComponentExportStub(exportName, normalized))
-        }
-      }
-    }
-
-    if (needsDefault && !hasDefaultExport(content, componentName)) {
-      if (isNamedExport(content, componentName)) {
-        additions.push(`export default ${componentName}`)
-      } else {
-        additions.push(buildComponentExportStub(componentName, normalized, { asDefault: true }))
-      }
-    }
-
-    if (additions.length === 0 && content === file.content) {
-      return file
-    }
-
-    let result = content.trimEnd()
-    if (additions.length > 0) {
-      result = `${result}\n\n${additions.join('\n\n')}\n`
-      if (additions.some((addition) => addition.includes('children: ReactNode'))) {
-        result = ensureComponentTypeImports(result, { children: 'ReactNode' })
-      }
-    }
-
-    if (
-      !result.startsWith("'use client'") &&
-      (path.includes('/ui/') || /Client$|Toast|Modal|Dropdown|Menu/i.test(componentName))
-    ) {
-      result = `'use client'\n\n${result}`
-    }
-
-    return { ...file, content: result }
-  })
-}
-
-/**
- * Collects JSX prop names passed to a component across generated sources.
- */
 /**
  * Collects external npm package names imported across generated source files.
  */
@@ -999,17 +893,6 @@ export function collectJsxPropNamesForComponent(
   return [...propNames].sort()
 }
 
-function componentAcceptsProps(content: string, componentName: string): boolean {
-  return (
-    new RegExp(`export\\s+(?:default\\s+)?function\\s+${componentName}\\s*\\(\\s*\\{`, 'm').test(
-      content
-    ) ||
-    new RegExp(`export\\s+(?:default\\s+)?function\\s+${componentName}\\s*\\([^)]+:`, 'm').test(
-      content
-    )
-  )
-}
-
 /**
  * Infers prop types for a component by matching page data fetching to lib/actions return types.
  */
@@ -1069,131 +952,12 @@ const REACT_BUILTIN_TYPES = new Set([
   'CSSProperties',
 ])
 
-function collectTypeImports(propTypes: Record<string, string>): string[] {
-  const imports = new Set<string>()
-  for (const typeName of Object.values(propTypes)) {
-    if (typeName === 'unknown' || REACT_BUILTIN_TYPES.has(typeName)) {
-      continue
-    }
-    const baseType = typeName.replace(/\[\]$/, '').trim()
-    if (/^[A-Z]\w*$/.test(baseType)) {
-      imports.add(baseType)
-    }
-  }
-  return [...imports].sort()
-}
-
 function parseNamedImportBinding(imports: string): string[] {
   return imports
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => part.replace(/^type\s+/, '').trim())
-}
-
-function contentAlreadyImportsReactType(content: string, typeName: string): boolean {
-  return (
-    new RegExp(
-      `import\\s+type\\s*\\{[^}]*\\b${typeName}\\b[^}]*\\}\\s*from\\s+['"]react['"]`
-    ).test(content) ||
-    new RegExp(`import\\s*\\{[^}]*\\b${typeName}\\b[^}]*\\}\\s*from\\s+['"]react['"]`).test(
-      content
-    ) ||
-    new RegExp(`import\\s+React[^;]*\\b${typeName}\\b`).test(content)
-  )
-}
-
-function ensureReactTypeImport(content: string, typeName: string): string {
-  if (contentAlreadyImportsReactType(content, typeName)) {
-    return content
-  }
-
-  const existingTypeImport = content.match(
-    /^import\s+type\s*\{([^}]*)\}\s*from\s*['"]react['"]/m
-  )
-  if (existingTypeImport) {
-    const names = parseNamedImportBinding(existingTypeImport[1])
-    if (!names.includes(typeName)) {
-      names.push(typeName)
-      return content.replace(
-        /^import\s+type\s*\{[^}]*\}\s*from\s*['"]react['"]/m,
-        `import type { ${names.sort().join(', ')} } from 'react'`
-      )
-    }
-    return content
-  }
-
-  const importLine = `import type { ${typeName} } from 'react'\n`
-  if (content.startsWith("'use client'")) {
-    return content.replace(/^('use client'\n\n)/m, `$1${importLine}\n`)
-  }
-  if (content.startsWith("'use client'\n") && !content.startsWith("'use client'\n\n")) {
-    return content.replace(/^('use client'\n)/m, `$1${importLine}\n`)
-  }
-  return `${importLine}\n${content}`
-}
-
-function contentAlreadyImportsActionsType(content: string, typeName: string): boolean {
-  return new RegExp(
-    `import\\s+type\\s*\\{[^}]*\\b${typeName}\\b[^}]*\\}\\s*from\\s+['"]@/lib/actions['"]`
-  ).test(content)
-}
-
-function ensureActionsTypeImports(content: string, typeNames: string[]): string {
-  const missing = typeNames.filter((typeName) => !contentAlreadyImportsActionsType(content, typeName))
-  if (missing.length === 0) {
-    return content
-  }
-
-  const existingMatch = content.match(
-    /import\s+type\s*\{([^}]*)\}\s*from\s+['"]@\/lib\/actions['"]/
-  )
-  if (existingMatch) {
-    const existing = existingMatch[1]
-      .split(',')
-      .map((part) => part.trim())
-      .filter(Boolean)
-    const merged = [...new Set([...existing, ...missing])].sort()
-    return content.replace(
-      /import\s+type\s*\{[^}]*\}\s*from\s+['"]@\/lib\/actions['"]/,
-      `import type { ${merged.join(', ')} } from '@/lib/actions'`
-    )
-  }
-
-  const importLine = `import type { ${missing.join(', ')} } from '@/lib/actions'\n`
-  if (content.startsWith("'use client'")) {
-    return content.replace(/^('use client'\n\n)/m, `$1${importLine}\n`)
-  }
-  return `${importLine}\n${content}`
-}
-
-function ensureComponentTypeImports(content: string, propTypes: Record<string, string>): string {
-  let result = content
-
-  if (Object.values(propTypes).includes('ReactNode')) {
-    result = ensureReactTypeImport(result, 'ReactNode')
-  }
-
-  const actionTypes = collectTypeImports(propTypes)
-  if (actionTypes.length > 0) {
-    result = ensureActionsTypeImports(result, actionTypes)
-  }
-
-  return result
-}
-
-function buildComponentTypeImportLines(propTypes: Record<string, string>): string {
-  const lines: string[] = []
-  const actionTypes = collectTypeImports(propTypes)
-
-  if (Object.values(propTypes).includes('ReactNode')) {
-    lines.push("import type { ReactNode } from 'react'")
-  }
-  if (actionTypes.length > 0) {
-    lines.push(`import type { ${actionTypes.join(', ')} } from '@/lib/actions'`)
-  }
-
-  return lines.length > 0 ? `${lines.join('\n')}\n\n` : ''
 }
 
 function dedupeDuplicateImportLines(content: string): string {
@@ -1289,299 +1053,6 @@ export function sanitizeComponentFileImports(content: string): string {
   return output.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()
 }
 
-function sanitizeGeneratedComponentFiles(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  return files.map((file) => {
-    const path = normalizePath(file.path)
-    if (!path.startsWith('components/') || !path.endsWith('.tsx')) {
-      return file
-    }
-
-    const sanitized = sanitizeComponentFileImports(file.content)
-    return sanitized === file.content ? file : { ...file, content: sanitized }
-  })
-}
-
-function formatComponentPropsInterface(
-  componentName: string,
-  propTypes: Record<string, string>
-): string {
-  return `interface ${componentName}Props {\n${Object.entries(propTypes)
-    .map(([prop, type]) => `  ${prop}: ${type}`)
-    .join('\n')}\n}\n\n`
-}
-
-function formatComponentPropsSignature(
-  componentName: string,
-  propTypes: Record<string, string>,
-  renderChildren: boolean
-): string {
-  const destructure = Object.keys(propTypes)
-    .map((prop) => (prop === 'children' && renderChildren ? prop : `${prop}: _${prop}`))
-    .join(', ')
-
-  return `({ ${destructure} }: ${componentName}Props)`
-}
-
-function shouldRenderChildrenInBody(content: string, propTypes: Record<string, string>): boolean {
-  if (!propTypes.children) {
-    return false
-  }
-
-  return (
-    /return\s+null/.test(content) ||
-    /Auto-generated stub/.test(content) ||
-    /<section className="py-8">/.test(content)
-  )
-}
-
-function patchComponentReturnForChildren(content: string, renderChildren: boolean): string {
-  if (!renderChildren) {
-    return content
-  }
-
-  if (/return\s+null/.test(content)) {
-    return content.replace(/return\s+null/, 'return <>{children}</>')
-  }
-
-  if (/<section className="py-8">[\s\S]*?<\/section>/.test(content)) {
-    return content.replace(/<section className="py-8">[\s\S]*?<\/section>/, '<>{children}</>')
-  }
-
-  return content
-}
-
-/**
- * Adds JSX prop names missing from an existing Props interface so pages and clients align.
- */
-function appendMissingPropsToComponentInterface(
-  content: string,
-  componentName: string,
-  missingProps: string[],
-  propTypes: Record<string, string>
-): string {
-  if (missingProps.length === 0) {
-    return content
-  }
-
-  const propsTypeName = `${componentName}Props`
-  const interfacePattern = new RegExp(`interface\\s+${propsTypeName}\\s*\\{([^}]*)\\}`, 's')
-  const interfaceMatch = interfacePattern.exec(content)
-  if (!interfaceMatch) {
-    return content
-  }
-
-  const newFieldLines = missingProps
-    .map((prop) => `  ${prop}: ${propTypes[prop] ?? 'unknown'}`)
-    .join('\n')
-  const existingBody = interfaceMatch[1].trimEnd()
-  const separator = existingBody.length > 0 ? '\n' : ''
-  const updatedInterface = `interface ${propsTypeName} {${existingBody}${separator}\n${newFieldLines}\n}`
-
-  return content.replace(interfacePattern, updatedInterface)
-}
-
-function patchComponentToAcceptProps(
-  content: string,
-  componentName: string,
-  propTypes: Record<string, string>
-): string {
-  if (componentAcceptsProps(content, componentName)) {
-    return content
-  }
-
-  const propsTypeName = `${componentName}Props`
-  const renderChildren = shouldRenderChildrenInBody(content, propTypes)
-  const interfaceBlock = formatComponentPropsInterface(componentName, propTypes)
-  const signature = formatComponentPropsSignature(componentName, propTypes, renderChildren)
-
-  const funcPatterns = [
-    new RegExp(`(export\\s+default\\s+function\\s+${componentName}\\s*)\\(\\s*\\)`, 'm'),
-    new RegExp(`(export\\s+function\\s+${componentName}\\s*)\\(\\s*\\)`, 'm'),
-  ]
-
-  const funcPattern = funcPatterns.find((pattern) => pattern.test(content))
-  if (!funcPattern) {
-    return content
-  }
-
-  let result = content.replace(funcPattern, `$1${signature}`)
-  if (!result.includes(`interface ${propsTypeName}`)) {
-    result = result.replace(
-      new RegExp(`(export\\s+(?:default\\s+)?function\\s+${componentName})`),
-      `${interfaceBlock}$1`
-    )
-  }
-  result = patchComponentReturnForChildren(result, renderChildren)
-  result = ensureComponentTypeImports(result, propTypes)
-
-  if (/Client$/i.test(componentName) && !result.includes("'use client'")) {
-    result = `'use client'\n\n${result}`
-  }
-
-  return result
-}
-
-function buildComponentExportStub(
-  exportName: string,
-  files: GeneratedAppFile[],
-  options: { asDefault?: boolean } = {}
-): string {
-  const propNames = collectJsxPropNamesForComponent(exportName, files)
-  if (propNames.length === 0) {
-    return options.asDefault
-      ? `export default function ${exportName}() {\n  return null\n}`
-      : `export function ${exportName}() {\n  return null\n}`
-  }
-
-  const propTypes = inferComponentPropTypes(exportName, propNames, files)
-  const renderChildren = Boolean(propTypes.children)
-  const interfaceBlock = formatComponentPropsInterface(exportName, propTypes)
-  const signature = formatComponentPropsSignature(exportName, propTypes, renderChildren)
-  const returnBody = renderChildren ? '  return <>{children}</>\n' : '  return null\n'
-  const exportKeyword = options.asDefault ? 'export default function' : 'export function'
-
-  return `${interfaceBlock}${exportKeyword} ${exportName}${signature} {\n${returnBody}}`
-}
-
-const NEXT_DOCUMENT_IMPORT_PATTERN = /from\s+['"]next\/document['"]/
-
-function shouldStripNextDocumentImports(filePath: string): boolean {
-  const path = normalizePath(filePath)
-  if (!/\.(tsx|jsx)$/.test(path)) {
-    return false
-  }
-  return !/^pages\/_document\.(tsx|jsx)$/.test(path)
-}
-
-/**
- * Removes Pages Router next/document imports and rewrites Html/Head/Main/NextScript to App Router-safe JSX.
- */
-export function stripNextDocumentImports(content: string): string {
-  if (!NEXT_DOCUMENT_IMPORT_PATTERN.test(content)) {
-    return content
-  }
-
-  let result = content
-
-  result = result.replace(
-    /^import\s+(?:type\s+)?\{[^}]*\}\s+from\s+['"]next\/document['"];?\s*\n?/gm,
-    ''
-  )
-  result = result.replace(
-    /^import\s+(?:type\s+)?[\w*]+\s+from\s+['"]next\/document['"];?\s*\n?/gm,
-    ''
-  )
-  result = result.replace(/<Head>[\s\S]*?<\/Head>\s*/g, '')
-  result = result.replace(/<Head\s[^>]*\/>\s*/g, '')
-  result = result.replace(/<NextScript\s*\/>\s*/g, '')
-  result = result.replace(/<NextScript>[\s\S]*?<\/NextScript>\s*/g, '')
-  result = result.replace(/<Html(\s[^>]*)?>/g, '<main$1>')
-  result = result.replace(/<\/Html>/g, '</main>')
-  result = result.replace(/<Main(\s[^>]*)?>/g, '<main$1>')
-  result = result.replace(/<\/Main>/g, '</main>')
-  result = result.replace(/<body(\s[^>]*)?>/gi, '')
-  result = result.replace(/<\/body>/gi, '')
-
-  return result.replace(/\n{3,}/g, '\n\n')
-}
-
-/**
- * Strips invalid next/document usage from App Router and shared component files.
- */
-export function reconcileNextDocumentImports(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  return files.map((file) => {
-    if (!shouldStripNextDocumentImports(file.path)) {
-      return file
-    }
-
-    const stripped = stripNextDocumentImports(file.content)
-    if (stripped !== file.content) {
-      logger.warn('Stripped next/document usage from generated file', { path: normalizePath(file.path) })
-      return { ...file, content: stripped }
-    }
-
-    return file
-  })
-}
-
-/**
- * Widens date-formatting helper params to accept Prisma Date values as well as ISO strings.
- */
-export function reconcileDateFormatterSignatures(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  return files.map((file) => {
-    if (!/\.(ts|tsx)$/.test(file.path)) {
-      return file
-    }
-
-    let content = file.content
-    content = content.replace(
-      /\bfunction\s+(formatDate|formatTime|formatRelativeTime|formatTimeAgo|timeAgo|formatTimestamp)\s*\(\s*(\w+)\s*:\s*string\s*\)/gi,
-      'function $1($2: string | Date)'
-    )
-    content = content.replace(
-      /\b(formatDate|formatTime|formatRelativeTime|formatTimeAgo|timeAgo|formatTimestamp)\s*=\s*\(\s*(\w+)\s*:\s*string\s*\)/gi,
-      '$1 = ($2: string | Date)'
-    )
-    content = content.replace(
-      /\bfunction\s+(\w+)\s*\(\s*(\w+)\s*:\s*string\s*\)/g,
-      (match, fnName, param) => {
-        if (!DATE_FORMATTER_FUNCTION_NAMES.test(fnName) && !/^format.*(?:Date|Time)/i.test(fnName)) {
-          return match
-        }
-        return `function ${fnName}(${param}: string | Date)`
-      }
-    )
-
-    return content !== file.content ? { ...file, content } : file
-  })
-}
-
-/**
- * Patches Client components so their props match how pages render them.
- */
-export function reconcileClientComponentProps(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  const normalized = files.map((file) => ({ ...file, path: normalizePath(file.path) }))
-
-  return normalized.map((file) => {
-    if (!file.path.startsWith('components/') || !file.path.endsWith('.tsx')) {
-      return file
-    }
-
-    const componentName = toComponentName(file.path)
-    const propNames = collectJsxPropNamesForComponent(componentName, normalized)
-    if (propNames.length === 0) {
-      return file
-    }
-
-    const propTypes = inferComponentPropTypes(componentName, propNames, normalized)
-    let patchedContent = file.content
-
-    if (!componentAcceptsProps(patchedContent, componentName)) {
-      patchedContent = patchComponentToAcceptProps(patchedContent, componentName, propTypes)
-    } else {
-      const interfaceFields = extractComponentPropsInterfaceFields(patchedContent, componentName)
-      const interfaceSet = new Set(interfaceFields)
-      const missingFromInterface = propNames.filter((prop) => !interfaceSet.has(prop))
-      if (missingFromInterface.length > 0) {
-        patchedContent = appendMissingPropsToComponentInterface(
-          patchedContent,
-          componentName,
-          missingFromInterface,
-          propTypes
-        )
-        patchedContent = ensureComponentTypeImports(patchedContent, propTypes)
-      }
-    }
-
-    patchedContent = sanitizeComponentFileImports(patchedContent)
-    if (patchedContent !== file.content) {
-      return { ...file, content: patchedContent }
-    }
-
-    return file
-  })
-}
-
 /**
  * Marks database-backed pages as dynamic so builds do not require live DB at compile time.
  */
@@ -1627,30 +1098,6 @@ function isAutoGeneratedStubContent(content: string): boolean {
   return content.includes('Auto-generated stub so @/ imports resolve')
 }
 
-function createStubModuleFile(filePath: string, importPath: string): GeneratedAppFile {
-  if (importPath === 'lib/actions' || filePath.endsWith('/actions.ts')) {
-    return {
-      path: filePath,
-      content: `'use server'
-
-/** Auto-generated stub so @/ imports resolve on Vercel. Replace with real server actions. */
-export interface RecordItem {
-  id: string
-}
-
-export async function listRecords(): Promise<RecordItem[]> {
-  return []
-}
-`,
-    }
-  }
-
-  return {
-    path: filePath,
-    content: `/** Auto-generated stub so @/ imports resolve on Vercel. */\nexport {}\n`,
-  }
-}
-
 /**
  * Removes erroneous TSX stubs under lib/ that shadow real .ts modules.
  */
@@ -1672,540 +1119,6 @@ export function removeConflictingModuleStubs(files: GeneratedAppFile[]): Generat
     logger.warn('Removed invalid lib TSX stub (lib modules must be .ts)', { path: file.path })
     return false
   })
-}
-
-function parseImportNames(clause: string): string[] {
-  return clause
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => part.replace(/^type\s+/, ''))
-}
-
-function collectActionsImports(files: GeneratedAppFile[]): { types: Set<string>; values: Set<string> } {
-  const types = new Set<string>()
-  const values = new Set<string>()
-
-  for (const file of files) {
-    if (normalizePath(file.path) === 'lib/actions.ts') {
-      continue
-    }
-
-    for (const match of file.content.matchAll(
-      /import\s+type\s+\{([^}]+)\}\s+from\s+['"]@\/lib\/actions['"]/g
-    )) {
-      for (const name of parseImportNames(match[1] ?? '')) {
-        types.add(name)
-      }
-    }
-
-    for (const match of file.content.matchAll(
-      /import\s+\{([^}]+)\}\s+from\s+['"]@\/lib\/actions['"]/g
-    )) {
-      if (match[0].includes('import type')) {
-        continue
-      }
-
-      for (const part of (match[1] ?? '').split(',').map((entry) => entry.trim())) {
-        if (!part) {
-          continue
-        }
-        if (part.startsWith('type ')) {
-          types.add(part.replace(/^type\s+/, ''))
-        } else {
-          values.add(part)
-        }
-      }
-    }
-  }
-
-  return { types, values }
-}
-
-function collectAuthImports(files: GeneratedAppFile[]): { types: Set<string>; values: Set<string> } {
-  const types = new Set<string>()
-  const values = new Set<string>()
-
-  for (const file of files) {
-    if (normalizePath(file.path) === 'lib/auth.ts') {
-      continue
-    }
-
-    for (const match of file.content.matchAll(
-      /import\s+type\s*\{([^}]+)\}\s*from\s*['"]@\/lib\/auth['"]/g
-    )) {
-      for (const name of parseImportNames(match[1] ?? '')) {
-        types.add(name)
-      }
-    }
-
-    for (const match of file.content.matchAll(
-      /import\s*\{([^}]+)\}\s*from\s*['"]@\/lib\/auth['"]/g
-    )) {
-      if (match[0].includes('import type')) {
-        continue
-      }
-
-      for (const part of (match[1] ?? '').split(',').map((entry) => entry.trim())) {
-        if (!part) {
-          continue
-        }
-        if (part.startsWith('type ')) {
-          types.add(part.replace(/^type\s+/, ''))
-        } else {
-          values.add(part)
-        }
-      }
-    }
-  }
-
-  return { types, values }
-}
-
-function isExportedInAuthModule(content: string, name: string): boolean {
-  return (
-    new RegExp(`export\\s+(?:async\\s+)?(?:function|const|interface|type|enum)\\s+${name}\\b`).test(
-      content
-    ) ||
-    new RegExp(`export\\s+type\\s*\\{[^}]*\\b${name}\\b`).test(content) ||
-    new RegExp(`export\\s*\\{[^}]*\\b${name}\\b`).test(content)
-  )
-}
-
-export const DEFAULT_LIB_AUTH_CONTENT = `import jwt from 'jsonwebtoken';
-import { cookies } from 'next/headers';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
-
-export interface JwtPayload {
-  userId: string;
-  email: string;
-  role: string;
-}
-
-export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
-}
-
-export function verifyToken(token: string): JwtPayload | null {
-  try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
-  } catch {
-    return null;
-  }
-}
-
-export async function getAuthUser(): Promise<JwtPayload | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('token')?.value;
-  if (!token) return null;
-  return verifyToken(token);
-}
-`
-
-const AUTH_EXPORT_SNIPPETS: Record<string, string> = {
-  JwtPayload: `export interface JwtPayload {
-  userId: string;
-  email: string;
-  role: string;
-}`,
-  signToken: `export function signToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
-}`,
-  verifyToken: `export function verifyToken(token: string): JwtPayload | null {
-  try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
-  } catch {
-    return null;
-  }
-}`,
-  getAuthUser: `export async function getAuthUser(): Promise<JwtPayload | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('token')?.value;
-  if (!token) return null;
-  return verifyToken(token);
-}`,
-}
-
-function ensureAuthJwtImports(content: string): string {
-  if (content.includes("from 'jsonwebtoken'") || content.includes('from "jsonwebtoken"')) {
-    return content
-  }
-
-  return `import jwt from 'jsonwebtoken';
-import { cookies } from 'next/headers';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
-
-${content.trimStart()}`
-}
-
-function patchPackageJsonForAuth(content: string): string {
-  try {
-    const pkg = JSON.parse(content) as {
-      dependencies?: Record<string, string>
-      devDependencies?: Record<string, string>
-    }
-    pkg.dependencies = {
-      ...pkg.dependencies,
-      ...AUTH_PACKAGE_DEPENDENCIES,
-    }
-    pkg.devDependencies = {
-      ...pkg.devDependencies,
-      ...AUTH_PACKAGE_DEV_DEPENDENCIES,
-    }
-    return `${JSON.stringify(pkg, null, 2)}\n`
-  } catch {
-    return content
-  }
-}
-
-function libAuthUsesJsonWebToken(files: GeneratedAppFile[]): boolean {
-  const authContent = files.find((file) => normalizePath(file.path) === 'lib/auth.ts')?.content
-  return Boolean(authContent?.includes('jsonwebtoken'))
-}
-
-function ensureAuthPackageDependencies(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  if (!libAuthUsesJsonWebToken(files)) {
-    return files
-  }
-
-  return files.map((file) => {
-    if (normalizePath(file.path) !== 'package.json') {
-      return file
-    }
-    return { ...file, content: patchPackageJsonForAuth(file.content) }
-  })
-}
-
-/**
- * Ensures lib/auth.ts exports every symbol imported from @/lib/auth across the app.
- */
-export function reconcileAuthExports(
-  files: GeneratedAppFile[],
-  options: NormalizeGeneratedAppFilesOptions = {}
-): GeneratedAppFile[] {
-  if (!options.requiresDatabase) {
-    return files
-  }
-
-  const { types, values } = collectAuthImports(files)
-  const requiredNames = new Set([...types, ...values])
-
-  let updated = [...files]
-
-  if (requiredNames.size === 0) {
-    return ensureAuthPackageDependencies(updated)
-  }
-  const authIndex = updated.findIndex((file) => normalizePath(file.path) === 'lib/auth.ts')
-
-  if (authIndex < 0) {
-    logger.warn('Added lib/auth.ts for imported auth helpers')
-    updated = [...updated, { path: 'lib/auth.ts', content: DEFAULT_LIB_AUTH_CONTENT }]
-  } else {
-    const authFile = updated[authIndex]
-    const additions: string[] = []
-
-    for (const name of requiredNames) {
-      if (!isExportedInAuthModule(authFile.content, name) && AUTH_EXPORT_SNIPPETS[name]) {
-        additions.push(AUTH_EXPORT_SNIPPETS[name])
-      }
-    }
-
-    if (additions.length > 0) {
-      logger.warn('Added missing lib/auth exports for typecheck', { exports: [...requiredNames] })
-      let content = ensureAuthJwtImports(authFile.content)
-      content = `${content.trimEnd()}\n\n// Auto-added exports so @/lib/auth imports resolve during typecheck\n${additions.join('\n\n')}\n`
-      updated[authIndex] = { ...authFile, content }
-    }
-  }
-
-  return ensureAuthPackageDependencies(updated)
-}
-
-function collectTypesImportedInActions(content: string): Set<string> {
-  const imported = new Set<string>()
-  for (const match of content.matchAll(/import\s+type\s+\{([^}]+)\}\s+from\s+['"]@\/lib\/types['"]/g)) {
-    for (const name of parseImportNames(match[1] ?? '')) {
-      imported.add(name)
-    }
-  }
-  return imported
-}
-
-function collectTypesReExportedFromActions(content: string): Set<string> {
-  const reExported = new Set<string>()
-  for (const match of content.matchAll(/export\s+type\s*\{([^}]+)\}/g)) {
-    for (const name of parseImportNames(match[1] ?? '')) {
-      reExported.add(name)
-    }
-  }
-  return reExported
-}
-
-function isExportedInActions(content: string, name: string): boolean {
-  return (
-    new RegExp(`export\\s+(?:async\\s+)?(?:function|const|interface|type|enum)\\s+${name}\\b`).test(
-      content
-    ) ||
-    new RegExp(`export\\s+type\\s*\\{[^}]*\\b${name}\\b`).test(content) ||
-    new RegExp(`export\\s*\\{[^}]*\\b${name}\\b`).test(content) ||
-    collectTypesImportedInActions(content).has(name)
-  )
-}
-
-/**
- * Removes duplicate AnalyticsData-style interfaces when types are re-exported from lib/types.
- */
-export function dedupeActionsTypeConflicts(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  const actionsIndex = files.findIndex((file) => normalizePath(file.path) === 'lib/actions.ts')
-  if (actionsIndex < 0) {
-    return files
-  }
-
-  const actionsFile = files[actionsIndex]
-  const importedFromTypes = collectTypesImportedInActions(actionsFile.content)
-  const reExportedFromTypes = collectTypesReExportedFromActions(actionsFile.content)
-  const reservedTypeNames = new Set([...importedFromTypes, ...reExportedFromTypes])
-
-  if (reservedTypeNames.size === 0) {
-    return files
-  }
-
-  let content = actionsFile.content
-
-  for (const typeName of reservedTypeNames) {
-    content = content.replace(
-      new RegExp(`\\nexport interface ${typeName} \\{[\\s\\S]*?\\n\\}`, 'g'),
-      ''
-    )
-    content = content.replace(
-      new RegExp(
-        `\\n*// Auto-added exports so imports resolve during typecheck\\nexport interface ${typeName} \\{\\n  id: string\\n  \\[key: string\\]: unknown\\n\\}\\n?`,
-        'g'
-      ),
-      '\n'
-    )
-  }
-
-  content = content.replace(/\n*\/\/ Auto-added exports so imports resolve during typecheck\n*$/g, '')
-
-  if (content === actionsFile.content) {
-    return files
-  }
-
-  logger.warn('Removed duplicate lib/actions type exports that conflict with lib/types', {
-    types: [...reservedTypeNames],
-  })
-
-  const updated = [...files]
-  updated[actionsIndex] = { ...actionsFile, content }
-  return updated
-}
-
-/**
- * Adds missing exports to lib/actions.ts so component imports typecheck.
- */
-export function reconcileActionsTypeExports(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  const actionsIndex = files.findIndex((file) => normalizePath(file.path) === 'lib/actions.ts')
-  if (actionsIndex < 0) {
-    return files
-  }
-
-  const { types, values } = collectActionsImports(files)
-  const actionsFile = files[actionsIndex]
-  const additions: string[] = []
-
-  for (const typeName of types) {
-    if (!isExportedInActions(actionsFile.content, typeName)) {
-      additions.push(
-        `export interface ${typeName} {\n  id: string\n  [key: string]: unknown\n}`
-      )
-    }
-  }
-
-  for (const valueName of values) {
-    if (!isExportedInActions(actionsFile.content, valueName)) {
-      if (valueName.startsWith('get')) {
-        additions.push(`export async function ${valueName}(): Promise<unknown[]> {\n  return []\n}`)
-      } else if (valueName.startsWith('create') || valueName.startsWith('update')) {
-        additions.push(
-          `export async function ${valueName}(..._args: unknown[]): Promise<unknown> {\n  return {}\n}`
-        )
-      } else {
-        additions.push(`export async function ${valueName}(..._args: unknown[]): Promise<void> {}`)
-      }
-    }
-  }
-
-  if (additions.length === 0) {
-    return files
-  }
-
-  logger.warn('Added missing lib/actions exports for typecheck', {
-    types: [...types],
-    values: [...values],
-  })
-
-  const updated = [...files]
-  updated[actionsIndex] = {
-    ...actionsFile,
-    content: `${actionsFile.content.trimEnd()}\n\n// Auto-added exports so imports resolve during typecheck\n${additions.join('\n\n')}\n`,
-  }
-  return updated
-}
-
-/** Maps commonly mismatched type import names to existing exports in lib/types.ts. */
-const LIB_TYPES_ALIASES: Record<string, string> = {
-  TaskWithRelations: 'Task',
-  TaskWithOwners: 'Task',
-  MemberData: 'Member',
-  MemberType: 'Member',
-}
-
-function isExportedInTypesModule(content: string, name: string): boolean {
-  return (
-    new RegExp(`export\\s+(?:type|interface|enum|const)\\s+${name}\\b`).test(content) ||
-    new RegExp(`export\\s*\\{[^}]*\\b${name}\\b`).test(content)
-  )
-}
-
-function collectTypesImports(files: GeneratedAppFile[]): Set<string> {
-  const types = new Set<string>()
-
-  for (const file of files) {
-    if (normalizePath(file.path) === 'lib/types.ts') {
-      continue
-    }
-
-    for (const match of file.content.matchAll(
-      /import\s+type\s+\{([^}]+)\}\s+from\s+['"]@\/lib\/types['"]/g
-    )) {
-      for (const name of parseImportNames(match[1] ?? '')) {
-        types.add(name)
-      }
-    }
-
-    for (const match of file.content.matchAll(/import\s+\{([^}]+)\}\s+from\s+['"]@\/lib\/types['"]/g)) {
-      if (match[0].includes('import type')) {
-        continue
-      }
-
-      for (const part of (match[1] ?? '').split(',').map((entry) => entry.trim())) {
-        if (!part) {
-          continue
-        }
-        if (part.startsWith('type ')) {
-          types.add(part.replace(/^type\s+/, ''))
-        }
-      }
-    }
-  }
-
-  return types
-}
-
-const DEFAULT_TYPES_STUB = `/** Auto-generated types scaffold. Replace with domain-specific types. */
-export interface RecordItem {
-  id: string
-  [key: string]: unknown
-}
-`
-
-const LIB_TYPES_KNOWN_STUBS: Record<string, string> = {
-  DashboardStats: `export interface DashboardStats {
-  totalTasks: number
-  completedTasks: number
-  inProgressTasks: number
-  overdueTasks: number
-  totalUsers: number
-  totalCategories: number
-  recentTasks: TaskData[]
-  tasksByStatus: { status: string; count: number }[]
-  tasksByPriority: { priority: string; count: number }[]
-}`,
-}
-
-/**
- * Adds missing exports to lib/types.ts so @/lib/types imports typecheck.
- */
-export function reconcileTypesExports(files: GeneratedAppFile[]): GeneratedAppFile[] {
-  const importedTypes = collectTypesImports(files)
-  if (importedTypes.size === 0) {
-    return files
-  }
-
-  let typesIndex = files.findIndex((file) => normalizePath(file.path) === 'lib/types.ts')
-  const updated = [...files]
-
-  if (typesIndex < 0) {
-    updated.push({ path: 'lib/types.ts', content: DEFAULT_TYPES_STUB })
-    typesIndex = updated.length - 1
-  }
-
-  const typesFile = updated[typesIndex]
-  const additions: string[] = []
-
-  for (const typeName of importedTypes) {
-    if (isExportedInTypesModule(typesFile.content, typeName)) {
-      continue
-    }
-
-    const aliasTarget = LIB_TYPES_ALIASES[typeName]
-    if (aliasTarget && isExportedInTypesModule(typesFile.content, aliasTarget)) {
-      additions.push(`export type ${typeName} = ${aliasTarget}`)
-      continue
-    }
-
-    if (/^Status$/i.test(typeName) && isExportedInTypesModule(typesFile.content, 'TaskStatus')) {
-      additions.push(`export type ${typeName} = TaskStatus`)
-      continue
-    }
-
-    if (/^Priority$/i.test(typeName) && isExportedInTypesModule(typesFile.content, 'TaskPriority')) {
-      additions.push(`export type ${typeName} = TaskPriority`)
-      continue
-    }
-
-    if (LIB_TYPES_KNOWN_STUBS[typeName]) {
-      additions.push(LIB_TYPES_KNOWN_STUBS[typeName])
-      continue
-    }
-
-    additions.push(`export interface ${typeName} {\n  id: string\n  [key: string]: unknown\n}`)
-  }
-
-  let typesContent = typesFile.content
-  for (const [typeName, stub] of Object.entries(LIB_TYPES_KNOWN_STUBS)) {
-    const malformed = new RegExp(
-      `export interface ${typeName} \\{\\s*id: string\\s*\\[key: string\\]: unknown\\s*\\}`,
-      's'
-    )
-    if (malformed.test(typesContent)) {
-      typesContent = typesContent.replace(malformed, stub)
-    }
-  }
-
-  if (additions.length === 0 && typesContent === typesFile.content) {
-    return updated
-  }
-
-  if (additions.length > 0) {
-    logger.warn('Added missing lib/types exports for typecheck', {
-      types: [...importedTypes],
-    })
-  }
-
-  const suffix =
-    additions.length > 0
-      ? `\n\n// Auto-added exports so imports resolve during typecheck\n${additions.join('\n\n')}\n`
-      : '\n'
-
-  updated[typesIndex] = {
-    ...typesFile,
-    content: `${typesContent.trimEnd()}${suffix}`,
-  }
-  return updated
 }
 
 function readPackageName(files: GeneratedAppFile[]): string | undefined {
@@ -2554,74 +1467,10 @@ export function ensureNextEnvFile(files: GeneratedAppFile[]): GeneratedAppFile[]
   return [...files, { path: 'next-env.d.ts', content: DEFAULT_NEXT_ENV_DTS }]
 }
 
-function createStubComponentFile(
-  filePath: string,
-  propNames: string[] = [],
-  propTypes: Record<string, string> = {}
-): GeneratedAppFile {
-  const name = toComponentName(filePath)
-  const isClient =
-    /Client$/i.test(name) ||
-    /\/ui\//.test(filePath) ||
-    /form|modal|menu|dropdown|toggle|carousel|slider|tabs|toast/i.test(name) ||
-    /Form|Modal|Menu|Dropdown|Toast/.test(name)
-
-  const resolvedPropTypes =
-    propNames.length > 0
-      ? Object.fromEntries(
-          propNames.map((prop) => [
-            prop,
-            propTypes[prop] && propTypes[prop] !== 'unknown' ? propTypes[prop] : prop === 'children' ? 'ReactNode' : 'unknown',
-          ])
-        )
-      : {}
-  const typeImportLine = buildComponentTypeImportLines(resolvedPropTypes)
-  const renderChildren = Boolean(resolvedPropTypes.children)
-  const propsInterface =
-    propNames.length > 0 ? formatComponentPropsInterface(name, resolvedPropTypes) : ''
-  const propsSignature =
-    propNames.length > 0
-      ? formatComponentPropsSignature(name, resolvedPropTypes, renderChildren)
-      : '()'
-  const returnBody = renderChildren
-    ? '  return <>{children}</>\n'
-    : `  return (
-    <section className="py-8">
-      <div className="mx-auto max-w-5xl px-4 text-sm text-slate-600">${name}</div>
-    </section>
-  )\n`
-
-  const content = `${isClient ? "'use client'\n\n" : ''}${typeImportLine}/** Auto-generated stub so @/ imports resolve on Vercel. Replace with full UI when refining the app. */
-${propsInterface}export function ${name}${propsSignature} {
-${returnBody}}
-
-export default ${name}
-`
-
-  return { path: filePath, content }
-}
-
-/**
- * Applies import/export reconcilers so structure validation and typecheck see consistent modules.
- */
-function reconcileGeneratedAppImportsAndExports(
-  files: GeneratedAppFile[],
-  options: NormalizeGeneratedAppFilesOptions = {}
-): GeneratedAppFile[] {
-  let updated = reconcileSplitImportsInFiles(files)
-  updated = dedupeActionsTypeConflicts(reconcileActionsTypeExports(updated))
-  updated = reconcileTypesExports(updated)
-  updated = reconcileAuthExports(updated, options)
-  updated = reconcileComponentExportStyles(updated)
-  updated = reconcileClientComponentProps(updated)
-  updated = reconcileNextDocumentImports(updated)
-  updated = reconcileDateFormatterSignatures(updated)
-  return updated
-}
-
 /**
  * Normalizes generated files for reliable local and Vercel builds.
- * Structural import/export gaps are auto-reconciled; domain logic remains the LLM's responsibility.
+ * Only config pinning, scaffolding (README, REPO_SUMMARY, next-env.d.ts), and package.json deps run here.
+ * Import/export correctness, types, auth, Client props, and JSX must come from the LLM system prompt.
  */
 export function normalizeGeneratedAppFiles(
   files: GeneratedAppFile[],
@@ -2651,8 +1500,7 @@ export function normalizeGeneratedAppFiles(
     return file
   })
 
-  const withReconciledSources = reconcileGeneratedAppImportsAndExports(patched, options)
-  const withNextEnv = ensureNextEnvFile(withReconciledSources)
+  const withNextEnv = ensureNextEnvFile(patched)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
   const usedPackages = collectUsedNpmPackageNames(withRepoSummary)

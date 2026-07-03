@@ -90,7 +90,7 @@ describe('validate-generated-app-structure', () => {
     )
   })
 
-  it('auto-reconciles prop drift during normalization before structure validation', () => {
+  it('reports prop drift after normalization when Client props are incomplete', () => {
     const normalized = normalizeGeneratedAppFiles([
       ...baseFiles,
       {
@@ -112,7 +112,9 @@ describe('validate-generated-app-structure', () => {
     ])
 
     const result = validateGeneratedAppStructure(normalized)
-    expect(result.valid).toBe(true)
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('executions'))).toBe(true)
+    expect(result.issues.some((issue) => issue.includes('hasApiKey'))).toBe(true)
   })
 
   it('does not report prop drift for quoted confirmation copy in modal messages', () => {
@@ -167,7 +169,7 @@ export default function ConfirmModal({ message, onConfirm, open, onClose }: Conf
     expect(result.issues.some((issue) => issue.includes('getRecentTasks'))).toBe(true)
   })
 
-  it('passes action import checks after normalize auto-reconciles missing exports', () => {
+  it('reports missing action exports after normalization without auto-reconciling', () => {
     const files = normalizeGeneratedAppFiles(
       [
         ...baseFiles,
@@ -182,7 +184,26 @@ export default function ConfirmModal({ message, onConfirm, open, onClose }: Conf
     )
 
     const result = validateGeneratedAppStructure(files, { requiresDatabase: true })
-    expect(result.issues.some((issue) => issue.includes('updatePassword'))).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('updatePassword'))).toBe(true)
+  })
+
+  it('reports next/document component tags even without an import', () => {
+    const result = validateGeneratedAppStructure([
+      ...baseFiles,
+      {
+        path: 'app/not-found.tsx',
+        content: 'export default function NotFound() { return <Html><h1>404</h1></Html> }\n',
+      },
+      {
+        path: 'app/layout.tsx',
+        content:
+          'export default function Layout({ children }: { children: React.ReactNode }) { return <html><body>{children}</body></html> }',
+      },
+      { path: 'app/page.tsx', content: 'export default function Page() { return null }\n' },
+    ])
+
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('app/not-found.tsx'))).toBe(true)
   })
 
   it('reports next/document imports in App Router files', () => {
@@ -225,7 +246,7 @@ export default function ConfirmModal({ message, onConfirm, open, onClose }: Conf
     expect(result.issues.some((issue) => issue.includes('components/NotFoundShell.tsx'))).toBe(true)
   })
 
-  it('auto-strips next/document during normalization before structure validation', () => {
+  it('reports next/document after normalization without auto-stripping', () => {
     const normalized = normalizeGeneratedAppFiles([
       ...baseFiles,
       {
@@ -242,9 +263,10 @@ export default function ConfirmModal({ message, onConfirm, open, onClose }: Conf
     ])
 
     const result = validateGeneratedAppStructure(normalized)
-    expect(result.valid).toBe(true)
+    expect(result.valid).toBe(false)
+    expect(result.issues.some((issue) => issue.includes('app/not-found.tsx'))).toBe(true)
     const notFound = normalized.find((file) => file.path === 'app/not-found.tsx')
-    expect(notFound?.content).not.toContain('next/document')
+    expect(notFound?.content).toContain('next/document')
   })
 
   it('reports wrong use client placement', () => {
