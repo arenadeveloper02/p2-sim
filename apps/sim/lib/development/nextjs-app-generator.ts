@@ -57,6 +57,7 @@ import {
   validateGeneratedAppStructure,
   collectReferencedAliasPathsInFiles,
 } from '@/lib/development/validate-generated-app-structure'
+import { supportsTemperature } from '@/providers/utils'
 
 const logger = createLogger('NextjsAppGenerator')
 
@@ -528,7 +529,7 @@ async function requestStructuredLlm(
   return createAnthropicMessage(anthropic, {
     model: modelId,
     max_tokens: getMaxOutputTokens(modelId),
-    temperature: 0.2,
+    ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
     system: systemPrompt,
     messages,
     output_config: {
