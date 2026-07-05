@@ -59,7 +59,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'COVER_SLIDE',
         order: 2,
         templateSlideObjectId: 'g392319e7c15_4_83',
-        description: 'Cover slide with title, subtitle, date, and hero image',
+        description:
+          'Cover slide with title, subtitle, date, company logo (top-left), and a square AI-generated hero photo on the right',
         blocks: [
           {
             key: 'title',
@@ -95,11 +96,17 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'hero_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
-            source: 'stock_photo',
-            replaceable: false,
-            usage: ['background', 'contextual_photo', 'hero'],
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['hero', 'contextual_photo', 'cover'],
+            // Shape: scaleX 1.7881 / scaleY 1.7881 → 1:1
+            aspectRatio: '1:1',
+            generationContext:
+              'professional stock photography, no text or UI overlays, square crop, sharp subject, well-lit, corporate presentation quality, suitable as a cover slide hero',
+            generationPrompt: '',
             shapeId: 'g392319e7c15_4_91',
-            description: 'Large hero image on the right side of the slide',
+            description:
+              'Large square hero photo on the right side of the cover slide. Sets the visual tone for the presentation.',
             content: '',
           },
           {
@@ -834,7 +841,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'TRANSITION_SLIDE',
         order: 11,
         templateSlideObjectId: 'g328ad9f718d_0_36',
-        description: 'Simple transition slide with section title (images ignored)',
+        description:
+          'Section transition slide with title on the left and a square AI-generated hero photo on the right',
         blocks: [
           {
             key: 'title',
@@ -844,6 +852,23 @@ function buildTemplateSchema(): PresentationSchema {
             minChars: 5,
             maxChars: 40,
             description: 'Section or transition title',
+            content: '',
+          },
+          {
+            key: 'hero_image',
+            type: 'IMAGE',
+            role: 'PRIMARY_VISUAL',
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['hero', 'contextual_photo', 'section_transition'],
+            // Shape: scaleX 1.7881 / scaleY 1.7881 → 1:1
+            aspectRatio: '1:1',
+            generationContext:
+              'professional stock photography, no text or UI overlays, square crop, sharp subject, well-lit, corporate presentation quality, suitable as a section transition visual',
+            generationPrompt: '',
+            shapeId: 'g328ad9f718d_0_42',
+            description:
+              'Large square hero photo on the right side. Visually introduces the upcoming section.',
             content: '',
           },
         ],
