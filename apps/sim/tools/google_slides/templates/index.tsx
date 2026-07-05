@@ -248,7 +248,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'THREE_COLUMN_IMAGE_TEXT',
         order: 5,
         templateSlideObjectId: 'g392319e7c15_4_327',
-        description: 'Three-column layout with images, separate headers and body text',
+        description:
+          'Three-column layout — each column has a landscape AI-generated photo (top) with a bold subheading and body paragraph below. Left header uses ACCENT5, middle ACCENT3, right ACCENT6.',
         blocks: [
           {
             key: 'title',
@@ -260,15 +261,22 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Slide title describing the three-column content',
             content: '',
           },
+          // ── Left column ──
           {
             key: 'left_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
-            source: 'stock_photo',
-            replaceable: false,
-            usage: ['contextual_photo', 'illustration'],
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['contextual_photo', 'illustration', 'left_column'],
+            // Shape: scaleX 1.0859 / scaleY 0.6362 → 1.707:1 → '16:9' is closest supported ratio
+            aspectRatio: '16:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g392319e7c15_4_335',
-            description: 'Left column image',
+            description:
+              'Photo for the left column. Visually represents the left section topic.',
             content: '',
           },
           {
@@ -291,15 +299,22 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Left column body text (14pt regular)',
             content: '',
           },
+          // ── Middle column ──
           {
             key: 'middle_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
-            source: 'stock_photo',
-            replaceable: false,
-            usage: ['contextual_photo', 'illustration'],
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['contextual_photo', 'illustration', 'middle_column'],
+            // Same shape dimensions as left image → '16:9'
+            aspectRatio: '16:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g392319e7c15_4_337',
-            description: 'Middle column image',
+            description:
+              'Photo for the middle column. Visually represents the middle section topic.',
             content: '',
           },
           {
@@ -322,15 +337,22 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Middle column body text (14pt regular)',
             content: '',
           },
+          // ── Right column ──
           {
             key: 'right_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
-            source: 'stock_photo',
-            replaceable: false,
-            usage: ['contextual_photo', 'illustration'],
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['contextual_photo', 'illustration', 'right_column'],
+            // Same shape dimensions as left image → '16:9'
+            aspectRatio: '16:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g392319e7c15_4_336',
-            description: 'Right column image',
+            description:
+              'Photo for the right column. Visually represents the right section topic.',
             content: '',
           },
           {
