@@ -598,6 +598,50 @@ export const renderBs64Img = ({
   }
 }
 
+export type ChatMessageImageSelectionProps = {
+  onSelect?: () => void
+  selectLabel?: string
+  isSelected?: boolean
+  compactActions?: boolean
+}
+
+/**
+ * Renders a chat markdown or content-block image with preview, download, and optional select overlay.
+ */
+export function renderChatMessageImage(
+  src: string,
+  selectionProps?: ChatMessageImageSelectionProps
+) {
+  const trimmed = src.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  if (trimmed.startsWith('data:image/')) {
+    const [, base64Data = ''] = trimmed.split(',', 2)
+    return renderBs64Img({
+      isBase64: true,
+      imageData: base64Data || trimmed,
+      ...selectionProps,
+    })
+  }
+
+  if (isBase64(trimmed)) {
+    return renderBs64Img({
+      isBase64: true,
+      imageData: trimmed.replace(/\s+/g, ''),
+      ...selectionProps,
+    })
+  }
+
+  return renderBs64Img({
+    isBase64: false,
+    imageData: '',
+    imageUrl: trimmed,
+    ...selectionProps,
+  })
+}
+
 /**
  * Returns a single image URL from a string that might contain multiple URLs or markdown.
  * Used so the fetch URL is never a concatenation of several URLs.
@@ -911,11 +955,36 @@ function normalizeUrlDedupeKey(u: string): string {
   }
 }
 
+/** Characters that end a URL when scanning from free-form text. */
+const URL_END_CHARS = /[\s)\]"'\u00A0>,;]/
+
+const LIST_ITEM_PREFIX = /^(?:[-*+•]\s+|\d+[.)]\s+)/
+const BLOCKQUOTE_PREFIX = /^>\s+/
+
+const IMAGE_URL_SCAN_PATTERNS: RegExp[] = [
+  /!?\[[^\]]*\]\(([^)]+)\)/gi,
+  /<img[^>]+src=["']([^"']+)["']/gi,
+  /`(https?:\/\/[^`]+)`/gi,
+  /`(\/api\/files\/serve\/[^`]+)`/gi,
+  /https?:\/\/[^\s<>\][)"'`]+?(?:agent-generated-images[^\s<>\][)"'`]*?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>\][)"'`]*)?)/gi,
+  /\/api\/files\/serve\/[^\s<>\][)"'`]+?(?:agent-generated-images[^\s<>\][)"'`]*?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>\][)"'`]*)?)/gi,
+  /https?:\/\/[^\s<>\][)"'`]+?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s<>\][)"'`]*)?/gi,
+  /\/api\/files\/serve\/[^\s<>\][)"'`]+agent-generated-images[^\s<>\][)"'`]+/gi,
+]
+
 /**
- * True when a trimmed line is a file-serve or HTTP URL that should render as an image.
- * (Handles multiline final chat output where each line is a full URL.)
+ * Extracts the first image URL from a string that may contain multiple URLs, markdown, or extra text.
+ * Returns only the first valid image URL segment, or null.
  */
-export function isImageUrlLine(s: string): boolean {
+function extractFirstImageUrlFromString(s: string): string | null {
+  const urls = extractAllImageUrlsFromText(s)
+  return urls[0] ?? null
+}
+
+/**
+ * True when a trimmed string is a bare file-serve or HTTP image URL.
+ */
+function isRawImageUrlString(s: string): boolean {
   const t = s.trim()
   if (!t) return false
   if (t.startsWith('/api/files/serve/')) {
@@ -932,6 +1001,170 @@ export function isImageUrlLine(s: string): boolean {
 }
 
 /**
+ * Strips common agent/chat wrappers and trailing punctuation from a URL candidate.
+ */
+function normalizeExtractedImageUrl(raw: string): string | null {
+  if (!raw) return null
+
+  let candidate = raw.trim()
+  if (!candidate) return null
+
+  const markdownUrl = candidate.match(/^(?:!\[[^\]]*\]|\[[^\]]*\])\(([^)]+)\)$/)?.[1]
+  if (markdownUrl) {
+    candidate = markdownUrl.trim()
+  }
+
+  for (let pass = 0; pass < 4; pass += 1) {
+    const before = candidate
+    candidate = candidate.replace(LIST_ITEM_PREFIX, '').trim()
+    candidate = candidate.replace(BLOCKQUOTE_PREFIX, '').trim()
+    candidate = candidate.replace(/^[`"'(<\[]+/, '').replace(/[`"')\]>]+$/, '').trim()
+    candidate = candidate.replace(/^\(+/, '').replace(/\)+$/, '').trim()
+    candidate = candidate.replace(URL_END_CHARS, '').trim()
+    if (candidate === before) break
+  }
+
+  if (isRawImageUrlString(candidate)) {
+    return candidate
+  }
+
+  for (const pattern of IMAGE_URL_SCAN_PATTERNS) {
+    const match = candidate.match(new RegExp(pattern.source, pattern.flags.replace('g', '')))
+    const matched = match?.[1] ?? match?.[0]
+    if (matched && isRawImageUrlString(matched.trim())) {
+      return matched.trim()
+    }
+  }
+
+  return null
+}
+
+function addUniqueImageUrl(
+  raw: string | undefined,
+  seen: Set<string>,
+  urls: string[]
+): void {
+  const normalized = normalizeExtractedImageUrl(raw ?? '')
+  if (!normalized) return
+  const key = normalizeUrlDedupeKey(normalized)
+  if (seen.has(key)) return
+  seen.add(key)
+  urls.push(normalized)
+}
+
+function collectImageUrlsFromPatternMatches(text: string, seen: Set<string>, urls: string[]): void {
+  for (const pattern of IMAGE_URL_SCAN_PATTERNS) {
+    for (const match of text.matchAll(pattern)) {
+      addUniqueImageUrl(match[1] ?? match[0], seen, urls)
+    }
+  }
+}
+
+/**
+ * Extracts every renderable image URL from arbitrary assistant text (lists, markdown, inline labels, etc.).
+ */
+function extractAllImageUrlsFromText(text: string): string[] {
+  if (!text || typeof text !== 'string') {
+    return []
+  }
+
+  const urls: string[] = []
+  const seen = new Set<string>()
+
+  collectImageUrlsFromPatternMatches(text, seen, urls)
+
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    const variants = [
+      trimmed,
+      trimmed.replace(LIST_ITEM_PREFIX, '').trim(),
+      trimmed.replace(BLOCKQUOTE_PREFIX, '').trim(),
+      trimmed.replace(LIST_ITEM_PREFIX, '').replace(BLOCKQUOTE_PREFIX, '').trim(),
+    ]
+
+    for (const variant of variants) {
+      if (!variant || variant === trimmed) continue
+      collectImageUrlsFromPatternMatches(variant, seen, urls)
+    }
+  }
+
+  return urls
+}
+
+/**
+ * Removes extracted image URLs from prose while preserving non-image lines and labels.
+ */
+function isOrphanLabelLine(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return true
+  if (trimmed.length > 24) return false
+  return /^[\w#.-]+(?:\s+[\w#.-]+){0,3}\s*:?\s*$/.test(trimmed)
+}
+
+function removeImageUrlsFromProse(raw: string, urls: string[]): string {
+  if (urls.length === 0) {
+    return raw.trim()
+  }
+
+  const knownKeys = new Set(urls.map(normalizeUrlDedupeKey))
+  const proseLines: string[] = []
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      proseLines.push('')
+      continue
+    }
+
+    const lineUrls = extractAllImageUrlsFromText(trimmed).filter((url) =>
+      knownKeys.has(normalizeUrlDedupeKey(url))
+    )
+
+    if (lineUrls.length === 0) {
+      proseLines.push(line)
+      continue
+    }
+
+    let remaining = line
+    for (const url of lineUrls) {
+      remaining = remaining.split(url).join('')
+    }
+
+    remaining = remaining
+      .replace(/!?\[[^\]]*\]\(\s*\)/g, '')
+      .replace(/`+/g, '')
+      .replace(LIST_ITEM_PREFIX, '')
+      .replace(BLOCKQUOTE_PREFIX, '')
+      .replace(/^\s*:\s*/, '')
+      .replace(/:\s*$/, '')
+      .trim()
+
+    if (remaining && !isOrphanLabelLine(remaining)) {
+      proseLines.push(remaining)
+    }
+  }
+
+  return proseLines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/**
+ * Extracts an image URL from a chat line that may use list markers or markdown links.
+ */
+function extractImageUrlFromLine(line: string): string | null {
+  return extractAllImageUrlsFromText(line)[0] ?? null
+}
+
+/**
+ * True when a trimmed line is a file-serve or HTTP URL that should render as an image.
+ * (Handles multiline final chat output where each line is a full URL.)
+ */
+export function isImageUrlLine(s: string): boolean {
+  return extractImageUrlFromLine(s) !== null
+}
+
+/**
  * Resolves assistant message text into deduped image URLs and remaining markdown prose.
  * Handles: (1) multiple outputs joined with \\n\\n (same URL twice from content+image picks),
  * (2) JSON payloads `{ content, image, metadata }`, (3) single URL lines.
@@ -941,58 +1174,6 @@ export function resolveMessageImagesAndProse(raw: string): { urls: string[]; pro
     return { urls: [], prose: '' }
   }
 
-  const pushUrl = (u: string, seen: Set<string>, urls: string[]) => {
-    const t = u.trim()
-    if (!t || !isImageUrlLine(t)) return
-    const k = normalizeUrlDedupeKey(t)
-    if (!seen.has(k)) {
-      seen.add(k)
-      urls.push(t)
-    }
-  }
-
-  const segments = raw
-    .split(/\n\n+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-  const urls: string[] = []
-  const seen = new Set<string>()
-  const proseParts: string[] = []
-
-  for (const seg of segments) {
-    const lines = seg
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-    if (lines.length === 0) continue
-
-    if (lines.length === 1 && isImageUrlLine(lines[0])) {
-      pushUrl(lines[0], seen, urls)
-      continue
-    }
-
-    const allLinesAreImageUrls = lines.every((l) => isImageUrlLine(l))
-    if (allLinesAreImageUrls) {
-      for (const l of lines) pushUrl(l, seen, urls)
-      continue
-    }
-
-    const hasAnyImageLine = lines.some((l) => isImageUrlLine(l))
-    if (hasAnyImageLine) {
-      for (const l of lines) {
-        if (isImageUrlLine(l)) pushUrl(l, seen, urls)
-        else proseParts.push(l)
-      }
-      continue
-    }
-
-    proseParts.push(seg)
-  }
-
-  if (urls.length > 0) {
-    return { urls, prose: proseParts.join('\n\n').trim() }
-  }
-
   const t = raw.trim()
   if (t.startsWith('{')) {
     try {
@@ -1000,10 +1181,21 @@ export function resolveMessageImagesAndProse(raw: string): { urls: string[]; pro
       if (o && typeof o === 'object' && !Array.isArray(o)) {
         const jsonUrls: string[] = []
         const jSeen = new Set<string>()
-        if (typeof o.image === 'string') pushUrl(o.image, jSeen, jsonUrls)
-        if (typeof o.content === 'string') pushUrl(o.content, jSeen, jsonUrls)
+        if (typeof o.image === 'string') addUniqueImageUrl(o.image, jSeen, jsonUrls)
+        if (typeof o.content === 'string') {
+          for (const url of extractAllImageUrlsFromText(o.content)) {
+            addUniqueImageUrl(url, jSeen, jsonUrls)
+          }
+        }
+        if (Array.isArray(o.images)) {
+          for (const item of o.images) {
+            if (typeof item === 'string') addUniqueImageUrl(item, jSeen, jsonUrls)
+          }
+        }
         if (jsonUrls.length > 0) {
-          return { urls: jsonUrls, prose: '' }
+          const prose =
+            typeof o.content === 'string' ? removeImageUrlsFromProse(o.content, jsonUrls) : ''
+          return { urls: jsonUrls, prose }
         }
       }
     } catch {
@@ -1048,35 +1240,12 @@ export function resolveMessageImagesAndProse(raw: string): { urls: string[]; pro
     }
   }
 
-  return { urls: [], prose: raw }
-}
-
-/** Characters that end a URL when scanning from the start. */
-const URL_END_CHARS = /[\s)\]"'\u00A0]/
-
-/**
- * Extracts the first image URL from a string that may contain multiple URLs, markdown, or extra text.
- * Returns only the first valid image URL segment, or null.
- */
-function extractFirstImageUrlFromString(s: string): string | null {
-  if (!s || typeof s !== 'string') return null
-  const trimmed = s.trim()
-  const patterns: RegExp[] = [
-    /https?:\/\/[^\s)\]"']*?(?:agent-generated-images[^\s)\]"']*?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s)\]"']*)?)/i,
-    /\/api\/files\/serve\/[^\s)\]"']*?(?:agent-generated-images[^\s)\]"']*?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s)\]"']*)?)/i,
-    /https?:\/\/[^\s)\]"']*?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s)\]"']*)?/i,
-    /\/api\/files\/serve\/[^\s)\]"']+agent-generated-images[^\s)\]"']+/i,
-  ]
-  for (const re of patterns) {
-    const match = trimmed.match(re)
-    if (match?.[0]) {
-      let url = match[0]
-      const endIdx = url.search(URL_END_CHARS)
-      if (endIdx !== -1) url = url.slice(0, endIdx)
-      if (url.length > 0) return url
-    }
+  const urls = extractAllImageUrlsFromText(raw)
+  if (urls.length > 0) {
+    return { urls, prose: removeImageUrlsFromProse(raw, urls) }
   }
-  return null
+
+  return { urls: [], prose: raw }
 }
 
 /**

@@ -21,6 +21,7 @@ import { downloadFile } from '@/lib/uploads/core/storage-service'
 //   compileDocumentIfNeeded,
 //   getWorkspaceIdForCompile,
 // } from '@/lib/uploads/utils/compile-document'
+import { ORG_LOGOS_S3_PREFIX } from '@/lib/uploads/contexts/org-logos/utils'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
 import { canAccessAgentGeneratedImageViaDeployedChat } from '@/app/api/chat/utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
@@ -336,7 +337,8 @@ export const GET = withRouteHandler(
       const isPublicByKeyPrefix =
         cloudKey.startsWith('profile-pictures/') ||
         cloudKey.startsWith('og-images/') ||
-        cloudKey.startsWith('workspace-logos/')
+        cloudKey.startsWith('workspace-logos/') ||
+        cloudKey.startsWith(`${ORG_LOGOS_S3_PREFIX}/`)
 
       if (isPublicByKeyPrefix) {
         const context = inferContextFromKey(cloudKey)
