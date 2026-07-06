@@ -62,7 +62,7 @@ function parseArgs(argv: string[]): Options {
   if (!Number.isFinite(batchSize) || batchSize <= 0) {
     throw new Error('--batch-size must be a positive integer')
   }
-  if (!Number.isFinite(maxBatches) || maxBatches <= 0) {
+  if (maxBatchesArg && (!Number.isFinite(maxBatches) || maxBatches <= 0)) {
     throw new Error('--max-batches must be a positive integer')
   }
 

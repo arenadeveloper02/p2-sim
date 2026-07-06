@@ -62,9 +62,25 @@ interface ResolvedPeriod {
   end: Date
 }
 
+function ensurePeriodDate(value: unknown): Date {
+  const date = coerceToDate(value)
+  if (!date) {
+    throw new Error('Invalid time range')
+  }
+  return date
+}
+
 /** Coalesced ledger clock: occurred_at when present, else created_at. */
 function ledgerOccurredAt() {
   return sql`coalesce(${usageLog.occurredAt}, ${usageLog.createdAt})`
+}
+
+/** Period bounds for the coalesced ledger clock — use raw SQL so drizzle does not stringify dates incorrectly. */
+function ledgerPeriodBounds(period: ResolvedPeriod): [SQL, SQL] {
+  const start = ensurePeriodDate(period.start)
+  const end = ensurePeriodDate(period.end)
+  const occurredAt = ledgerOccurredAt()
+  return [sql`${occurredAt} >= ${start}`, sql`${occurredAt} <= ${end}`]
 }
 
 /** Normalizes postgres/drizzle timestamp values (Date or ISO string) for range math. */
@@ -88,8 +104,22 @@ function parseDecimal(value: string | null | undefined): number {
 function parseIntMetric(value: string | number | null | undefined): number {
   if (typeof value === 'number') return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
   if (!value) return 0
-  const parsed = Number.parseInt(String(value), 10)
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.min(Math.trunc(parsed), Number.MAX_SAFE_INTEGER))
+}
+
+const NUMERIC_STRING_PATTERN = '^-?[0-9]+(\\.[0-9]+)?$'
+
+/** Legacy metadata may store non-numeric token strings; a bare `::numeric` cast aborts the whole aggregate. */
+function safeMetadataTokenCount(key: 'inputTokens' | 'outputTokens') {
+  const tokenValue = sql`${usageLog.metadata}->>${key}`
+  return sql`case when ${tokenValue} ~ ${NUMERIC_STRING_PATTERN} then ${tokenValue}::numeric else 0 end`
+}
+
+function safeQuantityTokenCount() {
+  const quantityText = sql`nullif(trim(${usageLog.quantity}::text), '')`
+  return sql`case when ${quantityText} ~ ${NUMERIC_STRING_PATTERN} then ${quantityText}::numeric else 0 end`
 }
 
 function ledgerCostSelect() {
@@ -101,28 +131,30 @@ function ledgerCostSelect() {
 }
 
 function usageMetricsSelect() {
+  const inputTokens = safeMetadataTokenCount('inputTokens')
+  const outputTokens = safeMetadataTokenCount('outputTokens')
+  const quantityTokens = safeQuantityTokenCount()
+
   return {
     inputTokens: sql<number>`coalesce(sum(
       case when ${usageLog.category} = 'model'
-        then coalesce((${usageLog.metadata}->>'inputTokens')::numeric, 0)
+        then ${inputTokens}
         else 0
       end
-    ), 0)::int`,
+    ), 0)::bigint`,
     outputTokens: sql<number>`coalesce(sum(
       case when ${usageLog.category} = 'model'
-        then coalesce((${usageLog.metadata}->>'outputTokens')::numeric, 0)
+        then ${outputTokens}
         else 0
       end
-    ), 0)::int`,
+    ), 0)::bigint`,
     totalTokens: sql<number>`coalesce(sum(
       case
-        when ${usageLog.category} = 'model' then
-          coalesce((${usageLog.metadata}->>'inputTokens')::numeric, 0)
-          + coalesce((${usageLog.metadata}->>'outputTokens')::numeric, 0)
-        when ${usageLog.unit} = 'tokens' then coalesce(${usageLog.quantity}::numeric, 0)
+        when ${usageLog.category} = 'model' then ${inputTokens} + ${outputTokens}
+        when ${usageLog.unit} = 'tokens' then ${quantityTokens}
         else 0
       end
-    ), 0)::int`,
+    ), 0)::bigint`,
     invocationCount: sql<number>`count(*)::int`,
   }
 }
@@ -146,11 +178,9 @@ function buildLedgerConditions(
   period: ResolvedPeriod,
   sources?: UsageLogSource[]
 ): SQL[] {
-  const occurredAt = ledgerOccurredAt()
   const conditions: SQL[] = [
     eq(usageLog.workspaceId, workspaceId),
-    gte(occurredAt, period.start),
-    lte(occurredAt, period.end),
+    ...ledgerPeriodBounds(period),
   ]
   if (sources && sources.length > 0) {
     conditions.push(inArray(usageLog.source, sources))
@@ -162,20 +192,23 @@ function buildLedgerJoinConditions(
   workspaceId: string,
   period: ResolvedPeriod
 ): SQL[] {
-  const occurredAt = ledgerOccurredAt()
-  return [
-    eq(usageLog.workspaceId, workspaceId),
-    gte(occurredAt, period.start),
-    lte(occurredAt, period.end),
-  ]
+  return [eq(usageLog.workspaceId, workspaceId), ...ledgerPeriodBounds(period)]
 }
 
 function buildExecutionConditions(workspaceId: string, period: ResolvedPeriod): SQL[] {
+  const start = ensurePeriodDate(period.start)
+  const end = ensurePeriodDate(period.end)
   return [
     eq(workflowExecutionLogs.workspaceId, workspaceId),
-    gte(workflowExecutionLogs.startedAt, period.start),
-    lte(workflowExecutionLogs.startedAt, period.end),
+    gte(workflowExecutionLogs.startedAt, start),
+    lte(workflowExecutionLogs.startedAt, end),
   ]
+}
+
+function periodRange<T extends Parameters<typeof gte>[0]>(column: T, period: ResolvedPeriod): [SQL, SQL] {
+  const start = ensurePeriodDate(period.start)
+  const end = ensurePeriodDate(period.end)
+  return [gte(column, start), lte(column, end)]
 }
 
 async function resolvePeriod(
@@ -232,15 +265,19 @@ async function resolvePeriod(
       return { start: now, end: now }
     }
 
-    const start = new Date(Math.min(...candidates.map((date) => date.getTime())))
-    const end = new Date(Math.max(...candidates.map((date) => date.getTime()), Date.now()))
+    const start = ensurePeriodDate(new Date(Math.min(...candidates.map((date) => date.getTime()))))
+    const end = ensurePeriodDate(
+      new Date(Math.max(...candidates.map((date) => date.getTime()), Date.now()))
+    )
     return { start, end }
   }
 
-  const end = options.endTime ? new Date(options.endTime) : new Date()
-  const start = options.startTime
-    ? new Date(options.startTime)
-    : new Date(end.getTime() - PERIOD_MS[options.period ?? '30d'])
+  const end = ensurePeriodDate(options.endTime ? new Date(options.endTime) : new Date())
+  const start = ensurePeriodDate(
+    options.startTime
+      ? new Date(options.startTime)
+      : new Date(end.getTime() - PERIOD_MS[options.period ?? '30d'])
+  )
 
   return { start, end }
 }
@@ -428,7 +465,7 @@ export async function getWorkspaceUsageAnalytics(
           and(
             eq(copilotChats.workspaceId, workspaceId),
             or(
-              and(gte(copilotChats.createdAt, period.start), lte(copilotChats.createdAt, period.end)),
+              and(...periodRange(copilotChats.createdAt, period)),
               isNotNull(usageLog.id)
             )
           )
@@ -442,8 +479,7 @@ export async function getWorkspaceUsageAnalytics(
         .where(
           and(
             eq(copilotRuns.workspaceId, workspaceId),
-            gte(copilotRuns.startedAt, period.start),
-            lte(copilotRuns.startedAt, period.end)
+            ...periodRange(copilotRuns.startedAt, period)
           )
         ),
 
@@ -459,8 +495,7 @@ export async function getWorkspaceUsageAnalytics(
           copilotRuns,
           and(
             eq(copilotRuns.chatId, copilotChats.id),
-            gte(copilotRuns.startedAt, period.start),
-            lte(copilotRuns.startedAt, period.end)
+            ...periodRange(copilotRuns.startedAt, period)
           )
         )
         .leftJoin(
@@ -471,7 +506,7 @@ export async function getWorkspaceUsageAnalytics(
           and(
             eq(copilotChats.workspaceId, workspaceId),
             or(
-              and(gte(copilotChats.createdAt, period.start), lte(copilotChats.createdAt, period.end)),
+              and(...periodRange(copilotChats.createdAt, period)),
               isNotNull(usageLog.id),
               isNotNull(copilotRuns.id)
             )
@@ -685,8 +720,7 @@ export async function getWorkspaceUsageAnalytics(
         .where(
           and(
             or(eq(usageLog.workspaceId, workspaceId), isNull(usageLog.workspaceId)),
-            gte(ledgerOccurredAt(), period.start),
-            lte(ledgerOccurredAt(), period.end)
+            ...ledgerPeriodBounds(period)
           )
         ),
 
