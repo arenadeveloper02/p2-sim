@@ -416,6 +416,21 @@ export const workflowExecutionLogs = pgTable(
     conversationId: text('conversation_id'), // conversation_id for memory tracking
     initialInput: text('initial_input'), // Initial Input to the chat API
     finalChatOutput: text('final_chat_output'), // Final chat output based on output_configs
+
+    /** Parent workflow run when this execution was triggered as a child (subworkflow/copilot). */
+    parentExecutionId: text('parent_execution_id'),
+    /** Root of the execution lineage tree; self when no parent. */
+    rootExecutionId: text('root_execution_id'),
+    /** Human or resolved owner for attribution (distinct from billing user_id). */
+    actorUserId: text('actor_user_id'),
+    /** Actor channel: user | api_key | webhook | schedule. */
+    actorType: text('actor_type'),
+    /** API key that triggered the run when actor_type is api_key. */
+    apiKeyId: text('api_key_id'),
+    /** Copilot chat that triggered this run (rollup only; not billing chat_id). */
+    triggeringChatId: text('triggering_chat_id'),
+    /** Copilot run that triggered this run (rollup only; not billing run_id). */
+    triggeringRunId: text('triggering_run_id'),
   },
   (table) => ({
     workflowIdIdx: index('workflow_execution_logs_workflow_id_idx').on(table.workflowId),
@@ -455,6 +470,13 @@ export const workflowExecutionLogs = pgTable(
     runningStartedAtIdx: index('workflow_execution_logs_running_started_at_idx')
       .on(table.startedAt)
       .where(sql`status = 'running'`),
+    workspaceActorUserIdx: index('workflow_execution_logs_workspace_actor_user_idx').on(
+      table.workspaceId,
+      table.actorUserId
+    ),
+    rootExecutionIdIdx: index('workflow_execution_logs_root_execution_id_idx').on(
+      table.rootExecutionId
+    ),
   })
 )
 
@@ -2986,7 +3008,12 @@ export const auditLog = pgTable(
   })
 )
 
-export const usageLogCategoryEnum = pgEnum('usage_log_category', ['model', 'fixed', 'tool'])
+export const usageLogCategoryEnum = pgEnum('usage_log_category', [
+  'model',
+  'fixed',
+  'tool',
+  'external',
+])
 export const usageLogSourceEnum = pgEnum('usage_log_source', [
   'workflow',
   'wand',
@@ -3055,6 +3082,28 @@ export const usageLog = pgTable(
     workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
     executionId: text('execution_id'),
 
+    /** Human or resolved owner for attribution (distinct from billing user_id). */
+    actorUserId: text('actor_user_id'),
+    /** Actor channel: user | api_key | webhook | schedule. */
+    actorType: text('actor_type'),
+    /** API key that triggered the usage when actor_type is api_key. */
+    apiKeyId: text('api_key_id'),
+    /** Parent workflow run when this row belongs to a child execution. */
+    parentExecutionId: text('parent_execution_id'),
+    /** Root of the execution lineage tree. */
+    rootExecutionId: text('root_execution_id'),
+    /** Copilot chat that triggered the hosting run (rollup only; not billing chat_id). */
+    triggeringChatId: text('triggering_chat_id'),
+    /** Copilot run that triggered the hosting run (rollup only; not billing run_id). */
+    triggeringRunId: text('triggering_run_id'),
+    /**
+     * When the underlying execution started; defaults to created_at at write time
+     * when not supplied. Backfilled from execution started_at for legacy rows.
+     */
+    occurredAt: timestamp('occurred_at'),
+    /** False for zero-cost ledger rows that still carry usage metadata. */
+    billable: boolean('billable').notNull().default(true),
+
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => ({
@@ -3073,6 +3122,14 @@ export const usageLog = pgTable(
         table.billingPeriodEnd
       )
       .where(sql`${table.billingEntityType} IS NOT NULL`),
+    billingEntityPeriodBillableIdx: index('usage_log_billing_entity_period_billable_idx')
+      .on(
+        table.billingEntityType,
+        table.billingEntityId,
+        table.billingPeriodStart,
+        table.billingPeriodEnd
+      )
+      .where(sql`${table.billable} = true AND ${table.billingEntityType} IS NOT NULL`),
     billingScopeAllOrNone: check(
       'usage_log_billing_scope_all_or_none',
       sql`(
@@ -3097,6 +3154,15 @@ export const usageLog = pgTable(
     runIdIdx: index('usage_log_run_id_idx')
       .on(table.runId)
       .where(sql`${table.runId} IS NOT NULL`),
+    workspaceOccurredAtIdx: index('usage_log_workspace_occurred_at_idx').on(
+      table.workspaceId,
+      table.occurredAt
+    ),
+    actorUserOccurredAtIdx: index('usage_log_actor_user_occurred_at_idx').on(
+      table.actorUserId,
+      table.occurredAt
+    ),
+    rootExecutionIdIdx: index('usage_log_root_execution_id_idx').on(table.rootExecutionId),
   })
 )
 
