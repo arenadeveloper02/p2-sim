@@ -5,6 +5,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { env } from '@/lib/core/config/env'
 import {
   deployPreparedVercelProject,
@@ -197,9 +198,6 @@ interface LlmAppManifest {
   filePaths: string[]
 }
 
-/** Anthropic SDK requires streaming when max_tokens exceeds this limit. */
-const ANTHROPIC_NON_STREAMING_MAX_TOKENS = 21333
-
 export interface GenerateNextjsAppInput {
   userInput: string
   repoName?: string
@@ -327,25 +325,6 @@ function extractJsonFromLlmText(text: string): string {
     return trimmed.slice(firstBrace, lastBrace + 1)
   }
   return trimmed
-}
-
-type AnthropicMessageParams = Anthropic.Messages.MessageCreateParamsNonStreaming & {
-  output_config?: {
-    format?: { type: 'json_schema'; schema: Record<string, unknown> }
-  }
-}
-
-async function createAnthropicMessage(
-  anthropic: Anthropic,
-  params: AnthropicMessageParams
-): Promise<Anthropic.Messages.Message> {
-  if (params.max_tokens > ANTHROPIC_NON_STREAMING_MAX_TOKENS) {
-    const stream = anthropic.messages.stream(
-      params as Anthropic.Messages.MessageStreamParams
-    )
-    return stream.finalMessage()
-  }
-  return anthropic.messages.create(params)
 }
 
 function parseAppSpecJson(text: string): LlmAppSpec {

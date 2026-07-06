@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { getAnthropicAutomaticCacheControl } from '@/lib/anthropic/prompt-cache'
 import { supportsTemperature } from '@/providers/models'
 import { convertMessagesToAnthropic } from '@/local-copilot/lib/providers/anthropic-messages'
 import type {
@@ -35,6 +36,7 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
         model,
         max_tokens: request.maxTokens ?? 8192,
         stream: true,
+        cache_control: getAnthropicAutomaticCacheControl(),
         system: system || undefined,
         messages: anthropicMessages,
         tools: toAnthropicTools(request.tools),
