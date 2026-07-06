@@ -75,12 +75,18 @@ function ledgerOccurredAt() {
   return sql`coalesce(${usageLog.occurredAt}, ${usageLog.createdAt})`
 }
 
-/** Period bounds for the coalesced ledger clock — use raw SQL so drizzle does not stringify dates incorrectly. */
+/**
+ * Period bounds for the coalesced ledger clock.
+ * Compare against ISO strings — raw `Date` in `sql` templates is not encoded like `gte`/`lte` params.
+ */
 function ledgerPeriodBounds(period: ResolvedPeriod): [SQL, SQL] {
-  const start = ensurePeriodDate(period.start)
-  const end = ensurePeriodDate(period.end)
+  const startIso = ensurePeriodDate(period.start).toISOString()
+  const endIso = ensurePeriodDate(period.end).toISOString()
   const occurredAt = ledgerOccurredAt()
-  return [sql`${occurredAt} >= ${start}`, sql`${occurredAt} <= ${end}`]
+  return [
+    sql`${occurredAt} >= ${startIso}::timestamptz`,
+    sql`${occurredAt} <= ${endIso}::timestamptz`,
+  ]
 }
 
 /** Normalizes postgres/drizzle timestamp values (Date or ISO string) for range math. */
@@ -114,12 +120,12 @@ const NUMERIC_STRING_PATTERN = '^-?[0-9]+(\\.[0-9]+)?$'
 /** Legacy metadata may store non-numeric token strings; a bare `::numeric` cast aborts the whole aggregate. */
 function safeMetadataTokenCount(key: 'inputTokens' | 'outputTokens') {
   const tokenValue = sql`${usageLog.metadata}->>${key}`
-  return sql`case when ${tokenValue} ~ ${NUMERIC_STRING_PATTERN} then ${tokenValue}::numeric else 0 end`
+  return sql`case when ${tokenValue} ~ ${NUMERIC_STRING_PATTERN} then (${tokenValue})::numeric else 0 end`
 }
 
 function safeQuantityTokenCount() {
   const quantityText = sql`nullif(trim(${usageLog.quantity}::text), '')`
-  return sql`case when ${quantityText} ~ ${NUMERIC_STRING_PATTERN} then ${quantityText}::numeric else 0 end`
+  return sql`case when ${quantityText} ~ ${NUMERIC_STRING_PATTERN} then (${quantityText})::numeric else 0 end`
 }
 
 function ledgerCostSelect() {
