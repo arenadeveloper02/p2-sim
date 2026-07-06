@@ -59,7 +59,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'COVER_SLIDE',
         order: 2,
         templateSlideObjectId: 'g392319e7c15_4_83',
-        description: 'Cover slide with title, subtitle, date, and hero image',
+        description:
+          'Cover slide with title, subtitle, date, company logo (top-left), and a square AI-generated hero photo on the right',
         blocks: [
           {
             key: 'title',
@@ -95,11 +96,17 @@ function buildTemplateSchema(): PresentationSchema {
             key: 'hero_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
-            source: 'stock_photo',
-            replaceable: false,
-            usage: ['background', 'contextual_photo', 'hero'],
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['hero', 'contextual_photo', 'cover'],
+            // Shape: scaleX 1.7881 / scaleY 1.7881 → 1:1
+            aspectRatio: '1:1',
+            generationContext:
+              'professional stock photography, no text or UI overlays, square crop, sharp subject, well-lit, corporate presentation quality, suitable as a cover slide hero',
+            generationPrompt: '',
             shapeId: 'g392319e7c15_4_91',
-            description: 'Large hero image on the right side of the slide',
+            description:
+              'Large square hero photo on the right side of the cover slide. Sets the visual tone for the presentation.',
             content: '',
           },
           {
@@ -143,7 +150,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'TWO_COLUMN_IMAGE_TEXT',
         order: 4,
         templateSlideObjectId: 'g3bd983d1368_1_0',
-        description: 'Two-column layout with images, headers, and bulleted text content',
+        description:
+          'Two-column layout — each column has an ultra-wide AI-generated hero photo (top) with a bold subheading and two bullet points below. Left header uses ACCENT2 color, right header uses ACCENT3.',
         blocks: [
           {
             key: 'title',
@@ -152,18 +160,25 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3bd983d1368_1_3',
             minChars: 15,
             maxChars: 40,
-            description: 'Slide title describing the two-column content',
+            description: 'Slide title spanning both columns (top of slide)',
             content: '',
           },
+          // ── Left column ──
           {
             key: 'left_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
             source: 'ai_photo',
             replaceable: true,
-            usage: ['contextual_photo', 'illustration', 'ai_generated'],
+            usage: ['hero', 'wide_landscape', 'left_column'],
+            // Shape: scaleX 1.7365 / scaleY 0.7248 → 2.396:1 → '21:9' is closest supported ratio
+            aspectRatio: '21:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, ultra-wide landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g3bd983d1368_1_5',
-            description: 'Left column AI-generated photo',
+            description:
+              'Hero photo for the left column. Visually represents the left section topic.',
             content: '',
           },
           {
@@ -191,15 +206,22 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Left column bulleted list with body text only',
             content: [],
           },
+          // ── Right column ──
           {
             key: 'right_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
             source: 'ai_photo',
             replaceable: true,
-            usage: ['contextual_photo', 'illustration', 'ai_generated'],
+            usage: ['hero', 'wide_landscape', 'right_column'],
+            // Same shape dimensions as left image → '21:9'
+            aspectRatio: '21:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, ultra-wide landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g3bd983d1368_1_7',
-            description: 'Right column AI-generated photo',
+            description:
+              'Hero photo for the right column. Visually represents the right section topic.',
             content: '',
           },
           {
@@ -233,7 +255,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'THREE_COLUMN_IMAGE_TEXT',
         order: 5,
         templateSlideObjectId: 'g392319e7c15_4_327',
-        description: 'Three-column layout with images, separate headers and body text',
+        description:
+          'Three-column layout — each column has a landscape AI-generated photo (top) with a bold subheading and body paragraph below. Left header uses ACCENT5, middle ACCENT3, right ACCENT6.',
         blocks: [
           {
             key: 'title',
@@ -245,15 +268,22 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Slide title describing the three-column content',
             content: '',
           },
+          // ── Left column ──
           {
             key: 'left_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
-            source: 'stock_photo',
-            replaceable: false,
-            usage: ['contextual_photo', 'illustration'],
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['contextual_photo', 'illustration', 'left_column'],
+            // Shape: scaleX 1.0859 / scaleY 0.6362 → 1.707:1 → '16:9' is closest supported ratio
+            aspectRatio: '16:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g392319e7c15_4_335',
-            description: 'Left column image',
+            description:
+              'Photo for the left column. Visually represents the left section topic.',
             content: '',
           },
           {
@@ -276,15 +306,22 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Left column body text (14pt regular)',
             content: '',
           },
+          // ── Middle column ──
           {
             key: 'middle_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
-            source: 'stock_photo',
-            replaceable: false,
-            usage: ['contextual_photo', 'illustration'],
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['contextual_photo', 'illustration', 'middle_column'],
+            // Same shape dimensions as left image → '16:9'
+            aspectRatio: '16:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g392319e7c15_4_337',
-            description: 'Middle column image',
+            description:
+              'Photo for the middle column. Visually represents the middle section topic.',
             content: '',
           },
           {
@@ -307,15 +344,22 @@ function buildTemplateSchema(): PresentationSchema {
             description: 'Middle column body text (14pt regular)',
             content: '',
           },
+          // ── Right column ──
           {
             key: 'right_image',
             type: 'IMAGE',
             role: 'PRIMARY_VISUAL',
-            source: 'stock_photo',
-            replaceable: false,
-            usage: ['contextual_photo', 'illustration'],
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['contextual_photo', 'illustration', 'right_column'],
+            // Same shape dimensions as left image → '16:9'
+            aspectRatio: '16:9',
+            generationContext:
+              'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
+            generationPrompt: '',
             shapeId: 'g392319e7c15_4_336',
-            description: 'Right column image',
+            description:
+              'Photo for the right column. Visually represents the right section topic.',
             content: '',
           },
           {
@@ -797,7 +841,8 @@ function buildTemplateSchema(): PresentationSchema {
         slideKey: 'TRANSITION_SLIDE',
         order: 11,
         templateSlideObjectId: 'g328ad9f718d_0_36',
-        description: 'Simple transition slide with section title (images ignored)',
+        description:
+          'Section transition slide with title on the left and a square AI-generated hero photo on the right',
         blocks: [
           {
             key: 'title',
@@ -807,6 +852,23 @@ function buildTemplateSchema(): PresentationSchema {
             minChars: 5,
             maxChars: 40,
             description: 'Section or transition title',
+            content: '',
+          },
+          {
+            key: 'hero_image',
+            type: 'IMAGE',
+            role: 'PRIMARY_VISUAL',
+            source: 'ai_photo',
+            replaceable: true,
+            usage: ['hero', 'contextual_photo', 'section_transition'],
+            // Shape: scaleX 1.7881 / scaleY 1.7881 → 1:1
+            aspectRatio: '1:1',
+            generationContext:
+              'professional stock photography, no text or UI overlays, square crop, sharp subject, well-lit, corporate presentation quality, suitable as a section transition visual',
+            generationPrompt: '',
+            shapeId: 'g328ad9f718d_0_42',
+            description:
+              'Large square hero photo on the right side. Visually introduces the upcoming section.',
             content: '',
           },
         ],
