@@ -1798,18 +1798,26 @@ const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
 }
 
 /** Edit-mode only — never included in generate or repair prompts. */
-const EDIT_APP_PRISMA_SCHEMA_PRESERVATION = `LIVE DATABASE — prisma/schema.prisma (EDIT MODE, highest priority):
-The app is already deployed. Neon Postgres has real rows. Vercel build runs \`prisma generate && prisma db push && next build\` with NO --force-reset and NO --accept-data-loss.
-Dropping ANY existing column fails the entire deploy with code potential_dataloss (e.g. "You are about to drop the column updatedAt on the User table").
+const EDIT_APP_PRISMA_SCHEMA_PRESERVATION = `═══ EDIT MODE: prisma/schema.prisma — ADD ONLY, NEVER DROP COLUMNS ═══
+This repository is ALREADY deployed. Neon Postgres has REAL ROWS. Vercel build runs:
+  prisma generate && prisma db push && next build
+There is NO --accept-data-loss. Dropping a column FAILS the deploy (potential_dataloss).
 
-When you return prisma/schema.prisma:
-1. COPY the full prisma/schema.prisma from the user message — that file is the only source of truth for existing models and columns.
-2. Apply ONLY the user's requested additions on top of that copy. Do NOT regenerate the schema from scratch, from REPO_SUMMARY, or from memory.
-3. NEVER remove, omit, skip, rename, or retype ANY existing scalar column on ANY model (id, createdAt, updatedAt, email, passwordHash, name, and every other field must remain exactly as in the input file).
-4. If the user did not explicitly ask to delete a specific field, that field MUST appear unchanged in your output.
-5. New columns only: add as optional (?) or with @default(...). New DateTime @updatedAt fields on existing models also need @default(now()).
-6. When unsure whether a field existed in the input schema, KEEP it — never drop it.
-7. Return lib/actions.ts and lib/types.ts in the same response whenever prisma/schema.prisma changes.`
+FORBIDDEN on edit (will break production):
+- Dropping, omitting, or skipping ANY existing column (e.g. User.updatedAt, User.createdAt, User.id, User.email — every field on every model)
+- Regenerating prisma/schema.prisma from scratch, from REPO_SUMMARY, or from memory
+- Returning a "simplified" or "cleaned up" schema with fewer fields than the input file
+- Renaming or retyping existing columns unless the user explicitly asked for that exact rename/type change
+
+REQUIRED workflow when you touch prisma/schema.prisma:
+1. Locate prisma/schema.prisma in the user message — that exact file is your baseline.
+2. Copy it in full. Change NOTHING except what the user requested to ADD.
+3. ADD ONLY: new models, new scalar fields, new relations, new enums. Existing fields stay byte-for-byte identical (same name, type, attributes, order is fine to preserve).
+4. New fields on existing models: use ? or @default(...). DateTime @updatedAt on existing models also needs @default(now()).
+5. Before returning: verify EVERY scalar field from the baseline still appears in your output. If User had "updatedAt DateTime @updatedAt" in the input, it MUST still be there.
+6. Return lib/actions.ts and lib/types.ts in the same response when schema changes.
+
+The user's edit request is about NEW functionality — it is NOT permission to remove database columns. Unless they literally say "delete/remove/drop field X", keep all columns.`
 
 const EDIT_APP_SYSTEM_PROMPT = `You are a senior full-stack engineer editing an existing Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
 
@@ -1836,7 +1844,6 @@ Constraints:
 - ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 - ${GENERATED_APP_JSX_GUIDANCE}
 - ${GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE}
-- ${GENERATED_APP_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
