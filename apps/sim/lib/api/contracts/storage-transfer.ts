@@ -279,6 +279,7 @@ export const storageContextSchema = z.enum([
   'og-images',
   'logs',
   'workspace-logos',
+  'org-logos',
 ])
 
 export const downloadContextSchema = z.union([storageContextSchema, z.literal('general')])
@@ -327,6 +328,7 @@ export const validUploadTypes = [
   'profile-pictures',
   'mothership',
   'workspace-logos',
+  'org-logos',
   'execution',
 ] as const
 
@@ -451,6 +453,7 @@ export const uploadFilesFormFieldsSchema = z.object({
   workflowId: z.string().nullable(),
   executionId: z.string().nullable(),
   workspaceId: z.string().nullable(),
+  organizationId: z.string().nullable(),
   context: z.string().nullable(),
   uploadContext: z.literal('image-fusion').nullable(),
 })

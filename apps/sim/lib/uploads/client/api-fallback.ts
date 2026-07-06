@@ -7,13 +7,17 @@ import type { StorageContext } from '@/lib/uploads/shared/types'
 export async function uploadViaApiFallback(
   file: File,
   context: StorageContext,
-  workspaceId?: string
+  workspaceId?: string,
+  organizationId?: string
 ): Promise<{ path: string; key?: string }> {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('context', context)
   if (workspaceId) {
     formData.append('workspaceId', workspaceId)
+  }
+  if (organizationId) {
+    formData.append('organizationId', organizationId)
   }
 
   // boundary-raw-fetch: local-dev fallback when cloud storage is not configured; multipart upload incompatible with requestJson

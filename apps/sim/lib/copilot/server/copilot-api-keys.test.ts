@@ -49,12 +49,14 @@ describe('copilot-api-keys', () => {
     expect(isCopilotApiKeyFailoverStatus(401)).toBe(true)
     expect(isCopilotApiKeyFailoverStatus(429)).toBe(true)
     expect(isCopilotApiKeyFailoverStatus(503)).toBe(true)
-    expect(isCopilotApiKeyFailoverStatus(400)).toBe(false)
-    expect(isCopilotApiKeyFailoverStatus(402)).toBe(false)
+    expect(isCopilotApiKeyFailoverStatus(400)).toBe(true)
+    expect(isCopilotApiKeyFailoverStatus(500)).toBe(true)
+    expect(isCopilotApiKeyFailoverStatus(200)).toBe(false)
   })
 
-  it('treats TypeError as a failover network error but not AbortError', () => {
+  it('retries on fetch errors except AbortError', () => {
     expect(isCopilotApiKeyFailoverNetworkError(new TypeError('fetch failed'))).toBe(true)
+    expect(isCopilotApiKeyFailoverNetworkError(new Error('connection reset'))).toBe(true)
     expect(isCopilotApiKeyFailoverNetworkError(new DOMException('Aborted', 'AbortError'))).toBe(
       false
     )

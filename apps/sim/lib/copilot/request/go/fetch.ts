@@ -9,7 +9,6 @@ import {
   isCopilotApiKeyFailoverNetworkError,
   isCopilotApiKeyFailoverStatus,
   listCopilotApiKeys,
-  requestUsesCopilotApiKey,
   stripCopilotApiKeyHeader,
 } from '@/lib/copilot/server/copilot-api-keys'
 
@@ -76,10 +75,7 @@ export async function fetchGo(url: string, options: OutboundFetchOptions = {}): 
   }
 
   const headerRecord = mergedHeaders as Record<string, string>
-  const copilotKeys =
-    requestUsesCopilotApiKey(headerRecord) && listCopilotApiKeys().length > 0
-      ? listCopilotApiKeys()
-      : []
+  const copilotKeys = listCopilotApiKeys()
 
   const start = performance.now()
 

@@ -3,7 +3,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { MoreHorizontal, Pin } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
@@ -25,7 +24,6 @@ import {
   Upload,
 } from '@/components/emcn'
 import {
-  ArrowLeft,
   BookOpen,
   Calendar,
   Database,
@@ -59,6 +57,7 @@ import {
   NavItemContextMenu,
   SearchModal,
   SettingsSidebar,
+  SidebarBrandHeader,
   WorkflowList,
   WorkspaceHeader,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components'
@@ -90,6 +89,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/utils'
 import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
+import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
@@ -1172,20 +1172,30 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
 
   const handleOpenHelpFromMenu = useCallback(() => setIsHelpModalOpen(true), [])
 
-  const handleOpenDocs = useCallback(() => {
-    window.open('https://docs.sim.ai', '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'docs_opened', { source: 'help_menu' })
-  }, [posthog])
-
   const handleChatRenameBlur = useCallback(
     () => void chatFlyoutRename.saveRename(),
     [chatFlyoutRename.saveRename]
   )
 
   const handleOpenArenaDocs = useCallback(() => {
-    window.open('/arena-ai-docs', '_blank', 'noopener,noreferrer')
+    window.open(resolveBrandDocsUrl(brand?.documentationUrl), '_blank', 'noopener,noreferrer')
     captureEvent(posthog, 'arena_docs_opened', { source: 'help_menu' })
-  }, [posthog])
+  }, [brand?.documentationUrl, posthog])
+
+  const handleContactSupport = useCallback(() => {
+    if (!brand?.supportEmail) return
+    window.location.href = `mailto:${brand.supportEmail}`
+  }, [brand?.supportEmail])
+
+  const handleOpenTerms = useCallback(() => {
+    if (!brand?.termsUrl) return
+    window.open(brand.termsUrl, '_blank', 'noopener,noreferrer')
+  }, [brand?.termsUrl])
+
+  const handleOpenPrivacy = useCallback(() => {
+    if (!brand?.privacyUrl) return
+    window.open(brand.privacyUrl, '_blank', 'noopener,noreferrer')
+  }, [brand?.privacyUrl])
 
   const handleWorkflowRenameBlur = useCallback(
     () => void workflowFlyoutRename.saveRename(),
@@ -1251,57 +1261,6 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
     ])
   )
 
-  const renderArenaLogo = () => {
-    return (
-      <>
-        {arenaHubAgentsUrl ? (
-          <div
-            className={cn(
-              'flex flex-shrink-0 items-center px-2.5 pb-1.5',
-              isCollapsed && 'justify-center'
-            )}
-          >
-            <SidebarTooltip label='Back to Arena agents' enabled={isCollapsed} side='right'>
-              <Link
-                href={arenaHubAgentsUrl}
-                className={cn(
-                  'group flex h-[30px] min-w-0 items-center gap-2 rounded-lg px-1 text-[var(--text-body)] text-sm hover-hover:bg-[var(--surface-hover)]',
-                  isCollapsed ? 'w-[30px] flex-shrink-0 justify-center' : 'flex-1'
-                )}
-                aria-label='Back to Arena agents'
-              >
-                <ArrowLeft className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
-                <span className='sidebar-collapse-hide truncate font-base'>Back</span>
-              </Link>
-            </SidebarTooltip>
-          </div>
-        ) : null}
-        {brand?.logoUrlBlacktext && (
-          <div className='flex h-[40px] flex-shrink-0 items-center pl-2'>
-            <Link
-              href={`/workspace/${workspaceId}/home`}
-              className={cn(
-                'sidebar-collapse-hide !transition-none group items-center rounded-[8px] hover-hover:bg-[var(--surface-hover)]',
-                isCollapsed ? 'contents' : 'flex'
-              )}
-              tabIndex={isCollapsed ? -1 : undefined}
-              aria-label={brand.name}
-            >
-              <Image
-                src={brand?.logoUrlBlacktext || ''}
-                alt={brand?.name || ''}
-                width={34}
-                height={28}
-                className=' flex-shrink-0 object-contain'
-                unoptimized
-              />
-            </Link>
-          </div>
-        )}
-      </>
-    )
-  }
-
   return (
     <>
       <input
@@ -1330,8 +1289,16 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
           onClick={handleSidebarClick}
         >
           <div className='flex h-full flex-col'>
-            {renderArenaLogo()}
-            <div className='flex flex-shrink-0 items-center px-2 pt-3'>
+            <SidebarBrandHeader
+              workspaceId={workspaceId}
+              isCollapsed={isCollapsed}
+              showCollapsedTooltips={showCollapsedTooltips}
+              brandLogoUrl={brand?.logoUrl || brand?.logoUrlBlacktext}
+              brandWordmarkUrl={brand?.wordmarkUrl}
+              brandName={brand?.name}
+              arenaHubAgentsUrl={arenaHubAgentsUrl}
+            />
+            <div className='flex flex-shrink-0 items-center px-2 pt-2'>
               <WorkspaceHeader
                 activeWorkspace={activeWorkspace}
                 workspaceId={workspaceId}
@@ -1722,14 +1689,28 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
                       </DropdownMenuTrigger>
                     </SidebarTooltip>
                     <DropdownMenuContent align='start' side='top' sideOffset={4}>
-                      {/* <DropdownMenuItem onSelect={handleOpenDocs}>
-                        <BookOpen className='h-[14px] w-[14px]' />
-                        Docs
-                      </DropdownMenuItem> */}
                       <DropdownMenuItem onSelect={handleOpenArenaDocs}>
                         <BookOpen className='h-[14px] w-[14px]' />
                         Docs
                       </DropdownMenuItem>
+                      {brand?.supportEmail ? (
+                        <DropdownMenuItem onSelect={handleContactSupport}>
+                          <HelpCircle className='h-[14px] w-[14px]' />
+                          Contact support
+                        </DropdownMenuItem>
+                      ) : null}
+                      {brand?.termsUrl ? (
+                        <DropdownMenuItem onSelect={handleOpenTerms}>
+                          <BookOpen className='h-[14px] w-[14px]' />
+                          Terms of service
+                        </DropdownMenuItem>
+                      ) : null}
+                      {brand?.privacyUrl ? (
+                        <DropdownMenuItem onSelect={handleOpenPrivacy}>
+                          <BookOpen className='h-[14px] w-[14px]' />
+                          Privacy policy
+                        </DropdownMenuItem>
+                      ) : null}
                       <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
                         <HelpCircle className='h-[14px] w-[14px]' />
                         Report an issue
