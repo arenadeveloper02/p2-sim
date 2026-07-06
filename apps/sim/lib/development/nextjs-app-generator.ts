@@ -1126,7 +1126,6 @@ ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 ${GENERATED_APP_JSX_GUIDANCE}
 ${GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE}
 ${GENERATED_APP_DATABASE_GUIDANCE}
-${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
 ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 ${GENERATED_APP_AUTH_GUIDANCE}
 ${GENERATED_APP_README_GUIDANCE}
@@ -1798,9 +1797,25 @@ const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 }
 
+/** Edit-mode only — never included in generate or repair prompts. */
+const EDIT_APP_PRISMA_SCHEMA_PRESERVATION = `LIVE DATABASE — prisma/schema.prisma (EDIT MODE, highest priority):
+The app is already deployed. Neon Postgres has real rows. Vercel build runs \`prisma generate && prisma db push && next build\` with NO --force-reset and NO --accept-data-loss.
+Dropping ANY existing column fails the entire deploy with code potential_dataloss (e.g. "You are about to drop the column updatedAt on the User table").
+
+When you return prisma/schema.prisma:
+1. COPY the full prisma/schema.prisma from the user message — that file is the only source of truth for existing models and columns.
+2. Apply ONLY the user's requested additions on top of that copy. Do NOT regenerate the schema from scratch, from REPO_SUMMARY, or from memory.
+3. NEVER remove, omit, skip, rename, or retype ANY existing scalar column on ANY model (id, createdAt, updatedAt, email, passwordHash, name, and every other field must remain exactly as in the input file).
+4. If the user did not explicitly ask to delete a specific field, that field MUST appear unchanged in your output.
+5. New columns only: add as optional (?) or with @default(...). New DateTime @updatedAt fields on existing models also need @default(now()).
+6. When unsure whether a field existed in the input schema, KEEP it — never drop it.
+7. Return lib/actions.ts and lib/types.ts in the same response whenever prisma/schema.prisma changes.`
+
 const EDIT_APP_SYSTEM_PROMPT = `You are a senior full-stack engineer editing an existing Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
 
 Respond ONLY with JSON matching the provided schema.
+
+${EDIT_APP_PRISMA_SCHEMA_PRESERVATION}
 
 The user message contains the CURRENT contents of the repository files. Treat them as the source of truth: when you modify a file, start from its existing content and apply the requested change — never regenerate a file from scratch based on its name or the summary. Keep every cross-file contract (types, exports, prop names, Prisma fields, function signatures) consistent with the files you are NOT changing.
 
@@ -1826,7 +1841,6 @@ Constraints:
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
 - When editing prisma/schema.prisma you MUST return lib/actions.ts and lib/types.ts in the same response — aligned includes, t.field access, and DTO field names
-- CRITICAL: prisma/schema.prisma edits are ADDITIVE ONLY — copy every existing model and scalar field from the user message verbatim, then add what the user requested; never omit updatedAt, createdAt, id, or any other existing column (Vercel prisma db push fails with potential_dataloss)
 - When editing prisma/schema.prisma or lib/types.ts, keep exports in sync — export every type from lib/types.ts and import it with \`import type\` in components; import server actions (not types) from lib/actions.ts
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
