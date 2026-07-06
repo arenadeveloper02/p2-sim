@@ -92,6 +92,52 @@ const CORS_RULES: readonly CorsRule[] = [
   },
 ]
 
+function normalizeOrigin(value: string): string | null {
+  try {
+    return new URL(value.trim()).origin
+  } catch {
+    const trimmed = value.trim().replace(/\/$/, '')
+    return trimmed || null
+  }
+}
+
+/** Arena hub (e.g. app.thearena.ai) may call agent APIs with credentials. */
+function isAllowedArenaHubOrigin(requestOrigin: string, agentAppUrl: string): boolean {
+  const normalized = normalizeOrigin(requestOrigin)
+  if (!normalized) return false
+
+  const allowed = new Set<string>()
+  const add = (value: string | undefined | null) => {
+    const origin = value ? normalizeOrigin(value) : null
+    if (origin) allowed.add(origin)
+  }
+
+  add(agentAppUrl)
+  add(getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL'))
+  add(getEnv('ARENA_FRONTEND_APP_URL'))
+  getEnv('ALLOWED_ORIGINS')
+    ?.split(',')
+    .forEach((part) => add(part))
+
+  try {
+    add(getLoginRedirectUrl(new URL(agentAppUrl).hostname))
+  } catch {
+    // ignore invalid agent URL
+  }
+
+  return allowed.has(normalized)
+}
+
+function resolveDefaultApiCorsOrigin(request: NextRequest): string {
+  const agentAppUrl = getEnv('NEXT_PUBLIC_APP_URL') || 'http://localhost:3001'
+  const defaultOrigin = normalizeOrigin(agentAppUrl) ?? agentAppUrl.replace(/\/$/, '')
+  const requestOrigin = request.headers.get('origin')
+  if (requestOrigin && isAllowedArenaHubOrigin(requestOrigin, agentAppUrl)) {
+    return normalizeOrigin(requestOrigin) ?? defaultOrigin
+  }
+  return defaultOrigin
+}
+
 /** Single source of truth for /api/* CORS — resolved at request time, not baked at build. */
 export function resolveApiCorsPolicy(request: NextRequest): CorsPolicy {
   const { pathname } = request.nextUrl
@@ -99,7 +145,7 @@ export function resolveApiCorsPolicy(request: NextRequest): CorsPolicy {
     if (rule.match(pathname)) return rule.policy(request)
   }
   return {
-    origin: getEnv('NEXT_PUBLIC_APP_URL') || 'http://localhost:3001',
+    origin: resolveDefaultApiCorsOrigin(request),
     credentials: true,
     methods: 'GET,POST,OPTIONS,PUT,DELETE',
     headers: DEFAULT_API_ALLOWED_HEADERS,
