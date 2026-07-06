@@ -1047,12 +1047,115 @@ async function generateAppSpecWithLlm(
 const MAX_REPAIR_CONTEXT_FILE_CHARS = 12_000
 const MAX_REPAIR_CONTEXT_TOTAL_CHARS = 260_000
 
+const EDIT_DATABASE_CONTEXT_PATHS = [
+  'prisma/schema.prisma',
+  'lib/prisma.ts',
+  'lib/actions.ts',
+  'lib/types.ts',
+] as const
+
+function collectPrismaModelNames(schema: string): Set<string> {
+  const names = new Set<string>()
+  for (const match of schema.matchAll(/model\s+(\w+)\s*\{/g)) {
+    names.add(match[1])
+  }
+  return names
+}
+
+/**
+ * Lists scalar columns per model so the edit LLM sees exactly what must not be dropped.
+ */
+function summarizePrismaScalarFields(schema: string): string {
+  const modelNames = collectPrismaModelNames(schema)
+  const lines: string[] = []
+  const modelBlockPattern = /model\s+(\w+)\s*\{([\s\S]*?)\n\}/g
+  const fieldPattern = /^(\w+)\s+(\w+)(\[\])?(\?)?\s*/
+
+  for (const match of schema.matchAll(modelBlockPattern)) {
+    const modelName = match[1]
+    const scalarFields: string[] = []
+
+    for (const rawLine of match[2].split('\n')) {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('//') || line.startsWith('@@')) {
+        continue
+      }
+
+      const fieldMatch = fieldPattern.exec(line)
+      if (!fieldMatch) {
+        continue
+      }
+
+      const fieldName = fieldMatch[1]
+      const type = fieldMatch[2]
+      const isList = Boolean(fieldMatch[3])
+      if (isList || modelNames.has(type)) {
+        continue
+      }
+
+      scalarFields.push(fieldName)
+    }
+
+    if (scalarFields.length > 0) {
+      lines.push(`- ${modelName}: ${scalarFields.join(', ')}`)
+    }
+  }
+
+  return lines.join('\n')
+}
+
+function getFileContentByPath(files: GeneratedAppFile[], path: string): string | undefined {
+  const normalized = path.replace(/\\/g, '/')
+  return files.find((file) => file.path.replace(/\\/g, '/') === normalized)?.content
+}
+
+/**
+ * Prominent database baseline for edit prompts — full schema plus immutable column checklist.
+ */
+function buildEditDatabaseContext(existingFiles: GeneratedAppFile[]): string {
+  const schema = getFileContentByPath(existingFiles, 'prisma/schema.prisma')
+  if (!schema?.trim()) {
+    return ''
+  }
+
+  const fieldSummary = summarizePrismaScalarFields(schema)
+  const sections = [
+    '═══ LIVE DATABASE BASELINE (ADD columns only — NEVER drop any field listed below) ═══',
+    'Neon Postgres already has rows. Vercel runs prisma db push with no --accept-data-loss.',
+    'If you return prisma/schema.prisma, copy the schema below verbatim and ADD only what the user requested.',
+    '',
+    'Immutable scalar columns (every name must remain in your output):',
+    fieldSummary || '(no models parsed)',
+    '',
+    '--- prisma/schema.prisma (SOURCE OF TRUTH — patch this file, do not regenerate) ---',
+    schema,
+  ]
+
+  for (const path of EDIT_DATABASE_CONTEXT_PATHS) {
+    if (path === 'prisma/schema.prisma') {
+      continue
+    }
+    const content = getFileContentByPath(existingFiles, path)
+    if (content?.trim()) {
+      sections.push('', `--- ${path} ---`, content)
+    }
+  }
+
+  return sections.join('\n')
+}
+
 /**
  * Serializes the current file set for repair and edit prompts so changes are
  * grounded in the real code instead of re-guessed from the app description.
  */
-function buildRepairFileContext(files: GeneratedAppFile[]): string {
+function buildRepairFileContext(
+  files: GeneratedAppFile[],
+  options: { extraSkipPaths?: Iterable<string> } = {}
+): string {
   const skipPaths = new Set<string>([GENERATED_APP_REPO_SUMMARY_PATH, 'README.md', 'next-env.d.ts'])
+  for (const path of options.extraSkipPaths ?? []) {
+    skipPaths.add(path.replace(/\\/g, '/'))
+  }
   const sections: string[] = []
   let total = 0
 
@@ -1931,16 +2034,27 @@ function buildEditReferenceContext(
     .sort()
     .join('\n')
 
+  const databaseContext =
+    metadata.requiresDatabase === true ? buildEditDatabaseContext(existingFiles) : ''
+
+  const databaseSection = databaseContext
+    ? `${databaseContext}
+
+`
+    : ''
+
   return `Repository summary (read this first — primary reference for architecture, routes, and scope):
 
 ${repoSummary}
 
-Complete file index (${existingFiles.length} paths):
+${databaseSection}Complete file index (${existingFiles.length} paths):
 ${fileIndex}
 
 Current repository files (source of truth — base every edit on this exact code; keep cross-file contracts consistent with files you do not change):
 
-${buildRepairFileContext(existingFiles)}`
+${buildRepairFileContext(existingFiles, {
+  extraSkipPaths: databaseContext ? EDIT_DATABASE_CONTEXT_PATHS : undefined,
+})}`
 }
 
 async function requestAppEditsFromLlm(
@@ -1962,6 +2076,8 @@ ${editReference}
 
 User edit request:
 ${userInput}
+
+If you change prisma/schema.prisma, every column listed under LIVE DATABASE BASELINE must remain — add new columns only.
 
 Return JSON with app metadata and ONLY the files you changed or added.`
 
