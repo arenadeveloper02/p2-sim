@@ -418,8 +418,10 @@ export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for De
 
 export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Neon Postgres — additive only):
 - NEVER provision, replace, or reset the database connection — the app already has DATABASE_URL on Vercel
-- When editing prisma/schema.prisma: preserve every existing model and field unless the user explicitly asks to remove or rename them
-- ADD new models, fields, relations, and enums for new features; use optional fields (?) or defaults when extending existing models
+- When editing prisma/schema.prisma: COPY the existing schema from the user message and apply ONLY the requested additions — treat every existing model and scalar field as immutable unless the user explicitly asks to remove or rename it
+- NEVER drop, omit, or regenerate-from-scratch any existing scalar column (including id, createdAt, updatedAt, email, passwordHash, and every other field on every model) — removing a column makes Vercel \`prisma db push\` fail with potential_dataloss when the live Neon table still has rows
+- If you return prisma/schema.prisma on edit, the file MUST be a superset of the current schema: same models, same scalar fields, same types — only ADD new models, fields, relations, or enums
+- ADD new models, fields, relations, and enums for new features; use optional fields (?) or @default(...) when extending existing models
 - The live database has rows — deploy runs plain \`prisma db push\` (no --force-reset, no --accept-data-loss), so any change it cannot execute against existing data FAILS the whole deploy:
   - Every NEW field on an EXISTING model MUST be optional (?) or carry @default(...) — a new required column without a default fails with "Added the required column without a default value"
   - New \`updatedAt DateTime @updatedAt\` fields on existing models MUST also include @default(now())

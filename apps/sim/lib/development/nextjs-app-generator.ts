@@ -1126,6 +1126,7 @@ ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 ${GENERATED_APP_JSX_GUIDANCE}
 ${GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE}
 ${GENERATED_APP_DATABASE_GUIDANCE}
+${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
 ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 ${GENERATED_APP_AUTH_GUIDANCE}
 ${GENERATED_APP_README_GUIDANCE}
@@ -1366,7 +1367,7 @@ async function validateAndRepairUntilBuildPasses(
 }
 
 const DB_PUSH_UNEXECUTABLE_PATTERN =
-  /cannot be executed|without a default value|--force-reset|not possible to execute/i
+  /cannot be executed|without a default value|--force-reset|not possible to execute|data loss|dataloss|drop the column/i
 const MAX_DB_SCHEMA_REPAIR_ROUNDS = 2
 
 interface DatabaseSyncWithRepairResult {
@@ -1825,6 +1826,7 @@ Constraints:
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
 - When editing prisma/schema.prisma you MUST return lib/actions.ts and lib/types.ts in the same response — aligned includes, t.field access, and DTO field names
+- CRITICAL: prisma/schema.prisma edits are ADDITIVE ONLY — copy every existing model and scalar field from the user message verbatim, then add what the user requested; never omit updatedAt, createdAt, id, or any other existing column (Vercel prisma db push fails with potential_dataloss)
 - When editing prisma/schema.prisma or lib/types.ts, keep exports in sync — export every type from lib/types.ts and import it with \`import type\` in components; import server actions (not types) from lib/actions.ts
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
