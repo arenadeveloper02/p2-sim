@@ -60,4 +60,32 @@ describe('convertMessagesToAnthropic', () => {
       { role: 'user', content: 'Continue' },
     ])
   })
+
+  it('converts multimodal user messages with image blocks', () => {
+    const { anthropicMessages } = convertMessagesToAnthropic([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'What is in this image?' },
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/png', data: 'abc123' },
+          },
+        ],
+      },
+    ])
+
+    expect(anthropicMessages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'What is in this image?' },
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/png', data: 'abc123' },
+          },
+        ],
+      },
+    ])
+  })
 })

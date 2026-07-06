@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type {
   ChatCompletionChunk,
   ChatCompletionRequest,
@@ -44,13 +45,13 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
             return {
               role: 'tool',
               tool_call_id: message.toolCallId,
-              content: message.content,
+              content: getMessageContentText(message.content),
             }
           }
           if (message.role === 'assistant' && message.toolCalls?.length) {
             return {
               role: 'assistant',
-              content: message.content || null,
+              content: getMessageContentText(message.content) || null,
               tool_calls: message.toolCalls.map((call) => ({
                 id: call.id,
                 type: 'function',
@@ -58,7 +59,7 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
               })),
             }
           }
-          return { role: message.role, content: message.content }
+          return { role: message.role, content: getMessageContentText(message.content) }
         }),
         tools: toOpenAiTools(request.tools),
         tool_choice: request.tools?.length ? 'auto' : undefined,

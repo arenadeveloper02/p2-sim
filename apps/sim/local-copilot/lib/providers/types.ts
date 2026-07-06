@@ -1,8 +1,15 @@
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
+export type ChatMessageContentPart =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image'
+      source: { type: 'base64'; media_type: string; data: string }
+    }
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string
+  content: string | ChatMessageContentPart[]
   toolCallId?: string
   toolCalls?: Array<{
     id: string

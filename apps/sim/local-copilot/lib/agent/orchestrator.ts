@@ -25,6 +25,12 @@ import {
 } from '@/local-copilot/lib/persistence/store'
 import { getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+import {
+  buildLocalCopilotUserTurn,
+  getLocalCopilotUserTurnText,
+  type CopilotContextEntry,
+  type CopilotFileAttachmentRef,
+} from '@/local-copilot/lib/user-turn-content'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { LOCAL_COPILOT_TOOLS } from '@/local-copilot/lib/tools/definitions'
 import {
@@ -142,6 +148,12 @@ export interface RunAgentParams {
   persistLocally?: boolean
   /** Workspace permission for write tools (create_file, user_table create, knowledge_base add_file). */
   userPermission?: string
+  /** Mothership request context entries (upload hints, resource tags, etc.). */
+  contexts?: CopilotContextEntry[]
+  /** Raw file attachment refs from the chat request (fallback when context is missing). */
+  fileAttachments?: CopilotFileAttachmentRef[]
+  /** Workspace markdown snapshot from mothership payload. */
+  workspaceContext?: string
 }
 
 export async function* runLocalCopilotAgent(
@@ -200,6 +212,13 @@ export async function* runLocalCopilotAgent(
 
   const workflowDetail = resolveWorkflowContextDetail(structuredContext)
   const contextJson = contextToPromptJson(structuredContext, { workflowDetail })
+  const userTurn = await buildLocalCopilotUserTurn({
+    message: params.message,
+    ...(params.contexts?.length ? { contexts: params.contexts } : {}),
+    ...(params.fileAttachments?.length ? { fileAttachments: params.fileAttachments } : {}),
+    ...(params.chatId ? { chatId: params.chatId } : {}),
+  })
+  const userTurnText = getLocalCopilotUserTurnText(userTurn)
 
   const messages: ChatMessage[] = fitPromptToTokenBudget(
     [
@@ -208,8 +227,11 @@ export async function* runLocalCopilotAgent(
         role: 'system',
         content: `Current context:\n${contextJson}`,
       },
+      ...(params.workspaceContext
+        ? [{ role: 'system' as const, content: `Workspace snapshot:\n${params.workspaceContext}` }]
+        : []),
       ...historyMessages,
-      { role: 'user', content: params.message },
+      userTurn,
     ],
     LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
   )
@@ -217,6 +239,8 @@ export async function* runLocalCopilotAgent(
   logger.info('Arena Copilot prompt budget applied', {
     workflowDetail,
     historyTurns: historyMessages.length,
+    contextEntries: params.contexts?.length ?? 0,
+    fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages),
   })
 
@@ -230,7 +254,7 @@ export async function* runLocalCopilotAgent(
     userPermission: params.userPermission,
     structuredContext,
     selectedBlockId: params.selectedBlockId,
-    lastUserMessage: params.message,
+    lastUserMessage: userTurnText,
   }
   let assistantText = ''
   let proposedPatch: WorkflowPatch | undefined

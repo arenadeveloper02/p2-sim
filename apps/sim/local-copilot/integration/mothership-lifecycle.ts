@@ -20,12 +20,49 @@ import type {
 } from '@/lib/copilot/request/types'
 import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
+import type { CopilotContextEntry, CopilotFileAttachmentRef } from '@/local-copilot/lib/user-turn-content'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotMothershipLifecycle')
 
 function extractString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function extractContexts(value: unknown): CopilotContextEntry[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined
+  const contexts = value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const record = entry as Record<string, unknown>
+    const type = extractString(record.type)
+    const content = typeof record.content === 'string' ? record.content : ''
+    const path = extractString(record.path)
+    if (!type || (!content.trim() && !path)) return []
+    return [
+      {
+        type,
+        content,
+        ...(extractString(record.tag) ? { tag: extractString(record.tag) } : {}),
+        ...(path ? { path } : {}),
+      },
+    ]
+  })
+  return contexts.length > 0 ? contexts : undefined
+}
+
+function extractFileAttachments(value: unknown): CopilotFileAttachmentRef[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined
+  const attachments = value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const record = entry as Record<string, unknown>
+    const key = extractString(record.key)
+    const filename = extractString(record.filename)
+    const mediaType = extractString(record.media_type)
+    const size = typeof record.size === 'number' && Number.isFinite(record.size) ? record.size : null
+    if (!key || !filename || !mediaType || size === null) return []
+    return [{ key, filename, media_type: mediaType, size }]
+  })
+  return attachments.length > 0 ? attachments : undefined
 }
 
 async function dispatchStreamEvent(
@@ -182,6 +219,9 @@ export async function runLocalCopilotMothershipLifecycle(
   options: CopilotLifecycleOptions
 ): Promise<void> {
   const message = extractString(requestPayload.message)
+  const contexts = extractContexts(requestPayload.context)
+  const fileAttachments = extractFileAttachments(requestPayload.fileAttachments)
+  const workspaceContext = extractString(requestPayload.workspaceContext)
   const workflowId = options.workflowId ?? extractString(requestPayload.workflowId)
   const workspaceId = options.workspaceId ?? extractString(requestPayload.workspaceId)
   const userId = options.userId
@@ -265,6 +305,9 @@ export async function runLocalCopilotMothershipLifecycle(
       chatId: options.chatId,
       priorMessages,
       persistLocally: false,
+      ...(contexts ? { contexts } : {}),
+      ...(fileAttachments ? { fileAttachments } : {}),
+      ...(workspaceContext ? { workspaceContext } : {}),
       ...(workflowId ? { workflowId } : {}),
       ...(execContext.userPermission ? { userPermission: execContext.userPermission } : {}),
       signal: options.abortSignal,

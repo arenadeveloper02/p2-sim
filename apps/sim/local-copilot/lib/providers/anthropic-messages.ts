@@ -1,9 +1,30 @@
-import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+import type { ChatMessage, ChatMessageContentPart } from '@/local-copilot/lib/providers/types'
+import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 
 export type AnthropicContentBlock =
   | { type: 'text'; text: string }
+  | {
+      type: 'image'
+      source: { type: 'base64'; media_type: string; data: string }
+    }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string }
+
+function toAnthropicUserContent(
+  content: string | ChatMessageContentPart[]
+): string | AnthropicContentBlock[] {
+  if (typeof content === 'string') return content
+
+  return content.map((part) => {
+    if (part.type === 'text') {
+      return { type: 'text', text: part.text }
+    }
+    return {
+      type: 'image',
+      source: part.source,
+    }
+  })
+}
 
 export interface AnthropicMessage {
   role: 'user' | 'assistant'
@@ -56,7 +77,7 @@ export function convertMessagesToAnthropic(messages: ChatMessage[]): {
     const message = sanitized[index]
 
     if (message.role === 'system') {
-      systemParts.push(message.content)
+      systemParts.push(getMessageContentText(message.content))
       continue
     }
 
@@ -67,7 +88,7 @@ export function convertMessagesToAnthropic(messages: ChatMessage[]): {
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolMessage.toolCallId ?? '',
-          content: toolMessage.content,
+          content: getMessageContentText(toolMessage.content),
         })
         index += 1
       }
@@ -81,8 +102,9 @@ export function convertMessagesToAnthropic(messages: ChatMessage[]): {
 
     if (message.role === 'assistant' && message.toolCalls?.length) {
       const content: AnthropicContentBlock[] = []
-      if (message.content.trim()) {
-        content.push({ type: 'text', text: message.content })
+      const assistantText = getMessageContentText(message.content).trim()
+      if (assistantText) {
+        content.push({ type: 'text', text: assistantText })
       }
       for (const call of message.toolCalls) {
         let input: Record<string, unknown> = {}
@@ -97,7 +119,18 @@ export function convertMessagesToAnthropic(messages: ChatMessage[]): {
       continue
     }
 
-    anthropicMessages.push({ role: message.role as 'user' | 'assistant', content: message.content })
+    if (message.role === 'user') {
+      anthropicMessages.push({
+        role: 'user',
+        content: toAnthropicUserContent(message.content),
+      })
+      continue
+    }
+
+    anthropicMessages.push({
+      role: 'assistant',
+      content: getMessageContentText(message.content),
+    })
   }
 
   return { system: systemParts.join('\n\n'), anthropicMessages }

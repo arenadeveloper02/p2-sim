@@ -2,6 +2,7 @@ import type { Edge } from 'reactflow'
 import { estimateTokens } from '@/lib/chunkers/utils'
 import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { truncate } from '@sim/utils/string'
+import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
@@ -41,7 +42,7 @@ interface HistoryTurn {
  * Estimates tokens for a list of chat messages (rough: chars / 4).
  */
 export function estimateChatMessagesTokens(messages: ChatMessage[]): number {
-  return messages.reduce((sum, message) => sum + estimateTokens(message.content), 0)
+  return messages.reduce((sum, message) => sum + estimateTokens(getMessageContentText(message.content)), 0)
 }
 
 /**
@@ -115,10 +116,20 @@ export function fitPromptToTokenBudget(
     const last = trimmedConversation[0]
     const overhead = estimateChatMessagesTokens(systemMessages)
     const remainingChars = Math.max(500, (tokenBudget - overhead) * 4)
+    const lastText = getMessageContentText(last.content)
     trimmedConversation = [
       {
         ...last,
-        content: truncate(last.content, remainingChars),
+        content:
+          typeof last.content === 'string'
+            ? truncate(lastText, remainingChars)
+            : [
+                {
+                  type: 'text' as const,
+                  text: truncate(lastText, remainingChars),
+                },
+                ...last.content.filter((part) => part.type === 'image'),
+              ],
       },
     ]
   }
@@ -283,7 +294,7 @@ function summarizeHistoryTurns(turns: HistoryTurn[]): string {
     .map((turn, index) => {
       const lines = turn.messages.map((message) => {
         const label = message.role === 'user' ? 'User' : 'Assistant'
-        return `- ${label}: ${truncate(message.content.replace(/\s+/g, ' ').trim(), 400)}`
+        return `- ${label}: ${truncate(getMessageContentText(message.content).replace(/\s+/g, ' ').trim(), 400)}`
       })
       return `Turn ${index + 1}:\n${lines.join('\n')}`
     })
@@ -291,11 +302,14 @@ function summarizeHistoryTurns(turns: HistoryTurn[]): string {
 }
 
 function truncateMessageContents(messages: ChatMessage[], maxChars: number): ChatMessage[] {
-  return messages.map((message) => ({
-    ...message,
-    content:
-      message.content.length > maxChars
-        ? `${truncate(message.content, maxChars)}\n\n[... message truncated for context budget]`
-        : message.content,
-  }))
+  return messages.map((message) => {
+    if (typeof message.content !== 'string') return message
+    return {
+      ...message,
+      content:
+        message.content.length > maxChars
+          ? `${truncate(message.content, maxChars)}\n\n[... message truncated for context budget]`
+          : message.content,
+    }
+  })
 }
