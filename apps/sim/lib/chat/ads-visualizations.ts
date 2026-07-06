@@ -156,7 +156,11 @@ export function buildChartsFromTable(
           `ts-${titlePrefix}-${metricKey(metric)}`,
           isOverview
             ? `${titlePrefix} — Overview: ${metric} over time`
-            : `${titlePrefix} — ${metric} over time`
+            : `${titlePrefix} — ${metric} over time`,
+          {
+            layout: isOverview ? 'full' : 'half',
+            height: isOverview ? 460 : 400,
+          }
         )
       )
     }
@@ -173,7 +177,13 @@ export function buildChartsFromTable(
           `bar-${titlePrefix}-${metricKey(metric)}`,
           isOverview
             ? `${titlePrefix} — Overview: ${metric} by campaign`
-            : `${titlePrefix} — ${metric} by campaign`
+            : `${titlePrefix} — ${metric} by campaign`,
+          {
+            layout: isOverview ? 'full' : 'half',
+            height: isOverview
+              ? 460
+              : Math.min(440, Math.max(360, sorted.length * 44 + 120)),
+          }
         )
       )
     }
@@ -271,6 +281,8 @@ function buildFunnelChart(rows: NormalizedRow[], metricNames: string[], titlePre
     id: `funnel-${titlePrefix}`,
     type: 'funnel',
     title: `${titlePrefix} funnel`,
+    layout: 'full',
+    height: 420,
     series: [
       {
         name: 'Expected',
@@ -286,7 +298,8 @@ function buildTimeSeries(
   rows: NormalizedRow[],
   metricNames: string[],
   id: string,
-  title: string
+  title: string,
+  options: { layout?: 'full' | 'half'; height?: number } = {}
 ): ChartSpec {
   // Aggregate by date (sum metrics for the same date across rows).
   const byDate = new Map<string, Record<string, number>>()
@@ -316,6 +329,8 @@ function buildTimeSeries(
     yAxis: { type: 'value' },
     series,
     legend: series.length > 1,
+    layout: options.layout,
+    height: options.height,
   }
 }
 
@@ -323,9 +338,15 @@ function buildSingleMetricBar(
   rows: NormalizedRow[],
   metricName: string,
   id: string,
-  title: string
+  title: string,
+  options: { layout?: 'full' | 'half'; height?: number } = {}
 ): ChartSpec {
-  return buildCategoryBar(rows, [metricName], id, title)
+  const spec = buildCategoryBar(rows, [metricName], id, title)
+  return {
+    ...spec,
+    layout: options.layout ?? 'half',
+    height: options.height ?? spec.height,
+  }
 }
 
 function buildCategoryBar(
@@ -351,7 +372,7 @@ function buildCategoryBar(
     yAxis: { type: 'value' },
     series,
     legend: series.length > 1,
-    height: Math.min(480, Math.max(280, rows.length * 40 + 100)),
+    height: Math.min(480, Math.max(360, rows.length * 44 + 120)),
   }
 }
 
@@ -364,6 +385,8 @@ function buildSharePie(
     id: `pie-${titlePrefix}-${metricName}`,
     type: 'pie',
     title: `${titlePrefix}: ${metricName} share`,
+    layout: 'half',
+    height: 380,
     series: [
       {
         name: metricName,

@@ -13,8 +13,8 @@ import {
 
 const logger = createLogger('ChatChartRenderer')
 
-const DEFAULT_HEIGHT = 320
-const DEFAULT_HEIGHT_3D = 400
+const DEFAULT_HEIGHT = 400
+const DEFAULT_HEIGHT_3D = 440
 
 /** Loaded once per session; echarts-gl augments the global echarts instance. */
 let glLoadPromise: Promise<void> | null = null
@@ -35,6 +35,22 @@ function detectTheme(): ChartTheme {
   return document.documentElement.classList.contains('dark') ? DARK_THEME : LIGHT_THEME
 }
 
+function resolveLayout(spec: ChartSpec): 'full' | 'half' {
+  if (spec.layout === 'full' || spec.layout === 'half') return spec.layout
+  if (spec.type === 'funnel') return 'full'
+  if (spec.title?.includes('Overview')) return 'full'
+  return 'half'
+}
+
+function resolveHeight(spec: ChartSpec, needs3D: boolean): number {
+  if (spec.height) return spec.height
+  if (needs3D) return DEFAULT_HEIGHT_3D
+  if (spec.type === 'pie') return 380
+  if (spec.type === 'funnel') return 420
+  if (spec.title?.includes('Overview')) return 460
+  return DEFAULT_HEIGHT
+}
+
 const SingleChart = memo(function SingleChart({ spec }: { spec: ChartSpec }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<echarts.ECharts | null>(null)
@@ -42,7 +58,7 @@ const SingleChart = memo(function SingleChart({ spec }: { spec: ChartSpec }) {
   const [ready, setReady] = useState(false)
 
   const needs3D = isSpec3D(spec)
-  const height = spec.height ?? (needs3D ? DEFAULT_HEIGHT_3D : DEFAULT_HEIGHT)
+  const height = resolveHeight(spec, needs3D)
 
   useEffect(() => {
     let cancelled = false
@@ -99,7 +115,7 @@ const SingleChart = memo(function SingleChart({ spec }: { spec: ChartSpec }) {
   }
 
   return (
-    <div className='w-full overflow-hidden rounded-lg border border-[var(--border-1)] bg-[var(--surface-3,transparent)]'>
+    <div className='h-full w-full overflow-hidden rounded-lg border border-[var(--border-1)] bg-[var(--surface-3,transparent)] shadow-sm'>
       <div
         ref={containerRef}
         style={{ height, width: '100%', opacity: ready ? 1 : 0, transition: 'opacity 150ms' }}
@@ -122,10 +138,19 @@ export const ChartRenderer = memo(function ChartRenderer({ specs }: { specs: Cha
   if (validSpecs.length === 0) return null
 
   return (
-    <div className='flex w-full flex-col gap-3'>
-      {validSpecs.map((spec, index) => (
-        <SingleChart key={spec.id ?? index} spec={spec} />
-      ))}
+    <div className='grid w-full grid-cols-1 gap-4 md:grid-cols-2'>
+      {validSpecs.map((spec, index) => {
+        const layout = resolveLayout(spec)
+        return (
+          <div
+            key={spec.id ?? index}
+            className={layout === 'full' ? 'min-w-0 md:col-span-2' : 'min-w-0'}
+            style={{ contentVisibility: 'auto', containIntrinsicSize: '0 400px' }}
+          >
+            <SingleChart spec={spec} />
+          </div>
+        )
+      })}
     </div>
   )
 })

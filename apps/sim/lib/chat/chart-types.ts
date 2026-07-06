@@ -68,6 +68,8 @@ export interface ChartSpec {
   horizontal?: boolean
   /** Full category labels for tooltips; parallels `xAxis.data` when shortened. */
   categoryFullLabels?: string[]
+  /** Dashboard grid span: full-width row or half-width tile. */
+  layout?: 'full' | 'half'
 }
 
 /** True for chart types that require the echarts-gl (WebGL) extension. */
