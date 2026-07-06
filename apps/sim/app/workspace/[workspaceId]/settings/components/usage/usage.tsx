@@ -18,11 +18,17 @@ import {
   CostBreakdownTable,
   CostCell,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/components/cost-breakdown-table'
+import { DataHealthPanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/data-health-panel'
+import { LineagePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/lineage-panel'
+import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import {
+  formatActorType,
   formatBillableWithCredits,
   formatDollarAmount,
   formatPeriodLabel,
   formatSourceLabel,
+  formatTokenCount,
+  formatUsageMetricsSummary,
   MOTHERSHIP_USAGE_SOURCES,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
@@ -64,67 +70,37 @@ function SummaryCard({ label, value, hint, isLoading }: SummaryCardProps) {
   )
 }
 
-interface AttributionBannerProps {
-  data: WorkspaceUsageAnalytics
-}
-
-function AttributionBanner({ data }: AttributionBannerProps) {
-  const { missingChatId, missingExecutionId } = data.attribution
-  const hasMissingChat =
-    missingChatId.billableCost > 0 || missingChatId.count > 0 || missingChatId.rawCost > 0
-  const hasMissingExecution =
-    missingExecutionId.billableCost > 0 ||
-    missingExecutionId.count > 0 ||
-    missingExecutionId.rawCost > 0
-
-  if (!hasMissingChat && !hasMissingExecution) return null
-
-  return (
-    <div className='rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
-      <p className='font-medium text-[var(--text-primary)] text-small'>Unattributed usage</p>
-      <p className='mt-1 text-[var(--text-secondary)] text-small'>
-        Some ledger rows are missing join keys and cannot be tied to a chat or execution.
-      </p>
-      <div className='mt-3 flex flex-col gap-2 sm:flex-row sm:gap-6'>
-        {hasMissingChat && (
-          <div className='text-small'>
-            <span className='text-[var(--text-muted)]'>Missing chat ID: </span>
-            <span className='text-[var(--text-primary)] tabular-nums'>
-              {formatBillableWithCredits(missingChatId.billableCost)}
-            </span>
-            <span className='ml-1 text-[var(--text-muted)]'>({missingChatId.count} rows)</span>
-          </div>
-        )}
-        {hasMissingExecution && (
-          <div className='text-small'>
-            <span className='text-[var(--text-muted)]'>Missing execution ID: </span>
-            <span className='text-[var(--text-primary)] tabular-nums'>
-              {formatBillableWithCredits(missingExecutionId.billableCost)}
-            </span>
-            <span className='ml-1 text-[var(--text-muted)]'>
-              ({missingExecutionId.count} rows)
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 interface UsageDashboardContentProps {
   workspaceId: string
   data: WorkspaceUsageAnalytics
   tab: UsageTab
   userNameById: Map<string, string>
+  rootExecutionId: string | null
+  onSelectRoot: (rootExecutionId: string) => void
+  onClearDrillDown: () => void
 }
 
-function UsageDashboardContent({ workspaceId, data, tab, userNameById }: UsageDashboardContentProps) {
+function UsageDashboardContent({
+  workspaceId,
+  data,
+  tab,
+  userNameById,
+  rootExecutionId,
+  onSelectRoot,
+  onClearDrillDown,
+}: UsageDashboardContentProps) {
   const showWorkflow = tab === 'all' || tab === 'workflow'
   const showMothership = tab === 'all' || tab === 'mothership'
 
   return (
     <div className='flex flex-col gap-8'>
-      <AttributionBanner data={data} />
+      <DataHealthPanel data={data} />
+
+      {data.timeSeries.length > 0 && (
+        <SettingsSection label='Trends'>
+          <UsageTimeSeriesChart timeSeries={data.timeSeries} />
+        </SettingsSection>
+      )}
 
       {(tab === 'all' || tab === 'workflow') && data.bySource.length > 0 && (
         <SettingsSection label='By source'>
@@ -142,6 +118,12 @@ function UsageDashboardContent({ workspaceId, data, tab, userNameById }: UsageDa
                 header: 'Entries',
                 align: 'right',
                 render: (row) => row.count.toLocaleString(),
+              },
+              {
+                key: 'tokens',
+                header: 'Tokens',
+                align: 'right',
+                render: (row) => formatTokenCount(row.usage.totalTokens),
               },
               {
                 key: 'cost',
@@ -236,6 +218,17 @@ function UsageDashboardContent({ workspaceId, data, tab, userNameById }: UsageDa
         </SettingsSection>
       )}
 
+      {showWorkflow && (
+        <LineagePanel
+          workspaceId={workspaceId}
+          lineage={data.lineage}
+          rootExecutionId={rootExecutionId}
+          userNameById={userNameById}
+          onSelectRoot={onSelectRoot}
+          onClearDrillDown={onClearDrillDown}
+        />
+      )}
+
       {showMothership && (
         <SettingsSection label='Mothership & copilot'>
           <div className='mb-4 flex flex-wrap items-center justify-between gap-2'>
@@ -246,6 +239,54 @@ function UsageDashboardContent({ workspaceId, data, tab, userNameById }: UsageDa
             </p>
             <ChipLink href={`/workspace/${workspaceId}/home`}>Open mothership</ChipLink>
           </div>
+          {data.copilot.triggeredWorkflows.executionCount > 0 && (
+            <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
+              <p className='font-medium text-[var(--text-primary)] text-small'>
+                Workflows triggered by copilot
+              </p>
+              <p className='mt-1 text-[var(--text-secondary)] text-small'>
+                {data.copilot.triggeredWorkflows.executionCount.toLocaleString()} child runs ·{' '}
+                {formatBillableWithCredits(data.copilot.triggeredWorkflows.billableCost)} inclusive
+              </p>
+              <p className='mt-1 text-[var(--text-muted)] text-xs'>
+                Rolled up via triggering chat — excluded from mothership headline totals to avoid
+                double counting.
+              </p>
+              {data.copilot.triggeredWorkflows.byChat.length > 0 && (
+                <div className='mt-4'>
+                  <CostBreakdownTable
+                    rows={data.copilot.triggeredWorkflows.byChat}
+                    getRowKey={(row) => row.triggeringChatId}
+                    columns={[
+                      {
+                        key: 'chat',
+                        header: 'Triggering chat',
+                        render: (row) => (
+                          <span className='font-mono text-small'>
+                            {row.triggeringChatId.slice(0, 12)}…
+                          </span>
+                        ),
+                      },
+                      {
+                        key: 'runs',
+                        header: 'Runs',
+                        align: 'right',
+                        render: (row) => row.executionCount.toLocaleString(),
+                      },
+                      {
+                        key: 'cost',
+                        header: 'Billable',
+                        align: 'right',
+                        render: (row) => (
+                          <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              )}
+            </div>
+          )}
           {data.copilot.byChatType.length > 0 && (
             <CostBreakdownTable
               rows={data.copilot.byChatType}
@@ -254,9 +295,7 @@ function UsageDashboardContent({ workspaceId, data, tab, userNameById }: UsageDa
                 {
                   key: 'type',
                   header: 'Chat type',
-                  render: (row) => (
-                    <span className='capitalize'>{row.chatType}</span>
-                  ),
+                  render: (row) => <span className='capitalize'>{row.chatType}</span>,
                 },
                 {
                   key: 'chats',
@@ -314,8 +353,57 @@ function UsageDashboardContent({ workspaceId, data, tab, userNameById }: UsageDa
         </SettingsSection>
       )}
 
+      {tab === 'all' && data.byActor.length > 0 && (
+        <SettingsSection label='By actor'>
+          <p className='mb-4 text-[var(--text-secondary)] text-small'>
+            Who triggered usage — grouped by actor type and resolved user.
+          </p>
+          <CostBreakdownTable
+            rows={data.byActor}
+            getRowKey={(row) => `${row.actorType ?? 'unknown'}-${row.actorUserId ?? 'none'}`}
+            columns={[
+              {
+                key: 'actor',
+                header: 'Actor',
+                render: (row) => {
+                  const name = row.actorUserId
+                    ? (userNameById.get(row.actorUserId) ?? row.actorUserId)
+                    : '—'
+                  return (
+                    <span>
+                      {name}
+                      <span className='ml-1 text-[var(--text-muted)]'>
+                        ({formatActorType(row.actorType)})
+                      </span>
+                    </span>
+                  )
+                },
+              },
+              {
+                key: 'count',
+                header: 'Entries',
+                align: 'right',
+                render: (row) => row.count.toLocaleString(),
+              },
+              {
+                key: 'tokens',
+                header: 'Tokens',
+                align: 'right',
+                render: (row) => formatTokenCount(row.usage.totalTokens),
+              },
+              {
+                key: 'cost',
+                header: 'Billable',
+                align: 'right',
+                render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
+              },
+            ]}
+          />
+        </SettingsSection>
+      )}
+
       {tab === 'all' && data.byUser.length > 0 && (
-        <SettingsSection label='By user'>
+        <SettingsSection label='By billing user'>
           <CostBreakdownTable
             rows={data.byUser}
             getRowKey={(row) => row.userId}
@@ -342,92 +430,127 @@ function UsageDashboardContent({ workspaceId, data, tab, userNameById }: UsageDa
         </SettingsSection>
       )}
 
-      {tab === 'all' && (data.byModel.length > 0 || data.byProvider.length > 0 || data.byTool.length > 0) && (
-        <SettingsSection label='Model & tool usage'>
-          {data.byModel.length > 0 && (
-            <CostBreakdownTable
-              rows={data.byModel}
-              getRowKey={(row) => row.model}
-              columns={[
-                { key: 'model', header: 'Model', render: (row) => row.model },
-                {
-                  key: 'count',
-                  header: 'Entries',
-                  align: 'right',
-                  render: (row) => row.count.toLocaleString(),
-                },
-                {
-                  key: 'cost',
-                  header: 'Billable',
-                  align: 'right',
-                  render: (row) => (
-                    <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-                  ),
-                },
-              ]}
-            />
-          )}
-          {data.byProvider.length > 0 && (
-            <div className='mt-6'>
-              <p className='mb-2 text-[var(--text-muted)] text-small'>By provider</p>
-              <CostBreakdownTable
-                rows={data.byProvider}
-                getRowKey={(row) => row.provider}
-                columns={[
-                  { key: 'provider', header: 'Provider', render: (row) => row.provider },
-                  {
-                    key: 'count',
-                    header: 'Entries',
-                    align: 'right',
-                    render: (row) => row.count.toLocaleString(),
-                  },
-                  {
-                    key: 'cost',
-                    header: 'Billable',
-                    align: 'right',
-                    render: (row) => (
-                      <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-                    ),
-                  },
-                ]}
-              />
-            </div>
-          )}
-          {data.byTool.length > 0 && (
-            <div className='mt-6'>
-              <p className='mb-2 text-[var(--text-muted)] text-small'>By tool</p>
-              <CostBreakdownTable
-                rows={data.byTool}
-                getRowKey={(row) => row.toolId}
-                columns={[
-                  { key: 'tool', header: 'Tool', render: (row) => row.toolId },
-                  {
-                    key: 'count',
-                    header: 'Entries',
-                    align: 'right',
-                    render: (row) => row.count.toLocaleString(),
-                  },
-                  {
-                    key: 'cost',
-                    header: 'Billable',
-                    align: 'right',
-                    render: (row) => (
-                      <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-                    ),
-                  },
-                ]}
-              />
-            </div>
-          )}
+      {tab === 'all' && data.byVendor.length > 0 && (
+        <SettingsSection label='External vendor spend'>
+          <p className='mb-4 text-[var(--text-secondary)] text-small'>
+            Pass-through third-party API costs tracked via Cost blocks.
+          </p>
+          <CostBreakdownTable
+            rows={data.byVendor}
+            getRowKey={(row) => row.vendor}
+            columns={[
+              {
+                key: 'vendor',
+                header: 'Vendor',
+                render: (row) => row.vendor,
+              },
+              {
+                key: 'count',
+                header: 'Entries',
+                align: 'right',
+                render: (row) => row.count.toLocaleString(),
+              },
+              {
+                key: 'cost',
+                header: 'Billable',
+                align: 'right',
+                render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
+              },
+            ]}
+          />
         </SettingsSection>
       )}
+
+      {tab === 'all' &&
+        (data.byModel.length > 0 || data.byProvider.length > 0 || data.byTool.length > 0) && (
+          <SettingsSection label='Model & tool usage'>
+            {data.byModel.length > 0 && (
+              <CostBreakdownTable
+                rows={data.byModel}
+                getRowKey={(row) => row.model}
+                columns={[
+                  { key: 'model', header: 'Model', render: (row) => row.model },
+                  {
+                    key: 'count',
+                    header: 'Entries',
+                    align: 'right',
+                    render: (row) => row.count.toLocaleString(),
+                  },
+                  {
+                    key: 'cost',
+                    header: 'Billable',
+                    align: 'right',
+                    render: (row) => (
+                      <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                    ),
+                  },
+                ]}
+              />
+            )}
+            {data.byProvider.length > 0 && (
+              <div className='mt-6'>
+                <p className='mb-2 text-[var(--text-muted)] text-small'>By provider</p>
+                <CostBreakdownTable
+                  rows={data.byProvider}
+                  getRowKey={(row) => row.provider}
+                  columns={[
+                    { key: 'provider', header: 'Provider', render: (row) => row.provider },
+                    {
+                      key: 'count',
+                      header: 'Entries',
+                      align: 'right',
+                      render: (row) => row.count.toLocaleString(),
+                    },
+                    {
+                      key: 'cost',
+                      header: 'Billable',
+                      align: 'right',
+                      render: (row) => (
+                        <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+            )}
+            {data.byTool.length > 0 && (
+              <div className='mt-6'>
+                <p className='mb-2 text-[var(--text-muted)] text-small'>By tool</p>
+                <CostBreakdownTable
+                  rows={data.byTool}
+                  getRowKey={(row) => row.toolId}
+                  columns={[
+                    { key: 'tool', header: 'Tool', render: (row) => row.toolId },
+                    {
+                      key: 'count',
+                      header: 'Entries',
+                      align: 'right',
+                      render: (row) => row.count.toLocaleString(),
+                    },
+                    {
+                      key: 'cost',
+                      header: 'Billable',
+                      align: 'right',
+                      render: (row) => (
+                        <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+            )}
+          </SettingsSection>
+        )}
     </div>
   )
 }
 
 export function Usage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [{ tab, period, allTime }, setUsageParams] = useQueryStates(usageParsers, usageUrlKeys)
+  const [{ tab, period, allTime, rootExecutionId }, setUsageParams] = useQueryStates(
+    usageParsers,
+    usageUrlKeys
+  )
 
   const { data: permissions, isPending: permissionsLoading } =
     useWorkspacePermissionsQuery(workspaceId)
@@ -438,18 +561,20 @@ export function Usage() {
       ? { allTime: 'true' as const }
       : { period: period as UsagePeriod }
 
-    if (tab === 'workflow') return { ...base, sources: 'workflow' }
-    if (tab === 'mothership') return { ...base, sources: MOTHERSHIP_USAGE_SOURCES }
-    return base
-  }, [allTime, period, tab])
+    const withLineage =
+      rootExecutionId && (tab === 'workflow' || tab === 'all')
+        ? { rootExecutionId }
+        : {}
 
-  const {
-    data,
-    isLoading,
-    isFetching,
-    error,
-    refetch,
-  } = useWorkspaceUsageAnalytics(isWorkspaceAdmin ? workspaceId : undefined, analyticsQuery)
+    if (tab === 'workflow') return { ...base, ...withLineage, sources: 'workflow' }
+    if (tab === 'mothership') return { ...base, sources: MOTHERSHIP_USAGE_SOURCES }
+    return { ...base, ...withLineage }
+  }, [allTime, period, rootExecutionId, tab])
+
+  const { data, isLoading, isFetching, error, refetch } = useWorkspaceUsageAnalytics(
+    isWorkspaceAdmin ? workspaceId : undefined,
+    analyticsQuery
+  )
 
   const userNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -458,6 +583,14 @@ export function Usage() {
     }
     return map
   }, [permissions?.users])
+
+  const handleSelectRoot = (nextRootExecutionId: string) => {
+    void setUsageParams({ rootExecutionId: nextRootExecutionId, tab: 'workflow' })
+  }
+
+  const handleClearDrillDown = () => {
+    void setUsageParams({ rootExecutionId: null })
+  }
 
   if (permissionsLoading) {
     return (
@@ -507,7 +640,12 @@ export function Usage() {
             <div className='flex flex-wrap items-center gap-3'>
               <ButtonGroup
                 value={tab}
-                onValueChange={(value) => setUsageParams({ tab: value as UsageTab })}
+                onValueChange={(value) =>
+                  void setUsageParams({
+                    tab: value as UsageTab,
+                    rootExecutionId: value === 'mothership' ? null : rootExecutionId,
+                  })
+                }
               >
                 {USAGE_TABS.map((tabId) => (
                   <ButtonGroupItem key={tabId} value={tabId}>
@@ -521,10 +659,10 @@ export function Usage() {
                   value={allTime ? 'all' : period}
                   onValueChange={(value) => {
                     if (value === 'all') {
-                      setUsageParams({ allTime: true })
+                      void setUsageParams({ allTime: true })
                       return
                     }
-                    setUsageParams({ allTime: false, period: value as UsagePeriod })
+                    void setUsageParams({ allTime: false, period: value as UsagePeriod })
                   }}
                 >
                   {USAGE_PERIODS.map((periodId) => (
@@ -547,6 +685,11 @@ export function Usage() {
             <SummaryCard
               label='Raw cost'
               value={data ? formatDollarAmount(data.summary.rawCost) : '—'}
+              isLoading={isLoading}
+            />
+            <SummaryCard
+              label='Usage volume'
+              value={data ? formatUsageMetricsSummary(data.summary.usage) : '—'}
               isLoading={isLoading}
             />
             <SummaryCard
@@ -598,6 +741,9 @@ export function Usage() {
               data={data}
               tab={tab}
               userNameById={userNameById}
+              rootExecutionId={rootExecutionId}
+              onSelectRoot={handleSelectRoot}
+              onClearDrillDown={handleClearDrillDown}
             />
           )}
 
@@ -606,16 +752,16 @@ export function Usage() {
             data.summary.ledgerEntryCount === 0 &&
             data.summary.executionCount === 0 &&
             data.summary.chatCount === 0 && (
-            <div className='flex flex-col items-center gap-2 py-8 text-center'>
-              <Badge variant='gray-secondary' size='sm'>
-                No usage recorded
-              </Badge>
-              <p className='max-w-md text-[var(--text-muted)] text-small'>
-                No billing ledger entries were found for this workspace in the selected period.
-                Workflow and mothership activity may still exist without cost rows.
-              </p>
-            </div>
-          )}
+              <div className='flex flex-col items-center gap-2 py-8 text-center'>
+                <Badge variant='gray-secondary' size='sm'>
+                  No usage recorded
+                </Badge>
+                <p className='max-w-md text-[var(--text-muted)] text-small'>
+                  No billing ledger entries were found for this workspace in the selected period.
+                  Workflow and mothership activity may still exist without cost rows.
+                </p>
+              </div>
+            )}
         </div>
       </div>
     </div>

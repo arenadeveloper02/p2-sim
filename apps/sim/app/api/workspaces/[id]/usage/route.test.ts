@@ -47,6 +47,12 @@ const ANALYTICS = {
     executionCount: 2,
     chatCount: 1,
     runCount: 3,
+    usage: {
+      inputTokens: 1000,
+      outputTokens: 500,
+      totalTokens: 1500,
+      invocationCount: 4,
+    },
   },
   bySource: [],
   attribution: {
@@ -68,11 +74,22 @@ const ANALYTICS = {
     runs: { total: 3 },
     byChatType: [],
     byModel: [],
+    triggeredWorkflows: {
+      executionCount: 0,
+      billableCost: 0,
+      rawCost: 0,
+      byChat: [],
+    },
   },
   byUser: [],
+  byActor: [],
   byModel: [],
   byProvider: [],
   byTool: [],
+  byVendor: [],
+  timeSeries: [],
+  lineage: { roots: [] },
+  dataHealth: { limitedAttribution: false, warnings: [] },
 }
 
 function buildParams() {

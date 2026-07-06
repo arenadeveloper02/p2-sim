@@ -1,5 +1,9 @@
 import { formatCredits } from '@/lib/billing/credits/conversion'
-import type { UsageLogSourceValue } from '@/lib/api/contracts/workspace-usage'
+import type {
+  UsageActorTypeValue,
+  UsageLogSourceValue,
+  WorkspaceUsageAnalytics,
+} from '@/lib/api/contracts/workspace-usage'
 import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
 
 /** Human-readable labels for usage_log source values. */
@@ -15,9 +19,19 @@ export const SOURCE_LABELS: Record<UsageLogSourceValue, string> = {
   enrichment: 'Enrichment',
 }
 
+/** Human-readable labels for usage_log actor_type values. */
+export const ACTOR_TYPE_LABELS: Record<UsageActorTypeValue, string> = {
+  user: 'User',
+  api_key: 'API key',
+  webhook: 'Webhook',
+  schedule: 'Schedule',
+}
+
 /** Comma-separated sources passed to the analytics API for the mothership tab. */
 export const MOTHERSHIP_USAGE_SOURCES =
   'workspace-chat,mothership_block,copilot,mcp_copilot' as const
+
+type UsageMetrics = WorkspaceUsageAnalytics['summary']['usage']
 
 /**
  * Format a dollar amount for dashboard display.
@@ -43,6 +57,31 @@ export function formatBillableWithCredits(dollars: number): string {
 /** Format a usage_log source key for display. */
 export function formatSourceLabel(source: string): string {
   return SOURCE_LABELS[source as UsageLogSourceValue] ?? source
+}
+
+/** Format actor_type for display. */
+export function formatActorType(actorType: UsageActorTypeValue | null): string {
+  if (!actorType) return 'Unknown'
+  return ACTOR_TYPE_LABELS[actorType] ?? actorType
+}
+
+/** Compact token count for tables and summary cards. */
+export function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`
+  return tokens.toLocaleString()
+}
+
+/** Format usage metrics as a single summary line. */
+export function formatUsageMetricsSummary(usage: UsageMetrics): string {
+  const parts: string[] = []
+  if (usage.totalTokens > 0) {
+    parts.push(`${formatTokenCount(usage.totalTokens)} tokens`)
+  }
+  if (usage.invocationCount > 0) {
+    parts.push(`${usage.invocationCount.toLocaleString()} invocations`)
+  }
+  return parts.length > 0 ? parts.join(' · ') : 'No usage volume recorded'
 }
 
 /** Format a period preset for the period selector. */

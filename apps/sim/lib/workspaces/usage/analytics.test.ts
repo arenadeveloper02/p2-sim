@@ -6,9 +6,54 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@sim/db', () => dbChainMock)
 
-import { getWorkspaceUsageAnalytics } from '@/lib/workspaces/usage/analytics'
+import {
+  getWorkspaceUsageAnalytics,
+  InvalidUsageSourcesError,
+  parseWorkspaceUsageSources,
+} from '@/lib/workspaces/usage/analytics'
 
 const WORKSPACE_ID = 'ws-1'
+
+const ANALYTICS_QUERY_COUNT = 23
+const ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN = 25
+
+const EMPTY_USAGE = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  invocationCount: 0,
+}
+
+function emptyTail(count: number) {
+  return Array.from({ length: count }, () => [])
+}
+
+function buildAnalyticsQueue(
+  overrides: Record<number, unknown[]>,
+  count = ANALYTICS_QUERY_COUNT
+) {
+  const results = emptyTail(count)
+  for (const [index, value] of Object.entries(overrides)) {
+    results[Number(index)] = value
+  }
+  return results
+}
+
+const ATTRIBUTION_OK = [
+  {
+    missingChatIdCost: '0',
+    missingChatIdCount: 0,
+    missingChatIdRawCost: '0',
+    missingExecutionIdCost: '0',
+    missingExecutionIdCount: 0,
+    missingExecutionIdRawCost: '0',
+  },
+]
+
+const DATA_HEALTH_OK = [
+  [{ totalRows: 4, nullWorkspaceRows: 0, missingActorRows: 0 }],
+  [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+]
 
 function wireTerminalQueue(results: unknown[][]) {
   let index = 0
@@ -45,6 +90,18 @@ function wireTerminalQueue(results: unknown[][]) {
   })
 }
 
+describe('parseWorkspaceUsageSources', () => {
+  it('rejects unknown source tokens', () => {
+    expect(() => parseWorkspaceUsageSources('workflow,not-a-source')).toThrow(
+      InvalidUsageSourcesError
+    )
+  })
+
+  it('accepts valid comma-separated sources', () => {
+    expect(parseWorkspaceUsageSources('workflow,copilot')).toEqual(['workflow', 'copilot'])
+  })
+})
+
 describe('getWorkspaceUsageAnalytics reconciliation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -52,35 +109,45 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
   })
 
   it('rolls up mixed-source ledger costs into summary and bySource buckets', async () => {
-    wireTerminalQueue([
-      [
-        { source: 'workflow', billableCost: '6', rawCost: '5', count: 2 },
-        { source: 'workspace-chat', billableCost: '2.5', rawCost: '2.5', count: 1 },
-        { source: 'mothership_block', billableCost: '1', rawCost: '0.8', count: 1 },
-      ],
-      [
-        {
-          missingChatIdCost: '0',
-          missingChatIdCount: 0,
-          missingChatIdRawCost: '0',
-          missingExecutionIdCost: '0',
-          missingExecutionIdCount: 0,
-          missingExecutionIdRawCost: '0',
-        },
-      ],
-      [{ total: 2, withProjectedCost: 2, totalProjectedCost: '6' }],
-      [{ totalLedgerCost: '6' }],
-      [],
-      [],
-      [{ total: 1, withLedgerCost: 1 }],
-      [{ total: 1 }],
-      [],
-      [],
-      [],
-      [],
-      [],
-      [],
-    ])
+    wireTerminalQueue(
+      buildAnalyticsQueue({
+        0: [
+          {
+            source: 'workflow',
+            billableCost: '6',
+            rawCost: '5',
+            count: 2,
+            ...EMPTY_USAGE,
+            totalTokens: 1200,
+            invocationCount: 2,
+          },
+          {
+            source: 'workspace-chat',
+            billableCost: '2.5',
+            rawCost: '2.5',
+            count: 1,
+            ...EMPTY_USAGE,
+            invocationCount: 1,
+          },
+          {
+            source: 'mothership_block',
+            billableCost: '1',
+            rawCost: '0.8',
+            count: 1,
+            ...EMPTY_USAGE,
+            invocationCount: 1,
+          },
+        ],
+        1: [{ ...EMPTY_USAGE, totalTokens: 1200, invocationCount: 4 }],
+        2: ATTRIBUTION_OK,
+        3: [{ total: 2, withProjectedCost: 2, totalProjectedCost: '6' }],
+        4: [{ totalLedgerCost: '6' }],
+        7: [{ total: 1, withLedgerCost: 1 }],
+        8: [{ total: 1 }],
+        21: DATA_HEALTH_OK[0],
+        22: DATA_HEALTH_OK[1],
+      })
+    )
 
     const analytics = await getWorkspaceUsageAnalytics({
       workspaceId: WORKSPACE_ID,
@@ -90,6 +157,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     expect(analytics.summary.billableCost).toBeCloseTo(9.5, 8)
     expect(analytics.summary.rawCost).toBeCloseTo(8.3, 8)
     expect(analytics.summary.ledgerEntryCount).toBe(4)
+    expect(analytics.summary.usage.totalTokens).toBe(1200)
     expect(analytics.bySource).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ source: 'workflow', billableCost: 6, rawCost: 5, count: 2 }),
@@ -109,34 +177,42 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     )
     expect(analytics.workflow.executions.totalProjectedCost).toBe(6)
     expect(analytics.workflow.executions.totalLedgerCost).toBe(6)
+    expect(analytics.dataHealth.limitedAttribution).toBe(false)
+    expect(analytics.copilot.triggeredWorkflows.executionCount).toBe(0)
   })
 
   it('surfaces copilot transcripts that lack ledger rows and unattributed mothership cost', async () => {
-    wireTerminalQueue([
-      [{ source: 'workspace-chat', billableCost: '1.5', rawCost: '1.5', count: 1 }],
-      [
-        {
-          missingChatIdCost: '0.5',
-          missingChatIdCount: 1,
-          missingChatIdRawCost: '0.5',
-          missingExecutionIdCost: '0',
-          missingExecutionIdCount: 0,
-          missingExecutionIdRawCost: '0',
-        },
-      ],
-      [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
-      [{ totalLedgerCost: '0' }],
-      [],
-      [],
-      [{ total: 4, withLedgerCost: 1 }],
-      [{ total: 2 }],
-      [],
-      [],
-      [],
-      [],
-      [],
-      [],
-    ])
+    wireTerminalQueue(
+      buildAnalyticsQueue({
+        0: [
+          {
+            source: 'workspace-chat',
+            billableCost: '1.5',
+            rawCost: '1.5',
+            count: 1,
+            ...EMPTY_USAGE,
+            invocationCount: 1,
+          },
+        ],
+        1: [{ ...EMPTY_USAGE, invocationCount: 1 }],
+        2: [
+          {
+            missingChatIdCost: '0.5',
+            missingChatIdCount: 1,
+            missingChatIdRawCost: '0.5',
+            missingExecutionIdCost: '0',
+            missingExecutionIdCount: 0,
+            missingExecutionIdRawCost: '0',
+          },
+        ],
+        3: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
+        4: [{ totalLedgerCost: '0' }],
+        7: [{ total: 4, withLedgerCost: 1 }],
+        8: [{ total: 2 }],
+        21: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        22: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+      })
+    )
 
     const analytics = await getWorkspaceUsageAnalytics({
       workspaceId: WORKSPACE_ID,
@@ -154,32 +230,70 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     expect(analytics.summary.billableCost).toBeCloseTo(1.5, 8)
   })
 
-  it('filters mixed-source rollups when a source subset is requested', async () => {
+  it('resolves all-time bounds when postgres returns ISO date strings', async () => {
     wireTerminalQueue([
-      [{ source: 'workflow', billableCost: '4', rawCost: '4', count: 1 }],
-      [
-        {
-          missingChatIdCost: '0',
-          missingChatIdCount: 0,
-          missingChatIdRawCost: '0',
-          missingExecutionIdCost: '0',
-          missingExecutionIdCount: 0,
-          missingExecutionIdRawCost: '0',
-        },
-      ],
-      [{ total: 1, withProjectedCost: 1, totalProjectedCost: '4' }],
-      [{ totalLedgerCost: '4' }],
-      [],
-      [],
-      [{ total: 0, withLedgerCost: 0 }],
-      [{ total: 0 }],
-      [],
-      [],
-      [],
-      [],
-      [],
-      [],
+      [{ minAt: '2025-01-01T00:00:00.000Z', maxAt: '2025-06-01T00:00:00.000Z' }],
+      [{ minAt: '2025-02-01T00:00:00.000Z', maxAt: '2025-06-15T00:00:00.000Z' }],
+      [{ minAt: '2025-03-01T00:00:00.000Z', maxAt: '2025-06-10T00:00:00.000Z' }],
+      [{ minAt: '2025-04-01T00:00:00.000Z', maxAt: '2025-06-20T00:00:00.000Z' }],
+      ...buildAnalyticsQueue({
+        0: [
+          {
+            source: 'workflow',
+            billableCost: '4',
+            rawCost: '4',
+            count: 1,
+            ...EMPTY_USAGE,
+            invocationCount: 1,
+          },
+        ],
+        1: [{ ...EMPTY_USAGE, invocationCount: 1 }],
+        2: ATTRIBUTION_OK,
+        3: [{ total: 1, withProjectedCost: 1, totalProjectedCost: '4' }],
+        4: [{ totalLedgerCost: '4' }],
+        7: [{ total: 0, withLedgerCost: 0 }],
+        8: [{ total: 0 }],
+        21: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        22: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+      }),
     ])
+
+    const analytics = await getWorkspaceUsageAnalytics({
+      workspaceId: WORKSPACE_ID,
+      allTime: true,
+    })
+
+    expect(analytics.period.startTime).toBe('2025-01-01T00:00:00.000Z')
+    expect(new Date(analytics.period.endTime).getTime()).toBeGreaterThanOrEqual(
+      new Date('2025-06-20T00:00:00.000Z').getTime()
+    )
+    expect(analytics.summary.billableCost).toBe(4)
+    expect(analytics.workflow.executions.total).toBe(1)
+  })
+
+  it('filters mixed-source rollups when a source subset is requested', async () => {
+    wireTerminalQueue(
+      buildAnalyticsQueue({
+        0: [
+          {
+            source: 'workflow',
+            billableCost: '4',
+            rawCost: '4',
+            count: 1,
+            ...EMPTY_USAGE,
+            invocationCount: 1,
+          },
+        ],
+        1: [{ ...EMPTY_USAGE, invocationCount: 1 }],
+        2: ATTRIBUTION_OK,
+        3: [{ total: 1, withProjectedCost: 1, totalProjectedCost: '4' }],
+        4: [{ totalLedgerCost: '4' }],
+        7: [{ total: 0, withLedgerCost: 0 }],
+        8: [{ total: 0 }],
+        21: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        22: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+      })
+    )
 
     const analytics = await getWorkspaceUsageAnalytics({
       workspaceId: WORKSPACE_ID,
@@ -191,5 +305,55 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
       expect.objectContaining({ source: 'workflow', billableCost: 4, rawCost: 4, count: 1 }),
     ])
     expect(analytics.summary.billableCost).toBe(4)
+  })
+
+  it('returns lineage drill-down when rootExecutionId is provided', async () => {
+    wireTerminalQueue(
+      buildAnalyticsQueue(
+        {
+          2: ATTRIBUTION_OK,
+          3: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
+          4: [{ totalLedgerCost: '0' }],
+          20: [
+            {
+              executionId: 'exec-child',
+              parentExecutionId: 'exec-root',
+              workflowId: 'wf-1',
+              workflowName: 'Child',
+              startedAt: new Date('2026-01-02T00:00:00.000Z'),
+              trigger: 'api',
+              actorUserId: 'user-1',
+              actorType: 'user',
+              billableCost: '2',
+              rawCost: '2',
+            },
+          ],
+          21: [{ inclusiveBillableCost: '5', inclusiveRawCost: '4' }],
+          23: DATA_HEALTH_OK[0],
+          24: DATA_HEALTH_OK[1],
+        },
+        ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN
+      )
+    )
+
+    const analytics = await getWorkspaceUsageAnalytics({
+      workspaceId: WORKSPACE_ID,
+      period: '30d',
+      rootExecutionId: 'exec-root',
+    })
+
+    expect(analytics.lineage.drillDown).toEqual(
+      expect.objectContaining({
+        rootExecutionId: 'exec-root',
+        inclusiveBillableCost: 5,
+        executions: [
+          expect.objectContaining({
+            executionId: 'exec-child',
+            parentExecutionId: 'exec-root',
+            billableCost: 2,
+          }),
+        ],
+      })
+    )
   })
 })
