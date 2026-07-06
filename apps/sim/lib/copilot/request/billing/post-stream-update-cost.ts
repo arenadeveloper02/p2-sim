@@ -35,6 +35,8 @@ export interface PostStreamBillingUpdateCostInput {
   cost: number
   inputTokens?: number
   outputTokens?: number
+  /** Hosting workflow execution when billing a mothership block run. */
+  parentExecutionId?: string
 }
 
 /**
@@ -65,6 +67,7 @@ export async function postStreamBillingUpdateCost(
     ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     ...(input.chatId ? { chatId: input.chatId } : {}),
     ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.parentExecutionId ? { parentExecutionId: input.parentExecutionId } : {}),
   }
 
   const url = `${getInternalApiBaseUrl()}/api/billing/update-cost`

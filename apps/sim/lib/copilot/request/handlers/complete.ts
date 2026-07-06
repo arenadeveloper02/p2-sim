@@ -40,6 +40,9 @@ export const handleCompleteEvent: StreamHandler = async (event, context, execCon
       cost: cumulativeCost,
       inputTokens: context.usage?.prompt,
       outputTokens: context.usage?.completion,
+      ...(context.billingGoRoute?.startsWith('/api/mothership/execute') && execContext.executionId
+        ? { parentExecutionId: execContext.executionId }
+        : {}),
     })
   }
 }

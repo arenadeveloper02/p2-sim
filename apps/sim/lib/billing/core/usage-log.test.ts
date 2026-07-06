@@ -38,6 +38,7 @@ vi.mock('@sim/db/schema', () => ({
     cost: 'usageLog.cost',
     rawCost: 'usageLog.rawCost',
     billableCost: 'usageLog.billableCost',
+    billable: 'usageLog.billable',
     chatId: 'usageLog.chatId',
     runId: 'usageLog.runId',
     vendor: 'usageLog.vendor',
@@ -46,6 +47,7 @@ vi.mock('@sim/db/schema', () => ({
     quantity: 'usageLog.quantity',
     unit: 'usageLog.unit',
     pricingSnapshot: 'usageLog.pricingSnapshot',
+    occurredAt: 'usageLog.occurredAt',
     createdAt: 'usageLog.createdAt',
     description: 'usageLog.description',
     eventKey: 'usageLog.eventKey',
@@ -81,7 +83,10 @@ import {
 describe('recordUsage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockReturning.mockResolvedValue([{ cost: '0.10' }, { cost: '0.20' }])
+    mockReturning.mockResolvedValue([
+      { cost: '0.10', billable: true },
+      { cost: '0.20', billable: true },
+    ])
     mockOnConflictDoNothing.mockReturnValue({ returning: mockReturning })
     mockValues.mockReturnValue({
       onConflictDoNothing: mockOnConflictDoNothing,
@@ -128,10 +133,22 @@ describe('recordUsage', () => {
       rawCost: '0.1',
       billableCost: '0.1',
       cost: '0.1',
+      billable: true,
     })
     expect(mockOnConflictDoNothing).toHaveBeenCalledWith(
       expect.objectContaining({ target: 'usageLog.eventKey' })
     )
+  })
+
+  it('stamps occurredAt from caller when provided', async () => {
+    const occurredAt = new Date('2026-01-15T10:00:00.000Z')
+    await recordUsage({
+      userId: 'user-1',
+      occurredAt,
+      entries: [{ category: 'fixed', source: 'workflow', description: 'execution_fee', cost: 0.1 }],
+    })
+
+    expect(mockValues.mock.calls[0][0][0].occurredAt).toEqual(occurredAt)
   })
 
   it('uses pre-resolved billing context without loading subscriptions', async () => {
@@ -149,6 +166,32 @@ describe('recordUsage', () => {
     expect(mockValues.mock.calls[0][0][0]).toMatchObject({
       billingEntityId: 'user-1',
       billingEntityType: 'user',
+    })
+  })
+
+  it('inserts zero-cost entries with billable=false and full metadata', async () => {
+    mockReturning.mockResolvedValue([{ cost: '0', billable: false }])
+
+    await recordUsage({
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      executionId: 'execution-1',
+      entries: [
+        {
+          category: 'model',
+          source: 'workflow',
+          description: 'gpt-4o',
+          cost: 0,
+          metadata: { inputTokens: 100, outputTokens: 50 },
+        },
+      ],
+    })
+
+    expect(mockValues.mock.calls[0][0]).toHaveLength(1)
+    expect(mockValues.mock.calls[0][0][0]).toMatchObject({
+      cost: '0',
+      billable: false,
+      metadata: { inputTokens: 100, outputTokens: 50 },
     })
   })
 })
@@ -191,7 +234,7 @@ describe('resolveCumulativeTopUp', () => {
 describe('recordCumulativeUsage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockReturning.mockResolvedValue([{ cost: '0.3474447' }])
+    mockReturning.mockResolvedValue([{ cost: '0.3474447', billable: true }])
     mockOnConflictDoNothing.mockReturnValue({ returning: mockReturning })
     mockValues.mockReturnValue({ onConflictDoNothing: mockOnConflictDoNothing })
     mockInsert.mockReturnValue({ values: mockValues })
@@ -264,6 +307,40 @@ describe('recordCumulativeUsage', () => {
       })
     )
     expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  it('tops up using the multiplier locked on first flush, not the current env', async () => {
+    const previousMultiplier = process.env.USAGE_LOG_COST_MULTIPLIER
+    process.env.USAGE_LOG_COST_MULTIPLIER = '2'
+
+    const { updateSet } = setupTx({
+      id: 'row-1',
+      cost: '0.3474447',
+      rawCost: '0.3474447',
+      pricingSnapshot: { multiplier: 1 },
+    })
+    const result = await recordCumulativeUsage({
+      userId: 'user-1',
+      source: 'workspace-chat',
+      model: 'claude-opus-4.8',
+      cost: 0.4662453,
+      eventKey: 'update-cost:msg-1-billing',
+    })
+
+    expect(result.billed).toBe(true)
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rawCost: '0.4662453',
+        cost: '0.4662453',
+        billableCost: '0.4662453',
+      })
+    )
+
+    if (previousMultiplier === undefined) {
+      delete process.env.USAGE_LOG_COST_MULTIPLIER
+    } else {
+      process.env.USAGE_LOG_COST_MULTIPLIER = previousMultiplier
+    }
   })
 
   it('does not bill when the cumulative is not higher than recorded', async () => {
@@ -347,7 +424,7 @@ describe('recordCumulativeUsage', () => {
 describe('recordCumulativeUsage streaming idempotency with chatId/runId', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockReturning.mockResolvedValue([{ cost: '0.3474447' }])
+    mockReturning.mockResolvedValue([{ cost: '0.3474447', billable: true }])
     mockOnConflictDoNothing.mockReturnValue({ returning: mockReturning })
     mockValues.mockReturnValue({ onConflictDoNothing: mockOnConflictDoNothing })
     mockInsert.mockReturnValue({ values: mockValues })

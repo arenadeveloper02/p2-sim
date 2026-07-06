@@ -2,12 +2,19 @@ import { createHash } from 'node:crypto'
 import { db, dbReplica } from '@sim/db'
 import { usageLog, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getPostgresErrorCode, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, desc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/plan'
+import {
+  buildModelPricingSnapshot,
+  normalizeUsageEntry,
+  normalizeUsageModelId,
+} from '@/lib/billing/core/usage-entry-normalize'
+import { logUsageSkip } from '@/lib/billing/core/usage-skip-metrics'
 import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import type { DbClient, DbOrTx } from '@/lib/db/types'
 
 const logger = createLogger('UsageLog')
@@ -46,8 +53,11 @@ export function scaleUsageLogCost(cost: number): number {
 
 function scaleUsageEntry<T extends UsageEntry>(entry: T, multiplier: number): T {
   const rawCost = entry.rawCost ?? entry.cost
+  const effectiveMultiplier =
+    entry.category === 'external' ? 1 : (entry.pricingSnapshot?.multiplier ?? multiplier)
   const billableCost =
-    entry.billableCost ?? (multiplier === 1 ? rawCost : rawCost * multiplier)
+    entry.billableCost ??
+    (effectiveMultiplier === 1 ? rawCost : rawCost * effectiveMultiplier)
 
   let metadata = entry.metadata
   if (
@@ -61,7 +71,9 @@ function scaleUsageEntry<T extends UsageEntry>(entry: T, multiplier: number): T 
     metadata = {
       ...modelMetadata,
       toolCost:
-        multiplier === 1 ? modelMetadata.toolCost : modelMetadata.toolCost! * multiplier,
+        effectiveMultiplier === 1
+          ? modelMetadata.toolCost
+          : modelMetadata.toolCost! * effectiveMultiplier,
     }
   }
 
@@ -119,7 +131,7 @@ function scaleUsageLogCosts(entries: UsageEntry[], context: UsageCostLogContext)
 /**
  * Usage log category types
  */
-export type UsageLogCategory = 'model' | 'fixed' | 'tool'
+export type UsageLogCategory = 'model' | 'fixed' | 'tool' | 'external'
 
 /**
  * Usage log source types
@@ -157,9 +169,25 @@ export interface ModelUsageMetadata {
 }
 
 /**
+ * Metadata for `external` category charges (Cost block / third-party vendor spend).
+ */
+export interface ExternalUsageMetadata {
+  originalAmount?: number
+  originalCurrency?: string
+  exchangeRate?: number
+  sourceBlockId?: string
+  responsePath?: string
+  source?: string
+}
+
+/**
  * Union type for all usage log metadata types
  */
-export type UsageLogMetadata = ModelUsageMetadata | Record<string, unknown> | null
+export type UsageLogMetadata =
+  | ModelUsageMetadata
+  | ExternalUsageMetadata
+  | Record<string, unknown>
+  | null
 
 export type BillingEntityType = 'user' | 'organization'
 
@@ -225,6 +253,21 @@ interface RecordUsageBaseParams {
   chatId?: string
   /** Copilot run context (entry-level values take precedence). */
   runId?: string
+  /**
+   * When the underlying work started (execution `startedAt`). Falls back to
+   * `now` at insert time when omitted.
+   */
+  occurredAt?: Date
+  /** Attribution actor stamped from the hosting execution log. */
+  executionActor?: ExecutionActor
+  /** Parent workflow run for child/mothership-block attribution. */
+  parentExecutionId?: string
+  /** Root of the execution lineage tree. */
+  rootExecutionId?: string
+  /** Copilot chat that triggered the hosting run (rollup only). */
+  triggeringChatId?: string
+  /** Copilot run that triggered the hosting run (rollup only). */
+  triggeringRunId?: string
 }
 
 /**
@@ -328,6 +371,7 @@ export async function getBillingPeriodUsageCost(
     eq(usageLog.billingEntityId, billingEntity.id),
     eq(usageLog.billingPeriodStart, billingPeriod.start),
     eq(usageLog.billingPeriodEnd, billingPeriod.end),
+    eq(usageLog.billable, true),
   ]
   if (source) {
     conditions.push(
@@ -356,6 +400,7 @@ export async function getBillingPeriodUsageCostByUser(
     eq(usageLog.billingEntityId, billingEntity.id),
     eq(usageLog.billingPeriodStart, billingPeriod.start),
     eq(usageLog.billingPeriodEnd, billingPeriod.end),
+    eq(usageLog.billable, true),
   ]
   if (source) {
     conditions.push(
@@ -401,6 +446,7 @@ export async function getOrgWorkspaceUsageCostForUser(
     .where(
       and(
         eq(usageLog.userId, userId),
+        eq(usageLog.billable, true),
         eq(workspace.organizationId, organizationId),
         gte(usageLog.createdAt, window.start),
         lt(usageLog.createdAt, window.end)
@@ -430,29 +476,36 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
     executionId,
     chatId,
     runId,
+    occurredAt,
+    executionActor,
+    parentExecutionId,
+    rootExecutionId,
+    triggeringChatId,
+    triggeringRunId,
     billingEntity,
     billingPeriod,
     tx,
   } = params
 
-  const scaledEntries = scaleUsageLogCosts(entries, {
+  const normalizedEntries = entries.map((entry) => normalizeUsageEntry(entry))
+  const scaledEntries = scaleUsageLogCosts(normalizedEntries, {
     userId,
     workspaceId,
     workflowId,
     executionId,
   })
-  const validEntries = scaledEntries.filter((e) => e.cost > 0)
 
-  if (validEntries.length === 0) {
+  if (scaledEntries.length === 0) {
     return
   }
 
   const context = await resolveBillingContext(userId, billingEntity, billingPeriod)
+  const stampedOccurredAt = occurredAt ?? new Date()
 
   const insertedRows = await (tx ?? db)
     .insert(usageLog)
     .values(
-      validEntries.map((entry, index) => {
+      scaledEntries.map((entry, index) => {
         const sourceReference =
           entry.sourceReference ??
           [executionId, workflowId, workspaceId, entry.source, entry.description, index]
@@ -495,9 +548,18 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
           quantity: entry.quantity != null ? entry.quantity.toString() : null,
           unit: entry.unit ?? null,
           pricingSnapshot: entry.pricingSnapshot ?? null,
+          billable: entry.cost > 0,
           workspaceId: workspaceId ?? null,
           workflowId: workflowId ?? null,
           executionId: executionId ?? null,
+          occurredAt: stampedOccurredAt,
+          actorUserId: executionActor?.actorUserId ?? null,
+          actorType: executionActor?.actorType ?? null,
+          apiKeyId: executionActor?.apiKeyId ?? null,
+          parentExecutionId: parentExecutionId ?? null,
+          rootExecutionId: rootExecutionId ?? executionId ?? null,
+          triggeringChatId: triggeringChatId ?? null,
+          triggeringRunId: triggeringRunId ?? null,
         }
       })
     )
@@ -505,15 +567,21 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
       target: usageLog.eventKey,
       where: sql`${usageLog.eventKey} IS NOT NULL`,
     })
-    .returning({ cost: usageLog.cost })
+    .returning({ cost: usageLog.cost, billable: usageLog.billable })
 
   const insertedCost = insertedRows.reduce((sum, row) => sum + Number.parseFloat(row.cost), 0)
+  const billableInserted = insertedRows.filter((row) => row.billable).length
+  const nonBillableInserted = insertedRows.length - billableInserted
 
-  if (insertedRows.length < validEntries.length) {
-    logger.debug('Skipped duplicate usage events', {
+  if (insertedRows.length < scaledEntries.length) {
+    logUsageSkip('duplicate_event_key', {
       userId,
-      attemptedEntries: validEntries.length,
+      workspaceId,
+      workflowId,
+      executionId,
+      attemptedEntries: scaledEntries.length,
       insertedEntries: insertedRows.length,
+      droppedEntries: scaledEntries.length - insertedRows.length,
     })
   }
 
@@ -524,13 +592,16 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
     executionId,
     totalCostAddedToUserStats: insertedCost,
     totalCost: insertedCost,
-    entryCount: validEntries.length,
-    sources: [...new Set(validEntries.map((e) => e.source))],
-    persistedCosts: validEntries.map((e) => ({
+    entryCount: scaledEntries.length,
+    billableInserted,
+    nonBillableInserted,
+    sources: [...new Set(scaledEntries.map((e) => e.source))],
+    persistedCosts: scaledEntries.map((e) => ({
       category: e.category,
       source: e.source,
       description: e.description,
       cost: e.cost,
+      billable: e.cost > 0,
     })),
   })
 }
@@ -580,6 +651,16 @@ export interface RecordCumulativeUsageParams {
   provider?: string
   vendor?: string
   pricingSnapshot?: UsagePricingSnapshot
+  /** When the underlying request started; stamped on first flush only. */
+  occurredAt?: Date
+  /** Parent workflow run for mothership-block / child attribution. */
+  parentExecutionId?: string
+  /** Root of the execution lineage tree. */
+  rootExecutionId?: string
+  /** Copilot chat that triggered the hosting run (rollup only). */
+  triggeringChatId?: string
+  /** Copilot run that triggered the hosting run (rollup only). */
+  triggeringRunId?: string
 }
 
 export interface RecordCumulativeUsageResult {
@@ -634,7 +715,15 @@ export async function recordCumulativeUsage(
     provider,
     vendor,
     pricingSnapshot,
+    occurredAt,
+    parentExecutionId,
+    rootExecutionId,
+    triggeringChatId,
+    triggeringRunId,
   } = params
+
+  const canonicalModel = normalizeUsageModelId(model)
+  const envMultiplier = getUsageLogCostMultiplier()
 
   // Resolved before the locked transaction on purpose: resolving inside it
   // ran the subscription lookups on the global pool while this tx already
@@ -644,86 +733,113 @@ export async function recordCumulativeUsage(
   // side's retries) behind the stall.
   const billingContext = await resolveBillingContext(userId)
 
-  return db.transaction(async (tx) => {
-    // Serialize all flushes for this request (lock auto-releases at tx end),
-    // with a bounded wait so a pathological holder fails this flush fast and
-    // lets the caller retry instead of hanging the connection.
-    await tx.execute(
-      sql`select set_config('lock_timeout', ${`${CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS}ms`}, true)`
-    )
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${eventKey}, 0))`)
+  try {
+    return await db.transaction(async (tx) => {
+      // Serialize all flushes for this request (lock auto-releases at tx end),
+      // with a bounded wait so a pathological holder fails this flush fast and
+      // lets the caller retry instead of hanging the connection.
+      await tx.execute(
+        sql`select set_config('lock_timeout', ${`${CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS}ms`}, true)`
+      )
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${eventKey}, 0))`)
 
-    const [existing] = await tx
-      .select({ id: usageLog.id, cost: usageLog.cost, rawCost: usageLog.rawCost })
-      .from(usageLog)
-      .where(eq(usageLog.eventKey, eventKey))
-      .limit(1)
-
-    const recordedRaw = existing
-      ? Number.parseFloat(existing.rawCost ?? existing.cost)
-      : 0
-    const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recordedRaw, cost)
-
-    if (!shouldBill) {
-      return { billed: false, delta: 0, total: recordedRaw }
-    }
-
-    const billableTotal = scaleUsageLogCost(newTotal)
-    const attributionPatch = {
-      ...(metadata !== undefined ? { metadata } : {}),
-      ...(chatId ? { chatId } : {}),
-      ...(runId ? { runId } : {}),
-      ...(provider ? { provider } : {}),
-      ...(vendor ? { vendor } : {}),
-      ...(pricingSnapshot ? { pricingSnapshot } : {}),
-    }
-
-    if (existing) {
-      // Top up the single row to the new (higher) cumulative; the
-      // period total is SUM(usage_log.cost), so this lifts it by the delta.
-      await tx
-        .update(usageLog)
-        .set({
-          cost: billableTotal.toString(),
-          rawCost: newTotal.toString(),
-          billableCost: billableTotal.toString(),
-          ...attributionPatch,
+      const [existing] = await tx
+        .select({
+          id: usageLog.id,
+          cost: usageLog.cost,
+          rawCost: usageLog.rawCost,
+          pricingSnapshot: usageLog.pricingSnapshot,
         })
-        .where(eq(usageLog.id, existing.id))
-    } else {
-      // First flush for this request: insert the canonical row with the
-      // pre-resolved billing context. Runs in the same tx + advisory lock.
-      await recordUsage({
-        userId,
-        workspaceId,
-        chatId,
-        runId,
-        tx,
-        billingEntity: billingContext.billingEntity,
-        billingPeriod: billingContext.billingPeriod,
-        entries: [
-          {
-            category: 'model',
-            source,
-            description: model,
-            cost: newTotal,
-            rawCost: newTotal,
-            billableCost: billableTotal,
-            eventKey,
-            sourceReference: eventKey,
-            ...(metadata ? { metadata } : {}),
-            ...(chatId ? { chatId } : {}),
-            ...(runId ? { runId } : {}),
-            ...(provider ? { provider } : {}),
-            ...(vendor ? { vendor } : {}),
-            ...(pricingSnapshot ? { pricingSnapshot } : {}),
-          },
-        ],
-      })
-    }
+        .from(usageLog)
+        .where(eq(usageLog.eventKey, eventKey))
+        .limit(1)
 
-    return { billed: true, delta, total: newTotal }
-  })
+      const recordedRaw = existing
+        ? Number.parseFloat(existing.rawCost ?? existing.cost)
+        : 0
+      const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recordedRaw, cost)
+
+      if (!shouldBill) {
+        return { billed: false, delta: 0, total: recordedRaw }
+      }
+
+      const existingSnapshot = existing?.pricingSnapshot as UsagePricingSnapshot | null
+      const lockedMultiplier = existingSnapshot?.multiplier ?? envMultiplier
+      const billableTotal =
+        lockedMultiplier === 1 ? newTotal : newTotal * lockedMultiplier
+
+      const firstFlushSnapshot =
+        pricingSnapshot ?? buildModelPricingSnapshot(canonicalModel, lockedMultiplier)
+
+      const attributionPatch = {
+        ...(metadata !== undefined ? { metadata } : {}),
+        ...(chatId ? { chatId } : {}),
+        ...(runId ? { runId } : {}),
+        ...(provider ? { provider } : {}),
+        ...(vendor ? { vendor } : {}),
+      }
+
+      if (existing) {
+        // Top up using the multiplier captured on first flush — never the current env.
+        await tx
+          .update(usageLog)
+          .set({
+            cost: billableTotal.toString(),
+            rawCost: newTotal.toString(),
+            billableCost: billableTotal.toString(),
+            billable: newTotal > 0,
+            ...attributionPatch,
+          })
+          .where(eq(usageLog.id, existing.id))
+      } else {
+        // First flush for this request: insert the canonical row with the
+        // pre-resolved billing context. Runs in the same tx + advisory lock.
+        await recordUsage({
+          userId,
+          workspaceId,
+          chatId,
+          runId,
+          occurredAt,
+          parentExecutionId,
+          rootExecutionId: rootExecutionId ?? parentExecutionId,
+          triggeringChatId,
+          triggeringRunId,
+          tx,
+          billingEntity: billingContext.billingEntity,
+          billingPeriod: billingContext.billingPeriod,
+          entries: [
+            {
+              category: 'model',
+              source,
+              description: canonicalModel,
+              cost: newTotal,
+              rawCost: newTotal,
+              billableCost: billableTotal,
+              eventKey,
+              sourceReference: eventKey,
+              pricingSnapshot: firstFlushSnapshot,
+              ...(metadata ? { metadata } : {}),
+              ...(chatId ? { chatId } : {}),
+              ...(runId ? { runId } : {}),
+              ...(provider ? { provider } : {}),
+              ...(vendor ? { vendor } : {}),
+            },
+          ],
+        })
+      }
+
+      return { billed: true, delta, total: newTotal }
+    })
+  } catch (error) {
+    if (getPostgresErrorCode(error) === '55P03') {
+      logUsageSkip(
+        'advisory_lock_timeout',
+        { userId, eventKey, source, model: canonicalModel },
+        'error'
+      )
+    }
+    throw error
+  }
 }
 
 /**
@@ -843,7 +959,7 @@ export async function getUserUsageLogs(
       ...(log.executionId ? { executionId: log.executionId } : {}),
     }))
 
-    const summaryConditions = [eq(usageLog.userId, userId)]
+    const summaryConditions = [eq(usageLog.userId, userId), eq(usageLog.billable, true)]
     if (source) summaryConditions.push(eq(usageLog.source, source))
     if (workspaceId) summaryConditions.push(eq(usageLog.workspaceId, workspaceId))
     if (startDate) summaryConditions.push(gte(usageLog.createdAt, startDate))

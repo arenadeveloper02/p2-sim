@@ -25,6 +25,7 @@ import {
   getTimeoutErrorMessage,
 } from '@/lib/core/execution-limits'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { cleanupExecutionBase64Cache } from '@/lib/uploads/utils/user-file-base64.server'
@@ -403,6 +404,7 @@ async function runWorkflowExecution({
   correlation,
   workflowRecord,
   actorUserId,
+  executionActor,
   loggingSession,
   requestId,
   executionId,
@@ -412,6 +414,7 @@ async function runWorkflowExecution({
   correlation: AsyncExecutionCorrelation
   workflowRecord: WorkflowRecord
   actorUserId: string
+  executionActor?: ExecutionActor
   loggingSession: LoggingSession
   requestId: string
   executionId: string
@@ -489,6 +492,7 @@ async function runWorkflowExecution({
       startTime: new Date().toISOString(),
       isClientSession: false,
       correlation,
+      executionActor,
     }
 
     const snapshot = new ExecutionSnapshot(
@@ -909,7 +913,7 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
         }
       }
 
-      const { actorUserId, workflowRecord } = preprocessResult
+      const { actorUserId, workflowRecord, executionActor } = preprocessResult
       if (!actorUserId || !workflowRecord) {
         logger.error(`[${requestId}] Missing required preprocessing data`)
         await releaseClaim(
@@ -931,6 +935,7 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
           correlation,
           workflowRecord,
           actorUserId,
+          executionActor,
           loggingSession,
           requestId,
           executionId,

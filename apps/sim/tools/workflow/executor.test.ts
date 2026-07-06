@@ -52,6 +52,27 @@ describe('workflowExecutorTool', () => {
       })
     })
 
+    it.concurrent('should pass parent execution lineage for sub-workflow calls', () => {
+      const params = {
+        workflowId: 'test-workflow-id',
+        inputMapping: { name: 'Test' },
+        _context: {
+          executionId: 'parent-exec-1',
+          rootExecutionId: 'root-exec-1',
+        },
+      }
+
+      const result = buildBody(params)
+
+      expect(result).toEqual({
+        input: { name: 'Test' },
+        triggerType: 'workflow',
+        useDraftState: true,
+        parentExecutionId: 'parent-exec-1',
+        parentRootExecutionId: 'root-exec-1',
+      })
+    })
+
     it.concurrent('should parse JSON string inputMapping (UI-provided via tool-input)', () => {
       const params = {
         workflowId: 'test-workflow-id',

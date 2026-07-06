@@ -182,6 +182,7 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
       workspaceId,
       chatId,
       runId,
+      parentExecutionId,
     } = parsed.data.body
     const isMcp = source === 'mcp_copilot'
 
@@ -230,6 +231,12 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
         cost,
         eventKey: `update-cost:${idempotencyKey}`,
         metadata: { inputTokens, outputTokens },
+        ...(parentExecutionId
+          ? {
+              parentExecutionId,
+              rootExecutionId: parentExecutionId,
+            }
+          : {}),
       })
       billed = result.billed
       logger.info(`[${requestId}] Cumulative cost top-up`, {
@@ -248,6 +255,12 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
         workspaceId: attributedWorkspaceId,
         chatId: attributedChatId,
         runId: attributedRunId,
+        ...(parentExecutionId
+          ? {
+              parentExecutionId,
+              rootExecutionId: parentExecutionId,
+            }
+          : {}),
         entries: [
           {
             category: 'model',

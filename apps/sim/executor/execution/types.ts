@@ -1,4 +1,5 @@
 import type { Edge } from 'reactflow'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import type { NodeMetadata } from '@/executor/dag/types'
 import type {
@@ -42,6 +43,15 @@ export interface ExecutionMetadata {
   callChain?: string[]
   correlation?: AsyncExecutionCorrelation
   executionMode?: 'sync' | 'stream' | 'async'
+  /** Parent workflow run when this execution was triggered as a child. */
+  parentExecutionId?: string
+  /** Root of the execution lineage tree; self when no parent. */
+  rootExecutionId?: string
+  /** Copilot chat that triggered this run (rollup only). */
+  triggeringChatId?: string
+  /** Copilot run that triggered this run (rollup only). */
+  triggeringRunId?: string
+  executionActor?: ExecutionActor
 }
 
 export interface SerializableExecutionState {

@@ -34,6 +34,8 @@ export const billingUpdateCostBodySchema = z.object({
   chatId: z.string().uuid().optional(),
   /** Originating copilot run for mothership/copilot ledger joins. Best-effort FK. */
   runId: z.string().uuid().optional(),
+  /** Hosting workflow execution for mothership_block lineage (internal callers only). */
+  parentExecutionId: z.string().min(1).max(128).optional(),
 })
 export type BillingUpdateCostBody = z.input<typeof billingUpdateCostBodySchema>
 

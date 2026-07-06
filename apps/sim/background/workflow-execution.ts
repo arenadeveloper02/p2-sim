@@ -93,6 +93,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
       }
 
       const actorUserId = preprocessResult.actorUserId!
+      const executionActor = preprocessResult.executionActor
       const workspaceId = preprocessResult.workflowRecord?.workspaceId
       if (!workspaceId) {
         throw new Error(`Workflow ${workflowId} has no associated workspace`)
@@ -117,6 +118,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
         callChain: payload.callChain,
         correlation,
         executionMode: payload.executionMode ?? 'async',
+        executionActor,
       }
 
       const snapshot = new ExecutionSnapshot(

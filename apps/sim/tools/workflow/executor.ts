@@ -44,10 +44,15 @@ export const workflowExecutorTool: ToolConfig<
       }
       // Use draft state for manual runs (not deployed), deployed state for deployed runs
       const isDeployedContext = params._context?.isDeployedContext
+      const parentExecutionId = params._context?.executionId
+      const parentRootExecutionId =
+        params._context?.rootExecutionId ?? parentExecutionId
       return {
         input: inputData,
         triggerType: 'workflow',
         useDraftState: !isDeployedContext,
+        ...(parentExecutionId ? { parentExecutionId } : {}),
+        ...(parentRootExecutionId ? { parentRootExecutionId } : {}),
       }
     },
   },

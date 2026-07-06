@@ -533,22 +533,25 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     baseExecutionCharge: 0.005,
     models: {},
     charges: {},
+    external: {},
     ...overrides,
   })
 
-  // db.select() is called twice in recordExecutionUsage: first the workflow row
-  // (terminated by .limit), then the already-billed usage_log rows (terminated
-  // by .groupBy). Return each in order.
+  // db.select() is called in recordExecutionUsage: workflow row, optional
+  // execution-log lineage row (when executionId is set), then already-billed rows.
   const mockDb = (billedRows: Array<Record<string, unknown>>) => {
-    let call = 0
-    dbSelectMock.mockImplementation(() => {
-      call += 1
-      const rows = call === 1 ? [{ id: 'workflow-1', workspaceId: 'ws-1' }] : billedRows
+    dbSelectMock.mockImplementation((fields?: unknown) => {
+      const isLineageSelect =
+        fields && typeof fields === 'object' && 'parentExecutionId' in (fields as object)
+
       const chain: any = {
         from: () => chain,
         where: () => chain,
-        limit: () => Promise.resolve(rows),
-        groupBy: () => Promise.resolve(rows),
+        limit: () =>
+          Promise.resolve(
+            isLineageSelect ? [] : [{ id: 'workflow-1', workspaceId: 'ws-1' }]
+          ),
+        groupBy: () => Promise.resolve(billedRows),
       }
       return chain
     })
@@ -731,6 +734,43 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     ])
   })
 
+  test('external Cost block charge reconciles as an external row with vendor metadata', async () => {
+    await run(
+      costSummary({
+        external: {
+          'Twilio Cost': {
+            total: 0.05,
+            vendor: 'Twilio',
+            quantity: 2,
+            unit: 'message',
+            metadata: {
+              originalAmount: 0.05,
+              originalCurrency: 'USD',
+              source: 'fixed',
+            },
+          },
+        },
+      }),
+      [{ category: 'fixed', description: 'execution_fee', cost: '0.005' }]
+    )
+
+    expect(lastEntries()).toEqual([
+      expect.objectContaining({
+        category: 'external',
+        description: 'Twilio Cost',
+        cost: 0.05,
+        vendor: 'Twilio',
+        quantity: 2,
+        unit: 'message',
+        metadata: {
+          originalAmount: 0.05,
+          originalCurrency: 'USD',
+          source: 'fixed',
+        },
+      }),
+    ])
+  })
+
   test('two boundaries (pause then resume) bill the full run exactly once', async () => {
     const model = (total: number) => ({
       'gpt-4o': {
@@ -825,7 +865,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     ])
   })
 
-  test('zero-cost models and charges (BYOK) are filtered out, leaving only the base fee', async () => {
+  test('zero-cost models without usage metadata are filtered out, leaving only the base fee', async () => {
     await run(
       costSummary({
         models: {
@@ -837,6 +877,30 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     )
     expect(lastEntries()).toEqual([
       expect.objectContaining({ category: 'fixed', description: 'execution_fee', cost: 0.005 }),
+    ])
+  })
+
+  test('BYOK model usage with tokens records a zero-cost ledger row', async () => {
+    await run(
+      costSummary({
+        models: {
+          'gpt-4o': {
+            input: 0,
+            output: 0,
+            total: 0,
+            tokens: { input: 120, output: 45, total: 165 },
+          },
+        },
+      }),
+      [{ category: 'fixed', description: 'execution_fee', cost: '0.005' }]
+    )
+    expect(lastEntries()).toEqual([
+      expect.objectContaining({
+        category: 'model',
+        description: 'gpt-4o',
+        cost: 0,
+        metadata: { inputTokens: 120, outputTokens: 45 },
+      }),
     ])
   })
 

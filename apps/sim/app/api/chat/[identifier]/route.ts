@@ -502,6 +502,7 @@ export const POST = withRouteHandler(
       }
 
       const { actorUserId, workflowRecord } = preprocessResult
+      const executionActor = preprocessResult.executionActor
       const workspaceOwnerId = actorUserId!
       const workspaceId = workflowRecord?.workspaceId
       if (!workspaceId) {
@@ -544,6 +545,7 @@ export const POST = withRouteHandler(
         chatId: payload || conversationId || undefined,
         conversationId: conversationId || undefined,
         initialInput: formattedInitialInput || undefined,
+        executionActor,
       })
 
       try {

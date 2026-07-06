@@ -361,6 +361,7 @@ async function executeWebhookJobInternal(
     checkDeployment: false,
     skipUsageLimits: true,
     workspaceId: payload.workspaceId,
+    webhookId: payload.webhookId,
     loggingSession,
   })
 
@@ -368,7 +369,7 @@ async function executeWebhookJobInternal(
     throw new Error(preprocessResult.error?.message || 'Preprocessing failed in background job')
   }
 
-  const { workflowRecord, executionTimeout } = preprocessResult
+  const { workflowRecord, executionTimeout, actorUserId, executionActor } = preprocessResult
   if (!workflowRecord) {
     throw new Error(`Workflow ${payload.workflowId} not found during preprocessing`)
   }
@@ -451,7 +452,7 @@ async function executeWebhookJobInternal(
 
     if (skipMessage) {
       await loggingSession.safeStart({
-        userId: payload.userId,
+        userId: actorUserId ?? payload.userId,
         workspaceId,
         variables: {},
         triggerData: {
@@ -460,6 +461,7 @@ async function executeWebhookJobInternal(
         },
         conversationId: undefined,
         deploymentVersionId,
+        executionActor,
       })
 
       await loggingSession.safeComplete({
@@ -544,7 +546,7 @@ async function executeWebhookJobInternal(
       executionId,
       workflowId: payload.workflowId,
       workspaceId,
-      userId: payload.userId,
+      userId: actorUserId ?? payload.userId,
       sessionUserId: undefined,
       workflowUserId: workflowRecord.userId,
       triggerType: payload.provider || 'webhook',
@@ -554,6 +556,7 @@ async function executeWebhookJobInternal(
       isClientSession: false,
       credentialAccountUserId,
       correlation,
+      executionActor,
       workflowStateOverride: {
         blocks,
         edges,
@@ -640,7 +643,7 @@ async function executeWebhookJobInternal(
 
     try {
       await loggingSession.safeStart({
-        userId: payload.userId,
+        userId: actorUserId ?? payload.userId,
         workspaceId,
         variables: {},
         triggerData: {
@@ -649,6 +652,7 @@ async function executeWebhookJobInternal(
         },
         conversationId: undefined,
         deploymentVersionId,
+        executionActor,
       })
 
       const executionResult = hasExecutionResult(error)

@@ -509,7 +509,8 @@ describe('calculateCostSummary', () => {
     const ledgerSum =
       result.baseExecutionCharge +
       Object.values(result.models).reduce((s, m) => s + m.total, 0) +
-      Object.values(result.charges).reduce((s, c) => s + c.total, 0)
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
     expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
   })
 
@@ -557,7 +558,8 @@ describe('calculateCostSummary', () => {
     const ledgerSum =
       result.baseExecutionCharge +
       Object.values(result.models).reduce((s, m) => s + m.total, 0) +
-      Object.values(result.charges).reduce((s, c) => s + c.total, 0)
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
     expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
   })
 
@@ -616,7 +618,8 @@ describe('calculateCostSummary', () => {
     const ledgerSum =
       result.baseExecutionCharge +
       Object.values(result.models).reduce((s, m) => s + m.total, 0) +
-      Object.values(result.charges).reduce((s, c) => s + c.total, 0)
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
     expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
   })
 
@@ -709,7 +712,92 @@ describe('calculateCostSummary', () => {
     const ledgerSum =
       result.baseExecutionCharge +
       Object.values(result.models).reduce((s, m) => s + m.total, 0) +
-      Object.values(result.charges).reduce((s, c) => s + c.total, 0)
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
+    expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
+  })
+
+  test('records a Cost block span as external (not tool) with vendor metadata', () => {
+    const traceSpans = [
+      {
+        id: 'cost-block',
+        name: 'Twilio Cost',
+        type: 'cost',
+        cost: { input: 0, output: 0, total: 0.05 },
+        output: {
+          cost: { total: 0.05, input: 0, output: 0 },
+          raw: {
+            amount: 0.05,
+            currency: 'USD',
+            vendor: 'Twilio',
+            label: 'SMS send',
+            source: 'fixed',
+            quantity: 1,
+            unit: 'message',
+          },
+          recorded: true,
+        },
+      },
+    ]
+
+    const result = calculateCostSummary(traceSpans)
+
+    expect(Object.keys(result.charges)).toHaveLength(0)
+    expect(result.external['Twilio Cost']).toBeDefined()
+    expect(result.external['Twilio Cost'].total).toBe(0.05)
+    expect(result.external['Twilio Cost'].vendor).toBe('Twilio')
+    expect(result.external['Twilio Cost'].quantity).toBe(1)
+    expect(result.external['Twilio Cost'].unit).toBe('message')
+    expect(result.external['Twilio Cost'].metadata).toEqual({
+      originalAmount: 0.05,
+      originalCurrency: 'USD',
+      source: 'fixed',
+    })
+    const ledgerSum =
+      result.baseExecutionCharge +
+      Object.values(result.models).reduce((s, m) => s + m.total, 0) +
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
+    expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
+  })
+
+  test('mixed model + tool + external run reconciles to total', () => {
+    const traceSpans = [
+      {
+        id: 'agent',
+        name: 'Agent',
+        type: 'agent',
+        model: 'gpt-4o',
+        cost: { input: 0.01, output: 0.02, total: 0.03 },
+        tokens: { input: 100, output: 200, total: 300 },
+      },
+      {
+        id: 'exa',
+        name: 'Exa Search',
+        type: 'tool',
+        cost: { input: 0, output: 0, total: 0.01 },
+      },
+      {
+        id: 'cost',
+        name: 'Partner API',
+        type: 'cost',
+        cost: { input: 0, output: 0, total: 0.02 },
+        output: {
+          raw: { amount: 0.02, currency: 'USD', vendor: 'Partner', source: 'response_path' },
+        },
+      },
+    ]
+
+    const result = calculateCostSummary(traceSpans)
+
+    expect(result.models['gpt-4o'].total).toBe(0.03)
+    expect(result.charges['Exa Search'].total).toBe(0.01)
+    expect(result.external['Partner API'].total).toBe(0.02)
+    const ledgerSum =
+      result.baseExecutionCharge +
+      Object.values(result.models).reduce((s, m) => s + m.total, 0) +
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
     expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
   })
 })

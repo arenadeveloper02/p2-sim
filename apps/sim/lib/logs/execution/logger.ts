@@ -10,10 +10,14 @@ import {
   workspace,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
+import { getErrorMessage, getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, sql } from 'drizzle-orm'
-import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import {
+  EXECUTION_ACTOR_TYPES,
+  type ExecutionActor,
+  type ExecutionActorType,
+} from '@/lib/execution/actor-resolution'
 import {
   checkUsageStatus,
   getOrgUsageLimit,
@@ -22,10 +26,17 @@ import {
 import {
   type BillingContext,
   deriveBillingContext,
+  type ExternalUsageMetadata,
   type ModelUsageMetadata,
   recordUsage,
   stableEventKey,
 } from '@/lib/billing/core/usage-log'
+import {
+  normalizeUsageModelId,
+  normalizeUsageToolId,
+} from '@/lib/billing/core/usage-entry-normalize'
+import { logUsageSkip } from '@/lib/billing/core/usage-skip-metrics'
+import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { resolveEffectivePiiRedaction } from '@/lib/billing/retention'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
@@ -507,6 +518,13 @@ export class ExecutionLogger implements IExecutionLoggerService {
     conversationId?: string
     initialInput?: string
     deploymentVersionId?: string
+    lineage?: {
+      parentExecutionId?: string
+      rootExecutionId: string
+      triggeringChatId?: string
+      triggeringRunId?: string
+    }
+    executionActor?: ExecutionActor
   }): Promise<{
     workflowLog: WorkflowExecutionLog
     snapshot: WorkflowExecutionSnapshot
@@ -524,6 +542,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
       conversationId,
       initialInput,
       deploymentVersionId,
+      lineage,
+      executionActor,
     } = params
     const execLog = logger.withMetadata({ workflowId, workspaceId, executionId })
 
@@ -594,6 +614,13 @@ export class ExecutionLogger implements IExecutionLoggerService {
         chatId: chatId || null,
         conversationId: conversationId || null,
         initialInput: initialInput || null,
+        parentExecutionId: lineage?.parentExecutionId ?? null,
+        rootExecutionId: lineage?.rootExecutionId ?? executionId,
+        triggeringChatId: lineage?.triggeringChatId ?? null,
+        triggeringRunId: lineage?.triggeringRunId ?? null,
+        actorUserId: executionActor?.actorUserId ?? null,
+        actorType: executionActor?.actorType ?? null,
+        apiKeyId: executionActor?.apiKeyId ?? null,
       })
       .returning()
 
@@ -673,6 +700,23 @@ export class ExecutionLogger implements IExecutionLoggerService {
         }
       >
       charges?: Record<string, { total: number }>
+      external?: Record<
+        string,
+        {
+          total: number
+          vendor?: string
+          quantity?: number
+          unit?: string
+          metadata?: {
+            originalAmount?: number
+            originalCurrency?: string
+            exchangeRate?: number
+            sourceBlockId?: string
+            responsePath?: string
+            source?: string
+          }
+        }
+      >
     }
     finalOutput: BlockOutputData
     traceSpans?: TraceSpan[]
@@ -1036,7 +1080,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
         updatedLog.trigger as ExecutionTrigger['type'],
         executionId,
         billingUserId,
-        billingContext
+        billingContext,
+        updatedLog.startedAt,
+        this.extractExecutionActor(updatedLog)
       )
 
       // Best-effort usage-threshold email.
@@ -1085,7 +1131,10 @@ export class ExecutionLogger implements IExecutionLoggerService {
           costSummary,
           updatedLog.trigger as ExecutionTrigger['type'],
           executionId,
-          billingUserId
+          billingUserId,
+          undefined,
+          updatedLog.startedAt,
+          this.extractExecutionActor(updatedLog)
         )
       } catch {}
       execLog.warn('Usage threshold notification check failed (non-fatal)', { error: e })
@@ -1152,6 +1201,24 @@ export class ExecutionLogger implements IExecutionLoggerService {
    * Updates user stats with cost and token information
    * Maintains same logic as original execution logger for billing consistency
    */
+  private extractExecutionActor(log: {
+    actorUserId: string | null
+    actorType: string | null
+    apiKeyId: string | null
+  }): ExecutionActor | undefined {
+    if (!log.actorUserId || !log.actorType) {
+      return undefined
+    }
+    if (!EXECUTION_ACTOR_TYPES.includes(log.actorType as ExecutionActorType)) {
+      return undefined
+    }
+    return {
+      actorUserId: log.actorUserId,
+      actorType: log.actorType as ExecutionActorType,
+      apiKeyId: log.apiKeyId ?? undefined,
+    }
+  }
+
   private extractBillingUserId(executionData: unknown): string | null {
     if (!executionData || typeof executionData !== 'object') {
       return null
@@ -1189,6 +1256,23 @@ export class ExecutionLogger implements IExecutionLoggerService {
         }
       >
       charges?: Record<string, { total: number }>
+      external?: Record<
+        string,
+        {
+          total: number
+          vendor?: string
+          quantity?: number
+          unit?: string
+          metadata?: {
+            originalAmount?: number
+            originalCurrency?: string
+            exchangeRate?: number
+            sourceBlockId?: string
+            responsePath?: string
+            source?: string
+          }
+        }
+      >
     },
     trigger: ExecutionTrigger['type'],
     executionId?: string,
@@ -1196,7 +1280,10 @@ export class ExecutionLogger implements IExecutionLoggerService {
     // Pre-resolved billing context. The completion path already fetches the
     // subscription for usage-threshold emails; passing the derived context here
     // lets recordUsage skip a redundant subscription lookup per completion.
-    billingContext?: BillingContext
+    billingContext?: BillingContext,
+    /** Execution start time stamped onto usage_log.occurred_at. */
+    occurredAt?: Date,
+    executionActor?: ExecutionActor
   ): Promise<number> {
     const statsLog = logger.withMetadata({ workflowId: workflowId ?? undefined, executionId })
 
@@ -1208,7 +1295,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     // cumulative run total (which would double-count pre-pause cost on resume).
 
     if (!workflowId) {
-      statsLog.debug('Workflow was deleted, skipping usage recording')
+      logUsageSkip('deleted_workflow', { executionId, trigger })
       return 0
     }
 
@@ -1221,15 +1308,13 @@ export class ExecutionLogger implements IExecutionLoggerService {
         .limit(1)
 
       if (!workflowRecord) {
-        statsLog.error('Workflow not found for usage recording')
+        logUsageSkip('workflow_not_found', { workflowId, executionId, trigger }, 'error')
         return 0
       }
 
       const userId = billingUserId?.trim() || null
       if (!userId) {
-        statsLog.error('Missing billing actor in execution context; skipping usage recording', {
-          trigger,
-        })
+        logUsageSkip('missing_billing_user', { workflowId, executionId, trigger }, 'error')
         return 0
       }
 
@@ -1239,6 +1324,41 @@ export class ExecutionLogger implements IExecutionLoggerService {
       const resolvedBillingContext =
         billingContext ?? deriveBillingContext(userId, await getHighestPrioritySubscription(userId))
 
+      let executionLineage: {
+        parentExecutionId?: string
+        rootExecutionId?: string
+        triggeringChatId?: string
+        triggeringRunId?: string
+      } = {}
+      if (executionId) {
+        const [executionLogRow] = await db
+          .select({
+            parentExecutionId: workflowExecutionLogs.parentExecutionId,
+            rootExecutionId: workflowExecutionLogs.rootExecutionId,
+            triggeringChatId: workflowExecutionLogs.triggeringChatId,
+            triggeringRunId: workflowExecutionLogs.triggeringRunId,
+          })
+          .from(workflowExecutionLogs)
+          .where(eq(workflowExecutionLogs.executionId, executionId))
+          .limit(1)
+        if (executionLogRow) {
+          executionLineage = {
+            ...(executionLogRow.parentExecutionId
+              ? { parentExecutionId: executionLogRow.parentExecutionId }
+              : {}),
+            ...(executionLogRow.rootExecutionId
+              ? { rootExecutionId: executionLogRow.rootExecutionId }
+              : {}),
+            ...(executionLogRow.triggeringChatId
+              ? { triggeringChatId: executionLogRow.triggeringChatId }
+              : {}),
+            ...(executionLogRow.triggeringRunId
+              ? { triggeringRunId: executionLogRow.triggeringRunId }
+              : {}),
+          }
+        }
+      }
+
       // Build the run's *cumulative* target ledger lines from the cost summary.
       // The usage_log is then reconciled to these targets: at each completion
       // boundary (pause or terminal) we record only the increment versus what
@@ -1246,10 +1366,13 @@ export class ExecutionLogger implements IExecutionLoggerService {
       // once across pause/resume without double-charging on resume, and keeps
       // pre-pause work billed even if the run is later abandoned.
       type TargetLine = {
-        category: 'model' | 'fixed' | 'tool'
+        category: 'model' | 'fixed' | 'tool' | 'external'
         description: string
         target: number
-        metadata?: ModelUsageMetadata | null
+        metadata?: ModelUsageMetadata | ExternalUsageMetadata | null
+        vendor?: string
+        quantity?: number
+        unit?: string
       }
       const targets: TargetLine[] = []
 
@@ -1263,10 +1386,15 @@ export class ExecutionLogger implements IExecutionLoggerService {
 
       if (costSummary.models) {
         for (const [modelName, modelData] of Object.entries(costSummary.models)) {
-          if (modelData.total > 0) {
+          const hasUsage =
+            modelData.total > 0 ||
+            modelData.tokens.total > 0 ||
+            modelData.tokens.input > 0 ||
+            modelData.tokens.output > 0
+          if (hasUsage) {
             targets.push({
               category: 'model',
-              description: modelName,
+              description: normalizeUsageModelId(modelName),
               target: modelData.total,
               metadata: {
                 inputTokens: modelData.tokens.input,
@@ -1288,13 +1416,33 @@ export class ExecutionLogger implements IExecutionLoggerService {
       if (costSummary.charges) {
         for (const [description, charge] of Object.entries(costSummary.charges)) {
           if (charge.total > 0) {
-            targets.push({ category: 'tool', description, target: charge.total })
+            targets.push({
+              category: 'tool',
+              description: normalizeUsageToolId(description),
+              target: charge.total,
+            })
+          }
+        }
+      }
+
+      if (costSummary.external) {
+        for (const [description, charge] of Object.entries(costSummary.external)) {
+          if (charge.total > 0) {
+            targets.push({
+              category: 'external',
+              description,
+              target: charge.total,
+              vendor: charge.vendor,
+              quantity: charge.quantity,
+              unit: charge.unit,
+              metadata: charge.metadata,
+            })
           }
         }
       }
 
       if (targets.length === 0) {
-        statsLog.debug('No cost to record')
+        logUsageSkip('no_cost_to_record', { workflowId, executionId, trigger })
         return 0
       }
 
@@ -1317,20 +1465,44 @@ export class ExecutionLogger implements IExecutionLoggerService {
       // change that relabels historical spans would break this invariant.
       const buildDeltaEntries = (alreadyBilled: Map<string, number>) => {
         const entries: Array<{
-          category: 'model' | 'fixed' | 'tool'
+          category: 'model' | 'fixed' | 'tool' | 'external'
           source: 'workflow'
           description: string
           cost: number
           eventKey: string
-          metadata?: ModelUsageMetadata | null
+          metadata?: ModelUsageMetadata | ExternalUsageMetadata | null
           toolId?: string
+          vendor?: string
           quantity?: number
           unit?: string
         }> = []
         for (const line of targets) {
-          const billed = alreadyBilled.get(`${line.category}::${line.description}`) ?? 0
+          const key = `${line.category}::${line.description}`
+          const billed = alreadyBilled.get(key) ?? 0
           const delta = line.target - billed
-          if (delta <= COST_EPSILON) continue
+          if (delta <= COST_EPSILON) {
+            // Zero-cost usage metadata: record once when no ledger row exists yet.
+            if (line.target <= COST_EPSILON && !alreadyBilled.has(key)) {
+              entries.push({
+                category: line.category,
+                source: 'workflow',
+                description: line.description,
+                cost: 0,
+                eventKey: stableEventKey({
+                  executionId: executionId ?? '',
+                  category: line.category,
+                  description: line.description,
+                  billedBefore: '0',
+                }),
+                ...(line.metadata !== undefined ? { metadata: line.metadata } : {}),
+                ...(line.toolId ? { toolId: line.toolId } : {}),
+                ...(line.vendor ? { vendor: line.vendor } : {}),
+                ...(line.quantity != null ? { quantity: line.quantity } : {}),
+                ...(line.unit ? { unit: line.unit } : {}),
+              })
+            }
+            continue
+          }
           entries.push({
             category: line.category,
             source: 'workflow',
@@ -1344,9 +1516,15 @@ export class ExecutionLogger implements IExecutionLoggerService {
             }),
             ...(line.metadata !== undefined ? { metadata: line.metadata } : {}),
             ...(line.category === 'tool' ? { toolId: line.description } : {}),
+            ...(line.category === 'external' && line.vendor ? { vendor: line.vendor } : {}),
+            ...(line.category === 'external' && line.quantity != null
+              ? { quantity: line.quantity }
+              : {}),
+            ...(line.category === 'external' && line.unit ? { unit: line.unit } : {}),
             ...(line.category === 'model' && line.metadata
               ? {
-                  quantity: line.metadata.inputTokens + line.metadata.outputTokens,
+                  quantity: (line.metadata as ModelUsageMetadata).inputTokens +
+                    (line.metadata as ModelUsageMetadata).outputTokens,
                   unit: 'tokens',
                 }
               : {}),
@@ -1364,62 +1542,76 @@ export class ExecutionLogger implements IExecutionLoggerService {
         // flow and only matters under a cross-process double-completion of the
         // same execution, where it stops a stale already-billed read from
         // dropping the larger delta.
-        await db.transaction(async (tx) => {
-          await tx.execute(
-            sql`select set_config('lock_timeout', ${`${USAGE_RECONCILE_LOCK_TIMEOUT_MS}ms`}, true)`
-          )
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${executionId}, 0))`)
+        try {
+          await db.transaction(async (tx) => {
+            await tx.execute(
+              sql`select set_config('lock_timeout', ${`${USAGE_RECONCILE_LOCK_TIMEOUT_MS}ms`}, true)`
+            )
+            await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${executionId}, 0))`)
 
-          // Already-billed for this execution, scoped to the rows this path owns
-          // (source='workflow') so a same-executionId row from another source
-          // can't suppress a charge.
-          const billedRows = await tx
-            .select({
-              category: usageLog.category,
-              description: usageLog.description,
-              cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)`,
-            })
-            .from(usageLog)
-            .where(and(eq(usageLog.executionId, executionId), eq(usageLog.source, 'workflow')))
-            .groupBy(usageLog.category, usageLog.description)
+            // Already-billed for this execution, scoped to the rows this path owns
+            // (source='workflow') so a same-executionId row from another source
+            // can't suppress a charge.
+            const billedRows = await tx
+              .select({
+                category: usageLog.category,
+                description: usageLog.description,
+                cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)`,
+              })
+              .from(usageLog)
+              .where(and(eq(usageLog.executionId, executionId), eq(usageLog.source, 'workflow')))
+              .groupBy(usageLog.category, usageLog.description)
 
-          const alreadyBilled = new Map<string, number>()
-          for (const row of billedRows) {
-            alreadyBilled.set(
-              `${row.category}::${row.description}`,
-              Number.parseFloat(row.cost ?? '0')
+            const alreadyBilled = new Map<string, number>()
+            for (const row of billedRows) {
+              alreadyBilled.set(
+                `${row.category}::${row.description}`,
+                Number.parseFloat(row.cost ?? '0')
+              )
+            }
+
+            const entries = buildDeltaEntries(alreadyBilled)
+            if (entries.length > 0) {
+              await recordUsage({
+                userId,
+                entries,
+                workspaceId: workflowRecord.workspaceId ?? undefined,
+                workflowId,
+                executionId,
+                occurredAt,
+                executionActor,
+                ...executionLineage,
+                tx,
+                billingEntity: resolvedBillingContext.billingEntity,
+                billingPeriod: resolvedBillingContext.billingPeriod,
+              })
+              recordedIncrement = entries.reduce((acc, e) => acc + e.cost, 0)
+
+              // Refine cost_total to the EXACT post-reconciliation ledger sum,
+              // inside the same advisory-locked tx so it is atomic with the inserts
+              // and can't be clobbered by a concurrent boundary. Exact by
+              // construction: under the lock no delta collides, so the new sum is
+              // the prior workflow-source sum plus the deltas just inserted. This
+              // supersedes the main-transaction GREATEST baseline (which remains for
+              // early-return / no-executionId / failed-reconcile paths).
+              const ledgerSum =
+                [...alreadyBilled.values()].reduce((acc, v) => acc + v, 0) + recordedIncrement
+              await tx
+                .update(workflowExecutionLogs)
+                .set({ costTotal: ledgerSum.toString() })
+                .where(eq(workflowExecutionLogs.executionId, executionId))
+            }
+          })
+        } catch (lockError) {
+          if (getPostgresErrorCode(lockError) === '55P03') {
+            logUsageSkip(
+              'advisory_lock_timeout',
+              { workflowId, executionId, trigger },
+              'error'
             )
           }
-
-          const entries = buildDeltaEntries(alreadyBilled)
-          if (entries.length > 0) {
-            await recordUsage({
-              userId,
-              entries,
-              workspaceId: workflowRecord.workspaceId ?? undefined,
-              workflowId,
-              executionId,
-              tx,
-              billingEntity: resolvedBillingContext.billingEntity,
-              billingPeriod: resolvedBillingContext.billingPeriod,
-            })
-            recordedIncrement = entries.reduce((acc, e) => acc + e.cost, 0)
-
-            // Refine cost_total to the EXACT post-reconciliation ledger sum,
-            // inside the same advisory-locked tx so it is atomic with the inserts
-            // and can't be clobbered by a concurrent boundary. Exact by
-            // construction: under the lock no delta collides, so the new sum is
-            // the prior workflow-source sum plus the deltas just inserted. This
-            // supersedes the main-transaction GREATEST baseline (which remains for
-            // early-return / no-executionId / failed-reconcile paths).
-            const ledgerSum =
-              [...alreadyBilled.values()].reduce((acc, v) => acc + v, 0) + recordedIncrement
-            await tx
-              .update(workflowExecutionLogs)
-              .set({ costTotal: ledgerSum.toString() })
-              .where(eq(workflowExecutionLogs.executionId, executionId))
-          }
-        })
+          throw lockError
+        }
       } else {
         // No execution scope to reconcile/lock against (not expected at a
         // workflow completion): record the full targets directly.
@@ -1430,6 +1622,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
             entries,
             workspaceId: workflowRecord.workspaceId ?? undefined,
             workflowId,
+            occurredAt,
+            executionActor,
+            ...executionLineage,
             billingEntity: resolvedBillingContext.billingEntity,
             billingPeriod: resolvedBillingContext.billingPeriod,
           })
@@ -1447,13 +1642,16 @@ export class ExecutionLogger implements IExecutionLoggerService {
       // reconciliation self-heals on a later boundary; a TERMINAL-boundary
       // failure leaves the run under-billed (and cost_total may then exceed
       // SUM(usage_log)), so log loudly enough to alert / reconcile out of band.
-      statsLog.error(
-        'Failed to record execution usage to usage_log ledger; charge may be unbilled',
+      logUsageSkip(
+        'record_usage_failed',
         {
-          error,
+          workflowId,
+          executionId,
+          trigger,
           billingUserId,
-          costSummary,
-        }
+          error: getErrorMessage(error),
+        },
+        'error'
       )
     }
 

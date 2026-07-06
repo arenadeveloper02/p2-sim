@@ -3227,6 +3227,37 @@ function getAllStaticModelIds(): string[] {
 
 const STATIC_MODEL_ID_SET = new Set(getAllStaticModelIds().map((id) => id.toLowerCase()))
 
+/**
+ * Resolves a runtime model label to the canonical catalog ID when possible.
+ * Strips a leading `provider/` prefix, matches case-insensitively against the
+ * static catalog, and returns the catalog's canonical casing. Unknown labels
+ * are returned trimmed (prefix stripped when present).
+ */
+export function resolveCanonicalModelId(modelId: string): string {
+  const trimmed = modelId.trim()
+  if (!trimmed) return trimmed
+
+  const slashIdx = trimmed.indexOf('/')
+  const withoutPrefix = slashIdx > 0 ? trimmed.slice(slashIdx + 1).trim() : trimmed
+  const candidates = slashIdx > 0 ? [withoutPrefix, trimmed] : [trimmed]
+
+  for (const candidate of candidates) {
+    for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
+      const match = provider.models.find((m) => m.id.toLowerCase() === candidate.toLowerCase())
+      if (match) return match.id
+    }
+  }
+
+  const lowered = trimmed.toLowerCase()
+  for (const providerId of DYNAMIC_MODEL_PROVIDERS) {
+    if (lowered.startsWith(`${providerId}/`)) {
+      return `${providerId}/${trimmed.slice(providerId.length + 1)}`
+    }
+  }
+
+  return withoutPrefix
+}
+
 export function isKnownModelId(modelId: string): boolean {
   if (!modelId || typeof modelId !== 'string') return false
   const trimmed = modelId.trim()
