@@ -9,12 +9,13 @@ import { CopilotFiles } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
 import { generateExecutionFileKey } from '@/lib/uploads/contexts/execution/utils'
 import { generateKnowledgeBaseFileKey } from '@/lib/uploads/contexts/knowledge-base/knowledge-base-file-manager'
+import { generateOrgLogoFileKey } from '@/lib/uploads/contexts/org-logos/utils'
 import { generateWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/storage-service'
 import { insertFileMetadata, recordKnowledgeBaseFileOwnership } from '@/lib/uploads/server/metadata'
 import { isImageFileType } from '@/lib/uploads/utils/file-utils'
 import { validateAttachmentFileType, validateFileType } from '@/lib/uploads/utils/validation'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { getUserEntityPermissions, isOrganizationAdminOrOwner } from '@/lib/workspaces/permissions/utils'
 import { createErrorResponse } from '@/app/api/files/utils'
 
 const logger = createLogger('PresignedUploadAPI')
@@ -26,6 +27,7 @@ const VALID_UPLOAD_TYPES = [
   'profile-pictures',
   'mothership',
   'workspace-logos',
+  'org-logos',
   'execution',
 ] as const
 
@@ -248,6 +250,48 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         userId: sessionUserId,
         workspaceId,
         context: 'workspace-logos',
+        originalName: fileName,
+        contentType,
+        size: fileSize,
+      })
+    } else if (uploadType === 'org-logos') {
+      const organizationId = request.nextUrl.searchParams.get('organizationId')
+      if (!organizationId?.trim()) {
+        throw new ValidationError(
+          'organizationId query parameter is required for org-logos uploads'
+        )
+      }
+
+      const canManageOrg = await isOrganizationAdminOrOwner(sessionUserId, organizationId)
+      if (!canManageOrg) {
+        return NextResponse.json(
+          { error: 'Organization owner or admin access required for org logo uploads' },
+          { status: 403 }
+        )
+      }
+
+      if (!isImageFileType(contentType)) {
+        throw new ValidationError(
+          'Only image files (JPEG, PNG, GIF, WebP, SVG) are allowed for org logo uploads'
+        )
+      }
+
+      const customKey = generateOrgLogoFileKey(organizationId, fileName)
+      presignedUrlResponse = await generatePresignedUploadUrl({
+        fileName,
+        contentType,
+        fileSize,
+        context: 'org-logos',
+        userId: sessionUserId,
+        customKey,
+        expirationSeconds: 3600,
+        metadata: { organizationId },
+      })
+
+      await insertFileMetadata({
+        key: presignedUrlResponse.key,
+        userId: sessionUserId,
+        context: 'org-logos',
         originalName: fileName,
         contentType,
         size: fileSize,

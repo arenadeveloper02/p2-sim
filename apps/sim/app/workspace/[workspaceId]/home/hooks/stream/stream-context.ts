@@ -115,6 +115,8 @@ export interface StreamLoopDeps {
   activeTurnRef: MutableRefObject<ActiveTurn | null>
   resourcesRef: MutableRefObject<MothershipResource[]>
   workflowIdRef: MutableRefObject<string | undefined>
+  /** True when the chat surface is an embed route (no workspace sidebar). */
+  isEmbedPageRef: MutableRefObject<boolean>
   activeResourceIdRef: MutableRefObject<string | null>
   onTitleUpdateRef: MutableRefObject<(() => void) | undefined>
   onToolResultRef: MutableRefObject<

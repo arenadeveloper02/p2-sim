@@ -1,10 +1,11 @@
 'use client'
 
-import { createContext, useContext, useMemo } from 'react'
+import { createContext, useContext, useEffect, useMemo } from 'react'
 import type { BrandConfig, OrganizationWhitelabelSettings } from '@/lib/branding/types'
 import { getBrandConfig } from '@/ee/whitelabeling/branding'
 import { useWhitelabelSettings } from '@/ee/whitelabeling/hooks/whitelabel'
 import { generateOrgThemeCSS, mergeOrgBrandConfig } from '@/ee/whitelabeling/org-branding-utils'
+import { syncDocumentFavicon } from '@/ee/whitelabeling/sync-document-favicon'
 import { useOrganizations } from '@/hooks/queries/organization'
 
 interface BrandingContextValue {
@@ -46,6 +47,17 @@ export function BrandingProvider({ children, initialOrgSettings }: BrandingProvi
     () => (effectiveOrgSettings ? generateOrgThemeCSS(effectiveOrgSettings) : ''),
     [effectiveOrgSettings]
   )
+
+  useEffect(() => {
+    syncDocumentFavicon(brandConfig.faviconUrl)
+  }, [brandConfig.faviconUrl])
+
+  useEffect(() => {
+    const instanceFaviconUrl = getBrandConfig().faviconUrl
+    return () => {
+      syncDocumentFavicon(instanceFaviconUrl)
+    }
+  }, [])
 
   return (
     <BrandingContext.Provider value={{ config: brandConfig }}>

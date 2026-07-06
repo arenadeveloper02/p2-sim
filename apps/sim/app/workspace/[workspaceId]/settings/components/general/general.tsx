@@ -31,7 +31,7 @@ import { getBrowserTimezone, getTimezoneOptions } from '@/lib/core/utils/timezon
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { useProfilePictureUpload } from '@/app/workspace/[workspaceId]/settings/hooks/use-profile-picture-upload'
-import { useBrandConfig } from '@/ee/whitelabeling'
+import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import { useGeneralSettings, useUpdateGeneralSetting } from '@/hooks/queries/general-settings'
 import {
   useResetPassword,
@@ -68,7 +68,7 @@ function getInitials(name: string | undefined | null): string {
 
 export function General() {
   const router = useRouter()
-  const brandConfig = useBrandConfig()
+  const brandConfig = useOrgBrandConfig()
   const { data: session } = useSession()
 
   const { data: profile, isLoading: isProfileLoading } = useUserProfile()
@@ -262,7 +262,7 @@ export function General() {
     }
   }
 
-  const imageUrl = profilePictureUrl || profile?.image || brandConfig.logoUrl
+  const imageUrl = profilePictureUrl || profile?.image || brandConfig.logoUrl || brandConfig.logoUrlBlacktext
 
   if (isLoading) {
     return null

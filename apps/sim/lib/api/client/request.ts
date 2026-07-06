@@ -67,9 +67,16 @@ function appendQuery(path: string, query: unknown): string {
     if (value === undefined || value === null || value === '') continue
 
     if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item !== undefined && item !== null && item !== '') {
-          searchParams.append(key, String(item))
+      if (value.length === 0) continue
+
+      const hasComplexItems = value.some((item) => item !== null && typeof item === 'object')
+      if (hasComplexItems) {
+        searchParams.set(key, JSON.stringify(value))
+      } else {
+        for (const item of value) {
+          if (item !== undefined && item !== null && item !== '') {
+            searchParams.append(key, String(item))
+          }
         }
       }
       continue

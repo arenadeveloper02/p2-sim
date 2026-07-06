@@ -66,6 +66,7 @@ describe('inferContextFromKey', () => {
     expect(inferContextFromKey('profile-pictures/x')).toBe('profile-pictures')
     expect(inferContextFromKey('og-images/x')).toBe('og-images')
     expect(inferContextFromKey('workspace-logos/x')).toBe('workspace-logos')
+    expect(inferContextFromKey('SIM_ORG_LOGOS/org-1/logo.png')).toBe('org-logos')
     expect(inferContextFromKey('logs/x')).toBe('logs')
   })
 
