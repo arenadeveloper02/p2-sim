@@ -232,6 +232,13 @@ export const GET = withRouteHandler(
             userId,
             authType: authResult.authType ?? 'hybrid',
           })
+        } else if (authResult.success && authResult.authType === 'internal_jwt') {
+          // Server-to-server call (e.g. create_from_template proxying image for Google Slides).
+          // The internal JWT is valid but carries no userId — use a sentinel for logging.
+          userId = 'internal-service'
+          logger.info('Agent-generated-image serve: internal service access', {
+            workflowIdFromPath,
+          })
         } else {
           const deployedChatOk = await canAccessAgentGeneratedImageViaDeployedChat(
             request,
