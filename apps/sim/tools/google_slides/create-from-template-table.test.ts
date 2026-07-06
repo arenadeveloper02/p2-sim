@@ -7,9 +7,12 @@ import {
   buildTableColumnWidthRequests,
   buildTableContentRequests,
   computeColumnContentWeights,
+  computeMaxRowsThatFitOnSlide,
   distributeColumnWidthsByContent,
+  estimateCellLineCount,
   findTableColumnLayout,
   findTableDimensions,
+  findTableSlideLayout,
   normalizeTableContent,
 } from '@/tools/google_slides/create-from-template-table'
 
@@ -302,5 +305,103 @@ describe('buildTableContentRequests', () => {
         text: 'Heuristic',
       },
     })
+  })
+
+  it('caps rows when content would exceed the table height budget on the slide', () => {
+    const longCell = 'A'.repeat(120)
+    const tenRows = Array.from({ length: 10 }, (_, index) => [
+      `Row ${index + 1}`,
+      longCell,
+      longCell,
+    ])
+
+    const requests = buildTableContentRequests({
+      tableObjectId: 'table_1',
+      templateRows: 10,
+      templateColumns: 3,
+      minRows: 2,
+      maxRows: 10,
+      content: tenRows,
+      layout: {
+        columnWidths: [900_000, 900_000, 900_000],
+      },
+      slideLayout: {
+        heightBudgetEmu: 900_000,
+        templateRowHeightsEmu: Array.from({ length: 10 }, () => 90_000),
+      },
+    })
+
+    const rowDeletes = requests.filter((r) => 'deleteTableRow' in r)
+    expect(rowDeletes.length).toBeGreaterThan(0)
+
+    const inserts = requests.filter((r) => 'insertText' in r)
+    const insertedRowIndices = new Set(
+      inserts.map(
+        (request) =>
+          (request as { insertText: { cellLocation: { rowIndex: number } } }).insertText.cellLocation
+            .rowIndex
+      )
+    )
+    expect(insertedRowIndices.size).toBeLessThan(10)
+    expect(insertedRowIndices.size).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe('findTableSlideLayout', () => {
+  it('derives height budget from element size and scaleY', () => {
+    const layout = findTableSlideLayout(
+      {
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                size: { height: { magnitude: 2_000_000, unit: 'EMU' } },
+                transform: { scaleY: 1.5 },
+                table: {
+                  tableRows: [
+                    { rowHeight: { magnitude: 200_000, unit: 'EMU' } },
+                    { rowHeight: { magnitude: 300_000, unit: 'EMU' } },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    expect(layout).toEqual({
+      heightBudgetEmu: 3_000_000,
+      templateRowHeightsEmu: [200_000, 300_000],
+    })
+  })
+})
+
+describe('computeMaxRowsThatFitOnSlide', () => {
+  it('returns fewer rows when long cell text exceeds the vertical budget', () => {
+    const longCell = 'Word '.repeat(40).trim()
+    const content = Array.from({ length: 10 }, () => ['Label', longCell])
+
+    const fitRows = computeMaxRowsThatFitOnSlide({
+      content,
+      slideLayout: {
+        heightBudgetEmu: 800_000,
+        templateRowHeightsEmu: Array.from({ length: 10 }, () => 80_000),
+      },
+      columnWidths: [700_000, 700_000],
+      minRows: 2,
+      maxRows: 10,
+    })
+
+    expect(fitRows).toBeLessThan(10)
+    expect(fitRows).toBeGreaterThanOrEqual(2)
+  })
+
+  it('wraps more text into fewer lines in wider columns', () => {
+    const narrowLines = estimateCellLineCount('abcdefghijklmnop', 500_000)
+    const wideLines = estimateCellLineCount('abcdefghijklmnop', 2_000_000)
+    expect(wideLines).toBeLessThanOrEqual(narrowLines)
   })
 })

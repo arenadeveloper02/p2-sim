@@ -71,10 +71,18 @@ interface TableCell {
 
 interface TableRowPayload {
   tableCells?: TableCell[]
+  rowHeight?: Dimension
+}
+
+interface PageElementTransform {
+  scaleX?: number
+  scaleY?: number
 }
 
 interface PresentationElement {
   objectId?: string
+  size?: { width?: Dimension; height?: Dimension }
+  transform?: PageElementTransform
   table?: {
     rows?: number
     columns?: number
@@ -82,6 +90,21 @@ interface PresentationElement {
     tableRows?: TableRowPayload[]
   }
 }
+
+/** Vertical layout of a table shape on the slide (from a fetched presentation). */
+export interface TableSlideLayout {
+  /** Rendered height of the table bounding box on the slide (EMU). */
+  heightBudgetEmu: number
+  /** Per-row heights from the template before content fill (EMU). */
+  templateRowHeightsEmu: number[]
+}
+
+/** Google Slides API: 1 pt = 12_700 EMU. Heuristic defaults for body table text. */
+const PT_TO_EMU = 12_700
+const ESTIMATED_TABLE_FONT_SIZE_PT = 11
+const ESTIMATED_LINE_HEIGHT_EMU = Math.round(ESTIMATED_TABLE_FONT_SIZE_PT * PT_TO_EMU * 1.2)
+const ESTIMATED_CHAR_WIDTH_EMU = Math.round(ESTIMATED_TABLE_FONT_SIZE_PT * PT_TO_EMU * 0.55)
+const ESTIMATED_CELL_VERTICAL_PADDING_EMU = PT_TO_EMU * 2
 
 interface PresentationSlide {
   pageElements?: PresentationElement[]
@@ -211,6 +234,100 @@ export function buildTableColumnWidthRequests(input: {
   }))
 }
 
+/** Reads table bounding height and template row heights from a fetched presentation. */
+export function findTableSlideLayout(
+  presentationData: PresentationPayload,
+  tableObjectId: string
+): TableSlideLayout | null {
+  for (const slide of presentationData.slides ?? []) {
+    for (const element of slide.pageElements ?? []) {
+      if (element.objectId !== tableObjectId || !element.table) continue
+
+      const scaleY = Math.abs(element.transform?.scaleY ?? 1)
+      const sizeHeight = readDimensionEmu(element.size?.height)
+      const templateRowHeightsEmu = (element.table.tableRows ?? []).map((row) =>
+        readDimensionEmu(row.rowHeight)
+      )
+
+      let heightBudgetEmu = sizeHeight > 0 ? sizeHeight * scaleY : 0
+      if (heightBudgetEmu <= 0 && templateRowHeightsEmu.length > 0) {
+        heightBudgetEmu = templateRowHeightsEmu.reduce((sum, height) => sum + height, 0)
+      }
+      if (heightBudgetEmu <= 0) return null
+
+      return { heightBudgetEmu, templateRowHeightsEmu }
+    }
+  }
+  return null
+}
+
+/**
+ * Estimates wrapped line count for cell text given a column width (EMU).
+ */
+export function estimateCellLineCount(text: string, columnWidthEmu: number): number {
+  if (!text) return 1
+  const usableWidth = Math.max(MIN_COLUMN_WIDTH_EMU, columnWidthEmu - PT_TO_EMU * 4)
+  const charsPerLine = Math.max(1, Math.floor(usableWidth / ESTIMATED_CHAR_WIDTH_EMU))
+  return Math.max(1, Math.ceil(text.length / charsPerLine))
+}
+
+/**
+ * Estimates rendered row height from the tallest cell in the row (EMU).
+ */
+export function estimateRowHeightEmu(row: string[], columnWidths: number[]): number {
+  let maxLines = 1
+  for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+    const columnWidth = columnWidths[columnIndex] ?? columnWidths[0] ?? MIN_COLUMN_WIDTH_EMU
+    maxLines = Math.max(maxLines, estimateCellLineCount(row[columnIndex] ?? '', columnWidth))
+  }
+  return maxLines * ESTIMATED_LINE_HEIGHT_EMU + ESTIMATED_CELL_VERTICAL_PADDING_EMU
+}
+
+/**
+ * Returns how many content rows fit in the table's vertical budget on the slide.
+ * Rows beyond this cap should be dropped (from the end) to avoid overflowing the slide.
+ */
+export function computeMaxRowsThatFitOnSlide(input: {
+  content: string[][]
+  slideLayout: TableSlideLayout
+  columnWidths: number[]
+  minRows: number
+  maxRows: number
+}): number {
+  const { content, slideLayout, minRows, maxRows } = input
+  if (content.length === 0) return minRows
+
+  const columnWidths =
+    input.columnWidths.length > 0
+      ? input.columnWidths
+      : [MIN_COLUMN_WIDTH_EMU]
+
+  const templateRows = slideLayout.templateRowHeightsEmu.length
+  const avgTemplateRowHeight =
+    templateRows > 0
+      ? slideLayout.templateRowHeightsEmu.reduce((sum, height) => sum + height, 0) / templateRows
+      : slideLayout.heightBudgetEmu / Math.max(maxRows, content.length)
+
+  let usedHeight = 0
+  let fitRows = 0
+
+  for (let rowIndex = 0; rowIndex < content.length && fitRows < maxRows; rowIndex += 1) {
+    const row = content[rowIndex] ?? []
+    const estimatedHeight = estimateRowHeightEmu(row, columnWidths)
+    const templateHeight = slideLayout.templateRowHeightsEmu[rowIndex] ?? avgTemplateRowHeight
+    const rowHeight = Math.max(estimatedHeight, templateHeight)
+
+    if (fitRows >= minRows && usedHeight + rowHeight > slideLayout.heightBudgetEmu) {
+      break
+    }
+
+    usedHeight += rowHeight
+    fitRows += 1
+  }
+
+  return Math.min(maxRows, Math.max(minRows, fitRows))
+}
+
 /** Reads table row/column counts from a fetched presentation payload. */
 export function findTableDimensions(
   presentationData: PresentationPayload,
@@ -284,14 +401,30 @@ export function buildTableContentRequests(input: {
   minColumns?: number
   cellTextEndIndexMap?: Record<string, number>
   layout?: TableColumnLayout
+  slideLayout?: TableSlideLayout
 }): TableBatchRequest[] {
   const { tableObjectId, templateRows, templateColumns } = input
   const rowCap = Math.min(input.maxRows ?? templateRows, templateRows)
   const columnCap = Math.min(input.maxColumns ?? templateColumns, templateColumns)
-  const content = normalizeTableContent(input.content, rowCap, columnCap)
+  let content = normalizeTableContent(input.content, rowCap, columnCap)
+  const minRows = Math.max(1, input.minRows ?? 1)
+
+  if (input.slideLayout && content.length > 0) {
+    const columnWidths = input.layout?.columnWidths ?? []
+    const rowsThatFit = computeMaxRowsThatFitOnSlide({
+      content,
+      slideLayout: input.slideLayout,
+      columnWidths,
+      minRows,
+      maxRows: rowCap,
+    })
+    if (rowsThatFit < content.length) {
+      content = content.slice(0, rowsThatFit)
+    }
+  }
+
   const contentRows = content.length
   const contentColumns = content.reduce((max, row) => Math.max(max, row.length), 0)
-  const minRows = Math.max(1, input.minRows ?? 1)
   const minColumns = Math.max(1, input.minColumns ?? 1)
   const keepRows = Math.min(templateRows, Math.max(contentRows, minRows))
   const keepColumns = Math.min(templateColumns, Math.max(contentColumns, minColumns))

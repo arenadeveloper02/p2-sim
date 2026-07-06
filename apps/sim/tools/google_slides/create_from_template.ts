@@ -7,6 +7,7 @@ import {
   buildTableContentRequests,
   findTableColumnLayout,
   findTableDimensions,
+  findTableSlideLayout,
 } from '@/tools/google_slides/create-from-template-table'
 import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
@@ -630,6 +631,7 @@ export const createFromTemplateTool: ToolConfig<
           }
 
           const layout = findTableColumnLayout(presData, tableObjectId)
+          const slideLayout = findTableSlideLayout(presData, tableObjectId)
 
           const tableContent = Array.isArray(content) ? content : []
           if (tableContent.length === 0) {
@@ -652,6 +654,7 @@ export const createFromTemplateTool: ToolConfig<
               minColumns: block.minColumns,
               cellTextEndIndexMap: tableCellTextEndIndexMap,
               layout: layout ?? undefined,
+              slideLayout: slideLayout ?? undefined,
             })
           )
         } else if (block.type === 'IMAGE' && content) {
