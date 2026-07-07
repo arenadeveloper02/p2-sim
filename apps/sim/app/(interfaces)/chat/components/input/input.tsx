@@ -2,7 +2,7 @@
 
 import type React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Badge, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
+import { Badge, Button, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { ArrowUp, Mic, Paperclip, X } from 'lucide-react'
@@ -229,7 +229,7 @@ export const ChatInput: React.FC<{
 
   return (
     <Tooltip.Provider>
-      <div className='fixed right-0 bottom-0 left-0 ml-[118px] flex w-full items-center justify-center bg-gradient-to-t from-[var(--bg)] to-transparent px-4 pb-4 md:px-0 md:pb-4'>
+      <div className='fixed right-0 bottom-0 left-0 flex w-full items-center justify-center bg-gradient-to-t from-[var(--bg)] to-transparent px-4 pb-4 md:px-0 md:pb-4'>
         <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
           {/* Error Messages */}
           {uploadErrors.length > 0 && (
@@ -252,7 +252,7 @@ export const ChatInput: React.FC<{
               handleKeyboardActivation(event, focusTextarea)
             }}
             className={cn(
-              'relative z-10 cursor-text rounded-2xl border border-[var(--border-1)] bg-white px-2.5 py-2',
+              'relative z-10 cursor-text rounded-2xl border border-[var(--border-1)] bg-[var(--surface-2)] px-2.5 py-2',
               isDragOver && 'border-purple-500'
             )}
             onDragEnter={(e) => {
@@ -316,7 +316,7 @@ export const ChatInput: React.FC<{
                 {attachedFiles.map((file) => (
                   <Tooltip.Root key={file.id}>
                     <Tooltip.Trigger asChild>
-                      <div className='group relative size-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-5)] dark:bg-[var(--landing-bg)]'>
+                      <div className='group relative size-[56px] flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-3)] dark:bg-[var(--landing-bg)]'>
                         {file.dataUrl ? (
                           <img
                             src={file.dataUrl}
@@ -324,23 +324,23 @@ export const ChatInput: React.FC<{
                             className='h-full w-full object-cover'
                           />
                         ) : (
-                          <div className='flex h-full w-full flex-col items-center justify-center gap-0.5 text-[var(--landing-text-muted)]'>
+                          <div className='flex h-full w-full flex-col items-center justify-center gap-0.5 text-[var(--text-muted)]'>
                             <Paperclip className='size-[18px]' />
                             <span className='max-w-[48px] truncate px-[2px] text-[9px]'>
                               {file.name.split('.').pop()}
                             </span>
                           </div>
                         )}
-                        <button
-                          type='button'
+                        <Button
+                          variant='ghost'
                           onClick={(e) => {
                             e.stopPropagation()
                             handleRemoveFile(file.id)
                           }}
-                          className='absolute top-[2px] right-[2px] flex size-[16px] items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100'
+                          className='absolute top-[2px] right-[2px] size-[16px] rounded-full bg-black/60 p-0 text-white opacity-0 hover-hover:text-white group-hover:opacity-100'
                         >
-                          <X className='size-[10px] text-white' />
-                        </button>
+                          <X className='size-[10px]' />
+                        </Button>
                       </div>
                     </Tooltip.Trigger>
                     <Tooltip.Content side='top'>
@@ -368,14 +368,14 @@ export const ChatInput: React.FC<{
               <div>
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
-                    <button
-                      type='button'
+                    <Button
+                      variant='quiet'
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isStreaming || attachedFiles.length >= 15}
                       className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
                     >
                       <Paperclip className='size-[16px]' strokeWidth={2} />
-                    </button>
+                    </Button>
                   </Tooltip.Trigger>
                   <Tooltip.Content side='top'>
                     <p>Attach files</p>
@@ -401,14 +401,14 @@ export const ChatInput: React.FC<{
                 {sttAvailable && (
                   <Tooltip.Root>
                     <Tooltip.Trigger asChild>
-                      <button
-                        type='button'
+                      <Button
+                        variant='quiet'
                         onClick={onVoiceStart}
                         disabled={isStreaming}
                         className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
                       >
                         <Mic className='size-[16px]' strokeWidth={2} />
-                      </button>
+                      </Button>
                     </Tooltip.Trigger>
                     <Tooltip.Content side='top'>
                       <p>Start voice conversation</p>
@@ -417,37 +417,29 @@ export const ChatInput: React.FC<{
                 )}
 
                 {isStreaming ? (
-                  <button
-                    type='button'
+                  <Button
+                    variant='primary'
                     onClick={onStopStreaming}
-                    className='flex size-[28px] items-center justify-center rounded-full border-0 bg-[#383838] p-0 transition-colors hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
+                    className='size-[28px] rounded-full p-0'
                     title='Stop generation'
                   >
                     <svg
-                      className='block size-[14px] fill-white dark:fill-black'
+                      className='block size-[14px] fill-current'
                       viewBox='0 0 24 24'
                       xmlns='http://www.w3.org/2000/svg'
                     >
                       <rect x='4' y='4' width='16' height='16' rx='3' ry='3' />
                     </svg>
-                  </button>
+                  </Button>
                 ) : (
-                  <button
-                    type='button'
+                  <Button
+                    variant='primary'
                     onClick={handleSubmit}
                     disabled={!canSubmit}
-                    className={cn(
-                      'flex h-[28px] w-[28px] items-center justify-center rounded-full border-0 p-0 transition-colors',
-                      canSubmit
-                        ? 'bg-[#383838] hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
-                        : 'bg-[#808080] dark:bg-[#808080]'
-                    )}
+                    className='size-[28px] rounded-full p-0'
                   >
-                    <ArrowUp
-                      className='block size-[16px] text-white dark:text-black'
-                      strokeWidth={2.25}
-                    />
-                  </button>
+                    <ArrowUp className='block size-[16px]' strokeWidth={2.25} />
+                  </Button>
                 )}
               </div>
             </div>

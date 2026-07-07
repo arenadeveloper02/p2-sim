@@ -10,6 +10,7 @@ import { AppBanner } from '@/app/workspace/[workspaceId]/app-banner'
 import { ImpersonationBanner } from '@/app/workspace/[workspaceId]/components/impersonation-banner'
 import { WorkspaceChrome } from '@/app/workspace/[workspaceId]/components/workspace-chrome'
 import { prefetchWorkspaceSidebar } from '@/app/workspace/[workspaceId]/prefetch'
+import { CustomBlocksLoader } from '@/app/workspace/[workspaceId]/providers/custom-blocks-loader'
 import { GlobalCommandsProvider } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { ProviderModelsLoader } from '@/app/workspace/[workspaceId]/providers/provider-models-loader'
 import { SettingsLoader } from '@/app/workspace/[workspaceId]/providers/settings-loader'
@@ -85,6 +86,7 @@ async function WorkspaceLayoutInner({
       <ToastProvider>
         <SettingsLoader />
         <ProviderModelsLoader />
+        <CustomBlocksLoader />
         <GlobalCommandsProvider>
           <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
             <AppBanner />

@@ -10,7 +10,6 @@ import {
   ChipModalFooter,
   ChipModalHeader,
   ChipSelect,
-  handleKeyboardActivation,
   Input,
   Label,
   Switch,
@@ -295,12 +294,11 @@ export function General() {
           <div className='flex flex-col gap-3'>
             <div className='flex items-center gap-3'>
               <div className='relative'>
-                <div
-                  role='button'
-                  tabIndex={0}
+                <button
+                  type='button'
+                  aria-label='Change profile picture'
                   className={`group relative flex size-9 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all hover-hover:bg-[var(--bg)] ${!imageUrl ? 'border border-[var(--border)]' : ''}`}
                   onClick={handleProfilePictureClick}
-                  onKeyDown={(event) => handleKeyboardActivation(event, handleProfilePictureClick)}
                 >
                   {(() => {
                     if (imageUrl) {
@@ -336,7 +334,7 @@ export function General() {
                       <Camera className='size-4 text-white' />
                     )}
                   </div>
-                </div>
+                </button>
                 <Input
                   type='file'
                   accept='image/png,image/jpeg,image/jpg'
@@ -359,6 +357,7 @@ export function General() {
                         </span>
                         <input
                           ref={inputRef}
+                          aria-label='Your name'
                           value={name}
                           onChange={(e) => setName(e.target.value)}
                           onKeyDown={handleKeyDown}

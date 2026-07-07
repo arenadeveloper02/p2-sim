@@ -1,5 +1,8 @@
 'use client'
 
+import { memo, type RefObject } from 'react'
+import { Button } from '@sim/emcn'
+import { ArrowDown } from 'lucide-react'
 import {
   type Dispatch,
   memo,
@@ -195,10 +198,10 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
           {messages.length === 0 ? (
             <div className='flex flex-col items-center justify-center py-10'>
               <div className='space-y-2 text-center'>
-                <h3 className='font-medium text-[var(--landing-text)] text-lg'>
+                <h3 className='font-medium text-[var(--text-primary)] text-lg'>
                   How can I help you today?
                 </h3>
-                <p className='text-[var(--landing-text-muted)] text-sm'>
+                <p className='text-[var(--text-muted)] text-sm'>
                   {chatConfig?.description || 'Ask me anything.'}
                 </p>
               </div>

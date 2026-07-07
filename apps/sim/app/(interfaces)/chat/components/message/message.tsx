@@ -1,7 +1,7 @@
 'use client'
 
 import { memo, useState } from 'react'
-import { Duplicate, Tooltip } from '@sim/emcn'
+import { Button, cn, Duplicate, Tooltip } from '@sim/emcn'
 import { Check, File as FileIcon, FileText, Image as ImageIcon } from 'lucide-react'
 import type {
   AssistantGeneratedImage,
@@ -134,20 +134,12 @@ export const ClientChatMessage = memo(
                     const attachmentUrl = attachment.dataUrl?.trim()
                     const getFileIcon = (type: string) => {
                       if (type.includes('pdf'))
-                        return (
-                          <FileText className='h-5 w-5 text-[var(--landing-text-muted)] md:h-6 md:w-6' />
-                        )
+                        return <FileText className='size-5 text-[var(--text-muted)] md:size-6' />
                       if (type.startsWith('image/'))
-                        return (
-                          <ImageIcon className='h-5 w-5 text-[var(--landing-text-muted)] md:h-6 md:w-6' />
-                        )
+                        return <ImageIcon className='size-5 text-[var(--text-muted)] md:size-6' />
                       if (type.includes('text') || type.includes('json'))
-                        return (
-                          <FileText className='h-5 w-5 text-[var(--landing-text-muted)] md:h-6 md:w-6' />
-                        )
-                      return (
-                        <FileIcon className='h-5 w-5 text-[var(--landing-text-muted)] md:h-6 md:w-6' />
-                      )
+                        return <FileText className='size-5 text-[var(--text-muted)] md:size-6' />
+                      return <FileIcon className='size-5 text-[var(--text-muted)] md:size-6' />
                     }
                     const formatFileSize = (bytes?: number) => {
                       if (!bytes || bytes === 0) return ''
@@ -172,13 +164,13 @@ export const ClientChatMessage = memo(
                         role={isInteractive ? 'button' : undefined}
                         aria-disabled={!isInteractive}
                         tabIndex={isInteractive ? 0 : undefined}
-                        className={`relative overflow-hidden rounded-2xl border border-[var(--border-1)] bg-[var(--landing-bg-elevated)] ${
-                          isInteractive ? 'cursor-pointer' : ''
-                        } ${
+                        className={cn(
+                          'relative overflow-hidden rounded-2xl border border-[var(--border-1)] bg-[var(--surface-2)]',
+                          isInteractive && 'cursor-pointer',
                           isImage
                             ? 'h-24 w-24 md:h-28 md:w-28'
                             : 'flex h-16 min-w-[140px] max-w-[220px] items-center gap-2 px-3 md:h-20 md:min-w-[160px] md:max-w-[240px]'
-                        }`}
+                        )}
                         onClick={(e) => {
                           if (!isInteractive) return
                           e.preventDefault()
@@ -198,19 +190,19 @@ export const ClientChatMessage = memo(
                           <img
                             src={attachmentUrl}
                             alt={attachment.name}
-                            className='h-full w-full object-cover'
+                            className='size-full object-cover'
                           />
                         ) : (
                           <>
-                            <div className='flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-[var(--landing-bg)] md:h-12 md:w-12'>
+                            <div className='flex size-10 flex-shrink-0 items-center justify-center rounded bg-[var(--surface-3)] md:size-12'>
                               {getFileIcon(attachment.type)}
                             </div>
                             <div className='min-w-0 flex-1'>
-                              <div className='truncate font-medium text-[var(--landing-text)] text-xs md:text-sm'>
+                              <div className='truncate font-medium text-[var(--text-primary)] text-xs md:text-sm'>
                                 {attachment.name}
                               </div>
                               {attachment.size && (
-                                <div className='text-[var(--landing-text-muted)] text-micro md:text-xs'>
+                                <div className='text-[var(--text-muted)] text-micro md:text-xs'>
                                   {formatFileSize(attachment.size)}
                                 </div>
                               )}
@@ -227,8 +219,8 @@ export const ClientChatMessage = memo(
             {/* Only render message bubble if there's actual text content (not just file count message) */}
             {message.content && !String(message.content).startsWith('Sent') && (
               <div className='flex justify-end'>
-                <div className='max-w-[80%] rounded-3xl bg-[var(--landing-bg-elevated)] px-4 py-3'>
-                  <div className='whitespace-pre-wrap break-words text-[var(--landing-text)] text-base leading-relaxed'>
+                <div className='max-w-[80%] rounded-3xl bg-[var(--surface-3)] px-4 py-3'>
+                  <div className='whitespace-pre-wrap break-words text-[var(--text-primary)] text-base leading-relaxed'>
                     {isJsonObject ? (
                       <pre>{JSON.stringify(message.content, null, 2)}</pre>
                     ) : (
@@ -248,7 +240,7 @@ export const ClientChatMessage = memo(
               <div>
                 <div className='break-words text-base'>
                   {isJsonObject ? (
-                    <pre className='text-[var(--landing-text)]'>
+                    <pre className='text-[var(--text-primary)]'>
                       {JSON.stringify(cleanTextContent, null, 2)}
                     </pre>
                   ) : (
@@ -269,8 +261,9 @@ export const ClientChatMessage = memo(
                   {!message.isStreaming && (
                     <Tooltip.Root delayDuration={300}>
                       <Tooltip.Trigger asChild>
-                        <button
-                          className='text-[var(--landing-text-muted)] transition-colors hover:bg-[var(--landing-bg-elevated)]'
+                        <Button
+                          variant='ghost-secondary'
+                          className='p-0'
                           onClick={() => {
                             const contentToCopy =
                               typeof cleanTextContent === 'string'
@@ -282,11 +275,11 @@ export const ClientChatMessage = memo(
                           }}
                         >
                           {isCopied ? (
-                            <Check className='h-3 w-3' strokeWidth={2} />
+                            <Check className='size-3' strokeWidth={2} />
                           ) : (
-                            <Duplicate className='h-3 w-3' />
+                            <Duplicate className='size-3' />
                           )}
-                        </button>
+                        </Button>
                       </Tooltip.Trigger>
                       <Tooltip.Content side='top' align='center' sideOffset={5}>
                         {isCopied ? 'Copied!' : 'Copy to clipboard'}

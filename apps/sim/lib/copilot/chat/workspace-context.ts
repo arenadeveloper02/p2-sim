@@ -28,6 +28,7 @@ import {
   getAccessibleOAuthCredentials,
 } from '@/lib/credentials/environment'
 import { listWorkspaceFiles } from '@/lib/uploads/contexts/workspace'
+import { listCustomBlockSummariesForWorkspace } from '@/lib/workflows/custom-blocks/operations'
 import { listCustomTools } from '@/lib/workflows/custom-tools/operations'
 import { listSkills } from '@/lib/workflows/skills/operations'
 import {
@@ -85,6 +86,7 @@ export interface WorkspaceMdData {
   envVariables: string[]
   tasks?: Array<{ id: string; title: string; updatedAt: Date }>
   customTools?: Array<{ id: string; name: string }>
+  customBlocks?: Array<{ type: string; name: string; description?: string }>
   mcpServers?: Array<{ id: string; name: string; url?: string | null; enabled: boolean }>
   skills?: Array<{ id: string; name: string; description: string }>
   jobs?: Array<{
@@ -291,6 +293,13 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
     sections.push(`## Custom Tools (${data.customTools.length})\n${lines.join('\n')}`)
   }
 
+  if (data.customBlocks && data.customBlocks.length > 0) {
+    const lines = [...data.customBlocks]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((b) => `- **${b.name}** (${b.type})${b.description ? ` — ${b.description}` : ''}`)
+    sections.push(`## Custom Blocks (${data.customBlocks.length})\n${lines.join('\n')}`)
+  }
+
   if (data.mcpServers && data.mcpServers.length > 0) {
     const lines = [...data.mcpServers].sort(byNameThenId).map((s) => {
       const status = s.enabled ? 'enabled' : 'disabled'
@@ -388,6 +397,7 @@ async function buildWorkspaceMdData(
       mcpServerRows,
       skillRows,
       jobRows,
+      customBlockSummaries,
     ] = await Promise.all([
       getUsersWithPermissions(workspaceId),
 
@@ -473,6 +483,8 @@ async function buildWorkspaceMdData(
             isNull(workflowSchedule.archivedAt)
           )
         ),
+
+      listCustomBlockSummariesForWorkspace(workspaceId),
     ])
 
     const kbIds = kbs.map((kb) => kb.id)
@@ -553,6 +565,7 @@ async function buildWorkspaceMdData(
       envVariables: [...new Set(envCredentials.map((c) => c.envKey).filter(Boolean))] as string[],
       hubspotSharedAccounts: hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
       customTools: customTools.map((t) => ({ id: t.id, name: t.title })),
+      customBlocks: customBlockSummaries,
       mcpServers: mcpServerRows,
       skills: skillRows.map((s) => ({ id: s.id, name: s.name, description: s.description })),
       jobs: jobRows
