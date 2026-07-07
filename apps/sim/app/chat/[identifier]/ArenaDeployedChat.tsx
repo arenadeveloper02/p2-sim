@@ -1584,6 +1584,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           workflowId={identifier}
           showReRun={customFields.length > 0}
           showFeedbackView={showFeedbackView}
+          isGoldenQueriesOpen={isGoldenQueriesOpen}
+          showLandingView={showLandingView}
           onReRun={handleRerun}
           onViewFeedback={handleViewFeedback}
           onViewGoldenQueries={handleViewGoldenQueries}
@@ -1610,6 +1612,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           workflowId={identifier}
           showReRun={customFields.length > 0}
           showFeedbackView={showFeedbackView}
+          isGoldenQueriesOpen={isGoldenQueriesOpen}
+          showLandingView={showLandingView}
           onReRun={handleRerun}
           onViewFeedback={handleViewFeedback}
           onViewGoldenQueries={handleViewGoldenQueries}

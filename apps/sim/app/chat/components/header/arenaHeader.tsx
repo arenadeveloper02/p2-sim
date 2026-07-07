@@ -48,7 +48,7 @@ export function ArenaChatHeader({
   return (
     <nav
       aria-label='Chat navigation'
-      className='grid h-12 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-[var(--border-1)] border-b px-4'
+      className='grid h-12 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 px-4'
       style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
     >
       <div className='flex items-center'>

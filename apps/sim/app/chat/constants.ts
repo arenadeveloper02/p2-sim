@@ -20,4 +20,7 @@ export const DEPLOYED_CHAT_CANVAS_BG = '#F3F8FE'
 /** Deployed chat input placeholder */
 export const DEPLOYED_CHAT_INPUT_PLACEHOLDER = 'Ask Vimi...'
 
+/** Active thread label color in the deployed chat sidebar */
+export const DEPLOYED_CHAT_ACTIVE_THREAD_COLOR = '#155CBA'
+
 export type ChatErrorType = keyof typeof CHAT_ERROR_MESSAGES

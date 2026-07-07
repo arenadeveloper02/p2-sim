@@ -61,6 +61,8 @@ interface LeftNavThreadProps {
   onReRun?: () => void
   onViewFeedback?: () => void
   onViewGoldenQueries?: () => void
+  isGoldenQueriesOpen?: boolean
+  showLandingView?: boolean
   isCollapsed?: boolean
   isMobileOpen?: boolean
   onCloseMobile?: () => void
@@ -71,12 +73,39 @@ interface LeftNavThreadProps {
 
 type SidebarActionIcon = React.ComponentType<{ className?: string }>
 
+function sidebarRowClass(isActive: boolean, disabled = false) {
+  return cn(
+    'group flex min-h-8 cursor-pointer items-center gap-1 rounded-lg bg-white px-2 py-1 font-normal transition-colors',
+    isActive && 'shadow-sm',
+    disabled && 'cursor-not-allowed opacity-50'
+  )
+}
+
+function sidebarRowIconClass(isActive: boolean) {
+  return cn(
+    'ml-1 size-4 shrink-0',
+    isActive
+      ? 'text-[#155CBA]'
+      : 'text-[var(--text-body)] group-hover:text-[#155CBA]'
+  )
+}
+
+function sidebarRowLabelClass(isActive: boolean) {
+  return cn(
+    'truncate text-sm',
+    isActive
+      ? 'font-medium text-[#155CBA]'
+      : 'font-normal text-[var(--text-body)] group-hover:font-medium group-hover:text-[#155CBA]'
+  )
+}
+
 interface SidebarActionButtonProps {
   icon: SidebarActionIcon
   label: string
   onClick: () => void
   disabled?: boolean
   collapsed?: boolean
+  isActive?: boolean
 }
 
 function SidebarActionButton({
@@ -85,21 +114,23 @@ function SidebarActionButton({
   onClick,
   disabled = false,
   collapsed = false,
+  isActive = false,
 }: SidebarActionButtonProps) {
   const button = (
-    <Button
+    <button
+      type='button'
       className={cn(
-        'border-none bg-[var(--surface-1)] font-normal text-[var(--text-body)] text-sm hover:bg-[var(--surface-1)] hover:shadow-md',
-        collapsed ? 'size-8 justify-center rounded p-0' : 'h-8 w-full justify-start gap-2 rounded'
+        sidebarRowClass(isActive, disabled),
+        collapsed ? 'size-8 justify-center px-0' : 'w-full'
       )}
-      variant='outline'
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
+      aria-current={isActive ? 'true' : undefined}
     >
-      <Icon className='size-4 shrink-0 text-[var(--text-icon)]' />
-      {!collapsed && label}
-    </Button>
+      <Icon className={cn(sidebarRowIconClass(isActive), collapsed && 'ml-0')} />
+      {!collapsed && <span className={sidebarRowLabelClass(isActive)}>{label}</span>}
+    </button>
   )
 
   if (!collapsed) return button
@@ -116,7 +147,7 @@ function SidebarActionButton({
 
 function ThreadSkeleton() {
   return (
-    <div className='flex h-8 animate-pulse items-center gap-2 rounded bg-[var(--surface-1)] px-2'>
+    <div className='flex min-h-8 animate-pulse items-center gap-2 rounded-lg bg-white px-2 py-1'>
       <div className='size-4 rounded bg-[var(--surface-3)]' />
       <div className='h-3 flex-1 rounded bg-[var(--surface-3)]' />
     </div>
@@ -166,7 +197,7 @@ function ThreadRow({
 
   if (isRenaming) {
     return (
-      <div className='flex h-8 items-center gap-1 rounded bg-[var(--surface-1)] px-1'>
+      <div className='flex min-h-8 items-center gap-1 rounded-lg bg-white px-2 py-1'>
         <ChipInput
           ref={renameInputRef}
           value={renameValue}
@@ -191,12 +222,7 @@ function ThreadRow({
 
   return (
     <div
-      className={cn(
-        'group flex h-8 cursor-pointer items-center gap-1 rounded px-1 transition-colors',
-        isActive
-          ? 'bg-[var(--surface-1)] font-semibold shadow-sm'
-          : 'bg-transparent hover:bg-[var(--surface-1)]'
-      )}
+      className={sidebarRowClass(isActive)}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -209,18 +235,13 @@ function ThreadRow({
       aria-label={`Open chat: ${thread.title || 'Untitled chat'}`}
       aria-current={isActive ? 'true' : undefined}
     >
-      <MessageSquareText
-        className={cn(
-          'ml-1 size-4 shrink-0',
-          isActive ? 'text-[var(--brand-primary-hex)]' : 'text-[var(--text-icon)]'
-        )}
-      />
+      <MessageSquareText className={sidebarRowIconClass(isActive)} />
 
       <div className='min-w-0 flex-1'>
         <Tooltip.Provider>
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
-              <div className='truncate text-[var(--text-body)] text-sm'>
+              <div className={sidebarRowLabelClass(isActive)}>
                 {thread.title || 'Untitled chat'}
               </div>
             </Tooltip.Trigger>
@@ -315,6 +336,8 @@ const LeftNavThread = ({
   onReRun,
   onViewFeedback,
   onViewGoldenQueries,
+  isGoldenQueriesOpen = false,
+  showLandingView = false,
   isCollapsed = false,
   isMobileOpen = false,
   onCloseMobile,
@@ -398,20 +421,21 @@ const LeftNavThread = ({
   )
 
   const actionButtonsDisabled = isLoading || isStreaming
+  const isNewChatActive = showLandingView && !showFeedbackView && !isGoldenQueriesOpen
 
   const primaryActionButtons = (collapsed: boolean) => (
     <div className={cn('flex flex-col gap-2', collapsed && 'items-center')}>
       {showReRun && onReRun && !collapsed && (
-        <Button
-          className='h-8 w-full justify-start gap-2 rounded border-none bg-[var(--surface-1)] font-normal text-[var(--text-body)] text-sm hover:bg-[var(--surface-1)] hover:shadow-md'
-          variant='outline'
+        <button
+          type='button'
+          className={cn(sidebarRowClass(false, actionButtonsDisabled), 'w-full')}
           onClick={onReRun}
           disabled={actionButtonsDisabled}
           title='Re-run workflow with new input values'
         >
-          <RefreshCw className='size-4 text-[var(--text-icon)]' />
-          Re-Run
-        </Button>
+          <RefreshCw className={sidebarRowIconClass(false)} />
+          <span className={sidebarRowLabelClass(false)}>Re-Run</span>
+        </button>
       )}
       <SidebarActionButton
         collapsed={collapsed}
@@ -419,13 +443,15 @@ const LeftNavThread = ({
         label='New Chat'
         onClick={() => onNewChat?.()}
         disabled={actionButtonsDisabled}
+        isActive={isNewChatActive}
       />
       <SidebarActionButton
         collapsed={collapsed}
         icon={Sparkles}
         label='Golden Queries'
         onClick={() => onViewGoldenQueries?.()}
-        disabled={actionButtonsDisabled || showFeedbackView}
+        disabled={actionButtonsDisabled}
+        isActive={isGoldenQueriesOpen}
       />
       <SidebarActionButton
         collapsed={collapsed}
@@ -433,6 +459,7 @@ const LeftNavThread = ({
         label='View Feedback'
         onClick={() => onViewFeedback?.()}
         disabled={actionButtonsDisabled}
+        isActive={showFeedbackView}
       />
     </div>
   )
@@ -495,7 +522,7 @@ const LeftNavThread = ({
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder='Search chats...'
           icon={Search}
-          className='h-8'
+          className='h-8 rounded-lg border-none bg-white shadow-sm'
           aria-label='Search chats'
         />
       </div>
@@ -520,13 +547,17 @@ const LeftNavThread = ({
         ) : groupedThreads.length > 0 ? (
           <div className='flex flex-col gap-3'>
             {groupedThreads.map((group) => (
-              <div key={group.label} className='flex flex-col gap-1'>
+              <div key={group.label} className='flex flex-col gap-2'>
                 <p className='px-1 text-[var(--text-muted)] text-xs'>{group.label}</p>
                 {group.threads.map((thread) => (
                   <ThreadRow
                     key={thread.chatId}
                     thread={thread}
-                    isActive={currentChatId === thread.chatId}
+                    isActive={
+                      currentChatId === thread.chatId &&
+                      !showFeedbackView &&
+                      !isGoldenQueriesOpen
+                    }
                     isRenaming={renamingChatId === thread.chatId}
                     renameValue={renameValue}
                     isStreaming={isStreaming}

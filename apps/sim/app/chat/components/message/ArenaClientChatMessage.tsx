@@ -940,8 +940,8 @@ export const ArenaClientChatMessage = memo(
             {hasUserText && (
               <div className='flex justify-end'>
                 <div className='max-w-[94%]'>
-                  <div className='rounded-3xl bg-[#F4F4F4] px-4 py-3 dark:bg-gray-600'>
-                    <div className='whitespace-pre-wrap break-words text-base text-gray-800 leading-relaxed dark:text-gray-100'>
+                  <div className='rounded-3xl bg-white px-4 py-3 shadow-sm'>
+                    <div className='whitespace-pre-wrap break-words text-base text-[#1E293B] leading-relaxed'>
                       {isJsonObject ? (
                         <span>{JSON.stringify(message.content as string)}</span>
                       ) : (
