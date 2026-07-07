@@ -45,6 +45,9 @@ export const developmentEditAppTool: ToolConfig<
       userInput: params.userInput,
       repoName: params.repoName,
       referenceImage: params.referenceImage,
+      workspaceId: params._context?.workspaceId,
+      workflowId: params._context?.workflowId,
+      executionId: params._context?.executionId,
     }),
   },
 

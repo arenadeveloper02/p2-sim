@@ -914,6 +914,28 @@ async function applyHostedKeyCostToResult(
 
 import { normalizeToolId } from '@/tools/normalize'
 
+async function maybeRecordToolModelUsage(
+  toolId: string,
+  result: ToolResponse,
+  scope: ToolExecutionScope,
+  params: Record<string, unknown>
+): Promise<void> {
+  if (typeof window !== 'undefined' || !result.success) {
+    return
+  }
+
+  const normalizedToolId = normalizeToolId(toolId)
+  if (normalizedToolId !== 'figma_to_html_ai') {
+    return
+  }
+
+  const { recordFigmaToHtmlAiModelUsage } = await import(
+    '@/lib/billing/core/record-model-usage.server'
+  )
+  const fileKey = typeof params.fileKey === 'string' ? params.fileKey : undefined
+  await recordFigmaToHtmlAiModelUsage(result, scope, fileKey)
+}
+
 /**
  * Maximum request body sizes before we fail with a clear error.
  * Internal Next.js routes can reject/truncate JSON bodies around 10MB, which otherwise
@@ -1484,6 +1506,8 @@ export async function executeTool(
         hostedKeyMetrics.recordFailed({ ...hostedKeyForMetrics, reason: 'other' })
       }
 
+      await maybeRecordToolModelUsage(toolId, finalResult, scope, contextParams)
+
       const strippedOutput = postProcessToolOutput(normalizedToolId, finalResult.output ?? {})
 
       return {
@@ -1558,6 +1582,8 @@ export async function executeTool(
     } else if (hostedKeyForMetrics) {
       hostedKeyMetrics.recordFailed({ ...hostedKeyForMetrics, reason: 'other' })
     }
+
+    await maybeRecordToolModelUsage(toolId, finalResult, scope, contextParams)
 
     const strippedOutput = postProcessToolOutput(normalizedToolId, finalResult.output ?? {})
 

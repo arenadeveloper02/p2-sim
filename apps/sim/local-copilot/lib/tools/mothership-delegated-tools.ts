@@ -9,6 +9,7 @@ import { getRegisteredServerToolNames } from '@/lib/copilot/tools/server/router'
 import { TOOL_RUNTIME_SCHEMAS } from '@/lib/copilot/generated/tool-schemas-v1'
 import type { LocalCopilotToolDefinition, LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
+import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
 
 const logger = createLogger('LocalCopilotMothershipDelegatedTools')
 
@@ -279,17 +280,11 @@ export function buildMothershipDelegatedToolDefinitions(): LocalCopilotToolDefin
 async function executeCopilotServerTool(
   toolName: string,
   args: Record<string, unknown>,
-  ctx: ToolExecutionContext
+  ctx: ToolExecutionContext,
+  workflowId?: string
 ): Promise<ToolExecutionResult> {
   const handler = createServerToolHandler(toolName)
-  const result = await handler(args, {
-    userId: ctx.userId,
-    workspaceId: ctx.workspaceId,
-    userPermission: ctx.userPermission ?? 'write',
-    chatId: ctx.chatId,
-    abortSignal: ctx.abortSignal,
-    copilotToolExecution: true,
-  })
+  const result = await handler(args, toCopilotServerToolContext(ctx, workflowId))
 
   return {
     toolName,
@@ -350,7 +345,7 @@ export async function executeMothershipDelegatedTool(
   }
 
   if (COPILOT_SERVER_TOOL_NAMES.has(toolName)) {
-    const result = await executeCopilotServerTool(toolName, enrichedArgs, ctx)
+    const result = await executeCopilotServerTool(toolName, enrichedArgs, ctx, workflowId)
     if (!result.success) {
       logger.warn('Copilot server tool failed', { toolName, error: result.error })
     }

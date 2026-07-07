@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { getMaxOutputTokensForModel } from '@/providers/utils'
-import type { ToolConfig } from '@/tools/types'
+import type { ToolConfig, WorkflowToolExecutionContext } from '@/tools/types'
 
 const logger = createLogger('FigmaToHTMLAI')
 
@@ -17,6 +17,8 @@ export interface FigmaToHTMLAIParams {
   responsive?: boolean
   outputFormat?: 'html' | 'react' | 'vue'
   customPrompt?: string
+  /** Injected at runtime by the tool executor for billing attribution. */
+  _context?: WorkflowToolExecutionContext
 }
 
 // Response interface
@@ -29,6 +31,8 @@ export interface FigmaToHTMLAIResponse {
       processingTime: number
       aiModel: string
       tokensUsed: number
+      inputTokens: number
+      outputTokens: number
       combinedHtml: string
     }
   }
@@ -142,7 +146,8 @@ async function callAIService(
 ): Promise<{
   combinedHtml: string
   model: string
-  tokens: number
+  inputTokens: number
+  outputTokens: number
 }> {
   const startTime = Date.now()
 
@@ -257,7 +262,8 @@ async function callAIService(
     return {
       combinedHtml: textContent.text,
       model: FIGMA_AI_MODEL,
-      tokens: message.usage?.output_tokens || 0,
+      inputTokens: message.usage?.input_tokens ?? 0,
+      outputTokens: message.usage?.output_tokens ?? 0,
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
@@ -269,7 +275,8 @@ async function callAIService(
     return {
       combinedHtml: fallbackHtml,
       model: 'fallback',
-      tokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
     }
   }
 }
@@ -377,7 +384,9 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
             nodeId: params.nodeId,
             processingTime,
             aiModel: aiResult.model,
-            tokensUsed: aiResult.tokens,
+            tokensUsed: aiResult.inputTokens + aiResult.outputTokens,
+            inputTokens: aiResult.inputTokens,
+            outputTokens: aiResult.outputTokens,
             combinedHtml: cleanedHtml,
           },
         },

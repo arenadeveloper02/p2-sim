@@ -30,9 +30,15 @@ export function useCopilotBackendPreference(): {
     writeCopilotBackendPreference(value)
   }, [])
 
+  const effectiveBackend: CopilotBackendPreference = !isSuccess
+    ? copilotBackend
+    : canSwitchBackend
+      ? copilotBackend
+      : 'external'
+
   return {
     canSwitchBackend,
-    copilotBackend: canSwitchBackend ? copilotBackend : 'external',
+    copilotBackend: effectiveBackend,
     setCopilotBackend,
   }
 }

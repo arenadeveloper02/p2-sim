@@ -246,7 +246,7 @@ export function formatToolResultForLlm(toolName: string, result: unknown): strin
   ) {
     formatted.needsFollowUpPopulate = true
     formatted.followUpHint =
-      'New workflow created. Call edit_workflow immediately with add operations to populate blocks and connections before finishing.'
+      'New workflow created. Call get_blocks_metadata(["agent","start_trigger"]) then edit_workflow: add blocks and wire Start → downstream via connections on the Start block (startBlockId). Example: edit start block with connections: { source: "<agent-block-id>" }.'
   }
 
   return JSON.stringify(formatted)

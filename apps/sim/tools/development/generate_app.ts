@@ -54,6 +54,9 @@ export const developmentGenerateAppTool: ToolConfig<
       repoName: params.repoName,
       privateRepo: params.privateRepo,
       referenceImage: params.referenceImage,
+      workspaceId: params._context?.workspaceId,
+      workflowId: params._context?.workflowId,
+      executionId: params._context?.executionId,
     }),
   },
 

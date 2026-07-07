@@ -75,6 +75,8 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
       const decoder = new TextDecoder()
       let buffer = ''
       const toolCalls = new Map<number, { id: string; name: string; arguments: string }>()
+      let inputTokens = 0
+      let outputTokens = 0
 
       while (true) {
         const { done, value } = await reader.read()
@@ -101,6 +103,13 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
 
           try {
             const data = JSON.parse(dataLine) as Record<string, unknown>
+
+            if (eventType === 'message_start') {
+              const message = data.message as { usage?: { input_tokens?: number } } | undefined
+              if (typeof message?.usage?.input_tokens === 'number') {
+                inputTokens = message.usage.input_tokens
+              }
+            }
 
             if (eventType === 'content_block_delta') {
               const delta = data.delta as Record<string, unknown> | undefined
@@ -129,6 +138,10 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
 
             if (eventType === 'message_delta') {
               const delta = data.delta as { stop_reason?: string } | undefined
+              const usage = data.usage as { output_tokens?: number } | undefined
+              if (typeof usage?.output_tokens === 'number') {
+                outputTokens = usage.output_tokens
+              }
               if (delta?.stop_reason === 'tool_use') {
                 for (const call of toolCalls.values()) {
                   yield { type: 'tool_call', toolCall: call }
@@ -136,12 +149,20 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
                 toolCalls.clear()
               }
               if (delta?.stop_reason === 'end_turn') {
-                yield { type: 'done', finishReason: 'stop' }
+                yield {
+                  type: 'done',
+                  finishReason: 'stop',
+                  usage: { inputTokens, outputTokens },
+                }
               }
             }
 
             if (eventType === 'message_stop') {
-              yield { type: 'done', finishReason: 'stop' }
+              yield {
+                type: 'done',
+                finishReason: 'stop',
+                usage: { inputTokens, outputTokens },
+              }
             }
           } catch {
             continue

@@ -42,6 +42,7 @@ import type {
   StreamingContext,
 } from '@/lib/copilot/request/types'
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
+import { hasCopilotApiKey } from '@/lib/copilot/server/copilot-api-keys'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
 import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
@@ -183,6 +184,12 @@ export async function runCopilotLifecycle(
         lifecycleOptions
       )
     } else {
+      if (!hasCopilotApiKey()) {
+        throw new CopilotBackendError(
+          'Cloud copilot is not configured on this deployment (missing COPILOT_API_KEY). Switch the chat input toggle to Local to use Arena Copilot with your ANTHROPIC_API_KEY, or add COPILOT_API_KEY for Sim Cloud Mothership.',
+          { status: 401, body: 'Missing COPILOT_API_KEY' }
+        )
+      }
       await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
     }
 

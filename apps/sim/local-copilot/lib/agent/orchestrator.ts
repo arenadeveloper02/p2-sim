@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { buildLocalCopilotContext, contextToPromptJson } from '@/local-copilot/lib/context/build-context'
 import {
@@ -77,7 +78,13 @@ Rules:
   - Only call \`create_workflow\` when the user clearly wants a brand-new workflow with a distinct name and purpose. Pass \`confirmNewWorkflow: true\` in that case.
   - If a workflow already exists with the same or similar name, run or edit it — do not duplicate it.
 - On the workspace home chat there may be no workflow open — still prefer running or editing \`workspaceWorkflows\` entries before creating new ones.
-- After create_workflow succeeds (only when truly new), immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId.
+- After create_workflow succeeds (only when truly new), immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId and startBlockId.
+- Building workflows with edit_workflow (CRITICAL — follow exactly to avoid retry loops):
+  - Call get_blocks_metadata with the block types you need (e.g. \`["agent","start_trigger"]\`) before the first edit — use the returned input field ids verbatim in params.inputs.
+  - Never add edges as separate operations or with type "edge". Connections live on the SOURCE block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id.
+  - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. Exa web search tool entry: \`{ type: "exa", title: "Exa Search", toolId: "exa_search", usageControl: "auto" }\`.
+  - Prefer one edit_workflow call with all add operations plus a final edit on the Start block for connections. deferredConnections in results are normal for forward references within the same batch — do not re-issue them unless the target id was wrong.
+  - If workflowLintMessage reports orphan blocks, fix connections on the Start (or upstream) block before run_workflow.
 - Block output references (CRITICAL):
   - Wire upstream block outputs using angle-bracket tags with the block's **display name**, never its UUID: \`<My Agent.content>\`, not \`<bd80a5a8-ef94-43ef-afcf-f6daa926495f.content>\`.
   - Before wiring inputs (e.g. Gmail body, Slack message, API payload), call \`get_block_upstream_references\` for the target block and use the exact tags returned (e.g. \`agent1.content\` for a default agent without structured outputs).
@@ -266,6 +273,8 @@ export async function* runLocalCopilotAgent(
 
   for (let round = 0; round < maxToolRounds; round++) {
     const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
+    let roundInputTokens = 0
+    let roundOutputTokens = 0
 
     for await (const chunk of provider.chatCompletionStream({
       model: config.model,
@@ -282,6 +291,25 @@ export async function* runLocalCopilotAgent(
       if (chunk.type === 'tool_call' && chunk.toolCall) {
         pendingToolCalls.push(chunk.toolCall)
       }
+      if (chunk.type === 'done' && chunk.usage) {
+        roundInputTokens = chunk.usage.inputTokens
+        roundOutputTokens = chunk.usage.outputTokens
+      }
+    }
+
+    if (roundInputTokens > 0 || roundOutputTokens > 0) {
+      await recordModelUsage({
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        workflowId: params.workflowId,
+        model: config.model,
+        inputTokens: roundInputTokens,
+        outputTokens: roundOutputTokens,
+        source: 'copilot',
+        sourceReference: conversationId
+          ? `local-copilot:${conversationId}:round-${round}`
+          : `local-copilot:${params.workspaceId}:round-${round}`,
+      })
     }
 
     if (pendingToolCalls.length === 0) {

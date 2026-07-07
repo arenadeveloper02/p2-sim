@@ -1,16 +1,20 @@
-import type { ToolResponse } from '@/tools/types'
+import type { ToolResponse, WorkflowToolExecutionContext } from '@/tools/types'
 
 export interface DevelopmentGenerateAppParams {
   userInput: string
   repoName?: string
   privateRepo?: boolean
   referenceImage?: object
+  /** Injected at runtime by the tool executor for billing attribution. */
+  _context?: WorkflowToolExecutionContext
 }
 
 export interface DevelopmentEditAppParams {
   userInput: string
   repoName: string
   referenceImage?: object
+  /** Injected at runtime by the tool executor for billing attribution. */
+  _context?: WorkflowToolExecutionContext
 }
 
 export interface DevelopmentGenerateAppResponse extends ToolResponse {

@@ -64,6 +64,7 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
         tools: toOpenAiTools(request.tools),
         tool_choice: request.tools?.length ? 'auto' : undefined,
         stream: true,
+        stream_options: { include_usage: true },
         temperature: request.temperature ?? 0.2,
         max_tokens: request.maxTokens ?? 4096,
       }
@@ -92,6 +93,8 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
       const decoder = new TextDecoder()
       let buffer = ''
       const toolCalls = new Map<number, { id: string; name: string; arguments: string }>()
+      let inputTokens = 0
+      let outputTokens = 0
 
       while (true) {
         const { done, value } = await reader.read()
@@ -106,7 +109,11 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
           if (!trimmed.startsWith('data:')) continue
           const payload = trimmed.slice(5).trim()
           if (payload === '[DONE]') {
-            yield { type: 'done', finishReason: 'stop' }
+            yield {
+              type: 'done',
+              finishReason: 'stop',
+              usage: { inputTokens, outputTokens },
+            }
             continue
           }
 
@@ -123,6 +130,15 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
                 }
                 finish_reason?: string
               }>
+              usage?: {
+                prompt_tokens?: number
+                completion_tokens?: number
+              }
+            }
+
+            if (parsed.usage) {
+              inputTokens = parsed.usage.prompt_tokens ?? inputTokens
+              outputTokens = parsed.usage.completion_tokens ?? outputTokens
             }
 
             const choice = parsed.choices?.[0]
@@ -157,7 +173,11 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
             }
 
             if (choice.finish_reason === 'stop') {
-              yield { type: 'done', finishReason: 'stop' }
+              yield {
+                type: 'done',
+                finishReason: 'stop',
+                usage: { inputTokens, outputTokens },
+              }
             }
           } catch {
             continue

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'fs'
 import { mkdir, rm, writeFile } from 'fs/promises'
 import { dirname, join, normalize, relative, resolve } from 'path'
@@ -5,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
@@ -66,6 +68,39 @@ import {
 import { supportsTemperature } from '@/providers/utils'
 
 const logger = createLogger('NextjsAppGenerator')
+
+type LlmUsageAccumulator = Map<string, { inputTokens: number; outputTokens: number }>
+
+const llmUsageStorage = new AsyncLocalStorage<LlmUsageAccumulator>()
+
+function runWithLlmUsageTracking<T>(fn: () => Promise<T>): Promise<T> {
+  return llmUsageStorage.run(new Map(), fn)
+}
+
+function trackLlmUsage(
+  model: string,
+  usage: { input_tokens?: number; output_tokens?: number } | undefined
+): void {
+  if (!usage) return
+  const inputTokens = usage.input_tokens ?? 0
+  const outputTokens = usage.output_tokens ?? 0
+  if (inputTokens <= 0 && outputTokens <= 0) return
+
+  const acc = llmUsageStorage.getStore()
+  if (!acc) return
+
+  const existing = acc.get(model) ?? { inputTokens: 0, outputTokens: 0 }
+  acc.set(model, {
+    inputTokens: existing.inputTokens + inputTokens,
+    outputTokens: existing.outputTokens + outputTokens,
+  })
+}
+
+function getTrackedLlmUsage(): ModelUsageByModel | undefined {
+  const acc = llmUsageStorage.getStore()
+  if (!acc || acc.size === 0) return undefined
+  return Object.fromEntries(acc)
+}
 
 const GENERATED_APPS_DIR = 'generated-apps'
 /** Creation and edit/repair both use Claude Fable. Override via DEVELOPMENT_ANTHROPIC_CREATION_MODEL / DEVELOPMENT_ANTHROPIC_EDIT_MODEL. */
@@ -241,6 +276,8 @@ export interface GenerateNextjsAppResult {
   databaseProvisionError?: string
   error?: string
   mode?: 'generate' | 'edit'
+  /** Aggregated LLM token usage keyed by model id (for usage_log billing). */
+  llmUsage?: ModelUsageByModel
 }
 
 interface LlmAppSpec {
@@ -597,7 +634,7 @@ async function requestStructuredLlm(
   purpose: DevelopmentModelPurpose
 ): Promise<Anthropic.Messages.Message> {
   const modelId = getDevelopmentModelId(purpose)
-  return createAnthropicMessage(anthropic, {
+  const message = await createAnthropicMessage(anthropic, {
     model: modelId,
     max_tokens: getMaxOutputTokens(modelId),
     ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
@@ -610,6 +647,8 @@ async function requestStructuredLlm(
       },
     },
   })
+  trackLlmUsage(modelId, message.usage)
+  return message
 }
 
 function augmentSystemPromptForReferenceImage(
@@ -1572,6 +1611,17 @@ export async function generateNextjsApp(
     return { success: false, error: 'userInput is required' }
   }
 
+  return runWithLlmUsageTracking(async () => {
+    const result = await generateNextjsAppInner(input, userInput)
+    const llmUsage = getTrackedLlmUsage()
+    return llmUsage ? { ...result, llmUsage } : result
+  })
+}
+
+async function generateNextjsAppInner(
+  input: GenerateNextjsAppInput,
+  userInput: string
+): Promise<GenerateNextjsAppResult> {
   try {
     const generationStartedAt = Date.now()
     let spec = await generateAppSpecWithLlm(
@@ -2126,6 +2176,18 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
     return { success: false, error: 'repoName is required' }
   }
 
+  return runWithLlmUsageTracking(async () => {
+    const result = await editNextjsAppInner(input, userInput, repoName)
+    const llmUsage = getTrackedLlmUsage()
+    return llmUsage ? { ...result, llmUsage } : result
+  })
+}
+
+async function editNextjsAppInner(
+  input: EditNextjsAppInput,
+  userInput: string,
+  repoName: string
+): Promise<GenerateNextjsAppResult> {
   try {
     const { ensureLocalGeneratedApp } = await import('@/lib/development/ensure-local-generated-app')
     const { readGeneratedAppFiles } = await import('@/lib/development/read-generated-app-files')

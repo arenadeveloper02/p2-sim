@@ -26,7 +26,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'edit_workflow',
     description:
-      'Applies block/edge operations to a workflow (add, edit, delete blocks). Requires workflowId from create_workflow or an open workflow.',
+      'Applies block operations to a workflow (add, edit, delete). Requires workflowId from create_workflow or an open workflow. CONNECTIONS: never add edges as separate operations or type "edge". Wire on the SOURCE block via params.connections — e.g. { source: "<target-block-id>" } on the Start block to connect Start → Agent. Branch blocks use handle keys from get_blocks_metadata. Pass subblock values under params.inputs (flat keys), not params.subBlocks. Call get_blocks_metadata(["agent","start_trigger"]) for exact field names before first edit.',
     parameters: {
       type: 'object',
       properties: {
@@ -36,7 +36,8 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
         },
         operations: {
           type: 'array',
-          description: 'Edit operations (add, edit, delete, insert_into_subflow, extract_from_subflow)',
+          description:
+            'Edit operations. Example Start→Agent in one call: (1) add agent block with type, name, inputs; (2) edit start block (use startBlockId from create_workflow) with connections: { source: "<agent-block-id>" }.',
           items: {
             type: 'object',
             properties: {
@@ -45,13 +46,34 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
                 type: 'string',
                 enum: ['add', 'edit', 'delete', 'insert_into_subflow', 'extract_from_subflow'],
               },
-              params: { type: 'object' },
+              params: {
+                type: 'object',
+                description:
+                  'add/edit params: type, name, inputs (subblock values), connections (outgoing edges from this block). Agent inputs use messages (JSON array of {role, content}), model, tools — not systemPrompt/userPrompt.',
+              },
             },
             required: ['operation_type', 'block_id'],
           },
         },
       },
       required: ['operations'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_blocks_metadata',
+    description:
+      'Returns exact subblock field names, types, and examples for block types (e.g. ["agent","start_trigger","exa"]). Call before edit_workflow when configuring blocks — avoids guessing field names like systemPrompt vs messages.',
+    parameters: {
+      type: 'object',
+      properties: {
+        blockIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Block type ids from get_available_blocks, e.g. ["agent","start_trigger"]',
+        },
+      },
+      required: ['blockIds'],
       additionalProperties: false,
     },
   },

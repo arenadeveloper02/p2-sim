@@ -10,15 +10,23 @@ import {
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
 import { getToolDefinition } from '@/local-copilot/lib/tools/definitions'
+import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
 import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
 } from '@/local-copilot/lib/tools/mothership-delegated-tools'
 import { executeTool as executeCopilotRegistryTool } from '@/lib/copilot/tool-executor/executor'
 import { ensureHandlersRegistered } from '@/lib/copilot/tool-executor/register-handlers'
+import { createServerToolHandler } from '@/lib/copilot/tools/registry/server-tool-adapter'
+import {
+  formatWorkflowLintMessage,
+  hasWorkflowLintIssues,
+  lintEditedWorkflowState,
+} from '@/lib/copilot/tools/server/workflow/edit-workflow/lint'
 import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
+import type { WorkflowState } from '@sim/workflow-types/workflow'
 
 const logger = createLogger('LocalCopilotToolExecutor')
 
@@ -211,6 +219,32 @@ export async function executeLocalCopilotTool(
       return { toolName, success: true, result: { blocks } }
     }
 
+    case 'get_blocks_metadata': {
+      const blockIds = Array.isArray(args.blockIds)
+        ? args.blockIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : []
+      if (blockIds.length === 0) {
+        return {
+          toolName,
+          success: false,
+          error: 'blockIds is required — pass block type ids like ["agent","start_trigger"]',
+          result: {},
+        }
+      }
+      ensureHandlersRegistered()
+      const handler = createServerToolHandler('get_blocks_metadata')
+      const metadataResult = await handler(
+        { blockIds },
+        toCopilotServerToolContext(ctx)
+      )
+      return {
+        toolName,
+        success: metadataResult.success,
+        result: metadataResult.output ?? (metadataResult.error ? { error: metadataResult.error } : {}),
+        error: metadataResult.error,
+      }
+    }
+
     case 'get_available_integrations':
       return {
         toolName,
@@ -267,15 +301,37 @@ export async function executeLocalCopilotTool(
     }
 
     case 'validate_workflow': {
-      const state = requireWorkflowContext(ctx)
+      const override =
+        args.workflowJson && typeof args.workflowJson === 'object' && !Array.isArray(args.workflowJson)
+          ? (args.workflowJson as Partial<WorkflowState>)
+          : undefined
+      const state = override?.blocks ? override : requireWorkflowContext(ctx)
+
       const validation = validateWorkflowState({
-        blocks: state.blocks,
-        edges: state.edges,
-        loops: state.loops,
-        parallels: state.parallels,
-        variables: state.variables,
+        blocks: state.blocks ?? {},
+        edges: state.edges ?? [],
+        loops: state.loops ?? {},
+        parallels: state.parallels ?? {},
+        variables: state.variables ?? {},
       })
-      return { toolName, success: true, result: validation }
+
+      const workflowLint = lintEditedWorkflowState({
+        blocks: state.blocks ?? {},
+        edges: state.edges ?? [],
+      })
+      const workflowLintMessage = hasWorkflowLintIssues(workflowLint)
+        ? formatWorkflowLintMessage(workflowLint)
+        : undefined
+
+      return {
+        toolName,
+        success: true,
+        result: {
+          ...validation,
+          workflowLint,
+          ...(workflowLintMessage ? { workflowLintMessage } : {}),
+        },
+      }
     }
 
     case 'generate_workflow_patch': {

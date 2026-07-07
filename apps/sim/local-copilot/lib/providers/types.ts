@@ -27,6 +27,11 @@ export interface ChatCompletionRequest {
   signal?: AbortSignal
 }
 
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+}
+
 export interface ChatCompletionChunk {
   type: 'text' | 'tool_call' | 'done'
   content?: string
@@ -36,6 +41,7 @@ export interface ChatCompletionChunk {
     arguments: string
   }
   finishReason?: string
+  usage?: TokenUsage
 }
 
 export interface LocalCopilotProvider {

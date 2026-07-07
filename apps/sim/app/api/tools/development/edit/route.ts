@@ -5,6 +5,7 @@ import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { editNextjsApp } from '@/lib/development/nextjs-app-generator'
+import { recordDevelopmentModelUsage } from '@/lib/development/record-development-model-usage'
 import {
   getDevelopmentReferenceImageErrorMessage,
   resolveDevelopmentReferenceImage,
@@ -25,10 +26,17 @@ const ReferencePdfFileSchema = z
   })
   .passthrough()
 
+const billingContextSchema = z.object({
+  workspaceId: z.string().optional(),
+  workflowId: z.string().optional(),
+  executionId: z.string().optional(),
+})
+
 const RequestSchema = z.object({
   userInput: z.string().min(1, 'userInput is required'),
   repoName: z.string().min(1, 'repoName is required'),
   referenceImage: ReferencePdfFileSchema.optional(),
+  ...billingContextSchema.shape,
 })
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
@@ -74,8 +82,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   })
 
   const result = await editNextjsApp({
-    ...parsed.data,
+    userInput: parsed.data.userInput,
+    repoName: parsed.data.repoName,
     referenceImage,
+  })
+
+  await recordDevelopmentModelUsage(result.llmUsage, {
+    userId: auth.userId,
+    workspaceId: parsed.data.workspaceId,
+    workflowId: parsed.data.workflowId,
+    executionId: parsed.data.executionId,
+    requestId,
   })
 
   if (!result.success) {
