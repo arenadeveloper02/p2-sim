@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { ArrowDown, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DEPLOYED_CHAT_CANVAS_BG } from '@/app/chat/constants'
 import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClientChatMessage'
 
 interface ChatMessageContainerProps {
@@ -165,7 +166,10 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   }, [selectionTip])
 
   return (
-    <div className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white'>
+    <div
+      className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden'
+      style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+    >
       {/* "Ask this in chat" tip - fixed near selection */}
       {selectionTip && onAskInChat && (
         <button

@@ -6,7 +6,6 @@ import { formatRelativeTime } from '@sim/utils/formatting'
 import {
   ArrowLeft,
   CirclePlus,
-  Ellipsis,
   FileText,
   MessageSquareText,
   MoreHorizontal,
@@ -32,6 +31,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/core/utils/cn'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { DEPLOYED_CHAT_CANVAS_BG } from '@/app/chat/constants'
 import { groupThreadsByDate } from '@/app/chat/utils/thread-date-groups'
 
 export interface ThreadRecord {
@@ -67,6 +67,51 @@ interface LeftNavThreadProps {
   searchInputRef?: React.RefObject<HTMLInputElement | null>
   logoUrl?: string
   onToggleSidebar?: () => void
+}
+
+type SidebarActionIcon = React.ComponentType<{ className?: string }>
+
+interface SidebarActionButtonProps {
+  icon: SidebarActionIcon
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  collapsed?: boolean
+}
+
+function SidebarActionButton({
+  icon: Icon,
+  label,
+  onClick,
+  disabled = false,
+  collapsed = false,
+}: SidebarActionButtonProps) {
+  const button = (
+    <Button
+      className={cn(
+        'border-none bg-[var(--surface-1)] font-normal text-[var(--text-body)] text-sm hover:bg-[var(--surface-1)] hover:shadow-md',
+        collapsed ? 'size-8 justify-center rounded p-0' : 'h-8 w-full justify-start gap-2 rounded'
+      )}
+      variant='outline'
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+    >
+      <Icon className='size-4 shrink-0 text-[var(--text-icon)]' />
+      {!collapsed && label}
+    </Button>
+  )
+
+  if (!collapsed) return button
+
+  return (
+    <Tooltip.Provider>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>{button}</Tooltip.Trigger>
+        <Tooltip.Content>{label}</Tooltip.Content>
+      </Tooltip.Root>
+    </Tooltip.Provider>
+  )
 }
 
 function ThreadSkeleton() {
@@ -352,16 +397,74 @@ const LeftNavThread = ({
     [onSelectThread, onCloseMobile]
   )
 
+  const actionButtonsDisabled = isLoading || isStreaming
+
+  const primaryActionButtons = (collapsed: boolean) => (
+    <div className={cn('flex flex-col gap-2', collapsed && 'items-center')}>
+      {showReRun && onReRun && !collapsed && (
+        <Button
+          className='h-8 w-full justify-start gap-2 rounded border-none bg-[var(--surface-1)] font-normal text-[var(--text-body)] text-sm hover:bg-[var(--surface-1)] hover:shadow-md'
+          variant='outline'
+          onClick={onReRun}
+          disabled={actionButtonsDisabled}
+          title='Re-run workflow with new input values'
+        >
+          <RefreshCw className='size-4 text-[var(--text-icon)]' />
+          Re-Run
+        </Button>
+      )}
+      <SidebarActionButton
+        collapsed={collapsed}
+        icon={CirclePlus}
+        label='New Chat'
+        onClick={() => onNewChat?.()}
+        disabled={actionButtonsDisabled}
+      />
+      <SidebarActionButton
+        collapsed={collapsed}
+        icon={Sparkles}
+        label='Golden Queries'
+        onClick={() => onViewGoldenQueries?.()}
+        disabled={actionButtonsDisabled || showFeedbackView}
+      />
+      <SidebarActionButton
+        collapsed={collapsed}
+        icon={FileText}
+        label='View Feedback'
+        onClick={() => onViewFeedback?.()}
+        disabled={actionButtonsDisabled}
+      />
+    </div>
+  )
+
   if (isCollapsed && !isMobileOpen) {
-    return null
+    return (
+      <div
+        className='flex h-full w-12 shrink-0 flex-col items-center border-[var(--border-1)] border-r px-1 py-4'
+        style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+      >
+        {logoUrl ? (
+          <Image
+            src={logoUrl}
+            alt='Logo'
+            width={40}
+            height={40}
+            className='mb-3 h-7 w-auto shrink-0'
+          />
+        ) : null}
+        {primaryActionButtons(true)}
+        <hr className='my-4 w-full border-[var(--border-1)]' />
+      </div>
+    )
   }
 
   const sidebarContent = (
     <div
       className={cn(
-        'flex h-full w-[280px] shrink-0 flex-col border-[var(--border-1)] border-r bg-[var(--surface-2)] px-2 py-4',
+        'flex h-full w-[280px] shrink-0 flex-col border-[var(--border-1)] border-r px-2 py-4',
         isMobileOpen && 'shadow-xl'
       )}
+      style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
     >
       <div className='mb-4 flex items-center justify-between px-1'>
         {logoUrl ? (
@@ -381,31 +484,11 @@ const LeftNavThread = ({
         )}
       </div>
 
-      <div className='flex flex-col gap-2'>
-        {showReRun && onReRun && (
-          <Button
-            className='h-8 w-full justify-start gap-2 rounded border-none bg-[var(--surface-1)] font-normal text-[var(--text-body)] text-sm hover:bg-[var(--surface-1)] hover:shadow-md'
-            variant='outline'
-            onClick={onReRun}
-            disabled={isLoading || isStreaming}
-            title='Re-run workflow with new input values'
-          >
-            <RefreshCw className='size-4 text-[var(--text-icon)]' />
-            Re-Run
-          </Button>
-        )}
-        <Button
-          className='h-8 w-full justify-start gap-2 rounded border-none bg-[var(--surface-1)] font-normal text-[var(--text-body)] text-sm hover:bg-[var(--surface-1)] hover:shadow-md'
-          variant='outline'
-          onClick={() => onNewChat?.()}
-          disabled={isLoading || isStreaming}
-        >
-          <CirclePlus className='size-4 text-[var(--text-icon)]' />
-          New Chat
-        </Button>
-      </div>
+      {primaryActionButtons(false)}
 
-      <div className='mt-4'>
+      <hr className='my-4 border-[var(--border-1)]' />
+
+      <div>
         <ChipInput
           ref={resolvedSearchRef}
           value={searchQuery}
@@ -479,34 +562,6 @@ const LeftNavThread = ({
             )}
           </div>
         )}
-      </div>
-
-      <div className='mt-2'>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              className='h-8 w-full justify-start gap-2 rounded border-none bg-[var(--surface-1)] font-normal text-[var(--text-body)] text-sm hover:shadow-md'
-              variant='outline'
-              disabled={isLoading || isStreaming}
-            >
-              <Ellipsis className='size-4 text-[var(--text-icon)]' />
-              More tools
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align='start' side='top' className='w-56'>
-            <DropdownMenuItem
-              onClick={() => onViewGoldenQueries?.()}
-              disabled={showFeedbackView || isStreaming}
-            >
-              <Sparkles className='size-[14px]' />
-              Golden queries
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onViewFeedback?.()} disabled={isStreaming}>
-              <FileText className='size-[14px]' />
-              View Feedback
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       <hr className='my-4 border-[var(--border-1)]' />

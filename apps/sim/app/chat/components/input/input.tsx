@@ -40,6 +40,9 @@ export const ChatInput: React.FC<{
   sttAvailable?: boolean
   /** When true, input is positioned within the flex main column instead of fixed viewport offsets */
   embedded?: boolean
+  /** Landing-page styling with gradient border */
+  landing?: boolean
+  placeholder?: string
 }> = ({
   onSubmit,
   isStreaming = false,
@@ -52,6 +55,8 @@ export const ChatInput: React.FC<{
   onInsertConsumed,
   sttAvailable = false,
   embedded = false,
+  landing = false,
+  placeholder = 'Enter a message...',
 }) => {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -89,8 +94,9 @@ export const ChatInput: React.FC<{
     const el = textareaRef.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`
-  }, [inputValue])
+    const maxHeight = landing ? 24 : MAX_TEXTAREA_HEIGHT
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`
+  }, [inputValue, landing])
 
   const handleFileSelect = async (selectedFiles: FileList | null) => {
     if (!selectedFiles) return
@@ -236,10 +242,13 @@ export const ChatInput: React.FC<{
     <Tooltip.Provider>
       <div
         className={cn(
-          'flex w-full items-center justify-center bg-gradient-to-t from-[var(--bg)] to-transparent px-4 pb-4 md:px-0 md:pb-4',
-          embedded
-            ? 'relative shrink-0'
-            : 'fixed right-0 bottom-0 left-0 ml-[118px]'
+          'flex w-full items-center justify-center',
+          landing
+            ? 'relative shrink-0 px-0 pb-0'
+            : cn(
+                'bg-gradient-to-t from-[var(--bg)] to-transparent px-4 pb-4 md:px-0 md:pb-4',
+                embedded ? 'relative shrink-0' : 'fixed right-0 bottom-0 left-0 ml-[118px]'
+              )
         )}
       >
         <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
@@ -256,17 +265,24 @@ export const ChatInput: React.FC<{
 
           {/* Input container */}
           <div
-            role='group'
-            aria-label='Chat message input'
-            onClick={handleContainerClick}
-            onKeyDown={(event) => {
-              if (event.target !== event.currentTarget) return
-              handleKeyboardActivation(event, focusTextarea)
-            }}
             className={cn(
-              'relative z-10 cursor-text rounded-2xl border border-[var(--border-1)] bg-white px-2.5 py-2',
-              isDragOver && 'border-purple-500'
+              landing &&
+                'rounded-[20px] bg-gradient-to-r from-[#93c5fd] via-[#c4b5fd] to-[#f9a8d4] p-[1px]'
             )}
+          >
+            <div
+              role='group'
+              aria-label='Chat message input'
+              onClick={handleContainerClick}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return
+                handleKeyboardActivation(event, focusTextarea)
+              }}
+              className={cn(
+                'relative z-10 cursor-text bg-white',
+                landing ? 'rounded-[19px] px-2 py-1.5' : 'rounded-2xl border border-[var(--border-1)] px-2.5 py-2',
+                isDragOver && 'border-purple-500'
+              )}
             onDragEnter={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -363,28 +379,16 @@ export const ChatInput: React.FC<{
               </div>
             )}
 
-            {/* Textarea */}
-            <textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={isDragOver ? 'Drop files here...' : 'Enter a message...'}
-              rows={1}
-              className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent p-1 text-[15px] leading-[24px] outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--landing-text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
-            />
-
-            {/* Bottom row */}
-            <div className='flex items-center justify-between'>
-              {/* Left: attach */}
-              <div>
+            {/* Textarea + controls */}
+            {landing ? (
+              <div className='flex items-center gap-1'>
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
                     <button
                       type='button'
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isStreaming || attachedFiles.length >= 15}
-                      className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
+                      className='flex size-[28px] shrink-0 items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50'
                     >
                       <Paperclip className='size-[16px]' strokeWidth={2} />
                     </button>
@@ -406,37 +410,26 @@ export const ChatInput: React.FC<{
                   className='hidden'
                   disabled={isStreaming}
                 />
-              </div>
 
-              {/* Right: mic + send */}
-              <div className='flex items-center gap-1.5'>
-                {sttAvailable && (
-                  <Tooltip.Root>
-                    <Tooltip.Trigger asChild>
-                      <button
-                        type='button'
-                        onClick={onVoiceStart}
-                        disabled={isStreaming}
-                        className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
-                      >
-                        <Mic className='size-[16px]' strokeWidth={2} />
-                      </button>
-                    </Tooltip.Trigger>
-                    <Tooltip.Content side='top'>
-                      <p>Start voice conversation</p>
-                    </Tooltip.Content>
-                  </Tooltip.Root>
-                )}
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={isDragOver ? 'Drop files here...' : placeholder}
+                  rows={1}
+                  className='m-0 min-h-[24px] min-w-0 flex-1 resize-none overflow-hidden border-0 bg-transparent p-0 text-[15px] leading-[24px] outline-none placeholder:text-[#94A3B8] focus-visible:ring-0 focus-visible:ring-offset-0'
+                />
 
                 {isStreaming ? (
                   <button
                     type='button'
                     onClick={onStopStreaming}
-                    className='flex size-[28px] items-center justify-center rounded-full border-0 bg-[#383838] p-0 transition-colors hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
+                    className='flex size-8 shrink-0 items-center justify-center rounded-lg border-0 bg-[#DCE6F3] p-0 transition-colors hover:bg-[#CED9EA]'
                     title='Stop generation'
                   >
                     <svg
-                      className='block size-[14px] fill-white dark:fill-black'
+                      className='block size-[14px] fill-[#64748B]'
                       viewBox='0 0 24 24'
                       xmlns='http://www.w3.org/2000/svg'
                     >
@@ -449,23 +442,120 @@ export const ChatInput: React.FC<{
                     onClick={handleSubmit}
                     disabled={!canSubmit}
                     className={cn(
-                      'flex h-[28px] w-[28px] items-center justify-center rounded-full border-0 p-0 transition-colors',
+                      'flex size-8 shrink-0 items-center justify-center rounded-lg border-0 p-0 transition-colors',
                       canSubmit
-                        ? 'bg-[#383838] hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
-                        : 'bg-[#808080] dark:bg-[#808080]'
+                        ? 'bg-[#DCE6F3] hover:bg-[#CED9EA]'
+                        : 'bg-[#E8EEF7] opacity-60'
                     )}
                   >
-                    <ArrowUp
-                      className='block size-[16px] text-white dark:text-black'
-                      strokeWidth={2.25}
-                    />
+                    <ArrowUp className='block size-[16px] text-[#64748B]' strokeWidth={2.25} />
                   </button>
                 )}
               </div>
-            </div>
+            ) : (
+              <>
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={isDragOver ? 'Drop files here...' : placeholder}
+                  rows={1}
+                  className='m-0 h-auto min-h-[24px] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent p-1 text-[15px] leading-[24px] outline-none [-ms-overflow-style:none] [scrollbar-width:none] placeholder:text-[var(--landing-text-muted)] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-scrollbar]:hidden'
+                />
+
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <button
+                          type='button'
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isStreaming || attachedFiles.length >= 15}
+                          className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
+                        >
+                          <Paperclip className='size-[16px]' strokeWidth={2} />
+                        </button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Content side='top'>
+                        <p>Attach files</p>
+                      </Tooltip.Content>
+                    </Tooltip.Root>
+
+                    <input
+                      ref={fileInputRef}
+                      type='file'
+                      multiple
+                      accept={CHAT_ACCEPT_ATTRIBUTE}
+                      onChange={(e) => {
+                        handleFileSelect(e.target.files)
+                        if (fileInputRef.current) fileInputRef.current.value = ''
+                      }}
+                      className='hidden'
+                      disabled={isStreaming}
+                    />
+                  </div>
+
+                  <div className='flex items-center gap-1.5'>
+                    {sttAvailable && (
+                      <Tooltip.Root>
+                        <Tooltip.Trigger asChild>
+                          <button
+                            type='button'
+                            onClick={onVoiceStart}
+                            disabled={isStreaming}
+                            className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
+                          >
+                            <Mic className='size-[16px]' strokeWidth={2} />
+                          </button>
+                        </Tooltip.Trigger>
+                        <Tooltip.Content side='top'>
+                          <p>Start voice conversation</p>
+                        </Tooltip.Content>
+                      </Tooltip.Root>
+                    )}
+
+                    {isStreaming ? (
+                      <button
+                        type='button'
+                        onClick={onStopStreaming}
+                        className='flex size-[28px] items-center justify-center rounded-full border-0 bg-[#383838] p-0 transition-colors hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
+                        title='Stop generation'
+                      >
+                        <svg
+                          className='block size-[14px] fill-white dark:fill-black'
+                          viewBox='0 0 24 24'
+                          xmlns='http://www.w3.org/2000/svg'
+                        >
+                          <rect x='4' y='4' width='16' height='16' rx='3' ry='3' />
+                        </svg>
+                      </button>
+                    ) : (
+                      <button
+                        type='button'
+                        onClick={handleSubmit}
+                        disabled={!canSubmit}
+                        className={cn(
+                          'flex h-[28px] w-[28px] items-center justify-center rounded-full border-0 p-0 transition-colors',
+                          canSubmit
+                            ? 'bg-[#383838] hover:bg-[#575757] dark:bg-[#E0E0E0] dark:hover:bg-[#CFCFCF]'
+                            : 'bg-[#808080] dark:bg-[#808080]'
+                        )}
+                      >
+                        <ArrowUp
+                          className='block size-[16px] text-white dark:text-black'
+                          strokeWidth={2.25}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
+    </div>
     </Tooltip.Provider>
   )
 }

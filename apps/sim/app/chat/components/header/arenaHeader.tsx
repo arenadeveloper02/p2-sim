@@ -1,8 +1,8 @@
 'use client'
 
-import Image from 'next/image'
 import { Download, Menu, MoreHorizontal, PanelLeftOpen, Share2 } from 'lucide-react'
 import { inter } from '@/app/_styles/fonts/inter/inter'
+import { DEPLOYED_CHAT_CANVAS_BG } from '@/app/chat/constants'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +13,7 @@ import {
 import { cn } from '@/lib/core/utils/cn'
 
 interface ArenaChatHeaderProps {
-  chatConfig: {
+  chatConfig?: {
     title?: string
     description?: string
     customizations?: {
@@ -22,6 +22,7 @@ interface ArenaChatHeaderProps {
   } | null
   showFeedbackView?: boolean
   isSidebarCollapsed?: boolean
+  hideCenterTitle?: boolean
   onToggleSidebar?: () => void
   onExportChat?: () => void
   onShareChat?: () => void
@@ -32,6 +33,7 @@ export function ArenaChatHeader({
   chatConfig,
   showFeedbackView = false,
   isSidebarCollapsed = false,
+  hideCenterTitle = false,
   onToggleSidebar,
   onExportChat,
   onShareChat,
@@ -40,7 +42,6 @@ export function ArenaChatHeader({
   const title = showFeedbackView
     ? 'User Feedback'
     : chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'
-  const description = showFeedbackView ? undefined : chatConfig?.description
   const showOverflowMenu =
     !showFeedbackView && (onExportChat || onShareChat || onShowKeyboardShortcuts)
 
@@ -48,6 +49,7 @@ export function ArenaChatHeader({
     <nav
       aria-label='Chat navigation'
       className='grid h-12 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-[var(--border-1)] border-b px-4'
+      style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
     >
       <div className='flex items-center'>
         {onToggleSidebar && (
@@ -75,13 +77,12 @@ export function ArenaChatHeader({
       </div>
 
       <div className='min-w-0 px-2 text-center'>
-        <h2
-          className={cn(inter.className, 'truncate font-semibold text-[var(--text-body)] text-lg')}
-        >
-          {title}
-        </h2>
-        {description && (
-          <p className='hidden truncate text-[var(--text-muted)] text-sm sm:block'>{description}</p>
+        {!hideCenterTitle && (
+          <h2
+            className={cn(inter.className, 'truncate font-semibold text-[#1E293B] text-lg')}
+          >
+            {title}
+          </h2>
         )}
       </div>
 

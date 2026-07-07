@@ -1,0 +1,150 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import type { RefObject } from 'react'
+import { ChipModal, ChipModalBody, ChipModalHeader } from '@/components/emcn'
+import { inter } from '@/app/_styles/fonts/inter/inter'
+import { ChatInput } from '@/app/chat/components'
+import { DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_INPUT_PLACEHOLDER } from '@/app/chat/constants'
+import {
+  clipDeployedChatDescription,
+  getDeployedChatFirstName,
+  resolveDeployedChatLandingDescription,
+} from '@/app/chat/utils/clip-description'
+import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
+import { cn } from '@/lib/core/utils/cn'
+
+interface DeployedChatLandingProps {
+  chatConfig: {
+    title: string
+    description?: string
+    customizations?: {
+      headerText?: string
+      welcomeMessage?: string
+    }
+  }
+  userName?: string | null
+  isStreaming?: boolean
+  isLoading?: boolean
+  insertText?: string
+  onInsertConsumed?: () => void
+  onSubmit: (
+    value: string,
+    isVoiceInput?: boolean,
+    files?: Array<{
+      id: string
+      name: string
+      size: number
+      type: string
+      file: File
+      dataUrl?: string
+    }>
+  ) => void
+  onStopStreaming?: () => void
+  onVoiceStart?: () => void
+  selectedGeneratedImages?: SelectedGeneratedImage[]
+  onRemoveSelectedGeneratedImage?: (imageId: string) => void
+  inputWrapperRef?: RefObject<HTMLDivElement | null>
+}
+
+export function DeployedChatLanding({
+  chatConfig,
+  userName,
+  isStreaming = false,
+  isLoading = false,
+  insertText,
+  onInsertConsumed,
+  onSubmit,
+  onStopStreaming,
+  onVoiceStart,
+  selectedGeneratedImages,
+  onRemoveSelectedGeneratedImage,
+  inputWrapperRef,
+}: DeployedChatLandingProps) {
+  const [isDescriptionModalOpen, setIsDescriptionModalOpen] = useState(false)
+
+  const title = chatConfig.customizations?.headerText || chatConfig.title || 'Chat'
+  const firstName = getDeployedChatFirstName(userName)
+  const descriptionSource = resolveDeployedChatLandingDescription({
+    title,
+    description: chatConfig.description,
+    welcomeMessage: chatConfig.customizations?.welcomeMessage,
+  })
+
+  const clippedDescription = useMemo(
+    () => clipDeployedChatDescription(descriptionSource),
+    [descriptionSource]
+  )
+
+  return (
+    <>
+      <div
+        className='flex min-h-0 flex-1 flex-col overflow-y-auto'
+        style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+      >
+        <div className='flex flex-1 flex-col items-center justify-center px-4 py-8 md:px-6'>
+          <div className='w-full max-w-[748px] text-center'>
+            <h1
+              className={cn(
+                inter.className,
+                'font-bold text-[24px] text-[#1E293B] leading-[1.2] tracking-[-0.01em]'
+              )}
+            >
+              {title}
+            </h1>
+
+            {userName && (
+              <p className='mt-3 font-normal text-[#64748B] text-[18px] leading-[1.4]'>
+                Hi {userName}, welcome to the chat!
+              </p>
+            )}
+
+            {clippedDescription.displayText && (
+              <div className='mt-3 font-normal text-[#64748B] text-[15px] leading-[1.6]'>
+                <p className='whitespace-pre-wrap'>{clippedDescription.displayText}</p>
+                {clippedDescription.isTruncated && (
+                  <button
+                    type='button'
+                    onClick={() => setIsDescriptionModalOpen(true)}
+                    className='mt-2 font-medium text-[var(--brand-primary-hex)] hover:underline'
+                  >
+                    View more
+                  </button>
+                )}
+              </div>
+            )}
+
+            <p className='mt-8 font-semibold text-[#1E293B] text-[18px] leading-[1.4]'>
+              What should we get done{firstName ? `, ${firstName}` : ''}?
+            </p>
+
+            <div ref={inputWrapperRef} className='mt-5 w-full'>
+              <ChatInput
+                embedded
+                landing
+                placeholder={DEPLOYED_CHAT_INPUT_PLACEHOLDER}
+                insertText={insertText}
+                onInsertConsumed={onInsertConsumed}
+                onSubmit={onSubmit}
+                isStreaming={isLoading || isStreaming}
+                onStopStreaming={onStopStreaming}
+                onVoiceStart={onVoiceStart}
+                selectedGeneratedImages={selectedGeneratedImages}
+                onRemoveSelectedGeneratedImage={onRemoveSelectedGeneratedImage}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ChipModal open={isDescriptionModalOpen} onOpenChange={setIsDescriptionModalOpen}>
+        <ChipModalHeader onClose={() => setIsDescriptionModalOpen(false)}>{title}</ChipModalHeader>
+        <ChipModalBody>
+          <p className='whitespace-pre-wrap font-normal text-[#64748B] text-[15px] leading-[1.6]'>
+            {clippedDescription.fullText}
+          </p>
+        </ChipModalBody>
+      </ChipModal>
+    </>
+  )
+}

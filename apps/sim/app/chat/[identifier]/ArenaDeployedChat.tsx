@@ -32,7 +32,7 @@ import {
   UnauthorizedEmailError,
   VoiceInterface,
 } from '@/app/chat/components'
-import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/chat/constants'
+import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS, DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_INPUT_PLACEHOLDER } from '@/app/chat/constants'
 import { useAudioStreaming, useChatKeyboardShortcuts, useChatStreaming } from '@/app/chat/hooks'
 import { downloadTextFile, exportChatAsMarkdown } from '@/app/chat/utils/export-chat'
 import {
@@ -43,6 +43,7 @@ import {
 } from '@/hooks/queries/deployed-chat-threads'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
 import { ArenaChatHeader } from '../components/header/arenaHeader'
+import { DeployedChatLanding } from './DeployedChatLanding'
 import { FeedbackView } from './FeedbackView'
 import LeftNavThread, { type ThreadRecord } from './leftNavThread'
 
@@ -266,6 +267,32 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
   const [askInChatText, setAskInChatText] = useState('')
   const [userName, setUserName] = useState<string | null>(null)
+
+  const showLandingView = useMemo(() => {
+    if (showFeedbackView) return false
+    return !hasNonWelcomeMessages
+  }, [showFeedbackView, hasNonWelcomeMessages])
+
+  const hideHeaderTitle = useMemo(() => {
+    if (showFeedbackView) return false
+    if (hasNonWelcomeMessages) return false
+
+    const isExistingThread = Boolean(
+      currentChatId && threads.some((thread) => thread.chatId === currentChatId)
+    )
+    if (isExistingThread && (isHistoryLoading || !hasCheckedHistory)) {
+      return false
+    }
+
+    return true
+  }, [
+    showFeedbackView,
+    hasNonWelcomeMessages,
+    currentChatId,
+    threads,
+    isHistoryLoading,
+    hasCheckedHistory,
+  ])
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -1540,32 +1567,31 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   // Standard text-based chat interface
   return (
-    <div className='fixed inset-0 z-[100] flex bg-background text-foreground'>
+    <div className='fixed inset-0 z-[100] flex' style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}>
       <div className='hidden h-full shrink-0 md:flex'>
-        {!isSidebarCollapsed && (
-          <LeftNavThread
-            threads={threads as ThreadRecord[]}
-            isLoading={isThreadsLoading}
-            error={threadsError || null}
-            currentChatId={currentChatId || ''}
-            onSelectThread={handleSelectThread}
-            onRefreshThread={handleRefreshThread}
-            onNewChat={handleNewChat}
-            onRenameThread={handleRenameThread}
-            onDeleteThread={handleDeleteThread}
-            onTogglePinThread={handleTogglePinThread}
-            isStreaming={isStreamingResponse || isLoading}
-            workflowId={identifier}
-            showReRun={customFields.length > 0}
-            showFeedbackView={showFeedbackView}
-            onReRun={handleRerun}
-            onViewFeedback={handleViewFeedback}
-            onViewGoldenQueries={handleViewGoldenQueries}
-            searchInputRef={threadSearchInputRef}
-            logoUrl={sidebarLogoUrl}
-            onToggleSidebar={handleToggleSidebar}
-          />
-        )}
+        <LeftNavThread
+          threads={threads as ThreadRecord[]}
+          isLoading={isThreadsLoading}
+          error={threadsError || null}
+          currentChatId={currentChatId || ''}
+          onSelectThread={handleSelectThread}
+          onRefreshThread={handleRefreshThread}
+          onNewChat={handleNewChat}
+          onRenameThread={handleRenameThread}
+          onDeleteThread={handleDeleteThread}
+          onTogglePinThread={handleTogglePinThread}
+          isStreaming={isStreamingResponse || isLoading}
+          workflowId={identifier}
+          showReRun={customFields.length > 0}
+          showFeedbackView={showFeedbackView}
+          onReRun={handleRerun}
+          onViewFeedback={handleViewFeedback}
+          onViewGoldenQueries={handleViewGoldenQueries}
+          searchInputRef={threadSearchInputRef}
+          logoUrl={sidebarLogoUrl}
+          onToggleSidebar={handleToggleSidebar}
+          isCollapsed={isSidebarCollapsed}
+        />
       </div>
 
       {isMobileSidebarOpen && (
@@ -1595,11 +1621,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         />
       )}
 
-      <div className='relative flex min-h-0 min-w-0 flex-1 flex-col'>
+      <div
+        className='relative flex min-h-0 min-w-0 flex-1 flex-col'
+        style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+      >
         <ArenaChatHeader
           chatConfig={chatConfig}
           showFeedbackView={showFeedbackView}
           isSidebarCollapsed={isSidebarCollapsed}
+          hideCenterTitle={hideHeaderTitle}
           onToggleSidebar={handleToggleSidebar}
           onExportChat={handleExportChat}
           onShareChat={handleShareChat}
@@ -1608,7 +1638,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
         <div className='relative flex min-h-0 flex-1'>
           {isHistoryLoading && (
-            <div className='absolute inset-0 z-[105] flex items-center justify-center bg-white/60'>
+            <div
+              className='absolute inset-0 z-[105] flex items-center justify-center'
+              style={{ backgroundColor: `${DEPLOYED_CHAT_CANVAS_BG}99` }}
+            >
               <LoadingAgentP2 size='lg' />
             </div>
           )}
@@ -1626,6 +1659,23 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               totalCount={feedbackTotalCount}
               onPageChange={fetchFeedbackPage}
               onBack={handleBackFromFeedback}
+            />
+          ) : showLandingView ? (
+            <DeployedChatLanding
+              chatConfig={chatConfig}
+              userName={userName}
+              isStreaming={isStreamingResponse}
+              isLoading={isLoading}
+              insertText={askInChatText}
+              onInsertConsumed={() => setAskInChatText('')}
+              onSubmit={(value, isVoiceInput, files) => {
+                void handleSendMessage(value, isVoiceInput, files)
+              }}
+              onStopStreaming={() => stopStreaming(setMessages)}
+              onVoiceStart={handleVoiceStart}
+              selectedGeneratedImages={effectiveGeneratedImages}
+              onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
+              inputWrapperRef={chatInputWrapperRef}
             />
           ) : (
             <>
@@ -1655,6 +1705,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                 <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
                   <ChatInput
                     embedded
+                    placeholder={DEPLOYED_CHAT_INPUT_PLACEHOLDER}
                     insertText={askInChatText}
                     onInsertConsumed={() => setAskInChatText('')}
                     onSubmit={(
