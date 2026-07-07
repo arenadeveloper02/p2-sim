@@ -65,6 +65,7 @@ export const ChatInput: React.FC<{
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const [uploadErrors, setUploadErrors] = useState<string[]>([])
   const [dragCounter, setDragCounter] = useState(0)
+  const [isMultiLineInput, setIsMultiLineInput] = useState(false)
   const isDragOver = dragCounter > 0
 
   // When parent injects text (e.g. "Ask this in chat"), append it + space and focus the input.
@@ -90,15 +91,22 @@ export const ChatInput: React.FC<{
     })
   }, [insertText, onInsertConsumed])
 
+  const useDeployedChrome = landing || embedded
+
   useLayoutEffect(() => {
     const el = textareaRef.current
     if (!el) return
     el.style.height = 'auto'
-    const maxHeight = landing ? 24 : MAX_TEXTAREA_HEIGHT
-    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`
-  }, [inputValue, landing])
+    const singleLineHeight = 24
+    const maxHeight = landing ? singleLineHeight : MAX_TEXTAREA_HEIGHT
+    const scrollHeight = el.scrollHeight
+    const newHeight = Math.min(scrollHeight, maxHeight)
+    el.style.height = `${newHeight}px`
 
-  const useDeployedChrome = landing || embedded
+    if (useDeployedChrome && !landing) {
+      setIsMultiLineInput(newHeight > singleLineHeight + 2 || inputValue.includes('\n'))
+    }
+  }, [inputValue, landing, useDeployedChrome])
 
   const handleFileSelect = async (selectedFiles: FileList | null) => {
     if (!selectedFiles) return
@@ -215,8 +223,13 @@ export const ChatInput: React.FC<{
       selectedGeneratedImages.length > 0) &&
     !isStreaming
 
-  const renderDeployedControls = () => (
-    <div className={cn('flex gap-1', landing ? 'items-center' : 'items-start')}>
+  const renderDeployedControls = () => {
+    const alignControlsCenter = landing || !isMultiLineInput
+    const controlAlignClass = alignControlsCenter ? 'items-center min-h-[44px]' : 'items-start py-1'
+    const pinnedControlClass = alignControlsCenter ? undefined : 'mt-0.5'
+
+    return (
+    <div className={cn('flex gap-2', controlAlignClass)}>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>
           <button
@@ -224,8 +237,8 @@ export const ChatInput: React.FC<{
             onClick={() => fileInputRef.current?.click()}
             disabled={isStreaming || attachedFiles.length >= 15}
             className={cn(
-              'flex size-[28px] shrink-0 items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50',
-              !landing && 'mt-0.5'
+              'flex size-7 shrink-0 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F5F9] disabled:cursor-not-allowed disabled:opacity-50',
+              pinnedControlClass
             )}
           >
             <Paperclip className='size-[16px]' strokeWidth={2} />
@@ -258,7 +271,7 @@ export const ChatInput: React.FC<{
         rows={1}
         className={cn(
           'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[15px] leading-[24px] outline-none placeholder:text-[#94A3B8] focus-visible:ring-0 focus-visible:ring-offset-0',
-          landing
+          landing || !isMultiLineInput
             ? 'min-h-[24px] overflow-hidden'
             : 'min-h-[24px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
         )}
@@ -269,8 +282,8 @@ export const ChatInput: React.FC<{
           type='button'
           onClick={onStopStreaming}
           className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-lg border-0 bg-[#DCE6F3] p-0 transition-colors hover:bg-[#CED9EA]',
-            !landing && 'mt-0.5'
+            'flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-[#DCE6F3] p-0 transition-colors hover:bg-[#CED9EA]',
+            pinnedControlClass
           )}
           title='Stop generation'
         >
@@ -288,16 +301,18 @@ export const ChatInput: React.FC<{
           onClick={handleSubmit}
           disabled={!canSubmit}
           className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-lg border-0 p-0 transition-colors',
-            canSubmit ? 'bg-[#DCE6F3] hover:bg-[#CED9EA]' : 'bg-[#E8EEF7] opacity-60',
-            !landing && 'mt-0.5'
+            'flex size-7 shrink-0 items-center justify-center rounded-md border-0 p-0 transition-colors',
+            canSubmit ? 'bg-[#DCE6F3] hover:bg-[#CED9EA]' : 'bg-[#E8EEF7] opacity-70',
+            pinnedControlClass
           )}
+          aria-label='Send message'
         >
-          <ArrowUp className='block size-[16px] text-[#64748B]' strokeWidth={2.25} />
+          <ArrowUp className='block size-[14px] text-[#64748B]' strokeWidth={2.5} />
         </button>
       )}
     </div>
-  )
+    )
+  }
 
   if (voiceOnly) {
     return (
@@ -367,7 +382,7 @@ export const ChatInput: React.FC<{
               className={cn(
                 'relative z-10 cursor-text bg-white',
                 useDeployedChrome
-                  ? 'rounded-[19px] px-2 py-1.5'
+                  ? 'rounded-[19px] px-3 py-2'
                   : 'rounded-2xl border border-[var(--border-1)] px-2.5 py-2',
                 isDragOver && 'border-purple-500'
               )}

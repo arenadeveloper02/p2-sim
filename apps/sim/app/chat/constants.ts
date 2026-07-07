@@ -18,7 +18,7 @@ export const CHAT_REQUEST_TIMEOUT_MS = 1800000 // 30 minutes
 export const DEPLOYED_CHAT_CANVAS_BG = '#F3F8FE'
 
 /** Deployed chat input placeholder */
-export const DEPLOYED_CHAT_INPUT_PLACEHOLDER = 'Ask Vimi...'
+export const DEPLOYED_CHAT_INPUT_PLACEHOLDER = 'Ask VIMI'
 
 /** Active thread label color in the deployed chat sidebar */
 export const DEPLOYED_CHAT_ACTIVE_THREAD_COLOR = '#155CBA'
