@@ -21,6 +21,7 @@ import { downloadFile } from '@/lib/uploads/core/storage-service'
 //   compileDocumentIfNeeded,
 //   getWorkspaceIdForCompile,
 // } from '@/lib/uploads/utils/compile-document'
+import { ORG_LOGOS_S3_PREFIX } from '@/lib/uploads/contexts/org-logos/utils'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
 import { canAccessAgentGeneratedImageViaDeployedChat } from '@/app/api/chat/utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
@@ -231,6 +232,13 @@ export const GET = withRouteHandler(
             userId,
             authType: authResult.authType ?? 'hybrid',
           })
+        } else if (authResult.success && authResult.authType === 'internal_jwt') {
+          // Server-to-server call (e.g. create_from_template proxying image for Google Slides).
+          // The internal JWT is valid but carries no userId — use a sentinel for logging.
+          userId = 'internal-service'
+          logger.info('Agent-generated-image serve: internal service access', {
+            workflowIdFromPath,
+          })
         } else {
           const deployedChatOk = await canAccessAgentGeneratedImageViaDeployedChat(
             request,
@@ -329,7 +337,8 @@ export const GET = withRouteHandler(
       const isPublicByKeyPrefix =
         cloudKey.startsWith('profile-pictures/') ||
         cloudKey.startsWith('og-images/') ||
-        cloudKey.startsWith('workspace-logos/')
+        cloudKey.startsWith('workspace-logos/') ||
+        cloudKey.startsWith(`${ORG_LOGOS_S3_PREFIX}/`)
 
       if (isPublicByKeyPrefix) {
         const context = inferContextFromKey(cloudKey)

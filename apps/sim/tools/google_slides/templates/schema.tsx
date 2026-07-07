@@ -4,7 +4,9 @@
 
 /* ---------- Block Types ---------- */
 
-export type BlockType = 'TEXT' | 'IMAGE'
+export type BlockType = 'TEXT' | 'IMAGE' | 'TABLE'
+
+export type BlockContent = string | string[] | string[][]
 
 /* ---------- Base Block ---------- */
 
@@ -13,7 +15,7 @@ export interface BaseBlock {
   type: BlockType
   description: string // Used by LLM to generate content
   shapeId: string // TEMPLATE shapeId (never runtime slide ID)
-  content: string | string[] // Filled by LLM ("" initially)
+  content: BlockContent // Filled by LLM ("" initially)
 }
 
 /* ---------- Text Blocks ---------- */
@@ -54,14 +56,84 @@ export interface ImageBlock extends BaseBlock {
   iconLibraryId?: string // filled by AI — matched icon id from IconLibrary
   /** When source is 'icon_library', constrains selection to icons of this color variant. */
   iconLibraryColor?: IconColor
+
+  /**
+   * Agent-filled field for source 'ai_photo' or 'generated'.
+   *
+   * Workflow:
+   *   1. Agent reads `description`, `usage`, and `generationContext` to write this prompt.
+   *   2. Agent calls `image_generate` with `prompt = generationPrompt`, `aspectRatio = aspectRatio`.
+   *   3. Agent puts the returned `imageUrl` into `content`.
+   *   4. Leave empty in the template definition — agent fills it at runtime.
+   *
+   * Write a rich, specific prompt: subject, environment, lighting, mood, camera style.
+   * Example: "cinematic wide photo of a modern open-plan office with employees collaborating,
+   * warm natural light through floor-to-ceiling windows, no text, photorealistic"
+   */
+  generationPrompt?: string
+
+  /**
+   * Aspect ratio the agent must pass to `image_generate` when calling it for this block.
+   * Derived from the shape's actual pixel dimensions on the slide.
+   *
+   * Supported values (must be one of these):
+   *   '1:1' | '16:9' | '9:16' | '3:2' | '2:3' | '4:3' | '3:4' | '5:4' | '4:5' | '21:9'
+   *
+   * How to calculate from a Google Slides page element:
+   *   ratio = scaleX / scaleY
+   *   Pick the supported value whose numeric ratio is closest to that result.
+   *
+   * Examples:
+   *   scaleX 1.7365, scaleY 0.7248 → 2.396:1 → closest is '21:9' (2.333:1)
+   *   scaleX 1.778, scaleY 1.0    → 1.778:1 → closest is '16:9' (1.778:1)
+   *   scaleX 1.0,   scaleY 1.0    → 1.0:1   → '1:1'
+   */
+  aspectRatio?: '1:1' | '16:9' | '9:16' | '3:2' | '2:3' | '4:3' | '3:4' | '5:4' | '4:5' | '21:9'
+
+  /**
+   * Style and framing constraints the agent uses when writing `generationPrompt`.
+   * Be specific: lighting, mood, subject framing, what to avoid (text, UI, logos).
+   *
+   * Examples:
+   *   "professional stock photography, no text or UI overlays, ultra-wide landscape crop, corporate quality"
+   *   "dark moody cinematic, shallow depth of field, no people"
+   *   "flat illustration style, pastel colors, minimalist"
+   */
+  generationContext?: string
+
   width?: number
   height?: number
   replaceable: boolean
 }
 
+/* ---------- Table Block ---------- */
+
+export interface TableBlock extends BaseBlock {
+  type: 'TABLE'
+  role: 'DATA_TABLE'
+  content: string[][]
+  /** Maximum rows the template table supports (trim/delete extras beyond content). */
+  maxRows: number
+  /** Maximum columns the template table supports (trim/delete extras beyond content). */
+  maxColumns: number
+  /** Minimum rows to retain after trimming (template must include at least this many). */
+  minRows?: number
+  /** Minimum columns to retain after trimming (template must include at least this many). */
+  minColumns?: number
+  /** When true, column 0 holds row labels (e.g. "Title 1", "Title 2"). */
+  rowLabelColumn?: boolean
+  /** When true, row 0 holds column headers. */
+  headerRow?: boolean
+  cellConstraints: {
+    minChars: number
+    maxChars: number
+    description?: string
+  }
+}
+
 /* ---------- Union Block ---------- */
 
-export type Block = TextBlock | ListBlock | ImageBlock
+export type Block = TextBlock | ListBlock | ImageBlock | TableBlock
 
 /* ---------- Slide Schema ---------- */
 
