@@ -62,7 +62,7 @@ interface LeftNavThreadProps {
   onViewFeedback?: () => void
   onViewGoldenQueries?: () => void
   isGoldenQueriesOpen?: boolean
-  showLandingView?: boolean
+  isNewChatActive?: boolean
   isCollapsed?: boolean
   isMobileOpen?: boolean
   onCloseMobile?: () => void
@@ -186,14 +186,27 @@ function ThreadRow({
   onTogglePin,
 }: ThreadRowProps) {
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const renameBlurReadyRef = useRef(false)
   const isPinned = Boolean(thread.pinnedAt)
 
   useEffect(() => {
     if (isRenaming && renameInputRef.current) {
       renameInputRef.current.focus()
       renameInputRef.current.select()
+      renameBlurReadyRef.current = false
+      const timer = window.setTimeout(() => {
+        renameBlurReadyRef.current = true
+      }, 150)
+      return () => window.clearTimeout(timer)
     }
+    renameBlurReadyRef.current = false
+    return undefined
   }, [isRenaming])
+
+  const handleRenameBlur = useCallback(() => {
+    if (!renameBlurReadyRef.current) return
+    onRenameSave()
+  }, [onRenameSave])
 
   if (isRenaming) {
     return (
@@ -212,7 +225,7 @@ function ThreadRow({
               onRenameCancel()
             }
           }}
-          onBlur={onRenameSave}
+          onBlur={handleRenameBlur}
           autoFocus
           className='h-7 min-w-0 flex-1'
         />
@@ -337,7 +350,7 @@ const LeftNavThread = ({
   onViewFeedback,
   onViewGoldenQueries,
   isGoldenQueriesOpen = false,
-  showLandingView = false,
+  isNewChatActive = false,
   isCollapsed = false,
   isMobileOpen = false,
   onCloseMobile,
@@ -421,7 +434,6 @@ const LeftNavThread = ({
   )
 
   const actionButtonsDisabled = isLoading || isStreaming
-  const isNewChatActive = showLandingView && !showFeedbackView && !isGoldenQueriesOpen
 
   const primaryActionButtons = (collapsed: boolean) => (
     <div className={cn('flex flex-col gap-2', collapsed && 'items-center')}>
@@ -515,25 +527,24 @@ const LeftNavThread = ({
 
       <hr className='my-4 border-[var(--border-1)]' />
 
-      <div>
-        <ChipInput
-          ref={resolvedSearchRef}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder='Search chats...'
-          icon={Search}
-          className='h-8 rounded-lg border-none bg-white shadow-sm'
-          aria-label='Search chats'
-        />
-      </div>
+      <div className='flex min-h-0 flex-1 flex-col'>
+        <p className='mb-2 px-1 font-medium text-[var(--text-muted)] text-xs uppercase tracking-wide'>
+          Chats
+        </p>
 
-      <hr className='my-4 border-[var(--border-1)]' />
+        <div className='mb-2'>
+          <ChipInput
+            ref={resolvedSearchRef}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder='Search chats...'
+            icon={Search}
+            className='h-8 rounded-lg border-none bg-white shadow-sm'
+            aria-label='Search chats'
+          />
+        </div>
 
-      <p className='mb-2 px-1 font-medium text-[var(--text-muted)] text-xs uppercase tracking-wide'>
-        Chats
-      </p>
-
-      <div className='flex-1 overflow-y-auto'>
+        <div className='flex-1 overflow-y-auto'>
         {isLoading ? (
           <div className='flex flex-col gap-2'>
             {Array.from({ length: 5 }).map((_, i) => (
@@ -556,7 +567,8 @@ const LeftNavThread = ({
                     isActive={
                       currentChatId === thread.chatId &&
                       !showFeedbackView &&
-                      !isGoldenQueriesOpen
+                      !isGoldenQueriesOpen &&
+                      !isNewChatActive
                     }
                     isRenaming={renamingChatId === thread.chatId}
                     renameValue={renameValue}
@@ -593,6 +605,7 @@ const LeftNavThread = ({
             )}
           </div>
         )}
+      </div>
       </div>
 
       <hr className='my-4 border-[var(--border-1)]' />

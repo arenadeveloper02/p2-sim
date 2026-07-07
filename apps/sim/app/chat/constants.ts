@@ -23,4 +23,8 @@ export const DEPLOYED_CHAT_INPUT_PLACEHOLDER = 'Ask VIMI'
 /** Active thread label color in the deployed chat sidebar */
 export const DEPLOYED_CHAT_ACTIVE_THREAD_COLOR = '#155CBA'
 
+/** Soft outer glow for deployed chat input gradient border */
+export const DEPLOYED_CHAT_INPUT_GLOW_SHADOW =
+  '0 0 0 1px rgba(147, 197, 253, 0.25), 0 4px 16px rgba(147, 197, 253, 0.18), 0 4px 20px rgba(249, 168, 212, 0.12)'
+
 export type ChatErrorType = keyof typeof CHAT_ERROR_MESSAGES

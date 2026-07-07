@@ -10,6 +10,7 @@ import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selectio
 import { cn } from '@/lib/core/utils/cn'
 import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
+import { DEPLOYED_CHAT_INPUT_GLOW_SHADOW } from '@/app/chat/constants'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
 const logger = createLogger('ChatInput')
@@ -225,7 +226,7 @@ export const ChatInput: React.FC<{
 
   const renderDeployedControls = () => {
     const alignControlsCenter = landing || !isMultiLineInput
-    const controlAlignClass = alignControlsCenter ? 'items-center min-h-[44px]' : 'items-start py-1'
+    const controlAlignClass = alignControlsCenter ? 'items-center min-h-[36px]' : 'items-start py-1'
     const pinnedControlClass = alignControlsCenter ? undefined : 'mt-0.5'
 
     return (
@@ -368,8 +369,9 @@ export const ChatInput: React.FC<{
           <div
             className={cn(
               useDeployedChrome &&
-                'rounded-[20px] bg-gradient-to-r from-[#93c5fd] via-[#c4b5fd] to-[#f9a8d4] p-[1px] shadow-sm'
+                'rounded-[20px] bg-gradient-to-r from-[#93c5fd] via-[#c4b5fd] to-[#f9a8d4] p-[1px]'
             )}
+            style={useDeployedChrome ? { boxShadow: DEPLOYED_CHAT_INPUT_GLOW_SHADOW } : undefined}
           >
             <div
               role='group'
@@ -382,7 +384,7 @@ export const ChatInput: React.FC<{
               className={cn(
                 'relative z-10 cursor-text bg-white',
                 useDeployedChrome
-                  ? 'rounded-[19px] px-3 py-2'
+                  ? 'rounded-[19px] px-2.5 py-1'
                   : 'rounded-2xl border border-[var(--border-1)] px-2.5 py-2',
                 isDragOver && 'border-purple-500'
               )}
