@@ -13,6 +13,7 @@ import {
 import { ArrowDown, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DEPLOYED_CHAT_CANVAS_BG } from '@/app/chat/constants'
+import { DeployedResponseLoader } from '@/app/chat/components/message/components/deployed-response-loader'
 import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClientChatMessage'
 
 interface ChatMessageContainerProps {
@@ -72,7 +73,6 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   onWelcomeQueryClick,
   onRegenerateMessage,
 }: ChatMessageContainerProps) {
-  const loadingLabel = isStreaming ? 'Fetching' : 'Thinking'
   const [selectionTip, setSelectionTip] = useState<{
     text: string
     top: number
@@ -228,32 +228,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
             })()
           )}
 
-          {/* Loading indicator with label and bouncing dots (when executing) */}
-          {isLoading && (
-            <div className='px-4 py-5'>
-              <div className='mx-auto max-w-3xl'>
-                <div className='flex items-center gap-2'>
-                  <div className='flex gap-1' aria-hidden>
-                    <span
-                      className='h-2 w-2 animate-bounce rounded-full bg-gray-600 [animation-delay:0ms] [animation-duration:1s] dark:bg-gray-400'
-                      style={{ animationDelay: '0ms' }}
-                    />
-                    <span
-                      className='h-2 w-2 animate-bounce rounded-full bg-gray-600 [animation-duration:1s] dark:bg-gray-400'
-                      style={{ animationDelay: '150ms' }}
-                    />
-                    <span
-                      className='h-2 w-2 animate-bounce rounded-full bg-gray-600 [animation-duration:1s] dark:bg-gray-400'
-                      style={{ animationDelay: '300ms' }}
-                    />
-                  </div>
-                  <span className='font-medium text-muted-foreground text-sm'>
-                    {loadingLabel}...
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
+          {isLoading && <DeployedResponseLoader isStreaming={isStreaming} />}
 
           {/* End of messages marker for scrolling */}
           <div ref={messagesEndRef} />
