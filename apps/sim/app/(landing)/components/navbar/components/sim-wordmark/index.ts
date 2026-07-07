@@ -1,1 +1,1 @@
-export { SimWordmark } from './sim-wordmark'
+export { SimWordmark, ArenaWordmark } from './sim-wordmark'

@@ -15,3 +15,4 @@ export {
 export { QueuedMessages } from './queued-messages'
 export { SuggestedActions } from './suggested-actions'
 export { UserInput, type UserInputHandle } from './user-input'
+export { MothershipView } from './mothership-view'

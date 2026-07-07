@@ -1,13 +1,12 @@
 'use client'
 
 import { useMemo } from 'react'
-import { Button } from '@/components/emcn/components'
+import { Button, cn } from '@sim/emcn'
 import {
   getConversationImageRefKey,
   listConversationFileOptions,
   toConversationImageRef,
 } from '@/lib/chat/conversation-image-catalog'
-import { cn } from '@/lib/core/utils/cn'
 import type { ConversationImageRef } from '@/lib/image-generation/reference-files'
 import type { ChatMessage } from '@/stores/chat/types'
 
