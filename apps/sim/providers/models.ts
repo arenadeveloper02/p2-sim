@@ -922,22 +922,22 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-10-15',
         speedOptimized: true,
       },
-      {
-        id: 'claude-3-haiku-20240307',
-        pricing: {
-          input: 0.25,
-          cachedInput: 0.03,
-          output: 1.25,
-          updatedAt: '2026-04-01',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 4096,
-        },
-        contextWindow: 200000,
-        releaseDate: '2024-03-13',
-        deprecated: true,
-      },
+      // {
+      //   id: 'claude-3-haiku-20240307',
+      //   pricing: {
+      //     input: 0.25,
+      //     cachedInput: 0.03,
+      //     output: 1.25,
+      //     updatedAt: '2026-04-01',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 4096,
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2024-03-13',
+      //   deprecated: true,
+      // },
     ],
   },
   'azure-openai': {
@@ -1505,22 +1505,22 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-06-17',
         speedOptimized: true,
       },
-      {
-        id: 'gemini-2.0-flash',
-        pricing: {
-          input: 0.1,
-          cachedInput: 0.025,
-          output: 0.4,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-          maxOutputTokens: 8192,
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-02-05',
-        deprecated: true,
-      },
+      // {
+      //   id: 'gemini-2.0-flash',
+      //   pricing: {
+      //     input: 0.1,
+      //     cachedInput: 0.025,
+      //     output: 0.4,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //     maxOutputTokens: 8192,
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-02-05',
+      //   deprecated: true,
+      // },
       // Retired models (as of September 24, 2025) - commented out to prevent 404 errors
       // {
       //   id: 'gemini-1.5-pro',
@@ -1574,21 +1574,21 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       //   },
       //   contextWindow: 1048576,
       // },
-      {
-        id: 'gemini-2.0-flash-lite',
-        pricing: {
-          input: 0.075,
-          output: 0.3,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-          maxOutputTokens: 8192,
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-02-25',
-        deprecated: true,
-      },
+      // {
+      //   id: 'gemini-2.0-flash-lite',
+      //   pricing: {
+      //     input: 0.075,
+      //     output: 0.3,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //     maxOutputTokens: 8192,
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-02-25',
+      //   deprecated: true,
+      // },
       {
         id: 'deep-research-pro-preview-12-2025',
         pricing: {
@@ -1762,35 +1762,35 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-06-17',
         speedOptimized: true,
       },
-      {
-        id: 'vertex/gemini-2.0-flash',
-        pricing: {
-          input: 0.15,
-          cachedInput: 0.025,
-          output: 0.6,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-02-05',
-        deprecated: true,
-      },
-      {
-        id: 'vertex/gemini-2.0-flash-lite',
-        pricing: {
-          input: 0.075,
-          output: 0.3,
-          updatedAt: '2026-04-01',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-02-25',
-        deprecated: true,
-      },
+      // {
+      //   id: 'vertex/gemini-2.0-flash',
+      //   pricing: {
+      //     input: 0.15,
+      //     cachedInput: 0.025,
+      //     output: 0.6,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-02-05',
+      //   deprecated: true,
+      // },
+      // {
+      //   id: 'vertex/gemini-2.0-flash-lite',
+      //   pricing: {
+      //     input: 0.075,
+      //     output: 0.3,
+      //     updatedAt: '2026-04-01',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-02-25',
+      //   deprecated: true,
+      // },
       {
         id: 'vertex/deep-research-pro-preview-12-2025',
         pricing: {
