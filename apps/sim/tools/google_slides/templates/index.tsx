@@ -727,7 +727,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g2380b89c92d_0_19',
             minChars: 2,
-            maxChars: 10,
+            maxChars: 3,
             description: 'Top stat percentage (28pt bold, centered, white text) - e.g., "86%"',
             content: '',
           },
@@ -747,7 +747,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g2380b89c92d_0_166',
             minChars: 2,
-            maxChars: 10,
+            maxChars: 3,
             description: 'Middle stat percentage (28pt bold, centered, white text) - e.g., "35%"',
             content: '',
           },
@@ -767,7 +767,7 @@ function buildTemplateSchema(): PresentationSchema {
             role: 'BODY',
             shapeId: 'g2380b89c92d_0_167',
             minChars: 2,
-            maxChars: 10,
+            maxChars: 3,
             description: 'Bottom stat percentage (28pt bold, centered, white text) - e.g., "45%"',
             content: '',
           },
@@ -7093,7 +7093,7 @@ function buildTemplateSchema(): PresentationSchema {
             minColumns: 2,
             rowLabelColumn: true,
             description:
-              'Flexible data table from minRows×minColumns up to maxRows×maxColumns. Put row labels in the first column; put values in the remaining columns. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically (never below minRows/minColumns).',
+              'Flexible data table from minRows×minColumns up to maxRows×maxColumns. Put row labels in the first column; put values in the remaining columns. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically (never below minRows/minColumns). If rows exceed the slide height, additional slides are created using the same template; continuation slides append " (continued)" to the title.',
             content: [],
             cellConstraints: {
               minChars: 1,
@@ -7132,7 +7132,7 @@ function buildTemplateSchema(): PresentationSchema {
             headerRow: true,
             rowLabelColumn: true,
             description:
-              'Flexible table with header row and row labels, from minRows×minColumns up to maxRows×maxColumns. Header row: leave the first column empty (corner), put column headers in the remaining columns. Body rows: first column = row label, remaining columns = data. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically (never below minRows/minColumns).',
+              'Flexible table with header row and row labels, from minRows×minColumns up to maxRows×maxColumns. Header row: leave the first column empty (corner), put column headers in the remaining columns. Body rows: first column = row label, remaining columns = data. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically (never below minRows/minColumns). If rows exceed the slide height, additional slides repeat the header row and remaining body rows; continuation slides append " (continued)" to the title.',
             content: [],
             cellConstraints: {
               minChars: 1,

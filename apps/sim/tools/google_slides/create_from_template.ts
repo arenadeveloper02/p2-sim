@@ -5,9 +5,9 @@ import type { ToolConfig } from '@/tools/types'
 import {
   buildTableCellTextEndIndexMap,
   buildTableContentRequests,
+  expandSlidesForTableOverflow,
   findTableColumnLayout,
   findTableDimensions,
-  findTableSlideLayout,
 } from '@/tools/google_slides/create-from-template-table'
 import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
@@ -51,6 +51,8 @@ interface BlockLike {
   maxColumns?: number
   minRows?: number
   minColumns?: number
+  headerRow?: boolean
+  rowLabelColumn?: boolean
 }
 
 interface SlideLike {
@@ -481,7 +483,23 @@ export const createFromTemplateTool: ToolConfig<
       originalSlideCount: originalSlidesToDelete.length,
     })
 
-    const slidesOrdered = [...schema.slides]
+    const templatePresRes = await fetchWithRetry(
+      `https://slides.googleapis.com/v1/presentations/${schema.id}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    const templatePresData = await templatePresRes.json()
+    if (!templatePresRes.ok) {
+      throw new Error(templatePresData.error?.message || 'Failed to read template presentation for tables')
+    }
+
+    const slidesOrdered = expandSlidesForTableOverflow([...schema.slides], templatePresData)
+    if (slidesOrdered.length > schema.slides.length) {
+      logger.info('Expanded slides for table overflow', {
+        originalSlideCount: schema.slides.length,
+        expandedSlideCount: slidesOrdered.length,
+      })
+    }
+
     const slideIndexToShapeMap: Record<string, string>[] = []
 
     // 2. Duplicate Slides & Reorder (Batch)
@@ -631,7 +649,6 @@ export const createFromTemplateTool: ToolConfig<
           }
 
           const layout = findTableColumnLayout(presData, tableObjectId)
-          const slideLayout = findTableSlideLayout(presData, tableObjectId)
 
           const tableContent = Array.isArray(content) ? content : []
           if (tableContent.length === 0) {
@@ -654,7 +671,6 @@ export const createFromTemplateTool: ToolConfig<
               minColumns: block.minColumns,
               cellTextEndIndexMap: tableCellTextEndIndexMap,
               layout: layout ?? undefined,
-              slideLayout: slideLayout ?? undefined,
             })
           )
         } else if (block.type === 'IMAGE' && content) {
