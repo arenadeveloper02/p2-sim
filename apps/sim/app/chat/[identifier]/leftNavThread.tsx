@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Image from 'next/image'
 import { formatRelativeTime } from '@sim/utils/formatting'
 import {
   ArrowLeft,
@@ -9,6 +10,7 @@ import {
   FileText,
   MessageSquareText,
   MoreHorizontal,
+  PanelLeftClose,
   Pin,
   PinOff,
   RefreshCw,
@@ -63,6 +65,8 @@ interface LeftNavThreadProps {
   isMobileOpen?: boolean
   onCloseMobile?: () => void
   searchInputRef?: React.RefObject<HTMLInputElement | null>
+  logoUrl?: string
+  onToggleSidebar?: () => void
 }
 
 function ThreadSkeleton() {
@@ -270,6 +274,8 @@ const LeftNavThread = ({
   isMobileOpen = false,
   onCloseMobile,
   searchInputRef,
+  logoUrl,
+  onToggleSidebar,
 }: LeftNavThreadProps) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
@@ -357,6 +363,24 @@ const LeftNavThread = ({
         isMobileOpen && 'shadow-xl'
       )}
     >
+      <div className='mb-4 flex items-center justify-between px-1'>
+        {logoUrl ? (
+          <Image src={logoUrl} alt='Logo' width={56} height={56} className='h-8 w-auto shrink-0' />
+        ) : (
+          <div className='size-8' />
+        )}
+        {onToggleSidebar && (
+          <button
+            type='button'
+            onClick={onToggleSidebar}
+            className='flex size-8 items-center justify-center rounded-md text-[var(--text-icon)] hover:bg-[var(--surface-3)]'
+            aria-label='Close sidebar'
+          >
+            <PanelLeftClose className='size-[14px]' />
+          </button>
+        )}
+      </div>
+
       <div className='flex flex-col gap-2'>
         {showReRun && onReRun && (
           <Button

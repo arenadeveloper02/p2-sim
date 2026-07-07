@@ -12,6 +12,7 @@ import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
+import { useBrandConfig } from '@/ee/whitelabeling/branding'
 // import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   deployedChatPromptSentEvent,
@@ -46,6 +47,9 @@ import { FeedbackView } from './FeedbackView'
 import LeftNavThread, { type ThreadRecord } from './leftNavThread'
 
 const logger = createLogger('ChatClient')
+
+const ARENA_LOGO_URL =
+  'https://arenav2image.s3.us-west-1.amazonaws.com/rt/calibrate/Arena_Logo_WebDashboard.svg'
 
 interface ChatConfig {
   id: string
@@ -180,6 +184,7 @@ function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T 
 
 export default function ChatClient({ identifier }: { identifier: string }) {
   const router = useRouter()
+  const brand = useBrandConfig()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -218,6 +223,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const threads = threadsQuery.data ?? []
   const isThreadsLoading = threadsQuery.isLoading
   const threadsError = threadsQuery.error?.message ?? null
+  const sidebarLogoUrl = useMemo(
+    () =>
+      chatConfig?.customizations?.logoUrl ||
+      chatConfig?.customizations?.imageUrl ||
+      brand.logoUrl ||
+      ARENA_LOGO_URL,
+    [chatConfig, brand.logoUrl]
+  )
   const renameThreadMutation = useRenameDeployedChatThread(identifier)
   const deleteThreadMutation = useDeleteDeployedChatThread(identifier)
   const pinThreadMutation = useSetDeployedChatThreadPinned(identifier)
@@ -1527,52 +1540,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   // Standard text-based chat interface
   return (
-    <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-      <div className='relative z-[60] shrink-0'>
-        <ArenaChatHeader
-          chatConfig={chatConfig}
-          showFeedbackView={showFeedbackView}
-          isSidebarCollapsed={isSidebarCollapsed}
-          onToggleSidebar={handleToggleSidebar}
-          onExportChat={handleExportChat}
-          onShareChat={handleShareChat}
-          onShowKeyboardShortcuts={() => setShowKeyboardShortcutsHint(true)}
-        />
-      </div>
-
-      <div className='relative flex min-h-0 flex-1'>
-        {isHistoryLoading && (
-          <div className='absolute inset-0 z-[105] flex items-center justify-center bg-white/60'>
-            <LoadingAgentP2 size='lg' />
-          </div>
-        )}
-
-        <div className='hidden md:flex'>
-          {!isSidebarCollapsed && (
-            <LeftNavThread
-              threads={threads as ThreadRecord[]}
-              isLoading={isThreadsLoading}
-              error={threadsError || null}
-              currentChatId={currentChatId || ''}
-              onSelectThread={handleSelectThread}
-              onRefreshThread={handleRefreshThread}
-              onNewChat={handleNewChat}
-              onRenameThread={handleRenameThread}
-              onDeleteThread={handleDeleteThread}
-              onTogglePinThread={handleTogglePinThread}
-              isStreaming={isStreamingResponse || isLoading}
-              workflowId={identifier}
-              showReRun={customFields.length > 0}
-              showFeedbackView={showFeedbackView}
-              onReRun={handleRerun}
-              onViewFeedback={handleViewFeedback}
-              onViewGoldenQueries={handleViewGoldenQueries}
-              searchInputRef={threadSearchInputRef}
-            />
-          )}
-        </div>
-
-        {isMobileSidebarOpen && (
+    <div className='fixed inset-0 z-[100] flex bg-background text-foreground'>
+      <div className='hidden h-full shrink-0 md:flex'>
+        {!isSidebarCollapsed && (
           <LeftNavThread
             threads={threads as ThreadRecord[]}
             isLoading={isThreadsLoading}
@@ -1591,13 +1561,59 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             onReRun={handleRerun}
             onViewFeedback={handleViewFeedback}
             onViewGoldenQueries={handleViewGoldenQueries}
-            isMobileOpen
-            onCloseMobile={() => setIsMobileSidebarOpen(false)}
             searchInputRef={threadSearchInputRef}
+            logoUrl={sidebarLogoUrl}
+            onToggleSidebar={handleToggleSidebar}
           />
         )}
+      </div>
 
-        <div className='flex min-h-0 min-w-0 flex-1 flex-col'>
+      {isMobileSidebarOpen && (
+        <LeftNavThread
+          threads={threads as ThreadRecord[]}
+          isLoading={isThreadsLoading}
+          error={threadsError || null}
+          currentChatId={currentChatId || ''}
+          onSelectThread={handleSelectThread}
+          onRefreshThread={handleRefreshThread}
+          onNewChat={handleNewChat}
+          onRenameThread={handleRenameThread}
+          onDeleteThread={handleDeleteThread}
+          onTogglePinThread={handleTogglePinThread}
+          isStreaming={isStreamingResponse || isLoading}
+          workflowId={identifier}
+          showReRun={customFields.length > 0}
+          showFeedbackView={showFeedbackView}
+          onReRun={handleRerun}
+          onViewFeedback={handleViewFeedback}
+          onViewGoldenQueries={handleViewGoldenQueries}
+          isMobileOpen
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          searchInputRef={threadSearchInputRef}
+          logoUrl={sidebarLogoUrl}
+          onToggleSidebar={handleToggleSidebar}
+        />
+      )}
+
+      <div className='relative flex min-h-0 min-w-0 flex-1 flex-col'>
+        <ArenaChatHeader
+          chatConfig={chatConfig}
+          showFeedbackView={showFeedbackView}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={handleToggleSidebar}
+          onExportChat={handleExportChat}
+          onShareChat={handleShareChat}
+          onShowKeyboardShortcuts={() => setShowKeyboardShortcutsHint(true)}
+        />
+
+        <div className='relative flex min-h-0 flex-1'>
+          {isHistoryLoading && (
+            <div className='absolute inset-0 z-[105] flex items-center justify-center bg-white/60'>
+              <LoadingAgentP2 size='lg' />
+            </div>
+          )}
+
+          <div className='flex min-h-0 min-w-0 flex-1 flex-col'>
           {showFeedbackView ? (
             <FeedbackView
               feedbackData={feedbackData}
@@ -1666,6 +1682,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             </>
           )}
         </div>
+      </div>
       </div>
 
       {/* Start Block Input Modal */}

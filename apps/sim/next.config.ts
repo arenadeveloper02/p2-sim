@@ -1,5 +1,9 @@
+import path from 'node:path'
 import type { NextConfig } from 'next'
 import { env, isTruthy } from './lib/core/config/env'
+
+/** Monorepo root — required so Turbopack doesn't pick a stray ~/yarn.lock as the workspace root. */
+const monorepoRoot = path.resolve(__dirname, '../..')
 import { isDev } from './lib/core/config/env-flags'
 import {
   getChatEmbedCSPPolicy,
@@ -8,6 +12,10 @@ import {
 } from './lib/core/security/csp'
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: monorepoRoot,
+  },
+  outputFileTracingRoot: monorepoRoot,
   devIndicators: false,
   poweredByHeader: false,
   images: {
