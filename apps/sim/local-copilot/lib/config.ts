@@ -1,3 +1,4 @@
+import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { isHosted } from '@/lib/core/config/env-flags'
 import { isEmailAllowed } from '@/lib/core/security/deployment'
 import type { LocalCopilotConfig, LocalCopilotProviderId } from '@/local-copilot/lib/types'
@@ -35,13 +36,11 @@ function resolveProvider(value: string | undefined): LocalCopilotProviderId {
  */
 function resolveApiKey(provider: LocalCopilotProviderId): string | undefined {
   if (provider === 'anthropic') {
-    return (
-      process.env.ANTHROPIC_API_KEY?.trim() ||
-      process.env.ANTHROPIC_API_KEY_1?.trim() ||
-      process.env.ANTHROPIC_API_KEY_2?.trim() ||
-      process.env.ANTHROPIC_API_KEY_3?.trim() ||
-      undefined
-    )
+    try {
+      return getRotatingApiKey('anthropic')
+    } catch {
+      return undefined
+    }
   }
 
   if (provider === 'openai' || provider === 'openai-compatible') {
@@ -102,7 +101,7 @@ export function assertLocalCopilotEnabled(config: LocalCopilotConfig = getLocalC
   if (!config.apiKey && config.provider !== 'openai-compatible') {
     const hint =
       config.provider === 'anthropic'
-        ? 'Set ANTHROPIC_API_KEY or ANTHROPIC_API_KEY_1 (not COPILOT_API_KEY).'
+        ? 'Set ANTHROPIC_API_KEY or ANTHROPIC_API_KEY_1 through _3 (not COPILOT_API_KEY).'
         : 'Set OPENAI_API_KEY or OPENAI_API_KEY_1.'
     throw new Error(`Arena Copilot requires an API key for the configured provider. ${hint}`)
   }

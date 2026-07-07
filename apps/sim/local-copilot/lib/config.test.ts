@@ -1,36 +1,45 @@
 /**
  * @vitest-environment node
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const { mockGetRotatingApiKey } = vi.hoisted(() => ({
+  mockGetRotatingApiKey: vi.fn(),
+}))
+
+vi.mock('@/lib/core/config/api-keys', () => ({
+  getRotatingApiKey: mockGetRotatingApiKey,
+}))
+
 import {
   getLocalCopilotAllowedEmails,
   getLocalCopilotConfig,
   isUserAllowedForLocalCopilot,
 } from '@/local-copilot/lib/config'
-
 const ORIGINAL_ENV = { ...process.env }
 
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV }
+  vi.clearAllMocks()
 })
 
 describe('getLocalCopilotConfig api key resolution', () => {
-  it('uses Anthropic keys for anthropic provider and ignores COPILOT_API_KEY', () => {
+  it('uses rotating Anthropic keys for anthropic provider and ignores COPILOT_API_KEY', () => {
+    mockGetRotatingApiKey.mockReturnValue('sk-ant-test-key')
     process.env.COPILOT_PROVIDER = 'anthropic'
     process.env.COPILOT_API_KEY = 'sk-sim-copilot-test'
-    process.env.ANTHROPIC_API_KEY_1 = 'sk-ant-test-key'
-    delete process.env.ANTHROPIC_API_KEY
 
     expect(getLocalCopilotConfig().apiKey).toBe('sk-ant-test-key')
+    expect(mockGetRotatingApiKey).toHaveBeenCalledWith('anthropic')
   })
 
-  it('prefers ANTHROPIC_API_KEY over numbered fallbacks', () => {
+  it('returns undefined when Anthropic rotation keys are not configured', () => {
+    mockGetRotatingApiKey.mockImplementation(() => {
+      throw new Error('No API keys configured for rotation')
+    })
     process.env.COPILOT_PROVIDER = 'anthropic'
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-primary'
-    process.env.ANTHROPIC_API_KEY_1 = 'sk-ant-backup'
-    delete process.env.COPILOT_API_KEY
 
-    expect(getLocalCopilotConfig().apiKey).toBe('sk-ant-primary')
+    expect(getLocalCopilotConfig().apiKey).toBeUndefined()
   })
 })
 

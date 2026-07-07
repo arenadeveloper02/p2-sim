@@ -61,7 +61,7 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
         logger.error('Anthropic request failed', { status: response.status, errorText })
         if (response.status === 401) {
           throw new Error(
-            'Anthropic API authentication failed. Set ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY_1) in deployment secrets — COPILOT_API_KEY is for Sim Cloud copilot only.'
+            'Anthropic API authentication failed. Set ANTHROPIC_API_KEY or ANTHROPIC_API_KEY_1 through _3 in deployment secrets — COPILOT_API_KEY is for Sim Cloud copilot only.'
           )
         }
         throw new Error(getErrorMessage(errorText, `Anthropic request failed (${response.status})`))

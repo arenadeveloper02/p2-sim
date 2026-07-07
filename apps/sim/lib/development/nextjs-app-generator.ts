@@ -6,6 +6,7 @@ import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
+import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
 import {
   deployPreparedVercelProject,
@@ -473,13 +474,13 @@ function normalizeAppSpec(
 }
 
 function getAnthropicApiKey(): string {
-  const apiKey = env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
+  try {
+    return getRotatingApiKey('anthropic')
+  } catch {
     throw new Error(
-      'ANTHROPIC_API_KEY is not configured. Set it to enable Next.js app generation.'
+      'ANTHROPIC_API_KEY is not configured. Set ANTHROPIC_API_KEY or ANTHROPIC_API_KEY_1 through _3 to enable Next.js app generation.'
     )
   }
-  return apiKey
 }
 
 function getMaxOutputTokens(modelId: string): number {
