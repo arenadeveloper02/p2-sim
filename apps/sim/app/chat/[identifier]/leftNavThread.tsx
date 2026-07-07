@@ -31,7 +31,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/core/utils/cn'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
-import { DEPLOYED_CHAT_CANVAS_BG } from '@/app/chat/constants'
+import { DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_SIDEBAR_BORDER } from '@/app/chat/constants'
 import { groupThreadsByDate } from '@/app/chat/utils/thread-date-groups'
 
 export interface ThreadRecord {
@@ -96,6 +96,81 @@ function sidebarRowLabelClass(isActive: boolean) {
     isActive
       ? 'font-medium text-[#155CBA]'
       : 'font-normal text-[var(--text-body)] group-hover:font-medium group-hover:text-[#155CBA]'
+  )
+}
+
+function sidebarPanelClass(collapsed: boolean) {
+  return cn(
+    'flex h-full flex-col rounded-2xl border bg-[#F3F8FE]',
+    collapsed ? 'w-16 items-center px-1 py-3' : 'w-[280px] px-2 py-4'
+  )
+}
+
+interface SidebarShellProps {
+  collapsed?: boolean
+  children: React.ReactNode
+}
+
+function SidebarShell({ collapsed = false, children }: SidebarShellProps) {
+  return (
+    <div className='flex h-full shrink-0 p-2' style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}>
+      <div
+        className={sidebarPanelClass(collapsed)}
+        style={{ borderColor: DEPLOYED_CHAT_SIDEBAR_BORDER }}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+interface SidebarToggleButtonProps {
+  onClick: () => void
+}
+
+function SidebarCollapseButton({ onClick }: SidebarToggleButtonProps) {
+  return (
+    <button
+      type='button'
+      onClick={onClick}
+      className='flex size-8 shrink-0 items-center justify-center rounded-lg border bg-white shadow-sm transition-shadow hover:shadow-md'
+      style={{ borderColor: DEPLOYED_CHAT_SIDEBAR_BORDER }}
+      aria-label='Collapse sidebar'
+    >
+      <PanelLeftClose className='size-[14px] text-[var(--text-icon)]' />
+    </button>
+  )
+}
+
+interface SidebarHeaderProps {
+  logoUrl?: string
+  collapsed: boolean
+  onToggleSidebar?: () => void
+}
+
+function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderProps) {
+  return (
+    <div
+      className={cn(
+        'mb-4 flex items-center px-0.5',
+        collapsed ? 'justify-center' : 'justify-between'
+      )}
+    >
+      {logoUrl ? (
+        <Image
+          src={logoUrl}
+          alt='Logo'
+          width={collapsed ? 24 : 56}
+          height={collapsed ? 24 : 56}
+          className={cn('shrink-0 object-contain', collapsed ? 'size-6' : 'h-8 w-auto')}
+        />
+      ) : (
+        <div className={cn('shrink-0', collapsed ? 'size-6' : 'size-8')} />
+      )}
+      {!collapsed && onToggleSidebar ? (
+        <SidebarCollapseButton onClick={onToggleSidebar} />
+      ) : null}
+    </div>
   )
 }
 
@@ -478,50 +553,16 @@ const LeftNavThread = ({
 
   if (isCollapsed && !isMobileOpen) {
     return (
-      <div
-        className='flex h-full w-12 shrink-0 flex-col items-center border-[var(--border-1)] border-r px-1 py-4'
-        style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
-      >
-        {logoUrl ? (
-          <Image
-            src={logoUrl}
-            alt='Logo'
-            width={40}
-            height={40}
-            className='mb-3 h-7 w-auto shrink-0'
-          />
-        ) : null}
+      <SidebarShell collapsed>
+        <SidebarHeader logoUrl={logoUrl} collapsed />
         {primaryActionButtons(true)}
-        <hr className='my-4 w-full border-[var(--border-1)]' />
-      </div>
+      </SidebarShell>
     )
   }
 
   const sidebarContent = (
-    <div
-      className={cn(
-        'flex h-full w-[280px] shrink-0 flex-col border-[var(--border-1)] border-r px-2 py-4',
-        isMobileOpen && 'shadow-xl'
-      )}
-      style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
-    >
-      <div className='mb-4 flex items-center justify-between px-1'>
-        {logoUrl ? (
-          <Image src={logoUrl} alt='Logo' width={56} height={56} className='h-8 w-auto shrink-0' />
-        ) : (
-          <div className='size-8' />
-        )}
-        {onToggleSidebar && (
-          <button
-            type='button'
-            onClick={onToggleSidebar}
-            className='flex size-8 items-center justify-center rounded-md text-[var(--text-icon)] hover:bg-[var(--surface-3)]'
-            aria-label='Close sidebar'
-          >
-            <PanelLeftClose className='size-[14px]' />
-          </button>
-        )}
-      </div>
+    <SidebarShell collapsed={false}>
+      <SidebarHeader logoUrl={logoUrl} collapsed={false} onToggleSidebar={onToggleSidebar} />
 
       {primaryActionButtons(false)}
 
@@ -643,7 +684,7 @@ const LeftNavThread = ({
           pendingLabel: 'Deleting...',
         }}
       />
-    </div>
+    </SidebarShell>
   )
 
   if (isMobileOpen) {
@@ -657,7 +698,7 @@ const LeftNavThread = ({
         />
         <div className='fixed inset-y-0 left-0 z-50 md:hidden'>
           <div className='flex h-full items-start justify-between'>
-            {sidebarContent}
+            <div className={cn(isMobileOpen && 'shadow-xl')}>{sidebarContent}</div>
             <button
               type='button'
               className='m-2 flex size-8 items-center justify-center rounded-full bg-[var(--surface-1)] shadow'

@@ -67,7 +67,7 @@ export function ArenaChatHeader({
                 type='button'
                 onClick={onToggleSidebar}
                 className='hidden size-8 items-center justify-center rounded-md text-[var(--text-icon)] hover:bg-[var(--surface-2)] md:flex'
-                aria-label='Open sidebar'
+                aria-label='Expand sidebar'
               >
                 <PanelLeftOpen className='size-[14px]' />
               </button>

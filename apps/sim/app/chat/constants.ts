@@ -27,4 +27,7 @@ export const DEPLOYED_CHAT_ACTIVE_THREAD_COLOR = '#155CBA'
 export const DEPLOYED_CHAT_INPUT_GLOW_SHADOW =
   '0 0 0 1px rgba(147, 197, 253, 0.25), 0 4px 16px rgba(147, 197, 253, 0.18), 0 4px 20px rgba(249, 168, 212, 0.12)'
 
+/** Deployed chat sidebar border */
+export const DEPLOYED_CHAT_SIDEBAR_BORDER = '#C7D9F0'
+
 export type ChatErrorType = keyof typeof CHAT_ERROR_MESSAGES
