@@ -4,6 +4,7 @@ import {
   type Dispatch,
   Fragment,
   memo,
+  type ReactNode,
   type SetStateAction,
   useCallback,
   useEffect,
@@ -41,6 +42,7 @@ import {
   mergeToolOutputImageUrls,
   normalizeImageUrlForCompare,
   renderBs64Img,
+  renderChatMessageImage,
   resolveMessageImagesAndProse,
   S3UploadFailedAlert,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
@@ -113,6 +115,7 @@ function isPipeSegmentCopyable(partsLen: number, index: number, part: string): b
 interface LineWithPipeHoverProps {
   line: string
   onCopySegment: (text: string) => void
+  renderImage?: (args: { src: string; alt?: string }) => ReactNode
 }
 
 type WelcomeSegment =
@@ -152,7 +155,7 @@ function parseWelcomeSegments(content: string): WelcomeSegment[] {
   return segments
 }
 
-function LineWithPipeHover({ line, onCopySegment }: LineWithPipeHoverProps) {
+function LineWithPipeHover({ line, onCopySegment, renderImage }: LineWithPipeHoverProps) {
   const parts = line.split('|')
   const handleCopy = useCallback(
     (text: string) => {
@@ -175,13 +178,21 @@ function LineWithPipeHover({ line, onCopySegment }: LineWithPipeHoverProps) {
                     onClick={() => handleCopy(part)}
                     className='inline cursor-pointer rounded border-0 bg-transparent px-0.5 py-0 font-inherit text-inherit no-underline transition-colors hover:underline hover:decoration-2 hover:decoration-gray-400 hover:underline-offset-2'
                   >
-                    <ArenaCopilotMarkdownRenderer content={part} variant='inline' />
+                    <ArenaCopilotMarkdownRenderer
+                      content={part}
+                      variant='inline'
+                      renderImage={renderImage}
+                    />
                   </button>
                 </Tooltip.Trigger>
                 <Tooltip.Content side='top'>Click to copy</Tooltip.Content>
               </Tooltip.Root>
             ) : (
-              <ArenaCopilotMarkdownRenderer content={part} variant='inline' />
+              <ArenaCopilotMarkdownRenderer
+                content={part}
+                variant='inline'
+                renderImage={renderImage}
+              />
             )}
           </Fragment>
         ))}
@@ -286,6 +297,53 @@ export const ArenaClientChatMessage = memo(
       [onWelcomeQueryClick]
     )
 
+    const generatedImagesByUrl = useMemo(() => {
+      const entries = (message.generatedImages ?? []).map(
+        (image): [string, AssistantGeneratedImage] => [
+          normalizeImageUrlForCompare(image.url),
+          image,
+        ]
+      )
+      return new Map(entries)
+    }, [message.generatedImages])
+
+    const getGeneratedImageSelectionProps = useCallback(
+      (imageUrl?: string) => {
+        if (!imageUrl || !onToggleGeneratedImage) {
+          return {}
+        }
+
+        const matchedImage = resolveSelectableGeneratedImage(imageUrl, generatedImagesByUrl)
+        if (!matchedImage) {
+          return {}
+        }
+
+        const isSelected = selectedGeneratedImageIds?.has(matchedImage.id) ?? false
+
+        return {
+          onSelect: () =>
+            onToggleGeneratedImage(message.id, {
+              id: matchedImage.id,
+              name: matchedImage.name || 'Generated image',
+              url: matchedImage.url,
+              key: matchedImage.key,
+              type: matchedImage.type,
+              size: matchedImage.size,
+              context: matchedImage.context,
+            }),
+          selectLabel: isSelected ? 'Selected' : 'Select',
+          isSelected,
+        }
+      },
+      [generatedImagesByUrl, message.id, onToggleGeneratedImage, selectedGeneratedImageIds]
+    )
+
+    const renderMarkdownImage = useCallback(
+      ({ src }: { src: string; alt?: string }) =>
+        renderChatMessageImage(src, getGeneratedImageSelectionProps(src)),
+      [getGeneratedImageSelectionProps]
+    )
+
     /** Renders string content. When onCopySegmentToInput is set and content has pipes (and is not a table/code block), renders line-by-line: each pipe splits the line; columns strictly between two other columns are click-to-copy (trimmed). Markdown in every column still renders (e.g. **bold**). */
     const renderStringContent = useCallback(
       (str: string) => {
@@ -294,10 +352,10 @@ export const ArenaClientChatMessage = memo(
         }
 
         if (!onCopySegmentToInput || !str.includes('|')) {
-          return <ArenaCopilotMarkdownRenderer content={str} />
+          return <ArenaCopilotMarkdownRenderer content={str} renderImage={renderMarkdownImage} />
         }
         if (isLikelyMarkdownTable(str) || hasFencedCodeBlock(str)) {
-          return <ArenaCopilotMarkdownRenderer content={str} />
+          return <ArenaCopilotMarkdownRenderer content={str} renderImage={renderMarkdownImage} />
         }
         const lines = str.split(/\r?\n/)
         return (
@@ -306,16 +364,20 @@ export const ArenaClientChatMessage = memo(
               <span key={i}>
                 {i > 0 && '\n'}
                 {line.includes('|') ? (
-                  <LineWithPipeHover line={line} onCopySegment={onCopySegmentToInput} />
+                  <LineWithPipeHover
+                    line={line}
+                    onCopySegment={onCopySegmentToInput}
+                    renderImage={renderMarkdownImage}
+                  />
                 ) : (
-                  <ArenaCopilotMarkdownRenderer content={line} />
+                  <ArenaCopilotMarkdownRenderer content={line} renderImage={renderMarkdownImage} />
                 )}
               </span>
             ))}
           </span>
         )
       },
-      [message.isInitialMessage, onCopySegmentToInput, renderWelcomeMessage]
+      [message.isInitialMessage, onCopySegmentToInput, renderMarkdownImage, renderWelcomeMessage]
     )
 
     const handleUserAttachmentDownload = useCallback((attachment: { dataUrl: string }) => {
@@ -387,7 +449,12 @@ export const ArenaClientChatMessage = memo(
             return renderStringContent(txtTrim)
           }
 
-          return <ArenaCopilotMarkdownRenderer content={JSON.stringify(content, null, 2)} />
+          return (
+            <ArenaCopilotMarkdownRenderer
+              content={JSON.stringify(content, null, 2)}
+              renderImage={renderMarkdownImage}
+            />
+          )
         }
 
         if (typeof content === 'string') {
@@ -444,7 +511,13 @@ export const ArenaClientChatMessage = memo(
               <>
                 {textParts.length > 0 && renderStringContent(textParts.join('\n\n'))}
                 {base64Images.map((imageData, index) => (
-                  <div key={index}>{renderBs64Img({ isBase64: true, imageData })}</div>
+                  <div key={index}>
+                    {renderBs64Img({
+                      isBase64: true,
+                      imageData,
+                      ...getGeneratedImageSelectionProps(imageData),
+                    })}
+                  </div>
                 ))}
               </>
             )
@@ -453,7 +526,12 @@ export const ArenaClientChatMessage = memo(
           return renderStringContent(content)
         }
 
-        return <ArenaCopilotMarkdownRenderer content={String(content)} />
+        return (
+          <ArenaCopilotMarkdownRenderer
+            content={String(content)}
+            renderImage={renderMarkdownImage}
+          />
+        )
       } catch (error) {
         arenaChatMessageLogger.error('Error rendering message content', { error })
         return (
@@ -497,46 +575,6 @@ export const ArenaClientChatMessage = memo(
 
     const containsBase64Images = hasBase64Images(cleanTextContent)
     const hasImageUrl = !!getImageUrlFromContent(cleanTextContent)
-    const generatedImagesByUrl = useMemo(() => {
-      const entries = (message.generatedImages ?? []).map(
-        (image): [string, AssistantGeneratedImage] => [
-          normalizeImageUrlForCompare(image.url),
-          image,
-        ]
-      )
-      return new Map(entries)
-    }, [message.generatedImages])
-
-    const getGeneratedImageSelectionProps = useCallback(
-      (imageUrl?: string) => {
-        if (!imageUrl || !onToggleGeneratedImage) {
-          return {}
-        }
-
-        const matchedImage = resolveSelectableGeneratedImage(imageUrl, generatedImagesByUrl)
-        if (!matchedImage) {
-          return {}
-        }
-
-        const isSelected = selectedGeneratedImageIds?.has(matchedImage.id) ?? false
-
-        return {
-          onSelect: () =>
-            onToggleGeneratedImage(message.id, {
-              id: matchedImage.id,
-              name: matchedImage.name || 'Generated image',
-              url: matchedImage.url,
-              key: matchedImage.key,
-              type: matchedImage.type,
-              size: matchedImage.size,
-              context: matchedImage.context,
-            }),
-          selectLabel: isSelected ? 'Selected' : 'Select',
-          isSelected,
-        }
-      },
-      [generatedImagesByUrl, message.id, onToggleGeneratedImage, selectedGeneratedImageIds]
-    )
 
     const [knowledgeModalDoc, setKnowledgeModalDoc] = useState<{
       documentName: string
