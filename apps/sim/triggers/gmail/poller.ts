@@ -2,7 +2,6 @@ import { createLogger } from '@sim/logger'
 import { GmailIcon } from '@/components/icons'
 import { requestJson } from '@/lib/api/client/request'
 import { gmailLabelsSelectorContract } from '@/lib/api/contracts/selectors/google'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import type { TriggerConfig } from '@/triggers/types'
 
 const logger = createLogger('GmailPollingTrigger')
@@ -37,6 +36,7 @@ export const gmailPollingTrigger: TriggerConfig = {
       required: false,
       options: [], // Will be populated dynamically from user's Gmail labels
       fetchOptions: async (blockId: string) => {
+        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null

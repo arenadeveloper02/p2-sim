@@ -2,13 +2,15 @@ import { TableIcon } from '@/components/icons'
 import { requestJson } from '@/lib/api/client/request'
 import { listTablesContract } from '@/lib/api/contracts/tables'
 import type { TableDefinition } from '@/lib/table'
-import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { tableKeys } from '@/hooks/queries/utils/table-keys'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import type { TriggerConfig } from '@/triggers/types'
 
 async function fetchTableColumns(blockId: string): Promise<Array<{ label: string; id: string }>> {
+  const [{ getQueryClient }, { useWorkflowRegistry }, { useSubBlockStore }] = await Promise.all([
+    import('@/app/_shell/providers/get-query-client'),
+    import('@/stores/workflows/registry/store'),
+    import('@/stores/workflows/subblock/store'),
+  ])
   const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
   const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
   if (!activeWorkflowId || !workspaceId) return []
