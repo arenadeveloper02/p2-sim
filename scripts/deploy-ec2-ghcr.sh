@@ -1,6 +1,3 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_DEPLOY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEPLOY_ROOT="${DEPLOY_ROOT:-}"
@@ -48,6 +45,23 @@ fi
 
 export IMAGE_TAG="${IMAGE_TAG:-$IMAGE_TAG_ARG}"
 
+SIM_ENV_FILE="${DEPLOY_ROOT}/apps/sim/.env"
+REALTIME_ENV_FILE="${DEPLOY_ROOT}/apps/realtime/.env"
+
+if [ ! -f "$SIM_ENV_FILE" ]; then
+  echo "Missing env file: $SIM_ENV_FILE" >&2
+  echo "Copy apps/sim/.env.example to apps/sim/.env and configure it before deploying." >&2
+  exit 1
+fi
+
+if [ ! -f "$REALTIME_ENV_FILE" ]; then
+  echo "Missing env file: $REALTIME_ENV_FILE" >&2
+  echo "Copy apps/realtime/.env.example to apps/realtime/.env and configure it before deploying." >&2
+  exit 1
+fi
+
+COMPOSE_ENV_ARGS=(--env-file "$SIM_ENV_FILE")
+
 GHCR_PASSWORD="${GHCR_TOKEN:-${CR_PAT:-}}"
 if [ -n "$GHCR_PASSWORD" ]; then
   echo "$GHCR_PASSWORD" | docker login ghcr.io \
@@ -59,15 +73,15 @@ echo "Deploying IMAGE_TAG=${IMAGE_TAG}"
 echo "Using compose file: ${COMPOSE_FILE}"
 
 cd "$DEPLOY_ROOT"
-docker compose -f "$COMPOSE_FILE" pull simstudio realtime migrations
-docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" pull simstudio realtime migrations
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" up -d --remove-orphans
 
 deadline=$((SECONDS + ${DEPLOY_HEALTH_TIMEOUT_SECONDS:-240}))
 
 until curl -fsS http://127.0.0.1:3002/health >/dev/null; do
   if [ "$SECONDS" -ge "$deadline" ]; then
-    docker compose -f "$COMPOSE_FILE" ps
-    docker compose -f "$COMPOSE_FILE" logs --tail=100 realtime
+    docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" ps
+    docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" logs --tail=100 realtime
     exit 1
   fi
   sleep 5
@@ -75,12 +89,12 @@ done
 
 until curl -fsS http://127.0.0.1:3000 >/dev/null; do
   if [ "$SECONDS" -ge "$deadline" ]; then
-    docker compose -f "$COMPOSE_FILE" ps
-    docker compose -f "$COMPOSE_FILE" logs --tail=100 simstudio
+    docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" ps
+    docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" logs --tail=100 simstudio
     exit 1
   fi
   sleep 5
 done
 
 docker image prune -f
-docker compose -f "$COMPOSE_FILE" ps
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" ps
