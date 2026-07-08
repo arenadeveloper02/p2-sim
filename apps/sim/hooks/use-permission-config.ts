@@ -87,6 +87,7 @@ export function usePermissionConfig(): PermissionConfigResult {
   }, [permissionData])
 
   const isInPermissionGroup = !!permissionData?.permissionGroupId
+  const isOrgAdmin = permissionData?.isOrgAdmin === true
 
   const mergedAllowedIntegrations = useMemo(() => {
     const envAllowlist = envAllowlistData?.allowedIntegrations ?? null
@@ -96,10 +97,10 @@ export function usePermissionConfig(): PermissionConfigResult {
   const isBlockAllowed = useMemo(() => {
     return (blockType: string) => {
       if (isBlockTypeAccessControlExempt(blockType)) return true
-      if (mergedAllowedIntegrations === null) return true
+      if (isOrgAdmin || mergedAllowedIntegrations === null) return true
       return mergedAllowedIntegrations.includes(blockType.toLowerCase())
     }
-  }, [mergedAllowedIntegrations])
+  }, [isOrgAdmin, mergedAllowedIntegrations])
 
   const isProviderAllowed = useMemo(() => {
     return (providerId: string) => {
@@ -121,14 +122,14 @@ export function usePermissionConfig(): PermissionConfigResult {
       const workspaceVisible = blocks.filter((block) =>
         isBlockVisibleForWorkspace(block.type, workspaceId)
       )
-      if (mergedAllowedIntegrations === null) return workspaceVisible
+      if (isOrgAdmin || mergedAllowedIntegrations === null) return workspaceVisible
       return workspaceVisible.filter(
         (block) =>
           isBlockTypeAccessControlExempt(block.type) ||
           mergedAllowedIntegrations.includes(block.type.toLowerCase())
       )
     }
-  }, [mergedAllowedIntegrations, workspaceId])
+  }, [isOrgAdmin, mergedAllowedIntegrations, workspaceId])
 
   const filterProviders = useMemo(() => {
     return (providerIds: string[]): string[] => {
