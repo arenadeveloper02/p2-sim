@@ -10,6 +10,8 @@ import {
   updateCustomBlockContract,
 } from '@/lib/api/contracts/custom-blocks'
 
+export const CUSTOM_BLOCK_LIST_STALE_TIME = 60 * 1000
+
 export const customBlockKeys = {
   all: ['custom-blocks'] as const,
   lists: () => [...customBlockKeys.all, 'list'] as const,
@@ -36,7 +38,7 @@ function useCustomBlocksQuery<T>(
     queryKey: customBlockKeys.list(workspaceId),
     queryFn: ({ signal }) => fetchCustomBlocks(workspaceId as string, signal),
     enabled: Boolean(workspaceId),
-    staleTime: 60 * 1000,
+    staleTime: CUSTOM_BLOCK_LIST_STALE_TIME,
     select,
   })
 }
@@ -56,7 +58,7 @@ export function usePublishCustomBlock(workspaceId?: string) {
   return useMutation({
     mutationFn: (body: PublishCustomBlockBody) => requestJson(publishCustomBlockContract, { body }),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: customBlockKeys.list(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: customBlockKeys.lists() })
     },
   })
 }
@@ -67,7 +69,7 @@ export function useUpdateCustomBlock(workspaceId?: string) {
     mutationFn: ({ id, ...body }: UpdateCustomBlockBody & { id: string }) =>
       requestJson(updateCustomBlockContract, { params: { id }, body }),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: customBlockKeys.list(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: customBlockKeys.lists() })
     },
   })
 }
@@ -77,7 +79,7 @@ export function useDeleteCustomBlock(workspaceId?: string) {
   return useMutation({
     mutationFn: (id: string) => requestJson(deleteCustomBlockContract, { params: { id } }),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: customBlockKeys.list(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: customBlockKeys.lists() })
     },
   })
 }
