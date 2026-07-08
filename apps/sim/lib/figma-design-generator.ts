@@ -2,7 +2,7 @@
  * Figma Design Generator with AI
  *
  * This module generates Figma designs automatically using:
- * 1. Claude AI (Sonnet 4.5) to generate HTML/CSS from prompts and wireframes
+ * 1. Claude AI (Opus 4.8) to generate HTML/CSS from prompts and wireframes
  * 2. Selenium WebDriver to automate Figma browser interactions
  * 3. A Figma plugin to convert HTML/CSS to Figma design elements
  *
@@ -53,6 +53,11 @@ import { Builder, By, Key, until, type WebDriver } from 'selenium-webdriver'
 import chrome from 'selenium-webdriver/chrome'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { extractStorageKey } from '@/lib/uploads/utils/file-utils'
+import { createAnthropicMessage } from '@/lib/anthropic/create-message'
+import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
+
+const FIGMA_AI_MODEL = 'claude-opus-4-8'
+const FIGMA_AI_MAX_OUTPUT_TOKENS = getMaxOutputTokensForModel(FIGMA_AI_MODEL)
 
 interface FigmaDesignInputs {
   projectId: string
@@ -247,10 +252,10 @@ async function extractTextFromPdfWithClaudeVision(
   const anthropic = new Anthropic({ apiKey })
   const base64Data = fileBuffer.toString('base64')
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 16384,
-    temperature: 0,
+  const message = await createAnthropicMessage(anthropic, {
+    model: FIGMA_AI_MODEL,
+    max_tokens: FIGMA_AI_MAX_OUTPUT_TOKENS,
+    ...(supportsTemperature(FIGMA_AI_MODEL) ? { temperature: 0 } : {}),
     system:
       'You are a meticulous design analyst. Extract all textual content, layout instructions, and structural details from the provided PDF. Return clean, plain text that preserves hierarchy, sections, and component descriptions.',
     messages: [
@@ -575,9 +580,9 @@ async function generateHTMLCSS(systemPrompt: string, userPrompt: string): Promis
     apiKey: apiKey,
   })
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 16384, // Large token limit for complex, multi-section designs with detailed HTML/CSS
+  const message = await createAnthropicMessage(anthropic, {
+    model: FIGMA_AI_MODEL,
+    max_tokens: FIGMA_AI_MAX_OUTPUT_TOKENS,
     system: systemPrompt,
     messages: [
       {

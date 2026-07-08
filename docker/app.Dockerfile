@@ -141,9 +141,9 @@ RUN groupadd -g 1001 nodejs && \
 # ========================================
 # Copy build artifacts from builder
 # ========================================
-# Install Node.js 22 (for isolated-vm worker) and other runtime dependencies
+# Install Node.js 22 (for isolated-vm worker), git (Development block GitHub push), and other runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates \
+    curl ca-certificates git \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*

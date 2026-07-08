@@ -97,7 +97,12 @@ export async function handleResourceSideEffects(
           logger.info('[file-stream-server] Emitting resource upsert events', {
             toolName,
             chatId,
-            resources: resources.map((r) => ({ type: r.type, id: r.id, title: r.title })),
+            resources: resources.map((r) => ({
+              type: r.type,
+              id: r.id,
+              title: r.title,
+              path: r.path,
+            })),
           })
           persistChatResources(chatId, resources).catch((err) => {
             logger.warn('Failed to persist chat resources', {
@@ -112,7 +117,12 @@ export async function handleResourceSideEffects(
               type: MothershipStreamV1EventType.resource,
               payload: {
                 op: MothershipStreamV1ResourceOp.upsert,
-                resource: { type: resource.type, id: resource.id, title: resource.title },
+                resource: {
+                  type: resource.type,
+                  id: resource.id,
+                  title: resource.title,
+                  ...(resource.path ? { path: resource.path } : {}),
+                },
               },
             })
           }

@@ -695,6 +695,7 @@ import {
   devinSendMessageTool,
   devinTerminateSessionTool,
 } from '@/tools/devin'
+import { developmentEditAppTool, developmentGenerateAppTool } from '@/tools/development'
 import {
   discordAddReactionTool,
   discordArchiveThreadTool,
@@ -5355,6 +5356,8 @@ export const tools: Record<string, ToolConfig> = {
   devin_get_session: devinGetSessionTool,
   devin_list_sessions: devinListSessionsTool,
   devin_send_message: devinSendMessageTool,
+  development_generate_app: developmentGenerateAppTool,
+  development_edit_app: developmentEditAppTool,
   devin_list_session_messages: devinListSessionMessagesTool,
   devin_list_session_attachments: devinListSessionAttachmentsTool,
   devin_get_session_tags: devinGetSessionTagsTool,
