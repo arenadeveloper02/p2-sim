@@ -50,7 +50,7 @@ export default function PasswordAuth({ identifier }: PasswordAuthProps) {
   }
 
   return (
-    <AuthBackground className='dark font-[430] font-season'>
+    <AuthBackground className='dark font-[430]'>
       <main className='relative flex min-h-full flex-col text-[var(--landing-text)]'>
         <header className='shrink-0 bg-[var(--landing-bg)]'>
           <Navbar logoOnly />
@@ -59,10 +59,10 @@ export default function PasswordAuth({ identifier }: PasswordAuthProps) {
           <div className='w-full max-w-lg px-4'>
             <div className='flex flex-col items-center justify-center'>
               <div className='space-y-1 text-center'>
-                <h1 className='text-balance font-[430] font-season text-[40px] text-white leading-[110%] tracking-[-0.02em]'>
+                <h1 className='text-balance font-[430] text-[40px] text-white leading-[110%] tracking-[-0.02em]'>
                   Password Required
                 </h1>
-                <p className='font-[430] font-season text-[color-mix(in_srgb,var(--landing-text-subtle)_60%,transparent)] text-lg leading-[125%] tracking-[0.02em]'>
+                <p className='font-[430] text-[color-mix(in_srgb,var(--landing-text-subtle)_60%,transparent)] text-lg leading-[125%] tracking-[0.02em]'>
                   This chat is password-protected
                 </p>
               </div>

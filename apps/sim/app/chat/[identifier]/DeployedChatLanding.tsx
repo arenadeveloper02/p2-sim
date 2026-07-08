@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react'
 import type { RefObject } from 'react'
 import { ChipModal, ChipModalBody, ChipModalHeader } from '@/components/emcn'
-import { inter } from '@/app/_styles/fonts/inter/inter'
 import { ChatInput } from '@/app/chat/components'
 import { DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_INPUT_PLACEHOLDER } from '@/app/chat/constants'
 import {
@@ -12,7 +11,6 @@ import {
   resolveDeployedChatLandingDescription,
 } from '@/app/chat/utils/clip-description'
 import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
-import { cn } from '@/lib/core/utils/cn'
 
 interface DeployedChatLandingProps {
   chatConfig: {
@@ -84,12 +82,7 @@ export function DeployedChatLanding({
       >
         <div className='flex flex-1 flex-col items-center justify-center px-4 py-8 md:px-6'>
           <div className='w-full max-w-[748px] text-center'>
-            <h1
-              className={cn(
-                inter.className,
-                'font-bold text-[24px] text-[#1E293B] leading-[1.2] tracking-[-0.01em]'
-              )}
-            >
+            <h1 className='font-bold text-[24px] text-[#1E293B] leading-[1.2] tracking-[-0.01em]'>
               {title}
             </h1>
 

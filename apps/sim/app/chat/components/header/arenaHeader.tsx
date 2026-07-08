@@ -1,7 +1,6 @@
 'use client'
 
 import { Download, Menu, MoreHorizontal, PanelLeftOpen, Share2 } from 'lucide-react'
-import { inter } from '@/app/_styles/fonts/inter/inter'
 import { DEPLOYED_CHAT_CANVAS_BG } from '@/app/chat/constants'
 import {
   DropdownMenu,
@@ -10,7 +9,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
 
 interface ArenaChatHeaderProps {
   chatConfig?: {
@@ -78,9 +76,7 @@ export function ArenaChatHeader({
 
       <div className='min-w-0 px-2 text-center'>
         {!hideCenterTitle && (
-          <h2
-            className={cn(inter.className, 'truncate font-semibold text-[#1E293B] text-lg')}
-          >
+          <h2 className='truncate font-semibold text-[#1E293B] text-lg'>
             {title}
           </h2>
         )}

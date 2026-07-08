@@ -50,6 +50,8 @@ import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
 
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
+const DEPLOYED_MARKDOWN_FONT_CLASS = 'font-poppins'
+
 export interface ChatMessage {
   id: string
   content: string | Record<string, unknown>
@@ -179,6 +181,7 @@ function LineWithPipeHover({ line, onCopySegment, renderImage }: LineWithPipeHov
                       content={part}
                       variant='inline'
                       renderImage={renderImage}
+                      fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
                     />
                   </button>
                 </Tooltip.Trigger>
@@ -189,6 +192,7 @@ function LineWithPipeHover({ line, onCopySegment, renderImage }: LineWithPipeHov
                 content={part}
                 variant='inline'
                 renderImage={renderImage}
+                fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
               />
             )}
           </Fragment>
@@ -353,10 +357,22 @@ export const ArenaClientChatMessage = memo(
         }
 
         if (!onCopySegmentToInput || !str.includes('|')) {
-          return <ArenaCopilotMarkdownRenderer content={str} renderImage={renderMarkdownImage} />
+          return (
+            <ArenaCopilotMarkdownRenderer
+              content={str}
+              renderImage={renderMarkdownImage}
+              fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+            />
+          )
         }
         if (isLikelyMarkdownTable(str) || hasFencedCodeBlock(str)) {
-          return <ArenaCopilotMarkdownRenderer content={str} renderImage={renderMarkdownImage} />
+          return (
+            <ArenaCopilotMarkdownRenderer
+              content={str}
+              renderImage={renderMarkdownImage}
+              fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+            />
+          )
         }
         const lines = str.split(/\r?\n/)
         return (
@@ -371,7 +387,11 @@ export const ArenaClientChatMessage = memo(
                     renderImage={renderMarkdownImage}
                   />
                 ) : (
-                  <ArenaCopilotMarkdownRenderer content={line} renderImage={renderMarkdownImage} />
+                  <ArenaCopilotMarkdownRenderer
+                    content={line}
+                    renderImage={renderMarkdownImage}
+                    fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+                  />
                 )}
               </span>
             ))}
@@ -454,6 +474,7 @@ export const ArenaClientChatMessage = memo(
             <ArenaCopilotMarkdownRenderer
               content={JSON.stringify(content, null, 2)}
               renderImage={renderMarkdownImage}
+              fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
             />
           )
         }
@@ -531,6 +552,7 @@ export const ArenaClientChatMessage = memo(
           <ArenaCopilotMarkdownRenderer
             content={String(content)}
             renderImage={renderMarkdownImage}
+            fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
           />
         )
       } catch (error) {

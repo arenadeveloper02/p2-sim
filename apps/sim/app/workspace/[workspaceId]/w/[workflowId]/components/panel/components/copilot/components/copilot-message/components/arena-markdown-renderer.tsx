@@ -134,6 +134,8 @@ interface ArenaCopilotMarkdownRendererProps {
   variant?: 'block' | 'inline'
   /** Custom image renderer for preview/download/select overlays in chat */
   renderImage?: (args: { src: string; alt?: string }) => React.ReactNode
+  /** Tailwind font family class for markdown body text */
+  fontClassName?: string
 }
 
 /**
@@ -148,6 +150,7 @@ export default function ArenaCopilotMarkdownRenderer({
   content,
   variant = 'block',
   renderImage,
+  fontClassName = 'font-geist-sans',
 }: ArenaCopilotMarkdownRendererProps) {
   const [copiedCodeBlocks, setCopiedCodeBlocks] = useState<Record<string, boolean>>({})
 
@@ -174,33 +177,33 @@ export default function ArenaCopilotMarkdownRenderer({
       // Paragraph
       p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) =>
         variant === 'inline' ? (
-          <span className='my-0 inline font-geist-sans text-base text-gray-800 leading-relaxed dark:text-gray-200'>
+          <span className={cn('my-0 inline text-base text-gray-800 leading-relaxed dark:text-gray-200', fontClassName)}>
             {children}
           </span>
         ) : (
-          <p className='my-2 font-geist-sans text-base text-gray-800 leading-relaxed last:mb-0 dark:text-gray-200'>
+          <p className={cn('my-2 text-base text-gray-800 leading-relaxed last:mb-0 dark:text-gray-200', fontClassName)}>
             {children}
           </p>
         ),
 
       // Headings
       h1: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h1 className='my-3 font-geist-sans font-semibold text-2xl text-gray-900 dark:text-gray-100'>
+        <h1 className={cn('my-3 font-semibold text-2xl text-gray-900 dark:text-gray-100', fontClassName)}>
           {children}
         </h1>
       ),
       h2: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h2 className='my-3 font-geist-sans font-semibold text-gray-900 text-xl dark:text-gray-100'>
+        <h2 className={cn('my-3 font-semibold text-gray-900 text-xl dark:text-gray-100', fontClassName)}>
           {children}
         </h2>
       ),
       h3: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h3 className='my-3 font-geist-sans font-semibold text-gray-900 text-lg dark:text-gray-100'>
+        <h3 className={cn('my-3 font-semibold text-gray-900 text-lg dark:text-gray-100', fontClassName)}>
           {children}
         </h3>
       ),
       h4: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => (
-        <h4 className='my-3 font-geist-sans font-semibold text-base text-gray-900 dark:text-gray-100'>
+        <h4 className={cn('my-3 font-semibold text-base text-gray-900 dark:text-gray-100', fontClassName)}>
           {children}
         </h4>
       ),
@@ -208,7 +211,7 @@ export default function ArenaCopilotMarkdownRenderer({
       // Lists
       ul: ({ children }: React.HTMLAttributes<HTMLUListElement>) => (
         <ul
-          className='ml-7 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
+          className={cn('ml-7 pl-2 text-gray-800 dark:text-gray-200', fontClassName)}
           style={{ listStyleType: 'disc' }}
         >
           {children}
@@ -216,7 +219,7 @@ export default function ArenaCopilotMarkdownRenderer({
       ),
       ol: ({ children }: React.HTMLAttributes<HTMLOListElement>) => (
         <ol
-          className='ml-7 pl-2 font-geist-sans text-gray-800 dark:text-gray-200'
+          className={cn('ml-7 pl-2 text-gray-800 dark:text-gray-200', fontClassName)}
           style={{ listStyleType: 'decimal' }}
         >
           {children}
@@ -227,7 +230,7 @@ export default function ArenaCopilotMarkdownRenderer({
         ordered,
       }: React.LiHTMLAttributes<HTMLLIElement> & { ordered?: boolean }) => (
         <li
-          className='font-geist-sans text-gray-800 dark:text-gray-200'
+          className={cn('text-gray-800 dark:text-gray-200', fontClassName)}
           style={{ display: 'list-item' }}
         >
           {children}
@@ -390,7 +393,7 @@ export default function ArenaCopilotMarkdownRenderer({
 
       // Blockquotes
       blockquote: ({ children }: React.HTMLAttributes<HTMLQuoteElement>) => (
-        <blockquote className='my-4 border-gray-300 border-l-4 py-1 pl-4 font-geist-sans text-gray-700 italic dark:border-gray-600 dark:text-gray-300'>
+        <blockquote className={cn('my-4 border-gray-300 border-l-4 py-1 pl-4 text-gray-700 italic dark:border-gray-600 dark:text-gray-300', fontClassName)}>
           {children}
         </blockquote>
       ),
@@ -409,7 +412,7 @@ export default function ArenaCopilotMarkdownRenderer({
       table: ({ children }: React.TableHTMLAttributes<HTMLTableElement>) => (
         <div className='my-4 w-full overflow-x-auto overflow-y-visible'>
           <div className='inline-block min-w-full align-middle'>
-            <table className='min-w-full table-auto border border-gray-300 font-geist-sans text-sm dark:border-gray-700'>
+            <table className={cn('min-w-full table-auto border border-gray-300 text-sm dark:border-gray-700', fontClassName)}>
               {children}
             </table>
           </div>
@@ -453,7 +456,7 @@ export default function ArenaCopilotMarkdownRenderer({
         )
       },
     }),
-    [copiedCodeBlocks, variant, renderImage]
+    [copiedCodeBlocks, variant, renderImage, fontClassName]
   )
 
   const Root = variant === 'inline' ? 'span' : 'div'
@@ -462,7 +465,8 @@ export default function ArenaCopilotMarkdownRenderer({
     <Tooltip.Provider>
       <Root
         className={cn(
-          'copilot-markdown-wrapper max-w-full break-words font-geist-sans text-[#0D0D0D] text-base leading-relaxed dark:text-gray-100',
+          'copilot-markdown-wrapper max-w-full break-words text-[#0D0D0D] text-base leading-relaxed dark:text-gray-100',
+          fontClassName,
           variant === 'inline' && 'inline'
         )}
       >
