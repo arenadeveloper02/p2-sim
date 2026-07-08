@@ -13,6 +13,7 @@ import {
   type TokenizerProviderId,
 } from '@/lib/knowledge/embedding-models'
 import { batchByTokenLimit, estimateTokenCount } from '@/lib/tokenization'
+import { getRerankModelPricing } from '@/providers/models'
 import { calculateCost } from '@/providers/utils'
 
 const logger = createLogger('EmbeddingUtils')
@@ -447,5 +448,45 @@ export async function recordSearchEmbeddingUsage(params: {
     })
   } catch (error) {
     logger.warn('Failed to record search embedding usage', { error: getErrorMessage(error) })
+  }
+}
+
+/**
+ * Records hosted rerank usage for a knowledge-base search when platform keys were used.
+ */
+export async function recordSearchRerankUsage(params: {
+  userId: string
+  workspaceId?: string | null
+  model: string
+  isBYOK: boolean
+  sourceReference: string
+  searchUnits?: number
+}): Promise<void> {
+  const { userId, workspaceId, model, isBYOK, sourceReference, searchUnits = 1 } = params
+  if (isBYOK || !workspaceId || searchUnits <= 0) return
+
+  try {
+    const pricing = getRerankModelPricing(model)
+    if (!pricing) return
+
+    const cost = pricing.perSearchUnit * searchUnits
+    if (cost <= 0) return
+
+    await recordUsage({
+      userId,
+      workspaceId,
+      entries: [
+        {
+          category: 'model',
+          source: 'knowledge-base',
+          description: model,
+          cost,
+          sourceReference,
+          metadata: { searchUnits, rerank: true },
+        },
+      ],
+    })
+  } catch (error) {
+    logger.warn('Failed to record search rerank usage', { error: getErrorMessage(error) })
   }
 }

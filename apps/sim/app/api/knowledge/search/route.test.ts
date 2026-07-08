@@ -26,6 +26,7 @@ const {
   mockGenerateSearchEmbedding,
   mockGetDocumentMetadataByIds,
   mockRecordSearchEmbeddingUsage,
+  mockRecordSearchRerankUsage,
   mockRerankSearchResults,
 } = vi.hoisted(() => ({
   mockDbChain: {
@@ -47,6 +48,7 @@ const {
   mockGenerateSearchEmbedding: vi.fn(),
   mockGetDocumentMetadataByIds: vi.fn(),
   mockRecordSearchEmbeddingUsage: vi.fn(),
+  mockRecordSearchRerankUsage: vi.fn(),
   mockRerankSearchResults: vi.fn(),
 }))
 
@@ -101,6 +103,7 @@ vi.mock('@/lib/knowledge/tags/service', () => ({
 
 vi.mock('@/lib/knowledge/embeddings', () => ({
   recordSearchEmbeddingUsage: mockRecordSearchEmbeddingUsage,
+  recordSearchRerankUsage: mockRecordSearchRerankUsage,
 }))
 
 vi.mock('./utils', () => ({
@@ -177,7 +180,13 @@ describe('Knowledge Search API Route', () => {
       'doc-2': { filename: 'Document 2', sourceUrl: null },
     })
     mockRecordSearchEmbeddingUsage.mockClear().mockResolvedValue(undefined)
-    mockRerankSearchResults.mockClear().mockImplementation(async (_query, results) => results)
+    mockRecordSearchRerankUsage.mockClear().mockResolvedValue(undefined)
+    mockRerankSearchResults.mockClear().mockImplementation(async (_query, results) => ({
+      results,
+      isBYOK: false,
+      model: 'rerank-v4.0-fast',
+      searchUnits: results.length > 0 ? 1 : 0,
+    }))
     mockGetDocumentTagDefinitions.mockClear()
     hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockClear().mockResolvedValue({
       success: true,
@@ -672,6 +681,70 @@ describe('Knowledge Search API Route', () => {
 
         expect(response.status).toBe(200)
         expect(mockRecordSearchEmbeddingUsage).not.toHaveBeenCalled()
+      })
+
+      it('records rerank usage for session callers when reranking runs', async () => {
+        mockCheckKnowledgeBaseAccess.mockResolvedValue({
+          hasAccess: true,
+          knowledgeBase: {
+            id: 'kb-123',
+            userId: 'user-123',
+            workspaceId: 'ws-123',
+            name: 'Test KB',
+            deletedAt: null,
+            embeddingModel: 'text-embedding-3-small',
+          },
+        })
+
+        mockDbChain.where.mockResolvedValue([{ id: 'kb-123', workspaceId: 'ws-123' }])
+        mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
+
+        const req = createMockRequest('POST', validSearchData)
+        const response = await POST(req)
+
+        expect(response.status).toBe(200)
+        expect(mockRecordSearchRerankUsage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: 'user-123',
+            workspaceId: 'ws-123',
+            model: 'rerank-v4.0-fast',
+            isBYOK: false,
+            searchUnits: 1,
+            sourceReference: expect.stringMatching(/^kb-search:/),
+          })
+        )
+      })
+
+      it('skips rerank usage when workflow tool requests skipUsageBilling via internal JWT', async () => {
+        hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+          success: true,
+          userId: 'user-123',
+          authType: 'internal_jwt',
+        })
+
+        mockCheckKnowledgeBaseAccess.mockResolvedValue({
+          hasAccess: true,
+          knowledgeBase: {
+            id: 'kb-123',
+            userId: 'user-123',
+            workspaceId: 'ws-123',
+            name: 'Test KB',
+            deletedAt: null,
+            embeddingModel: 'text-embedding-3-small',
+          },
+        })
+
+        mockDbChain.where.mockResolvedValue([{ id: 'kb-123', workspaceId: 'ws-123' }])
+        mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
+
+        const req = createMockRequest('POST', {
+          ...validSearchData,
+          skipUsageBilling: true,
+        })
+        const response = await POST(req)
+
+        expect(response.status).toBe(200)
+        expect(mockRecordSearchRerankUsage).not.toHaveBeenCalled()
       })
 
       it('should handle cost calculation with different query lengths', async () => {
