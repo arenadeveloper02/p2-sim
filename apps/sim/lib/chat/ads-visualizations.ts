@@ -226,12 +226,16 @@ function mergeDynamicMetrics(
   }
 }
 
+// Skip campaign / entity IDs — they are identifiers, not chart metrics.
 const FACEBOOK_SKIP_KEYS = new Set([
+  'campaign_id',
+  'adset_id',
+  'ad_id',
+  'account_id',
   'campaign_name',
   'adset_name',
   'ad_name',
   'account_name',
-  'account_id',
   'date_start',
   'date_stop',
   'paging',

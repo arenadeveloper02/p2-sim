@@ -21,7 +21,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
 import type { ChartSpec } from '@/lib/chat/chart-types'
-import { extractVisualizations, isChartSpec, isChartSpecArray } from '@/lib/chat/chart-types'
+import {
+  extractVisualizations,
+  isChartSpec,
+  isChartSpecArray,
+  isVisualizationsOnlyPayload,
+} from '@/lib/chat/chart-types'
 import { ChartRenderer } from '@/app/chat/components/message/components/chart-renderer'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
@@ -543,6 +548,7 @@ export const ArenaClientChatMessage = memo(
     }
 
     const hasRenderableText = useMemo(() => {
+      if (isVisualizationsOnlyPayload(cleanTextContent)) return false
       if (typeof cleanTextContent === 'string') {
         return cleanTextContent.trim().length > 0
       }
@@ -708,7 +714,7 @@ export const ArenaClientChatMessage = memo(
     }, [message.type, message.visualizations, message.content])
 
     const isChartOnlyContent = useMemo(
-      () => isChartSpec(cleanTextContent) || isChartSpecArray(cleanTextContent),
+      () => isVisualizationsOnlyPayload(cleanTextContent),
       [cleanTextContent]
     )
 

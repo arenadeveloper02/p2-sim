@@ -8,7 +8,11 @@ import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
-import { type ChartSpec, extractVisualizations } from '@/lib/chat/chart-types'
+import {
+  type ChartSpec,
+  extractVisualizations,
+  isVisualizationsOnlyPayload,
+} from '@/lib/chat/chart-types'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import type { ChatMessage } from '@/app/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
@@ -331,6 +335,11 @@ export function useChatStreaming() {
                     return null
                   }
 
+                  // Chart JSON must only render via ChartRenderer — never as chat text.
+                  if (isVisualizationsOnlyPayload(value)) {
+                    return null
+                  }
+
                   if (extractAssistantFilesFromData(value).length > 0) {
                     return null
                   }
@@ -348,6 +357,23 @@ export function useChatStreaming() {
                   }
 
                   if (typeof value === 'object') {
+                    // Strip visualizations from block output before stringifying
+                    // so Ads block payloads never dump chart JSON into chat text.
+                    if (
+                      value &&
+                      typeof value === 'object' &&
+                      !Array.isArray(value) &&
+                      'visualizations' in value
+                    ) {
+                      const { visualizations: _viz, ...rest } = value as Record<string, unknown>
+                      if (Object.keys(rest).length === 0) return null
+                      if (isVisualizationsOnlyPayload(rest)) return null
+                      try {
+                        return `\`\`\`json\n${JSON.stringify(rest, null, 2)}\n\`\`\``
+                      } catch {
+                        return String(value)
+                      }
+                    }
                     try {
                       return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
                     } catch {
@@ -441,7 +467,9 @@ export function useChatStreaming() {
                 let finalContent = accumulatedText
 
                 if (formattedOutputs.length > 0) {
-                  const nonEmptyOutputs = formattedOutputs.filter((output) => output.trim())
+                  const nonEmptyOutputs = formattedOutputs
+                    .filter((output) => output.trim())
+                    .filter((output) => !isVisualizationsOnlyPayload(output))
                   if (nonEmptyOutputs.length > 0) {
                     const combinedOutputs = nonEmptyOutputs.join('\n\n')
                     finalContent = finalContent
@@ -449,6 +477,12 @@ export function useChatStreaming() {
                       : combinedOutputs
                   }
                 }
+
+                // Pull charts first so chart-only deployments (visualizations
+                // selected alone) still work when we skip chart JSON as text.
+                const visualizations: ChartSpec[] = finalData.output
+                  ? extractVisualizations(finalData.output)
+                  : []
 
                 if (!finalContent && extractedFiles.length === 0) {
                   if (finalData.error) {
@@ -458,14 +492,27 @@ export function useChatStreaming() {
                       finalContent = finalData.error.message
                     }
                   } else if (finalData.success && finalData.output) {
-                    const fallbackOutput = Object.values(finalData.output)
-                      .filter((block) => !isKnowledgeResultsArray(block?.results))
-                      .map((block) => formatValue(block)?.trim())
-                      .filter(Boolean)[0]
-                    if (fallbackOutput) {
-                      finalContent = fallbackOutput
+                    // Never fall back to dumping block output that is only charts.
+                    if (visualizations.length === 0) {
+                      const fallbackOutput = Object.values(finalData.output)
+                        .filter((block) => !isKnowledgeResultsArray(block?.results))
+                        .filter((block) => !isVisualizationsOnlyPayload(block))
+                        .map((block) => formatValue(block)?.trim())
+                        .filter(Boolean)[0]
+                      if (fallbackOutput && !isVisualizationsOnlyPayload(fallbackOutput)) {
+                        finalContent = fallbackOutput
+                      }
                     }
                   }
+                }
+
+                // Chart-only message: keep content empty — ChartRenderer uses visualizations.
+                if (
+                  visualizations.length > 0 &&
+                  finalContent &&
+                  isVisualizationsOnlyPayload(finalContent)
+                ) {
+                  finalContent = ''
                 }
 
                 let contentToSet: string | Record<string, unknown> | undefined =
@@ -488,11 +535,6 @@ export function useChatStreaming() {
                     : contentToSet
                       ? extractGeneratedImagesFromData(contentToSet)
                       : []
-
-                // Backend-provided interactive charts ride along in block outputs.
-                const visualizations: ChartSpec[] = finalData.output
-                  ? extractVisualizations(finalData.output)
-                  : []
 
                 setMessages((prev) =>
                   prev.map((msg) =>

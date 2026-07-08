@@ -16,6 +16,7 @@ import { getSession } from '@/lib/auth'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import { getAgentDepartmentLabel } from '@/lib/chat/arena-departments'
 import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
+import { isVisualizationsOnlyPayload } from '@/lib/chat/chart-types'
 import {
   toPersistedChatAttachment,
   updateExecutionHistoryData,
@@ -895,13 +896,32 @@ export const POST = withRouteHandler(
                           if (value === null || value === undefined) {
                             return null
                           }
+                          if (isVisualizationsOnlyPayload(value)) {
+                            return null
+                          }
                           if (extractGeneratedImagesFromData(value).length > 0) {
                             return null
                           }
                           if (typeof value === 'string') {
-                            return value
+                            return isVisualizationsOnlyPayload(value) ? null : value
                           }
                           if (typeof value === 'object') {
+                            if (
+                              !Array.isArray(value) &&
+                              value &&
+                              'visualizations' in (value as object)
+                            ) {
+                              const { visualizations: _viz, ...rest } = value as Record<
+                                string,
+                                unknown
+                              >
+                              if (Object.keys(rest).length === 0) return null
+                              try {
+                                return `\`\`\`json\n${JSON.stringify(rest, null, 2)}\n\`\`\``
+                              } catch {
+                                return String(value)
+                              }
+                            }
                             try {
                               return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
                             } catch {
@@ -944,10 +964,14 @@ export const POST = withRouteHandler(
                           })
 
                           if (uniqueOutputs.length > 0) {
-                            const combinedOutputs = uniqueOutputs.join('\n\n')
-                            finalChatOutput = finalChatOutput
-                              ? `${finalChatOutput}\n\n${combinedOutputs}`
-                              : combinedOutputs
+                            const combinedOutputs = uniqueOutputs
+                              .filter((output) => !isVisualizationsOnlyPayload(output))
+                              .join('\n\n')
+                            if (combinedOutputs) {
+                              finalChatOutput = finalChatOutput
+                                ? `${finalChatOutput}\n\n${combinedOutputs}`
+                                : combinedOutputs
+                            }
                           }
                         }
                       }
@@ -960,6 +984,11 @@ export const POST = withRouteHandler(
                             ? `${finalChatOutput}\n\n${imageUrls.join('\n')}`
                             : imageUrls.join('\n')
                         }
+                      }
+
+                      // Never persist / emit chart JSON as chat text (charts render separately).
+                      if (isVisualizationsOnlyPayload(finalChatOutput)) {
+                        finalChatOutput = ''
                       }
 
                       if (

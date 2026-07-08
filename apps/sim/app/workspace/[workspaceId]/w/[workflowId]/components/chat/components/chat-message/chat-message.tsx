@@ -3,7 +3,7 @@ import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
-import { extractVisualizations } from '@/lib/chat/chart-types'
+import { extractVisualizations, isVisualizationsOnlyPayload } from '@/lib/chat/chart-types'
 import { ChartRenderer } from '@/app/chat/components/message/components/chart-renderer'
 import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
@@ -194,17 +194,26 @@ export function ChatMessage({
 }: ChatMessageProps) {
   const rawContent = useMemo(() => {
     if (typeof message.content === 'object' && message.content !== null) {
+      // Chart-only payloads must not dump as JSON text in the workflow panel.
+      if (isVisualizationsOnlyPayload(message.content)) {
+        return ''
+      }
       return JSON.stringify(message.content, null, 2)
+    }
+    if (typeof message.content === 'string' && isVisualizationsOnlyPayload(message.content)) {
+      return ''
     }
     return String(message.content || '')
   }, [message.content])
 
   const throttled = useThrottledValue(rawContent)
   const formattedContent = message.type === 'user' ? rawContent : throttled
-  const visualizations = useMemo(
-    () => (message.type === 'user' ? [] : extractVisualizations(message.content)),
-    [message.type, message.content]
-  )
+  const visualizations = useMemo(() => {
+    if (message.type === 'user') return []
+    const fromContent = extractVisualizations(message.content)
+    if (fromContent.length > 0) return fromContent
+    return []
+  }, [message.type, message.content])
   const generatedImagesByUrl = useMemo(() => {
     const entries = (message.generatedImages ?? []).map(
       (image): [string, AssistantGeneratedImage] => [normalizeImageUrlForCompare(image.url), image]
@@ -338,9 +347,16 @@ export function ChatMessage({
         }
 
         if (txtTrim) {
+          if (isVisualizationsOnlyPayload(txtTrim)) {
+            return null
+          }
           return (
             <ArenaCopilotMarkdownRenderer content={txtTrim} renderImage={renderMarkdownImage} />
           )
+        }
+
+        if (isVisualizationsOnlyPayload(content)) {
+          return null
         }
 
         return (

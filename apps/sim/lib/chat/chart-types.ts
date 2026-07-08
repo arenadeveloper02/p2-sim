@@ -102,6 +102,50 @@ export function isChartSpecArray(value: unknown): value is ChartSpec[] {
 }
 
 /**
+ * True when a value is chart JSON that must never be shown as chat text
+ * (only rendered via ChartRenderer). Covers:
+ *  - a ChartSpec
+ *  - a ChartSpec[]
+ *  - `{ visualizations: ChartSpec[] }`
+ *  - a string / markdown ```json``` block containing any of the above
+ */
+export function isVisualizationsOnlyPayload(value: unknown): boolean {
+  if (value == null) return false
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return false
+
+    const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+    const candidate = (fenced?.[1] ?? trimmed).trim()
+    if (!candidate.startsWith('{') && !candidate.startsWith('[')) return false
+
+    try {
+      return isVisualizationsOnlyPayload(JSON.parse(candidate))
+    } catch {
+      return false
+    }
+  }
+
+  if (isChartSpec(value) || isChartSpecArray(value)) return true
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>
+    const keys = Object.keys(obj)
+    if (keys.length === 1 && keys[0] === 'visualizations') {
+      return isChartSpecArray(obj.visualizations)
+    }
+    // Whole Ads block output that only meaningfully carries charts for chat.
+    if ('visualizations' in obj && isChartSpecArray(obj.visualizations)) {
+      const otherKeys = keys.filter((k) => k !== 'visualizations')
+      if (otherKeys.length === 0) return true
+    }
+  }
+
+  return false
+}
+
+/**
  * Pulls a `visualizations` array out of an arbitrary payload.
  *
  * Handles the common shapes that appear in chat:

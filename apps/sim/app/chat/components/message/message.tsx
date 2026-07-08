@@ -8,6 +8,7 @@ import type {
   AssistantChatFile as ChatFile,
 } from '@/lib/chat/assistant-assets'
 import type { ChartSpec } from '@/lib/chat/chart-types'
+import { isVisualizationsOnlyPayload } from '@/lib/chat/chart-types'
 import { ChartRenderer } from '@/app/chat/components/message/components/chart-renderer'
 import {
   ChatFileDownload,
@@ -251,7 +252,7 @@ export const ClientChatMessage = memo(
               {/* Direct content rendering - tool calls are now handled via SSE events */}
               <div>
                 <div className='break-words text-base'>
-                  {isJsonObject ? (
+                  {isVisualizationsOnlyPayload(cleanTextContent) ? null : isJsonObject ? (
                     <pre className='text-[var(--landing-text)]'>
                       {JSON.stringify(cleanTextContent, null, 2)}
                     </pre>
