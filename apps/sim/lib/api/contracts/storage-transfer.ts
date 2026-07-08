@@ -283,14 +283,10 @@ export const storageContextSchema = z.enum([
   'org-logos',
 ])
 
-export const downloadContextSchema = z.union([storageContextSchema, z.literal('general')])
-
 export const fileDownloadBodySchema = z
   .object({
     key: z.string().optional(),
     name: z.string().optional(),
-    isExecutionFile: z.boolean().optional(),
-    context: downloadContextSchema.optional(),
     url: z
       .string()
       .url()

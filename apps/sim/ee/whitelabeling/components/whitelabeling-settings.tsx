@@ -83,7 +83,7 @@ function ColorInput({ label, value, onChange, placeholder = '#000000' }: ColorIn
 
   return (
     <div className='flex flex-col gap-1.5'>
-      <Label className='text-[13px] text-[var(--text-primary)]'>{label}</Label>
+      <Label className='text-[var(--text-primary)] text-small'>{label}</Label>
       <div className={cn(CHIP_FIELD_SHELL, !isValidHex && 'border-[var(--text-error)]')}>
         <div
           className={cn(
@@ -109,7 +109,7 @@ function ColorInput({ label, value, onChange, placeholder = '#000000' }: ColorIn
         />
       </div>
       {!isValidHex && (
-        <p className='text-[12px] text-[var(--text-error)]'>
+        <p className='text-[var(--text-error)] text-caption'>
           Must be a valid hex color (e.g. #33c482)
         </p>
       )}
@@ -405,7 +405,7 @@ export function WhitelabelingSettings() {
                     size='sm'
                     onClick={logoUpload.handleThumbnailClick}
                     disabled={logoUpload.isUploading}
-                    className='text-[13px]'
+                    className='text-small'
                   >
                     {logoUpload.previewUrl ? 'Change' : 'Upload'}
                   </Button>
@@ -414,7 +414,7 @@ export function WhitelabelingSettings() {
                       variant='ghost'
                       size='sm'
                       onClick={logoUpload.handleRemove}
-                      className='text-[13px] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                      className='text-[var(--text-muted)] text-small hover:text-[var(--text-primary)]'
                     >
                       <X className='size-[14px]' />
                     </Button>
@@ -462,7 +462,7 @@ export function WhitelabelingSettings() {
                     size='sm'
                     onClick={faviconUpload.handleThumbnailClick}
                     disabled={faviconUpload.isUploading}
-                    className='text-[13px]'
+                    className='text-small'
                   >
                     {faviconUpload.previewUrl ? 'Change' : 'Upload'}
                   </Button>
@@ -471,7 +471,7 @@ export function WhitelabelingSettings() {
                       variant='ghost'
                       size='sm'
                       onClick={faviconUpload.handleRemove}
-                      className='text-[13px] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                      className='text-[var(--text-muted)] text-small hover:text-[var(--text-primary)]'
                     >
                       <X className='size-[14px]' />
                     </Button>

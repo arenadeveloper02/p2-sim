@@ -61,6 +61,16 @@ export type {
   TagUsageData,
 }
 
+export const KNOWLEDGE_BASE_LIST_STALE_TIME = 60 * 1000
+export const KNOWLEDGE_BASE_DETAIL_STALE_TIME = 60 * 1000
+export const KNOWLEDGE_DOCUMENT_DETAIL_STALE_TIME = 60 * 1000
+export const KNOWLEDGE_DOCUMENT_LIST_STALE_TIME = 60 * 1000
+export const KNOWLEDGE_CHUNK_LIST_STALE_TIME = 60 * 1000
+export const KNOWLEDGE_CHUNK_SEARCH_STALE_TIME = 60 * 1000
+export const KNOWLEDGE_TAG_DEFINITION_LIST_STALE_TIME = 60 * 1000
+export const KNOWLEDGE_TAG_USAGE_STALE_TIME = 60 * 1000
+export const KNOWLEDGE_DOCUMENT_TAG_DEFINITION_LIST_STALE_TIME = 60 * 1000
+
 export const knowledgeKeys = {
   all: ['knowledge'] as const,
   userAccess: (workspaceId?: string) =>
@@ -264,7 +274,7 @@ export function useKnowledgeBasesQuery(
     queryKey: knowledgeKeys.list(workspaceId, scope),
     queryFn: ({ signal }) => fetchKnowledgeBases(workspaceId, scope, signal),
     enabled: options?.enabled ?? true,
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_BASE_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -292,7 +302,7 @@ export function useKnowledgeBaseQuery(knowledgeBaseId?: string) {
     queryKey: knowledgeKeys.detail(knowledgeBaseId),
     queryFn: ({ signal }) => fetchKnowledgeBase(knowledgeBaseId as string, signal),
     enabled: Boolean(knowledgeBaseId),
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_BASE_DETAIL_STALE_TIME,
   })
 }
 
@@ -301,7 +311,7 @@ export function useDocumentQuery(knowledgeBaseId?: string, documentId?: string) 
     queryKey: knowledgeKeys.document(knowledgeBaseId ?? '', documentId ?? ''),
     queryFn: ({ signal }) => fetchDocument(knowledgeBaseId as string, documentId as string, signal),
     enabled: Boolean(knowledgeBaseId && documentId),
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_DOCUMENT_DETAIL_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -332,7 +342,7 @@ export function useKnowledgeDocumentsQuery(
     queryKey: knowledgeKeys.documents(params.knowledgeBaseId, paramsKey),
     queryFn: ({ signal }) => fetchKnowledgeDocuments(params, signal),
     enabled: (options?.enabled ?? true) && Boolean(params.knowledgeBaseId),
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_DOCUMENT_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
     refetchInterval: options?.refetchInterval ?? false,
   })
@@ -359,7 +369,7 @@ export function useKnowledgeChunksQuery(
     queryKey: knowledgeKeys.chunks(params.knowledgeBaseId, params.documentId, paramsKey),
     queryFn: ({ signal }) => fetchKnowledgeChunks(params, signal),
     enabled: (options?.enabled ?? true) && Boolean(params.knowledgeBaseId && params.documentId),
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_CHUNK_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -418,7 +428,7 @@ export function useDocumentChunkSearchQuery(
     enabled:
       (options?.enabled ?? true) &&
       Boolean(params.knowledgeBaseId && params.documentId && params.search.trim()),
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_CHUNK_SEARCH_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -867,7 +877,7 @@ export function useTagDefinitionsQuery(knowledgeBaseId?: string | null) {
     queryKey: knowledgeKeys.tagDefinitions(knowledgeBaseId ?? ''),
     queryFn: ({ signal }) => fetchTagDefinitions(knowledgeBaseId as string, signal),
     enabled: Boolean(knowledgeBaseId),
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_TAG_DEFINITION_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -889,7 +899,7 @@ export function useTagUsageQuery(knowledgeBaseId?: string | null, options?: { en
     queryKey: knowledgeKeys.tagUsage(knowledgeBaseId ?? ''),
     queryFn: ({ signal }) => fetchTagUsage(knowledgeBaseId as string, signal),
     enabled: Boolean(knowledgeBaseId) && (options?.enabled ?? true),
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_TAG_USAGE_STALE_TIME,
   })
 }
 
@@ -1012,7 +1022,7 @@ export function useDocumentTagDefinitionsQuery(
     queryFn: ({ signal }) =>
       fetchDocumentTagDefinitions(knowledgeBaseId as string, documentId as string, signal),
     enabled: Boolean(knowledgeBaseId && documentId),
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_DOCUMENT_TAG_DEFINITION_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }

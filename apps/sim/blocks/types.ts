@@ -374,8 +374,6 @@ export interface SubBlockConfig {
     label: string
     serviceId: string
   }>
-  // Whether this credential selector supports credential sets (for trigger blocks)
-  supportsCredentialSets?: boolean
   // Selector properties — declarative mapping to a SelectorKey
   selectorKey?: SelectorKey
   selectorAllowSearch?: boolean
