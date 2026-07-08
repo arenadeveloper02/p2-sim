@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
   getWorkspaceUsageAnalyticsContract,
@@ -25,6 +25,10 @@ async function fetchWorkspaceUsageAnalytics(
   })
 }
 
+/**
+ * Usage analytics by tab/period/source. Intentionally omits `keepPreviousData` so
+ * switching filters does not flash another query's totals while the next load runs.
+ */
 export function useWorkspaceUsageAnalytics(
   workspaceId: string | undefined,
   query: WorkspaceUsageAnalyticsQuery = {}
@@ -34,6 +38,5 @@ export function useWorkspaceUsageAnalytics(
     queryFn: ({ signal }) => fetchWorkspaceUsageAnalytics(workspaceId as string, query, signal),
     enabled: Boolean(workspaceId),
     staleTime: 60 * 1000,
-    placeholderData: keepPreviousData,
   })
 }

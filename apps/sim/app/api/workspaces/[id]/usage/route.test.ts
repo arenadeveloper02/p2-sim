@@ -55,6 +55,7 @@ const ANALYTICS = {
     },
   },
   bySource: [],
+  byChargeType: [],
   attribution: {
     missingChatId: { billableCost: 0, rawCost: 0, count: 0 },
     missingExecutionId: { billableCost: 0, rawCost: 0, count: 0 },

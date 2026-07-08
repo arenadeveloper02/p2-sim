@@ -14,8 +14,8 @@ import {
 
 const WORKSPACE_ID = 'ws-1'
 
-const ANALYTICS_QUERY_COUNT = 23
-const ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN = 25
+const ANALYTICS_QUERY_COUNT = 24
+const ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN = 26
 
 const EMPTY_USAGE = {
   inputTokens: 0,
@@ -138,14 +138,20 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
             invocationCount: 1,
           },
         ],
-        1: [{ ...EMPTY_USAGE, totalTokens: 1200, invocationCount: 4 }],
-        2: ATTRIBUTION_OK,
-        3: [{ total: 2, withProjectedCost: 2, totalProjectedCost: '6' }],
-        4: [{ totalLedgerCost: '6' }],
-        7: [{ total: 1, withLedgerCost: 1 }],
-        8: [{ total: 1 }],
-        21: DATA_HEALTH_OK[0],
-        22: DATA_HEALTH_OK[1],
+        1: [
+          { chargeType: 'base_run', billableCost: '0.5', rawCost: '0.5', count: 1 },
+          { chargeType: 'provider', billableCost: '5.5', rawCost: '4.5', count: 1 },
+          { chargeType: 'cost_block', billableCost: '1', rawCost: '0.8', count: 1 },
+          { chargeType: 'other', billableCost: '2.5', rawCost: '2.5', count: 1 },
+        ],
+        2: [{ ...EMPTY_USAGE, totalTokens: 1200, invocationCount: 4 }],
+        3: ATTRIBUTION_OK,
+        4: [{ total: 2, withProjectedCost: 2, totalProjectedCost: '6' }],
+        5: [{ totalLedgerCost: '6' }],
+        8: [{ total: 1, withLedgerCost: 1 }],
+        9: [{ total: 1 }],
+        22: DATA_HEALTH_OK[0],
+        23: DATA_HEALTH_OK[1],
       })
     )
 
@@ -175,6 +181,12 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         }),
       ])
     )
+    expect(analytics.byChargeType).toEqual([
+      expect.objectContaining({ chargeType: 'base_run', billableCost: 0.5, count: 1 }),
+      expect.objectContaining({ chargeType: 'provider', billableCost: 5.5, count: 1 }),
+      expect.objectContaining({ chargeType: 'cost_block', billableCost: 1, count: 1 }),
+      expect.objectContaining({ chargeType: 'other', billableCost: 2.5, count: 1 }),
+    ])
     expect(analytics.workflow.executions.totalProjectedCost).toBe(6)
     expect(analytics.workflow.executions.totalLedgerCost).toBe(6)
     expect(analytics.dataHealth.limitedAttribution).toBe(false)
@@ -194,8 +206,9 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
             invocationCount: 1,
           },
         ],
-        1: [{ ...EMPTY_USAGE, invocationCount: 1 }],
-        2: [
+        1: [{ chargeType: 'provider', billableCost: '1.5', rawCost: '1.5', count: 1 }],
+        2: [{ ...EMPTY_USAGE, invocationCount: 1 }],
+        3: [
           {
             missingChatIdCost: '0.5',
             missingChatIdCount: 1,
@@ -205,12 +218,12 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
             missingExecutionIdRawCost: '0',
           },
         ],
-        3: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
-        4: [{ totalLedgerCost: '0' }],
-        7: [{ total: 4, withLedgerCost: 1 }],
-        8: [{ total: 2 }],
-        21: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
-        22: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+        4: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
+        5: [{ totalLedgerCost: '0' }],
+        8: [{ total: 4, withLedgerCost: 1 }],
+        9: [{ total: 2 }],
+        22: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        23: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
       })
     )
 
@@ -247,14 +260,15 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
             invocationCount: 1,
           },
         ],
-        1: [{ ...EMPTY_USAGE, invocationCount: 1 }],
-        2: ATTRIBUTION_OK,
-        3: [{ total: 1, withProjectedCost: 1, totalProjectedCost: '4' }],
-        4: [{ totalLedgerCost: '4' }],
-        7: [{ total: 0, withLedgerCost: 0 }],
-        8: [{ total: 0 }],
-        21: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
-        22: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+        1: [{ chargeType: 'provider', billableCost: '4', rawCost: '4', count: 1 }],
+        2: [{ ...EMPTY_USAGE, invocationCount: 1 }],
+        3: ATTRIBUTION_OK,
+        4: [{ total: 1, withProjectedCost: 1, totalProjectedCost: '4' }],
+        5: [{ totalLedgerCost: '4' }],
+        8: [{ total: 0, withLedgerCost: 0 }],
+        9: [{ total: 0 }],
+        22: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        23: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
       }),
     ])
 
@@ -284,14 +298,15 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
             invocationCount: 1,
           },
         ],
-        1: [{ ...EMPTY_USAGE, invocationCount: 1 }],
-        2: ATTRIBUTION_OK,
-        3: [{ total: 1, withProjectedCost: 1, totalProjectedCost: '4' }],
-        4: [{ totalLedgerCost: '4' }],
-        7: [{ total: 0, withLedgerCost: 0 }],
-        8: [{ total: 0 }],
-        21: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
-        22: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+        1: [{ chargeType: 'provider', billableCost: '4', rawCost: '4', count: 1 }],
+        2: [{ ...EMPTY_USAGE, invocationCount: 1 }],
+        3: ATTRIBUTION_OK,
+        4: [{ total: 1, withProjectedCost: 1, totalProjectedCost: '4' }],
+        5: [{ totalLedgerCost: '4' }],
+        8: [{ total: 0, withLedgerCost: 0 }],
+        9: [{ total: 0 }],
+        22: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        23: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
       })
     )
 
@@ -311,10 +326,10 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     wireTerminalQueue(
       buildAnalyticsQueue(
         {
-          2: ATTRIBUTION_OK,
-          3: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
-          4: [{ totalLedgerCost: '0' }],
-          20: [
+          3: ATTRIBUTION_OK,
+          4: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
+          5: [{ totalLedgerCost: '0' }],
+          21: [
             {
               executionId: 'exec-child',
               parentExecutionId: 'exec-root',
@@ -328,9 +343,9 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
               rawCost: '2',
             },
           ],
-          21: [{ inclusiveBillableCost: '5', inclusiveRawCost: '4' }],
-          23: DATA_HEALTH_OK[0],
-          24: DATA_HEALTH_OK[1],
+          22: [{ inclusiveBillableCost: '5', inclusiveRawCost: '4' }],
+          24: DATA_HEALTH_OK[0],
+          25: DATA_HEALTH_OK[1],
         },
         ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN
       )

@@ -22,7 +22,9 @@ import {
 } from 'drizzle-orm'
 import {
   usageActorTypeSchema,
+  usageChargeTypeSchema,
   usageLogSourceSchema,
+  type UsageChargeTypeValue,
   type WorkspaceUsageAnalytics,
 } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
@@ -134,6 +136,25 @@ function ledgerCostSelect() {
     rawCost: sql<string>`coalesce(sum(coalesce(${usageLog.rawCost}, ${usageLog.cost})::numeric), 0)`,
     count: sql<number>`count(*)::int`,
   }
+}
+
+/**
+ * Maps ledger category/description into dashboard charge buckets:
+ * base run fee, provider/model spend, hosted tools, Cost-block pass-through.
+ */
+function chargeTypeExpr() {
+  return sql<string>`case
+    when ${usageLog.category} = 'fixed' and ${usageLog.description} = 'execution_fee' then 'base_run'
+    when ${usageLog.category} = 'model' then 'provider'
+    when ${usageLog.category} = 'tool' then 'tool'
+    when ${usageLog.category} = 'external' then 'cost_block'
+    else 'other'
+  end`
+}
+
+function parseChargeType(value: string | null | undefined): UsageChargeTypeValue {
+  const parsed = usageChargeTypeSchema.safeParse(value)
+  return parsed.success ? parsed.data : 'other'
 }
 
 function usageMetricsSelect() {
@@ -334,8 +355,11 @@ export async function getWorkspaceUsageAnalytics(
     const bucketExpr = timeBucketExpr(useHourlyBuckets)
     const executionBucket = executionBucketExpr(useHourlyBuckets)
 
+    const chargeType = chargeTypeExpr()
+
     const [
       bySourceRows,
+      byChargeTypeRows,
       summaryUsageRows,
       attributionRows,
       workflowExecutionSummary,
@@ -370,6 +394,15 @@ export async function getWorkspaceUsageAnalytics(
         .from(usageLog)
         .where(and(...ledgerConditions))
         .groupBy(usageLog.source),
+
+      dbReplica
+        .select({
+          chargeType,
+          ...ledgerCostSelect(),
+        })
+        .from(usageLog)
+        .where(and(...ledgerConditions))
+        .groupBy(chargeType),
 
       dbReplica
         .select(usageMetricsSelect())
@@ -765,6 +798,24 @@ export async function getWorkspaceUsageAnalytics(
       usage: mapUsageMetrics(row),
     }))
 
+    const CHARGE_TYPE_ORDER: UsageChargeTypeValue[] = [
+      'base_run',
+      'provider',
+      'tool',
+      'cost_block',
+      'other',
+    ]
+    const byChargeType = byChargeTypeRows
+      .map((row) => ({
+        chargeType: parseChargeType(row.chargeType),
+        billableCost: parseDecimal(row.billableCost),
+        rawCost: parseDecimal(row.rawCost),
+        count: row.count,
+      }))
+      .sort(
+        (a, b) => CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
+      )
+
     const totalBillableCost = bySource.reduce((sum, row) => sum + row.billableCost, 0)
     const totalRawCost = bySource.reduce((sum, row) => sum + row.rawCost, 0)
     const ledgerEntryCount = bySource.reduce((sum, row) => sum + row.count, 0)
@@ -911,6 +962,7 @@ export async function getWorkspaceUsageAnalytics(
         usage: summaryUsage,
       },
       bySource,
+      byChargeType,
       attribution: {
         missingChatId: {
           billableCost: parseDecimal(attribution?.missingChatIdCost),

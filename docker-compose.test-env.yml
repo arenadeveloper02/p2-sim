@@ -42,8 +42,8 @@ services:
       - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - REDIS_URL=${REDIS_URL:-}
-      - COPILOT_API_KEY=${COPILOT_API_KEY}
-      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL}
+      - COPILOT_API_KEY=${COPILOT_API_KEY:-}
+      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL:-}
     depends_on:
       db:
         condition: service_healthy
@@ -69,7 +69,7 @@ services:
       - apps/realtime/.env
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
     depends_on:
       db:
         condition: service_healthy
@@ -89,6 +89,8 @@ services:
       db:
         condition: service_healthy
     command: ["bun", "run", "db:migrate"]
+    restart: "no"
+
 
 volumes:
   postgres_data:

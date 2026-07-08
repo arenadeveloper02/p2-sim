@@ -20,6 +20,17 @@ export const usageActorTypeSchema = z.enum(['user', 'api_key', 'webhook', 'sched
 
 export type UsageActorTypeValue = z.output<typeof usageActorTypeSchema>
 
+/** High-level charge buckets for total-cost division (base run, LLM, tools, Cost blocks). */
+export const usageChargeTypeSchema = z.enum([
+  'base_run',
+  'provider',
+  'tool',
+  'cost_block',
+  'other',
+])
+
+export type UsageChargeTypeValue = z.output<typeof usageChargeTypeSchema>
+
 export const workspaceUsagePeriodSchema = z.enum(['1d', '7d', '30d', '90d'])
 
 export const workspaceUsageAnalyticsQuerySchema = z.object({
@@ -77,6 +88,11 @@ export const workspaceUsageAnalyticsResponseSchema = z.object({
     costBucketSchema.extend({
       source: usageLogSourceSchema,
       usage: usageMetricsSchema,
+    })
+  ),
+  byChargeType: z.array(
+    costBucketSchema.extend({
+      chargeType: usageChargeTypeSchema,
     })
   ),
   attribution: z.object({

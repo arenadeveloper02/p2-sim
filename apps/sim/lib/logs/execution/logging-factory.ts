@@ -124,6 +124,8 @@ export interface CostSummaryExternalCharge {
     exchangeRate?: number
     sourceBlockId?: string
     responsePath?: string
+    quantityPath?: string
+    unitPrice?: number
     source?: string
   }
 }
@@ -154,6 +156,8 @@ interface CostBlockRawOutput {
   source?: string
   quantity?: number
   unit?: string
+  unitPrice?: number
+  quantityPath?: string
   sourceBlockId?: string
   responsePath?: string
 }
@@ -180,6 +184,8 @@ function extractExternalChargeFromSpan(span: BillableTraceSpan): {
       ...(raw.exchangeRate !== undefined ? { exchangeRate: raw.exchangeRate } : {}),
       ...(raw.sourceBlockId ? { sourceBlockId: raw.sourceBlockId } : {}),
       ...(raw.responsePath ? { responsePath: raw.responsePath } : {}),
+      ...(raw.quantityPath ? { quantityPath: raw.quantityPath } : {}),
+      ...(raw.unitPrice !== undefined ? { unitPrice: raw.unitPrice } : {}),
       ...(raw.source ? { source: raw.source } : {}),
     },
   }

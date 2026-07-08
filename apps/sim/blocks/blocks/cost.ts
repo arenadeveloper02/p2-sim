@@ -21,10 +21,11 @@ export const CostBlock: BlockConfig = {
   name: 'Cost',
   description: 'Record third-party vendor cost not metered by Sim',
   longDescription:
-    'Record external vendor spend that Sim does not already meter (custom APIs, BYOK integrations, batch logic). Supports fixed amounts, dynamic expressions, and values read from upstream block outputs.',
+    'Record external vendor spend that Sim does not already meter (custom APIs, BYOK integrations, batch logic). Supports fixed amounts, per-unit pricing from upstream outputs, dynamic expressions, and values read from upstream block outputs.',
   bestPractices: `
   - Place after the block whose vendor cost you want to track (e.g. API → Cost).
   - Use fixed mode for a known per-call COGS amount.
+  - Use per-unit mode to read units from the upstream block and multiply by a USD rate (e.g. tokens × price per token).
   - Use expression mode to reference resolved values like <api.data.billing.cost>.
   - Use response path mode to read a numeric field from a specific upstream block output.
   - Do not double-count costs already metered by hosted Sim integrations or LLM blocks.
@@ -47,6 +48,7 @@ export const CostBlock: BlockConfig = {
       type: 'dropdown',
       options: [
         { label: 'Fixed amount', id: 'fixed' },
+        { label: 'Per unit', id: 'per_unit' },
         { label: 'Expression', id: 'expression' },
         { label: 'Response path', id: 'response_path' },
       ],
@@ -62,20 +64,48 @@ export const CostBlock: BlockConfig = {
       condition: { field: 'mode', value: 'fixed' },
     },
     {
+      id: 'sourceBlock',
+      title: 'Source block',
+      type: 'short-input',
+      placeholder: 'Auto (upstream block)',
+      description:
+        'Block whose output supplies units. Leave empty to use the immediate upstream block.',
+      condition: { field: 'mode', value: ['per_unit', 'response_path'] },
+    },
+    {
+      id: 'quantityPath',
+      title: 'Units path',
+      type: 'short-input',
+      placeholder: 'tokens.total',
+      description: 'Dot path on the source block output for units consumed (e.g. data.usage.count)',
+      condition: { field: 'mode', value: 'per_unit' },
+      required: true,
+    },
+    {
+      id: 'unitPrice',
+      title: 'Price per unit',
+      type: 'short-input',
+      placeholder: '0.000003',
+      description: 'Cost per unit in the selected currency (units × price = amount)',
+      condition: { field: 'mode', value: 'per_unit' },
+      required: true,
+    },
+    {
+      id: 'unitName',
+      title: 'Unit',
+      type: 'short-input',
+      placeholder: 'token',
+      description: 'Unit label for quantity (e.g. request, minute, credit, token)',
+      canonicalParamId: 'unit',
+      condition: { field: 'mode', value: 'per_unit' },
+    },
+    {
       id: 'amountExpression',
       title: 'Amount expression',
       type: 'short-input',
       placeholder: '<api.data.billing.cost>',
       description: 'Dynamic numeric value from workflow variables or prior block outputs',
       condition: { field: 'mode', value: 'expression' },
-    },
-    {
-      id: 'sourceBlock',
-      title: 'Source block',
-      type: 'short-input',
-      placeholder: 'API',
-      description: 'Block name or ID whose output to read',
-      condition: { field: 'mode', value: 'response_path' },
     },
     {
       id: 'responsePath',
@@ -121,16 +151,19 @@ export const CostBlock: BlockConfig = {
       title: 'Quantity',
       type: 'short-input',
       placeholder: '1',
-      description: 'Optional units consumed',
+      description: 'Optional units consumed (fixed/expression/response_path modes only)',
       mode: 'advanced',
+      condition: { field: 'mode', value: 'per_unit', not: true },
     },
     {
-      id: 'unit',
+      id: 'unitLabel',
       title: 'Unit',
       type: 'short-input',
       placeholder: 'request',
-      description: 'Unit for quantity (e.g. request, minute, credit)',
+      description: 'Unit label for quantity (fixed/expression/response_path modes only)',
       mode: 'advanced',
+      canonicalParamId: 'unit',
+      condition: { field: 'mode', value: 'per_unit', not: true },
     },
     {
       id: 'onlyOnSuccess',
@@ -154,13 +187,24 @@ export const CostBlock: BlockConfig = {
   },
   inputs: {
     enabled: { type: 'boolean', description: 'Master toggle for cost recording' },
-    mode: { type: 'string', description: 'Amount resolution mode (fixed, expression, response_path)' },
+    mode: {
+      type: 'string',
+      description: 'Amount resolution mode (fixed, per_unit, expression, response_path)',
+    },
     amount: { type: 'number', description: 'Fixed amount in the selected currency' },
     amountExpression: {
       type: 'number',
       description: 'Resolved numeric amount from an expression',
     },
-    sourceBlock: { type: 'string', description: 'Upstream block name or ID for response path mode' },
+    sourceBlock: {
+      type: 'string',
+      description: 'Upstream block name or ID; auto-detects when empty in per_unit/response_path modes',
+    },
+    quantityPath: {
+      type: 'string',
+      description: 'Dot path on the source block output for units consumed',
+    },
+    unitPrice: { type: 'number', description: 'Price per unit in the selected currency' },
     responsePath: {
       type: 'string',
       description: 'Dot path on the source block output',
@@ -182,14 +226,26 @@ export const CostBlock: BlockConfig = {
       type: 'json',
       description: 'USD cost object ({ total, input, output }) consumed by billing',
     },
+    units: {
+      type: 'number',
+      description: 'Units consumed from the upstream block (per_unit mode)',
+    },
+    unitPrice: {
+      type: 'number',
+      description: 'Price per unit in the selected currency (per_unit mode)',
+    },
+    usd: {
+      type: 'number',
+      description: 'Total cost converted to USD',
+    },
     raw: {
       type: 'json',
-      description: 'Audit metadata (amount, currency, vendor, label, source mode)',
+      description: 'Audit metadata (amount, currency, vendor, label, source mode, units, unitPrice)',
     },
     recorded: { type: 'boolean', description: 'Whether a positive cost was emitted' },
     passthrough: {
       type: 'json',
-      description: 'Upstream block output forwarded unchanged when using response path mode',
+      description: 'Upstream block output forwarded unchanged when reading from a source block',
     },
   },
 }

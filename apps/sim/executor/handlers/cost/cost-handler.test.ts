@@ -49,8 +49,9 @@ describe('CostBlockHandler', () => {
             outputs: {},
             enabled: true,
           },
+          mockBlock,
         ],
-        connections: [],
+        connections: [{ source: 'api-block-1', target: 'cost-block-1' }],
       },
     }
   })
@@ -207,5 +208,105 @@ describe('CostBlockHandler', () => {
 
     expect(result.cost).toEqual({ total: 0, input: 0, output: 0 })
     expect(result.recorded).toBe(false)
+  })
+
+  it('converts upstream units to USD in per_unit mode', async () => {
+    mockContext.blockStates.set('api-block-1', {
+      output: {
+        tokens: { total: 1000 },
+        status: 200,
+      },
+      executed: true,
+      executionTime: 1,
+    })
+    mockContext.blockLogs.push({
+      blockId: 'api-block-1',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 1,
+      success: true,
+      executionOrder: 1,
+    })
+
+    const result = await handler.execute(mockContext, mockBlock, {
+      mode: 'per_unit',
+      quantityPath: 'tokens.total',
+      unitPrice: 0.000003,
+      unit: 'token',
+      currency: 'USD',
+      vendor: 'Custom LLM',
+    })
+
+    expect(result.units).toBe(1000)
+    expect(result.unitPrice).toBe(0.000003)
+    expect(result.usd).toBeCloseTo(0.003, 10)
+    expect(result.cost).toEqual({ total: 0.003, input: 0, output: 0 })
+    expect(result.raw).toMatchObject({
+      amount: 0.003,
+      currency: 'USD',
+      vendor: 'Custom LLM',
+      label: 'Custom LLM',
+      source: 'per_unit',
+      quantity: 1000,
+      unit: 'token',
+      unitPrice: 0.000003,
+      quantityPath: 'tokens.total',
+      sourceBlockId: 'api-block-1',
+    })
+    expect(result.passthrough).toEqual({
+      tokens: { total: 1000 },
+      status: 200,
+    })
+    expect(result.recorded).toBe(true)
+  })
+
+  it('auto-detects the upstream block when sourceBlock is omitted in per_unit mode', async () => {
+    mockContext.blockStates.set('api-block-1', {
+      output: { data: { usage: { count: 5 } } },
+      executed: true,
+      executionTime: 1,
+    })
+    mockContext.blockLogs.push({
+      blockId: 'api-block-1',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 1,
+      success: true,
+      executionOrder: 1,
+    })
+
+    const result = await handler.execute(mockContext, mockBlock, {
+      mode: 'per_unit',
+      quantityPath: 'data.usage.count',
+      unitPrice: 0.1,
+      currency: 'USD',
+    })
+
+    expect(result.units).toBe(5)
+    expect(result.usd).toBe(0.5)
+    expect(result.raw).toMatchObject({
+      sourceBlockId: 'api-block-1',
+      quantity: 5,
+      amount: 0.5,
+      source: 'per_unit',
+    })
+    expect(result.recorded).toBe(true)
+  })
+
+  it('requires units path and unit price for per_unit mode', async () => {
+    await expect(
+      handler.execute(mockContext, mockBlock, {
+        mode: 'per_unit',
+        currency: 'USD',
+      })
+    ).rejects.toThrow('Units path is required for per unit mode')
+
+    await expect(
+      handler.execute(mockContext, mockBlock, {
+        mode: 'per_unit',
+        quantityPath: 'tokens.total',
+        currency: 'USD',
+      })
+    ).rejects.toThrow('Price per unit is required for per unit mode')
   })
 })

@@ -72,6 +72,8 @@ export function LineagePanel({
                   return (
                     <ChipLink
                       href={`/workspace/${workspaceId}/logs?workflowIds=${row.workflowId}`}
+                      target='_blank'
+                      rel='noopener noreferrer'
                     >
                       {label}
                     </ChipLink>
@@ -122,7 +124,11 @@ export function LineagePanel({
               header: '',
               align: 'right',
               render: (row) => (
-                <ChipLink href={`/workspace/${workspaceId}/logs?search=${row.executionId}`}>
+                <ChipLink
+                  href={`/workspace/${workspaceId}/logs?search=${row.executionId}`}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                >
                   View
                 </ChipLink>
               ),
@@ -149,13 +155,22 @@ export function LineagePanel({
             key: 'root',
             header: 'Root execution',
             render: (row) => (
-              <button
-                type='button'
-                onClick={() => onSelectRoot(row.rootExecutionId)}
-                className='font-mono text-[var(--text-primary)] text-small underline-offset-2 hover-hover:underline'
-              >
-                {row.rootExecutionId.slice(0, 12)}…
-              </button>
+              <div className='flex items-center gap-2'>
+                <button
+                  type='button'
+                  onClick={() => onSelectRoot(row.rootExecutionId)}
+                  className='font-mono text-[var(--text-primary)] text-small underline-offset-2 hover-hover:underline'
+                >
+                  {row.rootExecutionId.slice(0, 12)}…
+                </button>
+                <ChipLink
+                  href={`/workspace/${workspaceId}/logs?search=${row.rootExecutionId}`}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                >
+                  View
+                </ChipLink>
+              </div>
             ),
           },
           {

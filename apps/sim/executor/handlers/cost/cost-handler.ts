@@ -4,11 +4,12 @@ import { traverseObjectPath } from '@/lib/core/utils/response-format'
 import { BlockType, isUuid, normalizeName } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import { collectBlockData } from '@/executor/utils/block-data'
+import { extractBaseBlockId } from '@/executor/utils/subflow-utils'
 import type { SerializedBlock } from '@/serializer/types'
 
 const logger = createLogger('CostBlockHandler')
 
-type CostMode = 'fixed' | 'expression' | 'response_path'
+type CostMode = 'fixed' | 'expression' | 'response_path' | 'per_unit'
 
 interface CostRawOutput {
   amount: number
@@ -19,6 +20,8 @@ interface CostRawOutput {
   source: CostMode
   quantity?: number
   unit?: string
+  unitPrice?: number
+  quantityPath?: string
   sourceBlockId?: string
   responsePath?: string
 }
@@ -76,6 +79,51 @@ function resolveSourceBlockId(ctx: ExecutionContext, sourceBlock: string): strin
   return byName?.id
 }
 
+function resolveUpstreamBlockId(
+  ctx: ExecutionContext,
+  currentBlockId: string,
+  explicitSource?: string
+): string | undefined {
+  if (explicitSource) {
+    return resolveSourceBlockId(ctx, explicitSource)
+  }
+
+  const connections = ctx.workflow?.connections ?? []
+  const baseCurrentId = extractBaseBlockId(currentBlockId)
+  const candidates = connections
+    .filter(
+      (connection) =>
+        connection.target === currentBlockId ||
+        connection.target === baseCurrentId
+    )
+    .map((connection) => connection.source)
+    .filter((sourceId) => {
+      const state = ctx.blockStates.get(sourceId)
+      return state?.executed && state.output !== undefined
+    })
+
+  if (candidates.length === 0) {
+    return undefined
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0]
+  }
+
+  let bestSource = candidates[0]
+  let bestOrder = -1
+  for (const sourceId of candidates) {
+    const logs = ctx.blockLogs.filter((log) => log.blockId === sourceId)
+    const maxOrder = logs.reduce((max, log) => Math.max(max, log.executionOrder), -1)
+    if (maxOrder > bestOrder) {
+      bestOrder = maxOrder
+      bestSource = sourceId
+    }
+  }
+
+  return bestSource
+}
+
 function didBlockError(ctx: ExecutionContext, blockId: string): boolean {
   const matchingLogs = ctx.blockLogs.filter((log) => log.blockId === blockId)
   if (matchingLogs.length > 0) {
@@ -94,6 +142,9 @@ function didBlockError(ctx: ExecutionContext, blockId: string): boolean {
 function buildZeroOutput(raw: Partial<CostRawOutput>, passthrough?: unknown): BlockOutput {
   return {
     cost: { total: 0, input: 0, output: 0 },
+    usd: 0,
+    ...(raw.quantity !== undefined ? { units: raw.quantity } : {}),
+    ...(raw.unitPrice !== undefined ? { unitPrice: raw.unitPrice } : {}),
     raw: {
       amount: 0,
       currency: raw.currency ?? 'USD',
@@ -102,11 +153,33 @@ function buildZeroOutput(raw: Partial<CostRawOutput>, passthrough?: unknown): Bl
       source: raw.source ?? 'fixed',
       quantity: raw.quantity,
       unit: raw.unit,
+      unitPrice: raw.unitPrice,
+      quantityPath: raw.quantityPath,
       sourceBlockId: raw.sourceBlockId,
       responsePath: raw.responsePath,
       exchangeRate: raw.exchangeRate,
     },
     recorded: false,
+    ...(passthrough !== undefined ? { passthrough } : {}),
+  }
+}
+
+function buildRecordedOutput(
+  usdTotal: number,
+  raw: CostRawOutput,
+  passthrough?: unknown
+): BlockOutput {
+  return {
+    cost: {
+      total: usdTotal,
+      input: 0,
+      output: 0,
+    },
+    usd: usdTotal,
+    ...(raw.quantity !== undefined ? { units: raw.quantity } : {}),
+    ...(raw.unitPrice !== undefined ? { unitPrice: raw.unitPrice } : {}),
+    raw,
+    recorded: usdTotal > 0,
     ...(passthrough !== undefined ? { passthrough } : {}),
   }
 }
@@ -149,7 +222,15 @@ export class CostBlockHandler implements BlockHandler {
       typeof inputs.sourceBlock === 'string' ? inputs.sourceBlock.trim() : undefined
     const responsePath =
       typeof inputs.responsePath === 'string' ? inputs.responsePath.trim() : undefined
-    const sourceBlockId = sourceBlockInput ? resolveSourceBlockId(ctx, sourceBlockInput) : undefined
+    const quantityPath =
+      typeof inputs.quantityPath === 'string' ? inputs.quantityPath.trim() : undefined
+    const unitPrice = coerceToNonNegativeNumber(inputs.unitPrice)
+    const usesSourceBlock = mode === 'per_unit' || mode === 'response_path'
+    const sourceBlockId = usesSourceBlock
+      ? resolveUpstreamBlockId(ctx, nodeMetadata.nodeId, sourceBlockInput)
+      : sourceBlockInput
+        ? resolveSourceBlockId(ctx, sourceBlockInput)
+        : undefined
 
     const rawBase: Partial<CostRawOutput> = {
       currency,
@@ -158,6 +239,8 @@ export class CostBlockHandler implements BlockHandler {
       source: mode,
       quantity,
       unit,
+      unitPrice: mode === 'per_unit' ? unitPrice : undefined,
+      quantityPath: mode === 'per_unit' ? quantityPath : undefined,
       sourceBlockId,
       responsePath,
       exchangeRate: currency !== 'USD' ? exchangeRate : undefined,
@@ -182,21 +265,54 @@ export class CostBlockHandler implements BlockHandler {
     }
 
     let resolvedAmount: number | undefined
+    let resolvedQuantity = quantity
     let passthrough: unknown
 
     if (mode === 'fixed') {
       resolvedAmount = coerceToNonNegativeNumber(inputs.amount)
     } else if (mode === 'expression') {
       resolvedAmount = coerceToNonNegativeNumber(inputs.amountExpression)
-    } else if (mode === 'response_path') {
-      if (!sourceBlockInput) {
-        throw new Error('Source block is required for response path mode')
+    } else if (mode === 'per_unit') {
+      if (!quantityPath) {
+        throw new Error('Units path is required for per unit mode')
       }
+      if (unitPrice === undefined) {
+        throw new Error('Price per unit is required for per unit mode')
+      }
+      if (!sourceBlockId) {
+        throw new Error(
+          sourceBlockInput
+            ? `Source block not found: ${sourceBlockInput}`
+            : 'No upstream block found to read units from'
+        )
+      }
+
+      const { blockData } = collectBlockData(ctx, nodeMetadata.nodeId)
+      const sourceOutput = blockData[sourceBlockId]
+      passthrough = sourceOutput
+      const pathValue =
+        sourceOutput !== undefined ? traverseObjectPath(sourceOutput, quantityPath) : undefined
+      resolvedQuantity = coerceToNonNegativeNumber(pathValue)
+      if (resolvedQuantity === undefined) {
+        logger.warn('Cost block could not resolve units from upstream block', {
+          blockId: block.id,
+          sourceBlockId,
+          quantityPath,
+        })
+        return buildZeroOutput(rawBase, passthrough)
+      }
+
+      resolvedAmount = resolvedQuantity * unitPrice
+    } else if (mode === 'response_path') {
       if (!responsePath) {
         throw new Error('Response path is required for response path mode')
       }
       if (!sourceBlockId) {
-        throw new Error(`Source block not found: ${sourceBlockInput}`)
+        throw new Error(
+          sourceBlockInput
+            ? `Source block not found: ${sourceBlockInput}`
+            : 'No upstream block found to read amount from'
+        )
       }
 
       const { blockData } = collectBlockData(ctx, nodeMetadata.nodeId)
@@ -214,6 +330,7 @@ export class CostBlockHandler implements BlockHandler {
         mode,
         sourceBlockId,
         responsePath,
+        quantityPath,
       })
       return buildZeroOutput(rawBase, passthrough)
     }
@@ -223,6 +340,7 @@ export class CostBlockHandler implements BlockHandler {
         {
           ...rawBase,
           amount: 0,
+          quantity: resolvedQuantity,
         },
         passthrough
       )
@@ -230,27 +348,24 @@ export class CostBlockHandler implements BlockHandler {
 
     const usdTotal = convertToUsd(resolvedAmount, currency, exchangeRate)
 
-    return {
-      cost: {
-        total: usdTotal,
-        input: 0,
-        output: 0,
-      },
-      raw: {
+    return buildRecordedOutput(
+      usdTotal,
+      {
         amount: resolvedAmount,
         currency,
         exchangeRate: currency !== 'USD' ? exchangeRate : undefined,
         vendor,
         label,
         source: mode,
-        quantity,
+        quantity: resolvedQuantity,
         unit,
+        unitPrice: mode === 'per_unit' ? unitPrice : undefined,
+        quantityPath: mode === 'per_unit' ? quantityPath : undefined,
         sourceBlockId,
         responsePath,
       },
-      recorded: usdTotal > 0,
-      ...(passthrough !== undefined ? { passthrough } : {}),
-    }
+      passthrough
+    )
   }
 
   private getPassthroughOutput(

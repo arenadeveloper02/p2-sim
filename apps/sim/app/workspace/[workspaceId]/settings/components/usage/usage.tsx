@@ -14,10 +14,12 @@ import {
 } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
+import { ChargeTypePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/charge-type-panel'
 import {
   CostBreakdownTable,
   CostCell,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/components/cost-breakdown-table'
+import { CostShareBars } from '@/app/workspace/[workspaceId]/settings/components/usage/components/cost-share-bars'
 import { DataHealthPanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/data-health-panel'
 import { LineagePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/lineage-panel'
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
@@ -92,6 +94,20 @@ function UsageDashboardContent({
   const showWorkflow = tab === 'all' || tab === 'workflow'
   const showMothership = tab === 'all' || tab === 'mothership'
 
+  const workflowChartRows = useMemo(
+    () =>
+      data.workflow.byWorkflow.map((row) => ({
+        id: row.workflowId ?? row.workflowName ?? 'unknown',
+        label: row.workflowName ?? row.workflowId ?? 'Unknown workflow',
+        billableCost: row.billableCost,
+        secondary: `${row.executionCount.toLocaleString()} runs`,
+        href: row.workflowId
+          ? `/workspace/${workspaceId}/logs?workflowIds=${row.workflowId}`
+          : undefined,
+      })),
+    [data.workflow.byWorkflow, workspaceId]
+  )
+
   return (
     <div className='flex flex-col gap-8'>
       <DataHealthPanel data={data} />
@@ -100,6 +116,13 @@ function UsageDashboardContent({
         <SettingsSection label='Trends'>
           <UsageTimeSeriesChart timeSeries={data.timeSeries} />
         </SettingsSection>
+      )}
+
+      {data.byChargeType.length > 0 && (
+        <ChargeTypePanel
+          byChargeType={data.byChargeType}
+          totalBillableCost={data.summary.billableCost}
+        />
       )}
 
       {(tab === 'all' || tab === 'workflow') && data.bySource.length > 0 && (
@@ -143,8 +166,21 @@ function UsageDashboardContent({
               {data.workflow.executions.total.toLocaleString()} executions ·{' '}
               {data.workflow.executions.withProjectedCost.toLocaleString()} with projected cost
             </p>
-            <ChipLink href={`/workspace/${workspaceId}/logs`}>View execution logs</ChipLink>
+            <ChipLink href={`/workspace/${workspaceId}/logs`} target='_blank' rel='noopener noreferrer'>
+              View execution logs
+            </ChipLink>
           </div>
+          {workflowChartRows.length > 0 && (
+            <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3'>
+              <p className='mb-3 font-medium text-[var(--text-primary)] text-small'>
+                Cost by workflow
+              </p>
+              <CostShareBars
+                rows={workflowChartRows}
+                emptyMessage='No workflow cost in this period.'
+              />
+            </div>
+          )}
           {data.workflow.byWorkflow.length > 0 && (
             <CostBreakdownTable
               rows={data.workflow.byWorkflow}
@@ -160,6 +196,8 @@ function UsageDashboardContent({
                       return (
                         <ChipLink
                           href={`/workspace/${workspaceId}/logs?workflowIds=${row.workflowId}`}
+                          target='_blank'
+                          rel='noopener noreferrer'
                         >
                           {label}
                         </ChipLink>
@@ -237,7 +275,13 @@ function UsageDashboardContent({
               {data.copilot.chats.withLedgerCost.toLocaleString()} with ledger cost ·{' '}
               {data.copilot.runs.total.toLocaleString()} runs
             </p>
-            <ChipLink href={`/workspace/${workspaceId}/home`}>Open mothership</ChipLink>
+            <ChipLink
+              href={`/workspace/${workspaceId}/home`}
+              target='_blank'
+              rel='noopener noreferrer'
+            >
+              Open mothership
+            </ChipLink>
           </div>
           {data.copilot.triggeredWorkflows.executionCount > 0 && (
             <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
