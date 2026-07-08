@@ -76,7 +76,12 @@ import {
   isSsoEnabled,
 } from '@/lib/core/config/env-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
-import { getBaseUrl, isLocalhostUrl, parseOriginList } from '@/lib/core/utils/urls'
+import {
+  getBaseUrl,
+  getLoginRedirectUrl,
+  isLocalhostUrl,
+  parseOriginList,
+} from '@/lib/core/utils/urls'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
@@ -231,10 +236,29 @@ function resolveBetterAuthCrossSubdomainCookieDomain(): string | undefined {
 
 const betterAuthCrossSubdomainCookieDomain = resolveBetterAuthCrossSubdomainCookieDomain()
 
+function resolveArenaHubTrustedOrigin(): string | null {
+  const fromEnv = env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL?.trim()
+  if (fromEnv) {
+    try {
+      return new URL(fromEnv).origin
+    } catch {
+      return null
+    }
+  }
+  try {
+    return new URL(getLoginRedirectUrl(new URL(getBaseUrl()).hostname)).origin
+  } catch {
+    return null
+  }
+}
+
+const arenaHubTrustedOrigin = resolveArenaHubTrustedOrigin()
+
 export const auth = betterAuth({
   baseURL: getBaseUrl(),
   trustedOrigins: [
     getBaseUrl(),
+    ...(arenaHubTrustedOrigin ? [arenaHubTrustedOrigin] : []),
     ...(env.ALLOWED_ORIGINS
       ? env.ALLOWED_ORIGINS.split(',')
           .map((o) => o.trim())
