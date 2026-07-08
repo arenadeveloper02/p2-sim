@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     // Build interactive chart specs from the result rows (deterministic; no LLM).
     // Rendered by the shared ChartRenderer in both the deployed and workflow chats.
-    const visualizations = buildGoogleAdsVisualizations(processedResults.rows)
+    const visualizations = buildGoogleAdsVisualizations(processedResults.rows, { query })
 
     // Build response with pagination info
     const response = {

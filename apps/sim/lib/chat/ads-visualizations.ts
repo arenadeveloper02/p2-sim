@@ -15,6 +15,7 @@
  * hallucinate a broken chart.
  */
 
+import { applyChartIntent, parseChartIntent } from './chart-intent'
 import type { ChartSpec, ChartType } from './chart-types'
 
 /** A flattened row: dimension label(s) + numeric metrics. */
@@ -32,6 +33,8 @@ interface BuildOptions {
   titlePrefix?: string
   /** Cap on number of categories/series to keep charts readable. */
   maxCategories?: number
+  /** User query — when it mentions chart types, only matching specs are returned. */
+  query?: string
 }
 
 interface FunnelStage {
@@ -74,6 +77,7 @@ const METRIC_ORDER: ReadonlyArray<{ test: RegExp; order: number }> = [
   { test: /cpc/i, order: 21 },
   { test: /cpm/i, order: 22 },
   { test: /frequency/i, order: 23 },
+  { test: /roas/i, order: 24 },
   { test: /conv/i, order: 30 },
 ]
 
@@ -114,6 +118,7 @@ function pickPieShareMetrics(metricNames: string[]): string[] {
     'Impressions',
     'Clicks',
     'Reach',
+    'ROAS',
     'Conversions',
   ]
   return preferred.filter((m) => metricNames.includes(m)).slice(0, MAX_PIE_SHARE_CHARTS)
@@ -199,7 +204,9 @@ export function buildChartsFromTable(
   const funnel = buildFunnelChart(rows, metricNames, titlePrefix)
   if (funnel) specs.push(funnel)
 
-  return specs.filter((s) => s.series.some((series) => series.data.length > 0))
+  const built = specs.filter((s) => s.series.some((series) => series.data.length > 0))
+  const intent = parseChartIntent(options.query)
+  return applyChartIntent(built, intent)
 }
 
 function collectMetricNames(rows: NormalizedRow[]): string[] {
@@ -454,12 +461,18 @@ function normalizeGoogleRow(row: any): NormalizedRow | null {
 }
 
 /** Build chart specs from processed Google Ads V1 result rows. */
-export function buildGoogleAdsVisualizations(rows: any[]): ChartSpec[] {
+export function buildGoogleAdsVisualizations(
+  rows: any[],
+  options?: { query?: string }
+): ChartSpec[] {
   if (!Array.isArray(rows) || rows.length === 0) return []
   const normalized = rows
     .map(normalizeGoogleRow)
     .filter((r): r is NormalizedRow => r !== null)
-  return buildChartsFromTable(normalized, { titlePrefix: 'Google Ads' })
+  return buildChartsFromTable(normalized, {
+    titlePrefix: 'Google Ads',
+    query: options?.query,
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -476,6 +489,8 @@ const FACEBOOK_METRIC_LABELS: Record<string, string> = {
   cpc: 'CPC ($)',
   cpm: 'CPM ($)',
   frequency: 'Frequency',
+  purchase_roas: 'ROAS',
+  roas: 'ROAS',
 }
 
 function toNumber(v: unknown): number | undefined {
@@ -511,7 +526,10 @@ function normalizeFacebookRow(row: any): NormalizedRow | null {
  * Build chart specs from a Facebook Ads API result.
  * Accepts either the raw result (`{ data: [...] }`) or an insights array.
  */
-export function buildFacebookAdsVisualizations(result: any): ChartSpec[] {
+export function buildFacebookAdsVisualizations(
+  result: any,
+  options?: { query?: string }
+): ChartSpec[] {
   const insights: any[] = Array.isArray(result)
     ? result
     : Array.isArray(result?.data)
@@ -524,5 +542,8 @@ export function buildFacebookAdsVisualizations(result: any): ChartSpec[] {
   const normalized = insights
     .map(normalizeFacebookRow)
     .filter((r): r is NormalizedRow => r !== null)
-  return buildChartsFromTable(normalized, { titlePrefix: 'Facebook Ads' })
+  return buildChartsFromTable(normalized, {
+    titlePrefix: 'Facebook Ads',
+    query: options?.query,
+  })
 }

@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
 
     // Build interactive chart specs from the insights (deterministic; no LLM).
     // Rendered by the shared ChartRenderer in both the deployed and workflow chats.
-    const visualizations = buildFacebookAdsVisualizations(result)
+    const visualizations = buildFacebookAdsVisualizations(result, { query })
 
     const response: FacebookAdsResponse = {
       success: true,
