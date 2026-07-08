@@ -44,6 +44,7 @@ import { ParameterWithLabel } from '@/app/workspace/[workspaceId]/w/[workflowId]
 import { ToolSubBlockRenderer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/components/tools/sub-block-renderer'
 import type { StoredTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/types'
 import {
+  buildInitialAgentToolParams,
   isAgentToolPickerBlock,
   isCustomToolAlreadySelected,
   isMcpToolAlreadySelected,
@@ -809,17 +810,10 @@ export const ToolInput = memo(function ToolInput({
       })
       if (!toolParams) return
 
-      const initialParams: Record<string, any> = {}
-
-      toolParams.userInputParameters.forEach((param) => {
-        if (param.uiComponent?.value && !initialParams[param.id]) {
-          const defaultValue =
-            typeof param.uiComponent.value === 'function'
-              ? param.uiComponent.value()
-              : param.uiComponent.value
-          initialParams[param.id] = defaultValue
-        }
-      })
+      const initialParams = buildInitialAgentToolParams(
+        toolBlock.type,
+        toolParams.userInputParameters
+      )
 
       const newTool: StoredTool = {
         type: toolBlock.type,
