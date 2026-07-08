@@ -635,6 +635,7 @@ export const AGENT_TOOL_BLOCK_TYPES = new Set([
  */
 export const BUILT_IN_TOOL_TYPES = new Set([
   'api',
+  'chart_generator',
   'file',
   'function',
   'knowledge',

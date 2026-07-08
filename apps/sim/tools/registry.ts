@@ -405,6 +405,7 @@ import {
   calendlyListScheduledEventsTool,
   calendlyListWebhooksTool,
 } from '@/tools/calendly'
+import { chartGeneratorTool } from '@/tools/chart/generator'
 import { clayPopulateTool } from '@/tools/clay'
 import {
   clerkCreateOrganizationTool,
@@ -5113,6 +5114,7 @@ export const tools: Record<string, ToolConfig> = {
   calcom_delete_schedule: calcomDeleteScheduleTool,
   calcom_get_default_schedule: calcomGetDefaultScheduleTool,
   calcom_get_slots: calcomGetSlotsTool,
+  chart_generator: chartGeneratorTool,
   typeform_responses: typeformResponsesTool,
   typeform_files: typeformFilesTool,
   typeform_insights: typeformInsightsTool,
