@@ -1,7 +1,7 @@
 'use client'
 
 import { Download, Menu, MoreHorizontal, PanelLeftOpen, Share2 } from 'lucide-react'
-import { DEPLOYED_CHAT_CANVAS_BG } from '@/app/chat/constants'
+import { DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_DIVIDER, DEPLOYED_CHAT_TEXT_DISPLAY } from '@/app/chat/constants'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,8 +46,11 @@ export function ArenaChatHeader({
   return (
     <nav
       aria-label='Chat navigation'
-      className='grid h-12 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 px-4'
-      style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+      className='grid h-12 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-b px-4'
+      style={{
+        backgroundColor: DEPLOYED_CHAT_CANVAS_BG,
+        borderColor: DEPLOYED_CHAT_DIVIDER,
+      }}
     >
       <div className='flex items-center'>
         {onToggleSidebar && (
@@ -76,7 +79,10 @@ export function ArenaChatHeader({
 
       <div className='min-w-0 px-2 text-center'>
         {!hideCenterTitle && (
-          <h2 className='truncate font-semibold text-[#1E293B] text-lg'>
+          <h2
+            className='truncate font-semibold text-[17px] md:text-lg'
+            style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
+          >
             {title}
           </h2>
         )}

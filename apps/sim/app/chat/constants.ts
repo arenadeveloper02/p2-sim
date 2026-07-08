@@ -14,8 +14,26 @@ export const CHAT_ERROR_MESSAGES = {
 // Increased to 30 minutes to accommodate long-running workflows (some can take 15+ minutes)
 export const CHAT_REQUEST_TIMEOUT_MS = 1800000 // 30 minutes
 
+/** Shared max content width for deployed chat landing, messages, and input */
+export const DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS = 'max-w-[748px]' as const
+
 /** Deployed chat main canvas background (pale blue-white) */
 export const DEPLOYED_CHAT_CANVAS_BG = '#F3F8FE'
+
+/** Subtle top tint for deployed chat canvas gradient */
+export const DEPLOYED_CHAT_CANVAS_GRADIENT_TOP = '#F8FBFF'
+
+/** Deployed chat canvas background gradient */
+export const DEPLOYED_CHAT_CANVAS_GRADIENT = `linear-gradient(180deg, ${DEPLOYED_CHAT_CANVAS_GRADIENT_TOP} 0%, ${DEPLOYED_CHAT_CANVAS_BG} 100%)`
+
+/** Deployed chat typography colors */
+export const DEPLOYED_CHAT_TEXT_DISPLAY = '#0F172A'
+export const DEPLOYED_CHAT_TEXT_BODY = '#1E293B'
+export const DEPLOYED_CHAT_TEXT_MUTED = '#64748B'
+export const DEPLOYED_CHAT_TEXT_SUBTLE = '#94A3B8'
+
+/** Deployed chat dividers and borders */
+export const DEPLOYED_CHAT_DIVIDER = '#E2EAF4'
 
 /** Deployed chat input placeholder */
 export const DEPLOYED_CHAT_INPUT_PLACEHOLDER = 'Ask VIMI'
@@ -23,9 +41,12 @@ export const DEPLOYED_CHAT_INPUT_PLACEHOLDER = 'Ask VIMI'
 /** Active thread label color in the deployed chat sidebar */
 export const DEPLOYED_CHAT_ACTIVE_THREAD_COLOR = '#155CBA'
 
+/** Active thread background wash in the deployed chat sidebar */
+export const DEPLOYED_CHAT_ACTIVE_THREAD_BG = '#E8F0FA'
+
 /** Soft outer glow for deployed chat input gradient border */
 export const DEPLOYED_CHAT_INPUT_GLOW_SHADOW =
-  '0 0 0 1px rgba(147, 197, 253, 0.25), 0 4px 16px rgba(147, 197, 253, 0.18), 0 4px 20px rgba(249, 168, 212, 0.12)'
+  '0 0 0 1px rgba(147, 197, 253, 0.2), 0 4px 12px rgba(147, 197, 253, 0.15), 0 2px 8px rgba(147, 197, 253, 0.08)'
 
 /** Deployed chat sidebar border */
 export const DEPLOYED_CHAT_SIDEBAR_BORDER = '#C7D9F0'

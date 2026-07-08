@@ -33,7 +33,7 @@ import {
   UnauthorizedEmailError,
   VoiceInterface,
 } from '@/app/chat/components'
-import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS, DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_INPUT_PLACEHOLDER } from '@/app/chat/constants'
+import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS, DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_CANVAS_GRADIENT, DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS, DEPLOYED_CHAT_INPUT_PLACEHOLDER } from '@/app/chat/constants'
 import { useAudioStreaming, useChatKeyboardShortcuts, useChatStreaming } from '@/app/chat/hooks'
 import { downloadTextFile, exportChatAsMarkdown } from '@/app/chat/utils/export-chat'
 import {
@@ -1636,7 +1636,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Standard text-based chat interface
   return (
     <ToastProvider>
-    <div className='fixed inset-0 z-[100] flex' style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}>
+    <div className='fixed inset-0 z-[100] flex' style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}>
       <div className='hidden h-full shrink-0 md:flex'>
         <LeftNavThread
           threads={threads as ThreadRecord[]}
@@ -1696,7 +1696,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
       <div
         className='relative flex min-h-0 min-w-0 flex-1 flex-col'
-        style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+        style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
       >
         <ArenaChatHeader
           chatConfig={chatConfig}
@@ -1756,7 +1756,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                 <ChatMessageContainer
                   messages={messages}
                   isLoading={isLoading}
-                  isStreaming={isStreamingResponse}
                   showScrollButton={showScrollButton}
                   messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
                   messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
@@ -1775,7 +1774,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               </div>
 
               <div ref={chatInputWrapperRef} className='relative shrink-0 p-3 pb-4 md:p-4 md:pb-6'>
-                <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
+                <div className={`relative mx-auto ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
                   <ChatInput
                     embedded
                     placeholder={DEPLOYED_CHAT_INPUT_PLACEHOLDER}

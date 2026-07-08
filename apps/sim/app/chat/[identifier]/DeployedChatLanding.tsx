@@ -4,7 +4,13 @@ import { useMemo, useState } from 'react'
 import type { RefObject } from 'react'
 import { ChipModal, ChipModalBody, ChipModalHeader } from '@/components/emcn'
 import { ChatInput } from '@/app/chat/components'
-import { DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_INPUT_PLACEHOLDER } from '@/app/chat/constants'
+import {
+  DEPLOYED_CHAT_CANVAS_GRADIENT,
+  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
+  DEPLOYED_CHAT_INPUT_PLACEHOLDER,
+  DEPLOYED_CHAT_TEXT_DISPLAY,
+  DEPLOYED_CHAT_TEXT_MUTED,
+} from '@/app/chat/constants'
 import {
   clipDeployedChatDescription,
   getDeployedChatFirstName,
@@ -74,26 +80,38 @@ export function DeployedChatLanding({
     [descriptionSource]
   )
 
+  const heroLine = firstName ? `Hi ${firstName}` : title
+  const showTitleSubtitle = Boolean(firstName)
+
   return (
     <>
       <div
         className='flex min-h-0 flex-1 flex-col overflow-y-auto'
-        style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+        style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
       >
         <div className='flex flex-1 flex-col items-center justify-center px-4 py-8 md:px-6'>
-          <div className='w-full max-w-[748px] text-center'>
-            <h1 className='font-bold text-[24px] text-[#1E293B] leading-[1.2] tracking-[-0.01em]'>
-              {title}
+          <div className={`w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} text-center`}>
+            <h1
+              className='font-semibold text-[28px] leading-[1.2] tracking-[-0.02em] md:text-[32px]'
+              style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
+            >
+              {heroLine}
             </h1>
 
-            {userName && (
-              <p className='mt-3 font-normal text-[#64748B] text-[18px] leading-[1.4]'>
-                Hi {userName}, welcome to the chat!
+            {showTitleSubtitle && (
+              <p
+                className='mt-2 font-normal text-[15px] leading-[1.6]'
+                style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
+              >
+                {title}
               </p>
             )}
 
             {clippedDescription.displayText && (
-              <div className='mt-3 font-normal text-[#64748B] text-[15px] leading-[1.6]'>
+              <div
+                className='mt-4 font-normal text-[15px] leading-[1.6]'
+                style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
+              >
                 <p className='whitespace-pre-wrap'>{clippedDescription.displayText}</p>
                 {clippedDescription.isTruncated && (
                   <button
@@ -107,11 +125,7 @@ export function DeployedChatLanding({
               </div>
             )}
 
-            <p className='mt-8 font-semibold text-[#1E293B] text-[18px] leading-[1.4]'>
-              What should we get done{firstName ? `, ${firstName}` : ''}?
-            </p>
-
-            <div ref={inputWrapperRef} className='mt-5 w-full'>
+            <div ref={inputWrapperRef} className='mt-6 w-full md:mt-8'>
               <ChatInput
                 embedded
                 landing
@@ -133,7 +147,10 @@ export function DeployedChatLanding({
       <ChipModal open={isDescriptionModalOpen} onOpenChange={setIsDescriptionModalOpen}>
         <ChipModalHeader onClose={() => setIsDescriptionModalOpen(false)}>{title}</ChipModalHeader>
         <ChipModalBody>
-          <p className='whitespace-pre-wrap font-normal text-[#64748B] text-[15px] leading-[1.6]'>
+          <p
+            className='whitespace-pre-wrap font-normal text-[15px] leading-[1.6]'
+            style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
+          >
             {clippedDescription.fullText}
           </p>
         </ChipModalBody>

@@ -12,15 +12,18 @@ import {
 } from 'react'
 import { ArrowDown, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DEPLOYED_CHAT_CANVAS_BG } from '@/app/chat/constants'
+import {
+  DEPLOYED_CHAT_CANVAS_GRADIENT,
+  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
+  DEPLOYED_CHAT_TEXT_BODY,
+  DEPLOYED_CHAT_TEXT_MUTED,
+} from '@/app/chat/constants'
 import { DeployedResponseLoader } from '@/app/chat/components/message/components/deployed-response-loader'
 import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClientChatMessage'
 
 interface ChatMessageContainerProps {
   messages: ChatMessage[]
   isLoading: boolean
-  /** When true, response is streaming (show "Fetching..." instead of "Thinking...") */
-  isStreaming?: boolean
   showScrollButton: boolean
   messagesContainerRef: RefObject<HTMLDivElement>
   messagesEndRef: RefObject<HTMLDivElement>
@@ -57,7 +60,6 @@ interface ChatMessageContainerProps {
 export const ChatMessageContainer = memo(function ChatMessageContainer({
   messages,
   isLoading,
-  isStreaming = false,
   showScrollButton,
   messagesContainerRef,
   messagesEndRef,
@@ -168,7 +170,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   return (
     <div
       className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden'
-      style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+      style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
     >
       {/* "Ask this in chat" tip - fixed near selection */}
       {selectionTip && onAskInChat && (
@@ -193,14 +195,14 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
         ref={messagesContainerRef}
         className='!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto'
       >
-        <div className='mx-auto w-full max-w-3xl px-4 pb-8 md:max-w-[748px]'>
+        <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} px-4 pb-8`}>
           {messages.length === 0 ? (
             <div className='flex min-h-full flex-col items-center justify-center py-10'>
               <div className='space-y-2 text-center'>
-                <h3 className='font-medium text-[var(--landing-text)] text-lg'>
+                <h3 className='font-medium text-[17px]' style={{ color: DEPLOYED_CHAT_TEXT_BODY }}>
                   How can I help you today?
                 </h3>
-                <p className='text-[var(--landing-text-muted)] text-sm'>
+                <p className='text-[14px]' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
                   {chatConfig?.description || 'Ask me anything.'}
                 </p>
               </div>
@@ -228,7 +230,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
             })()
           )}
 
-          {isLoading && <DeployedResponseLoader isStreaming={isStreaming} />}
+          {isLoading && <DeployedResponseLoader />}
 
           {/* End of messages marker for scrolling */}
           <div ref={messagesEndRef} />

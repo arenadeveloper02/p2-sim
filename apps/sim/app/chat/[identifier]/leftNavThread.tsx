@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import Image from 'next/image'
 import { formatRelativeTime } from '@sim/utils/formatting'
 import {
@@ -31,7 +31,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/core/utils/cn'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
-import { DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_SIDEBAR_BORDER } from '@/app/chat/constants'
+import {
+  DEPLOYED_CHAT_ACTIVE_THREAD_BG,
+  DEPLOYED_CHAT_CANVAS_BG,
+  DEPLOYED_CHAT_DIVIDER,
+  DEPLOYED_CHAT_SIDEBAR_BORDER,
+  DEPLOYED_CHAT_TEXT_SUBTLE,
+} from '@/app/chat/constants'
 import { groupThreadsByDate } from '@/app/chat/utils/thread-date-groups'
 
 export interface ThreadRecord {
@@ -75,10 +81,15 @@ type SidebarActionIcon = React.ComponentType<{ className?: string }>
 
 function sidebarRowClass(isActive: boolean, disabled = false) {
   return cn(
-    'group flex min-h-8 cursor-pointer items-center gap-1 rounded-lg bg-white px-2 py-1 font-normal transition-colors',
-    isActive && 'shadow-sm',
+    'group flex min-h-8 cursor-pointer items-center gap-1 rounded-lg px-2 py-1 transition-colors',
+    isActive ? 'shadow-none' : 'bg-transparent hover:bg-white',
     disabled && 'cursor-not-allowed opacity-50'
   )
+}
+
+function sidebarRowStyle(isActive: boolean): CSSProperties | undefined {
+  if (!isActive) return undefined
+  return { backgroundColor: DEPLOYED_CHAT_ACTIVE_THREAD_BG }
 }
 
 function sidebarRowIconClass(isActive: boolean) {
@@ -95,14 +106,14 @@ function sidebarRowLabelClass(isActive: boolean) {
     'truncate text-sm',
     isActive
       ? 'font-medium text-[#155CBA]'
-      : 'font-normal text-[var(--text-body)] group-hover:font-medium group-hover:text-[#155CBA]'
+      : 'font-normal text-[var(--text-body)] group-hover:text-[#155CBA]'
   )
 }
 
 function sidebarPanelClass(collapsed: boolean) {
   return cn(
     'flex h-full flex-col rounded-2xl border bg-[#F3F8FE]',
-    collapsed ? 'w-16 items-center px-1 py-3' : 'w-[280px] px-2 py-4'
+    collapsed ? 'w-16 items-center px-1 py-3' : 'w-[280px] px-3 py-4'
   )
 }
 
@@ -198,6 +209,7 @@ function SidebarActionButton({
         sidebarRowClass(isActive, disabled),
         collapsed ? 'size-8 justify-center px-0' : 'w-full'
       )}
+      style={sidebarRowStyle(isActive)}
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
@@ -222,7 +234,7 @@ function SidebarActionButton({
 
 function ThreadSkeleton() {
   return (
-    <div className='flex min-h-8 animate-pulse items-center gap-2 rounded-lg bg-white px-2 py-1'>
+    <div className='flex min-h-8 animate-pulse items-center gap-2 rounded-lg px-2 py-1'>
       <div className='size-4 rounded bg-[var(--surface-3)]' />
       <div className='h-3 flex-1 rounded bg-[var(--surface-3)]' />
     </div>
@@ -311,6 +323,7 @@ function ThreadRow({
   return (
     <div
       className={sidebarRowClass(isActive)}
+      style={sidebarRowStyle(isActive)}
       onClick={onSelect}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -566,10 +579,13 @@ const LeftNavThread = ({
 
       {primaryActionButtons(false)}
 
-      <hr className='my-4 border-[var(--border-1)]' />
+      <hr className='my-4' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
 
       <div className='flex min-h-0 flex-1 flex-col'>
-        <p className='mb-2 px-1 font-medium text-[var(--text-muted)] text-xs uppercase tracking-wide'>
+        <p
+          className='mb-2 px-1 font-medium text-xs'
+          style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}
+        >
           Chats
         </p>
 
@@ -649,7 +665,7 @@ const LeftNavThread = ({
       </div>
       </div>
 
-      <hr className='my-4 border-[var(--border-1)]' />
+      <hr className='my-4' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
 
       <div className='flex items-center gap-3'>
         <Button

@@ -114,7 +114,7 @@ export default function EmailAuth({ identifier }: EmailAuthProps) {
   }
 
   return (
-    <AuthBackground className='dark font-[430]'>
+    <AuthBackground className='dark'>
       <main className='relative flex min-h-full flex-col text-[var(--landing-text)]'>
         <header className='shrink-0 bg-[var(--landing-bg)]'>
           <Navbar logoOnly />
@@ -123,10 +123,10 @@ export default function EmailAuth({ identifier }: EmailAuthProps) {
           <div className='w-full max-w-lg px-4'>
             <div className='flex flex-col items-center justify-center'>
               <div className='space-y-1 text-center'>
-                <h1 className='text-balance font-[430] text-[40px] text-[var(--landing-text)] leading-[110%] tracking-[-0.02em]'>
+                <h1 className='text-balance text-[40px] text-[var(--landing-text)] leading-[110%] tracking-[-0.02em]'>
                   {showOtpVerification ? 'Verify Your Email' : 'Email Verification'}
                 </h1>
-                <p className='font-[430] text-[color-mix(in_srgb,var(--landing-text-subtle)_60%,transparent)] text-lg leading-[125%] tracking-[0.02em]'>
+                <p className='text-[color-mix(in_srgb,var(--landing-text-subtle)_60%,transparent)] text-lg leading-[125%] tracking-[0.02em]'>
                   {showOtpVerification
                     ? `A verification code has been sent to ${email}`
                     : 'This chat requires email verification'}

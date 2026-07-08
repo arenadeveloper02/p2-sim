@@ -1,34 +1,50 @@
 'use client'
 
 import Image from 'next/image'
+import {
+  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
+  DEPLOYED_CHAT_TEXT_MUTED,
+} from '@/app/chat/constants'
 import circlePatternLoader from '@/app/chat/components/message/components/circle-pattern-loader.gif'
-
-interface DeployedResponseLoaderProps {
-  /** When true, show "Fetching..." instead of "Thinking..." */
-  isStreaming?: boolean
-}
 
 /**
  * Loading indicator shown in deployed chat while waiting for an assistant response.
  */
-export function DeployedResponseLoader({ isStreaming = false }: DeployedResponseLoaderProps) {
-  const label = isStreaming ? 'Fetching' : 'Thinking'
-
+export function DeployedResponseLoader() {
   return (
-    <div className='px-4 py-5'>
-      <div className='mx-auto max-w-3xl'>
-        <div className='flex items-center gap-3'>
+    <div className='px-4 py-4'>
+      <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
+        <div className='flex items-center'>
           <Image
             src={circlePatternLoader}
-            alt=''
-            width={64}
-            height={64}
+            alt='Loading response'
+            width={48}
+            height={48}
             unoptimized
-            aria-hidden
+            className='mix-blend-multiply'
           />
-          <span className='font-medium text-muted-foreground text-sm'>{label}...</span>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Compact inline loader for deployed chat streaming states (e.g. fetching references).
+ */
+export function DeployedInlineLoader({ label }: { label: string }) {
+  return (
+    <div className='mt-2 flex items-center gap-2.5 text-sm' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
+      <Image
+        src={circlePatternLoader}
+        alt=''
+        width={24}
+        height={24}
+        unoptimized
+        aria-hidden
+        className='mix-blend-multiply'
+      />
+      <span className='font-medium'>{label}</span>
     </div>
   )
 }

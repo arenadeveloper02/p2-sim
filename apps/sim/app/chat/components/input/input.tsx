@@ -10,7 +10,7 @@ import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selectio
 import { cn } from '@/lib/core/utils/cn'
 import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
-import { DEPLOYED_CHAT_INPUT_GLOW_SHADOW } from '@/app/chat/constants'
+import { DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS, DEPLOYED_CHAT_INPUT_GLOW_SHADOW } from '@/app/chat/constants'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
 const logger = createLogger('ChatInput')
@@ -353,7 +353,7 @@ export const ChatInput: React.FC<{
               )
         )}
       >
-        <div ref={wrapperRef} className='w-full max-w-3xl md:max-w-[748px]'>
+        <div ref={wrapperRef} className={`w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
           {/* Error Messages */}
           {uploadErrors.length > 0 && (
             <div className='mb-3 flex flex-col gap-2'>

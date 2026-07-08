@@ -45,12 +45,22 @@ import {
   S3UploadFailedAlert,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
+import { DeployedInlineLoader } from '@/app/chat/components/message/components/deployed-response-loader'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
-import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
+import {
+  CHAT_ERROR_MESSAGES,
+  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
+  DEPLOYED_CHAT_TEXT_BODY,
+  DEPLOYED_CHAT_TEXT_MUTED,
+} from '@/app/chat/constants'
 
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
-const DEPLOYED_MARKDOWN_FONT_CLASS = 'font-poppins'
+const DEPLOYED_MARKDOWN_PROPS = {
+  fontClassName: 'font-poppins',
+  bodyTextClassName: 'text-[#1E293B]',
+  headingTextClassName: 'text-[#0F172A]',
+} as const
 
 export interface ChatMessage {
   id: string
@@ -181,7 +191,9 @@ function LineWithPipeHover({ line, onCopySegment, renderImage }: LineWithPipeHov
                       content={part}
                       variant='inline'
                       renderImage={renderImage}
-                      fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+                      fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
+                      bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
+                      headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
                     />
                   </button>
                 </Tooltip.Trigger>
@@ -192,7 +204,9 @@ function LineWithPipeHover({ line, onCopySegment, renderImage }: LineWithPipeHov
                 content={part}
                 variant='inline'
                 renderImage={renderImage}
-                fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+                fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
+                bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
+                headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
               />
             )}
           </Fragment>
@@ -361,7 +375,9 @@ export const ArenaClientChatMessage = memo(
             <ArenaCopilotMarkdownRenderer
               content={str}
               renderImage={renderMarkdownImage}
-              fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+              fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
+              bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
+              headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
             />
           )
         }
@@ -370,7 +386,9 @@ export const ArenaClientChatMessage = memo(
             <ArenaCopilotMarkdownRenderer
               content={str}
               renderImage={renderMarkdownImage}
-              fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+              fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
+              bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
+              headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
             />
           )
         }
@@ -390,7 +408,9 @@ export const ArenaClientChatMessage = memo(
                   <ArenaCopilotMarkdownRenderer
                     content={line}
                     renderImage={renderMarkdownImage}
-                    fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+                    fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
+                bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
+                headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
                   />
                 )}
               </span>
@@ -474,7 +494,9 @@ export const ArenaClientChatMessage = memo(
             <ArenaCopilotMarkdownRenderer
               content={JSON.stringify(content, null, 2)}
               renderImage={renderMarkdownImage}
-              fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+              fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
+              bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
+              headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
             />
           )
         }
@@ -552,7 +574,9 @@ export const ArenaClientChatMessage = memo(
           <ArenaCopilotMarkdownRenderer
             content={String(content)}
             renderImage={renderMarkdownImage}
-            fontClassName={DEPLOYED_MARKDOWN_FONT_CLASS}
+                    fontClassName={DEPLOYED_MARKDOWN_PROPS.fontClassName}
+                    bodyTextClassName={DEPLOYED_MARKDOWN_PROPS.bodyTextClassName}
+                    headingTextClassName={DEPLOYED_MARKDOWN_PROPS.headingTextClassName}
           />
         )
       } catch (error) {
@@ -904,8 +928,8 @@ export const ArenaClientChatMessage = memo(
           : Boolean(message.content)
 
       return (
-        <div className='px-4 py-2' data-message-id={message.id}>
-          <div className='mx-auto max-w-3xl'>
+        <div className='px-4 py-3' data-message-id={message.id}>
+          <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
             {message.attachments && message.attachments.length > 0 && (
               <div className='mb-2 flex justify-end'>
                 <div className='flex flex-wrap gap-2'>
@@ -961,9 +985,12 @@ export const ArenaClientChatMessage = memo(
             )}
             {hasUserText && (
               <div className='flex justify-end'>
-                <div className='max-w-[94%]'>
+                <div className='max-w-[min(80%,560px)]'>
                   <div className='rounded-3xl bg-white px-4 py-3 shadow-sm'>
-                    <div className='whitespace-pre-wrap break-words text-base text-[#1E293B] leading-relaxed'>
+                    <div
+                      className='whitespace-pre-wrap break-words text-[15px] leading-relaxed'
+                      style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
+                    >
                       {isJsonObject ? (
                         <span>{JSON.stringify(message.content as string)}</span>
                       ) : (
@@ -971,7 +998,9 @@ export const ArenaClientChatMessage = memo(
                       )}
                     </div>
                   </div>
-                  <p className='mt-1 text-right text-[var(--text-muted)] text-xs'>{timestampLabel}</p>
+                  <p className='mt-1.5 text-right text-[13px]' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
+                    {timestampLabel}
+                  </p>
                 </div>
               </div>
             )}
@@ -982,12 +1011,11 @@ export const ArenaClientChatMessage = memo(
 
     // For assistant messages (on the left)
     return (
-      <div className='px-4 pt-2 pb-2' data-message-id={message.id}>
-        <div className='mx-auto max-w-3xl'>
+      <div className='px-4 py-3' data-message-id={message.id}>
+        <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
           <div className='flex flex-col space-y-3'>
-            {/* Direct content rendering - tool calls are now handled via SSE events */}
-            <div>
-              <div className='break-words text-base'>
+            <div className='rounded-2xl bg-white/70 px-4 py-3 shadow-sm'>
+              <div className='break-words text-[15px]'>
                 {renderContent(cleanTextContent)}
                 {/* {isJsonObject ? (
                   <pre className='text-gray-800 dark:text-gray-100'>
@@ -999,23 +1027,7 @@ export const ArenaClientChatMessage = memo(
               </div>
             </div>
             {message.type === 'assistant' && message.isStreaming && (
-              <div className='mt-2 flex items-center gap-2 text-muted-foreground text-sm'>
-                <div className='flex gap-1' aria-hidden>
-                  <span
-                    className='h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 dark:bg-gray-400'
-                    style={{ animationDuration: '1s', animationDelay: '0ms' }}
-                  />
-                  <span
-                    className='h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 dark:bg-gray-400'
-                    style={{ animationDuration: '1s', animationDelay: '150ms' }}
-                  />
-                  <span
-                    className='h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500 dark:bg-gray-400'
-                    style={{ animationDuration: '1s', animationDelay: '300ms' }}
-                  />
-                </div>
-                <span className='font-medium'>Fetching references...</span>
-              </div>
+              <DeployedInlineLoader label='Fetching references...' />
             )}
             {showReferencesSection && (
               <div className='mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
