@@ -431,6 +431,16 @@ async function injectUnipileAccountIdFromCredentialIfNeeded(
 }
 
 /**
+ * Resolve static or parameter-dependent hosted-key configuration values.
+ */
+function resolveHostingField<T>(
+  value: T | ((params: Record<string, unknown>) => T),
+  params: Record<string, unknown>
+): T {
+  return typeof value === 'function' ? (value as (p: Record<string, unknown>) => T)(params) : value
+}
+
+/**
  * Inject hosted API key if tool supports it and user didn't provide one.
  * Checks BYOK workspace keys first, then uses the HostedKeyRateLimiter for round-robin key selection.
  * Returns whether a hosted (billable) key was injected and which env var it came from.
@@ -447,7 +457,9 @@ async function injectHostedKeyIfNeeded(
     return { isUsingHostedKey: false }
   }
 
-  const { envKeyPrefix, apiKeyParam, byokProviderId, rateLimit } = tool.hosting
+  const { apiKeyParam, rateLimit } = tool.hosting
+  const envKeyPrefix = resolveHostingField(tool.hosting.envKeyPrefix, params)
+  const byokProviderId = resolveHostingField(tool.hosting.byokProviderId, params)
   const userProvidedKey = params[apiKeyParam]
   if (typeof userProvidedKey === 'string' && userProvidedKey.trim().length > 0) {
     return { isUsingHostedKey: false }
@@ -546,7 +558,9 @@ async function reacquireHostedKey(
   requestId: string
 ): Promise<string | null> {
   if (!tool.hosting) return null
-  const { envKeyPrefix, apiKeyParam, byokProviderId, rateLimit } = tool.hosting
+  const { apiKeyParam, rateLimit } = tool.hosting
+  const envKeyPrefix = resolveHostingField(tool.hosting.envKeyPrefix, params)
+  const byokProviderId = resolveHostingField(tool.hosting.byokProviderId, params)
   const { workspaceId } = resolveToolScope(params, executionContext)
   if (!workspaceId) return null
 
@@ -797,7 +811,7 @@ async function reportCustomDimensionUsage(
   if (!billingActorId) return
 
   const rateLimiter = getHostedKeyRateLimiter()
-  const provider = tool.hosting.byokProviderId || tool.id
+  const provider = resolveHostingField(tool.hosting.byokProviderId, params) || tool.id
 
   try {
     const result = await rateLimiter.reportUsage(
@@ -866,7 +880,7 @@ async function applyHostedKeyCostToResult(
     requestId
   )
 
-  const provider = tool.hosting?.byokProviderId || tool.id
+  const provider = resolveHostingField(tool.hosting?.byokProviderId, params) || tool.id
   const key = envVarName ?? 'unknown'
   hostedKeyMetrics.recordUsed({ provider, tool: tool.id, key })
   hostedKeyMetrics.recordCostCharged(hostedKeyCost, { provider, tool: tool.id })
@@ -1252,7 +1266,7 @@ export async function executeTool(
 
     if (hostedKeyInfo.isUsingHostedKey) {
       hostedKeyForMetrics = {
-        provider: tool.hosting?.byokProviderId || tool.id,
+        provider: resolveHostingField(tool.hosting?.byokProviderId, contextParams) || tool.id,
         tool: tool.id,
         key: hostedKeyInfo.envVarName ?? 'unknown',
       }
@@ -1471,7 +1485,7 @@ export async function executeTool(
           {
             requestId,
             toolId,
-            provider: tool.hosting?.byokProviderId || tool.id,
+            provider: resolveHostingField(tool.hosting?.byokProviderId, contextParams) || tool.id,
             envVarName: hostedKeyInfo.envVarName!,
             executionContext,
             reacquireAfterRetriesExhausted: async () => {

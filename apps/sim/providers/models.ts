@@ -3598,6 +3598,13 @@ export function getRerankModelPricing(
   return RERANK_MODEL_PRICING[modelId] || null
 }
 
+export {
+  IMAGE_MODEL_PRICING,
+  getImageModelPerImageCost,
+  type ImageBillingDimensions,
+  type ImageBillingMetadata,
+} from '@/lib/tools/image-pricing'
+
 export function getModelsWithReasoningEffort(): string[] {
   const models: string[] = []
   for (const provider of Object.values(PROVIDER_DEFINITIONS)) {

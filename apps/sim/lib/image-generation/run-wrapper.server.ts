@@ -450,6 +450,9 @@ export async function runImageGenerationWrapper(
   const falaiBilling = successfulResults
     .map((result) => (isRecord(result.output) ? result.output.__falaiBilling : undefined))
     .filter((billing) => billing !== undefined)
+  const imageBilling = successfulResults
+    .map((result) => (isRecord(result.output) ? result.output.__imageBilling : undefined))
+    .find((billing) => billing !== undefined)
   const warnings = [
     ...getMetadataWarnings(outputMetadata),
     ...(inputImageWarning ? [inputImageWarning] : []),
@@ -496,6 +499,7 @@ export async function runImageGenerationWrapper(
       },
       ...(falaiCostDollars > 0 ? { __falaiCostDollars: falaiCostDollars } : {}),
       ...(falaiBilling.length > 0 ? { __falaiBilling: { requests: falaiBilling } } : {}),
+      ...(imageBilling ? { __imageBilling: imageBilling } : {}),
       ...(s3UploadFailed ? { s3UploadFailed } : {}),
     },
   }
