@@ -14,6 +14,7 @@ import { BillingRouteOutcome } from '@/lib/copilot/generated/trace-attribute-val
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
 import { withIncomingGoSpan } from '@/lib/copilot/request/otel'
+import { checkInternalApiKey } from '@/lib/copilot/request/http'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -124,19 +125,19 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
     logger.info(`[${requestId}] Update cost request started`)
 
     // Check authentication (internal API key)
-    // const authResult = checkInternalApiKey(req)
-    // if (!authResult.success) {
-    //   logger.warn(`[${requestId}] Authentication failed: ${authResult.error}`)
-    //   span.setAttribute(TraceAttr.BillingOutcome, BillingRouteOutcome.AuthFailed)
-    //   span.setAttribute(TraceAttr.HttpStatusCode, 401)
-    //   return NextResponse.json(
-    //     {
-    //       success: false,
-    //       error: authResult.error || 'Authentication failed',
-    //     },
-    //     { status: 401 }
-    //   )
-    // }
+    const authResult = checkInternalApiKey(req)
+    if (!authResult.success) {
+      logger.warn(`[${requestId}] Authentication failed: ${authResult.error}`)
+      span.setAttribute(TraceAttr.BillingOutcome, BillingRouteOutcome.AuthFailed)
+      span.setAttribute(TraceAttr.HttpStatusCode, 401)
+      return NextResponse.json(
+        {
+          success: false,
+          error: authResult.error || 'Authentication failed',
+        },
+        { status: 401 }
+      )
+    }
 
     const parsed = await parseRequest(
       billingUpdateCostContract,

@@ -5,7 +5,7 @@ import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
 import { formatCreditCost } from '@/lib/billing/credits/conversion'
 import { env } from '@/lib/core/config/env'
-import { getBlacklistedProvidersFromEnv, isHosted } from '@/lib/core/config/env-flags'
+import { getBlacklistedProvidersFromEnv, getCostMultiplier, isHosted } from '@/lib/core/config/env-flags'
 import {
   normalizeRecord,
   normalizeStringRecord,
@@ -991,6 +991,61 @@ export function getHostedModels(): string[] {
 export function shouldBillModelUsage(model: string): boolean {
   const hostedModels = getHostedModels()
   return hostedModels.some((hostedModel) => model.toLowerCase() === hostedModel.toLowerCase())
+}
+
+export interface BlockModelCost {
+  input: number
+  output: number
+  total: number
+}
+
+/**
+ * Normalizes a provider API `cost` field into the block output shape.
+ */
+export function normalizeProviderCost(cost: unknown): BlockModelCost | null {
+  if (!cost || typeof cost !== 'object') return null
+
+  const record = cost as Record<string, unknown>
+  if (typeof record.total !== 'number' || !Number.isFinite(record.total)) return null
+
+  return {
+    input: typeof record.input === 'number' && Number.isFinite(record.input) ? record.input : 0,
+    output:
+      typeof record.output === 'number' && Number.isFinite(record.output) ? record.output : 0,
+    total: record.total,
+  }
+}
+
+/**
+ * Resolves billable model cost for router/evaluator blocks. Prefers the cost
+ * object returned by `/api/providers` (already BYOK- and multiplier-aware).
+ */
+export function resolveBlockModelCost(params: {
+  model: string
+  promptTokens: number
+  completionTokens: number
+  providerCost?: unknown
+  isBYOK?: boolean
+  useCachedInput?: boolean
+}): BlockModelCost {
+  if (params.isBYOK) {
+    return { input: 0, output: 0, total: 0 }
+  }
+
+  const fromProvider = normalizeProviderCost(params.providerCost)
+  if (fromProvider) return fromProvider
+
+  const multiplier = getCostMultiplier()
+  const cost = calculateCost(
+    params.model,
+    params.promptTokens,
+    params.completionTokens,
+    params.useCachedInput ?? false,
+    multiplier,
+    multiplier
+  )
+
+  return { input: cost.input, output: cost.output, total: cost.total }
 }
 
 /**

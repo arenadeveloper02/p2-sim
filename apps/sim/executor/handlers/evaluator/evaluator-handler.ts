@@ -6,7 +6,7 @@ import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import { buildAPIUrl, buildAuthHeaders, extractAPIErrorMessage } from '@/executor/utils/http'
 import { isJSONString, parseJSON, stringifyJSON } from '@/executor/utils/json'
 import { resolveVertexCredential } from '@/executor/utils/vertex-credential'
-import { calculateCost, getProviderFromModel } from '@/providers/utils'
+import { getProviderFromModel, resolveBlockModelCost } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
 
 const logger = createLogger('EvaluatorBlockHandler')
@@ -154,7 +154,13 @@ export class EvaluatorBlockHandler implements BlockHandler {
       const outputTokens =
         result.tokens?.output || result.tokens?.completion || DEFAULTS.TOKENS.COMPLETION
 
-      const costCalculation = calculateCost(result.model, inputTokens, outputTokens, false)
+      const cost = resolveBlockModelCost({
+        model: result.model,
+        promptTokens: inputTokens,
+        completionTokens: outputTokens,
+        providerCost: result.cost,
+        isBYOK: Boolean(evaluatorConfig.apiKey),
+      })
 
       return {
         content: inputs.content,
@@ -164,11 +170,7 @@ export class EvaluatorBlockHandler implements BlockHandler {
           output: outputTokens,
           total: result.tokens?.total || DEFAULTS.TOKENS.TOTAL,
         },
-        cost: {
-          input: costCalculation.input,
-          output: costCalculation.output,
-          total: costCalculation.total,
-        },
+        cost,
         ...metricScores,
       }
     } catch (error) {

@@ -64,6 +64,22 @@ describe('POST /api/billing/update-cost — workspaceId attribution', () => {
     dbChainMockFns.limit.mockResolvedValue([{ id: 'ws-1' }])
   })
 
+  it('returns 401 when internal API key auth fails', async () => {
+    mockCheckInternalApiKey.mockReturnValue({ success: false, error: 'Invalid API key' })
+
+    const res = await POST(
+      createMockRequest(
+        'POST',
+        { userId: 'user-1', cost: 0.5, model: 'gpt', source: 'copilot' },
+        { 'x-api-key': 'wrong' }
+      )
+    )
+
+    expect(res.status).toBe(401)
+    expect(mockRecordUsage).not.toHaveBeenCalled()
+    expect(mockRecordCumulativeUsage).not.toHaveBeenCalled()
+  })
+
   it('stamps workspaceId onto recorded usage when provided (no idempotency key)', async () => {
     const res = await POST(
       createMockRequest(

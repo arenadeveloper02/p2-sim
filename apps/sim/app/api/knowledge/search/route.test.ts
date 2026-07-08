@@ -25,6 +25,8 @@ const {
   mockGetQueryStrategy,
   mockGenerateSearchEmbedding,
   mockGetDocumentMetadataByIds,
+  mockRecordSearchEmbeddingUsage,
+  mockRerankSearchResults,
 } = vi.hoisted(() => ({
   mockDbChain: {
     select: vi.fn().mockReturnThis(),
@@ -44,6 +46,8 @@ const {
   mockGetQueryStrategy: vi.fn(),
   mockGenerateSearchEmbedding: vi.fn(),
   mockGetDocumentMetadataByIds: vi.fn(),
+  mockRecordSearchEmbeddingUsage: vi.fn(),
+  mockRerankSearchResults: vi.fn(),
 }))
 
 const mockCheckKnowledgeBaseAccess = knowledgeApiUtilsMockFns.mockCheckKnowledgeBaseAccess
@@ -95,6 +99,10 @@ vi.mock('@/lib/knowledge/tags/service', () => ({
   getDocumentTagDefinitions: mockGetDocumentTagDefinitions,
 }))
 
+vi.mock('@/lib/knowledge/embeddings', () => ({
+  recordSearchEmbeddingUsage: mockRecordSearchEmbeddingUsage,
+}))
+
 vi.mock('./utils', () => ({
   handleTagOnlySearch: mockHandleTagOnlySearch,
   handleVectorOnlySearch: mockHandleVectorOnlySearch,
@@ -102,6 +110,7 @@ vi.mock('./utils', () => ({
   getQueryStrategy: mockGetQueryStrategy,
   generateSearchEmbedding: mockGenerateSearchEmbedding,
   getDocumentMetadataByIds: mockGetDocumentMetadataByIds,
+  rerankSearchResults: mockRerankSearchResults,
   APIError: class APIError extends Error {
     public status: number
     constructor(message: string, status: number) {
@@ -127,6 +136,7 @@ describe('Knowledge Search API Route', () => {
       content: 'This is a test chunk',
       documentId: 'doc-1',
       chunkIndex: 0,
+      knowledgeBaseId: 'kb-123',
       metadata: { title: 'Test Document' },
       distance: 0.2,
     },
@@ -135,6 +145,7 @@ describe('Knowledge Search API Route', () => {
       content: 'Another test chunk',
       documentId: 'doc-2',
       chunkIndex: 1,
+      knowledgeBaseId: 'kb-123',
       metadata: { title: 'Another Document' },
       distance: 0.3,
     },
@@ -162,9 +173,11 @@ describe('Knowledge Search API Route', () => {
       .mockClear()
       .mockResolvedValue({ embedding: [0.1, 0.2, 0.3, 0.4, 0.5], isBYOK: false })
     mockGetDocumentMetadataByIds.mockClear().mockResolvedValue({
-      doc1: { filename: 'Document 1', sourceUrl: null },
-      doc2: { filename: 'Document 2', sourceUrl: null },
+      'doc-1': { filename: 'Document 1', sourceUrl: null },
+      'doc-2': { filename: 'Document 2', sourceUrl: null },
     })
+    mockRecordSearchEmbeddingUsage.mockClear().mockResolvedValue(undefined)
+    mockRerankSearchResults.mockClear().mockImplementation(async (_query, results) => results)
     mockGetDocumentTagDefinitions.mockClear()
     hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockClear().mockResolvedValue({
       success: true,
@@ -595,6 +608,70 @@ describe('Knowledge Search API Route', () => {
         expect(estimateTokenCount).toHaveBeenCalledWith('test search query', 'openai')
 
         expect(calculateCost).toHaveBeenCalledWith('text-embedding-3-small', 521, 0, false)
+      })
+
+      it('records embedding usage for session callers when workspace is known', async () => {
+        mockCheckKnowledgeBaseAccess.mockResolvedValue({
+          hasAccess: true,
+          knowledgeBase: {
+            id: 'kb-123',
+            userId: 'user-123',
+            workspaceId: 'ws-123',
+            name: 'Test KB',
+            deletedAt: null,
+            embeddingModel: 'text-embedding-3-small',
+          },
+        })
+
+        mockDbChain.where.mockResolvedValue([{ id: 'kb-123', workspaceId: 'ws-123' }])
+        mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
+
+        const req = createMockRequest('POST', validSearchData)
+        const response = await POST(req)
+
+        expect(response.status).toBe(200)
+        expect(mockRecordSearchEmbeddingUsage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: 'user-123',
+            workspaceId: 'ws-123',
+            embeddingModel: 'text-embedding-3-small',
+            query: validSearchData.query,
+            isBYOK: false,
+            sourceReference: expect.stringMatching(/^kb-search:/),
+          })
+        )
+      })
+
+      it('skips embedding usage when workflow tool requests skipUsageBilling via internal JWT', async () => {
+        hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+          success: true,
+          userId: 'user-123',
+          authType: 'internal_jwt',
+        })
+
+        mockCheckKnowledgeBaseAccess.mockResolvedValue({
+          hasAccess: true,
+          knowledgeBase: {
+            id: 'kb-123',
+            userId: 'user-123',
+            workspaceId: 'ws-123',
+            name: 'Test KB',
+            deletedAt: null,
+            embeddingModel: 'text-embedding-3-small',
+          },
+        })
+
+        mockDbChain.where.mockResolvedValue([{ id: 'kb-123', workspaceId: 'ws-123' }])
+        mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
+
+        const req = createMockRequest('POST', {
+          ...validSearchData,
+          skipUsageBilling: true,
+        })
+        const response = await POST(req)
+
+        expect(response.status).toBe(200)
+        expect(mockRecordSearchEmbeddingUsage).not.toHaveBeenCalled()
       })
 
       it('should handle cost calculation with different query lengths', async () => {

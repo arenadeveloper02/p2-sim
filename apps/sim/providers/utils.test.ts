@@ -33,6 +33,8 @@ import {
   PROVIDERS_WITH_TOOL_USAGE_CONTROL,
   prepareToolExecution,
   prepareToolsWithUsageControl,
+  resolveBlockModelCost,
+  normalizeProviderCost,
   shouldBillModelUsage,
   supportsReasoningEffort,
   supportsTemperature,
@@ -928,6 +930,50 @@ describe('shouldBillModelUsage', () => {
     expect(shouldBillModelUsage('gpt-4')).toBe(false)
     expect(shouldBillModelUsage('claude-sonnet')).toBe(false)
     expect(shouldBillModelUsage('gemini')).toBe(false)
+  })
+})
+
+describe('resolveBlockModelCost', () => {
+  it('returns zero for BYOK even when provider reports a cost', () => {
+    expect(
+      resolveBlockModelCost({
+        model: 'gpt-4o',
+        promptTokens: 100,
+        completionTokens: 10,
+        providerCost: { input: 0.01, output: 0.02, total: 0.03 },
+        isBYOK: true,
+      })
+    ).toEqual({ input: 0, output: 0, total: 0 })
+  })
+
+  it('uses provider-reported cost for hosted calls', () => {
+    expect(
+      resolveBlockModelCost({
+        model: 'gpt-4o',
+        promptTokens: 100,
+        completionTokens: 10,
+        providerCost: { input: 0.01, output: 0.02, total: 0.03 },
+        isBYOK: false,
+      })
+    ).toEqual({ input: 0.01, output: 0.02, total: 0.03 })
+  })
+
+  it('falls back to zero for non-hosted models without provider cost', () => {
+    expect(
+      resolveBlockModelCost({
+        model: 'unknown-model',
+        promptTokens: 100,
+        completionTokens: 10,
+        isBYOK: false,
+      })
+    ).toEqual({ input: 0, output: 0, total: 0 })
+  })
+})
+
+describe('normalizeProviderCost', () => {
+  it('returns null for non-object cost values', () => {
+    expect(normalizeProviderCost(0.5)).toBeNull()
+    expect(normalizeProviderCost(null)).toBeNull()
   })
 })
 

@@ -114,7 +114,7 @@ describe('RouterBlockHandler', () => {
             content: 'target-block-1',
             model: 'mock-model',
             tokens: { input: 100, output: 5, total: 105 },
-            cost: 0.003,
+            cost: { input: 0.001, output: 0.002, total: 0.003 },
             timing: { total: 300 },
           }),
       })
@@ -198,6 +198,22 @@ describe('RouterBlockHandler', () => {
         blockTitle: 'Option A',
       },
       selectedRoute: 'target-block-1',
+    })
+  })
+
+  it('should use provider-reported cost for hosted router calls without BYOK', async () => {
+    const inputs = {
+      prompt: 'Choose the best option.',
+      model: 'gpt-4o',
+      temperature: 0.1,
+    }
+
+    const result = await handler.execute(mockContext, mockBlock, inputs)
+
+    expect(result.cost).toEqual({
+      input: 0.001,
+      output: 0.002,
+      total: 0.003,
     })
   })
 

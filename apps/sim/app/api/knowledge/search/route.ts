@@ -11,6 +11,7 @@ import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { ALL_TAG_SLOTS } from '@/lib/knowledge/constants'
+import { recordSearchEmbeddingUsage } from '@/lib/knowledge/embeddings'
 import { getDocumentTagDefinitions } from '@/lib/knowledge/tags/service'
 import { buildUndefinedTagsError, validateTagValue } from '@/lib/knowledge/tags/utils'
 import type { StructuredFilter } from '@/lib/knowledge/types'
@@ -359,6 +360,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       // }
 
       let results: SearchResult[]
+      let queryEmbeddingIsBYOK: boolean | null = null
 
       const hasFilters = structuredFilters && structuredFilters.length > 0
 
@@ -381,6 +383,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           queryEmbeddingModel,
           workspaceId
         )
+        queryEmbeddingIsBYOK = queryEmbeddingResult.isBYOK
         const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
 
         results = await handleTagAndVectorSearch({
@@ -398,6 +401,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           queryEmbeddingModel,
           workspaceId
         )
+        queryEmbeddingIsBYOK = queryEmbeddingResult.isBYOK
         const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
 
         results = await handleVectorOnlySearch({
@@ -429,6 +433,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             error: error instanceof Error ? error.message : 'Unknown error',
           })
           // Continue without cost information rather than failing the search
+        }
+
+        if (shouldMeter && queryEmbeddingIsBYOK !== null && workspaceId) {
+          await recordSearchEmbeddingUsage({
+            userId,
+            workspaceId,
+            embeddingModel: queryEmbeddingModel,
+            query: validatedData.query!,
+            isBYOK: queryEmbeddingIsBYOK,
+            sourceReference: `kb-search:${requestId}`,
+          })
         }
       }
 
