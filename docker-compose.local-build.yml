@@ -12,9 +12,3 @@ services:
     build:
       context: .
       dockerfile: docker/realtime.Dockerfile
-
-  migrations:
-    image: p2-sim-migrations
-    build:
-      context: .
-      dockerfile: docker/db.Dockerfile
