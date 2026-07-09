@@ -41,6 +41,7 @@ services:
       - REDIS_URL=${REDIS_URL:-}
       - COPILOT_API_KEY=${COPILOT_API_KEY:-}
       - SIM_AGENT_API_URL=${SIM_AGENT_API_URL:-}
+      - E2B_API_KEY=${E2B_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
