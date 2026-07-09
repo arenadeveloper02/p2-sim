@@ -92,7 +92,7 @@ export function DeployedChatLanding({
         <div className='flex flex-1 flex-col items-center justify-center px-4 py-8 md:px-6'>
           <div className={`w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} text-center`}>
             <h1
-              className='font-bold text-[24px] leading-[1.25]'
+              className='font-semibold text-[24px] leading-[1.25]'
               style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
             >
               {title}

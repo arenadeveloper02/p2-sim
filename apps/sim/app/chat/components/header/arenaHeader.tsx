@@ -1,6 +1,6 @@
 'use client'
 
-import { Download, Menu, MoreHorizontal, PanelLeftOpen, Share2 } from 'lucide-react'
+import { Download, Menu, MoreHorizontal, Share2 } from 'lucide-react'
 import { DEPLOYED_CHAT_CANVAS_BG, DEPLOYED_CHAT_DIVIDER, DEPLOYED_CHAT_TEXT_DISPLAY } from '@/app/chat/constants'
 import {
   DropdownMenu,
@@ -19,7 +19,6 @@ interface ArenaChatHeaderProps {
     }
   } | null
   showFeedbackView?: boolean
-  isSidebarCollapsed?: boolean
   hideCenterTitle?: boolean
   onToggleSidebar?: () => void
   onExportChat?: () => void
@@ -30,7 +29,6 @@ interface ArenaChatHeaderProps {
 export function ArenaChatHeader({
   chatConfig,
   showFeedbackView = false,
-  isSidebarCollapsed = false,
   hideCenterTitle = false,
   onToggleSidebar,
   onExportChat,
@@ -54,26 +52,14 @@ export function ArenaChatHeader({
     >
       <div className='flex items-center'>
         {onToggleSidebar && (
-          <>
-            <button
-              type='button'
-              onClick={onToggleSidebar}
-              className='flex size-8 items-center justify-center rounded-md text-[var(--text-icon)] hover:bg-[var(--surface-2)] md:hidden'
-              aria-label='Open sidebar'
-            >
-              <Menu className='size-[14px]' />
-            </button>
-            {isSidebarCollapsed && (
-              <button
-                type='button'
-                onClick={onToggleSidebar}
-                className='hidden size-8 items-center justify-center rounded-md text-[var(--text-icon)] hover:bg-[var(--surface-2)] md:flex'
-                aria-label='Expand sidebar'
-              >
-                <PanelLeftOpen className='size-[14px]' />
-              </button>
-            )}
-          </>
+          <button
+            type='button'
+            onClick={onToggleSidebar}
+            className='flex size-8 items-center justify-center rounded-md text-[var(--text-icon)] hover:bg-[var(--surface-2)] md:hidden'
+            aria-label='Open sidebar'
+          >
+            <Menu className='size-[14px]' />
+          </button>
         )}
       </div>
 

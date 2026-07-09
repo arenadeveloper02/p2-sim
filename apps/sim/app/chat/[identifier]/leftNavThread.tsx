@@ -6,15 +6,14 @@ import { formatRelativeTime } from '@sim/utils/formatting'
 import {
   ArrowLeft,
   CirclePlus,
-  FileText,
   MessageSquareText,
   MoreHorizontal,
   PanelLeftClose,
+  PanelLeftOpen,
   Pin,
   PinOff,
   RefreshCw,
   Search,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -31,6 +30,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/core/utils/cn'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import feedbackIcon from '@/app/chat/components/message/components/feedback.png'
+import goldenQueriesIcon from '@/app/chat/components/message/components/golden-queries.png'
 import {
   DEPLOYED_CHAT_ACTIVE_THREAD_BG,
   DEPLOYED_CHAT_CANVAS_BG,
@@ -160,6 +161,34 @@ interface SidebarHeaderProps {
 }
 
 function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderProps) {
+  if (collapsed && onToggleSidebar) {
+    return (
+      <div className='mb-4 flex items-center justify-center px-0.5'>
+        <button
+          type='button'
+          onClick={onToggleSidebar}
+          className='group relative flex size-8 items-center justify-center rounded-lg'
+          aria-label='Expand sidebar'
+        >
+          {logoUrl ? (
+            <>
+              <Image
+                src={logoUrl}
+                alt='Logo'
+                width={24}
+                height={24}
+                className='size-6 shrink-0 object-contain opacity-100 transition-opacity group-hover:opacity-0'
+              />
+              <PanelLeftOpen className='absolute size-[14px] text-[var(--text-icon)] opacity-0 transition-opacity group-hover:opacity-100' />
+            </>
+          ) : (
+            <PanelLeftOpen className='size-[14px] text-[var(--text-icon)]' />
+          )}
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div
       className={cn(
@@ -186,7 +215,8 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
 }
 
 interface SidebarActionButtonProps {
-  icon: SidebarActionIcon
+  icon?: SidebarActionIcon
+  iconNode?: React.ReactNode
   label: string
   onClick: () => void
   disabled?: boolean
@@ -196,6 +226,7 @@ interface SidebarActionButtonProps {
 
 function SidebarActionButton({
   icon: Icon,
+  iconNode,
   label,
   onClick,
   disabled = false,
@@ -215,7 +246,7 @@ function SidebarActionButton({
       aria-label={label}
       aria-current={isActive ? 'true' : undefined}
     >
-      <Icon className={cn(sidebarRowIconClass(isActive), collapsed && 'ml-0')} />
+      {iconNode ?? (Icon ? <Icon className={cn(sidebarRowIconClass(isActive), collapsed && 'ml-0')} /> : null)}
       {!collapsed && <span className={sidebarRowLabelClass(isActive)}>{label}</span>}
     </button>
   )
@@ -547,7 +578,14 @@ const LeftNavThread = ({
       />
       <SidebarActionButton
         collapsed={collapsed}
-        icon={Sparkles}
+        iconNode={
+          <Image
+            src={goldenQueriesIcon}
+            alt=''
+            aria-hidden='true'
+            className={cn('ml-1 size-4 shrink-0 object-contain', collapsed && 'ml-0')}
+          />
+        }
         label='Golden Queries'
         onClick={() => onViewGoldenQueries?.()}
         disabled={actionButtonsDisabled}
@@ -555,7 +593,14 @@ const LeftNavThread = ({
       />
       <SidebarActionButton
         collapsed={collapsed}
-        icon={FileText}
+        iconNode={
+          <Image
+            src={feedbackIcon}
+            alt=''
+            aria-hidden='true'
+            className={cn('ml-1 size-4 shrink-0 object-contain', collapsed && 'ml-0')}
+          />
+        }
         label='View Feedback'
         onClick={() => onViewFeedback?.()}
         disabled={actionButtonsDisabled}
@@ -567,7 +612,7 @@ const LeftNavThread = ({
   if (isCollapsed && !isMobileOpen) {
     return (
       <SidebarShell collapsed>
-        <SidebarHeader logoUrl={logoUrl} collapsed />
+        <SidebarHeader logoUrl={logoUrl} collapsed onToggleSidebar={onToggleSidebar} />
         {primaryActionButtons(true)}
       </SidebarShell>
     )

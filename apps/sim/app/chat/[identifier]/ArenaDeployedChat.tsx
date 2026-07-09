@@ -1701,7 +1701,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         <ArenaChatHeader
           chatConfig={chatConfig}
           showFeedbackView={showFeedbackView}
-          isSidebarCollapsed={isSidebarCollapsed}
           hideCenterTitle={hideHeaderTitle}
           onToggleSidebar={handleToggleSidebar}
           onExportChat={handleExportChat}

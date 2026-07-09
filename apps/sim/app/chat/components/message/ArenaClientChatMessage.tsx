@@ -58,8 +58,8 @@ const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
 const DEPLOYED_MARKDOWN_PROPS = {
   fontClassName: 'font-poppins',
-  bodyTextClassName: 'text-[#1E293B]',
-  headingTextClassName: 'text-[#0F172A]',
+  bodyTextClassName: 'text-[#2C2D33]',
+  headingTextClassName: 'text-[#2C2D33]',
 } as const
 
 export interface ChatMessage {
@@ -986,10 +986,10 @@ export const ArenaClientChatMessage = memo(
             {hasUserText && (
               <div className='flex justify-end'>
                 <div className='max-w-[min(80%,560px)]'>
-                  <div className='rounded-3xl bg-white px-4 py-3 shadow-sm'>
+                  <div className='px-4 py-3'>
                     <div
-                      className='whitespace-pre-wrap break-words text-[15px] leading-relaxed'
-                      style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
+                      className='whitespace-pre-wrap break-words text-[14px] font-normal leading-[1.6]'
+                      style={{ color: '#2C2D33' }}
                     >
                       {isJsonObject ? (
                         <span>{JSON.stringify(message.content as string)}</span>
@@ -1014,8 +1014,11 @@ export const ArenaClientChatMessage = memo(
       <div className='px-4 py-3' data-message-id={message.id}>
         <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
           <div className='flex flex-col space-y-3'>
-            <div className='rounded-2xl bg-white/70 px-4 py-3 shadow-sm'>
-              <div className='break-words text-[15px]'>
+            <div className='px-4 py-3'>
+              <div
+                className='break-words text-[14px] font-normal leading-[1.6]'
+                style={{ color: '#2C2D33' }}
+              >
                 {renderContent(cleanTextContent)}
                 {/* {isJsonObject ? (
                   <pre className='text-gray-800 dark:text-gray-100'>
