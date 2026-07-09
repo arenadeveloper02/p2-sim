@@ -79,7 +79,22 @@ export const ChartGeneratorBlock: BlockConfig = {
     },
     ...getProviderCredentialSubBlocks().map((subBlock) => ({
       ...subBlock,
-      condition: { field: 'operation', value: 'generate' },
+      // Keep model-specific credential visibility (OpenAI vs Vertex vs Bedrock) — do not
+      // replace with operation-only or deploy will require every provider field.
+      condition: (values?: Record<string, unknown>) => {
+        if (values?.operation !== 'generate') {
+          return { field: 'operation', value: '__never_show__' }
+        }
+        if (!subBlock.condition) {
+          return { field: 'operation', value: 'generate' }
+        }
+        const inner =
+          typeof subBlock.condition === 'function'
+            ? subBlock.condition(values)
+            : subBlock.condition
+        return { field: 'operation', value: 'generate', and: inner }
+      },
+      dependsOn: [...(subBlock.dependsOn ?? []), 'operation', 'model'],
     })),
     {
       id: 'skills',
