@@ -28,6 +28,7 @@ export enum BlockType {
   MOTHERSHIP = 'mothership',
   API = 'api',
   EVALUATOR = 'evaluator',
+  CHART_GENERATOR = 'chart_generator',
   VARIABLES = 'variables',
 
   RESPONSE = 'response',

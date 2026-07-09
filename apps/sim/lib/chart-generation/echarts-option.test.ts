@@ -28,9 +28,14 @@ describe('isEChartsOption', () => {
     expect(isEChartsOption({ data: [1, 2, 3] })).toBe(false)
   })
 
-  it('rejects series entries without a recognized type', () => {
+  it('rejects series entries without a type string', () => {
     expect(isEChartsOption({ series: [{ data: [1, 2] }] })).toBe(false)
-    expect(isEChartsOption({ series: [{ type: 'unknown', data: [1] }] })).toBe(false)
+    expect(isEChartsOption({ series: [{ type: '', data: [1] }] })).toBe(false)
+  })
+
+  it('accepts any non-empty series type string (extensible chart types)', () => {
+    expect(isEChartsOption({ series: [{ type: 'themeRiver', data: [1] }] })).toBe(true)
+    expect(isEChartsOption({ series: [{ type: 'customViz', data: [1] }] })).toBe(true)
   })
 
   it('rejects non-objects and empty series', () => {
@@ -47,7 +52,7 @@ describe('parseEChartsOptionFromString', () => {
   })
 
   it('parses a fenced json code block', () => {
-    const fenced = '```json\n' + JSON.stringify(validOption) + '\n```'
+    const fenced = `\`\`\`json\n${JSON.stringify(validOption)}\n\`\`\``
     expect(parseEChartsOptionFromString(fenced)).toEqual(validOption)
   })
 
@@ -85,7 +90,15 @@ const heatmapOption = {
   xAxis: { type: 'category', data: ['X1', 'X2'] },
   yAxis: { type: 'category', data: ['Y1', 'Y2'] },
   visualMap: { min: 0, max: 10 },
-  series: [{ type: 'heatmap', data: [[0, 0, 5], [1, 1, 3]] }],
+  series: [
+    {
+      type: 'heatmap',
+      data: [
+        [0, 0, 5],
+        [1, 1, 3],
+      ],
+    },
+  ],
 }
 
 const dashboardPayload = {
@@ -99,10 +112,7 @@ describe('resolveEChartsOptionsFromContent', () => {
   })
 
   it('resolves a dashboard wrapper with multiple charts', () => {
-    expect(resolveEChartsOptionsFromContent(dashboardPayload)).toEqual([
-      heatmapOption,
-      barOption,
-    ])
+    expect(resolveEChartsOptionsFromContent(dashboardPayload)).toEqual([heatmapOption, barOption])
   })
 
   it('resolves a dashboard wrapper from a JSON string', () => {
@@ -113,8 +123,15 @@ describe('resolveEChartsOptionsFromContent', () => {
   })
 
   it('parses a fenced dashboard JSON string', () => {
-    const fenced = '```json\n' + JSON.stringify(dashboardPayload) + '\n```'
+    const fenced = `\`\`\`json\n${JSON.stringify(dashboardPayload)}\n\`\`\``
     expect(parseEChartsOptionsFromString(fenced)).toEqual([heatmapOption, barOption])
+  })
+
+  it('resolves a bare JSON array of options', () => {
+    expect(resolveEChartsOptionsFromContent([heatmapOption, barOption])).toEqual([
+      heatmapOption,
+      barOption,
+    ])
   })
 
   it('returns null when charts array is empty or invalid', () => {

@@ -7,30 +7,13 @@
 /** Maximum number of data points kept per series before truncation. */
 const MAX_SERIES_DATA_POINTS = 5000
 
-/** ECharts series `type` values recognized as valid chart configurations. */
-const ALLOWED_SERIES_TYPES = new Set([
-  'bar',
-  'line',
-  'pie',
-  'scatter',
-  'effectScatter',
-  'radar',
-  'candlestick',
-  'boxplot',
-  'heatmap',
-  'funnel',
-  'gauge',
-  'graph',
-  'sankey',
-  'sunburst',
-  'tree',
-  'treemap',
-  'themeRiver',
-  'pictorialBar',
-  'map',
-  'lines',
-  'custom',
-])
+function isRecognizedSeriesType(type: unknown): type is string {
+  if (typeof type !== 'string') return false
+  const normalized = type.trim()
+  if (!normalized) return false
+  // Permissive: accept any non-empty series type so new ECharts types work without code changes.
+  return true
+}
 
 /**
  * Minimal structural shape for a recognized ECharts option. The full option
@@ -60,12 +43,7 @@ export function isEChartsOption(value: unknown): value is EChartsOptionLike {
     return false
   }
 
-  return series.every(
-    (entry) =>
-      isRecord(entry) &&
-      typeof entry.type === 'string' &&
-      ALLOWED_SERIES_TYPES.has(entry.type)
-  )
+  return series.every((entry) => isRecord(entry) && isRecognizedSeriesType(entry.type))
 }
 
 /**
@@ -117,6 +95,11 @@ function resolveEChartsOptionsFromParsed(value: unknown): EChartsOptionLike[] | 
     return [value]
   }
 
+  if (Array.isArray(value)) {
+    const charts = value.filter(isEChartsOption)
+    return charts.length > 0 ? charts : null
+  }
+
   if (!isRecord(value)) {
     return null
   }
@@ -151,7 +134,7 @@ export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[
     candidate = fenceMatch[1].trim()
   }
 
-  if (!candidate.startsWith('{') || !candidate.endsWith('}')) {
+  if (!candidate.startsWith('{') && !candidate.startsWith('[')) {
     return null
   }
 
@@ -190,7 +173,11 @@ export function sanitizeEChartsOption(option: EChartsOptionLike): EChartsOptionL
 
   if (Array.isArray(clone.series)) {
     for (const series of clone.series) {
-      if (isRecord(series) && Array.isArray(series.data) && series.data.length > MAX_SERIES_DATA_POINTS) {
+      if (
+        isRecord(series) &&
+        Array.isArray(series.data) &&
+        series.data.length > MAX_SERIES_DATA_POINTS
+      ) {
         series.data = series.data.slice(0, MAX_SERIES_DATA_POINTS)
       }
     }
