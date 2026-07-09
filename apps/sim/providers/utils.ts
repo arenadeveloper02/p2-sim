@@ -989,8 +989,14 @@ export function getHostedModels(): string[] {
  * @returns true if the usage should be billed to the user
  */
 export function shouldBillModelUsage(model: string): boolean {
+  const normalized = model.trim().toLowerCase()
+  if (!normalized) return false
+
   const hostedModels = getHostedModels()
-  return hostedModels.some((hostedModel) => model.toLowerCase() === hostedModel.toLowerCase())
+  return hostedModels.some((hostedModel) => {
+    const base = hostedModel.toLowerCase()
+    return normalized === base || normalized.startsWith(`${base}-`)
+  })
 }
 
 export interface BlockModelCost {

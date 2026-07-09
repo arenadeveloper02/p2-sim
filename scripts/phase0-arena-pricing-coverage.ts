@@ -56,7 +56,10 @@ function main() {
   console.log('\n--- Notes ---')
   console.log(`Hosted model count in catalog: ${hosted.size}`)
   console.log(
-    'Models with shouldBill=true but $0 calculateCost are pricing gaps (Phase 2 normalization target).'
+    'Date-suffixed API model IDs resolve via findCatalogModel before pricing (e.g. claude-sonnet-4-5-20250514).'
+  )
+  console.log(
+    'Models with shouldBill=true but $0 calculateCost are pricing gaps — re-run after catalog updates.'
   )
   console.log(
     'Non-hosted models (BYOK/user key) always get output.cost.total=0 from executeProviderRequest.'

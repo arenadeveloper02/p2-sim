@@ -1,7 +1,19 @@
 # Phase 0: Arena Cost-Path Audit — Findings
 
-**Date:** 2026-07-06  
+**Date:** 2026-07-06 (original) · **Remediation completed:** 2026-07-09  
 **Scope:** Answer whether Arena's LLM contracts populate `output.cost` through `apps/sim/providers/*`, how that cost reaches `usage_log`, and whether `workflow_execution_logs.cost_total` reconciles with the ledger.
+
+## Remediation status (Phases 1–5)
+
+| Phase | Status | Summary |
+|-------|--------|---------|
+| **1** | Done | Router/evaluator BYOK passthrough, `/api/billing/update-cost` auth, session KB search metering |
+| **2** | Done | Rerank billing, `firecrawl_scrape` hosting, Cohere key cleanup |
+| **3** | Done | OpenAI/Gemini per-image hosted billing |
+| **4** | Done | Ledger failure flags (`billingReconciliationPending`), guardrails `enrichment` attribution, `pricing_snapshot` on model/tool/external rows |
+| **5** | Done | Date-suffixed model pricing, `gpt-4o-mini` + `claude-3-7-sonnet-latest` catalog entries, mothership double-count audit doc + script |
+
+Track progress in [`.cursor/plans/cost_gap_remediation_ee4a305c.plan.md`](../../.cursor/plans/cost_gap_remediation_ee4a305c.plan.md).
 
 ## Executive summary
 
@@ -11,11 +23,11 @@
 | Workflow Agent (BYOK) | **Yes, but $0** — `zeroCostForBYOK` | **No model rows** — `recordUsage` skips `cost > 0` | Correct by design |
 | Copilot / workspace-chat | **N/A** — cost from Go mothership stream `complete.payload.cost` | **Yes** — `postStreamBillingUpdateCost` → `/api/billing/update-cost` | Sim does not price via `providers/*` |
 | Mothership block (workflow) | **Forwarded** — `result.cost` from Go `/api/mothership/execute` final event | **Yes** — same workflow ledger path as Agent when `cost.total > 0` on block output | Depends on Go returning cost |
-| Hosted tool (e.g. Firecrawl parse) | **Yes** — `applyHostedKeyCostToResult` when `tool.hosting.pricing` exists | **Yes** — `costSummary.charges` → `category: tool` | `firecrawl_scrape` has **no** `hosting` block today |
-| Cost block | **Yes** — `CostBlockHandler` emits `output.cost` | **Yes** — `category=external` verified empirically (migration `0249`) | Pass-through vendor spend; multiplier exemption deferred to Phase 2 |
-| Non-hosted / unpriced model ID | **Yes, but $0** | **No** — filtered at `recordUsage` (`cost > 0`) | Silent under-billing risk |
+| Hosted tool (e.g. Firecrawl parse) | **Yes** — `applyHostedKeyCostToResult` when `tool.hosting.pricing` exists | **Yes** — `costSummary.charges` → `category: tool` | `firecrawl_scrape` hosting added in Phase 2 |
+| Cost block | **Yes** — `CostBlockHandler` emits `output.cost` | **Yes** — `category=external` verified empirically (migration `0249`) | `scaleUsageEntry` exempts `external` (multiplier 1) |
+| Non-hosted / unpriced model ID | **Reduced** — date-suffixed IDs + `gpt-4o-mini` / `claude-3-7-sonnet-latest` priced in Phase 5 | **Yes** when cost > 0 | Remaining gaps: dynamic Go model IDs not in `models.ts` |
 
-**Gate for Phase 2 pricing work:** Workflow Agent hosted models **do** populate `output.cost` through `providers/*` when the model is in `getHostedModels()` and has pricing in `providers/models.ts`. Copilot/mothership chat billing is **outside** `providers/*` — Go computes cost and Sim records it via the billing callback. Several Arena-relevant model IDs (date-suffixed Anthropic IDs, `gpt-4o-mini`, copilot default `claude-3-7-sonnet-latest`) have **pricing gaps** that produce $0 cost even on hosted paths.
+**Post-remediation:** Workflow Agent hosted models populate `output.cost` when the model is hosted (including date-suffixed API labels) and priced in `providers/models.ts`. Copilot/mothership chat billing remains outside `providers/*` — Go computes cost and Sim records via `/api/billing/update-cost`. See [mothership double-count audit](../billing/mothership-double-count-audit.md).
 
 ## Methods
 
@@ -72,9 +84,9 @@ cd apps/sim && bunx vitest run \
 3. `recordUsage` — inserted `category=external`, `source=workflow`, `vendor`, `metadata` (`originalAmount`, `originalCurrency`, `source`)
 4. DB readback confirmed; test row cleaned up
 
-**Multiplier note:** With `USAGE_LOG_COST_MULTIPLIER=1`, external cost passed through unchanged (`$0.42 → $0.42`). Today `scaleUsageEntry` does **not** exempt `category=external` — Phase 2 should set `rawCost = billableCost = recorded amount` without markup.
+**Multiplier note:** `scaleUsageEntry` exempts `category=external` — vendor spend passes through at multiplier 1.
 
-**Attribution columns (0250):** `actor_user_id`, `occurred_at`, lineage fields exist on schema but are **not yet written** by `recordUsage` — Phase 2 write-path work. External rows land with those columns `NULL` today, same as other categories.
+**Attribution columns (0250):** `recordUsage` writes `occurred_at`, lineage fields (`parent_execution_id`, `root_execution_id`, `triggering_chat_id`, `triggering_run_id`), and `pricing_snapshot` (model/tool/external via `normalizeUsageEntry`) as of Phase 4.
 
 **`quantity` / `unit`:** Populated when `CostBlockHandler` `raw` includes them (e.g. response-path / labeled runs). Fixed-mode instrumented run had `vendor` + metadata only; unit tests cover quantity/unit via trace span fixtures.
 
@@ -112,13 +124,13 @@ Models for copilot are listed by Go (`/api/get-available-models`), not `provider
 | Model ID | Hosted | `shouldBillModelUsage` | Pricing in `models.ts` | Sample $/1M tokens (in+out) |
 |----------|--------|------------------------|------------------------|-----------------------------|
 | `gpt-4o` | yes | yes | yes | $12.50 |
-| `gpt-4o-mini` | **no** | **no** | **no** | $0 |
+| `gpt-4o-mini` | yes | yes | yes | ~$0.75 |
+| `claude-3-7-sonnet-latest` | yes | yes | yes | $18.00 |
 | `o1` | yes | yes | yes | $75.00 |
 | `o3-mini` | yes | yes | yes | $5.50 |
 | `claude-sonnet-4-6` | yes | yes | yes | $18.00 |
 | `claude-sonnet-4-5` | yes | yes | yes | $18.00 |
-| `claude-sonnet-4-5-20250514` | **no** | **no** | **no** (exact match only) | $0 |
-| `claude-3-7-sonnet-latest` | **no** | **no** | **no** | $0 |
+| `claude-sonnet-4-5-20250514` | yes | yes | yes (via prefix) | $18.00 |
 | `gemini-2.5-pro` / `flash` | yes | yes | yes | $11.25 / $2.80 |
 | `grok-4-latest` | yes | yes | yes | $3.75 |
 | `deepseek-v3` | no | no | no | $0 |
@@ -129,11 +141,11 @@ Models for copilot are listed by Go (`/api/get-available-models`), not `provider
 
 \*Pricing exists in catalog but models are **not** in `getHostedModels()`, so users must BYOK — `executeProviderRequest` sets `output.cost.total = 0`.
 
-### Pricing lookup limitation
+### Pricing lookup (updated Phase 5)
 
-`getModelPricing` in `providers/models.ts` uses **exact** `model.id` match (case-insensitive). It does **not** strip date suffixes (e.g. `-20250514`). Provider APIs often return suffixed IDs → $0 cost + warn log from `calculateCost`.
+`getModelPricing` and `resolveCanonicalModelId` use `findCatalogModel`, which matches date-suffixed API IDs (e.g. `claude-sonnet-4-5-20250514` → `claude-sonnet-4-5`). `shouldBillModelUsage` treats date-suffixed labels as hosted when the base catalog ID is hosted.
 
-`supportsNativeStructuredOutputs` already handles date-suffixed matching; pricing does not.
+High-traffic gaps closed: `gpt-4o-mini`, `claude-3-7-sonnet-latest`.
 
 ## Path-by-path findings
 
@@ -217,16 +229,16 @@ From `logger.ts` + tests:
 | Anthropic catalog | `claude-sonnet-4-6` default; `4-0` commented out | upstream may differ | tests reference removed `claude-sonnet-4-0` |
 | Arena deployment | `agent.thearena.ai` hosts | `sim.ai` | billing callbacks use same Sim code paths |
 
-## Phase 2 work items (gated by this audit)
+## Phase 2 work items — status
 
-1. **Canonical model ID normalization at write time** — strip date suffixes before `calculateCost` / ledger `description` (fixes `claude-sonnet-4-5-20250514` fragmentation).
-2. **Add pricing for high-traffic gaps:** `gpt-4o-mini`, `claude-3-7-sonnet-latest` (or change copilot default to a priced ID).
-3. **Wire `firecrawl_scrape` hosting** to match `vendor-pricing.json` (or document as BYOK-only).
-4. **Go mothership pricing audit** — separate pass on staging comparing stream `complete.payload.cost` to expected rates for Arena contract models.
-5. **Zero-cost ledger rows** (Phase 2 plan) — write `billable = false` rows so attribution works even when cost is $0.
-6. **`pricingSnapshot` mandatory** on model rows — many paths don't capture it today.
-7. **External multiplier pass-through** — exempt `category=external` in `scaleUsageEntry` (vendor spend is pass-through, not margin).
-8. **Re-run `scripts/phase0-arena-cost-audit.ts`** on an environment with execution data before shipping Phase 3 dashboard.
+1. ~~Canonical model ID normalization~~ — **Done (Phase 5):** `findCatalogModel` at pricing + ledger write.
+2. ~~Add pricing for `gpt-4o-mini`, `claude-3-7-sonnet-latest`~~ — **Done (Phase 5).**
+3. ~~Wire `firecrawl_scrape` hosting~~ — **Done (Phase 2).**
+4. **Go mothership pricing audit** — Sim-side double-count detection added; Go verification still required on staging ([doc](../billing/mothership-double-count-audit.md)).
+5. Zero-cost ledger rows (`billable = false`) — **Deferred** (product decision).
+6. ~~`pricingSnapshot` on model rows~~ — **Done (Phase 4).**
+7. ~~External multiplier pass-through~~ — **Done** (`scaleUsageEntry`).
+8. Re-run `scripts/phase0-arena-cost-audit.ts` on populated DB before dashboard ship — **Pending ops** (dev DB still empty).
 
 ## Manual instrumented workflow checklist
 
@@ -249,7 +261,8 @@ Compare `cost_total` to `SUM(cost)` — should match within 1e-8.
 
 ## Artifacts
 
-- `scripts/phase0-arena-cost-audit.ts` — DB reconciliation + source breakdown (includes `external` category)
+- `scripts/phase0-arena-cost-audit.ts` — DB reconciliation, drift export, `billingReconciliationPending`, mothership double-count check
 - `scripts/phase0-arena-pricing-coverage.ts` — static model pricing matrix
 - `scripts/phase0-cost-block-external-verify.ts` — instrumented Cost block → `usage_log` external row verification
+- `docs/billing/mothership-double-count-audit.md` — Sim vs Go billing path analysis
 - This document

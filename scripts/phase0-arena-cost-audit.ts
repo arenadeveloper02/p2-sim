@@ -199,6 +199,61 @@ async function main() {
     )
   }
 
+  const mothershipDoubleCount = queryRows(
+    await db.execute<{
+      execution_id: string
+      workflow_total: string
+      mothership_total: string
+      started_at: Date
+    }>(sql`
+    WITH workflow_ledger AS (
+      SELECT
+        execution_id,
+        COALESCE(SUM(cost::numeric), 0) AS workflow_total
+      FROM usage_log
+      WHERE source = 'workflow'
+        AND execution_id IS NOT NULL
+        AND created_at >= NOW() - (${DAYS}::int || ' days')::interval
+      GROUP BY execution_id
+    ),
+    mothership_ledger AS (
+      SELECT
+        parent_execution_id AS execution_id,
+        COALESCE(SUM(cost::numeric), 0) AS mothership_total
+      FROM usage_log
+      WHERE source = 'mothership_block'
+        AND parent_execution_id IS NOT NULL
+        AND created_at >= NOW() - (${DAYS}::int || ' days')::interval
+      GROUP BY parent_execution_id
+    )
+    SELECT
+      w.execution_id,
+      w.workflow_total::text AS workflow_total,
+      m.mothership_total::text AS mothership_total,
+      wel.started_at
+    FROM workflow_ledger w
+    INNER JOIN mothership_ledger m ON m.execution_id = w.execution_id
+    INNER JOIN workflow_execution_logs wel ON wel.execution_id = w.execution_id
+    WHERE w.workflow_total > 0
+      AND m.mothership_total > 0
+    ORDER BY (w.workflow_total + m.mothership_total) DESC
+    LIMIT 20
+  `)
+  )
+
+  console.log('\n--- Potential mothership double-count (workflow + mothership_block on same execution) ---')
+  console.log(`Cases (last ${DAYS}d): ${mothershipDoubleCount.length}`)
+  for (const r of mothershipDoubleCount.slice(0, 10)) {
+    console.log(
+      `  ${r.execution_id.slice(0, 8)}… workflow=$${Number.parseFloat(r.workflow_total).toFixed(4)} mothership_block=$${Number.parseFloat(r.mothership_total).toFixed(4)} started=${r.started_at}`
+    )
+  }
+  if (mothershipDoubleCount.length > 0) {
+    console.log(
+      '  Review: workflow mothership blocks bill via result.cost → workflow ledger; mothership_block rows imply Go also POSTed /api/billing/update-cost for the same parent execution.'
+    )
+  }
+
   const sourceBreakdown = queryRows(
     await db.execute<SourceBreakdownRow>(sql`
     SELECT

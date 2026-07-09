@@ -652,6 +652,21 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       },
       // Legacy
       {
+        id: 'gpt-4o-mini',
+        pricing: {
+          input: 0.15,
+          cachedInput: 0.075,
+          output: 0.6,
+          updatedAt: '2026-07-09',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          maxOutputTokens: 16384,
+        },
+        contextWindow: 128000,
+        releaseDate: '2024-07-18',
+      },
+      {
         id: 'gpt-4o',
         pricing: {
           input: 2.5,
@@ -822,6 +837,27 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       //   releaseDate: '2025-05-22',
       //   deprecated: true,
       // },
+      {
+        id: 'claude-3-7-sonnet-latest',
+        pricing: {
+          input: 3.0,
+          cachedInput: 0.3,
+          output: 15.0,
+          updatedAt: '2026-07-09',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 64000,
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'high',
+          },
+        },
+        contextWindow: 200000,
+        releaseDate: '2025-02-19',
+        deprecated: true,
+      },
       {
         id: 'claude-sonnet-4-5',
         pricing: {
@@ -3230,8 +3266,8 @@ const STATIC_MODEL_ID_SET = new Set(getAllStaticModelIds().map((id) => id.toLowe
 /**
  * Resolves a runtime model label to the canonical catalog ID when possible.
  * Strips a leading `provider/` prefix, matches case-insensitively against the
- * static catalog, and returns the catalog's canonical casing. Unknown labels
- * are returned trimmed (prefix stripped when present).
+ * static catalog (including date-suffixed API IDs), and returns the catalog's
+ * canonical casing. Unknown labels are returned trimmed (prefix stripped when present).
  */
 export function resolveCanonicalModelId(modelId: string): string {
   const trimmed = modelId.trim()
@@ -3242,10 +3278,8 @@ export function resolveCanonicalModelId(modelId: string): string {
   const candidates = slashIdx > 0 ? [withoutPrefix, trimmed] : [trimmed]
 
   for (const candidate of candidates) {
-    for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
-      const match = provider.models.find((m) => m.id.toLowerCase() === candidate.toLowerCase())
-      if (match) return match.id
-    }
+    const catalogModel = findCatalogModel(candidate)
+    if (catalogModel) return catalogModel.model.id
   }
 
   const lowered = trimmed.toLowerCase()
@@ -3256,6 +3290,39 @@ export function resolveCanonicalModelId(modelId: string): string {
   }
 
   return withoutPrefix
+}
+
+function matchesCatalogModelId(candidate: string, catalogId: string): boolean {
+  const normalizedCandidate = candidate.toLowerCase()
+  const baseId = catalogId.toLowerCase()
+  return normalizedCandidate === baseId || normalizedCandidate.startsWith(`${baseId}-`)
+}
+
+/**
+ * Finds a catalog model entry for a runtime label, including date-suffixed IDs
+ * returned by provider APIs (e.g. `claude-sonnet-4-5-20250514`).
+ */
+export function findCatalogModel(
+  modelId: string
+): { providerId: string; model: (typeof PROVIDER_DEFINITIONS)[keyof typeof PROVIDER_DEFINITIONS]['models'][number] } | null {
+  const trimmed = modelId.trim()
+  if (!trimmed) return null
+
+  const slashIdx = trimmed.indexOf('/')
+  const withoutPrefix = slashIdx > 0 ? trimmed.slice(slashIdx + 1).trim() : trimmed
+  const candidates = slashIdx > 0 ? [withoutPrefix, trimmed] : [trimmed]
+
+  for (const candidate of candidates) {
+    for (const [providerId, provider] of Object.entries(PROVIDER_DEFINITIONS)) {
+      for (const model of provider.models) {
+        if (matchesCatalogModelId(candidate, model.id)) {
+          return { providerId, model }
+        }
+      }
+    }
+  }
+
+  return null
 }
 
 export function isKnownModelId(modelId: string): boolean {
@@ -3353,13 +3420,7 @@ export function getProviderDefaultModel(providerId: string): string {
 }
 
 export function getModelPricing(modelId: string): ModelPricing | null {
-  for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
-    const model = provider.models.find((m) => m.id.toLowerCase() === modelId.toLowerCase())
-    if (model) {
-      return model.pricing
-    }
-  }
-  return null
+  return findCatalogModel(modelId)?.model.pricing ?? null
 }
 
 export function getModelCapabilities(modelId: string): ModelCapabilities | null {
