@@ -3,12 +3,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  formatChartDeployOutputForChat,
   isEChartsOption,
   parseEChartsOptionFromString,
   parseEChartsOptionsFromString,
   resolveEChartsOptionFromContent,
   resolveEChartsOptionsFromContent,
   sanitizeEChartsOption,
+  stripEChartsJsonFromContent,
 } from '@/lib/chart-generation/echarts-option'
 
 const validOption = {
@@ -138,6 +140,26 @@ describe('resolveEChartsOptionsFromContent', () => {
     expect(resolveEChartsOptionsFromContent({ charts: [] })).toBeNull()
     expect(resolveEChartsOptionsFromContent({ charts: [{ foo: 'bar' }] })).toBeNull()
     expect(resolveEChartsOptionsFromContent('hello world')).toBeNull()
+  })
+
+  it('parses dashboard JSON embedded after agent text (deployed chat)', () => {
+    const mixed = `Total spend is $1,200.\n\n\`\`\`json\n${JSON.stringify(dashboardPayload)}\n\`\`\``
+    expect(resolveEChartsOptionsFromContent(mixed)).toEqual([heatmapOption, barOption])
+  })
+
+  it('strips embedded chart JSON from mixed content', () => {
+    const mixed = `Total spend is $1,200.\n\n\`\`\`json\n${JSON.stringify(dashboardPayload)}\n\`\`\``
+    expect(stripEChartsJsonFromContent(mixed)).toBe('Total spend is $1,200.')
+  })
+})
+
+describe('formatChartDeployOutputForChat', () => {
+  it('formats dashboard output when charts exist', () => {
+    expect(formatChartDeployOutputForChat(dashboardPayload)).toContain('"charts"')
+  })
+
+  it('returns null for empty dashboard', () => {
+    expect(formatChartDeployOutputForChat({ charts: [], count: 0 })).toBeNull()
   })
 })
 

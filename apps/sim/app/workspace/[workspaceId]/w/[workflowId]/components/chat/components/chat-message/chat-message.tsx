@@ -3,7 +3,7 @@ import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
-import { resolveEChartsOptionsFromContent } from '@/lib/chart-generation/echarts-option'
+import { resolveEChartsOptionsFromContent, stripEChartsJsonFromContent } from '@/lib/chart-generation/echarts-option'
 import { ChatEChartsRenderer } from '@/app/chat/components/message/components/chat-echarts-renderer'
 import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
@@ -285,8 +285,13 @@ export function ChatMessage({
     }
 
     if (content === message.content && messageChartOptions) {
+      const prose =
+        typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
       return (
         <>
+          {prose ? (
+            <ArenaCopilotMarkdownRenderer content={prose} renderImage={renderMarkdownImage} />
+          ) : null}
           {messageChartOptions.map((option, index) => (
             <ChatEChartsRenderer key={index} option={option} />
           ))}

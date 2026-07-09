@@ -116,10 +116,47 @@ function resolveEChartsOptionsFromParsed(value: unknown): EChartsOptionLike[] | 
   return charts
 }
 
+const EMBEDDED_FENCE_REGEX = /```(?:json|echarts)?\s*([\s\S]*?)```/gi
+
+function tryParseEChartsJsonCandidate(candidate: string): EChartsOptionLike[] | null {
+  const trimmed = candidate.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    return resolveEChartsOptionsFromParsed(parsed)
+  } catch {
+    return null
+  }
+}
+
+function tryParseWholeEChartsString(value: string): EChartsOptionLike[] | null {
+  let candidate = value.trim()
+  const fenceMatch = candidate.match(/^```(?:json|echarts)?\s*([\s\S]*?)```$/i)
+  if (fenceMatch?.[1]) {
+    candidate = fenceMatch[1].trim()
+  }
+  return tryParseEChartsJsonCandidate(candidate)
+}
+
+function tryParseEmbeddedEChartsFences(value: string): EChartsOptionLike[] | null {
+  const charts: EChartsOptionLike[] = []
+  for (const match of value.matchAll(EMBEDDED_FENCE_REGEX)) {
+    const inner = match[1]?.trim()
+    if (!inner) continue
+    const parsed = tryParseEChartsJsonCandidate(inner)
+    if (parsed) charts.push(...parsed)
+  }
+  return charts.length > 0 ? charts : null
+}
+
 /**
  * Attempts to extract one or more ECharts options from a string. Supports a raw
- * JSON object, a `{ charts: [...] }` dashboard wrapper, or a single fenced code
- * block (```json / ```echarts / bare fence).
+ * JSON object, a `{ charts: [...] }` dashboard wrapper, a single fenced code
+ * block, or chart JSON embedded after other text (deployed chat combines agent
+ * text + chart generator dashboard in one message).
  */
 export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[] | null {
   const trimmed = value.trim()
@@ -127,22 +164,51 @@ export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[
     return null
   }
 
-  let candidate = trimmed
+  return tryParseWholeEChartsString(trimmed) ?? tryParseEmbeddedEChartsFences(trimmed)
+}
 
-  const fenceMatch = trimmed.match(/^```(?:json|echarts)?\s*([\s\S]*?)```$/i)
-  if (fenceMatch?.[1]) {
-    candidate = fenceMatch[1].trim()
+/**
+ * Removes fenced or inline chart/dashboard JSON from mixed assistant text so prose
+ * and charts can render separately in deployed chat.
+ */
+export function stripEChartsJsonFromContent(content: string): string {
+  return content
+    .replace(EMBEDDED_FENCE_REGEX, (full, inner: string) => {
+      if (tryParseEChartsJsonCandidate(inner)) {
+        return ''
+      }
+      return full
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/** True when a deploy output value contains at least one renderable chart. */
+export function hasRenderableChartDeployOutput(value: unknown): boolean {
+  if (typeof value === 'string') {
+    return parseEChartsOptionsFromString(value) !== null
   }
+  return resolveEChartsOptionsFromParsed(value) !== null
+}
 
-  if (!candidate.startsWith('{') && !candidate.startsWith('[')) {
+/**
+ * Formats chart generator deploy output for chat message content, or returns null
+ * when there are no charts to show (e.g. skipped / empty dashboard).
+ */
+export function formatChartDeployOutputForChat(value: unknown): string | null {
+  if (value === null || value === undefined) {
     return null
   }
-
+  if (typeof value === 'string') {
+    return hasRenderableChartDeployOutput(value) ? value : null
+  }
+  if (!hasRenderableChartDeployOutput(value)) {
+    return null
+  }
   try {
-    const parsed = JSON.parse(candidate)
-    return resolveEChartsOptionsFromParsed(parsed)
+    return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
   } catch {
-    return null
+    return String(value)
   }
 }
 
