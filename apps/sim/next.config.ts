@@ -105,6 +105,19 @@ const nextConfig: NextConfig = {
       './lib/execution/sandbox/bundles/*.cjs',
     ],
   },
+  /**
+   * The dev-only Next.js app generator (`lib/development/nextjs-app-generator.ts`)
+   * uses `process.cwd()` + unscoped filesystem ops, so Next's file tracer follows
+   * them and pulls root files into these routes' trace — flagging `next.config.ts`
+   * as an "unexpected file in NFT list". `next.config.ts` is loaded specially at
+   * build time and is never imported by a route at runtime, so excluding it from
+   * the dev routes' trace is safe and clears the warning. Only exclude files that
+   * are genuinely not imported — the generator does import `@/providers/utils`
+   * and `@/app/api/files/authorization`, so those trees must stay traced.
+   */
+  outputFileTracingExcludes: {
+    '/api/tools/development/**': ['./next.config.ts'],
+  },
   experimental: {
     optimizeCss: true,
     preloadEntriesOnStart: false,
