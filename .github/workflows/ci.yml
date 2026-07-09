@@ -163,7 +163,7 @@ jobs:
           fi
           sudo swapoff "$SWAPFILE" 2>/dev/null || true
           sudo rm -f "$SWAPFILE"
-          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=10240 status=none
+          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=20480 status=none
           sudo chmod 600 "$SWAPFILE"
           sudo mkswap "$SWAPFILE"
           sudo swapon "$SWAPFILE"
@@ -250,7 +250,7 @@ jobs:
           fi
           sudo swapoff "$SWAPFILE" 2>/dev/null || true
           sudo rm -f "$SWAPFILE"
-          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=10240 status=none
+          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=20480 status=none
           sudo chmod 600 "$SWAPFILE"
           sudo mkswap "$SWAPFILE"
           sudo swapon "$SWAPFILE"
@@ -374,7 +374,7 @@ jobs:
           fi
           sudo swapoff "$SWAPFILE" 2>/dev/null || true
           sudo rm -f "$SWAPFILE"
-          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=10240 status=none
+          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=20480 status=none
           sudo chmod 600 "$SWAPFILE"
           sudo mkswap "$SWAPFILE"
           sudo swapon "$SWAPFILE"
@@ -455,7 +455,7 @@ jobs:
           fi
           sudo swapoff "$SWAPFILE" 2>/dev/null || true
           sudo rm -f "$SWAPFILE"
-          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=10240 status=none
+          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=20480 status=none
           sudo chmod 600 "$SWAPFILE"
           sudo mkswap "$SWAPFILE"
           sudo swapon "$SWAPFILE"

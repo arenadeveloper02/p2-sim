@@ -108,6 +108,7 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizeCss: true,
     preloadEntriesOnStart: false,
+    turbopackFileSystemCacheForBuild: true,
     optimizePackageImports: [
       'lodash',
       'framer-motion',
