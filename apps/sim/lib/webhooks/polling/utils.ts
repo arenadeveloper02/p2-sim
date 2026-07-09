@@ -164,7 +164,7 @@ export async function updateWebhookProviderConfig(
       else defined[key] = value
     }
 
-    const merged = sql`COALESCE(${webhook.providerConfig}, '{}'::jsonb) || ${JSON.stringify(defined)}::jsonb`
+    const merged = sql`COALESCE(${webhook.providerConfig}::jsonb, '{}'::jsonb) || ${JSON.stringify(defined)}::jsonb`
 
     await db
       .update(webhook)
