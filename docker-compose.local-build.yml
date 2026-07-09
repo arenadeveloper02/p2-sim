@@ -12,3 +12,7 @@ services:
     build:
       context: .
       dockerfile: docker/realtime.Dockerfile
+
+  migrations:
+    profiles:
+      - disabled
