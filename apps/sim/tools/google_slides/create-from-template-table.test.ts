@@ -7,10 +7,16 @@ import {
   buildTableColumnWidthRequests,
   buildTableContentRequests,
   computeColumnContentWeights,
+  computeMaxRowsThatFitOnSlide,
   distributeColumnWidthsByContent,
+  estimateCellLineCount,
+  expandSlidesForTableOverflow,
+  appendTableContinuationTitleSuffix,
   findTableColumnLayout,
   findTableDimensions,
+  findTableSlideLayout,
   normalizeTableContent,
+  splitTableContentAcrossSlides,
 } from '@/tools/google_slides/create-from-template-table'
 
 describe('normalizeTableContent', () => {
@@ -304,3 +310,195 @@ describe('buildTableContentRequests', () => {
     })
   })
 })
+
+describe('findTableSlideLayout', () => {
+  it('derives height budget from element size and scaleY', () => {
+    const layout = findTableSlideLayout(
+      {
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                size: { height: { magnitude: 2_000_000, unit: 'EMU' } },
+                transform: { scaleY: 1.5 },
+                table: {
+                  tableRows: [
+                    { rowHeight: { magnitude: 200_000, unit: 'EMU' } },
+                    { rowHeight: { magnitude: 300_000, unit: 'EMU' } },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    expect(layout).toEqual({
+      heightBudgetEmu: 3_000_000,
+      templateRowHeightsEmu: [200_000, 300_000],
+    })
+  })
+})
+
+describe('computeMaxRowsThatFitOnSlide', () => {
+  it('returns fewer rows when long cell text exceeds the vertical budget', () => {
+    const longCell = 'Word '.repeat(40).trim()
+    const content = Array.from({ length: 10 }, () => ['Label', longCell])
+
+    const fitRows = computeMaxRowsThatFitOnSlide({
+      content,
+      slideLayout: {
+        heightBudgetEmu: 800_000,
+        templateRowHeightsEmu: Array.from({ length: 10 }, () => 80_000),
+      },
+      columnWidths: [700_000, 700_000],
+      minRows: 2,
+      maxRows: 10,
+    })
+
+    expect(fitRows).toBeLessThan(10)
+    expect(fitRows).toBeGreaterThanOrEqual(2)
+  })
+
+  it('wraps more text into fewer lines in wider columns', () => {
+    const narrowLines = estimateCellLineCount('abcdefghijklmnop', 500_000)
+    const wideLines = estimateCellLineCount('abcdefghijklmnop', 2_000_000)
+    expect(wideLines).toBeLessThanOrEqual(narrowLines)
+  })
+})
+
+describe('splitTableContentAcrossSlides', () => {
+  const slideLayout = {
+    heightBudgetEmu: 900_000,
+    templateRowHeightsEmu: Array.from({ length: 10 }, () => 90_000),
+  }
+  const columnWidths = [900_000, 900_000, 900_000]
+  const longCell = 'A'.repeat(120)
+
+  it('returns a single chunk when all rows fit on one slide', () => {
+    const chunks = splitTableContentAcrossSlides({
+      content: [
+        ['H1', 'H2', 'H3'],
+        ['Row 1', 'A', 'B'],
+      ],
+      maxRows: 10,
+      maxColumns: 3,
+      minRows: 2,
+      headerRow: true,
+      slideLayout,
+      columnWidths,
+    })
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toHaveLength(2)
+  })
+
+  it('splits body rows across slides and repeats the header row', () => {
+    const bodyRows = Array.from({ length: 10 }, (_, index) => [
+      `Row ${index + 1}`,
+      longCell,
+      longCell,
+    ])
+    const chunks = splitTableContentAcrossSlides({
+      content: [['Col A', 'Col B', 'Col C'], ...bodyRows],
+      maxRows: 10,
+      maxColumns: 3,
+      minRows: 2,
+      headerRow: true,
+      slideLayout,
+      columnWidths,
+    })
+
+    expect(chunks.length).toBeGreaterThan(1)
+    for (const chunk of chunks) {
+      expect(chunk[0]).toEqual(['Col A', 'Col B', 'Col C'])
+    }
+
+    const totalBodyRows = chunks.reduce((sum, chunk) => sum + chunk.length - 1, 0)
+    expect(totalBodyRows).toBe(10)
+  })
+})
+
+describe('expandSlidesForTableOverflow', () => {
+  it('duplicates slide entries when table content requires continuation slides', () => {
+    const longCell = 'A'.repeat(120)
+    const slides = expandSlidesForTableOverflow(
+      [
+        {
+          order: 1,
+          templateSlideObjectId: 'slide_tpl',
+          blocks: [
+            { type: 'TEXT', role: 'TITLE', shapeId: 'title_1', content: 'My Table' },
+            {
+              type: 'TABLE',
+              shapeId: 'table_1',
+              headerRow: true,
+              maxRows: 10,
+              maxColumns: 3,
+              minRows: 2,
+              content: [
+                ['Col A', 'Col B', 'Col C'],
+                ...Array.from({ length: 10 }, (_, index) => [`Row ${index + 1}`, longCell, longCell]),
+              ],
+            },
+          ],
+        },
+      ],
+      {
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                size: { height: { magnitude: 900_000, unit: 'EMU' } },
+                transform: { scaleY: 1 },
+                table: {
+                  rows: 10,
+                  columns: 3,
+                  tableColumns: columnWidthsToTableColumns([900_000, 900_000, 900_000]),
+                  tableRows: Array.from({ length: 10 }, () => ({
+                    rowHeight: { magnitude: 90_000, unit: 'EMU' },
+                  })),
+                },
+              },
+            ],
+          },
+        ],
+      }
+    )
+
+    expect(slides.length).toBeGreaterThan(1)
+    expect(slides.every((slide) => slide.templateSlideObjectId === 'slide_tpl')).toBe(true)
+    const tableChunks = slides.map(
+      (slide) => slide.blocks.find((block) => block.type === 'TABLE')?.content
+    )
+    expect(tableChunks[0]?.[0]).toEqual(['Col A', 'Col B', 'Col C'])
+    expect(tableChunks[1]?.[0]).toEqual(['Col A', 'Col B', 'Col C'])
+
+    expect(slides[0]?.blocks.find((block) => block.type === 'TEXT')?.content).toBe('My Table')
+    expect(slides[1]?.blocks.find((block) => block.type === 'TEXT')?.content).toBe(
+      'My Table (continued)'
+    )
+  })
+})
+
+describe('appendTableContinuationTitleSuffix', () => {
+  it('appends (continued) to non-empty titles', () => {
+    expect(appendTableContinuationTitleSuffix('My Table')).toBe('My Table (continued)')
+  })
+
+  it('does not double-append when already continued', () => {
+    expect(appendTableContinuationTitleSuffix('My Table (continued)')).toBe('My Table (continued)')
+  })
+
+  it('uses Continued for empty titles', () => {
+    expect(appendTableContinuationTitleSuffix('')).toBe('Continued')
+  })
+})
+
+function columnWidthsToTableColumns(widths: number[]) {
+  return widths.map((magnitude) => ({ columnWidth: { magnitude, unit: 'EMU' as const } }))
+}

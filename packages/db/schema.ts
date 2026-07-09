@@ -2432,6 +2432,150 @@ export const copilotFeedback = pgTable(
   })
 )
 
+export const localCopilotPatchStatusEnum = pgEnum('local_copilot_patch_status', [
+  'pending',
+  'applied',
+  'rejected',
+  'expired',
+])
+
+export const localCopilotAuditStatusEnum = pgEnum('local_copilot_audit_status', [
+  'success',
+  'failure',
+  'rejected',
+])
+
+export const localCopilotConversations = pgTable(
+  'local_copilot_conversations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'cascade' }),
+    title: text('title'),
+    model: text('model').notNull(),
+    provider: text('provider').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index('local_copilot_conversations_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('local_copilot_conversations_workspace_id_idx').on(table.workspaceId),
+    workflowIdIdx: index('local_copilot_conversations_workflow_id_idx').on(table.workflowId),
+    userWorkflowIdx: index('local_copilot_conversations_user_workflow_idx').on(
+      table.userId,
+      table.workflowId
+    ),
+    updatedAtIdx: index('local_copilot_conversations_updated_at_idx').on(table.updatedAt),
+  })
+)
+
+export const localCopilotMessages = pgTable(
+  'local_copilot_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => localCopilotConversations.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(),
+    content: jsonb('content').notNull(),
+    seq: integer('seq').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    conversationSeqIdx: index('local_copilot_messages_conversation_seq_idx').on(
+      table.conversationId,
+      table.seq
+    ),
+  })
+)
+
+export const localCopilotToolCalls = pgTable(
+  'local_copilot_tool_calls',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => localCopilotConversations.id, { onDelete: 'cascade' }),
+    messageId: uuid('message_id').references(() => localCopilotMessages.id, { onDelete: 'set null' }),
+    toolName: text('tool_name').notNull(),
+    toolCallId: text('tool_call_id').notNull(),
+    arguments: jsonb('arguments').notNull().default({}),
+    result: jsonb('result'),
+    status: text('status').notNull().default('completed'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    completedAt: timestamp('completed_at'),
+  },
+  (table) => ({
+    conversationIdIdx: index('local_copilot_tool_calls_conversation_id_idx').on(
+      table.conversationId
+    ),
+    toolCallIdIdx: index('local_copilot_tool_calls_tool_call_id_idx').on(table.toolCallId),
+  })
+)
+
+export const localCopilotPatches = pgTable(
+  'local_copilot_patches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => localCopilotConversations.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    summary: text('summary').notNull(),
+    patch: jsonb('patch').notNull(),
+    status: localCopilotPatchStatusEnum('status').notNull().default('pending'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at'),
+  },
+  (table) => ({
+    conversationIdIdx: index('local_copilot_patches_conversation_id_idx').on(table.conversationId),
+    workflowIdIdx: index('local_copilot_patches_workflow_id_idx').on(table.workflowId),
+    statusIdx: index('local_copilot_patches_status_idx').on(table.status),
+  })
+)
+
+export const localCopilotAuditLogs = pgTable(
+  'local_copilot_audit_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    conversationId: uuid('conversation_id').references(() => localCopilotConversations.id, {
+      onDelete: 'set null',
+    }),
+    patchId: uuid('patch_id').references(() => localCopilotPatches.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    summary: text('summary'),
+    status: localCopilotAuditStatusEnum('status').notNull().default('success'),
+    metadata: jsonb('metadata').notNull().default({}),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index('local_copilot_audit_logs_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('local_copilot_audit_logs_workspace_id_idx').on(table.workspaceId),
+    workflowIdIdx: index('local_copilot_audit_logs_workflow_id_idx').on(table.workflowId),
+    createdAtIdx: index('local_copilot_audit_logs_created_at_idx').on(table.createdAt),
+  })
+)
+
+export type LocalCopilotPatchStatus = (typeof localCopilotPatchStatusEnum.enumValues)[number]
+export type LocalCopilotAuditStatus = (typeof localCopilotAuditStatusEnum.enumValues)[number]
+
 // Tracks immutable deployment versions for each workflow
 export const workflowDeploymentVersion = pgTable(
   'workflow_deployment_version',

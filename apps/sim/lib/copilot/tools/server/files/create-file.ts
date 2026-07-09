@@ -7,13 +7,14 @@ import {
 } from '@/lib/copilot/tools/server/base-tool'
 import { writeWorkspaceFileByPath } from '@/lib/copilot/vfs/resource-writer'
 import { isPlanAliasPath } from '@/lib/copilot/vfs/workflow-aliases'
-import { inferContentType } from './workspace-file'
+import { inferContentType, getDocumentFormatInfo } from './workspace-file'
 
 const logger = createLogger('CreateFileServerTool')
 const CREATE_FILE_TOOL_ID = 'create_file'
 
 interface CreateFileArgs {
   fileName: string
+  content?: string
   contentType?: string
   outputs?: { files?: Array<{ path: string; mode?: 'create' | 'overwrite'; mimeType?: string }> }
   args?: Record<string, unknown>
@@ -28,7 +29,15 @@ interface CreateFileResult {
     contentType: string
     vfsPath: string
     backingVfsPath?: string
+    size: number
   }
+}
+
+function resolveCreateFileContent(params: CreateFileArgs): string | undefined {
+  const nested = params.args
+  if (typeof params.content === 'string') return params.content
+  if (typeof nested?.content === 'string') return nested.content
+  return undefined
 }
 
 export const createFileServerTool: BaseServerTool<CreateFileArgs, CreateFileResult> = {
@@ -60,7 +69,19 @@ export const createFileServerTool: BaseServerTool<CreateFileArgs, CreateFileResu
       }
     }
     const contentType = outputFile?.mimeType ?? inferContentType(outputPath, explicitType)
-    const emptyBuffer = Buffer.from('', 'utf-8')
+    const content = resolveCreateFileContent(params)
+    const leafName = outputPath.split('/').pop() ?? outputPath
+    const docInfo = getDocumentFormatInfo(leafName)
+
+    if (content !== undefined && docInfo.isDoc) {
+      return {
+        success: false,
+        message:
+          'create_file content is only supported for text files (.md, .txt, .json, .csv, .html). For DOCX/PPTX/PDF use create_file (empty shell) → workspace_file update → edit_content.',
+      }
+    }
+
+    const fileBuffer = Buffer.from(content ?? '', 'utf-8')
 
     assertServerToolNotAborted(context)
     const result = await writeWorkspaceFileByPath({
@@ -71,7 +92,7 @@ export const createFileServerTool: BaseServerTool<CreateFileArgs, CreateFileResu
         mode: outputFile?.mode ?? 'create',
         mimeType: outputFile?.mimeType,
       },
-      buffer: emptyBuffer,
+      buffer: fileBuffer,
       inferredMimeType: contentType,
     })
 
@@ -79,18 +100,23 @@ export const createFileServerTool: BaseServerTool<CreateFileArgs, CreateFileResu
       fileId: result.id,
       name: result.vfsPath,
       contentType,
+      size: fileBuffer.length,
       userId: context.userId,
     })
 
+    const emptyShell = fileBuffer.length === 0
     return {
       success: true,
-      message: `File "${result.vfsPath}" created successfully`,
+      message: emptyShell
+        ? `Empty file shell "${result.vfsPath}" created. Call workspace_file operation=update on this path, then edit_content with the full body — or call create_file again with content for text files.`
+        : `File "${result.vfsPath}" created successfully (${fileBuffer.length} bytes)`,
       data: {
         id: result.id,
         name: result.name,
         contentType,
         vfsPath: result.vfsPath,
         backingVfsPath: result.backingVfsPath,
+        size: fileBuffer.length,
       },
     }
   },

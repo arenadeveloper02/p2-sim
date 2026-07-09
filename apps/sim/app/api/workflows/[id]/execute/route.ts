@@ -67,6 +67,7 @@ import {
   cleanupExecutionBase64Cache,
   hydrateUserFilesWithBase64,
 } from '@/lib/uploads/utils/user-file-base64.server'
+import { resolveWorkflowSyncTimeoutMs } from '@/lib/development/execution-timeout'
 import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import { type ExecutionEvent, encodeSSEEvent } from '@/lib/workflows/executor/execution-events'
@@ -929,6 +930,20 @@ async function handleExecutePost(
       resolvedRunFromBlock?.sourceSnapshot && !resolvedRunFromBlock.sourceExecutionId
     )
 
+    const syncTimeoutMs = resolveWorkflowSyncTimeoutMs({
+      executionTimeout: preprocessResult.executionTimeout!,
+      blocks:
+        (effectiveWorkflowStateOverride as { blocks?: Record<string, { type?: string; enabled?: boolean }> } | undefined)
+          ?.blocks ?? cachedWorkflowData?.blocks,
+    })
+
+    if (syncTimeoutMs !== preprocessResult.executionTimeout?.sync) {
+      reqLogger.info('Using extended sync timeout for Development block workflow', {
+        syncTimeoutMs,
+        defaultSyncMs: preprocessResult.executionTimeout?.sync,
+      })
+    }
+
     if (!enableSSE) {
       reqLogger.info('Using non-SSE execution (direct JSON response)')
       const metadata: ExecutionMetadata = {
@@ -1190,7 +1205,7 @@ async function handleExecutePost(
           workflowTriggerType: triggerType === 'chat' ? 'chat' : 'api',
           includeFileBase64,
           base64MaxBytes,
-          timeoutMs: preprocessResult.executionTimeout?.sync,
+          timeoutMs: syncTimeoutMs,
           sessionUserId: auth.authType === 'session' ? userId : undefined,
         },
         executionId,
@@ -1236,7 +1251,7 @@ async function handleExecutePost(
     }
 
     const encoder = new TextEncoder()
-    const timeoutController = createTimeoutAbortController(preprocessResult.executionTimeout?.sync)
+    const timeoutController = createTimeoutAbortController(syncTimeoutMs)
     let isStreamClosed = false
     let isManualAbortRegistered = false
 

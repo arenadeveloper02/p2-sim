@@ -10,6 +10,7 @@ import {
   useRef,
 } from 'react'
 import type { MothershipResource } from '@/app/workspace/[workspaceId]/home/types'
+import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import type { ChatContext } from '@/stores/panel'
 
 /**
@@ -29,6 +30,10 @@ interface ChatSurfaceContextValue {
   onContextRemove: (context: ChatContext) => void
   /** Opens a workspace resource referenced from rendered message content. */
   onWorkspaceResourceSelect: (resource: MothershipResource) => void
+  /** When true, show the Local / Cloud copilot switch in the chat input. */
+  canSwitchCopilotBackend?: boolean
+  copilotBackend?: CopilotBackendPreference
+  setCopilotBackend?: (value: CopilotBackendPreference) => void
 }
 
 const noop = () => {}
@@ -45,6 +50,9 @@ interface ChatSurfaceProviderProps {
   onContextAdd?: (context: ChatContext) => void
   onContextRemove?: (context: ChatContext) => void
   onWorkspaceResourceSelect?: (resource: MothershipResource) => void
+  canSwitchCopilotBackend?: boolean
+  copilotBackend?: CopilotBackendPreference
+  setCopilotBackend?: (value: CopilotBackendPreference) => void
   children: ReactNode
 }
 
@@ -60,6 +68,9 @@ export function ChatSurfaceProvider({
   onContextAdd,
   onContextRemove,
   onWorkspaceResourceSelect,
+  canSwitchCopilotBackend,
+  copilotBackend,
+  setCopilotBackend,
   children,
 }: ChatSurfaceProviderProps) {
   const onContextAddRef = useRef(onContextAdd)
@@ -89,8 +100,20 @@ export function ChatSurfaceProvider({
       onContextAdd: stableOnContextAdd,
       onContextRemove: stableOnContextRemove,
       onWorkspaceResourceSelect: stableOnWorkspaceResourceSelect,
+      canSwitchCopilotBackend,
+      copilotBackend,
+      setCopilotBackend,
     }),
-    [chatId, userId, stableOnContextAdd, stableOnContextRemove, stableOnWorkspaceResourceSelect]
+    [
+      chatId,
+      userId,
+      stableOnContextAdd,
+      stableOnContextRemove,
+      stableOnWorkspaceResourceSelect,
+      canSwitchCopilotBackend,
+      copilotBackend,
+      setCopilotBackend,
+    ]
   )
 
   return <ChatSurfaceContext.Provider value={value}>{children}</ChatSurfaceContext.Provider>

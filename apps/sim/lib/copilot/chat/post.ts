@@ -46,6 +46,9 @@ import { persistChatResources } from '@/lib/copilot/resources/persistence'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { resolveWorkflowIdForUser } from '@/lib/workflows/utils'
+import { isUserAllowedForLocalCopilot } from '@/local-copilot/lib/config'
+import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
+import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import {
   getUserEntityPermissions,
   isWorkspaceAccessDeniedError,
@@ -150,6 +153,7 @@ const ChatMessageSchema = z.object({
   commands: z.array(z.string()).optional(),
   userTimezone: z.string().optional(),
   effectiveWorkspaceId: z.string(),
+  copilotBackend: z.enum(['local', 'external']).optional(),
 })
 
 type UnifiedChatRequest = z.infer<typeof ChatMessageSchema>
@@ -727,6 +731,16 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       typeof session.user.name === 'string' ? session.user.name : undefined
 
     const body = ChatMessageSchema.parse(await req.json())
+    const requestedCopilotBackend = parseCopilotBackendPreference(body.copilotBackend)
+    const copilotBackend: CopilotBackendPreference | undefined =
+      requestedCopilotBackend === 'local' &&
+      isUserAllowedForLocalCopilot(authenticatedUserEmail)
+        ? 'local'
+        : requestedCopilotBackend === 'external'
+          ? 'external'
+          : isUserAllowedForLocalCopilot(authenticatedUserEmail)
+            ? 'local'
+            : 'external'
     const userMetadata = {
       ...(authenticatedUserName ? { name: authenticatedUserName } : {}),
       ...(authenticatedUserEmail ? { email: authenticatedUserEmail } : {}),
@@ -1030,6 +1044,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       const stream = createSSEStream({
         requestPayload,
         userId: authenticatedUserId,
+        userEmail: authenticatedUserEmail,
         streamId: userMessageId,
         executionId,
         runId,
@@ -1044,6 +1059,8 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         otelRoot: activeOtelRoot,
         orchestrateOptions: {
           userId: authenticatedUserId,
+          userEmail: authenticatedUserEmail,
+          copilotBackend,
           ...(branch.kind === 'workflow' ? { workflowId: branch.workflowId } : {}),
           ...(workspaceId ? { workspaceId } : {}),
           chatId: actualChatId,
