@@ -78,6 +78,9 @@ async function executeNanoBananaDirect(params: Record<string, any>): Promise<Too
     prompt: params.prompt ?? '',
     aspectRatio: params.aspectRatio,
     imageSize: params.imageSize,
+    ...(typeof params.apiKey === 'string' && params.apiKey.trim().length > 0
+      ? { apiKey: params.apiKey }
+      : {}),
     inputImage: inputImages?.length
       ? undefined
       : stripInlinePayloadFromFileReference(params.inputImage),
@@ -900,29 +903,35 @@ async function applyHostedKeyCostToResult(
   requestId: string,
   envVarName: string | undefined
 ): Promise<void> {
-  await reportCustomDimensionUsage(tool, params, finalResult.output, executionContext, requestId)
+  try {
+    await reportCustomDimensionUsage(tool, params, finalResult.output, executionContext, requestId)
 
-  const { cost: hostedKeyCost, metadata } = await processHostedKeyCost(
-    tool,
-    params,
-    finalResult.output,
-    executionContext,
-    requestId
-  )
+    const { cost: hostedKeyCost, metadata } = await processHostedKeyCost(
+      tool,
+      params,
+      finalResult.output,
+      executionContext,
+      requestId
+    )
 
-  const provider = resolveHostingField(tool.hosting?.byokProviderId, params) || tool.id
-  const key = envVarName ?? 'unknown'
-  hostedKeyMetrics.recordUsed({ provider, tool: tool.id, key })
-  hostedKeyMetrics.recordCostCharged(hostedKeyCost, { provider, tool: tool.id })
+    const provider = resolveHostingField(tool.hosting?.byokProviderId, params) || tool.id
+    const key = envVarName ?? 'unknown'
+    hostedKeyMetrics.recordUsed({ provider, tool: tool.id, key })
+    hostedKeyMetrics.recordCostCharged(hostedKeyCost, { provider, tool: tool.id })
 
-  if (hostedKeyCost > 0) {
-    finalResult.output = {
-      ...finalResult.output,
-      cost: {
-        ...metadata,
-        total: hostedKeyCost,
-      },
+    if (hostedKeyCost > 0) {
+      finalResult.output = {
+        ...finalResult.output,
+        cost: {
+          ...metadata,
+          total: hostedKeyCost,
+        },
+      }
     }
+  } catch (error) {
+    logger.error(`[${requestId}] Failed to apply hosted key cost for ${tool.id}:`, {
+      error: toError(error).message,
+    })
   }
 }
 

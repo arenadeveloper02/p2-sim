@@ -2674,6 +2674,55 @@ describe('Cost Field Handling', () => {
     Object.assign(tools, originalTools)
   })
 
+  it('should not fail tool execution when hosted key cost calculation throws', async () => {
+    const mockTool = {
+      id: 'test_billing_failure',
+      name: 'Test Billing Failure',
+      description: 'A test tool where hosted cost calculation throws',
+      version: '1.0.0',
+      params: {
+        apiKey: { type: 'string', required: false },
+      },
+      hosting: {
+        envKeyPrefix: 'TEST_HOSTED_KEY',
+        apiKeyParam: 'apiKey',
+        pricing: {
+          type: 'custom' as const,
+          getCost: () => {
+            throw new Error('Image generation response missing billing dimensions')
+          },
+        },
+        rateLimit: {
+          mode: 'per_request' as const,
+          requestsPerMinute: 100,
+        },
+      },
+      request: {
+        url: '/api/test/billing-failure',
+        method: 'POST' as const,
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      directExecution: async () => ({
+        success: true,
+        output: { result: 'generated' },
+      }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_billing_failure = mockTool
+
+    const mockContext = createToolExecutionContext({
+      userId: 'user-123',
+    } as any)
+    const result = await executeTool('test_billing_failure', {}, { executionContext: mockContext })
+
+    expect(result.success).toBe(true)
+    expect(result.output.result).toBe('generated')
+    expect(result.output.cost).toBeUndefined()
+
+    Object.assign(tools, originalTools)
+  })
+
   it('should not add cost when not using hosted key', async () => {
     mockIsHosted.value = false
 
