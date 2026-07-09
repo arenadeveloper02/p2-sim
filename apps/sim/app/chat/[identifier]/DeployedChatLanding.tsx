@@ -8,6 +8,7 @@ import {
   DEPLOYED_CHAT_CANVAS_GRADIENT,
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_INPUT_PLACEHOLDER,
+  DEPLOYED_CHAT_TEXT_BODY,
   DEPLOYED_CHAT_TEXT_DISPLAY,
   DEPLOYED_CHAT_TEXT_MUTED,
 } from '@/app/chat/constants'
@@ -80,8 +81,7 @@ export function DeployedChatLanding({
     [descriptionSource]
   )
 
-  const heroLine = firstName ? `Hi ${firstName}` : title
-  const showTitleSubtitle = Boolean(firstName)
+  const promptLine = `What should we get done${firstName ? `, ${firstName}` : ''}?`
 
   return (
     <>
@@ -92,24 +92,15 @@ export function DeployedChatLanding({
         <div className='flex flex-1 flex-col items-center justify-center px-4 py-8 md:px-6'>
           <div className={`w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} text-center`}>
             <h1
-              className='font-semibold text-[28px] leading-[1.2] tracking-[-0.02em] md:text-[28px]'
+              className='font-bold text-[24px] leading-[1.25]'
               style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
             >
-              {heroLine}
+              {title}
             </h1>
-
-            {showTitleSubtitle && (
-              <p
-                className='mt-2 font-normal text-[15px] leading-[1.6]'
-                style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
-              >
-                {title}
-              </p>
-            )}
 
             {clippedDescription.displayText && (
               <div
-                className='mt-4 font-normal text-[15px] leading-[1.6]'
+                className='mt-3 font-normal text-[15px] leading-[1.6]'
                 style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
               >
                 <p className='whitespace-pre-wrap'>{clippedDescription.displayText}</p>
@@ -125,7 +116,14 @@ export function DeployedChatLanding({
               </div>
             )}
 
-            <div ref={inputWrapperRef} className='mt-6 w-full md:mt-8'>
+            <p
+              className='mt-8 font-normal text-[18px] leading-[1.4]'
+              style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
+            >
+              {promptLine}
+            </p>
+
+            <div ref={inputWrapperRef} className='mt-5 w-full'>
               <ChatInput
                 embedded
                 landing
