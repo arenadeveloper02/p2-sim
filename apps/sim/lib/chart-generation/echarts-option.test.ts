@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest'
 import {
   isEChartsOption,
   parseEChartsOptionFromString,
+  parseEChartsOptionsFromString,
   resolveEChartsOptionFromContent,
+  resolveEChartsOptionsFromContent,
   sanitizeEChartsOption,
 } from '@/lib/chart-generation/echarts-option'
 
@@ -68,6 +70,57 @@ describe('resolveEChartsOptionFromContent', () => {
   it('returns null for unrelated content', () => {
     expect(resolveEChartsOptionFromContent('hello world')).toBeNull()
     expect(resolveEChartsOptionFromContent({ message: 'hi' })).toBeNull()
+  })
+})
+
+const barOption = {
+  title: { text: 'Bar' },
+  xAxis: { type: 'value' },
+  yAxis: { type: 'category', data: ['A', 'B'] },
+  series: [{ type: 'bar', data: [1, 2] }],
+}
+
+const heatmapOption = {
+  title: { text: 'Heatmap' },
+  xAxis: { type: 'category', data: ['X1', 'X2'] },
+  yAxis: { type: 'category', data: ['Y1', 'Y2'] },
+  visualMap: { min: 0, max: 10 },
+  series: [{ type: 'heatmap', data: [[0, 0, 5], [1, 1, 3]] }],
+}
+
+const dashboardPayload = {
+  charts: [heatmapOption, barOption],
+  count: 2,
+}
+
+describe('resolveEChartsOptionsFromContent', () => {
+  it('resolves a single option as a one-item array', () => {
+    expect(resolveEChartsOptionsFromContent(validOption)).toEqual([validOption])
+  })
+
+  it('resolves a dashboard wrapper with multiple charts', () => {
+    expect(resolveEChartsOptionsFromContent(dashboardPayload)).toEqual([
+      heatmapOption,
+      barOption,
+    ])
+  })
+
+  it('resolves a dashboard wrapper from a JSON string', () => {
+    expect(resolveEChartsOptionsFromContent(JSON.stringify(dashboardPayload))).toEqual([
+      heatmapOption,
+      barOption,
+    ])
+  })
+
+  it('parses a fenced dashboard JSON string', () => {
+    const fenced = '```json\n' + JSON.stringify(dashboardPayload) + '\n```'
+    expect(parseEChartsOptionsFromString(fenced)).toEqual([heatmapOption, barOption])
+  })
+
+  it('returns null when charts array is empty or invalid', () => {
+    expect(resolveEChartsOptionsFromContent({ charts: [] })).toBeNull()
+    expect(resolveEChartsOptionsFromContent({ charts: [{ foo: 'bar' }] })).toBeNull()
+    expect(resolveEChartsOptionsFromContent('hello world')).toBeNull()
   })
 })
 

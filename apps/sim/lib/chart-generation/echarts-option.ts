@@ -112,6 +112,70 @@ export function resolveEChartsOptionFromContent(content: unknown): EChartsOption
   return null
 }
 
+function resolveEChartsOptionsFromParsed(value: unknown): EChartsOptionLike[] | null {
+  if (isEChartsOption(value)) {
+    return [value]
+  }
+
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const charts = value.charts
+  if (!Array.isArray(charts) || charts.length === 0) {
+    return null
+  }
+
+  if (!charts.every(isEChartsOption)) {
+    return null
+  }
+
+  return charts
+}
+
+/**
+ * Attempts to extract one or more ECharts options from a string. Supports a raw
+ * JSON object, a `{ charts: [...] }` dashboard wrapper, or a single fenced code
+ * block (```json / ```echarts / bare fence).
+ */
+export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[] | null {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  let candidate = trimmed
+
+  const fenceMatch = trimmed.match(/^```(?:json|echarts)?\s*([\s\S]*?)```$/i)
+  if (fenceMatch?.[1]) {
+    candidate = fenceMatch[1].trim()
+  }
+
+  if (!candidate.startsWith('{') || !candidate.endsWith('}')) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(candidate)
+    return resolveEChartsOptionsFromParsed(parsed)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolves one or more ECharts options from arbitrary message content. Returns a
+ * single-item array for a lone option, or every entry from a `{ charts: [...] }`
+ * dashboard wrapper when each chart is valid.
+ */
+export function resolveEChartsOptionsFromContent(content: unknown): EChartsOptionLike[] | null {
+  if (typeof content === 'string') {
+    return parseEChartsOptionsFromString(content)
+  }
+
+  return resolveEChartsOptionsFromParsed(content)
+}
+
 /**
  * Returns a defensive copy of the option with oversized series data truncated.
  * Falls back to the original option if cloning fails.

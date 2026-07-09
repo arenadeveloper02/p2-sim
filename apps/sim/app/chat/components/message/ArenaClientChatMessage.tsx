@@ -20,7 +20,7 @@ import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
-import { resolveEChartsOptionFromContent } from '@/lib/chart-generation/echarts-option'
+import { resolveEChartsOptionsFromContent } from '@/lib/chart-generation/echarts-option'
 import { ChatEChartsRenderer } from '@/app/chat/components/message/components/chat-echarts-renderer'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
@@ -244,8 +244,8 @@ export const ArenaClientChatMessage = memo(
       return typeof message.content === 'object' && message.content !== null
     }, [message.content])
 
-    const messageChartOption = useMemo(
-      () => resolveEChartsOptionFromContent(message.content),
+    const messageChartOptions = useMemo(
+      () => resolveEChartsOptionsFromContent(message.content),
       [message.content]
     )
 
@@ -397,8 +397,14 @@ export const ArenaClientChatMessage = memo(
         return null
       }
 
-      if (content === message.content && messageChartOption) {
-        return <ChatEChartsRenderer option={messageChartOption} />
+      if (content === message.content && messageChartOptions) {
+        return (
+          <>
+            {messageChartOptions.map((option, index) => (
+              <ChatEChartsRenderer key={index} option={option} />
+            ))}
+          </>
+        )
       }
 
       try {

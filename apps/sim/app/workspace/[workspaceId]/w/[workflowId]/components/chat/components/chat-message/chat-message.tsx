@@ -3,7 +3,7 @@ import { Check, Copy } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
-import { resolveEChartsOptionFromContent } from '@/lib/chart-generation/echarts-option'
+import { resolveEChartsOptionsFromContent } from '@/lib/chart-generation/echarts-option'
 import { ChatEChartsRenderer } from '@/app/chat/components/message/components/chat-echarts-renderer'
 import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
@@ -208,8 +208,8 @@ export function ChatMessage({
     return new Map(entries)
   }, [message.generatedImages])
 
-  const messageChartOption = useMemo(
-    () => resolveEChartsOptionFromContent(message.content),
+  const messageChartOptions = useMemo(
+    () => resolveEChartsOptionsFromContent(message.content),
     [message.content]
   )
 
@@ -284,8 +284,14 @@ export function ChatMessage({
       return null
     }
 
-    if (content === message.content && messageChartOption) {
-      return <ChatEChartsRenderer option={messageChartOption} />
+    if (content === message.content && messageChartOptions) {
+      return (
+        <>
+          {messageChartOptions.map((option, index) => (
+            <ChatEChartsRenderer key={index} option={option} />
+          ))}
+        </>
+      )
     }
 
     try {
