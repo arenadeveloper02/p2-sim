@@ -5,6 +5,8 @@ import { guardrailsValidateContract } from '@/lib/api/contracts'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import { normalizeUsageModelId } from '@/lib/billing/core/usage-entry-normalize'
+import { recordUsage } from '@/lib/billing/core/usage-log'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { validateHallucination } from '@/lib/guardrails/validate_hallucination'
@@ -50,6 +52,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       bedrockSecretKey,
       bedrockRegion,
       workflowId,
+      executionId,
       piiEntityTypes,
       piiMode,
       piiLanguage,
@@ -235,19 +238,32 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     if (
       resolvedWorkspaceId &&
       typeof validationResult.cost === 'number' &&
-      validationResult.cost > 0
+      validationResult.cost > 0 &&
+      model
     ) {
-      const { recordUsage } = await import('@/lib/billing/core/usage-log')
+      const canonicalModel = normalizeUsageModelId(model)
+      const inputTokens = validationResult.inputTokens ?? 0
+      const outputTokens = validationResult.outputTokens ?? 0
+
       await recordUsage({
         userId: auth.userId,
         workspaceId: resolvedWorkspaceId,
+        workflowId,
+        executionId,
         entries: [
           {
             category: 'model',
-            source: 'workflow',
-            description: `guardrail-hallucination:${model ?? 'unknown'}`,
+            source: 'enrichment',
+            description: canonicalModel,
             cost: validationResult.cost,
-            sourceReference: `guardrail:${workflowId ?? 'unknown'}:${requestId}`,
+            sourceReference: `guardrail-hallucination:${workflowId ?? 'unknown'}:${requestId}`,
+            metadata: {
+              inputTokens,
+              outputTokens,
+              guardrail: 'hallucination',
+            },
+            quantity: inputTokens + outputTokens,
+            unit: 'tokens',
           },
         ],
       }).catch((billingError) => {
@@ -341,6 +357,8 @@ async function executeValidation(
   detectedEntities?: any[]
   maskedText?: string
   cost?: number
+  inputTokens?: number
+  outputTokens?: number
 }> {
   // Use TypeScript validators for all validation types
   if (validationType === 'json') {

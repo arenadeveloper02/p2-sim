@@ -2,13 +2,15 @@
  * Phase 0 empirical audit: compare usage_log ledger sums to workflow_execution_logs.cost_total,
  * surface drift and missing-ledger patterns, and sample model/tool attribution rows.
  *
- * Usage: bun run scripts/phase0-arena-cost-audit.ts [--days=30] [--limit=500]
+ * Usage: bun run scripts/phase0-arena-cost-audit.ts [--days=30] [--limit=500] [--drift-only] [--export-drift]
  */
 import { db } from '@sim/db'
 import { sql } from 'drizzle-orm'
 
 const daysArg = process.argv.find((a) => a.startsWith('--days='))
 const limitArg = process.argv.find((a) => a.startsWith('--limit='))
+const DRIFT_ONLY = process.argv.includes('--drift-only')
+const EXPORT_DRIFT = process.argv.includes('--export-drift')
 const DAYS = daysArg ? Number.parseInt(daysArg.split('=')[1] ?? '30', 10) : 30
 const LIMIT = limitArg ? Number.parseInt(limitArg.split('=')[1] ?? '500', 10) : 500
 
@@ -132,6 +134,7 @@ async function main() {
   const ledgerNoCostTotal = rows.filter(
     (r) => Number.parseFloat(r.ledger_sum) > 0 && Number.parseFloat(r.cost_total ?? '0') === 0
   )
+  const displayRows = DRIFT_ONLY ? drifted : rows
 
   console.log('--- Workflow reconciliation (sampled completed runs) ---')
   console.log(`Sampled runs:              ${rows.length}`)
@@ -140,13 +143,60 @@ async function main() {
   console.log(`cost_total > 0, no ledger: ${costNoLedger.length}`)
   console.log(`ledger > 0, cost_total=0:  ${ledgerNoCostTotal.length}`)
 
-  if (drifted.length > 0) {
-    console.log('\nTop drift cases:')
-    for (const r of drifted.slice(0, 10)) {
+  if (displayRows.length > 0) {
+    console.log(`\n${DRIFT_ONLY ? 'Drift cases' : 'Top drift cases'}:`)
+    for (const r of displayRows.slice(0, DRIFT_ONLY ? displayRows.length : 10)) {
       console.log(
         `  ${r.execution_id.slice(0, 8)}… drift=${r.drift} cost_total=${r.cost_total} ledger=${r.ledger_sum} trigger=${r.trigger} models=${(r.models_used ?? []).join(',')}`
       )
     }
+  }
+
+  if (EXPORT_DRIFT && drifted.length > 0) {
+    console.log('\n--- Drift export (JSON) ---')
+    console.log(
+      JSON.stringify(
+        drifted.map((r) => ({
+          executionId: r.execution_id,
+          costTotal: r.cost_total,
+          ledgerSum: r.ledger_sum,
+          drift: r.drift,
+          trigger: r.trigger,
+          status: r.status,
+          startedAt: r.started_at,
+        })),
+        null,
+        2
+      )
+    )
+  }
+
+  const reconciliationPending = queryRows(
+    await db.execute<{
+      execution_id: string
+      cost_total: string | null
+      reason: string | null
+      started_at: Date
+    }>(sql`
+    SELECT
+      execution_id,
+      cost_total,
+      execution_data->>'billingReconciliationReason' AS reason,
+      started_at
+    FROM workflow_execution_logs
+    WHERE started_at >= NOW() - (${DAYS}::int || ' days')::interval
+      AND (execution_data->>'billingReconciliationPending')::boolean IS TRUE
+    ORDER BY started_at DESC
+    LIMIT ${LIMIT}
+  `)
+  )
+
+  console.log('\n--- Runs flagged billingReconciliationPending ---')
+  console.log(`Count (last ${DAYS}d): ${reconciliationPending.length}`)
+  for (const r of reconciliationPending.slice(0, 10)) {
+    console.log(
+      `  ${r.execution_id.slice(0, 8)}… reason=${r.reason ?? 'unknown'} cost_total=${r.cost_total} started=${r.started_at}`
+    )
   }
 
   const sourceBreakdown = queryRows(

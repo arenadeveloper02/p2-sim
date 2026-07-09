@@ -5,6 +5,9 @@ import { ExecutionLogger } from '@/lib/logs/execution/logger'
 
 const dbSelectMock = vi.hoisted(() => vi.fn())
 const dbExecuteMock = vi.hoisted(() => vi.fn())
+const dbUpdateWhereMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+const dbUpdateSetMock = vi.hoisted(() => vi.fn(() => ({ where: dbUpdateWhereMock })))
+const dbUpdateMock = vi.hoisted(() => vi.fn(() => ({ set: dbUpdateSetMock })))
 const txUpdateSetMock = vi.hoisted(() => vi.fn(() => ({ where: () => Promise.resolve() })))
 const txUpdateMock = vi.hoisted(() => vi.fn(() => ({ set: txUpdateSetMock })))
 
@@ -24,7 +27,7 @@ vi.mock('@sim/db', () => {
     db: {
       select: dbSelectMock,
       insert: vi.fn(),
-      update: vi.fn(),
+      update: dbUpdateMock,
       execute: dbExecuteMock,
       transaction: vi.fn(async (cb: (txArg: typeof tx) => Promise<unknown>) => cb(tx)),
     },
@@ -919,5 +922,23 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     expect(recordUsage).toHaveBeenCalledTimes(1)
     // The ledger INSERT participates in the locked transaction.
     expect(vi.mocked(recordUsage).mock.calls[0][0]).toHaveProperty('tx')
+  })
+
+  test('marks billingReconciliationPending when recordUsage fails', async () => {
+    vi.mocked(recordUsage).mockRejectedValueOnce(new Error('ledger insert failed'))
+    mockDb([])
+
+    const recorded = await logger.recordExecutionUsage(
+      'workflow-1',
+      costSummary({ baseExecutionCharge: 0.005 }),
+      'api',
+      'exec-fail-1',
+      'user-1'
+    )
+
+    expect(recorded).toBe(0)
+    expect(dbUpdateMock).toHaveBeenCalled()
+    expect(dbUpdateSetMock).toHaveBeenCalled()
+    expect(dbUpdateWhereMock).toHaveBeenCalled()
   })
 })

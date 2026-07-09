@@ -3,7 +3,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  buildExternalPricingSnapshot,
   buildModelPricingSnapshot,
+  buildToolPricingSnapshot,
   normalizeUsageEntry,
   normalizeUsageModelId,
   normalizeUsageToolId,
@@ -47,6 +49,51 @@ describe('normalizeUsageEntry', () => {
 
     expect(entry.description).toBe('knowledge_search')
     expect(entry.toolId).toBe('knowledge_search')
+    expect(entry.pricingSnapshot?.tool).toBe('knowledge_search')
+    expect(entry.pricingSnapshot?.pricingSource).toBe('hosted-key')
+  })
+
+  it('adds external pricing snapshot with passthrough multiplier', () => {
+    const entry = normalizeUsageEntry({
+      category: 'external',
+      source: 'workflow',
+      description: 'vendor_spend',
+      cost: 12.5,
+      vendor: 'Acme',
+    })
+
+    expect(entry.pricingSnapshot?.vendor).toBe('Acme')
+    expect(entry.pricingSnapshot?.multiplier).toBe(1)
+    expect(entry.pricingSnapshot?.pricingSource).toBe('vendor-pricing')
+  })
+
+  it('captures rerank flat rate in model pricing snapshot', () => {
+    const entry = normalizeUsageEntry({
+      category: 'model',
+      source: 'knowledge-base',
+      description: 'rerank-v4.0-pro',
+      cost: 0.0025,
+    })
+
+    expect(entry.pricingSnapshot?.flatRate).toBe(0.0025)
+    expect(entry.pricingSnapshot?.model).toBe('rerank-v4.0-pro')
+  })
+})
+
+describe('buildToolPricingSnapshot', () => {
+  it('captures hosted-key source', () => {
+    const snapshot = buildToolPricingSnapshot('firecrawl_scrape', 1.5)
+    expect(snapshot.tool).toBe('firecrawl_scrape')
+    expect(snapshot.multiplier).toBe(1.5)
+    expect(snapshot.pricingSource).toBe('hosted-key')
+  })
+})
+
+describe('buildExternalPricingSnapshot', () => {
+  it('uses multiplier 1 for COGS passthrough', () => {
+    const snapshot = buildExternalPricingSnapshot('Stripe')
+    expect(snapshot.vendor).toBe('Stripe')
+    expect(snapshot.multiplier).toBe(1)
   })
 })
 

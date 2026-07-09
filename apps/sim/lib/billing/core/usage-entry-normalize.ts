@@ -1,6 +1,8 @@
 import {
+  getEmbeddingModelPricing,
   getModelPricing,
   getProviderFromModel,
+  getRerankModelPricing,
   PROVIDER_DEFINITIONS,
   resolveCanonicalModelId,
 } from '@/providers/models'
@@ -33,10 +35,22 @@ export function buildModelPricingSnapshot(
   multiplier?: number
 ): UsagePricingSnapshot {
   const model = normalizeUsageModelId(modelId)
-  const pricing = getModelPricing(model)
   const effectiveMultiplier = multiplier ?? readUsageLogCostMultiplier()
   const providerId = getProviderFromModel(model)
   const vendor = PROVIDER_DEFINITIONS[providerId]?.name
+  const pricing = getModelPricing(model) ?? getEmbeddingModelPricing(model)
+  const rerankPricing = getRerankModelPricing(model)
+
+  if (rerankPricing) {
+    return {
+      model,
+      vendor: vendor ?? 'Cohere',
+      multiplier: effectiveMultiplier,
+      flatRate: rerankPricing.perSearchUnit,
+      pricingSource: 'models-ts',
+      capturedAt: new Date().toISOString(),
+    }
+  }
 
   return {
     model,
@@ -52,6 +66,30 @@ export function buildModelPricingSnapshot(
           pricingSource: 'models-ts' as const,
         }
       : { pricingSource: 'models-ts' as const }),
+    capturedAt: new Date().toISOString(),
+  }
+}
+
+/** Captures hosted-tool identity at write time for tool-category ledger rows. */
+export function buildToolPricingSnapshot(
+  toolId: string,
+  multiplier?: number
+): UsagePricingSnapshot {
+  const tool = normalizeUsageToolId(toolId)
+  return {
+    tool,
+    multiplier: multiplier ?? readUsageLogCostMultiplier(),
+    pricingSource: 'hosted-key',
+    capturedAt: new Date().toISOString(),
+  }
+}
+
+/** External vendor spend is COGS passthrough — multiplier is always 1. */
+export function buildExternalPricingSnapshot(vendor?: string): UsagePricingSnapshot {
+  return {
+    vendor,
+    multiplier: 1,
+    pricingSource: 'vendor-pricing',
     capturedAt: new Date().toISOString(),
   }
 }
@@ -82,10 +120,20 @@ export function normalizeUsageEntry(entry: UsageEntry): UsageEntry {
 
   if (entry.category === 'tool') {
     const canonicalTool = normalizeUsageToolId(entry.toolId ?? entry.description)
+    const multiplier = entry.pricingSnapshot?.multiplier ?? readUsageLogCostMultiplier()
     normalized = {
       ...normalized,
       description: canonicalTool,
       toolId: canonicalTool,
+      pricingSnapshot:
+        entry.pricingSnapshot ?? buildToolPricingSnapshot(canonicalTool, multiplier),
+    }
+  }
+
+  if (entry.category === 'external') {
+    normalized = {
+      ...normalized,
+      pricingSnapshot: entry.pricingSnapshot ?? buildExternalPricingSnapshot(entry.vendor),
     }
   }
 

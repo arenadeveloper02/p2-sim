@@ -443,6 +443,9 @@ export async function recordSearchEmbeddingUsage(params: {
           description: embeddingModel,
           cost: cost.total,
           sourceReference,
+          metadata: { inputTokens: count, outputTokens: 0 },
+          quantity: count,
+          unit: 'tokens',
         },
       ],
     })
@@ -483,6 +486,8 @@ export async function recordSearchRerankUsage(params: {
           cost,
           sourceReference,
           metadata: { searchUnits, rerank: true },
+          quantity: searchUnits,
+          unit: 'search_units',
         },
       ],
     })

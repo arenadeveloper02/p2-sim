@@ -35,7 +35,7 @@ import {
   normalizeUsageModelId,
   normalizeUsageToolId,
 } from '@/lib/billing/core/usage-entry-normalize'
-import { logUsageSkip } from '@/lib/billing/core/usage-skip-metrics'
+import { logUsageSkip, type UsageSkipReason } from '@/lib/billing/core/usage-skip-metrics'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { resolveEffectivePiiRedaction } from '@/lib/billing/retention'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
@@ -1235,6 +1235,34 @@ export class ExecutionLogger implements IExecutionLoggerService {
     return trimmedUserId.length > 0 ? trimmedUserId : null
   }
 
+  private async markBillingReconciliationPending(
+    executionId: string,
+    reason: UsageSkipReason
+  ): Promise<void> {
+    try {
+      await db
+        .update(workflowExecutionLogs)
+        .set({
+          executionData: sql`jsonb_set(
+            jsonb_set(
+              COALESCE(execution_data, '{}'::jsonb),
+              ARRAY['billingReconciliationPending'],
+              to_jsonb(true::boolean)
+            ),
+            ARRAY['billingReconciliationReason'],
+            to_jsonb(${reason}::text)
+          )`,
+        })
+        .where(eq(workflowExecutionLogs.executionId, executionId))
+    } catch (error) {
+      logger.error('Failed to mark billing reconciliation pending', {
+        executionId,
+        reason,
+        error: getErrorMessage(error),
+      })
+    }
+  }
+
   private async recordExecutionUsage(
     workflowId: string | null,
     costSummary: {
@@ -1603,13 +1631,6 @@ export class ExecutionLogger implements IExecutionLoggerService {
             }
           })
         } catch (lockError) {
-          if (getPostgresErrorCode(lockError) === '55P03') {
-            logUsageSkip(
-              'advisory_lock_timeout',
-              { workflowId, executionId, trigger },
-              'error'
-            )
-          }
           throw lockError
         }
       } else {
@@ -1638,12 +1659,21 @@ export class ExecutionLogger implements IExecutionLoggerService {
         await checkAndBillOverageThreshold(userId)
       }
     } catch (error) {
+      const isLockTimeout = getPostgresErrorCode(error) === '55P03'
+      const reason: UsageSkipReason = isLockTimeout
+        ? 'advisory_lock_timeout'
+        : 'record_usage_failed'
+
+      if (executionId) {
+        await this.markBillingReconciliationPending(executionId, reason)
+      }
+
       // Swallowed so a billing-write failure never fails the execution. The
       // reconciliation self-heals on a later boundary; a TERMINAL-boundary
       // failure leaves the run under-billed (and cost_total may then exceed
       // SUM(usage_log)), so log loudly enough to alert / reconcile out of band.
       logUsageSkip(
-        'record_usage_failed',
+        reason,
         {
           workflowId,
           executionId,
