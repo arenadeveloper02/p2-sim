@@ -119,6 +119,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/version-4.2-prod'
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: read
       packages: write
     strategy:
@@ -176,6 +177,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.dockerfile }}-amd64
+          cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-amd64
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
           provenance: false
@@ -188,6 +191,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: read
       packages: write
       id-token: write
@@ -260,6 +264,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.dockerfile }}-amd64
+          cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-amd64
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
           provenance: false
@@ -274,6 +280,7 @@ jobs:
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: read
       packages: write
       id-token: write
@@ -381,6 +388,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.dockerfile }}-amd64
+          cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-amd64
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
           provenance: false
@@ -393,6 +402,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
+      actions: write
       contents: read
       packages: write
     strategy:
@@ -459,6 +469,8 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.dockerfile }}-arm64
+          cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-arm64
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
           provenance: false

@@ -15,6 +15,7 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: read
   packages: write
 
@@ -103,6 +104,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.dockerfile }}-amd64
+          cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-amd64
           build-args: |
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
           provenance: false
