@@ -369,11 +369,10 @@ export function Billing() {
   if (isLoading) return null
   if (!subscriptionData?.data) return null
 
-  /** Personal workspaces are not org-linked; show Community/Free plan chrome only there. */
-  const isOrgLinkedWorkspace = workspaceOrganizationId != null
-  const displayPlan = isOrgLinkedWorkspace ? subscription.plan : 'free'
+  /** All workspaces are org-linked; billing follows the organization subscription. */
+  const displayPlan = subscription.plan
   const displayPlanName = getDisplayPlanName(displayPlan)
-  const displayIsEnterprise = isOrgLinkedWorkspace && subscription.isEnterprise
+  const displayIsEnterprise = subscription.isEnterprise
 
   const billingPeriod =
     subscriptionData.data.billingInterval === 'year' ? 'billed annually' : 'billed monthly'

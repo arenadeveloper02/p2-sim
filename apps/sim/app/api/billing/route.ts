@@ -65,21 +65,24 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         }
       }
 
-      let personalWorkspace = false
+      let resolvedOrganizationId = contextId || undefined
       if (workspaceId) {
         const [workspaceRow] = await db
-          .select({ organizationId: workspace.organizationId })
+          .select({
+            organizationId: workspace.organizationId,
+            workspaceMode: workspace.workspaceMode,
+          })
           .from(workspace)
           .where(eq(workspace.id, workspaceId))
           .limit(1)
 
-        personalWorkspace = workspaceRow != null && workspaceRow.organizationId == null
+        if (workspaceRow?.workspaceMode === 'organization' && workspaceRow.organizationId != null) {
+          resolvedOrganizationId = workspaceRow.organizationId
+        }
       }
 
       const [billingResult, billingStatus] = await Promise.all([
-        getSimplifiedBillingSummary(session.user.id, contextId || undefined, dbReplica, {
-          personalWorkspace,
-        }),
+        getSimplifiedBillingSummary(session.user.id, resolvedOrganizationId, dbReplica),
         getEffectiveBillingStatus(session.user.id),
       ])
       billingData = billingResult

@@ -1367,6 +1367,7 @@ export const workspace = pgTable(
       onDelete: 'set null',
     }),
     workspaceMode: workspaceModeEnum('workspace_mode').notNull().default('grandfathered_shared'),
+    isPersonal: boolean('is_personal').notNull().default(false),
     billedAccountUserId: text('billed_account_user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'no action' }),
