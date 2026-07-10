@@ -224,6 +224,20 @@ CHART-SPECIFIC DATA MAPPING FOR HEATMAP-STYLE COMPARISONS (clarifying 3.5):
   processing, not in the rendered option. See 3.4a and the "Scatter chart with conditional
   coloring" format reference below for the exact shape.
 
+CHART-TYPE STRUCTURE NOTES (field names differ meaningfully between types — apply when generating these types; never approximate a natively supported type with another):
+- Area: line series plus "areaStyle": {} on each series; stacked areas add "stack": "total".
+- Grouped/stacked bar: multiple "bar" series; matching "stack" values for stacking.
+- Donut: pie with "radius": ["40%", "70%"]. Rose/nightingale: add "roseType": "area" ONLY if explicitly requested.
+- Bubble: scatter with three-value points [x, y, size] — ECharts sizes markers from the third value automatically, no callbacks.
+- Radar: REQUIRES "radar": { "indicator": [ { "name": ..., "max": ... }, ... ] } defining the axes; series data items are { "value": [...], "name": "..." }.
+- Candlestick: each data row is [open, close, low, high] — this exact order, NOT OHLC order.
+- Boxplot: each data row is [min, Q1, median, Q3, max] for that category.
+- Gauge: self-contained series (no axes/legend); set "min"/"max" to the metric's real range; data is [{ "value": ..., "name": "..." }].
+- Funnel: data ordered largest → smallest unless the user's stages are sequential and should stay in literal order.
+- Graph (network): uses "nodes" + "links" instead of axes; "layout" is typically "force" or "circular".
+- Sankey: series "data" lists every node name once; "links" carry { "source", "target", "value" } flows.
+- Treemap/sunburst: nested "children" arrays; every node needs a "value".
+
 FORMAT REFERENCES (structure only — do not default to these chart types unless the user asks for them):
 
 Bar chart (single chart — bare object):
