@@ -928,7 +928,7 @@ export const ArenaClientChatMessage = memo(
           : Boolean(message.content)
 
       return (
-        <div className='px-4 py-3' data-message-id={message.id}>
+        <div className='px-4 py-[5px]' data-message-id={message.id}>
           <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
             {message.attachments && message.attachments.length > 0 && (
               <div className='mb-2 flex justify-end'>
@@ -986,7 +986,7 @@ export const ArenaClientChatMessage = memo(
             {hasUserText && (
               <div className='flex justify-end'>
                 <div className='max-w-[min(80%,560px)]'>
-                  <div className='px-4 py-3'>
+                  <div className='bg-white px-4 py-3'>
                     <div
                       className='whitespace-pre-wrap break-words text-[14px] font-normal leading-[1.6]'
                       style={{ color: '#2C2D33' }}
@@ -998,9 +998,6 @@ export const ArenaClientChatMessage = memo(
                       )}
                     </div>
                   </div>
-                  <p className='mt-1.5 text-right text-[13px]' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
-                    {timestampLabel}
-                  </p>
                 </div>
               </div>
             )}
@@ -1011,10 +1008,10 @@ export const ArenaClientChatMessage = memo(
 
     // For assistant messages (on the left)
     return (
-      <div className='px-4 py-3' data-message-id={message.id}>
+      <div className='px-4 py-[5px]' data-message-id={message.id}>
         <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
           <div className='flex flex-col space-y-3'>
-            <div className='px-4 py-3'>
+            <div className='px-4 py-1'>
               <div
                 className='break-words text-[14px] font-normal leading-[1.6]'
                 style={{ color: '#2C2D33' }}

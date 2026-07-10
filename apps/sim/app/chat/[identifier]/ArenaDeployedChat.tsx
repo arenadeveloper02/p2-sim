@@ -1735,6 +1735,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           ) : showLandingView ? (
             <DeployedChatLanding
               chatConfig={chatConfig}
+              department={chatDepartment}
               userName={userName}
               isStreaming={isStreamingResponse}
               isLoading={isLoading}

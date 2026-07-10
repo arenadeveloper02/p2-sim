@@ -17,11 +17,11 @@ export const CHAT_REQUEST_TIMEOUT_MS = 1800000 // 30 minutes
 /** Shared max content width for deployed chat landing, messages, and input */
 export const DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS = 'max-w-[748px]' as const
 
-/** Deployed chat main canvas background (pale blue-white) */
-export const DEPLOYED_CHAT_CANVAS_BG = '#F3F8FE'
+/** Deployed chat main canvas background (pale lavender-white) */
+export const DEPLOYED_CHAT_CANVAS_BG = '#FBF7FD'
 
 /** Subtle top tint for deployed chat canvas gradient */
-export const DEPLOYED_CHAT_CANVAS_GRADIENT_TOP = '#F8FBFF'
+export const DEPLOYED_CHAT_CANVAS_GRADIENT_TOP = '#FDFBFE'
 
 /** Deployed chat canvas background gradient */
 export const DEPLOYED_CHAT_CANVAS_GRADIENT = `linear-gradient(180deg, ${DEPLOYED_CHAT_CANVAS_GRADIENT_TOP} 0%, ${DEPLOYED_CHAT_CANVAS_BG} 100%)`

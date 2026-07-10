@@ -11,6 +11,7 @@ import { cn } from '@/lib/core/utils/cn'
 import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS, DEPLOYED_CHAT_INPUT_GLOW_SHADOW } from '@/app/chat/constants'
+import { SendChatIcon } from '@/app/chat/[identifier]/send-icon'
 import { VoiceInput } from '@/app/chat/components/input/voice-input'
 
 const logger = createLogger('ChatInput')
@@ -302,13 +303,13 @@ export const ChatInput: React.FC<{
           onClick={handleSubmit}
           disabled={!canSubmit}
           className={cn(
-            'flex size-7 shrink-0 items-center justify-center rounded-md border-0 p-0 transition-colors',
-            canSubmit ? 'bg-[#DCE6F3] hover:bg-[#CED9EA]' : 'bg-[#E8EEF7] opacity-70',
+            'flex size-8 shrink-0 items-center justify-center border-0 bg-transparent p-0 transition-opacity disabled:cursor-not-allowed disabled:opacity-50',
+            canSubmit && 'hover:opacity-80',
             pinnedControlClass
           )}
           aria-label='Send message'
         >
-          <ArrowUp className='block size-[14px] text-[#64748B]' strokeWidth={2.5} />
+          <SendChatIcon />
         </button>
       )}
     </div>

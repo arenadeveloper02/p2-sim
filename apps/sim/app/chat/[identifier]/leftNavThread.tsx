@@ -5,8 +5,6 @@ import Image from 'next/image'
 import { formatRelativeTime } from '@sim/utils/formatting'
 import {
   ArrowLeft,
-  CirclePlus,
-  MessageSquareText,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -23,17 +21,19 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Tooltip,
 } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/core/utils/cn'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
-import feedbackIcon from '@/app/chat/components/message/components/feedback.png'
-import goldenQueriesIcon from '@/app/chat/components/message/components/golden-queries.png'
 import {
-  DEPLOYED_CHAT_ACTIVE_THREAD_BG,
+  FeedbackNavIcon,
+  GoldenQueriesNavIcon,
+  NewChatNavIcon,
+  RenameMenuIcon,
+} from '@/app/chat/[identifier]/sidebar-nav-icons'
+import {
   DEPLOYED_CHAT_CANVAS_BG,
   DEPLOYED_CHAT_DIVIDER,
   DEPLOYED_CHAT_SIDEBAR_BORDER,
@@ -82,20 +82,19 @@ type SidebarActionIcon = React.ComponentType<{ className?: string }>
 
 function sidebarRowClass(isActive: boolean, disabled = false) {
   return cn(
-    'group flex min-h-8 cursor-pointer items-center gap-1 rounded-lg px-2 py-1 transition-colors',
-    isActive ? 'shadow-none' : 'bg-transparent hover:bg-white',
+    'group flex min-h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 transition-colors',
+    isActive ? 'bg-white shadow-none' : 'bg-transparent hover:bg-white',
     disabled && 'cursor-not-allowed opacity-50'
   )
 }
 
-function sidebarRowStyle(isActive: boolean): CSSProperties | undefined {
-  if (!isActive) return undefined
-  return { backgroundColor: DEPLOYED_CHAT_ACTIVE_THREAD_BG }
+function sidebarRowStyle(_isActive: boolean): CSSProperties | undefined {
+  return undefined
 }
 
 function sidebarRowIconClass(isActive: boolean) {
   return cn(
-    'ml-1 size-4 shrink-0',
+    'ml-1 size-6 shrink-0',
     isActive
       ? 'text-[#155CBA]'
       : 'text-[var(--text-body)] group-hover:text-[#155CBA]'
@@ -111,10 +110,13 @@ function sidebarRowLabelClass(isActive: boolean) {
   )
 }
 
+const THREAD_MENU_ITEM_CLASS =
+  'h-9 gap-2.5 px-3 text-sm font-normal text-[#575A66] focus:bg-[#F3F8FE] data-[highlighted]:bg-[#F3F8FE] data-[highlighted]:text-[#155CBA] [&_svg]:size-4 [&_svg]:text-current'
+
 function sidebarPanelClass(collapsed: boolean) {
   return cn(
-    'flex h-full flex-col rounded-2xl border bg-[#F3F8FE]',
-    collapsed ? 'w-16 items-center px-1 py-3' : 'w-[280px] px-3 py-4'
+    'flex h-full flex-col rounded-2xl border',
+    collapsed ? 'w-16 items-center px-1 py-3' : 'w-[280px] px-3 py-3'
   )
 }
 
@@ -128,7 +130,7 @@ function SidebarShell({ collapsed = false, children }: SidebarShellProps) {
     <div className='flex h-full shrink-0 p-2' style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}>
       <div
         className={sidebarPanelClass(collapsed)}
-        style={{ borderColor: DEPLOYED_CHAT_SIDEBAR_BORDER }}
+        style={{ borderColor: DEPLOYED_CHAT_SIDEBAR_BORDER, backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
       >
         {children}
       </div>
@@ -163,7 +165,7 @@ interface SidebarHeaderProps {
 function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderProps) {
   if (collapsed && onToggleSidebar) {
     return (
-      <div className='mb-4 flex items-center justify-center px-0.5'>
+      <div className='mb-3 flex items-center justify-center px-0.5'>
         <button
           type='button'
           onClick={onToggleSidebar}
@@ -192,7 +194,7 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
   return (
     <div
       className={cn(
-        'mb-4 flex items-center px-0.5',
+        'mb-3 flex items-center px-0.5',
         collapsed ? 'justify-center' : 'justify-between'
       )}
     >
@@ -216,7 +218,7 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
 
 interface SidebarActionButtonProps {
   icon?: SidebarActionIcon
-  iconNode?: React.ReactNode
+  NavIcon?: React.ComponentType<{ className?: string }>
   label: string
   onClick: () => void
   disabled?: boolean
@@ -226,7 +228,7 @@ interface SidebarActionButtonProps {
 
 function SidebarActionButton({
   icon: Icon,
-  iconNode,
+  NavIcon,
   label,
   onClick,
   disabled = false,
@@ -238,7 +240,7 @@ function SidebarActionButton({
       type='button'
       className={cn(
         sidebarRowClass(isActive, disabled),
-        collapsed ? 'size-8 justify-center px-0' : 'w-full'
+        collapsed ? 'size-9 justify-center px-0' : 'w-full'
       )}
       style={sidebarRowStyle(isActive)}
       onClick={onClick}
@@ -246,7 +248,11 @@ function SidebarActionButton({
       aria-label={label}
       aria-current={isActive ? 'true' : undefined}
     >
-      {iconNode ?? (Icon ? <Icon className={cn(sidebarRowIconClass(isActive), collapsed && 'ml-0')} /> : null)}
+      {NavIcon ? (
+        <NavIcon className={cn(sidebarRowIconClass(isActive), collapsed && 'ml-0')} />
+      ) : (
+        Icon ? <Icon className={cn(sidebarRowIconClass(isActive), collapsed && 'ml-0')} /> : null
+      )}
       {!collapsed && <span className={sidebarRowLabelClass(isActive)}>{label}</span>}
     </button>
   )
@@ -266,7 +272,6 @@ function SidebarActionButton({
 function ThreadSkeleton() {
   return (
     <div className='flex min-h-8 animate-pulse items-center gap-2 rounded-lg px-2 py-1'>
-      <div className='size-4 rounded bg-[var(--surface-3)]' />
       <div className='h-3 flex-1 rounded bg-[var(--surface-3)]' />
     </div>
   )
@@ -345,7 +350,7 @@ function ThreadRow({
           }}
           onBlur={handleRenameBlur}
           autoFocus
-          className='h-7 min-w-0 flex-1'
+          className='h-7 min-w-0 flex-1 border-[#E2EAF4] bg-white'
         />
       </div>
     )
@@ -367,8 +372,6 @@ function ThreadRow({
       aria-label={`Open chat: ${thread.title || 'Untitled chat'}`}
       aria-current={isActive ? 'true' : undefined}
     >
-      <MessageSquareText className={sidebarRowIconClass(isActive)} />
-
       <div className='min-w-0 flex-1'>
         <Tooltip.Provider>
           <Tooltip.Root>
@@ -403,7 +406,7 @@ function ThreadRow({
         {isActive && (
           <button
             type='button'
-            className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-[var(--surface-3)]'
+            className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-white'
             onClick={onRefresh}
             disabled={isStreaming}
             aria-label='Refresh conversation'
@@ -416,31 +419,37 @@ function ThreadRow({
           <DropdownMenuTrigger asChild>
             <button
               type='button'
-              className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-[var(--surface-3)]'
+              className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-white'
               aria-label='Thread options'
               disabled={isStreaming}
             >
               <MoreHorizontal className='size-3.5' />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align='start' side='right'>
-            <DropdownMenuItem onClick={onStartRename}>Rename</DropdownMenuItem>
-            <DropdownMenuItem onClick={onTogglePin}>
+          <DropdownMenuContent
+            align='start'
+            side='right'
+            className='min-w-[132px] rounded-lg border-[#E2EAF4] bg-white p-1.5 shadow-md'
+          >
+            <DropdownMenuItem onClick={onStartRename} className={THREAD_MENU_ITEM_CLASS}>
+              <RenameMenuIcon />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onTogglePin} className={THREAD_MENU_ITEM_CLASS}>
               {isPinned ? (
                 <>
-                  <PinOff className='size-[14px]' />
+                  <PinOff />
                   Unpin
                 </>
               ) : (
                 <>
-                  <Pin className='size-[14px]' />
+                  <Pin />
                   Pin
                 </>
               )}
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onDelete} className='text-red-600'>
-              <Trash2 className='size-[14px]' />
+            <DropdownMenuItem onClick={onDelete} className={THREAD_MENU_ITEM_CLASS}>
+              <Trash2 />
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -555,7 +564,7 @@ const LeftNavThread = ({
   const actionButtonsDisabled = isLoading || isStreaming
 
   const primaryActionButtons = (collapsed: boolean) => (
-    <div className={cn('flex flex-col gap-2', collapsed && 'items-center')}>
+    <div className={cn('flex flex-col gap-1', collapsed && 'items-center')}>
       {showReRun && onReRun && !collapsed && (
         <button
           type='button'
@@ -570,7 +579,7 @@ const LeftNavThread = ({
       )}
       <SidebarActionButton
         collapsed={collapsed}
-        icon={CirclePlus}
+        NavIcon={NewChatNavIcon}
         label='New Chat'
         onClick={() => onNewChat?.()}
         disabled={actionButtonsDisabled}
@@ -578,14 +587,7 @@ const LeftNavThread = ({
       />
       <SidebarActionButton
         collapsed={collapsed}
-        iconNode={
-          <Image
-            src={goldenQueriesIcon}
-            alt=''
-            aria-hidden='true'
-            className={cn('ml-1 size-4 shrink-0 object-contain', collapsed && 'ml-0')}
-          />
-        }
+        NavIcon={GoldenQueriesNavIcon}
         label='Golden Queries'
         onClick={() => onViewGoldenQueries?.()}
         disabled={actionButtonsDisabled}
@@ -593,14 +595,7 @@ const LeftNavThread = ({
       />
       <SidebarActionButton
         collapsed={collapsed}
-        iconNode={
-          <Image
-            src={feedbackIcon}
-            alt=''
-            aria-hidden='true'
-            className={cn('ml-1 size-4 shrink-0 object-contain', collapsed && 'ml-0')}
-          />
-        }
+        NavIcon={FeedbackNavIcon}
         label='View Feedback'
         onClick={() => onViewFeedback?.()}
         disabled={actionButtonsDisabled}
@@ -624,17 +619,17 @@ const LeftNavThread = ({
 
       {primaryActionButtons(false)}
 
-      <hr className='my-4' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
+      <hr className='my-3' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
 
       <div className='flex min-h-0 flex-1 flex-col'>
         <p
-          className='mb-2 px-1 font-medium text-xs'
+          className='mb-1 px-1 font-medium text-xs'
           style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}
         >
           Chats
         </p>
 
-        <div className='mb-2'>
+        <div className='mb-1.5'>
           <ChipInput
             ref={resolvedSearchRef}
             value={searchQuery}
@@ -648,7 +643,7 @@ const LeftNavThread = ({
 
         <div className='flex-1 overflow-y-auto'>
         {isLoading ? (
-          <div className='flex flex-col gap-2'>
+          <div className='flex flex-col gap-1'>
             {Array.from({ length: 5 }).map((_, i) => (
               <ThreadSkeleton key={i} />
             ))}
@@ -658,9 +653,9 @@ const LeftNavThread = ({
             <div className='text-red-500 text-sm'>Failed to load threads</div>
           </div>
         ) : groupedThreads.length > 0 ? (
-          <div className='flex flex-col gap-3'>
+          <div className='flex flex-col gap-2'>
             {groupedThreads.map((group) => (
-              <div key={group.label} className='flex flex-col gap-2'>
+              <div key={group.label} className='flex flex-col gap-1'>
                 <p className='px-1 text-[var(--text-muted)] text-xs'>{group.label}</p>
                 {group.threads.map((thread) => (
                   <ThreadRow
@@ -710,7 +705,7 @@ const LeftNavThread = ({
       </div>
       </div>
 
-      <hr className='my-4' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
+      <hr className='my-3' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
 
       <div className='flex items-center gap-3'>
         <Button

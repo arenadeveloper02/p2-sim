@@ -1,10 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import { ChipModal, ChipModalBody, ChipModalHeader } from '@/components/emcn'
 import { ChatInput } from '@/app/chat/components'
+import { DeployedChatDescriptionModal } from '@/app/chat/[identifier]/DeployedChatDescriptionModal'
+import { Tooltip } from '@/components/emcn'
 import {
+  DEPLOYED_CHAT_CANVAS_BG,
   DEPLOYED_CHAT_CANVAS_GRADIENT,
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_INPUT_PLACEHOLDER,
@@ -13,11 +15,68 @@ import {
   DEPLOYED_CHAT_TEXT_MUTED,
 } from '@/app/chat/constants'
 import {
-  clipDeployedChatDescription,
   getDeployedChatFirstName,
   resolveDeployedChatLandingDescription,
 } from '@/app/chat/utils/clip-description'
 import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
+
+interface DeployedChatDescriptionPreviewProps {
+  text: string
+  onExpand: () => void
+}
+
+function DeployedChatDescriptionPreview({ text, onExpand }: DeployedChatDescriptionPreviewProps) {
+  const descriptionRef = useRef<HTMLParagraphElement>(null)
+  const [isTruncated, setIsTruncated] = useState(false)
+
+  useLayoutEffect(() => {
+    const element = descriptionRef.current
+    if (!element) return
+
+    const updateTruncation = () => {
+      setIsTruncated(element.scrollHeight > element.clientHeight + 1)
+    }
+
+    updateTruncation()
+
+    const resizeObserver = new ResizeObserver(updateTruncation)
+    resizeObserver.observe(element)
+    return () => resizeObserver.disconnect()
+  }, [text])
+
+  return (
+    <div className='relative mt-3'>
+      <p
+        ref={descriptionRef}
+        className='max-h-[3.2em] overflow-hidden whitespace-pre-wrap text-center font-normal text-[15px] leading-[1.6]'
+        style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
+      >
+        {text}
+      </p>
+      {isTruncated && (
+        <Tooltip.Provider>
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <button
+                type='button'
+                onClick={onExpand}
+                className='absolute right-0 bottom-0 pl-3 font-normal text-[15px] leading-[1.6] hover:text-[var(--brand-primary-hex)]'
+                style={{
+                  color: DEPLOYED_CHAT_TEXT_MUTED,
+                  background: `linear-gradient(to right, transparent, ${DEPLOYED_CHAT_CANVAS_BG} 50%)`,
+                }}
+                aria-label='View full description'
+              >
+                ...
+              </button>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top'>View full description</Tooltip.Content>
+          </Tooltip.Root>
+        </Tooltip.Provider>
+      )}
+    </div>
+  )
+}
 
 interface DeployedChatLandingProps {
   chatConfig: {
@@ -28,6 +87,7 @@ interface DeployedChatLandingProps {
       welcomeMessage?: string
     }
   }
+  department?: string | null
   userName?: string | null
   isStreaming?: boolean
   isLoading?: boolean
@@ -54,6 +114,7 @@ interface DeployedChatLandingProps {
 
 export function DeployedChatLanding({
   chatConfig,
+  department,
   userName,
   isStreaming = false,
   isLoading = false,
@@ -76,11 +137,6 @@ export function DeployedChatLanding({
     welcomeMessage: chatConfig.customizations?.welcomeMessage,
   })
 
-  const clippedDescription = useMemo(
-    () => clipDeployedChatDescription(descriptionSource),
-    [descriptionSource]
-  )
-
   const promptLine = `What should we get done${firstName ? `, ${firstName}` : ''}?`
 
   return (
@@ -90,40 +146,31 @@ export function DeployedChatLanding({
         style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
       >
         <div className='flex flex-1 flex-col items-center justify-center px-4 py-8 md:px-6'>
-          <div className={`w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} text-center`}>
-            <h1
-              className='font-semibold text-[24px] leading-[1.25]'
-              style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
-            >
-              {title}
-            </h1>
-
-            {clippedDescription.displayText && (
-              <div
-                className='mt-3 font-normal text-[15px] leading-[1.6]'
-                style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
+          <div className={`flex w-full flex-col gap-5 ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} text-center`}>
+            <div>
+              <h1
+                className='font-semibold text-[24px] leading-[1.25]'
+                style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
               >
-                <p className='whitespace-pre-wrap'>{clippedDescription.displayText}</p>
-                {clippedDescription.isTruncated && (
-                  <button
-                    type='button'
-                    onClick={() => setIsDescriptionModalOpen(true)}
-                    className='mt-2 font-medium text-[var(--brand-primary-hex)] hover:underline'
-                  >
-                    View more
-                  </button>
-                )}
-              </div>
-            )}
+                {title}
+              </h1>
+
+              {descriptionSource && (
+                <DeployedChatDescriptionPreview
+                  text={descriptionSource}
+                  onExpand={() => setIsDescriptionModalOpen(true)}
+                />
+              )}
+            </div>
 
             <p
-              className='mt-8 font-normal text-[18px] leading-[1.4]'
+              className='font-normal text-[20px] leading-[1.4]'
               style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
             >
               {promptLine}
             </p>
 
-            <div ref={inputWrapperRef} className='mt-5 w-full'>
+            <div ref={inputWrapperRef} className='w-full'>
               <ChatInput
                 embedded
                 landing
@@ -142,17 +189,13 @@ export function DeployedChatLanding({
         </div>
       </div>
 
-      <ChipModal open={isDescriptionModalOpen} onOpenChange={setIsDescriptionModalOpen}>
-        <ChipModalHeader onClose={() => setIsDescriptionModalOpen(false)}>{title}</ChipModalHeader>
-        <ChipModalBody>
-          <p
-            className='whitespace-pre-wrap font-normal text-[15px] leading-[1.6]'
-            style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
-          >
-            {clippedDescription.fullText}
-          </p>
-        </ChipModalBody>
-      </ChipModal>
+      <DeployedChatDescriptionModal
+        open={isDescriptionModalOpen}
+        onOpenChange={setIsDescriptionModalOpen}
+        title={title}
+        description={descriptionSource}
+        department={department}
+      />
     </>
   )
 }
