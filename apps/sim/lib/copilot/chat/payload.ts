@@ -383,6 +383,16 @@ export async function buildCopilotRequestPayload(
     mode: transportMode,
     messageId: userMessageId,
     ...(allContexts.length > 0 ? { context: allContexts } : {}),
+    ...(fileAttachments && fileAttachments.length > 0
+      ? {
+          fileAttachments: fileAttachments.map((file) => ({
+            key: file.key,
+            filename: (file.filename ?? file.name ?? 'file') as string,
+            media_type: (file.media_type ?? file.mimeType ?? 'application/octet-stream') as string,
+            size: file.size,
+          })),
+        }
+      : {}),
     ...(chatId ? { chatId } : {}),
     ...(typeof prefetch === 'boolean' ? { prefetch } : {}),
     ...(implicitFeedback ? { implicitFeedback } : {}),

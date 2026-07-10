@@ -226,6 +226,16 @@ export const env = createEnv({
     BROWSERBASE_API_KEY:                   z.string().min(1).optional(),           // Browserbase API key for browser automation
     BROWSERBASE_PROJECT_ID:                z.string().min(1).optional(),           // Browserbase project ID
     GITHUB_TOKEN:                          z.string().optional(),                  // GitHub personal access token for API access
+    DEVELOPMENT_GITHUB_TOKEN:              z.string().optional(),                  // Development block: GitHub token for pushing generated apps
+    DEVELOPMENT_GITHUB_OWNER:              z.string().optional(),                  // Development block: GitHub user or org for new repos
+    DEVELOPMENT_VERCEL_TOKEN:              z.string().optional(),                  // Development block: Vercel token for deploy + Neon provisioning
+    DEVELOPMENT_VERCEL_TEAM_ID:            z.string().optional(),                  // Development block: Vercel team ID for team deploys
+    DEVELOPMENT_VERCEL_NEON_INTEGRATION_CONFIG_ID: z.string().optional(),          // Development block: optional Neon marketplace config id (icfg_...)
+    DEVELOPMENT_NEON_API_KEY:              z.string().optional(),                  // Development block: Neon API key for per-project DBs (no Vercel Neon install)
+    DEVELOPMENT_NEON_ORG_ID:               z.string().optional(),                  // Development block: Neon org id when API key belongs to an org
+    DEVELOPMENT_ANTHROPIC_MODEL:             z.string().min(1).optional(),           // Optional override for creation model (default in code: claude-fable-5)
+    DEVELOPMENT_ANTHROPIC_CREATION_MODEL:    z.string().min(1).optional(),           // Optional override for new app generation (default in code: claude-fable-5)
+    DEVELOPMENT_ANTHROPIC_EDIT_MODEL:        z.string().min(1).optional(),           // Optional override for app edits/repair (default in code: claude-opus-4-8)
 
     // Admin API
     ADMIN_API_KEY:                         z.string().min(32).optional(),          // Admin API key for self-hosted GitOps access (generate with: openssl rand -hex 32)

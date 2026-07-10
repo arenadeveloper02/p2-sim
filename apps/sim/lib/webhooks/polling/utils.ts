@@ -163,7 +163,6 @@ export async function updateWebhookProviderConfig(
     }
 
     const merged = sql`COALESCE(${webhook.providerConfig}::jsonb, '{}'::jsonb) || ${JSON.stringify(defined)}::jsonb`
-    const nextConfig = removedKeys.length > 0 ? sql`(${merged}) - ${removedKeys}::text[]` : merged
 
     await db
       .update(webhook)

@@ -11,6 +11,7 @@ export const ARENA_APP_CSP_ORIGINS = [
   'https://app.thearena.ai',
   'https://dev-agent.thearena.ai',
   'https://test-agent.thearena.ai',
+  'https://test-v1-agent.thearena.ai',
   'https://sandbox-agent.thearena.ai',
   'https://agent.thearena.ai',
 ] as const

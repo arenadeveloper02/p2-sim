@@ -56,7 +56,8 @@ import { useLogDetail } from '@/hooks/queries/logs'
 import { useScheduleById } from '@/hooks/queries/schedules'
 import { downloadTableExport } from '@/hooks/queries/tables'
 import { useWorkflows } from '@/hooks/queries/workflows'
-import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
+import { useQueryClient } from '@tanstack/react-query'
+import { useWorkspaceFiles, workspaceFilesKeys } from '@/hooks/queries/workspace-files'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -628,6 +629,8 @@ function EmbeddedFile({
   previewContextKey,
 }: EmbeddedFileProps) {
   const { canEdit } = useUserPermissionsContext()
+  const queryClient = useQueryClient()
+  const retryCountRef = useRef(0)
   const { data: files = [], isLoading, isFetching } = useWorkspaceFiles(workspaceId)
   const file = useMemo(
     () =>
@@ -639,6 +642,15 @@ function EmbeddedFile({
       ),
     [files, fileId, filePath]
   )
+
+  useEffect(() => {
+    if (file || isLoading || isFetching || !fileId || !workspaceId) return
+    if (retryCountRef.current >= 3) return
+    retryCountRef.current += 1
+    void queryClient.invalidateQueries({
+      queryKey: workspaceFilesKeys.list(workspaceId, 'active'),
+    })
+  }, [file, fileId, isFetching, isLoading, queryClient, workspaceId])
 
   if (isLoading || (isFetching && !file)) return LOADING_SKELETON
 

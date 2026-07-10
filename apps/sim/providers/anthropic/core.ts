@@ -28,6 +28,10 @@ import {
   sumToolCosts,
 } from '@/providers/utils'
 import { executeTool } from '@/tools'
+import {
+  getAnthropicAutomaticCacheControl,
+  supportsAnthropicAutomaticPromptCaching,
+} from '@/lib/anthropic/prompt-cache'
 
 /**
  * Configuration for creating an Anthropic provider instance.
@@ -51,6 +55,7 @@ interface AnthropicPayload extends Omit<Anthropic.Messages.MessageStreamParams, 
   thinking?: Anthropic.Messages.ThinkingConfigParam | { type: 'adaptive' }
   output_format?: { type: 'json_schema'; schema: Record<string, unknown> }
   output_config?: { effort: string }
+  cache_control?: ReturnType<typeof getAnthropicAutomaticCacheControl>
 }
 
 /**
@@ -306,6 +311,9 @@ export async function executeAnthropicProviderRequest(
       Number.parseInt(String(request.maxTokens)) || getMaxOutputTokensForModel(request.model),
     ...(supportsTemperature(request.model) && {
       temperature: Number.parseFloat(String(request.temperature ?? 0.7)),
+    }),
+    ...(supportsAnthropicAutomaticPromptCaching(config.providerId) && {
+      cache_control: getAnthropicAutomaticCacheControl(),
     }),
   }
 

@@ -132,6 +132,9 @@ export function getLoginRedirectUrl(hostname: string): string {
   if (hostname === 'test-agent.thearena.ai') {
     return 'https://test.thearena.ai/'
   }
+  if (hostname === 'test-v1-agent.thearena.ai') {
+    return 'https://test.thearena.ai/'
+  }
   if (hostname === 'sandbox-agent.thearena.ai') {
     return 'https://sandbox.thearena.ai/'
   }

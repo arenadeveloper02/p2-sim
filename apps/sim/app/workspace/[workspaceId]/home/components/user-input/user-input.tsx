@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Button, cn, Paperclip, Plus, Slash, Tooltip, toast } from '@sim/emcn'
+import { Button, ChipSwitch, cn, Paperclip, Plus, Slash, Tooltip, toast } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
@@ -88,7 +88,14 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 ) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { navigateToSettings } = useSettingsNavigation()
-  const { userId, onContextAdd, onContextRemove } = useChatSurface()
+  const {
+    userId,
+    onContextAdd,
+    onContextRemove,
+    canSwitchCopilotBackend,
+    copilotBackend,
+    setCopilotBackend,
+  } = useChatSurface()
 
   const [initialValue] = useState(() => {
     if (defaultValue) return defaultValue
@@ -263,11 +270,11 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       isMemberLimit
         ? undefined
         : {
-            action: {
-              label: 'Upgrade',
-              onClick: () => navigateToSettings({ section: 'billing' }),
-            },
-          }
+          action: {
+            label: 'Upgrade',
+            onClick: () => navigateToSettings({ section: 'billing' }),
+          },
+        }
     )
   }
 
@@ -364,7 +371,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         try {
           const resources = JSON.parse(resourcesJson) as MothershipResource[]
           editorRef.current.insertResources(resources)
-        } catch {}
+        } catch { }
         textareaRef.current?.focus()
         return
       }
@@ -375,7 +382,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         try {
           const resource = JSON.parse(resourceJson) as MothershipResource
           editorRef.current.insertResources([resource])
-        } catch {}
+        } catch { }
         textareaRef.current?.focus()
         return
       }
@@ -584,6 +591,26 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
             </Tooltip.Trigger>
             <Tooltip.Content side='top'>Skills</Tooltip.Content>
           </Tooltip.Root>
+          {canSwitchCopilotBackend && copilotBackend && setCopilotBackend ? (
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <div className='ml-1'>
+                  <ChipSwitch
+                    value={copilotBackend}
+                    onChange={setCopilotBackend}
+                    aria-label='Copilot backend'
+                    options={[
+                      { value: 'local', label: 'Local' },
+                      { value: 'external', label: 'Cloud' },
+                    ]}
+                  />
+                </div>
+              </Tooltip.Trigger>
+              <Tooltip.Content side='top'>
+                Local runs Arena Copilot in your deployment. Cloud uses external Mothership.
+              </Tooltip.Content>
+            </Tooltip.Root>
+          ) : null}
         </div>
         <div className='flex items-center gap-1.5'>
           {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}

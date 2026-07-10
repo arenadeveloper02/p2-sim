@@ -57,6 +57,7 @@ import {
   type UserInputHandle,
 } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
+import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
 
 const logger = createLogger('Home')
@@ -213,6 +214,8 @@ export function Home({ chatId, userName, userId }: HomeProps) {
     }
   }
 
+  const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
+
   const {
     messages,
     isSending,
@@ -243,6 +246,7 @@ export function Home({ chatId, userName, userId }: HomeProps) {
       onResourceEvent: handleResourceEvent,
       activeResourceState,
       resolveWorkspaceBeforeSend: false,
+      getCopilotBackend: () => copilotBackend,
       onRequestStarted: ({ requestId, userMessageId }) => {
         captureEvent(posthogRef.current, 'task_request_started', {
           workspace_id: workspaceId,
@@ -461,6 +465,9 @@ export function Home({ chatId, userName, userId }: HomeProps) {
               userId={userId}
               onContextAdd={handleContextAdd}
               onContextRemove={handleInitialContextRemove}
+              canSwitchCopilotBackend={canSwitchBackend}
+              copilotBackend={copilotBackend}
+              setCopilotBackend={setCopilotBackend}
             >
               <UserInput
                 ref={initialViewUserInputRef}
@@ -504,6 +511,9 @@ export function Home({ chatId, userName, userId }: HomeProps) {
           chatId={resolvedChatId}
           onContextAdd={handleContextAdd}
           onWorkspaceResourceSelect={handleWorkspaceResourceSelect}
+          canSwitchCopilotBackend={canSwitchBackend}
+          copilotBackend={copilotBackend}
+          setCopilotBackend={setCopilotBackend}
           draftScopeKey={draftScopeKey}
           animateInput={isInputEntering}
           onInputAnimationEnd={isInputEntering ? () => setIsInputEntering(false) : undefined}
