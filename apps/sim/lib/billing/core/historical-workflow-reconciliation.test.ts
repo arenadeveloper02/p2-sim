@@ -1,15 +1,84 @@
 /**
  * @vitest-environment node
  */
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const {
+  mockTransaction,
+  mockExecute,
+  mockSelect,
+  mockUpdate,
+  mockRecordUsage,
+  mockGetHighestPrioritySubscription,
+  mockCostBlockExecute,
+} = vi.hoisted(() => ({
+  mockTransaction: vi.fn(),
+  mockExecute: vi.fn(),
+  mockSelect: vi.fn(),
+  mockUpdate: vi.fn(),
+  mockRecordUsage: vi.fn(),
+  mockGetHighestPrioritySubscription: vi.fn(),
+  mockCostBlockExecute: vi.fn(),
+}))
+
+vi.mock('@sim/db', () => ({
+  db: {
+    transaction: mockTransaction,
+    select: mockSelect,
+  },
+}))
+
+vi.mock('@/lib/billing/core/usage-log', () => ({
+  deriveBillingContext: vi.fn(() => ({
+    billingEntity: { type: 'user', id: 'user-1' },
+    billingPeriod: {
+      start: new Date('2026-05-01T00:00:00.000Z'),
+      end: new Date('2026-06-01T00:00:00.000Z'),
+    },
+  })),
+  recordUsage: mockRecordUsage,
+  stableEventKey: vi.fn((parts: Record<string, unknown>) =>
+    Object.keys(parts)
+      .sort()
+      .map((key) => `${key}:${String(parts[key] ?? '')}`)
+      .join('|')
+  ),
+}))
+
+vi.mock('@/lib/billing/core/plan', () => ({
+  getHighestPrioritySubscription: mockGetHighestPrioritySubscription,
+}))
+
+vi.mock('@/executor/handlers/cost/cost-handler', () => ({
+  CostBlockHandler: class MockCostBlockHandler {
+    executeWithNode = mockCostBlockExecute
+  },
+}))
+
 import {
   analyzeTraceSpans,
+  applyHistoricalReconciliation,
+  aggregateShadowDeltaReview,
+  buildHistoricalAdjustmentEntries,
   classifyExecutionEvidence,
   aggregateClassificationResults,
+  computeTargetLedgerLines,
+  enrichTraceSpansForReprice,
+  evaluateApplyRolloutGates,
+  HISTORICAL_RECONCILE_PILOT_MAX_RECORDS,
+  HISTORICAL_RECONCILE_PRICING_MODE,
+  HISTORICAL_RECONCILE_ROLLOUT_STEPS,
+  HISTORICAL_RECONCILE_VERSION,
+  parseHistoricalReconcileShadowRecord,
   snapshotStateHasCostBlocks,
+  verifyLedgerProjection,
   type ExecutionEvidence,
+  type HistoricalReconcileShadowRecord,
   type TraceEvidenceSummary,
 } from '@/lib/billing/core/historical-workflow-reconciliation'
+import { calculateCostSummary } from '@/lib/logs/execution/logging-factory'
+import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
+import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 
 function baseEvidence(overrides: Partial<ExecutionEvidence> = {}): ExecutionEvidence {
   const trace: TraceEvidenceSummary = {
@@ -46,6 +115,8 @@ function baseEvidence(overrides: Partial<ExecutionEvidence> = {}): ExecutionEvid
     trace,
     hasSnapshot: true,
     snapshotHasCostBlocks: false,
+    snapshotState: null,
+    traceSpans: undefined,
     modelsUsed: null,
     ...overrides,
   }
@@ -380,5 +451,766 @@ describe('aggregateClassificationResults', () => {
     expect(summary.byClass.reconciled).toBe(1)
     expect(summary.applyEligible).toBe(1)
     expect(summary.topRiskExamples[0]?.executionId).toBe('exec-a')
+  })
+})
+
+function shadowRecord(
+  overrides: Partial<HistoricalReconcileShadowRecord> = {}
+): HistoricalReconcileShadowRecord {
+  return {
+    executionId: 'exec-apply-1',
+    workflowId: 'wf-1',
+    workspaceId: 'ws-1',
+    startedAt: '2024-01-01T00:00:00.000Z',
+    status: 'completed',
+    ledgerSum: 0,
+    ledgerLines: [],
+    costTotal: 0,
+    targetSum: 0.02,
+    positiveDelta: 0.02,
+    negativeDelta: 0,
+    confidence: 'high',
+    applyEligible: true,
+    primaryClass: 'span_cost_legacy',
+    warnings: [],
+    blockers: [],
+    targets: [
+      {
+        category: 'model',
+        description: 'gpt-4o',
+        target: 0.02,
+        metadata: { inputTokens: 100, outputTokens: 50 },
+      },
+    ],
+    pricingMode: HISTORICAL_RECONCILE_PRICING_MODE,
+    ...overrides,
+  }
+}
+
+describe('enrichTraceSpansForReprice', () => {
+  it('reprices cost-stripped hosted model spans from current catalog', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'model',
+        model: 'gpt-4o',
+        tokens: { input: 1000, output: 500, total: 1500 },
+      },
+    ])
+
+    expect(enriched?.[0]?.cost?.total).toBeGreaterThan(0)
+    expect(enriched?.[0]?.cost?.input).toBeGreaterThan(0)
+    expect(enriched?.[0]?.cost?.output).toBeGreaterThan(0)
+  })
+
+  it('adds standalone firecrawl tool costs from output metadata', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'firecrawl_scrape',
+        output: { metadata: { creditsUsed: 10 } },
+      },
+    ])
+
+    expect(enriched?.[0]?.cost?.total).toBeCloseTo(0.01, 8)
+  })
+
+  it('folds agent-embedded tool costs into the parent model span', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'agent',
+        model: 'gpt-4o',
+        tokens: { input: 1000, output: 500, total: 1500 },
+        children: [
+          {
+            type: 'tool',
+            name: 'exa_search',
+            output: { cost: { total: 0.01 } },
+          },
+        ],
+      },
+    ])
+
+    expect(enriched?.[0]?.cost?.toolCost).toBeCloseTo(0.01, 8)
+    expect(enriched?.[0]?.cost?.total ?? 0).toBeGreaterThan(0.01)
+  })
+})
+
+describe('computeTargetLedgerLines', () => {
+  beforeEach(() => {
+    mockCostBlockExecute.mockReset()
+  })
+
+  it('matches calculateCostSummary for legacy inline span costs', async () => {
+    const traceSpans = [
+      {
+        type: 'agent',
+        model: 'gpt-4o',
+        cost: { input: 0.01, output: 0.02, total: 0.03 },
+        tokens: { input: 100, output: 200, total: 300 },
+      },
+    ]
+    const summary = calculateCostSummary(traceSpans)
+    const { targets } = await computeTargetLedgerLines(
+      baseEvidence({
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 1,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 1,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 0,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: ['gpt-4o'],
+          hostedToolSignals: [],
+        },
+        traceSpans,
+      })
+    )
+
+    const modelTarget = targets.find((line) => line.category === 'model')
+    const fixedTarget = targets.find((line) => line.category === 'fixed')
+
+    expect(modelTarget?.target).toBeCloseTo(summary.models['gpt-4o']?.total ?? 0, 8)
+    expect(fixedTarget?.target).toBeCloseTo(BASE_EXECUTION_CHARGE, 8)
+    expect(modelTarget?.evidenceSource).toBe('legacy_span_cost')
+  })
+
+  it('reprices token-only model spans using the current catalog', async () => {
+    const traceSpans = [
+      {
+        type: 'model',
+        model: 'gpt-4o',
+        tokens: { input: 1000, output: 500, total: 1500 },
+      },
+    ]
+
+    const { targets } = await computeTargetLedgerLines(
+      baseEvidence({
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 1,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 1,
+          spansWithHostedToolMetadata: 0,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: ['gpt-4o'],
+          hostedToolSignals: [],
+        },
+        traceSpans,
+      })
+    )
+
+    const modelTarget = targets.find((line) => line.category === 'model')
+    expect(modelTarget?.target).toBeGreaterThan(0)
+    expect(modelTarget?.evidenceSource).toBe('tokens_repriced')
+  })
+
+  it('creates hosted tool rows for firecrawl and fal.ai image metadata', async () => {
+    const traceSpans = [
+      {
+        type: 'tool',
+        name: 'firecrawl_scrape',
+        output: { metadata: { creditsUsed: 8 } },
+      },
+      {
+        type: 'tool',
+        name: 'image_generate',
+        output: { __falaiCostDollars: 0.04 },
+      },
+    ]
+
+    const { targets } = await computeTargetLedgerLines(
+      baseEvidence({
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 2,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 2,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: [],
+          hostedToolSignals: ['firecrawl_credits', 'falai_cost_dollars'],
+        },
+        traceSpans,
+      })
+    )
+
+    const firecrawl = targets.find((line) => line.description === 'firecrawl_scrape')
+    const image = targets.find((line) => line.description === 'image_generate')
+
+    expect(firecrawl?.target).toBeCloseTo(0.008, 8)
+    expect(image?.target).toBeCloseTo(0.04 * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER, 8)
+  })
+
+  it('uses snapshot state for cost block external targets when trace costs are missing', async () => {
+    mockCostBlockExecute.mockResolvedValue({
+      recorded: true,
+      cost: { total: 2.5 },
+      raw: { vendor: 'Twilio', label: 'SMS Cost' },
+      units: 5,
+    })
+
+    const snapshotState = {
+      blocks: {
+        cost1: {
+          id: 'cost1',
+          name: 'SMS Cost',
+          type: 'cost',
+          position: { x: 0, y: 0 },
+          subBlocks: {
+            mode: { id: 'mode', type: 'short-input', value: 'fixed' },
+            amount: { id: 'amount', type: 'short-input', value: 2.5 },
+          },
+          outputs: {},
+          enabled: true,
+          horizontalHandles: true,
+          advancedMode: false,
+          height: 0,
+        },
+      },
+      edges: [],
+      loops: {},
+      parallels: {},
+    }
+
+    const traceSpans = [
+      {
+        type: 'cost',
+        blockId: 'cost1',
+        name: 'SMS Cost',
+        status: 'success' as const,
+        output: { raw: { vendor: 'Twilio' } },
+      },
+    ]
+
+    const { targets } = await computeTargetLedgerLines(
+      baseEvidence({
+        workflowId: 'wf-1',
+        snapshotHasCostBlocks: true,
+        snapshotState,
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 1,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 0,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 1,
+          modelsInSpans: [],
+          hostedToolSignals: [],
+        },
+        traceSpans,
+      })
+    )
+
+    const external = targets.find((line) => line.category === 'external')
+    expect(external?.target).toBeCloseTo(2.5, 8)
+    expect(external?.evidenceSource).toBe('cost_block_snapshot')
+    expect(mockCostBlockExecute).toHaveBeenCalled()
+  })
+
+  it('reports unrecoverable evidence when trace store is expired and no snapshot cost blocks exist', async () => {
+    const { targets, warnings } = await computeTargetLedgerLines(
+      baseEvidence({
+        trace: {
+          hasTraceSpans: false,
+          traceSpanCount: 3,
+          traceStoreExternalized: true,
+          traceStoreMaterialized: false,
+          traceStoreExpired: true,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 0,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: [],
+          hostedToolSignals: [],
+        },
+        traceSpans: undefined,
+      })
+    )
+
+    expect(targets).toHaveLength(0)
+    expect(warnings).toContain('trace_store_unavailable')
+  })
+})
+
+describe('buildHistoricalAdjustmentEntries', () => {
+  it('emits positive deltas with deterministic historical reconcile event keys', () => {
+    const result = buildHistoricalAdjustmentEntries({
+      executionId: 'exec-1',
+      targets: [
+        { category: 'fixed', description: 'execution_fee', target: 0.005 },
+        {
+          category: 'model',
+          description: 'gpt-4o',
+          target: 0.02,
+          metadata: { inputTokens: 100, outputTokens: 50 },
+        },
+      ],
+      alreadyBilled: new Map([['fixed::execution_fee', 0.005]]),
+    })
+
+    expect(result.entries).toHaveLength(1)
+    expect(result.entries[0]).toMatchObject({
+      category: 'model',
+      description: 'gpt-4o',
+      cost: 0.02,
+      source: 'workflow',
+    })
+    expect(result.entries[0]?.eventKey).toContain(HISTORICAL_RECONCILE_VERSION)
+    expect(result.positiveDeltaTotal).toBeCloseTo(0.02, 8)
+    expect(result.negativeDeltaTotal).toBe(0)
+  })
+
+  it('reports negative deltas without emitting adjustment rows', () => {
+    const result = buildHistoricalAdjustmentEntries({
+      executionId: 'exec-1',
+      targets: [{ category: 'model', description: 'gpt-4o', target: 0.01 }],
+      alreadyBilled: new Map([['model::gpt-4o', 0.03]]),
+    })
+
+    expect(result.entries).toHaveLength(0)
+    expect(result.negativeDeltaTotal).toBeCloseTo(0.02, 8)
+    expect(result.skippedNegativeLines).toHaveLength(1)
+    expect(result.skippedNegativeLines[0]?.delta).toBeCloseTo(-0.02, 8)
+  })
+
+  it('is idempotent when the ledger already matches targets', () => {
+    const result = buildHistoricalAdjustmentEntries({
+      executionId: 'exec-1',
+      targets: [{ category: 'tool', description: 'firecrawl_scrape', target: 0.012 }],
+      alreadyBilled: new Map([['tool::firecrawl_scrape', 0.012]]),
+    })
+
+    expect(result.entries).toHaveLength(0)
+    expect(result.positiveDeltaTotal).toBe(0)
+  })
+})
+
+describe('parseHistoricalReconcileShadowRecord', () => {
+  it('parses valid NDJSON shadow lines', () => {
+    const record = parseHistoricalReconcileShadowRecord(
+      JSON.stringify({
+        executionId: 'exec-1',
+        workspaceId: 'ws-1',
+        startedAt: '2024-01-01T00:00:00.000Z',
+        targets: [],
+      })
+    )
+
+    expect(record).toMatchObject({
+      executionId: 'exec-1',
+      workspaceId: 'ws-1',
+      pricingMode: HISTORICAL_RECONCILE_PRICING_MODE,
+    })
+  })
+})
+
+describe('applyHistoricalReconciliation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetHighestPrioritySubscription.mockResolvedValue({
+      periodStart: new Date('2026-05-01T00:00:00.000Z'),
+      periodEnd: new Date('2026-06-01T00:00:00.000Z'),
+      referenceId: 'user-1',
+    })
+    mockRecordUsage.mockResolvedValue(undefined)
+  })
+
+  function setupTx(
+    alreadyBilled: Array<{ category: string; description: string; cost: string }>,
+    ledgerSumAfter?: number
+  ) {
+    const ledgerSumBefore = alreadyBilled.reduce(
+      (sum, row) => sum + Number.parseFloat(row.cost),
+      0
+    )
+    const ledgerSumFinal = ledgerSumAfter ?? ledgerSumBefore
+
+    const groupBy = vi.fn().mockResolvedValue(alreadyBilled)
+    const billedWhere = vi.fn().mockReturnValue({ groupBy })
+    const billedFrom = vi.fn().mockReturnValue({ where: billedWhere })
+
+    let selectCall = 0
+    const txSelect = vi.fn(() => {
+      selectCall += 1
+      if (selectCall === 1) {
+        return { from: billedFrom }
+      }
+
+      const sumValue = selectCall === 2 ? ledgerSumBefore : ledgerSumFinal
+      const sumWhere = vi.fn().mockResolvedValue([{ cost: sumValue.toString() }])
+      const sumFrom = vi.fn().mockReturnValue({ where: sumWhere })
+      return { from: sumFrom }
+    })
+
+    const updateWhere = vi.fn().mockResolvedValue(undefined)
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere })
+    const txUpdate = vi.fn().mockReturnValue({ set: updateSet })
+    const txExecute = vi.fn().mockResolvedValue(undefined)
+
+    const tx = {
+      execute: txExecute,
+      select: txSelect,
+      update: txUpdate,
+    }
+    mockTransaction.mockImplementation(async (fn: (t: typeof tx) => unknown) => fn(tx))
+
+    return { updateSet, ledgerSumBefore, ledgerSumFinal }
+  }
+
+  it('skips ineligible shadow records without writing', async () => {
+    const result = await applyHistoricalReconciliation({
+      record: shadowRecord({ applyEligible: false }),
+      userId: 'user-1',
+    })
+
+    expect(result.status).toBe('skipped')
+    expect(result.reason).toBe('not_apply_eligible')
+    expect(mockTransaction).not.toHaveBeenCalled()
+  })
+
+  it('writes positive deltas and refreshes cost_total from the ledger', async () => {
+    const { updateSet } = setupTx([], 0.02)
+
+    const result = await applyHistoricalReconciliation({
+      record: shadowRecord(),
+      userId: 'user-1',
+    })
+
+    expect(result.status).toBe('applied')
+    expect(mockRecordUsage).toHaveBeenCalledTimes(1)
+    expect(mockRecordUsage.mock.calls[0]?.[0]).toMatchObject({
+      userId: 'user-1',
+      executionId: 'exec-apply-1',
+      workspaceId: 'ws-1',
+      workflowId: 'wf-1',
+    })
+    expect(updateSet).toHaveBeenCalledWith({ costTotal: '0.02' })
+    expect(result.costTotalAfter).toBe(0.02)
+  })
+
+  it('does not double-charge when targets are already billed', async () => {
+    setupTx([{ category: 'model', description: 'gpt-4o', cost: '0.02' }])
+
+    const result = await applyHistoricalReconciliation({
+      record: shadowRecord(),
+      userId: 'user-1',
+    })
+
+    expect(result.status).toBe('unchanged')
+    expect(mockRecordUsage).not.toHaveBeenCalled()
+    expect(result.entriesInserted).toBe(0)
+  })
+
+  it('does not apply negative deltas but still refreshes cost_total', async () => {
+    const { updateSet } = setupTx([{ category: 'model', description: 'gpt-4o', cost: '0.05' }])
+
+    const result = await applyHistoricalReconciliation({
+      record: shadowRecord({
+        targets: [{ category: 'model', description: 'gpt-4o', target: 0.02 }],
+        positiveDelta: 0,
+        negativeDelta: 0.03,
+      }),
+      userId: 'user-1',
+    })
+
+    expect(result.status).toBe('unchanged')
+    expect(mockRecordUsage).not.toHaveBeenCalled()
+    expect(result.negativeDeltaSkipped).toBeCloseTo(0.03, 8)
+    expect(updateSet).toHaveBeenCalledWith({ costTotal: '0.05' })
+  })
+})
+
+describe('computeTargetLedgerLines hosted tools', () => {
+  it('creates firecrawl parse tool rows from credits metadata', async () => {
+    const traceSpans = [
+      {
+        type: 'tool',
+        name: 'firecrawl_parse',
+        output: { metadata: { creditsUsed: 5 } },
+      },
+    ]
+
+    const { targets } = await computeTargetLedgerLines(
+      baseEvidence({
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 1,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 1,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: [],
+          hostedToolSignals: ['firecrawl_credits'],
+        },
+        traceSpans,
+      })
+    )
+
+    const parseTarget = targets.find((line) => line.description === 'firecrawl_parse')
+    expect(parseTarget?.category).toBe('tool')
+    expect(parseTarget?.target).toBeCloseTo(0.005, 8)
+  })
+
+  it('creates OpenAI and Gemini image tool rows from __imageBilling metadata', async () => {
+    const openAiSpans = [
+      {
+        type: 'tool',
+        name: 'openai_image',
+        output: {
+          __imageBilling: {
+            provider: 'openai',
+            model: 'gpt-image-1.5',
+            size: '1024x1024',
+            quality: 'medium',
+            numImages: 1,
+          },
+        },
+      },
+    ]
+    const geminiSpans = [
+      {
+        type: 'tool',
+        name: 'gemini_image',
+        output: {
+          __imageBilling: {
+            provider: 'gemini',
+            model: 'gemini-3.1-flash-image-preview',
+            resolution: '4K',
+            numImages: 1,
+          },
+        },
+      },
+    ]
+
+    const openAiResult = await computeTargetLedgerLines(
+      baseEvidence({
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 1,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 1,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: [],
+          hostedToolSignals: ['image_billing'],
+        },
+        traceSpans: openAiSpans,
+      })
+    )
+
+    const geminiResult = await computeTargetLedgerLines(
+      baseEvidence({
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 1,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 1,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: [],
+          hostedToolSignals: ['image_billing'],
+        },
+        traceSpans: geminiSpans,
+      })
+    )
+
+    const openAiTarget = openAiResult.targets.find((line) => line.category === 'tool')
+    const geminiTarget = geminiResult.targets.find((line) => line.category === 'tool')
+
+    expect(openAiTarget?.target).toBeCloseTo(0.034, 8)
+    expect(geminiTarget?.target).toBeCloseTo(0.15, 8)
+  })
+})
+
+describe('aggregateShadowDeltaReview', () => {
+  it('aggregates positive deltas by workspace, workflow, model, and tool', () => {
+    const review = aggregateShadowDeltaReview([
+      shadowRecord({
+        workspaceId: 'ws-a',
+        workflowId: 'wf-a',
+        positiveDelta: 0.03,
+        negativeDelta: 0,
+        ledgerLines: [],
+        targets: [
+          { category: 'model', description: 'gpt-4o', target: 0.02 },
+          { category: 'tool', description: 'firecrawl_scrape', target: 0.01 },
+        ],
+      }),
+      shadowRecord({
+        executionId: 'exec-apply-2',
+        workspaceId: 'ws-a',
+        workflowId: 'wf-b',
+        positiveDelta: 0.01,
+        negativeDelta: 0.01,
+        ledgerLines: [{ category: 'model', description: 'gpt-4o', cost: 0.01 }],
+        targets: [{ category: 'model', description: 'gpt-4o', target: 0.02 }],
+      }),
+    ])
+
+    expect(review.totals.executions).toBe(2)
+    expect(review.totals.positiveDelta).toBeCloseTo(0.04, 8)
+    expect(review.totals.negativeDelta).toBeCloseTo(0.01, 8)
+    expect(review.byWorkspace[0]?.id).toBe('ws-a')
+    expect(review.byWorkflow).toHaveLength(2)
+    expect(review.byModel[0]?.description).toBe('gpt-4o')
+    expect(review.byTool[0]?.description).toBe('firecrawl_scrape')
+  })
+})
+
+describe('evaluateApplyRolloutGates', () => {
+  it('allows pilot apply when scoped to a workspace', () => {
+    const gate = evaluateApplyRolloutGates({
+      recordCount: 500,
+      filter: { workspaceId: 'ws-1', limit: 100 },
+    })
+
+    expect(gate.allowed).toBe(true)
+    expect(gate.phase).toBe('pilot')
+    expect(gate.blockers).toHaveLength(0)
+  })
+
+  it('blocks production apply without confirm-production', () => {
+    const gate = evaluateApplyRolloutGates({
+      recordCount: 500,
+      filter: { limit: 500 },
+    })
+
+    expect(gate.allowed).toBe(false)
+    expect(gate.phase).toBe('production')
+    expect(gate.blockers).toContain('production_apply_requires_confirm_production')
+  })
+
+  it('allows production apply when confirm-production is set', () => {
+    const gate = evaluateApplyRolloutGates({
+      recordCount: 500,
+      filter: { limit: 500 },
+      confirmProduction: true,
+    })
+
+    expect(gate.allowed).toBe(true)
+    expect(gate.phase).toBe('production')
+  })
+
+  it('treats small limit-only batches as pilot scope', () => {
+    const gate = evaluateApplyRolloutGates({
+      recordCount: 80,
+      filter: { limit: HISTORICAL_RECONCILE_PILOT_MAX_RECORDS },
+    })
+
+    expect(gate.allowed).toBe(true)
+    expect(gate.phase).toBe('pilot')
+  })
+})
+
+describe('verifyLedgerProjection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('passes when sampled executions have no projection drift', async () => {
+    mockSelect.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                executionId: 'exec-1',
+                workflowId: 'wf-1',
+                workspaceId: 'ws-1',
+                startedAt: new Date('2024-01-01T00:00:00.000Z'),
+                status: 'completed',
+                trigger: 'api',
+                stateSnapshotId: 'snap-1',
+                costTotal: '0.02',
+                modelsUsed: null,
+                ledgerSum: '0.02',
+              },
+            ]),
+          }),
+        }),
+      }),
+    })
+
+    const result = await verifyLedgerProjection({ limit: 1 })
+
+    expect(result.passed).toBe(true)
+    expect(result.drifted).toBe(0)
+    expect(result.total).toBe(1)
+  })
+
+  it('fails when cost_total and ledger sums diverge', async () => {
+    mockSelect.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                executionId: 'exec-drift',
+                workflowId: 'wf-1',
+                workspaceId: 'ws-1',
+                startedAt: new Date('2024-01-01T00:00:00.000Z'),
+                status: 'completed',
+                trigger: 'api',
+                stateSnapshotId: 'snap-1',
+                costTotal: '0.05',
+                modelsUsed: null,
+                ledgerSum: '0.02',
+              },
+            ]),
+          }),
+        }),
+      }),
+    })
+
+    const result = await verifyLedgerProjection({ limit: 1 })
+
+    expect(result.passed).toBe(false)
+    expect(result.drifted).toBe(1)
+    expect(result.driftExamples[0]?.executionId).toBe('exec-drift')
+  })
+})
+
+describe('rollout sequence', () => {
+  it('defines the full audit → shadow → pilot → production → verify sequence', () => {
+    expect(HISTORICAL_RECONCILE_ROLLOUT_STEPS.map((step) => step.name)).toEqual([
+      'baseline_audit',
+      'evidence_audit',
+      'staging_shadow',
+      'delta_review',
+      'pilot_apply',
+      'post_pilot_verify',
+      'production_apply',
+      'final_verify',
+    ])
+    expect(HISTORICAL_RECONCILE_ROLLOUT_STEPS.every((step) => step.command.length > 0)).toBe(true)
   })
 })

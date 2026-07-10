@@ -3,22 +3,44 @@
  * Historical workflow cost reconciliation CLI.
  *
  * Modes:
- *   --audit     Classify executions by reconciliation evidence and risk (no writes)
- *   --dry-run   Compute target ledger deltas (future)
- *   --apply     Apply adjustments from a dry-run artifact (future)
+ *   --audit          Classify executions by reconciliation evidence and risk (no writes)
+ *   --dry-run        Compute target ledger lines and export NDJSON shadow artifact
+ *   --apply          Apply adjustments from a dry-run NDJSON artifact (gated rollout)
+ *   --verify         Verify cost_total equals workflow ledger projection (post-apply gate)
+ *   --rollout-guide  Print the recommended ops rollout sequence
  *
  * Usage:
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --rollout-guide
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --audit --since=2020-01-01 --batch-size=1000
- *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --audit --workflow-id=<id> --limit=100
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --batch-size=1000 --export=reconcile-shadow.ndjson --review-deltas
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --workspace-id=<id> --batch-size=100
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --verify --workspace-id=<id> --batch-size=1000
  */
 import {
+  aggregateShadowDeltaReview,
+  applyHistoricalReconciliationBatch,
   auditHistoricalWorkflowExecutions,
+  dryRunHistoricalWorkflowReprices,
+  evaluateApplyRolloutGates,
+  HISTORICAL_RECONCILE_ROLLOUT_STEPS,
+  loadHistoricalReconcileShadowArtifact,
+  verifyLedgerProjection,
+  verifyPostApplyReconciliation,
   type ReconciliationClass,
   type ReconciliationConfidence,
 } from '../apps/sim/lib/billing/core/historical-workflow-reconciliation'
 
 interface Options {
   audit: boolean
+  dryRun: boolean
+  apply: boolean
+  verify: boolean
+  rolloutGuide: boolean
+  reviewDeltas: boolean
+  confirmProduction: boolean
+  verifyAfterApply: boolean
+  inputPath?: string
   workflowId?: string
   executionId?: string
   workspaceId?: string
@@ -36,6 +58,13 @@ function parseDateArg(raw: string | undefined): Date | undefined {
 
 function parseArgs(argv: string[]): Options {
   const audit = argv.includes('--audit')
+  const dryRun = argv.includes('--dry-run')
+  const apply = argv.includes('--apply')
+  const verify = argv.includes('--verify')
+  const rolloutGuide = argv.includes('--rollout-guide')
+  const reviewDeltas = argv.includes('--review-deltas')
+  const confirmProduction = argv.includes('--confirm-production')
+  const verifyAfterApply = argv.includes('--verify-after-apply')
   const workflowId = argv.find((arg) => arg.startsWith('--workflow-id='))?.split('=')[1]
   const executionId = argv.find((arg) => arg.startsWith('--execution-id='))?.split('=')[1]
   const workspaceId = argv.find((arg) => arg.startsWith('--workspace-id='))?.split('=')[1]
@@ -44,6 +73,7 @@ function parseArgs(argv: string[]): Options {
   const limitRaw = argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1]
   const batchSizeRaw = argv.find((arg) => arg.startsWith('--batch-size='))?.split('=')[1]
   const exportPath = argv.find((arg) => arg.startsWith('--export='))?.split('=')[1]
+  const inputPath = argv.find((arg) => arg.startsWith('--input='))?.split('=')[1]
 
   const limit = limitRaw
     ? Number.parseInt(limitRaw, 10)
@@ -53,6 +83,14 @@ function parseArgs(argv: string[]): Options {
 
   return {
     audit,
+    dryRun,
+    apply,
+    verify,
+    rolloutGuide,
+    reviewDeltas,
+    confirmProduction,
+    verifyAfterApply,
+    inputPath,
     workflowId,
     executionId,
     workspaceId,
@@ -77,28 +115,126 @@ function formatConfidenceCounts(byConfidence: Record<ReconciliationConfidence, n
     .join('\n')
 }
 
-function printAuditSummary(options: Options): void {
+function printFilterSummary(options: Options, title: string): void {
   const window =
     options.since || options.until
       ? `${options.since?.toISOString() ?? '…'} → ${options.until?.toISOString() ?? '…'}`
       : 'all time'
 
-  console.log(`\n=== Historical Workflow Cost Reconciliation Audit (${window}) ===\n`)
+  console.log(`\n=== ${title} (${window}) ===\n`)
   if (options.workflowId) console.log(`Workflow filter: ${options.workflowId}`)
   if (options.executionId) console.log(`Execution filter: ${options.executionId}`)
   if (options.workspaceId) console.log(`Workspace filter: ${options.workspaceId}`)
   if (options.limit) console.log(`Limit: ${options.limit}`)
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2))
+function printRolloutGuide(): void {
+  console.log('\n=== Historical Workflow Cost Reconciliation Rollout ===\n')
+  for (const step of HISTORICAL_RECONCILE_ROLLOUT_STEPS) {
+    console.log(`${step.step}. ${step.name}`)
+    console.log(`   ${step.description}`)
+    console.log(`   ${step.command}`)
+    console.log('')
+  }
+}
 
-  if (!options.audit) {
-    console.error('No mode selected. Supported: --audit')
-    process.exit(1)
+function printDeltaReview(
+  records: Awaited<ReturnType<typeof dryRunHistoricalWorkflowReprices>>['records']
+): void {
+  const review = aggregateShadowDeltaReview(records)
+
+  console.log('\n--- Delta review totals ---')
+  console.log(`Executions:            ${review.totals.executions}`)
+  console.log(`Apply-eligible:        ${review.totals.applyEligible}`)
+  console.log(`Total positive delta:  $${review.totals.positiveDelta.toFixed(6)}`)
+  console.log(`Total negative delta:  $${review.totals.negativeDelta.toFixed(6)}`)
+
+  if (review.byWorkspace.length > 0) {
+    console.log('\n--- Top workspaces by positive delta ---')
+    for (const bucket of review.byWorkspace) {
+      console.log(
+        `  ${bucket.id} executions=${bucket.executions} positive=$${bucket.positiveDelta.toFixed(6)} negative=$${bucket.negativeDelta.toFixed(6)} apply=${bucket.applyEligible}`
+      )
+    }
   }
 
-  printAuditSummary(options)
+  if (review.byWorkflow.length > 0) {
+    console.log('\n--- Top workflows by positive delta ---')
+    for (const bucket of review.byWorkflow) {
+      console.log(
+        `  ${bucket.id} executions=${bucket.executions} positive=$${bucket.positiveDelta.toFixed(6)} negative=$${bucket.negativeDelta.toFixed(6)} apply=${bucket.applyEligible}`
+      )
+    }
+  }
+
+  if (review.byModel.length > 0) {
+    console.log('\n--- Top models by positive delta ---')
+    for (const bucket of review.byModel) {
+      console.log(
+        `  ${bucket.description} executions=${bucket.executions} positive=$${bucket.positiveDelta.toFixed(6)}`
+      )
+    }
+  }
+
+  if (review.byTool.length > 0) {
+    console.log('\n--- Top tools by positive delta ---')
+    for (const bucket of review.byTool) {
+      console.log(
+        `  ${bucket.description} executions=${bucket.executions} positive=$${bucket.positiveDelta.toFixed(6)}`
+      )
+    }
+  }
+}
+
+async function runDryRun(options: Options): Promise<void> {
+  printFilterSummary(options, 'Historical Workflow Cost Shadow Reprice')
+  if (options.exportPath) console.log(`Export: ${options.exportPath}`)
+
+  const summary = await dryRunHistoricalWorkflowReprices({
+    workflowId: options.workflowId,
+    executionId: options.executionId,
+    workspaceId: options.workspaceId,
+    since: options.since,
+    until: options.until,
+    limit: options.limit,
+  })
+
+  console.log('--- Shadow reprice summary ---')
+  console.log(`Executions repriced:   ${summary.total}`)
+  console.log(`With target lines:     ${summary.withTargets}`)
+  console.log(`With positive delta:   ${summary.withPositiveDelta}`)
+  console.log(`With negative delta:   ${summary.withNegativeDelta}`)
+  console.log(`Total positive delta:  $${summary.totalPositiveDelta.toFixed(6)}`)
+  console.log(`Total negative delta:  $${summary.totalNegativeDelta.toFixed(6)}`)
+
+  if (options.reviewDeltas) {
+    printDeltaReview(summary.records)
+  }
+
+  const topPositive = [...summary.records]
+    .filter((record) => record.positiveDelta > 0)
+    .sort((a, b) => b.positiveDelta - a.positiveDelta)
+    .slice(0, 20)
+
+  if (topPositive.length > 0) {
+    console.log('\n--- Top positive delta examples ---')
+    for (const record of topPositive) {
+      const warningText = record.warnings.length > 0 ? ` warnings=${record.warnings.join(';')}` : ''
+      console.log(
+        `  ${record.executionId.slice(0, 8)}… class=${record.primaryClass} confidence=${record.confidence} positive=$${record.positiveDelta.toFixed(6)} negative=$${record.negativeDelta.toFixed(6)} ledger=$${record.ledgerSum.toFixed(6)} target=$${record.targetSum.toFixed(6)} apply=${record.applyEligible}${warningText}`
+      )
+    }
+  }
+
+  if (options.exportPath) {
+    const ndjson = summary.records.map((record) => JSON.stringify(record)).join('\n')
+    await Bun.write(options.exportPath, ndjson.length > 0 ? `${ndjson}\n` : '')
+    console.log(`\nExported shadow artifact: ${options.exportPath} (${summary.records.length} records)`)
+  }
+}
+
+async function runAudit(options: Options): Promise<void> {
+  printFilterSummary(options, 'Historical Workflow Cost Reconciliation Audit')
 
   const summary = await auditHistoricalWorkflowExecutions({
     workflowId: options.workflowId,
@@ -157,8 +293,170 @@ async function main() {
     await Bun.write(options.exportPath, `${JSON.stringify(payload, null, 2)}\n`)
     console.log(`\nExported classification artifact: ${options.exportPath}`)
   }
+}
 
-  process.exit(0)
+async function runVerify(options: Options): Promise<number> {
+  printFilterSummary(options, 'Historical Workflow Ledger Projection Verification')
+
+  const verification = await verifyLedgerProjection({
+    workflowId: options.workflowId,
+    executionId: options.executionId,
+    workspaceId: options.workspaceId,
+    since: options.since,
+    until: options.until,
+    limit: options.limit,
+  })
+
+  console.log('--- Verification summary ---')
+  console.log(`Sampled executions: ${verification.total}`)
+  console.log(`Drifted:            ${verification.drifted}`)
+  console.log(`Passed:             ${verification.passed ? 'yes' : 'no'}`)
+
+  if (verification.driftExamples.length > 0) {
+    console.log('\n--- Drift examples ---')
+    for (const item of verification.driftExamples) {
+      console.log(
+        `  ${item.executionId.slice(0, 8)}… drift=${item.drift.toFixed(6)} cost_total=${item.costTotal?.toFixed(6) ?? 'null'} ledger=${item.ledgerSum.toFixed(6)} workspace=${item.workspaceId}`
+      )
+    }
+  }
+
+  return verification.passed ? 0 : 1
+}
+
+async function runApply(options: Options): Promise<number> {
+  if (!options.inputPath) {
+    throw new Error('--apply requires --input=<shadow-artifact.ndjson>')
+  }
+
+  console.log('\n=== Historical Workflow Cost Reconciliation Apply ===\n')
+  console.log(`Input artifact: ${options.inputPath}`)
+  if (options.workflowId) console.log(`Workflow filter: ${options.workflowId}`)
+  if (options.executionId) console.log(`Execution filter: ${options.executionId}`)
+  if (options.workspaceId) console.log(`Workspace filter: ${options.workspaceId}`)
+  if (options.limit) console.log(`Limit: ${options.limit}`)
+
+  const records = await loadHistoricalReconcileShadowArtifact(options.inputPath)
+  console.log(`Loaded ${records.length} shadow record(s) from artifact`)
+
+  const gate = evaluateApplyRolloutGates({
+    recordCount: records.length,
+    filter: {
+      workflowId: options.workflowId,
+      executionId: options.executionId,
+      workspaceId: options.workspaceId,
+      limit: options.limit,
+    },
+    confirmProduction: options.confirmProduction,
+  })
+
+  console.log(`\n--- Rollout gate (${gate.phase}) ---`)
+  console.log(`Allowed: ${gate.allowed ? 'yes' : 'no'}`)
+  if (gate.warnings.length > 0) {
+    console.log(`Warnings: ${gate.warnings.join(', ')}`)
+  }
+  if (gate.blockers.length > 0) {
+    console.log(`Blockers: ${gate.blockers.join(', ')}`)
+    console.log('\nRun with --rollout-guide for the recommended pilot → production sequence.')
+    return 1
+  }
+
+  const batch = await applyHistoricalReconciliationBatch({
+    records,
+    filter: {
+      workflowId: options.workflowId,
+      executionId: options.executionId,
+      workspaceId: options.workspaceId,
+      limit: options.limit,
+    },
+  })
+
+  console.log('\n--- Apply summary ---')
+  console.log(`Processed:              ${batch.processed}`)
+  console.log(`Applied (new rows):     ${batch.applied}`)
+  console.log(`Unchanged (idempotent): ${batch.unchanged}`)
+  console.log(`Skipped:                ${batch.skipped}`)
+  console.log(`Errors:                 ${batch.errors}`)
+  console.log(`Positive delta applied: $${batch.totalPositiveDeltaApplied.toFixed(6)}`)
+  console.log(`Negative delta skipped: $${batch.totalNegativeDeltaSkipped.toFixed(6)}`)
+
+  const notable = batch.results.filter(
+    (result) => result.status === 'applied' || result.status === 'error'
+  )
+  if (notable.length > 0) {
+    console.log('\n--- Applied / error details ---')
+    for (const result of notable.slice(0, 50)) {
+      console.log(
+        `  ${result.executionId.slice(0, 8)}… status=${result.status} entries=${result.entriesInserted} delta=$${result.positiveDeltaApplied.toFixed(6)} ledger=${result.ledgerSumBefore.toFixed(6)}→${result.ledgerSumAfter.toFixed(6)} cost_total=${result.costTotalBefore?.toFixed(6) ?? 'null'}→${result.costTotalAfter.toFixed(6)}${result.reason ? ` reason=${result.reason}` : ''}`
+      )
+    }
+    if (notable.length > 50) {
+      console.log(`  … and ${notable.length - 50} more`)
+    }
+  }
+
+  if (options.verifyAfterApply || batch.applied > 0) {
+    const executionIds = batch.results
+      .filter((result) => result.status === 'applied' || result.status === 'unchanged')
+      .map((result) => result.executionId)
+
+    if (executionIds.length > 0) {
+      const postApply = await verifyPostApplyReconciliation(executionIds)
+      console.log('\n--- Post-apply verification ---')
+      console.log(`Checked: ${postApply.total}`)
+      console.log(`Passed:  ${postApply.passed}`)
+      console.log(`Failed:  ${postApply.failed}`)
+
+      if (postApply.failed > 0) {
+        for (const result of postApply.results.filter((item) => !item.passed).slice(0, 20)) {
+          console.log(
+            `  ${result.executionId.slice(0, 8)}… drift=${result.drift.toFixed(6)} cost_total=${result.costTotal?.toFixed(6) ?? 'null'} ledger=${result.ledgerSum.toFixed(6)}`
+          )
+        }
+        return 1
+      }
+    }
+  }
+
+  return batch.errors > 0 ? 1 : 0
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2))
+
+  if (options.rolloutGuide) {
+    printRolloutGuide()
+    process.exit(0)
+  }
+
+  const modeCount = [options.audit, options.dryRun, options.apply, options.verify].filter(
+    Boolean
+  ).length
+  if (modeCount > 1) {
+    console.error('Use only one mode: --audit, --dry-run, --apply, or --verify')
+    process.exit(1)
+  }
+
+  if (!options.audit && !options.dryRun && !options.apply && !options.verify) {
+    console.error(
+      'No mode selected. Supported: --audit, --dry-run, --apply, --verify, --rollout-guide'
+    )
+    process.exit(1)
+  }
+
+  let exitCode = 0
+
+  if (options.audit) {
+    await runAudit(options)
+  } else if (options.dryRun) {
+    await runDryRun(options)
+  } else if (options.verify) {
+    exitCode = await runVerify(options)
+  } else {
+    exitCode = await runApply(options)
+  }
+
+  process.exit(exitCode)
 }
 
 main().catch((error) => {
