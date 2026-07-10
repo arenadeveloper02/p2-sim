@@ -19,18 +19,19 @@ const ECHARTS_JSON_GENERATOR_SKILL: SuggestedSkill = {
 
 When generating charts:
 - Lock the chart type the user requested; do not substitute another type.
-- Output the block's required envelope: \`{ "charts": [ ...options ], "count": N }\`.
+- Output pure JSON: a single bare ECharts option object for one chart, or a bare JSON array of option objects for multiple charts. No wrapper keys (no "charts"/"count"), no "option =" prefix.
 - Each chart option must include a non-empty \`series\` array with valid \`type\` strings.
 - Use only data from the provided dataset; never invent metrics.
-- Valid JSON only — no markdown fences, no JavaScript functions.`,
+- Valid JSON only — no markdown fences, no JavaScript functions, no trailing commas.
+- Radar needs a \`radar.indicator\` array; heatmap data is \`[xIndex, yIndex, value]\` triples plus a \`visualMap\`; candlestick rows are \`[open, close, low, high]\`; graph/sankey use \`nodes\`/\`links\` instead of axes.`,
 }
 
 export const ChartGeneratorBlock: BlockConfig = {
   type: 'chart_generator',
   name: 'Chart Generator',
-  description: 'Generate ECharts visualizations from any data',
+  description: 'Answer data questions in text and generate ECharts visualizations',
   longDescription:
-    'Core workflow block. Uses an LLM plus optional skills to decide chart intent and produce valid ECharts JSON for the deployed chat renderer. No hardcoded chart rules — prompts and skills drive behavior. Works with any JSON/tabular data source.',
+    'Core workflow block. A standalone data-analysis assistant: answers questions in text/markdown like an Agent block, and produces valid ECharts JSON when the user explicitly asks for a visualization — or both in one response. No hardcoded chart rules — prompts and skills drive behavior. Works with any JSON/tabular data source. For deployed chat, select the "content" output.',
   docsLink: 'https://docs.sim.ai/workflows/blocks/chart-generator',
   category: 'blocks',
   bgColor: '#7C3AED',
@@ -166,7 +167,10 @@ export const ChartGeneratorBlock: BlockConfig = {
       type: 'boolean',
       description: 'True when no chart was requested or output was plain text',
     },
-    content: { type: 'string', description: 'Raw LLM response (generate mode)' },
+    content: {
+      type: 'string',
+      description: 'Deploy to chat: text answer and/or chart JSON in one response',
+    },
     model: { type: 'string', description: 'Model used' },
     tokens: { type: 'json', description: 'Token usage' },
     cost: { type: 'json', description: 'Cost breakdown' },

@@ -151,6 +151,24 @@ describe('resolveEChartsOptionsFromContent', () => {
     const mixed = `Total spend is $1,200.\n\n\`\`\`json\n${JSON.stringify(dashboardPayload)}\n\`\`\``
     expect(stripEChartsJsonFromContent(mixed)).toBe('Total spend is $1,200.')
   })
+
+  it('parses un-fenced bare option JSON appended after text (chart generator mixed mode)', () => {
+    const mixed = `Campaign A has the best CTR at 4.2%.\n\n${JSON.stringify(barOption, null, 2)}`
+    expect(resolveEChartsOptionsFromContent(mixed)).toEqual([barOption])
+    expect(stripEChartsJsonFromContent(mixed)).toBe('Campaign A has the best CTR at 4.2%.')
+  })
+
+  it('parses un-fenced bare array JSON appended after text', () => {
+    const mixed = `Here is the comparison you asked for.\n\n${JSON.stringify([heatmapOption, barOption])}`
+    expect(resolveEChartsOptionsFromContent(mixed)).toEqual([heatmapOption, barOption])
+    expect(stripEChartsJsonFromContent(mixed)).toBe('Here is the comparison you asked for.')
+  })
+
+  it('does not strip non-chart JSON from text', () => {
+    const mixed = `Some config:\n\n${JSON.stringify({ foo: 'bar' })}`
+    expect(resolveEChartsOptionsFromContent(mixed)).toBeNull()
+    expect(stripEChartsJsonFromContent(mixed)).toBe(mixed)
+  })
 })
 
 describe('formatChartDeployOutputForChat', () => {

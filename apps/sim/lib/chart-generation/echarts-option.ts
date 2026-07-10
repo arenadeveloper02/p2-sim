@@ -152,6 +152,27 @@ function tryParseEmbeddedEChartsFences(value: string): EChartsOptionLike[] | nul
   return charts.length > 0 ? charts : null
 }
 
+const BARE_JSON_LINE_START_REGEX = /^[ \t]*[[{]/gm
+
+/**
+ * Detects un-fenced chart JSON appended after prose (the chart generator's
+ * mixed "answer text + bare option JSON" responses use no code fences). Returns
+ * the parsed charts plus the index where the JSON starts so prose can be split.
+ */
+function findTrailingBareEChartsJson(
+  value: string
+): { charts: EChartsOptionLike[]; jsonStart: number } | null {
+  for (const match of value.matchAll(BARE_JSON_LINE_START_REGEX)) {
+    const index = match.index ?? 0
+    if (index === 0) continue // whole-string JSON is handled separately
+    const charts = tryParseEChartsJsonCandidate(value.slice(index))
+    if (charts) {
+      return { charts, jsonStart: index }
+    }
+  }
+  return null
+}
+
 /**
  * Attempts to extract one or more ECharts options from a string. Supports a raw
  * JSON object, a `{ charts: [...] }` dashboard wrapper, a single fenced code
@@ -164,7 +185,12 @@ export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[
     return null
   }
 
-  return tryParseWholeEChartsString(trimmed) ?? tryParseEmbeddedEChartsFences(trimmed)
+  return (
+    tryParseWholeEChartsString(trimmed) ??
+    tryParseEmbeddedEChartsFences(trimmed) ??
+    findTrailingBareEChartsJson(trimmed)?.charts ??
+    null
+  )
 }
 
 /**
@@ -172,15 +198,23 @@ export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[
  * and charts can render separately in deployed chat.
  */
 export function stripEChartsJsonFromContent(content: string): string {
-  return content
-    .replace(EMBEDDED_FENCE_REGEX, (full, inner: string) => {
-      if (tryParseEChartsJsonCandidate(inner)) {
-        return ''
-      }
-      return full
-    })
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  let out = content.replace(EMBEDDED_FENCE_REGEX, (full, inner: string) => {
+    if (tryParseEChartsJsonCandidate(inner)) {
+      return ''
+    }
+    return full
+  })
+
+  if (tryParseEChartsJsonCandidate(out)) {
+    return ''
+  }
+
+  const trailing = findTrailingBareEChartsJson(out)
+  if (trailing) {
+    out = out.slice(0, trailing.jsonStart)
+  }
+
+  return out.replace(/\n{3,}/g, '\n\n').trim()
 }
 
 /** True when a deploy output value contains at least one renderable chart. */
