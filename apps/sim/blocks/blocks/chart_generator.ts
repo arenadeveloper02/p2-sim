@@ -1,9 +1,5 @@
 import { ChartBarIcon } from '@/components/icons'
 import { CHART_GENERATOR_DEFAULT_MODEL } from '@/lib/chart-generation/chart-generator-config'
-import {
-  buildChartGeneratorUserPrompt,
-  DEFAULT_CHART_GENERATOR_SYSTEM_PROMPT,
-} from '@/lib/chart-generation/chart-generator-prompts'
 import type { BlockConfig, SuggestedSkill } from '@/blocks/types'
 import {
   getModelOptions,
@@ -105,27 +101,28 @@ export const ChartGeneratorBlock: BlockConfig = {
       condition: { field: 'operation', value: 'generate' },
     },
     {
+      // No value() default here: baking the default prompt into the saved workflow
+      // freezes it (backend updates stop applying) — leave empty so the handler
+      // falls back to DEFAULT_CHART_GENERATOR_SYSTEM_PROMPT at runtime.
       id: 'systemPrompt',
       title: 'System prompt',
       type: 'code',
       language: 'markdown',
-      placeholder: 'Override default chart generation instructions',
+      placeholder: 'Leave empty to use the built-in analysis + chart instructions',
       mode: 'advanced',
       condition: { field: 'operation', value: 'generate' },
-      value: () => DEFAULT_CHART_GENERATOR_SYSTEM_PROMPT,
     },
     {
+      // No value() default here: it used to serialize literal <userRequest>/<data>
+      // placeholders into the workflow, which overrode the runtime-built prompt and
+      // sent the LLM empty inputs.
       id: 'userPrompt',
       title: 'User prompt template',
       type: 'code',
       language: 'markdown',
+      placeholder: 'Leave empty to auto-build from Chart request + Data',
       mode: 'advanced',
       condition: { field: 'operation', value: 'generate' },
-      value: (params: Record<string, unknown>) =>
-        buildChartGeneratorUserPrompt(
-          String(params.userRequest ?? '<userRequest>'),
-          String(params.data ?? '<data>')
-        ),
     },
     {
       id: 'temperature',

@@ -78,10 +78,21 @@ export class ChartGeneratorBlockHandler implements BlockHandler {
     const userRequest = String(inputs.userRequest || '')
     const data = formatDataInput(inputs.data)
 
+    // Workflows saved with older block versions baked stale defaults into these
+    // fields: a userPrompt containing literal <userRequest>/<data> placeholders
+    // (which sent the LLM empty inputs) and an outdated system prompt. Ignore
+    // both so the backend defaults and real runtime inputs are used instead.
+    const savedSystemPrompt = String(inputs.systemPrompt || '').trim()
     let systemPrompt =
-      String(inputs.systemPrompt || '').trim() || DEFAULT_CHART_GENERATOR_SYSTEM_PROMPT
+      !savedSystemPrompt || savedSystemPrompt.startsWith('You are a chart generation assistant.')
+        ? DEFAULT_CHART_GENERATOR_SYSTEM_PROMPT
+        : savedSystemPrompt
+
+    const savedUserPrompt = String(inputs.userPrompt || '').trim()
     const userPrompt =
-      String(inputs.userPrompt || '').trim() || buildChartGeneratorUserPrompt(userRequest, data)
+      !savedUserPrompt || /<userRequest>|<data>/.test(savedUserPrompt)
+        ? buildChartGeneratorUserPrompt(userRequest, data)
+        : savedUserPrompt
 
     const skillInputs = (inputs.skills as SkillInput[] | undefined) ?? []
     if (skillInputs.length > 0 && ctx.workspaceId) {
