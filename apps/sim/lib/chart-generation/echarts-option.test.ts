@@ -122,6 +122,34 @@ describe('resolveEChartsOptionsFromContent', () => {
     expect(resolveEChartsOptionsFromContent({ charts: [{ foo: 'bar' }] })).toBeNull()
     expect(resolveEChartsOptionsFromContent('hello world')).toBeNull()
   })
+
+  it('resolves a bare JSON array of chart options', () => {
+    expect(resolveEChartsOptionsFromContent([validOption, barOption])).toEqual([
+      validOption,
+      barOption,
+    ])
+    expect(resolveEChartsOptionsFromContent(JSON.stringify([validOption, barOption]))).toEqual([
+      validOption,
+      barOption,
+    ])
+  })
+
+  it('resolves charts from a nested content string on a block output object', () => {
+    const wrapper = { charts: [validOption], count: 1 }
+    expect(
+      resolveEChartsOptionsFromContent({
+        charts: [validOption],
+        count: 1,
+        content: JSON.stringify(wrapper),
+        model: 'gpt-4o',
+      })
+    ).toEqual([validOption])
+  })
+
+  it('resolves chart JSON from the first valid segment when content was duplicated', () => {
+    const wrapper = JSON.stringify({ charts: [validOption], count: 1 })
+    expect(resolveEChartsOptionsFromContent(`${wrapper}\n\n${wrapper}`)).toEqual([validOption])
+  })
 })
 
 describe('sanitizeEChartsOption', () => {

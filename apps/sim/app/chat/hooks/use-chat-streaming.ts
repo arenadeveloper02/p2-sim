@@ -8,6 +8,7 @@ import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
+import { formatChartContentForChat } from '@/lib/chart-generation/format-chart-content-for-chat'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import type { ChatMessage } from '@/app/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/chat/constants'
@@ -347,6 +348,11 @@ export function useChatStreaming() {
                   }
 
                   if (typeof value === 'object') {
+                    const chartContent = formatChartContentForChat(value)
+                    if (chartContent) {
+                      return chartContent
+                    }
+
                     try {
                       return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
                     } catch {
@@ -438,10 +444,21 @@ export function useChatStreaming() {
                 if (formattedOutputs.length > 0) {
                   const nonEmptyOutputs = formattedOutputs.filter((output) => output.trim())
                   if (nonEmptyOutputs.length > 0) {
-                    const combinedOutputs = nonEmptyOutputs.join('\n\n')
-                    finalContent = finalContent
-                      ? `${finalContent.trim()}\n\n${combinedOutputs}`
-                      : combinedOutputs
+                    const chartOutputs = nonEmptyOutputs.filter(
+                      (output) => formatChartContentForChat(output) !== null
+                    )
+                    const combinedOutputs =
+                      chartOutputs.length > 0
+                        ? chartOutputs.join('\n\n')
+                        : nonEmptyOutputs.join('\n\n')
+
+                    if (chartOutputs.length > 0) {
+                      finalContent = combinedOutputs
+                    } else {
+                      finalContent = finalContent
+                        ? `${finalContent.trim()}\n\n${combinedOutputs}`
+                        : combinedOutputs
+                    }
                   }
                 }
 

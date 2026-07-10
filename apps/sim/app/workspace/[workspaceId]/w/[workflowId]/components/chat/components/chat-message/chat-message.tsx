@@ -349,6 +349,17 @@ export function ChatMessage({
         }
 
         if (txtTrim) {
+          const nestedChartOptions = resolveEChartsOptionsFromContent(txtTrim)
+          if (nestedChartOptions) {
+            return (
+              <>
+                {nestedChartOptions.map((option, index) => (
+                  <ChatEChartsRenderer key={index} option={option} />
+                ))}
+              </>
+            )
+          }
+
           return (
             <ArenaCopilotMarkdownRenderer content={txtTrim} renderImage={renderMarkdownImage} />
           )

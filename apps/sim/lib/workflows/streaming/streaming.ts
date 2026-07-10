@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { formatChartContentForChat } from '@/lib/chart-generation/format-chart-content-for-chat'
 import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
 import {
   extractBlockIdFromOutputId,
@@ -680,10 +681,15 @@ export async function createStreamingResponse(
               await materializeInlineExecutionValue(hydratedOutput, materializationContext, {
                 maxBytes: getRemainingSelectedOutputBytes(state.selectedOutputBytes),
               })
-              const formattedOutput =
-                typeof hydratedOutput === 'string'
+              const formattedOutput = (() => {
+                const chartContent = formatChartContentForChat(hydratedOutput)
+                if (chartContent) {
+                  return chartContent
+                }
+                return typeof hydratedOutput === 'string'
                   ? hydratedOutput
                   : JSON.stringify(hydratedOutput, null, 2)
+              })()
               const selectedOutputBytes = Math.max(
                 getInlineJsonByteLength(hydratedOutput) ?? 0,
                 Buffer.byteLength(formattedOutput, 'utf8')

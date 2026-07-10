@@ -25,6 +25,7 @@ import {
   extractGeneratedImagesFromData,
   isAssistantImageUrl,
 } from '@/lib/chat/assistant-assets'
+import { formatChartContentForChat } from '@/lib/chart-generation/format-chart-content-for-chat'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { cn } from '@/lib/core/utils/cn'
 import {
@@ -198,6 +199,11 @@ const extractOutputFromLogs = (logs: BlockLog[] | undefined, outputId: string): 
  * @returns Formatted string, markdown code block for objects, or empty string
  */
 const formatOutputContent = (output: unknown): string => {
+  const chartContent = formatChartContentForChat(output)
+  if (chartContent) {
+    return chartContent
+  }
+
   if (typeof output === 'string') {
     return output
   }
@@ -205,6 +211,56 @@ const formatOutputContent = (output: unknown): string => {
     return `\`\`\`json\n${JSON.stringify(output, null, 2)}\n\`\`\``
   }
   return ''
+}
+
+const buildChartAwareChatContent = (
+  logs: BlockLog[] | undefined,
+  selectedOutputs: string[],
+  accumulatedContent: string
+): string | undefined => {
+  const trimmedAccumulated = accumulatedContent.trim()
+
+  if (!logs || selectedOutputs.length === 0) {
+    if (trimmedAccumulated) {
+      return formatChartContentForChat(trimmedAccumulated) ?? trimmedAccumulated
+    }
+    return undefined
+  }
+
+  const chartParts: string[] = []
+  const nonChartParts: string[] = []
+  for (const outputId of selectedOutputs) {
+    const output = extractOutputFromLogs(logs, outputId)
+    if (output === undefined) {
+      continue
+    }
+
+    const chartContent = formatChartContentForChat(output)
+    if (chartContent) {
+      chartParts.push(chartContent)
+      continue
+    }
+
+    const formatted = formatOutputContent(output)
+    if (formatted.trim()) {
+      nonChartParts.push(formatted)
+    }
+  }
+
+  if (chartParts.length > 0) {
+    return chartParts.join('\n\n')
+  }
+
+  if (nonChartParts.length > 0) {
+    const combined = nonChartParts.join('\n\n')
+    return trimmedAccumulated ? `${trimmedAccumulated}\n\n${combined}` : combined
+  }
+
+  if (trimmedAccumulated) {
+    return formatChartContentForChat(trimmedAccumulated) ?? trimmedAccumulated
+  }
+
+  return undefined
 }
 
 const getImageUrlsFromOutput = (output: unknown): string[] => {
@@ -762,6 +818,19 @@ export function Chat() {
                       ...(s3UploadFailed === true && { s3UploadFailed: true }),
                     }
                     break
+                  }
+                }
+
+                if (!contentToSet) {
+                  const chartAwareContent = buildChartAwareChatContent(
+                    'logs' in result && Array.isArray(result.logs)
+                      ? (result.logs as BlockLog[])
+                      : undefined,
+                    selectedOutputs,
+                    accumulatedContent
+                  )
+                  if (chartAwareContent) {
+                    contentToSet = chartAwareContent
                   }
                 }
               }

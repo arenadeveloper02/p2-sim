@@ -117,8 +117,20 @@ function resolveEChartsOptionsFromParsed(value: unknown): EChartsOptionLike[] | 
     return [value]
   }
 
+  if (Array.isArray(value)) {
+    const charts = value.filter(isEChartsOption)
+    return charts.length > 0 ? charts : null
+  }
+
   if (!isRecord(value)) {
     return null
+  }
+
+  if (typeof value.content === 'string') {
+    const nested = parseEChartsOptionsFromString(value.content)
+    if (nested) {
+      return nested
+    }
   }
 
   const charts = value.charts
@@ -151,6 +163,15 @@ export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[
     candidate = fenceMatch[1].trim()
   }
 
+  if (candidate.startsWith('[') && candidate.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(candidate)
+      return resolveEChartsOptionsFromParsed(parsed)
+    } catch {
+      return null
+    }
+  }
+
   if (!candidate.startsWith('{') || !candidate.endsWith('}')) {
     return null
   }
@@ -170,7 +191,25 @@ export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[
  */
 export function resolveEChartsOptionsFromContent(content: unknown): EChartsOptionLike[] | null {
   if (typeof content === 'string') {
-    return parseEChartsOptionsFromString(content)
+    const direct = parseEChartsOptionsFromString(content)
+    if (direct) {
+      return direct
+    }
+
+    const parts = content
+      .split('\n\n')
+      .map((part) => part.trim())
+      .filter(Boolean)
+    if (parts.length > 1) {
+      for (const part of parts) {
+        const resolved = parseEChartsOptionsFromString(part)
+        if (resolved) {
+          return resolved
+        }
+      }
+    }
+
+    return null
   }
 
   return resolveEChartsOptionsFromParsed(content)
