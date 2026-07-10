@@ -1,9 +1,9 @@
 import { createSign } from 'crypto'
 import { db } from '@sim/db'
-import { account, accountTokens, credential, credentialSetMember } from '@sim/db/schema'
+import { account, accountTokens, credential } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { getPostgresErrorCode, toError } from '@sim/utils/errors'
+import { and, desc, eq,sql  } from 'drizzle-orm'
 import { withLeaderLock } from '@/lib/concurrency/leader-lock'
 import { coalesceLocally } from '@/lib/concurrency/singleflight'
 import { decryptSecret } from '@/lib/core/security/encryption'
@@ -287,7 +287,7 @@ export async function safeAccountInsert(
     await db.insert(account).values(data)
     logger.info(`Created new ${context.provider} account for user`, { userId: data.userId })
   } catch (error: any) {
-    if (error?.code === '23505') {
+    if (getPostgresErrorCode(error) === '23505') {
       logger.error(`Duplicate ${context.provider} account detected, credential already exists`, {
         userId: data.userId,
         identifier: context.identifier,

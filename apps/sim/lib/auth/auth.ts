@@ -3215,6 +3215,7 @@ export const auth = betterAuth({
                 params: { allow_promotion_codes: true },
               }),
               onSubscriptionComplete: async ({
+                event,
                 stripeSubscription,
                 subscription,
               }: {
@@ -3268,7 +3269,7 @@ export const auth = betterAuth({
                   throw orgError
                 }
 
-                await handleSubscriptionCreated(resolvedSubscription)
+                await handleSubscriptionCreated(resolvedSubscription, event.id)
 
                 await syncSubscriptionUsageLimits(resolvedSubscription)
 
