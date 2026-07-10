@@ -294,14 +294,17 @@ interface LlmAppSpec {
  * Prefers the directory that contains `bun.lock` (workspace root), not nested package roots like `apps/sim`.
  */
 export function findMonorepoRoot(startDir: string = process.cwd()): string {
-  let dir = resolve(startDir)
+  let dir = resolve(/* turbopackIgnore: true */ startDir)
   let packageJsonFallback = dir
 
   while (true) {
-    if (existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'turbo.json'))) {
+    if (
+      existsSync(join(/* turbopackIgnore: true */ dir, 'bun.lock')) ||
+      existsSync(join(/* turbopackIgnore: true */ dir, 'turbo.json'))
+    ) {
       return dir
     }
-    if (existsSync(join(dir, 'package.json'))) {
+    if (existsSync(join(/* turbopackIgnore: true */ dir, 'package.json'))) {
       packageJsonFallback = dir
     }
     const parent = dirname(dir)
@@ -1325,7 +1328,7 @@ async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Prom
       continue
     }
 
-    const fullPath = join(outputDir, safePath)
+    const fullPath = join(/* turbopackIgnore: true */ outputDir, safePath)
     await mkdir(dirname(fullPath), { recursive: true })
     await writeFile(fullPath, file.content, 'utf-8')
     written++
@@ -1452,7 +1455,7 @@ async function validateAndRepairUntilBuildPasses(
 
       currentSpec = await repairAppSpecWithLlm(currentSpec, fastResult.output, userInput)
 
-      const nextCacheDir = join(outputDir, '.next')
+      const nextCacheDir = join(/* turbopackIgnore: true */ outputDir, '.next')
       if (existsSync(nextCacheDir)) {
         await rm(nextCacheDir, { recursive: true, force: true })
       }
@@ -1494,7 +1497,7 @@ async function validateAndRepairUntilBuildPasses(
 
     currentSpec = await repairAppSpecWithLlm(currentSpec, finalResult.output, userInput)
 
-    const nextCacheDir = join(outputDir, '.next')
+    const nextCacheDir = join(/* turbopackIgnore: true */ outputDir, '.next')
     if (existsSync(nextCacheDir)) {
       await rm(nextCacheDir, { recursive: true, force: true })
     }
@@ -1638,7 +1641,7 @@ async function generateNextjsAppInner(
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
     const monorepoRoot = findMonorepoRoot()
-    const outputDir = join(monorepoRoot, GENERATED_APPS_DIR, repoName)
+    const outputDir = join(/* turbopackIgnore: true */ monorepoRoot, GENERATED_APPS_DIR, repoName)
 
     await mkdir(outputDir, { recursive: true })
     const fileCount = await writeAppFiles(outputDir, spec.files)
