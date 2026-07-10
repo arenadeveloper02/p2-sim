@@ -9,6 +9,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { isZodError, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { type ChatLoadResult, resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
 import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import { buildCopilotRequestPayload } from '@/lib/copilot/chat/payload'
@@ -883,6 +884,22 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       })
 
       const workspaceId = branch.workspaceId
+
+      if (branch.goRoute === '/api/mothership') {
+        const usage = await checkMothershipUsageLimits(authenticatedUserId, workspaceId)
+        if (usage.isExceeded) {
+          activeOtelRoot.span.setAttribute(TraceAttr.HttpStatusCode, 402)
+          activeOtelRoot.finish('error')
+          return NextResponse.json(
+            {
+              error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
+              scope: usage.scope,
+            },
+            { status: 402 }
+          )
+        }
+      }
+
       // The workspace branch already resolved this permission (and gated on it)
       // during branch resolution; reuse it instead of querying again.
       const userPermissionPromise =
