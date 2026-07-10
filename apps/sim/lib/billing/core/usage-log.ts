@@ -68,12 +68,23 @@ function scaleUsageEntry<T extends UsageEntry>(entry: T, multiplier: number): T 
     (metadata as ModelUsageMetadata).toolCost! > 0
   ) {
     const modelMetadata = metadata as ModelUsageMetadata
+    const scaledToolCost =
+      effectiveMultiplier === 1
+        ? modelMetadata.toolCost
+        : modelMetadata.toolCost! * effectiveMultiplier
+    const scaledEmbeddedToolCosts =
+      modelMetadata.embeddedToolCosts && effectiveMultiplier !== 1
+        ? Object.fromEntries(
+            Object.entries(modelMetadata.embeddedToolCosts).map(([tool, cost]) => [
+              tool,
+              cost * effectiveMultiplier,
+            ])
+          )
+        : modelMetadata.embeddedToolCosts
     metadata = {
       ...modelMetadata,
-      toolCost:
-        effectiveMultiplier === 1
-          ? modelMetadata.toolCost
-          : modelMetadata.toolCost! * effectiveMultiplier,
+      toolCost: scaledToolCost,
+      ...(scaledEmbeddedToolCosts ? { embeddedToolCosts: scaledEmbeddedToolCosts } : {}),
     }
   }
 
@@ -166,6 +177,7 @@ export interface ModelUsageMetadata {
   inputTokens: number
   outputTokens: number
   toolCost?: number
+  embeddedToolCosts?: Record<string, number>
 }
 
 /**

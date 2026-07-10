@@ -371,4 +371,83 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
       })
     )
   })
+
+  it('virtually splits embedded agent tools from provider into tool buckets', async () => {
+    wireTerminalQueue(
+      buildAnalyticsQueue(
+        {
+          0: [
+            {
+              source: 'workflow',
+              billableCost: '0.11',
+              rawCost: '0.09',
+              count: 2,
+              ...EMPTY_USAGE,
+            },
+          ],
+          1: [
+            { chargeType: 'provider', billableCost: '0.10', rawCost: '0.08', count: 1 },
+            { chargeType: 'tool', billableCost: '0.01', rawCost: '0.01', count: 1 },
+          ],
+          2: [EMPTY_USAGE],
+          3: ATTRIBUTION_OK,
+          4: [{ total: 1, withProjectedCost: 1, totalProjectedCost: '0.11' }],
+          5: [{ totalLedgerCost: '0.11' }],
+          14: [{ model: 'gpt-4o', billableCost: '0.10', rawCost: '0.08', count: 1 }],
+          16: [{ toolId: 'exa_search', billableCost: '0.01', rawCost: '0.01', count: 1 }],
+          24: [
+            {
+              executionId: 'exec-1',
+              description: 'gpt-4o',
+              provider: 'openai',
+              cost: '0.10',
+              rawCost: '0.08',
+              metadata: {
+                inputTokens: 1000,
+                outputTokens: 100,
+                toolCost: 0.04,
+                embeddedToolCosts: { image_generate: 0.04 },
+              },
+            },
+          ],
+          25: DATA_HEALTH_OK[0],
+          26: DATA_HEALTH_OK[1],
+        },
+        27
+      )
+    )
+
+    const analytics = await getWorkspaceUsageAnalytics({
+      workspaceId: WORKSPACE_ID,
+      period: '30d',
+      sources: ['workflow'],
+    })
+
+    expect(analytics.summary.billableCost).toBeCloseTo(0.11, 8)
+    expect(analytics.byChargeType).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          chargeType: 'provider',
+          billableCost: expect.closeTo(0.06, 8),
+        }),
+        expect.objectContaining({ chargeType: 'tool', billableCost: expect.closeTo(0.05, 8) }),
+      ])
+    )
+    expect(analytics.byModel).toEqual([
+      expect.objectContaining({
+        model: 'gpt-4o',
+        billableCost: expect.closeTo(0.06, 8),
+        rawCost: expect.closeTo(0.048, 8),
+      }),
+    ])
+    expect(analytics.byTool).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toolId: 'image_generate', billableCost: 0.04 }),
+        expect.objectContaining({ toolId: 'exa_search', billableCost: 0.01 }),
+      ])
+    )
+
+    const chargeTypeTotal = analytics.byChargeType.reduce((sum, row) => sum + row.billableCost, 0)
+    expect(chargeTypeTotal).toBeCloseTo(analytics.summary.billableCost, 8)
+  })
 })

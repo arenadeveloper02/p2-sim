@@ -1,4 +1,5 @@
 import { formatCredits } from '@/lib/billing/credits/conversion'
+import { formatEmbeddedToolLabel } from '@/lib/logs/embedded-tool-costs'
 import type {
   UsageActorTypeValue,
   UsageChargeTypeValue,
@@ -72,6 +73,11 @@ export function formatSourceLabel(source: string): string {
 /** Format a charge-type bucket for display. */
 export function formatChargeTypeLabel(chargeType: UsageChargeTypeValue): string {
   return CHARGE_TYPE_LABELS[chargeType] ?? chargeType
+}
+
+/** Format a tool id for dashboard display (includes virtual embedded-tool ids). */
+export function formatToolLabel(toolId: string): string {
+  return formatEmbeddedToolLabel(toolId)
 }
 
 /** Format actor_type for display. */

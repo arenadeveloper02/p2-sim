@@ -30,6 +30,12 @@ import {
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
 import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
+import {
+  applyEmbeddedToolChargeTypeSplit,
+  computeEmbeddedToolVirtualSplit,
+  mergeEmbeddedToolBucketRows,
+  subtractEmbeddedFromBucketRows,
+} from '@/lib/workspaces/usage/embedded-tool-virtual-split'
 
 const logger = createLogger('WorkspaceUsageAnalytics')
 
@@ -790,6 +796,26 @@ export async function getWorkspaceUsageAnalytics(
         ),
     ])
 
+    const modelMetadataRows = await dbReplica
+      .select({
+        executionId: usageLog.executionId,
+        description: usageLog.description,
+        provider: usageLog.provider,
+        cost: usageLog.cost,
+        rawCost: usageLog.rawCost,
+        metadata: usageLog.metadata,
+      })
+      .from(usageLog)
+      .where(
+        and(
+          ...ledgerConditions,
+          eq(usageLog.category, 'model'),
+          isNotNull(usageLog.executionId)
+        )
+      )
+
+    const embeddedToolSplit = computeEmbeddedToolVirtualSplit(modelMetadataRows)
+
     const bySource = bySourceRows.map((row) => ({
       source: row.source,
       billableCost: parseDecimal(row.billableCost),
@@ -805,16 +831,19 @@ export async function getWorkspaceUsageAnalytics(
       'cost_block',
       'other',
     ]
-    const byChargeType = byChargeTypeRows
-      .map((row) => ({
-        chargeType: parseChargeType(row.chargeType),
-        billableCost: parseDecimal(row.billableCost),
-        rawCost: parseDecimal(row.rawCost),
-        count: row.count,
-      }))
-      .sort(
-        (a, b) => CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
-      )
+    const byChargeType = applyEmbeddedToolChargeTypeSplit(
+      byChargeTypeRows
+        .map((row) => ({
+          chargeType: parseChargeType(row.chargeType),
+          billableCost: parseDecimal(row.billableCost),
+          rawCost: parseDecimal(row.rawCost),
+          count: row.count,
+        }))
+        .sort(
+          (a, b) => CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
+        ),
+      embeddedToolSplit
+    )
 
     const totalBillableCost = bySource.reduce((sum, row) => sum + row.billableCost, 0)
     const totalRawCost = bySource.reduce((sum, row) => sum + row.rawCost, 0)
@@ -1051,28 +1080,39 @@ export async function getWorkspaceUsageAnalytics(
         count: row.count,
         usage: mapUsageMetrics(row),
       })),
-      byModel: byModelRows.map((row) => ({
-        model: row.model,
-        billableCost: parseDecimal(row.billableCost),
-        rawCost: parseDecimal(row.rawCost),
-        count: row.count,
-      })),
-      byProvider: byProviderRows
-        .filter((row): row is typeof row & { provider: string } => row.provider !== null)
-        .map((row) => ({
-          provider: row.provider,
+      byModel: subtractEmbeddedFromBucketRows(
+        byModelRows.map((row) => ({
+          model: row.model,
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
           count: row.count,
         })),
-      byTool: byToolRows
-        .filter((row): row is typeof row & { toolId: string } => row.toolId !== null)
-        .map((row) => ({
-          toolId: row.toolId,
-          billableCost: parseDecimal(row.billableCost),
-          rawCost: parseDecimal(row.rawCost),
-          count: row.count,
-        })),
+        (row) => row.model,
+        embeddedToolSplit.byModelEmbedded
+      ),
+      byProvider: subtractEmbeddedFromBucketRows(
+        byProviderRows
+          .filter((row): row is typeof row & { provider: string } => row.provider !== null)
+          .map((row) => ({
+            provider: row.provider,
+            billableCost: parseDecimal(row.billableCost),
+            rawCost: parseDecimal(row.rawCost),
+            count: row.count,
+          })),
+        (row) => row.provider,
+        embeddedToolSplit.byProviderEmbedded
+      ),
+      byTool: mergeEmbeddedToolBucketRows(
+        byToolRows
+          .filter((row): row is typeof row & { toolId: string } => row.toolId !== null)
+          .map((row) => ({
+            toolId: row.toolId,
+            billableCost: parseDecimal(row.billableCost),
+            rawCost: parseDecimal(row.rawCost),
+            count: row.count,
+          })),
+        embeddedToolSplit.byToolEmbedded
+      ),
       byVendor: byVendorRows.map((row) => ({
         vendor: row.vendor,
         billableCost: parseDecimal(row.billableCost),

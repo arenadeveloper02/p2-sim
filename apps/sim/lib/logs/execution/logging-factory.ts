@@ -8,6 +8,11 @@ import type {
   WorkflowState,
 } from '@/lib/logs/types'
 import {
+  accumulateEmbeddedToolCosts,
+  extractEmbeddedToolCostsFromSpan,
+  normalizeEmbeddedToolCosts,
+} from '@/lib/logs/embedded-tool-costs'
+import {
   loadDeployedWorkflowState,
   loadWorkflowFromNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
@@ -96,6 +101,8 @@ export interface CostSummaryModel {
   output: number
   total: number
   toolCost?: number
+  /** Per-tool embedded costs normalized to `toolCost`; merged with max across boundaries. */
+  embeddedToolCosts?: Record<string, number>
   tokens: { input: number; output: number; total: number }
 }
 
@@ -306,6 +313,12 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
 
       if (span.cost.toolCost) {
         models[model].toolCost = (models[model].toolCost || 0) + span.cost.toolCost
+        const embeddedRaw = extractEmbeddedToolCostsFromSpan(span)
+        const normalized = normalizeEmbeddedToolCosts(embeddedRaw, span.cost.toolCost)
+        models[model].embeddedToolCosts = accumulateEmbeddedToolCosts(
+          models[model].embeddedToolCosts,
+          normalized
+        )
       }
     } else if ((span.cost.total || 0) > 0) {
       if (span.type === 'cost') {

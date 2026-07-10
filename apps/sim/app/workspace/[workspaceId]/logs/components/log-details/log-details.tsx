@@ -63,6 +63,13 @@ function creditLabel(credits: number, dollars: number): string {
   return `${credits.toLocaleString()} ${credits === 1 ? 'credit' : 'credits'}`
 }
 
+const ADDITIVE_COST_SECTIONS = [
+  { group: 'base' as const, label: 'Base cost' },
+  { group: 'model' as const, label: 'Model costs' },
+  { group: 'tool' as const, label: 'Tool costs' },
+  { group: 'other' as const, label: 'Other costs' },
+]
+
 export const WorkflowOutputSection = memo(
   function WorkflowOutputSection({ output }: { output: Record<string, unknown> }) {
     const contentRef = useRef<HTMLDivElement>(null)
@@ -338,32 +345,38 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
   // have the cost_total projection show the total alone — no itemization, no
   // parallel jsonb reconstruction.
   const costBreakdown = useMemo((): {
-    rows: Array<{ key: string; label: string; credits: number; dollars: number }>
+    sections: Array<{
+      label: string
+      rows: Array<{ key: string; label: string; credits: number; dollars: number }>
+    }>
     totalCredits: number
     totalDollars: number
     tokens: { input: number; output: number }
   } | null => {
     const ledger = log.costLedger
-    if (ledger && ledger.items.length > 0) {
+    if (ledger && ledger.leaves.length > 0) {
       const credits = apportionCredits(
-        ledger.items.map((item, i) => ({ key: String(i), dollars: item.cost }))
+        ledger.leaves.map((leaf) => ({ key: leaf.key, dollars: leaf.dollars }))
       )
-      const rows = ledger.items.map((item, i) => ({
-        key: String(i),
-        label:
-          item.category === 'fixed' && item.description === 'execution_fee'
-            ? 'Base Run'
-            : item.description,
-        credits: credits[String(i)] ?? 0,
-        dollars: item.cost,
-      }))
+      const sections = ADDITIVE_COST_SECTIONS.map((section) => ({
+        label: section.label,
+        rows: ledger.leaves
+          .filter((leaf) => leaf.group === section.group)
+          .map((leaf) => ({
+            key: leaf.key,
+            label: leaf.label,
+            credits: credits[leaf.key] ?? 0,
+            dollars: leaf.dollars,
+          })),
+      })).filter((section) => section.rows.length > 0)
+
       return {
-        rows,
+        sections,
         totalCredits: dollarsToCredits(ledger.total),
         totalDollars: ledger.total,
         tokens: {
-          input: ledger.items.reduce((s, it) => s + (it.inputTokens ?? 0), 0),
-          output: ledger.items.reduce((s, it) => s + (it.outputTokens ?? 0), 0),
+          input: ledger.items.reduce((sum, item) => sum + (item.inputTokens ?? 0), 0),
+          output: ledger.items.reduce((sum, item) => sum + (item.outputTokens ?? 0), 0),
         },
       }
     }
@@ -372,7 +385,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
     const total = log.cost?.total
     if (total == null) return null
     return {
-      rows: [],
+      sections: [],
       totalCredits: dollarsToCredits(total),
       totalDollars: total,
       tokens: { input: 0, output: 0 },
@@ -547,17 +560,26 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
               {/* Cost Breakdown */}
               {hasCostInfo && costBreakdown && (
                 <div className='divide-y divide-[var(--border)] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--surface-2)] dark:bg-transparent'>
-                  {costBreakdown.rows.map((row) => (
-                    <div
-                      key={row.key}
-                      className='flex h-10 items-center justify-between px-3 transition-colors hover-hover:bg-[var(--surface-2)]'
-                    >
-                      <span className='min-w-0 truncate font-medium text-[var(--text-tertiary)] text-caption'>
-                        {row.label}
-                      </span>
-                      <span className='flex-shrink-0 font-medium text-[var(--text-secondary)] text-caption tabular-nums'>
-                        {creditLabel(row.credits, row.dollars)}
-                      </span>
+                  {costBreakdown.sections.map((section) => (
+                    <div key={section.label}>
+                      <div className='flex h-8 items-center bg-[var(--surface-3)] px-3 dark:bg-[var(--surface-2)]'>
+                        <span className='font-medium text-[var(--text-secondary)] text-caption'>
+                          {section.label}
+                        </span>
+                      </div>
+                      {section.rows.map((row) => (
+                        <div
+                          key={row.key}
+                          className='flex h-10 items-center justify-between px-3 transition-colors hover-hover:bg-[var(--surface-2)]'
+                        >
+                          <span className='min-w-0 truncate pl-2 font-medium text-[var(--text-tertiary)] text-caption'>
+                            {row.label}
+                          </span>
+                          <span className='flex-shrink-0 font-medium text-[var(--text-secondary)] text-caption tabular-nums'>
+                            {creditLabel(row.credits, row.dollars)}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   ))}
                   <div className='flex h-10 items-center justify-between px-3 transition-colors hover-hover:bg-[var(--surface-2)]'>

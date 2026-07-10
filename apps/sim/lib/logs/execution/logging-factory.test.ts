@@ -533,6 +533,41 @@ describe('calculateCostSummary', () => {
     expect(result.models['gpt-4o'].toolCost).toBe(0.015)
   })
 
+  test('captures named embedded tool costs normalized to the model toolCost subtotal', () => {
+    const traceSpans = [
+      {
+        id: 'agent-span',
+        name: 'Agent',
+        type: 'agent',
+        model: 'gpt-4o',
+        cost: { input: 0.01, output: 0.02, total: 0.06, toolCost: 0.03 },
+        tokens: { input: 1000, output: 2000, total: 3000 },
+        children: [
+          {
+            id: 'tool-1',
+            type: 'tool',
+            name: 'image_generate',
+            output: { cost: { total: 0.02 } },
+          },
+          {
+            id: 'tool-2',
+            type: 'tool',
+            name: 'exa_search',
+            output: { cost: { total: 0.01 } },
+          },
+        ],
+      },
+    ]
+
+    const result = calculateCostSummary(traceSpans)
+
+    expect(result.models['gpt-4o'].toolCost).toBe(0.03)
+    expect(result.models['gpt-4o'].embeddedToolCosts).toEqual({
+      image_generate: 0.02,
+      exa_search: 0.01,
+    })
+  })
+
   test('mixed model + standalone tool run reconciles to total', () => {
     const traceSpans = [
       {

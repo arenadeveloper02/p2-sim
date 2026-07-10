@@ -696,6 +696,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           output: number
           total: number
           toolCost?: number
+          embeddedToolCosts?: Record<string, number>
           tokens: { input: number; output: number; total: number }
         }
       >
@@ -1280,6 +1281,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           output: number
           total: number
           toolCost?: number
+          embeddedToolCosts?: Record<string, number>
           tokens: { input: number; output: number; total: number }
         }
       >
@@ -1429,6 +1431,10 @@ export class ExecutionLogger implements IExecutionLoggerService {
                 outputTokens: modelData.tokens.output,
                 ...(modelData.toolCost != null &&
                   modelData.toolCost > 0 && { toolCost: modelData.toolCost }),
+                ...(modelData.embeddedToolCosts &&
+                  Object.keys(modelData.embeddedToolCosts).length > 0 && {
+                    embeddedToolCosts: modelData.embeddedToolCosts,
+                  }),
               },
             })
           }

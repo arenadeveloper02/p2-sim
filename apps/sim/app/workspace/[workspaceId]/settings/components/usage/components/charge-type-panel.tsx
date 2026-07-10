@@ -41,8 +41,8 @@ export function ChargeTypePanel({ byChargeType, totalBillableCost }: ChargeTypeP
   return (
     <SettingsSection label='Cost composition'>
       <p className='mb-4 text-[var(--text-secondary)] text-small'>
-        How the {formatDollarAmount(totalBillableCost)} total breaks down — base run fee, provider
-        model spend, hosted tools, and Cost-block pass-through.
+        How the {formatDollarAmount(totalBillableCost)} total breaks down — base run fee, model
+        inference, hosted tools (including agent-embedded tools), and Cost-block pass-through.
       </p>
       <div className='mb-6'>
         <CostShareBars rows={chartRows} emptyMessage='No charge-type data for this period.' />

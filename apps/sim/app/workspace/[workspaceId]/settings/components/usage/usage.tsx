@@ -30,6 +30,7 @@ import {
   formatPeriodLabel,
   formatSourceLabel,
   formatTokenCount,
+  formatToolLabel,
   formatUsageMetricsSummary,
   MOTHERSHIP_USAGE_SOURCES,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
@@ -564,7 +565,7 @@ function UsageDashboardContent({
                   rows={data.byTool}
                   getRowKey={(row) => row.toolId}
                   columns={[
-                    { key: 'tool', header: 'Tool', render: (row) => row.toolId },
+                    { key: 'tool', header: 'Tool', render: (row) => formatToolLabel(row.toolId) },
                     {
                       key: 'count',
                       header: 'Entries',

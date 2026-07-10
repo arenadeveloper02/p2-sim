@@ -108,21 +108,37 @@ const costSummarySchema = z
  * of truth) for the detail view. Each item is one billed line (base fee, a
  * model, or a tool/integration); the items reconcile to `total`.
  */
+const embeddedToolCostSchema = z.object({
+  name: z.string(),
+  cost: z.number(),
+})
+
 const costLedgerItemSchema = z.object({
-  category: z.enum(['fixed', 'model', 'tool']),
+  category: z.enum(['fixed', 'model', 'tool', 'external']),
   description: z.string(),
   cost: z.number(),
   inputTokens: z.number().optional(),
   outputTokens: z.number().optional(),
+  toolCost: z.number().optional(),
+  embeddedTools: z.array(embeddedToolCostSchema).optional(),
+})
+
+const additiveCostLeafSchema = z.object({
+  key: z.string(),
+  group: z.enum(['base', 'model', 'tool', 'other']),
+  label: z.string(),
+  dollars: z.number(),
 })
 
 export const costLedgerSchema = z.object({
   total: z.number(),
   items: z.array(costLedgerItemSchema),
+  leaves: z.array(additiveCostLeafSchema),
 })
 
 export type CostLedger = z.output<typeof costLedgerSchema>
 export type CostLedgerItem = z.output<typeof costLedgerItemSchema>
+export type AdditiveCostLeaf = z.output<typeof additiveCostLeafSchema>
 
 const pauseSummarySchema = z.object({
   status: z.string().nullable(),
