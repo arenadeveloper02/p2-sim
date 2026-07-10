@@ -36,12 +36,12 @@ services:
       - XAI_API_KEY_1=${XAI_API_KEY_1:-}
       - XAI_API_KEY_2=${XAI_API_KEY_2:-}
       - XAI_API_KEY_3=${XAI_API_KEY_3:-}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-}
       - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - REDIS_URL=${REDIS_URL:-}
-      - COPILOT_API_KEY=${COPILOT_API_KEY}
-      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL}
+      - COPILOT_API_KEY=${COPILOT_API_KEY:-}
+      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL:-}
+      - E2B_API_KEY=${E2B_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
