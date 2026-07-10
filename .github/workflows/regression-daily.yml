@@ -1,0 +1,80 @@
+name: Regression Daily
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: regression-daily
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: Daily regression
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    env:
+      REGRESSION_APP_URL: https://test-agent.thearena.ai
+      NODE_OPTIONS: '--no-warnings --max-old-space-size=4096'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run daily regression pipeline
+        id: regression
+        continue-on-error: true
+        env:
+          REGRESSION_API_KEY: ${{ secrets.REGRESSION_API_KEY }}
+          REGRESSION_WORKSPACE_ID: ${{ secrets.REGRESSION_WORKSPACE_ID }}
+          REGRESSION_SLACK_WEBHOOK: ${{ secrets.REGRESSION_SLACK_WEBHOOK }}
+        run: bun run apps/sim/tests/regression/daily.ts
+
+      - name: Upload regression artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-report-${{ github.run_id }}
+          path: |
+            apps/sim/tests/regression/reports/report.json
+            apps/sim/tests/regression/reports/regression-*.html
+            apps/sim/tests/regression/reports/email.txt
+          retention-days: 90
+
+      - name: Post Slack notification
+        if: always()
+        env:
+          REGRESSION_SLACK_WEBHOOK: ${{ secrets.REGRESSION_SLACK_WEBHOOK }}
+        run: |
+          if [ -z "$REGRESSION_SLACK_WEBHOOK" ]; then
+            echo "REGRESSION_SLACK_WEBHOOK not configured — skipping"
+            exit 0
+          fi
+          bun run apps/sim/tests/regression/notify.ts apps/sim/tests/regression/reports/report.json
+
+      - name: Send email report
+        if: always()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.REGRESSION_SMTP_SERVER }}
+          server_port: ${{ secrets.REGRESSION_SMTP_PORT }}
+          username: ${{ secrets.REGRESSION_SMTP_USERNAME }}
+          password: ${{ secrets.REGRESSION_SMTP_PASSWORD }}
+          subject: Sim Regression — ${{ github.run_id }}
+          to: akshay.v@position2.com
+          from: ${{ secrets.REGRESSION_SMTP_FROM }}
+          body: file://apps/sim/tests/regression/reports/email.txt
+        continue-on-error: true
+
+      - name: Mark job failed when regression failed
+        if: steps.regression.outcome == 'failure'
+        run: exit 1

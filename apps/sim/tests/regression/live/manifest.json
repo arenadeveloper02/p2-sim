@@ -1,0 +1,31 @@
+{
+  "integrations": [
+    {
+      "id": "slack",
+      "operation": "post_message",
+      "priority": "P0",
+      "workflowId": "",
+      "params": {
+        "channel": "C0BDTEZPF7C",
+        "text": "Regression smoke {{runId}}"
+      },
+      "expected": {
+        "workflowSuccess": true
+      }
+    },
+    {
+      "id": "function",
+      "operation": "execute",
+      "priority": "P0",
+      "workflowId": "",
+      "params": {
+        "input": {
+          "source": "regression-smoke"
+        }
+      },
+      "expected": {
+        "workflowSuccess": true
+      }
+    }
+  ]
+}
