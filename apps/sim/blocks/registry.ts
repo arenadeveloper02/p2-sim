@@ -128,6 +128,7 @@ import {
 import { GoogleTasksBlock, GoogleTasksBlockMeta } from '@/blocks/blocks/google_tasks'
 import { GoogleTranslateBlock, GoogleTranslateBlockMeta } from '@/blocks/blocks/google_translate'
 import { GoogleVaultBlock, GoogleVaultBlockMeta } from '@/blocks/blocks/google_vault'
+import { GraphGeneratorBlock } from '@/blocks/blocks/graph_generator'
 import { GrafanaBlock, GrafanaBlockMeta } from '@/blocks/blocks/grafana'
 import { GrainBlock, GrainBlockMeta } from '@/blocks/blocks/grain'
 import { GranolaBlock, GranolaBlockMeta } from '@/blocks/blocks/granola'
@@ -468,6 +469,7 @@ const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   google_tasks: GoogleTasksBlock,
   google_translate: GoogleTranslateBlock,
   google_vault: GoogleVaultBlock,
+  graph_generator: GraphGeneratorBlock,
   grafana: GrafanaBlock,
   grain: GrainBlock,
   granola: GranolaBlock,

@@ -28,6 +28,7 @@ export enum BlockType {
   MOTHERSHIP = 'mothership',
   API = 'api',
   EVALUATOR = 'evaluator',
+  GRAPH_GENERATOR = 'graph_generator',
   VARIABLES = 'variables',
 
   RESPONSE = 'response',
@@ -254,6 +255,11 @@ export const EVALUATOR = {
   DEFAULT_TEMPERATURE: 0.1,
   RESPONSE_SCHEMA_NAME: 'evaluation_response',
   JSON_INDENT: 2,
+} as const
+
+export const GRAPH_GENERATOR = {
+  DEFAULT_MODEL: 'gpt-4o',
+  DEFAULT_TEMPERATURE: 0.2,
 } as const
 
 export const CONDITION = {

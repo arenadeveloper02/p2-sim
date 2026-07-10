@@ -1,0 +1,3 @@
+{"date":"2026-07-10","passRate":98.4,"failed":5,"failedCaseIds":["static:block-tools:agent","static:block-tools:evaluator","static:block-tools:figma","static:block-tools:router","static:block-tools:router_v2"]}
+{"date":"2026-07-10","passRate":99.7,"failed":1,"failedCaseIds":["static:block-tools:figma"]}
+{"date":"2026-07-10","passRate":0,"failed":0,"failedCaseIds":[]}

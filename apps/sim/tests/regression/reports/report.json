@@ -1,0 +1,101 @@
+{
+  "meta": {
+    "runId": "cb318aef-db6b-4bc1-9d86-89a80a76484b",
+    "startedAt": "2026-07-10T09:25:07.854Z",
+    "finishedAt": "2026-07-10T09:25:08.123Z",
+    "environment": "test-agent",
+    "appUrl": "https://test-agent.thearena.ai",
+    "gitSha": "bafd6aea6b6d8965d332638bd7bcf4213a4ae0c2",
+    "tier": "combined",
+    "trigger": "local"
+  },
+  "policy": {
+    "slackChannelId": "C0BDTEZPF7C",
+    "slackChannelName": "#slack-testing",
+    "emailRecipient": "akshay.v@position2.com",
+    "excludedIntegrations": [
+      "notion"
+    ]
+  },
+  "suites": [
+    {
+      "id": "live",
+      "name": "Live integrations (QA)",
+      "category": "feature",
+      "priority": "P0",
+      "status": "skip",
+      "durationMs": 2,
+      "cases": [
+        {
+          "id": "live:slack:post_message",
+          "status": "skip",
+          "durationMs": 0,
+          "skipReason": "Set REGRESSION_API_KEY and workflowId in live/manifest.json to enable live tests",
+          "what": {
+            "title": "slack → post_message",
+            "expected": "Live workflow execution succeeds",
+            "actual": "Skipped — credentials or workflow not configured"
+          },
+          "reproduce": {
+            "environment": "test-agent",
+            "appUrl": "https://test-agent.thearena.ai",
+            "gitSha": "bafd6aea6b6d8965d332638bd7bcf4213a4ae0c2",
+            "workflowId": "",
+            "stepsUi": [
+              "Configure workflow id for slack in live/manifest.json"
+            ],
+            "commandCli": "bun run apps/sim/tests/regression/run.ts --case=live:slack:post_message",
+            "inputs": {
+              "channel": "C0BDTEZPF7C",
+              "text": "Regression smoke {{runId}}"
+            },
+            "fixturePath": "apps/sim/tests/regression/live/manifest.json"
+          }
+        },
+        {
+          "id": "live:function:execute",
+          "status": "skip",
+          "durationMs": 0,
+          "skipReason": "Set REGRESSION_API_KEY and workflowId in live/manifest.json to enable live tests",
+          "what": {
+            "title": "function → execute",
+            "expected": "Live workflow execution succeeds",
+            "actual": "Skipped — credentials or workflow not configured"
+          },
+          "reproduce": {
+            "environment": "test-agent",
+            "appUrl": "https://test-agent.thearena.ai",
+            "gitSha": "bafd6aea6b6d8965d332638bd7bcf4213a4ae0c2",
+            "workflowId": "",
+            "stepsUi": [
+              "Configure workflow id for function in live/manifest.json"
+            ],
+            "commandCli": "bun run apps/sim/tests/regression/run.ts --case=live:function:execute",
+            "inputs": {
+              "input": {
+                "source": "regression-smoke"
+              }
+            },
+            "fixturePath": "apps/sim/tests/regression/live/manifest.json"
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total": 2,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 2,
+    "flaky": 0,
+    "durationMs": 269,
+    "passRate": 0,
+    "vsYesterday": {
+      "passRateDelta": -99.7,
+      "newFailures": [],
+      "fixed": [
+        "static:block-tools:figma"
+      ]
+    }
+  }
+}

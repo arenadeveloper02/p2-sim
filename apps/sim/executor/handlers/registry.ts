@@ -10,6 +10,7 @@ import { ApiBlockHandler } from '@/executor/handlers/api/api-handler'
 import { ConditionBlockHandler } from '@/executor/handlers/condition/condition-handler'
 import { CredentialBlockHandler } from '@/executor/handlers/credential/credential-handler'
 import { EvaluatorBlockHandler } from '@/executor/handlers/evaluator/evaluator-handler'
+import { GraphGeneratorBlockHandler } from '@/executor/handlers/graph-generator/graph-generator-handler'
 import { FunctionBlockHandler } from '@/executor/handlers/function/function-handler'
 import { GenericBlockHandler } from '@/executor/handlers/generic/generic-handler'
 import { HumanInTheLoopBlockHandler } from '@/executor/handlers/human-in-the-loop/human-in-the-loop-handler'
@@ -43,6 +44,7 @@ export function createBlockHandlers(): BlockHandler[] {
     new WorkflowBlockHandler(),
     new WaitBlockHandler(),
     new EvaluatorBlockHandler(),
+    new GraphGeneratorBlockHandler(),
     new CredentialBlockHandler(),
     new GenericBlockHandler(),
   ]
