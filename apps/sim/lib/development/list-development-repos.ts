@@ -27,10 +27,7 @@ interface GitHubRepoListItem {
   updated_at: string
 }
 
-async function githubFetch<T>(
-  token: string,
-  path: string
-): Promise<{ data: T; status: number }> {
+async function githubFetch<T>(token: string, path: string): Promise<{ data: T; status: number }> {
   const response = await fetch(`${GITHUB_API}${path}`, {
     headers: {
       Accept: 'application/vnd.github+json',
@@ -65,7 +62,7 @@ async function resolveGitHubOwner(token: string, ownerHint?: string): Promise<st
 
 async function listLocalGeneratedRepos(): Promise<DevelopmentRepoOption[]> {
   const monorepoRoot = findMonorepoRoot()
-  const generatedAppsDir = join(monorepoRoot, GENERATED_APPS_DIR)
+  const generatedAppsDir = join(/*turbopackIgnore: true*/ monorepoRoot, GENERATED_APPS_DIR)
 
   if (!existsSync(generatedAppsDir)) {
     return []

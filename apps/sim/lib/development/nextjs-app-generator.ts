@@ -6,64 +6,66 @@ import Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
+import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
+import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
 import {
   deployPreparedVercelProject,
   prepareVercelProjectForDeploy,
 } from '@/lib/development/deploy-generated-app-to-vercel'
-import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
-import type { DevelopmentReferenceMedia } from '@/lib/development/resolve-development-reference-image'
-import { resolveDevelopmentDeployEnv, DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import {
-  GENERATED_APP_NEON_DATABASE_GUIDANCE,
-  GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE,
-  GENERATED_APP_DATABASE_FILE_PATHS,
+  formatBuildErrorsSummary,
+  logGeneratedAppValidationErrors,
+} from '@/lib/development/format-generated-app-build-errors'
+import {
+  buildRepoSummaryContent,
+  ensureRepoSummaryFile,
+  GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE,
   GENERATED_APP_AUTH_GUIDANCE,
   GENERATED_APP_COMMON_FAILURES_GUIDANCE,
-  GENERATED_APP_DATABASE_GUIDANCE,
-  GENERATED_APP_DATABASE_EDIT_GUIDANCE,
-  GENERATED_APP_DEPENDENCY_GUIDANCE,
-  GENERATED_APP_IMPORT_GUIDANCE,
   GENERATED_APP_COMPONENT_FILES_GUIDANCE,
-  GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE,
+  GENERATED_APP_DATABASE_EDIT_GUIDANCE,
+  GENERATED_APP_DATABASE_FILE_PATHS,
+  GENERATED_APP_DATABASE_GUIDANCE,
+  GENERATED_APP_DEPENDENCY_GUIDANCE,
   GENERATED_APP_GENERATION_MANDATES,
-  GENERATED_APP_NO_TESTS_GUIDANCE,
+  GENERATED_APP_IMPORT_GUIDANCE,
   GENERATED_APP_JSX_GUIDANCE,
-  GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE,
+  GENERATED_APP_NO_TESTS_GUIDANCE,
+  GENERATED_APP_NULL_SAFETY_GUIDANCE,
+  GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE,
+  GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE,
   GENERATED_APP_README_GUIDANCE,
   GENERATED_APP_REFERENCE_PDF_GUIDANCE,
   GENERATED_APP_REPO_SUMMARY_GUIDANCE,
   GENERATED_APP_REPO_SUMMARY_PATH,
   GENERATED_APP_STYLING_GUIDANCE,
   GENERATED_APP_TYPESCRIPT_GUIDANCE,
-  GENERATED_APP_NULL_SAFETY_GUIDANCE,
   GENERATED_APP_VALIDATION_GUIDANCE,
   GENERATED_APP_ZERO_ERRORS_GUIDANCE,
+  normalizeGeneratedAppFiles,
   PINNED_NEXT_VERSION,
   PINNED_REACT_VERSION,
-  buildRepoSummaryContent,
-  ensureRepoSummaryFile,
-  normalizeGeneratedAppFiles,
 } from '@/lib/development/normalize-generated-app-files'
 import {
   ensureGitHubRepository,
   pushGeneratedAppToGitHub,
 } from '@/lib/development/push-generated-app-to-github'
 import {
-  formatBuildErrorsSummary,
-  logGeneratedAppValidationErrors,
-} from '@/lib/development/format-generated-app-build-errors'
+  DEVELOPMENT_REQUIRES_DATABASE,
+  resolveDevelopmentDeployEnv,
+} from '@/lib/development/resolve-development-env'
+import type { DevelopmentReferenceMedia } from '@/lib/development/resolve-development-reference-image'
 import {
   validateGeneratedAppPreDeploy,
   validateGeneratedAppProductionBuild,
 } from '@/lib/development/validate-generated-app-build'
 import {
+  collectReferencedAliasPathsInFiles,
   formatStructureValidationIssues,
   validateGeneratedAppStructure,
-  collectReferencedAliasPathsInFiles,
 } from '@/lib/development/validate-generated-app-structure'
 import { supportsTemperature } from '@/providers/utils'
 
@@ -122,8 +124,10 @@ function resolveEnvModel(...values: Array<string | undefined>): string | undefin
 function getDevelopmentModelId(purpose: DevelopmentModelPurpose): string {
   if (purpose === 'edit') {
     return (
-      resolveEnvModel(env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL, process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL) ??
-      DEFAULT_EDIT_MODEL
+      resolveEnvModel(
+        env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL,
+        process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL
+      ) ?? DEFAULT_EDIT_MODEL
     )
   }
 
@@ -292,8 +296,13 @@ interface LlmAppSpec {
 /**
  * Resolves the monorepo root by walking up from the current working directory.
  * Prefers the directory that contains `bun.lock` (workspace root), not nested package roots like `apps/sim`.
+ *
+ * `process.cwd()` is marked turbopackIgnore so Next's file tracer does not sweep the whole
+ * monorepo (including next.config.ts) into development API route bundles.
  */
-export function findMonorepoRoot(startDir: string = process.cwd()): string {
+export function findMonorepoRoot(
+  startDir: string = resolve(/*turbopackIgnore: true*/ process.cwd())
+): string {
   let dir = resolve(startDir)
   let packageJsonFallback = dir
 
@@ -318,12 +327,14 @@ export function findMonorepoRoot(startDir: string = process.cwd()): string {
  * Converts a display name into a safe repository folder name.
  */
 export function slugifyRepoName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64) || 'generated-app'
+  return (
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 64) || 'generated-app'
+  )
 }
 
 /**
@@ -399,9 +410,7 @@ function truncateBuildLog(output: string): string {
 }
 
 /** Development block always provisions Neon Postgres + Prisma for generated apps. */
-function resolveRequiresDatabase(
-  _spec: Pick<LlmAppSpec, 'requiresDatabase' | 'files'>
-): boolean {
+function resolveRequiresDatabase(_spec: Pick<LlmAppSpec, 'requiresDatabase' | 'files'>): boolean {
   return DEVELOPMENT_REQUIRES_DATABASE
 }
 
@@ -601,9 +610,7 @@ function mergeManifestFilePaths(
   manifestPaths: string[],
   requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
 ): string[] {
-  const normalized = manifestPaths
-    .map((p) => p.replace(/\\/g, '/').trim())
-    .filter(Boolean)
+  const normalized = manifestPaths.map((p) => p.replace(/\\/g, '/').trim()).filter(Boolean)
   const requiredSet = new Set<string>(REQUIRED_APP_FILE_PATHS)
   if (requiresDatabase) {
     for (const path of GENERATED_APP_DATABASE_FILE_PATHS) {
@@ -1003,7 +1010,12 @@ async function requestBatchedAppSpecFromLlm(
   referenceImage?: DevelopmentReferenceMedia
 ): Promise<LlmAppSpec> {
   const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
-  const manifest = await requestAppManifestFromLlm(anthropic, userInput, repoNameHint, referenceImage)
+  const manifest = await requestAppManifestFromLlm(
+    anthropic,
+    userInput,
+    repoNameHint,
+    referenceImage
+  )
 
   const pathBatches = chunkArray(manifest.filePaths, FILES_PER_BATCH)
 
@@ -1020,10 +1032,7 @@ async function requestBatchedAppSpecFromLlm(
       userInput,
       appName: manifest.appName,
       description: manifest.description,
-      existingPaths: [
-        ...manifest.filePaths,
-        ...allFiles.map((f) => f.path.replace(/\\/g, '/')),
-      ],
+      existingPaths: [...manifest.filePaths, ...allFiles.map((f) => f.path.replace(/\\/g, '/'))],
       referenceImage,
     })
     allFiles.push(...batchFiles)
@@ -1429,7 +1438,11 @@ async function validateAndRepairUntilBuildPasses(
       continue
     }
 
-    const fastResult = await validateGeneratedAppPreDeploy(outputDir, currentSpec.files, validationOptions)
+    const fastResult = await validateGeneratedAppPreDeploy(
+      outputDir,
+      currentSpec.files,
+      validationOptions
+    )
     buildOutput = `[${fastResult.method}:typecheck] ${fastResult.output}`
 
     if (!fastResult.validated) {
@@ -1560,10 +1573,13 @@ async function syncDatabaseWithSchemaRepair(params: {
 
     const output = [result.output, result.error].filter(Boolean).join('\n')
     if (!DB_PUSH_UNEXECUTABLE_PATTERN.test(output)) {
-      logger.warn('Database schema sync failed (non-schema error) — continuing, Vercel build will retry db push', {
-        repoName: params.repoName,
-        error: result.error,
-      })
+      logger.warn(
+        'Database schema sync failed (non-schema error) — continuing, Vercel build will retry db push',
+        {
+          repoName: params.repoName,
+          error: result.error,
+        }
+      )
       return { spec, applied: false }
     }
 
@@ -1624,11 +1640,7 @@ async function generateNextjsAppInner(
 ): Promise<GenerateNextjsAppResult> {
   try {
     const generationStartedAt = Date.now()
-    let spec = await generateAppSpecWithLlm(
-      userInput,
-      input.repoName?.trim(),
-      input.referenceImage
-    )
+    let spec = await generateAppSpecWithLlm(userInput, input.repoName?.trim(), input.referenceImage)
     logger.info('LLM app generation finished', {
       durationMs: Date.now() - generationStartedAt,
       fileCount: spec.files.length,
@@ -1638,7 +1650,7 @@ async function generateNextjsAppInner(
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
     const monorepoRoot = findMonorepoRoot()
-    const outputDir = join(monorepoRoot, GENERATED_APPS_DIR, repoName)
+    const outputDir = join(/*turbopackIgnore: true*/ monorepoRoot, GENERATED_APPS_DIR, repoName)
 
     await mkdir(outputDir, { recursive: true })
     const fileCount = await writeAppFiles(outputDir, spec.files)
@@ -2191,14 +2203,16 @@ async function editNextjsAppInner(
   try {
     const { ensureLocalGeneratedApp } = await import('@/lib/development/ensure-local-generated-app')
     const { readGeneratedAppFiles } = await import('@/lib/development/read-generated-app-files')
-    const {
-      ensureGitHubRepository,
-      pushRepoChangesToGitHub,
-    } = await import('@/lib/development/push-generated-app-to-github')
+    const { ensureGitHubRepository, pushRepoChangesToGitHub } = await import(
+      '@/lib/development/push-generated-app-to-github'
+    )
 
     const localResult = await ensureLocalGeneratedApp(repoName)
     if (!localResult.success || !localResult.outputDir) {
-      return { success: false, error: localResult.error ?? 'Failed to prepare local repository copy' }
+      return {
+        success: false,
+        error: localResult.error ?? 'Failed to prepare local repository copy',
+      }
     }
 
     const outputDir = localResult.outputDir
@@ -2210,7 +2224,12 @@ async function editNextjsAppInner(
       (file) => file.path.replace(/\\/g, '/') === 'prisma/schema.prisma'
     )?.content
     const generationStartedAt = Date.now()
-    let spec = await requestAppEditsFromLlm(userInput, repoName, existingFiles, input.referenceImage)
+    let spec = await requestAppEditsFromLlm(
+      userInput,
+      repoName,
+      existingFiles,
+      input.referenceImage
+    )
     logger.info('LLM app edit finished', {
       durationMs: Date.now() - generationStartedAt,
       changedFiles: spec.files.length,
@@ -2438,7 +2457,10 @@ async function editNextjsAppInner(
       try {
         await rm(outputDir, { recursive: true, force: true })
         resolvedAbsoluteOutputPath = undefined
-        logger.info('Removed local generated app folder after edit publish', { outputDir, repoName })
+        logger.info('Removed local generated app folder after edit publish', {
+          outputDir,
+          repoName,
+        })
       } catch (cleanupError) {
         logger.warn('Failed to remove local generated app folder after edit', {
           outputDir,
