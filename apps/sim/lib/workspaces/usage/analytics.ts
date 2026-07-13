@@ -11,20 +11,14 @@ import { toError } from '@sim/utils/errors'
 import {
   and,
   eq,
-  gte,
   inArray,
   isNotNull,
   isNull,
-  lte,
   or,
-  type SQL,
   sql,
 } from 'drizzle-orm'
 import {
-  usageActorTypeSchema,
-  usageChargeTypeSchema,
   usageLogSourceSchema,
-  type UsageChargeTypeValue,
   type WorkspaceUsageAnalytics,
 } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
@@ -36,24 +30,35 @@ import {
   mergeEmbeddedToolBucketRows,
   subtractEmbeddedFromBucketRows,
 } from '@/lib/workspaces/usage/embedded-tool-virtual-split'
+import {
+  buildExecutionConditions,
+  buildExpensiveCopilotChatsQuery,
+  buildLedgerConditions,
+  buildLedgerJoinConditions,
+  chargeTypeExpr,
+  coerceToDate,
+  EMPTY_USAGE_METRICS,
+  executionBucketExpr,
+  ledgerCostSelect,
+  ledgerOccurredAt,
+  ledgerPeriodBounds,
+  mapExpensiveCopilotChatRows,
+  mapUsageMetrics,
+  parseActorType,
+  parseChargeType,
+  parseChatType,
+  parseDecimal,
+  periodRange,
+  type ResolvedPeriod,
+  resolveExplicitPeriod,
+  resolvePeriodFromDateCandidates,
+  timeBucketExpr,
+  usageMetricsSelect,
+} from '@/lib/workspaces/usage/ledger-helpers'
 
 const logger = createLogger('WorkspaceUsageAnalytics')
 
 const WORKFLOW_SOURCE: UsageLogSource = 'workflow'
-
-const PERIOD_MS: Record<'1d' | '7d' | '30d' | '90d', number> = {
-  '1d': 24 * 60 * 60 * 1000,
-  '7d': 7 * 24 * 60 * 60 * 1000,
-  '30d': 30 * 24 * 60 * 60 * 1000,
-  '90d': 90 * 24 * 60 * 60 * 1000,
-}
-
-const EMPTY_USAGE_METRICS = {
-  inputTokens: 0,
-  outputTokens: 0,
-  totalTokens: 0,
-  invocationCount: 0,
-} as const
 
 export interface WorkspaceUsageAnalyticsOptions {
   workspaceId: string
@@ -63,185 +68,6 @@ export interface WorkspaceUsageAnalyticsOptions {
   sources?: UsageLogSource[]
   allTime?: boolean
   rootExecutionId?: string
-}
-
-interface ResolvedPeriod {
-  start: Date
-  end: Date
-}
-
-function ensurePeriodDate(value: unknown): Date {
-  const date = coerceToDate(value)
-  if (!date) {
-    throw new Error('Invalid time range')
-  }
-  return date
-}
-
-/** Coalesced ledger clock: occurred_at when present, else created_at. */
-function ledgerOccurredAt() {
-  return sql`coalesce(${usageLog.occurredAt}, ${usageLog.createdAt})`
-}
-
-/**
- * Period bounds for the coalesced ledger clock.
- * Compare against ISO strings — raw `Date` in `sql` templates is not encoded like `gte`/`lte` params.
- */
-function ledgerPeriodBounds(period: ResolvedPeriod): [SQL, SQL] {
-  const startIso = ensurePeriodDate(period.start).toISOString()
-  const endIso = ensurePeriodDate(period.end).toISOString()
-  const occurredAt = ledgerOccurredAt()
-  return [
-    sql`${occurredAt} >= ${startIso}::timestamptz`,
-    sql`${occurredAt} <= ${endIso}::timestamptz`,
-  ]
-}
-
-/** Normalizes postgres/drizzle timestamp values (Date or ISO string) for range math. */
-function coerceToDate(value: unknown): Date | null {
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value
-  }
-  if (typeof value === 'string' || typeof value === 'number') {
-    const date = new Date(value)
-    return Number.isNaN(date.getTime()) ? null : date
-  }
-  return null
-}
-
-function parseDecimal(value: string | null | undefined): number {
-  if (!value) return 0
-  const parsed = Number.parseFloat(value)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function parseIntMetric(value: string | number | null | undefined): number {
-  if (typeof value === 'number') return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
-  if (!value) return 0
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return 0
-  return Math.max(0, Math.min(Math.trunc(parsed), Number.MAX_SAFE_INTEGER))
-}
-
-const NUMERIC_STRING_PATTERN = '^-?[0-9]+(\\.[0-9]+)?$'
-
-/** Legacy metadata may store non-numeric token strings; a bare `::numeric` cast aborts the whole aggregate. */
-function safeMetadataTokenCount(key: 'inputTokens' | 'outputTokens') {
-  const tokenValue = sql`${usageLog.metadata}->>${key}`
-  return sql`case when ${tokenValue} ~ ${NUMERIC_STRING_PATTERN} then (${tokenValue})::numeric else 0 end`
-}
-
-function safeQuantityTokenCount() {
-  const quantityText = sql`nullif(trim(${usageLog.quantity}::text), '')`
-  return sql`case when ${quantityText} ~ ${NUMERIC_STRING_PATTERN} then (${quantityText})::numeric else 0 end`
-}
-
-function ledgerCostSelect() {
-  return {
-    billableCost: sql<string>`coalesce(sum(${usageLog.cost}::numeric), 0)`,
-    rawCost: sql<string>`coalesce(sum(coalesce(${usageLog.rawCost}, ${usageLog.cost})::numeric), 0)`,
-    count: sql<number>`count(*)::int`,
-  }
-}
-
-/**
- * Maps ledger category/description into dashboard charge buckets:
- * base run fee, provider/model spend, hosted tools, Cost-block pass-through.
- */
-function chargeTypeExpr() {
-  return sql<string>`case
-    when ${usageLog.category} = 'fixed' and ${usageLog.description} = 'execution_fee' then 'base_run'
-    when ${usageLog.category} = 'model' then 'provider'
-    when ${usageLog.category} = 'tool' then 'tool'
-    when ${usageLog.category} = 'external' then 'cost_block'
-    else 'other'
-  end`
-}
-
-function parseChargeType(value: string | null | undefined): UsageChargeTypeValue {
-  const parsed = usageChargeTypeSchema.safeParse(value)
-  return parsed.success ? parsed.data : 'other'
-}
-
-function usageMetricsSelect() {
-  const inputTokens = safeMetadataTokenCount('inputTokens')
-  const outputTokens = safeMetadataTokenCount('outputTokens')
-  const quantityTokens = safeQuantityTokenCount()
-
-  return {
-    inputTokens: sql<number>`coalesce(sum(
-      case when ${usageLog.category} = 'model'
-        then ${inputTokens}
-        else 0
-      end
-    ), 0)::bigint`,
-    outputTokens: sql<number>`coalesce(sum(
-      case when ${usageLog.category} = 'model'
-        then ${outputTokens}
-        else 0
-      end
-    ), 0)::bigint`,
-    totalTokens: sql<number>`coalesce(sum(
-      case
-        when ${usageLog.category} = 'model' then ${inputTokens} + ${outputTokens}
-        when ${usageLog.unit} = 'tokens' then ${quantityTokens}
-        else 0
-      end
-    ), 0)::bigint`,
-    invocationCount: sql<number>`count(*)::int`,
-  }
-}
-
-function mapUsageMetrics(row: {
-  inputTokens?: number | string | null
-  outputTokens?: number | string | null
-  totalTokens?: number | string | null
-  invocationCount?: number | string | null
-}) {
-  return {
-    inputTokens: parseIntMetric(row.inputTokens),
-    outputTokens: parseIntMetric(row.outputTokens),
-    totalTokens: parseIntMetric(row.totalTokens),
-    invocationCount: parseIntMetric(row.invocationCount),
-  }
-}
-
-function buildLedgerConditions(
-  workspaceId: string,
-  period: ResolvedPeriod,
-  sources?: UsageLogSource[]
-): SQL[] {
-  const conditions: SQL[] = [
-    eq(usageLog.workspaceId, workspaceId),
-    ...ledgerPeriodBounds(period),
-  ]
-  if (sources && sources.length > 0) {
-    conditions.push(inArray(usageLog.source, sources))
-  }
-  return conditions
-}
-
-function buildLedgerJoinConditions(
-  workspaceId: string,
-  period: ResolvedPeriod
-): SQL[] {
-  return [eq(usageLog.workspaceId, workspaceId), ...ledgerPeriodBounds(period)]
-}
-
-function buildExecutionConditions(workspaceId: string, period: ResolvedPeriod): SQL[] {
-  const start = ensurePeriodDate(period.start)
-  const end = ensurePeriodDate(period.end)
-  return [
-    eq(workflowExecutionLogs.workspaceId, workspaceId),
-    gte(workflowExecutionLogs.startedAt, start),
-    lte(workflowExecutionLogs.startedAt, end),
-  ]
-}
-
-function periodRange<T extends Parameters<typeof gte>[0]>(column: T, period: ResolvedPeriod): [SQL, SQL] {
-  const start = ensurePeriodDate(period.start)
-  const end = ensurePeriodDate(period.end)
-  return [gte(column, start), lte(column, end)]
 }
 
 async function resolvePeriod(
@@ -280,7 +106,7 @@ async function resolvePeriod(
         .where(eq(copilotRuns.workspaceId, workspaceId)),
     ])
 
-    const candidates = [
+    return resolvePeriodFromDateCandidates([
       usageBounds[0]?.minAt,
       usageBounds[0]?.maxAt,
       executionBounds[0]?.minAt,
@@ -289,49 +115,10 @@ async function resolvePeriod(
       chatBounds[0]?.maxAt,
       runBounds[0]?.minAt,
       runBounds[0]?.maxAt,
-    ]
-      .map(coerceToDate)
-      .filter((value): value is Date => value !== null)
-
-    if (candidates.length === 0) {
-      const now = new Date()
-      return { start: now, end: now }
-    }
-
-    const start = ensurePeriodDate(new Date(Math.min(...candidates.map((date) => date.getTime()))))
-    const end = ensurePeriodDate(
-      new Date(Math.max(...candidates.map((date) => date.getTime()), Date.now()))
-    )
-    return { start, end }
+    ])
   }
 
-  const end = ensurePeriodDate(options.endTime ? new Date(options.endTime) : new Date())
-  const start = ensurePeriodDate(
-    options.startTime
-      ? new Date(options.startTime)
-      : new Date(end.getTime() - PERIOD_MS[options.period ?? '30d'])
-  )
-
-  return { start, end }
-}
-
-function timeBucketExpr(useHourly: boolean) {
-  const occurredAt = ledgerOccurredAt()
-  return useHourly
-    ? sql`date_trunc('hour', ${occurredAt})`
-    : sql`date_trunc('day', ${occurredAt})`
-}
-
-function executionBucketExpr(useHourly: boolean) {
-  return useHourly
-    ? sql`date_trunc('hour', ${workflowExecutionLogs.startedAt})`
-    : sql`date_trunc('day', ${workflowExecutionLogs.startedAt})`
-}
-
-function parseActorType(value: string | null | undefined) {
-  if (!value) return null
-  const parsed = usageActorTypeSchema.safeParse(value)
-  return parsed.success ? parsed.data : null
+  return resolveExplicitPeriod(options)
 }
 
 /**
@@ -354,9 +141,13 @@ export async function getWorkspaceUsageAnalytics(
       throw new Error('Invalid time range')
     }
 
-    const ledgerConditions = buildLedgerConditions(workspaceId, period, sources)
-    const ledgerJoinConditions = buildLedgerJoinConditions(workspaceId, period)
-    const executionConditions = buildExecutionConditions(workspaceId, period)
+    const ledgerWorkspaceCondition = eq(usageLog.workspaceId, workspaceId)
+    const ledgerConditions = buildLedgerConditions(ledgerWorkspaceCondition, period, sources)
+    const ledgerJoinConditions = buildLedgerJoinConditions(ledgerWorkspaceCondition, period)
+    const executionConditions = buildExecutionConditions(
+      eq(workflowExecutionLogs.workspaceId, workspaceId),
+      period
+    )
     const useHourlyBuckets = !options.allTime && (options.period ?? '30d') === '1d'
     const bucketExpr = timeBucketExpr(useHourlyBuckets)
     const executionBucket = executionBucketExpr(useHourlyBuckets)
@@ -376,6 +167,7 @@ export async function getWorkspaceUsageAnalytics(
       copilotRunSummary,
       copilotByTypeRows,
       copilotByModelRows,
+      copilotByChatRows,
       byUserRows,
       byActorRows,
       byModelRows,
@@ -575,6 +367,12 @@ export async function getWorkspaceUsageAnalytics(
         )
         .groupBy(copilotChats.model),
 
+      buildExpensiveCopilotChatsQuery({
+        chatScope: eq(copilotChats.workspaceId, workspaceId),
+        ledgerJoinConditions,
+        period,
+      }),
+
       dbReplica
         .select({
           userId: usageLog.userId,
@@ -586,14 +384,36 @@ export async function getWorkspaceUsageAnalytics(
 
       dbReplica
         .select({
-          actorUserId: usageLog.actorUserId,
-          actorType: usageLog.actorType,
+          actorUserId: sql<string | null>`coalesce(
+            ${usageLog.actorUserId},
+            ${copilotChats.userId},
+            ${usageLog.userId}
+          )`,
+          actorType: sql<string | null>`coalesce(
+            ${usageLog.actorType},
+            case
+              when coalesce(${usageLog.actorUserId}, ${copilotChats.userId}, ${usageLog.userId}) is not null
+                then 'user'
+              else null
+            end
+          )`,
           ...ledgerCostSelect(),
           ...usageMetricsSelect(),
         })
         .from(usageLog)
+        .leftJoin(copilotChats, eq(copilotChats.id, usageLog.chatId))
         .where(and(...ledgerConditions))
-        .groupBy(usageLog.actorUserId, usageLog.actorType),
+        .groupBy(
+          sql`coalesce(${usageLog.actorUserId}, ${copilotChats.userId}, ${usageLog.userId})`,
+          sql`coalesce(
+            ${usageLog.actorType},
+            case
+              when coalesce(${usageLog.actorUserId}, ${copilotChats.userId}, ${usageLog.userId}) is not null
+                then 'user'
+              else null
+            end
+          )`
+        ),
 
       dbReplica
         .select({
@@ -1036,11 +856,21 @@ export async function getWorkspaceUsageAnalytics(
           total: runSummary?.total ?? 0,
         },
         byChatType: copilotByTypeRows.map((row) => ({
-          chatType: row.chatType,
+          chatType: parseChatType(row.chatType),
           chatCount: row.chatCount,
           runCount: row.runCount,
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
+          count: row.count,
+        })),
+        byChat: mapExpensiveCopilotChatRows(copilotByChatRows).map((row) => ({
+          chatId: row.chatId,
+          title: row.title,
+          chatType: row.chatType,
+          userId: row.userId,
+          runCount: row.runCount,
+          billableCost: row.billableCost,
+          rawCost: row.rawCost,
           count: row.count,
         })),
         byModel: copilotByModelRows.map((row) => ({
