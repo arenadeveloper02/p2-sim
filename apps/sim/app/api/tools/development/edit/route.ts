@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -10,21 +11,12 @@ import {
   getDevelopmentReferenceImageErrorMessage,
   resolveDevelopmentReferenceImage,
 } from '@/lib/development/resolve-development-reference-image'
+import { RawFileInputSchema } from '@/lib/uploads/utils/file-schemas'
 
 const logger = createLogger('DevelopmentEditAPI')
 
 export const runtime = 'nodejs'
 export const maxDuration = 600
-
-const ReferencePdfFileSchema = z
-  .object({
-    name: z.string(),
-    key: z.string().optional(),
-    url: z.string().optional(),
-    type: z.string().optional(),
-    base64: z.string().optional(),
-  })
-  .passthrough()
 
 const billingContextSchema = z.object({
   workspaceId: z.string().optional(),
@@ -35,7 +27,7 @@ const billingContextSchema = z.object({
 const RequestSchema = z.object({
   userInput: z.string().min(1, 'userInput is required'),
   repoName: z.string().min(1, 'repoName is required'),
-  referenceImage: ReferencePdfFileSchema.optional(),
+  referenceImage: RawFileInputSchema.optional(),
   ...billingContextSchema.shape,
 })
 
@@ -56,7 +48,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const parsed = RequestSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json(
-      { success: false, error: parsed.error.errors[0]?.message ?? 'Invalid request' },
+      { success: false, error: getValidationErrorMessage(parsed.error, 'Invalid request') },
       { status: 400 }
     )
   }

@@ -122,16 +122,14 @@ function resolveEnvModel(...values: Array<string | undefined>): string | undefin
 function getDevelopmentModelId(purpose: DevelopmentModelPurpose): string {
   if (purpose === 'edit') {
     return (
-      resolveEnvModel(env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL, process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL) ??
+      resolveEnvModel(process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL) ??
       DEFAULT_EDIT_MODEL
     )
   }
 
   return (
     resolveEnvModel(
-      env.DEVELOPMENT_ANTHROPIC_CREATION_MODEL,
       process.env.DEVELOPMENT_ANTHROPIC_CREATION_MODEL,
-      env.DEVELOPMENT_ANTHROPIC_MODEL,
       process.env.DEVELOPMENT_ANTHROPIC_MODEL
     ) ?? DEFAULT_CREATION_MODEL
   )
