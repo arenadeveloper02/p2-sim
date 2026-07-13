@@ -66,15 +66,15 @@ import { isWorkflowToolName } from '@/lib/copilot/tools/workflow-tools'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { useFilePreviewController } from '@/app/workspace/[workspaceId]/home/hooks/preview'
 import {
-  getMothershipChatPath,
-  readMothershipChatSearch,
-} from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
-import {
   applyTurnTerminal,
   createStreamLoopContext,
   dispatchStreamEvent,
   finalizeResidualToolCalls,
 } from '@/app/workspace/[workspaceId]/home/hooks/stream'
+import {
+  getMothershipChatPath,
+  readMothershipChatSearch,
+} from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
 import {
   fetchMothershipChatHistory,
   type MothershipChatHistory,
@@ -499,6 +499,19 @@ function createBatchSchemaValidationError(message: string): StreamSchemaValidati
 
 function isStreamSchemaValidationError(error: unknown): error is StreamSchemaValidationError {
   return error instanceof StreamSchemaValidationError
+}
+
+/**
+ * Builds the same `<usage_upgrade>` tag the SSE billing path emits, so a
+ * pre-stream JSON 402 can render through {@link UsageUpgradeDisplay}.
+ */
+function buildUsageUpgradeContent(message: string, scope?: string): string {
+  const action = scope === 'member' ? 'increase_limit' : 'upgrade_plan'
+  return `<usage_upgrade>${JSON.stringify({
+    reason: 'usage_limit',
+    action,
+    message,
+  })}</usage_upgrade>`
 }
 
 function parseStreamBatchResponse(value: unknown): StreamBatchResponse {
@@ -3395,6 +3408,69 @@ export function useChat(
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
+
+          // Pre-stream billing/member-credit gate: server returns JSON 402 before
+          // SSE starts. Do not reconnect (no stream exists). Inject the same
+          // `<usage_upgrade>` tag the mid-stream billing path uses so Thinking
+          // stops and the in-chat upgrade card renders. Skip detail invalidation
+          // so the optimistic user + upgrade messages are not wiped (nothing was
+          // persisted server-side for this turn).
+          if (response.status === 402 && !isResolvedWorkflowExecution) {
+            const message =
+              typeof errorData.error === 'string' && errorData.error.trim().length > 0
+                ? errorData.error
+                : 'Usage limit exceeded. Please upgrade your plan to continue.'
+            const scope = typeof errorData.scope === 'string' ? errorData.scope : undefined
+            const syntheticContent = buildUsageUpgradeContent(message, scope)
+            const assistantSnapshot = buildAssistantSnapshotMessage({
+              id: assistantId,
+              content: syntheticContent,
+              contentBlocks: [],
+            })
+            const targetChatId = streamTargetChatId ?? requestChatId
+
+            if (targetChatId) {
+              upsertChatHistory(targetChatId, (current) => ({
+                ...current,
+                activeStreamId: null,
+                messages: current.messages.map((persistedMessage) =>
+                  persistedMessage.id === assistantId ? assistantSnapshot : persistedMessage
+                ),
+              }))
+            }
+
+            setPendingMessages((prev) =>
+              prev.map((pendingMessage) =>
+                pendingMessage.id === assistantId
+                  ? {
+                      ...pendingMessage,
+                      content: syntheticContent,
+                      contentBlocks: [],
+                    }
+                  : pendingMessage
+              )
+            )
+
+            if (queuedSendHandoff) {
+              clearQueuedSendHandoffState(queuedSendHandoff.id)
+            }
+
+            if (streamGenRef.current === gen) {
+              locallyTerminalStreamIdRef.current =
+                streamIdRef.current ?? activeTurnRef.current?.userMessageId ?? userMessageId
+              abortController.abort('billing_limit')
+              abortControllerRef.current = null
+              clearActiveTurn()
+              setTransportIdle()
+              invalidateChatQueries({
+                includeDetail: false,
+                ...(targetChatId ? { targetChatId } : {}),
+              })
+              notifyTurnEnded({ error: true })
+            }
+            return consumedByTranscript
+          }
+
           if (response.status === 409 && !isResolvedWorkflowExecution) {
             const conflictStreamId =
               typeof errorData.activeStreamId === 'string'
@@ -3522,6 +3598,8 @@ export function useChat(
       adoptResolvedChatId,
       setTransportIdle,
       setTransportStreaming,
+      invalidateChatQueries,
+      notifyTurnEnded,
     ]
   )
   const sendMessage = useCallback(
