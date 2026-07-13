@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { workspace, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 import { getAllBlocks } from '@/blocks/registry'
 import type { BlockConfig } from '@/blocks/types'
@@ -74,9 +74,9 @@ export async function buildLocalCopilotContext(
         lastRunAt: workflow.lastRunAt,
       })
       .from(workflow)
-      .where(eq(workflow.workspaceId, workspaceId))
+      .where(and(eq(workflow.workspaceId, workspaceId), isNull(workflow.archivedAt)))
       .orderBy(desc(workflow.updatedAt))
-      .limit(25)
+      .limit(50)
 
     const context: LocalCopilotStructuredContext = {
       workspace: {

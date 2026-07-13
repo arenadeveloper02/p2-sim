@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
@@ -112,7 +112,7 @@ async function resolveWorkflowIdFromDatabase(
   const rows = await db
     .select({ id: workflow.id, name: workflow.name })
     .from(workflow)
-    .where(eq(workflow.workspaceId, workspaceId))
+    .where(and(eq(workflow.workspaceId, workspaceId), isNull(workflow.archivedAt)))
     .orderBy(desc(workflow.updatedAt))
     .limit(50)
 
