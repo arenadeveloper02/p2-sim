@@ -25,6 +25,7 @@ vi.mock('@sim/db', () => ({
   db: {
     transaction: mockTransaction,
     select: mockSelect,
+    execute: mockExecute,
   },
 }))
 
@@ -65,13 +66,17 @@ import {
   computeTargetLedgerLines,
   enrichTraceSpansForReprice,
   evaluateApplyRolloutGates,
+  HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE,
+  HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY,
   HISTORICAL_RECONCILE_PILOT_MAX_RECORDS,
   HISTORICAL_RECONCILE_PRICING_MODE,
+  HISTORICAL_RECONCILE_PROGRESS_INTERVAL,
   HISTORICAL_RECONCILE_ROLLOUT_STEPS,
   HISTORICAL_RECONCILE_VERSION,
   parseHistoricalReconcileShadowRecord,
   snapshotStateHasCostBlocks,
   verifyLedgerProjection,
+  type ExecutionClassification,
   type ExecutionEvidence,
   type HistoricalReconcileShadowRecord,
   type TraceEvidenceSummary,
@@ -447,10 +452,64 @@ describe('aggregateClassificationResults', () => {
     ])
 
     expect(summary.total).toBe(2)
+    expect(summary.attempted).toBe(2)
+    expect(summary.skipped).toBe(0)
+    expect(summary.failed).toBe(0)
     expect(summary.byClass.span_cost_legacy).toBe(1)
     expect(summary.byClass.reconciled).toBe(1)
     expect(summary.applyEligible).toBe(1)
     expect(summary.topRiskExamples[0]?.executionId).toBe('exec-a')
+  })
+
+  it('preserves attempted/skipped/failed accounting from the batch runner', () => {
+    const classifications: ExecutionClassification[] = [
+      {
+        executionId: 'exec-ok',
+        workflowId: 'wf-1',
+        workspaceId: 'ws-1',
+        startedAt: new Date(),
+        status: 'completed',
+        primaryClass: 'reconciled',
+        secondaryClasses: [],
+        confidence: 'high',
+        blockers: [],
+        warnings: [],
+        evidenceSources: [],
+        applyEligible: false,
+        costTotal: 0.01,
+        ledgerSum: 0.01,
+        drift: 0,
+      },
+    ]
+
+    const summary = aggregateClassificationResults(classifications, 20, {
+      attempted: 5,
+      skipped: 1,
+      failed: 3,
+      failures: [
+        {
+          executionId: 'exec-fail',
+          error: 'Failed query: select ...',
+          cause: { name: 'Error', message: 'connection reset' },
+          postgresCode: '08006',
+        },
+      ],
+    })
+
+    expect(summary.total).toBe(1)
+    expect(summary.attempted).toBe(5)
+    expect(summary.skipped).toBe(1)
+    expect(summary.failed).toBe(3)
+    expect(summary.failures).toHaveLength(1)
+    expect(summary.failures[0]?.postgresCode).toBe('08006')
+  })
+})
+
+describe('throughput defaults', () => {
+  it('exposes bounded page size, concurrency, and progress interval defaults', () => {
+    expect(HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE).toBe(1000)
+    expect(HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY).toBe(8)
+    expect(HISTORICAL_RECONCILE_PROGRESS_INTERVAL).toBe(100)
   })
 })
 
@@ -1134,33 +1193,46 @@ describe('evaluateApplyRolloutGates', () => {
 describe('verifyLedgerProjection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockExecute.mockResolvedValue([{ '?column?': 1 }])
   })
 
-  it('passes when sampled executions have no projection drift', async () => {
-    mockSelect.mockReturnValue({
+  function mockPagedSelect(pages: Array<Array<Record<string, unknown>>>) {
+    let pageIndex = 0
+    mockSelect.mockImplementation(() => ({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
           orderBy: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([
-              {
-                executionId: 'exec-1',
-                workflowId: 'wf-1',
-                workspaceId: 'ws-1',
-                startedAt: new Date('2024-01-01T00:00:00.000Z'),
-                status: 'completed',
-                trigger: 'api',
-                stateSnapshotId: 'snap-1',
-                costTotal: '0.02',
-                modelsUsed: null,
-                ledgerSum: '0.02',
-              },
-            ]),
+            limit: vi.fn().mockImplementation(async () => {
+              const page = pages[pageIndex] ?? []
+              pageIndex += 1
+              return page
+            }),
           }),
         }),
       }),
-    })
+    }))
+  }
 
-    const result = await verifyLedgerProjection({ limit: 1 })
+  it('passes when sampled executions have no projection drift', async () => {
+    mockPagedSelect([
+      [
+        {
+          executionId: 'exec-1',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+          startedAt: new Date('2024-01-01T00:00:00.000Z'),
+          status: 'completed',
+          trigger: 'api',
+          stateSnapshotId: 'snap-1',
+          costTotal: '0.02',
+          modelsUsed: null,
+          ledgerSum: '0.02',
+        },
+      ],
+      [],
+    ])
+
+    const result = await verifyLedgerProjection({ limit: 1, batchSize: 1 })
 
     expect(result.passed).toBe(true)
     expect(result.drifted).toBe(0)
@@ -1168,34 +1240,68 @@ describe('verifyLedgerProjection', () => {
   })
 
   it('fails when cost_total and ledger sums diverge', async () => {
-    mockSelect.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([
-              {
-                executionId: 'exec-drift',
-                workflowId: 'wf-1',
-                workspaceId: 'ws-1',
-                startedAt: new Date('2024-01-01T00:00:00.000Z'),
-                status: 'completed',
-                trigger: 'api',
-                stateSnapshotId: 'snap-1',
-                costTotal: '0.05',
-                modelsUsed: null,
-                ledgerSum: '0.02',
-              },
-            ]),
-          }),
-        }),
-      }),
-    })
+    mockPagedSelect([
+      [
+        {
+          executionId: 'exec-drift',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+          startedAt: new Date('2024-01-01T00:00:00.000Z'),
+          status: 'completed',
+          trigger: 'api',
+          stateSnapshotId: 'snap-1',
+          costTotal: '0.05',
+          modelsUsed: null,
+          ledgerSum: '0.02',
+        },
+      ],
+      [],
+    ])
 
-    const result = await verifyLedgerProjection({ limit: 1 })
+    const result = await verifyLedgerProjection({ limit: 1, batchSize: 1 })
 
     expect(result.passed).toBe(false)
     expect(result.drifted).toBe(1)
     expect(result.driftExamples[0]?.executionId).toBe('exec-drift')
+  })
+
+  it('pages across multiple batches until the total limit is reached', async () => {
+    mockPagedSelect([
+      [
+        {
+          executionId: 'exec-1',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+          startedAt: new Date('2024-01-02T00:00:00.000Z'),
+          status: 'completed',
+          trigger: 'api',
+          stateSnapshotId: 'snap-1',
+          costTotal: '0.01',
+          modelsUsed: null,
+          ledgerSum: '0.01',
+        },
+      ],
+      [
+        {
+          executionId: 'exec-2',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+          startedAt: new Date('2024-01-01T00:00:00.000Z'),
+          status: 'completed',
+          trigger: 'api',
+          stateSnapshotId: 'snap-2',
+          costTotal: '0.02',
+          modelsUsed: null,
+          ledgerSum: '0.02',
+        },
+      ],
+    ])
+
+    const result = await verifyLedgerProjection({ limit: 2, batchSize: 1 })
+
+    expect(result.total).toBe(2)
+    expect(result.passed).toBe(true)
+    expect(mockSelect).toHaveBeenCalledTimes(2)
   })
 })
 

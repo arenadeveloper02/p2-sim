@@ -6,7 +6,12 @@ import {
   workflowExecutionSnapshots,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { getErrorMessage, getPostgresErrorCode } from '@sim/utils/errors'
+import {
+  describeError,
+  getErrorMessage,
+  getPostgresErrorCode,
+  type DescribedError,
+} from '@sim/utils/errors'
 import { BlockType } from '@/executor/constants'
 import { CostBlockHandler } from '@/executor/handlers/cost/cost-handler'
 import type { BlockLog, BlockState, ExecutionContext } from '@/executor/types'
@@ -29,6 +34,11 @@ import {
   type UsageLogMetadata,
   type UsagePricingSnapshot,
 } from '@/lib/billing/core/usage-log'
+import {
+  describeRetryableInfrastructureError,
+  withInfrastructureRetry,
+} from '@/lib/core/errors/retryable-infrastructure'
+import { mapWithConcurrency } from '@/lib/core/utils/concurrency'
 import { isLargeValueRef } from '@/lib/execution/payloads/large-value-ref'
 import {
   extractEmbeddedToolCostsFromSpan,
@@ -45,7 +55,7 @@ import type { SerializedBlock, SerializedConnection, SerializedWorkflow } from '
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
 import { resolveBlockModelCost, shouldBillModelUsage } from '@/providers/utils'
-import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, lt, lte, or, sql } from 'drizzle-orm'
 
 const logger = createLogger('HistoricalWorkflowReconciliation')
 
@@ -56,6 +66,18 @@ export const HISTORICAL_RECONCILE_VERSION = 'historical-reconcile-v1'
 export const HISTORICAL_RECONCILE_PRICING_MODE = 'current-catalog' as const
 
 export type HistoricalReconcilePricingMode = typeof HISTORICAL_RECONCILE_PRICING_MODE
+
+/** Default page size when listing terminal executions for audit / dry-run. */
+export const HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE = 1000
+
+/** Default concurrent evidence loads per page. */
+export const HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY = 8
+
+/** Emit progress after this many attempted executions (and once at completion). */
+export const HISTORICAL_RECONCILE_PROGRESS_INTERVAL = 100
+
+/** Transient DB/network retries for long-running reconciliation pages. */
+export const HISTORICAL_RECONCILE_DB_RETRY_ATTEMPTS = 5
 
 const HISTORICAL_RECONCILE_LOCK_TIMEOUT_MS = 10_000
 
@@ -154,7 +176,38 @@ export interface HistoricalExecutionFilter {
   workspaceId?: string
   since?: Date
   until?: Date
+  /** Optional total cap on executions to process across all pages. */
   limit?: number
+  /** Page size for keyset pagination. Defaults to {@link HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE}. */
+  batchSize?: number
+  /** Concurrent evidence loads within a page. Defaults to {@link HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY}. */
+  concurrency?: number
+}
+
+/** Keyset cursor for descending `(started_at, execution_id)` pagination. */
+export interface HistoricalExecutionCursor {
+  startedAt: Date
+  executionId: string
+}
+
+export interface HistoricalReconcileProgress {
+  attempted: number
+  succeeded: number
+  skipped: number
+  failed: number
+  pages: number
+  done: boolean
+}
+
+export type HistoricalReconcileProgressCallback = (
+  progress: HistoricalReconcileProgress
+) => void
+
+export interface HistoricalReconcileFailure {
+  executionId: string
+  error: string
+  cause: DescribedError
+  postgresCode?: string
 }
 
 export interface HistoricalExecutionRow {
@@ -221,6 +274,10 @@ export interface ComputeTargetLedgerOptions {
 
 export interface ShadowRepriceSummary {
   total: number
+  attempted: number
+  skipped: number
+  failed: number
+  failures: HistoricalReconcileFailure[]
   withTargets: number
   withPositiveDelta: number
   withNegativeDelta: number
@@ -249,6 +306,10 @@ export interface ExecutionClassification {
 
 export interface ReconciliationAuditSummary {
   total: number
+  attempted: number
+  skipped: number
+  failed: number
+  failures: HistoricalReconcileFailure[]
   byClass: Record<ReconciliationClass, number>
   byConfidence: Record<ReconciliationConfidence, number>
   applyEligible: number
@@ -589,7 +650,13 @@ function emptyClassCounts(): Record<ReconciliationClass, number> {
  */
 export function aggregateClassificationResults(
   classifications: ExecutionClassification[],
-  topRiskLimit = 20
+  topRiskLimit = 20,
+  accounting: {
+    attempted?: number
+    skipped?: number
+    failed?: number
+    failures?: HistoricalReconcileFailure[]
+  } = {}
 ): ReconciliationAuditSummary {
   const byClass = emptyClassCounts()
   const byConfidence: Record<ReconciliationConfidence, number> = {
@@ -620,6 +687,10 @@ export function aggregateClassificationResults(
 
   return {
     total: classifications.length,
+    attempted: accounting.attempted ?? classifications.length,
+    skipped: accounting.skipped ?? 0,
+    failed: accounting.failed ?? accounting.failures?.length ?? 0,
+    failures: accounting.failures ?? [],
     byClass,
     byConfidence,
     applyEligible,
@@ -629,15 +700,8 @@ export function aggregateClassificationResults(
   }
 }
 
-/**
- * Lists terminal workflow executions with ledger sums and projection drift.
- */
-export async function listHistoricalWorkflowExecutions(
-  filter: HistoricalExecutionFilter = {}
-): Promise<HistoricalExecutionRow[]> {
-  const conditions = [
-    inArray(workflowExecutionLogs.status, [...TERMINAL_EXECUTION_STATUSES]),
-  ]
+function buildExecutionFilterConditions(filter: HistoricalExecutionFilter) {
+  const conditions = [inArray(workflowExecutionLogs.status, [...TERMINAL_EXECUTION_STATUSES])]
 
   if (filter.workflowId) {
     conditions.push(eq(workflowExecutionLogs.workflowId, filter.workflowId))
@@ -655,7 +719,106 @@ export async function listHistoricalWorkflowExecutions(
     conditions.push(lte(workflowExecutionLogs.startedAt, filter.until))
   }
 
-  const limit = filter.limit ?? 500
+  return conditions
+}
+
+function resolveBatchSize(filter: HistoricalExecutionFilter): number {
+  const requested = filter.batchSize ?? HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE
+  if (!Number.isFinite(requested) || requested <= 0) {
+    return HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE
+  }
+  return Math.floor(requested)
+}
+
+function resolveConcurrency(filter: HistoricalExecutionFilter): number {
+  const requested = filter.concurrency ?? HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY
+  if (!Number.isFinite(requested) || requested <= 0) {
+    return HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY
+  }
+  return Math.floor(requested)
+}
+
+function toHistoricalExecutionFailure(
+  executionId: string,
+  error: unknown
+): HistoricalReconcileFailure {
+  const postgresCode = getPostgresErrorCode(error)
+  return {
+    executionId,
+    error: getErrorMessage(error),
+    cause: describeError(error),
+    ...(postgresCode ? { postgresCode } : {}),
+  }
+}
+
+function withReconcileDbRetry<T>(
+  operation: () => Promise<T>,
+  context: Record<string, unknown>
+): Promise<T> {
+  return withInfrastructureRetry(operation, {
+    maxAttempts: HISTORICAL_RECONCILE_DB_RETRY_ATTEMPTS,
+    onRetry: ({ attempt, maxAttempts, delayMs, error }) => {
+      logger.warn('Retrying historical reconciliation DB operation after transient failure', {
+        ...context,
+        attempt,
+        maxAttempts,
+        delayMs,
+        retryable: describeRetryableInfrastructureError(error),
+        cause: describeError(error),
+      })
+    },
+  })
+}
+
+/**
+ * Forces a round-trip so dead pooled sockets are discarded before the next page.
+ */
+async function ensureDatabaseConnection(): Promise<void> {
+  await withReconcileDbRetry(async () => {
+    await db.execute(sql`select 1`)
+  }, { operation: 'db_keepalive' })
+}
+
+/**
+ * Lists one page of terminal workflow executions with ledger sums and projection drift.
+ * Uses a stable descending keyset on `(started_at, execution_id)`.
+ */
+export async function listHistoricalWorkflowExecutions(
+  filter: HistoricalExecutionFilter = {},
+  cursor?: HistoricalExecutionCursor | null
+): Promise<HistoricalExecutionRow[]> {
+  return withReconcileDbRetry(
+    () => listHistoricalWorkflowExecutionsOnce(filter, cursor),
+    {
+      operation: 'listHistoricalWorkflowExecutions',
+      cursorExecutionId: cursor?.executionId,
+    }
+  )
+}
+
+async function listHistoricalWorkflowExecutionsOnce(
+  filter: HistoricalExecutionFilter,
+  cursor?: HistoricalExecutionCursor | null
+): Promise<HistoricalExecutionRow[]> {
+  const conditions = buildExecutionFilterConditions(filter)
+
+  if (cursor) {
+    conditions.push(
+      or(
+        lt(workflowExecutionLogs.startedAt, cursor.startedAt),
+        and(
+          eq(workflowExecutionLogs.startedAt, cursor.startedAt),
+          lt(workflowExecutionLogs.executionId, cursor.executionId)
+        )
+      )!
+    )
+  }
+
+  const pageSize = resolveBatchSize(filter)
+  const limit =
+    filter.limit != null && Number.isFinite(filter.limit) && filter.limit > 0
+      ? Math.min(pageSize, Math.floor(filter.limit))
+      : pageSize
 
   const rows = await db
     .select({
@@ -677,7 +840,7 @@ export async function listHistoricalWorkflowExecutions(
     })
     .from(workflowExecutionLogs)
     .where(and(...conditions))
-    .orderBy(desc(workflowExecutionLogs.startedAt))
+    .orderBy(desc(workflowExecutionLogs.startedAt), desc(workflowExecutionLogs.executionId))
     .limit(limit)
 
   return rows.map((row) => {
@@ -697,6 +860,55 @@ export async function listHistoricalWorkflowExecutions(
       modelsUsed: row.modelsUsed,
     }
   })
+}
+
+/**
+ * Pages through historical workflow executions until exhausted or `filter.limit` is reached.
+ */
+export async function* iterateHistoricalWorkflowExecutionPages(
+  filter: HistoricalExecutionFilter = {}
+): AsyncGenerator<HistoricalExecutionRow[], void, undefined> {
+  let cursor: HistoricalExecutionCursor | null = null
+  let remaining =
+    filter.limit != null && Number.isFinite(filter.limit) && filter.limit > 0
+      ? Math.floor(filter.limit)
+      : Number.POSITIVE_INFINITY
+
+  while (remaining > 0) {
+    await ensureDatabaseConnection()
+
+    const pageFilter: HistoricalExecutionFilter = {
+      ...filter,
+      limit: Number.isFinite(remaining) ? remaining : undefined,
+    }
+    const page = await listHistoricalWorkflowExecutions(pageFilter, cursor)
+    if (page.length === 0) return
+
+    yield page
+
+    remaining -= page.length
+    const last = page[page.length - 1]
+    if (!last) return
+
+    cursor = {
+      startedAt: last.startedAt,
+      executionId: last.executionId,
+    }
+
+    // A short page means there are no further rows under the current filters.
+    if (page.length < resolveBatchSize(filter)) return
+  }
+}
+
+function emitProgress(
+  onProgress: HistoricalReconcileProgressCallback | undefined,
+  progress: HistoricalReconcileProgress
+): void {
+  onProgress?.(progress)
+}
+
+function shouldEmitProgress(attempted: number, previousEmitted: number): boolean {
+  return attempted - previousEmitted >= HISTORICAL_RECONCILE_PROGRESS_INTERVAL
 }
 
 async function loadLedgerLines(executionId: string): Promise<LedgerLineSummary[]> {
@@ -737,6 +949,13 @@ async function loadMothershipLedgerSum(executionId: string): Promise<number> {
  * materialized trace spans and snapshot cost-block presence.
  */
 export async function loadExecutionEvidence(executionId: string): Promise<ExecutionEvidence | null> {
+  return withReconcileDbRetry(() => loadExecutionEvidenceOnce(executionId), {
+    operation: 'loadExecutionEvidence',
+    executionId,
+  })
+}
+
+async function loadExecutionEvidenceOnce(executionId: string): Promise<ExecutionEvidence | null> {
   const [row] = await db
     .select({
       executionId: workflowExecutionLogs.executionId,
@@ -837,27 +1056,81 @@ export async function loadExecutionEvidence(executionId: string): Promise<Execut
 
 /**
  * Classifies a batch of historical workflow executions for audit and rollout planning.
+ * Pages through the filtered scope and loads evidence with bounded concurrency.
  */
 export async function auditHistoricalWorkflowExecutions(
-  filter: HistoricalExecutionFilter = {}
+  filter: HistoricalExecutionFilter = {},
+  options: { onProgress?: HistoricalReconcileProgressCallback } = {}
 ): Promise<ReconciliationAuditSummary> {
-  const rows = await listHistoricalWorkflowExecutions(filter)
+  const concurrency = resolveConcurrency(filter)
   const classifications: ExecutionClassification[] = []
+  const failures: HistoricalReconcileFailure[] = []
+  let attempted = 0
+  let skipped = 0
+  let pages = 0
+  let previousEmitted = -1
 
-  for (const row of rows) {
-    try {
-      const evidence = await loadExecutionEvidence(row.executionId)
-      if (!evidence) continue
-      classifications.push(classifyExecutionEvidence(evidence))
-    } catch (error) {
-      logger.warn('Failed to classify execution', {
-        executionId: row.executionId,
-        error: getErrorMessage(error),
-      })
+  const reportProgress = (done: boolean) => {
+    const progress: HistoricalReconcileProgress = {
+      attempted,
+      succeeded: classifications.length,
+      skipped,
+      failed: failures.length,
+      pages,
+      done,
+    }
+    if (done || shouldEmitProgress(attempted, previousEmitted)) {
+      emitProgress(options.onProgress, progress)
+      previousEmitted = attempted
     }
   }
 
-  return aggregateClassificationResults(classifications)
+  for await (const page of iterateHistoricalWorkflowExecutionPages(filter)) {
+    pages += 1
+    const pageResults = await mapWithConcurrency(page, concurrency, async (row) => {
+      try {
+        const evidence = await loadExecutionEvidence(row.executionId)
+        if (!evidence) {
+          return { kind: 'skipped' as const, executionId: row.executionId }
+        }
+        return {
+          kind: 'classified' as const,
+          classification: classifyExecutionEvidence(evidence),
+        }
+      } catch (error) {
+        const failure = toHistoricalExecutionFailure(row.executionId, error)
+        logger.warn('Failed to classify execution', {
+          executionId: failure.executionId,
+          error: failure.error,
+          cause: failure.cause,
+          postgresCode: failure.postgresCode,
+        })
+        return { kind: 'failed' as const, failure }
+      }
+    })
+
+    for (const result of pageResults) {
+      attempted += 1
+      if (result.kind === 'classified') {
+        classifications.push(result.classification)
+      } else if (result.kind === 'skipped') {
+        skipped += 1
+      } else {
+        failures.push(result.failure)
+      }
+    }
+
+    reportProgress(false)
+  }
+
+  reportProgress(true)
+
+  return aggregateClassificationResults(classifications, 20, {
+    attempted,
+    skipped,
+    failed: failures.length,
+    failures,
+  })
 }
 
 function extractSubBlockValues(
@@ -1361,25 +1634,73 @@ export async function computeShadowRepriceForExecution(
 
 /**
  * Dry-run batch shadow repricer for historical workflow executions.
+ * Pages through the filtered scope and reprices with bounded concurrency.
  */
 export async function dryRunHistoricalWorkflowReprices(
   filter: HistoricalExecutionFilter = {},
-  options: ComputeTargetLedgerOptions = {}
+  options: ComputeTargetLedgerOptions & {
+    onProgress?: HistoricalReconcileProgressCallback
+  } = {}
 ): Promise<ShadowRepriceSummary> {
-  const rows = await listHistoricalWorkflowExecutions(filter)
+  const concurrency = resolveConcurrency(filter)
   const records: HistoricalReconcileShadowRecord[] = []
+  const failures: HistoricalReconcileFailure[] = []
+  let attempted = 0
+  let skipped = 0
+  let pages = 0
+  let previousEmitted = -1
 
-  for (const row of rows) {
-    try {
-      const record = await computeShadowRepriceForExecution(row.executionId, options)
-      if (record) records.push(record)
-    } catch (error) {
-      logger.warn('Failed to shadow-reprice execution', {
-        executionId: row.executionId,
-        error: getErrorMessage(error),
-      })
+  const reportProgress = (done: boolean) => {
+    const progress: HistoricalReconcileProgress = {
+      attempted,
+      succeeded: records.length,
+      skipped,
+      failed: failures.length,
+      pages,
+      done,
+    }
+    if (done || shouldEmitProgress(attempted, previousEmitted)) {
+      emitProgress(options.onProgress, progress)
+      previousEmitted = attempted
     }
   }
+
+  for await (const page of iterateHistoricalWorkflowExecutionPages(filter)) {
+    pages += 1
+    const pageResults = await mapWithConcurrency(page, concurrency, async (row) => {
+      try {
+        const record = await computeShadowRepriceForExecution(row.executionId, options)
+        if (!record) {
+          return { kind: 'skipped' as const, executionId: row.executionId }
+        }
+        return { kind: 'record' as const, record }
+      } catch (error) {
+        const failure = toHistoricalExecutionFailure(row.executionId, error)
+        logger.warn('Failed to shadow-reprice execution', {
+          executionId: failure.executionId,
+          error: failure.error,
+          cause: failure.cause,
+          postgresCode: failure.postgresCode,
+        })
+        return { kind: 'failed' as const, failure }
+      }
+    })
+
+    for (const result of pageResults) {
+      attempted += 1
+      if (result.kind === 'record') {
+        records.push(result.record)
+      } else if (result.kind === 'skipped') {
+        skipped += 1
+      } else {
+        failures.push(result.failure)
+      }
+    }
+
+    reportProgress(false)
+  }
+
+  reportProgress(true)
 
   let withPositiveDelta = 0
   let withNegativeDelta = 0
@@ -1395,6 +1716,10 @@ export async function dryRunHistoricalWorkflowReprices(
 
   return {
     total: records.length,
+    attempted,
+    skipped,
+    failed: failures.length,
+    failures,
     withTargets: records.filter((record) => record.targets.length > 0).length,
     withPositiveDelta,
     withNegativeDelta,
@@ -2187,23 +2512,36 @@ export async function verifyLedgerProjection(
   filter: HistoricalExecutionFilter = {},
   maxDriftExamples = 20
 ): Promise<LedgerProjectionVerification> {
-  const rows = await listHistoricalWorkflowExecutions(filter)
-  const drifted = rows.filter((row) => Math.abs(row.drift) > RECONCILIATION_EPSILON)
+  const driftExamples: LedgerProjectionDriftCase[] = []
+  let total = 0
+  let drifted = 0
+
+  for await (const page of iterateHistoricalWorkflowExecutionPages(filter)) {
+    for (const row of page) {
+      total += 1
+      if (Math.abs(row.drift) <= RECONCILIATION_EPSILON) continue
+
+      drifted += 1
+      if (driftExamples.length < maxDriftExamples) {
+        driftExamples.push({
+          executionId: row.executionId,
+          workflowId: row.workflowId,
+          workspaceId: row.workspaceId,
+          startedAt: row.startedAt,
+          status: row.status,
+          costTotal: row.costTotal,
+          ledgerSum: row.ledgerSum,
+          drift: row.drift,
+        })
+      }
+    }
+  }
 
   return {
-    total: rows.length,
-    drifted: drifted.length,
-    passed: drifted.length === 0,
-    driftExamples: drifted.slice(0, maxDriftExamples).map((row) => ({
-      executionId: row.executionId,
-      workflowId: row.workflowId,
-      workspaceId: row.workspaceId,
-      startedAt: row.startedAt,
-      status: row.status,
-      costTotal: row.costTotal,
-      ledgerSum: row.ledgerSum,
-      drift: row.drift,
-    })),
+    total,
+    drifted,
+    passed: drifted === 0,
+    driftExamples,
   }
 }
 

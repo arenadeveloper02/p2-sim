@@ -673,6 +673,12 @@ export interface RecordCumulativeUsageParams {
   triggeringChatId?: string
   /** Copilot run that triggered the hosting run (rollup only). */
   triggeringRunId?: string
+  /**
+   * Who triggered the request. Mothership/copilot flushes should stamp the
+   * requesting user here — otherwise actor columns stay null and dashboards
+   * cannot attribute spend without joining `copilot_chats`.
+   */
+  executionActor?: ExecutionActor
 }
 
 export interface RecordCumulativeUsageResult {
@@ -732,6 +738,7 @@ export async function recordCumulativeUsage(
     rootExecutionId,
     triggeringChatId,
     triggeringRunId,
+    executionActor,
   } = params
 
   const canonicalModel = normalizeUsageModelId(model)
@@ -816,6 +823,7 @@ export async function recordCumulativeUsage(
           rootExecutionId: rootExecutionId ?? parentExecutionId,
           triggeringChatId,
           triggeringRunId,
+          executionActor,
           tx,
           billingEntity: billingContext.billingEntity,
           billingPeriod: billingContext.billingPeriod,

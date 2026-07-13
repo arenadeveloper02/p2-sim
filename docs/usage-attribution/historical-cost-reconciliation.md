@@ -1,0 +1,220 @@
+# Historical Cost Reconciliation SOP
+
+## Purpose and source boundaries
+
+This runbook repairs and verifies historical workflow cost analysis. The authoritative workflow total is:
+
+```sql
+SUM(usage_log.cost)
+WHERE usage_log.source = 'workflow'
+  AND usage_log.execution_id = workflow_execution_logs.execution_id
+```
+
+`workflow_execution_logs.cost_total` is an indexed projection of that sum. Never include `copilot`, `workspace-chat`, `mcp_copilot`, `mothership_block`, `knowledge-base`, `enrichment`, `wand`, or `voice-input` in a workflow execution total.
+
+Agent-embedded tools remain folded into the model row as `toolCost` and `embeddedToolCosts`; the log detail and Usage analytics split them virtually. Do not create duplicate standalone tool ledger rows.
+
+## Current baseline
+
+The initial full-history audit found:
+
+- 30,199 reconciled workflow executions.
+- 9,253 executions with a positive workflow ledger and `cost_total IS NULL`.
+- 60 executions with a non-null projection that differs from the ledger.
+- No `billingReconciliationPending` runs or workflow / `mothership_block` double-count candidates.
+
+The 9,253 cases are missing projections, not `cost_total = 0`. The 60 true mismatches are exactly 2× ledger-to-projection mismatches from 2026-07-03 through 2026-07-07, consistent with a multiplier-era projection defect.
+
+## Preconditions
+
+Do not write to production until all checks pass:
+
+- Reconciliation code is committed and CI is green.
+- The audit and apply environments use the same `COST_MULTIPLIER` and `USAGE_LOG_COST_MULTIPLIER`.
+- Object-store credentials can materialize historical traces.
+- Historical models seen in audit output resolve in `apps/sim/providers/models.ts`.
+- Historical image models resolve in `apps/sim/lib/tools/image-pricing.ts`.
+- Firecrawl rate is `$0.001 × creditsUsed`; Fal.ai cost uses the hosted-key markup; external Cost blocks remain multiplier `1`.
+- Copilot and Mothership chat totals remain Go-reported aggregates. Sim cannot reconstruct their historical internal tool costs.
+
+Run the preflight checks:
+
+```bash
+cd apps/sim
+
+bun test \
+  lib/billing/core/historical-workflow-reconciliation.test.ts \
+  lib/billing/core/usage-log.test.ts \
+  lib/logs/execution/logger.test.ts \
+  lib/logs/execution/logging-factory.test.ts \
+  providers/utils.test.ts \
+  lib/tools/image-pricing.test.ts
+
+bun run type-check
+bun run lint:check
+
+cd ../..
+bun run vendor-pricing:check
+bun run check:api-validation:strict
+```
+
+## Step 1: establish the baseline
+
+```bash
+bun --env-file=apps/sim/.env run scripts/phase0-arena-cost-audit.ts \
+  --days=9999 --limit=100000 --export-drift
+```
+
+Expected change: none.
+
+Review separately:
+
+- workflow ledger/projection health;
+- Copilot/Mothership aggregate totals;
+- Mothership double-count candidates;
+- missing `pricing_snapshot` and provider attribution;
+- `billingReconciliationPending` executions.
+
+## Step 2: repair workflow projections
+
+Repair only the indexed `cost_total` projection for:
+
+- rows where `cost_total IS NULL` and the workflow ledger is positive;
+- rows where non-null `cost_total` differs from the workflow ledger by more than `1e-6`.
+
+For every repaired execution:
+
+```text
+workflow_execution_logs.cost_total
+  = SUM(usage_log.cost WHERE source = 'workflow' AND execution_id = execution)
+```
+
+This projection repair must not insert, delete, or reprice `usage_log` rows. It must not affect non-workflow sources or embedded-tool attribution.
+
+Re-run the Step 1 audit. The 9,313 identified projection discrepancies should disappear without any change in the workflow ledger total.
+
+## Step 3: classify historical pricing evidence
+
+```bash
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --audit --since=2020-01-01 --batch-size=1000 \
+  --export=reconciliation-audit.json
+```
+
+`--batch-size` is the keyset page size (default `1000`). Without `--limit`, the audit walks the full filtered window page by page. Use `--limit=<n>` to cap total attempted executions, and `--concurrency=<n>` (default `8`) to bound parallel evidence loads within each page.
+
+The CLI prints live `[progress]` lines about every 100 attempted executions (and once when finished). Mirror them with `tee` if you want a log file:
+
+```bash
+set -o pipefail
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --audit --since=2020-01-01 --batch-size=1000 \
+  --export=reconciliation-audit.json 2>&1 | tee reconciliation-audit.log
+```
+
+Long audits reuse the shared DB pool. Each page starts with a `select 1` keepalive, and list/evidence queries retry up to 5 times on transient disconnects (`CONNECTION_CLOSED`, reset, timeout). Missing object-store traces still classify as `missing_trace_data` and are not treated as hard failures.
+
+Expected change: local audit artifact only.
+
+The export includes `summary.attempted` / `skipped` / `failed`, plus a `failures[]` array with nested Postgres/driver causes. If `failed > 0`, treat the artifact as incomplete until those executions are retried or explicitly dispositioned. The command exits nonzero when any classification fails.
+
+Proceed only with high- or medium-confidence workflow evidence:
+
+- fixed execution fee;
+- hosted-model tokens or retained inline cost;
+- standalone hosted-tool output metadata;
+- agent-embedded tool metadata or retained tool output cost;
+- Cost block configuration from the execution snapshot;
+- Go cost returned from a workflow Mothership block.
+
+Do not auto-apply BYOK ambiguity, missing traces, expression Cost blocks, Mothership double-count risk, unsupported image/tool pricing, or negative target deltas.
+
+## Step 4: generate and review a shadow artifact
+
+Start with a single known-good execution:
+
+```bash
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --dry-run --execution-id=<execution-id> \
+  --export=reconcile-pilot.ndjson --review-deltas
+```
+
+Then use a small workspace scope:
+
+```bash
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --dry-run --workspace-id=<workspace-id> --batch-size=100 --limit=100 \
+  --export=reconcile-workspace.ndjson --review-deltas
+```
+
+`--batch-size` pages the dry-run the same way as audit; `--limit` caps total attempted executions. Dry-run also prints `[progress]` lines and exits nonzero when any execution fails to reprice.
+
+Expected change: NDJSON artifact only.
+
+For each reviewed execution, verify:
+
+- base + model-only + tools + external equals `targetSum`;
+- named embedded tools plus the unattributed remainder equal `toolCost`;
+- an embedded tool does not also appear as a standalone tool charge;
+- target cost is backed by retained evidence or the current supported catalog;
+- Copilot/Mothership aggregate rows are unchanged;
+- negative deltas are reported for manual treatment, never silently ignored.
+
+Generate a fresh artifact immediately before applying it.
+
+## Step 5: pilot apply
+
+Run only after Steps 1–4 pass:
+
+```bash
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --apply --input=reconcile-workspace.ndjson \
+  --workspace-id=<workspace-id> --batch-size=100
+```
+
+Expected change:
+
+- deterministic reconciliation rows for evidence-backed workflow deltas;
+- `workflow_execution_logs.cost_total` refreshed to the exact workflow ledger sum;
+- no writes to Copilot-family rows;
+- repeat of the same artifact is idempotent.
+
+Do not use production apply until the implementation supports the approved correction policy for negative deltas, BYOK evidence, artifact staleness, and historical billing attribution.
+
+## Step 6: verify the pilot
+
+```bash
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --verify --workspace-id=<workspace-id> --batch-size=1000
+
+bun --env-file=apps/sim/.env run scripts/phase0-arena-cost-audit.ts \
+  --days=9999 --limit=100000 --drift-only
+```
+
+Require:
+
+- no workflow projection drift in pilot scope;
+- additive log-detail leaves equal the workflow total;
+- Usage analytics virtual split preserves total cost;
+- no duplicate reconciliation event keys;
+- no movement in Copilot/Mothership source totals.
+
+## Step 7: production rollout
+
+Process bounded date windows. For each window: audit, dry-run, review, apply, then verify.
+
+```bash
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --apply --input=reconcile-window.ndjson \
+  --batch-size=500 --confirm-production
+```
+
+Stop immediately on a lock error, unexpected source movement, pricing anomaly, non-zero projection drift, or a large unexplained negative-delta population.
+
+## Completion criteria
+
+- Every workflow `cost_total` is the exact workflow-source ledger projection.
+- Every automatically corrected workflow cost has high- or medium-confidence evidence and reproducible provenance.
+- Embedded tools remain a virtual split of model cost.
+- Copilot and Mothership chat totals are preserved as Go-reported aggregates.
+- All ambiguous, unsupported, double-count-risk, and negative-delta cases have an explicit manual disposition.

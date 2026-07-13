@@ -16,6 +16,10 @@
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --workspace-id=<id> --batch-size=100
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --verify --workspace-id=<id> --batch-size=1000
+ *
+ * Long-running modes (--audit / --dry-run / --verify) keep the shared DB pool
+ * healthy with per-page keepalives and up to 5 retries on CONNECTION_CLOSED /
+ * other transient infrastructure errors.
  */
 import {
   aggregateShadowDeltaReview,
@@ -23,10 +27,13 @@ import {
   auditHistoricalWorkflowExecutions,
   dryRunHistoricalWorkflowReprices,
   evaluateApplyRolloutGates,
+  HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE,
+  HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY,
   HISTORICAL_RECONCILE_ROLLOUT_STEPS,
   loadHistoricalReconcileShadowArtifact,
   verifyLedgerProjection,
   verifyPostApplyReconciliation,
+  type HistoricalReconcileProgress,
   type ReconciliationClass,
   type ReconciliationConfidence,
 } from '../apps/sim/lib/billing/core/historical-workflow-reconciliation'
@@ -46,7 +53,12 @@ interface Options {
   workspaceId?: string
   since?: Date
   until?: Date
+  /** Optional total cap across all pages. */
   limit?: number
+  /** Keyset page size. */
+  batchSize: number
+  /** Concurrent evidence loads within a page. */
+  concurrency: number
   exportPath?: string
 }
 
@@ -54,6 +66,12 @@ function parseDateArg(raw: string | undefined): Date | undefined {
   if (!raw) return undefined
   const parsed = new Date(raw)
   return Number.isNaN(parsed.getTime()) ? undefined : parsed
+}
+
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  if (!raw) return undefined
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
 }
 
 function parseArgs(argv: string[]): Options {
@@ -70,16 +88,15 @@ function parseArgs(argv: string[]): Options {
   const workspaceId = argv.find((arg) => arg.startsWith('--workspace-id='))?.split('=')[1]
   const since = parseDateArg(argv.find((arg) => arg.startsWith('--since='))?.split('=')[1])
   const until = parseDateArg(argv.find((arg) => arg.startsWith('--until='))?.split('=')[1])
-  const limitRaw = argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1]
-  const batchSizeRaw = argv.find((arg) => arg.startsWith('--batch-size='))?.split('=')[1]
+  const limit = parsePositiveInt(argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1])
+  const batchSize =
+    parsePositiveInt(argv.find((arg) => arg.startsWith('--batch-size='))?.split('=')[1]) ??
+    HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE
+  const concurrency =
+    parsePositiveInt(argv.find((arg) => arg.startsWith('--concurrency='))?.split('=')[1]) ??
+    HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY
   const exportPath = argv.find((arg) => arg.startsWith('--export='))?.split('=')[1]
   const inputPath = argv.find((arg) => arg.startsWith('--input='))?.split('=')[1]
-
-  const limit = limitRaw
-    ? Number.parseInt(limitRaw, 10)
-    : batchSizeRaw
-      ? Number.parseInt(batchSizeRaw, 10)
-      : undefined
 
   return {
     audit,
@@ -97,6 +114,8 @@ function parseArgs(argv: string[]): Options {
     since,
     until,
     limit,
+    batchSize,
+    concurrency,
     exportPath,
   }
 }
@@ -125,7 +144,16 @@ function printFilterSummary(options: Options, title: string): void {
   if (options.workflowId) console.log(`Workflow filter: ${options.workflowId}`)
   if (options.executionId) console.log(`Execution filter: ${options.executionId}`)
   if (options.workspaceId) console.log(`Workspace filter: ${options.workspaceId}`)
+  console.log(`Batch size: ${options.batchSize}`)
+  console.log(`Concurrency: ${options.concurrency}`)
   if (options.limit) console.log(`Limit: ${options.limit}`)
+}
+
+function printProgress(progress: HistoricalReconcileProgress): void {
+  const suffix = progress.done ? ' (done)' : ''
+  console.log(
+    `[progress] attempted=${progress.attempted} succeeded=${progress.succeeded} skipped=${progress.skipped} failed=${progress.failed} pages=${progress.pages}${suffix}`
+  )
 }
 
 function printRolloutGuide(): void {
@@ -186,26 +214,49 @@ function printDeltaReview(
   }
 }
 
-async function runDryRun(options: Options): Promise<void> {
-  printFilterSummary(options, 'Historical Workflow Cost Shadow Reprice')
-  if (options.exportPath) console.log(`Export: ${options.exportPath}`)
-
-  const summary = await dryRunHistoricalWorkflowReprices({
+function toFilter(options: Options) {
+  return {
     workflowId: options.workflowId,
     executionId: options.executionId,
     workspaceId: options.workspaceId,
     since: options.since,
     until: options.until,
     limit: options.limit,
+    batchSize: options.batchSize,
+    concurrency: options.concurrency,
+  }
+}
+
+async function runDryRun(options: Options): Promise<number> {
+  printFilterSummary(options, 'Historical Workflow Cost Shadow Reprice')
+  if (options.exportPath) console.log(`Export: ${options.exportPath}`)
+
+  const summary = await dryRunHistoricalWorkflowReprices(toFilter(options), {
+    onProgress: printProgress,
   })
 
   console.log('--- Shadow reprice summary ---')
-  console.log(`Executions repriced:   ${summary.total}`)
+  console.log(`Attempted:             ${summary.attempted}`)
+  console.log(`Succeeded:             ${summary.total}`)
+  console.log(`Skipped:               ${summary.skipped}`)
+  console.log(`Failed:                ${summary.failed}`)
   console.log(`With target lines:     ${summary.withTargets}`)
   console.log(`With positive delta:   ${summary.withPositiveDelta}`)
   console.log(`With negative delta:   ${summary.withNegativeDelta}`)
   console.log(`Total positive delta:  $${summary.totalPositiveDelta.toFixed(6)}`)
   console.log(`Total negative delta:  $${summary.totalNegativeDelta.toFixed(6)}`)
+
+  if (summary.failures.length > 0) {
+    console.log('\n--- Failures ---')
+    for (const failure of summary.failures.slice(0, 20)) {
+      console.log(
+        `  ${failure.executionId.slice(0, 8)}… error=${failure.error}${failure.postgresCode ? ` pg=${failure.postgresCode}` : ''} cause=${failure.cause.message}`
+      )
+    }
+    if (summary.failures.length > 20) {
+      console.log(`  … and ${summary.failures.length - 20} more`)
+    }
+  }
 
   if (options.reviewDeltas) {
     printDeltaReview(summary.records)
@@ -227,34 +278,51 @@ async function runDryRun(options: Options): Promise<void> {
   }
 
   if (options.exportPath) {
+    if (summary.failed > 0) {
+      console.log(
+        `\nWarning: export includes ${summary.failed} failure(s); treat the artifact as incomplete until failures are resolved or excluded.`
+      )
+    }
     const ndjson = summary.records.map((record) => JSON.stringify(record)).join('\n')
     await Bun.write(options.exportPath, ndjson.length > 0 ? `${ndjson}\n` : '')
     console.log(`\nExported shadow artifact: ${options.exportPath} (${summary.records.length} records)`)
   }
+
+  return summary.failed > 0 ? 1 : 0
 }
 
-async function runAudit(options: Options): Promise<void> {
+async function runAudit(options: Options): Promise<number> {
   printFilterSummary(options, 'Historical Workflow Cost Reconciliation Audit')
 
-  const summary = await auditHistoricalWorkflowExecutions({
-    workflowId: options.workflowId,
-    executionId: options.executionId,
-    workspaceId: options.workspaceId,
-    since: options.since,
-    until: options.until,
-    limit: options.limit,
+  const summary = await auditHistoricalWorkflowExecutions(toFilter(options), {
+    onProgress: printProgress,
   })
 
   console.log('--- Reconciliation class counts ---')
-  console.log(formatClassCounts(summary.byClass))
+  console.log(formatClassCounts(summary.byClass) || '  (none)')
 
   console.log('\n--- Confidence ---')
   console.log(formatConfidenceCounts(summary.byConfidence))
 
   console.log('\n--- Summary ---')
+  console.log(`Attempted executions:  ${summary.attempted}`)
   console.log(`Classified executions: ${summary.total}`)
+  console.log(`Skipped (no evidence): ${summary.skipped}`)
+  console.log(`Failed:                ${summary.failed}`)
   console.log(`With projection drift: ${summary.withDrift}`)
   console.log(`Apply-eligible (v1):   ${summary.applyEligible}`)
+
+  if (summary.failures.length > 0) {
+    console.log('\n--- Failures ---')
+    for (const failure of summary.failures.slice(0, 20)) {
+      console.log(
+        `  ${failure.executionId.slice(0, 8)}… error=${failure.error}${failure.postgresCode ? ` pg=${failure.postgresCode}` : ''} cause=${failure.cause.message}`
+      )
+    }
+    if (summary.failures.length > 20) {
+      console.log(`  … and ${summary.failures.length - 20} more`)
+    }
+  }
 
   if (summary.topRiskExamples.length > 0) {
     console.log('\n--- Top risk examples ---')
@@ -270,6 +338,11 @@ async function runAudit(options: Options): Promise<void> {
   }
 
   if (options.exportPath) {
+    if (summary.failed > 0) {
+      console.log(
+        `\nWarning: export includes ${summary.failed} failure(s); treat the artifact as incomplete until failures are resolved or excluded.`
+      )
+    }
     const payload = {
       generatedAt: new Date().toISOString(),
       filters: {
@@ -279,33 +352,34 @@ async function runAudit(options: Options): Promise<void> {
         since: options.since?.toISOString() ?? null,
         until: options.until?.toISOString() ?? null,
         limit: options.limit ?? null,
+        batchSize: options.batchSize,
+        concurrency: options.concurrency,
       },
       summary: {
         total: summary.total,
+        attempted: summary.attempted,
+        skipped: summary.skipped,
+        failed: summary.failed,
         byClass: summary.byClass,
         byConfidence: summary.byConfidence,
         applyEligible: summary.applyEligible,
         withDrift: summary.withDrift,
       },
+      failures: summary.failures,
       classifications: summary.classifications,
     }
 
     await Bun.write(options.exportPath, `${JSON.stringify(payload, null, 2)}\n`)
     console.log(`\nExported classification artifact: ${options.exportPath}`)
   }
+
+  return summary.failed > 0 ? 1 : 0
 }
 
 async function runVerify(options: Options): Promise<number> {
   printFilterSummary(options, 'Historical Workflow Ledger Projection Verification')
 
-  const verification = await verifyLedgerProjection({
-    workflowId: options.workflowId,
-    executionId: options.executionId,
-    workspaceId: options.workspaceId,
-    since: options.since,
-    until: options.until,
-    limit: options.limit,
-  })
+  const verification = await verifyLedgerProjection(toFilter(options))
 
   console.log('--- Verification summary ---')
   console.log(`Sampled executions: ${verification.total}`)
@@ -335,6 +409,7 @@ async function runApply(options: Options): Promise<number> {
   if (options.executionId) console.log(`Execution filter: ${options.executionId}`)
   if (options.workspaceId) console.log(`Workspace filter: ${options.workspaceId}`)
   if (options.limit) console.log(`Limit: ${options.limit}`)
+  console.log(`Batch size: ${options.batchSize}`)
 
   const records = await loadHistoricalReconcileShadowArtifact(options.inputPath)
   console.log(`Loaded ${records.length} shadow record(s) from artifact`)
@@ -345,7 +420,7 @@ async function runApply(options: Options): Promise<number> {
       workflowId: options.workflowId,
       executionId: options.executionId,
       workspaceId: options.workspaceId,
-      limit: options.limit,
+      limit: options.limit ?? options.batchSize,
     },
     confirmProduction: options.confirmProduction,
   })
@@ -367,7 +442,7 @@ async function runApply(options: Options): Promise<number> {
       workflowId: options.workflowId,
       executionId: options.executionId,
       workspaceId: options.workspaceId,
-      limit: options.limit,
+      limit: options.limit ?? options.batchSize,
     },
   })
 
@@ -447,9 +522,9 @@ async function main() {
   let exitCode = 0
 
   if (options.audit) {
-    await runAudit(options)
+    exitCode = await runAudit(options)
   } else if (options.dryRun) {
-    await runDryRun(options)
+    exitCode = await runDryRun(options)
   } else if (options.verify) {
     exitCode = await runVerify(options)
   } else {

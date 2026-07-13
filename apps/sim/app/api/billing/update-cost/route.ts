@@ -208,6 +208,8 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
     const attributedWorkspaceId = await resolveAttributableWorkspaceId(requestId, workspaceId)
     const attributedChatId = await resolveAttributableChatId(requestId, chatId)
     const attributedRunId = await resolveAttributableRunId(requestId, runId)
+    /** Mothership/copilot requests are always user-triggered; stamp ledger actor from the billed user. */
+    const executionActor = { actorUserId: userId, actorType: 'user' as const }
 
     // Go sends the request's CUMULATIVE vendor COGS, possibly more than once (a
     // mid-loop provider-error flush, then the recovered terminal flush, plus
@@ -232,6 +234,7 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
         cost,
         eventKey: `update-cost:${idempotencyKey}`,
         metadata: { inputTokens, outputTokens },
+        executionActor,
         ...(parentExecutionId
           ? {
               parentExecutionId,
@@ -256,6 +259,7 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
         workspaceId: attributedWorkspaceId,
         chatId: attributedChatId,
         runId: attributedRunId,
+        executionActor,
         ...(parentExecutionId
           ? {
               parentExecutionId,
