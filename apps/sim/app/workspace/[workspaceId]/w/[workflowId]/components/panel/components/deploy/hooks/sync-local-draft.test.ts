@@ -6,13 +6,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   mockRequestJson,
   mockApplyWorkflowStateToStores,
+  mockPersistWorkflowStateToServer,
   mockGetRegistryState,
   mockHasPendingOperations,
   mockGetOperationQueueState,
   mockGetWorkflowDiffState,
+  mockGetWorkflowState,
+  mockReplaceWorkflowState,
+  mockMergeSubblockState,
 } = vi.hoisted(() => ({
   mockRequestJson: vi.fn(),
   mockApplyWorkflowStateToStores: vi.fn(),
+  mockPersistWorkflowStateToServer: vi.fn(),
   mockGetRegistryState: vi.fn(() => ({ activeWorkflowId: 'workflow-a' })),
   mockHasPendingOperations: vi.fn(() => false),
   mockGetOperationQueueState: vi.fn(() => ({
@@ -26,6 +31,9 @@ const {
     reconciliationErrors: {},
     remoteUpdateVersions: {},
   })),
+  mockGetWorkflowState: vi.fn(),
+  mockReplaceWorkflowState: vi.fn(),
+  mockMergeSubblockState: vi.fn(),
 }))
 
 vi.mock('@/lib/api/client/request', () => ({
@@ -38,6 +46,7 @@ vi.mock('@/lib/api/contracts', () => ({
 
 vi.mock('@/stores/workflow-diff/utils', () => ({
   applyWorkflowStateToStores: mockApplyWorkflowStateToStores,
+  persistWorkflowStateToServer: mockPersistWorkflowStateToServer,
 }))
 
 vi.mock('@/stores/workflow-diff/store', () => ({
@@ -58,7 +67,92 @@ vi.mock('@/stores/workflows/registry/store', () => ({
   },
 }))
 
-import { syncLocalDraftFromServer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft'
+vi.mock('@/stores/workflows/utils', () => ({
+  mergeSubblockState: mockMergeSubblockState,
+}))
+
+vi.mock('@/stores/workflows/workflow/store', () => ({
+  useWorkflowStore: {
+    getState: () => ({
+      getWorkflowState: mockGetWorkflowState,
+      replaceWorkflowState: mockReplaceWorkflowState,
+    }),
+  },
+}))
+
+import {
+  flushMergedLocalDraftToServer,
+  syncLocalDraftFromServer,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft'
+
+describe('flushMergedLocalDraftToServer', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetRegistryState.mockReturnValue({ activeWorkflowId: 'workflow-a' })
+    mockGetWorkflowState.mockReturnValue({
+      blocks: {
+        'block-1': {
+          id: 'block-1',
+          type: 'image_generator_v2',
+          name: 'Image 1',
+          subBlocks: {
+            provider: { id: 'provider', type: 'combobox', value: '' },
+          },
+        },
+      },
+      edges: [],
+      loops: {},
+      parallels: {},
+    })
+    mockMergeSubblockState.mockImplementation((blocks) => ({
+      ...blocks,
+      'block-1': {
+        ...blocks['block-1'],
+        subBlocks: {
+          provider: { id: 'provider', type: 'combobox', value: 'gemini' },
+        },
+      },
+    }))
+    mockPersistWorkflowStateToServer.mockResolvedValue(true)
+  })
+
+  it('persists merged subblock values before deployment', async () => {
+    await expect(flushMergedLocalDraftToServer('workflow-a')).resolves.toBe(true)
+
+    expect(mockReplaceWorkflowState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: {
+          'block-1': expect.objectContaining({
+            subBlocks: {
+              provider: { id: 'provider', type: 'combobox', value: 'gemini' },
+            },
+          }),
+        },
+      })
+    )
+    expect(mockPersistWorkflowStateToServer).toHaveBeenCalledWith(
+      'workflow-a',
+      expect.objectContaining({
+        blocks: {
+          'block-1': expect.objectContaining({
+            subBlocks: {
+              provider: { id: 'provider', type: 'combobox', value: 'gemini' },
+            },
+          }),
+        },
+      })
+    )
+  })
+
+  it('skips persistence when workflow blocks already match the subblock store', async () => {
+    mockMergeSubblockState.mockImplementation((blocks) => blocks)
+
+    await expect(flushMergedLocalDraftToServer('workflow-a')).resolves.toBe(true)
+
+    expect(mockReplaceWorkflowState).not.toHaveBeenCalled()
+    expect(mockPersistWorkflowStateToServer).not.toHaveBeenCalled()
+  })
+})
 
 describe('syncLocalDraftFromServer', () => {
   beforeEach(() => {
