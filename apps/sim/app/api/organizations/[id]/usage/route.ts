@@ -11,15 +11,20 @@ import {
   InvalidUsageSourcesError,
   parseWorkspaceUsageSources,
 } from '@/lib/workspaces/usage/analytics'
-import { getOrganizationUsageAnalytics } from '@/lib/workspaces/usage/organization-analytics'
+import {
+  getOrganizationUsageAnalytics,
+  InvalidOrganizationWorkspaceError,
+} from '@/lib/workspaces/usage/organization-analytics'
 
 const logger = createLogger('OrganizationUsageAnalyticsAPI')
 
 /**
  * GET /api/organizations/[id]/usage
  *
- * Organization-admin usage analytics across all active workspaces in the org
- * (totals, by-workspace rollup, and most-expensive workflows / chats / actors).
+ * Organization-admin usage analytics across active workspaces in the org
+ * (parity with workspace Usage, plus by-workspace rollup and workspace-aware leaders).
+ * Optional `workspaceId` subsets to one org workspace. Lineage drill-down is via
+ * workspace Usage deep-links, not this endpoint.
  */
 export const GET = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
@@ -32,7 +37,7 @@ export const GET = withRouteHandler(
     if (!parsed.success) return parsed.response
 
     const { id: organizationId } = parsed.data.params
-    const { startTime, endTime, period, sources, allTime } = parsed.data.query
+    const { startTime, endTime, period, sources, allTime, workspaceId } = parsed.data.query
 
     const isAdmin = await isOrganizationAdminOrOwner(session.user.id, organizationId)
     if (!isAdmin) {
@@ -47,11 +52,16 @@ export const GET = withRouteHandler(
         period,
         sources: parseWorkspaceUsageSources(sources),
         allTime,
+        workspaceId,
       })
 
       return NextResponse.json(analytics)
     } catch (error) {
       if (error instanceof InvalidUsageSourcesError) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+
+      if (error instanceof InvalidOrganizationWorkspaceError) {
         return NextResponse.json({ error: error.message }, { status: 400 })
       }
 

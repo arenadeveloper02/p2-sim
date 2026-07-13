@@ -8,6 +8,7 @@ import {
   ButtonGroup,
   ButtonGroupItem,
   ChipLink,
+  ChipSelect,
   Loader,
   RefreshCw,
   Skeleton,
@@ -667,10 +668,8 @@ function UsageDashboardContent({
 export function Usage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: session } = useSession()
-  const [{ scope, tab, period, allTime, rootExecutionId }, setUsageParams] = useQueryStates(
-    usageParsers,
-    usageUrlKeys
-  )
+  const [{ scope, tab, period, allTime, rootExecutionId, orgWorkspaceId }, setUsageParams] =
+    useQueryStates(usageParsers, usageUrlKeys)
 
   const { data: permissions, isPending: permissionsLoading } =
     useWorkspacePermissionsQuery(workspaceId)
@@ -711,6 +710,14 @@ export function Usage() {
     return { ...analyticsQuery, ...withLineage }
   }, [analyticsQuery, isOrganizationScope, rootExecutionId, tab])
 
+  const organizationAnalyticsQuery = useMemo(
+    () => ({
+      ...analyticsQuery,
+      ...(orgWorkspaceId ? { workspaceId: orgWorkspaceId } : {}),
+    }),
+    [analyticsQuery, orgWorkspaceId]
+  )
+
   const {
     data: workspaceData,
     isLoading: workspaceLoading,
@@ -730,9 +737,17 @@ export function Usage() {
     refetch: refetchOrganization,
   } = useOrganizationUsageAnalytics(
     canViewOrganizationUsage ? (organizationId ?? undefined) : undefined,
-    analyticsQuery,
+    organizationAnalyticsQuery,
     isOrganizationScope
   )
+
+  const orgWorkspaceFilterOptions = useMemo(() => {
+    const options = [{ label: 'All workspaces', value: 'all' }]
+    for (const ws of organizationData?.workspaces ?? []) {
+      options.push({ label: ws.name, value: ws.id })
+    }
+    return options
+  }, [organizationData?.workspaces])
 
   const { data: organizationRoster } = useOrganizationRoster(
     isOrganizationScope && canViewOrganizationUsage ? organizationId : undefined
@@ -828,6 +843,7 @@ export function Usage() {
                     void setUsageParams({
                       scope: nextScope,
                       rootExecutionId: nextScope === 'organization' ? null : rootExecutionId,
+                      orgWorkspaceId: nextScope === 'workspace' ? null : orgWorkspaceId,
                     })
                   }}
                 >
@@ -855,6 +871,19 @@ export function Usage() {
                   </ButtonGroupItem>
                 ))}
               </ButtonGroup>
+
+              {isOrganizationScope && (
+                <ChipSelect
+                  align='start'
+                  value={orgWorkspaceId ?? 'all'}
+                  onChange={(value) => {
+                    void setUsageParams({
+                      orgWorkspaceId: value === 'all' ? null : value,
+                    })
+                  }}
+                  options={orgWorkspaceFilterOptions}
+                />
+              )}
 
               <div className='flex flex-wrap items-center gap-2'>
                 <ButtonGroup

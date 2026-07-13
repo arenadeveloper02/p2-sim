@@ -26,8 +26,9 @@ async function fetchOrganizationUsageAnalytics(
 }
 
 /**
- * Organization-wide usage analytics by tab/period/source. Intentionally omits
- * `keepPreviousData` so switching filters does not flash another query's totals.
+ * Organization-wide usage analytics by tab/period/source/workspace filter.
+ * Intentionally omits `keepPreviousData` so switching filters does not flash
+ * another query's totals.
  */
 export function useOrganizationUsageAnalytics(
   organizationId: string | undefined,

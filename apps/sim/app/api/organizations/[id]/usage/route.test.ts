@@ -8,11 +8,22 @@ const {
   mockGetSession,
   mockIsOrganizationAdminOrOwner,
   mockGetOrganizationUsageAnalytics,
-} = vi.hoisted(() => ({
-  mockGetSession: vi.fn(),
-  mockIsOrganizationAdminOrOwner: vi.fn(),
-  mockGetOrganizationUsageAnalytics: vi.fn(),
-}))
+  InvalidOrganizationWorkspaceError,
+} = vi.hoisted(() => {
+  class InvalidOrganizationWorkspaceError extends Error {
+    constructor(public readonly workspaceId: string) {
+      super(`Workspace ${workspaceId} is not an active workspace in this organization`)
+      this.name = 'InvalidOrganizationWorkspaceError'
+    }
+  }
+
+  return {
+    mockGetSession: vi.fn(),
+    mockIsOrganizationAdminOrOwner: vi.fn(),
+    mockGetOrganizationUsageAnalytics: vi.fn(),
+    InvalidOrganizationWorkspaceError,
+  }
+})
 
 vi.mock('@/lib/auth', () => ({
   auth: { api: { getSession: vi.fn() } },
@@ -25,6 +36,7 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
 
 vi.mock('@/lib/workspaces/usage/organization-analytics', () => ({
   getOrganizationUsageAnalytics: mockGetOrganizationUsageAnalytics,
+  InvalidOrganizationWorkspaceError,
 }))
 
 vi.mock('@/lib/workspaces/usage/analytics', () => ({
@@ -70,12 +82,43 @@ const ANALYTICS = {
     },
   },
   byWorkspace: [],
-  workflow: { byWorkflow: [] },
-  copilot: { byChat: [] },
+  byChargeType: [],
+  attribution: {
+    missingChatId: { billableCost: 0, rawCost: 0, count: 0 },
+    missingExecutionId: { billableCost: 0, rawCost: 0, count: 0 },
+  },
+  workflow: {
+    executions: {
+      total: 0,
+      withProjectedCost: 0,
+      totalProjectedCost: 0,
+      totalLedgerCost: 0,
+    },
+    byTrigger: [],
+    byWorkflow: [],
+  },
+  copilot: {
+    chats: { total: 0, withLedgerCost: 0 },
+    runs: { total: 0 },
+    byChatType: [],
+    byChat: [],
+    byModel: [],
+    triggeredWorkflows: {
+      executionCount: 0,
+      billableCost: 0,
+      rawCost: 0,
+      byChat: [],
+    },
+  },
   byActor: [],
   byUser: [],
   bySource: [],
+  byModel: [],
+  byProvider: [],
+  byTool: [],
+  byVendor: [],
   timeSeries: [],
+  lineage: { roots: [] },
   dataHealth: { limitedAttribution: false, warnings: [] },
 }
 
@@ -138,6 +181,7 @@ describe('GET /api/organizations/[id]/usage', () => {
       period: '30d',
       sources: undefined,
       allTime: false,
+      workspaceId: undefined,
     })
   })
 
@@ -148,5 +192,24 @@ describe('GET /api/organizations/[id]/usage', () => {
         sources: ['workflow', 'copilot'],
       })
     )
+  })
+
+  it('forwards optional workspaceId filter to analytics', async () => {
+    await callGet('?workspaceId=ws-2')
+    expect(mockGetOrganizationUsageAnalytics).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'ws-2',
+      })
+    )
+  })
+
+  it('returns 400 when workspaceId is not in the organization', async () => {
+    mockGetOrganizationUsageAnalytics.mockRejectedValue(
+      new InvalidOrganizationWorkspaceError('ws-foreign')
+    )
+
+    const { status, body } = await callGet('?workspaceId=ws-foreign')
+    expect(status).toBe(400)
+    expect(body.error).toMatch(/not an active workspace/i)
   })
 })

@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import { organizationParamsSchema } from '@/lib/api/contracts/organization'
+import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import {
   usageActorTypeSchema,
+  usageChargeTypeSchema,
   usageLogSourceSchema,
   workspaceUsagePeriodSchema,
 } from '@/lib/api/contracts/workspace-usage'
@@ -16,6 +18,8 @@ export const organizationUsageAnalyticsQuerySchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((value) => value === 'true'),
+  /** Optional subset: one active org workspace. Omit for all org workspaces. */
+  workspaceId: workspaceIdSchema.optional(),
 })
 
 export type OrganizationUsageAnalyticsQuery = z.input<typeof organizationUsageAnalyticsQuerySchema>
@@ -49,6 +53,7 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
     startTime: z.string(),
     endTime: z.string(),
   }),
+  /** All active org workspaces (for filter UI). Analytics may be scoped via `workspaceId`. */
   workspaces: z.array(
     z.object({
       id: z.string(),
@@ -72,7 +77,29 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
       usage: usageMetricsSchema,
     })
   ),
+  byChargeType: z.array(
+    costBucketSchema.extend({
+      chargeType: usageChargeTypeSchema,
+    })
+  ),
+  attribution: z.object({
+    missingChatId: costBucketSchema,
+    missingExecutionId: costBucketSchema,
+  }),
   workflow: z.object({
+    executions: z.object({
+      total: z.number().int().nonnegative(),
+      withProjectedCost: z.number().int().nonnegative(),
+      totalProjectedCost: z.number(),
+      totalLedgerCost: z.number(),
+    }),
+    byTrigger: z.array(
+      costBucketSchema.extend({
+        trigger: z.string(),
+        executionCount: z.number().int().nonnegative(),
+      })
+    ),
+    /** Most expensive workflows across the scoped org workspaces (top N). */
     byWorkflow: z.array(
       costBucketSchema.extend({
         workspaceId: z.string(),
@@ -84,6 +111,21 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
     ),
   }),
   copilot: z.object({
+    chats: z.object({
+      total: z.number().int().nonnegative(),
+      withLedgerCost: z.number().int().nonnegative(),
+    }),
+    runs: z.object({
+      total: z.number().int().nonnegative(),
+    }),
+    byChatType: z.array(
+      costBucketSchema.extend({
+        chatType: z.enum(['mothership', 'copilot']),
+        chatCount: z.number().int().nonnegative(),
+        runCount: z.number().int().nonnegative(),
+      })
+    ),
+    /** Most expensive mothership/copilot chats (top N), with workspace for deep-links. */
     byChat: z.array(
       costBucketSchema.extend({
         workspaceId: z.string(),
@@ -95,6 +137,26 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
         runCount: z.number().int().nonnegative(),
       })
     ),
+    byModel: z.array(
+      costBucketSchema.extend({
+        model: z.string(),
+      })
+    ),
+    triggeredWorkflows: z.object({
+      executionCount: z.number().int().nonnegative(),
+      billableCost: z.number(),
+      rawCost: z.number(),
+      byChat: z.array(
+        z.object({
+          workspaceId: z.string(),
+          workspaceName: z.string(),
+          triggeringChatId: z.string(),
+          executionCount: z.number().int().nonnegative(),
+          billableCost: z.number(),
+          rawCost: z.number(),
+        })
+      ),
+    }),
   }),
   byActor: z.array(
     costBucketSchema.extend({
@@ -114,6 +176,26 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
       usage: usageMetricsSchema,
     })
   ),
+  byModel: z.array(
+    costBucketSchema.extend({
+      model: z.string(),
+    })
+  ),
+  byProvider: z.array(
+    costBucketSchema.extend({
+      provider: z.string(),
+    })
+  ),
+  byTool: z.array(
+    costBucketSchema.extend({
+      toolId: z.string(),
+    })
+  ),
+  byVendor: z.array(
+    costBucketSchema.extend({
+      vendor: z.string(),
+    })
+  ),
   timeSeries: z.array(
     z.object({
       bucketStart: z.string(),
@@ -123,6 +205,22 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
       usage: usageMetricsSchema,
     })
   ),
+  /**
+   * Lineage roots only — drill-down happens via workspace Usage deep-link
+   * (`rootExecutionId`), not merged trees in the org API.
+   */
+  lineage: z.object({
+    roots: z.array(
+      z.object({
+        workspaceId: z.string(),
+        workspaceName: z.string(),
+        rootExecutionId: z.string(),
+        executionCount: z.number().int().nonnegative(),
+        inclusiveBillableCost: z.number(),
+        inclusiveRawCost: z.number(),
+      })
+    ),
+  }),
   dataHealth: z.object({
     limitedAttribution: z.boolean(),
     warnings: z.array(dataHealthWarningSchema),

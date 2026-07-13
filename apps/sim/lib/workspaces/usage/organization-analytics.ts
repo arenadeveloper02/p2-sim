@@ -10,14 +10,23 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import type { OrganizationUsageAnalytics } from '@/lib/api/contracts/organization-usage'
+import type { UsageChargeTypeValue } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
+import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
+import {
+  applyEmbeddedToolChargeTypeSplit,
+  computeEmbeddedToolVirtualSplit,
+  mergeEmbeddedToolBucketRows,
+  subtractEmbeddedFromBucketRows,
+} from '@/lib/workspaces/usage/embedded-tool-virtual-split'
 import {
   buildExecutionConditions,
   buildExpensiveCopilotChatsQuery,
   buildExpensiveWorkflowsQuery,
   buildLedgerConditions,
   buildLedgerJoinConditions,
+  chargeTypeExpr,
   coerceToDate,
   EMPTY_USAGE_METRICS,
   executionBucketExpr,
@@ -28,6 +37,8 @@ import {
   mapExpensiveWorkflowRows,
   mapUsageMetrics,
   parseActorType,
+  parseChargeType,
+  parseChatType,
   parseDecimal,
   periodRange,
   type ResolvedPeriod,
@@ -35,9 +46,17 @@ import {
   resolvePeriodFromDateCandidates,
   timeBucketExpr,
   usageMetricsSelect,
+  WORKFLOW_SOURCE,
 } from '@/lib/workspaces/usage/ledger-helpers'
 
 const logger = createLogger('OrganizationUsageAnalytics')
+
+export class InvalidOrganizationWorkspaceError extends Error {
+  constructor(public readonly workspaceId: string) {
+    super(`Workspace ${workspaceId} is not an active workspace in this organization`)
+    this.name = 'InvalidOrganizationWorkspaceError'
+  }
+}
 
 export interface OrganizationUsageAnalyticsOptions {
   organizationId: string
@@ -46,6 +65,8 @@ export interface OrganizationUsageAnalyticsOptions {
   period?: '1d' | '7d' | '30d' | '90d'
   sources?: UsageLogSource[]
   allTime?: boolean
+  /** Optional subset to a single active org workspace. */
+  workspaceId?: string
 }
 
 interface OrgWorkspaceRef {
@@ -116,6 +137,7 @@ async function resolveOrganizationPeriod(
 
 function emptyOrganizationAnalytics(
   workspaces: OrgWorkspaceRef[],
+  scopedWorkspaces: OrgWorkspaceRef[],
   period: ResolvedPeriod
 ): OrganizationUsageAnalytics {
   return {
@@ -134,7 +156,7 @@ function emptyOrganizationAnalytics(
       runCount: 0,
       usage: { ...EMPTY_USAGE_METRICS },
     },
-    byWorkspace: workspaces.map((ws) => ({
+    byWorkspace: scopedWorkspaces.map((ws) => ({
       workspaceId: ws.id,
       workspaceName: ws.name,
       billableCost: 0,
@@ -142,33 +164,75 @@ function emptyOrganizationAnalytics(
       count: 0,
       usage: { ...EMPTY_USAGE_METRICS },
     })),
-    workflow: { byWorkflow: [] },
-    copilot: { byChat: [] },
+    byChargeType: [],
+    attribution: {
+      missingChatId: { billableCost: 0, rawCost: 0, count: 0 },
+      missingExecutionId: { billableCost: 0, rawCost: 0, count: 0 },
+    },
+    workflow: {
+      executions: {
+        total: 0,
+        withProjectedCost: 0,
+        totalProjectedCost: 0,
+        totalLedgerCost: 0,
+      },
+      byTrigger: [],
+      byWorkflow: [],
+    },
+    copilot: {
+      chats: { total: 0, withLedgerCost: 0 },
+      runs: { total: 0 },
+      byChatType: [],
+      byChat: [],
+      byModel: [],
+      triggeredWorkflows: {
+        executionCount: 0,
+        billableCost: 0,
+        rawCost: 0,
+        byChat: [],
+      },
+    },
     byActor: [],
     byUser: [],
     bySource: [],
+    byModel: [],
+    byProvider: [],
+    byTool: [],
+    byVendor: [],
     timeSeries: [],
+    lineage: { roots: [] },
     dataHealth: { limitedAttribution: false, warnings: [] },
   }
 }
 
 /**
- * Aggregates organization usage across all active org workspaces for admin
- * cost-finding dashboards (totals, by-workspace, expensive workflows/chats/actors).
+ * Aggregates organization usage across active org workspaces for admin dashboards.
+ * Optional `workspaceId` subsets analytics to one org workspace; lineage drill-down
+ * is not computed here — clients deep-link into workspace Usage with `rootExecutionId`.
  */
 export async function getOrganizationUsageAnalytics(
   options: OrganizationUsageAnalyticsOptions
 ): Promise<OrganizationUsageAnalytics> {
-  const { organizationId, sources } = options
+  const { organizationId, sources, workspaceId: filterWorkspaceId } = options
 
   try {
-    const workspaces = await listActiveOrganizationWorkspaces(organizationId)
-    const workspaceIds = workspaces.map((ws) => ws.id)
-    const workspaceNameById = new Map(workspaces.map((ws) => [ws.id, ws.name]))
+    const allWorkspaces = await listActiveOrganizationWorkspaces(organizationId)
 
-    if (workspaceIds.length === 0) {
-      return emptyOrganizationAnalytics(workspaces, resolveExplicitPeriod(options))
+    if (allWorkspaces.length === 0) {
+      return emptyOrganizationAnalytics([], [], resolveExplicitPeriod(options))
     }
+
+    let scopedWorkspaces = allWorkspaces
+    if (filterWorkspaceId) {
+      const match = allWorkspaces.find((ws) => ws.id === filterWorkspaceId)
+      if (!match) {
+        throw new InvalidOrganizationWorkspaceError(filterWorkspaceId)
+      }
+      scopedWorkspaces = [match]
+    }
+
+    const workspaceIds = scopedWorkspaces.map((ws) => ws.id)
+    const workspaceNameById = new Map(allWorkspaces.map((ws) => [ws.id, ws.name]))
 
     const period = await resolveOrganizationPeriod(workspaceIds, options)
 
@@ -188,21 +252,39 @@ export async function getOrganizationUsageAnalytics(
     const useHourlyBuckets = !options.allTime && (options.period ?? '30d') === '1d'
     const bucketExpr = timeBucketExpr(useHourlyBuckets)
     const executionBucket = executionBucketExpr(useHourlyBuckets)
+    const chargeType = chargeTypeExpr()
+    const workspaceIdsSql = sql.join(
+      workspaceIds.map((id) => sql`${id}`),
+      sql`, `
+    )
 
     const [
       bySourceRows,
+      byChargeTypeRows,
       summaryUsageRows,
+      attributionRows,
       byWorkspaceRows,
+      workflowExecutionSummary,
+      workflowLedgerSummary,
+      workflowByTriggerRows,
       expensiveWorkflowRows,
+      copilotChatSummary,
+      copilotRunSummary,
+      copilotByTypeRows,
+      copilotByModelRows,
       expensiveChatRows,
       byUserRows,
       byActorRows,
+      byModelRows,
+      byProviderRows,
+      byToolRows,
+      byVendorRows,
       timeSeriesLedgerRows,
       timeSeriesExecutionRows,
-      executionCountRows,
-      chatCountRows,
-      runCountRows,
+      lineageRootRows,
+      triggeredWorkflowRows,
       dataHealthLedgerRows,
+      dataHealthExecutionRows,
     ] = await Promise.all([
       dbReplica
         .select({
@@ -215,7 +297,37 @@ export async function getOrganizationUsageAnalytics(
         .groupBy(usageLog.source),
 
       dbReplica
+        .select({
+          chargeType,
+          ...ledgerCostSelect(),
+        })
+        .from(usageLog)
+        .where(and(...ledgerConditions))
+        .groupBy(chargeType),
+
+      dbReplica
         .select(usageMetricsSelect())
+        .from(usageLog)
+        .where(and(...ledgerConditions)),
+
+      dbReplica
+        .select({
+          missingChatIdCost: sql<string>`coalesce(sum(case when ${usageLog.source} in (${sql.join(
+            COPILOT_USAGE_SOURCES.map((s) => sql`${s}`),
+            sql`, `
+          )}) and ${usageLog.chatId} is null then ${usageLog.cost}::numeric else 0 end), 0)`,
+          missingChatIdCount: sql<number>`count(case when ${usageLog.source} in (${sql.join(
+            COPILOT_USAGE_SOURCES.map((s) => sql`${s}`),
+            sql`, `
+          )}) and ${usageLog.chatId} is null then 1 end)::int`,
+          missingChatIdRawCost: sql<string>`coalesce(sum(case when ${usageLog.source} in (${sql.join(
+            COPILOT_USAGE_SOURCES.map((s) => sql`${s}`),
+            sql`, `
+          )}) and ${usageLog.chatId} is null then coalesce(${usageLog.rawCost}, ${usageLog.cost})::numeric else 0 end), 0)`,
+          missingExecutionIdCost: sql<string>`coalesce(sum(case when ${usageLog.source} = ${WORKFLOW_SOURCE} and ${usageLog.executionId} is null then ${usageLog.cost}::numeric else 0 end), 0)`,
+          missingExecutionIdCount: sql<number>`count(case when ${usageLog.source} = ${WORKFLOW_SOURCE} and ${usageLog.executionId} is null then 1 end)::int`,
+          missingExecutionIdRawCost: sql<string>`coalesce(sum(case when ${usageLog.source} = ${WORKFLOW_SOURCE} and ${usageLog.executionId} is null then coalesce(${usageLog.rawCost}, ${usageLog.cost})::numeric else 0 end), 0)`,
+        })
         .from(usageLog)
         .where(and(...ledgerConditions)),
 
@@ -229,11 +341,115 @@ export async function getOrganizationUsageAnalytics(
         .where(and(...ledgerConditions))
         .groupBy(usageLog.workspaceId),
 
+      dbReplica
+        .select({
+          total: sql<number>`count(*)::int`,
+          withProjectedCost: sql<number>`count(case when ${workflowExecutionLogs.costTotal} is not null and ${workflowExecutionLogs.costTotal}::numeric > 0 then 1 end)::int`,
+          totalProjectedCost: sql<string>`coalesce(sum(${workflowExecutionLogs.costTotal}::numeric), 0)`,
+        })
+        .from(workflowExecutionLogs)
+        .where(and(...executionConditions)),
+
+      dbReplica
+        .select({
+          totalLedgerCost: sql<string>`coalesce(sum(${usageLog.cost}::numeric), 0)`,
+        })
+        .from(usageLog)
+        .where(
+          and(
+            ...ledgerConditions,
+            eq(usageLog.source, WORKFLOW_SOURCE),
+            isNotNull(usageLog.executionId)
+          )
+        ),
+
+      dbReplica
+        .select({
+          trigger: workflowExecutionLogs.trigger,
+          executionCount: sql<number>`count(distinct ${workflowExecutionLogs.executionId})::int`,
+          ...ledgerCostSelect(),
+        })
+        .from(workflowExecutionLogs)
+        .leftJoin(
+          usageLog,
+          and(
+            eq(usageLog.executionId, workflowExecutionLogs.executionId),
+            eq(usageLog.source, WORKFLOW_SOURCE),
+            ...ledgerJoinConditions
+          )
+        )
+        .where(and(...executionConditions))
+        .groupBy(workflowExecutionLogs.trigger),
+
       buildExpensiveWorkflowsQuery({
         executionScope: executionWorkspaceCondition,
         ledgerJoinConditions,
         period,
       }),
+
+      dbReplica
+        .select({
+          total: sql<number>`count(distinct ${copilotChats.id})::int`,
+          withLedgerCost: sql<number>`count(distinct case when ${usageLog.id} is not null then ${copilotChats.id} end)::int`,
+        })
+        .from(copilotChats)
+        .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
+        .where(
+          and(
+            inArray(copilotChats.workspaceId, workspaceIds),
+            or(and(...periodRange(copilotChats.createdAt, period)), isNotNull(usageLog.id))
+          )
+        ),
+
+      dbReplica
+        .select({
+          total: sql<number>`count(distinct ${copilotRuns.id})::int`,
+        })
+        .from(copilotRuns)
+        .where(
+          and(inArray(copilotRuns.workspaceId, workspaceIds), ...periodRange(copilotRuns.startedAt, period))
+        ),
+
+      dbReplica
+        .select({
+          chatType: copilotChats.type,
+          chatCount: sql<number>`count(distinct ${copilotChats.id})::int`,
+          runCount: sql<number>`count(distinct ${copilotRuns.id})::int`,
+          ...ledgerCostSelect(),
+        })
+        .from(copilotChats)
+        .leftJoin(
+          copilotRuns,
+          and(eq(copilotRuns.chatId, copilotChats.id), ...periodRange(copilotRuns.startedAt, period))
+        )
+        .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
+        .where(
+          and(
+            inArray(copilotChats.workspaceId, workspaceIds),
+            or(
+              and(...periodRange(copilotChats.createdAt, period)),
+              isNotNull(usageLog.id),
+              isNotNull(copilotRuns.id)
+            )
+          )
+        )
+        .groupBy(copilotChats.type),
+
+      dbReplica
+        .select({
+          model: copilotChats.model,
+          ...ledgerCostSelect(),
+        })
+        .from(copilotChats)
+        .innerJoin(usageLog, eq(usageLog.chatId, copilotChats.id))
+        .where(
+          and(
+            inArray(copilotChats.workspaceId, workspaceIds),
+            ...ledgerJoinConditions,
+            inArray(usageLog.source, COPILOT_USAGE_SOURCES)
+          )
+        )
+        .groupBy(copilotChats.model),
 
       buildExpensiveCopilotChatsQuery({
         chatScope: inArray(copilotChats.workspaceId, workspaceIds),
@@ -285,6 +501,42 @@ export async function getOrganizationUsageAnalytics(
 
       dbReplica
         .select({
+          model: usageLog.description,
+          ...ledgerCostSelect(),
+        })
+        .from(usageLog)
+        .where(and(...ledgerConditions, eq(usageLog.category, 'model')))
+        .groupBy(usageLog.description),
+
+      dbReplica
+        .select({
+          provider: usageLog.provider,
+          ...ledgerCostSelect(),
+        })
+        .from(usageLog)
+        .where(and(...ledgerConditions, isNotNull(usageLog.provider)))
+        .groupBy(usageLog.provider),
+
+      dbReplica
+        .select({
+          toolId: usageLog.toolId,
+          ...ledgerCostSelect(),
+        })
+        .from(usageLog)
+        .where(and(...ledgerConditions, isNotNull(usageLog.toolId)))
+        .groupBy(usageLog.toolId),
+
+      dbReplica
+        .select({
+          vendor: sql<string>`coalesce(${usageLog.vendor}, ${usageLog.description})`,
+          ...ledgerCostSelect(),
+        })
+        .from(usageLog)
+        .where(and(...ledgerConditions, eq(usageLog.category, 'external')))
+        .groupBy(sql`coalesce(${usageLog.vendor}, ${usageLog.description})`),
+
+      dbReplica
+        .select({
           bucketStart: bucketExpr,
           ...ledgerCostSelect(),
           ...usageMetricsSelect(),
@@ -304,32 +556,43 @@ export async function getOrganizationUsageAnalytics(
 
       dbReplica
         .select({
-          total: sql<number>`count(*)::int`,
+          rootExecutionId: workflowExecutionLogs.rootExecutionId,
+          workspaceId: workflowExecutionLogs.workspaceId,
+          executionCount: sql<number>`count(distinct ${workflowExecutionLogs.executionId})::int`,
+          inclusiveBillableCost: sql<string>`coalesce(sum(${usageLog.cost}::numeric), 0)`,
+          inclusiveRawCost: sql<string>`coalesce(sum(coalesce(${usageLog.rawCost}, ${usageLog.cost})::numeric), 0)`,
         })
         .from(workflowExecutionLogs)
-        .where(and(...executionConditions)),
-
-      dbReplica
-        .select({
-          total: sql<number>`count(distinct ${copilotChats.id})::int`,
-        })
-        .from(copilotChats)
-        .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
-        .where(
+        .leftJoin(
+          usageLog,
           and(
-            inArray(copilotChats.workspaceId, workspaceIds),
-            or(and(...periodRange(copilotChats.createdAt, period)), isNotNull(usageLog.id))
+            eq(usageLog.executionId, workflowExecutionLogs.executionId),
+            eq(usageLog.source, WORKFLOW_SOURCE),
+            ...ledgerJoinConditions
           )
-        ),
+        )
+        .where(and(...executionConditions, isNotNull(workflowExecutionLogs.rootExecutionId)))
+        .groupBy(workflowExecutionLogs.rootExecutionId, workflowExecutionLogs.workspaceId),
 
       dbReplica
         .select({
-          total: sql<number>`count(distinct ${copilotRuns.id})::int`,
+          triggeringChatId: workflowExecutionLogs.triggeringChatId,
+          workspaceId: workflowExecutionLogs.workspaceId,
+          executionCount: sql<number>`count(distinct ${workflowExecutionLogs.executionId})::int`,
+          billableCost: sql<string>`coalesce(sum(${usageLog.cost}::numeric), 0)`,
+          rawCost: sql<string>`coalesce(sum(coalesce(${usageLog.rawCost}, ${usageLog.cost})::numeric), 0)`,
         })
-        .from(copilotRuns)
-        .where(
-          and(inArray(copilotRuns.workspaceId, workspaceIds), ...periodRange(copilotRuns.startedAt, period))
-        ),
+        .from(workflowExecutionLogs)
+        .leftJoin(
+          usageLog,
+          and(
+            eq(usageLog.executionId, workflowExecutionLogs.executionId),
+            eq(usageLog.source, WORKFLOW_SOURCE),
+            ...ledgerJoinConditions
+          )
+        )
+        .where(and(...executionConditions, isNotNull(workflowExecutionLogs.triggeringChatId)))
+        .groupBy(workflowExecutionLogs.triggeringChatId, workflowExecutionLogs.workspaceId),
 
       dbReplica
         .select({
@@ -344,7 +607,47 @@ export async function getOrganizationUsageAnalytics(
             ...ledgerPeriodBounds(period)
           )
         ),
+
+      dbReplica
+        .select({
+          executionsWithCostNoLedger: sql<number>`count(case when coalesce(${workflowExecutionLogs.costTotal}::numeric, 0) > 0 and coalesce(ledger.ledger_sum, 0) = 0 then 1 end)::int`,
+          costTotalDriftCount: sql<number>`count(case when abs(coalesce(${workflowExecutionLogs.costTotal}::numeric, 0) - coalesce(ledger.ledger_sum, 0)) > 0.000001 then 1 end)::int`,
+        })
+        .from(workflowExecutionLogs)
+        .leftJoin(
+          sql`(
+            select
+              ${usageLog.executionId} as execution_id,
+              sum(${usageLog.cost}::numeric) as ledger_sum
+            from ${usageLog}
+            where ${usageLog.workspaceId} in (${workspaceIdsSql})
+              and ${usageLog.source} = ${WORKFLOW_SOURCE}
+              and ${usageLog.executionId} is not null
+            group by ${usageLog.executionId}
+          ) ledger`,
+          sql`ledger.execution_id = ${workflowExecutionLogs.executionId}`
+        )
+        .where(
+          and(
+            ...executionConditions,
+            inArray(workflowExecutionLogs.status, ['completed', 'failed', 'cancelled'])
+          )
+        ),
     ])
+
+    const modelMetadataRows = await dbReplica
+      .select({
+        executionId: usageLog.executionId,
+        description: usageLog.description,
+        provider: usageLog.provider,
+        cost: usageLog.cost,
+        rawCost: usageLog.rawCost,
+        metadata: usageLog.metadata,
+      })
+      .from(usageLog)
+      .where(and(...ledgerConditions, eq(usageLog.category, 'model'), isNotNull(usageLog.executionId)))
+
+    const embeddedToolSplit = computeEmbeddedToolVirtualSplit(modelMetadataRows)
 
     const bySource = bySourceRows.map((row) => ({
       source: row.source,
@@ -354,10 +657,37 @@ export async function getOrganizationUsageAnalytics(
       usage: mapUsageMetrics(row),
     }))
 
+    const CHARGE_TYPE_ORDER: UsageChargeTypeValue[] = [
+      'base_run',
+      'provider',
+      'tool',
+      'cost_block',
+      'other',
+    ]
+    const byChargeType = applyEmbeddedToolChargeTypeSplit(
+      byChargeTypeRows
+        .map((row) => ({
+          chargeType: parseChargeType(row.chargeType),
+          billableCost: parseDecimal(row.billableCost),
+          rawCost: parseDecimal(row.rawCost),
+          count: row.count,
+        }))
+        .sort(
+          (a, b) => CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
+        ),
+      embeddedToolSplit
+    )
+
     const totalBillableCost = bySource.reduce((sum, row) => sum + row.billableCost, 0)
     const totalRawCost = bySource.reduce((sum, row) => sum + row.rawCost, 0)
     const ledgerEntryCount = bySource.reduce((sum, row) => sum + row.count, 0)
     const summaryUsage = mapUsageMetrics(summaryUsageRows[0] ?? {})
+
+    const attribution = attributionRows[0]
+    const workflowSummary = workflowExecutionSummary[0]
+    const workflowLedger = workflowLedgerSummary[0]
+    const chatSummary = copilotChatSummary[0]
+    const runSummary = copilotRunSummary[0]
 
     const costByWorkspaceId = new Map(
       byWorkspaceRows
@@ -373,7 +703,7 @@ export async function getOrganizationUsageAnalytics(
         ])
     )
 
-    const byWorkspace = workspaces
+    const byWorkspace = scopedWorkspaces
       .map((ws) => {
         const costs = costByWorkspaceId.get(ws.id)
         return {
@@ -420,10 +750,22 @@ export async function getOrganizationUsageAnalytics(
 
     timeSeries.sort((a, b) => a.bucketStart.localeCompare(b.bucketStart))
 
+    const triggeredWorkflowTotal = triggeredWorkflowRows.reduce(
+      (acc, row) => ({
+        executionCount: acc.executionCount + row.executionCount,
+        billableCost: acc.billableCost + parseDecimal(row.billableCost),
+        rawCost: acc.rawCost + parseDecimal(row.rawCost),
+      }),
+      { executionCount: 0, billableCost: 0, rawCost: 0 }
+    )
+
     const dataHealthLedger = dataHealthLedgerRows[0]
+    const dataHealthExecution = dataHealthExecutionRows[0]
     const totalLedgerRows = dataHealthLedger?.totalRows ?? 0
     const missingActorRows = dataHealthLedger?.missingActorRows ?? 0
     const nullWorkspaceRows = dataHealthLedger?.nullWorkspaceRows ?? 0
+    const executionsWithCostNoLedger = dataHealthExecution?.executionsWithCostNoLedger ?? 0
+    const costTotalDriftCount = dataHealthExecution?.costTotalDriftCount ?? 0
 
     const warnings: OrganizationUsageAnalytics['dataHealth']['warnings'] = []
 
@@ -434,6 +776,26 @@ export async function getOrganizationUsageAnalytics(
         label: 'Ledger rows missing workspace',
         count: nullWorkspaceRows,
         detail: 'usage_log.workspace_id is null for rows in this period.',
+      })
+    }
+
+    if (executionsWithCostNoLedger > 0) {
+      warnings.push({
+        id: 'executions-cost-no-ledger',
+        severity: 'warning',
+        label: 'Executions with cost but no ledger',
+        count: executionsWithCostNoLedger,
+        detail: 'workflow_execution_logs.cost_total > 0 with no matching workflow ledger rows.',
+      })
+    }
+
+    if (costTotalDriftCount > 0) {
+      warnings.push({
+        id: 'cost-total-drift',
+        severity: 'warning',
+        label: 'Execution cost vs ledger drift',
+        count: costTotalDriftCount,
+        detail: 'cost_total does not match the sum of workflow ledger rows.',
       })
     }
 
@@ -454,19 +816,45 @@ export async function getOrganizationUsageAnalytics(
         startTime: period.start.toISOString(),
         endTime: period.end.toISOString(),
       },
-      workspaces,
+      workspaces: allWorkspaces,
       summary: {
         billableCost: totalBillableCost,
         rawCost: totalRawCost,
         billableCostCredits: dollarsToCredits(totalBillableCost),
         ledgerEntryCount,
-        executionCount: executionCountRows[0]?.total ?? 0,
-        chatCount: chatCountRows[0]?.total ?? 0,
-        runCount: runCountRows[0]?.total ?? 0,
+        executionCount: workflowSummary?.total ?? 0,
+        chatCount: chatSummary?.total ?? 0,
+        runCount: runSummary?.total ?? 0,
         usage: summaryUsage,
       },
       byWorkspace,
+      byChargeType,
+      attribution: {
+        missingChatId: {
+          billableCost: parseDecimal(attribution?.missingChatIdCost),
+          rawCost: parseDecimal(attribution?.missingChatIdRawCost),
+          count: attribution?.missingChatIdCount ?? 0,
+        },
+        missingExecutionId: {
+          billableCost: parseDecimal(attribution?.missingExecutionIdCost),
+          rawCost: parseDecimal(attribution?.missingExecutionIdRawCost),
+          count: attribution?.missingExecutionIdCount ?? 0,
+        },
+      },
       workflow: {
+        executions: {
+          total: workflowSummary?.total ?? 0,
+          withProjectedCost: workflowSummary?.withProjectedCost ?? 0,
+          totalProjectedCost: parseDecimal(workflowSummary?.totalProjectedCost),
+          totalLedgerCost: parseDecimal(workflowLedger?.totalLedgerCost),
+        },
+        byTrigger: workflowByTriggerRows.map((row) => ({
+          trigger: row.trigger,
+          executionCount: row.executionCount,
+          billableCost: parseDecimal(row.billableCost),
+          rawCost: parseDecimal(row.rawCost),
+          count: row.count,
+        })),
         byWorkflow: mapExpensiveWorkflowRows(expensiveWorkflowRows).map((row) => ({
           workspaceId: row.workspaceId,
           workspaceName:
@@ -480,7 +868,26 @@ export async function getOrganizationUsageAnalytics(
         })),
       },
       copilot: {
-        byChat: mapExpensiveCopilotChatRows(expensiveChatRows).map((row) => ({
+        chats: {
+          total: chatSummary?.total ?? 0,
+          withLedgerCost: chatSummary?.withLedgerCost ?? 0,
+        },
+        runs: {
+          total: runSummary?.total ?? 0,
+        },
+        byChatType: copilotByTypeRows.map((row) => ({
+          chatType: parseChatType(row.chatType),
+          chatCount: row.chatCount,
+          runCount: row.runCount,
+          billableCost: parseDecimal(row.billableCost),
+          rawCost: parseDecimal(row.rawCost),
+          count: row.count,
+        })),
+        byChat: mapExpensiveCopilotChatRows(
+          expensiveChatRows.filter(
+            (row): row is (typeof row & { workspaceId: string }) => row.workspaceId !== null
+          )
+        ).map((row) => ({
           workspaceId: row.workspaceId,
           workspaceName:
             row.workspaceName ?? workspaceNameById.get(row.workspaceId) ?? row.workspaceId,
@@ -493,6 +900,32 @@ export async function getOrganizationUsageAnalytics(
           rawCost: row.rawCost,
           count: row.count,
         })),
+        byModel: copilotByModelRows.map((row) => ({
+          model: row.model,
+          billableCost: parseDecimal(row.billableCost),
+          rawCost: parseDecimal(row.rawCost),
+          count: row.count,
+        })),
+        triggeredWorkflows: {
+          executionCount: triggeredWorkflowTotal.executionCount,
+          billableCost: triggeredWorkflowTotal.billableCost,
+          rawCost: triggeredWorkflowTotal.rawCost,
+          byChat: triggeredWorkflowRows
+            .filter(
+              (
+                row
+              ): row is typeof row & { triggeringChatId: string; workspaceId: string } =>
+                row.triggeringChatId !== null && row.workspaceId !== null
+            )
+            .map((row) => ({
+              workspaceId: row.workspaceId,
+              workspaceName: workspaceNameById.get(row.workspaceId) ?? row.workspaceId,
+              triggeringChatId: row.triggeringChatId,
+              executionCount: row.executionCount,
+              billableCost: parseDecimal(row.billableCost),
+              rawCost: parseDecimal(row.rawCost),
+            })),
+        },
       },
       byActor: byActorRows
         .map((row) => ({
@@ -513,18 +946,78 @@ export async function getOrganizationUsageAnalytics(
         }))
         .sort((a, b) => b.billableCost - a.billableCost),
       bySource,
+      byModel: subtractEmbeddedFromBucketRows(
+        byModelRows.map((row) => ({
+          model: row.model,
+          billableCost: parseDecimal(row.billableCost),
+          rawCost: parseDecimal(row.rawCost),
+          count: row.count,
+        })),
+        (row) => row.model,
+        embeddedToolSplit.byModelEmbedded
+      ),
+      byProvider: subtractEmbeddedFromBucketRows(
+        byProviderRows
+          .filter((row): row is typeof row & { provider: string } => row.provider !== null)
+          .map((row) => ({
+            provider: row.provider,
+            billableCost: parseDecimal(row.billableCost),
+            rawCost: parseDecimal(row.rawCost),
+            count: row.count,
+          })),
+        (row) => row.provider,
+        embeddedToolSplit.byProviderEmbedded
+      ),
+      byTool: mergeEmbeddedToolBucketRows(
+        byToolRows
+          .filter((row): row is typeof row & { toolId: string } => row.toolId !== null)
+          .map((row) => ({
+            toolId: row.toolId,
+            billableCost: parseDecimal(row.billableCost),
+            rawCost: parseDecimal(row.rawCost),
+            count: row.count,
+          })),
+        embeddedToolSplit.byToolEmbedded
+      ),
+      byVendor: byVendorRows.map((row) => ({
+        vendor: row.vendor,
+        billableCost: parseDecimal(row.billableCost),
+        rawCost: parseDecimal(row.rawCost),
+        count: row.count,
+      })),
       timeSeries,
+      lineage: {
+        roots: lineageRootRows
+          .filter(
+            (
+              row
+            ): row is typeof row & { rootExecutionId: string; workspaceId: string } =>
+              row.rootExecutionId !== null && row.workspaceId !== null
+          )
+          .map((row) => ({
+            workspaceId: row.workspaceId,
+            workspaceName: workspaceNameById.get(row.workspaceId) ?? row.workspaceId,
+            rootExecutionId: row.rootExecutionId,
+            executionCount: row.executionCount,
+            inclusiveBillableCost: parseDecimal(row.inclusiveBillableCost),
+            inclusiveRawCost: parseDecimal(row.inclusiveRawCost),
+          }))
+          .sort((a, b) => b.inclusiveBillableCost - a.inclusiveBillableCost)
+          .slice(0, 25),
+      },
       dataHealth: {
         limitedAttribution,
         warnings,
       },
     }
   } catch (error) {
-    logger.error('Failed to compute organization usage analytics', {
-      error: toError(error).message,
-      organizationId,
-      options,
-    })
+    if (!(error instanceof InvalidOrganizationWorkspaceError)) {
+      logger.error('Failed to compute organization usage analytics', {
+        error: toError(error).message,
+        organizationId,
+        options,
+      })
+    }
     throw error
   }
 }
