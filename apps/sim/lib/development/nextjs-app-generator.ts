@@ -1165,15 +1165,15 @@ function buildEditDatabaseContext(existingFiles: GeneratedAppFile[]): string {
 
   const fieldSummary = summarizePrismaScalarFields(schema)
   const sections = [
-    '═══ LIVE DATABASE BASELINE (ADD columns only — NEVER drop ANY field listed below) ═══',
+    '═══ LIVE DATABASE BASELINE (ALWAYS return this file; ADD columns only — NEVER edit/drop/retype existing fields) ═══',
     'Neon Postgres already has rows. Vercel runs prisma db push with no --accept-data-loss.',
-    'ABSOLUTE: do not drop, omit, rename, or retype any immutable scalar column. Unused columns stay in the schema.',
-    'If you return prisma/schema.prisma, copy the schema below verbatim and ADD only what the user requested.',
+    'ABSOLUTE: do not drop, omit, rename, retype, or edit any immutable scalar column. Unused columns stay in the schema.',
+    'MANDATORY: every edit response MUST include prisma/schema.prisma — copy the schema below verbatim and ADD only new columns/models if needed.',
     '',
-    'Immutable scalar columns (every name must remain in your output — including createdAt / updatedAt):',
+    'Immutable scalar columns (every name AND type must remain unchanged in your output — including createdAt / updatedAt):',
     fieldSummary || '(no models parsed)',
     '',
-    '--- prisma/schema.prisma (SOURCE OF TRUTH — patch this file, do not regenerate) ---',
+    '--- prisma/schema.prisma (SOURCE OF TRUTH — always return this file; add-only, do not regenerate) ---',
     schema,
   ]
 
@@ -1962,30 +1962,34 @@ const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
 }
 
 /** Edit-mode only — never included in generate or repair prompts. */
-const EDIT_APP_PRISMA_SCHEMA_PRESERVATION = `═══ EDIT MODE: prisma/schema.prisma — ADD ONLY, NEVER DROP COLUMNS ═══
+const EDIT_APP_PRISMA_SCHEMA_PRESERVATION = `═══ EDIT MODE: prisma/schema.prisma — ALWAYS RETURN; ADD ONLY; NEVER EDIT EXISTING COLUMNS ═══
 This repository is ALREADY deployed. Neon Postgres has REAL ROWS. Vercel build runs:
   prisma generate && prisma db push && next build
-There is NO --accept-data-loss. Dropping a column FAILS the deploy (potential_dataloss).
+There is NO --accept-data-loss. Dropping or altering a column FAILS the deploy (potential_dataloss / unexecutable).
 
-ABSOLUTE RULE: Do not drop ANY database column. Not for cleanup. Not for refactor. Not to "match the UI". Not because a field looks unused. Leave unused columns in the schema.
+ABSOLUTE RULES:
+1. ALWAYS include prisma/schema.prisma in EVERY edit response when the app has a database — even if you did not change the schema (echo the baseline file verbatim).
+2. NEVER edit an existing column. Do not change its name, data type, nullability, @default, @unique, @id, @updatedAt, @map, or @relation attributes. Leave existing field lines byte-for-byte identical.
+3. NEVER change data types of existing columns (String/Int/Boolean/DateTime/Json/enum/etc.). If you need a different type, ADD a NEW column instead.
+4. NEVER drop ANY database column. Not for cleanup. Not for refactor. Not to "match the UI". Not because a field looks unused. Leave unused columns in the schema.
 
 FORBIDDEN on edit (will break production):
-- Dropping, omitting, renaming, retyping, or skipping ANY existing column (id, createdAt, updatedAt, email, title, name, status, FKs — every scalar on every model)
+- Dropping, omitting, renaming, retyping, or modifying ANY existing column (id, createdAt, updatedAt, email, title, name, status, FKs — every scalar on every model)
+- Changing an existing field's type or attributes in any way — ADD a new column instead
 - Regenerating prisma/schema.prisma from scratch, from REPO_SUMMARY, or from memory
-- Returning a "simplified", "cleaned up", or "normalized" schema with fewer fields than the input file
-- Renaming or retyping existing columns unless the user explicitly asked for that exact rename/type change
+- Returning a "simplified", "cleaned up", or "normalized" schema with fewer or altered fields than the input file
 - Removing \`updatedAt DateTime @updatedAt\` or \`createdAt DateTime @default(now())\` from any model that already has them
 
-REQUIRED workflow when you touch prisma/schema.prisma:
+REQUIRED workflow for prisma/schema.prisma on every edit:
 1. Locate prisma/schema.prisma in the user message — that exact file is your baseline.
-2. Copy it in full. Change NOTHING except what the user requested to ADD.
-3. ADD ONLY: new models, new scalar fields, new relations, new enums. Existing fields stay byte-for-byte identical (same name, type, attributes; order may stay the same).
+2. Copy it in full into your response files array (mandatory every edit).
+3. Change NOTHING on existing lines. ADD ONLY: new models, new scalar fields, new relations, new enums.
 4. New fields on existing models: use ? or @default(...). DateTime @updatedAt on existing models also needs @default(now()).
-5. Before returning: verify EVERY scalar field from the baseline / LIVE DATABASE BASELINE still appears in your output. If Project had "updatedAt DateTime @updatedAt", it MUST still be there.
-6. If UI no longer uses a column, stop selecting it in lib/actions.ts — do NOT remove it from the schema.
-7. Return lib/actions.ts and lib/types.ts in the same response when schema changes.
+5. Before returning: verify EVERY scalar field from the baseline / LIVE DATABASE BASELINE still appears unchanged in your output. If Project had "updatedAt DateTime @updatedAt", it MUST still be there with the same type and attributes.
+6. If UI no longer uses a column, stop selecting it in lib/actions.ts — do NOT remove or alter it in the schema.
+7. When you ADD models/fields/relations, also return lib/actions.ts and lib/types.ts in the same response.
 
-The user's edit request is about NEW functionality — it is NOT permission to remove database columns. Unless they literally say "delete/remove/drop field X from the database", keep all columns.`
+The user's edit request is about NEW functionality — it is NOT permission to edit, retype, rename, or remove existing database columns. Always add new columns for new data.`
 
 const EDIT_APP_SYSTEM_PROMPT = `You are a senior full-stack engineer editing an existing Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
 
@@ -1999,7 +2003,7 @@ ${GENERATED_APP_GENERATION_MANDATES}
 
 Constraints:
 - Apply the user's requested changes while preserving working architecture and unrelated code
-- Return ONLY files you create or modify (do not echo unchanged files)
+- Return ONLY files you create or modify — EXCEPTION: when the app uses a database, ALWAYS return the full prisma/schema.prisma (unchanged echo or additive update)
 - Every returned file must contain complete, real, working code — no stubs or placeholders
 - ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
@@ -2015,7 +2019,7 @@ Constraints:
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
-- When editing prisma/schema.prisma you MUST return lib/actions.ts and lib/types.ts in the same response — aligned includes, t.field access, and DTO field names
+- ALWAYS return prisma/schema.prisma on every database-backed edit; when you ADD schema fields also return lib/actions.ts and lib/types.ts — aligned includes, t.field access, and DTO field names
 - When editing prisma/schema.prisma or lib/types.ts, keep exports in sync — export every type from lib/types.ts and import it with \`import type\` in components; import server actions (not types) from lib/actions.ts
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
@@ -2142,9 +2146,9 @@ ${editReference}
 User edit request:
 ${userInput}
 
-DATABASE RULE (non-negotiable): Never drop any column from prisma/schema.prisma. If you change the schema, every column under LIVE DATABASE BASELINE must remain (especially createdAt / updatedAt). Add new columns only. If UI no longer needs a field, stop using it in code — leave it in the schema.
+DATABASE RULE (non-negotiable): ALWAYS return prisma/schema.prisma in this edit response. Never drop, rename, retype, or edit any existing column — existing field lines must stay identical. Add new columns only. If UI no longer needs a field, stop using it in code — leave it in the schema unchanged.
 
-Return JSON with app metadata and ONLY the files you changed or added.`
+Return JSON with app metadata and the files you changed or added (plus prisma/schema.prisma whenever the app uses a database).`
 
   const parsed = await requestStructuredJsonWithContinuations(
     anthropic,
