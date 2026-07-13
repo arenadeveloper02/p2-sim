@@ -6,7 +6,6 @@ import { requestJson } from '@/lib/api/client/request'
 import type {
   ApplyLocalCopilotPatchBody,
   LocalCopilotChatBody,
-  WorkflowPatchWire,
 } from '@/local-copilot/contracts/local-copilot'
 import {
   applyLocalCopilotPatchContract,
@@ -15,7 +14,7 @@ import {
   listLocalCopilotConversationsContract,
   rejectLocalCopilotPatchContract,
 } from '@/local-copilot/contracts/local-copilot'
-import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
+import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 
 export const localCopilotKeys = {
   all: ['local-copilot'] as const,
@@ -31,7 +30,7 @@ export interface LocalCopilotMessage {
   role: 'user' | 'assistant'
   text: string
   patchId?: string
-  patch?: WorkflowPatchWire
+  patch?: WorkflowPatch
   recommendations?: string[]
   streaming?: boolean
 }
@@ -73,7 +72,7 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
   const [isStreaming, setIsStreaming] = useState(false)
   const [pendingPatch, setPendingPatch] = useState<{
     patchId: string
-    patch: WorkflowPatchWire
+    patch: WorkflowPatch
   } | null>(null)
   const [showDiff, setShowDiff] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -130,7 +129,7 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
         let buffer = ''
         let assistantText = ''
         let patchId: string | undefined
-        let patch: WorkflowPatchWire | undefined
+        let patch: WorkflowPatch | undefined
         let recommendations: string[] = []
 
         while (true) {
