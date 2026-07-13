@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { getMaxOutputTokensForModel } from '@/providers/utils'
 import type { ToolConfig, WorkflowToolExecutionContext } from '@/tools/types'
@@ -34,25 +35,176 @@ export interface FigmaToHTMLAIResponse {
       inputTokens: number
       outputTokens: number
       combinedHtml: string
+      /** Figma node ID → exported image URL used in combinedHtml */
+      assets?: Record<string, string>
     }
   }
   error?: string
 }
 
-// Optimize Figma data for AI processing
-function optimizeFigmaData(figmaData: any, nodeId: string): any {
-  const node = nodeId.replace('-', ':')
-  const optimized = {
-    document: figmaData.nodes[node].document,
-    components: figmaData.nodes[node].components || {},
-    styles: figmaData.nodes[node].styles || {},
-    name: figmaData.name,
-    lastModified: figmaData.nodes[node].lastModified,
-    version: figmaData.nodes[node].version,
-    thumbnailUrl: figmaData.thumbnailUrl,
+const MAX_FIGMA_ASSET_EXPORTS = 80
+const VECTOR_NODE_TYPES = new Set([
+  'VECTOR',
+  'BOOLEAN_OPERATION',
+  'STAR',
+  'LINE',
+  'REGULAR_POLYGON',
+  'ELLIPSE',
+])
+
+type FigmaAssetMap = Record<string, string>
+
+function normalizeFigmaNodeId(nodeId: string): string {
+  return nodeId.replace(/-/g, ':')
+}
+
+function getRootDocument(figmaData: any, nodeId?: string): any {
+  if (nodeId) {
+    const key = normalizeFigmaNodeId(nodeId)
+    return figmaData?.nodes?.[key]?.document ?? figmaData?.nodes?.[nodeId]?.document ?? null
+  }
+  return figmaData?.document ?? null
+}
+
+function hasImageFill(node: any): boolean {
+  if (!Array.isArray(node?.fills)) return false
+  return node.fills.some(
+    (fill: any) =>
+      fill &&
+      fill.visible !== false &&
+      fill.type === 'IMAGE' &&
+      typeof fill.imageRef === 'string' &&
+      fill.imageRef.length > 0
+  )
+}
+
+/**
+ * Collects node IDs that should be exported via the Figma Images API
+ * (image fills and vector/shape nodes).
+ */
+function collectImageableNodeIds(root: any, limit = MAX_FIGMA_ASSET_EXPORTS): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+
+  function walk(node: any) {
+    if (!node || ids.length >= limit) return
+    if (node.visible === false) return
+
+    const shouldExport =
+      typeof node.id === 'string' &&
+      (hasImageFill(node) ||
+        VECTOR_NODE_TYPES.has(node.type) ||
+        (Array.isArray(node.exportSettings) && node.exportSettings.length > 0))
+
+    if (shouldExport && !seen.has(node.id)) {
+      seen.add(node.id)
+      ids.push(node.id)
+    }
+
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) {
+        walk(child)
+        if (ids.length >= limit) return
+      }
+    }
   }
 
-  // Remove unnecessary data to reduce token usage
+  walk(root)
+  return ids
+}
+
+/**
+ * Exports node renders from Figma Images API. Returns nodeId → temporary URL map.
+ */
+async function fetchFigmaAssetUrls(
+  fileKey: string,
+  nodeIds: string[]
+): Promise<FigmaAssetMap> {
+  if (nodeIds.length === 0) return {}
+
+  const figmaToken = process.env.FIGMA_API_KEY || ''
+  if (!figmaToken) {
+    logger.warn('FIGMA_API_KEY missing — skipping asset export for HTML conversion')
+    return {}
+  }
+
+  const assets: FigmaAssetMap = {}
+  const chunkSize = 40
+
+  for (let i = 0; i < nodeIds.length; i += chunkSize) {
+    const chunk = nodeIds.slice(i, i + chunkSize)
+    const query = new URLSearchParams({
+      ids: chunk.join(','),
+      format: 'png',
+      scale: '2',
+    })
+
+    try {
+      const response = await fetch(`https://api.figma.com/v1/images/${fileKey}?${query.toString()}`, {
+        method: 'GET',
+        headers: {
+          'X-Figma-Token': figmaToken,
+        },
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        logger.warn('Figma Images API request failed', {
+          status: response.status,
+          message: (errorData as { message?: string }).message,
+          chunkSize: chunk.length,
+        })
+        continue
+      }
+
+      const data = (await response.json()) as { images?: Record<string, string | null> }
+      for (const [id, url] of Object.entries(data.images ?? {})) {
+        if (typeof url === 'string' && url.length > 0) {
+          assets[id] = url
+        }
+      }
+    } catch (error) {
+      logger.warn('Figma Images API request error', {
+        error: getErrorMessage(error),
+      })
+    }
+  }
+
+  return assets
+}
+
+function attachAssetUrls(node: any, assets: FigmaAssetMap): any {
+  if (!node) return null
+
+  const imageUrl = typeof node.id === 'string' ? assets[node.id] : undefined
+
+  return {
+    ...node,
+    ...(imageUrl ? { imageUrl } : {}),
+    children: Array.isArray(node.children)
+      ? node.children.map((child: any) => attachAssetUrls(child, assets)).filter(Boolean)
+      : undefined,
+  }
+}
+
+// Optimize Figma data for AI processing
+function optimizeFigmaData(figmaData: any, nodeId: string, assets: FigmaAssetMap = {}): any {
+  const rootDocument = getRootDocument(figmaData, nodeId || undefined)
+  const nodeKey = nodeId ? normalizeFigmaNodeId(nodeId) : ''
+  const nodeMeta = nodeKey ? figmaData?.nodes?.[nodeKey] : undefined
+
+  const optimized = {
+    document: rootDocument,
+    components: nodeMeta?.components || figmaData?.components || {},
+    styles: nodeMeta?.styles || figmaData?.styles || {},
+    name: figmaData?.name,
+    lastModified: nodeMeta?.lastModified || figmaData?.lastModified,
+    version: nodeMeta?.version || figmaData?.version,
+    thumbnailUrl: figmaData?.thumbnailUrl,
+    assets,
+  }
+
+  // Remove unnecessary data to reduce token usage (keep layout + asset-relevant fields)
   function cleanNode(node: any): any {
     if (!node) return null
 
@@ -61,16 +213,23 @@ function optimizeFigmaData(figmaData: any, nodeId: string): any {
       name: node.name,
       type: node.type,
       visible: node.visible,
+      opacity: node.opacity,
       absoluteBoundingBox: node.absoluteBoundingBox,
+      constraints: node.constraints,
+      clipsContent: node.clipsContent,
       fills: node.fills,
       strokes: node.strokes,
       strokeWeight: node.strokeWeight,
       cornerRadius: node.cornerRadius,
+      effects: node.effects,
       characters: node.characters,
       style: node.style,
       layoutMode: node.layoutMode,
+      layoutWrap: node.layoutWrap,
       primaryAxisAlignItems: node.primaryAxisAlignItems,
       counterAxisAlignItems: node.counterAxisAlignItems,
+      primaryAxisSizingMode: node.primaryAxisSizingMode,
+      counterAxisSizingMode: node.counterAxisSizingMode,
       paddingLeft: node.paddingLeft,
       paddingRight: node.paddingRight,
       paddingTop: node.paddingTop,
@@ -81,16 +240,30 @@ function optimizeFigmaData(figmaData: any, nodeId: string): any {
   }
 
   if (optimized.document) {
-    optimized.document = cleanNode(optimized.document)
+    optimized.document = attachAssetUrls(cleanNode(optimized.document), assets)
   }
 
   return optimized
 }
 
+function formatAssetMapForPrompt(assets: FigmaAssetMap): string {
+  const entries = Object.entries(assets)
+  if (entries.length === 0) {
+    return 'No exported asset URLs were available for this design.'
+  }
+
+  return entries.map(([nodeId, url]) => `- ${nodeId}: ${url}`).join('\n')
+}
+
 // Generate AI prompt for HTML/CSS conversion
-function generateAIPrompt(figmaData: any, params: FigmaToHTMLAIParams): string {
-  const optimizedData = optimizeFigmaData(figmaData, params.nodeId || '')
+function generateAIPrompt(
+  figmaData: any,
+  params: FigmaToHTMLAIParams,
+  assets: FigmaAssetMap = {}
+): string {
+  const optimizedData = optimizeFigmaData(figmaData, params.nodeId || '', assets)
   const figmaJson = JSON.stringify(optimizedData, null, 2)
+  const assetList = formatAssetMapForPrompt(assets)
 
   const basePrompt = `You are an expert frontend developer specializing in converting Figma designs to clean, semantic, and accessible HTML/CSS code.
 
@@ -103,7 +276,11 @@ CRITICAL REQUIREMENTS:
 6. Include proper accessibility attributes (ARIA labels, roles, etc.)
 7. Use CSS custom properties for design tokens
 8. Generate clean, maintainable code with comments
-9. USE THE PROVIDED IMAGES: Replace any image placeholders with the actual image URLs provided below
+9. USE EXACT ASSET URLS BELOW: for any node that has "imageUrl", you MUST use that exact URL in <img src="..."> or CSS background-image. Never invent, omit, or placeholder image URLs.
+10. Match absoluteBoundingBox sizes/positions as closely as possible (width/height and layout from the JSON). Prefer Flexbox/Grid from layoutMode when present; otherwise use absolute/relative positioning from absoluteBoundingBox.
+
+EXPORTED FIGMA ASSETS (nodeId → URL):
+${assetList}
 
 Figma Design Data:
 ${figmaJson}
@@ -127,7 +304,7 @@ Technical Requirements:
 - Preserve all text content exactly as shown in the design
 - Include all visual elements, shapes, and components from the design
 - Maintain the exact layout structure and positioning from Figma
-- For images, use proper <img> tags with alt attributes for accessibility
+- For nodes with imageUrl, use <img src="{imageUrl}" alt="{node.name}" /> (or background-image with that same URL)
 - Remove all newline characters (\n) from the output
 - Use class names that correspond to the CSS selectors
 
@@ -356,11 +533,21 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
     try {
       // Extract data from Figma API response
       const data = await response.json()
-      console.log('Figma data:', data)
       const figmaData = data
 
-      // Generate AI prompt
-      const prompt = generateAIPrompt(figmaData, params)
+      const rootDocument = getRootDocument(figmaData, params.nodeId)
+      const imageableIds = collectImageableNodeIds(rootDocument)
+      const assets = await fetchFigmaAssetUrls(params.fileKey, imageableIds)
+
+      logger.info('Figma HTML conversion assets resolved', {
+        fileKey: params.fileKey,
+        nodeId: params.nodeId,
+        imageableCount: imageableIds.length,
+        assetUrlCount: Object.keys(assets).length,
+      })
+
+      // Generate AI prompt with exported asset URLs attached to nodes
+      const prompt = generateAIPrompt(figmaData, params, assets)
 
       // Call AI service
       const aiResult = await callAIService(prompt, params)
@@ -388,6 +575,7 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
             inputTokens: aiResult.inputTokens,
             outputTokens: aiResult.outputTokens,
             combinedHtml: cleanedHtml,
+            assets,
           },
         },
       }
@@ -438,7 +626,12 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
         tokensUsed: { type: 'number', description: 'Number of tokens used' },
         combinedHtml: {
           type: 'string',
-          description: 'Generated HTML document with embedded CSS styles',
+          description: 'Generated HTML document with embedded CSS styles and Figma asset URLs',
+        },
+        assets: {
+          type: 'json',
+          description: 'Map of Figma node IDs to exported image URLs used in combinedHtml',
+          optional: true,
         },
       },
     },
