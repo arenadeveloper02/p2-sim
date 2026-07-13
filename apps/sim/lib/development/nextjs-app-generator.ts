@@ -291,15 +291,22 @@ interface LlmAppSpec {
  * Resolves the monorepo root by walking up from the current working directory.
  * Prefers the directory that contains `bun.lock` (workspace root), not nested package roots like `apps/sim`.
  */
-export function findMonorepoRoot(startDir: string = process.cwd()): string {
-  let dir = resolve(startDir)
+export function findMonorepoRoot(
+  // turbopackIgnore: unscoped process.cwd() makes NFT sweep the whole project and
+  // flag next.config.ts as an unexpected file in the development API route traces.
+  startDir: string = /*turbopackIgnore: true*/ process.cwd()
+): string {
+  let dir = resolve(/*turbopackIgnore: true*/ startDir)
   let packageJsonFallback = dir
 
   while (true) {
-    if (existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'turbo.json'))) {
+    if (
+      existsSync(join(/*turbopackIgnore: true*/ dir, 'bun.lock')) ||
+      existsSync(join(/*turbopackIgnore: true*/ dir, 'turbo.json'))
+    ) {
       return dir
     }
-    if (existsSync(join(dir, 'package.json'))) {
+    if (existsSync(join(/*turbopackIgnore: true*/ dir, 'package.json'))) {
       packageJsonFallback = dir
     }
     const parent = dirname(dir)
