@@ -1,33 +1,41 @@
 'use client'
 
 import { useMemo } from 'react'
-import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
 import {
   LineChart,
   type LineChartMultiSeries,
+  type LineChartPoint,
 } from '@/app/workspace/[workspaceId]/logs/components/dashboard/components'
 
+interface UsageTimeSeriesPoint {
+  bucketStart: string
+  billableCost: number
+  executionCount: number
+}
+
 interface UsageTimeSeriesChartProps {
-  timeSeries: WorkspaceUsageAnalytics['timeSeries']
+  timeSeries: UsageTimeSeriesPoint[]
 }
 
 /**
  * Cost and execution volume over time for the usage dashboard.
+ *
+ * LineChart uses `data` for the x-axis / hover timeline and early-returns
+ * "No data" when it is empty — so billable cost must be the primary series,
+ * with executions overlaid via `series`.
  */
 export function UsageTimeSeriesChart({ timeSeries }: UsageTimeSeriesChartProps) {
+  const billableData = useMemo((): LineChartPoint[] => {
+    return timeSeries.map((bucket) => ({
+      timestamp: bucket.bucketStart,
+      value: bucket.billableCost,
+    }))
+  }, [timeSeries])
+
   const series = useMemo((): LineChartMultiSeries[] => {
     if (timeSeries.length === 0) return []
 
     return [
-      {
-        id: 'billable-cost',
-        label: 'Billable cost',
-        color: 'var(--success)',
-        data: timeSeries.map((bucket) => ({
-          timestamp: bucket.bucketStart,
-          value: bucket.billableCost,
-        })),
-      },
       {
         id: 'executions',
         label: 'Executions',
@@ -55,7 +63,7 @@ export function UsageTimeSeriesChart({ timeSeries }: UsageTimeSeriesChartProps) 
         <p className='font-medium text-[var(--text-primary)] text-small'>Cost & activity over time</p>
       </div>
       <div className='px-3.5 py-2.5'>
-        <LineChart data={[]} label='' color='var(--success)' series={series} />
+        <LineChart data={billableData} label='' color='var(--success)' series={series} />
       </div>
     </div>
   )

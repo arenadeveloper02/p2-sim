@@ -6,7 +6,10 @@ import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usag
 import { AttributionBanner } from '@/app/workspace/[workspaceId]/settings/components/usage/components/attribution-banner'
 
 interface DataHealthPanelProps {
-  data: WorkspaceUsageAnalytics
+  data: {
+    dataHealth: WorkspaceUsageAnalytics['dataHealth']
+    attribution?: WorkspaceUsageAnalytics['attribution']
+  }
 }
 
 /**
@@ -64,7 +67,7 @@ export function DataHealthPanel({ data }: DataHealthPanelProps) {
         </div>
       )}
 
-      <AttributionBanner data={data} />
+      {data.attribution && <AttributionBanner data={{ attribution: data.attribution }} />}
     </div>
   )
 }

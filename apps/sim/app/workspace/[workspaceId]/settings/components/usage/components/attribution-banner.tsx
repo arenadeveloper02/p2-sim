@@ -4,7 +4,9 @@ import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usag
 import { formatBillableWithCredits } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 
 interface AttributionBannerProps {
-  data: WorkspaceUsageAnalytics
+  data: {
+    attribution: WorkspaceUsageAnalytics['attribution']
+  }
 }
 
 /** Warns when ledger rows lack chat or execution join keys. */
