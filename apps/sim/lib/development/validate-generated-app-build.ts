@@ -28,6 +28,19 @@ export interface GeneratedAppFile {
   content: string
 }
 
+/**
+ * Maps generated app files into E2B sandbox mounts, dropping unsafe relative paths.
+ */
+function toSandboxFiles(files: GeneratedAppFile[]): SandboxFile[] {
+  const sandboxFiles: SandboxFile[] = []
+  for (const file of files) {
+    const safePath = sanitizeRelativeFilePath(file.path)
+    if (!safePath) continue
+    sandboxFiles.push({ path: `/home/user/app/${safePath}`, content: file.content })
+  }
+  return sandboxFiles
+}
+
 export interface ValidateAppBuildResult {
   validated: boolean
   output: string
@@ -209,13 +222,7 @@ async function validateAppTypecheckInE2b(
   files: GeneratedAppFile[],
   options: ValidateGeneratedAppBuildOptions = {}
 ): Promise<ValidateAppBuildResult> {
-  const sandboxFiles: SandboxFile[] = files
-    .map((file) => {
-      const safePath = sanitizeRelativeFilePath(file.path)
-      if (!safePath) return null
-      return { path: `/home/user/app/${safePath}`, content: file.content }
-    })
-    .filter((entry): entry is SandboxFile => entry !== null)
+  const sandboxFiles = toSandboxFiles(files)
 
   const hasPrisma = files.some((file) => file.path === 'prisma/schema.prisma')
   const shellScript = buildE2bValidationShellScript([
@@ -248,13 +255,7 @@ async function validateAppBuildInE2b(
   files: GeneratedAppFile[],
   options: ValidateGeneratedAppBuildOptions = {}
 ): Promise<ValidateAppBuildResult> {
-  const sandboxFiles: SandboxFile[] = files
-    .map((file) => {
-      const safePath = sanitizeRelativeFilePath(file.path)
-      if (!safePath) return null
-      return { path: `/home/user/app/${safePath}`, content: file.content }
-    })
-    .filter((entry): entry is SandboxFile => entry !== null)
+  const sandboxFiles = toSandboxFiles(files)
 
   const hasPrisma = files.some((file) => file.path === 'prisma/schema.prisma')
   const skipPackageBuild = shouldSkipPackageBuildScript(options, hasPrisma)

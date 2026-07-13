@@ -1,7 +1,12 @@
 import { z } from 'zod'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import { workflowIdSchema, workspaceIdSchema } from '@/lib/api/contracts/primitives'
+import type { WorkflowPatch } from '@/local-copilot/lib/types'
 
+/**
+ * Runtime-permissive patch shape (LLM / DB payloads). Typed as {@link WorkflowPatch}
+ * so clients and stream events share one domain type with apply/validate.
+ */
 const workflowPatchOperationSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('add_block'), block: z.record(z.string(), z.unknown()) }),
   z.object({
@@ -21,7 +26,7 @@ const workflowPatchOperationSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('remove_variable'), variableId: z.string().min(1) }),
 ])
 
-export const workflowPatchSchema = z.object({
+const workflowPatchLooseSchema = z.object({
   type: z.literal('workflow_patch'),
   summary: z.string().min(1),
   changes: z.array(workflowPatchOperationSchema),
@@ -30,7 +35,9 @@ export const workflowPatchSchema = z.object({
   recommendations: z.array(z.string()).optional(),
 })
 
-export type WorkflowPatchWire = z.output<typeof workflowPatchSchema>
+export const workflowPatchSchema = workflowPatchLooseSchema as z.ZodType<WorkflowPatch>
+
+export type WorkflowPatchWire = WorkflowPatch
 
 export const localCopilotConfigResponseSchema = z.object({
   enabled: z.boolean(),

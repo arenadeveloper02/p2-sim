@@ -48,7 +48,7 @@ function isAssistantProseBlock(block: PersistedContentBlock): boolean {
 
 function isToolHistoryBlock(block: PersistedContentBlock): boolean {
   return (
-    (block.type === MothershipStreamV1EventType.tool || block.type === 'tool_call') &&
+    block.type === MothershipStreamV1EventType.tool &&
     Boolean(block.toolCall?.id && block.toolCall.name)
   )
 }

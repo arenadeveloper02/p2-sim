@@ -1,5 +1,5 @@
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
-import { buildMothershipDelegatedToolDefinitions } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import { buildMothershipDelegatedToolDefinitions } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 
 const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {

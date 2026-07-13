@@ -1,12 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { getAllBlocks } from '@/blocks/registry'
-import { fetchLogDetail } from '@/lib/logs/fetch-log-detail'
-import { listLogs } from '@/lib/logs/list-logs'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
 } from '@/local-copilot/lib/context/build-context'
+import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
 import { getToolDefinition } from '@/local-copilot/lib/tools/definitions'
@@ -15,20 +13,29 @@ import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
 } from '@/local-copilot/lib/tools/mothership-delegated-tools'
-import { executeTool as executeCopilotRegistryTool } from '@/lib/copilot/tool-executor/executor'
-import { ensureHandlersRegistered } from '@/lib/copilot/tool-executor/register-handlers'
-import { createServerToolHandler } from '@/lib/copilot/tools/registry/server-tool-adapter'
-import {
-  formatWorkflowLintMessage,
-  hasWorkflowLintIssues,
-  lintEditedWorkflowState,
-} from '@/lib/copilot/tools/server/workflow/edit-workflow/lint'
 import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 
 const logger = createLogger('LocalCopilotToolExecutor')
+
+let handlersRegistered = false
+
+async function ensureHandlersReady() {
+  if (handlersRegistered) return
+  const loadStartedAt = Date.now()
+  logger.info('Arena Copilot ensuring handlers registered', {
+    memory: getLocalCopilotMemorySnapshot(),
+  })
+  const { ensureHandlersRegistered } = await import('@/lib/copilot/tool-executor/register-handlers')
+  ensureHandlersRegistered()
+  handlersRegistered = true
+  logger.info('Arena Copilot handlers ready', {
+    durationMs: Date.now() - loadStartedAt,
+    memory: getLocalCopilotMemorySnapshot(),
+  })
+}
 
 export interface ToolExecutionContext {
   userId: string
@@ -231,7 +238,10 @@ export async function executeLocalCopilotTool(
           result: {},
         }
       }
-      ensureHandlersRegistered()
+      await ensureHandlersReady()
+      const { createServerToolHandler } = await import(
+        '@/lib/copilot/tools/registry/server-tool-adapter'
+      )
       const handler = createServerToolHandler('get_blocks_metadata')
       const metadataResult = await handler(
         { blockIds },
@@ -278,7 +288,10 @@ export async function executeLocalCopilotTool(
           ? (args.params as Record<string, unknown>)
           : { ...args }
 
-      ensureHandlersRegistered()
+      await ensureHandlersReady()
+      const { executeTool: executeCopilotRegistryTool } = await import(
+        '@/lib/copilot/tool-executor/executor'
+      )
       const integrationResult = await executeCopilotRegistryTool(toolId, params, {
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
@@ -315,6 +328,11 @@ export async function executeLocalCopilotTool(
         variables: state.variables ?? {},
       })
 
+      const {
+        formatWorkflowLintMessage,
+        hasWorkflowLintIssues,
+        lintEditedWorkflowState,
+      } = await import('@/lib/copilot/tools/server/workflow/edit-workflow/lint')
       const workflowLint = lintEditedWorkflowState({
         blocks: state.blocks ?? {},
         edges: state.edges ?? [],
@@ -351,6 +369,7 @@ export async function executeLocalCopilotTool(
       const limit = typeof args.limit === 'number' ? args.limit : 10
       const executionId =
         typeof args.executionId === 'string' ? args.executionId : undefined
+      const { listLogs } = await import('@/lib/logs/list-logs')
       const logs = await listLogs(
         {
           workspaceId: ctx.workspaceId,
@@ -378,6 +397,7 @@ export async function executeLocalCopilotTool(
 
       let logDetail = null
       if (executionId) {
+        const { fetchLogDetail } = await import('@/lib/logs/fetch-log-detail')
         logDetail = await fetchLogDetail({
           userId: ctx.userId,
           workspaceId: ctx.workspaceId,
@@ -401,6 +421,7 @@ export async function executeLocalCopilotTool(
 
     case 'search_docs': {
       const query = String(args.query ?? '').toLowerCase()
+      const { getAllBlocks } = await import('@/blocks/registry')
       const matches = getAllBlocks()
         .filter(
           (block) =>

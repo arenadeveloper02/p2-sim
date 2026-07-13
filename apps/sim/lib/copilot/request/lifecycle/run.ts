@@ -174,6 +174,12 @@ export async function runCopilotLifecycle(
         copilotBackend: lifecycleOptions.copilotBackend,
       })
     ) {
+      logger.info('Delegating copilot turn to Arena Copilot', {
+        chatId: context.chatId,
+        requestId: context.requestId,
+        workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId ?? null,
+        workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId ?? null,
+      })
       const { runLocalCopilotMothershipLifecycle } = await import(
         '@/local-copilot/integration/mothership-lifecycle'
       )
@@ -184,6 +190,12 @@ export async function runCopilotLifecycle(
         lifecycleOptions
       )
     } else {
+      logger.info('Delegating copilot turn to external Mothership', {
+        chatId: context.chatId,
+        requestId: context.requestId,
+        workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId ?? null,
+        workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId ?? null,
+      })
       if (!hasCopilotApiKey()) {
         throw new CopilotBackendError(
           'Cloud copilot is not configured on this deployment (missing COPILOT_API_KEY). Switch the chat input toggle to Local to use Arena Copilot with your ANTHROPIC_API_KEY, or add COPILOT_API_KEY for Sim Cloud Mothership.',
