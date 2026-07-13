@@ -54,6 +54,7 @@ import {
   isFilePreviewSession,
 } from '@/lib/copilot/request/session/file-preview-session-contract'
 import type { StreamBatchEvent } from '@/lib/copilot/request/session/types'
+import { buildUsageUpgradeContent } from '@/lib/copilot/request/tools/usage-upgrade'
 import {
   bindRunToolToExecution,
   cancelRunToolExecution,
@@ -499,19 +500,6 @@ function createBatchSchemaValidationError(message: string): StreamSchemaValidati
 
 function isStreamSchemaValidationError(error: unknown): error is StreamSchemaValidationError {
   return error instanceof StreamSchemaValidationError
-}
-
-/**
- * Builds the same `<usage_upgrade>` tag the SSE billing path emits, so a
- * pre-stream JSON 402 can render through {@link UsageUpgradeDisplay}.
- */
-function buildUsageUpgradeContent(message: string, scope?: string): string {
-  const action = scope === 'member' ? 'increase_limit' : 'upgrade_plan'
-  return `<usage_upgrade>${JSON.stringify({
-    reason: 'usage_limit',
-    action,
-    message,
-  })}</usage_upgrade>`
 }
 
 function parseStreamBatchResponse(value: unknown): StreamBatchResponse {
@@ -3409,47 +3397,68 @@ export function useChat(
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
 
-          // Pre-stream billing/member-credit gate: server returns JSON 402 before
-          // SSE starts. Do not reconnect (no stream exists). Inject the same
-          // `<usage_upgrade>` tag the mid-stream billing path uses so Thinking
-          // stops and the in-chat upgrade card renders. Skip detail invalidation
-          // so the optimistic user + upgrade messages are not wiped (nothing was
-          // persisted server-side for this turn).
+          // Pre-stream billing/member-credit gate: server returns JSON 402 after
+          // persisting the user + `<usage_upgrade>` assistant turn and releasing
+          // the stream lock. Adopt chatId (new chats), show the upgrade card,
+          // skip reconnect, then invalidate detail so refresh reloads from DB.
           if (response.status === 402 && !isResolvedWorkflowExecution) {
             const message =
               typeof errorData.error === 'string' && errorData.error.trim().length > 0
                 ? errorData.error
                 : 'Usage limit exceeded. Please upgrade your plan to continue.'
             const scope = typeof errorData.scope === 'string' ? errorData.scope : undefined
-            const syntheticContent = buildUsageUpgradeContent(message, scope)
+            const serverChatId =
+              typeof errorData.chatId === 'string' && errorData.chatId.trim().length > 0
+                ? errorData.chatId
+                : undefined
+            const syntheticContent = buildUsageUpgradeContent(message, { scope })
             const assistantSnapshot = buildAssistantSnapshotMessage({
               id: assistantId,
               content: syntheticContent,
               contentBlocks: [],
             })
-            const targetChatId = streamTargetChatId ?? requestChatId
 
-            if (targetChatId) {
-              upsertChatHistory(targetChatId, (current) => ({
-                ...current,
-                activeStreamId: null,
-                messages: current.messages.map((persistedMessage) =>
-                  persistedMessage.id === assistantId ? assistantSnapshot : persistedMessage
-                ),
-              }))
+            if (serverChatId && serverChatId !== requestChatId) {
+              adoptResolvedChatId(serverChatId, {
+                replaceHomeHistory: true,
+                invalidateList: true,
+              })
+              requestChatId = serverChatId
+              streamTargetChatId = serverChatId
             }
 
-            setPendingMessages((prev) =>
-              prev.map((pendingMessage) =>
-                pendingMessage.id === assistantId
-                  ? {
-                      ...pendingMessage,
-                      content: syntheticContent,
-                      contentBlocks: [],
-                    }
-                  : pendingMessage
+            const targetChatId = serverChatId ?? streamTargetChatId ?? requestChatId
+
+            if (targetChatId) {
+              upsertChatHistory(targetChatId, (current) => {
+                const withoutTurn = current.messages.filter(
+                  (persistedMessage) =>
+                    persistedMessage.id !== userMessageId && persistedMessage.id !== assistantId
+                )
+                return {
+                  ...current,
+                  id: targetChatId,
+                  activeStreamId: null,
+                  messages: [...withoutTurn, cachedUserMsg, assistantSnapshot],
+                }
+              })
+            }
+
+            setPendingMessages((prev) => {
+              const withoutTurn = prev.filter(
+                (pendingMessage) =>
+                  pendingMessage.id !== userMessageId && pendingMessage.id !== assistantId
               )
-            )
+              return [
+                ...withoutTurn,
+                optimisticUserMessage,
+                {
+                  ...optimisticAssistantMessage,
+                  content: syntheticContent,
+                  contentBlocks: [],
+                },
+              ]
+            })
 
             if (queuedSendHandoff) {
               clearQueuedSendHandoffState(queuedSendHandoff.id)
@@ -3463,7 +3472,7 @@ export function useChat(
               clearActiveTurn()
               setTransportIdle()
               invalidateChatQueries({
-                includeDetail: false,
+                includeDetail: Boolean(targetChatId),
                 ...(targetChatId ? { targetChatId } : {}),
               })
               notifyTurnEnded({ error: true })

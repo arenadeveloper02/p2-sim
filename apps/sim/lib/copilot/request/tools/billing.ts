@@ -8,6 +8,7 @@ import {
   MothershipStreamV1TextChannel,
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import { sseHandlers } from '@/lib/copilot/request/handlers'
+import { buildUsageUpgradeContent } from '@/lib/copilot/request/tools/usage-upgrade'
 import type {
   ExecutionContext,
   OrchestratorOptions,
@@ -61,12 +62,7 @@ export async function handleBillingLimitResponse(
     }
   }
 
-  const upgradePayload = JSON.stringify({
-    reason: 'usage_limit',
-    action,
-    message,
-  })
-  const syntheticContent = `<usage_upgrade>${upgradePayload}</usage_upgrade>`
+  const syntheticContent = buildUsageUpgradeContent(message, { action })
 
   const syntheticEvents: StreamEvent[] = [
     {
