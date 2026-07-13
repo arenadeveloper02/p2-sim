@@ -72,14 +72,19 @@ function formatChangeDetail(change: WorkflowPatchWire['changes'][number]): strin
       return change.blockId
     case 'remove_block':
       return change.blockId
-    case 'add_edge':
-      return `${(change.edge as { source?: string }).source ?? '?'} → ${(change.edge as { target?: string }).target ?? '?'}`
+    case 'add_edge': {
+      const edge = change.edge as { source?: string; target?: string }
+      return `${edge.source ?? '?'} → ${edge.target ?? '?'}`
+    }
     case 'remove_edge':
       return change.edgeId
-    case 'add_variable':
+    case 'add_variable': {
+      const variable = change.variable as { name?: string; id?: string }
+      return String(variable.name ?? variable.id ?? 'variable')
+    }
     case 'update_variable':
     case 'remove_variable':
-      return 'variable'
+      return change.variableId
     default:
       return ''
   }

@@ -88,14 +88,13 @@ function applyPatchOperations(state: WorkflowState, patch: WorkflowPatch): Workf
   for (const change of patch.changes) {
     switch (change.operation) {
       case 'add_block': {
-        const block = change.block as WorkflowState['blocks'][string]
-        next.blocks[block.id] = block
+        next.blocks[change.block.id] = change.block
         break
       }
       case 'update_block': {
         const existing = next.blocks[change.blockId]
         if (existing) {
-          next.blocks[change.blockId] = { ...existing, ...change.updates } as typeof existing
+          next.blocks[change.blockId] = { ...existing, ...change.updates }
         }
         break
       }
@@ -107,21 +106,20 @@ function applyPatchOperations(state: WorkflowState, patch: WorkflowPatch): Workf
         break
       }
       case 'add_edge':
-        next.edges.push(change.edge as (typeof next.edges)[number])
+        next.edges.push(change.edge)
         break
       case 'remove_edge':
         next.edges = next.edges.filter((e) => e.id !== change.edgeId)
         break
       case 'add_variable': {
-        const variable = change.variable as NonNullable<WorkflowState['variables']>[string]
         if (!next.variables) next.variables = {}
-        next.variables[variable.id] = variable
+        next.variables[change.variable.id] = change.variable
         break
       }
       case 'update_variable': {
         const existing = next.variables?.[change.variableId]
         if (existing && next.variables) {
-          next.variables[change.variableId] = { ...existing, ...change.updates } as typeof existing
+          next.variables[change.variableId] = { ...existing, ...change.updates }
         }
         break
       }
