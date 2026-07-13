@@ -37,7 +37,10 @@ import {
   releaseDeployAction,
   tryAcquireDeployAction,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/deploy-action-lock'
-import { syncLocalDraftFromServer } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft'
+import {
+  flushMergedLocalDraftToServer,
+  syncLocalDraftFromServer,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft'
 import type { DeployReadiness } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/use-deploy-readiness'
 import { runPreDeployChecks } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/use-predeploy-checks'
 import { normalizeName, startsWithUuid } from '@/executor/constants'
@@ -360,6 +363,14 @@ export function DeployModal({
       }
       if (!isWorkflowStillActive(workflowId) || deployActionIdRef.current !== actionId) return
 
+      const flushedDraft = await flushMergedLocalDraftToServer(workflowId)
+      if (!flushedDraft) {
+        if (!isWorkflowStillActive(workflowId) || deployActionIdRef.current !== actionId) return
+        setDeployError('Failed to save workflow changes before deployment')
+        return
+      }
+      if (!isWorkflowStillActive(workflowId) || deployActionIdRef.current !== actionId) return
+
       try {
         const result = await deployMutation.mutateAsync({ workflowId })
         const syncWarning = await syncDraftAfterDeploy()
@@ -469,6 +480,14 @@ export function DeployModal({
         setDeployError(checkResult.error || 'Pre-deploy validation failed')
         return
       }
+
+      const flushedDraft = await flushMergedLocalDraftToServer(workflowId)
+      if (!flushedDraft) {
+        if (!isWorkflowStillActive(workflowId) || deployActionIdRef.current !== actionId) return
+        setDeployError('Failed to save workflow changes before deployment')
+        return
+      }
+      if (!isWorkflowStillActive(workflowId) || deployActionIdRef.current !== actionId) return
 
       try {
         const result = await deployMutation.mutateAsync({ workflowId })

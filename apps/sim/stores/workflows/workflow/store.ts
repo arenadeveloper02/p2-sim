@@ -8,6 +8,7 @@ import {
   getDynamicHandleSubblockType,
   isDynamicHandleSubblock,
 } from '@/lib/workflows/dynamic-handle-topology'
+import { getBlock } from '@/blocks'
 import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import {
@@ -831,12 +832,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
       syncDynamicHandleSubblockValue: (blockId: string, subblockId: string, value: unknown) => {
         set((state) => {
           const block = state.blocks[blockId]
-          if (!block || !isDynamicHandleSubblock(block.type, subblockId)) {
-            return state
-          }
-
-          const expectedType = getDynamicHandleSubblockType(block.type)
-          if (!expectedType) {
+          if (!block) {
             return state
           }
 
@@ -846,6 +842,25 @@ export const useWorkflowStore = create<WorkflowStore>()(
             typeof currentValue === 'object' || typeof value === 'object'
               ? JSON.stringify(currentValue) === JSON.stringify(value)
               : currentValue === value
+
+          let expectedType: SubBlockState['type'] = 'short-input'
+          if (isDynamicHandleSubblock(block.type, subblockId)) {
+            const dynamicType = getDynamicHandleSubblockType(block.type)
+            if (!dynamicType) {
+              return state
+            }
+            expectedType = dynamicType
+          } else {
+            const configuredSubblock = getBlock(block.type)?.subBlocks?.find(
+              (subBlock) => subBlock.id === subblockId
+            )
+            expectedType =
+              typeof currentSubBlock?.type === 'string' &&
+              currentSubBlock.type.length > 0 &&
+              currentSubBlock.type !== 'unknown'
+                ? currentSubBlock.type
+                : (configuredSubblock?.type ?? 'short-input')
+          }
 
           if (valuesEqual && currentSubBlock?.type === expectedType) {
             return state
