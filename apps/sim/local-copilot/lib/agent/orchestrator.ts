@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { getErrorMessage } from '@sim/utils/errors'
 import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { buildLocalCopilotContext, contextToPromptJson } from '@/local-copilot/lib/context/build-context'
@@ -10,6 +11,7 @@ import {
   LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
+import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
 import {
   stripLeakedToolMarkers,
@@ -34,11 +36,8 @@ import {
 } from '@/local-copilot/lib/user-turn-content'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { LOCAL_COPILOT_TOOLS } from '@/local-copilot/lib/tools/definitions'
-import {
-  executeLocalCopilotTool,
-  refreshToolContext,
-} from '@/local-copilot/lib/tools/executor'
-import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
+import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
 import {
   buildFollowUpContinuationMessage,
   detectMandatoryFollowUp,
@@ -167,13 +166,46 @@ export interface RunAgentParams {
 export async function* runLocalCopilotAgent(
   params: RunAgentParams
 ): AsyncGenerator<LocalCopilotStreamEvent, void, undefined> {
+  const startedAt = Date.now()
   const config = getLocalCopilotConfig()
-  const structuredContext = await buildLocalCopilotContext({
-    userId: params.userId,
+  logger.info('Arena Copilot agent starting', {
     workspaceId: params.workspaceId,
-    ...(params.workflowId ? { workflowId: params.workflowId } : {}),
-    selectedBlockId: params.selectedBlockId,
-    executionId: params.executionId,
+    workflowId: params.workflowId ?? null,
+    chatId: params.chatId ?? null,
+    provider: config.provider,
+    model: config.model,
+    hasApiKey: Boolean(config.apiKey),
+    messageChars: params.message.length,
+    priorTurns: params.priorMessages?.length ?? 0,
+    memory: getLocalCopilotMemorySnapshot(),
+  })
+
+  let structuredContext
+  try {
+    structuredContext = await buildLocalCopilotContext({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+      selectedBlockId: params.selectedBlockId,
+      executionId: params.executionId,
+    })
+  } catch (error) {
+    logger.error('Arena Copilot context build failed', {
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId ?? null,
+      error: getErrorMessage(error, 'context build failed'),
+      memory: getLocalCopilotMemorySnapshot(),
+    })
+    throw error
+  }
+
+  logger.info('Arena Copilot context built', {
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId ?? null,
+    workspaceWorkflowCount: structuredContext.workspaceWorkflows?.length ?? 0,
+    availableBlockCount: structuredContext.availableBlocks?.length ?? 0,
+    durationMs: Date.now() - startedAt,
+    memory: getLocalCopilotMemorySnapshot(),
   })
 
   const persistLocally = params.persistLocally !== false
@@ -250,10 +282,12 @@ export async function* runLocalCopilotAgent(
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages),
+    toolDefinitionCount: LOCAL_COPILOT_TOOLS.length,
+    memory: getLocalCopilotMemorySnapshot(),
   })
 
   const provider = getLocalCopilotProvider()
-  const toolCtx = {
+  const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId,
@@ -263,6 +297,25 @@ export async function* runLocalCopilotAgent(
     structuredContext,
     selectedBlockId: params.selectedBlockId,
     lastUserMessage: userTurnText,
+  }
+
+  /** Loads the heavy tool executor graph on first tool call only. */
+  let toolExecutorModule: typeof import('@/local-copilot/lib/tools/executor') | null = null
+  async function getToolExecutor() {
+    if (!toolExecutorModule) {
+      const loadStartedAt = Date.now()
+      logger.info('Arena Copilot lazy-loading tool executor', {
+        workspaceId: params.workspaceId,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
+      toolExecutorModule = await import('@/local-copilot/lib/tools/executor')
+      logger.info('Arena Copilot tool executor loaded', {
+        workspaceId: params.workspaceId,
+        durationMs: Date.now() - loadStartedAt,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
+    }
+    return toolExecutorModule
   }
   let assistantText = ''
   let proposedPatch: WorkflowPatch | undefined
@@ -297,6 +350,16 @@ export async function* runLocalCopilotAgent(
         roundOutputTokens = chunk.usage.outputTokens
       }
     }
+
+    logger.info('Arena Copilot model round finished', {
+      round,
+      toolCallCount: pendingToolCalls.length,
+      toolNames: pendingToolCalls.map((call) => call.name),
+      assistantChars: assistantText.length,
+      inputTokens: roundInputTokens,
+      outputTokens: roundOutputTokens,
+      memory: getLocalCopilotMemorySnapshot(),
+    })
 
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
       await recordModelUsage({
@@ -363,7 +426,23 @@ export async function* runLocalCopilotAgent(
         args: parsedArgs,
       }
 
+      const { executeLocalCopilotTool, refreshToolContext } = await getToolExecutor()
+      const toolStartedAt = Date.now()
+      logger.info('Arena Copilot tool starting', {
+        toolName: call.name,
+        toolCallId: call.id,
+        workflowId: toolCtx.workflowId ?? null,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
       const result = await executeLocalCopilotTool(call.name, parsedArgs, toolCtx)
+      logger.info('Arena Copilot tool finished', {
+        toolName: call.name,
+        toolCallId: call.id,
+        success: result.success,
+        error: result.error ?? null,
+        durationMs: Date.now() - toolStartedAt,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
 
       if (result.createdWorkflowId) {
         toolCtx.workflowId = result.createdWorkflowId
@@ -506,7 +585,15 @@ export async function* runLocalCopilotAgent(
     conversationId: conversationId ?? null,
     messageId: messageId || null,
     patchId: patchId ?? null,
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId ?? null,
     historyTurns: historyMessages.length,
+    assistantChars: assistantText.length,
+    toolCallCount: turnToolRecords.length,
+    toolNames: turnToolRecords.map((record) => record.name),
+    hasPatch: Boolean(proposedPatch),
+    durationMs: Date.now() - startedAt,
+    memory: getLocalCopilotMemorySnapshot(),
   })
   yield { type: 'done', messageId: messageId || generateId() }
 }

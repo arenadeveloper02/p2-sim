@@ -19,6 +19,7 @@ import type {
   StreamingContext,
 } from '@/lib/copilot/request/types'
 import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
+import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import type { CopilotContextEntry, CopilotFileAttachmentRef } from '@/local-copilot/lib/user-turn-content'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
@@ -278,8 +279,16 @@ export async function runLocalCopilotMothershipLifecycle(
   logger.info('Running Arena Copilot mothership lifecycle', {
     workflowId: workflowId ?? null,
     workspaceId,
+    userId,
+    chatId: options.chatId ?? null,
+    messageChars: message.length,
+    contextEntries: contexts?.length ?? 0,
+    fileAttachments: fileAttachments?.length ?? 0,
+    hasWorkspaceSnapshot: Boolean(workspaceContext),
+    memory: getLocalCopilotMemorySnapshot(),
   })
 
+  const startedAt = Date.now()
   const toolArgsByCallId = new Map<string, Record<string, unknown>>()
   const userMessageId =
     typeof requestPayload.messageId === 'string' ? requestPayload.messageId : undefined
@@ -294,10 +303,13 @@ export async function runLocalCopilotMothershipLifecycle(
     logger.info('Loaded mothership chat history for Arena Copilot', {
       chatId: options.chatId,
       turns: priorMessages.length,
+      memory: getLocalCopilotMemorySnapshot(),
     })
   }
 
   try {
+    let eventCount = 0
+    let toolCallCount = 0
     for await (const event of runLocalCopilotAgent({
       userId,
       workspaceId,
@@ -314,8 +326,19 @@ export async function runLocalCopilotMothershipLifecycle(
     })) {
       if (options.abortSignal?.aborted) {
         context.wasAborted = true
+        logger.warn('Arena Copilot mothership lifecycle aborted', {
+          workspaceId,
+          workflowId: workflowId ?? null,
+          eventCount,
+          toolCallCount,
+          durationMs: Date.now() - startedAt,
+          memory: getLocalCopilotMemorySnapshot(),
+        })
         break
       }
+
+      eventCount += 1
+      if (event.type === 'tool_call_start') toolCallCount += 1
 
       await dispatchLocalCopilotEvent(
         event,
@@ -333,6 +356,17 @@ export async function runLocalCopilotMothershipLifecycle(
           ? MothershipStreamV1CompletionStatus.cancelled
           : MothershipStreamV1CompletionStatus.complete
 
+    logger.info('Arena Copilot mothership lifecycle finished', {
+      workspaceId,
+      workflowId: workflowId ?? null,
+      status,
+      eventCount,
+      toolCallCount,
+      errorCount: context.errors.length,
+      durationMs: Date.now() - startedAt,
+      memory: getLocalCopilotMemorySnapshot(),
+    })
+
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.complete,
@@ -344,7 +378,13 @@ export async function runLocalCopilotMothershipLifecycle(
     )
   } catch (error) {
     const messageText = getErrorMessage(error, 'Arena Copilot failed')
-    logger.error('Arena Copilot mothership lifecycle failed', { error: messageText })
+    logger.error('Arena Copilot mothership lifecycle failed', {
+      error: messageText,
+      workspaceId,
+      workflowId: workflowId ?? null,
+      durationMs: Date.now() - startedAt,
+      memory: getLocalCopilotMemorySnapshot(),
+    })
     context.errors.push(messageText)
     await dispatchStreamEvent(
       {
