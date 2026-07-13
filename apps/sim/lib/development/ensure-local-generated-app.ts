@@ -5,13 +5,12 @@ import { join } from 'path'
 import { promisify } from 'node:util'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { findMonorepoRoot } from '@/lib/development/nextjs-app-generator'
+import { getGeneratedAppDir } from '@/lib/development/generated-apps-paths'
 import { resolveDevelopmentDeployEnv } from '@/lib/development/resolve-development-env'
 
 const logger = createLogger('EnsureLocalGeneratedApp')
 const execFileAsync = promisify(execFile)
 
-const GENERATED_APPS_DIR = 'generated-apps'
 const GITHUB_API = 'https://api.github.com'
 
 export interface EnsureLocalGeneratedAppResult {
@@ -104,8 +103,7 @@ export async function ensureLocalGeneratedApp(repoName: string): Promise<EnsureL
     return { success: false, error: 'Repository name is required' }
   }
 
-  const monorepoRoot = findMonorepoRoot()
-  const outputDir = join(monorepoRoot, GENERATED_APPS_DIR, trimmedRepoName)
+  const outputDir = getGeneratedAppDir(trimmedRepoName)
 
   try {
     if (existsSync(outputDir)) {

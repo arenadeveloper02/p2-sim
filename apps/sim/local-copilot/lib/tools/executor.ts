@@ -288,6 +288,22 @@ export async function executeLocalCopilotTool(
           ? (args.params as Record<string, unknown>)
           : { ...args }
 
+      // Model sometimes passes Arena/mothership tool ids here (e.g. search_online).
+      // Route those through the delegated path instead of shared executeTool → @/tools.
+      if (isMothershipDelegatedTool(toolId)) {
+        const delegated = await executeMothershipDelegatedTool(toolId, params, ctx)
+        return {
+          toolName,
+          success: delegated.success,
+          result: {
+            toolId,
+            output: delegated.result ?? (delegated.error ? { error: delegated.error } : {}),
+          },
+          error: delegated.error,
+          resources: delegated.resources,
+        }
+      }
+
       await ensureHandlersReady()
       const { executeTool: executeCopilotRegistryTool } = await import(
         '@/lib/copilot/tool-executor/executor'

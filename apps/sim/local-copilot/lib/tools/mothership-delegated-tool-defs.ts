@@ -32,7 +32,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   generate_image:
     'Generates an image from a text prompt (no workflow). Uses hosted/workspace keys automatically. Pass the user full request in `prompt`, including variation counts (e.g. "3 variations"). Optional outputs.files path to save under files/.',
   search_online:
-    'Live web search (Exa or Serper when keys are configured). Use for current events and live data — no workflow required.',
+    'Live web search (Exa when keys are configured). Use for current events and live data — no workflow required. REQUIRED: query (search string) and toolTitle (short UI label, e.g. "Tealium ads").',
   enrichment_run:
     'Runs a one-off table enrichment lookup inline (no table/workflow required).',
   function_execute:

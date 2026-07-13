@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'fs'
 import { mkdir, rm, writeFile } from 'fs/promises'
-import { dirname, join, normalize, relative, resolve } from 'path'
+import { dirname, join, normalize, relative } from 'path'
 import Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import { createLogger } from '@sim/logger'
@@ -15,6 +15,10 @@ import {
   prepareVercelProjectForDeploy,
 } from '@/lib/development/deploy-generated-app-to-vercel'
 import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
+import {
+  findMonorepoRoot,
+  getGeneratedAppDir,
+} from '@/lib/development/generated-apps-paths'
 import type { DevelopmentReferenceMedia } from '@/lib/development/resolve-development-reference-image'
 import { resolveDevelopmentDeployEnv, DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import {
@@ -102,7 +106,6 @@ function getTrackedLlmUsage(): ModelUsageByModel | undefined {
   return Object.fromEntries(acc)
 }
 
-const GENERATED_APPS_DIR = 'generated-apps'
 /** Creation and edit/repair both use Claude Fable. Override via DEVELOPMENT_ANTHROPIC_CREATION_MODEL / DEVELOPMENT_ANTHROPIC_EDIT_MODEL. */
 const DEFAULT_CREATION_MODEL = 'claude-fable-5'
 const DEFAULT_EDIT_MODEL = 'claude-fable-5'
@@ -285,38 +288,6 @@ interface LlmAppSpec {
   features: string[]
   requiresDatabase?: boolean
   files: GeneratedAppFile[]
-}
-
-/**
- * Resolves the monorepo root by walking up from the current working directory.
- * Prefers the directory that contains `bun.lock` (workspace root), not nested package roots like `apps/sim`.
- */
-export function findMonorepoRoot(
-  // turbopackIgnore: unscoped process.cwd() makes NFT sweep the whole project and
-  // flag next.config.ts as an unexpected file in the development API route traces.
-  startDir: string = /*turbopackIgnore: true*/ process.cwd()
-): string {
-  let dir = resolve(/*turbopackIgnore: true*/ startDir)
-  let packageJsonFallback = dir
-
-  while (true) {
-    if (
-      existsSync(join(/*turbopackIgnore: true*/ dir, 'bun.lock')) ||
-      existsSync(join(/*turbopackIgnore: true*/ dir, 'turbo.json'))
-    ) {
-      return dir
-    }
-    if (existsSync(join(/*turbopackIgnore: true*/ dir, 'package.json'))) {
-      packageJsonFallback = dir
-    }
-    const parent = dirname(dir)
-    if (parent === dir) {
-      break
-    }
-    dir = parent
-  }
-
-  return packageJsonFallback
 }
 
 /**
@@ -1648,7 +1619,7 @@ async function generateNextjsAppInner(
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
     const monorepoRoot = findMonorepoRoot()
-    const outputDir = join(monorepoRoot, GENERATED_APPS_DIR, repoName)
+    const outputDir = getGeneratedAppDir(repoName)
 
     await mkdir(outputDir, { recursive: true })
     const fileCount = await writeAppFiles(outputDir, spec.files)

@@ -225,6 +225,30 @@ function enrichGenerateImagePrompt(
 }
 
 /**
+ * Fills required `search_online` fields the model often omits (`toolTitle`)
+ * and remaps common query aliases so AJV validation does not fail open.
+ */
+function enrichSearchOnlineArgs(args: Record<string, unknown>): void {
+  if (typeof args.query !== 'string' || !args.query.trim()) {
+    for (const key of ['q', 'search', 'searchQuery', 'text'] as const) {
+      const value = args[key]
+      if (typeof value === 'string' && value.trim()) {
+        args.query = value.trim()
+        break
+      }
+    }
+  }
+
+  const query = typeof args.query === 'string' ? args.query.trim() : ''
+  if (
+    query &&
+    (typeof args.toolTitle !== 'string' || !args.toolTitle.trim())
+  ) {
+    args.toolTitle = query.length > 48 ? `${query.slice(0, 45)}...` : query
+  }
+}
+
+/**
  * Runs a registered Mothership/copilot server tool handler in-process.
  * Heavy handler registration loads on first call only.
  */
@@ -260,6 +284,14 @@ export async function executeMothershipDelegatedTool(
     enrichGenerateImagePrompt(enrichedArgs, ctx.lastUserMessage)
   }
 
+  if (toolName === 'search_online') {
+    enrichSearchOnlineArgs(enrichedArgs)
+  }
+
+  // Arena always runs server-registry tools in-process via ServerToolAdapter.
+  // Never send go-catalogued tools (e.g. search_online) through shared
+  // executeTool — that path treats route:'go' as an app-tool lookup and
+  // throws "Built-in tool not found".
   if (serverToolNames.has(toolName)) {
     const result = await executeCopilotServerTool(toolName, enrichedArgs, ctx, workflowId)
     if (!result.success) {
@@ -268,6 +300,7 @@ export async function executeMothershipDelegatedTool(
     return result
   }
 
+  // Remaining delegated tools are sim-routed (run_workflow, function_execute, …).
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
   const result = await executeTool(toolName, enrichedArgs, {
     userId: ctx.userId,

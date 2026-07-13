@@ -1,15 +1,13 @@
 import { existsSync } from 'fs'
 import { readdir } from 'fs/promises'
-import { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { findMonorepoRoot } from '@/lib/development/nextjs-app-generator'
+import { getGeneratedAppsDir } from '@/lib/development/generated-apps-paths'
 import { resolveDevelopmentDeployEnv } from '@/lib/development/resolve-development-env'
 
 const logger = createLogger('ListDevelopmentRepos')
 
 const GITHUB_API = 'https://api.github.com'
-const GENERATED_APPS_DIR = 'generated-apps'
 
 export interface DevelopmentRepoOption {
   id: string
@@ -64,8 +62,7 @@ async function resolveGitHubOwner(token: string, ownerHint?: string): Promise<st
 }
 
 async function listLocalGeneratedRepos(): Promise<DevelopmentRepoOption[]> {
-  const monorepoRoot = findMonorepoRoot()
-  const generatedAppsDir = join(monorepoRoot, GENERATED_APPS_DIR)
+  const generatedAppsDir = getGeneratedAppsDir()
 
   if (!existsSync(generatedAppsDir)) {
     return []

@@ -105,16 +105,6 @@ const nextConfig: NextConfig = {
       './lib/execution/sandbox/bundles/*.cjs',
     ],
   },
-  /**
-   * The Next.js app generator (`lib/development/nextjs-app-generator.ts`) walks
-   * the filesystem from `process.cwd()`, so NFT can pull root files into these
-   * routes' traces and flag `next.config.ts` as an unexpected file. `next.config.ts`
-   * is loaded at build time and is never imported by a route at runtime, so excluding
-   * it from the development routes' trace is safe.
-   */
-  outputFileTracingExcludes: {
-    '/api/tools/development/**': ['./next.config.ts'],
-  },
   experimental: {
     optimizeCss: true,
     preloadEntriesOnStart: false,
