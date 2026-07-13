@@ -12,6 +12,7 @@ import { getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId, generateShortId } from '@sim/utils/id'
 import { isRecordLike } from '@sim/utils/object'
+import { truncate } from '@sim/utils/string'
 import { useQueryClient } from '@tanstack/react-query'
 import { usePathname, useRouter } from 'next/navigation'
 import { requestJson } from '@/lib/api/client/request'
@@ -79,6 +80,7 @@ import {
 import {
   fetchMothershipChatHistory,
   type MothershipChatHistory,
+  type MothershipChatMetadata,
   mothershipChatKeys,
   useMothershipChatHistory,
 } from '@/hooks/queries/mothership-chats'
@@ -3411,20 +3413,54 @@ export function useChat(
               typeof errorData.chatId === 'string' && errorData.chatId.trim().length > 0
                 ? errorData.chatId
                 : undefined
+            const serverTitle =
+              typeof errorData.title === 'string' && errorData.title.trim().length > 0
+                ? errorData.title.trim()
+                : undefined
             const syntheticContent = buildUsageUpgradeContent(message, { scope })
             const assistantSnapshot = buildAssistantSnapshotMessage({
               id: assistantId,
               content: syntheticContent,
               contentBlocks: [],
             })
+            const wasNewChat = Boolean(serverChatId && serverChatId !== requestChatId)
 
-            if (serverChatId && serverChatId !== requestChatId) {
+            if (wasNewChat && serverChatId) {
+              // Don't invalidate the list here — seed it first, then reconcile
+              // via invalidateChatQueries below (same order as useCreateMothershipChat).
               adoptResolvedChatId(serverChatId, {
                 replaceHomeHistory: true,
-                invalidateList: true,
               })
               requestChatId = serverChatId
               streamTargetChatId = serverChatId
+
+              // Optimistic sidebar row — same pattern as useCreateMothershipChat.
+              // 402 never starts SSE, so without this the Chats list stays stale
+              // until a full page refresh.
+              const existing =
+                queryClient.getQueryData<MothershipChatMetadata[]>(
+                  mothershipChatKeys.list(workspaceId)
+                ) ?? []
+              if (!existing.some((chat) => chat.id === serverChatId)) {
+                const listTitle =
+                  serverTitle ||
+                  truncate(optimisticUserMessage.content.trim(), 60).trim() ||
+                  'New chat'
+                const newChat: MothershipChatMetadata = {
+                  id: serverChatId,
+                  name: listTitle,
+                  updatedAt: new Date(),
+                  isActive: false,
+                  isUnread: false,
+                  isPinned: false,
+                }
+                const pinnedCount = existing.findIndex((chat) => !chat.isPinned)
+                const insertAt = pinnedCount === -1 ? existing.length : pinnedCount
+                queryClient.setQueryData<MothershipChatMetadata[]>(
+                  mothershipChatKeys.list(workspaceId),
+                  [...existing.slice(0, insertAt), newChat, ...existing.slice(insertAt)]
+                )
+              }
             }
 
             const targetChatId = serverChatId ?? streamTargetChatId ?? requestChatId
@@ -3439,6 +3475,7 @@ export function useChat(
                   ...current,
                   id: targetChatId,
                   activeStreamId: null,
+                  ...(serverTitle ? { title: serverTitle } : {}),
                   messages: [...withoutTurn, cachedUserMsg, assistantSnapshot],
                 }
               })

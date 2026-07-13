@@ -941,6 +941,16 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                     .set({ title, updatedAt: new Date() })
                     .where(eq(copilotChats.id, actualChatId))
                 }
+
+                // Same event POST /api/mothership/chats emits so sidebar SSE
+                // subscribers refresh the Chats list without waiting for a reload.
+                if (branch.notifyWorkspaceStatus && workspaceId) {
+                  chatPubSub?.publishStatusChanged({
+                    workspaceId,
+                    chatId: actualChatId,
+                    type: 'created',
+                  })
+                }
               }
             } catch (persistError) {
               logger.error('Failed to persist usage-limit turn', {
@@ -957,11 +967,20 @@ export async function handleUnifiedChatPost(req: NextRequest) {
 
           activeOtelRoot.span.setAttribute(TraceAttr.HttpStatusCode, 402)
           activeOtelRoot.finish('error')
+
+          // Re-read title for the response when we set it above; fall back to
+          // a truncated user message so the client can seed the sidebar row.
+          const responseTitle =
+            chatIsNew && actualChatId
+              ? truncate(body.message.trim(), 60).trim() || undefined
+              : undefined
+
           return NextResponse.json(
             {
               error: errorMessage,
               scope: usage.scope,
               ...(actualChatId ? { chatId: actualChatId } : {}),
+              ...(responseTitle ? { title: responseTitle } : {}),
             },
             { status: 402 }
           )
