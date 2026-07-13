@@ -84,8 +84,6 @@ export interface QueryExpensiveCopilotChatsOptions {
   /** Ledger join filters (workspace scope + period bounds). */
   ledgerJoinConditions: SQL[]
   period: ResolvedPeriod
-  /** Defaults to {@link TOP_EXPENSIVE_COPILOT_CHATS}. */
-  limit?: number
 }
 
 /** Ranked workflow cost row for org-wide most-expensive workflows. */
@@ -106,8 +104,6 @@ export interface QueryExpensiveWorkflowsOptions {
   /** Ledger join filters (workspace scope + period bounds). */
   ledgerJoinConditions: SQL[]
   period: ResolvedPeriod
-  /** Defaults to {@link TOP_EXPENSIVE_WORKFLOWS}. */
-  limit?: number
 }
 
 export function ensurePeriodDate(value: unknown): Date {

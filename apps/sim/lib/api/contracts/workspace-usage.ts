@@ -135,6 +135,16 @@ export const workspaceUsageAnalyticsResponseSchema = z.object({
         runCount: z.number().int().nonnegative(),
       })
     ),
+    /** Highest-cost chats in the period (owner = copilot_chats.user_id). */
+    byChat: z.array(
+      costBucketSchema.extend({
+        chatId: z.string(),
+        title: z.string().nullable(),
+        chatType: z.enum(['mothership', 'copilot']),
+        userId: z.string(),
+        runCount: z.number().int().nonnegative(),
+      })
+    ),
     byModel: z.array(
       costBucketSchema.extend({
         model: z.string(),

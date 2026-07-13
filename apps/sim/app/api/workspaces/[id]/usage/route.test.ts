@@ -74,6 +74,7 @@ const ANALYTICS = {
     chats: { total: 1, withLedgerCost: 1 },
     runs: { total: 3 },
     byChatType: [],
+    byChat: [],
     byModel: [],
     triggeredWorkflows: {
       executionCount: 0,

@@ -14,8 +14,8 @@ import {
 
 const WORKSPACE_ID = 'ws-1'
 
-const ANALYTICS_QUERY_COUNT = 24
-const ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN = 26
+const ANALYTICS_QUERY_COUNT = 25
+const ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN = 27
 
 const EMPTY_USAGE = {
   inputTokens: 0,
@@ -150,8 +150,8 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         5: [{ totalLedgerCost: '6' }],
         8: [{ total: 1, withLedgerCost: 1 }],
         9: [{ total: 1 }],
-        22: DATA_HEALTH_OK[0],
-        23: DATA_HEALTH_OK[1],
+        23: DATA_HEALTH_OK[0],
+        24: DATA_HEALTH_OK[1],
       })
     )
 
@@ -222,8 +222,8 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         5: [{ totalLedgerCost: '0' }],
         8: [{ total: 4, withLedgerCost: 1 }],
         9: [{ total: 2 }],
-        22: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
-        23: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+        23: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        24: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
       })
     )
 
@@ -267,8 +267,8 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         5: [{ totalLedgerCost: '4' }],
         8: [{ total: 0, withLedgerCost: 0 }],
         9: [{ total: 0 }],
-        22: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
-        23: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+        23: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        24: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
       }),
     ])
 
@@ -305,8 +305,8 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         5: [{ totalLedgerCost: '4' }],
         8: [{ total: 0, withLedgerCost: 0 }],
         9: [{ total: 0 }],
-        22: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
-        23: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+        23: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        24: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
       })
     )
 
@@ -322,6 +322,68 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     expect(analytics.summary.billableCost).toBe(4)
   })
 
+  it('returns top mothership chats with owning user ids', async () => {
+    wireTerminalQueue(
+      buildAnalyticsQueue({
+        3: ATTRIBUTION_OK,
+        4: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
+        5: [{ totalLedgerCost: '0' }],
+        8: [{ total: 2, withLedgerCost: 2 }],
+        9: [{ total: 3 }],
+        12: [
+          {
+            chatId: 'chat-expensive',
+            title: 'Heavy research',
+            chatType: 'mothership',
+            userId: 'user-alice',
+            runCount: 4,
+            billableCost: '12.5',
+            rawCost: '10',
+            count: 8,
+          },
+          {
+            chatId: 'chat-cheaper',
+            title: null,
+            chatType: 'copilot',
+            userId: 'user-bob',
+            runCount: 1,
+            billableCost: '1.25',
+            rawCost: '1.25',
+            count: 2,
+          },
+        ],
+        23: DATA_HEALTH_OK[0],
+        24: DATA_HEALTH_OK[1],
+      })
+    )
+
+    const analytics = await getWorkspaceUsageAnalytics({
+      workspaceId: WORKSPACE_ID,
+      period: '30d',
+    })
+
+    expect(analytics.copilot.byChat).toEqual([
+      expect.objectContaining({
+        chatId: 'chat-expensive',
+        title: 'Heavy research',
+        chatType: 'mothership',
+        userId: 'user-alice',
+        runCount: 4,
+        billableCost: 12.5,
+        rawCost: 10,
+        count: 8,
+      }),
+      expect.objectContaining({
+        chatId: 'chat-cheaper',
+        title: null,
+        chatType: 'copilot',
+        userId: 'user-bob',
+        runCount: 1,
+        billableCost: 1.25,
+      }),
+    ])
+  })
+
   it('returns lineage drill-down when rootExecutionId is provided', async () => {
     wireTerminalQueue(
       buildAnalyticsQueue(
@@ -329,7 +391,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
           3: ATTRIBUTION_OK,
           4: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
           5: [{ totalLedgerCost: '0' }],
-          21: [
+          22: [
             {
               executionId: 'exec-child',
               parentExecutionId: 'exec-root',
@@ -343,9 +405,9 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
               rawCost: '2',
             },
           ],
-          22: [{ inclusiveBillableCost: '5', inclusiveRawCost: '4' }],
-          24: DATA_HEALTH_OK[0],
-          25: DATA_HEALTH_OK[1],
+          23: [{ inclusiveBillableCost: '5', inclusiveRawCost: '4' }],
+          25: DATA_HEALTH_OK[0],
+          26: DATA_HEALTH_OK[1],
         },
         ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN
       )
@@ -393,9 +455,9 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
           3: ATTRIBUTION_OK,
           4: [{ total: 1, withProjectedCost: 1, totalProjectedCost: '0.11' }],
           5: [{ totalLedgerCost: '0.11' }],
-          14: [{ model: 'gpt-4o', billableCost: '0.10', rawCost: '0.08', count: 1 }],
-          16: [{ toolId: 'exa_search', billableCost: '0.01', rawCost: '0.01', count: 1 }],
-          24: [
+          15: [{ model: 'gpt-4o', billableCost: '0.10', rawCost: '0.08', count: 1 }],
+          17: [{ toolId: 'exa_search', billableCost: '0.01', rawCost: '0.01', count: 1 }],
+          25: [
             {
               executionId: 'exec-1',
               description: 'gpt-4o',
@@ -410,10 +472,10 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
               },
             },
           ],
-          25: DATA_HEALTH_OK[0],
-          26: DATA_HEALTH_OK[1],
+          26: DATA_HEALTH_OK[0],
+          27: DATA_HEALTH_OK[1],
         },
-        27
+        28
       )
     )
 
