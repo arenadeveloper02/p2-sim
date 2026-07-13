@@ -12,6 +12,7 @@ import {
   type NormalizeGeneratedAppFilesOptions,
 } from '@/lib/development/normalize-generated-app-files'
 import { resolveNeonConnectionUri } from '@/lib/development/provision-neon-via-api'
+import { getPrismaSchemaMigrationSafetyIssues } from '@/lib/development/validate-generated-app-structure'
 
 const logger = createLogger('ApplyGeneratedAppDatabase')
 
@@ -36,6 +37,8 @@ export interface SyncGeneratedAppDatabaseInput {
   neonProjectId?: string
   neonApiKey?: string
   files?: GeneratedAppFile[]
+  /** Pre-edit schema — when set, unsafe edits are blocked even if Neon sync is skipped. */
+  originalPrismaSchema?: string
 }
 
 export interface SyncGeneratedAppDatabaseResult {
@@ -166,9 +169,10 @@ export async function applyGeneratedAppDatabase(
     logs.push(await runNpmInDir(outputDir, ['exec', 'prisma', 'generate'], databaseEnv))
 
     logs.push('=== prisma db push ===')
-    logs.push(
-      await runNpmInDir(outputDir, ['exec', 'prisma', 'db', 'push', '--accept-data-loss'], databaseEnv)
-    )
+    // Match Vercel: generated apps run plain `prisma db push` (no --accept-data-loss).
+    // Accepting data loss here would drop columns locally, push the bad schema, then fail on
+    // Vercel when the live Neon still has those columns — or silently destroy data when URLs match.
+    logs.push(await runNpmInDir(outputDir, ['exec', 'prisma', 'db', 'push'], databaseEnv))
 
     const seedSqlPath = join(outputDir, 'db/seed.sql')
     if (existsSync(seedSqlPath)) {
@@ -208,6 +212,19 @@ export async function applyGeneratedAppDatabase(
 export async function syncGeneratedAppDatabase(
   input: SyncGeneratedAppDatabaseInput
 ): Promise<SyncGeneratedAppDatabaseResult> {
+  const files = input.files ?? []
+  const migrationIssues = getPrismaSchemaMigrationSafetyIssues(files, input.originalPrismaSchema)
+  if (migrationIssues.length > 0) {
+    const message = [
+      'prisma/schema.prisma changes would fail Vercel `prisma db push` (data loss / unexecutable against live rows):',
+      ...migrationIssues.map((issue, index) => `${index + 1}. ${issue}`),
+    ].join('\n')
+    logger.error('Blocking generated app database sync due to unsafe Prisma schema edit', {
+      issueCount: migrationIssues.length,
+    })
+    return { applied: false, error: message, output: message }
+  }
+
   const databaseUrl = await resolveGeneratedAppDatabaseUrl(input)
   if (!databaseUrl) {
     logger.info('Skipping local database sync — connection URL unavailable (Vercel build will run prisma db push)')
@@ -238,6 +255,7 @@ export async function prepareGeneratedAppForDatabaseDeploy(input: {
   databaseUrl?: string
   neonProjectId?: string
   neonApiKey?: string
+  originalPrismaSchema?: string
 }): Promise<SyncGeneratedAppDatabaseResult> {
   const summaryOptions: NormalizeGeneratedAppFilesOptions = {
     ...input.summaryOptions,
@@ -253,5 +271,6 @@ export async function prepareGeneratedAppForDatabaseDeploy(input: {
     neonProjectId: input.neonProjectId,
     neonApiKey: input.neonApiKey,
     files: input.files,
+    originalPrismaSchema: input.originalPrismaSchema,
   })
 }

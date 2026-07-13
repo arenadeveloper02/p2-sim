@@ -417,12 +417,15 @@ export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for De
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}`
 
 export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Neon Postgres — ADD columns only, NEVER drop):
+- HARD RULE: NEVER drop, delete, omit, rename, or retype ANY existing column or model. Prefer leaving unused columns in the schema forever over removing them.
+- HARD RULE: NEVER "clean up", "simplify", "refactor", or "normalize" prisma/schema.prisma by removing fields — unused columns are fine; dropped columns break Vercel deploy.
 - NEVER provision, replace, or reset the database connection — the app already has DATABASE_URL on Vercel
 - Schema edits are ADDITIVE ONLY — add new models/columns/relations/enums; NEVER delete, omit, or drop existing columns
-- When editing prisma/schema.prisma: COPY the entire file from the user message, then add only what the user requested — every existing column must remain (id, createdAt, updatedAt, email, etc.)
-- Dropping User.updatedAt while rows exist fails Vercel: "You are about to drop the column … potential_dataloss"
+- When editing prisma/schema.prisma: COPY the entire file from the user message, then add only what the user requested — every existing column must remain (id, createdAt, updatedAt, email, title, name, status, foreign keys, etc.)
+- Timestamps are especially easy to drop by mistake — if a model has \`createdAt\` / \`updatedAt\`, BOTH must remain exactly as written (keep \`@default(now())\` and \`@updatedAt\`)
+- Dropping e.g. Project.updatedAt or Task.updatedAt while rows exist fails Vercel: "You are about to drop the column … potential_dataloss" / requires --accept-data-loss (which deploy does NOT use)
 - Do NOT regenerate the schema from scratch or from REPO_SUMMARY — patch the provided file only
-- If you return prisma/schema.prisma on edit, the file MUST be a superset of the current schema: same models, same scalar fields, same types — only ADD new models, fields, relations, or enums
+- If you return prisma/schema.prisma on edit, the file MUST be a strict superset of the current schema: same models, same scalar fields, same types, same attributes — only ADD new models, fields, relations, or enums
 - ADD new models, fields, relations, and enums for new features; use optional fields (?) or @default(...) when extending existing models
 - The live database has rows — deploy runs plain \`prisma db push\` (no --force-reset, no --accept-data-loss), so any change it cannot execute against existing data FAILS the whole deploy:
   - Every NEW field on an EXISTING model MUST be optional (?) or carry @default(...) — a new required column without a default fails with "Added the required column without a default value"
@@ -432,6 +435,7 @@ export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Ne
 - Keep lib/prisma.ts and the existing DATABASE_URL / .env.example pattern unchanged unless fixing a bug
 - New features must read/write through the same Prisma client against the existing database — never switch to localStorage or a new database
 - NEVER insert dummy, demo, fake, or sample data into the database on edit — preserve existing user data; only add seed data when the user explicitly asks
+- If UI no longer needs a column, stop reading/writing it in lib/actions.ts / components — leave the column in prisma/schema.prisma
 - ${GENERATED_APP_NEON_DATABASE_GUIDANCE}
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - MANDATORY on schema edits: return prisma/schema.prisma + lib/actions.ts + lib/types.ts together whenever any model/field/relation changes
