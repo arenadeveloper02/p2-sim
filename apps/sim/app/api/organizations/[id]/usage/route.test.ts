@@ -109,7 +109,16 @@ describe('GET /api/organizations/[id]/usage', () => {
     expect(mockGetOrganizationUsageAnalytics).not.toHaveBeenCalled()
   })
 
-  it('returns 403 when the caller is not an organization admin or owner', async () => {
+  it('returns 403 when the caller is not an organization member', async () => {
+    mockIsOrganizationAdminOrOwner.mockResolvedValue(false)
+    const { status, body } = await callGet()
+    expect(body).toEqual({ error: 'Forbidden' })
+    expect(status).toBe(403)
+    expect(mockIsOrganizationAdminOrOwner).toHaveBeenCalledWith('u-1', ORGANIZATION_ID)
+    expect(mockGetOrganizationUsageAnalytics).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 when the caller is an organization member but not an admin or owner', async () => {
     mockIsOrganizationAdminOrOwner.mockResolvedValue(false)
     const { status, body } = await callGet()
     expect(body).toEqual({ error: 'Forbidden' })
@@ -121,6 +130,7 @@ describe('GET /api/organizations/[id]/usage', () => {
     const { status, body } = await callGet('?period=30d')
     expect(status).toBe(200)
     expect(body).toEqual(ANALYTICS)
+    expect(mockIsOrganizationAdminOrOwner).toHaveBeenCalledWith('u-1', ORGANIZATION_ID)
     expect(mockGetOrganizationUsageAnalytics).toHaveBeenCalledWith({
       organizationId: ORGANIZATION_ID,
       startTime: undefined,
