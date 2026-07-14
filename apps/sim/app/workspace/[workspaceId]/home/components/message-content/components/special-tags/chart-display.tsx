@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import type { EChartsOption, EChartsType, SeriesOption } from 'echarts'
-import { cn } from '@/lib/core/utils/cn'
+import { cn } from '@sim/emcn'
 import type {
   ChartTagData,
   ChartTagSeries,
@@ -54,21 +54,21 @@ function buildOption(data: ChartTagData, colors: ChartThemeColors): EChartsOptio
     color: [...SERIES_PALETTE],
     ...(data.title
       ? {
-          title: {
-            text: data.title,
-            left: 'center',
-            textStyle: { color: colors.text, fontSize: 13, fontWeight: 600 },
-          },
-        }
+        title: {
+          text: data.title,
+          left: 'center',
+          textStyle: { color: colors.text, fontSize: 13, fontWeight: 600 },
+        },
+      }
       : {}),
     tooltip: { trigger: data.type === 'pie' || data.type === 'scatter' ? 'item' : 'axis' },
     ...(data.series.length > 1 || data.type === 'pie'
       ? {
-          legend: {
-            bottom: 0,
-            textStyle: { color: colors.subtleText, fontSize: 11 },
-          },
-        }
+        legend: {
+          bottom: 0,
+          textStyle: { color: colors.subtleText, fontSize: 11 },
+        },
+      }
       : {}),
   }
 
