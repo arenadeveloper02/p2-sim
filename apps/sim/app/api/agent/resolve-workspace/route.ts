@@ -28,14 +28,16 @@ export async function POST(req: NextRequest) {
 
   const apiKey = process.env.SIM_WORKFLOW_API_KEY
   if (!apiKey) {
-    logger.error('SIM_API_KEY is not configured — cannot resolve workspace')
+    logger.error('SIM_WORKFLOW_API_KEY is not configured — cannot resolve workspace')
     return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
   }
-  const resolveUrl = `${process.env.SIM_AGENT_BASE_URL}/api/workflows/${process.env.SIM_AGENT_WORKSPACE_RESOLVE_ID}/execute`
-  if (!resolveUrl) {
-    logger.error('SIM_AGENT_WORKSPACE_RESOLVE_URL is not configured')
+  const agentBaseUrl = process.env.SIM_AGENT_BASE_URL?.replace(/\/$/, '')
+  const resolveWorkflowId = process.env.SIM_AGENT_WORKSPACE_RESOLVE_ID
+  if (!agentBaseUrl || !resolveWorkflowId) {
+    logger.error('SIM_AGENT_BASE_URL or SIM_AGENT_WORKSPACE_RESOLVE_ID is not configured')
     return NextResponse.json({ error: 'Agent resolve URL not configured' }, { status: 500 })
   }
+  const resolveUrl = `${agentBaseUrl}/api/workflows/${resolveWorkflowId}/execute`
 
   let message: string
   let context: string | undefined

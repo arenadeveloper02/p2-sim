@@ -1,14 +1,17 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { generateInternalToken } from '@/lib/auth/internal'
 import { normalizeMessage, type PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import { chatPubSub } from '@/lib/copilot/chat-status'
 import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 
 const logger = createLogger('AgentResolveWorkspaceExecute')
 
@@ -22,6 +25,35 @@ const ExecuteRequestSchema = z.object({
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+/**
+ * Prefer the in-cluster / same-deployment base URL when the configured agent host
+ * matches this app, so internal JWT auth works for loopback execute calls.
+ */
+function resolveExecuteBaseUrl(agentBaseUrl: string): string {
+  try {
+    const configured = new URL(agentBaseUrl)
+    const app = new URL(getBaseUrl())
+    if (configured.host === app.host) {
+      return getInternalApiBaseUrl().replace(/\/$/, '')
+    }
+  } catch {
+    // fall through to the configured agent base URL
+  }
+  return agentBaseUrl.replace(/\/$/, '')
+}
+
+/**
+ * Resolve workflows often return a stale/invalid apiKey. For same-deployment
+ * loopback executes, authenticate as the logged-in user with an internal JWT.
+ */
+function shouldUseInternalJwt(agentBaseUrl: string): boolean {
+  try {
+    return new URL(agentBaseUrl).host === new URL(getBaseUrl()).host
+  } catch {
+    return false
+  }
+}
 
 type TextEnvelope = {
   v: 1
@@ -403,7 +435,7 @@ async function persistWorkflowChatTurn(params: {
   } catch (error) {
     logger.warn('Failed to generate title before persisting workflow chat turn', {
       chatId,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     })
   }
 
@@ -468,17 +500,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const apiKey = body.userApiKey ?? process.env.SIM_WORKFLOW_API_KEY_UNIFIED
-  if (!apiKey) {
-    logger.error('SIM_WORKFLOW_API_KEY_UNIFIED is not configured — cannot execute workflow')
-    return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
+  if (!body.workflowId) {
+    return NextResponse.json({ error: 'workflowId is required' }, { status: 400 })
   }
-  const agentBaseUrl = process.env.SIM_AGENT_BASE_URL
-  if (!agentBaseUrl) {
+
+  const configuredAgentBaseUrl = process.env.SIM_AGENT_BASE_URL?.replace(/\/$/, '')
+  if (!configuredAgentBaseUrl) {
     logger.error('SIM_AGENT_BASE_URL is not configured — cannot execute workflow')
     return NextResponse.json({ error: 'Agent base URL not configured' }, { status: 500 })
   }
-  const executeUrl = `${agentBaseUrl.replace(/\/$/, '')}/api/workflows/${body.workflowId}/execute`
+
+  // Same pattern as /api/workflows/embed-html: resolve workflows often return a
+  // stale/invalid apiKey, so authenticate the loopback execute as the logged-in
+  // user with an internal JWT. Only fall back to API key for cross-host calls.
+  const sameDeployment = shouldUseInternalJwt(configuredAgentBaseUrl)
+  const useInternalJwt = sameDeployment
+  const apiKey = body.userApiKey ?? process.env.SIM_WORKFLOW_API_KEY_UNIFIED
+  if (!useInternalJwt && !apiKey) {
+    logger.error('SIM_WORKFLOW_API_KEY_UNIFIED is not configured — cannot execute workflow')
+    return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
+  }
+
+  const agentBaseUrl = resolveExecuteBaseUrl(configuredAgentBaseUrl)
+  const executeUrl = `${agentBaseUrl}/api/workflows/${body.workflowId}/execute`
 
   try {
     const streamId = generateRequestId()
@@ -651,12 +695,26 @@ export async function POST(req: NextRequest) {
         }
 
         try {
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          }
+
+          if (useInternalJwt) {
+            headers.Authorization = `Bearer ${await generateInternalToken(userId)}`
+          } else {
+            headers['X-API-Key'] = apiKey as string
+          }
+
+          logger.info('Executing resolved workspace workflow', {
+            userId,
+            workflowId: body.workflowId,
+            executeUrl,
+            authType: useInternalJwt ? 'internal_jwt' : 'api_key',
+          })
+
           const upstream = await fetch(executeUrl, {
             method: 'POST',
-            headers: {
-              'X-API-Key': apiKey,
-              'Content-Type': 'application/json',
-            },
+            headers,
             body: JSON.stringify({
               input: body.input,
               ...(body.conversationId ? { conversationId: body.conversationId } : {}),
@@ -673,6 +731,8 @@ export async function POST(req: NextRequest) {
               userId,
               workflowId: body.workflowId,
               status: upstream.status,
+              authType: useInternalJwt ? 'internal_jwt' : 'api_key',
+              executeUrl,
               error: errorText,
             })
             emitTextEvent('Failed to execute workflow request. Please try again.')
@@ -754,7 +814,7 @@ export async function POST(req: NextRequest) {
           emitToolResultEvent({
             status: 'error',
             success: false,
-            error: error instanceof Error ? error.message : String(error),
+            error: getErrorMessage(error),
             scope: runScope,
           })
           emitEvent({
@@ -769,7 +829,7 @@ export async function POST(req: NextRequest) {
           logger.error('Failed to transform upstream workflow stream', {
             userId,
             workflowId: body.workflowId,
-            error: error instanceof Error ? error.message : String(error),
+            error: getErrorMessage(error),
           })
         } finally {
           stopStatusRotation()
@@ -787,7 +847,7 @@ export async function POST(req: NextRequest) {
                 userId,
                 chatId: body.conversationId,
                 workflowId: body.workflowId,
-                error: error instanceof Error ? error.message : String(error),
+                error: getErrorMessage(error),
               })
             }
           }
@@ -813,7 +873,7 @@ export async function POST(req: NextRequest) {
     logger.error('Unexpected error executing workflow', {
       userId,
       workflowId: body.workflowId,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
