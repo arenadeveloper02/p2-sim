@@ -107,6 +107,74 @@ describe('ImageGeneratorV2Block', () => {
     expect(modelSubBlock?.condition).toBeUndefined()
   })
 
+  it('keeps Nano Banana 2 aspect ratio and resolution optional without editor defaults', () => {
+    const nanoBanana2AspectRatio = ImageGeneratorV2Block.subBlocks.find(
+      (subBlock) =>
+        subBlock.id === 'aspectRatio' &&
+        subBlock.condition?.and?.field === 'model' &&
+        subBlock.condition?.and?.value === 'gemini-3.1-flash-image-preview'
+    )
+    const nanoBanana2Resolution = ImageGeneratorV2Block.subBlocks.find(
+      (subBlock) =>
+        subBlock.id === 'resolution' &&
+        subBlock.condition?.and?.field === 'model' &&
+        subBlock.condition?.and?.value === 'gemini-3.1-flash-image-preview'
+    )
+
+    expect(nanoBanana2AspectRatio?.clearable).toBe(true)
+    expect(nanoBanana2AspectRatio?.value?.({})).toBe('')
+    expect(nanoBanana2Resolution?.clearable).toBe(true)
+    expect(nanoBanana2Resolution?.value?.({})).toBe('')
+  })
+
+  it('keeps all optional image_generator_v2 combobox and dropdown fields clearable without editor defaults', () => {
+    const optionalFieldTypes = new Set(['combobox', 'dropdown'])
+    const requiredFieldIds = new Set(['prompt'])
+
+    const optionalConfiguredFields = ImageGeneratorV2Block.subBlocks.filter(
+      (subBlock) => optionalFieldTypes.has(subBlock.type) && !requiredFieldIds.has(subBlock.id)
+    )
+
+    expect(optionalConfiguredFields.length).toBeGreaterThan(0)
+    expect(
+      optionalConfiguredFields.every(
+        (subBlock) => subBlock.clearable === true && subBlock.value?.({}) === ''
+      )
+    ).toBe(true)
+  })
+
+  it('omits cleared optional image_generator_v2 params from tool params', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-image-preview',
+      prompt: 'A mountain landscape',
+      aspectRatio: '',
+      resolution: '',
+      size: '',
+      quality: '',
+      background: '',
+      outputFormat: '',
+      moderation: '',
+      safetyTolerance: '',
+      thinkingLevel: '',
+    })
+
+    expect(params).toMatchObject({
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-image-preview',
+      prompt: 'A mountain landscape',
+    })
+    expect(params).not.toHaveProperty('aspectRatio')
+    expect(params).not.toHaveProperty('resolution')
+    expect(params).not.toHaveProperty('size')
+    expect(params).not.toHaveProperty('quality')
+    expect(params).not.toHaveProperty('background')
+    expect(params).not.toHaveProperty('outputFormat')
+    expect(params).not.toHaveProperty('moderation')
+    expect(params).not.toHaveProperty('safetyTolerance')
+    expect(params).not.toHaveProperty('thinkingLevel')
+  })
+
   it('coerces provider to openai when block defaults conflict with gpt-image-2', () => {
     const params = ImageGeneratorV2Block.tools.config.params?.({
       provider: 'gemini',

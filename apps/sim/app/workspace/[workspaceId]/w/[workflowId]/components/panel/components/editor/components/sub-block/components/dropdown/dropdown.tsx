@@ -73,6 +73,8 @@ interface DropdownProps {
   dependsOn?: SubBlockConfig['dependsOn']
   /** Enable search input in dropdown */
   searchable?: boolean
+  /** When true, empty is intentional and defaults must not be re-seeded on hydration */
+  clearable?: boolean
 }
 
 /**
@@ -100,6 +102,7 @@ export const Dropdown = memo(function Dropdown({
   fetchOptionById,
   dependsOn,
   searchable = false,
+  clearable = false,
 }: DropdownProps) {
   const activeSearchTarget = useActiveSearchTarget()
   const { isToolAllowed } = usePermissionConfig()
@@ -267,7 +270,8 @@ export const Dropdown = memo(function Dropdown({
     if (multiSelect) return undefined
 
     const firstSelectable = comboboxOptions.find((opt) => !opt.hidden)
-    if (defaultValue !== undefined) {
+
+    if (defaultValue !== undefined && defaultValue !== '') {
       // Don't seed a denied operation as the default; use the first allowed option.
       if (deniedOperationIds.has(defaultValue)) {
         return firstSelectable?.value
@@ -275,17 +279,28 @@ export const Dropdown = memo(function Dropdown({
       return defaultValue
     }
 
+    if (clearable) {
+      return undefined
+    }
+
     return firstSelectable?.value
-  }, [defaultValue, comboboxOptions, deniedOperationIds, multiSelect])
+  }, [defaultValue, comboboxOptions, deniedOperationIds, multiSelect, clearable])
 
   useEffect(() => {
     if (multiSelect || defaultOptionValue === undefined) {
       return
     }
-    if (storeValue === null || storeValue === undefined || storeValue === '') {
-      setStoreValue(defaultOptionValue)
+    if (storeValue !== null && storeValue !== undefined && storeValue !== '') {
+      return
     }
-  }, [storeValue, defaultOptionValue, setStoreValue, multiSelect])
+
+    if (clearable) return
+
+    const persistedSubBlock = useWorkflowStore.getState().blocks[blockId]?.subBlocks?.[subBlockId]
+    if (persistedSubBlock !== undefined) return
+
+    setStoreValue(defaultOptionValue)
+  }, [storeValue, defaultOptionValue, setStoreValue, multiSelect, clearable, blockId, subBlockId])
 
   /**
    * Normalizes variable references in JSON strings by wrapping them in quotes

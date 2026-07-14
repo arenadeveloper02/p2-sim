@@ -64,19 +64,21 @@ async function WorkspaceLayoutInner({
 }) {
   const session = await getSession()
   if (!session?.user) {
-    //this logic is for doing auto login
+    // Allow render when an email cookie is present so AutoLoginProvider can establish a session
+    // (Arena iframe embeds rely on the shared `email` cookie across *.thearena.ai).
     const cookieStore = await cookies()
     const hasEmailCookie = !!cookieStore.get('email')?.value
     if (!hasEmailCookie) {
       redirect('/login')
     }
-    //--------------
   }
 
   const { workspaceId } = await params
   const initialSidebarCollapsed = (await cookies()).get('sidebar_collapsed')?.value === '1'
   const queryClient = getQueryClient()
-  const sidebarPrefetch = prefetchWorkspaceSidebar(queryClient, workspaceId, session.user.id)
+  const sidebarPrefetch = session?.user?.id
+    ? prefetchWorkspaceSidebar(queryClient, workspaceId, session.user.id)
+    : Promise.resolve()
 
   const initialOrgSettings = await getActiveOrgWhitelabelSettings()
 

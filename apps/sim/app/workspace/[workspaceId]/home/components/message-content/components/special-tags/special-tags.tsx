@@ -19,6 +19,7 @@ import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
 import { isSafeHttpUrl } from '@/lib/core/utils/urls'
 import { OAUTH_PROVIDERS } from '@/lib/oauth/oauth'
 import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
+import { ChartDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/chart-display'
 import type {
   ChatMessageContext,
   MothershipResource,
@@ -100,6 +101,27 @@ export const WORKSPACE_RESOURCE_TAG_TYPES = ['workflow', 'table', 'file'] as con
 
 export type WorkspaceResourceTagType = (typeof WORKSPACE_RESOURCE_TAG_TYPES)[number]
 
+export const CHART_TAG_TYPES = ['bar', 'line', 'area', 'pie', 'scatter'] as const
+
+export type ChartTagType = (typeof CHART_TAG_TYPES)[number]
+
+export interface ChartTagSeries {
+  name?: string
+  data: Array<number | [number, number]>
+}
+
+/**
+ * Constrained chart spec streamed by the copilot inside a `<chart>` tag and
+ * rendered inline with ECharts. `labels` are x-axis categories for cartesian
+ * types and slice names for pie.
+ */
+export interface ChartTagData {
+  type: ChartTagType
+  title?: string
+  labels?: string[]
+  series: ChartTagSeries[]
+}
+
 export interface WorkspaceResourceTagData {
   type: WorkspaceResourceTagType
   id?: string
@@ -115,6 +137,7 @@ export type ContentSegment =
   | { type: 'credential'; data: CredentialTagData }
   | { type: 'mothership-error'; data: MothershipErrorTagData }
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
+  | { type: 'chart'; data: ChartTagData }
 
 export type RuntimeSpecialTagName =
   | 'thinking'
@@ -123,6 +146,7 @@ export type RuntimeSpecialTagName =
   | 'mothership-error'
   | 'file'
   | 'workspace_resource'
+  | 'chart'
 
 export interface ParsedSpecialContent {
   segments: ContentSegment[]
@@ -136,6 +160,7 @@ const RUNTIME_SPECIAL_TAG_NAMES = [
   'mothership-error',
   'file',
   'workspace_resource',
+  'chart',
 ] as const
 
 const SPECIAL_TAG_NAMES = [
@@ -145,6 +170,7 @@ const SPECIAL_TAG_NAMES = [
   'credential',
   'mothership-error',
   'workspace_resource',
+  'chart',
 ] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -222,6 +248,52 @@ function isWorkspaceResourceTagData(value: unknown): value is WorkspaceResourceT
   return id.length > 0
 }
 
+const CHART_MAX_SERIES = 10
+const CHART_MAX_POINTS = 1000
+
+function isChartPoint(value: unknown): value is number | [number, number] {
+  if (typeof value === 'number') return Number.isFinite(value)
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
+  )
+}
+
+function isChartTagSeries(value: unknown): value is ChartTagSeries {
+  if (!isRecord(value)) return false
+  if (value.name !== undefined && typeof value.name !== 'string') return false
+  return (
+    Array.isArray(value.data) &&
+    value.data.length > 0 &&
+    value.data.length <= CHART_MAX_POINTS &&
+    value.data.every(isChartPoint)
+  )
+}
+
+function isChartTagData(value: unknown): value is ChartTagData {
+  if (!isRecord(value)) return false
+  if (
+    typeof value.type !== 'string' ||
+    !(CHART_TAG_TYPES as readonly string[]).includes(value.type)
+  ) {
+    return false
+  }
+  if (value.title !== undefined && typeof value.title !== 'string') return false
+  if (
+    value.labels !== undefined &&
+    (!Array.isArray(value.labels) || !value.labels.every((label) => typeof label === 'string'))
+  ) {
+    return false
+  }
+  return (
+    Array.isArray(value.series) &&
+    value.series.length > 0 &&
+    value.series.length <= CHART_MAX_SERIES &&
+    value.series.every(isChartTagSeries)
+  )
+}
+
 export function parseJsonTagBody<T>(
   body: string,
   isExpectedShape: (value: unknown) => value is T
@@ -270,6 +342,7 @@ function parseSpecialTagData(
   | { type: 'credential'; data: CredentialTagData }
   | { type: 'mothership-error'; data: MothershipErrorTagData }
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
+  | { type: 'chart'; data: ChartTagData }
   | null {
   if (tagName === 'thinking') {
     const content = parseTextTagBody(body)
@@ -299,6 +372,11 @@ function parseSpecialTagData(
   if (tagName === 'workspace_resource') {
     const data = parseJsonTagBody(body, isWorkspaceResourceTagData)
     return data ? { type: 'workspace_resource', data } : null
+  }
+
+  if (tagName === 'chart') {
+    const data = parseJsonTagBody(body, isChartTagData)
+    return data ? { type: 'chart', data } : null
   }
 
   return null
@@ -419,6 +497,8 @@ export function SpecialTags({
       return <MothershipErrorDisplay data={segment.data} />
     case 'workspace_resource':
       return <WorkspaceResourceDisplay data={segment.data} onSelect={onWorkspaceResourceSelect} />
+    case 'chart':
+      return <ChartDisplay data={segment.data} />
     default:
       return null
   }

@@ -8,7 +8,7 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { mergeSubblockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { releaseDeployAction, tryAcquireDeployAction } from './deploy-action-lock'
-import { syncLocalDraftFromServer } from './sync-local-draft'
+import { flushMergedLocalDraftToServer, syncLocalDraftFromServer } from './sync-local-draft'
 import type { DeployReadiness } from './use-deploy-readiness'
 
 const logger = createLogger('UseDeployment')
@@ -66,6 +66,18 @@ export function useDeployment({ workflowId, isDeployed, deployReadiness }: UseDe
       })
       if (!checkResult.passed) {
         toast.error(checkResult.error || 'Pre-deploy validation failed')
+        return { success: false, shouldOpenModal: false }
+      }
+
+      const flushedDraft = await flushMergedLocalDraftToServer(workflowId)
+      if (!flushedDraft) {
+        if (useWorkflowRegistry.getState().activeWorkflowId !== workflowId) {
+          return { success: false, shouldOpenModal: false }
+        }
+        toast.error('Failed to save workflow changes before deployment')
+        return { success: false, shouldOpenModal: false }
+      }
+      if (useWorkflowRegistry.getState().activeWorkflowId !== workflowId) {
         return { success: false, shouldOpenModal: false }
       }
 

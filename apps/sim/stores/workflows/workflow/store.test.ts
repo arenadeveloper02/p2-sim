@@ -919,14 +919,13 @@ describe('workflow store', () => {
       )
     })
 
-    it('should ignore non-topology subblock updates', () => {
-      addBlock('function-1', 'function', 'Function 1', { x: 0, y: 0 })
-      const beforeBlock = useWorkflowStore.getState().blocks['function-1']
+    it('should sync standard subblock values into the workflow store', () => {
+      addBlock('image-1', 'image_generator_v2', 'Image 1', { x: 0, y: 0 })
 
-      useWorkflowStore.getState().syncDynamicHandleSubblockValue('function-1', 'code', 'return 1')
+      useWorkflowStore.getState().syncDynamicHandleSubblockValue('image-1', 'provider', 'gemini')
 
-      const afterBlock = useWorkflowStore.getState().blocks['function-1']
-      expect(afterBlock).toEqual(beforeBlock)
+      const imageBlock = useWorkflowStore.getState().blocks['image-1']
+      expect(imageBlock.subBlocks.provider?.value).toBe('gemini')
     })
   })
 
