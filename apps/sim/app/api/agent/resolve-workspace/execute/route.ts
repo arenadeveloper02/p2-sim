@@ -30,6 +30,7 @@ export const dynamic = 'force-dynamic'
 /**
  * Prefer the in-cluster / same-deployment base URL when the configured agent host
  * matches this app, so internal JWT auth works for loopback execute calls.
+ * Kept for the commented cross-host path below.
  */
 function resolveExecuteBaseUrl(agentBaseUrl: string): string {
   try {
@@ -47,6 +48,7 @@ function resolveExecuteBaseUrl(agentBaseUrl: string): string {
 /**
  * Resolve workflows often return a stale/invalid apiKey. For same-deployment
  * loopback executes, authenticate as the logged-in user with an internal JWT.
+ * Kept for the commented cross-host path below.
  */
 function shouldUseInternalJwt(agentBaseUrl: string): boolean {
   try {
@@ -541,28 +543,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'workflowId is required' }, { status: 400 })
   }
 
-  const configuredAgentBaseUrl = process.env.SIM_AGENT_BASE_URL?.replace(/\/$/, '')
-  if (!configuredAgentBaseUrl) {
-    logger.error('SIM_AGENT_BASE_URL is not configured — cannot execute workflow')
-    return NextResponse.json({ error: 'Agent base URL not configured' }, { status: 500 })
-  }
-
-  // Same pattern as /api/workflows/embed-html: resolve workflows often return a
-  // stale/invalid `userApiKey`, so same-deployment loopback uses an internal JWT.
-  // Cross-host calls still fall back to userApiKey / SIM_WORKFLOW_API_KEY_UNIFIED.
-  const sameDeployment = shouldUseInternalJwt(configuredAgentBaseUrl)
-  const useInternalJwt = sameDeployment
-  const apiKey = body.userApiKey ?? process.env.SIM_WORKFLOW_API_KEY_UNIFIED
-  if (!useInternalJwt && !apiKey) {
-    logger.error('SIM_WORKFLOW_API_KEY_UNIFIED is not configured — cannot execute workflow')
-    return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
-  }
-
-  // Prefer in-cluster base URL when agent host matches this app (JWT loopback).
-  const agentBaseUrl = resolveExecuteBaseUrl(configuredAgentBaseUrl)
-  // OLD (direct public host, no internal base rewrite):
-  // const agentBaseUrl = process.env.SIM_AGENT_BASE_URL
-  // const executeUrl = `${agentBaseUrl.replace(/\/$/, '')}/api/workflows/${body.workflowId}/execute`
+  // Always authenticate the execute hop as the logged-in user with an internal JWT.
+  // Same pattern as /api/workflows/embed-html — avoids:
+  // 1) stale resolve-workspace userApiKey → 401
+  // 2) API-key free-plan paywall → 402 (`isWorkspaceApiExecutionEntitled`)
+  //
+  // Execute against this app (internal/base URL), not SIM_AGENT_BASE_URL. Resolve may
+  // run against a configured agent host, but chats + workflows share this DB, so
+  // loopback JWT execute is the correct path for the embed chat.
+  const agentBaseUrl = getInternalApiBaseUrl().replace(/\/$/, '')
+  // OLD (cross-host API key — hit free-plan 402 when BILLING + FREE_API gate are on):
+  // const configuredAgentBaseUrl = process.env.SIM_AGENT_BASE_URL?.replace(/\/$/, '')
+  // const useInternalJwt = shouldUseInternalJwt(configuredAgentBaseUrl)
+  // const apiKey = body.userApiKey ?? process.env.SIM_WORKFLOW_API_KEY_UNIFIED
+  // const agentBaseUrl = resolveExecuteBaseUrl(configuredAgentBaseUrl!)
   const executeUrl = `${agentBaseUrl}/api/workflows/${body.workflowId}/execute`
 
   try {
@@ -738,15 +732,12 @@ export async function POST(req: NextRequest) {
         try {
           const headers: Record<string, string> = {
             'Content-Type': 'application/json',
+            // Always JWT for session users (bypasses API-key 401/402 failure modes).
+            Authorization: `Bearer ${await generateInternalToken(userId)}`,
           }
 
-          // NEW: same-deployment → internal JWT (avoids stale resolve-workspace apiKey 401).
-          // Cross-host → X-API-Key from payload `userApiKey` or SIM_WORKFLOW_API_KEY_UNIFIED.
-          if (useInternalJwt) {
-            headers.Authorization = `Bearer ${await generateInternalToken(userId)}`
-          } else {
-            headers['X-API-Key'] = apiKey as string
-          }
+          // OLD API-key path (disabled — free-plan workspaces return 402):
+          // headers['X-API-Key'] = body.userApiKey ?? process.env.SIM_WORKFLOW_API_KEY_UNIFIED!
 
           // OLD: always authenticated with X-API-Key from resolve payload (often stale → 401).
           // const headers = {
@@ -758,7 +749,7 @@ export async function POST(req: NextRequest) {
             userId,
             workflowId: body.workflowId,
             executeUrl,
-            authType: useInternalJwt ? 'internal_jwt' : 'api_key',
+            authType: 'internal_jwt',
           })
 
           const upstream = await fetch(executeUrl, {
@@ -774,23 +765,51 @@ export async function POST(req: NextRequest) {
             }),
           })
 
+          const persistBeforeComplete = async () => {
+            if (!body.conversationId || !accumulatedAssistantText.trim()) return
+            try {
+              await persistWorkflowChatTurn({
+                chatId: body.conversationId,
+                userId,
+                userInput: body.input,
+                assistantOutput: accumulatedAssistantText,
+                requestId,
+              })
+            } catch (persistError) {
+              logger.error('Failed to persist workflow execution chat turn', {
+                userId,
+                chatId: body.conversationId,
+                workflowId: body.workflowId,
+                error: getErrorMessage(persistError),
+              })
+            }
+          }
+
           if (!upstream.ok) {
             const errorText = await upstream.text().catch(() => '')
             logger.error('Workflow execution API returned non-OK status', {
               userId,
               workflowId: body.workflowId,
               status: upstream.status,
-              authType: useInternalJwt ? 'internal_jwt' : 'api_key',
+              authType: 'internal_jwt',
               executeUrl,
               error: errorText,
             })
-            emitTextEvent('Failed to execute workflow request. Please try again.')
+            const userFacingError =
+              upstream.status === 402
+                ? 'This workflow could not run because programmatic API execution requires a paid plan. Retrying uses your logged-in session instead — please refresh and try again.'
+                : upstream.status === 401
+                  ? 'Workflow authentication failed. Please refresh and try again.'
+                  : 'Failed to execute workflow request. Please try again.'
+            emitTextEvent(userFacingError)
             emitToolResultEvent({
               status: 'error',
               success: false,
               error: `Workflow request failed with status ${upstream.status}`,
               scope: runScope,
             })
+            // Persist error text so finalize→refetch does not wipe the UI empty.
+            await persistBeforeComplete()
             emitEvent({
               v: 1,
               type: 'complete',
@@ -815,6 +834,7 @@ export async function POST(req: NextRequest) {
               error: 'Workflow response stream was empty.',
               scope: runScope,
             })
+            await persistBeforeComplete()
             emitEvent({
               v: 1,
               type: 'complete',
@@ -851,27 +871,8 @@ export async function POST(req: NextRequest) {
             scope: runScope,
           })
 
-          // NEW: persist BEFORE emitting `complete`.
-          // The client finalize() invalidates chat history on `complete`; if we
-          // persist afterwards, refetch can return empty history and wipe the UI.
-          if (body.conversationId) {
-            try {
-              await persistWorkflowChatTurn({
-                chatId: body.conversationId,
-                userId,
-                userInput: body.input,
-                assistantOutput: accumulatedAssistantText,
-                requestId,
-              })
-            } catch (error) {
-              logger.error('Failed to persist workflow execution chat turn', {
-                userId,
-                chatId: body.conversationId,
-                workflowId: body.workflowId,
-                error: getErrorMessage(error),
-              })
-            }
-          }
+          // Persist BEFORE `complete` so client finalize refetch sees messages.
+          await persistBeforeComplete()
 
           emitEvent({
             v: 1,
@@ -890,7 +891,6 @@ export async function POST(req: NextRequest) {
             scope: runScope,
           })
 
-          // Persist any partial assistant text before complete (same race as success path).
           if (body.conversationId && accumulatedAssistantText.trim()) {
             try {
               await persistWorkflowChatTurn({
@@ -926,26 +926,7 @@ export async function POST(req: NextRequest) {
           })
         } finally {
           stopStatusRotation()
-          // OLD: persist ran here AFTER `complete` was already sent to the client.
-          // That raced finalize→invalidate and cleared prompt/response from the UI.
-          // if (body.conversationId) {
-          //   try {
-          //     await persistWorkflowChatTurn({
-          //       chatId: body.conversationId,
-          //       userId,
-          //       userInput: body.input,
-          //       assistantOutput: accumulatedAssistantText,
-          //       requestId,
-          //     })
-          //   } catch (error) {
-          //     logger.error('Failed to persist workflow execution chat turn', {
-          //       userId,
-          //       chatId: body.conversationId,
-          //       workflowId: body.workflowId,
-          //       error: getErrorMessage(error),
-          //     })
-          //   }
-          // }
+          // OLD: persist-after-complete lived here and raced the UI refetch.
           if (reader) {
             try {
               await reader.cancel()
