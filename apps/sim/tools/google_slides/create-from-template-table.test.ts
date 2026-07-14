@@ -6,6 +6,7 @@ import {
   buildTableCellTextEndIndexMap,
   buildTableColumnWidthRequests,
   buildTableContentRequests,
+  computeAvailableTableHeightOnSlide,
   computeColumnContentWeights,
   computeMaxRowsThatFitOnSlide,
   distributeColumnWidthsByContent,
@@ -341,6 +342,54 @@ describe('findTableSlideLayout', () => {
       templateRowHeightsEmu: [200_000, 300_000],
     })
   })
+
+  it('uses remaining slide height below the table when larger than the template box', () => {
+    const slideHeightEmu = 5_143_500
+    const tableTopEmu = 1_300_000
+    const templateBoxHeight = 900_000
+
+    const layout = findTableSlideLayout(
+      {
+        pageSize: { height: { magnitude: slideHeightEmu, unit: 'EMU' } },
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                size: { height: { magnitude: templateBoxHeight, unit: 'EMU' } },
+                transform: { scaleY: 1, translateY: tableTopEmu },
+                table: {
+                  tableRows: Array.from({ length: 10 }, () => ({
+                    rowHeight: { magnitude: 90_000, unit: 'EMU' },
+                  })),
+                },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    const expectedAvailable = computeAvailableTableHeightOnSlide({
+      tableTopEmu,
+      slideHeightEmu,
+    })
+
+    expect(expectedAvailable).toBeGreaterThan(templateBoxHeight)
+    expect(layout?.heightBudgetEmu).toBe(expectedAvailable)
+  })
+})
+
+describe('computeAvailableTableHeightOnSlide', () => {
+  it('returns zero when table top or slide height is missing', () => {
+    expect(
+      computeAvailableTableHeightOnSlide({ tableTopEmu: 0, slideHeightEmu: 5_000_000 })
+    ).toBe(0)
+    expect(
+      computeAvailableTableHeightOnSlide({ tableTopEmu: 1_000_000, slideHeightEmu: 0 })
+    ).toBe(0)
+  })
 })
 
 describe('computeMaxRowsThatFitOnSlide', () => {
@@ -419,6 +468,91 @@ describe('splitTableContentAcrossSlides', () => {
 
     const totalBodyRows = chunks.reduce((sum, chunk) => sum + chunk.length - 1, 0)
     expect(totalBodyRows).toBe(10)
+  })
+
+  it('keeps a priority roadmap table on one slide when slide space allows', () => {
+    const roadmapContent = [
+      ['', 'Action Item', 'Impact', 'Effort'],
+      [
+        'P0',
+        'Remove portrait-mode lock; build true responsive layouts for mobile and tablet',
+        'High',
+        'Low',
+      ],
+      ['P0', 'Differentiate hero slides with 3–4 distinct value props and add dual CTA', 'High', 'Low'],
+      [
+        'P1',
+        'Defer/facade Vimeo embeds and compress PNG/WebP image assets for faster load',
+        'High',
+        'Medium',
+      ],
+      [
+        'P1',
+        'Fix all alt attributes and run a full WCAG 2.1 AA accessibility audit pass',
+        'Medium',
+        'Low',
+      ],
+      ['P1', 'Add sticky header CTA and section-level CTAs across the full homepage', 'High', 'Low'],
+      [
+        'P2',
+        'Convert the CRO PDF into an on-site case study page with embedded metrics',
+        'Medium',
+        'Medium',
+      ],
+      [
+        'P2',
+        'Consolidate duplicate Arena sections and add quantified outcome proof captions',
+        'Medium',
+        'Low',
+      ],
+      [
+        'P2',
+        'Add 1–2 client testimonials near primary CTA and a gated lead magnet offer',
+        'High',
+        'Medium',
+      ],
+    ]
+
+    const columnWidthsForRoadmap = [600_000, 3_500_000, 900_000, 700_000]
+    const slideHeightEmu = 5_143_500
+    const tableTopEmu = 1_300_000
+    const templateBoxHeight = 900_000
+
+    const slideLayoutWithRoom = findTableSlideLayout(
+      {
+        pageSize: { height: { magnitude: slideHeightEmu, unit: 'EMU' } },
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                size: { height: { magnitude: templateBoxHeight, unit: 'EMU' } },
+                transform: { scaleY: 1, translateY: tableTopEmu },
+                table: {
+                  tableRows: Array.from({ length: 20 }, () => ({
+                    rowHeight: { magnitude: 45_000, unit: 'EMU' },
+                  })),
+                },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    const chunks = splitTableContentAcrossSlides({
+      content: roadmapContent,
+      maxRows: 20,
+      maxColumns: 4,
+      minRows: 2,
+      headerRow: true,
+      slideLayout: slideLayoutWithRoom,
+      columnWidths: columnWidthsForRoadmap,
+    })
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toHaveLength(roadmapContent.length)
   })
 })
 

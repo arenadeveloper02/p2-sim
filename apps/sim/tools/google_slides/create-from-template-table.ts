@@ -77,6 +77,9 @@ interface TableRowPayload {
 interface PageElementTransform {
   scaleX?: number
   scaleY?: number
+  translateX?: number
+  translateY?: number
+  unit?: string
 }
 
 interface PresentationElement {
@@ -112,7 +115,11 @@ interface PresentationSlide {
 
 interface PresentationPayload {
   slides?: PresentationSlide[]
+  pageSize?: { width?: Dimension; height?: Dimension }
 }
+
+/** Reserve space for slide footer / page number when sizing tables. */
+const SLIDE_TABLE_BOTTOM_MARGIN_EMU = PT_TO_EMU * 36
 
 /**
  * Normalizes LLM/user table content to a bounded string grid.
@@ -138,6 +145,28 @@ function readDimensionEmu(dimension?: Dimension): number {
   if (dimension?.magnitude == null || dimension.magnitude <= 0) return 0
   if (dimension.unit === 'PT') return dimension.magnitude * 12_700
   return dimension.magnitude
+}
+
+function readTransformOffsetEmu(transform?: PageElementTransform): number {
+  if (transform?.translateY == null || transform.translateY <= 0) return 0
+  if (transform.unit === 'PT') return transform.translateY * PT_TO_EMU
+  return transform.translateY
+}
+
+/**
+ * Vertical space below the table's top edge on the slide (EMU).
+ * Google Slides tables grow with wrapped cell text, so the budget should reflect
+ * remaining slide area—not only the template table's initial bounding height.
+ */
+export function computeAvailableTableHeightOnSlide(input: {
+  tableTopEmu: number
+  slideHeightEmu: number
+  bottomMarginEmu?: number
+}): number {
+  const { tableTopEmu, slideHeightEmu } = input
+  const bottomMarginEmu = input.bottomMarginEmu ?? SLIDE_TABLE_BOTTOM_MARGIN_EMU
+  if (slideHeightEmu <= 0 || tableTopEmu <= 0) return 0
+  return Math.max(0, slideHeightEmu - tableTopEmu - bottomMarginEmu)
 }
 
 /**
@@ -253,6 +282,17 @@ export function findTableSlideLayout(
       if (heightBudgetEmu <= 0 && templateRowHeightsEmu.length > 0) {
         heightBudgetEmu = templateRowHeightsEmu.reduce((sum, height) => sum + height, 0)
       }
+
+      const tableTopEmu = readTransformOffsetEmu(element.transform)
+      const slideHeightEmu = readDimensionEmu(presentationData.pageSize?.height)
+      const availableSlideHeight = computeAvailableTableHeightOnSlide({
+        tableTopEmu,
+        slideHeightEmu,
+      })
+      if (availableSlideHeight > 0) {
+        heightBudgetEmu = Math.max(heightBudgetEmu, availableSlideHeight)
+      }
+
       if (heightBudgetEmu <= 0) return null
 
       return { heightBudgetEmu, templateRowHeightsEmu }
