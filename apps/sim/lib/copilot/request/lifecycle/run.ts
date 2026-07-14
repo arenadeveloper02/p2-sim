@@ -42,9 +42,11 @@ import type {
   StreamingContext,
 } from '@/lib/copilot/request/types'
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
+import { hasCopilotApiKey } from '@/lib/copilot/server/copilot-api-keys'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
 import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
+import { shouldRouteToLocalCopilot } from '@/local-copilot/lib/routing'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 
 const logger = createLogger('CopilotLifecycle')
@@ -67,6 +69,8 @@ function resultContent(context: StreamingContext, options: CopilotLifecycleOptio
 
 export interface CopilotLifecycleOptions extends OrchestratorOptions {
   userId: string
+  userEmail?: string
+  copilotBackend?: 'local' | 'external'
   workflowId?: string
   workspaceId?: string
   chatId?: string
@@ -161,7 +165,45 @@ export async function runCopilotLifecycle(
       }
     }
 
-    await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
+    if (
+      shouldRouteToLocalCopilot({
+        workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId,
+        workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId,
+        userId: lifecycleOptions.userId,
+        userEmail: lifecycleOptions.userEmail,
+        copilotBackend: lifecycleOptions.copilotBackend,
+      })
+    ) {
+      logger.info('Delegating copilot turn to Arena Copilot', {
+        chatId: context.chatId,
+        requestId: context.requestId,
+        workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId ?? null,
+        workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId ?? null,
+      })
+      const { runLocalCopilotMothershipLifecycle } = await import(
+        '@/local-copilot/integration/mothership-lifecycle'
+      )
+      await runLocalCopilotMothershipLifecycle(
+        requestPayload,
+        context,
+        execContext,
+        lifecycleOptions
+      )
+    } else {
+      logger.info('Delegating copilot turn to external Mothership', {
+        chatId: context.chatId,
+        requestId: context.requestId,
+        workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId ?? null,
+        workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId ?? null,
+      })
+      if (!hasCopilotApiKey()) {
+        throw new CopilotBackendError(
+          'Cloud copilot is not configured on this deployment (missing COPILOT_API_KEY). Switch the chat input toggle to Local to use Arena Copilot with your ANTHROPIC_API_KEY, or add COPILOT_API_KEY for Sim Cloud Mothership.',
+          { status: 401, body: 'Missing COPILOT_API_KEY' }
+        )
+      }
+      await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
+    }
 
     const result: OrchestratorResult = {
       success: context.errors.length === 0 && !context.wasAborted,

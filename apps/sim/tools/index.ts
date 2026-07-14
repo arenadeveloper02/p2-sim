@@ -184,6 +184,36 @@ async function executeImageGenerationWrapperV2Direct(
   }
 }
 
+async function executeDevelopmentGenerateAppDirect(
+  params: Record<string, any>
+): Promise<ToolResponse> {
+  const [{ generateNextjsApp }, { mapGenerateAppResultToToolResponse }] = await Promise.all([
+    import('@/lib/development/nextjs-app-generator'),
+    import('@/tools/development/map-generate-app-response'),
+  ])
+  return mapGenerateAppResultToToolResponse(
+    await generateNextjsApp({
+      userInput: params.userInput,
+      repoName: params.repoName,
+      privateRepo: params.privateRepo,
+    })
+  )
+}
+
+async function executeDevelopmentEditAppDirect(params: Record<string, any>): Promise<ToolResponse> {
+  const [{ editNextjsApp }, { mapGenerateAppResultToToolResponse }] = await Promise.all([
+    import('@/lib/development/nextjs-app-generator'),
+    import('@/tools/development/map-generate-app-response'),
+  ])
+  return mapGenerateAppResultToToolResponse(
+    await editNextjsApp({
+      userInput: params.userInput,
+      repoName: params.repoName,
+      referenceImage: params.referenceImage,
+    })
+  )
+}
+
 function resolveToolScope(
   params: Record<string, unknown>,
   executionContext?: ExecutionContext
@@ -884,6 +914,28 @@ async function applyHostedKeyCostToResult(
 
 import { normalizeToolId } from '@/tools/normalize'
 
+async function maybeRecordToolModelUsage(
+  toolId: string,
+  result: ToolResponse,
+  scope: ToolExecutionScope,
+  params: Record<string, unknown>
+): Promise<void> {
+  if (typeof window !== 'undefined' || !result.success) {
+    return
+  }
+
+  const normalizedToolId = normalizeToolId(toolId)
+  if (normalizedToolId !== 'figma_to_html_ai') {
+    return
+  }
+
+  const { recordFigmaToHtmlAiModelUsage } = await import(
+    '@/lib/billing/core/record-model-usage.server'
+  )
+  const fileKey = typeof params.fileKey === 'string' ? params.fileKey : undefined
+  await recordFigmaToHtmlAiModelUsage(result, scope, fileKey)
+}
+
 /**
  * Maximum request body sizes before we fail with a clear error.
  * Internal Next.js routes can reject/truncate JSON bodies around 10MB, which otherwise
@@ -1402,16 +1454,20 @@ export async function executeTool(
     // Check for direct execution (no HTTP request needed)
     const wrapperBaseToolId = getImageGenerationWrapperBaseToolId(normalizedToolId)
     const directExecution =
-      normalizedToolId === 'google_nano_banana'
-        ? executeNanoBananaDirect
-        : normalizedToolId === 'image_generate'
-          ? executeImageGenerateDirect
-          : normalizedToolId === 'openai_image'
-            ? executeOpenAIImageDirect
-            : wrapperBaseToolId
-              ? (params: Record<string, any>) =>
-                  executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-              : tool.directExecution
+    normalizedToolId === 'google_nano_banana'
+      ? executeNanoBananaDirect
+      : normalizedToolId === 'image_generate'
+        ? executeImageGenerateDirect
+        : normalizedToolId === 'openai_image'
+          ? executeOpenAIImageDirect
+          : wrapperBaseToolId
+            ? (params: Record<string, any>) =>
+                executeImageGenerationWrapperV2Direct(normalizedToolId, params)
+      : normalizedToolId === 'development_generate_app'
+        ? executeDevelopmentGenerateAppDirect
+        : normalizedToolId === 'development_edit_app'
+          ? executeDevelopmentEditAppDirect
+          : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)
@@ -1449,6 +1505,8 @@ export async function executeTool(
       } else if (hostedKeyForMetrics) {
         hostedKeyMetrics.recordFailed({ ...hostedKeyForMetrics, reason: 'other' })
       }
+
+      await maybeRecordToolModelUsage(toolId, finalResult, scope, contextParams)
 
       const strippedOutput = postProcessToolOutput(normalizedToolId, finalResult.output ?? {})
 
@@ -1524,6 +1582,8 @@ export async function executeTool(
     } else if (hostedKeyForMetrics) {
       hostedKeyMetrics.recordFailed({ ...hostedKeyForMetrics, reason: 'other' })
     }
+
+    await maybeRecordToolModelUsage(toolId, finalResult, scope, contextParams)
 
     const strippedOutput = postProcessToolOutput(normalizedToolId, finalResult.output ?? {})
 
@@ -1989,6 +2049,15 @@ async function executeToolRequest(
                 throw error
               }
               throw new Error(`Request timed out after ${timeout}ms`)
+            }
+            if (
+              error instanceof TypeError &&
+              error.message === 'fetch failed' &&
+              timeout >= DEFAULT_EXECUTION_TIMEOUT_MS
+            ) {
+              throw new Error(
+                `Internal tool request failed (connection closed or timed out after ${timeout}ms). Long-running tools may need a workflow with a Development block or async execution mode.`
+              )
             }
             throw error
           } finally {

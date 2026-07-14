@@ -695,6 +695,7 @@ import {
   devinSendMessageTool,
   devinTerminateSessionTool,
 } from '@/tools/devin'
+import { developmentEditAppTool, developmentGenerateAppTool } from '@/tools/development'
 import {
   discordAddReactionTool,
   discordArchiveThreadTool,
@@ -5362,6 +5363,8 @@ export const tools: Record<string, ToolConfig> = {
   devin_replace_session_tags: devinReplaceSessionTagsTool,
   devin_archive_session: devinArchiveSessionTool,
   devin_terminate_session: devinTerminateSessionTool,
+  development_generate_app: developmentGenerateAppTool,
+  development_edit_app: developmentEditAppTool,
   dagster_delete_run: dagsterDeleteRunTool,
   dagster_get_asset: dagsterGetAssetTool,
   dagster_get_run: dagsterGetRunTool,

@@ -60,6 +60,8 @@ export function UnauthorizedEmailError({
         redirectUrl = 'https://dev.thearena.ai/hub/agents'
       } else if (hostname === 'test-agent.thearena.ai') {
         redirectUrl = 'https://test.thearena.ai/hub/agents'
+      } else if (hostname === 'test-v1-agent.thearena.ai') {
+        redirectUrl = 'https://test.thearena.ai/hub/agents'
       } else if (hostname === 'sandbox-agent.thearena.ai') {
         redirectUrl = 'https://sandbox.thearena.ai/hub/agents'
       } else if (hostname === 'agent.thearena.ai') {

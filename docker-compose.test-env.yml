@@ -12,6 +12,7 @@ services:
           memory: 8G
     environment:
       - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
       - DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
@@ -30,6 +31,7 @@ services:
       - OPENAI_API_KEY_1=${OPENAI_API_KEY_1:-}
       - OPENAI_API_KEY_2=${OPENAI_API_KEY_2:-}
       - OPENAI_API_KEY_3=${OPENAI_API_KEY_3:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_API_KEY_1=${ANTHROPIC_API_KEY_1:-}
       - ANTHROPIC_API_KEY_2=${ANTHROPIC_API_KEY_2:-}
       - ANTHROPIC_API_KEY_3=${ANTHROPIC_API_KEY_3:-}

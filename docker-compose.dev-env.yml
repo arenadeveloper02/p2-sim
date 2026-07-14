@@ -13,6 +13,7 @@ services:
     environment:
       # Core
       - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
