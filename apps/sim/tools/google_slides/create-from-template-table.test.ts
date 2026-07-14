@@ -325,6 +325,36 @@ describe('buildTableContentRequests', () => {
       },
     })
   })
+
+  it('inserts rows when content exceeds the template table row count', () => {
+    const requests = buildTableContentRequests({
+      tableObjectId: 'table_1',
+      templateRows: 3,
+      templateColumns: 5,
+      maxRows: 20,
+      maxColumns: 5,
+      minRows: 2,
+      content: [
+        ['Q1 Revenue', '$9.1M', '+10%', 'Above target', 'Strong performance vs. plan'],
+        ['Q2 Revenue', '$6.0M', '-5%', 'Below target', 'Shortfall attributed to supply chain delays'],
+        ['Q3 Revenue', '$7.1M', '+2%', 'On track', 'Recovery confirmed'],
+        ['Q4 Revenue', '$4.5M', '+18%', 'Strong close', 'Best quarterly growth rate'],
+        ['Annual Total', '$26.7M', '+6%', 'Exceeded plan', 'Full-year target surpassed'],
+      ],
+    })
+
+    expect(requests.filter((r) => 'insertTableRows' in r)).toEqual([
+      {
+        insertTableRows: {
+          tableObjectId: 'table_1',
+          cellLocation: { rowIndex: 2, columnIndex: 0 },
+          insertBelow: true,
+          number: 2,
+        },
+      },
+    ])
+    expect(requests.filter((r) => 'insertText' in r)).toHaveLength(25)
+  })
 })
 
 describe('findTableSlideLayout', () => {
@@ -360,25 +390,39 @@ describe('findTableSlideLayout', () => {
 })
 
 describe('computeBodyRowsPerSlide', () => {
-  const slideLayout = {
-    heightBudgetEmu: 3_000_000,
-    templateRowHeightsEmu: Array.from({ length: 8 }, () => 375_000),
-  }
-
   it('derives body row slots from template row count minus header', () => {
     expect(
       computeBodyRowsPerSlide({
-        slideLayout,
+        slideLayout: {
+          heightBudgetEmu: 900_000,
+          templateRowHeightsEmu: Array.from({ length: 8 }, () => 112_500),
+        },
         headerRow: true,
         maxRows: 20,
       })
     ).toBe(7)
   })
 
+  it('uses table height budget when the template has fewer rows than the area allows', () => {
+    expect(
+      computeBodyRowsPerSlide({
+        slideLayout: {
+          heightBudgetEmu: 2_700_000,
+          templateRowHeightsEmu: [300_000, 300_000, 300_000],
+        },
+        headerRow: false,
+        maxRows: 20,
+      })
+    ).toBe(9)
+  })
+
   it('respects an explicit rowsPerSlide override', () => {
     expect(
       computeBodyRowsPerSlide({
-        slideLayout,
+        slideLayout: {
+          heightBudgetEmu: 3_000_000,
+          templateRowHeightsEmu: Array.from({ length: 8 }, () => 375_000),
+        },
         headerRow: true,
         maxRows: 20,
         rowsPerSlide: 5,
@@ -490,6 +534,31 @@ describe('splitTableContentAcrossSlides', () => {
     expect(chunks).toHaveLength(2)
     expect(chunks[0]).toHaveLength(8)
     expect(chunks[1]).toHaveLength(4)
+  })
+
+  it('keeps a small table on one slide when height budget allows more rows than template placeholders', () => {
+    const bodyRows = [
+      ['Q1 Revenue', '$9.1M', '+10%', 'Above target', 'Strong performance vs. plan'],
+      ['Q2 Revenue', '$6.0M', '-5%', 'Below target', 'Shortfall attributed to supply chain delays'],
+      ['Q3 Revenue', '$7.1M', '+2%', 'On track', 'Recovery confirmed; mid-market segment rebounded'],
+      ['Q4 Revenue', '$4.5M', '+18%', 'Strong close', 'Best quarterly growth rate of the year'],
+      ['Annual Total', '$26.7M', '+6%', 'Exceeded plan', 'Full-year target surpassed'],
+    ]
+
+    const chunks = splitTableContentAcrossSlides({
+      content: bodyRows,
+      maxRows: 20,
+      maxColumns: 5,
+      minRows: 2,
+      slideLayout: {
+        heightBudgetEmu: 2_700_000,
+        templateRowHeightsEmu: [300_000, 300_000, 300_000],
+      },
+      columnWidths: [900_000, 500_000, 400_000, 500_000, 1_400_000],
+    })
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toHaveLength(5)
   })
 })
 

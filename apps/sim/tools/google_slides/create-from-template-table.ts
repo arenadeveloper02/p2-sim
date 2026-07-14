@@ -26,6 +26,14 @@ export type TableBatchRequest =
   | TableCellTextRequest
   | TableCellInsertRequest
   | {
+      insertTableRows: {
+        tableObjectId: string
+        cellLocation: { rowIndex: number; columnIndex: number }
+        insertBelow?: boolean
+        number: number
+      }
+    }
+  | {
       deleteTableRow: {
         tableObjectId: string
         cellLocation: { rowIndex: number; columnIndex: number }
@@ -105,8 +113,6 @@ const ESTIMATED_TABLE_FONT_SIZE_PT = 11
 const ESTIMATED_LINE_HEIGHT_EMU = Math.round(ESTIMATED_TABLE_FONT_SIZE_PT * PT_TO_EMU * 1.2)
 const ESTIMATED_CHAR_WIDTH_EMU = Math.round(ESTIMATED_TABLE_FONT_SIZE_PT * PT_TO_EMU * 0.55)
 const ESTIMATED_CELL_VERTICAL_PADDING_EMU = PT_TO_EMU * 2
-/** When any cell in a chunk wraps beyond this many lines, fall back to height-based chunk sizing. */
-const EXTREME_CELL_LINE_THRESHOLD = 5
 
 interface PresentationSlide {
   pageElements?: PresentationElement[]
@@ -299,61 +305,23 @@ export function computeBodyRowsPerSlide(input: {
     return Math.min(input.rowsPerSlide, maxBodyRows)
   }
 
-  const templateBodySlots = Math.max(
-    1,
-    input.slideLayout.templateRowHeightsEmu.length - headerOffset
-  )
-  return Math.min(templateBodySlots, maxBodyRows)
-}
+  const { templateRowHeightsEmu, heightBudgetEmu } = input.slideLayout
+  const templateBodySlots = Math.max(1, templateRowHeightsEmu.length - headerOffset)
 
-function rowHasExtremeCellText(row: string[], columnWidths: number[]): boolean {
-  for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
-    const columnWidth = columnWidths[columnIndex] ?? columnWidths[0] ?? MIN_COLUMN_WIDTH_EMU
-    if (estimateCellLineCount(row[columnIndex] ?? '', columnWidth) > EXTREME_CELL_LINE_THRESHOLD) {
-      return true
-    }
-  }
-  return false
-}
+  const bodyRowHeights = templateRowHeightsEmu.slice(headerOffset)
+  const avgRowHeight =
+    bodyRowHeights.length > 0
+      ? bodyRowHeights.reduce((sum, height) => sum + height, 0) / bodyRowHeights.length
+      : heightBudgetEmu / Math.max(templateBodySlots, 1)
 
-/**
- * Caps a slot-based chunk when any row contains extremely long wrapped text.
- */
-function computeChunkBodyRowCount(input: {
-  bodyRows: string[][]
-  bodyOffset: number
-  bodyRowsPerSlide: number
-  slideLayout: TableSlideLayout
-  headerRow?: string[]
-  columnWidths: number[]
-}): number {
-  const remaining = input.bodyRows.length - input.bodyOffset
-  if (remaining <= 0) return 0
+  const headerHeight = headerOffset > 0 ? (templateRowHeightsEmu[0] ?? avgRowHeight) : 0
+  const bodyHeightBudget = Math.max(avgRowHeight, heightBudgetEmu - headerHeight)
+  const slotsFromHeight = Math.max(1, Math.floor(bodyHeightBudget / avgRowHeight))
 
-  const chunkSize = Math.min(input.bodyRowsPerSlide, remaining)
-  const candidateRows = input.bodyRows.slice(input.bodyOffset, input.bodyOffset + chunkSize)
-  if (!candidateRows.some((row) => rowHasExtremeCellText(row, input.columnWidths))) {
-    return chunkSize
-  }
+  // Template tables often ship with few placeholder rows but a tall bounding box — use both.
+  const bodySlots = Math.max(templateBodySlots, slotsFromHeight)
 
-  const bodySlideLayout: TableSlideLayout = {
-    heightBudgetEmu: Math.max(
-      ESTIMATED_LINE_HEIGHT_EMU,
-      input.slideLayout.heightBudgetEmu -
-        (input.headerRow ? estimateRowHeightEmu(input.headerRow, input.columnWidths) : 0)
-    ),
-    templateRowHeightsEmu: input.slideLayout.templateRowHeightsEmu.slice(input.headerRow ? 1 : 0),
-  }
-
-  const heightFit = computeMaxRowsThatFitOnSlide({
-    content: candidateRows,
-    slideLayout: bodySlideLayout,
-    columnWidths: input.columnWidths,
-    minRows: 1,
-    maxRows: chunkSize,
-  })
-
-  return Math.max(1, Math.min(chunkSize, heightFit))
+  return Math.min(bodySlots, maxBodyRows)
 }
 
 /**
@@ -420,8 +388,6 @@ export function splitTableContentAcrossSlides(input: {
   if (normalized.length === 0) return []
   if (!input.slideLayout) return [normalized]
 
-  const columnWidths = input.columnWidths.length > 0 ? input.columnWidths : [MIN_COLUMN_WIDTH_EMU]
-
   const header = input.headerRow ? normalized[0] : undefined
   const bodyRows = input.headerRow ? normalized.slice(1) : normalized
 
@@ -436,18 +402,15 @@ export function splitTableContentAcrossSlides(input: {
     rowsPerSlide: input.rowsPerSlide,
   })
 
+  if (bodyRows.length <= bodyRowsPerSlide) {
+    return [normalized]
+  }
+
   const chunks: string[][][] = []
   let bodyOffset = 0
 
   while (bodyOffset < bodyRows.length) {
-    const bodyFit = computeChunkBodyRowCount({
-      bodyRows,
-      bodyOffset,
-      bodyRowsPerSlide,
-      slideLayout: input.slideLayout,
-      headerRow: header,
-      columnWidths,
-    })
+    const bodyFit = Math.min(bodyRowsPerSlide, bodyRows.length - bodyOffset)
 
     if (bodyFit <= 0) break
 
@@ -642,19 +605,30 @@ export function buildTableContentRequests(input: {
   layout?: TableColumnLayout
 }): TableBatchRequest[] {
   const { tableObjectId, templateRows, templateColumns } = input
-  const rowCap = Math.min(input.maxRows ?? templateRows, templateRows)
-  const columnCap = Math.min(input.maxColumns ?? templateColumns, templateColumns)
-  const content = normalizeTableContent(input.content, rowCap, columnCap)
+  const maxRowsCap = input.maxRows ?? templateRows
+  const maxColumnsCap = input.maxColumns ?? templateColumns
+  const content = normalizeTableContent(input.content, maxRowsCap, maxColumnsCap)
   const contentRows = content.length
   const minRows = Math.max(1, input.minRows ?? 1)
   const contentColumns = content.reduce((max, row) => Math.max(max, row.length), 0)
   const minColumns = Math.max(1, input.minColumns ?? 1)
-  const keepRows = Math.min(templateRows, Math.max(contentRows, minRows))
+  const targetRows = Math.min(maxRowsCap, Math.max(contentRows, minRows))
   const keepColumns = Math.min(templateColumns, Math.max(contentColumns, minColumns))
 
   const requests: TableBatchRequest[] = []
 
-  for (let rowIndex = templateRows - 1; rowIndex >= keepRows; rowIndex -= 1) {
+  if (targetRows > templateRows) {
+    requests.push({
+      insertTableRows: {
+        tableObjectId,
+        cellLocation: { rowIndex: templateRows - 1, columnIndex: 0 },
+        insertBelow: true,
+        number: targetRows - templateRows,
+      },
+    })
+  }
+
+  for (let rowIndex = templateRows - 1; rowIndex >= targetRows; rowIndex -= 1) {
     requests.push({
       deleteTableRow: {
         tableObjectId,
