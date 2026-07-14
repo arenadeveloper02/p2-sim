@@ -730,10 +730,17 @@ export async function POST(req: NextRequest) {
         }
 
         try {
+          // Prefer internal JWT; also forward the caller cookie so AuthType.SESSION
+          // works if JWT verify fails (secret mismatch across pods). Session/JWT
+          // skip the free-plan API-key 402 paywall. Safe because executeUrl is always
+          // getInternalApiBaseUrl() (same app loopback), never an external agent host.
           const headers: Record<string, string> = {
             'Content-Type': 'application/json',
-            // Always JWT for session users (bypasses API-key 401/402 failure modes).
             Authorization: `Bearer ${await generateInternalToken(userId)}`,
+          }
+          const sessionCookie = req.headers.get('cookie')
+          if (sessionCookie) {
+            headers.Cookie = sessionCookie
           }
 
           // OLD API-key path (disabled — free-plan workspaces return 402):
@@ -749,7 +756,8 @@ export async function POST(req: NextRequest) {
             userId,
             workflowId: body.workflowId,
             executeUrl,
-            authType: 'internal_jwt',
+            authType: 'internal_jwt+session_cookie',
+            hasSessionCookie: Boolean(sessionCookie),
           })
 
           const upstream = await fetch(executeUrl, {
