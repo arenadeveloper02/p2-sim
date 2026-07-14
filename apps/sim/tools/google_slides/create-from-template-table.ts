@@ -206,9 +206,44 @@ export function distributeColumnWidthsByContent(
   const weightSum = normalizedWeights.reduce((sum, weight) => sum + weight, 0)
   const flexibleWidth = totalWidth - minTotal
 
-  return normalizedWeights.map(
-    (weight) => minWidth + (flexibleWidth * weight) / weightSum
+  return normalizedWeights.map((weight) => minWidth + (flexibleWidth * weight) / weightSum)
+}
+
+/**
+ * Column widths for row-height estimation when splitting tables across slides.
+ * Mirrors post-fill `buildTableColumnWidthRequests` so long-text columns are not
+ * treated as narrow template placeholders during overflow checks.
+ */
+export function resolveTableColumnWidthsForSplit(input: {
+  content: unknown
+  maxRows: number
+  maxColumns: number
+  layout: TableColumnLayout | null
+}): number[] {
+  const contentRowCount = Array.isArray(input.content) ? input.content.length : 0
+  const normalized = normalizeTableContent(
+    input.content,
+    contentRowCount > 0 ? contentRowCount : input.maxRows,
+    input.maxColumns
   )
+
+  if (!input.layout || input.layout.columnWidths.length === 0) {
+    return []
+  }
+
+  const contentColumns = normalized.reduce((max, row) => Math.max(max, row.length), 0)
+  const keepColumns = Math.min(
+    input.maxColumns,
+    input.layout.columnWidths.length,
+    Math.max(contentColumns, 1)
+  )
+  if (keepColumns <= 0) return []
+
+  const totalWidth = input.layout.columnWidths.reduce((sum, width) => sum + width, 0)
+  if (totalWidth <= 0) return []
+
+  const weights = computeColumnContentWeights(normalized, keepColumns)
+  return distributeColumnWidthsByContent(totalWidth, weights)
 }
 
 /** Reads per-column widths (EMU) from a fetched presentation payload. */
@@ -336,10 +371,7 @@ export function computeMaxRowsThatFitOnSlide(input: {
   const { content, slideLayout, minRows, maxRows } = input
   if (content.length === 0) return minRows
 
-  const columnWidths =
-    input.columnWidths.length > 0
-      ? input.columnWidths
-      : [MIN_COLUMN_WIDTH_EMU]
+  const columnWidths = input.columnWidths.length > 0 ? input.columnWidths : [MIN_COLUMN_WIDTH_EMU]
 
   const templateRows = slideLayout.templateRowHeightsEmu.length
   const avgTemplateRowHeight =
@@ -389,8 +421,7 @@ export function splitTableContentAcrossSlides(input: {
   if (normalized.length === 0) return []
   if (!input.slideLayout) return [normalized]
 
-  const columnWidths =
-    input.columnWidths.length > 0 ? input.columnWidths : [MIN_COLUMN_WIDTH_EMU]
+  const columnWidths = input.columnWidths.length > 0 ? input.columnWidths : [MIN_COLUMN_WIDTH_EMU]
 
   const header = input.headerRow ? normalized[0] : undefined
   const bodyRows = input.headerRow ? normalized.slice(1) : normalized
@@ -399,9 +430,7 @@ export function splitTableContentAcrossSlides(input: {
     return header ? [[header]] : []
   }
 
-  const maxBodyRowsPerSlide = input.headerRow
-    ? Math.max(1, input.maxRows - 1)
-    : input.maxRows
+  const maxBodyRowsPerSlide = input.headerRow ? Math.max(1, input.maxRows - 1) : input.maxRows
 
   const chunks: string[][][] = []
   let bodyOffset = 0
@@ -501,6 +530,12 @@ export function expandSlidesForTableOverflow<T extends TableExpandableSlide>(
 
     const slideLayout = findTableSlideLayout(templatePresentation, tableBlock.shapeId)
     const columnLayout = findTableColumnLayout(templatePresentation, tableBlock.shapeId)
+    const columnWidths = resolveTableColumnWidthsForSplit({
+      content: tableContent,
+      maxRows: tableBlock.maxRows,
+      maxColumns: tableBlock.maxColumns,
+      layout: columnLayout,
+    })
     const chunks = splitTableContentAcrossSlides({
       content: tableContent,
       maxRows: tableBlock.maxRows,
@@ -508,7 +543,7 @@ export function expandSlidesForTableOverflow<T extends TableExpandableSlide>(
       minRows: tableBlock.minRows ?? 1,
       headerRow: tableBlock.headerRow,
       slideLayout,
-      columnWidths: columnLayout?.columnWidths ?? [],
+      columnWidths,
     })
 
     if (chunks.length <= 1) {

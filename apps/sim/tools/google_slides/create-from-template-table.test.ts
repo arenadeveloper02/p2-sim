@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  appendTableContinuationTitleSuffix,
   buildTableCellTextEndIndexMap,
   buildTableColumnWidthRequests,
   buildTableContentRequests,
@@ -12,11 +13,11 @@ import {
   distributeColumnWidthsByContent,
   estimateCellLineCount,
   expandSlidesForTableOverflow,
-  appendTableContinuationTitleSuffix,
   findTableColumnLayout,
   findTableDimensions,
   findTableSlideLayout,
   normalizeTableContent,
+  resolveTableColumnWidthsForSplit,
   splitTableContentAcrossSlides,
 } from '@/tools/google_slides/create-from-template-table'
 
@@ -108,7 +109,10 @@ describe('buildTableCellTextEndIndexMap', () => {
                       {
                         location: { columnIndex: 1 },
                         text: {
-                          textElements: [{ endIndex: 9 }, { endIndex: 9, textRun: { content: 'Header 1\n' } }],
+                          textElements: [
+                            { endIndex: 9 },
+                            { endIndex: 9, textRun: { content: 'Header 1\n' } },
+                          ],
                         },
                       },
                     ],
@@ -178,7 +182,9 @@ describe('buildTableColumnWidthRequests', () => {
       updateTableColumnProperties: { tableColumnProperties: { columnWidth: { magnitude: number } } }
     }
 
-    expect(wideColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude).toBeGreaterThan(
+    expect(
+      wideColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+    ).toBeGreaterThan(
       narrowColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
   })
@@ -196,8 +202,13 @@ describe('buildTableColumnWidthRequests', () => {
     expect(requests).toHaveLength(3)
     const widths = requests.map(
       (request) =>
-        (request as { updateTableColumnProperties: { tableColumnProperties: { columnWidth: { magnitude: number } } } })
-          .updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+        (
+          request as {
+            updateTableColumnProperties: {
+              tableColumnProperties: { columnWidth: { magnitude: number } }
+            }
+          }
+        ).updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
     expect(widths[1]).toBeGreaterThan(widths[0])
     expect(widths[1]).toBeGreaterThan(widths[2])
@@ -262,8 +273,13 @@ describe('buildTableContentRequests', () => {
 
     const widths = columnUpdates.map(
       (request) =>
-        (request as { updateTableColumnProperties: { tableColumnProperties: { columnWidth: { magnitude: number } } } })
-          .updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+        (
+          request as {
+            updateTableColumnProperties: {
+              tableColumnProperties: { columnWidth: { magnitude: number } }
+            }
+          }
+        ).updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
     expect(widths[1]).toBeGreaterThan(widths[0]!)
   })
@@ -309,6 +325,46 @@ describe('buildTableContentRequests', () => {
         text: 'Heuristic',
       },
     })
+  })
+})
+
+describe('resolveTableColumnWidthsForSplit', () => {
+  it('allocates more width to columns with longer content than the template layout', () => {
+    const content = [
+      ['', 'Action Item', 'Impact', 'Effort'],
+      [
+        'P0',
+        'Remove portrait-mode lock; build true responsive layouts for mobile and tablet',
+        'High',
+        'Low',
+      ],
+    ]
+
+    const widths = resolveTableColumnWidthsForSplit({
+      content,
+      maxRows: 20,
+      maxColumns: 4,
+      layout: {
+        columnWidths: [600_000, 800_000, 900_000, 700_000],
+      },
+    })
+
+    expect(widths).toHaveLength(4)
+    expect(widths[1]).toBeGreaterThan(widths[0]!)
+    expect(widths[1]).toBeGreaterThan(widths[2]!)
+    expect(widths[1]).toBeGreaterThan(widths[3]!)
+    expect(widths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(3_000_000, -2)
+  })
+
+  it('returns an empty array when template column layout is unavailable', () => {
+    expect(
+      resolveTableColumnWidthsForSplit({
+        content: [['A', 'B']],
+        maxRows: 10,
+        maxColumns: 2,
+        layout: null,
+      })
+    ).toEqual([])
   })
 })
 
@@ -383,12 +439,12 @@ describe('findTableSlideLayout', () => {
 
 describe('computeAvailableTableHeightOnSlide', () => {
   it('returns zero when table top or slide height is missing', () => {
-    expect(
-      computeAvailableTableHeightOnSlide({ tableTopEmu: 0, slideHeightEmu: 5_000_000 })
-    ).toBe(0)
-    expect(
-      computeAvailableTableHeightOnSlide({ tableTopEmu: 1_000_000, slideHeightEmu: 0 })
-    ).toBe(0)
+    expect(computeAvailableTableHeightOnSlide({ tableTopEmu: 0, slideHeightEmu: 5_000_000 })).toBe(
+      0
+    )
+    expect(computeAvailableTableHeightOnSlide({ tableTopEmu: 1_000_000, slideHeightEmu: 0 })).toBe(
+      0
+    )
   })
 })
 
@@ -479,7 +535,12 @@ describe('splitTableContentAcrossSlides', () => {
         'High',
         'Low',
       ],
-      ['P0', 'Differentiate hero slides with 3–4 distinct value props and add dual CTA', 'High', 'Low'],
+      [
+        'P0',
+        'Differentiate hero slides with 3–4 distinct value props and add dual CTA',
+        'High',
+        'Low',
+      ],
       [
         'P1',
         'Defer/facade Vimeo embeds and compress PNG/WebP image assets for faster load',
@@ -492,7 +553,12 @@ describe('splitTableContentAcrossSlides', () => {
         'Medium',
         'Low',
       ],
-      ['P1', 'Add sticky header CTA and section-level CTAs across the full homepage', 'High', 'Low'],
+      [
+        'P1',
+        'Add sticky header CTA and section-level CTAs across the full homepage',
+        'High',
+        'Low',
+      ],
       [
         'P2',
         'Convert the CRO PDF into an on-site case study page with embedded metrics',
@@ -575,7 +641,11 @@ describe('expandSlidesForTableOverflow', () => {
               minRows: 2,
               content: [
                 ['Col A', 'Col B', 'Col C'],
-                ...Array.from({ length: 10 }, (_, index) => [`Row ${index + 1}`, longCell, longCell]),
+                ...Array.from({ length: 10 }, (_, index) => [
+                  `Row ${index + 1}`,
+                  longCell,
+                  longCell,
+                ]),
               ],
             },
           ],
@@ -615,6 +685,115 @@ describe('expandSlidesForTableOverflow', () => {
     expect(slides[0]?.blocks.find((block) => block.type === 'TEXT')?.content).toBe('My Table')
     expect(slides[1]?.blocks.find((block) => block.type === 'TEXT')?.content).toBe(
       'My Table (continued)'
+    )
+  })
+
+  it('keeps a priority roadmap on one slide when template columns are narrow but slide space allows', () => {
+    const roadmapContent = [
+      ['', 'Action Item', 'Impact', 'Effort'],
+      [
+        'P0',
+        'Remove portrait-mode lock; build true responsive layouts for mobile and tablet',
+        'High',
+        'Low',
+      ],
+      [
+        'P0',
+        'Differentiate hero slides with 3–4 distinct value props and add dual CTA',
+        'High',
+        'Low',
+      ],
+      [
+        'P1',
+        'Defer/facade Vimeo embeds and compress PNG/WebP image assets for faster load',
+        'High',
+        'Medium',
+      ],
+      [
+        'P1',
+        'Fix all alt attributes and run a full WCAG 2.1 AA accessibility audit pass',
+        'Medium',
+        'Low',
+      ],
+      [
+        'P1',
+        'Add sticky header CTA and section-level CTAs across the full homepage',
+        'High',
+        'Low',
+      ],
+      [
+        'P2',
+        'Convert the CRO PDF into an on-site case study page with embedded metrics',
+        'Medium',
+        'Medium',
+      ],
+      [
+        'P2',
+        'Consolidate duplicate Arena sections and add quantified outcome proof captions',
+        'Medium',
+        'Low',
+      ],
+      [
+        'P2',
+        'Add 1–2 client testimonials near primary CTA and a gated lead magnet offer',
+        'High',
+        'Medium',
+      ],
+    ]
+
+    const slides = expandSlidesForTableOverflow(
+      [
+        {
+          order: 1,
+          templateSlideObjectId: 'slide_tpl',
+          blocks: [
+            {
+              type: 'TEXT',
+              role: 'TITLE',
+              shapeId: 'title_1',
+              content: 'Priority Roadmap: P0 -> P1 -> P2 Actions',
+            },
+            {
+              type: 'TABLE',
+              shapeId: 'table_1',
+              headerRow: true,
+              maxRows: 20,
+              maxColumns: 4,
+              minRows: 2,
+              content: roadmapContent,
+            },
+          ],
+        },
+      ],
+      {
+        pageSize: { height: { magnitude: 5_143_500, unit: 'EMU' } },
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                size: { height: { magnitude: 900_000, unit: 'EMU' } },
+                transform: { scaleY: 1, translateY: 1_300_000 },
+                table: {
+                  rows: 20,
+                  columns: 4,
+                  tableColumns: columnWidthsToTableColumns([
+                    2_000_000, 2_000_000, 2_000_000, 2_000_000,
+                  ]),
+                  tableRows: Array.from({ length: 20 }, () => ({
+                    rowHeight: { magnitude: 45_000, unit: 'EMU' },
+                  })),
+                },
+              },
+            ],
+          },
+        ],
+      }
+    )
+
+    expect(slides).toHaveLength(1)
+    expect(slides[0]?.blocks.find((block) => block.type === 'TABLE')?.content).toHaveLength(
+      roadmapContent.length
     )
   })
 })
