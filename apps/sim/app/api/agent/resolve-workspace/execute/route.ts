@@ -730,48 +730,83 @@ export async function POST(req: NextRequest) {
         }
 
         try {
-          // Prefer internal JWT; also forward the caller cookie so AuthType.SESSION
-          // works if JWT verify fails (secret mismatch across pods). Session/JWT
-          // skip the free-plan API-key 402 paywall. Safe because executeUrl is always
-          // getInternalApiBaseUrl() (same app loopback), never an external agent host.
-          const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${await generateInternalToken(userId)}`,
-          }
-          const sessionCookie = req.headers.get('cookie')
-          if (sessionCookie) {
-            headers.Cookie = sessionCookie
+          const executeBody = JSON.stringify({
+            input: body.input,
+            ...(body.conversationId ? { conversationId: body.conversationId } : {}),
+            stream: true,
+            selectedOutputs: body.selectedOutputs,
+            email: session.user.email,
+            userId: session.user.id,
+          })
+
+          /**
+           * Build loopback auth headers.
+           * Prefer Cookie-only (AuthType.SESSION) — never hits the free-plan API-key 402 gate.
+           * Do NOT send Authorization Bearer together with Cookie: an invalid JWT can
+           * short-circuit hybrid auth before session is considered on some paths, and
+           * proxies sometimes strip Bearer on public self-calls.
+           * JWT is the fallback when the inbound request has no cookie.
+           */
+          const buildLoopbackHeaders = async (mode: 'session' | 'jwt'): Promise<{
+            headers: Record<string, string>
+            authType: string
+          }> => {
+            const headers: Record<string, string> = {
+              'Content-Type': 'application/json',
+            }
+            if (mode === 'session') {
+              const sessionCookie = req.headers.get('cookie')
+              if (!sessionCookie) {
+                throw new Error('No session cookie available for loopback execute')
+              }
+              headers.Cookie = sessionCookie
+              return { headers, authType: 'session_cookie' }
+            }
+            headers.Authorization = `Bearer ${await generateInternalToken(userId)}`
+            return { headers, authType: 'internal_jwt' }
           }
 
           // OLD API-key path (disabled — free-plan workspaces return 402):
           // headers['X-API-Key'] = body.userApiKey ?? process.env.SIM_WORKFLOW_API_KEY_UNIFIED!
 
-          // OLD: always authenticated with X-API-Key from resolve payload (often stale → 401).
-          // const headers = {
-          //   'X-API-Key': apiKey,
-          //   'Content-Type': 'application/json',
-          // }
+          const hasInboundCookie = Boolean(req.headers.get('cookie'))
+          const authAttempts: Array<'session' | 'jwt'> = hasInboundCookie
+            ? ['session', 'jwt']
+            : ['jwt']
 
-          logger.info('Executing resolved workspace workflow', {
-            userId,
-            workflowId: body.workflowId,
-            executeUrl,
-            authType: 'internal_jwt+session_cookie',
-            hasSessionCookie: Boolean(sessionCookie),
-          })
+          let upstream: Response | null = null
+          let usedAuthType = 'none'
 
-          const upstream = await fetch(executeUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              input: body.input,
-              ...(body.conversationId ? { conversationId: body.conversationId } : {}),
-              stream: true,
-              selectedOutputs: body.selectedOutputs,
-              email: session.user.email,
-              userId: session.user.id,
-            }),
-          })
+          for (const mode of authAttempts) {
+            const { headers, authType } = await buildLoopbackHeaders(mode)
+            usedAuthType = authType
+            logger.info('Executing resolved workspace workflow', {
+              userId,
+              workflowId: body.workflowId,
+              executeUrl,
+              authType,
+              attempt: mode,
+            })
+            upstream = await fetch(executeUrl, {
+              method: 'POST',
+              headers,
+              body: executeBody,
+            })
+            // Retry with the next auth mode on paywall / auth failures.
+            if (upstream.ok || (upstream.status !== 401 && upstream.status !== 402)) {
+              break
+            }
+            logger.warn('Loopback execute auth attempt failed; trying next mode', {
+              userId,
+              workflowId: body.workflowId,
+              authType,
+              status: upstream.status,
+            })
+          }
+
+          if (!upstream) {
+            throw new Error('No upstream workflow response')
+          }
 
           const persistBeforeComplete = async () => {
             if (!body.conversationId || !accumulatedAssistantText.trim()) return
@@ -799,13 +834,13 @@ export async function POST(req: NextRequest) {
               userId,
               workflowId: body.workflowId,
               status: upstream.status,
-              authType: 'internal_jwt',
+              authType: usedAuthType,
               executeUrl,
               error: errorText,
             })
             const userFacingError =
               upstream.status === 402
-                ? 'This workflow could not run because programmatic API execution requires a paid plan. Retrying uses your logged-in session instead — please refresh and try again.'
+                ? 'This workflow could not run because of a billing restriction on API-key execution. Please refresh and try again.'
                 : upstream.status === 401
                   ? 'Workflow authentication failed. Please refresh and try again.'
                   : 'Failed to execute workflow request. Please try again.'
@@ -816,7 +851,6 @@ export async function POST(req: NextRequest) {
               error: `Workflow request failed with status ${upstream.status}`,
               scope: runScope,
             })
-            // Persist error text so finalize→refetch does not wipe the UI empty.
             await persistBeforeComplete()
             emitEvent({
               v: 1,

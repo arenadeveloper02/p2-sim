@@ -3316,6 +3316,36 @@ export function useChat(
           | { workflowId: string; selectedOutputs: string[]; userApiKey: string }
           | undefined
           | undefined
+
+        // Create the mothership chat BEFORE resolve on first embed message so
+        // conversationId/URL are ready before the workflow execute stream starts.
+        if (effectiveIsEmbedPageRef.current && !requestChatId) {
+          try {
+            const createChatResponse = await fetch('/api/mothership/chats', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ workspaceId }),
+              signal: abortController.signal,
+            })
+            if (createChatResponse.ok) {
+              const createChatData = await createChatResponse.json()
+              if (typeof createChatData.id === 'string' && createChatData.id.length > 0) {
+                requestChatId = createChatData.id
+                adoptResolvedChatId(createChatData.id, {
+                  replaceHomeHistory: true,
+                  invalidateList: true,
+                })
+                applyOptimisticSend()
+                streamTargetChatId = requestChatId
+              }
+            }
+          } catch (error) {
+            logger.warn('Failed to create mothership chat before workspace resolve', {
+              error: getErrorMessage(error),
+            })
+          }
+        }
+
         if (effectiveIsEmbedPageRef.current) {
           try {
             const currentMessages = messagesRef.current
@@ -3359,6 +3389,8 @@ export function useChat(
 
         const isResolvedWorkflowExecution = Boolean(resolvedWorkflowExecution)
         if (isResolvedWorkflowExecution) {
+          // Chat create already handled above for first embed message.
+          // Keep this block only if create-before-resolve was skipped/failed.
           if (!requestChatId) {
             try {
               const createChatResponse = await fetch('/api/mothership/chats', {
@@ -3371,7 +3403,6 @@ export function useChat(
                 const createChatData = await createChatResponse.json()
                 if (typeof createChatData.id === 'string' && createChatData.id.length > 0) {
                   requestChatId = createChatData.id
-                  // Adopt chat id + embed URL before the workflow execution stream starts.
                   adoptResolvedChatId(createChatData.id, {
                     replaceHomeHistory: true,
                     invalidateList: true,
@@ -3385,12 +3416,7 @@ export function useChat(
               })
             }
           }
-          // NEW: rebind after possible mid-flow chat creation.
-          // streamTargetChatId was assigned earlier (before resolve/create), so without
-          // this the SSE flush could miss targetChatId for a freshly created chat.
           streamTargetChatId = requestChatId
-          // OLD: left streamTargetChatId as the pre-create value (often undefined).
-          // streamTargetChatId = requestChatId // (was only set once, before resolve)
         }
         const executionConfig = resolvedWorkflowExecution
         const response = isResolvedWorkflowExecution
@@ -3402,7 +3428,9 @@ export function useChat(
                 input: message,
                 conversationId: requestChatId ?? chatIdRef.current,
                 selectedOutputs: executionConfig?.selectedOutputs ?? [],
-                userApiKey: executionConfig?.userApiKey,
+                // Do not send userApiKey — execute uses session/JWT loopback.
+                // Sending it encouraged API-key auth (402 on free plans) on older deploys.
+                // userApiKey: executionConfig?.userApiKey,
               }),
               signal: abortController.signal,
             })
