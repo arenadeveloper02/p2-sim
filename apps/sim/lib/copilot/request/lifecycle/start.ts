@@ -499,7 +499,7 @@ export async function requestChatTitle(params: {
   if (!message || !model) return null
 
   if (
-    isLocalCopilotEnabledForUser(userEmail) &&
+    (await isLocalCopilotEnabledForUser(userId)) &&
     copilotBackend !== 'external'
   ) {
     const trimmed = message.trim().replace(/\s+/g, ' ')

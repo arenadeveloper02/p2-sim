@@ -1,4 +1,4 @@
-import { resolveSimAgentApiUrl } from '@/local-copilot/lib/routing'
+import { resolveSimAgentApiUrl } from '@/local-copilot/lib/sim-agent-url'
 
 export const SIM_AGENT_API_URL_DEFAULT = 'https://www.copilot.sim.ai'
 export const SIM_AGENT_VERSION = '3.0.0'

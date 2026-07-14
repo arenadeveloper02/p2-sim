@@ -166,11 +166,10 @@ export async function runCopilotLifecycle(
     }
 
     if (
-      shouldRouteToLocalCopilot({
+      await shouldRouteToLocalCopilot({
         workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId,
         workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId,
         userId: lifecycleOptions.userId,
-        userEmail: lifecycleOptions.userEmail,
         copilotBackend: lifecycleOptions.copilotBackend,
       })
     ) {

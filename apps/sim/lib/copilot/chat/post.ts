@@ -46,7 +46,7 @@ import { persistChatResources } from '@/lib/copilot/resources/persistence'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { resolveWorkflowIdForUser } from '@/lib/workflows/utils'
-import { isUserAllowedForLocalCopilot } from '@/local-copilot/lib/config'
+import { isUserAllowedForLocalCopilot } from '@/local-copilot/lib/access'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import {
@@ -732,13 +732,13 @@ export async function handleUnifiedChatPost(req: NextRequest) {
 
     const body = ChatMessageSchema.parse(await req.json())
     const requestedCopilotBackend = parseCopilotBackendPreference(body.copilotBackend)
+    const userAllowedForLocal = await isUserAllowedForLocalCopilot(authenticatedUserId)
     const copilotBackend: CopilotBackendPreference | undefined =
-      requestedCopilotBackend === 'local' &&
-      isUserAllowedForLocalCopilot(authenticatedUserEmail)
+      requestedCopilotBackend === 'local' && userAllowedForLocal
         ? 'local'
         : requestedCopilotBackend === 'external'
           ? 'external'
-          : isUserAllowedForLocalCopilot(authenticatedUserEmail)
+          : userAllowedForLocal
             ? 'local'
             : 'external'
     const userMetadata = {

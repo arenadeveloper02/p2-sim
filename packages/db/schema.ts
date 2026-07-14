@@ -2551,6 +2551,28 @@ export const localCopilotAuditLogs = pgTable(
   })
 )
 
+/**
+ * Per-user Arena Copilot allowlist. Access is denied unless a row exists for the
+ * user with `hasAccess = true`. Managed via SQL only (no admin UI).
+ */
+export const localCopilotUserAccess = pgTable(
+  'local_copilot_user_access',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    hasAccess: boolean('has_access').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdUnique: uniqueIndex('local_copilot_user_access_user_id_uidx').on(table.userId),
+    emailIdx: index('local_copilot_user_access_email_idx').on(table.email),
+  })
+)
+
 export type LocalCopilotPatchStatus = (typeof localCopilotPatchStatusEnum.enumValues)[number]
 export type LocalCopilotAuditStatus = (typeof localCopilotAuditStatusEnum.enumValues)[number]
 

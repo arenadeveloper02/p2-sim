@@ -4,13 +4,11 @@ import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { parseRequest } from '@/lib/api/server'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
 import {
   getLocalCopilotConfig,
-  getLocalCopilotAllowedEmails,
   isSelfHostedDeployment,
-  isUserAllowedForLocalCopilot,
 } from '@/local-copilot/lib/config'
-import { resolveUserEmailForCopilot } from '@/local-copilot/lib/resolve-user-email'
 import { getLocalCopilotConfigContract } from '@/local-copilot/contracts/local-copilot'
 
 const logger = createLogger('LocalCopilotConfigAPI')
@@ -25,12 +23,13 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   if (!parsed.success) return parsed.response
 
   const config = getLocalCopilotConfig()
-  const userEmail = await resolveUserEmailForCopilot(session.user.id, session.user.email)
-  const canSwitchBackend =
-    config.enabled &&
-    (getLocalCopilotAllowedEmails().length === 0 || isUserAllowedForLocalCopilot(userEmail))
+  const canSwitchBackend = await isLocalCopilotEnabledForUser(session.user.id)
   const enabled = canSwitchBackend
-  logger.info('Returning Arena Copilot config', { enabled, canSwitchBackend, userEmail })
+  logger.info('Returning Arena Copilot config', {
+    enabled,
+    canSwitchBackend,
+    userId: session.user.id,
+  })
 
   return NextResponse.json({
     enabled,

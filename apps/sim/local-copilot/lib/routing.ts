@@ -1,8 +1,9 @@
 import { createLogger } from '@sim/logger'
-import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
+import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import { env } from '@/lib/core/config/env'
+
+export { resolveSimAgentApiUrl } from '@/local-copilot/lib/sim-agent-url'
 
 const logger = createLogger('LocalCopilotRouting')
 
@@ -20,20 +21,19 @@ function extractNonEmpty(value: unknown): string | undefined {
 }
 
 /**
- * When Arena Copilot is enabled, all copilot chat (home + workflow) is handled in-process.
+ * When Arena Copilot is enabled and the user is on the DB allowlist,
+ * all copilot chat (home + workflow) is handled in-process.
  * Requires workspace and user context; workflow is optional (home chat has none).
  */
-export function shouldRouteToLocalCopilot(params: {
+export async function shouldRouteToLocalCopilot(params: {
   workflowId?: unknown
   workspaceId?: unknown
   userId?: unknown
-  userEmail?: unknown
   copilotBackend?: unknown
-}): boolean {
+}): Promise<boolean> {
   const workspaceId = extractNonEmpty(params.workspaceId)
   const userId = extractNonEmpty(params.userId)
   const workflowId = extractNonEmpty(params.workflowId)
-  const userEmail = typeof params.userEmail === 'string' ? params.userEmail : undefined
   const preference = parseCopilotBackendPreference(params.copilotBackend)
   const config = getLocalCopilotConfig()
 
@@ -49,15 +49,14 @@ export function shouldRouteToLocalCopilot(params: {
     return false
   }
 
-  if (!isLocalCopilotEnabledForUser(userEmail)) {
+  if (!(await isLocalCopilotEnabledForUser(userId))) {
     logger.info('Arena Copilot route skipped', {
-      reason: 'disabled_or_email_not_allowed',
+      reason: 'disabled_or_user_not_allowed',
       workspaceId,
       userId,
       workflowId: workflowId ?? null,
       preference,
       copilotEnabled: config.enabled,
-      hasUserEmail: Boolean(userEmail?.trim()),
     })
     return false
   }
@@ -87,17 +86,6 @@ export function shouldRouteToLocalCopilot(params: {
   return true
 }
 
-/**
- * Resolves SIM_AGENT_API_URL for legacy call sites.
- */
-export function resolveSimAgentApiUrl(fallbackDefault: string): string {
-  const raw = env.SIM_AGENT_API_URL?.trim()
-  if (raw?.startsWith('http://') || raw?.startsWith('https://')) {
-    return raw
-  }
-  return fallbackDefault
-}
-
-export function shouldUseLocalCopilotChat(userEmail?: string | null): boolean {
-  return isLocalCopilotEnabledForUser(userEmail)
+export async function shouldUseLocalCopilotChat(userId?: string | null): Promise<boolean> {
+  return isLocalCopilotEnabledForUser(userId)
 }
