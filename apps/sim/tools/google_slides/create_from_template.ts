@@ -1,14 +1,17 @@
-import { SignJWT } from 'jose'
 import { createLogger } from '@sim/logger'
-import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
-import type { ToolConfig } from '@/tools/types'
+import { SignJWT } from 'jose'
 import {
+  appendTableContinuationTitleSuffix,
   buildTableCellTextEndIndexMap,
   buildTableContentRequests,
   expandSlidesForTableOverflow,
   findTableColumnLayout,
   findTableDimensions,
+  measureFilledTableOnSlide,
+  splitTableContentByMeasuredRowHeights,
 } from '@/tools/google_slides/create-from-template-table'
+import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
+import type { ToolConfig } from '@/tools/types'
 import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
 
@@ -180,7 +183,6 @@ function isSimInternalImageUrl(url: string): boolean {
     return false
   }
 }
-
 
 /**
  * Generates a short-lived internal JWT that satisfies `checkSessionOrInternalAuth` on
@@ -398,6 +400,210 @@ async function getPresentationSlides(
   }))
 }
 
+interface TrackedTableSlide {
+  tableObjectId: string
+  slideObjectId: string
+  templateSlideObjectId: string
+  shapeMap: Record<string, string>
+  block: BlockLike
+  content: string[][]
+  blocks: BlockLike[]
+}
+
+function isTableTitleBlock(block: BlockLike): boolean {
+  return block.type === 'TEXT' && (block.role === 'TITLE' || block.key === 'title')
+}
+
+/**
+ * After tables are filled, measures rendered height on each slide and moves overflow
+ * rows to continuation slides duplicated from the source slide.
+ */
+async function resolvePostFillTableOverflow(
+  accessToken: string,
+  presentationId: string,
+  trackedTables: TrackedTableSlide[]
+): Promise<number> {
+  const MAX_ROUNDS = 16
+  let continuationSlides = 0
+  const tables = [...trackedTables]
+
+  for (let round = 0; round < MAX_ROUNDS; round += 1) {
+    const presRes = await fetchWithRetry(
+      `https://slides.googleapis.com/v1/presentations/${presentationId}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    const presData = await presRes.json()
+    if (!presRes.ok) {
+      throw new Error(presData.error?.message || 'Failed to read presentation for table overflow')
+    }
+
+    const cellTextEndIndexMap = buildTableCellTextEndIndexMap(presData)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const batchRequests: any[] = []
+    const nextTables: TrackedTableSlide[] = []
+    let fixesThisRound = 0
+
+    for (const tracked of tables) {
+      const measured = measureFilledTableOnSlide(presData, tracked.tableObjectId)
+      if (!measured?.isOverflowing) {
+        nextTables.push(tracked)
+        continue
+      }
+
+      const split = splitTableContentByMeasuredRowHeights({
+        content: tracked.content,
+        measured,
+        headerRow: tracked.block.headerRow,
+      })
+      if (!split || split.overflowContent.length === 0) {
+        nextTables.push(tracked)
+        continue
+      }
+
+      const dimensions = findTableDimensions(presData, tracked.tableObjectId)
+      const layout = findTableColumnLayout(presData, tracked.tableObjectId)
+      if (!dimensions) {
+        nextTables.push(tracked)
+        continue
+      }
+
+      const newSlideId = generateObjectId()
+      const duplicateObjectIds: Record<string, string> = {
+        [tracked.slideObjectId]: newSlideId,
+      }
+      for (const objectId of Object.values(tracked.shapeMap)) {
+        if (objectId === tracked.slideObjectId) continue
+        duplicateObjectIds[objectId] = generateObjectId()
+      }
+
+      batchRequests.push({
+        duplicateObject: {
+          objectId: tracked.slideObjectId,
+          objectIds: duplicateObjectIds,
+        },
+      })
+
+      batchRequests.push({
+        updateSlidesPosition: {
+          slideObjectIds: [newSlideId],
+          insertionIndex:
+            (presData.slides ?? []).findIndex(
+              (slide: { objectId?: string }) => slide.objectId === tracked.slideObjectId
+            ) + 1,
+        },
+      })
+
+      const newTableObjectId = duplicateObjectIds[tracked.tableObjectId]
+      if (!newTableObjectId) {
+        nextTables.push(tracked)
+        continue
+      }
+
+      const continuationContent =
+        tracked.block.headerRow && tracked.content[0]
+          ? [tracked.content[0], ...split.overflowContent]
+          : split.overflowContent
+
+      batchRequests.push(
+        ...buildTableContentRequests({
+          tableObjectId: tracked.tableObjectId,
+          content: split.fitContent,
+          templateRows: dimensions.rows,
+          templateColumns: dimensions.columns,
+          maxRows: tracked.block.maxRows,
+          maxColumns: tracked.block.maxColumns,
+          minRows: tracked.block.minRows,
+          minColumns: tracked.block.minColumns,
+          cellTextEndIndexMap,
+          layout: layout ?? undefined,
+        })
+      )
+
+      batchRequests.push(
+        ...buildTableContentRequests({
+          tableObjectId: newTableObjectId,
+          content: continuationContent,
+          templateRows: dimensions.rows,
+          templateColumns: dimensions.columns,
+          maxRows: tracked.block.maxRows,
+          maxColumns: tracked.block.maxColumns,
+          minRows: tracked.block.minRows,
+          minColumns: tracked.block.minColumns,
+          cellTextEndIndexMap,
+          layout: layout ?? undefined,
+        })
+      )
+
+      const titleBlock = tracked.blocks.find(isTableTitleBlock)
+      const titleTemplateShapeId = titleBlock?.shapeId
+      const titleObjectId =
+        titleTemplateShapeId != null ? tracked.shapeMap[titleTemplateShapeId] : undefined
+      const newTitleObjectId = titleObjectId != null ? duplicateObjectIds[titleObjectId] : undefined
+
+      if (
+        newTitleObjectId &&
+        titleBlock &&
+        typeof titleBlock.content === 'string' &&
+        titleBlock.content
+      ) {
+        const continuedTitle = appendTableContinuationTitleSuffix(titleBlock.content)
+        batchRequests.push({
+          deleteText: { objectId: newTitleObjectId, textRange: { type: 'ALL' } },
+        })
+        batchRequests.push({
+          insertText: { objectId: newTitleObjectId, insertionIndex: 0, text: continuedTitle },
+        })
+      }
+
+      nextTables.push({ ...tracked, content: split.fitContent })
+      nextTables.push({
+        ...tracked,
+        slideObjectId: newSlideId,
+        tableObjectId: newTableObjectId,
+        shapeMap: Object.fromEntries(
+          Object.entries(tracked.shapeMap).map(([templateShapeId, objectId]) => [
+            templateShapeId,
+            duplicateObjectIds[objectId] ?? objectId,
+          ])
+        ),
+        content: continuationContent,
+      })
+
+      fixesThisRound += 1
+      continuationSlides += 1
+    }
+
+    tables.length = 0
+    tables.push(...nextTables)
+
+    if (fixesThisRound === 0) break
+
+    const batchRes = await fetchWithRetry(
+      `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requests: batchRequests }),
+      }
+    )
+
+    if (!batchRes.ok) {
+      const errData = await batchRes.json()
+      logger.error('Post-fill table overflow batch failed', {
+        presentationId,
+        status: batchRes.status,
+        error: errData.error?.message,
+      })
+      throw new Error(errData.error?.message || 'Failed to resolve table overflow after fill')
+    }
+  }
+
+  return continuationSlides
+}
+
 export const createFromTemplateTool: ToolConfig<
   CreateFromTemplateParams,
   CreateFromTemplateResponse
@@ -489,18 +695,15 @@ export const createFromTemplateTool: ToolConfig<
     )
     const templatePresData = await templatePresRes.json()
     if (!templatePresRes.ok) {
-      throw new Error(templatePresData.error?.message || 'Failed to read template presentation for tables')
+      throw new Error(
+        templatePresData.error?.message || 'Failed to read template presentation for tables'
+      )
     }
 
     const slidesOrdered = expandSlidesForTableOverflow([...schema.slides], templatePresData)
-    if (slidesOrdered.length > schema.slides.length) {
-      logger.info('Expanded slides for table overflow', {
-        originalSlideCount: schema.slides.length,
-        expandedSlideCount: slidesOrdered.length,
-      })
-    }
 
     const slideIndexToShapeMap: Record<string, string>[] = []
+    const trackedTables: TrackedTableSlide[] = []
 
     // 2. Duplicate Slides & Reorder (Batch)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -609,7 +812,6 @@ export const createFromTemplateTool: ToolConfig<
       source?: BlockLike['source']
     }[] = []
 
-
     for (let s = 0; s < slidesOrdered.length; s++) {
       const slideSchema = slidesOrdered[s] as SlideLike
       const shapeMap = slideIndexToShapeMap[s] ?? {}
@@ -673,6 +875,23 @@ export const createFromTemplateTool: ToolConfig<
               layout: layout ?? undefined,
             })
           )
+
+          const slideObjectId = shapeMap[slideSchema.templateSlideObjectId]
+          if (slideObjectId) {
+            trackedTables.push({
+              tableObjectId,
+              slideObjectId,
+              templateSlideObjectId: slideSchema.templateSlideObjectId,
+              shapeMap,
+              block,
+              content: tableContent.map((row) =>
+                Array.isArray(row)
+                  ? row.map((cell) => (typeof cell === 'string' ? cell : String(cell ?? '')))
+                  : []
+              ),
+              blocks,
+            })
+          }
         } else if (block.type === 'IMAGE' && content) {
           const imageUrl = typeof content === 'string' ? content : ''
           if (imageUrl) {
@@ -796,10 +1015,29 @@ export const createFromTemplateTool: ToolConfig<
       }
     }
 
+    let continuationSlides = 0
+    if (trackedTables.length > 0) {
+      logger.info('Resolving table overflow from measured slide layout', {
+        presentationId,
+        tableCount: trackedTables.length,
+      })
+      continuationSlides = await resolvePostFillTableOverflow(
+        accessToken,
+        presentationId,
+        trackedTables
+      )
+      if (continuationSlides > 0) {
+        logger.info('Created continuation slides from measured table overflow', {
+          presentationId,
+          continuationSlides,
+        })
+      }
+    }
+
     logger.info('Create from template completed', {
       presentationId,
       title: presentationName,
-      slidesCreated: slidesOrdered.length,
+      slidesCreated: slidesOrdered.length + continuationSlides,
     })
 
     return {
@@ -808,7 +1046,7 @@ export const createFromTemplateTool: ToolConfig<
         presentationId,
         title: presentationName,
         url: `https://docs.google.com/presentation/d/${presentationId}/edit`,
-        slidesCreated: slidesOrdered.length,
+        slidesCreated: slidesOrdered.length + continuationSlides,
       },
     }
   },

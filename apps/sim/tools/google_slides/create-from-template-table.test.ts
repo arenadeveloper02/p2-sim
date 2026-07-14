@@ -16,9 +16,12 @@ import {
   findTableColumnLayout,
   findTableDimensions,
   findTableSlideLayout,
+  measureFilledTableOnSlide,
   normalizeTableContent,
+  resolveKeptTableTotalWidth,
   resolveTableColumnWidthsForSplit,
   splitTableContentAcrossSlides,
+  splitTableContentByMeasuredRowHeights,
 } from '@/tools/google_slides/create-from-template-table'
 
 describe('normalizeTableContent', () => {
@@ -187,6 +190,54 @@ describe('buildTableColumnWidthRequests', () => {
     ).toBeGreaterThan(
       narrowColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
+
+    const widths = requests.map(
+      (request) =>
+        (
+          request as {
+            updateTableColumnProperties: {
+              tableColumnProperties: { columnWidth: { magnitude: number } }
+            }
+          }
+        ).updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+    )
+    expect(widths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(2_000_000, -2)
+  })
+
+  it('does not expand past the kept-column template width when trailing columns were removed', () => {
+    const requests = buildTableColumnWidthRequests({
+      tableObjectId: 'table_1',
+      keepColumns: 5,
+      layout: {
+        columnWidths: Array.from({ length: 8 }, () => 1_000_000),
+      },
+      content: [
+        ['Heuristic', 'Finding', 'Severity', 'Header 3', 'Header 4'],
+        [
+          'Visibility of System Status',
+          'No loading indicators shown on form submission',
+          '2 - Medium',
+          'Text',
+          'Text',
+        ],
+      ],
+    })
+
+    const widths = requests.map(
+      (request) =>
+        (
+          request as {
+            updateTableColumnProperties: {
+              tableColumnProperties: { columnWidth: { magnitude: number } }
+            }
+          }
+        ).updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+    )
+
+    expect(widths).toHaveLength(5)
+    expect(widths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(5_000_000, -2)
+    expect(widths[1]).toBeGreaterThan(widths[0]!)
+    expect(widths[1]).toBeGreaterThan(widths[2]!)
   })
 
   it('applies content-based widths even when no columns were removed', () => {
@@ -325,6 +376,14 @@ describe('buildTableContentRequests', () => {
         text: 'Heuristic',
       },
     })
+  })
+})
+
+describe('resolveKeptTableTotalWidth', () => {
+  it('sums only the leading kept columns from the template layout', () => {
+    expect(
+      resolveKeptTableTotalWidth({ columnWidths: Array.from({ length: 8 }, () => 1_000_000) }, 5)
+    ).toBe(5_000_000)
   })
 })
 
@@ -622,8 +681,101 @@ describe('splitTableContentAcrossSlides', () => {
   })
 })
 
+describe('measureFilledTableOnSlide', () => {
+  it('detects when a filled table extends past the slide bottom margin', () => {
+    const measured = measureFilledTableOnSlide(
+      {
+        pageSize: { height: { magnitude: 5_000_000, unit: 'EMU' } },
+        slides: [
+          {
+            objectId: 'slide_1',
+            pageElements: [
+              {
+                objectId: 'table_1',
+                size: { height: { magnitude: 4_500_000, unit: 'EMU' } },
+                transform: { scaleY: 1, translateY: 1_000_000 },
+                table: {
+                  rows: 3,
+                  tableRows: [
+                    { rowHeight: { magnitude: 1_500_000, unit: 'EMU' } },
+                    { rowHeight: { magnitude: 1_500_000, unit: 'EMU' } },
+                    { rowHeight: { magnitude: 1_500_000, unit: 'EMU' } },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    expect(measured?.isOverflowing).toBe(true)
+    expect(measured?.rowHeightsEmu).toEqual([1_500_000, 1_500_000, 1_500_000])
+  })
+})
+
+describe('splitTableContentByMeasuredRowHeights', () => {
+  const nielsenRows = [
+    ['Heuristic', 'Finding', 'Severity', 'Header 3', 'Header 4'],
+    [
+      'Visibility of System Status',
+      'No loading indicators shown on form submission',
+      '2 - Medium',
+      'Text',
+      'Text',
+    ],
+    [
+      'Match Between System & Real World',
+      'Technical jargon used in error messages',
+      '1 - Low',
+      'Text',
+      'Text',
+    ],
+    [
+      'User Control & Freedom',
+      'No undo option after deleting a record',
+      '3 - High',
+      'Text',
+      'Text',
+    ],
+    [
+      'Consistency & Standards',
+      'Inconsistent button styles across pages',
+      '2 - Medium',
+      'Text',
+      'Text',
+    ],
+  ]
+
+  it('splits overflow rows using measured per-row heights', () => {
+    const measured = {
+      tableObjectId: 'table_1',
+      tableTopEmu: 1_000_000,
+      tableHeightEmu: 4_500_000,
+      tableBottomEmu: 5_500_000,
+      slideHeightEmu: 5_000_000,
+      maxBottomEmu: 4_500_000,
+      availableHeightEmu: 3_500_000,
+      isOverflowing: true,
+      rowHeightsEmu: [400_000, 900_000, 900_000, 900_000, 900_000],
+      rowCount: 5,
+    }
+
+    const split = splitTableContentByMeasuredRowHeights({
+      content: nielsenRows,
+      measured,
+      headerRow: false,
+    })
+
+    expect(split?.rowsToKeep).toBe(4)
+    expect(split?.fitContent).toHaveLength(4)
+    expect(split?.overflowContent).toHaveLength(1)
+  })
+})
+
 describe('expandSlidesForTableOverflow', () => {
-  it('duplicates slide entries when table content requires continuation slides', () => {
+  it('returns slides unchanged because overflow is resolved after fill', () => {
     const longCell = 'A'.repeat(120)
     const slides = expandSlidesForTableOverflow(
       [
@@ -651,150 +803,11 @@ describe('expandSlidesForTableOverflow', () => {
           ],
         },
       ],
-      {
-        slides: [
-          {
-            pageElements: [
-              {
-                objectId: 'table_1',
-                size: { height: { magnitude: 900_000, unit: 'EMU' } },
-                transform: { scaleY: 1 },
-                table: {
-                  rows: 10,
-                  columns: 3,
-                  tableColumns: columnWidthsToTableColumns([900_000, 900_000, 900_000]),
-                  tableRows: Array.from({ length: 10 }, () => ({
-                    rowHeight: { magnitude: 90_000, unit: 'EMU' },
-                  })),
-                },
-              },
-            ],
-          },
-        ],
-      }
-    )
-
-    expect(slides.length).toBeGreaterThan(1)
-    expect(slides.every((slide) => slide.templateSlideObjectId === 'slide_tpl')).toBe(true)
-    const tableChunks = slides.map(
-      (slide) => slide.blocks.find((block) => block.type === 'TABLE')?.content
-    )
-    expect(tableChunks[0]?.[0]).toEqual(['Col A', 'Col B', 'Col C'])
-    expect(tableChunks[1]?.[0]).toEqual(['Col A', 'Col B', 'Col C'])
-
-    expect(slides[0]?.blocks.find((block) => block.type === 'TEXT')?.content).toBe('My Table')
-    expect(slides[1]?.blocks.find((block) => block.type === 'TEXT')?.content).toBe(
-      'My Table (continued)'
-    )
-  })
-
-  it('keeps a priority roadmap on one slide when template columns are narrow but slide space allows', () => {
-    const roadmapContent = [
-      ['', 'Action Item', 'Impact', 'Effort'],
-      [
-        'P0',
-        'Remove portrait-mode lock; build true responsive layouts for mobile and tablet',
-        'High',
-        'Low',
-      ],
-      [
-        'P0',
-        'Differentiate hero slides with 3–4 distinct value props and add dual CTA',
-        'High',
-        'Low',
-      ],
-      [
-        'P1',
-        'Defer/facade Vimeo embeds and compress PNG/WebP image assets for faster load',
-        'High',
-        'Medium',
-      ],
-      [
-        'P1',
-        'Fix all alt attributes and run a full WCAG 2.1 AA accessibility audit pass',
-        'Medium',
-        'Low',
-      ],
-      [
-        'P1',
-        'Add sticky header CTA and section-level CTAs across the full homepage',
-        'High',
-        'Low',
-      ],
-      [
-        'P2',
-        'Convert the CRO PDF into an on-site case study page with embedded metrics',
-        'Medium',
-        'Medium',
-      ],
-      [
-        'P2',
-        'Consolidate duplicate Arena sections and add quantified outcome proof captions',
-        'Medium',
-        'Low',
-      ],
-      [
-        'P2',
-        'Add 1–2 client testimonials near primary CTA and a gated lead magnet offer',
-        'High',
-        'Medium',
-      ],
-    ]
-
-    const slides = expandSlidesForTableOverflow(
-      [
-        {
-          order: 1,
-          templateSlideObjectId: 'slide_tpl',
-          blocks: [
-            {
-              type: 'TEXT',
-              role: 'TITLE',
-              shapeId: 'title_1',
-              content: 'Priority Roadmap: P0 -> P1 -> P2 Actions',
-            },
-            {
-              type: 'TABLE',
-              shapeId: 'table_1',
-              headerRow: true,
-              maxRows: 20,
-              maxColumns: 4,
-              minRows: 2,
-              content: roadmapContent,
-            },
-          ],
-        },
-      ],
-      {
-        pageSize: { height: { magnitude: 5_143_500, unit: 'EMU' } },
-        slides: [
-          {
-            pageElements: [
-              {
-                objectId: 'table_1',
-                size: { height: { magnitude: 900_000, unit: 'EMU' } },
-                transform: { scaleY: 1, translateY: 1_300_000 },
-                table: {
-                  rows: 20,
-                  columns: 4,
-                  tableColumns: columnWidthsToTableColumns([
-                    2_000_000, 2_000_000, 2_000_000, 2_000_000,
-                  ]),
-                  tableRows: Array.from({ length: 20 }, () => ({
-                    rowHeight: { magnitude: 45_000, unit: 'EMU' },
-                  })),
-                },
-              },
-            ],
-          },
-        ],
-      }
+      { slides: [] }
     )
 
     expect(slides).toHaveLength(1)
-    expect(slides[0]?.blocks.find((block) => block.type === 'TABLE')?.content).toHaveLength(
-      roadmapContent.length
-    )
+    expect(slides[0]?.blocks.find((block) => block.type === 'TABLE')?.content).toHaveLength(11)
   })
 })
 
