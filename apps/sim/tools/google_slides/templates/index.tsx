@@ -282,8 +282,7 @@ function buildTemplateSchema(): PresentationSchema {
               'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
             generationPrompt: '',
             shapeId: 'g392319e7c15_4_335',
-            description:
-              'Photo for the left column. Visually represents the left section topic.',
+            description: 'Photo for the left column. Visually represents the left section topic.',
             content: '',
           },
           {
@@ -358,8 +357,7 @@ function buildTemplateSchema(): PresentationSchema {
               'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
             generationPrompt: '',
             shapeId: 'g392319e7c15_4_336',
-            description:
-              'Photo for the right column. Visually represents the right section topic.',
+            description: 'Photo for the right column. Visually represents the right section topic.',
             content: '',
           },
           {
@@ -7093,7 +7091,7 @@ function buildTemplateSchema(): PresentationSchema {
             minColumns: 2,
             rowLabelColumn: true,
             description:
-              'Flexible data table from minRows×minColumns up to maxRows×maxColumns. Put row labels in the first column; put values in the remaining columns. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically (never below minRows/minColumns). If rows exceed the slide height, additional slides are created using the same template; continuation slides append " (continued)" to the title.',
+              'Flexible data table from minRows×minColumns up to maxRows×maxColumns. Put row labels in the first column; put values in the remaining columns. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically (never below minRows/minColumns). If body rows exceed the template table row slots, additional slides are created using the same template; continuation slides append " (continued)" to the title.',
             content: [],
             cellConstraints: {
               minChars: 1,
@@ -7132,7 +7130,7 @@ function buildTemplateSchema(): PresentationSchema {
             headerRow: true,
             rowLabelColumn: true,
             description:
-              'Flexible table with header row and row labels, from minRows×minColumns up to maxRows×maxColumns. Header row: leave the first column empty (corner), put column headers in the remaining columns. Body rows: first column = row label, remaining columns = data. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically (never below minRows/minColumns). If rows exceed the slide height, additional slides repeat the header row and remaining body rows; continuation slides append " (continued)" to the title.',
+              'Flexible table with header row and row labels, from minRows×minColumns up to maxRows×maxColumns. Header row: leave the first column empty (corner), put column headers in the remaining columns. Body rows: first column = row label, remaining columns = data. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically (never below minRows/minColumns). If body rows exceed the template table row slots, additional slides repeat the header row and remaining body rows; continuation slides append " (continued)" to the title.',
             content: [],
             cellConstraints: {
               minChars: 1,

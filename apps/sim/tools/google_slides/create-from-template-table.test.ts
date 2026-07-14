@@ -3,15 +3,16 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  appendTableContinuationTitleSuffix,
   buildTableCellTextEndIndexMap,
   buildTableColumnWidthRequests,
   buildTableContentRequests,
+  computeBodyRowsPerSlide,
   computeColumnContentWeights,
   computeMaxRowsThatFitOnSlide,
   distributeColumnWidthsByContent,
   estimateCellLineCount,
   expandSlidesForTableOverflow,
-  appendTableContinuationTitleSuffix,
   findTableColumnLayout,
   findTableDimensions,
   findTableSlideLayout,
@@ -107,7 +108,10 @@ describe('buildTableCellTextEndIndexMap', () => {
                       {
                         location: { columnIndex: 1 },
                         text: {
-                          textElements: [{ endIndex: 9 }, { endIndex: 9, textRun: { content: 'Header 1\n' } }],
+                          textElements: [
+                            { endIndex: 9 },
+                            { endIndex: 9, textRun: { content: 'Header 1\n' } },
+                          ],
                         },
                       },
                     ],
@@ -177,7 +181,9 @@ describe('buildTableColumnWidthRequests', () => {
       updateTableColumnProperties: { tableColumnProperties: { columnWidth: { magnitude: number } } }
     }
 
-    expect(wideColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude).toBeGreaterThan(
+    expect(
+      wideColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+    ).toBeGreaterThan(
       narrowColumn.updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
   })
@@ -195,8 +201,13 @@ describe('buildTableColumnWidthRequests', () => {
     expect(requests).toHaveLength(3)
     const widths = requests.map(
       (request) =>
-        (request as { updateTableColumnProperties: { tableColumnProperties: { columnWidth: { magnitude: number } } } })
-          .updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+        (
+          request as {
+            updateTableColumnProperties: {
+              tableColumnProperties: { columnWidth: { magnitude: number } }
+            }
+          }
+        ).updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
     expect(widths[1]).toBeGreaterThan(widths[0])
     expect(widths[1]).toBeGreaterThan(widths[2])
@@ -261,8 +272,13 @@ describe('buildTableContentRequests', () => {
 
     const widths = columnUpdates.map(
       (request) =>
-        (request as { updateTableColumnProperties: { tableColumnProperties: { columnWidth: { magnitude: number } } } })
-          .updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
+        (
+          request as {
+            updateTableColumnProperties: {
+              tableColumnProperties: { columnWidth: { magnitude: number } }
+            }
+          }
+        ).updateTableColumnProperties.tableColumnProperties.columnWidth.magnitude
     )
     expect(widths[1]).toBeGreaterThan(widths[0]!)
   })
@@ -343,6 +359,34 @@ describe('findTableSlideLayout', () => {
   })
 })
 
+describe('computeBodyRowsPerSlide', () => {
+  const slideLayout = {
+    heightBudgetEmu: 3_000_000,
+    templateRowHeightsEmu: Array.from({ length: 8 }, () => 375_000),
+  }
+
+  it('derives body row slots from template row count minus header', () => {
+    expect(
+      computeBodyRowsPerSlide({
+        slideLayout,
+        headerRow: true,
+        maxRows: 20,
+      })
+    ).toBe(7)
+  })
+
+  it('respects an explicit rowsPerSlide override', () => {
+    expect(
+      computeBodyRowsPerSlide({
+        slideLayout,
+        headerRow: true,
+        maxRows: 20,
+        rowsPerSlide: 5,
+      })
+    ).toBe(5)
+  })
+})
+
 describe('computeMaxRowsThatFitOnSlide', () => {
   it('returns fewer rows when long cell text exceeds the vertical budget', () => {
     const longCell = 'Word '.repeat(40).trim()
@@ -420,6 +464,33 @@ describe('splitTableContentAcrossSlides', () => {
     const totalBodyRows = chunks.reduce((sum, chunk) => sum + chunk.length - 1, 0)
     expect(totalBodyRows).toBe(10)
   })
+
+  it('packs moderate-length scorecard rows by template slots instead of height estimates', () => {
+    const observation =
+      'No site-wide search functionality; power users cannot shortcut to deep content pages'
+    const bodyRows = Array.from({ length: 10 }, (_, index) => [
+      `Heuristic ${index + 1}`,
+      `${(index % 5) + 1} / 5`,
+      observation,
+    ])
+
+    const chunks = splitTableContentAcrossSlides({
+      content: [['Heuristic', 'Score (1-5)', 'Key Observation'], ...bodyRows],
+      maxRows: 20,
+      maxColumns: 3,
+      minRows: 2,
+      headerRow: true,
+      slideLayout: {
+        heightBudgetEmu: 1_800_000,
+        templateRowHeightsEmu: Array.from({ length: 8 }, () => 225_000),
+      },
+      columnWidths: [900_000, 400_000, 2_700_000],
+    })
+
+    expect(chunks).toHaveLength(2)
+    expect(chunks[0]).toHaveLength(8)
+    expect(chunks[1]).toHaveLength(4)
+  })
 })
 
 describe('expandSlidesForTableOverflow', () => {
@@ -441,7 +512,11 @@ describe('expandSlidesForTableOverflow', () => {
               minRows: 2,
               content: [
                 ['Col A', 'Col B', 'Col C'],
-                ...Array.from({ length: 10 }, (_, index) => [`Row ${index + 1}`, longCell, longCell]),
+                ...Array.from({ length: 10 }, (_, index) => [
+                  `Row ${index + 1}`,
+                  longCell,
+                  longCell,
+                ]),
               ],
             },
           ],
