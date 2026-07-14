@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -31,6 +32,8 @@ export async function POST(req: NextRequest) {
     logger.error('SIM_WORKFLOW_API_KEY is not configured — cannot resolve workspace')
     return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
   }
+
+  // Build resolve URL from base + workflow id (validated independently).
   const agentBaseUrl = process.env.SIM_AGENT_BASE_URL?.replace(/\/$/, '')
   const resolveWorkflowId = process.env.SIM_AGENT_WORKSPACE_RESOLVE_ID
   if (!agentBaseUrl || !resolveWorkflowId) {
@@ -38,6 +41,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Agent resolve URL not configured' }, { status: 500 })
   }
   const resolveUrl = `${agentBaseUrl}/api/workflows/${resolveWorkflowId}/execute`
+  // OLD: templated URL without validating parts (falsey check on the string was always true).
+  // const resolveUrl = `${process.env.SIM_AGENT_BASE_URL}/api/workflows/${process.env.SIM_AGENT_WORKSPACE_RESOLVE_ID}/execute`
+  // if (!resolveUrl) {
+  //   logger.error('SIM_AGENT_WORKSPACE_RESOLVE_URL is not configured')
+  //   return NextResponse.json({ error: 'Agent resolve URL not configured' }, { status: 500 })
+  // }
 
   let message: string
   let context: string | undefined
@@ -137,7 +146,7 @@ export async function POST(req: NextRequest) {
     logger.error('Unexpected error calling external agent API', {
       userId,
       durationMs,
-      error: error instanceof Error ? error.message : String(error),
+      error: getErrorMessage(error),
     })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

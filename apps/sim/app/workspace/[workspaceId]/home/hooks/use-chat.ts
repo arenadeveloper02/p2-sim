@@ -2979,14 +2979,16 @@ export function useChat(
   const finalize = useCallback(
     (options?: { error?: boolean; targetChatId?: string }) => {
       const isError = !!options?.error
+      const blocks = streamingBlocksRef.current
+      const assistantId =
+        activeTurnRef.current?.assistantMessageId ??
+        (streamIdRef.current ? getLiveAssistantMessageId(streamIdRef.current) : undefined)
+      const activeChatId = options?.targetChatId ?? chatIdRef.current
+
       if (isError) {
-        const blocks = streamingBlocksRef.current
+        // Existing error path: settle executing tools + snapshot failed assistant state.
         if (blocks.some((block) => block.toolCall?.status === 'executing')) {
           finalizeResidualToolCalls(blocks, 'error')
-          const assistantId =
-            activeTurnRef.current?.assistantMessageId ??
-            (streamIdRef.current ? getLiveAssistantMessageId(streamIdRef.current) : undefined)
-          const activeChatId = options?.targetChatId ?? chatIdRef.current
           if (assistantId && activeChatId) {
             const snapshot = buildAssistantSnapshotMessage({
               id: assistantId,
@@ -3008,7 +3010,38 @@ export function useChat(
             )
           }
         }
+      } else if (assistantId && activeChatId) {
+        // NEW: on success, pin the streamed user+assistant turn into React Query
+        // BEFORE invalidate/refetch. Needed for `/api/agent/resolve-workspace/execute`
+        // so the UI does not flash empty after complete while history refetches.
+        //
+        // OLD success path had no cache pin — finalize went straight to invalidate,
+        // and a racey empty history response cleared the prompt + response from the UI.
+        const snapshot = buildAssistantSnapshotMessage({
+          id: assistantId,
+          content: streamingContentRef.current,
+          contentBlocks: blocks,
+          ...(streamRequestIdRef.current ? { requestId: streamRequestIdRef.current } : {}),
+        })
+        const cachedUserMessage = pendingUserMsgRef.current
+        upsertChatHistory(activeChatId, (current) => {
+          const withoutLive = current.messages.filter(
+            (message) =>
+              message.id !== assistantId &&
+              (!cachedUserMessage || message.id !== cachedUserMessage.id)
+          )
+          return {
+            ...current,
+            messages: [
+              ...withoutLive,
+              ...(cachedUserMessage ? [cachedUserMessage] : []),
+              snapshot,
+            ],
+            activeStreamId: null,
+          }
+        })
       }
+
       const queue = useMothershipQueueStore.getState().queues[chatKeyRef.current]
       const hasQueuedFollowUp = !isError && (queue?.length ?? 0) > 0
       reconcileTerminalPreviewSessions()
@@ -3348,10 +3381,16 @@ export function useChat(
               }
             } catch (error) {
               logger.warn('Failed to create mothership chat for workflow execution stream', {
-                error: error instanceof Error ? error.message : String(error),
+                error: getErrorMessage(error),
               })
             }
           }
+          // NEW: rebind after possible mid-flow chat creation.
+          // streamTargetChatId was assigned earlier (before resolve/create), so without
+          // this the SSE flush could miss targetChatId for a freshly created chat.
+          streamTargetChatId = requestChatId
+          // OLD: left streamTargetChatId as the pre-create value (often undefined).
+          // streamTargetChatId = requestChatId // (was only set once, before resolve)
         }
         const executionConfig = resolvedWorkflowExecution
         const response = isResolvedWorkflowExecution

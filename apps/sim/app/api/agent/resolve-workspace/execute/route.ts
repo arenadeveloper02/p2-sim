@@ -511,8 +511,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Same pattern as /api/workflows/embed-html: resolve workflows often return a
-  // stale/invalid apiKey, so authenticate the loopback execute as the logged-in
-  // user with an internal JWT. Only fall back to API key for cross-host calls.
+  // stale/invalid `userApiKey`, so same-deployment loopback uses an internal JWT.
+  // Cross-host calls still fall back to userApiKey / SIM_WORKFLOW_API_KEY_UNIFIED.
   const sameDeployment = shouldUseInternalJwt(configuredAgentBaseUrl)
   const useInternalJwt = sameDeployment
   const apiKey = body.userApiKey ?? process.env.SIM_WORKFLOW_API_KEY_UNIFIED
@@ -521,7 +521,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Agent API not configured' }, { status: 500 })
   }
 
+  // Prefer in-cluster base URL when agent host matches this app (JWT loopback).
   const agentBaseUrl = resolveExecuteBaseUrl(configuredAgentBaseUrl)
+  // OLD (direct public host, no internal base rewrite):
+  // const agentBaseUrl = process.env.SIM_AGENT_BASE_URL
+  // const executeUrl = `${agentBaseUrl.replace(/\/$/, '')}/api/workflows/${body.workflowId}/execute`
   const executeUrl = `${agentBaseUrl}/api/workflows/${body.workflowId}/execute`
 
   try {
@@ -699,11 +703,19 @@ export async function POST(req: NextRequest) {
             'Content-Type': 'application/json',
           }
 
+          // NEW: same-deployment → internal JWT (avoids stale resolve-workspace apiKey 401).
+          // Cross-host → X-API-Key from payload `userApiKey` or SIM_WORKFLOW_API_KEY_UNIFIED.
           if (useInternalJwt) {
             headers.Authorization = `Bearer ${await generateInternalToken(userId)}`
           } else {
             headers['X-API-Key'] = apiKey as string
           }
+
+          // OLD: always authenticated with X-API-Key from resolve payload (often stale → 401).
+          // const headers = {
+          //   'X-API-Key': apiKey,
+          //   'Content-Type': 'application/json',
+          // }
 
           logger.info('Executing resolved workspace workflow', {
             userId,
@@ -801,38 +813,10 @@ export async function POST(req: NextRequest) {
             },
             scope: runScope,
           })
-          emitEvent({
-            v: 1,
-            type: 'complete',
-            seq: nextSeq(),
-            ts: new Date().toISOString(),
-            stream: { streamId, chatId, cursor: String(seq) },
-            trace: { requestId },
-            payload: { status: 'complete' },
-          })
-        } catch (error) {
-          emitToolResultEvent({
-            status: 'error',
-            success: false,
-            error: getErrorMessage(error),
-            scope: runScope,
-          })
-          emitEvent({
-            v: 1,
-            type: 'complete',
-            seq: nextSeq(),
-            ts: new Date().toISOString(),
-            stream: { streamId, chatId, cursor: String(seq) },
-            trace: { requestId },
-            payload: { status: 'complete' },
-          })
-          logger.error('Failed to transform upstream workflow stream', {
-            userId,
-            workflowId: body.workflowId,
-            error: getErrorMessage(error),
-          })
-        } finally {
-          stopStatusRotation()
+
+          // NEW: persist BEFORE emitting `complete`.
+          // The client finalize() invalidates chat history on `complete`; if we
+          // persist afterwards, refetch can return empty history and wipe the UI.
           if (body.conversationId) {
             try {
               await persistWorkflowChatTurn({
@@ -851,6 +835,80 @@ export async function POST(req: NextRequest) {
               })
             }
           }
+
+          emitEvent({
+            v: 1,
+            type: 'complete',
+            seq: nextSeq(),
+            ts: new Date().toISOString(),
+            stream: { streamId, chatId, cursor: String(seq) },
+            trace: { requestId },
+            payload: { status: 'complete' },
+          })
+        } catch (error) {
+          emitToolResultEvent({
+            status: 'error',
+            success: false,
+            error: getErrorMessage(error),
+            scope: runScope,
+          })
+
+          // Persist any partial assistant text before complete (same race as success path).
+          if (body.conversationId && accumulatedAssistantText.trim()) {
+            try {
+              await persistWorkflowChatTurn({
+                chatId: body.conversationId,
+                userId,
+                userInput: body.input,
+                assistantOutput: accumulatedAssistantText,
+                requestId,
+              })
+            } catch (persistError) {
+              logger.error('Failed to persist partial workflow execution chat turn', {
+                userId,
+                chatId: body.conversationId,
+                workflowId: body.workflowId,
+                error: getErrorMessage(persistError),
+              })
+            }
+          }
+
+          emitEvent({
+            v: 1,
+            type: 'complete',
+            seq: nextSeq(),
+            ts: new Date().toISOString(),
+            stream: { streamId, chatId, cursor: String(seq) },
+            trace: { requestId },
+            payload: { status: 'complete' },
+          })
+          logger.error('Failed to transform upstream workflow stream', {
+            userId,
+            workflowId: body.workflowId,
+            error: getErrorMessage(error),
+          })
+        } finally {
+          stopStatusRotation()
+          // OLD: persist ran here AFTER `complete` was already sent to the client.
+          // That raced finalize→invalidate and cleared prompt/response from the UI.
+          // if (body.conversationId) {
+          //   try {
+          //     await persistWorkflowChatTurn({
+          //       chatId: body.conversationId,
+          //       userId,
+          //       userInput: body.input,
+          //       assistantOutput: accumulatedAssistantText,
+          //       requestId,
+          //     })
+          //   } catch (error) {
+          //     logger.error('Failed to persist workflow execution chat turn', {
+          //       userId,
+          //       chatId: body.conversationId,
+          //       workflowId: body.workflowId,
+          //       error: getErrorMessage(error),
+          //     })
+          //   }
+          // }
           if (reader) {
             try {
               await reader.cancel()
