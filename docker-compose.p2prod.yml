@@ -76,7 +76,7 @@ services:
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - REDIS_URL=${REDIS_URL:-}
-      -API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
+      - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
     depends_on:
       db:
         condition: service_healthy
