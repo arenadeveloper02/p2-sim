@@ -7089,8 +7089,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ef485f0cbc_0_11',
             maxRows: 20,
             maxColumns: 8,
-            minRows: 2,
-            minColumns: 2,
+            minRows: 5,
+            minColumns: 5,
             rowLabelColumn: true,
             description:
               'Flexible data table from minRows×minColumns up to maxRows×maxColumns. Put row labels in the first column; put values in the remaining columns. Only fill the rows and columns you need; unused trailing rows and columns are removed automatically (never below minRows/minColumns). If rows exceed the slide height, additional slides are created using the same template; continuation slides append " (continued)" to the title.',
@@ -7127,8 +7127,8 @@ function buildTemplateSchema(): PresentationSchema {
             shapeId: 'g3ef485f0cbc_0_2',
             maxRows: 20,
             maxColumns: 8,
-            minRows: 2,
-            minColumns: 2,
+            minRows: 5,
+            minColumns: 5,
             headerRow: true,
             rowLabelColumn: true,
             description:
