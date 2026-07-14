@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { generateShortId } from '@sim/utils/id'
 import { Button } from '@/components/emcn'
 import { cn } from '@/lib/core/utils/cn'
@@ -30,27 +30,35 @@ function LineChartComponent({
   unit?: string
   series?: LineChartMultiSeries[]
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null)
   const uniqueId = useRef(`chart-${generateShortId(7)}`).current
+  const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null)
   const [containerWidth, setContainerWidth] = useState<number | null>(null)
   const width = containerWidth ?? 0
   const height = 166
   const padding = { top: 16, right: 28, bottom: 26, left: 26 }
-  useEffect(() => {
-    if (!containerRef.current) return
-    const element = containerRef.current
+
+  /**
+   * Re-measure whenever the mounted container node changes. An empty-deps
+   * useEffect only saw the initial placeholder and missed the real chart node.
+   */
+  useLayoutEffect(() => {
+    if (!containerNode) return
+
+    const updateWidth = (nextWidth: number) => {
+      if (nextWidth > 0) {
+        setContainerWidth(Math.max(280, Math.floor(nextWidth)))
+      }
+    }
+
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0]
-      if (entry?.contentRect && entry.contentRect.width > 0) {
-        const w = Math.max(280, Math.floor(entry.contentRect.width))
-        setContainerWidth(w)
-      }
+      if (entry?.contentRect) updateWidth(entry.contentRect.width)
     })
-    ro.observe(element)
-    const rect = element.getBoundingClientRect()
-    if (rect?.width && rect.width > 0) setContainerWidth(Math.max(280, Math.floor(rect.width)))
+    ro.observe(containerNode)
+    updateWidth(containerNode.getBoundingClientRect().width)
     return () => ro.disconnect()
-  }, [])
+  }, [containerNode])
+
   const chartWidth = width - padding.left - padding.right
   const chartHeight = height - padding.top - padding.bottom
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
@@ -227,7 +235,7 @@ function LineChartComponent({
   if (containerWidth === null) {
     return (
       <div
-        ref={containerRef}
+        ref={setContainerNode}
         className={cn('w-full', !hasExternalWrapper && 'rounded-lg border bg-card p-4')}
         style={{ height }}
       />
@@ -250,7 +258,7 @@ function LineChartComponent({
 
   return (
     <div
-      ref={containerRef}
+      ref={setContainerNode}
       className={cn(
         'w-full overflow-hidden',
         !hasExternalWrapper && 'rounded-[11px] border bg-card p-4 shadow-sm'

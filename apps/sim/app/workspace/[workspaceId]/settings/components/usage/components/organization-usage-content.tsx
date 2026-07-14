@@ -74,11 +74,12 @@ export function OrganizationUsageContent({
     <div className='flex flex-col gap-8'>
       <DataHealthPanel data={data} />
 
-      {data.timeSeries.length > 0 && (
-        <SettingsSection label='Trends'>
-          <UsageTimeSeriesChart timeSeries={data.timeSeries} />
-        </SettingsSection>
-      )}
+      <SettingsSection label='Trends'>
+        <UsageTimeSeriesChart
+          timeSeries={data.timeSeries}
+          periodActiveUserCount={data.summary.activeUserCount}
+        />
+      </SettingsSection>
 
       {data.byChargeType.length > 0 && (
         <ChargeTypePanel
@@ -415,7 +416,7 @@ export function OrganizationUsageContent({
               )}
             </div>
           )}
-          {data.copilot.byChat.length > 0 && (
+          {(data.copilot.byChat?.length ?? 0) > 0 && (
             <div className='mb-6'>
               <p className='mb-2 text-[var(--text-muted)] text-small'>
                 Most expensive chats (top {data.copilot.byChat.length})

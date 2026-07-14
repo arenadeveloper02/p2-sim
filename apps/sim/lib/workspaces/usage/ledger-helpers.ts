@@ -329,6 +329,38 @@ export function parseActorType(value: string | null | undefined) {
   return parsed.success ? parsed.data : null
 }
 
+/**
+ * Resolved actor identity for usage attribution — stamped actor, else mothership
+ * chat owner, else billing user. Shared by byActor rollups and active-user counts.
+ */
+export function resolvedActorUserIdExpr() {
+  return sql`coalesce(
+    ${usageLog.actorUserId},
+    ${copilotChats.userId},
+    ${usageLog.userId}
+  )`
+}
+
+/**
+ * Resolved actor type with the same fallback chain as {@link resolvedActorUserIdExpr}.
+ * Infers `'user'` when a user id is present but `actor_type` was never stamped.
+ */
+export function resolvedActorTypeExpr() {
+  return sql`coalesce(
+    ${usageLog.actorType},
+    case
+      when coalesce(${usageLog.actorUserId}, ${copilotChats.userId}, ${usageLog.userId}) is not null
+        then 'user'
+      else null
+    end
+  )`
+}
+
+/** SQL predicate: resolved actor type is a human (`user`), including personal API keys. */
+export function isHumanActorCondition() {
+  return sql`${resolvedActorTypeExpr()} = 'user'`
+}
+
 export function parseChatType(value: string | null | undefined): 'mothership' | 'copilot' {
   return value === 'mothership' ? 'mothership' : 'copilot'
 }

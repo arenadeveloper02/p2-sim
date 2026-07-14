@@ -39,6 +39,7 @@ import {
   coerceToDate,
   EMPTY_USAGE_METRICS,
   executionBucketExpr,
+  isHumanActorCondition,
   ledgerCostSelect,
   ledgerOccurredAt,
   ledgerPeriodBounds,
@@ -52,6 +53,8 @@ import {
   type ResolvedPeriod,
   resolveExplicitPeriod,
   resolvePeriodFromDateCandidates,
+  resolvedActorTypeExpr,
+  resolvedActorUserIdExpr,
   timeBucketExpr,
   usageMetricsSelect,
 } from '@/lib/workspaces/usage/ledger-helpers'
@@ -176,6 +179,8 @@ export async function getWorkspaceUsageAnalytics(
       byVendorRows,
       timeSeriesLedgerRows,
       timeSeriesExecutionRows,
+      activeUserBucketRows,
+      activeUserPeriodRows,
       lineageRootRows,
       lineageDrillDownRows,
       lineageDrillDownTotals,
@@ -384,36 +389,15 @@ export async function getWorkspaceUsageAnalytics(
 
       dbReplica
         .select({
-          actorUserId: sql<string | null>`coalesce(
-            ${usageLog.actorUserId},
-            ${copilotChats.userId},
-            ${usageLog.userId}
-          )`,
-          actorType: sql<string | null>`coalesce(
-            ${usageLog.actorType},
-            case
-              when coalesce(${usageLog.actorUserId}, ${copilotChats.userId}, ${usageLog.userId}) is not null
-                then 'user'
-              else null
-            end
-          )`,
+          actorUserId: sql<string | null>`${resolvedActorUserIdExpr()}`,
+          actorType: sql<string | null>`${resolvedActorTypeExpr()}`,
           ...ledgerCostSelect(),
           ...usageMetricsSelect(),
         })
         .from(usageLog)
         .leftJoin(copilotChats, eq(copilotChats.id, usageLog.chatId))
         .where(and(...ledgerConditions))
-        .groupBy(
-          sql`coalesce(${usageLog.actorUserId}, ${copilotChats.userId}, ${usageLog.userId})`,
-          sql`coalesce(
-            ${usageLog.actorType},
-            case
-              when coalesce(${usageLog.actorUserId}, ${copilotChats.userId}, ${usageLog.userId}) is not null
-                then 'user'
-              else null
-            end
-          )`
-        ),
+        .groupBy(resolvedActorUserIdExpr(), resolvedActorTypeExpr()),
 
       dbReplica
         .select({
@@ -469,6 +453,24 @@ export async function getWorkspaceUsageAnalytics(
         .from(workflowExecutionLogs)
         .where(and(...executionConditions))
         .groupBy(executionBucket),
+
+      dbReplica
+        .select({
+          bucketStart: bucketExpr,
+          activeUserCount: sql<number>`count(distinct ${resolvedActorUserIdExpr()})::int`,
+        })
+        .from(usageLog)
+        .leftJoin(copilotChats, eq(copilotChats.id, usageLog.chatId))
+        .where(and(...ledgerConditions, isHumanActorCondition()))
+        .groupBy(bucketExpr),
+
+      dbReplica
+        .select({
+          activeUserCount: sql<number>`count(distinct ${resolvedActorUserIdExpr()})::int`,
+        })
+        .from(usageLog)
+        .leftJoin(copilotChats, eq(copilotChats.id, usageLog.chatId))
+        .where(and(...ledgerConditions, isHumanActorCondition())),
 
       dbReplica
         .select({
@@ -683,6 +685,13 @@ export async function getWorkspaceUsageAnalytics(
       ])
     )
 
+    const activeUserCountByBucket = new Map(
+      activeUserBucketRows.map((row) => [
+        coerceToDate(row.bucketStart)?.toISOString() ?? String(row.bucketStart),
+        row.activeUserCount,
+      ])
+    )
+
     const timeSeries = timeSeriesLedgerRows.map((row) => {
       const bucketStart = coerceToDate(row.bucketStart)?.toISOString() ?? String(row.bucketStart)
       return {
@@ -690,6 +699,7 @@ export async function getWorkspaceUsageAnalytics(
         billableCost: parseDecimal(row.billableCost),
         rawCost: parseDecimal(row.rawCost),
         executionCount: executionCountByBucket.get(bucketStart) ?? 0,
+        activeUserCount: activeUserCountByBucket.get(bucketStart) ?? 0,
         usage: mapUsageMetrics(row),
       }
     })
@@ -702,12 +712,29 @@ export async function getWorkspaceUsageAnalytics(
           billableCost: 0,
           rawCost: 0,
           executionCount: row.executionCount,
+          activeUserCount: activeUserCountByBucket.get(bucketStart) ?? 0,
+          usage: { ...EMPTY_USAGE_METRICS },
+        })
+      }
+    }
+
+    for (const row of activeUserBucketRows) {
+      const bucketStart = coerceToDate(row.bucketStart)?.toISOString() ?? String(row.bucketStart)
+      if (!timeSeries.some((bucket) => bucket.bucketStart === bucketStart)) {
+        timeSeries.push({
+          bucketStart,
+          billableCost: 0,
+          rawCost: 0,
+          executionCount: 0,
+          activeUserCount: row.activeUserCount,
           usage: { ...EMPTY_USAGE_METRICS },
         })
       }
     }
 
     timeSeries.sort((a, b) => a.bucketStart.localeCompare(b.bucketStart))
+
+    const periodActiveUserCount = activeUserPeriodRows[0]?.activeUserCount ?? 0
 
     const triggeredWorkflowTotal = triggeredWorkflowRows.reduce(
       (acc, row) => ({
@@ -808,6 +835,7 @@ export async function getWorkspaceUsageAnalytics(
         executionCount: workflowSummary?.total ?? 0,
         chatCount: chatSummary?.total ?? 0,
         runCount: runSummary?.total ?? 0,
+        activeUserCount: periodActiveUserCount,
         usage: summaryUsage,
       },
       bySource,

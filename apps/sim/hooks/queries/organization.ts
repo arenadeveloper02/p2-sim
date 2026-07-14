@@ -36,6 +36,10 @@ import {
   updateOrganizationUsageLimitContract,
 } from '@/lib/api/contracts/organization'
 import {
+  listCreatorOrganizationsContract,
+  type CreatorOrganization,
+} from '@/lib/api/contracts/organizations'
+import {
   getOrganizationBillingContract,
   type OrganizationBillingApiResponse,
 } from '@/lib/api/contracts/subscription'
@@ -100,6 +104,7 @@ function readNumber(value: unknown): number | undefined {
 export const organizationKeys = {
   all: ['organizations'] as const,
   lists: () => [...organizationKeys.all, 'list'] as const,
+  adminLists: () => [...organizationKeys.all, 'admin'] as const,
   details: () => [...organizationKeys.all, 'detail'] as const,
   detail: (id: string) => [...organizationKeys.details(), id] as const,
   subscription: (id: string) => [...organizationKeys.detail(id), 'subscription'] as const,
@@ -111,6 +116,20 @@ export const organizationKeys = {
   roster: (id: string) => [...organizationKeys.detail(id), 'roster'] as const,
   myMemberCredits: (workspaceId: string) =>
     [...organizationKeys.all, 'my-member-credits', workspaceId] as const,
+}
+
+export type { CreatorOrganization }
+
+/**
+ * Organizations where the current user is an owner or admin (userId-based).
+ * Same authority source as `GET /api/organizations/[id]/usage`.
+ */
+export function useAdminOrganizations() {
+  return useQuery({
+    queryKey: organizationKeys.adminLists(),
+    queryFn: ({ signal }) => requestJson(listCreatorOrganizationsContract, { signal }),
+    staleTime: 30 * 1000,
+  })
 }
 
 export type { OrganizationRoster, RosterMember, RosterPendingInvitation, RosterWorkspaceAccess }

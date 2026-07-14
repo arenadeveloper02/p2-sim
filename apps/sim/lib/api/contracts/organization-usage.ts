@@ -68,6 +68,8 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
     executionCount: z.number().int().nonnegative(),
     chatCount: z.number().int().nonnegative(),
     runCount: z.number().int().nonnegative(),
+    /** Distinct human actors (resolved actor_type = user) across the period. */
+    activeUserCount: z.number().int().nonnegative(),
     usage: usageMetricsSchema,
   }),
   byWorkspace: z.array(
@@ -125,18 +127,24 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
         runCount: z.number().int().nonnegative(),
       })
     ),
-    /** Most expensive mothership/copilot chats (top N), with workspace for deep-links. */
-    byChat: z.array(
-      costBucketSchema.extend({
-        workspaceId: z.string(),
-        workspaceName: z.string(),
-        chatId: z.string(),
-        title: z.string().nullable(),
-        chatType: z.enum(['mothership', 'copilot']),
-        userId: z.string(),
-        runCount: z.number().int().nonnegative(),
-      })
-    ),
+    /**
+     * Most expensive mothership/copilot chats (top N), with workspace for deep-links.
+     * Default keeps older API payloads that omitted this field from failing client
+     * contract validation (which would drop the entire usage response).
+     */
+    byChat: z
+      .array(
+        costBucketSchema.extend({
+          workspaceId: z.string(),
+          workspaceName: z.string(),
+          chatId: z.string(),
+          title: z.string().nullable(),
+          chatType: z.enum(['mothership', 'copilot']),
+          userId: z.string(),
+          runCount: z.number().int().nonnegative(),
+        })
+      )
+      .default([]),
     byModel: z.array(
       costBucketSchema.extend({
         model: z.string(),
@@ -202,6 +210,8 @@ export const organizationUsageAnalyticsResponseSchema = z.object({
       billableCost: z.number(),
       rawCost: z.number(),
       executionCount: z.number().int().nonnegative(),
+      /** Distinct human actors in this bucket (resolved actor_type = user). */
+      activeUserCount: z.number().int().nonnegative(),
       usage: usageMetricsSchema,
     })
   ),

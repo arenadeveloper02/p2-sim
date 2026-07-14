@@ -13,10 +13,8 @@ import {
   RefreshCw,
   Skeleton,
 } from '@/components/emcn'
-import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
-import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { ChargeTypePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/charge-type-panel'
 import {
   CostBreakdownTable,
@@ -50,7 +48,7 @@ import {
 } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { getMothershipChatPath } from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
-import { useOrganization, useOrganizationRoster } from '@/hooks/queries/organization'
+import { useAdminOrganizations, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useOrganizationUsageAnalytics } from '@/hooks/queries/organization-usage'
 import { useWorkspaceUsageAnalytics } from '@/hooks/queries/workspace-usage'
 import {
@@ -130,11 +128,12 @@ function UsageDashboardContent({
     <div className='flex flex-col gap-8'>
       <DataHealthPanel data={data} />
 
-      {data.timeSeries.length > 0 && (
-        <SettingsSection label='Trends'>
-          <UsageTimeSeriesChart timeSeries={data.timeSeries} />
-        </SettingsSection>
-      )}
+      <SettingsSection label='Trends'>
+        <UsageTimeSeriesChart
+          timeSeries={data.timeSeries}
+          periodActiveUserCount={data.summary.activeUserCount}
+        />
+      </SettingsSection>
 
       {data.byChargeType.length > 0 && (
         <ChargeTypePanel
@@ -349,7 +348,7 @@ function UsageDashboardContent({
               )}
             </div>
           )}
-          {data.copilot.byChat.length > 0 && (
+          {(data.copilot.byChat?.length ?? 0) > 0 && (
             <div className='mb-6'>
               <p className='mb-2 text-[var(--text-muted)] text-small'>
                 Most expensive chats (top {data.copilot.byChat.length})
@@ -667,7 +666,6 @@ function UsageDashboardContent({
 
 export function Usage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data: session } = useSession()
   const [{ scope, tab, period, allTime, rootExecutionId, orgWorkspaceId }, setUsageParams] =
     useQueryStates(usageParsers, usageUrlKeys)
 
@@ -675,15 +673,20 @@ export function Usage() {
     useWorkspacePermissionsQuery(workspaceId)
   const { data: workspaceSettings, isPending: workspaceSettingsLoading } =
     useWorkspaceSettings(workspaceId)
+  const { data: adminOrganizations, isPending: adminOrganizationsLoading } = useAdminOrganizations()
 
   const isWorkspaceAdmin = permissions?.viewer?.isAdmin ?? false
   const organizationId = workspaceSettings?.settings?.workspace?.organizationId ?? null
 
-  const { data: organization, isPending: organizationLoading } = useOrganization(
-    organizationId ?? ''
+  /**
+   * Gate matches the usage API (`isOrganizationAdminOrOwner` by userId), not
+   * Better Auth `getFullOrganization` + email matching — that path can hide the
+   * toggle when organizationId is set but the client org payload is incomplete.
+   */
+  const canViewOrganizationUsage = Boolean(
+    organizationId &&
+      adminOrganizations?.organizations.some((organization) => organization.id === organizationId)
   )
-  const canViewOrganizationUsage =
-    Boolean(organizationId) && isAdminOrOwner(organization, session?.user?.email)
 
   const effectiveScope: UsageScope =
     canViewOrganizationUsage && scope === 'organization' ? 'organization' : 'workspace'
@@ -785,7 +788,11 @@ export function Usage() {
     void setUsageParams({ rootExecutionId: null })
   }
 
-  if (permissionsLoading || workspaceSettingsLoading || (organizationId && organizationLoading)) {
+  if (
+    permissionsLoading ||
+    workspaceSettingsLoading ||
+    (organizationId && adminOrganizationsLoading)
+  ) {
     return (
       <div className='flex items-center justify-center py-16'>
         <Loader className='size-5 text-[var(--text-muted)]' />

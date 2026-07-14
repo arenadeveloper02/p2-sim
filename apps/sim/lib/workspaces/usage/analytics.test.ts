@@ -14,8 +14,8 @@ import {
 
 const WORKSPACE_ID = 'ws-1'
 
-const ANALYTICS_QUERY_COUNT = 25
-const ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN = 27
+const ANALYTICS_QUERY_COUNT = 27
+const ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN = 29
 
 const EMPTY_USAGE = {
   inputTokens: 0,
@@ -150,8 +150,8 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         5: [{ totalLedgerCost: '6' }],
         8: [{ total: 1, withLedgerCost: 1 }],
         9: [{ total: 1 }],
-        23: DATA_HEALTH_OK[0],
-        24: DATA_HEALTH_OK[1],
+        25: DATA_HEALTH_OK[0],
+        26: DATA_HEALTH_OK[1],
       })
     )
 
@@ -222,8 +222,8 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         5: [{ totalLedgerCost: '0' }],
         8: [{ total: 4, withLedgerCost: 1 }],
         9: [{ total: 2 }],
-        23: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
-        24: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+        25: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        26: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
       })
     )
 
@@ -267,8 +267,8 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         5: [{ totalLedgerCost: '4' }],
         8: [{ total: 0, withLedgerCost: 0 }],
         9: [{ total: 0 }],
-        23: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
-        24: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+        25: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        26: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
       }),
     ])
 
@@ -305,8 +305,8 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         5: [{ totalLedgerCost: '4' }],
         8: [{ total: 0, withLedgerCost: 0 }],
         9: [{ total: 0 }],
-        23: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
-        24: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+        25: [{ totalRows: 1, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        26: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
       })
     )
 
@@ -352,8 +352,8 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
             count: 2,
           },
         ],
-        23: DATA_HEALTH_OK[0],
-        24: DATA_HEALTH_OK[1],
+        25: DATA_HEALTH_OK[0],
+        26: DATA_HEALTH_OK[1],
       })
     )
 
@@ -391,7 +391,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
           3: ATTRIBUTION_OK,
           4: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
           5: [{ totalLedgerCost: '0' }],
-          22: [
+          24: [
             {
               executionId: 'exec-child',
               parentExecutionId: 'exec-root',
@@ -405,9 +405,9 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
               rawCost: '2',
             },
           ],
-          23: [{ inclusiveBillableCost: '5', inclusiveRawCost: '4' }],
-          25: DATA_HEALTH_OK[0],
-          26: DATA_HEALTH_OK[1],
+          25: [{ inclusiveBillableCost: '5', inclusiveRawCost: '4' }],
+          27: DATA_HEALTH_OK[0],
+          28: DATA_HEALTH_OK[1],
         },
         ANALYTICS_QUERY_COUNT_WITH_DRILLDOWN
       )
@@ -457,7 +457,9 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
           5: [{ totalLedgerCost: '0.11' }],
           15: [{ model: 'gpt-4o', billableCost: '0.10', rawCost: '0.08', count: 1 }],
           17: [{ toolId: 'exa_search', billableCost: '0.01', rawCost: '0.01', count: 1 }],
-          25: [
+          25: DATA_HEALTH_OK[0],
+          26: DATA_HEALTH_OK[1],
+          27: [
             {
               executionId: 'exec-1',
               description: 'gpt-4o',
@@ -472,8 +474,6 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
               },
             },
           ],
-          26: DATA_HEALTH_OK[0],
-          27: DATA_HEALTH_OK[1],
         },
         28
       )
@@ -511,5 +511,77 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
 
     const chargeTypeTotal = analytics.byChargeType.reduce((sum, row) => sum + row.billableCost, 0)
     expect(chargeTypeTotal).toBeCloseTo(analytics.summary.billableCost, 8)
+  })
+
+  it('merges active-user buckets into timeSeries and exposes period total', async () => {
+    wireTerminalQueue(
+      buildAnalyticsQueue({
+        3: ATTRIBUTION_OK,
+        4: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
+        5: [{ totalLedgerCost: '0' }],
+        8: [{ total: 0, withLedgerCost: 0 }],
+        9: [{ total: 0 }],
+        19: [
+          {
+            bucketStart: new Date('2026-07-01T00:00:00.000Z'),
+            billableCost: '1.5',
+            rawCost: '1.5',
+            count: 2,
+            ...EMPTY_USAGE,
+            invocationCount: 2,
+          },
+        ],
+        20: [
+          {
+            bucketStart: new Date('2026-07-01T00:00:00.000Z'),
+            executionCount: 4,
+          },
+          {
+            bucketStart: new Date('2026-07-02T00:00:00.000Z'),
+            executionCount: 1,
+          },
+        ],
+        21: [
+          {
+            bucketStart: new Date('2026-07-01T00:00:00.000Z'),
+            activeUserCount: 3,
+          },
+          {
+            bucketStart: new Date('2026-07-03T00:00:00.000Z'),
+            activeUserCount: 2,
+          },
+        ],
+        22: [{ activeUserCount: 4 }],
+        25: DATA_HEALTH_OK[0],
+        26: DATA_HEALTH_OK[1],
+      })
+    )
+
+    const analytics = await getWorkspaceUsageAnalytics({
+      workspaceId: WORKSPACE_ID,
+      period: '30d',
+    })
+
+    expect(analytics.summary.activeUserCount).toBe(4)
+    expect(analytics.timeSeries).toEqual([
+      expect.objectContaining({
+        bucketStart: '2026-07-01T00:00:00.000Z',
+        billableCost: 1.5,
+        executionCount: 4,
+        activeUserCount: 3,
+      }),
+      expect.objectContaining({
+        bucketStart: '2026-07-02T00:00:00.000Z',
+        billableCost: 0,
+        executionCount: 1,
+        activeUserCount: 0,
+      }),
+      expect.objectContaining({
+        bucketStart: '2026-07-03T00:00:00.000Z',
+        billableCost: 0,
+        executionCount: 0,
+        activeUserCount: 2,
+      }),
+    ])
   })
 })

@@ -19,10 +19,10 @@ const WS_B = { id: 'ws-b', name: 'Beta' }
  * Query terminals consumed by getOrganizationUsageAnalytics with a fixed period
  * (no all-time bounds probes):
  * 0 workspaces list (orderBy)
- * 1–26 Promise.all aggregations
- * 27 model metadata (embedded tool split)
+ * 1–28 Promise.all aggregations
+ * 29 model metadata (embedded tool split)
  */
-const ORG_ANALYTICS_QUERY_COUNT = 28
+const ORG_ANALYTICS_QUERY_COUNT = 30
 
 const EMPTY_USAGE = {
   inputTokens: 0,
@@ -121,9 +121,9 @@ function baseHappyPathOverrides(extra: Record<number, unknown[]> = {}) {
     7: WORKFLOW_LEDGER,
     10: CHAT_SUMMARY,
     11: RUN_SUMMARY,
-    25: DATA_HEALTH_LEDGER_OK,
-    26: DATA_HEALTH_EXECUTION_OK,
-    27: [],
+    27: DATA_HEALTH_LEDGER_OK,
+    28: DATA_HEALTH_EXECUTION_OK,
+    29: [],
     ...extra,
   }
 }
@@ -416,7 +416,7 @@ describe('getOrganizationUsageAnalytics', () => {
               invocationCount: 1,
             },
           ],
-          25: [{ totalRows: 10, nullWorkspaceRows: 2, missingActorRows: 1 }],
+          27: [{ totalRows: 10, nullWorkspaceRows: 2, missingActorRows: 1 }],
         })
       )
     )
@@ -556,7 +556,7 @@ describe('getOrganizationUsageAnalytics', () => {
               count: 2,
             },
           ],
-          23: [
+          25: [
             {
               rootExecutionId: 'root-1',
               workspaceId: WS_B.id,
@@ -565,7 +565,7 @@ describe('getOrganizationUsageAnalytics', () => {
               inclusiveRawCost: '8',
             },
           ],
-          24: [
+          26: [
             {
               triggeringChatId: 'chat-1',
               workspaceId: WS_A.id,

@@ -74,6 +74,7 @@ const ANALYTICS = {
     executionCount: 5,
     chatCount: 2,
     runCount: 4,
+    activeUserCount: 3,
     usage: {
       inputTokens: 1000,
       outputTokens: 500,

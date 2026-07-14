@@ -82,6 +82,8 @@ export const workspaceUsageAnalyticsResponseSchema = z.object({
     executionCount: z.number().int().nonnegative(),
     chatCount: z.number().int().nonnegative(),
     runCount: z.number().int().nonnegative(),
+    /** Distinct human actors (resolved actor_type = user) across the period. */
+    activeUserCount: z.number().int().nonnegative(),
     usage: usageMetricsSchema,
   }),
   bySource: z.array(
@@ -135,16 +137,22 @@ export const workspaceUsageAnalyticsResponseSchema = z.object({
         runCount: z.number().int().nonnegative(),
       })
     ),
-    /** Highest-cost chats in the period (owner = copilot_chats.user_id). */
-    byChat: z.array(
-      costBucketSchema.extend({
-        chatId: z.string(),
-        title: z.string().nullable(),
-        chatType: z.enum(['mothership', 'copilot']),
-        userId: z.string(),
-        runCount: z.number().int().nonnegative(),
-      })
-    ),
+    /**
+     * Highest-cost chats in the period (owner = copilot_chats.user_id).
+     * Default keeps older API payloads that omitted this field from failing
+     * client contract validation (which would drop the entire usage response).
+     */
+    byChat: z
+      .array(
+        costBucketSchema.extend({
+          chatId: z.string(),
+          title: z.string().nullable(),
+          chatType: z.enum(['mothership', 'copilot']),
+          userId: z.string(),
+          runCount: z.number().int().nonnegative(),
+        })
+      )
+      .default([]),
     byModel: z.array(
       costBucketSchema.extend({
         model: z.string(),
@@ -202,6 +210,8 @@ export const workspaceUsageAnalyticsResponseSchema = z.object({
       billableCost: z.number(),
       rawCost: z.number(),
       executionCount: z.number().int().nonnegative(),
+      /** Distinct human actors in this bucket (resolved actor_type = user). */
+      activeUserCount: z.number().int().nonnegative(),
       usage: usageMetricsSchema,
     })
   ),
