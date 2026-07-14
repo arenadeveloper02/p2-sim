@@ -112,7 +112,7 @@ export interface TableBlock extends BaseBlock {
   type: 'TABLE'
   role: 'DATA_TABLE'
   content: string[][]
-  /** Maximum rows per slide (overflow splits across continuation slides). */
+  /** Maximum rows the template table supports (trim/delete extras beyond content). */
   maxRows: number
   /** Maximum columns the template table supports (trim/delete extras beyond content). */
   maxColumns: number
@@ -124,6 +124,11 @@ export interface TableBlock extends BaseBlock {
   rowLabelColumn?: boolean
   /** When true, row 0 holds column headers. */
   headerRow?: boolean
+  /**
+   * Body rows per slide before creating a continuation slide.
+   * When omitted, derived from the template table's row count.
+   */
+  rowsPerSlide?: number
   cellConstraints: {
     minChars: number
     maxChars: number

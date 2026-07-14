@@ -105,6 +105,8 @@ const ESTIMATED_TABLE_FONT_SIZE_PT = 11
 const ESTIMATED_LINE_HEIGHT_EMU = Math.round(ESTIMATED_TABLE_FONT_SIZE_PT * PT_TO_EMU * 1.2)
 const ESTIMATED_CHAR_WIDTH_EMU = Math.round(ESTIMATED_TABLE_FONT_SIZE_PT * PT_TO_EMU * 0.55)
 const ESTIMATED_CELL_VERTICAL_PADDING_EMU = PT_TO_EMU * 2
+/** When any cell in a chunk wraps beyond this many lines, fall back to height-based chunk sizing. */
+const EXTREME_CELL_LINE_THRESHOLD = 5
 
 interface PresentationSlide {
   pageElements?: PresentationElement[]
@@ -177,9 +179,7 @@ export function distributeColumnWidthsByContent(
   const weightSum = normalizedWeights.reduce((sum, weight) => sum + weight, 0)
   const flexibleWidth = totalWidth - minTotal
 
-  return normalizedWeights.map(
-    (weight) => minWidth + (flexibleWidth * weight) / weightSum
-  )
+  return normalizedWeights.map((weight) => minWidth + (flexibleWidth * weight) / weightSum)
 }
 
 /** Reads per-column widths (EMU) from a fetched presentation payload. */
@@ -284,6 +284,79 @@ export function estimateRowHeightEmu(row: string[], columnWidths: number[]): num
 }
 
 /**
+ * Returns how many body rows fit on one slide from template row slots (and optional override).
+ */
+export function computeBodyRowsPerSlide(input: {
+  slideLayout: TableSlideLayout
+  headerRow?: boolean
+  maxRows: number
+  rowsPerSlide?: number
+}): number {
+  const headerOffset = input.headerRow ? 1 : 0
+  const maxBodyRows = Math.max(1, input.maxRows - headerOffset)
+
+  if (input.rowsPerSlide != null && input.rowsPerSlide > 0) {
+    return Math.min(input.rowsPerSlide, maxBodyRows)
+  }
+
+  const templateBodySlots = Math.max(
+    1,
+    input.slideLayout.templateRowHeightsEmu.length - headerOffset
+  )
+  return Math.min(templateBodySlots, maxBodyRows)
+}
+
+function rowHasExtremeCellText(row: string[], columnWidths: number[]): boolean {
+  for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+    const columnWidth = columnWidths[columnIndex] ?? columnWidths[0] ?? MIN_COLUMN_WIDTH_EMU
+    if (estimateCellLineCount(row[columnIndex] ?? '', columnWidth) > EXTREME_CELL_LINE_THRESHOLD) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Caps a slot-based chunk when any row contains extremely long wrapped text.
+ */
+function computeChunkBodyRowCount(input: {
+  bodyRows: string[][]
+  bodyOffset: number
+  bodyRowsPerSlide: number
+  slideLayout: TableSlideLayout
+  headerRow?: string[]
+  columnWidths: number[]
+}): number {
+  const remaining = input.bodyRows.length - input.bodyOffset
+  if (remaining <= 0) return 0
+
+  const chunkSize = Math.min(input.bodyRowsPerSlide, remaining)
+  const candidateRows = input.bodyRows.slice(input.bodyOffset, input.bodyOffset + chunkSize)
+  if (!candidateRows.some((row) => rowHasExtremeCellText(row, input.columnWidths))) {
+    return chunkSize
+  }
+
+  const bodySlideLayout: TableSlideLayout = {
+    heightBudgetEmu: Math.max(
+      ESTIMATED_LINE_HEIGHT_EMU,
+      input.slideLayout.heightBudgetEmu -
+        (input.headerRow ? estimateRowHeightEmu(input.headerRow, input.columnWidths) : 0)
+    ),
+    templateRowHeightsEmu: input.slideLayout.templateRowHeightsEmu.slice(input.headerRow ? 1 : 0),
+  }
+
+  const heightFit = computeMaxRowsThatFitOnSlide({
+    content: candidateRows,
+    slideLayout: bodySlideLayout,
+    columnWidths: input.columnWidths,
+    minRows: 1,
+    maxRows: chunkSize,
+  })
+
+  return Math.max(1, Math.min(chunkSize, heightFit))
+}
+
+/**
  * Returns how many content rows fit in the table's vertical budget on the slide.
  */
 export function computeMaxRowsThatFitOnSlide(input: {
@@ -296,10 +369,7 @@ export function computeMaxRowsThatFitOnSlide(input: {
   const { content, slideLayout, minRows, maxRows } = input
   if (content.length === 0) return minRows
 
-  const columnWidths =
-    input.columnWidths.length > 0
-      ? input.columnWidths
-      : [MIN_COLUMN_WIDTH_EMU]
+  const columnWidths = input.columnWidths.length > 0 ? input.columnWidths : [MIN_COLUMN_WIDTH_EMU]
 
   const templateRows = slideLayout.templateRowHeightsEmu.length
   const avgTemplateRowHeight =
@@ -328,8 +398,8 @@ export function computeMaxRowsThatFitOnSlide(input: {
 }
 
 /**
- * Splits table content across one or more slides when rows would overflow the template
- * table height. Repeats the header row on continuation slides when `headerRow` is set.
+ * Splits table content across one or more slides when body rows exceed template row slots.
+ * Repeats the header row on continuation slides when `headerRow` is set.
  */
 export function splitTableContentAcrossSlides(input: {
   content: unknown
@@ -337,6 +407,7 @@ export function splitTableContentAcrossSlides(input: {
   maxColumns: number
   minRows: number
   headerRow?: boolean
+  rowsPerSlide?: number
   slideLayout: TableSlideLayout | null
   columnWidths: number[]
 }): string[][][] {
@@ -349,8 +420,7 @@ export function splitTableContentAcrossSlides(input: {
   if (normalized.length === 0) return []
   if (!input.slideLayout) return [normalized]
 
-  const columnWidths =
-    input.columnWidths.length > 0 ? input.columnWidths : [MIN_COLUMN_WIDTH_EMU]
+  const columnWidths = input.columnWidths.length > 0 ? input.columnWidths : [MIN_COLUMN_WIDTH_EMU]
 
   const header = input.headerRow ? normalized[0] : undefined
   const bodyRows = input.headerRow ? normalized.slice(1) : normalized
@@ -359,39 +429,29 @@ export function splitTableContentAcrossSlides(input: {
     return header ? [[header]] : []
   }
 
-  const maxBodyRowsPerSlide = input.headerRow
-    ? Math.max(1, input.maxRows - 1)
-    : input.maxRows
+  const bodyRowsPerSlide = computeBodyRowsPerSlide({
+    slideLayout: input.slideLayout,
+    headerRow: input.headerRow,
+    maxRows: input.maxRows,
+    rowsPerSlide: input.rowsPerSlide,
+  })
 
   const chunks: string[][][] = []
   let bodyOffset = 0
 
   while (bodyOffset < bodyRows.length) {
-    const reservedHeight = header ? estimateRowHeightEmu(header, columnWidths) : 0
-    const bodyBudget = Math.max(
-      ESTIMATED_LINE_HEIGHT_EMU,
-      input.slideLayout.heightBudgetEmu - reservedHeight
-    )
-    const bodySlideLayout: TableSlideLayout = {
-      heightBudgetEmu: bodyBudget,
-      templateRowHeightsEmu: input.slideLayout.templateRowHeightsEmu.slice(header ? 1 : 0),
-    }
-
-    const remainingBody = bodyRows.slice(bodyOffset)
-    let bodyFit = computeMaxRowsThatFitOnSlide({
-      content: remainingBody,
-      slideLayout: bodySlideLayout,
+    const bodyFit = computeChunkBodyRowCount({
+      bodyRows,
+      bodyOffset,
+      bodyRowsPerSlide,
+      slideLayout: input.slideLayout,
+      headerRow: header,
       columnWidths,
-      minRows: 1,
-      maxRows: maxBodyRowsPerSlide,
     })
 
-    if (bodyFit <= 0 && remainingBody.length > 0) {
-      bodyFit = 1
-    }
     if (bodyFit <= 0) break
 
-    const chunkBody = remainingBody.slice(0, bodyFit)
+    const chunkBody = bodyRows.slice(bodyOffset, bodyOffset + bodyFit)
     chunks.push(header ? [header, ...chunkBody] : chunkBody)
     bodyOffset += bodyFit
   }
@@ -428,6 +488,7 @@ export interface TableExpandableBlock {
   maxColumns?: number
   minRows?: number
   headerRow?: boolean
+  rowsPerSlide?: number
 }
 
 export interface TableExpandableSlide {
@@ -467,6 +528,7 @@ export function expandSlidesForTableOverflow<T extends TableExpandableSlide>(
       maxColumns: tableBlock.maxColumns,
       minRows: tableBlock.minRows ?? 1,
       headerRow: tableBlock.headerRow,
+      rowsPerSlide: tableBlock.rowsPerSlide,
       slideLayout,
       columnWidths: columnLayout?.columnWidths ?? [],
     })
