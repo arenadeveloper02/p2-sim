@@ -2,11 +2,12 @@ import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { generateInternalToken } from '@/lib/auth/internal'
+import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import { normalizeMessage, type PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import { chatPubSub } from '@/lib/copilot/chat-status'
 import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
@@ -396,24 +397,34 @@ async function persistWorkflowChatTurn(params: {
   const { chatId, userId, userInput, assistantOutput, requestId } = params
   if (!assistantOutput.trim()) return
 
-  try {
-    const [chat] = await db
-      .select({
-        id: copilotChats.id,
-        title: copilotChats.title,
-        workspaceId: copilotChats.workspaceId,
-      })
-      .from(copilotChats)
-      .where(
-        and(
-          eq(copilotChats.id, chatId),
-          eq(copilotChats.userId, userId),
-          eq(copilotChats.type, 'mothership')
-        )
+  const [chat] = await db
+    .select({
+      id: copilotChats.id,
+      title: copilotChats.title,
+      workspaceId: copilotChats.workspaceId,
+      model: copilotChats.model,
+    })
+    .from(copilotChats)
+    .where(
+      and(
+        eq(copilotChats.id, chatId),
+        eq(copilotChats.userId, userId),
+        eq(copilotChats.type, 'mothership')
       )
-      .limit(1)
+    )
+    .limit(1)
 
-    if (chat && !chat.title) {
+  if (!chat) {
+    logger.error('Cannot persist workflow chat turn — mothership chat not found', {
+      chatId,
+      userId,
+    })
+    return
+  }
+
+  // Title generation (optional; failures must not block message persistence).
+  if (!chat.title) {
+    try {
       const generatedTitle = await requestChatTitle({
         message: userInput,
         model: 'claude-opus-4-6',
@@ -421,7 +432,7 @@ async function persistWorkflowChatTurn(params: {
       if (generatedTitle) {
         await db
           .update(copilotChats)
-          .set({ title: generatedTitle })
+          .set({ title: generatedTitle, updatedAt: new Date() })
           .where(eq(copilotChats.id, chatId))
         if (chat.workspaceId) {
           chatPubSub?.publishStatusChanged({
@@ -431,12 +442,12 @@ async function persistWorkflowChatTurn(params: {
           })
         }
       }
+    } catch (error) {
+      logger.warn('Failed to generate title before persisting workflow chat turn', {
+        chatId,
+        error: getErrorMessage(error),
+      })
     }
-  } catch (error) {
-    logger.warn('Failed to generate title before persisting workflow chat turn', {
-      chatId,
-      error: getErrorMessage(error),
-    })
   }
 
   const userMessage: PersistedMessage = normalizeMessage({
@@ -464,20 +475,46 @@ async function persistWorkflowChatTurn(params: {
     ],
   })
 
+  // NEW: transcript lives in `copilot_messages` (same as mothership/chat paths).
+  // GET /api/mothership/chats/:id reads via loadCopilotChatMessages — not JSONB.
+  await appendCopilotChatMessages(
+    chatId,
+    [userMessage, assistantMessage],
+    { chatModel: chat.model ?? null, streamId: requestId }
+  )
+
+  // Clear active-stream marker + bump updatedAt so the chat list refreshes.
   await db
     .update(copilotChats)
     .set({
-      messages: sql`${copilotChats.messages} || ${JSON.stringify([userMessage, assistantMessage])}::jsonb`,
       conversationId: null,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(copilotChats.id, chatId),
-        eq(copilotChats.userId, userId),
-        eq(copilotChats.type, 'mothership')
-      )
-    )
+    .where(eq(copilotChats.id, chatId))
+
+  // OLD (broken after messages moved off copilot_chats): wrote to removed JSONB
+  // column, so title could update but GET still returned messages: [].
+  // await db
+  //   .update(copilotChats)
+  //   .set({
+  //     messages: sql`${copilotChats.messages} || ${JSON.stringify([userMessage, assistantMessage])}::jsonb`,
+  //     conversationId: null,
+  //     updatedAt: new Date(),
+  //   })
+  //   .where(
+  //     and(
+  //       eq(copilotChats.id, chatId),
+  //       eq(copilotChats.userId, userId),
+  //       eq(copilotChats.type, 'mothership')
+  //     )
+  //   )
+
+  logger.info('Persisted workflow execution chat turn', {
+    chatId,
+    userId,
+    requestId,
+    assistantLength: assistantOutput.length,
+  })
 }
 
 export async function POST(req: NextRequest) {
