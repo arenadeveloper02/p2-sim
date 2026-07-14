@@ -1,9 +1,15 @@
+import { isEqual } from 'es-toolkit'
 import { requestJson } from '@/lib/api/client/request'
 import { getWorkflowStateContract } from '@/lib/api/contracts'
 import { useOperationQueueStore } from '@/stores/operation-queue/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
-import { applyWorkflowStateToStores } from '@/stores/workflow-diff/utils'
+import {
+  applyWorkflowStateToStores,
+  persistWorkflowStateToServer,
+} from '@/stores/workflow-diff/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { mergeSubblockState } from '@/stores/workflows/utils'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 function canApplyServerSnapshot(
@@ -29,6 +35,32 @@ function canApplyServerSnapshot(
     !diffState.reconciliationErrors[workflowId] &&
     (diffState.remoteUpdateVersions[workflowId] ?? 0) === remoteVersionAtStart
   )
+}
+
+/**
+ * Persists any subblock values that exist only in the subblock store into the
+ * normalized draft tables before deployment. Deploy snapshots and post-deploy
+ * draft sync both read from the database, so editor-only subblock store drift
+ * would otherwise clear fields such as image generator provider/model.
+ */
+export async function flushMergedLocalDraftToServer(workflowId: string): Promise<boolean> {
+  if (useWorkflowRegistry.getState().activeWorkflowId !== workflowId) return false
+
+  const workflowStore = useWorkflowStore.getState()
+  const currentState = workflowStore.getWorkflowState()
+  const mergedBlocks = mergeSubblockState(currentState.blocks, workflowId)
+
+  if (isEqual(currentState.blocks, mergedBlocks)) {
+    return true
+  }
+
+  const mergedState: WorkflowState = {
+    ...currentState,
+    blocks: mergedBlocks,
+  }
+
+  workflowStore.replaceWorkflowState(mergedState)
+  return persistWorkflowStateToServer(workflowId, mergedState)
 }
 
 export async function syncLocalDraftFromServer(workflowId: string): Promise<boolean> {

@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { getErrorMessage } from '@sim/utils/errors'
 import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { buildLocalCopilotContext, contextToPromptJson } from '@/local-copilot/lib/context/build-context'
@@ -10,6 +11,7 @@ import {
   LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
+import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
 import {
   stripLeakedToolMarkers,
@@ -34,11 +36,8 @@ import {
 } from '@/local-copilot/lib/user-turn-content'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { LOCAL_COPILOT_TOOLS } from '@/local-copilot/lib/tools/definitions'
-import {
-  executeLocalCopilotTool,
-  refreshToolContext,
-} from '@/local-copilot/lib/tools/executor'
-import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
+import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
 import {
   buildFollowUpContinuationMessage,
   detectMandatoryFollowUp,
@@ -62,12 +61,18 @@ Identity:
 Response format:
 - Open with a warm, concise greeting when starting a conversation or after a long pause.
 - Briefly summarize what you see in the workspace (workflows, files, tables, knowledge bases) in plain prose. Do not greet with a generic capability bullet list.
+- Never mention cost, pricing, dollar amounts, or spend in user-facing replies — even if tool results include them (e.g. do not write "cost ~$0.016"). You may still mention runtime/duration when useful.
 - When suggesting next steps, end your message with a clickable options block in this exact format (never use markdown bullet lists for suggestions):
 
 <options>{"1":{"title":"Run Weekly Email Summary","description":"Execute the existing workflow and summarize results"},"2":{"title":"Debug the last run","description":"Inspect logs from the most recent execution"},"3":{"title":"Create a brand-new workflow","description":"Only when nothing existing fits"}}</options>
 
 - Each option title is sent as the user's next message when they click it — write titles as clear imperative commands (e.g. "Check my inbox", "Debug the last run").
 - Include 3–4 options when offering follow-ups. Omit the options block when no follow-ups are needed.
+- Charts: when the user asks for a chart, graph, plot, or visualization of data you have (tool results, logs, tables, numbers they provided), render it inline with a chart tag in this exact format (never quickchart.io links, never ASCII art, never a markdown table as a substitute):
+
+<chart>{"type":"bar","title":"Runs per day","labels":["Mon","Tue","Wed"],"series":[{"name":"Successful","data":[12,18,9]},{"name":"Failed","data":[1,0,3]}]}</chart>
+
+- Chart tag rules: \`type\` is one of "bar", "line", "area", "pie", "scatter". \`labels\` are x-axis categories (or slice names for pie). Each \`series\` entry has an optional \`name\` and a numeric \`data\` array (for scatter, data may be [x,y] pairs). Pie charts use exactly one series whose values pair with \`labels\`. Keep the JSON on a single line with no comments. Add a one-sentence takeaway in prose near the chart; do not repeat all the numbers in text.
 
 Rules:
 - You have awareness of the workspace, available blocks/integrations, and (when open) the current workflow structure, variables, logs, and credential metadata (never secrets).
@@ -166,13 +171,46 @@ export interface RunAgentParams {
 export async function* runLocalCopilotAgent(
   params: RunAgentParams
 ): AsyncGenerator<LocalCopilotStreamEvent, void, undefined> {
+  const startedAt = Date.now()
   const config = getLocalCopilotConfig()
-  const structuredContext = await buildLocalCopilotContext({
-    userId: params.userId,
+  logger.info('Arena Copilot agent starting', {
     workspaceId: params.workspaceId,
-    ...(params.workflowId ? { workflowId: params.workflowId } : {}),
-    selectedBlockId: params.selectedBlockId,
-    executionId: params.executionId,
+    workflowId: params.workflowId ?? null,
+    chatId: params.chatId ?? null,
+    provider: config.provider,
+    model: config.model,
+    hasApiKey: Boolean(config.apiKey),
+    messageChars: params.message.length,
+    priorTurns: params.priorMessages?.length ?? 0,
+    memory: getLocalCopilotMemorySnapshot(),
+  })
+
+  let structuredContext
+  try {
+    structuredContext = await buildLocalCopilotContext({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+      selectedBlockId: params.selectedBlockId,
+      executionId: params.executionId,
+    })
+  } catch (error) {
+    logger.error('Arena Copilot context build failed', {
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId ?? null,
+      error: getErrorMessage(error, 'context build failed'),
+      memory: getLocalCopilotMemorySnapshot(),
+    })
+    throw error
+  }
+
+  logger.info('Arena Copilot context built', {
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId ?? null,
+    workspaceWorkflowCount: structuredContext.workspaceWorkflows?.length ?? 0,
+    availableBlockCount: structuredContext.availableBlocks?.length ?? 0,
+    durationMs: Date.now() - startedAt,
+    memory: getLocalCopilotMemorySnapshot(),
   })
 
   const persistLocally = params.persistLocally !== false
@@ -249,10 +287,12 @@ export async function* runLocalCopilotAgent(
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages),
+    toolDefinitionCount: LOCAL_COPILOT_TOOLS.length,
+    memory: getLocalCopilotMemorySnapshot(),
   })
 
   const provider = getLocalCopilotProvider()
-  const toolCtx = {
+  const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId,
@@ -262,6 +302,25 @@ export async function* runLocalCopilotAgent(
     structuredContext,
     selectedBlockId: params.selectedBlockId,
     lastUserMessage: userTurnText,
+  }
+
+  /** Loads the heavy tool executor graph on first tool call only. */
+  let toolExecutorModule: typeof import('@/local-copilot/lib/tools/executor') | null = null
+  async function getToolExecutor() {
+    if (!toolExecutorModule) {
+      const loadStartedAt = Date.now()
+      logger.info('Arena Copilot lazy-loading tool executor', {
+        workspaceId: params.workspaceId,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
+      toolExecutorModule = await import('@/local-copilot/lib/tools/executor')
+      logger.info('Arena Copilot tool executor loaded', {
+        workspaceId: params.workspaceId,
+        durationMs: Date.now() - loadStartedAt,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
+    }
+    return toolExecutorModule
   }
   let assistantText = ''
   let proposedPatch: WorkflowPatch | undefined
@@ -296,6 +355,16 @@ export async function* runLocalCopilotAgent(
         roundOutputTokens = chunk.usage.outputTokens
       }
     }
+
+    logger.info('Arena Copilot model round finished', {
+      round,
+      toolCallCount: pendingToolCalls.length,
+      toolNames: pendingToolCalls.map((call) => call.name),
+      assistantChars: assistantText.length,
+      inputTokens: roundInputTokens,
+      outputTokens: roundOutputTokens,
+      memory: getLocalCopilotMemorySnapshot(),
+    })
 
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
       await recordModelUsage({
@@ -362,7 +431,23 @@ export async function* runLocalCopilotAgent(
         args: parsedArgs,
       }
 
+      const { executeLocalCopilotTool, refreshToolContext } = await getToolExecutor()
+      const toolStartedAt = Date.now()
+      logger.info('Arena Copilot tool starting', {
+        toolName: call.name,
+        toolCallId: call.id,
+        workflowId: toolCtx.workflowId ?? null,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
       const result = await executeLocalCopilotTool(call.name, parsedArgs, toolCtx)
+      logger.info('Arena Copilot tool finished', {
+        toolName: call.name,
+        toolCallId: call.id,
+        success: result.success,
+        error: result.error ?? null,
+        durationMs: Date.now() - toolStartedAt,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
 
       if (result.createdWorkflowId) {
         toolCtx.workflowId = result.createdWorkflowId
@@ -505,7 +590,15 @@ export async function* runLocalCopilotAgent(
     conversationId: conversationId ?? null,
     messageId: messageId || null,
     patchId: patchId ?? null,
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId ?? null,
     historyTurns: historyMessages.length,
+    assistantChars: assistantText.length,
+    toolCallCount: turnToolRecords.length,
+    toolNames: turnToolRecords.map((record) => record.name),
+    hasPatch: Boolean(proposedPatch),
+    durationMs: Date.now() - startedAt,
+    memory: getLocalCopilotMemorySnapshot(),
   })
   yield { type: 'done', messageId: messageId || generateId() }
 }

@@ -91,14 +91,13 @@ function simulatePatch(
   for (const change of changes) {
     switch (change.operation) {
       case 'add_block': {
-        const block = change.block as { id: string }
-        if (block.id) blocks[block.id] = change.block as WorkflowState['blocks'][string]
+        if (change.block.id) blocks[change.block.id] = change.block
         break
       }
       case 'update_block': {
         const existing = blocks[change.blockId]
         if (existing) {
-          blocks[change.blockId] = { ...existing, ...change.updates } as typeof existing
+          blocks[change.blockId] = { ...existing, ...change.updates }
         }
         break
       }
@@ -108,7 +107,7 @@ function simulatePatch(
         break
       }
       case 'add_edge': {
-        edges.push(change.edge as (typeof edges)[number])
+        edges.push(change.edge)
         break
       }
       case 'remove_edge': {
@@ -116,14 +115,13 @@ function simulatePatch(
         break
       }
       case 'add_variable': {
-        const variable = change.variable as { id: string }
-        if (variable.id) variables[variable.id] = change.variable as (typeof variables)[string]
+        if (change.variable.id) variables[change.variable.id] = change.variable
         break
       }
       case 'update_variable': {
         const existing = variables[change.variableId]
         if (existing) {
-          variables[change.variableId] = { ...existing, ...change.updates } as typeof existing
+          variables[change.variableId] = { ...existing, ...change.updates }
         }
         break
       }
