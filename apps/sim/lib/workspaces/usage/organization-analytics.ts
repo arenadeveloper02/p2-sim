@@ -8,7 +8,7 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
 import type { OrganizationUsageAnalytics } from '@/lib/api/contracts/organization-usage'
 import type { UsageChargeTypeValue } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
@@ -399,11 +399,19 @@ export async function getOrganizationUsageAnalytics(
           withLedgerCost: sql<number>`count(distinct case when ${usageLog.id} is not null then ${copilotChats.id} end)::int`,
         })
         .from(copilotChats)
+        .leftJoin(
+          copilotRuns,
+          and(eq(copilotRuns.chatId, copilotChats.id), ...periodRange(copilotRuns.startedAt, period))
+        )
         .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
         .where(
           and(
             inArray(copilotChats.workspaceId, workspaceIds),
-            or(and(...periodRange(copilotChats.createdAt, period)), isNotNull(usageLog.id))
+            or(
+              and(...periodRange(copilotChats.createdAt, period)),
+              isNotNull(usageLog.id),
+              isNotNull(copilotRuns.id)
+            )
           )
         ),
 
@@ -484,13 +492,22 @@ export async function getOrganizationUsageAnalytics(
         .where(and(...ledgerConditions))
         .groupBy(resolvedActorUserIdExpr(), resolvedActorTypeExpr()),
 
+      // Model & tool usage is workflow-oriented. Mothership/copilot spend
+      // (including home chat billed as description "mothership") lives under
+      // the Mothership & copilot section via COPILOT_USAGE_SOURCES.
       dbReplica
         .select({
           model: usageLog.description,
           ...ledgerCostSelect(),
         })
         .from(usageLog)
-        .where(and(...ledgerConditions, eq(usageLog.category, 'model')))
+        .where(
+          and(
+            ...ledgerConditions,
+            eq(usageLog.category, 'model'),
+            notInArray(usageLog.source, COPILOT_USAGE_SOURCES)
+          )
+        )
         .groupBy(usageLog.description),
 
       dbReplica
@@ -665,6 +682,7 @@ export async function getOrganizationUsageAnalytics(
       'provider',
       'tool',
       'cost_block',
+      'mothership',
       'other',
     ]
     const byChargeType = applyEmbeddedToolChargeTypeSplit(

@@ -24,6 +24,7 @@ export async function recordModelUsage(params: RecordModelUsageParams): Promise<
     workspaceId,
     workflowId,
     executionId,
+    chatId,
     sourceReference,
   } = params
 
@@ -43,6 +44,7 @@ export async function recordModelUsage(params: RecordModelUsageParams): Promise<
       workspaceId,
       workflowId,
       executionId,
+      ...(chatId ? { chatId } : {}),
       entries: [
         {
           category: 'model',
@@ -63,6 +65,7 @@ export async function recordModelUsage(params: RecordModelUsageParams): Promise<
       workspaceId,
       workflowId,
       executionId,
+      chatId,
     })
   }
 }

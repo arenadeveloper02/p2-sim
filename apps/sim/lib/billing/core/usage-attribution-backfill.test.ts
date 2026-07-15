@@ -4,6 +4,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   normalizeUsageLogRowForBackfill,
+  parseArenaCopilotChatIdFromSourceReference,
+  parseUpdateCostBillingMessageId,
   resolveBackfillActorFromTrigger,
   resolveModelIdentifierForBackfill,
 } from '@/lib/billing/core/usage-attribution-backfill'
@@ -99,5 +101,35 @@ describe('normalizeUsageLogRowForBackfill', () => {
     })
 
     expect(result).toBeNull()
+  })
+})
+
+describe('parseUpdateCostBillingMessageId', () => {
+  it('extracts message id from update-cost event keys', () => {
+    expect(parseUpdateCostBillingMessageId('update-cost:msg-abc-billing')).toBe('msg-abc')
+    expect(parseUpdateCostBillingMessageId('update-cost:550e8400-e29b-41d4-a716-446655440000-billing')).toBe(
+      '550e8400-e29b-41d4-a716-446655440000'
+    )
+  })
+
+  it('returns null for non-matching keys', () => {
+    expect(parseUpdateCostBillingMessageId(null)).toBeNull()
+    expect(parseUpdateCostBillingMessageId('sha256hash')).toBeNull()
+    expect(parseUpdateCostBillingMessageId('update-cost:msg')).toBeNull()
+  })
+})
+
+describe('parseArenaCopilotChatIdFromSourceReference', () => {
+  it('extracts chat id from arena-copilot source references', () => {
+    expect(
+      parseArenaCopilotChatIdFromSourceReference(
+        'arena-copilot:550e8400-e29b-41d4-a716-446655440000:round-2'
+      )
+    ).toBe('550e8400-e29b-41d4-a716-446655440000')
+  })
+
+  it('returns null for historical local-copilot refs', () => {
+    expect(parseArenaCopilotChatIdFromSourceReference('local-copilot:ws-1:round-0')).toBeNull()
+    expect(parseArenaCopilotChatIdFromSourceReference(null)).toBeNull()
   })
 })

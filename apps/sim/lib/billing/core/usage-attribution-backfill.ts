@@ -145,3 +145,42 @@ export function normalizeUsageLogRowForBackfill(
 
   return null
 }
+
+/** Matches `/api/billing/update-cost` idempotency keys: `update-cost:{messageId}-billing`. */
+const UPDATE_COST_BILLING_EVENT_KEY =
+  /^update-cost:(.+)-billing$/
+
+/**
+ * Extracts the mothership/copilot message (stream) id from an update-cost event key.
+ * Returns null when the key is not an update-cost billing key.
+ */
+export function parseUpdateCostBillingMessageId(
+  eventKey: string | null | undefined
+): string | null {
+  if (!eventKey) return null
+  const match = UPDATE_COST_BILLING_EVENT_KEY.exec(eventKey.trim())
+  const messageId = match?.[1]?.trim()
+  return messageId && messageId.length > 0 ? messageId : null
+}
+
+/**
+ * Extracts a mothership chat id from Arena Copilot source references of the form
+ * `arena-copilot:{chatId}:round-N`. Historical `local-copilot:*` refs are not recoverable
+ * this way (chat id was never embedded).
+ */
+export function parseArenaCopilotChatIdFromSourceReference(
+  sourceReference: string | null | undefined
+): string | null {
+  if (!sourceReference) return null
+  const match = /^arena-copilot:([0-9a-f-]{36}):round-\d+$/i.exec(sourceReference.trim())
+  return match?.[1] ?? null
+}
+
+/** Copilot/mothership sources that should carry usage_log.chat_id for Usage joins. */
+export const MOTHERSHIP_CHAT_ATTRIBUTION_SOURCES = [
+  'copilot',
+  'workspace-chat',
+  'mcp_copilot',
+  'mothership_block',
+] as const
+

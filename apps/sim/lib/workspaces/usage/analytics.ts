@@ -14,6 +14,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  notInArray,
   or,
   sql,
 } from 'drizzle-orm'
@@ -300,6 +301,13 @@ export async function getWorkspaceUsageAnalytics(
         })
         .from(copilotChats)
         .leftJoin(
+          copilotRuns,
+          and(
+            eq(copilotRuns.chatId, copilotChats.id),
+            ...periodRange(copilotRuns.startedAt, period)
+          )
+        )
+        .leftJoin(
           usageLog,
           and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions)
         )
@@ -308,7 +316,8 @@ export async function getWorkspaceUsageAnalytics(
             eq(copilotChats.workspaceId, workspaceId),
             or(
               and(...periodRange(copilotChats.createdAt, period)),
-              isNotNull(usageLog.id)
+              isNotNull(usageLog.id),
+              isNotNull(copilotRuns.id)
             )
           )
         ),
@@ -399,13 +408,22 @@ export async function getWorkspaceUsageAnalytics(
         .where(and(...ledgerConditions))
         .groupBy(resolvedActorUserIdExpr(), resolvedActorTypeExpr()),
 
+      // Model & tool usage is workflow-oriented. Mothership/copilot spend
+      // (including home chat billed as description "mothership") lives under
+      // the Mothership & copilot section via COPILOT_USAGE_SOURCES.
       dbReplica
         .select({
           model: usageLog.description,
           ...ledgerCostSelect(),
         })
         .from(usageLog)
-        .where(and(...ledgerConditions, eq(usageLog.category, 'model')))
+        .where(
+          and(
+            ...ledgerConditions,
+            eq(usageLog.category, 'model'),
+            notInArray(usageLog.source, COPILOT_USAGE_SOURCES)
+          )
+        )
         .groupBy(usageLog.description),
 
       dbReplica
@@ -651,6 +669,7 @@ export async function getWorkspaceUsageAnalytics(
       'provider',
       'tool',
       'cost_block',
+      'mothership',
       'other',
     ]
     const byChargeType = applyEmbeddedToolChargeTypeSplit(

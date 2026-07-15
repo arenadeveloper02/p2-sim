@@ -12,10 +12,13 @@ import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/compone
 export const SOURCE_LABELS: Record<UsageLogSourceValue, string> = {
   workflow: 'Workflow',
   wand: 'Wand',
-  copilot: 'Copilot',
-  'workspace-chat': 'Workspace chat',
+  /** Arena Copilot / local mothership (Sim `models.ts` pricing). */
+  copilot: 'Arena Copilot',
+  /** Sim Cloud mothership home chat (Go-priced). */
+  'workspace-chat': 'Sim Mothership',
   mcp_copilot: 'MCP copilot',
-  mothership_block: 'Mothership block',
+  /** Sim Cloud mothership block in a workflow (Go-priced). */
+  mothership_block: 'Sim Mothership block',
   'knowledge-base': 'Knowledge base',
   'voice-input': 'Voice input',
   enrichment: 'Enrichment',
@@ -27,6 +30,7 @@ export const CHARGE_TYPE_LABELS: Record<UsageChargeTypeValue, string> = {
   provider: 'Provider / model',
   tool: 'Hosted tools',
   cost_block: 'Cost blocks',
+  mothership: 'Mothership pricing',
   other: 'Other',
 }
 

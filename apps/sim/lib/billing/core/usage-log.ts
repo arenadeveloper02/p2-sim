@@ -160,8 +160,9 @@ export type UsageLogSource =
 
 /**
  * usage_log sources that make up the "copilot" cost breakdown shown in billing
- * summaries: the copilot agent, mothership/workspace chat, MCP copilot, and
- * mothership blocks. Mirrors the source set billed via /api/billing/update-cost.
+ * summaries: Arena Copilot (local mothership), Sim Cloud mothership/workspace
+ * chat, MCP copilot, and mothership blocks. Local and Sim Cloud mothership stay
+ * on different sources (`copilot` vs `workspace-chat` / `mothership_block`).
  */
 export const COPILOT_USAGE_SOURCES: UsageLogSource[] = [
   'copilot',

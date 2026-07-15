@@ -142,7 +142,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
           { chargeType: 'base_run', billableCost: '0.5', rawCost: '0.5', count: 1 },
           { chargeType: 'provider', billableCost: '5.5', rawCost: '4.5', count: 1 },
           { chargeType: 'cost_block', billableCost: '1', rawCost: '0.8', count: 1 },
-          { chargeType: 'other', billableCost: '2.5', rawCost: '2.5', count: 1 },
+          { chargeType: 'mothership', billableCost: '2.5', rawCost: '2.5', count: 1 },
         ],
         2: [{ ...EMPTY_USAGE, totalTokens: 1200, invocationCount: 4 }],
         3: ATTRIBUTION_OK,
@@ -185,7 +185,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
       expect.objectContaining({ chargeType: 'base_run', billableCost: 0.5, count: 1 }),
       expect.objectContaining({ chargeType: 'provider', billableCost: 5.5, count: 1 }),
       expect.objectContaining({ chargeType: 'cost_block', billableCost: 1, count: 1 }),
-      expect.objectContaining({ chargeType: 'other', billableCost: 2.5, count: 1 }),
+      expect.objectContaining({ chargeType: 'mothership', billableCost: 2.5, count: 1 }),
     ])
     expect(analytics.workflow.executions.totalProjectedCost).toBe(6)
     expect(analytics.workflow.executions.totalLedgerCost).toBe(6)

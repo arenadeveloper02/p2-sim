@@ -182,10 +182,13 @@ export function ledgerCostSelect() {
 
 /**
  * Maps ledger category/description into dashboard charge buckets:
- * base run fee, provider/model spend, hosted tools, Cost-block pass-through.
+ * base run fee, provider/model spend, hosted tools, Cost-block pass-through,
+ * and mothership/copilot pricing (kept out of the workflow provider bucket).
  */
 export function chargeTypeExpr() {
   return sql<string>`case
+    when ${usageLog.source} in ('copilot', 'workspace-chat', 'mcp_copilot', 'mothership_block')
+      then 'mothership'
     when ${usageLog.category} = 'fixed' and ${usageLog.description} = 'execution_fee' then 'base_run'
     when ${usageLog.category} = 'model' then 'provider'
     when ${usageLog.category} = 'tool' then 'tool'

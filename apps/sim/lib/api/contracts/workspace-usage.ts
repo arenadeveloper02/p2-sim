@@ -26,6 +26,7 @@ export const usageChargeTypeSchema = z.enum([
   'provider',
   'tool',
   'cost_block',
+  'mothership',
   'other',
 ])
 

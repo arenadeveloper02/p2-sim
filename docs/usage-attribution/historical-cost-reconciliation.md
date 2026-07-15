@@ -46,6 +46,20 @@ Do not write to production until all checks pass:
 - Copilot and Mothership chat totals remain Go-reported aggregates. Sim cannot reconstruct their historical internal tool costs.
 - Audit/dry-run/apply default to `--only-priced-tools` (allowlist in `RECONCILE_PRICED_TOOL_ALLOWLIST`). Use `--all-tools` only for full-inventory audits.
 
+### Mothership chat_id attribution (Usage joins)
+
+Settings → Usage joins mothership/copilot billable cost via `usage_log.chat_id`. Rows missing `chat_id` show as activity without ledger cost.
+
+```bash
+# High-confidence only (Sim update-cost event keys + run_id)
+bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts --dry-run
+bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts
+
+# Also attach Arena Copilot historical rows via unique run time-window matches
+bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts --fuzzy --dry-run
+bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts --fuzzy
+```
+
 Run the preflight checks:
 
 ```bash

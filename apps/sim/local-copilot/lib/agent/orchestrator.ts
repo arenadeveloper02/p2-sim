@@ -386,17 +386,23 @@ export async function* runLocalCopilotAgent(
     })
 
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
+      // Arena Copilot (local mothership) bills via Sim `models.ts` pricing under
+      // source `copilot`. Sim Cloud mothership uses Go pricing + `workspace-chat`
+      // / `mothership_block` via `/api/billing/update-cost` — keep these separate.
       await recordModelUsage({
         userId: params.userId,
         workspaceId: params.workspaceId,
         workflowId: params.workflowId,
+        ...(params.chatId ? { chatId: params.chatId } : {}),
         model: config.model,
         inputTokens: roundInputTokens,
         outputTokens: roundOutputTokens,
         source: 'copilot',
-        sourceReference: conversationId
-          ? `local-copilot:${conversationId}:round-${round}`
-          : `local-copilot:${params.workspaceId}:round-${round}`,
+        sourceReference: params.chatId
+          ? `arena-copilot:${params.chatId}:round-${round}`
+          : conversationId
+            ? `arena-copilot:${conversationId}:round-${round}`
+            : `arena-copilot:${params.workspaceId}:round-${round}`,
       })
     }
 
