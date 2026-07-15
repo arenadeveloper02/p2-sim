@@ -223,9 +223,7 @@ function SvgPreview({ content }: { content: string }) {
 
   useEffect(() => {
     const normalized = normalizeSvgForPreview(content)
-    const url = URL.createObjectURL(
-      new Blob([normalized], { type: 'image/svg+xml;charset=utf-8' })
-    )
+    const url = URL.createObjectURL(new Blob([normalized], { type: 'image/svg+xml;charset=utf-8' }))
     const previous = blobUrlRef.current
     blobUrlRef.current = url
     setBlobUrl(url)
