@@ -20,6 +20,18 @@ export interface GAQLResponse {
   query_type?: string
   tables_used?: string[]
   metrics_used?: string[]
+  /** LLM cost from query generation (for tool output → span billing). */
+  cost?: {
+    input: number
+    output: number
+    total: number
+  }
+  model?: string
+  tokens?: {
+    input: number
+    output: number
+    total: number
+  }
 }
 
 export interface ProcessedResults {

@@ -1,13 +1,47 @@
+import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
+import { buildToolLlmCostFromModelUsage } from '@/lib/billing/core/tool-llm-cost'
 import { formatBuildErrorsSummary } from '@/lib/development/format-generated-app-build-errors'
 import type { GenerateNextjsAppResult } from '@/lib/development/nextjs-app-generator'
 import type { DevelopmentGenerateAppResponse } from '@/tools/development/types'
+
+type GenerateAppResultWithBilling = GenerateNextjsAppResult & {
+  cost?: {
+    input: number
+    output: number
+    total: number
+  }
+  model?: string
+  tokens?: {
+    input: number
+    output: number
+    total: number
+  }
+  llmUsage?: ModelUsageByModel
+}
+
+/**
+ * Resolves LLM billing fields from the API payload (precomputed or from llmUsage).
+ */
+function resolveBillingFields(data: GenerateAppResultWithBilling) {
+  if (data.cost && typeof data.cost.total === 'number') {
+    return {
+      cost: data.cost,
+      ...(typeof data.model === 'string' ? { model: data.model } : {}),
+      ...(data.tokens ? { tokens: data.tokens } : {}),
+      ...(data.llmUsage ? { llmUsage: data.llmUsage } : {}),
+    }
+  }
+  return buildToolLlmCostFromModelUsage(data.llmUsage)
+}
 
 /**
  * Maps API / generator result JSON into the Development block tool response shape.
  */
 export function mapGenerateAppResultToToolResponse(
-  data: GenerateNextjsAppResult
+  data: GenerateAppResultWithBilling
 ): DevelopmentGenerateAppResponse {
+  const billing = resolveBillingFields(data)
+
   if (!data.success) {
     const wroteFiles =
       (data.fileCount ?? 0) > 0 && Boolean(data.outputPath || data.absoluteOutputPath)
@@ -56,6 +90,7 @@ export function mapGenerateAppResultToToolResponse(
         databaseProvisioned: data.databaseProvisioned ?? null,
         neonProjectId: data.neonProjectId ?? null,
         databaseProvisionError: data.databaseProvisionError ?? null,
+        ...(billing ?? {}),
       },
       error: data.error,
     }
@@ -123,6 +158,7 @@ export function mapGenerateAppResultToToolResponse(
       databaseProvisioned: data.databaseProvisioned ?? null,
       neonProjectId: data.neonProjectId ?? null,
       databaseProvisionError: data.databaseProvisionError ?? null,
+      ...(billing ?? {}),
     },
   }
 }

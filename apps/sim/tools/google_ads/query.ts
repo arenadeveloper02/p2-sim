@@ -290,12 +290,17 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
         throw new Error(`Google Ads API error: ${data.error}`)
       }
 
-      const finalResult = {
-        success: true,
-        output: data,
-      }
+      const { cost, model, tokens, ...payload } = data
 
-      return finalResult
+      return {
+        success: true,
+        output: {
+          ...payload,
+          ...(cost && typeof cost === 'object' ? { cost } : {}),
+          ...(typeof model === 'string' ? { model } : {}),
+          ...(tokens && typeof tokens === 'object' ? { tokens } : {}),
+        },
+      }
     } catch (error) {
       logger.error('Google Ads query failed', { error })
 

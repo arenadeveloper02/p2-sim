@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
+import { buildToolLlmCostFields } from '@/lib/billing/core/tool-llm-cost'
 import { getMaxOutputTokensForModel } from '@/providers/utils'
 import type { ToolConfig, WorkflowToolExecutionContext } from '@/tools/types'
 
@@ -34,6 +35,18 @@ export interface FigmaToHTMLAIResponse {
       inputTokens: number
       outputTokens: number
       combinedHtml: string
+    }
+    /** Overall tool price (= LLM cost). */
+    cost?: {
+      input: number
+      output: number
+      total: number
+    }
+    model?: string
+    tokens?: {
+      input: number
+      output: number
+      total: number
     }
   }
   error?: string
@@ -376,6 +389,12 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
       cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse extra spaces
       cleanedHtml = cleanedHtml.trim() // trim ends
 
+      const billing = buildToolLlmCostFields(
+        aiResult.model,
+        aiResult.inputTokens,
+        aiResult.outputTokens
+      )
+
       return {
         success: true,
         output: {
@@ -389,6 +408,7 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
             outputTokens: aiResult.outputTokens,
             combinedHtml: cleanedHtml,
           },
+          ...(billing ?? {}),
         },
       }
     } catch (error) {
@@ -441,6 +461,11 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
           description: 'Generated HTML document with embedded CSS styles',
         },
       },
+    },
+    cost: {
+      type: 'object',
+      description: 'LLM cost for the conversion (overall tool price)',
+      optional: true,
     },
   },
 }

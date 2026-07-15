@@ -179,6 +179,9 @@ export async function POST(request: NextRequest) {
       account_name: accountName,
       query,
       timestamp,
+      ...(parsedQuery.cost ? { cost: parsedQuery.cost } : {}),
+      ...(parsedQuery.model ? { model: parsedQuery.model } : {}),
+      ...(parsedQuery.tokens ? { tokens: parsedQuery.tokens } : {}),
     }
 
     logger.info('Facebook Ads API request successful', {

@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { extractProviderToolCostFields } from '@/lib/billing/core/tool-llm-cost'
 import { executeProviderRequest } from '@/providers'
 import { resolveProvider } from './ai-provider'
 import { parseAiResponse } from './ai-response'
@@ -42,6 +43,9 @@ export async function generateSmartGAQL(
       comparisonQuery: aiResult.comparisonQuery,
       comparisonStartDate: aiResult.comparisonStartDate,
       comparisonEndDate: aiResult.comparisonEndDate,
+      ...(aiResult.cost ? { cost: aiResult.cost } : {}),
+      ...(aiResult.model ? { model: aiResult.model } : {}),
+      ...(aiResult.tokens ? { tokens: aiResult.tokens } : {}),
     }
   } catch (error) {
     logger.error('AI GAQL generation failed', { error, userQuestion, accountName })
@@ -263,6 +267,7 @@ Please re-run the agent with a clearer date specification.`
       comparisonQuery: parsed.comparisonQuery,
       comparisonStartDate: parsed.comparisonStartDate,
       comparisonEndDate: parsed.comparisonEndDate,
+      ...extractProviderToolCostFields(aiResponse),
     }
   } catch (error) {
     logger.error('AI query parsing failed', { error })

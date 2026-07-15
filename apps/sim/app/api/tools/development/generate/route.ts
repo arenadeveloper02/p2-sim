@@ -2,10 +2,10 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { buildToolLlmCostFromModelUsage } from '@/lib/billing/core/tool-llm-cost'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { generateNextjsApp } from '@/lib/development/nextjs-app-generator'
-import { recordDevelopmentModelUsage } from '@/lib/development/record-development-model-usage'
 import {
   getDevelopmentReferenceImageErrorMessage,
   resolveDevelopmentReferenceImage,
@@ -26,18 +26,14 @@ const ReferenceImageFileSchema = z
   })
   .passthrough()
 
-const billingContextSchema = z.object({
-  workspaceId: z.string().optional(),
-  workflowId: z.string().optional(),
-  executionId: z.string().optional(),
-})
-
 const RequestSchema = z.object({
   userInput: z.string().min(1, 'userInput is required'),
   repoName: z.string().optional(),
   privateRepo: z.boolean().optional(),
   referenceImage: ReferenceImageFileSchema.optional(),
-  ...billingContextSchema.shape,
+  workspaceId: z.string().optional(),
+  workflowId: z.string().optional(),
+  executionId: z.string().optional(),
 })
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
@@ -90,17 +86,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     referenceImage,
   })
 
-  await recordDevelopmentModelUsage(result.llmUsage, {
-    userId: auth.userId,
-    workspaceId: parsed.data.workspaceId,
-    workflowId: parsed.data.workflowId,
-    executionId: parsed.data.executionId,
-    requestId,
-  })
+  // Cost is returned on the response for span → usage_log billing (no side-channel).
+  const billing = buildToolLlmCostFromModelUsage(result.llmUsage)
 
   if (!result.success) {
-    return NextResponse.json(result, { status: 500 })
+    return NextResponse.json(billing ? { ...result, ...billing } : result, { status: 500 })
   }
 
-  return NextResponse.json(result)
+  return NextResponse.json(billing ? { ...result, ...billing } : result)
 })
