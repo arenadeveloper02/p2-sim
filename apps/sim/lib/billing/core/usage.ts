@@ -184,9 +184,15 @@ export async function ensureUserStatsExists(userId: string): Promise<void> {
 /**
  * Get comprehensive usage data for a user
  */
+export interface GetUserUsageDataOptions {
+  /** When true, use `user_stats` limits and personal usage even if the user has an org-scoped subscription. */
+  personalAccount?: boolean
+}
+
 export async function getUserUsageData(
   userId: string,
-  executor: DbClient = db
+  executor: DbClient = db,
+  options?: GetUserUsageDataOptions
 ): Promise<UsageData> {
   try {
     // Write — always on the primary regardless of executor routing.
@@ -210,7 +216,8 @@ export async function getUserUsageData(
     }
 
     const stats = userStatsData[0]
-    const orgScoped = isOrgScopedSubscription(subscription, userId)
+    const orgScoped =
+      isOrgScopedSubscription(subscription, userId) && !options?.personalAccount
     const billingPeriod =
       subscription?.periodStart && subscription.periodEnd
         ? { start: subscription.periodStart, end: subscription.periodEnd }

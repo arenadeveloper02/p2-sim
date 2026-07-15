@@ -602,3 +602,57 @@ export async function checkActorUsageLimits(
 
   return { isExceeded: false }
 }
+
+/**
+ * Mothership/copilot usage gate with split billing actors: the org pooled cap
+ * ({@link checkServerSideUsageLimits}) runs against the workspace billed account
+ * when the workspace is org-owned; otherwise it runs against the session user.
+ * The per-member org cap ({@link checkOrgMemberUsageLimit}) always runs against
+ * the session user. Self-hosted deployments use the copilot-only mothership cap.
+ */
+export async function checkMothershipUsageLimits(
+  sessionUserId: string,
+  workspaceId?: string | null
+): Promise<{ isExceeded: boolean; message?: string; scope?: 'pooled' | 'member' }> {
+  if (!isBillingEnabled) {
+    return { isExceeded: false }
+  }
+
+  if (!isHosted) {
+    const selfHosted = await checkSelfHostedMothershipUsageLimits(sessionUserId)
+    if (selfHosted.isExceeded) {
+      return { isExceeded: true, message: selfHosted.message, scope: 'pooled' }
+    }
+    return { isExceeded: false }
+  }
+
+  let pooledUserId = sessionUserId
+  if (workspaceId) {
+    const [workspaceRow] = await db
+      .select({
+        organizationId: workspace.organizationId,
+        billedAccountUserId: workspace.billedAccountUserId,
+      })
+      .from(workspace)
+      .where(eq(workspace.id, workspaceId))
+      .limit(1)
+
+    if (workspaceRow?.organizationId && workspaceRow.billedAccountUserId) {
+      pooledUserId = workspaceRow.billedAccountUserId
+    }
+  }
+
+  const pooled = await checkServerSideUsageLimits(pooledUserId)
+  if (pooled.isExceeded) {
+    return { isExceeded: true, message: pooled.message, scope: 'pooled' }
+  }
+
+  if (workspaceId) {
+    const member = await checkOrgMemberUsageLimit(sessionUserId, workspaceId)
+    if (member.isExceeded) {
+      return { isExceeded: true, message: member.message, scope: 'member' }
+    }
+  }
+
+  return { isExceeded: false }
+}

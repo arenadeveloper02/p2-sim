@@ -54,6 +54,7 @@ import {
   ZoomIcon,
 } from '@/components/icons'
 import { env } from '@/lib/core/config/env'
+import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import type { OAuthProviderConfig } from './types'
 
 const logger = createLogger('OAuth')
@@ -1363,7 +1364,7 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         env.MICROSOFT_CLIENT_SECRET
       )
       return {
-        tokenEndpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        tokenEndpoint: getMicrosoftOAuthEndpoints().tokenUrl,
         clientId,
         clientSecret,
         useBasicAuth: false,
