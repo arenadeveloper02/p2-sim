@@ -306,7 +306,13 @@ globalThis.getFileBase64 = async function(fileId){ const p='/home/user/inputs/'+
 globalThis.addImage = async function(fileId, opts){ if(!opts||opts.width==null||opts.height==null) throw new Error('addImage: opts must include width and height'); const p='/home/user/inputs/'+fileId; if(!fs.existsSync(p)) throw new Error('addImage: file not staged: '+fileId); const b=fs.readFileSync(p); const ext=(b[0]===0x89?'png':b[0]===0xff?'jpg':b[0]===0x47?'gif':'png'); const { width, height, type:_t, data:_d, transformation:ut, ...rest } = opts; return new docx.ImageRun(Object.assign(rest, { data: b, type: ext, transformation: Object.assign({ width, height }, ut||{}) })); };
 `.trim()
 
-const PPTX_NODE_FINALIZE = `await globalThis.pptx.writeFile({ fileName: '/home/user/output.pptx' });`
+const PPTX_NODE_FINALIZE = `
+const __slides = globalThis.pptx && globalThis.pptx._slides;
+if (!Array.isArray(__slides) || __slides.length === 0) {
+  throw new Error('Presentation has no slides. Call pptx.addSlide() and add content before finishing.');
+}
+await globalThis.pptx.writeFile({ fileName: '/home/user/output.pptx' });
+`.trim()
 const DOCX_NODE_FINALIZE = `
 let doc = globalThis.doc;
 if (!doc && globalThis.__docxSections.length > 0) doc = new docx.Document(Object.assign({}, globalThis.__docxDocOptions || {}, { sections: globalThis.__docxSections }));
@@ -447,5 +453,8 @@ export async function resolveServableDoc(
   const magic = fmt.ext === 'pdf' ? PDF_MAGIC : ZIP_MAGIC
   if (bufferStartsWith(storedBytes, magic)) return { kind: 'passthrough' }
   const artifact = await loadCompiledDocByExt(workspaceId, storedBytes.toString('utf-8'), fmt.ext)
-  return artifact ? { kind: 'artifact', ...artifact } : { kind: 'unavailable' }
+  if (artifact && artifact.buffer.length > 0) {
+    return { kind: 'artifact', ...artifact }
+  }
+  return { kind: 'unavailable' }
 }

@@ -3,6 +3,10 @@
 import { memo, useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
+import {
+  getEmptyDocPreviewMessage,
+  getZeroByteDocPreviewMessage,
+} from '@/app/workspace/[workspaceId]/files/components/file-viewer/empty-doc-preview'
 import { PptxSandboxHost } from '@/app/workspace/[workspaceId]/files/components/file-viewer/pptx-sandbox-host'
 import {
   PREVIEW_LOADING_OVERLAY,
@@ -25,6 +29,7 @@ export const PptxPreview = memo(function PptxPreview({
   file: WorkspaceFileRecord
   workspaceId: string
 }) {
+  const emptyMessage = getEmptyDocPreviewMessage(file, 'presentation')
   const preview = useDocPreviewBinary(workspaceId, file)
   const fileData = preview.data
   const cacheKey = pptxCacheKey(file.id, preview.dataUpdatedAt, fileData?.byteLength ?? 0)
@@ -50,9 +55,17 @@ export const PptxPreview = memo(function PptxPreview({
     setRenderError(message || 'Failed to render presentation')
   }
 
+  if (emptyMessage) return <PreviewError label='presentation' error={emptyMessage} />
+
   const error = resolvePreviewError(preview.error, renderError)
 
   if (error) return <PreviewError label='presentation' error={error} />
+
+  if (fileData && fileData.byteLength === 0) {
+    return (
+      <PreviewError label='presentation' error={getZeroByteDocPreviewMessage('presentation')} />
+    )
+  }
 
   if (!fileData) {
     return <PreviewLoadingFrame className='h-full flex-1' tone='surface' />

@@ -18,7 +18,10 @@ import {
   executeLoadUserSkill,
   LOAD_USER_SKILL_TOOL_NAME,
 } from '@/local-copilot/lib/tools/user-skills'
-import { enrichLocalIntegrationToolParams } from '@/local-copilot/lib/tools/enrich-integration-params'
+import {
+  enrichLocalIntegrationToolParams,
+  SEPARATE_DRAFT_RECIPIENTS_KEY,
+} from '@/local-copilot/lib/tools/enrich-integration-params'
 import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
@@ -214,6 +217,18 @@ export async function executeLocalCopilotTool(
     return runLoadUserSkill(args, ctx)
   }
 
+  // Cloud agents call load_integration_tool after listing; Arena uses invoke_integration_tool.
+  if (toolName === 'load_integration_tool') {
+    const message =
+      'load_integration_tool is Cloud-only. Call list_integration_tools then invoke_integration_tool({ toolId: "<id>", params: { ... } }) with the listed tool id (e.g. gmail_draft_v2).'
+    return {
+      toolName,
+      success: false,
+      error: message,
+      result: { error: message },
+    }
+  }
+
   const definition = getToolDefinition(toolName)
   if (!definition) {
     throw new Error(`Unknown tool: ${toolName}`)
@@ -369,7 +384,8 @@ export async function executeLocalCopilotTool(
       const { executeTool: executeCopilotRegistryTool } = await import(
         '@/lib/copilot/tool-executor/executor'
       )
-      const integrationResult = await executeCopilotRegistryTool(toolId, params, {
+
+      const executionContext = {
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workflowId: ctx.workflowId ?? '',
@@ -377,7 +393,50 @@ export async function executeLocalCopilotTool(
         abortSignal: ctx.abortSignal,
         copilotToolExecution: true,
         userPermission: ctx.userPermission,
-      })
+      }
+
+      const separateRecipients = params[SEPARATE_DRAFT_RECIPIENTS_KEY]
+      if (Array.isArray(separateRecipients) && separateRecipients.length > 1) {
+        const drafts: Array<{ to: string; success: boolean; output: unknown; error?: string }> = []
+        for (const recipient of separateRecipients) {
+          if (typeof recipient !== 'string' || !recipient.trim()) continue
+          const { [SEPARATE_DRAFT_RECIPIENTS_KEY]: _ignored, ...perRecipient } = params
+          const draftResult = await executeCopilotRegistryTool(
+            toolId,
+            { ...perRecipient, to: recipient.trim() },
+            executionContext
+          )
+          drafts.push({
+            to: recipient.trim(),
+            success: draftResult.success,
+            output: draftResult.output ?? { error: draftResult.error },
+            ...(draftResult.error ? { error: draftResult.error } : {}),
+          })
+        }
+
+        const allSucceeded = drafts.length > 0 && drafts.every((draft) => draft.success)
+        return {
+          toolName,
+          success: allSucceeded,
+          result: {
+            toolId,
+            separateDrafts: true,
+            drafts,
+            output: {
+              content: allSucceeded
+                ? `Created ${drafts.length} separate drafts`
+                : 'One or more separate drafts failed',
+              drafts,
+            },
+          },
+          ...(allSucceeded
+            ? {}
+            : { error: drafts.find((draft) => draft.error)?.error ?? 'Separate draft fan-out failed' }),
+        }
+      }
+
+      const { [SEPARATE_DRAFT_RECIPIENTS_KEY]: _ignored, ...cleanParams } = params
+      const integrationResult = await executeCopilotRegistryTool(toolId, cleanParams, executionContext)
 
       return {
         toolName,
