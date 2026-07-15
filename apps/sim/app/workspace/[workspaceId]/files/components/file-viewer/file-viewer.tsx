@@ -21,6 +21,10 @@ import {
   resolvePreviewError,
 } from './preview-shared'
 import { TextEditor } from './text-editor'
+import {
+  getEmptyDocPreviewMessage,
+  getZeroByteDocPreviewMessage,
+} from './empty-doc-preview'
 import { useDocPreviewBinary } from './use-doc-preview-binary'
 import { XlsxPreview } from './xlsx-preview'
 
@@ -262,24 +266,37 @@ const IframePreview = memo(function IframePreview({
   file: WorkspaceFileRecord
   workspaceId: string
 }) {
+  const emptyMessage = getEmptyDocPreviewMessage(file, 'PDF')
   const preview = useDocPreviewBinary(workspaceId, file)
 
-  const bufferSource = useMemo<PdfDocumentSource | null>(
-    () => (preview.data ? { kind: 'buffer', buffer: preview.data } : null),
-    [preview.data]
-  )
+  const bufferSource = useMemo<PdfDocumentSource | null>(() => {
+    if (!preview.data || preview.data.byteLength === 0) return null
+    return { kind: 'buffer', buffer: preview.data }
+  }, [preview.data])
+
+  if (emptyMessage) return <PreviewError label='PDF' error={emptyMessage} />
 
   const error = resolvePreviewError(preview.error, null)
   if (error) return <PreviewError label='PDF' error={error} />
 
+  if (preview.data && preview.data.byteLength === 0) {
+    return <PreviewError label='PDF' error={getZeroByteDocPreviewMessage('PDF')} />
+  }
+
   if (!bufferSource) {
-    return <div className='relative flex flex-1 overflow-hidden'>{PREVIEW_LOADING_OVERLAY}</div>
+    return (
+      <div className='relative flex h-full min-h-0 flex-1 overflow-hidden'>
+        {PREVIEW_LOADING_OVERLAY}
+      </div>
+    )
   }
 
   return (
-    <PreviewErrorBoundary key={`${file.id}:${preview.dataUpdatedAt}`} label='PDF'>
-      <PdfViewerCore source={bufferSource} filename={file.name} />
-    </PreviewErrorBoundary>
+    <div className='flex h-full min-h-0 flex-1 flex-col overflow-hidden'>
+      <PreviewErrorBoundary key={`${file.id}:${preview.dataUpdatedAt}`} label='PDF'>
+        <PdfViewerCore source={bufferSource} filename={file.name} />
+      </PreviewErrorBoundary>
+    </div>
   )
 })
 

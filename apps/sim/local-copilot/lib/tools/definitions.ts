@@ -1,5 +1,6 @@
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
-import { buildMothershipDelegatedToolDefinitions } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import { buildMothershipDelegatedToolDefinitions } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
+import { buildLocalCopilotUserSkillTool } from '@/local-copilot/lib/tools/user-skills'
 
 const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
@@ -211,6 +212,16 @@ export const LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   ...CORE_LOCAL_COPILOT_TOOLS,
   ...buildMothershipDelegatedToolDefinitions(),
 ]
+
+/**
+ * Resolves the full tool list for a turn, including workspace user skills when present.
+ */
+export async function resolveLocalCopilotTools(
+  workspaceId: string
+): Promise<LocalCopilotToolDefinition[]> {
+  const skillTool = await buildLocalCopilotUserSkillTool(workspaceId)
+  return skillTool ? [...LOCAL_COPILOT_TOOLS, skillTool] : LOCAL_COPILOT_TOOLS
+}
 
 export function getToolDefinition(name: string): LocalCopilotToolDefinition | undefined {
   return LOCAL_COPILOT_TOOLS.find((tool) => tool.name === name)

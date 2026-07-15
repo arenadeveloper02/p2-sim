@@ -1389,6 +1389,7 @@ export const workspace = pgTable(
       onDelete: 'set null',
     }),
     workspaceMode: workspaceModeEnum('workspace_mode').notNull().default('grandfathered_shared'),
+    isPersonal: boolean('is_personal').notNull().default(false),
     billedAccountUserId: text('billed_account_user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'no action' }),
@@ -2570,6 +2571,28 @@ export const localCopilotAuditLogs = pgTable(
     workspaceIdIdx: index('local_copilot_audit_logs_workspace_id_idx').on(table.workspaceId),
     workflowIdIdx: index('local_copilot_audit_logs_workflow_id_idx').on(table.workflowId),
     createdAtIdx: index('local_copilot_audit_logs_created_at_idx').on(table.createdAt),
+  })
+)
+
+/**
+ * Per-user Arena Copilot allowlist. Access is denied unless a row exists for the
+ * user with `hasAccess = true`. Managed via SQL only (no admin UI).
+ */
+export const localCopilotUserAccess = pgTable(
+  'local_copilot_user_access',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    hasAccess: boolean('has_access').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdUnique: uniqueIndex('local_copilot_user_access_user_id_uidx').on(table.userId),
+    emailIdx: index('local_copilot_user_access_email_idx').on(table.email),
   })
 )
 

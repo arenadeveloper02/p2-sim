@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { getValidationErrorMessage } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { buildToolLlmCostFromModelUsage } from '@/lib/billing/core/tool-llm-cost'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -10,6 +11,7 @@ import {
   getDevelopmentReferenceImageErrorMessage,
   resolveDevelopmentReferenceImage,
 } from '@/lib/development/resolve-development-reference-image'
+import { RawFileInputSchema } from '@/lib/uploads/utils/file-schemas'
 
 const logger = createLogger('DevelopmentEditAPI')
 
@@ -52,7 +54,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const parsed = RequestSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json(
-      { success: false, error: parsed.error.errors[0]?.message ?? 'Invalid request' },
+      { success: false, error: getValidationErrorMessage(parsed.error, 'Invalid request') },
       { status: 400 }
     )
   }

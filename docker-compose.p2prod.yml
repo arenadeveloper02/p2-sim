@@ -15,7 +15,6 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
-      - SOCKET_SERVER_URL=http://realtime:3002
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
@@ -40,17 +39,17 @@ services:
       - XAI_API_KEY_1=${XAI_API_KEY_1:-}
       - XAI_API_KEY_2=${XAI_API_KEY_2:-}
       - XAI_API_KEY_3=${XAI_API_KEY_3:-}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-}
       - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - REDIS_URL=${REDIS_URL:-}
-      - COPILOT_API_KEY=${COPILOT_API_KEY}
-      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL}
+      - COPILOT_API_KEY=${COPILOT_API_KEY:-}
+      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL:-}
+      - E2B_API_KEY=${E2B_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
-      migrations:
-        condition: service_completed_successfully
+      # migrations:
+      #   condition: service_completed_successfully
       realtime:
         condition: service_healthy
     healthcheck:
@@ -82,7 +81,13 @@ services:
       - apps/realtime/.env
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - REDIS_URL=${REDIS_URL:-}
+      - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
     depends_on:
       db:
         condition: service_healthy

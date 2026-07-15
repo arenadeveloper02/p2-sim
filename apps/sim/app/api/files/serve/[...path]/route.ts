@@ -119,7 +119,9 @@ async function compileDocumentIfNeeded(
     // in-memory layer here: the store is the source of truth, the client (react
     // query) already caches the bytes, and this branch never recomputes.
     const stored = await loadCompiledDocByExt(workspaceId, source, extNoDot)
-    if (stored) {
+    // A 0-byte artifact is corrupt (never a valid PDF/OOXML) — treat as a miss so
+    // we can recompile via isolated-vm or signal 409 under E2B.
+    if (stored && stored.buffer.length > 0) {
       return { buffer: stored.buffer, contentType: stored.contentType }
     }
 

@@ -1,5 +1,5 @@
 import type { MothershipResource } from '@/lib/copilot/resources/types'
-import type { WorkflowState } from '@sim/workflow-types/workflow'
+import type { BlockState, Variable, WorkflowState } from '@sim/workflow-types/workflow'
 
 export interface LocalCopilotE2bCapabilities {
   enabled: boolean
@@ -91,6 +91,8 @@ export interface LocalCopilotStructuredContext {
   knowledgeBases?: Array<{ id: string; name: string; description?: string | null }>
   tables?: Array<{ id: string; name: string; description?: string | null }>
   workspaceFiles?: Array<{ id: string; name: string; path: string; type: string; size: number }>
+  /** User-created workspace skills (name + description). Load full body via load_user_skill. */
+  skills?: Array<{ id: string; name: string; description: string }>
   execution: LocalCopilotExecutionContext
   availableIntegrations: string[]
   availableBlocks: LocalCopilotBlockSummary[]
@@ -106,13 +108,13 @@ export interface LocalCopilotBlockSummary {
 }
 
 export type WorkflowPatchOperation =
-  | { operation: 'add_block'; block: Record<string, unknown> }
-  | { operation: 'update_block'; blockId: string; updates: Record<string, unknown> }
+  | { operation: 'add_block'; block: BlockState }
+  | { operation: 'update_block'; blockId: string; updates: Partial<BlockState> }
   | { operation: 'remove_block'; blockId: string }
-  | { operation: 'add_edge'; edge: Record<string, unknown> }
+  | { operation: 'add_edge'; edge: WorkflowState['edges'][number] }
   | { operation: 'remove_edge'; edgeId: string }
-  | { operation: 'update_variable'; variableId: string; updates: Record<string, unknown> }
-  | { operation: 'add_variable'; variable: Record<string, unknown> }
+  | { operation: 'update_variable'; variableId: string; updates: Partial<Variable> }
+  | { operation: 'add_variable'; variable: Variable }
   | { operation: 'remove_variable'; variableId: string }
 
 export interface WorkflowPatch {

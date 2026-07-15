@@ -1,12 +1,11 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { getAllBlocks } from '@/blocks/registry'
-import { fetchLogDetail } from '@/lib/logs/fetch-log-detail'
-import { listLogs } from '@/lib/logs/list-logs'
+import { getErrorMessage } from '@sim/utils/errors'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
 } from '@/local-copilot/lib/context/build-context'
+import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
 import { getToolDefinition } from '@/local-copilot/lib/tools/definitions'
@@ -15,14 +14,14 @@ import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
 } from '@/local-copilot/lib/tools/mothership-delegated-tools'
-import { executeTool as executeCopilotRegistryTool } from '@/lib/copilot/tool-executor/executor'
-import { ensureHandlersRegistered } from '@/lib/copilot/tool-executor/register-handlers'
-import { createServerToolHandler } from '@/lib/copilot/tools/registry/server-tool-adapter'
 import {
-  formatWorkflowLintMessage,
-  hasWorkflowLintIssues,
-  lintEditedWorkflowState,
-} from '@/lib/copilot/tools/server/workflow/edit-workflow/lint'
+  executeLoadUserSkill,
+  LOAD_USER_SKILL_TOOL_NAME,
+} from '@/local-copilot/lib/tools/user-skills'
+import {
+  enrichLocalIntegrationToolParams,
+  SEPARATE_DRAFT_RECIPIENTS_KEY,
+} from '@/local-copilot/lib/tools/enrich-integration-params'
 import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
@@ -30,11 +29,30 @@ import type { WorkflowState } from '@sim/workflow-types/workflow'
 
 const logger = createLogger('LocalCopilotToolExecutor')
 
+let handlersRegistered = false
+
+async function ensureHandlersReady() {
+  if (handlersRegistered) return
+  const loadStartedAt = Date.now()
+  logger.info('Arena Copilot ensuring handlers registered', {
+    memory: getLocalCopilotMemorySnapshot(),
+  })
+  const { ensureHandlersRegistered } = await import('@/lib/copilot/tool-executor/register-handlers')
+  ensureHandlersRegistered()
+  handlersRegistered = true
+  logger.info('Arena Copilot handlers ready', {
+    durationMs: Date.now() - loadStartedAt,
+    memory: getLocalCopilotMemorySnapshot(),
+  })
+}
+
 export interface ToolExecutionContext {
   userId: string
   workspaceId: string
   workflowId?: string
   chatId?: string
+  /** Scopes workspace_file → edit_content intents for this user turn. */
+  messageId?: string
   abortSignal?: AbortSignal
   userPermission?: string
   structuredContext: LocalCopilotStructuredContext
@@ -147,11 +165,70 @@ function guardCreateWorkflowWhenExistingAvailable(
   }
 }
 
+async function runLoadUserSkill(
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext
+): Promise<ToolExecutionResult> {
+  try {
+    const { assertPermissionsAllowed } = await import(
+      '@/ee/access-control/utils/permission-check'
+    )
+    await assertPermissionsAllowed({
+      userId: ctx.userId,
+      workspaceId: ctx.workspaceId,
+      toolKind: 'skill',
+    })
+  } catch (error) {
+    const message = getErrorMessage(error, 'Skills are not allowed')
+    return {
+      toolName: LOAD_USER_SKILL_TOOL_NAME,
+      success: false,
+      error: message,
+      result: { error: message },
+    }
+  }
+
+  const skillName = typeof args.skill_name === 'string' ? args.skill_name.trim() : ''
+  const loaded = await executeLoadUserSkill(skillName, ctx.workspaceId)
+  if (!loaded.success) {
+    return {
+      toolName: LOAD_USER_SKILL_TOOL_NAME,
+      success: false,
+      error: loaded.error,
+      result: { error: loaded.error },
+    }
+  }
+
+  return {
+    toolName: LOAD_USER_SKILL_TOOL_NAME,
+    success: true,
+    result: { content: loaded.content },
+  }
+}
+
 export async function executeLocalCopilotTool(
   toolName: string,
   args: Record<string, unknown>,
   ctx: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
+  // load_user_skill is registered dynamically per workspace when skills exist.
+  if (toolName === LOAD_USER_SKILL_TOOL_NAME) {
+    logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
+    return runLoadUserSkill(args, ctx)
+  }
+
+  // Cloud agents call load_integration_tool after listing; Arena uses invoke_integration_tool.
+  if (toolName === 'load_integration_tool') {
+    const message =
+      'load_integration_tool is Cloud-only. Call list_integration_tools then invoke_integration_tool({ toolId: "<id>", params: { ... } }) with the listed tool id (e.g. gmail_draft_v2).'
+    return {
+      toolName,
+      success: false,
+      error: message,
+      result: { error: message },
+    }
+  }
+
   const definition = getToolDefinition(toolName)
   if (!definition) {
     throw new Error(`Unknown tool: ${toolName}`)
@@ -231,7 +308,10 @@ export async function executeLocalCopilotTool(
           result: {},
         }
       }
-      ensureHandlersRegistered()
+      await ensureHandlersReady()
+      const { createServerToolHandler } = await import(
+        '@/lib/copilot/tools/registry/server-tool-adapter'
+      )
       const handler = createServerToolHandler('get_blocks_metadata')
       const metadataResult = await handler(
         { blockIds },
@@ -273,13 +353,39 @@ export async function executeLocalCopilotTool(
         }
       }
 
-      const params =
+      const rawParams =
         args.params && typeof args.params === 'object' && !Array.isArray(args.params)
           ? (args.params as Record<string, unknown>)
           : { ...args }
 
-      ensureHandlersRegistered()
-      const integrationResult = await executeCopilotRegistryTool(toolId, params, {
+      // Model sometimes passes Arena/mothership tool ids here (e.g. search_online).
+      // Route those through the delegated path instead of shared executeTool → @/tools.
+      if (isMothershipDelegatedTool(toolId)) {
+        const delegated = await executeMothershipDelegatedTool(toolId, rawParams, ctx)
+        return {
+          toolName,
+          success: delegated.success,
+          result: {
+            toolId,
+            output: delegated.result ?? (delegated.error ? { error: delegated.error } : {}),
+          },
+          error: delegated.error,
+          resources: delegated.resources,
+        }
+      }
+
+      const params = enrichLocalIntegrationToolParams(
+        toolId,
+        rawParams,
+        ctx.structuredContext.connectedIntegrations
+      )
+
+      await ensureHandlersReady()
+      const { executeTool: executeCopilotRegistryTool } = await import(
+        '@/lib/copilot/tool-executor/executor'
+      )
+
+      const executionContext = {
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workflowId: ctx.workflowId ?? '',
@@ -287,7 +393,50 @@ export async function executeLocalCopilotTool(
         abortSignal: ctx.abortSignal,
         copilotToolExecution: true,
         userPermission: ctx.userPermission,
-      })
+      }
+
+      const separateRecipients = params[SEPARATE_DRAFT_RECIPIENTS_KEY]
+      if (Array.isArray(separateRecipients) && separateRecipients.length > 1) {
+        const drafts: Array<{ to: string; success: boolean; output: unknown; error?: string }> = []
+        for (const recipient of separateRecipients) {
+          if (typeof recipient !== 'string' || !recipient.trim()) continue
+          const { [SEPARATE_DRAFT_RECIPIENTS_KEY]: _ignored, ...perRecipient } = params
+          const draftResult = await executeCopilotRegistryTool(
+            toolId,
+            { ...perRecipient, to: recipient.trim() },
+            executionContext
+          )
+          drafts.push({
+            to: recipient.trim(),
+            success: draftResult.success,
+            output: draftResult.output ?? { error: draftResult.error },
+            ...(draftResult.error ? { error: draftResult.error } : {}),
+          })
+        }
+
+        const allSucceeded = drafts.length > 0 && drafts.every((draft) => draft.success)
+        return {
+          toolName,
+          success: allSucceeded,
+          result: {
+            toolId,
+            separateDrafts: true,
+            drafts,
+            output: {
+              content: allSucceeded
+                ? `Created ${drafts.length} separate drafts`
+                : 'One or more separate drafts failed',
+              drafts,
+            },
+          },
+          ...(allSucceeded
+            ? {}
+            : { error: drafts.find((draft) => draft.error)?.error ?? 'Separate draft fan-out failed' }),
+        }
+      }
+
+      const { [SEPARATE_DRAFT_RECIPIENTS_KEY]: _ignored, ...cleanParams } = params
+      const integrationResult = await executeCopilotRegistryTool(toolId, cleanParams, executionContext)
 
       return {
         toolName,
@@ -315,6 +464,11 @@ export async function executeLocalCopilotTool(
         variables: state.variables ?? {},
       })
 
+      const {
+        formatWorkflowLintMessage,
+        hasWorkflowLintIssues,
+        lintEditedWorkflowState,
+      } = await import('@/lib/copilot/tools/server/workflow/edit-workflow/lint')
       const workflowLint = lintEditedWorkflowState({
         blocks: state.blocks ?? {},
         edges: state.edges ?? [],
@@ -351,6 +505,7 @@ export async function executeLocalCopilotTool(
       const limit = typeof args.limit === 'number' ? args.limit : 10
       const executionId =
         typeof args.executionId === 'string' ? args.executionId : undefined
+      const { listLogs } = await import('@/lib/logs/list-logs')
       const logs = await listLogs(
         {
           workspaceId: ctx.workspaceId,
@@ -378,6 +533,7 @@ export async function executeLocalCopilotTool(
 
       let logDetail = null
       if (executionId) {
+        const { fetchLogDetail } = await import('@/lib/logs/fetch-log-detail')
         logDetail = await fetchLogDetail({
           userId: ctx.userId,
           workspaceId: ctx.workspaceId,
@@ -401,6 +557,7 @@ export async function executeLocalCopilotTool(
 
     case 'search_docs': {
       const query = String(args.query ?? '').toLowerCase()
+      const { getAllBlocks } = await import('@/blocks/registry')
       const matches = getAllBlocks()
         .filter(
           (block) =>

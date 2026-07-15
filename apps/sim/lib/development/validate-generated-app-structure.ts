@@ -573,6 +573,13 @@ function parsePrismaModels(schema: string): PrismaModelMap {
  * that make `prisma db push` fail against a live database with existing rows:
  * new required columns without @default, dropped/retyped columns, and dropped models.
  */
+export function getPrismaSchemaMigrationSafetyIssues(
+  files: GeneratedAppFile[],
+  originalSchema: string | undefined
+): string[] {
+  return checkPrismaSchemaMigrationSafety(files, originalSchema)
+}
+
 function checkPrismaSchemaMigrationSafety(
   files: GeneratedAppFile[],
   originalSchema: string | undefined

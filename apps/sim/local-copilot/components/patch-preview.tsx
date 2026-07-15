@@ -1,10 +1,10 @@
 'use client'
 
 import { cn } from '@/lib/core/utils/cn'
-import type { WorkflowPatchWire } from '@/local-copilot/contracts/local-copilot'
+import type { WorkflowPatch, WorkflowPatchOperation } from '@/local-copilot/lib/types'
 
 interface PatchPreviewProps {
-  patch: WorkflowPatchWire
+  patch: WorkflowPatch
   className?: string
 }
 
@@ -62,24 +62,23 @@ export function PatchPreview({ patch, className }: PatchPreviewProps) {
   )
 }
 
-function formatChangeDetail(change: WorkflowPatchWire['changes'][number]): string {
+function formatChangeDetail(change: WorkflowPatchOperation): string {
   switch (change.operation) {
-    case 'add_block': {
-      const block = change.block as { name?: string; type?: string; id?: string }
-      return String(block.name ?? block.type ?? block.id ?? '')
-    }
+    case 'add_block':
+      return change.block.name || change.block.type || change.block.id
     case 'update_block':
       return change.blockId
     case 'remove_block':
       return change.blockId
     case 'add_edge':
-      return `${(change.edge as { source?: string }).source ?? '?'} → ${(change.edge as { target?: string }).target ?? '?'}`
+      return `${change.edge.source} → ${change.edge.target}`
     case 'remove_edge':
       return change.edgeId
     case 'add_variable':
+      return change.variable.name || change.variable.id
     case 'update_variable':
     case 'remove_variable':
-      return 'variable'
+      return change.variableId
     default:
       return ''
   }

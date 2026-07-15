@@ -72,11 +72,9 @@ export async function generateWorkflowPatchFromRequest(
         )
       : undefined
     if (scheduleBlock) {
-      changes.push({
-        operation: 'update_block',
-        blockId: scheduleBlock.id,
-        updates: { note: 'Update schedule interval in block configuration' },
-      })
+      recommendations.push(
+        `Update the schedule interval on "${scheduleBlock.name}" in block configuration`
+      )
     } else {
       warnings.push('No schedule trigger found — add a Schedule trigger block first')
     }

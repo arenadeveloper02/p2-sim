@@ -180,6 +180,7 @@ export function buildContextPromptPayload(
       knowledgeBases: context.knowledgeBases,
       tables: context.tables,
       workspaceFiles: context.workspaceFiles,
+      skills: context.skills,
       execution: context.execution,
       availableIntegrations: context.availableIntegrations,
       availableBlocks: context.availableBlocks,

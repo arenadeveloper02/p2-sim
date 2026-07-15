@@ -48,7 +48,7 @@ function isAssistantProseBlock(block: PersistedContentBlock): boolean {
 
 function isToolHistoryBlock(block: PersistedContentBlock): boolean {
   return (
-    (block.type === MothershipStreamV1EventType.tool || block.type === 'tool_call') &&
+    block.type === MothershipStreamV1EventType.tool &&
     Boolean(block.toolCall?.id && block.toolCall.name)
   )
 }
@@ -83,6 +83,7 @@ export function assistantMessageToChatHistory(message: PersistedMessage): ChatMe
   let seededMessageContent = Boolean(message.content?.trim() && blocks.length > 0)
 
   while (index < blocks.length) {
+    const startIndex = index
     let prose = ''
     if (seededMessageContent) {
       prose = message.content ?? ''
@@ -124,6 +125,13 @@ export function assistantMessageToChatHistory(message: PersistedMessage): ChatMe
     const cleanedProse = stripLeakedToolMarkers(prose)
     if (cleanedProse) {
       out.push({ role: 'assistant', content: cleanedProse })
+    }
+
+    // Blocks that are neither prose nor tool (thinking channel, subagent lane,
+    // malformed tool blocks) leave `index` untouched — skip one so the loop
+    // always makes progress instead of spinning the event loop forever.
+    if (index === startIndex) {
+      index += 1
     }
   }
 

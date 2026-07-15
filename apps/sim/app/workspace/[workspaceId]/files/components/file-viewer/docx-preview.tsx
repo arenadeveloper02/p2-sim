@@ -5,6 +5,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { cn } from '@/lib/core/utils/cn'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
+import { getEmptyDocPreviewMessage, getZeroByteDocPreviewMessage } from './empty-doc-preview'
 import { PREVIEW_LOADING_OVERLAY, PreviewError, resolvePreviewError } from './preview-shared'
 import { PreviewToolbar } from './preview-toolbar'
 import { bindPreviewWheelZoom } from './preview-wheel-zoom'
@@ -232,8 +233,15 @@ export const DocxPreview = memo(function DocxPreview({
     }
   }, [fileData, applyPostRenderStyling])
 
+  const emptyMessage = getEmptyDocPreviewMessage(file, 'document')
+  if (emptyMessage) return <PreviewError label='document' error={emptyMessage} />
+
   const error = resolvePreviewError(preview.error, renderError)
   if (error) return <PreviewError label='document' error={error} />
+
+  if (fileData && fileData.byteLength === 0) {
+    return <PreviewError label='document' error={getZeroByteDocPreviewMessage('document')} />
+  }
 
   const showLoadingFrame = !hasRenderedPreview && (!fileData || rendering)
 

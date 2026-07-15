@@ -9,7 +9,6 @@ import {
   ChipModalField,
   ChipModalFooter,
   ChipModalHeader,
-  Info,
 } from '@/components/emcn'
 import {
   useOrganizationMemberUsageLimit,
@@ -107,16 +106,7 @@ export function ManageCreditsModal({
         <ChipModalField
           type='input'
           inputType='number'
-          title={
-            <span className='inline-flex items-center gap-1.5'>
-              Credit limit
-              <Info side='top'>
-                {
-                  "Set in credits — Sim's usage unit (1,000 credits = $5). Caps this member's usage across this organization's workspaces each billing period."
-                }
-              </Info>
-            </span>
-          }
+          title='Credit limit'
           value={draft}
           onChange={(value) => {
             hasEditedRef.current = true

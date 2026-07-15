@@ -415,11 +415,24 @@ async function injectOAuthCredentialFromUserContextIfNeeded(
   if (!userId || !workspaceId) return
   try {
     const accessible = await getAccessibleOAuthCredentials(workspaceId, userId)
-    const match = accessible.find((c) => c.providerId === oauth.provider)
+    const exact = accessible.find((c) => c.providerId === oauth.provider)
+    const googleDriveScopeProviders = new Set([
+      'google-drive',
+      'google-docs',
+      'google-sheets',
+      'google-slides',
+      'google-forms',
+    ])
+    const match =
+      exact ??
+      (googleDriveScopeProviders.has(oauth.provider)
+        ? accessible.find((c) => googleDriveScopeProviders.has(c.providerId))
+        : undefined)
     if (!match) return
     params.credential = match.id
     logger.info(`[${requestId}] Auto-resolved OAuth credential for ${tool.id}`, {
       provider: oauth.provider,
+      credentialProvider: match.providerId,
       credentialId: match.id,
     })
   } catch (error) {
@@ -1455,20 +1468,20 @@ export async function executeTool(
     // Check for direct execution (no HTTP request needed)
     const wrapperBaseToolId = getImageGenerationWrapperBaseToolId(normalizedToolId)
     const directExecution =
-      normalizedToolId === 'google_nano_banana'
-        ? executeNanoBananaDirect
-        : normalizedToolId === 'image_generate'
-          ? executeImageGenerateDirect
-          : normalizedToolId === 'openai_image'
-            ? executeOpenAIImageDirect
-            : wrapperBaseToolId
-              ? (params: Record<string, any>) =>
-                  executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-        : normalizedToolId === 'development_generate_app'
-          ? executeDevelopmentGenerateAppDirect
-          : normalizedToolId === 'development_edit_app'
-            ? executeDevelopmentEditAppDirect
-            : tool.directExecution
+    normalizedToolId === 'google_nano_banana'
+      ? executeNanoBananaDirect
+      : normalizedToolId === 'image_generate'
+        ? executeImageGenerateDirect
+        : normalizedToolId === 'openai_image'
+          ? executeOpenAIImageDirect
+          : wrapperBaseToolId
+            ? (params: Record<string, any>) =>
+                executeImageGenerationWrapperV2Direct(normalizedToolId, params)
+      : normalizedToolId === 'development_generate_app'
+        ? executeDevelopmentGenerateAppDirect
+        : normalizedToolId === 'development_edit_app'
+          ? executeDevelopmentEditAppDirect
+          : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)
