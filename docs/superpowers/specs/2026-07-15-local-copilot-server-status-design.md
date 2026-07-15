@@ -1,7 +1,7 @@
 # Local Copilot Server-Driven Status Messages
 
 **Date:** 2026-07-15  
-**Status:** Approved — plan ready  
+**Status:** Implemented (rollout #1; file-tool `onProgress` opt-in deferred to heartbeats)  
 **Plan:** `docs/superpowers/plans/2026-07-15-local-copilot-server-status.md`  
 **Approach:** B — tool-progress callbacks + orchestrator fallback heartbeats  
 **Surface:** Chat trailing indicator only (not the right-hand preview panel)
