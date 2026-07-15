@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { withResolvedGoogleSheetsV2RangeParams } from '@/tools/google_sheets/range'
+import { resolveGoogleSheetsV2RangeParams } from '@/tools/google_sheets/range'
 import { getTool, resolveToolId, stripVersionSuffix } from '@/tools/utils'
 import type { LocalCopilotConnectedIntegration } from '@/local-copilot/lib/types'
 
@@ -48,7 +48,12 @@ export function enrichLocalIntegrationToolParams(
 
   const baseName = stripVersionSuffix(registryToolId)
   if (baseName.startsWith('google_sheets_')) {
-    next = withResolvedGoogleSheetsV2RangeParams(next, { defaultSheetName: 'Sheet1' })
+    const resolved = resolveGoogleSheetsV2RangeParams(next)
+    next = {
+      ...next,
+      sheetName: resolved.sheetName || 'Sheet1',
+      ...(resolved.cellRange !== undefined ? { cellRange: resolved.cellRange } : {}),
+    }
     if (
       typeof params.range === 'string' &&
       params.range.trim() &&
