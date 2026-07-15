@@ -2,7 +2,12 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { deriveMicrosoftEmailVerified, isMicrosoftProvider } from '@/lib/oauth/microsoft'
+import {
+  deriveMicrosoftEmailVerified,
+  getMicrosoftOAuthEndpoints,
+  getMicrosoftOAuthTenantId,
+  isMicrosoftProvider,
+} from '@/lib/oauth/microsoft'
 
 const EMAIL = 'user@contoso.com'
 
@@ -80,5 +85,22 @@ describe('isMicrosoftProvider', () => {
   it('rejects non-Microsoft provider IDs', () => {
     expect(isMicrosoftProvider('google')).toBe(false)
     expect(isMicrosoftProvider('microsoft')).toBe(false)
+  })
+})
+
+describe('getMicrosoftOAuthEndpoints', () => {
+  it('builds tenant-specific authorize and token URLs', () => {
+    const tenantId = 'b0c4706b-d68f-4847-9e21-b6cc74633e39'
+    expect(getMicrosoftOAuthEndpoints(tenantId)).toEqual({
+      authorizationUrl: `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`,
+      tokenUrl: `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+    })
+  })
+
+  it('defaults to common when tenant id is not provided explicitly', () => {
+    expect(getMicrosoftOAuthTenantId()).toBe('common')
+    expect(getMicrosoftOAuthEndpoints('common').authorizationUrl).toBe(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/authorize'
+    )
   })
 })

@@ -3,7 +3,10 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
-import { checkSelfHostedMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import {
+  checkMothershipUsageLimits,
+  checkSelfHostedMothershipUsageLimits,
+} from '@/lib/billing/calculations/usage-monitor'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { createRunSegment, updateRunStatus } from '@/lib/copilot/async-runs/repository'
 import { SIM_AGENT_VERSION, TOOL_WATCHDOG_RESUME_GRACE_MS } from '@/lib/copilot/constants'
@@ -161,7 +164,20 @@ export async function runCopilotLifecycle(
     if (!isHosted && isBillingEnabled && execContext.userId) {
       const mothershipLimit = await checkSelfHostedMothershipUsageLimits(execContext.userId)
       if (mothershipLimit.isExceeded) {
-        throw new BillingLimitError(execContext.userId)
+        throw new BillingLimitError(execContext.userId, {
+          message: mothershipLimit.message,
+          scope: 'pooled',
+        })
+      }
+    }
+
+    if (isHosted && isBillingEnabled && execContext.userId) {
+      const usage = await checkMothershipUsageLimits(execContext.userId, workspaceId)
+      if (usage.isExceeded) {
+        throw new BillingLimitError(execContext.userId, {
+          message: usage.message,
+          scope: usage.scope,
+        })
       }
     }
 
@@ -232,7 +248,10 @@ export async function runCopilotLifecycle(
     return result
   } catch (error) {
     if (error instanceof BillingLimitError) {
-      await handleBillingLimitResponse(error.userId, context, execContext, lifecycleOptions)
+      await handleBillingLimitResponse(error.userId, context, execContext, lifecycleOptions, {
+        message: error.message,
+        scope: error.scope,
+      })
       const result: OrchestratorResult = {
         success: context.errors.length === 0 && !context.wasAborted,
         cancelled: false,
@@ -731,7 +750,10 @@ async function runCheckpointLoop(
       context.trace.endSpan(streamSpan, RequestTraceV1SpanStatus.error)
       context.trace.setActiveSpan(undefined)
       if (streamError instanceof BillingLimitError) {
-        await handleBillingLimitResponse(streamError.userId, context, execContext, options)
+        await handleBillingLimitResponse(streamError.userId, context, execContext, options, {
+          message: streamError.message,
+          scope: streamError.scope,
+        })
         break
       }
       if (

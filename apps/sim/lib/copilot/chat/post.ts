@@ -4,11 +4,13 @@ import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { truncate } from '@sim/utils/string'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { isZodError, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
+import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { type ChatLoadResult, resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
 import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import { buildCopilotRequestPayload } from '@/lib/copilot/chat/payload'
@@ -41,6 +43,7 @@ import {
   getPendingChatStreamId,
   releasePendingChatStream,
 } from '@/lib/copilot/request/session'
+import { buildUsageUpgradeContent } from '@/lib/copilot/request/tools/usage-upgrade'
 import type { ExecutionContext, OrchestratorResult } from '@/lib/copilot/request/types'
 import { persistChatResources } from '@/lib/copilot/resources/persistence'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
@@ -897,6 +900,107 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       })
 
       const workspaceId = branch.workspaceId
+
+      if (branch.goRoute === '/api/mothership') {
+        const usage = await checkMothershipUsageLimits(authenticatedUserId, workspaceId)
+        if (usage.isExceeded) {
+          const errorMessage =
+            usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.'
+
+          // Persist the blocked turn so mid-chat context and first-message chats
+          // survive refresh / navigation. Release the stream lock so the same
+          // chat can accept a follow-up once credits are restored.
+          if (actualChatId) {
+            try {
+              await persistUserMessage({
+                chatId: actualChatId,
+                userMessageId,
+                message: body.message,
+                fileAttachments: body.fileAttachments,
+                contexts: normalizedContexts,
+                workspaceId,
+                notifyWorkspaceStatus: branch.notifyWorkspaceStatus,
+                parentOtelContext: activeOtelRoot.context,
+              })
+
+              await finalizeAssistantTurn({
+                chatId: actualChatId,
+                userMessageId,
+                assistantMessage: {
+                  id: generateId(),
+                  role: 'assistant',
+                  content: buildUsageUpgradeContent(errorMessage, { scope: usage.scope }),
+                  timestamp: new Date().toISOString(),
+                },
+                streamMarkerPolicy: 'active-or-cleared',
+              })
+
+              if (branch.notifyWorkspaceStatus && workspaceId) {
+                chatPubSub?.publishStatusChanged({
+                  workspaceId,
+                  chatId: actualChatId,
+                  type: 'completed',
+                  streamId: userMessageId,
+                })
+              }
+
+              // New chats are created with a null title; set a cheap local title
+              // so the sidebar isn't stuck on "New Chat" (skip Go title gen —
+              // credits are already exhausted).
+              if (chatIsNew) {
+                const title = truncate(body.message.trim(), 60).trim()
+                if (title) {
+                  await db
+                    .update(copilotChats)
+                    .set({ title, updatedAt: new Date() })
+                    .where(eq(copilotChats.id, actualChatId))
+                }
+
+                // Same event POST /api/mothership/chats emits so sidebar SSE
+                // subscribers refresh the Chats list without waiting for a reload.
+                if (branch.notifyWorkspaceStatus && workspaceId) {
+                  chatPubSub?.publishStatusChanged({
+                    workspaceId,
+                    chatId: actualChatId,
+                    type: 'created',
+                  })
+                }
+              }
+            } catch (persistError) {
+              logger.error('Failed to persist usage-limit turn', {
+                chatId: actualChatId,
+                error: getErrorMessage(persistError),
+              })
+            }
+          }
+
+          if (chatStreamLockAcquired && actualChatId) {
+            await releasePendingChatStream(actualChatId, userMessageId)
+            chatStreamLockAcquired = false
+          }
+
+          activeOtelRoot.span.setAttribute(TraceAttr.HttpStatusCode, 402)
+          activeOtelRoot.finish('error')
+
+          // Re-read title for the response when we set it above; fall back to
+          // a truncated user message so the client can seed the sidebar row.
+          const responseTitle =
+            chatIsNew && actualChatId
+              ? truncate(body.message.trim(), 60).trim() || undefined
+              : undefined
+
+          return NextResponse.json(
+            {
+              error: errorMessage,
+              scope: usage.scope,
+              ...(actualChatId ? { chatId: actualChatId } : {}),
+              ...(responseTitle ? { title: responseTitle } : {}),
+            },
+            { status: 402 }
+          )
+        }
+      }
+
       // The workspace branch already resolved this permission (and gated on it)
       // during branch resolution; reuse it instead of querying again.
       const userPermissionPromise =

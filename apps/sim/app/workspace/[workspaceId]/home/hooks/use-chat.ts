@@ -12,6 +12,7 @@ import { getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId, generateShortId } from '@sim/utils/id'
 import { isRecordLike } from '@sim/utils/object'
+import { truncate } from '@sim/utils/string'
 import { useQueryClient } from '@tanstack/react-query'
 import { usePathname, useRouter } from 'next/navigation'
 import { requestJson } from '@/lib/api/client/request'
@@ -54,6 +55,7 @@ import {
   isFilePreviewSession,
 } from '@/lib/copilot/request/session/file-preview-session-contract'
 import type { StreamBatchEvent } from '@/lib/copilot/request/session/types'
+import { buildUsageUpgradeContent } from '@/lib/copilot/request/tools/usage-upgrade'
 import {
   bindRunToolToExecution,
   cancelRunToolExecution,
@@ -66,18 +68,19 @@ import { isWorkflowToolName } from '@/lib/copilot/tools/workflow-tools'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { useFilePreviewController } from '@/app/workspace/[workspaceId]/home/hooks/preview'
 import {
-  getMothershipChatPath,
-  readMothershipChatSearch,
-} from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
-import {
   applyTurnTerminal,
   createStreamLoopContext,
   dispatchStreamEvent,
   finalizeResidualToolCalls,
 } from '@/app/workspace/[workspaceId]/home/hooks/stream'
 import {
+  getMothershipChatPath,
+  readMothershipChatSearch,
+} from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
+import {
   fetchMothershipChatHistory,
   type MothershipChatHistory,
+  type MothershipChatMetadata,
   mothershipChatKeys,
   useMothershipChatHistory,
 } from '@/hooks/queries/mothership-chats'
@@ -3407,6 +3410,125 @@ export function useChat(
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
+
+          // Pre-stream billing/member-credit gate: server returns JSON 402 after
+          // persisting the user + `<usage_upgrade>` assistant turn and releasing
+          // the stream lock. Adopt chatId (new chats), show the upgrade card,
+          // skip reconnect, then invalidate detail so refresh reloads from DB.
+          if (response.status === 402 && !isResolvedWorkflowExecution) {
+            const message =
+              typeof errorData.error === 'string' && errorData.error.trim().length > 0
+                ? errorData.error
+                : 'Usage limit exceeded. Please upgrade your plan to continue.'
+            const scope = typeof errorData.scope === 'string' ? errorData.scope : undefined
+            const serverChatId =
+              typeof errorData.chatId === 'string' && errorData.chatId.trim().length > 0
+                ? errorData.chatId
+                : undefined
+            const serverTitle =
+              typeof errorData.title === 'string' && errorData.title.trim().length > 0
+                ? errorData.title.trim()
+                : undefined
+            const syntheticContent = buildUsageUpgradeContent(message, { scope })
+            const assistantSnapshot = buildAssistantSnapshotMessage({
+              id: assistantId,
+              content: syntheticContent,
+              contentBlocks: [],
+            })
+            const wasNewChat = Boolean(serverChatId && serverChatId !== requestChatId)
+
+            if (wasNewChat && serverChatId) {
+              // Don't invalidate the list here — seed it first, then reconcile
+              // via invalidateChatQueries below (same order as useCreateMothershipChat).
+              adoptResolvedChatId(serverChatId, {
+                replaceHomeHistory: true,
+              })
+              requestChatId = serverChatId
+              streamTargetChatId = serverChatId
+
+              // Optimistic sidebar row — same pattern as useCreateMothershipChat.
+              // 402 never starts SSE, so without this the Chats list stays stale
+              // until a full page refresh.
+              const existing =
+                queryClient.getQueryData<MothershipChatMetadata[]>(
+                  mothershipChatKeys.list(workspaceId)
+                ) ?? []
+              if (!existing.some((chat) => chat.id === serverChatId)) {
+                const listTitle =
+                  serverTitle ||
+                  truncate(optimisticUserMessage.content.trim(), 60).trim() ||
+                  'New chat'
+                const newChat: MothershipChatMetadata = {
+                  id: serverChatId,
+                  name: listTitle,
+                  updatedAt: new Date(),
+                  isActive: false,
+                  isUnread: false,
+                  isPinned: false,
+                }
+                const pinnedCount = existing.findIndex((chat) => !chat.isPinned)
+                const insertAt = pinnedCount === -1 ? existing.length : pinnedCount
+                queryClient.setQueryData<MothershipChatMetadata[]>(
+                  mothershipChatKeys.list(workspaceId),
+                  [...existing.slice(0, insertAt), newChat, ...existing.slice(insertAt)]
+                )
+              }
+            }
+
+            const targetChatId = serverChatId ?? streamTargetChatId ?? requestChatId
+
+            if (targetChatId) {
+              upsertChatHistory(targetChatId, (current) => {
+                const withoutTurn = current.messages.filter(
+                  (persistedMessage) =>
+                    persistedMessage.id !== userMessageId && persistedMessage.id !== assistantId
+                )
+                return {
+                  ...current,
+                  id: targetChatId,
+                  activeStreamId: null,
+                  ...(serverTitle ? { title: serverTitle } : {}),
+                  messages: [...withoutTurn, cachedUserMsg, assistantSnapshot],
+                }
+              })
+            }
+
+            setPendingMessages((prev) => {
+              const withoutTurn = prev.filter(
+                (pendingMessage) =>
+                  pendingMessage.id !== userMessageId && pendingMessage.id !== assistantId
+              )
+              return [
+                ...withoutTurn,
+                optimisticUserMessage,
+                {
+                  ...optimisticAssistantMessage,
+                  content: syntheticContent,
+                  contentBlocks: [],
+                },
+              ]
+            })
+
+            if (queuedSendHandoff) {
+              clearQueuedSendHandoffState(queuedSendHandoff.id)
+            }
+
+            if (streamGenRef.current === gen) {
+              locallyTerminalStreamIdRef.current =
+                streamIdRef.current ?? activeTurnRef.current?.userMessageId ?? userMessageId
+              abortController.abort('billing_limit')
+              abortControllerRef.current = null
+              clearActiveTurn()
+              setTransportIdle()
+              invalidateChatQueries({
+                includeDetail: Boolean(targetChatId),
+                ...(targetChatId ? { targetChatId } : {}),
+              })
+              notifyTurnEnded({ error: true })
+            }
+            return consumedByTranscript
+          }
+
           if (response.status === 409 && !isResolvedWorkflowExecution) {
             const conflictStreamId =
               typeof errorData.activeStreamId === 'string'
@@ -3534,6 +3656,8 @@ export function useChat(
       adoptResolvedChatId,
       setTransportIdle,
       setTransportStreaming,
+      invalidateChatQueries,
+      notifyTurnEnded,
     ]
   )
   const sendMessage = useCallback(
