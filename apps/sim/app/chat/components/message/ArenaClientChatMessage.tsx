@@ -63,9 +63,9 @@ import {
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
 
 const DEPLOYED_MARKDOWN_PROPS = {
-  fontClassName: 'font-poppins',
-  bodyTextClassName: 'text-[#2C2D33]',
-  headingTextClassName: 'text-[#2C2D33]',
+  fontClassName: 'font-poppins font-normal',
+  bodyTextClassName: 'text-[14px] leading-[1.6] text-[#2C2D33]',
+  headingTextClassName: 'font-poppins font-normal text-[14px] leading-[1.6] text-[#2C2D33]',
 } as const
 
 export interface ChatMessage {
@@ -994,7 +994,7 @@ export const ArenaClientChatMessage = memo(
                 <div className='max-w-[min(80%,560px)]'>
                   <div className='bg-white px-4 py-3'>
                     <div
-                      className='whitespace-pre-wrap break-words text-[14px] font-normal leading-[1.6]'
+                      className='whitespace-pre-wrap break-words font-poppins text-[14px] font-normal leading-[1.6]'
                       style={{ color: '#2C2D33' }}
                     >
                       {isJsonObject ? (
@@ -1019,7 +1019,7 @@ export const ArenaClientChatMessage = memo(
           <div className='flex flex-col space-y-3'>
             <div className='px-4 py-1'>
               <div
-                className='break-words text-[14px] font-normal leading-[1.6]'
+                className='break-words font-poppins text-[14px] font-normal leading-[1.6]'
                 style={{ color: '#2C2D33' }}
               >
                 {renderContent(cleanTextContent)}
