@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader } from '@/components/emcn'
 import { useLocalLiveStatus } from '@/local-copilot/hooks/use-local-live-status'
 import {
   getGeneratingPreviewMessages,
@@ -10,6 +9,14 @@ import {
 } from '@/app/workspace/[workspaceId]/files/components/file-viewer/generating-preview-messages'
 
 const MESSAGE_ROTATION_MS = 3500
+
+/** Matches chat `PendingTagIndicator` blocks so preview status feels like the same run. */
+const THINKING_BLOCKS = [
+  { color: '#2ABBF8', delay: '0s' },
+  { color: '#00F701', delay: '0.2s' },
+  { color: '#FA4EDF', delay: '0.6s' },
+  { color: '#FFCC02', delay: '0.4s' },
+] as const
 
 interface GeneratingPreviewEngagementProps {
   kind: GeneratingPreviewKind
@@ -43,7 +50,15 @@ export function GeneratingPreviewEngagement({ kind, fileName }: GeneratingPrevie
 
   return (
     <div className='flex flex-1 flex-col items-center justify-center gap-[12px] bg-[var(--surface-1)] px-6'>
-      <Loader className='size-[18px] text-[var(--text-secondary)]' animate />
+      <div className='grid size-[18px] grid-cols-2 gap-[1.5px]' aria-hidden='true'>
+        {THINKING_BLOCKS.map((block, i) => (
+          <div
+            key={i}
+            className='animate-thinking-block rounded-xs'
+            style={{ backgroundColor: block.color, animationDelay: block.delay }}
+          />
+        ))}
+      </div>
       <p className='text-center font-medium text-[14px] text-[var(--text-primary)]'>{message}</p>
       <p className='text-center text-[13px] text-[var(--text-muted)]'>
         Larger files can take a minute — preview will appear when ready.
