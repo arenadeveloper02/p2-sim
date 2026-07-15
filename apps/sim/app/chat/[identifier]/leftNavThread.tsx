@@ -4,10 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import Image from 'next/image'
 import { formatRelativeTime } from '@sim/utils/formatting'
 import {
-  ArrowLeft,
   MoreHorizontal,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pin,
   PinOff,
   RefreshCw,
@@ -16,15 +13,16 @@ import {
   X,
 } from 'lucide-react'
 import {
+  ArrowLeft,
   ChipConfirmModal,
   ChipInput,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  PanelLeft,
   Tooltip,
 } from '@/components/emcn'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/core/utils/cn'
 import { deployedChatExitEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import {
@@ -143,16 +141,27 @@ interface SidebarToggleButtonProps {
   onClick: () => void
 }
 
+/**
+ * Soft `#F3F8FE` shell by default; white background and blue glyph on hover.
+ */
+function sidebarSoftIconClass() {
+  return cn(
+    'inline-flex size-6 shrink-0 items-center justify-center rounded-[4px] bg-[#F3F8FE] text-[var(--text-body)] transition-colors',
+    'group-hover:bg-white group-hover:text-[#155CBA]'
+  )
+}
+
 function SidebarCollapseButton({ onClick }: SidebarToggleButtonProps) {
   return (
     <button
       type='button'
       onClick={onClick}
-      className='flex size-8 shrink-0 items-center justify-center rounded-lg border bg-white shadow-sm transition-shadow hover:shadow-md'
-      style={{ borderColor: DEPLOYED_CHAT_SIDEBAR_BORDER }}
+      className='group flex size-6 shrink-0 items-center justify-center p-0'
       aria-label='Collapse sidebar'
     >
-      <PanelLeftClose className='size-[14px] text-[var(--text-icon)]' />
+      <span className={sidebarSoftIconClass()}>
+        <PanelLeft className='size-4' />
+      </span>
     </button>
   )
 }
@@ -170,7 +179,7 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
         <button
           type='button'
           onClick={onToggleSidebar}
-          className='group relative flex size-6 items-center justify-center rounded-lg p-0'
+          className='group relative flex size-6 items-center justify-center p-0'
           aria-label='Expand sidebar'
         >
           {logoUrl ? (
@@ -182,10 +191,19 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
                 height={24}
                 className='size-6 shrink-0 object-contain opacity-100 transition-opacity group-hover:opacity-0'
               />
-              <PanelLeftOpen className='absolute size-[14px] text-[var(--text-icon)] opacity-0 transition-opacity group-hover:opacity-100' />
+              <span
+                className={cn(
+                  sidebarSoftIconClass(),
+                  'absolute inset-0 opacity-0 group-hover:opacity-100'
+                )}
+              >
+                <PanelLeft className='size-4 rotate-180' />
+              </span>
             </>
           ) : (
-            <PanelLeftOpen className='size-[14px] text-[var(--text-icon)]' />
+            <span className={sidebarSoftIconClass()}>
+              <PanelLeft className='size-4 rotate-180' />
+            </span>
           )}
         </button>
       </div>
@@ -605,11 +623,47 @@ const LeftNavThread = ({
     </div>
   )
 
+  const handleExitAgent = () => {
+    deployedChatExitEvent({})
+    window.location.replace(getExitUrl())
+  }
+
+  const exitActionButton = (collapsed: boolean) => {
+    const button = (
+      <button
+        type='button'
+        className={cn(
+          'group flex cursor-pointer items-center gap-1.5 rounded-lg transition-colors hover:bg-white',
+          collapsed ? 'size-6 justify-center p-0' : 'w-full px-2 py-1'
+        )}
+        onClick={handleExitAgent}
+        aria-label='Exit Agent'
+      >
+        <span className={cn(sidebarSoftIconClass(), !collapsed && 'ml-1')}>
+          <ArrowLeft className='size-4' />
+        </span>
+        {!collapsed && <span className={sidebarRowLabelClass(false)}>Exit Agent</span>}
+      </button>
+    )
+
+    if (!collapsed) return button
+
+    return (
+      <Tooltip.Provider>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>{button}</Tooltip.Trigger>
+          <Tooltip.Content>Exit Agent</Tooltip.Content>
+        </Tooltip.Root>
+      </Tooltip.Provider>
+    )
+  }
+
   if (isCollapsed && !isMobileOpen) {
     return (
       <SidebarShell collapsed>
         <SidebarHeader logoUrl={logoUrl} collapsed onToggleSidebar={onToggleSidebar} />
         {primaryActionButtons(true)}
+        <div className='mt-auto w-full pt-3'>{exitActionButton(true)}</div>
       </SidebarShell>
     )
   }
@@ -708,20 +762,7 @@ const LeftNavThread = ({
 
       <hr className='my-3' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
 
-      <div className='flex items-center gap-3'>
-        <Button
-          variant='outline'
-          className='flex size-8 items-center justify-center border-[var(--border-1)] bg-[var(--surface-1)] hover:shadow-md'
-          onClick={() => {
-            deployedChatExitEvent({})
-            window.location.replace(getExitUrl())
-          }}
-          aria-label='Exit agent'
-        >
-          <ArrowLeft className='size-4 text-[var(--text-icon)]' />
-        </Button>
-        <span className='font-normal text-[var(--text-body)] text-sm'>Exit Agent</span>
-      </div>
+      {exitActionButton(false)}
 
       <ChipConfirmModal
         open={Boolean(deleteTarget)}

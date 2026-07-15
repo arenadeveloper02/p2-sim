@@ -1773,8 +1773,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                 />
               </div>
 
-              <div ref={chatInputWrapperRef} className='relative shrink-0 p-3 pb-4 md:p-4 md:pb-6'>
-                <div className={`relative mx-auto ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
+              <div ref={chatInputWrapperRef} className='relative w-full shrink-0 p-3 pb-4 md:p-4 md:pb-6'>
+                <div className={`relative mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
                   <ChatInput
                     embedded
                     placeholder={DEPLOYED_CHAT_INPUT_PLACEHOLDER}

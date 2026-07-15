@@ -240,7 +240,7 @@ export const ChatInput: React.FC<{
     const pinnedControlClass = alignControlsCenter ? undefined : 'mt-0.5'
 
     return (
-    <div className={cn('flex gap-2', controlAlignClass)}>
+    <div className={cn('flex w-full gap-2', controlAlignClass)}>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>
           <button
@@ -281,7 +281,7 @@ export const ChatInput: React.FC<{
         placeholder={isDragOver ? 'Drop files here...' : placeholder}
         rows={1}
         className={cn(
-          'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[15px] leading-[24px] outline-none placeholder:text-[#94A3B8] focus-visible:ring-0 focus-visible:ring-offset-0',
+          'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-poppins text-[16px] font-normal leading-6 outline-none placeholder:font-poppins placeholder:text-[16px] placeholder:font-normal placeholder:text-[#94A3B8] focus-visible:ring-0 focus-visible:ring-offset-0',
           landing || !isMultiLineInput
             ? 'min-h-[24px] overflow-hidden'
             : 'min-h-[24px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
@@ -378,6 +378,7 @@ export const ChatInput: React.FC<{
           {/* Input container */}
           <div
             className={cn(
+              'w-full',
               useDeployedChrome &&
                 'rounded-[20px] bg-gradient-to-r from-[#93c5fd] via-[#c4b5fd] to-[#f9a8d4] p-[1px]',
               useDeployedChrome && !hasDeployedExtras && DEPLOYED_CHAT_INPUT_HEIGHT_CLASS
@@ -393,11 +394,11 @@ export const ChatInput: React.FC<{
                 handleKeyboardActivation(event, focusTextarea)
               }}
               className={cn(
-                'relative z-10 cursor-text bg-white',
+                'relative z-10 w-full cursor-text bg-white',
                 useDeployedChrome
                   ? cn(
                       'rounded-[19px] px-2.5',
-                      hasDeployedExtras ? 'py-1' : 'flex h-full items-center py-0'
+                      hasDeployedExtras ? 'py-1' : 'flex h-full min-w-0 items-center py-0'
                     )
                   : 'rounded-2xl border border-[var(--border-1)] px-2.5 py-2',
                 isDragOver && 'border-purple-500'
