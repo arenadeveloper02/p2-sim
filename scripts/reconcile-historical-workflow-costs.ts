@@ -3,21 +3,29 @@
  * Historical workflow cost reconciliation CLI.
  *
  * Modes:
- *   --audit          Classify executions by reconciliation evidence and risk (no writes)
- *   --dry-run        Compute target ledger lines and export NDJSON shadow artifact
- *   --apply          Apply adjustments from a dry-run NDJSON artifact (gated rollout)
- *   --verify         Verify cost_total equals workflow ledger projection (post-apply gate)
- *   --rollout-guide  Print the recommended ops rollout sequence
+ *   --audit                Classify executions by reconciliation evidence and risk (no writes)
+ *   --repair-projections   Sync cost_total to workflow ledger sum (preview by default; --write to persist)
+ *   --dry-run              Compute target ledger lines and export NDJSON shadow artifact
+ *   --apply                Apply adjustments from a dry-run NDJSON artifact (gated rollout)
+ *   --verify               Verify cost_total equals workflow ledger projection (post-apply gate)
+ *   --rollout-guide        Print the recommended ops rollout sequence
  *
  * Usage:
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --rollout-guide
- *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --audit --since=2020-01-01 --batch-size=1000
- *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --batch-size=1000 --export=reconcile-shadow.ndjson --review-deltas
- *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --workspace-id=<id> --batch-size=100
- *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --repair-projections --batch-size=1000
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --repair-projections --write --batch-size=1000
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --audit --since=2020-01-01 --batch-size=1000 --only-priced-tools
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --batch-size=1000 --only-priced-tools --export=reconcile-shadow.ndjson --review-deltas
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --workspace-id=<id> --batch-size=100 --only-priced-tools
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production --only-priced-tools
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --verify --workspace-id=<id> --batch-size=1000
  *
- * Long-running modes (--audit / --dry-run / --verify) keep the shared DB pool
+ * Flags:
+ *   --only-priced-tools  Gate to allowlisted hosted/LLM-on-tool tools (default on)
+ *   --all-tools          Disable the priced-tool allowlist gate
+ *   --write              Persist projection repairs (required with --repair-projections to mutate)
+ *
+ * Long-running modes (--audit / --dry-run / --verify / --repair-projections) keep the shared DB pool
  * healthy with per-page keepalives and up to 5 retries on CONNECTION_CLOSED /
  * other transient infrastructure errors.
  */
@@ -31,6 +39,7 @@ import {
   HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY,
   HISTORICAL_RECONCILE_ROLLOUT_STEPS,
   loadHistoricalReconcileShadowArtifact,
+  repairLedgerProjections,
   verifyLedgerProjection,
   verifyPostApplyReconciliation,
   type HistoricalReconcileProgress,
@@ -43,10 +52,14 @@ interface Options {
   dryRun: boolean
   apply: boolean
   verify: boolean
+  repairProjections: boolean
+  write: boolean
   rolloutGuide: boolean
   reviewDeltas: boolean
   confirmProduction: boolean
   verifyAfterApply: boolean
+  /** When true (default), gate to priced-tool allowlist. Disable with `--all-tools`. */
+  onlyPricedTools: boolean
   inputPath?: string
   workflowId?: string
   executionId?: string
@@ -79,10 +92,15 @@ function parseArgs(argv: string[]): Options {
   const dryRun = argv.includes('--dry-run')
   const apply = argv.includes('--apply')
   const verify = argv.includes('--verify')
+  const repairProjections = argv.includes('--repair-projections')
+  const write = argv.includes('--write')
   const rolloutGuide = argv.includes('--rollout-guide')
   const reviewDeltas = argv.includes('--review-deltas')
   const confirmProduction = argv.includes('--confirm-production')
   const verifyAfterApply = argv.includes('--verify-after-apply')
+  const allTools = argv.includes('--all-tools')
+  // Default on for audit / dry-run / apply; `--all-tools` disables.
+  const onlyPricedTools = !allTools
   const workflowId = argv.find((arg) => arg.startsWith('--workflow-id='))?.split('=')[1]
   const executionId = argv.find((arg) => arg.startsWith('--execution-id='))?.split('=')[1]
   const workspaceId = argv.find((arg) => arg.startsWith('--workspace-id='))?.split('=')[1]
@@ -103,10 +121,13 @@ function parseArgs(argv: string[]): Options {
     dryRun,
     apply,
     verify,
+    repairProjections,
+    write,
     rolloutGuide,
     reviewDeltas,
     confirmProduction,
     verifyAfterApply,
+    onlyPricedTools,
     inputPath,
     workflowId,
     executionId,
@@ -146,6 +167,7 @@ function printFilterSummary(options: Options, title: string): void {
   if (options.workspaceId) console.log(`Workspace filter: ${options.workspaceId}`)
   console.log(`Batch size: ${options.batchSize}`)
   console.log(`Concurrency: ${options.concurrency}`)
+  console.log(`Only priced tools: ${options.onlyPricedTools ? 'yes' : 'no (--all-tools)'}`)
   if (options.limit) console.log(`Limit: ${options.limit}`)
 }
 
@@ -224,6 +246,7 @@ function toFilter(options: Options) {
     limit: options.limit,
     batchSize: options.batchSize,
     concurrency: options.concurrency,
+    onlyPricedTools: options.onlyPricedTools,
   }
 }
 
@@ -233,6 +256,7 @@ async function runDryRun(options: Options): Promise<number> {
 
   const summary = await dryRunHistoricalWorkflowReprices(toFilter(options), {
     onProgress: printProgress,
+    onlyPricedTools: options.onlyPricedTools,
   })
 
   console.log('--- Shadow reprice summary ---')
@@ -296,6 +320,7 @@ async function runAudit(options: Options): Promise<number> {
 
   const summary = await auditHistoricalWorkflowExecutions(toFilter(options), {
     onProgress: printProgress,
+    onlyPricedTools: options.onlyPricedTools,
   })
 
   console.log('--- Reconciliation class counts ---')
@@ -354,6 +379,7 @@ async function runAudit(options: Options): Promise<number> {
         limit: options.limit ?? null,
         batchSize: options.batchSize,
         concurrency: options.concurrency,
+        onlyPricedTools: options.onlyPricedTools,
       },
       summary: {
         total: summary.total,
@@ -374,6 +400,59 @@ async function runAudit(options: Options): Promise<number> {
   }
 
   return summary.failed > 0 ? 1 : 0
+}
+
+async function runRepairProjections(options: Options): Promise<number> {
+  const dryRun = !options.write
+  printFilterSummary(
+    options,
+    dryRun
+      ? 'Historical Ledger Projection Repair (dry-run)'
+      : 'Historical Ledger Projection Repair (write)'
+  )
+  console.log(
+    `Mode: ${dryRun ? 'dry-run (pass --write to persist)' : 'WRITE — updating cost_total only'}`
+  )
+  console.log('Note: does not insert/delete/reprice usage_log rows.\n')
+
+  const result = await repairLedgerProjections(toFilter(options), {
+    dryRun,
+    onProgress: printProgress,
+  })
+
+  console.log('\n--- Projection repair summary ---')
+  console.log(`Scanned:   ${result.scanned}`)
+  console.log(`Drifted:   ${result.drifted}`)
+  console.log(`Repaired:  ${result.repaired}${dryRun ? ' (dry-run — 0 writes)' : ''}`)
+  console.log(`Failed:    ${result.failed}`)
+  console.log(`Pages:     ${result.pages}`)
+
+  if (result.examples.length > 0) {
+    console.log('\n--- Examples (cost_total → ledger) ---')
+    for (const item of result.examples) {
+      console.log(
+        `  ${item.executionId.slice(0, 8)}… ${item.costTotal?.toFixed(6) ?? 'null'} → ${item.costTotalAfter.toFixed(6)} (ledger=${item.ledgerSum.toFixed(6)} drift=${item.drift.toFixed(6)}) workspace=${item.workspaceId}`
+      )
+    }
+    if (result.drifted > result.examples.length) {
+      console.log(`  … and ${result.drifted - result.examples.length} more`)
+    }
+  }
+
+  if (result.failures.length > 0) {
+    console.log('\n--- Failures ---')
+    for (const failure of result.failures.slice(0, 20)) {
+      console.log(`  ${failure.executionId.slice(0, 8)}… ${failure.message}`)
+    }
+  }
+
+  if (dryRun && result.drifted > 0) {
+    console.log(
+      `\nPreview only. Re-run with --write to set cost_total for ${result.drifted} execution(s).`
+    )
+  }
+
+  return result.failed > 0 ? 1 : 0
 }
 
 async function runVerify(options: Options): Promise<number> {
@@ -410,6 +489,7 @@ async function runApply(options: Options): Promise<number> {
   if (options.workspaceId) console.log(`Workspace filter: ${options.workspaceId}`)
   if (options.limit) console.log(`Limit: ${options.limit}`)
   console.log(`Batch size: ${options.batchSize}`)
+  console.log(`Only priced tools: ${options.onlyPricedTools ? 'yes' : 'no (--all-tools)'}`)
 
   const records = await loadHistoricalReconcileShadowArtifact(options.inputPath)
   console.log(`Loaded ${records.length} shadow record(s) from artifact`)
@@ -443,6 +523,7 @@ async function runApply(options: Options): Promise<number> {
       executionId: options.executionId,
       workspaceId: options.workspaceId,
       limit: options.limit ?? options.batchSize,
+      onlyPricedTools: options.onlyPricedTools,
     },
   })
 
@@ -504,18 +585,35 @@ async function main() {
     process.exit(0)
   }
 
-  const modeCount = [options.audit, options.dryRun, options.apply, options.verify].filter(
-    Boolean
-  ).length
+  const modeCount = [
+    options.audit,
+    options.dryRun,
+    options.apply,
+    options.verify,
+    options.repairProjections,
+  ].filter(Boolean).length
   if (modeCount > 1) {
-    console.error('Use only one mode: --audit, --dry-run, --apply, or --verify')
+    console.error(
+      'Use only one mode: --audit, --repair-projections, --dry-run, --apply, or --verify'
+    )
     process.exit(1)
   }
 
-  if (!options.audit && !options.dryRun && !options.apply && !options.verify) {
+  if (
+    !options.audit &&
+    !options.dryRun &&
+    !options.apply &&
+    !options.verify &&
+    !options.repairProjections
+  ) {
     console.error(
-      'No mode selected. Supported: --audit, --dry-run, --apply, --verify, --rollout-guide'
+      'No mode selected. Supported: --audit, --repair-projections, --dry-run, --apply, --verify, --rollout-guide'
     )
+    process.exit(1)
+  }
+
+  if (options.write && !options.repairProjections) {
+    console.error('--write is only valid with --repair-projections')
     process.exit(1)
   }
 
@@ -523,6 +621,8 @@ async function main() {
 
   if (options.audit) {
     exitCode = await runAudit(options)
+  } else if (options.repairProjections) {
+    exitCode = await runRepairProjections(options)
   } else if (options.dryRun) {
     exitCode = await runDryRun(options)
   } else if (options.verify) {

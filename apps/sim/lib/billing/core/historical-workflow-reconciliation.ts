@@ -65,6 +65,50 @@ export const HISTORICAL_RECONCILE_VERSION = 'historical-reconcile-v1'
 
 export const HISTORICAL_RECONCILE_PRICING_MODE = 'current-catalog' as const
 
+/**
+ * Tool IDs / block signals eligible when `--only-priced-tools` is enabled.
+ * Pure model/token reprice (agent LLM runs without these tools) is out of scope.
+ */
+export const RECONCILE_PRICED_TOOL_ALLOWLIST = [
+  // Hosted tools
+  'exa_search',
+  'exa_get_contents',
+  'exa_find_similar_links',
+  'exa_answer',
+  'exa_research',
+  'firecrawl_scrape',
+  'firecrawl_parse',
+  'firecrawl_crawl',
+  'serper_search',
+  'semrush_query',
+  'semrush_organic_positions',
+  'browser_use_run_task',
+  'image_generate',
+  'openai_image',
+  'google_nano_banana',
+  // LLM-on-tool-output
+  'google_ads_v1_query',
+  'google_ads_query',
+  'facebook_ads_query',
+  'development_generate_app',
+  'development_edit_app',
+  'figma_to_html_ai',
+  'figma_create',
+] as const
+
+export type ReconcilePricedToolId = (typeof RECONCILE_PRICED_TOOL_ALLOWLIST)[number]
+
+const RECONCILE_PRICED_TOOL_ALLOWLIST_SET = new Set<string>(RECONCILE_PRICED_TOOL_ALLOWLIST)
+
+/** Hosted-tool output metadata that counts as priced-tool evidence. */
+const PRICED_HOSTED_TOOL_SIGNALS = new Set([
+  'firecrawl_credits',
+  'exa_cost_dollars',
+  'falai_cost_dollars',
+  'image_billing',
+  'browser_use_cost',
+])
+
 export type HistoricalReconcilePricingMode = typeof HISTORICAL_RECONCILE_PRICING_MODE
 
 /** Default page size when listing terminal executions for audit / dry-run. */
@@ -167,6 +211,7 @@ export type ReconciliationClass =
   | 'hosted_tool'
   | 'agent_embedded_tool'
   | 'mothership_risk'
+  | 'out_of_scope'
 
 export type ReconciliationConfidence = 'high' | 'medium' | 'low'
 
@@ -182,6 +227,11 @@ export interface HistoricalExecutionFilter {
   batchSize?: number
   /** Concurrent evidence loads within a page. Defaults to {@link HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY}. */
   concurrency?: number
+  /**
+   * When true, executions without allowlisted priced-tool / cost-block evidence
+   * are classified `out_of_scope` and are not apply-eligible.
+   */
+  onlyPricedTools?: boolean
 }
 
 /** Keyset cursor for descending `(started_at, execution_id)` pagination. */
@@ -270,6 +320,11 @@ export interface ExecutionEvidence {
 
 export interface ComputeTargetLedgerOptions {
   pricingMode?: HistoricalReconcilePricingMode
+  /**
+   * When true, executions without allowlisted priced-tool / cost-block evidence
+   * are classified `out_of_scope` and are not apply-eligible.
+   */
+  onlyPricedTools?: boolean
 }
 
 export interface ShadowRepriceSummary {
@@ -321,6 +376,7 @@ export interface ReconciliationAuditSummary {
 interface TraceSpanLike {
   type?: string
   name?: string
+  toolId?: string
   model?: string
   cost?: { input?: number; output?: number; total?: number; toolCost?: number }
   tokens?: {
@@ -354,16 +410,52 @@ function hasInlineSpanCost(span: TraceSpanLike): boolean {
   return typeof total === 'number' && Number.isFinite(total) && total > 0
 }
 
-function detectHostedToolSignals(output: Record<string, unknown> | undefined): string[] {
-  if (!output) return []
-  const signals: string[] = []
-
+function readFirecrawlCreditsUsed(output: Record<string, unknown>): number | null {
   const metadata = output.metadata
   if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
     const creditsUsed = (metadata as { creditsUsed?: unknown }).creditsUsed
     if (typeof creditsUsed === 'number' && creditsUsed > 0) {
-      signals.push('firecrawl_credits')
+      return creditsUsed
     }
+  }
+
+  if (typeof output.creditsUsed === 'number' && output.creditsUsed > 0) {
+    return output.creditsUsed
+  }
+
+  return null
+}
+
+/**
+ * Reads Exa-style API-reported dollar cost from tool output
+ * (`__costDollars` number or `{ total }`, then `costDollars`).
+ */
+function readExaLikeCostDollars(output: Record<string, unknown>): number | null {
+  const candidates = [output.__costDollars, output.costDollars]
+  for (const value of candidates) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const total = (value as { total?: unknown }).total
+      if (typeof total === 'number' && Number.isFinite(total) && total > 0) {
+        return total
+      }
+    }
+  }
+  return null
+}
+
+function detectHostedToolSignals(output: Record<string, unknown> | undefined): string[] {
+  if (!output) return []
+  const signals: string[] = []
+
+  if (readFirecrawlCreditsUsed(output) != null) {
+    signals.push('firecrawl_credits')
+  }
+
+  if (readExaLikeCostDollars(output) != null) {
+    signals.push('exa_cost_dollars')
   }
 
   if (typeof output.__falaiCostDollars === 'number' && output.__falaiCostDollars > 0) {
@@ -372,6 +464,13 @@ function detectHostedToolSignals(output: Record<string, unknown> | undefined): s
 
   if (output.__imageBilling && typeof output.__imageBilling === 'object') {
     signals.push('image_billing')
+  }
+
+  if (
+    (typeof output.__totalCostUsd === 'number' && output.__totalCostUsd > 0) ||
+    (typeof output.totalCostUsd === 'number' && output.totalCostUsd > 0)
+  ) {
+    signals.push('browser_use_cost')
   }
 
   return signals
@@ -451,6 +550,116 @@ export function snapshotStateHasCostBlocks(stateData: WorkflowState | null | und
   return Object.values(stateData.blocks).some((block) => block.type === BlockType.COST)
 }
 
+/**
+ * Returns true when `candidate` matches an allowlisted priced tool id
+ * (exact match after normalize, or allowlist id prefixed by the candidate block type).
+ */
+export function isReconcilePricedToolId(candidate: string | null | undefined): boolean {
+  if (!candidate) return false
+  const normalized = normalizeUsageToolId(candidate.trim())
+  if (!normalized) return false
+  if (RECONCILE_PRICED_TOOL_ALLOWLIST_SET.has(normalized)) return true
+  for (const allowed of RECONCILE_PRICED_TOOL_ALLOWLIST_SET) {
+    if (allowed.startsWith(`${normalized}_`)) return true
+  }
+  return false
+}
+
+function collectSnapshotToolCandidates(state: WorkflowState | null | undefined): string[] {
+  if (!state?.blocks) return []
+  const candidates: string[] = []
+
+  for (const block of Object.values(state.blocks)) {
+    if (block.type) candidates.push(block.type)
+
+    const subBlocks = block.subBlocks ?? {}
+    for (const key of ['operation', 'toolId', 'tool'] as const) {
+      const raw = subBlocks[key]?.value
+      if (typeof raw === 'string' && raw.trim().length > 0) {
+        candidates.push(raw)
+        if (block.type && key === 'operation') {
+          candidates.push(`${block.type}_${raw}`)
+        }
+      }
+    }
+  }
+
+  return candidates
+}
+
+function collectTraceToolCandidates(traceSpans: TraceSpanLike[] | undefined): string[] {
+  const candidates: string[] = []
+  walkTraceSpans(traceSpans, (span) => {
+    if (span.name) candidates.push(span.name)
+    if (span.type) candidates.push(span.type)
+    if (span.toolId) candidates.push(span.toolId)
+
+    const output = span.output
+    if (output && typeof output === 'object') {
+      for (const key of ['toolId', 'tool', 'name', 'operation'] as const) {
+        const value = output[key]
+        if (typeof value === 'string' && value.trim().length > 0) {
+          candidates.push(value)
+        }
+      }
+    }
+  })
+  return candidates
+}
+
+/**
+ * True when evidence includes an allowlisted priced tool, cost block, or
+ * hosted-tool dollar/credit metadata (`__costDollars`, firecrawl credits, etc.).
+ * Pure model/token spans alone do not qualify.
+ */
+export function executionHasPricedToolSignal(evidence: ExecutionEvidence): boolean {
+  if (evidence.snapshotHasCostBlocks || evidence.trace.spansWithCostBlockType > 0) {
+    return true
+  }
+
+  for (const signal of evidence.trace.hostedToolSignals) {
+    if (PRICED_HOSTED_TOOL_SIGNALS.has(signal)) return true
+  }
+
+  for (const candidate of collectSnapshotToolCandidates(evidence.snapshotState)) {
+    if (isReconcilePricedToolId(candidate)) return true
+  }
+
+  for (const candidate of collectTraceToolCandidates(evidence.traceSpans)) {
+    if (isReconcilePricedToolId(candidate)) return true
+  }
+
+  return false
+}
+
+/**
+ * True when a shadow artifact record still looks like priced-tool scope
+ * (used when applying an artifact that may have been produced with `--all-tools`).
+ */
+export function shadowRecordHasPricedToolEvidence(
+  record: HistoricalReconcileShadowRecord
+): boolean {
+  if (record.primaryClass === 'out_of_scope') return false
+  if (record.primaryClass === 'cost_block' || record.primaryClass === 'hosted_tool') {
+    return true
+  }
+
+  for (const target of record.targets) {
+    if (target.category === 'external') return true
+    if (isReconcilePricedToolId(target.toolId ?? target.description)) return true
+    if (target.evidenceSource && PRICED_HOSTED_TOOL_SIGNALS.has(target.evidenceSource)) {
+      return true
+    }
+  }
+
+  for (const line of record.ledgerLines) {
+    if (line.category === 'external') return true
+    if (line.category === 'tool' && isReconcilePricedToolId(line.description)) return true
+  }
+
+  return false
+}
+
 function readBillingReconciliationFlags(executionData: Record<string, unknown>): {
   pending: boolean
   reason: string | null
@@ -469,7 +678,30 @@ function uniqueClasses(classes: ReconciliationClass[]): ReconciliationClass[] {
  * Classifies a single execution's evidence into reconciliation classes, confidence,
  * and apply eligibility for the historical repricer.
  */
-export function classifyExecutionEvidence(evidence: ExecutionEvidence): ExecutionClassification {
+export function classifyExecutionEvidence(
+  evidence: ExecutionEvidence,
+  options: { onlyPricedTools?: boolean } = {}
+): ExecutionClassification {
+  if (options.onlyPricedTools && !executionHasPricedToolSignal(evidence)) {
+    return {
+      executionId: evidence.executionId,
+      workflowId: evidence.workflowId,
+      workspaceId: evidence.workspaceId,
+      startedAt: evidence.startedAt,
+      status: evidence.status,
+      primaryClass: 'out_of_scope',
+      secondaryClasses: [],
+      confidence: 'high',
+      blockers: [],
+      warnings: ['only_priced_tools_gate'],
+      evidenceSources: [],
+      applyEligible: false,
+      costTotal: evidence.costTotal,
+      ledgerSum: evidence.ledgerSum,
+      drift: evidence.drift,
+    }
+  }
+
   const warnings: string[] = []
   const blockers: string[] = []
   const evidenceSources: string[] = []
@@ -642,6 +874,7 @@ function emptyClassCounts(): Record<ReconciliationClass, number> {
     hosted_tool: 0,
     agent_embedded_tool: 0,
     mothership_risk: 0,
+    out_of_scope: 0,
   }
 }
 
@@ -1060,9 +1293,13 @@ async function loadExecutionEvidenceOnce(executionId: string): Promise<Execution
  */
 export async function auditHistoricalWorkflowExecutions(
   filter: HistoricalExecutionFilter = {},
-  options: { onProgress?: HistoricalReconcileProgressCallback } = {}
+  options: {
+    onProgress?: HistoricalReconcileProgressCallback
+    onlyPricedTools?: boolean
+  } = {}
 ): Promise<ReconciliationAuditSummary> {
   const concurrency = resolveConcurrency(filter)
+  const onlyPricedTools = options.onlyPricedTools ?? filter.onlyPricedTools ?? false
   const classifications: ExecutionClassification[] = []
   const failures: HistoricalReconcileFailure[] = []
   let attempted = 0
@@ -1095,7 +1332,7 @@ export async function auditHistoricalWorkflowExecutions(
         }
         return {
           kind: 'classified' as const,
-          classification: classifyExecutionEvidence(evidence),
+          classification: classifyExecutionEvidence(evidence, { onlyPricedTools }),
         }
       } catch (error) {
         const failure = toHistoricalExecutionFailure(row.executionId, error)
@@ -1226,15 +1463,21 @@ function computeStandaloneToolCost(span: TraceSpanLike): {
   if (span.type !== 'tool' || !span.output) return null
 
   const output = span.output
-  const metadata = output.metadata
-  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
-    const creditsUsed = (metadata as { creditsUsed?: unknown }).creditsUsed
-    if (typeof creditsUsed === 'number' && creditsUsed > 0) {
-      return {
-        cost: creditsUsed * 0.001,
-        reason: 'firecrawl_credits',
-        evidenceSource: 'firecrawl_credits',
-      }
+  const creditsUsed = readFirecrawlCreditsUsed(output)
+  if (creditsUsed != null) {
+    return {
+      cost: creditsUsed * 0.001,
+      reason: 'firecrawl_credits',
+      evidenceSource: 'firecrawl_credits',
+    }
+  }
+
+  const exaCost = readExaLikeCostDollars(output)
+  if (exaCost != null) {
+    return {
+      cost: exaCost,
+      reason: 'exa_cost_dollars',
+      evidenceSource: 'exa_cost_dollars',
     }
   }
 
@@ -1611,6 +1854,63 @@ function buildShadowRecord(params: {
 }
 
 /**
+ * Maps a shadow reprice record into the verify-costs API response shape.
+ */
+export function toVerifyExecutionCostsResponse(
+  record: HistoricalReconcileShadowRecord
+): {
+  executionId: string
+  workflowId: string | null
+  workspaceId: string
+  confidence: ReconciliationConfidence
+  primaryClass: ReconciliationClass
+  applyEligible: boolean
+  blockers: string[]
+  warnings: string[]
+  billed: { total: number; lines: LedgerLineSummary[] }
+  expected: {
+    total: number
+    lines: Array<{
+      category: UsageLogCategory
+      description: string
+      target: number
+      evidenceSource?: string
+    }>
+  }
+  deltas: { positive: number; negative: number }
+  onlyPricedTools: true
+} {
+  return {
+    executionId: record.executionId,
+    workflowId: record.workflowId,
+    workspaceId: record.workspaceId,
+    confidence: record.confidence,
+    primaryClass: record.primaryClass,
+    applyEligible: record.applyEligible,
+    blockers: record.blockers,
+    warnings: record.warnings,
+    billed: {
+      total: record.ledgerSum,
+      lines: record.ledgerLines,
+    },
+    expected: {
+      total: record.targetSum,
+      lines: record.targets.map((line) => ({
+        category: line.category,
+        description: line.description,
+        target: line.target,
+        ...(line.evidenceSource ? { evidenceSource: line.evidenceSource } : {}),
+      })),
+    },
+    deltas: {
+      positive: record.positiveDelta,
+      negative: record.negativeDelta,
+    },
+    onlyPricedTools: true,
+  }
+}
+
+/**
  * Computes a single execution's shadow repricing artifact without writing to the ledger.
  */
 export async function computeShadowRepriceForExecution(
@@ -1620,7 +1920,9 @@ export async function computeShadowRepriceForExecution(
   const evidence = await loadExecutionEvidence(executionId)
   if (!evidence) return null
 
-  const classification = classifyExecutionEvidence(evidence)
+  const classification = classifyExecutionEvidence(evidence, {
+    onlyPricedTools: options.onlyPricedTools,
+  })
   const { targets, warnings } = await computeTargetLedgerLines(evidence, options)
 
   return buildShadowRecord({
@@ -1643,6 +1945,11 @@ export async function dryRunHistoricalWorkflowReprices(
   } = {}
 ): Promise<ShadowRepriceSummary> {
   const concurrency = resolveConcurrency(filter)
+  const onlyPricedTools = options.onlyPricedTools ?? filter.onlyPricedTools ?? false
+  const repriceOptions: ComputeTargetLedgerOptions = {
+    pricingMode: options.pricingMode,
+    onlyPricedTools,
+  }
   const records: HistoricalReconcileShadowRecord[] = []
   const failures: HistoricalReconcileFailure[] = []
   let attempted = 0
@@ -1669,7 +1976,7 @@ export async function dryRunHistoricalWorkflowReprices(
     pages += 1
     const pageResults = await mapWithConcurrency(page, concurrency, async (row) => {
       try {
-        const record = await computeShadowRepriceForExecution(row.executionId, options)
+        const record = await computeShadowRepriceForExecution(row.executionId, repriceOptions)
         if (!record) {
           return { kind: 'skipped' as const, executionId: row.executionId }
         }
@@ -2102,6 +2409,11 @@ export interface ApplyHistoricalReconciliationBatchFilter {
   executionId?: string
   workspaceId?: string
   limit?: number
+  /**
+   * When true (CLI default), skip shadow records outside the priced-tool allowlist
+   * even if the artifact was produced with `--all-tools`.
+   */
+  onlyPricedTools?: boolean
 }
 
 /**
@@ -2114,6 +2426,7 @@ export async function applyHistoricalReconciliationBatch(params: {
 }): Promise<ApplyHistoricalReconciliationBatchResult> {
   const filter = params.filter ?? {}
   const requireEligible = params.requireEligible ?? true
+  const onlyPricedTools = filter.onlyPricedTools ?? false
 
   let candidates = params.records
   if (filter.workflowId) {
@@ -2124,6 +2437,9 @@ export async function applyHistoricalReconciliationBatch(params: {
   }
   if (filter.workspaceId) {
     candidates = candidates.filter((record) => record.workspaceId === filter.workspaceId)
+  }
+  if (onlyPricedTools) {
+    candidates = candidates.filter((record) => shadowRecordHasPricedToolEvidence(record))
   }
   if (filter.limit != null && filter.limit > 0) {
     candidates = candidates.slice(0, filter.limit)
@@ -2244,38 +2560,46 @@ export const HISTORICAL_RECONCILE_ROLLOUT_STEPS: HistoricalReconcileRolloutStep[
   },
   {
     step: 2,
+    name: 'repair_projections',
+    description:
+      'Set cost_total = workflow ledger sum for NULL/mismatched projections only. Does not touch usage_log. Preview with --dry-run; persist with --write.',
+    command:
+      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --repair-projections --write --batch-size=1000',
+  },
+  {
+    step: 3,
     name: 'evidence_audit',
     description:
       'Classify terminal workflow runs by reconciliation evidence, confidence, and apply eligibility.',
     command:
-      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --audit --since=2020-01-01 --batch-size=1000',
+      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --audit --since=2020-01-01 --batch-size=1000 --only-priced-tools',
   },
   {
-    step: 3,
+    step: 4,
     name: 'staging_shadow',
     description:
       'Compute shadow target ledger lines and export an NDJSON artifact for human review on staging.',
     command:
-      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --batch-size=1000 --export=reconcile-shadow.ndjson',
+      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --batch-size=1000 --only-priced-tools --export=reconcile-shadow.ndjson',
   },
   {
-    step: 4,
+    step: 5,
     name: 'delta_review',
     description:
       'Review positive/negative deltas by workspace, workflow, model, and tool before any writes.',
     command:
-      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --batch-size=1000 --export=reconcile-shadow.ndjson --review-deltas',
+      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --batch-size=1000 --only-priced-tools --export=reconcile-shadow.ndjson --review-deltas',
   },
   {
-    step: 5,
+    step: 6,
     name: 'pilot_apply',
     description:
       'Apply append-only adjustments for one workspace or narrow date range, then verify projection.',
     command:
-      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --workspace-id=<workspace-id> --batch-size=100',
+      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --workspace-id=<workspace-id> --batch-size=100 --only-priced-tools',
   },
   {
-    step: 6,
+    step: 7,
     name: 'post_pilot_verify',
     description:
       'Re-run drift audit and ledger projection verification for the pilot workspace.',
@@ -2283,15 +2607,15 @@ export const HISTORICAL_RECONCILE_ROLLOUT_STEPS: HistoricalReconcileRolloutStep[
       'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --verify --workspace-id=<workspace-id> --batch-size=1000',
   },
   {
-    step: 7,
+    step: 8,
     name: 'production_apply',
     description:
       'Apply in small production batches only after pilot verification passes.',
     command:
-      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production',
+      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production --only-priced-tools',
   },
   {
-    step: 8,
+    step: 9,
     name: 'final_verify',
     description: 'Confirm cost_total equals workflow ledger sums after the full rollout.',
     command:
@@ -2315,6 +2639,29 @@ export interface LedgerProjectionVerification {
   drifted: number
   passed: boolean
   driftExamples: LedgerProjectionDriftCase[]
+}
+
+export interface LedgerProjectionRepairCase extends LedgerProjectionDriftCase {
+  costTotalAfter: number
+}
+
+export interface LedgerProjectionRepairSummary {
+  /** Terminal executions scanned under the filter. */
+  scanned: number
+  /** Executions whose `cost_total` differed from the workflow ledger sum. */
+  drifted: number
+  /** Executions updated (0 when `dryRun` is true). */
+  repaired: number
+  /** True when no writes were performed. */
+  dryRun: boolean
+  /** Sample of repaired (or would-repair) cases. */
+  examples: LedgerProjectionRepairCase[]
+  attempted: number
+  succeeded: number
+  skipped: number
+  failed: number
+  failures: HistoricalReconcileFailure[]
+  pages: number
 }
 
 export interface ShadowDeltaBucket {
@@ -2542,6 +2889,137 @@ export async function verifyLedgerProjection(
     drifted,
     passed: drifted === 0,
     driftExamples,
+  }
+}
+
+function needsLedgerProjectionRepair(row: HistoricalExecutionRow): boolean {
+  return Math.abs(row.drift) > RECONCILIATION_EPSILON
+}
+
+/**
+ * Repairs `workflow_execution_logs.cost_total` to match
+ * `SUM(usage_log.cost WHERE source = 'workflow')` for drifted terminal runs.
+ *
+ * Does not insert, delete, or reprice `usage_log` rows. Defaults to dry-run;
+ * pass `{ dryRun: false }` (CLI `--write`) to persist.
+ */
+export async function repairLedgerProjections(
+  filter: HistoricalExecutionFilter = {},
+  options: {
+    dryRun?: boolean
+    onProgress?: HistoricalReconcileProgressCallback
+    maxExamples?: number
+  } = {}
+): Promise<LedgerProjectionRepairSummary> {
+  const dryRun = options.dryRun !== false
+  const maxExamples = options.maxExamples ?? 50
+  const examples: LedgerProjectionRepairCase[] = []
+
+  let scanned = 0
+  let drifted = 0
+  let repaired = 0
+  let pages = 0
+  let attempted = 0
+  let succeeded = 0
+  let skipped = 0
+  let failed = 0
+  const failures: HistoricalReconcileFailure[] = []
+  let previousEmitted = -1
+
+  const reportProgress = (done: boolean) => {
+    if (!(done || shouldEmitProgress(attempted, previousEmitted))) {
+      return
+    }
+    previousEmitted = attempted
+    emitProgress(options.onProgress, {
+      attempted,
+      succeeded,
+      skipped,
+      failed,
+      pages,
+      done,
+    })
+  }
+
+  for await (const page of iterateHistoricalWorkflowExecutionPages(filter)) {
+    pages += 1
+    await ensureDatabaseConnection()
+
+    const driftedRows = page.filter(needsLedgerProjectionRepair)
+    scanned += page.length
+    skipped += page.length - driftedRows.length
+
+    for (const row of driftedRows) {
+      attempted += 1
+      drifted += 1
+
+      const costTotalAfter = row.ledgerSum
+      const example: LedgerProjectionRepairCase = {
+        executionId: row.executionId,
+        workflowId: row.workflowId,
+        workspaceId: row.workspaceId,
+        startedAt: row.startedAt,
+        status: row.status,
+        costTotal: row.costTotal,
+        ledgerSum: row.ledgerSum,
+        drift: row.drift,
+        costTotalAfter,
+      }
+
+      if (examples.length < maxExamples) {
+        examples.push(example)
+      }
+
+      if (dryRun) {
+        succeeded += 1
+        reportProgress(false)
+        continue
+      }
+
+      try {
+        await withReconcileDbRetry(
+          async () => {
+            await db
+              .update(workflowExecutionLogs)
+              .set({ costTotal: costTotalAfter.toString() })
+              .where(eq(workflowExecutionLogs.executionId, row.executionId))
+          },
+          {
+            operation: 'repairLedgerProjection',
+            executionId: row.executionId,
+          }
+        )
+        repaired += 1
+        succeeded += 1
+      } catch (error) {
+        failed += 1
+        failures.push(toHistoricalExecutionFailure(row.executionId, error))
+        logger.error('Failed to repair ledger projection', {
+          executionId: row.executionId,
+          error: getErrorMessage(error),
+        })
+      }
+
+      reportProgress(false)
+    }
+
+    reportProgress(false)
+  }
+
+  reportProgress(true)
+
+  return {
+    scanned,
+    drifted,
+    repaired,
+    dryRun,
+    examples,
+    attempted,
+    succeeded,
+    skipped,
+    failed,
+    failures,
+    pages,
   }
 }
 

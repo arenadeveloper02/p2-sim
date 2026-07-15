@@ -26,6 +26,7 @@ vi.mock('@sim/db', () => ({
     transaction: mockTransaction,
     select: mockSelect,
     execute: mockExecute,
+    update: mockUpdate,
   },
 }))
 
@@ -74,6 +75,7 @@ import {
   HISTORICAL_RECONCILE_ROLLOUT_STEPS,
   HISTORICAL_RECONCILE_VERSION,
   parseHistoricalReconcileShadowRecord,
+  repairLedgerProjections,
   snapshotStateHasCostBlocks,
   verifyLedgerProjection,
   type ExecutionClassification,
@@ -174,6 +176,39 @@ describe('analyzeTraceSpans', () => {
     expect(summary.hostedToolSignals).toEqual(
       expect.arrayContaining(['firecrawl_credits', 'falai_cost_dollars'])
     )
+  })
+
+  it('detects top-level firecrawl credits and Exa costDollars signals', () => {
+    const summary = analyzeTraceSpans([
+      {
+        type: 'tool',
+        name: 'firecrawl_crawl',
+        output: { creditsUsed: 8 },
+      },
+      {
+        type: 'tool',
+        name: 'exa_search',
+        output: { __costDollars: 0.007 },
+      },
+    ])
+
+    expect(summary.spansWithHostedToolMetadata).toBe(2)
+    expect(summary.hostedToolSignals).toEqual(
+      expect.arrayContaining(['firecrawl_credits', 'exa_cost_dollars'])
+    )
+  })
+
+  it('detects browser_use __totalCostUsd hosted-tool signal', () => {
+    const summary = analyzeTraceSpans([
+      {
+        type: 'tool',
+        name: 'browser_use_run_task',
+        output: { __totalCostUsd: 0.15 },
+      },
+    ])
+
+    expect(summary.spansWithHostedToolMetadata).toBe(1)
+    expect(summary.hostedToolSignals).toContain('browser_use_cost')
   })
 
   it('detects agent embedded tool costs', () => {
@@ -410,6 +445,109 @@ describe('classifyExecutionEvidence', () => {
     expect(result.warnings.some((warning) => warning.startsWith('byok_ambiguity'))).toBe(true)
     expect(result.applyEligible).toBe(false)
   })
+
+  it('classifies out_of_scope when onlyPricedTools and no allowlisted tool signal', () => {
+    const result = classifyExecutionEvidence(
+      baseEvidence({
+        costTotal: 0,
+        ledgerSum: 0,
+        drift: -0.02,
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 1,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 1,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 0,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: ['gpt-4o'],
+          hostedToolSignals: [],
+        },
+        traceSpans: [
+          {
+            type: 'agent',
+            name: 'Agent',
+            model: 'gpt-4o',
+            cost: { total: 0.02 },
+          },
+        ],
+      }),
+      { onlyPricedTools: true }
+    )
+
+    expect(result.primaryClass).toBe('out_of_scope')
+    expect(result.applyEligible).toBe(false)
+    expect(result.confidence).toBe('high')
+    expect(result.secondaryClasses).toEqual([])
+    expect(result.warnings).toContain('only_priced_tools_gate')
+  })
+
+  it('keeps priced-tool executions in scope when onlyPricedTools is set', () => {
+    const result = classifyExecutionEvidence(
+      baseEvidence({
+        costTotal: 0,
+        ledgerSum: 0,
+        drift: -0.01,
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 1,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 1,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: [],
+          hostedToolSignals: ['exa_cost_dollars'],
+        },
+        traceSpans: [
+          {
+            type: 'tool',
+            name: 'exa_search',
+            output: { __costDollars: 0.007 },
+          },
+        ],
+      }),
+      { onlyPricedTools: true }
+    )
+
+    expect(result.primaryClass).toBe('hosted_tool')
+    expect(result.primaryClass).not.toBe('out_of_scope')
+  })
+
+  it('treats cost blocks as in-scope under onlyPricedTools', () => {
+    const result = classifyExecutionEvidence(
+      baseEvidence({
+        costTotal: 0,
+        ledgerSum: 0,
+        drift: -0.05,
+        snapshotHasCostBlocks: true,
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 1,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 0,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 1,
+          modelsInSpans: [],
+          hostedToolSignals: [],
+        },
+      }),
+      { onlyPricedTools: true }
+    )
+
+    expect(result.primaryClass).toBe('cost_block')
+    expect(result.applyEligible).toBe(true)
+  })
 })
 
 describe('aggregateClassificationResults', () => {
@@ -571,6 +709,33 @@ describe('enrichTraceSpansForReprice', () => {
     ])
 
     expect(enriched?.[0]?.cost?.total).toBeCloseTo(0.01, 8)
+  })
+
+  it('adds standalone firecrawl tool costs from top-level creditsUsed', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'firecrawl_crawl',
+        output: { creditsUsed: 15 },
+      },
+    ])
+
+    expect(enriched?.[0]?.cost?.total).toBeCloseTo(0.015, 8)
+  })
+
+  it('prefers Exa __costDollars over tool_output_cost', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'exa_search',
+        output: {
+          __costDollars: { total: 0.021 },
+          cost: { total: 0.007 },
+        },
+      },
+    ])
+
+    expect(enriched?.[0]?.cost?.total).toBeCloseTo(0.021, 8)
   })
 
   it('folds agent-embedded tool costs into the parent model span', () => {
@@ -1305,10 +1470,128 @@ describe('verifyLedgerProjection', () => {
   })
 })
 
+describe('repairLedgerProjections', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockExecute.mockResolvedValue([{ '?column?': 1 }])
+  })
+
+  function mockPagedSelect(pages: Array<Array<Record<string, unknown>>>) {
+    let pageIndex = 0
+    mockSelect.mockImplementation(() => ({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockImplementation(async () => {
+              const page = pages[pageIndex] ?? []
+              pageIndex += 1
+              return page
+            }),
+          }),
+        }),
+      }),
+    }))
+  }
+
+  it('dry-runs without writing when cost_total is null and ledger is positive', async () => {
+    mockPagedSelect([
+      [
+        {
+          executionId: 'exec-null',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+          startedAt: new Date('2024-01-01T00:00:00.000Z'),
+          status: 'completed',
+          trigger: 'api',
+          stateSnapshotId: 'snap-1',
+          costTotal: null,
+          modelsUsed: null,
+          ledgerSum: '1.25',
+        },
+      ],
+      [],
+    ])
+
+    const result = await repairLedgerProjections({ limit: 1, batchSize: 1 }, { dryRun: true })
+
+    expect(result.dryRun).toBe(true)
+    expect(result.scanned).toBe(1)
+    expect(result.drifted).toBe(1)
+    expect(result.repaired).toBe(0)
+    expect(result.examples[0]).toMatchObject({
+      executionId: 'exec-null',
+      costTotal: null,
+      ledgerSum: 1.25,
+      costTotalAfter: 1.25,
+    })
+    expect(mockUpdate).not.toHaveBeenCalled()
+  })
+
+  it('writes cost_total from the ledger when dryRun is false', async () => {
+    mockPagedSelect([
+      [
+        {
+          executionId: 'exec-2x',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+          startedAt: new Date('2024-01-01T00:00:00.000Z'),
+          status: 'completed',
+          trigger: 'api',
+          stateSnapshotId: 'snap-1',
+          costTotal: '0.0075',
+          modelsUsed: null,
+          ledgerSum: '0.015',
+        },
+      ],
+      [],
+    ])
+
+    const updateWhere = vi.fn().mockResolvedValue(undefined)
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere })
+    mockUpdate.mockReturnValue({ set: updateSet })
+
+    const result = await repairLedgerProjections({ limit: 1, batchSize: 1 }, { dryRun: false })
+
+    expect(result.dryRun).toBe(false)
+    expect(result.drifted).toBe(1)
+    expect(result.repaired).toBe(1)
+    expect(updateSet).toHaveBeenCalledWith({ costTotal: '0.015' })
+    expect(updateWhere).toHaveBeenCalled()
+  })
+
+  it('skips executions that already match the ledger', async () => {
+    mockPagedSelect([
+      [
+        {
+          executionId: 'exec-ok',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+          startedAt: new Date('2024-01-01T00:00:00.000Z'),
+          status: 'completed',
+          trigger: 'api',
+          stateSnapshotId: 'snap-1',
+          costTotal: '0.02',
+          modelsUsed: null,
+          ledgerSum: '0.02',
+        },
+      ],
+      [],
+    ])
+
+    const result = await repairLedgerProjections({ limit: 1, batchSize: 1 }, { dryRun: false })
+
+    expect(result.scanned).toBe(1)
+    expect(result.drifted).toBe(0)
+    expect(result.repaired).toBe(0)
+    expect(mockUpdate).not.toHaveBeenCalled()
+  })
+})
+
 describe('rollout sequence', () => {
   it('defines the full audit → shadow → pilot → production → verify sequence', () => {
     expect(HISTORICAL_RECONCILE_ROLLOUT_STEPS.map((step) => step.name)).toEqual([
       'baseline_audit',
+      'repair_projections',
       'evidence_audit',
       'staging_shadow',
       'delta_review',
@@ -1318,5 +1601,20 @@ describe('rollout sequence', () => {
       'final_verify',
     ])
     expect(HISTORICAL_RECONCILE_ROLLOUT_STEPS.every((step) => step.command.length > 0)).toBe(true)
+  })
+
+  it('includes --only-priced-tools on audit, shadow, and apply steps', () => {
+    const gated = HISTORICAL_RECONCILE_ROLLOUT_STEPS.filter((step) =>
+      ['evidence_audit', 'staging_shadow', 'delta_review', 'pilot_apply', 'production_apply'].includes(
+        step.name
+      )
+    )
+    expect(gated.every((step) => step.command.includes('--only-priced-tools'))).toBe(true)
+  })
+
+  it('includes projection repair before evidence audit', () => {
+    const repair = HISTORICAL_RECONCILE_ROLLOUT_STEPS.find((step) => step.name === 'repair_projections')
+    expect(repair?.command).toContain('--repair-projections')
+    expect(repair?.command).toContain('--write')
   })
 })

@@ -34,8 +34,17 @@ Do not write to production until all checks pass:
 - Object-store credentials can materialize historical traces.
 - Historical models seen in audit output resolve in `apps/sim/providers/models.ts`.
 - Historical image models resolve in `apps/sim/lib/tools/image-pricing.ts`.
-- Firecrawl rate is `$0.001 × creditsUsed`; Fal.ai cost uses the hosted-key markup; external Cost blocks remain multiplier `1`.
+- Hosted-tool rates (placeholders marked — update when vendor invoices confirm):
+  - Firecrawl: `$0.001 × creditsUsed` (`metadata.creditsUsed` or top-level)
+  - Serper.dev: `$0.001` per credit (`num > 10` → 2 credits)
+  - Exa: prefer API `costDollars.total`; else `$0.007`/request
+  - Semrush: `$0.01`/request (PLACEHOLDER)
+  - Browser Use: prefer API total cost; else `$0.01` init + `$0.006 × steps` (PLACEHOLDER)
+  - Fal.ai: hosted-key markup `× 1.5`; image tools use `IMAGE_MODEL_PRICING`
+  - External Cost blocks: multiplier `1`
+- LLM-behind-tool blocks (Google Ads, Facebook Ads, Dev, Figma AI) return cost on tool `output.cost` (not a separate side-channel ledger write).
 - Copilot and Mothership chat totals remain Go-reported aggregates. Sim cannot reconstruct their historical internal tool costs.
+- Audit/dry-run/apply default to `--only-priced-tools` (allowlist in `RECONCILE_PRICED_TOOL_ALLOWLIST`). Use `--all-tools` only for full-inventory audits.
 
 Run the preflight checks:
 
@@ -44,11 +53,17 @@ cd apps/sim
 
 bun test \
   lib/billing/core/historical-workflow-reconciliation.test.ts \
+  lib/billing/core/tool-llm-cost.test.ts \
   lib/billing/core/usage-log.test.ts \
   lib/logs/execution/logger.test.ts \
   lib/logs/execution/logging-factory.test.ts \
   providers/utils.test.ts \
-  lib/tools/image-pricing.test.ts
+  lib/tools/image-pricing.test.ts \
+  tools/exa-hosting.test.ts \
+  tools/firecrawl-crawl-hosting.test.ts \
+  tools/semrush-hosting.test.ts \
+  tools/browser-use-hosting.test.ts \
+  app/api/logs/execution/\[executionId\]/verify-costs/route.test.ts
 
 bun run type-check
 bun run lint:check
@@ -91,7 +106,23 @@ workflow_execution_logs.cost_total
 
 This projection repair must not insert, delete, or reprice `usage_log` rows. It must not affect non-workflow sources or embedded-tool attribution.
 
-Re-run the Step 1 audit. The 9,313 identified projection discrepancies should disappear without any change in the workflow ledger total.
+Preview first (no writes):
+
+```bash
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --repair-projections --batch-size=1000
+```
+
+Then persist:
+
+```bash
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --repair-projections --write --batch-size=1000
+```
+
+Optional scope: `--workspace-id=`, `--execution-id=`, `--since=`, `--limit=`.
+
+Re-run the Step 1 audit (or `--verify`). The ~9,313 projection discrepancies should disappear without any change in the workflow ledger total. After that, `--audit --only-priced-tools` shows which priced-tool executions still need ledger reprice — not projection noise.
 
 ## Step 3: classify historical pricing evidence
 
@@ -100,6 +131,8 @@ bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts 
   --audit --since=2020-01-01 --batch-size=1000 \
   --export=reconciliation-audit.json
 ```
+
+Defaults to `--only-priced-tools`: executions without allowlisted hosted tools, Cost blocks, or LLM-on-tool blocks are `out_of_scope` (not apply-eligible). Pass `--all-tools` to classify every terminal workflow run.
 
 `--batch-size` is the keyset page size (default `1000`). Without `--limit`, the audit walks the full filtered window page by page. Use `--limit=<n>` to cap total attempted executions, and `--concurrency=<n>` (default `8`) to bound parallel evidence loads within each page.
 
@@ -128,6 +161,16 @@ Proceed only with high- or medium-confidence workflow evidence:
 - Go cost returned from a workflow Mothership block.
 
 Do not auto-apply BYOK ambiguity, missing traces, expression Cost blocks, Mothership double-count risk, unsupported image/tool pricing, or negative target deltas.
+
+## Step 3b: manual verify in workflow logs (read-only)
+
+For a single execution, use Log details → **Verify pricing**, or:
+
+```http
+POST /api/logs/execution/<executionId>/verify-costs
+```
+
+This runs the same shadow reprice as CLI dry-run with `onlyPricedTools: true`. It never writes. Compare billed ledger lines vs expected targets + deltas before any apply.
 
 ## Step 4: generate and review a shadow artifact
 
