@@ -27,7 +27,8 @@ export const INVOICES_STALE_TIME = 5 * 60 * 1000
 export const subscriptionKeys = {
   all: ['subscription'] as const,
   users: () => [...subscriptionKeys.all, 'user'] as const,
-  user: (includeOrg?: boolean) => [...subscriptionKeys.users(), { includeOrg }] as const,
+  user: (includeOrg?: boolean, workspaceId?: string) =>
+    [...subscriptionKeys.users(), { includeOrg, workspaceId: workspaceId ?? '' }] as const,
   usage: () => [...subscriptionKeys.all, 'usage'] as const,
   invoicesAll: () => [...subscriptionKeys.all, 'invoices'] as const,
   invoices: (context: 'user' | 'organization' = 'user', organizationId?: string) =>
@@ -40,10 +41,15 @@ export const subscriptionKeys = {
  */
 async function fetchSubscriptionData(
   includeOrg = false,
+  workspaceId?: string,
   signal?: AbortSignal
 ): Promise<SubscriptionApiResponse> {
   return requestJson(getUserBillingContract, {
-    query: { context: 'user', includeOrg },
+    query: {
+      context: 'user',
+      includeOrg,
+      ...(workspaceId ? { workspaceId } : {}),
+    },
     signal,
   })
 }
@@ -51,6 +57,8 @@ async function fetchSubscriptionData(
 interface UseSubscriptionDataOptions {
   /** Include organization membership and role data */
   includeOrg?: boolean
+  /** Scope usage limits to a personal (non-org-linked) workspace when set */
+  workspaceId?: string
   /** Whether to enable the query (defaults to true) */
   enabled?: boolean
   /** Override default staleTime (defaults to 30s) */
@@ -62,11 +70,11 @@ interface UseSubscriptionDataOptions {
  * @param options - Optional configuration
  */
 export function useSubscriptionData(options: UseSubscriptionDataOptions = {}) {
-  const { includeOrg = false, enabled = true, staleTime = SUBSCRIPTION_DATA_STALE_TIME } = options
+  const { includeOrg = false, workspaceId, enabled = true, staleTime = SUBSCRIPTION_DATA_STALE_TIME } = options
 
   return useQuery({
-    queryKey: subscriptionKeys.user(includeOrg),
-    queryFn: ({ signal }) => fetchSubscriptionData(includeOrg, signal),
+    queryKey: subscriptionKeys.user(includeOrg, workspaceId),
+    queryFn: ({ signal }) => fetchSubscriptionData(includeOrg, workspaceId, signal),
     staleTime,
     placeholderData: keepPreviousData,
     enabled,

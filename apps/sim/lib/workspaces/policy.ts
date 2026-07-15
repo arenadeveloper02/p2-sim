@@ -44,6 +44,7 @@ export interface WorkspaceCreationPolicy {
   workspaceMode: WorkspaceMode
   organizationId: string | null
   billedAccountUserId: string
+  isPersonal: boolean
   maxWorkspaces: number | null
   currentWorkspaceCount: number
   reason: string | null
@@ -72,25 +73,18 @@ export function isOrganizationWorkspace(
   )
 }
 
+export function isPersonalWorkspace(
+  workspaceState: Pick<{ isPersonal: boolean }, 'isPersonal'>
+): boolean {
+  return workspaceState.isPersonal === true
+}
+
 /**
  * Computes whether new members can be invited to the given workspace
  * under the active product policy.
  *
- * Any paid billed account (Pro, Team, or Enterprise) may invite — the
- * seat, and any Pro→Team upgrade, is provisioned when the invitee
- * accepts, so invites are no longer seat-gated at this layer. Free
- * accounts are blocked with an upgrade tooltip because there is no
- * payment method to charge at acceptance.
- *
- * - `organization`: allowed; the org already holds a Team/Enterprise
- *   subscription. Only Enterprise keeps an invite-time `requiresSeat`
- *   gate (fixed seats).
- * - `personal` / `grandfathered_shared`: allowed when the billed user is
- *   Pro/Team/Enterprise. For Pro, acceptance creates the org and moves the
- *   subscription to the Team tier.
- *
- * Billing-disabled deployments always allow invites. Existing members
- * keep their access — this policy only governs *new* invitations.
+ * All workspaces are organization-scoped; invite policy follows the org
+ * subscription (seats, org subscription) like any other org workspace.
  */
 export async function getWorkspaceInvitePolicy(
   workspaceState: WorkspaceOwnershipState
@@ -121,47 +115,26 @@ export function evaluateWorkspaceInvitePolicy(
     }
   }
 
-  if (workspaceState.workspaceMode === WORKSPACE_MODE.ORGANIZATION) {
-    if (workspaceState.organizationId === null || context.billedPlanCategory === 'free') {
-      return blockInvite(workspaceState.organizationId)
-    }
-
-    return {
-      allowed: true,
-      reason: null,
-      requiresSeat: context.billedPlanCategory === 'enterprise',
-      organizationId: workspaceState.organizationId,
-      upgradeRequired: false,
-    }
+  if (!isOrganizationWorkspace(workspaceState)) {
+    return blockInvite(workspaceState.organizationId)
   }
 
-  switch (context.billedPlanCategory) {
-    case 'pro':
-    case 'team':
-      return {
-        allowed: true,
-        reason: null,
-        requiresSeat: false,
-        organizationId: workspaceState.organizationId,
-        upgradeRequired: false,
-      }
-    case 'enterprise':
-      return {
-        allowed: true,
-        reason: null,
-        requiresSeat: true,
-        organizationId: workspaceState.organizationId,
-        upgradeRequired: false,
-      }
-    default:
-      return blockInvite(workspaceState.organizationId)
+  if (context.billedPlanCategory === 'free') {
+    return blockInvite(workspaceState.organizationId)
+  }
+
+  return {
+    allowed: true,
+    reason: null,
+    requiresSeat: context.billedPlanCategory === 'enterprise',
+    organizationId: workspaceState.organizationId,
+    upgradeRequired: false,
   }
 }
 
 function blockInvite(organizationId: string | null): WorkspaceInvitePolicy {
   return {
     allowed: false,
-    // reason: UPGRADE_TO_INVITE_REASON,
     reason: null,
     requiresSeat: false,
     organizationId,
@@ -241,6 +214,20 @@ export async function getWorkspaceCreationPolicy({
               .limit(1)
           )[0]?.role
 
+  if (!organizationId) {
+    return {
+      canCreate: false,
+      workspaceMode: WORKSPACE_MODE.ORGANIZATION,
+      organizationId: null,
+      billedAccountUserId: userId,
+      isPersonal: false,
+      maxWorkspaces: null,
+      currentWorkspaceCount: 0,
+      reason: 'You must belong to an organization to create a workspace.',
+      status: 403,
+    }
+  }
+
   if (activeOrganizationId && !orgRole) {
     const billedAccountUserId = await requireOrganizationOwnerId(activeOrganizationId)
 
@@ -249,6 +236,7 @@ export async function getWorkspaceCreationPolicy({
       workspaceMode: WORKSPACE_MODE.ORGANIZATION,
       organizationId: activeOrganizationId,
       billedAccountUserId,
+      isPersonal: false,
       maxWorkspaces: null,
       currentWorkspaceCount: 0,
       reason: 'Only organization owners and admins can create organization workspaces.',
@@ -256,42 +244,32 @@ export async function getWorkspaceCreationPolicy({
     }
   }
 
-  if (!isBillingEnabled) {
-    if (organizationId && orgRole) {
-      const billedAccountUserId = await requireOrganizationOwnerId(organizationId)
+  const billedAccountUserId = await requireOrganizationOwnerId(organizationId)
+  const isPersonal = !(await userHasPersonalWorkspace(userId))
+  const currentWorkspaceCount = await countOrganizationWorkspaces(organizationId)
+  const isOrgAdmin = !!orgRole && isOrgAdminRole(orgRole)
 
-      if (!isOrgAdminRole(orgRole)) {
-        return {
-          canCreate: false,
-          workspaceMode: WORKSPACE_MODE.ORGANIZATION,
-          organizationId,
-          billedAccountUserId,
-          maxWorkspaces: null,
-          currentWorkspaceCount: 0,
-          reason: 'Only organization owners and admins can create organization workspaces.',
-          status: 403,
-        }
-      }
-
-      return {
-        canCreate: true,
-        workspaceMode: WORKSPACE_MODE.ORGANIZATION,
-        organizationId,
-        billedAccountUserId,
-        maxWorkspaces: null,
-        currentWorkspaceCount: 0,
-        reason: null,
-        status: 200,
-      }
+  if (!isOrgAdmin && !isPersonal) {
+    return {
+      canCreate: false,
+      workspaceMode: WORKSPACE_MODE.ORGANIZATION,
+      organizationId,
+      billedAccountUserId,
+      isPersonal,
+      maxWorkspaces: null,
+      currentWorkspaceCount,
+      reason: 'Only organization owners and admins can create organization workspaces.',
+      status: 403,
     }
+  }
 
-    const currentWorkspaceCount = await countNonOrganizationOwnedWorkspaces(userId)
-
+  if (!isBillingEnabled) {
     return {
       canCreate: true,
-      workspaceMode: getNonOrgWorkspaceMode(currentWorkspaceCount),
-      organizationId: null,
-      billedAccountUserId: userId,
+      workspaceMode: WORKSPACE_MODE.ORGANIZATION,
+      organizationId,
+      billedAccountUserId,
+      isPersonal,
       maxWorkspaces: null,
       currentWorkspaceCount,
       reason: null,
@@ -299,65 +277,50 @@ export async function getWorkspaceCreationPolicy({
     }
   }
 
-  if (organizationId && orgRole) {
-    const organizationSubscription = await getOrganizationSubscription(organizationId)
+  const organizationSubscription = await getOrganizationSubscription(organizationId)
 
-    if (
-      organizationSubscription &&
-      hasUsableSubscriptionStatus(organizationSubscription.status) &&
-      (isTeam(organizationSubscription.plan) || isEnterprise(organizationSubscription.plan))
-    ) {
-      const billedAccountUserId = await requireOrganizationOwnerId(organizationId)
-
-      if (!isOrgAdminRole(orgRole)) {
-        return {
-          canCreate: false,
-          workspaceMode: WORKSPACE_MODE.ORGANIZATION,
-          organizationId,
-          billedAccountUserId,
-          maxWorkspaces: null,
-          currentWorkspaceCount: 0,
-          reason: 'Only organization owners and admins can create organization workspaces.',
-          status: 403,
-        }
-      }
-
-      return {
-        canCreate: true,
-        workspaceMode: WORKSPACE_MODE.ORGANIZATION,
-        organizationId,
-        billedAccountUserId,
-        maxWorkspaces: null,
-        currentWorkspaceCount: 0,
-        reason: null,
-        status: 200,
-      }
+  if (
+    organizationSubscription &&
+    hasUsableSubscriptionStatus(organizationSubscription.status) &&
+    (isTeam(organizationSubscription.plan) || isEnterprise(organizationSubscription.plan))
+  ) {
+    return {
+      canCreate: true,
+      workspaceMode: WORKSPACE_MODE.ORGANIZATION,
+      organizationId,
+      billedAccountUserId,
+      isPersonal,
+      maxWorkspaces: null,
+      currentWorkspaceCount,
+      reason: null,
+      status: 200,
     }
   }
 
-  const highestPrioritySubscription = await getHighestPrioritySubscription(userId)
+  const highestPrioritySubscription = await getHighestPrioritySubscription(billedAccountUserId)
   const plan = highestPrioritySubscription?.plan
   const maxWorkspaces = isMax(plan) ? 10 : isPro(plan) ? 3 : 1
-  const currentWorkspaceCount = await countNonOrganizationOwnedWorkspaces(userId)
 
-  // if (currentWorkspaceCount >= maxWorkspaces) {
-  //   return {
-  //     canCreate: false,
-  //     workspaceMode: WORKSPACE_MODE.PERSONAL,
-  //     organizationId: null,
-  //     billedAccountUserId: userId,
-  //     maxWorkspaces,
-  //     currentWorkspaceCount,
-  //     reason: `This plan supports up to ${maxWorkspaces} personal workspace${maxWorkspaces === 1 ? '' : 's'}.`,
-  //     status: 403,
-  //   }
-  // }
+  if (currentWorkspaceCount >= maxWorkspaces) {
+    return {
+      canCreate: false,
+      workspaceMode: WORKSPACE_MODE.ORGANIZATION,
+      organizationId,
+      billedAccountUserId,
+      isPersonal,
+      maxWorkspaces,
+      currentWorkspaceCount,
+      reason: `This plan supports up to ${maxWorkspaces} workspace${maxWorkspaces === 1 ? '' : 's'}.`,
+      status: 403,
+    }
+  }
 
   return {
     canCreate: true,
-    workspaceMode: getNonOrgWorkspaceMode(currentWorkspaceCount),
-    organizationId: null,
-    billedAccountUserId: userId,
+    workspaceMode: WORKSPACE_MODE.ORGANIZATION,
+    organizationId,
+    billedAccountUserId,
+    isPersonal,
     maxWorkspaces,
     currentWorkspaceCount,
     reason: null,
@@ -365,13 +328,34 @@ export async function getWorkspaceCreationPolicy({
   }
 }
 
-/**
- * First workspace for a user is personal; additional non-org workspaces are shared.
- */
-function getNonOrgWorkspaceMode(currentWorkspaceCount: number): WorkspaceMode {
-  return currentWorkspaceCount === 0 ? WORKSPACE_MODE.PERSONAL : WORKSPACE_MODE.GRANDFATHERED_SHARED
+export async function countOrganizationWorkspaces(organizationId: string): Promise<number> {
+  const [result] = await db
+    .select({ value: count() })
+    .from(workspace)
+    .where(and(eq(workspace.organizationId, organizationId), isNull(workspace.archivedAt)))
+
+  return result?.value ?? 0
 }
 
+export async function userHasPersonalWorkspace(userId: string): Promise<boolean> {
+  const [result] = await db
+    .select({ id: workspace.id })
+    .from(workspace)
+    .where(
+      and(
+        eq(workspace.ownerId, userId),
+        eq(workspace.isPersonal, true),
+        isNull(workspace.archivedAt)
+      )
+    )
+    .limit(1)
+
+  return !!result
+}
+
+/**
+ * @deprecated Counts legacy non-org workspaces. Prefer `countOrganizationWorkspaces`.
+ */
 export async function countNonOrganizationOwnedWorkspaces(userId: string): Promise<number> {
   const [result] = await db
     .select({ value: count() })

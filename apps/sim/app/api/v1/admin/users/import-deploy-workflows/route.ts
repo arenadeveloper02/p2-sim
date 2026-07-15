@@ -7,6 +7,7 @@ import { generateId, generateShortId } from '@sim/utils/id'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { createApiKey } from '@/lib/api-key/auth'
 import { hashApiKey } from '@/lib/api-key/crypto'
+import { getUserOrganization } from '@/lib/billing/organizations/membership'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
@@ -26,6 +27,7 @@ import {
 } from '@/lib/workflows/default-user-workflows/service'
 import { performChatDeploy, performFullDeploy } from '@/lib/workflows/orchestration'
 import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
+import { getOrganizationOwnerId, WORKSPACE_MODE } from '@/lib/workspaces/policy'
 import { authenticateCronSecretRequest } from '@/app/api/v1/admin/cron-secret-auth'
 import {
   badRequestResponse,
@@ -165,7 +167,7 @@ async function getOrCreatePersonalWorkspace(params: {
     .where(
       and(
         eq(workspace.ownerId, params.userId),
-        eq(workspace.workspaceMode, 'personal'),
+        eq(workspace.isPersonal, true),
         isNull(workspace.archivedAt)
       )
     )
@@ -173,6 +175,16 @@ async function getOrCreatePersonalWorkspace(params: {
 
   if (existingWorkspace) {
     return { workspaceId: existingWorkspace.id, created: false }
+  }
+
+  const membership = await getUserOrganization(params.userId)
+  if (!membership?.organizationId) {
+    throw new Error(`User ${params.userId} has no organization membership`)
+  }
+
+  const billedAccountUserId = await getOrganizationOwnerId(membership.organizationId)
+  if (!billedAccountUserId) {
+    throw new Error(`Organization ${membership.organizationId} has no owner`)
   }
 
   const workspaceId = generateId()
@@ -186,23 +198,40 @@ async function getOrCreatePersonalWorkspace(params: {
       name: workspaceName,
       color: getRandomWorkspaceColor(),
       ownerId: params.userId,
-      organizationId: null,
-      workspaceMode: 'personal',
-      billedAccountUserId: params.userId,
+      organizationId: membership.organizationId,
+      workspaceMode: WORKSPACE_MODE.ORGANIZATION,
+      isPersonal: true,
+      billedAccountUserId,
       allowPersonalApiKeys: true,
       createdAt: now,
       updatedAt: now,
     })
 
-    await tx.insert(permissions).values({
-      id: generateId(),
-      entityType: 'workspace',
-      entityId: workspaceId,
-      userId: params.userId,
-      permissionType: 'admin',
-      createdAt: now,
-      updatedAt: now,
-    })
+    const permissionRows = [
+      {
+        id: generateId(),
+        entityType: 'workspace' as const,
+        entityId: workspaceId,
+        userId: params.userId,
+        permissionType: 'admin' as const,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]
+
+    if (billedAccountUserId !== params.userId) {
+      permissionRows.push({
+        id: generateId(),
+        entityType: 'workspace' as const,
+        entityId: workspaceId,
+        userId: billedAccountUserId,
+        permissionType: 'admin' as const,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
+    await tx.insert(permissions).values(permissionRows)
   })
 
   recordAudit({
@@ -215,7 +244,12 @@ async function getOrCreatePersonalWorkspace(params: {
     resourceId: workspaceId,
     resourceName: workspaceName,
     description: `Created personal workspace "${workspaceName}"`,
-    metadata: { userId: params.userId, workspaceMode: 'personal' },
+    metadata: {
+      userId: params.userId,
+      workspaceMode: WORKSPACE_MODE.ORGANIZATION,
+      isPersonal: true,
+      organizationId: membership.organizationId,
+    },
     request: params.request,
   })
 

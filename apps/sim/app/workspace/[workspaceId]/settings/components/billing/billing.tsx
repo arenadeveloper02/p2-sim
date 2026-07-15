@@ -113,6 +113,7 @@ export function Billing() {
     refetch: refetchSubscription,
   } = useSubscriptionData({
     includeOrg: true,
+    workspaceId,
   })
   const { data: usageLimitResponse, isLoading: isUsageLimitLoading } = useUsageLimitData()
   const { data: workspaceData, isLoading: isWorkspaceLoading } = useWorkspaceSettings(workspaceId)
@@ -392,13 +393,18 @@ export function Billing() {
   if (isLoading) return null
   if (!subscriptionData?.data) return null
 
-  const plan = subscription.plan
-  const planName = getDisplayPlanName(plan)
+  /** All workspaces are org-linked; billing follows the organization subscription. */
+  const displayPlan = subscription.plan
+  const displayPlanName = getDisplayPlanName(displayPlan)
+  const displayIsEnterprise = subscription.isEnterprise
+
   const billingPeriod =
     subscriptionData.data.billingInterval === 'year' ? 'billed annually' : 'billed monthly'
-  const priceText = subscription.isEnterprise
+  const priceText = displayIsEnterprise
     ? 'Custom pricing'
-    : `$${getPlanTierDollars(plan)} per user/month, ${billingPeriod}`
+    : isFree(displayPlan)
+      ? 'Included credits to get started'
+      : `$${getPlanTierDollars(displayPlan)} per user/month, ${billingPeriod}`
 
   const periodEnd = subscriptionData.data.periodEnd ?? null
   const isCancelledAtPeriodEnd = subscriptionData.data.cancelAtPeriodEnd === true
@@ -435,7 +441,7 @@ export function Billing() {
             </div>
           </div>
           <div className='flex min-w-0 flex-col'>
-            <span className='truncate text-[var(--text-body)] text-sm'>{planName} plan</span>
+            <span className='truncate text-[var(--text-body)] text-sm'>{displayPlanName } plan</span>
             <span className='truncate text-[var(--text-muted)] text-caption'>{priceText}</span>
           </div>
         </div>

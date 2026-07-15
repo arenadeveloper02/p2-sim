@@ -58,7 +58,8 @@ async function fetchWorkspaces(
       data.workspaces?.map((workspace: Workspace) => ({
         ...workspace,
         organizationId: workspace.organizationId ?? null,
-        workspaceMode: workspace.workspaceMode ?? 'grandfathered_shared',
+        workspaceMode: workspace.workspaceMode ?? 'organization',
+        isPersonal: workspace.isPersonal ?? false,
         inviteMembersEnabled: workspace.inviteMembersEnabled ?? false,
         inviteDisabledReason: workspace.inviteDisabledReason ?? null,
         inviteUpgradeRequired: workspace.inviteUpgradeRequired ?? false,
@@ -70,7 +71,8 @@ async function fetchWorkspaces(
           ...data.creationPolicy,
           organizationId: data.creationPolicy.organizationId ?? null,
           reason: data.creationPolicy.reason ?? null,
-          workspaceMode: data.creationPolicy.workspaceMode ?? 'personal',
+          workspaceMode: data.creationPolicy.workspaceMode ?? 'organization',
+          isPersonal: data.creationPolicy.isPersonal ?? false,
         }
       : null,
   }

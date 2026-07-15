@@ -10,6 +10,7 @@ const {
   mockGetOrgMemberUsageLimit,
   mockGetOrgMemberWorkspaceUsage,
   mockSetOrgMemberUsageLimit,
+  mockValidateOrgMemberAllocationWithinPool,
   mockGetOrganizationSubscription,
   mockFlags,
 } = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const {
   mockGetOrgMemberUsageLimit: vi.fn(),
   mockGetOrgMemberWorkspaceUsage: vi.fn(),
   mockSetOrgMemberUsageLimit: vi.fn(),
+  mockValidateOrgMemberAllocationWithinPool: vi.fn(),
   mockGetOrganizationSubscription: vi.fn(),
   mockFlags: { isHosted: true },
 }))
@@ -37,6 +39,7 @@ vi.mock('@/lib/billing/organizations/member-limits', () => ({
   getOrgMemberUsageLimit: mockGetOrgMemberUsageLimit,
   getOrgMemberWorkspaceUsage: mockGetOrgMemberWorkspaceUsage,
   setOrgMemberUsageLimit: mockSetOrgMemberUsageLimit,
+  validateOrgMemberAllocationWithinPool: mockValidateOrgMemberAllocationWithinPool,
 }))
 
 vi.mock('@/lib/billing/core/billing', () => ({
@@ -134,6 +137,7 @@ describe('PUT /api/organizations/[id]/members/[memberId]/usage-limit', () => {
     mockGetSession.mockResolvedValue(createSession({ userId: 'admin-1' }))
     mockIsOrganizationOwnerOrAdmin.mockResolvedValue(true)
     mockSetOrgMemberUsageLimit.mockResolvedValue(undefined)
+    mockValidateOrgMemberAllocationWithinPool.mockResolvedValue({ ok: true })
   })
 
   it('returns 404 when not hosted', async () => {
@@ -166,6 +170,22 @@ describe('PUT /api/organizations/[id]/members/[memberId]/usage-limit', () => {
     const res = await PUT(putRequest({ creditLimit: null }), context())
     expect(res.status).toBe(200)
     expect(mockSetOrgMemberUsageLimit).toHaveBeenCalledWith('org-1', 'user-2', null, 'admin-1')
+  })
+
+  it('rejects allocations that exceed the organization pool with 400', async () => {
+    mockValidateOrgMemberAllocationWithinPool.mockResolvedValue({
+      ok: false,
+      allocatedCredits: 450_000,
+      orgPoolCredits: 400_000,
+    })
+
+    const res = await PUT(putRequest({ creditLimit: 100_000 }), context())
+
+    expect(res.status).toBe(400)
+    expect(mockSetOrgMemberUsageLimit).not.toHaveBeenCalled()
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining('would exceed the organization pool'),
+    })
   })
 
   it('rejects a negative credit limit with 400', async () => {

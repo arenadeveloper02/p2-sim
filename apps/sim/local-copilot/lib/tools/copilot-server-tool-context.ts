@@ -13,6 +13,7 @@ export function toCopilotServerToolContext(
       workflowId ?? ctx.workflowId ?? ctx.structuredContext.workflow?.id ?? '',
     userPermission: ctx.userPermission ?? 'write',
     chatId: ctx.chatId,
+    messageId: ctx.messageId,
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
   }

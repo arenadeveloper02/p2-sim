@@ -16,6 +16,7 @@ import { getLocalCopilotE2bCapabilities } from '@/local-copilot/lib/context/e2b-
 import { isSelfHostedDeployment, getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { buildContextPromptPayload } from '@/local-copilot/lib/context/context-budget'
 import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
+import { loadWorkspaceSkillSummaries } from '@/local-copilot/lib/tools/user-skills'
 import type {
   LocalCopilotBlockSummary,
   LocalCopilotStructuredContext,
@@ -49,6 +50,7 @@ export async function buildLocalCopilotContext(
   const integrations = await loadWorkspaceIntegrations(workspaceId, userId)
   const credentials = oauthIntegrationsToCredentialMetadata(integrations.connectedIntegrations)
   const resources = await loadWorkspaceResourceSummaries(workspaceId)
+  const skills = await loadWorkspaceSkillSummaries(workspaceId)
   const availableBlocks = summarizeBlocks(getAllBlocks())
   const availableIntegrations = [...new Set(availableBlocks.map((block) => block.category))].sort()
 
@@ -63,6 +65,7 @@ export async function buildLocalCopilotContext(
     knowledgeBases: resources.knowledgeBases,
     tables: resources.tables,
     workspaceFiles: resources.workspaceFiles,
+    ...(skills.length > 0 ? { skills } : {}),
   }
 
   if (!workflowId) {
@@ -114,6 +117,7 @@ export async function buildLocalCopilotContext(
       fileCount: resources.workspaceFiles.length,
       tableCount: resources.tables.length,
       knowledgeBaseCount: resources.knowledgeBases.length,
+      skillCount: skills.length,
       envVariableCount: integrations.envVariables.length,
       connectedIntegrationCount: integrations.connectedIntegrations.length,
       provider: getLocalCopilotConfig().provider,
@@ -179,6 +183,7 @@ export async function buildLocalCopilotContext(
   logger.info('Built Arena Copilot context', {
     workflowId,
     blockCount: Object.keys(normalized.blocks).length,
+    skillCount: skills.length,
     envVariableCount: integrations.envVariables.length,
     connectedIntegrationCount: integrations.connectedIntegrations.length,
     provider: getLocalCopilotConfig().provider,

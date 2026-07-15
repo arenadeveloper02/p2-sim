@@ -475,6 +475,7 @@ export const schemaMock = {
     ownerId: 'ownerId',
     organizationId: 'organizationId',
     workspaceMode: 'workspaceMode',
+    isPersonal: 'isPersonal',
     billedAccountUserId: 'billedAccountUserId',
     allowPersonalApiKeys: 'allowPersonalApiKeys',
     inboxEnabled: 'inboxEnabled',

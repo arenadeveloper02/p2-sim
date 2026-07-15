@@ -304,13 +304,19 @@ const IframePreview = memo(function IframePreview({
   if (error) return <PreviewError label='PDF' error={error} />
 
   if (!bufferSource) {
-    return <div className='relative flex flex-1 overflow-hidden'>{PREVIEW_LOADING_OVERLAY}</div>
+    return (
+      <div className='relative flex h-full min-h-0 flex-1 overflow-hidden'>
+        {PREVIEW_LOADING_OVERLAY}
+      </div>
+    )
   }
 
   return (
-    <PreviewErrorBoundary key={`${file.id}:${preview.dataUpdatedAt}`} label='PDF'>
-      <PdfViewerCore source={bufferSource} filename={file.name} />
-    </PreviewErrorBoundary>
+    <div className='flex h-full min-h-0 flex-1 flex-col overflow-hidden'>
+      <PreviewErrorBoundary key={`${file.id}:${preview.dataUpdatedAt}`} label='PDF'>
+        <PdfViewerCore source={bufferSource} filename={file.name} />
+      </PreviewErrorBoundary>
+    </div>
   )
 })
 

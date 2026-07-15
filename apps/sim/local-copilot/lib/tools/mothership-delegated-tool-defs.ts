@@ -38,7 +38,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   function_execute:
     'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',
   edit_content:
-    'Writes or patches file content. For pptx/docx/pdf/xlsx, pairs with workspace file patch flows and compiles via E2B when e2b.docSandboxEnabled is true.',
+    'Writes or patches file content after workspace_file. For pptx/docx/pdf use pptxgenjs/docxjs/pdflibjs JavaScript (pre-initialized globals). Compiles via built-in JS sandbox; E2B doc sandbox is optional when e2b.docSandboxEnabled is true.',
   deploy_chat:
     'Deploys or undeploys a workflow as a shareable chat interface. Performs the full workflow deploy plus chat surface setup. REQUIRED on deploy: workflowId, identifier (URL slug), title, versionName, versionDescription. Call get_block_outputs for outputConfigs (agent content path). Call diff_workflows(ref1: "live", ref2: "draft") when unsure what changed. Returns chatUrl on success — share that with the user.',
   get_block_outputs:

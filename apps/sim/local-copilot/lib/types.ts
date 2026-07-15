@@ -91,6 +91,8 @@ export interface LocalCopilotStructuredContext {
   knowledgeBases?: Array<{ id: string; name: string; description?: string | null }>
   tables?: Array<{ id: string; name: string; description?: string | null }>
   workspaceFiles?: Array<{ id: string; name: string; path: string; type: string; size: number }>
+  /** User-created workspace skills (name + description). Load full body via load_user_skill. */
+  skills?: Array<{ id: string; name: string; description: string }>
   execution: LocalCopilotExecutionContext
   availableIntegrations: string[]
   availableBlocks: LocalCopilotBlockSummary[]

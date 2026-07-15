@@ -35,7 +35,7 @@ import {
   type CopilotFileAttachmentRef,
 } from '@/local-copilot/lib/user-turn-content'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
-import { LOCAL_COPILOT_TOOLS } from '@/local-copilot/lib/tools/definitions'
+import { LOCAL_COPILOT_TOOLS, resolveLocalCopilotTools } from '@/local-copilot/lib/tools/definitions'
 import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
 import {
@@ -107,7 +107,9 @@ Rules:
   - Image: \`generate_image\` with a clear \`prompt\` (and optional \`outputs.files\` path to save the file).
   - For variations, pass the user's exact wording in \`prompt\` (e.g. "3 variations of a red bus") — do not strip counts or the word "variations".
   - Live web / current data: \`search_online\` with \`query\` and \`toolTitle\` (uses Exa/Serper when \`EXA_API_KEY\` / Serper keys exist).
-  - Other integrations: \`list_integration_tools({ integration: "exa" })\` then \`invoke_integration_tool({ toolId: "exa_search", params: { query: "..." } })\`.
+  - Other integrations: \`list_integration_tools({ integration: "google_sheets" })\` (underscores, not hyphens) then \`invoke_integration_tool({ toolId: "google_sheets_write_v2", params: { ... } })\`.
+  - For OAuth integrations (Google Sheets, Gmail, Slack, etc.), \`params\` MUST include \`credentialId\` from \`connectedIntegrations\` for that provider (e.g. providerId \`google-sheets\`). If only one connected credential matches, Arena Copilot injects it automatically.
+  - Google Sheets write/update/append: pass \`spreadsheetId\`, \`sheetName\` (tab name), \`values\` as a 2D array (e.g. \`[["Name","Age"],["Alice",30]]\`). Optional \`cellRange\` like \`A1\`. Legacy \`range\` like \`Sheet1!A1\` is also accepted.
   - Only build or run a workflow when the user wants automation saved for reuse, multi-step pipelines, or scheduling.
 - For open workflows, propose incremental changes via workflow patches (requiresConfirmation). For new workflows from home chat, use create_workflow + edit_workflow.
 - Running and testing workflows:
@@ -131,6 +133,9 @@ Rules:
   - Read or update tables: \`user_table\` — use \`get\` / \`get_schema\` / \`query_rows\` to read; \`create\`, \`insert_row\`, \`batch_insert_rows\`, \`import_file\`, \`create_from_file\` to write.
   - Knowledge bases: \`knowledge_base\` — \`query\` to search/retrieve; \`add_file\` to ingest a workspace file or URL; \`create\` for new KBs; \`get\` / \`list\` to inspect.
   - Prefer existing resources in context before creating duplicates (same as workflows).
+- Workspace skills:
+  - Context may include \`skills\` (name + description). Descriptions only say when a skill applies — they are NOT the instructions.
+  - When a skill applies, call \`load_user_skill\` with its exact \`skill_name\`, then follow the returned content. Never act on the name or description alone.
 - E2B sandbox and code execution:
   - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, and \`supportedCodeLanguages\`.
   - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`.
@@ -138,7 +143,12 @@ Rules:
   - Code execution results include \`capturedOutput\` (preferred), plus \`stdout\` (prints) and \`result\` (return values). Read \`capturedOutput\` first — empty stdout with a return value is normal, not a failure.
   - Do **not** use \`function_execute\` or Daytona integration tools for workflow building, deployment, or questions you can answer without running code.
   - Do **not** tell the user about sandbox names (E2B, Daytona), empty payloads, internal retries, or "result variables" unless they explicitly asked to debug code execution. Give the answer directly.
-  - Do **not** use \`function_execute\` to create or edit DOCX/PPTX/PDF workspace files unless the user explicitly asks for sandbox code. Use \`create_file\` → \`workspace_file\` (append/update/patch) → \`edit_content\` in the next step (never parallel). For office formats, \`edit_content\` uses docxjs/pptxgenjs/pdflibjs JavaScript when \`e2b.docSandboxEnabled\` is true.
+  - Creating PPTX / DOCX / PDF (CRITICAL — always available, do not refuse):
+    1. \`create_file\` with a \`.pptx\` / \`.docx\` / \`.pdf\` path (empty shell — no inline content).
+    2. \`workspace_file\` with operation \`update\` (or \`append\`/\`patch\`) targeting that file — wait for success.
+    3. \`edit_content\` in a **later** tool round (never same batch as workspace_file) with **JavaScript** for the document API: \`pptxgenjs\` (\`globalThis.pptx\`), \`docxjs\`, or \`pdflibjs\`. Example: \`pptx.addSlide(); slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1 });\` — use the pre-initialized \`pptx\` instance; do not \`require('pptxgenjs')\` yourself.
+    - These formats compile via the built-in JS sandbox even when \`e2b.docSandboxEnabled\` is false. \`docSandboxEnabled: true\` only adds E2B extras (e.g. \`iconImage\`). Never tell the user you cannot generate PPTX because E2B is off.
+    - Do **not** use \`function_execute\` / Python \`python-pptx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
   - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.
 - Use tools to inspect context, validate workflows, fetch logs, run tests, and build or edit workflows.
 - When debugging failures, identify root cause, failing block, suggested fix, and test steps.
@@ -151,6 +161,8 @@ export interface RunAgentParams {
   message: string
   conversationId?: string
   chatId?: string
+  /** Scopes workspace_file → edit_content intents (mothership user message id when available). */
+  messageId?: string
   selectedBlockId?: string
   executionId?: string
   signal?: AbortSignal
@@ -281,22 +293,27 @@ export async function* runLocalCopilotAgent(
     LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
   )
 
+  const tools = await resolveLocalCopilotTools(params.workspaceId)
+
   logger.info('Arena Copilot prompt budget applied', {
     workflowDetail,
     historyTurns: historyMessages.length,
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages),
-    toolDefinitionCount: LOCAL_COPILOT_TOOLS.length,
+    toolDefinitionCount: tools.length,
+    skillToolEnabled: tools.length > LOCAL_COPILOT_TOOLS.length,
     memory: getLocalCopilotMemorySnapshot(),
   })
 
   const provider = getLocalCopilotProvider()
+  const turnMessageId = params.messageId?.trim() || generateId()
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId,
     chatId: params.chatId,
+    messageId: turnMessageId,
     abortSignal: params.signal,
     userPermission: params.userPermission,
     structuredContext,
@@ -338,7 +355,7 @@ export async function* runLocalCopilotAgent(
     for await (const chunk of provider.chatCompletionStream({
       model: config.model,
       messages,
-      tools: LOCAL_COPILOT_TOOLS,
+      tools,
       signal: params.signal,
     })) {
       if (chunk.type === 'text' && chunk.content) {

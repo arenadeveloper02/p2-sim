@@ -315,6 +315,7 @@ export async function runLocalCopilotMothershipLifecycle(
       workspaceId,
       message,
       chatId: options.chatId,
+      ...(userMessageId ? { messageId: userMessageId } : {}),
       priorMessages,
       persistLocally: false,
       ...(contexts ? { contexts } : {}),
