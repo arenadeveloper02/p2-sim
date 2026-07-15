@@ -16,9 +16,9 @@ import {
   Users,
   Workflow,
   chipVariants,
-} from '@/components/emcn'
+} from '@sim/emcn'
 import type { CreditUsageSummary, MemberCreditUsageRow } from '@/lib/api/contracts/billing-credit-usage'
-import { cn } from '@/lib/core/utils/cn'
+import { cn } from '@sim/emcn'
 import { BillingUsageMetricCard } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-metric-card'
 import { BillingUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-section'
 import {
