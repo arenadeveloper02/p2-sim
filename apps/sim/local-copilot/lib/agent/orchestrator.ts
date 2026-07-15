@@ -46,6 +46,10 @@ import {
   sortToolCallsForExecution,
   type MandatoryFollowUp,
 } from '@/local-copilot/lib/tools/format-tool-result'
+import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
+import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
+import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
+import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotAgent')
@@ -354,12 +358,32 @@ export async function* runLocalCopilotAgent(
     let roundInputTokens = 0
     let roundOutputTokens = 0
 
-    for await (const chunk of provider.chatCompletionStream({
-      model: config.model,
-      messages,
-      tools,
-      signal: params.signal,
+    // Status heartbeats cover the immediate first line + rotation while the
+    // model stream is quiet (including pauses after the first token).
+    for await (const event of iterateWithIdleStatus({
+      source: provider.chatCompletionStream({
+        model: config.model,
+        messages,
+        tools,
+        signal: params.signal,
+      }),
+      abortSignal: params.signal,
+      messages: MODEL_WAIT_STATUS_FALLBACK,
+      idleMs: 0,
+      intervalMs: 4000,
+      enrichMessages: (abortSignal) =>
+        generateEngagementStatusMessages({
+          phase: 'model_wait',
+          userHint: params.message,
+          signal: abortSignal,
+        }),
     })) {
+      if (event.type === 'status') {
+        yield event
+        continue
+      }
+
+      const chunk = event.item
       if (chunk.type === 'text' && chunk.content) {
         const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
         if (!cleaned) continue
@@ -458,24 +482,37 @@ export async function* runLocalCopilotAgent(
         workflowId: toolCtx.workflowId ?? null,
         memory: getLocalCopilotMemorySnapshot(),
       })
-      const result = await executeLocalCopilotTool(call.name, parsedArgs, toolCtx)
+      const toolStatus = runToolWithStatus({
+        toolCallId: call.id,
+        toolName: call.name,
+        args: parsedArgs,
+        abortSignal: params.signal,
+        execute: (onProgress) =>
+          executeLocalCopilotTool(call.name, parsedArgs, { ...toolCtx, onProgress }),
+      })
+      let result = await toolStatus.next()
+      while (!result.done) {
+        yield result.value
+        result = await toolStatus.next()
+      }
+      const toolResult = result.value
       logger.info('Arena Copilot tool finished', {
         toolName: call.name,
         toolCallId: call.id,
-        success: result.success,
-        error: result.error ?? null,
+        success: toolResult.success,
+        error: toolResult.error ?? null,
         durationMs: Date.now() - toolStartedAt,
         memory: getLocalCopilotMemorySnapshot(),
       })
 
-      if (result.createdWorkflowId) {
-        toolCtx.workflowId = result.createdWorkflowId
+      if (toolResult.createdWorkflowId) {
+        toolCtx.workflowId = toolResult.createdWorkflowId
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
-      } else if (call.name === 'create_workflow' && !result.success) {
+      } else if (call.name === 'create_workflow' && !toolResult.success) {
         const output =
-          result.result && typeof result.result === 'object'
-            ? (result.result as Record<string, unknown>)
+          toolResult.result && typeof toolResult.result === 'object'
+            ? (toolResult.result as Record<string, unknown>)
             : {}
         if (
           output.useRunWorkflowInstead === true &&
@@ -484,13 +521,13 @@ export async function* runLocalCopilotAgent(
         ) {
           toolCtx.workflowId = output.existingWorkflowId.trim()
         }
-      } else if (call.name === 'edit_workflow' && result.success) {
+      } else if (call.name === 'edit_workflow' && toolResult.success) {
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
-      } else if (result.success && isWorkflowScopedDelegatedTool(call.name)) {
+      } else if (toolResult.success && isWorkflowScopedDelegatedTool(call.name)) {
         const output =
-          result.result && typeof result.result === 'object'
-            ? (result.result as Record<string, unknown>)
+          toolResult.result && typeof toolResult.result === 'object'
+            ? (toolResult.result as Record<string, unknown>)
             : {}
         const resolvedWorkflowId =
           typeof output.workflowId === 'string' && output.workflowId.trim()
@@ -507,16 +544,16 @@ export async function* runLocalCopilotAgent(
         type: 'tool_call_result',
         toolCallId: call.id,
         toolName: call.name,
-        success: result.success,
-        output: result.result,
-        ...(result.error ? { error: result.error } : {}),
-        ...(result.resources?.length ? { resources: result.resources } : {}),
+        success: toolResult.success,
+        output: toolResult.result,
+        ...(toolResult.error ? { error: toolResult.error } : {}),
+        ...(toolResult.resources?.length ? { resources: toolResult.resources } : {}),
       }
 
       turnToolRecords.push({
         name: call.name,
-        success: result.success,
-        result: result.result,
+        success: toolResult.success,
+        result: toolResult.result,
       })
 
       if (persistLocally && conversationId) {
@@ -525,18 +562,18 @@ export async function* runLocalCopilotAgent(
           toolCallId: call.id,
           toolName: call.name,
           arguments: parsedArgs,
-          result: result.result,
+          result: toolResult.result,
         })
       }
 
-      if (result.patch) {
-        proposedPatch = result.patch
-        if (result.patch.recommendations) {
-          recommendations = [...recommendations, ...result.patch.recommendations]
+      if (toolResult.patch) {
+        proposedPatch = toolResult.patch
+        if (toolResult.patch.recommendations) {
+          recommendations = [...recommendations, ...toolResult.patch.recommendations]
         }
       }
 
-      const formattedToolResult = formatToolResultForLlm(call.name, result.result)
+      const formattedToolResult = formatToolResultForLlm(call.name, toolResult.result)
       const mandatoryFollowUp = detectMandatoryFollowUp(call.name, formattedToolResult)
       if (mandatoryFollowUp) {
         pendingFollowUps = [
@@ -547,8 +584,8 @@ export async function* runLocalCopilotAgent(
       pendingFollowUps = resolveMandatoryFollowUps(
         pendingFollowUps,
         call.name,
-        result.success,
-        result.result
+        toolResult.success,
+        toolResult.result
       )
 
       messages.push({

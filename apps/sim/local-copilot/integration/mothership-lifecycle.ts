@@ -11,6 +11,7 @@ import {
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import { sseHandlers } from '@/lib/copilot/request/handlers'
 import type { CopilotLifecycleOptions } from '@/lib/copilot/request/lifecycle/run'
+import { LOCAL_STATUS_PHASE } from '@/lib/copilot/request/session'
 import { handleResourceSideEffects } from '@/lib/copilot/request/tools/resources'
 import type {
   ExecutionContext,
@@ -86,6 +87,26 @@ async function dispatchLocalCopilotEvent(
   options: CopilotLifecycleOptions,
   toolArgsByCallId: Map<string, Record<string, unknown>>
 ): Promise<void> {
+  if (event.type === 'status') {
+    // Ephemeral UI-only: publish synthetic envelope via onEvent, skip content-block handlers.
+    const statusEvent: StreamEvent = {
+      type: 'run',
+      payload: {
+        statusPhase: LOCAL_STATUS_PHASE,
+        message: event.message,
+        ...(event.toolCallId ? { toolCallId: event.toolCallId } : {}),
+        ...(event.toolName ? { toolName: event.toolName } : {}),
+      },
+    }
+    logger.info('Arena Copilot publishing live status', {
+      message: event.message,
+      toolCallId: event.toolCallId ?? null,
+      toolName: event.toolName ?? null,
+    })
+    await options.onEvent?.(statusEvent)
+    return
+  }
+
   if (event.type === 'tool_call_start') {
     toolArgsByCallId.set(event.toolCallId, event.args ?? {})
     await dispatchStreamEvent(

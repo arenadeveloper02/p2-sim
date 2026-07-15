@@ -192,7 +192,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
   }, [phase])
 
   if (!hasAnyBlocks && !trimmedContent && isStreaming) {
-    return <PendingTagIndicator />
+    return <PendingTagIndicator label={message.liveStatus} />
   }
 
   const hasRenderableAssistant = assistantMessageHasRenderableContent(blocks, message.content ?? '')
@@ -208,6 +208,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
         blocks={blocks}
         fallbackContent={message.content}
         isStreaming={isStreaming}
+        liveStatus={message.liveStatus}
         onOptionSelect={onOptionSelect}
         onPhaseChange={setPhase}
       />

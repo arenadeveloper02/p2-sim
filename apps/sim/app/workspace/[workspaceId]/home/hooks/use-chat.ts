@@ -670,6 +670,7 @@ function buildAssistantSnapshotMessage(params: {
   content: string
   contentBlocks: ContentBlock[]
   requestId?: string
+  liveStatus?: string
 }): PersistedMessage {
   const rawContentBlocks = params.contentBlocks
     .map(toRawPersistedContentBlock)
@@ -681,6 +682,7 @@ function buildAssistantSnapshotMessage(params: {
     content: params.content,
     timestamp: new Date().toISOString(),
     ...(params.requestId ? { requestId: params.requestId } : {}),
+    ...(params.liveStatus !== undefined ? { liveStatus: params.liveStatus } : {}),
     ...(rawContentBlocks.length > 0 ? { contentBlocks: rawContentBlocks } : {}),
   })
 }
