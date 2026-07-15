@@ -115,8 +115,9 @@ const THREAD_MENU_ITEM_CLASS =
 
 function sidebarPanelClass(collapsed: boolean) {
   return cn(
-    'flex h-full flex-col rounded-2xl border',
-    collapsed ? 'w-16 items-center px-1 py-3' : 'w-[280px] px-3 py-3'
+    'flex h-full flex-col rounded-lg border',
+    // Collapsed: 8px inset from panel borders, 24px icons, no horizontal chrome beyond that.
+    collapsed ? 'w-[42px] items-center px-2 py-3' : 'w-[280px] px-3 py-3'
   )
 }
 
@@ -165,11 +166,11 @@ interface SidebarHeaderProps {
 function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderProps) {
   if (collapsed && onToggleSidebar) {
     return (
-      <div className='mb-3 flex items-center justify-center px-0.5'>
+      <div className='mb-3 flex items-center justify-center'>
         <button
           type='button'
           onClick={onToggleSidebar}
-          className='group relative flex size-8 items-center justify-center rounded-lg'
+          className='group relative flex size-6 items-center justify-center rounded-lg p-0'
           aria-label='Expand sidebar'
         >
           {logoUrl ? (
@@ -240,7 +241,7 @@ function SidebarActionButton({
       type='button'
       className={cn(
         sidebarRowClass(isActive, disabled),
-        collapsed ? 'size-9 justify-center px-0' : 'w-full'
+        collapsed ? 'size-6 min-h-0 justify-center gap-0 p-0' : 'w-full'
       )}
       style={sidebarRowStyle(isActive)}
       onClick={onClick}
