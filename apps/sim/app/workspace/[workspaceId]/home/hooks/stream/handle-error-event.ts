@@ -11,6 +11,7 @@ type ErrorEvent = Extract<PersistedStreamEventEnvelope, { type: 'error' }>
 export function handleErrorEvent(ctx: StreamLoopContext, parsed: ErrorEvent): void {
   const { state, ops, deps } = ctx
   state.sawStreamError = true
+  state.liveStatus = undefined
   deps.setError(parsed.payload.message || parsed.payload.error || 'An error occurred')
   ops.flush()
 }

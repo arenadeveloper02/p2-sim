@@ -1,19 +1,33 @@
 # Local Copilot Server-Driven Status Messages
 
 **Date:** 2026-07-15  
-**Status:** Draft — awaiting user review  
-**Approach:** B — tool-progress callbacks + orchestrator fallback heartbeats
+**Status:** Approved — plan ready  
+**Plan:** `docs/superpowers/plans/2026-07-15-local-copilot-server-status.md`  
+**Approach:** B — tool-progress callbacks + orchestrator fallback heartbeats  
+**Surface:** Chat trailing indicator only (not the right-hand preview panel)
+
+## Decisions (2026-07-15)
+
+| Topic | Choice |
+|-------|--------|
+| Surface | Chat only — replace static “Thinking…” under the assistant message |
+| Source of truth | Server-driven Local `status` events → ephemeral client `liveStatus` |
+| Preview panel engagement | Separate; out of scope for this feature (empty office shells already have Local client copy) |
+| Heartbeat interval | 8s after 4s idle |
+| Bridge transport | Ephemeral `liveStatus` on Local turn (do not persist) |
+| Slide N/M | Only if tool already has index; else filename/phase copy |
+| Legacy `/api/local-copilot/chat` panel | Skip unless shared types make it free |
 
 ## Problem
 
-During long Local (Arena Copilot) runs — especially multi-step document work like a 12-slide PPTX via `edit_content` — the chat shows a static assistant reply and a fixed **“Thinking…”** line. The stop button is active, but nothing user-visible updates for long stretches, so the product feels stuck.
+During long Local (Arena Copilot) runs — workflows, app generation, multi-step document work, integrations — the chat shows a static assistant reply and a fixed **“Thinking…”** line. The stop button is active, but nothing user-visible updates for long stretches, so the product feels stuck.
 
 SSE `: keepalive` only keeps the connection alive; it is not UI-visible.
 
 ## Goals
 
 1. While a Local turn is in-flight, show a **server-authored** live status under the assistant message that updates as work progresses.
-2. Prefer **concrete tool progress** when a tool can report it (e.g. “Compiling Deck.pptx…”, “Writing slide content…”).
+2. Prefer **concrete tool progress** when a tool can report it (e.g. “Compiling Deck.pptx…”, “Running workflow…”, “Generating app…”).
 3. **Fallback** to timed, tool-aware heartbeats when a tool has no progress callbacks, or while waiting on the model with no tokens yet.
 4. Reuse the mothership chat UI path (Local already bridges into it); do not require a new Cloud wire schema in v1.
 
@@ -22,6 +36,7 @@ SSE `: keepalive` only keeps the connection alive; it is not UI-visible.
 - Changing the generated mothership stream contract (`MothershipStreamV1EventType` enum / OpenAPI) for Cloud agents.
 - Inventing per-slide counters inside tools that do not already know slide indices.
 - Rotating client-only copy as the primary source of truth (client may only display the latest server status).
+- Overlaying status on the workflow canvas or file preview panel.
 - Updating the legacy standalone `/api/local-copilot/chat` panel unless it shares the same stream event handler with trivial cost.
 
 ## Current state (relevant)
@@ -58,7 +73,7 @@ In `runLocalCopilotAgent`:
 
 **Model-wait phase** (after requesting completion, until first `text` or `tool_call` chunk):
 
-- After an idle threshold (recommend **4s**), start emitting status every **8s**:
+- After an idle threshold (**4s**), start emitting status every **8s**:
   - First: `"Planning next step…"`
   - Later rotations: `"Still thinking…"`, `"Figuring out the next action…"` (small fixed set; no LLM-generated fluff).
 
@@ -66,6 +81,8 @@ In `runLocalCopilotAgent`:
 
 1. On start: yield `tool_call_start` (existing), then immediate status from args when possible, e.g.:
    - `edit_content` / file tools → `"Writing {fileName}…"` / `"Applying content to {fileName}…"`
+   - `run_workflow` / workflow tools → `"Running workflow…"` (include workflow name if present in args)
+   - `development_generate_app` / app tools → `"Generating app…"` / `"Editing app…"`
    - integrations → `"Running {displayTitle}…"`
    - default → `"Running {humanizedToolName}…"`
 2. Pass `onProgress?: (message: string) => void` (or async-safe queue) into tool execution context.
@@ -89,7 +106,7 @@ onProgress?: (message: string) => void
 |-------------|------------------------------|
 | Mothership-delegated `edit_content` | `"Preparing {file}…"`, `"Compiling document…"`, `"Saving {file}…"` at known phase boundaries in the delegated handler / compile path when reachable from Local |
 | `workspace_file` create/update | `"Creating {file}…"`, `"Updating {file}…"` |
-| Other tools | No callback — orchestrator heartbeats only |
+| Other tools (workflows, apps, integrations) | No callback required — orchestrator start label + heartbeats |
 
 If a phase boundary is deep inside Cloud-only code and awkward to thread in v1, skip deep hooks and rely on heartbeats + start label; do not block the feature on full PPTX slide accounting.
 
@@ -99,24 +116,17 @@ If a phase boundary is deep inside Cloud-only code and awkward to thread in v1, 
 
 Do **not** add a new `MothershipStreamV1EventType` in v1.
 
-Map local `status` in `dispatchLocalCopilotEvent` to mothership **`text` with `channel: thinking`**, where each status is emitted as a **replacement-oriented** update:
+Map Local `status` via mothership-lifecycle + `use-chat` Local handling so when Local is active, status events set **ephemeral** `liveStatus` (or turn-model `agentStatus`) on the in-flight assistant turn **without** writing it into persisted assistant content.
 
-- Preferred implementation: emit thinking text that is the **full current status string** (not growing delta soup). If the turn model only appends text, either:
-  - (a) close the prior thinking span and open a new one with the new status, or
-  - (b) stash `liveStatus` on the client when bridging Local (see §5).
+Do **not** use append-only thinking-channel text as the primary transport (replacement is awkward with current turn model). Thinking channel stays unused for this feature in v1.
 
-Recommendation: **(b) ephemeral live status on the stream consumer for Local**, keep thinking channel unused for this feature if append-only makes replacement awkward. Concretely:
-
-1. Bridge yields a small Local-only side channel the lifecycle already controls — e.g. write mothership `text` / thinking **or** attach via existing SSE custom comment / reuse `span` annotations only if already patterned.
-2. Simplest robust path that fits today: extend mothership-lifecycle + `use-chat` Local handling so when Local is active, status events set `assistantMessage.liveStatus = message` (or turn-model field `agentStatus`) without persisting into the final transcript.
-
-**Persistence:** status must **not** appear as assistant prose in saved history. It is ephemeral for the in-flight turn only; clear on `complete` / error / abort.
+**Persistence:** status must **not** appear as assistant prose in saved history. Clear on `complete` / error / abort.
 
 ### 5. Frontend
 
 1. Extend `PendingTagIndicator` to accept `label?: string` (default `"Thinking…"`).
-2. In `message-content.tsx` (trailing thinking / streaming empty states), pass `label={liveStatus ?? 'Thinking…'}` when `isStreaming`.
-3. Wire `liveStatus` from the active turn in `use-chat` / turn-model reduction when Local status events arrive (or when thinking-replacement strategy is chosen — single source of truth).
+2. In `message-content.tsx` / `mothership-chat.tsx` trailing thinking / streaming empty states, pass `label={liveStatus ?? 'Thinking…'}` when streaming / waiting.
+3. Wire `liveStatus` from the active turn in `use-chat` / turn-model reduction when Local status events arrive — single source of truth.
 4. When a tool row is executing, trailing indicator can still show server status (prefer status line under the message group, not duplicating inside every tool row in v1).
 5. Forward `arguments` on Local → mothership `tool` `call` events (today args are often dropped) so tool titles can show file paths — complementary UX, not a substitute for status.
 
@@ -133,19 +143,10 @@ Recommendation: **(b) ephemeral live status on the stream consumer for Local**, 
 - Unit: tool with `onProgress` yields those messages before `tool_call_result`.
 - Unit: bridge maps/forwards status without writing it into persisted assistant content.
 - UI: `PendingTagIndicator` renders custom label.
-- Manual: Local mode PPTX-style long `edit_content` — status changes at least once while compile/save runs; stop clears indicator.
+- Manual: Local mode long `edit_content` / `run_workflow` / app gen — status changes at least once while work runs; stop clears indicator.
 
 ## Rollout
 
 1. Types + orchestrator heartbeats + UI label wiring (immediate stuck-feeling fix).
 2. `onProgress` for file / `edit_content` phases.
 3. Optional follow-up: Cloud protocol `status` event if Cloud needs the same UX later.
-
-## Open decisions (defaults if unanswered)
-
-| Topic | Default |
-|-------|---------|
-| Heartbeat interval | 8s after 4s idle |
-| Bridge transport | Ephemeral `liveStatus` on Local turn (do not persist) |
-| Slide N/M | Only if tool already has index; else filename/phase copy |
-| Legacy local chat panel | Skip unless shared types make it free |

@@ -47,6 +47,8 @@ export interface StreamLoopState {
   sawStreamError: boolean
   sawCompleteEvent: boolean
   scheduledTextFlushFrame: number | null
+  /** Ephemeral Local Copilot status shown under the assistant message. */
+  liveStatus: string | undefined
 }
 
 export interface StreamEventScope {
@@ -91,6 +93,7 @@ export interface StreamLoopDeps {
     content: string
     contentBlocks: ContentBlock[]
     requestId?: string
+    liveStatus?: string
   }) => PersistedMessage
   hasTerminalPersistedAssistantForStream: (
     messages: PersistedMessage[],
@@ -167,6 +170,7 @@ export function createStreamLoopContext(deps: StreamLoopDeps): StreamLoopContext
     sawStreamError: false,
     sawCompleteEvent: false,
     scheduledTextFlushFrame: null,
+    liveStatus: undefined,
   }
 
   const isStale = () =>
@@ -196,6 +200,7 @@ export function createStreamLoopContext(deps: StreamLoopDeps): StreamLoopContext
       const snapshot: Partial<ChatMessage> = {
         content: modelContent,
         contentBlocks: modelBlocks,
+        liveStatus: state.liveStatus,
       }
       if (state.streamRequestId) snapshot.requestId = state.streamRequestId
       deps.setPendingMessages((prev) => {
@@ -219,6 +224,7 @@ export function createStreamLoopContext(deps: StreamLoopDeps): StreamLoopContext
       content: modelContent,
       contentBlocks: modelBlocks,
       ...(state.streamRequestId ? { requestId: state.streamRequestId } : {}),
+      ...(state.liveStatus ? { liveStatus: state.liveStatus } : {}),
     })
     deps.upsertMothershipChatHistory(activeChatId, (current) => {
       const streamId = deps.streamIdRef.current ?? current.activeStreamId ?? deps.assistantId

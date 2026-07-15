@@ -476,10 +476,15 @@ export function SpecialTags({
   }
 }
 
+interface PendingTagIndicatorProps {
+  /** Server-authored live status (Local Copilot). Defaults to Thinking…. */
+  label?: string
+}
+
 /**
  * Renders a "Thinking" shimmer while a special tag is still streaming in.
  */
-export function PendingTagIndicator() {
+export function PendingTagIndicator({ label = 'Thinking…' }: PendingTagIndicatorProps) {
   return (
     <div className='flex animate-stream-fade-in items-center gap-2 py-2'>
       <div className='grid size-[16px] grid-cols-2 gap-[1.5px]'>
@@ -491,7 +496,7 @@ export function PendingTagIndicator() {
           />
         ))}
       </div>
-      <span className='text-[var(--text-body)] text-sm'>Thinking…</span>
+      <span className='text-[var(--text-body)] text-sm'>{label}</span>
     </div>
   )
 }

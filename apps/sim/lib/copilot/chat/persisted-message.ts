@@ -79,6 +79,8 @@ export interface PersistedMessage {
   contentBlocks?: PersistedContentBlock[]
   fileAttachments?: PersistedFileAttachment[]
   contexts?: PersistedMessageContext[]
+  /** Ephemeral Local Copilot status for live turns; never saved as assistant prose. */
+  liveStatus?: string
 }
 
 /**
@@ -650,6 +652,10 @@ export function normalizeMessage(raw: Record<string, unknown>): PersistedMessage
       ...(c.folderId ? { folderId: c.folderId } : {}),
       ...(c.chatId ? { chatId: c.chatId } : {}),
     }))
+  }
+
+  if (typeof raw.liveStatus === 'string' && raw.liveStatus.trim()) {
+    msg.liveStatus = raw.liveStatus
   }
 
   return msg

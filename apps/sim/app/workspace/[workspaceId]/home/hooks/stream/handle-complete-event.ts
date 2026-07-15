@@ -10,5 +10,6 @@ type CompleteEvent = Extract<PersistedStreamEventEnvelope, { type: 'complete' }>
  */
 export function handleCompleteEvent(ctx: StreamLoopContext, _parsed: CompleteEvent): void {
   ctx.state.sawCompleteEvent = true
+  ctx.state.liveStatus = undefined
   ctx.ops.flush()
 }
