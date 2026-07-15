@@ -2,12 +2,11 @@
 
 import type React from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Badge, cn, Tooltip } from '@sim/emcn'
+import { Badge, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { ArrowUp, Mic, Paperclip, X } from 'lucide-react'
 import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
-import { handleKeyboardActivation } from '@/lib/core/utils/keyboard'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { SendChatIcon } from '@/app/(interfaces)/chat/[identifier]/send-icon'
 import { VoiceInput } from '@/app/(interfaces)/chat/components/input/voice-input'
