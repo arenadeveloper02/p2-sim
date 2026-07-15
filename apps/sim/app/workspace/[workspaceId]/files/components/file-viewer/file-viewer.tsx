@@ -26,6 +26,10 @@ import {
   resolvePreviewError,
 } from './preview-shared'
 import { TextEditor } from './text-editor'
+import {
+  getEmptyDocPreviewMessage,
+  getZeroByteDocPreviewMessage,
+} from './empty-doc-preview'
 import { useDocPreviewBinary } from './use-doc-preview-binary'
 import { XlsxPreview } from './xlsx-preview'
 
@@ -293,15 +297,22 @@ const IframePreview = memo(function IframePreview({
   file: WorkspaceFileRecord
   workspaceId: string
 }) {
+  const emptyMessage = getEmptyDocPreviewMessage(file, 'PDF')
   const preview = useDocPreviewBinary(workspaceId, file)
 
-  const bufferSource = useMemo<PdfDocumentSource | null>(
-    () => (preview.data ? { kind: 'buffer', buffer: preview.data } : null),
-    [preview.data]
-  )
+  const bufferSource = useMemo<PdfDocumentSource | null>(() => {
+    if (!preview.data || preview.data.byteLength === 0) return null
+    return { kind: 'buffer', buffer: preview.data }
+  }, [preview.data])
+
+  if (emptyMessage) return <PreviewError label='PDF' error={emptyMessage} />
 
   const error = resolvePreviewError(preview.error, null)
   if (error) return <PreviewError label='PDF' error={error} />
+
+  if (preview.data && preview.data.byteLength === 0) {
+    return <PreviewError label='PDF' error={getZeroByteDocPreviewMessage('PDF')} />
+  }
 
   if (!bufferSource) {
     return (

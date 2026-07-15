@@ -1,8 +1,7 @@
 'use client'
 
 import { Bug, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react'
-import { Button, Chip, ChipTextarea } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
+import { Button, Chip, ChipTextarea, cn } from '@sim/emcn'
 import { ChatContent } from '@/app/workspace/[workspaceId]/home/components/message-content/components/chat-content'
 import { PatchPreview } from '@/local-copilot/components/patch-preview'
 import type { LocalCopilotMessage } from '@/local-copilot/hooks/use-local-copilot'

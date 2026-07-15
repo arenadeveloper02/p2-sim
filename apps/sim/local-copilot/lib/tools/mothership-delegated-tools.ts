@@ -297,6 +297,15 @@ export async function executeMothershipDelegatedTool(
     if (!result.success) {
       logger.warn('Copilot server tool failed', { toolName, error: result.error })
     }
+    if (toolName === 'list_integration_tools' && result.success) {
+      const { adaptListIntegrationToolsForLocal } = await import(
+        '@/local-copilot/lib/tools/adapt-list-integration-tools'
+      )
+      return {
+        ...result,
+        result: adaptListIntegrationToolsForLocal(result.result),
+      }
+    }
     return result
   }
 

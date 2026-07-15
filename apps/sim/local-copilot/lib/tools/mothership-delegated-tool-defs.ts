@@ -13,7 +13,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   get_workflow_data:
     'Loads workflow structure and metadata by workflowId (useful on home chat when no workflow is open).',
   list_integration_tools:
-    'Lists available operations for a connected integration service (e.g. firecrawl, slack).',
+    'Lists available operations for a connected integration service (e.g. gmail, google_sheets, slack). Then call invoke_integration_tool with the exact tool id — do not call load_integration_tool.',
   read: 'Reads a workspace file by canonical VFS path (from glob or workspaceFiles in context).',
   glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
   grep: 'Searches file contents under a workspace path pattern.',
