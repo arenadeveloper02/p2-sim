@@ -1,6 +1,7 @@
 'use client'
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { getErrorMessage } from '@sim/utils/errors'
 import { formatDuration } from '@sim/utils/formatting'
 import { ArrowDown, ArrowUp, Check, ChevronUp, Clipboard, Search, X } from 'lucide-react'
 import { useQueryState } from 'nuqs'
@@ -22,7 +23,7 @@ import {
   Tooltip,
 } from '@/components/emcn'
 import { Workflow } from '@/components/emcn/icons'
-import type { WorkflowLogRow } from '@/lib/api/contracts/logs'
+import type { VerifyExecutionCostsResponse, WorkflowLogRow } from '@/lib/api/contracts/logs'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import { apportionCredits, dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { cn } from '@/lib/core/utils/cn'
@@ -46,6 +47,7 @@ import {
   StatusBadge,
   TriggerBadge,
 } from '@/app/workspace/[workspaceId]/logs/utils'
+import { useVerifyExecutionCosts } from '@/hooks/queries/logs'
 import { useCodeViewerFeatures } from '@/hooks/use-code-viewer'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
@@ -274,11 +276,14 @@ interface LogDetailsContentProps {
 
 export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentProps) {
   const [isExecutionSnapshotOpen, setIsExecutionSnapshotOpen] = useState(false)
+  const [verifyResult, setVerifyResult] = useState<VerifyExecutionCostsResponse | null>(null)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useQueryState(logDetailsTabParam.key, {
     ...logDetailsTabParam.parser,
     ...logDetailsTabUrlKeys,
   })
   const { copied: copiedRunId, copy: copyRunId } = useCopyToClipboard({ resetMs: 1500 })
+  const verifyCosts = useVerifyExecutionCosts()
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -295,6 +300,8 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
     } else {
       setActiveTab('overview')
     }
+    setVerifyResult(null)
+    setVerifyError(null)
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = 0
     }
@@ -600,12 +607,157 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                       </span>
                     </div>
                   )}
-                  <div className='px-3 py-2'>
+                  <div className='flex flex-col gap-2 px-3 py-2'>
                     <p className='font-medium text-[var(--text-tertiary)] text-xs'>
                       Total includes a {formatCost(BASE_EXECUTION_CHARGE)} base charge plus model
                       and tool usage.
                     </p>
+                    {log.executionId && (
+                      <div className='flex items-center gap-2'>
+                        <Button
+                          variant='ghost'
+                          className='h-7 gap-1 px-2'
+                          disabled={verifyCosts.isPending}
+                          onClick={() => {
+                            setVerifyError(null)
+                            verifyCosts.mutate(log.executionId as string, {
+                              onSuccess: (data) => {
+                                setVerifyResult(data)
+                              },
+                              onError: (error) => {
+                                setVerifyResult(null)
+                                setVerifyError(getErrorMessage(error, 'Failed to verify pricing'))
+                              },
+                            })
+                          }}
+                        >
+                          {verifyCosts.isPending ? 'Verifying…' : 'Verify pricing'}
+                        </Button>
+                      </div>
+                    )}
                   </div>
+                </div>
+              )}
+
+              {verifyError && (
+                <div className='rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 dark:bg-transparent'>
+                  <p className='font-medium text-[var(--text-error)] text-caption'>{verifyError}</p>
+                </div>
+              )}
+
+              {verifyResult && (
+                <div className='divide-y divide-[var(--border)] overflow-hidden rounded-md border border-[var(--border)] bg-[var(--surface-2)] dark:bg-transparent'>
+                  <div className='flex flex-col gap-1 bg-[var(--surface-3)] px-3 py-2 dark:bg-[var(--surface-2)]'>
+                    <span className='font-medium text-[var(--text-secondary)] text-caption'>
+                      Pricing verification
+                    </span>
+                    <span className='font-medium text-[var(--text-tertiary)] text-xs'>
+                      class={verifyResult.primaryClass} · confidence={verifyResult.confidence} ·
+                      read-only
+                    </span>
+                  </div>
+                  <div className='flex h-9 items-center justify-between px-3'>
+                    <span className='font-medium text-[var(--text-tertiary)] text-caption'>
+                      Billed total
+                    </span>
+                    <span className='font-medium text-[var(--text-secondary)] text-caption tabular-nums'>
+                      {formatCost(verifyResult.billed.total)}
+                    </span>
+                  </div>
+                  <div className='flex h-9 items-center justify-between px-3'>
+                    <span className='font-medium text-[var(--text-tertiary)] text-caption'>
+                      Expected total
+                    </span>
+                    <span className='font-medium text-[var(--text-secondary)] text-caption tabular-nums'>
+                      {formatCost(verifyResult.expected.total)}
+                    </span>
+                  </div>
+                  <div className='flex h-9 items-center justify-between px-3'>
+                    <span className='font-medium text-[var(--text-tertiary)] text-caption'>
+                      Positive delta
+                    </span>
+                    <span
+                      className={cn(
+                        'font-medium text-caption tabular-nums',
+                        verifyResult.deltas.positive > 0
+                          ? 'text-[var(--text-error)]'
+                          : 'text-[var(--text-secondary)]'
+                      )}
+                    >
+                      {formatCost(verifyResult.deltas.positive)}
+                    </span>
+                  </div>
+                  <div className='flex h-9 items-center justify-between px-3'>
+                    <span className='font-medium text-[var(--text-tertiary)] text-caption'>
+                      Negative delta
+                    </span>
+                    <span
+                      className={cn(
+                        'font-medium text-caption tabular-nums',
+                        verifyResult.deltas.negative > 0
+                          ? 'text-[var(--text-warning)]'
+                          : 'text-[var(--text-secondary)]'
+                      )}
+                    >
+                      {formatCost(verifyResult.deltas.negative)}
+                    </span>
+                  </div>
+                  {verifyResult.blockers.length > 0 && (
+                    <div className='px-3 py-2'>
+                      <p className='mb-1 font-medium text-[var(--text-secondary)] text-caption'>
+                        Blockers
+                      </p>
+                      <ul className='flex flex-col gap-0.5'>
+                        {verifyResult.blockers.map((blocker) => (
+                          <li
+                            key={blocker}
+                            className='font-medium text-[var(--text-error)] text-xs'
+                          >
+                            {blocker}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {verifyResult.warnings.length > 0 && (
+                    <div className='px-3 py-2'>
+                      <p className='mb-1 font-medium text-[var(--text-secondary)] text-caption'>
+                        Warnings
+                      </p>
+                      <ul className='flex flex-col gap-0.5'>
+                        {verifyResult.warnings.map((warning) => (
+                          <li
+                            key={warning}
+                            className='font-medium text-[var(--text-tertiary)] text-xs'
+                          >
+                            {warning}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {verifyResult.expected.lines.length > 0 && (
+                    <div className='px-3 py-2'>
+                      <p className='mb-1 font-medium text-[var(--text-secondary)] text-caption'>
+                        Expected lines
+                      </p>
+                      <ul className='flex flex-col gap-1'>
+                        {verifyResult.expected.lines.map((line) => (
+                          <li
+                            key={`${line.category}:${line.description}`}
+                            className='flex items-center justify-between gap-2'
+                          >
+                            <span className='min-w-0 truncate font-medium text-[var(--text-tertiary)] text-xs'>
+                              {line.description}
+                            </span>
+                            <span className='flex-shrink-0 font-medium text-[var(--text-secondary)] text-xs tabular-nums'>
+                              {formatCost(line.target)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
