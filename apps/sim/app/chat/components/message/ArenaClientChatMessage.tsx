@@ -16,12 +16,18 @@ import {
 // import { toastError, toastSuccess } from '@/components/ui'
 import { createLogger } from '@sim/logger'
 import { formatRelativeTime } from '@sim/utils/formatting'
-import { Check, Copy, RefreshCw, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Check, RefreshCw } from 'lucide-react'
 import { Tooltip } from '@/components/emcn'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
+import { cn } from '@/lib/core/utils/cn'
 import { KnowledgeResultsModal } from '@/app/chat/components/message/components/knowledge-results-modal'
+import {
+  CopyMessageIcon,
+  DislikeMessageIcon,
+  LikeMessageIcon,
+} from '@/app/chat/components/message/components/message-action-icons'
 import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
 import type {
   ChatAttachment,
@@ -1106,21 +1112,23 @@ export const ArenaClientChatMessage = memo(
                       Try again
                     </button>
                   )}
-                <div className='flex items-center justify-start space-x-2'>
+                <div className='flex items-center justify-start gap-2'>
                   {!isJsonObject && hasRenderableText && !hasImageUrl && (
                     <Tooltip.Provider>
                       <Tooltip.Root>
                         <Tooltip.Trigger asChild>
                           <button
-                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            type='button'
+                            className='flex size-6 items-center justify-center p-0 text-[#575A66] transition-colors hover:text-[#155CBA]'
                             onClick={() => {
                               handleCopy()
                             }}
+                            aria-label={isCopied ? 'Copied' : 'Copy to clipboard'}
                           >
                             {isCopied ? (
-                              <Check className='h-4 w-4' strokeWidth={2} />
+                              <Check className='size-4' strokeWidth={2} />
                             ) : (
-                              <Copy className='h-4 w-4' strokeWidth={2} />
+                              <CopyMessageIcon />
                             )}
                           </button>
                         </Tooltip.Trigger>
@@ -1137,34 +1145,17 @@ export const ArenaClientChatMessage = memo(
                         <Tooltip.Trigger asChild>
                           <button
                             type='button'
-                            className='text-muted-foreground transition-colors hover:bg-muted'
+                            className='flex size-6 items-center justify-center p-0 text-[#575A66] transition-colors hover:text-[#155CBA]'
                             onClick={onRegenerateMessage}
                             aria-label='Regenerate response'
                           >
-                            <RefreshCw className='h-4 w-4' strokeWidth={2} />
+                            <RefreshCw className='size-4' strokeWidth={2} />
                           </button>
                         </Tooltip.Trigger>
                         <Tooltip.Content>Regenerate</Tooltip.Content>
                       </Tooltip.Root>
                     </Tooltip.Provider>
                   )}
-                  {/* {(containsBase64Images || hasImageUrl) && (
-                    <Tooltip.Provider>
-                      <Tooltip.Root>
-                        <Tooltip.Trigger asChild>
-                          <button
-                            className='text-muted-foreground transition-colors hover:bg-muted'
-                            onClick={handleDownload}
-                          >
-                            <Download className='h-4 w-4' strokeWidth={2} />
-                          </button>
-                        </Tooltip.Trigger>
-                        <Tooltip.Content side='top' align='center' sideOffset={5}>
-                          Download image
-                        </Tooltip.Content>
-                      </Tooltip.Root>
-                    </Tooltip.Provider>
-                  )} */}
                   {cleanTextContent && message?.executionId && (
                     <>
                       {isFeedbackPending ? (
@@ -1181,18 +1172,20 @@ export const ArenaClientChatMessage = memo(
                                   <PopoverTrigger asChild>
                                     <Tooltip.Trigger asChild>
                                       <button
+                                        type='button'
                                         ref={likeButtonRef}
-                                        className='text-muted-foreground transition-colors hover:bg-muted'
+                                        className={cn(
+                                          'flex size-6 items-center justify-center p-0 transition-colors hover:text-[#155CBA]',
+                                          message?.liked === true
+                                            ? 'text-[#155CBA]'
+                                            : 'text-[#575A66]'
+                                        )}
                                         onClick={() => {
                                           handleLike(message?.executionId || '')
                                         }}
+                                        aria-label={message?.liked === true ? 'Unlike' : 'Like'}
                                       >
-                                        <ThumbsUp
-                                          stroke={'gray'}
-                                          fill={message?.liked === true ? 'gray' : 'white'}
-                                          className='h-4 w-4'
-                                          strokeWidth={2}
-                                        />
+                                        <LikeMessageIcon />
                                       </button>
                                     </Tooltip.Trigger>
                                   </PopoverTrigger>
@@ -1233,18 +1226,22 @@ export const ArenaClientChatMessage = memo(
                                   <PopoverTrigger asChild>
                                     <Tooltip.Trigger asChild>
                                       <button
+                                        type='button'
                                         ref={dislikeButtonRef}
-                                        className='text-muted-foreground transition-colors hover:bg-muted'
+                                        className={cn(
+                                          'flex size-6 items-center justify-center p-0 transition-colors hover:text-[#155CBA]',
+                                          message?.liked === false
+                                            ? 'text-[#155CBA]'
+                                            : 'text-[#575A66]'
+                                        )}
                                         onClick={() => {
                                           handleDislike(message?.executionId || '')
                                         }}
+                                        aria-label={
+                                          message?.liked === false ? 'Remove dislike' : 'Dislike'
+                                        }
                                       >
-                                        <ThumbsDown
-                                          stroke={'gray'}
-                                          fill={message?.liked === false ? 'gray' : 'white'}
-                                          className='h-4 w-4'
-                                          strokeWidth={2}
-                                        />
+                                        <DislikeMessageIcon />
                                       </button>
                                     </Tooltip.Trigger>
                                   </PopoverTrigger>
