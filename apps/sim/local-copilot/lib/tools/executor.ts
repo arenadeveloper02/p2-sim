@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { getErrorMessage } from '@sim/utils/errors'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
@@ -13,6 +14,11 @@ import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
 } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import {
+  executeLoadUserSkill,
+  LOAD_USER_SKILL_TOOL_NAME,
+} from '@/local-copilot/lib/tools/user-skills'
+import { enrichLocalIntegrationToolParams } from '@/local-copilot/lib/tools/enrich-integration-params'
 import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
@@ -42,6 +48,8 @@ export interface ToolExecutionContext {
   workspaceId: string
   workflowId?: string
   chatId?: string
+  /** Scopes workspace_file → edit_content intents for this user turn. */
+  messageId?: string
   abortSignal?: AbortSignal
   userPermission?: string
   structuredContext: LocalCopilotStructuredContext
@@ -154,11 +162,58 @@ function guardCreateWorkflowWhenExistingAvailable(
   }
 }
 
+async function runLoadUserSkill(
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext
+): Promise<ToolExecutionResult> {
+  try {
+    const { assertPermissionsAllowed } = await import(
+      '@/ee/access-control/utils/permission-check'
+    )
+    await assertPermissionsAllowed({
+      userId: ctx.userId,
+      workspaceId: ctx.workspaceId,
+      toolKind: 'skill',
+    })
+  } catch (error) {
+    const message = getErrorMessage(error, 'Skills are not allowed')
+    return {
+      toolName: LOAD_USER_SKILL_TOOL_NAME,
+      success: false,
+      error: message,
+      result: { error: message },
+    }
+  }
+
+  const skillName = typeof args.skill_name === 'string' ? args.skill_name.trim() : ''
+  const loaded = await executeLoadUserSkill(skillName, ctx.workspaceId)
+  if (!loaded.success) {
+    return {
+      toolName: LOAD_USER_SKILL_TOOL_NAME,
+      success: false,
+      error: loaded.error,
+      result: { error: loaded.error },
+    }
+  }
+
+  return {
+    toolName: LOAD_USER_SKILL_TOOL_NAME,
+    success: true,
+    result: { content: loaded.content },
+  }
+}
+
 export async function executeLocalCopilotTool(
   toolName: string,
   args: Record<string, unknown>,
   ctx: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
+  // load_user_skill is registered dynamically per workspace when skills exist.
+  if (toolName === LOAD_USER_SKILL_TOOL_NAME) {
+    logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
+    return runLoadUserSkill(args, ctx)
+  }
+
   const definition = getToolDefinition(toolName)
   if (!definition) {
     throw new Error(`Unknown tool: ${toolName}`)
@@ -283,7 +338,7 @@ export async function executeLocalCopilotTool(
         }
       }
 
-      const params =
+      const rawParams =
         args.params && typeof args.params === 'object' && !Array.isArray(args.params)
           ? (args.params as Record<string, unknown>)
           : { ...args }
@@ -291,7 +346,7 @@ export async function executeLocalCopilotTool(
       // Model sometimes passes Arena/mothership tool ids here (e.g. search_online).
       // Route those through the delegated path instead of shared executeTool → @/tools.
       if (isMothershipDelegatedTool(toolId)) {
-        const delegated = await executeMothershipDelegatedTool(toolId, params, ctx)
+        const delegated = await executeMothershipDelegatedTool(toolId, rawParams, ctx)
         return {
           toolName,
           success: delegated.success,
@@ -303,6 +358,12 @@ export async function executeLocalCopilotTool(
           resources: delegated.resources,
         }
       }
+
+      const params = enrichLocalIntegrationToolParams(
+        toolId,
+        rawParams,
+        ctx.structuredContext.connectedIntegrations
+      )
 
       await ensureHandlersReady()
       const { executeTool: executeCopilotRegistryTool } = await import(

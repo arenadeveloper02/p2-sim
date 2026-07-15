@@ -7,6 +7,7 @@ import { getFileExtension } from '@/lib/uploads/utils/file-utils'
 import { type CsvImportFileDescriptor, useCsvTruncationImport } from './csv-import'
 import { DataTable } from './data-table'
 import { MermaidDiagram } from './mermaid-diagram'
+import { normalizeSvgForPreview } from './svg-preview'
 import { ZoomablePreview } from './zoomable-preview'
 
 type PreviewType = 'markdown' | 'html' | 'csv' | 'svg' | 'mermaid' | null
@@ -217,22 +218,42 @@ const HtmlPreview = memo(function HtmlPreview({ content }: { content: string }) 
 
 function SvgPreview({ content }: { content: string }) {
   const [blobUrl, setBlobUrl] = useState('')
+  const [loadFailed, setLoadFailed] = useState(false)
+  const blobUrlRef = useRef<string | null>(null)
 
   useEffect(() => {
-    const url = URL.createObjectURL(new Blob([content], { type: 'image/svg+xml' }))
+    const normalized = normalizeSvgForPreview(content)
+    const url = URL.createObjectURL(
+      new Blob([normalized], { type: 'image/svg+xml;charset=utf-8' })
+    )
+    const previous = blobUrlRef.current
+    blobUrlRef.current = url
     setBlobUrl(url)
-    return () => URL.revokeObjectURL(url)
+    setLoadFailed(false)
+    if (previous) URL.revokeObjectURL(previous)
+
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current)
+        blobUrlRef.current = null
+      }
+    }
   }, [content])
 
   return (
     <ZoomablePreview className='h-full' contentClassName='h-full w-full'>
-      {blobUrl && (
-        <img
-          src={blobUrl}
-          alt='SVG preview'
-          className='max-h-full max-w-full select-none object-contain'
-          draggable={false}
-        />
+      {loadFailed ? (
+        <p className='text-[13px] text-[var(--text-muted)]'>Unable to render SVG preview</p>
+      ) : (
+        blobUrl && (
+          <img
+            src={blobUrl}
+            alt='SVG preview'
+            className='max-h-full max-w-full select-none object-contain'
+            draggable={false}
+            onError={() => setLoadFailed(true)}
+          />
+        )
       )}
     </ZoomablePreview>
   )
