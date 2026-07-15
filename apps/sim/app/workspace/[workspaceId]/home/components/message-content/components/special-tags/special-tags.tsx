@@ -469,6 +469,13 @@ export function parseSpecialTags(content: string, isStreaming: boolean): ParsedS
   return { segments, hasPendingTag }
 }
 
+const THINKING_BLOCKS = [
+  { color: '#2ABBF8', delay: '0s' },
+  { color: '#00F701', delay: '0.2s' },
+  { color: '#FA4EDF', delay: '0.6s' },
+  { color: '#FFCC02', delay: '0.4s' },
+] as const
+
 interface SpecialTagsProps {
   segment: Exclude<ContentSegment, { type: 'text' }>
   onOptionSelect?: (id: string) => void
@@ -514,8 +521,17 @@ interface PendingTagIndicatorProps {
  */
 export function PendingTagIndicator({ label = 'Thinking…' }: PendingTagIndicatorProps) {
   return (
-    <div className='animate-stream-fade-in py-2'>
-      <ThinkingLoader size={20} startVariant='corners' label='Thinking…' labelRatio={0.7} />
+    <div className='flex animate-stream-fade-in items-center gap-2 py-2'>
+      <div className='grid size-[16px] grid-cols-2 gap-[1.5px]'>
+        {THINKING_BLOCKS.map((block, i) => (
+          <div
+            key={i}
+            className='animate-thinking-block rounded-xs'
+            style={{ backgroundColor: block.color, animationDelay: block.delay }}
+          />
+        ))}
+      </div>
+      <span className='text-[var(--text-body)] text-sm'>{label}</span>
     </div>
   )
 }
