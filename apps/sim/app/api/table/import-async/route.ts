@@ -20,6 +20,7 @@ import {
   TableConflictError,
 } from '@/lib/table'
 import { runTableImport, type TableImportPayload } from '@/lib/table/import-runner'
+import { getUserSettings } from '@/lib/users/queries'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('TableImportAsync')
@@ -38,7 +39,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
   const parsed = await parseRequest(importTableAsyncContract, request, {})
   if (!parsed.success) return parsed.response
-  const { workspaceId, fileKey, fileName, deleteSourceFile } = parsed.data.body
+  const { workspaceId, fileKey, fileName, deleteSourceFile, timezone } = parsed.data.body
 
   const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
   if (permission !== 'write' && permission !== 'admin') {
@@ -111,16 +112,19 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     delimiter,
     mode: 'create',
     deleteSourceFile,
+    timezone: timezone ?? (await getUserSettings(userId)).timezone ?? 'UTC',
   }
   if (isTriggerDevEnabled) {
     // Trigger.dev runs the import outside the web container, so it survives app deploys.
     try {
-      const [{ tableImportTask }, { tasks }] = await Promise.all([
+      const [{ tableImportTask }, { tasks }, { resolveTriggerRegion }] = await Promise.all([
         import('@/background/table-import'),
         import('@trigger.dev/sdk'),
+        import('@/lib/core/async-jobs/region'),
       ])
       await tasks.trigger<typeof tableImportTask>('table-import', importPayload, {
         tags: [`tableId:${table.id}`, `jobId:${importId}`],
+        region: await resolveTriggerRegion(),
       })
     } catch (error) {
       // A failed dispatch must not leave a ghost `running` job holding the

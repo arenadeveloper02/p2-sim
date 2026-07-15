@@ -4,10 +4,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MothershipStreamV1SessionKind } from '@/lib/copilot/generated/mothership-stream-v1'
 import type { PersistedStreamEventEnvelope } from '@/lib/copilot/request/session/contract'
-import type { StreamLoopContext } from '@/app/workspace/[workspaceId]/home/hooks/stream/stream-context'
 import { handleSessionEvent } from '@/app/workspace/[workspaceId]/home/hooks/stream/handle-session-event'
+import type { StreamLoopContext } from '@/app/workspace/[workspaceId]/home/hooks/stream/stream-context'
 
-function makeSessionEvent(chatId: string): Extract<PersistedStreamEventEnvelope, { type: 'session' }> {
+function makeSessionEvent(
+  chatId: string
+): Extract<PersistedStreamEventEnvelope, { type: 'session' }> {
   return {
     type: 'session',
     payload: { kind: MothershipStreamV1SessionKind.chat, chatId },

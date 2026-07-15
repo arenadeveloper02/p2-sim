@@ -154,12 +154,29 @@ export function extractResourcesFromToolResult(
     case GenerateAudio.id:
     case Ffmpeg.id: {
       // ffmpeg's probe op writes no file (no fileId) → no resource/auto-open.
+      const files = Array.isArray(result.files) ? result.files : []
+      if (files.length > 0) {
+        return files
+          .map((entry) => asRecord(entry))
+          .filter((entry) => typeof entry.fileId === 'string' && entry.fileId.trim())
+          .map((entry) => ({
+            type: 'file' as const,
+            id: entry.fileId as string,
+            title: (entry.fileName as string) || 'Generated File',
+            ...(typeof entry.vfsPath === 'string' && entry.vfsPath.trim()
+              ? { path: entry.vfsPath }
+              : {}),
+          }))
+      }
       if (result.fileId) {
         return [
           {
             type: 'file',
             id: result.fileId as string,
             title: (result.fileName as string) || 'Generated File',
+            ...(typeof result.vfsPath === 'string' && result.vfsPath.trim()
+              ? { path: result.vfsPath as string }
+              : {}),
           },
         ]
       }

@@ -5,6 +5,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { mothershipExecuteContract } from '@/lib/api/contracts/mothership-chats'
 import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { buildIntegrationToolSchemas } from '@/lib/copilot/chat/payload'
 import { processContextsServer } from '@/lib/copilot/chat/process-contents'
 import { generateWorkspaceContext } from '@/lib/copilot/chat/workspace-context'
@@ -128,6 +129,17 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const userId = auth.userId ?? bodyUserId
 
     await assertActiveWorkspaceAccess(workspaceId, userId)
+
+    const usage = await checkMothershipUsageLimits(userId, workspaceId)
+    if (usage.isExceeded) {
+      return NextResponse.json(
+        {
+          error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
+          scope: usage.scope,
+        },
+        { status: 402 }
+      )
+    }
 
     const effectiveChatId = chatId || generateId()
     messageId = providedMessageId || generateId()
@@ -326,12 +338,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
                   : 'Mothership execute error',
                 {
                   requestId,
-                  error: error instanceof Error ? error.message : 'Unknown error',
+                  error: getErrorMessage(error, 'Unknown error'),
                 }
               )
               send({
                 type: 'error',
-                error: error instanceof Error ? error.message : 'Internal server error',
+                error: getErrorMessage(error, 'Internal server error'),
               })
             } finally {
               allowExplicitAbort = false

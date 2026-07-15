@@ -1,22 +1,35 @@
 'use client'
 
 import { createElement, useMemo, useState } from 'react'
-import { useParams } from 'next/navigation'
 import {
   ArrowRight,
+  Button,
   ChevronDown,
+  cn,
   Expandable,
   ExpandableContent,
+  SecretInput,
   SecretReveal,
-} from '@/components/emcn'
+  Tooltip,
+  toast,
+} from '@sim/emcn'
+import { useParams } from 'next/navigation'
+import { ThinkingLoader } from '@/components/ui'
 import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
-import { cn } from '@/lib/core/utils/cn'
+import { isSafeHttpUrl } from '@/lib/core/utils/urls'
 import { OAUTH_PROVIDERS } from '@/lib/oauth/oauth'
 import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
+import { ChartDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/chart-display'
 import type {
   ChatMessageContext,
   MothershipResource,
 } from '@/app/workspace/[workspaceId]/home/types'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import {
+  usePersonalEnvironment,
+  useSavePersonalEnvironment,
+  useUpsertWorkspaceEnvironment,
+} from '@/hooks/queries/environment'
 import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
 import { useTablesList } from '@/hooks/queries/tables'
 import { useWorkflows } from '@/hooks/queries/workflows'
@@ -49,15 +62,27 @@ export const CREDENTIAL_TAG_TYPES = [
   'sim_key',
   'credential_id',
   'link',
+  'secret_input',
 ] as const
 
 export type CredentialTagType = (typeof CREDENTIAL_TAG_TYPES)[number]
+
+export const SECRET_INPUT_SCOPES = ['personal', 'workspace'] as const
+
+export type SecretInputScope = (typeof SECRET_INPUT_SCOPES)[number]
 
 export interface CredentialTagData {
   value?: string
   type: CredentialTagType
   provider?: string
   redacted?: boolean
+  /**
+   * Env-var key name to save the pasted secret under (secret_input only),
+   * e.g. "OPENAI_API_KEY".
+   */
+  name?: string
+  /** Where a secret_input value is persisted. Defaults to "workspace". */
+  scope?: SecretInputScope
 }
 
 export interface MothershipErrorTagData {
@@ -76,6 +101,27 @@ export const WORKSPACE_RESOURCE_TAG_TYPES = ['workflow', 'table', 'file'] as con
 
 export type WorkspaceResourceTagType = (typeof WORKSPACE_RESOURCE_TAG_TYPES)[number]
 
+export const CHART_TAG_TYPES = ['bar', 'line', 'area', 'pie', 'scatter'] as const
+
+export type ChartTagType = (typeof CHART_TAG_TYPES)[number]
+
+export interface ChartTagSeries {
+  name?: string
+  data: Array<number | [number, number]>
+}
+
+/**
+ * Constrained chart spec streamed by the copilot inside a `<chart>` tag and
+ * rendered inline with ECharts. `labels` are x-axis categories for cartesian
+ * types and slice names for pie.
+ */
+export interface ChartTagData {
+  type: ChartTagType
+  title?: string
+  labels?: string[]
+  series: ChartTagSeries[]
+}
+
 export interface WorkspaceResourceTagData {
   type: WorkspaceResourceTagType
   id?: string
@@ -91,6 +137,7 @@ export type ContentSegment =
   | { type: 'credential'; data: CredentialTagData }
   | { type: 'mothership-error'; data: MothershipErrorTagData }
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
+  | { type: 'chart'; data: ChartTagData }
 
 export type RuntimeSpecialTagName =
   | 'thinking'
@@ -99,6 +146,7 @@ export type RuntimeSpecialTagName =
   | 'mothership-error'
   | 'file'
   | 'workspace_resource'
+  | 'chart'
 
 export interface ParsedSpecialContent {
   segments: ContentSegment[]
@@ -112,6 +160,7 @@ const RUNTIME_SPECIAL_TAG_NAMES = [
   'mothership-error',
   'file',
   'workspace_resource',
+  'chart',
 ] as const
 
 const SPECIAL_TAG_NAMES = [
@@ -121,6 +170,7 @@ const SPECIAL_TAG_NAMES = [
   'credential',
   'mothership-error',
   'workspace_resource',
+  'chart',
 ] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -156,6 +206,17 @@ function isCredentialTagData(value: unknown): value is CredentialTagData {
     return false
   }
   if (value.provider !== undefined && typeof value.provider !== 'string') return false
+  // secret_input is an empty input the user fills in — it carries a key name to
+  // save under, not a value.
+  if (value.type === 'secret_input') {
+    if (
+      value.scope !== undefined &&
+      !(SECRET_INPUT_SCOPES as readonly string[]).includes(value.scope as string)
+    ) {
+      return false
+    }
+    return typeof value.name === 'string' && value.name.trim().length > 0
+  }
   if (value.redacted === true) return value.value === undefined || typeof value.value === 'string'
   return typeof value.value === 'string'
 }
@@ -185,6 +246,52 @@ function isWorkspaceResourceTagData(value: unknown): value is WorkspaceResourceT
   const path = typeof value.path === 'string' ? value.path.trim() : ''
   if (value.type === 'file') return id.length > 0 || path.length > 0
   return id.length > 0
+}
+
+const CHART_MAX_SERIES = 10
+const CHART_MAX_POINTS = 1000
+
+function isChartPoint(value: unknown): value is number | [number, number] {
+  if (typeof value === 'number') return Number.isFinite(value)
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
+  )
+}
+
+function isChartTagSeries(value: unknown): value is ChartTagSeries {
+  if (!isRecord(value)) return false
+  if (value.name !== undefined && typeof value.name !== 'string') return false
+  return (
+    Array.isArray(value.data) &&
+    value.data.length > 0 &&
+    value.data.length <= CHART_MAX_POINTS &&
+    value.data.every(isChartPoint)
+  )
+}
+
+function isChartTagData(value: unknown): value is ChartTagData {
+  if (!isRecord(value)) return false
+  if (
+    typeof value.type !== 'string' ||
+    !(CHART_TAG_TYPES as readonly string[]).includes(value.type)
+  ) {
+    return false
+  }
+  if (value.title !== undefined && typeof value.title !== 'string') return false
+  if (
+    value.labels !== undefined &&
+    (!Array.isArray(value.labels) || !value.labels.every((label) => typeof label === 'string'))
+  ) {
+    return false
+  }
+  return (
+    Array.isArray(value.series) &&
+    value.series.length > 0 &&
+    value.series.length <= CHART_MAX_SERIES &&
+    value.series.every(isChartTagSeries)
+  )
 }
 
 export function parseJsonTagBody<T>(
@@ -235,6 +342,7 @@ function parseSpecialTagData(
   | { type: 'credential'; data: CredentialTagData }
   | { type: 'mothership-error'; data: MothershipErrorTagData }
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
+  | { type: 'chart'; data: ChartTagData }
   | null {
   if (tagName === 'thinking') {
     const content = parseTextTagBody(body)
@@ -264,6 +372,11 @@ function parseSpecialTagData(
   if (tagName === 'workspace_resource') {
     const data = parseJsonTagBody(body, isWorkspaceResourceTagData)
     return data ? { type: 'workspace_resource', data } : null
+  }
+
+  if (tagName === 'chart') {
+    const data = parseJsonTagBody(body, isChartTagData)
+    return data ? { type: 'chart', data } : null
   }
 
   return null
@@ -356,13 +469,6 @@ export function parseSpecialTags(content: string, isStreaming: boolean): ParsedS
   return { segments, hasPendingTag }
 }
 
-const THINKING_BLOCKS = [
-  { color: '#2ABBF8', delay: '0s' },
-  { color: '#00F701', delay: '0.2s' },
-  { color: '#FA4EDF', delay: '0.6s' },
-  { color: '#FFCC02', delay: '0.4s' },
-] as const
-
 interface SpecialTagsProps {
   segment: Exclude<ContentSegment, { type: 'text' }>
   onOptionSelect?: (id: string) => void
@@ -391,6 +497,8 @@ export function SpecialTags({
       return <MothershipErrorDisplay data={segment.data} />
     case 'workspace_resource':
       return <WorkspaceResourceDisplay data={segment.data} onSelect={onWorkspaceResourceSelect} />
+    case 'chart':
+      return <ChartDisplay data={segment.data} />
     default:
       return null
   }
@@ -401,17 +509,8 @@ export function SpecialTags({
  */
 export function PendingTagIndicator() {
   return (
-    <div className='flex animate-stream-fade-in items-center gap-2 py-2'>
-      <div className='grid size-[16px] grid-cols-2 gap-[1.5px]'>
-        {THINKING_BLOCKS.map((block, i) => (
-          <div
-            key={i}
-            className='animate-thinking-block rounded-xs'
-            style={{ backgroundColor: block.color, animationDelay: block.delay }}
-          />
-        ))}
-      </div>
-      <span className='text-[var(--text-body)] text-sm'>Thinking…</span>
+    <div className='animate-stream-fade-in py-2'>
+      <ThinkingLoader size={20} startVariant='corners' label='Thinking…' labelRatio={0.7} />
     </div>
   )
 }
@@ -619,9 +718,111 @@ const LockIcon = (props: { className?: string }) => (
   </svg>
 )
 
+/**
+ * Inline "paste a secret" widget rendered for
+ * `<credential>{"type":"secret_input","name":"OPENAI_API_KEY"}</credential>`.
+ * Reuses the shared emcn SecretInput; the pasted value is saved straight to
+ * workspace (default) or personal environment variables under `name` and never
+ * flows back through the chat transcript.
+ */
+function SecretInputDisplay({ data }: { data: CredentialTagData }) {
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const secretName = (data.name ?? '').trim()
+  const scope: SecretInputScope = data.scope === 'personal' ? 'personal' : 'workspace'
+
+  const [value, setValue] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const upsertWorkspace = useUpsertWorkspaceEnvironment()
+  const savePersonal = useSavePersonalEnvironment()
+  const personalQuery = usePersonalEnvironment()
+  const personalEnv = personalQuery.data
+  const { canEdit } = useUserPermissionsContext()
+
+  // Setting a workspace var needs write/admin (same gate as the secrets manager);
+  // personal vars are the user's own, so any member may set them.
+  const canManage = scope === 'personal' || canEdit
+
+  const isSaving = upsertWorkspace.isPending || savePersonal.isPending
+  // Personal saves replace the whole map, so block until existing vars are loaded.
+  const personalReady = scope !== 'personal' || personalEnv !== undefined
+  const canSave =
+    canManage && secretName.length > 0 && value.trim().length > 0 && !isSaving && personalReady
+
+  const handleSave = async () => {
+    if (!canSave) return
+    try {
+      if (scope === 'personal') {
+        // The personal POST replaces the whole map, so re-read the latest vars
+        // right before merging — a stale snapshot would drop keys saved elsewhere.
+        const { data: latest } = await personalQuery.refetch()
+        const merged: Record<string, string> = {}
+        for (const [key, entry] of Object.entries(latest ?? personalEnv ?? {}))
+          merged[key] = entry.value
+        merged[secretName] = value
+        await savePersonal.mutateAsync({ variables: merged })
+      } else {
+        await upsertWorkspace.mutateAsync({ workspaceId, variables: { [secretName]: value } })
+      }
+      setValue('')
+      setSaved(true)
+      toast.success(`Saved ${secretName}`)
+    } catch {
+      toast.error(`Couldn't save ${secretName}. Please try again.`)
+    }
+  }
+
+  if (!secretName) return null
+  // Only confirm after the user saves via THIS widget. A fresh prompt always shows
+  // the input so the user can set or override the key, even if it already exists.
+  if (saved) return <SecretReveal redacted />
+  if (!canManage) return null
+
+  return (
+    <SecretInput
+      value={value}
+      onChange={setValue}
+      placeholder={`Paste ${secretName}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          void handleSave()
+        }
+      }}
+      endAdornment={
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <Button
+              type='button'
+              variant='quiet'
+              className='size-[18px] rounded-sm p-0'
+              onClick={() => void handleSave()}
+              disabled={!canSave}
+              aria-label='Save'
+            >
+              <ArrowRight className='size-[13px]' />
+            </Button>
+          </Tooltip.Trigger>
+          <Tooltip.Content>{isSaving ? 'Saving…' : 'Save'}</Tooltip.Content>
+        </Tooltip.Root>
+      }
+    />
+  )
+}
+
 function CredentialDisplay({ data }: { data: CredentialTagData }) {
+  const { canEdit } = useUserPermissionsContext()
+
+  if (data.type === 'secret_input') {
+    return <SecretInputDisplay data={data} />
+  }
+
   if (data.type === 'link') {
-    if (!data.provider) return null
+    // Connecting a credential mutates the workspace — hide it from read-only members.
+    if (!data.provider || !canEdit) return null
+    // The connect link value comes from the streamed model output, so only
+    // render it as a clickable link when it resolves to a real http(s) URL.
+    if (!data.value || !isSafeHttpUrl(data.value)) return null
     const Icon = getCredentialIcon(data.provider) ?? LockIcon
     return (
       <a

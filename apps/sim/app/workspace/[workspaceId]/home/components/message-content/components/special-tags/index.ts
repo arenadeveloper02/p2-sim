@@ -1,4 +1,8 @@
+export { ChartDisplay } from './chart-display'
 export type {
+  ChartTagData,
+  ChartTagSeries,
+  ChartTagType,
   ContentSegment,
   CredentialTagData,
   CredentialTagType,
@@ -13,6 +17,7 @@ export type {
   WorkspaceResourceTagType,
 } from './special-tags'
 export {
+  CHART_TAG_TYPES,
   CREDENTIAL_TAG_TYPES,
   PendingTagIndicator,
   parseFileTag,

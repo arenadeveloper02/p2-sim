@@ -112,7 +112,7 @@ export interface TableBlock extends BaseBlock {
   type: 'TABLE'
   role: 'DATA_TABLE'
   content: string[][]
-  /** Maximum rows the template table supports (trim/delete extras beyond content). */
+  /** Maximum rows per slide (overflow splits across continuation slides). */
   maxRows: number
   /** Maximum columns the template table supports (trim/delete extras beyond content). */
   maxColumns: number

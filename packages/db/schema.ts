@@ -811,9 +811,6 @@ export const webhook = pgTable(
     isActive: boolean('is_active').notNull().default(true),
     failedCount: integer('failed_count').default(0), // Track consecutive failures
     lastFailedAt: timestamp('last_failed_at'), // When the webhook last failed
-    credentialSetId: text('credential_set_id').references(() => credentialSet.id, {
-      onDelete: 'set null',
-    }), // For credential set webhooks - enables efficient queries
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -828,8 +825,6 @@ export const webhook = pgTable(
         table.workflowId,
         table.deploymentVersionId
       ),
-      // Optimize queries for credential set webhooks
-      credentialSetIdIdx: index('webhook_credential_set_id_idx').on(table.credentialSetId),
       archivedAtPartialIdx: index('webhook_archived_at_partial_idx')
         .on(table.archivedAt)
         .where(sql`${table.archivedAt} IS NOT NULL`),
@@ -926,8 +921,6 @@ export const userStats = pgTable('user_stats', {
   /** @deprecated Retired usage counter; derive from usage_log. */
   totalMcpExecutions: integer('total_mcp_executions').notNull().default(0),
   /** @deprecated Retired usage counter; derive from usage_log. */
-  totalA2aExecutions: integer('total_a2a_executions').notNull().default(0),
-  /** @deprecated Retired usage counter; derive from usage_log. */
   totalTokensUsed: bigint('total_tokens_used', { mode: 'number' }).notNull().default(0),
   /** @deprecated Not written (recordUsage appends to usage_log); legacy/admin reads only. Move readers to ledger aggregation. */
   totalCost: decimal('total_cost').notNull().default('0'),
@@ -984,6 +977,21 @@ export const userStats = pgTable('user_stats', {
   lastActive: timestamp('last_active').notNull().defaultNow(),
   billingBlocked: boolean('billing_blocked').notNull().default(false),
   billingBlockedReason: billingBlockedReasonEnum('billing_blocked_reason'),
+  /**
+   * Highest usage-limit threshold already emailed per category (e.g.
+   * `{ storage: 80, tables: 100 }`). Prevents re-spamming the same warning;
+   * re-arms when usage drops back below the re-arm band. Keyed by limit
+   * category ('storage' | 'tables'); seats live on `organization`.
+   *
+   * Dedup granularity is per billing account per category — intentionally NOT
+   * per table, so a user hitting the row limit on several tables gets one
+   * 'tables' warning, not one per table (the email still names the table that
+   * triggered it).
+   */
+  limitNotifications: jsonb('limit_notifications')
+    .$type<Record<string, number>>()
+    .notNull()
+    .default({}),
 })
 
 export const customTools = pgTable(
@@ -1153,26 +1161,61 @@ export const workflowQueries = pgTable(
     userIdIdx: index('workflow_queries_user_id_idx').on(table.userId),
   })
 )
+/** Per-stage PII redaction policy stored on a {@link PiiRedactionRule}. */
+export interface PiiStagePolicy {
+  enabled: boolean
+  /** Presidio entity types to mask. Empty (or disabled) = redact nothing. */
+  entityTypes: string[]
+  /** Language whose Presidio recognizers apply (e.g. 'en', 'es'); defaults to English. */
+  language?: string
+}
+
 /**
  * A single PII redaction rule. Lives in the org-level
  * {@link DataRetentionSettings.piiRedaction} rules list. Each rule targets one
  * scope — all workspaces (`workspaceId: null`) or a single workspace — and
  * `workspaceId` is unique across rules. Resolution is most-specific-wins: a
  * workspace's own rule overrides the all-workspaces rule (never unioned).
+ *
+ * New rules carry per-stage {@link stages} (input / blockOutputs / logs); legacy
+ * rows carry only the flat `entityTypes`/`language`, resolved as a logs-only
+ * rule. At least one of the two is present.
  */
 export interface PiiRedactionRule {
   id: string
   name?: string
-  /** Presidio entity types to mask. Empty = redact nothing for this scope. */
-  entityTypes: string[]
   /** `null` = all workspaces; otherwise the single targeted workspace. */
   workspaceId: string | null
+  /** Per-stage policy (input redaction, block-output redaction, log redaction). */
+  stages?: {
+    input: PiiStagePolicy
+    blockOutputs: PiiStagePolicy
+    logs: PiiStagePolicy
+  }
+  /** Legacy flat policy (pre-stages). Presidio entity types masked at log persist. */
+  entityTypes?: string[]
+  /** Legacy flat language (pre-stages). */
+  language?: string
+}
+
+/**
+ * A per-workspace override of the org-level retention hours. Each field is
+ * tri-state: absent = inherit the org value; a number = that workspace's
+ * retention in hours; `null` = forever (never delete). `workspaceId` is unique
+ * across overrides.
+ */
+export interface RetentionOverride {
+  workspaceId: string
+  logRetentionHours?: number | null
+  softDeleteRetentionHours?: number | null
+  taskCleanupHours?: number | null
 }
 
 /**
  * Org-level data retention + governance settings. Retention-hours fall back to
  * plan defaults when unset. `piiRedaction.rules` are org-scoped; each rule
- * selects which workspaces it applies to.
+ * selects which workspaces it applies to. `retentionOverrides` lets individual
+ * workspaces override the org retention hours (enterprise only).
  */
 export interface DataRetentionSettings {
   logRetentionHours?: number | null
@@ -1182,6 +1225,8 @@ export interface DataRetentionSettings {
   piiRedaction?: {
     rules?: PiiRedactionRule[]
   } | null
+  /** Per-workspace overrides of the retention hours above (enterprise only). */
+  retentionOverrides?: RetentionOverride[] | null
 }
 
 export const organization = pgTable('organization', {
@@ -1214,6 +1259,15 @@ export const organization = pgTable('organization', {
    * changes; personal storage writes update `user_stats.storageUsedBytes`.
    */
   storageUsedBytes: bigint('storage_used_bytes', { mode: 'number' }).notNull().default(0),
+  /**
+   * Highest usage-limit threshold already emailed per category for this org
+   * (e.g. `{ seats: 80, storage: 100 }`). Mirrors `user_stats.limitNotifications`
+   * for org-scoped (pooled) limits. Re-arms when usage drops below the re-arm band.
+   */
+  limitNotifications: jsonb('limit_notifications')
+    .$type<Record<string, number>>()
+    .notNull()
+    .default({}),
   departedMemberUsage: decimal('departed_member_usage').notNull().default('0'),
   /**
    * Organization credit balance tracker.
@@ -1367,6 +1421,7 @@ export const workspace = pgTable(
       onDelete: 'set null',
     }),
     workspaceMode: workspaceModeEnum('workspace_mode').notNull().default('grandfathered_shared'),
+    isPersonal: boolean('is_personal').notNull().default(false),
     billedAccountUserId: text('billed_account_user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'no action' }),
@@ -1375,6 +1430,10 @@ export const workspace = pgTable(
     inboxAddress: text('inbox_address'),
     inboxProviderId: text('inbox_provider_id'),
     archivedAt: timestamp('archived_at'),
+    forkedFromWorkspaceId: text('forked_from_workspace_id').references(
+      (): AnyPgColumn => workspace.id,
+      { onDelete: 'set null' }
+    ),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -1382,6 +1441,240 @@ export const workspace = pgTable(
     ownerIdIdx: index('workspace_owner_id_idx').on(table.ownerId),
     organizationIdIdx: index('workspace_organization_id_idx').on(table.organizationId),
     workspaceModeIdx: index('workspace_mode_idx').on(table.workspaceMode),
+    forkedFromWorkspaceIdx: index('workspace_forked_from_workspace_id_idx').on(
+      table.forkedFromWorkspaceId
+    ),
+  })
+)
+
+export const workspaceForkResourceTypeEnum = pgEnum('workspace_fork_resource_type', [
+  'workflow',
+  'oauth_credential',
+  'service_account_credential',
+  'env_var',
+  'table',
+  'knowledge_base',
+  'knowledge_document',
+  'file',
+  'mcp_server',
+  /** Workflow-publishing MCP server identity (fork shell copy), for attachment sync. */
+  'workflow_mcp_server',
+  'custom_tool',
+  'skill',
+])
+
+export const workspaceForkResourceMap = pgTable(
+  'workspace_fork_resource_map',
+  {
+    id: text('id').primaryKey(),
+    childWorkspaceId: text('child_workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    resourceType: workspaceForkResourceTypeEnum('resource_type').notNull(),
+    parentResourceId: text('parent_resource_id').notNull(),
+    childResourceId: text('child_resource_id'),
+    // SET NULL (not CASCADE): deleting the creating user must not delete the fork's
+    // identity mappings, which the edge depends on for every future promote.
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    childWorkspaceIdx: index('workspace_fork_resource_map_child_ws_idx').on(table.childWorkspaceId),
+    childWorkspaceTypeIdx: index('workspace_fork_resource_map_child_ws_type_idx').on(
+      table.childWorkspaceId,
+      table.resourceType
+    ),
+    childTypeParentUnique: uniqueIndex('workspace_fork_resource_map_child_type_parent_unique').on(
+      table.childWorkspaceId,
+      table.resourceType,
+      table.parentResourceId
+    ),
+  })
+)
+
+/**
+ * Stable 1:1 block-identity map between a fork (child) and its parent, per edge. Seeded at
+ * fork creation (parent block -> derived child block) and reconciled on every promote.
+ * Promote looks a source block up here to reuse its counterpart's EXISTING id instead of
+ * re-deriving: without it, pushing a fork's workflow over the parent would re-key the
+ * parent's blocks and change their webhook URLs (the path falls back to the block id).
+ *
+ * Each pair records BOTH workflow ids so a lookup can be scoped to the workflow it belongs
+ * to: a target workflow that was archived and re-created gets a fresh id (the pair no longer
+ * matches), which avoids reusing an archived workflow's block id and colliding on the global
+ * `workflow_blocks` primary key. Block ids are plain text (no FK to `workflow_blocks`, which
+ * is rewritten on every deploy); only the edge (`child_workspace_id`) cascades. A parent
+ * block can map to different children across sibling forks, so uniqueness is per (edge,
+ * parent) and per (edge, child).
+ */
+export const workspaceForkBlockMap = pgTable(
+  'workspace_fork_block_map',
+  {
+    id: text('id').primaryKey(),
+    childWorkspaceId: text('child_workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    parentWorkflowId: text('parent_workflow_id').notNull(),
+    parentBlockId: text('parent_block_id').notNull(),
+    childWorkflowId: text('child_workflow_id').notNull(),
+    childBlockId: text('child_block_id').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // Pull resolves parent source block -> child target; one child per parent block per edge.
+    childWsParentBlockUnique: uniqueIndex('workspace_fork_block_map_child_ws_parent_unique').on(
+      table.childWorkspaceId,
+      table.parentBlockId
+    ),
+    // Push resolves child source block -> parent target; one parent per child block per edge.
+    childWsChildBlockUnique: uniqueIndex('workspace_fork_block_map_child_ws_child_unique').on(
+      table.childWorkspaceId,
+      table.childBlockId
+    ),
+    // Reconcile deletes a source workflow's pairs by its (stable) workflow id before
+    // re-inserting the live ones, so index both workflow sides for that sweep.
+    childWsParentWorkflowIdx: index('workspace_fork_block_map_child_ws_parent_wf_idx').on(
+      table.childWorkspaceId,
+      table.parentWorkflowId
+    ),
+    childWsChildWorkflowIdx: index('workspace_fork_block_map_child_ws_child_wf_idx').on(
+      table.childWorkspaceId,
+      table.childWorkflowId
+    ),
+  })
+)
+
+/**
+ * The user's stored dependent-field re-picks for an edge: a (target workflow, target block,
+ * subblock) -> selected value mapping (a Gmail label, a KB document, a sheet tab). The sync
+ * modal reads and writes this, and every promote applies it verbatim - it is the single
+ * source of truth for dependent values, replacing the old implicit "preserve the target's
+ * value if the credential is unchanged" path. Block ids are plain text (no FK to
+ * `workflow_blocks`, which is rewritten on every deploy); only the edge (`child_workspace_id`)
+ * cascades. The target workflow id encodes direction (push -> parent workflow, pull -> child
+ * workflow), so no separate direction column is needed.
+ */
+export const workspaceForkDependentValue = pgTable(
+  'workspace_fork_dependent_value',
+  {
+    id: text('id').primaryKey(),
+    childWorkspaceId: text('child_workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    targetWorkflowId: text('target_workflow_id').notNull(),
+    targetBlockId: text('target_block_id').notNull(),
+    subBlockKey: text('sub_block_key').notNull(),
+    value: text('value').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // Reconcile replaces a workflow's stored values by its id, so index that sweep.
+    childWsWorkflowIdx: index('workspace_fork_dependent_value_child_ws_wf_idx').on(
+      table.childWorkspaceId,
+      table.targetWorkflowId
+    ),
+    // One stored value per (edge, target workflow, target block, subblock).
+    childWsFieldUnique: uniqueIndex('workspace_fork_dependent_value_field_unique').on(
+      table.childWorkspaceId,
+      table.targetWorkflowId,
+      table.targetBlockId,
+      table.subBlockKey
+    ),
+  })
+)
+
+export const workspaceForkPromoteDirectionEnum = pgEnum('workspace_fork_promote_direction', [
+  'push',
+  'pull',
+])
+
+export const workspaceForkPromoteRun = pgTable(
+  'workspace_fork_promote_run',
+  {
+    id: text('id').primaryKey(),
+    childWorkspaceId: text('child_workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    sourceWorkspaceId: text('source_workspace_id').notNull(),
+    targetWorkspaceId: text('target_workspace_id').notNull(),
+    direction: workspaceForkPromoteDirectionEnum('direction').notNull(),
+    snapshot: jsonb('snapshot').notNull(),
+    // SET NULL (not CASCADE): deleting the creating user must not delete a pending
+    // undo point for a target workspace.
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    // One undo point per (edge, target) so a push (target=parent) and a pull
+    // (target=child) on the same edge keep independent undo points.
+    childWorkspaceTargetUnique: uniqueIndex('workspace_fork_promote_run_child_ws_target_unique').on(
+      table.childWorkspaceId,
+      table.targetWorkspaceId
+    ),
+    targetWorkspaceIdx: index('workspace_fork_promote_run_target_ws_idx').on(
+      table.targetWorkspaceId
+    ),
+  })
+)
+
+export const backgroundWorkKindEnum = pgEnum('background_work_kind', [
+  'deployment_side_effects',
+  'fork_content_copy',
+  'fork_sync',
+  'fork_rollback',
+])
+
+export const backgroundWorkStatusValueEnum = pgEnum('background_work_status_value', [
+  'pending',
+  'processing',
+  'completed',
+  'completed_with_warnings',
+  'failed',
+])
+
+/**
+ * Durable status for asynchronous background work (post-sync/rollback deployment
+ * side-effects and fork content copy), so the canvas can show a "work in progress"
+ * banner that survives a reload. A row scoped to a single workflow sets `workflowId`;
+ * workspace-spanning work (fork content copy) leaves it null.
+ */
+export const backgroundWorkStatus = pgTable(
+  'background_work_status',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'cascade' }),
+    kind: backgroundWorkKindEnum('kind').notNull(),
+    status: backgroundWorkStatusValueEnum('status').notNull(),
+    message: text('message'),
+    error: text('error'),
+    metadata: jsonb('metadata'),
+    startedAt: timestamp('started_at').notNull().defaultNow(),
+    completedAt: timestamp('completed_at'),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceStatusIdx: index('background_work_status_workspace_status_idx').on(
+      table.workspaceId,
+      table.status
+    ),
+    workflowStatusIdx: index('background_work_status_workflow_status_idx').on(
+      table.workflowId,
+      table.status
+    ),
+    // Expression indexes for listSurfacedBackgroundWork's metadata legs: `->>` equality can't
+    // use a GIN index, and one unindexable leg in its `or()` forces a full-table scan.
+    metaChildWorkspaceIdx: index('background_work_status_meta_child_ws_idx').on(
+      sql`(${table.metadata} ->> 'childWorkspaceId')`
+    ),
+    metaOtherWorkspaceIdx: index('background_work_status_meta_other_ws_idx').on(
+      sql`(${table.metadata} ->> 'otherWorkspaceId')`
+    ),
   })
 )
 
@@ -2410,6 +2703,174 @@ export const copilotFeedback = pgTable(
   })
 )
 
+export const localCopilotPatchStatusEnum = pgEnum('local_copilot_patch_status', [
+  'pending',
+  'applied',
+  'rejected',
+  'expired',
+])
+
+export const localCopilotAuditStatusEnum = pgEnum('local_copilot_audit_status', [
+  'success',
+  'failure',
+  'rejected',
+])
+
+export const localCopilotConversations = pgTable(
+  'local_copilot_conversations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'cascade' }),
+    title: text('title'),
+    model: text('model').notNull(),
+    provider: text('provider').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index('local_copilot_conversations_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('local_copilot_conversations_workspace_id_idx').on(table.workspaceId),
+    workflowIdIdx: index('local_copilot_conversations_workflow_id_idx').on(table.workflowId),
+    userWorkflowIdx: index('local_copilot_conversations_user_workflow_idx').on(
+      table.userId,
+      table.workflowId
+    ),
+    updatedAtIdx: index('local_copilot_conversations_updated_at_idx').on(table.updatedAt),
+  })
+)
+
+export const localCopilotMessages = pgTable(
+  'local_copilot_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => localCopilotConversations.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(),
+    content: jsonb('content').notNull(),
+    seq: integer('seq').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    conversationSeqIdx: index('local_copilot_messages_conversation_seq_idx').on(
+      table.conversationId,
+      table.seq
+    ),
+  })
+)
+
+export const localCopilotToolCalls = pgTable(
+  'local_copilot_tool_calls',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => localCopilotConversations.id, { onDelete: 'cascade' }),
+    messageId: uuid('message_id').references(() => localCopilotMessages.id, {
+      onDelete: 'set null',
+    }),
+    toolName: text('tool_name').notNull(),
+    toolCallId: text('tool_call_id').notNull(),
+    arguments: jsonb('arguments').notNull().default({}),
+    result: jsonb('result'),
+    status: text('status').notNull().default('completed'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    completedAt: timestamp('completed_at'),
+  },
+  (table) => ({
+    conversationIdIdx: index('local_copilot_tool_calls_conversation_id_idx').on(
+      table.conversationId
+    ),
+    toolCallIdIdx: index('local_copilot_tool_calls_tool_call_id_idx').on(table.toolCallId),
+  })
+)
+
+export const localCopilotPatches = pgTable(
+  'local_copilot_patches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => localCopilotConversations.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    summary: text('summary').notNull(),
+    patch: jsonb('patch').notNull(),
+    status: localCopilotPatchStatusEnum('status').notNull().default('pending'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at'),
+  },
+  (table) => ({
+    conversationIdIdx: index('local_copilot_patches_conversation_id_idx').on(table.conversationId),
+    workflowIdIdx: index('local_copilot_patches_workflow_id_idx').on(table.workflowId),
+    statusIdx: index('local_copilot_patches_status_idx').on(table.status),
+  })
+)
+
+export const localCopilotAuditLogs = pgTable(
+  'local_copilot_audit_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id').references(() => workflow.id, { onDelete: 'set null' }),
+    conversationId: uuid('conversation_id').references(() => localCopilotConversations.id, {
+      onDelete: 'set null',
+    }),
+    patchId: uuid('patch_id').references(() => localCopilotPatches.id, { onDelete: 'set null' }),
+    action: text('action').notNull(),
+    summary: text('summary'),
+    status: localCopilotAuditStatusEnum('status').notNull().default('success'),
+    metadata: jsonb('metadata').notNull().default({}),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index('local_copilot_audit_logs_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('local_copilot_audit_logs_workspace_id_idx').on(table.workspaceId),
+    workflowIdIdx: index('local_copilot_audit_logs_workflow_id_idx').on(table.workflowId),
+    createdAtIdx: index('local_copilot_audit_logs_created_at_idx').on(table.createdAt),
+  })
+)
+
+/**
+ * Per-user Arena Copilot allowlist. Access is denied unless a row exists for the
+ * user with `hasAccess = true`. Managed via SQL only (no admin UI).
+ */
+export const localCopilotUserAccess = pgTable(
+  'local_copilot_user_access',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    hasAccess: boolean('has_access').notNull().default(false),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdUnique: uniqueIndex('local_copilot_user_access_user_id_uidx').on(table.userId),
+    emailIdx: index('local_copilot_user_access_email_idx').on(table.email),
+  })
+)
+
+export type LocalCopilotPatchStatus = (typeof localCopilotPatchStatusEnum.enumValues)[number]
+export type LocalCopilotAuditStatus = (typeof localCopilotAuditStatusEnum.enumValues)[number]
+
 // Tracks immutable deployment versions for each workflow
 export const workflowDeploymentVersion = pgTable(
   'workflow_deployment_version',
@@ -2785,6 +3246,7 @@ export const workflowStatsMonthly = pgTable(
   'workflow_stats_monthly',
   {
     id: text('id').primaryKey(),
+
     workflowId: text('workflow_id_ref'),
     workflowName: text('workflow_name'),
     workflowAuthorId: text('workflow_author_id'),
@@ -2805,154 +3267,56 @@ export const workflowStatsMonthly = pgTable(
   })
 )
 
-// Usage logging for tracking individual billable operations
-
 /**
- * A2A Task State Enum (v0.2.6)
+ * Custom Blocks - a deployed workflow published as a reusable, org-wide block.
+ * Scoped to an organization: available across every workspace in the org. Bound to
+ * a source `workflowId` and always executes that workflow's latest deployment. Start
+ * input fields are derived live (not snapshotted). `type` is the stable lowercase
+ * block-type slug (`custom_block_<shortId>`) that flows into the block registry
+ * overlay, the palette, and permission-group `allowedIntegrations` access control.
  */
-export const a2aTaskStatusEnum = pgEnum('a2a_task_status', [
-  'submitted',
-  'working',
-  'input-required',
-  'completed',
-  'failed',
-  'canceled',
-  'rejected',
-  'auth-required',
-  'unknown',
-])
-
-/**
- * A2A Agents - Workflows exposed as A2A-compatible agents
- * These agents can be called by external A2A clients
- */
-export const a2aAgent = pgTable(
-  'a2a_agent',
+export const customBlock = pgTable(
+  'custom_block',
   {
     id: text('id').primaryKey(),
-    workspaceId: text('workspace_id')
+    organizationId: text('organization_id')
       .notNull()
-      .references(() => workspace.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     workflowId: text('workflow_id')
       .notNull()
       .references(() => workflow.id, { onDelete: 'cascade' }),
-    createdBy: text('created_by')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-
-    /** Agent name (used in Agent Card) */
+    type: text('type').notNull(),
     name: text('name').notNull(),
-    /** Agent description */
-    description: text('description'),
-    /** Agent version */
-    version: text('version').notNull().default('1.0.0'),
-
-    /** Agent capabilities (streaming, pushNotifications, etc.) */
-    capabilities: jsonb('capabilities').notNull().default('{}'),
-    /** Agent skills derived from workflow */
-    skills: jsonb('skills').notNull().default('[]'),
-    /** Authentication configuration */
-    authentication: jsonb('authentication').notNull().default('{}'),
-    /** Agent card signatures for verification (v0.3) */
-    signatures: jsonb('signatures').default('[]'),
-
-    /** Whether the agent is published and discoverable */
-    isPublished: boolean('is_published').notNull().default(false),
-    /** When the agent was published */
-    publishedAt: timestamp('published_at'),
-
-    archivedAt: timestamp('archived_at'),
+    description: text('description').notNull().default(''),
+    /** Uploaded icon image URL (workspace storage), or null for the default icon. */
+    iconUrl: text('icon_url'),
+    /**
+     * Per-input placeholder hints keyed by the source Start field's stable `id`:
+     * `Array<{ id, placeholder? }>`. Only the placeholder is authored — the input
+     * field set and its name/type/description are always derived live from the
+     * deployed Start (so they can never go stale). Absent/empty → no placeholder
+     * overrides; every deployed Start input is still exposed.
+     */
+    inputs: json('inputs').$type<Array<{ id: string; placeholder?: string }>>(),
+    /**
+     * Curated outputs exposed to consumers: `Array<{ blockId, path, name }>`. Each
+     * maps a child-workflow block output (blockId + dot-path) to a friendly output
+     * name on the block. Empty/absent → expose the child's whole `result`. Internal
+     * plumbing (child workflow id, trace spans) is never exposed.
+     */
+    outputs: json('outputs').$type<Array<{ blockId: string; path: string; name: string }>>(),
+    enabled: boolean('enabled').notNull().default(true),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (table) => ({
-    workflowIdIdx: index('a2a_agent_workflow_id_idx').on(table.workflowId),
-    createdByIdx: index('a2a_agent_created_by_idx').on(table.createdBy),
-    workspaceWorkflowUnique: uniqueIndex('a2a_agent_workspace_workflow_unique')
-      .on(table.workspaceId, table.workflowId)
-      .where(sql`${table.archivedAt} IS NULL`),
-    archivedAtIdx: index('a2a_agent_archived_at_idx').on(table.archivedAt),
-    workspaceArchivedAtPartialIdx: index('a2a_agent_workspace_archived_partial_idx')
-      .on(table.workspaceId, table.archivedAt)
-      .where(sql`${table.archivedAt} IS NOT NULL`),
-  })
-)
-
-/**
- * A2A Tasks - Tracks task state for A2A agent interactions (v0.3)
- * Each task represents a conversation/interaction with an agent
- */
-export const a2aTask = pgTable(
-  'a2a_task',
-  {
-    id: text('id').primaryKey(),
-    agentId: text('agent_id')
-      .notNull()
-      .references(() => a2aAgent.id, { onDelete: 'cascade' }),
-
-    /** Context ID for multi-turn conversations (maps to API contextId) */
-    sessionId: text('session_id'),
-
-    /** Task state */
-    status: a2aTaskStatusEnum('status').notNull().default('submitted'),
-
-    /** Message history (maps to API history, array of TaskMessage) */
-    messages: jsonb('messages').notNull().default('[]'),
-
-    /** Structured output artifacts */
-    artifacts: jsonb('artifacts').default('[]'),
-
-    /** Link to workflow execution */
-    executionId: text('execution_id'),
-
-    /** Additional metadata */
-    metadata: jsonb('metadata').default('{}'),
-
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    completedAt: timestamp('completed_at'),
-  },
-  (table) => ({
-    agentIdIdx: index('a2a_task_agent_id_idx').on(table.agentId),
-    sessionIdIdx: index('a2a_task_session_id_idx').on(table.sessionId),
-    statusIdx: index('a2a_task_status_idx').on(table.status),
-    executionIdIdx: index('a2a_task_execution_id_idx').on(table.executionId),
-    createdAtIdx: index('a2a_task_created_at_idx').on(table.createdAt),
-  })
-)
-
-/**
- * A2A Push Notification Config - Webhook configuration for task updates
- * Stores push notification webhooks for async task updates
- */
-export const a2aPushNotificationConfig = pgTable(
-  'a2a_push_notification_config',
-  {
-    id: text('id').primaryKey(),
-    taskId: text('task_id')
-      .notNull()
-      .references(() => a2aTask.id, { onDelete: 'cascade' }),
-
-    /** Webhook URL for notifications */
-    url: text('url').notNull(),
-
-    /** Optional token for client-side validation */
-    token: text('token'),
-
-    /** Authentication schemes (e.g., ['bearer', 'apiKey']) */
-    authSchemes: jsonb('auth_schemes').default('[]'),
-
-    /** Authentication credentials hint */
-    authCredentials: text('auth_credentials'),
-
-    /** Whether this config is active */
-    isActive: boolean('is_active').notNull().default(true),
-
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    taskIdUnique: uniqueIndex('a2a_push_notification_config_task_unique').on(table.taskId),
+    organizationIdIdx: index('custom_block_organization_id_idx').on(table.organizationId),
+    workflowIdIdx: index('custom_block_workflow_id_idx').on(table.workflowId),
+    orgTypeUnique: uniqueIndex('custom_block_organization_type_unique').on(
+      table.organizationId,
+      table.type
+    ),
   })
 )
 
@@ -3345,109 +3709,15 @@ export const pendingCredentialDraft = pgTable(
   })
 )
 
-export const credentialSet = pgTable(
-  'credential_set',
-  {
-    id: text('id').primaryKey(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
-    description: text('description'),
-    providerId: text('provider_id').notNull(),
-    createdBy: text('created_by')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    createdByIdx: index('credential_set_created_by_idx').on(table.createdBy),
-    providerIdIdx: index('credential_set_provider_id_idx').on(table.providerId),
-    orgNameUnique: uniqueIndex('credential_set_org_name_unique').on(
-      table.organizationId,
-      table.name
-    ),
-  })
-)
-
-export const credentialSetMemberStatusEnum = pgEnum('credential_set_member_status', [
-  'active',
-  'pending',
-  'revoked',
-])
-
-export const credentialSetMember = pgTable(
-  'credential_set_member',
-  {
-    id: text('id').primaryKey(),
-    credentialSetId: text('credential_set_id')
-      .notNull()
-      .references(() => credentialSet.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    status: credentialSetMemberStatusEnum('status').notNull().default('pending'),
-    joinedAt: timestamp('joined_at'),
-    invitedBy: text('invited_by').references(() => user.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    userIdIdx: index('credential_set_member_user_id_idx').on(table.userId),
-    statusIdx: index('credential_set_member_status_idx').on(table.status),
-    uniqueMembership: uniqueIndex('credential_set_member_unique').on(
-      table.credentialSetId,
-      table.userId
-    ),
-  })
-)
-
-export const credentialSetInvitationStatusEnum = pgEnum('credential_set_invitation_status', [
-  'pending',
-  'accepted',
-  'expired',
-  'cancelled',
-])
-
-export const credentialSetInvitation = pgTable(
-  'credential_set_invitation',
-  {
-    id: text('id').primaryKey(),
-    credentialSetId: text('credential_set_id')
-      .notNull()
-      .references(() => credentialSet.id, { onDelete: 'cascade' }),
-    email: text('email'),
-    token: text('token').notNull().unique(),
-    invitedBy: text('invited_by')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    status: credentialSetInvitationStatusEnum('status').notNull().default('pending'),
-    expiresAt: timestamp('expires_at').notNull(),
-    acceptedAt: timestamp('accepted_at'),
-    acceptedByUserId: text('accepted_by_user_id').references(() => user.id, {
-      onDelete: 'set null',
-    }),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    credentialSetIdIdx: index('credential_set_invitation_set_id_idx').on(table.credentialSetId),
-    tokenIdx: index('credential_set_invitation_token_idx').on(table.token),
-    statusIdx: index('credential_set_invitation_status_idx').on(table.status),
-    expiresAtIdx: index('credential_set_invitation_expires_at_idx').on(table.expiresAt),
-  })
-)
-
 /**
  * A named set of access-control restrictions (`config`) governing users within
  * an organization.
  *
  * Scope invariant: the organization's single default group (`isDefault`) is
- * org-wide (`appliesToAllWorkspaces = true`) and governs everyone not covered by
- * another group, including external workspace members. Every non-default group
- * targets specific workspaces (`appliesToAllWorkspaces = false` with rows in
- * `permission_group_workspace`) — the all-workspaces scope is reserved for the
- * default group. Enforced by the API contracts/routes, not a DB constraint.
+ * org-wide and governs everyone not covered by another group. Every non-default
+ * group targets specific workspaces (rows in `permission_group_workspace`), and a
+ * non-default group with no rows governs nothing. Being org-wide is definitionally
+ * `isDefault` — there is no separate flag. Enforced by the API contracts/routes.
  *
  * Member invariant: a non-default group with no `permission_group_member` rows
  * governs every member of its workspaces (including external members); adding
@@ -3470,7 +3740,6 @@ export const permissionGroup = pgTable(
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     isDefault: boolean('is_default').notNull().default(false),
-    appliesToAllWorkspaces: boolean('applies_to_all_workspaces').notNull().default(true),
   },
   (table) => ({
     createdByIdx: index('permission_group_created_by_idx').on(table.createdBy),
@@ -3485,9 +3754,9 @@ export const permissionGroup = pgTable(
 )
 
 /**
- * Workspaces a `permission_group` targets when `applies_to_all_workspaces` is
- * false. Rows are absent for organization-wide groups. A group with zero rows
- * while `applies_to_all_workspaces = false` governs no workspace.
+ * Workspaces a non-default `permission_group` targets. Rows are absent for the
+ * organization-wide default group; a non-default group with zero rows governs no
+ * workspace.
  */
 export const permissionGroupWorkspace = pgTable(
   'permission_group_workspace',
@@ -3734,9 +4003,9 @@ export const userTableRows = pgTable(
     data: jsonb('data').notNull(),
     position: integer('position').notNull().default(0),
     /**
-     * Fractional order key (base-62 string). Authoritative row order when the
-     * `TABLES_FRACTIONAL_ORDERING` flag is on; nullable during the backfill
-     * window. Ordered with `id` as a deterministic tiebreaker.
+     * Fractional order key (base-62 string) — the authoritative row order.
+     * Nullable during the backfill window. Ordered with `id` as a deterministic
+     * tiebreaker.
      *
      * Stored with `COLLATE "C"` (migration 0228) so Postgres compares it bytewise,
      * matching the fractional-indexing library's ASCII ordering. drizzle can't
@@ -4011,8 +4280,13 @@ export const mothershipInboxWebhook = pgTable('mothership_inbox_webhook', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 })
 
-// ─── Sim Academy ─────────────────────────────────────────────────────────────
-
+/**
+ * The application code that read/wrote this table (Academy) was removed in
+ * the same PR that would have dropped it here — deferred to a follow-up PR
+ * once that removal has actually shipped, per the expand/contract migration
+ * safety check (`check:migrations`), since a same-deploy drop would break
+ * any pod still running the old code during a rolling deploy.
+ */
 export const academyCertStatusEnum = pgEnum('academy_cert_status', ['active', 'revoked', 'expired'])
 
 /** Partner certification records issued on course completion */

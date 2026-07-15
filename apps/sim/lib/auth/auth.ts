@@ -78,6 +78,7 @@ import {
 import { PlatformEvents } from '@/lib/core/telemetry'
 import {
   getBaseUrl,
+  getInternalApiBaseUrl,
   getLoginRedirectUrl,
   isLocalhostUrl,
   parseOriginList,
@@ -88,8 +89,15 @@ import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import { validateSignupEmailMx } from '@/lib/messaging/email/validation.server'
 import { scheduleLifecycleEmail } from '@/lib/messaging/lifecycle'
+import {
+  deriveMicrosoftEmailVerified,
+  getMicrosoftOAuthEndpoints,
+  getMicrosoftOAuthTenantId,
+  getMicrosoftRefreshTokenExpiry,
+  isMicrosoftProvider,
+} from '@/lib/oauth/microsoft'
+import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
 import { captureServerEvent, getPostHogClient } from '@/lib/posthog/server'
-import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 import { disableUserResources } from '@/lib/workflows/lifecycle'
 import { SSO_TRUSTED_PROVIDERS } from '@/ee/sso/constants'
 import { createAnonymousSession, ensureAnonymousUserExists } from './anonymous'
@@ -97,13 +105,7 @@ import { getRequestedSignInProviderId, isSignInProviderAllowed } from './constan
 
 const logger = createLogger('Auth')
 
-import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
-import {
-  deriveMicrosoftEmailVerified,
-  getMicrosoftRefreshTokenExpiry,
-  isMicrosoftProvider,
-} from '@/lib/oauth/microsoft'
-import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
+const microsoftOAuthEndpoints = getMicrosoftOAuthEndpoints()
 
 /**
  * Extracts user info from a Microsoft ID token JWT instead of calling Graph API /me.
@@ -640,46 +642,6 @@ export const auth = betterAuth({
               .where(eq(schema.account.id, account.id))
           }
 
-          // Sync webhooks for credential sets after connecting a new credential
-          const requestId = generateId().slice(0, 8)
-          const userMemberships = await db
-            .select({
-              credentialSetId: schema.credentialSetMember.credentialSetId,
-              providerId: schema.credentialSet.providerId,
-            })
-            .from(schema.credentialSetMember)
-            .innerJoin(
-              schema.credentialSet,
-              eq(schema.credentialSetMember.credentialSetId, schema.credentialSet.id)
-            )
-            .where(
-              and(
-                eq(schema.credentialSetMember.userId, account.userId),
-                eq(schema.credentialSetMember.status, 'active')
-              )
-            )
-
-          for (const membership of userMemberships) {
-            if (membership.providerId === account.providerId) {
-              try {
-                await syncAllWebhooksForCredentialSet(membership.credentialSetId, requestId)
-                logger.info('[account.create.after] Synced webhooks after credential connect', {
-                  credentialSetId: membership.credentialSetId,
-                  providerId: account.providerId,
-                })
-              } catch (error) {
-                logger.error(
-                  '[account.create.after] Failed to sync webhooks after credential connect',
-                  {
-                    credentialSetId: membership.credentialSetId,
-                    providerId: account.providerId,
-                    error,
-                  }
-                )
-              }
-            }
-          }
-
           try {
             PlatformEvents.oauthConnected({
               userId: account.userId,
@@ -804,6 +766,7 @@ export const auth = betterAuth({
         microsoft: {
           clientId: env.MICROSOFT_CLIENT_ID,
           clientSecret: env.MICROSOFT_CLIENT_SECRET,
+          tenantId: getMicrosoftOAuthTenantId(),
           scope: ['openid', 'profile', 'email'],
         },
       }),
@@ -1628,8 +1591,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-ad',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-ad'),
           responseType: 'code',
@@ -1646,8 +1609,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-teams',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-teams'),
           responseType: 'code',
@@ -1664,8 +1627,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-excel',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-excel'),
           responseType: 'code',
@@ -1681,8 +1644,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-dataverse',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-dataverse'),
           responseType: 'code',
@@ -1698,8 +1661,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-planner',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-planner'),
           responseType: 'code',
@@ -1716,8 +1679,8 @@ export const auth = betterAuth({
           providerId: 'outlook',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('outlook'),
           responseType: 'code',
@@ -1734,8 +1697,8 @@ export const auth = betterAuth({
           providerId: 'onedrive',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('onedrive'),
           responseType: 'code',
@@ -1752,8 +1715,8 @@ export const auth = betterAuth({
           providerId: 'sharepoint',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('sharepoint'),
           responseType: 'code',
@@ -3256,6 +3219,7 @@ export const auth = betterAuth({
                 params: { allow_promotion_codes: true },
               }),
               onSubscriptionComplete: async ({
+                event,
                 stripeSubscription,
                 subscription,
               }: {
@@ -3309,7 +3273,7 @@ export const auth = betterAuth({
                   throw orgError
                 }
 
-                await handleSubscriptionCreated(resolvedSubscription)
+                await handleSubscriptionCreated(resolvedSubscription, event.id)
 
                 await syncSubscriptionUsageLimits(resolvedSubscription)
 

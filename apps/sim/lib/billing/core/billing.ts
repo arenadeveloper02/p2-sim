@@ -29,6 +29,11 @@ import { createLogger } from '@sim/logger'
 
 const logger = createLogger('Billing')
 
+interface GetSimplifiedBillingSummaryOptions {
+  /** Personal (non-org-linked) workspace: use `user_stats` limits instead of the org pool. */
+  personalWorkspace?: boolean
+}
+
 interface GetOrganizationSubscriptionOptions {
   onError?: 'return-null' | 'throw'
   /** Read-routing client (primary or replica); defaults to the primary. */
@@ -394,7 +399,8 @@ export async function calculateSubscriptionOverage(sub: {
 export async function getSimplifiedBillingSummary(
   userId: string,
   organizationId?: string,
-  executor: DbClient = db
+  executor: DbClient = db,
+  options?: GetSimplifiedBillingSummaryOptions
 ): Promise<{
   type: 'individual' | 'organization'
   plan: string
@@ -437,12 +443,18 @@ export async function getSimplifiedBillingSummary(
   }
 }> {
   try {
+    const usePersonalAccount = Boolean(options?.personalWorkspace && !organizationId)
+
     // Get subscription and usage data upfront
     const [subscription, usageData] = await Promise.all([
       organizationId
         ? getOrganizationSubscription(organizationId, { executor })
         : getHighestPrioritySubscription(userId, { executor }),
-      getUserUsageData(userId, executor),
+      getUserUsageData(
+        userId,
+        executor,
+        usePersonalAccount ? { personalAccount: true } : undefined
+      ),
     ])
 
     const plan = subscription?.plan || 'free'
@@ -606,7 +618,7 @@ export async function getSimplifiedBillingSummary(
     const currentUsage = usageData.currentUsage
     let totalCopilotCost = copilotCost
     let totalLastPeriodCopilotCost = lastPeriodCopilotCost
-    if (orgScoped && subscription?.referenceId) {
+    if (orgScoped && subscription?.referenceId && !usePersonalAccount) {
       const pooled = await aggregateOrgMemberStats(subscription.referenceId, executor)
       totalCopilotCost = pooled.currentPeriodCopilotCost
       totalLastPeriodCopilotCost = pooled.lastPeriodCopilotCost
@@ -621,7 +633,7 @@ export async function getSimplifiedBillingSummary(
         : null
     if (copilotBillingPeriod) {
       const copilotEntity =
-        orgScoped && subscription?.referenceId
+        orgScoped && subscription?.referenceId && !usePersonalAccount
           ? ({ type: 'organization', id: subscription.referenceId } as const)
           : ({ type: 'user', id: userId } as const)
       totalCopilotCost += await getBillingPeriodUsageCost(

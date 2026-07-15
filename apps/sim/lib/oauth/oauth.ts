@@ -54,6 +54,7 @@ import {
   ZoomIcon,
 } from '@/components/icons'
 import { env } from '@/lib/core/config/env'
+import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import type { OAuthProviderConfig } from './types'
 
 const logger = createLogger('OAuth')
@@ -716,7 +717,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'mpim:write',
           'chat:write',
           'chat:write.public',
-          'assistant:write',
+          // TODO: Add 'assistant:write' once Slack app review is approved
           'im:write',
           'im:read',
           'users:read',
@@ -1363,7 +1364,7 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         env.MICROSOFT_CLIENT_SECRET
       )
       return {
-        tokenEndpoint: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        tokenEndpoint: getMicrosoftOAuthEndpoints().tokenUrl,
         clientId,
         clientSecret,
         useBasicAuth: false,

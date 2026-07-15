@@ -17,7 +17,10 @@ import {
   readResponseToBufferWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-import { reconcileImageProviderAndModel, normalizeImageModelId } from '@/lib/image-generation/block-model-config'
+import {
+  normalizeImageModelId,
+  reconcileImageProviderAndModel,
+} from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
@@ -248,7 +251,9 @@ export async function runImageToolGeneration(
     throw new Error('Prompt must be between 3 and 4000 characters')
   }
 
-  logger.info(`[${requestId}] Generating image with ${provider}, model: ${resolvedBody.model || 'default'}`)
+  logger.info(
+    `[${requestId}] Generating image with ${provider}, model: ${resolvedBody.model || 'default'}`
+  )
 
   const apiKey = resolveImageProviderApiKey(provider, resolvedBody.apiKey)
   let imageResult: GeneratedImageResult
@@ -263,7 +268,12 @@ export async function runImageToolGeneration(
     throw new Error(`Unknown provider: ${provider}`)
   }
 
-  const storedImage = await storeGeneratedImage(imageResult, resolvedBody, options.userId, requestId)
+  const storedImage = await storeGeneratedImage(
+    imageResult,
+    resolvedBody,
+    options.userId,
+    requestId
+  )
 
   logger.info(`[${requestId}] Image generation completed successfully`, {
     provider,

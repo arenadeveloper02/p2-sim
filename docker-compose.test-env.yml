@@ -9,10 +9,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 8G
+          memory: 16G
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
+      - NEXT_TELEMETRY_DISABLED=1
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
@@ -30,6 +31,7 @@ services:
       - OPENAI_API_KEY_1=${OPENAI_API_KEY_1:-}
       - OPENAI_API_KEY_2=${OPENAI_API_KEY_2:-}
       - OPENAI_API_KEY_3=${OPENAI_API_KEY_3:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_API_KEY_1=${ANTHROPIC_API_KEY_1:-}
       - ANTHROPIC_API_KEY_2=${ANTHROPIC_API_KEY_2:-}
       - ANTHROPIC_API_KEY_3=${ANTHROPIC_API_KEY_3:-}
@@ -39,10 +41,9 @@ services:
       - XAI_API_KEY_3=${XAI_API_KEY_3:-}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - REDIS_URL=${REDIS_URL:-}
-      - COPILOT_API_KEY=${COPILOT_API_KEY}
-      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL}
+      - COPILOT_API_KEY=${COPILOT_API_KEY:-}
+      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL:-}
     depends_on:
       db:
         condition: service_healthy
@@ -65,7 +66,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 6G
     environment:
       - DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}

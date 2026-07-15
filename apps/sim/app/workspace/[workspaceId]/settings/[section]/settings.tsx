@@ -4,14 +4,12 @@ import { useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
-import { cn } from '@/lib/core/utils/cn'
 import { captureEvent } from '@/lib/posthog/client'
 import { General } from '@/app/workspace/[workspaceId]/settings/components/general/general'
+import { SettingsSectionProvider } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
+import { useSettingsBeforeUnload } from '@/app/workspace/[workspaceId]/settings/hooks/use-settings-before-unload'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
-import {
-  isBillingEnabled,
-  isCredentialSetsEnabled,
-} from '@/app/workspace/[workspaceId]/settings/navigation'
+import { isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
 
 const Admin = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/admin/admin').then((m) => m.Admin)
@@ -27,11 +25,7 @@ const BYOK = dynamic(() =>
 const Copilot = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/copilot/copilot').then((m) => m.Copilot)
 )
-const CredentialSets = dynamic(() =>
-  import('@/app/workspace/[workspaceId]/settings/components/credential-sets/credential-sets').then(
-    (m) => m.CredentialSets
-  )
-)
+const Forks = dynamic(() => import('@/ee/workspace-forking/components/forks').then((m) => m.Forks))
 const Secrets = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/secrets/secrets').then((m) => m.Secrets)
 )
@@ -57,7 +51,9 @@ const RecentlyDeleted = dynamic(() =>
   ).then((m) => m.RecentlyDeleted)
 )
 const Billing = dynamic(() =>
-  import('@/app/workspace/[workspaceId]/settings/components/billing/billing').then((m) => m.Billing)
+  import('@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-page-shell').then(
+    (m) => m.BillingPageShell
+  )
 )
 const Teammates = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/teammates/teammates').then(
@@ -76,6 +72,9 @@ const WorkflowMcpServers = dynamic(() =>
 )
 const AccessControl = dynamic(() =>
   import('@/ee/access-control/components/access-control').then((m) => m.AccessControl)
+)
+const CustomBlocks = dynamic(() =>
+  import('@/ee/custom-blocks/components/custom-blocks').then((m) => m.CustomBlocks)
 )
 const AuditLogs = dynamic(() =>
   import('@/ee/audit-logs/components/audit-logs').then((m) => m.AuditLogs)
@@ -105,20 +104,19 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const { data: session, isPending: sessionLoading } = useSession()
   const posthog = usePostHog()
 
+  useSettingsBeforeUnload()
+
   const isAdminRole = session?.user?.role === 'admin'
-  // The Subscription tab was replaced by Billing; redirect legacy links there.
   const normalizedSection: SettingsSection =
     (section as string) === 'subscription' ? 'billing' : section
   const effectiveSection =
     !isBillingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
       ? 'general'
-      : normalizedSection === 'credential-sets' && !isCredentialSetsEnabled
+      : normalizedSection === 'admin' && !sessionLoading && !isAdminRole
         ? 'general'
-        : normalizedSection === 'admin' && !sessionLoading && !isAdminRole
+        : normalizedSection === 'mothership' && !sessionLoading && !isAdminRole
           ? 'general'
-          : normalizedSection === 'mothership' && !sessionLoading && !isAdminRole
-            ? 'general'
-            : normalizedSection
+          : normalizedSection
 
   useEffect(() => {
     if (sessionLoading) return
@@ -126,16 +124,11 @@ export function SettingsPage({ section }: SettingsPageProps) {
   }, [effectiveSection, sessionLoading, posthog])
 
   return (
-    <div
-      className={cn(
-        (effectiveSection === 'access-control' || effectiveSection === 'recently-deleted') &&
-          'flex h-full flex-col'
-      )}
-    >
+    <SettingsSectionProvider section={effectiveSection}>
       {effectiveSection === 'general' && <General />}
       {effectiveSection === 'secrets' && <Secrets />}
-      {effectiveSection === 'credential-sets' && <CredentialSets />}
       {effectiveSection === 'access-control' && <AccessControl />}
+      {effectiveSection === 'custom-blocks' && <CustomBlocks />}
       {effectiveSection === 'audit-logs' && <AuditLogs />}
       {effectiveSection === 'apikeys' && <ApiKeys />}
       {isBillingEnabled && effectiveSection === 'billing' && <Billing />}
@@ -148,12 +141,13 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {effectiveSection === 'byok' && <BYOK />}
       {effectiveSection === 'copilot' && <Copilot />}
       {effectiveSection === 'mcp' && <MCP />}
+      {effectiveSection === 'forks' && <Forks />}
       {effectiveSection === 'custom-tools' && <CustomTools />}
       {effectiveSection === 'workflow-mcp-servers' && <WorkflowMcpServers />}
       {effectiveSection === 'inbox' && <Inbox />}
       {effectiveSection === 'recently-deleted' && <RecentlyDeleted />}
       {effectiveSection === 'admin' && <Admin />}
       {effectiveSection === 'mothership' && <Mothership />}
-    </div>
+    </SettingsSectionProvider>
   )
 }

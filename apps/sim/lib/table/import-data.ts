@@ -9,12 +9,12 @@ import { userTableDefinitions, userTableRows } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { eq } from 'drizzle-orm'
-import { assertRowCapacity } from '@/lib/table/billing'
+import { assertRowCapacity, notifyTableRowUsage } from '@/lib/table/billing'
 import { CSV_MAX_BATCH_SIZE } from '@/lib/table/import'
 import { nKeysBetween } from '@/lib/table/order-key'
 import { acquireRowOrderLock } from '@/lib/table/rows/ordering'
 import { batchInsertRowsWithTx, replaceTableRowsWithTx } from '@/lib/table/rows/service'
-import { addTableColumnsWithTx } from '@/lib/table/service'
+import { addTableColumnsWithTx, auditTableColumnsAdded } from '@/lib/table/service'
 import type {
   ReplaceRowsResult,
   RowData,
@@ -124,9 +124,18 @@ export async function deleteAllTableRows(tableId: string): Promise<void> {
 export async function addImportColumns(
   table: TableDefinition,
   additions: { name: string; type: string }[],
-  requestId: string
+  requestId: string,
+  actingUserId?: string
 ): Promise<TableDefinition> {
-  return db.transaction((trx) => addTableColumnsWithTx(trx, table, additions, requestId))
+  const updated = await db.transaction((trx) =>
+    addTableColumnsWithTx(trx, table, additions, requestId)
+  )
+  auditTableColumnsAdded(
+    table,
+    additions.map((c) => c.name),
+    actingUserId
+  )
+  return updated
 }
 
 /** Overwrites a table's schema during an import (used when inferring columns from the file). */
@@ -150,12 +159,12 @@ export async function importAppendRows(
   ctx: { workspaceId: string; userId?: string; requestId: string }
 ): Promise<{ inserted: TableRow[]; table: TableDefinition }> {
   // Gate capacity before opening the tx — the lookup is a separate pool read.
-  await assertRowCapacity({
+  const rowLimit = await assertRowCapacity({
     workspaceId: ctx.workspaceId,
     currentRowCount: table.rowCount,
     addedRows: rows.length,
   })
-  return db.transaction(async (trx) => {
+  const result = await db.transaction(async (trx) => {
     let working = table
     if (additions.length > 0) {
       // Take the row-order lock before creating columns so this path uses the
@@ -179,6 +188,21 @@ export async function importAppendRows(
     }
     return { inserted, table: working }
   })
+  // Audit post-commit — a mid-import rollback means the columns weren't added.
+  if (additions.length > 0) {
+    auditTableColumnsAdded(
+      table,
+      additions.map((c) => c.name),
+      ctx.userId
+    )
+  }
+  notifyTableRowUsage({
+    workspaceId: ctx.workspaceId,
+    currentRowCount: table.rowCount,
+    addedRows: result.inserted.length,
+    limit: rowLimit,
+  })
+  return result
 }
 
 /**
@@ -193,12 +217,12 @@ export async function importReplaceRows(
 ): Promise<ReplaceRowsResult> {
   // Replace deletes all existing rows, so the footprint is just the new set. Gate
   // before opening the tx — the plan lookup is a separate pool read.
-  await assertRowCapacity({
+  const rowLimit = await assertRowCapacity({
     workspaceId: data.workspaceId,
     currentRowCount: 0,
     addedRows: data.rows.length,
   })
-  return db.transaction(async (trx) => {
+  const result = await db.transaction(async (trx) => {
     let working = table
     if (additions.length > 0) {
       await acquireRowOrderLock(trx, table.id)
@@ -211,4 +235,19 @@ export async function importReplaceRows(
       requestId
     )
   })
+  // Audit post-commit (see importAppendRows).
+  if (additions.length > 0) {
+    auditTableColumnsAdded(
+      table,
+      additions.map((c) => c.name),
+      data.userId
+    )
+  }
+  notifyTableRowUsage({
+    workspaceId: data.workspaceId,
+    currentRowCount: 0,
+    addedRows: result.insertedCount,
+    limit: rowLimit,
+  })
+  return result
 }

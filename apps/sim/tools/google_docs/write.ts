@@ -21,7 +21,8 @@ export const writeTool: ToolConfig<GoogleDocsToolParams, GoogleDocsWriteResponse
     documentId: {
       type: 'string',
       required: true,
-      description: 'The ID of the document to write to',
+      description:
+        'Google Docs document ID (Drive file id). To locate a doc by title, call google_drive_list with query set to the title first, then pass the returned file id here — do not pass the title as documentId.',
     },
     content: {
       type: 'string',

@@ -1,10 +1,9 @@
 'use client'
 
+import { chipVariants, cn } from '@sim/emcn'
+import { ArrowLeft } from '@sim/emcn/icons'
 import Image from 'next/image'
 import Link from 'next/link'
-import { chipVariants } from '@/components/emcn'
-import { ArrowLeft } from '@/components/emcn/icons'
-import { cn } from '@/lib/core/utils/cn'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 
 interface SidebarBrandHeaderProps {
@@ -56,29 +55,27 @@ export function SidebarBrandHeader({
               )}
               aria-label={brandName}
             >
-              {isCollapsed ? (
-                (brandLogoUrl || expandedBrandUrl) && (
-                  <Image
-                    src={brandLogoUrl || expandedBrandUrl!}
-                    alt={brandName || ''}
-                    width={34}
-                    height={34}
-                    className='size-[34px] object-contain'
-                    unoptimized
-                  />
-                )
-              ) : (
-                expandedBrandUrl && (
-                  <Image
-                    src={expandedBrandUrl}
-                    alt={brandName || ''}
-                    width={140}
-                    height={44}
-                    className='h-[44px] w-auto max-w-[220px] object-contain object-left'
-                    unoptimized
-                  />
-                )
-              )}
+              {isCollapsed
+                ? (brandLogoUrl || expandedBrandUrl) && (
+                    <Image
+                      src={brandLogoUrl || expandedBrandUrl!}
+                      alt={brandName || ''}
+                      width={34}
+                      height={34}
+                      className='size-[34px] object-contain'
+                      unoptimized
+                    />
+                  )
+                : expandedBrandUrl && (
+                    <Image
+                      src={expandedBrandUrl}
+                      alt={brandName || ''}
+                      width={140}
+                      height={44}
+                      className='h-[44px] w-auto max-w-[220px] object-contain object-left'
+                      unoptimized
+                    />
+                  )}
             </Link>
           </div>
           <div className='border-[var(--border)] border-b' />
@@ -87,11 +84,7 @@ export function SidebarBrandHeader({
 
       {arenaHubAgentsUrl ? (
         <div className='flex flex-shrink-0 flex-col px-2 pt-2 pb-0'>
-          <SidebarTooltip
-            label='Back to Arena agents'
-            enabled={showCollapsedTooltips}
-            side='right'
-          >
+          <SidebarTooltip label='Back to Arena agents' enabled={showCollapsedTooltips} side='right'>
             <Link
               href={arenaHubAgentsUrl}
               className={chipVariants({ fullWidth: true })}

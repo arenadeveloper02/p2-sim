@@ -15,6 +15,7 @@ export const workspaceSchema = z.object({
   ownerId: z.string(),
   organizationId: z.string().nullable(),
   workspaceMode: workspaceModeSchema,
+  isPersonal: z.boolean().optional(),
   role: z.string().optional(),
   membershipId: z.string().optional(),
   permissions: workspacePermissionSchema.nullable().optional(),
@@ -23,6 +24,9 @@ export const workspaceSchema = z.object({
   inviteMembersEnabled: z.boolean().optional(),
   inviteDisabledReason: z.string().nullable().optional(),
   inviteUpgradeRequired: z.boolean().optional(),
+  // Source workspace id when this was created as a fork (null otherwise). Optional
+  // because not every workspace response builder includes the column.
+  forkedFromWorkspaceId: z.string().nullable().optional(),
 })
 
 export type Workspace = z.output<typeof workspaceSchema>
@@ -31,6 +35,7 @@ export const workspaceCreationPolicySchema = z.object({
   canCreate: z.boolean(),
   workspaceMode: workspaceModeSchema,
   organizationId: z.string().nullable(),
+  isPersonal: z.boolean(),
   maxWorkspaces: z.number().nullable(),
   currentWorkspaceCount: z.number(),
   reason: z.string().nullable(),

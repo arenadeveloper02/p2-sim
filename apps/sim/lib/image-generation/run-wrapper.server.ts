@@ -1,7 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { z } from 'zod'
-import { MAX_IMAGES_TO_GENERATE } from '@/lib/image-generation/constants'
-import { reconcileImageProviderAndModel, normalizeImageModelId } from '@/lib/image-generation/block-model-config'
+import {
+  normalizeImageModelId,
+  reconcileImageProviderAndModel,
+} from '@/lib/image-generation/block-model-config'
 import {
   applyNanoBananaPromptImageParams,
   normalizeOptionalString,

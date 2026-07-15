@@ -1,16 +1,12 @@
 'use client'
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { MoreHorizontal, Pin } from 'lucide-react'
-import Link from 'next/link'
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { usePostHog } from 'posthog-js/react'
 import {
   Button,
   Chip,
   ChipLink,
   chipVariants,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -22,7 +18,7 @@ import {
   Skeleton,
   Tooltip,
   Upload,
-} from '@/components/emcn'
+} from '@sim/emcn'
 import {
   BookOpen,
   Calendar,
@@ -37,10 +33,14 @@ import {
   Table,
   Task,
   Workflow,
-} from '@/components/emcn/icons'
+} from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { MoreHorizontal, Pin } from 'lucide-react'
+import Link from 'next/link'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { cn } from '@/lib/core/utils/cn'
 import { isMacPlatform } from '@/lib/core/utils/platform'
 import { buildFolderTree, getFolderPath } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'
@@ -88,6 +88,7 @@ import {
   groupWorkflowsByFolder,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/utils'
 import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
+import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
@@ -113,6 +114,7 @@ import { SIDEBAR_WIDTH } from '@/stores/constants'
 import { useFolderStore } from '@/stores/folders/store'
 import { useSearchModalStore } from '@/stores/modals/search/store'
 import { useProvidersStore } from '@/stores/providers'
+import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 import { useSidebarStore } from '@/stores/sidebar/store'
 
 const logger = createLogger('Sidebar')
@@ -379,6 +381,7 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
   const { config: permissionConfig, filterBlocks } = usePermissionConfig()
   const { navigateToSettings, getSettingsHref } = useSettingsNavigation()
   const initializeSearchData = useSearchModalStore((state) => state.initializeData)
+  const customBlockOverlayVersion = useCustomBlockOverlayVersion()
   const providers = useProvidersStore((state) => state.providers)
   const providerModelSignature = useMemo(
     () =>
@@ -390,7 +393,7 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
 
   useEffect(() => {
     initializeSearchData(filterBlocks)
-  }, [initializeSearchData, filterBlocks, providerModelSignature])
+  }, [initializeSearchData, filterBlocks, providerModelSignature, customBlockOverlayVersion])
 
   const setSidebarWidth = useSidebarStore((state) => state.setSidebarWidth)
   const toggleCollapsed = useSidebarStore((state) => state.toggleCollapsed)
@@ -1087,16 +1090,21 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
     fileInputRef.current?.click()
   }
 
+  const requestLeave = useSettingsDirtyStore((s) => s.requestLeave)
+
   const handleWorkspaceSwitch = useCallback(
-    async (workspace: Workspace) => {
+    (workspace: Workspace) => {
       if (workspace.id === workspaceId) {
         setIsWorkspaceMenuOpen(false)
         return
       }
-      await switchWorkspace(workspace)
+      // Close the switcher first so the settings discard dialog (if any) is visible.
       setIsWorkspaceMenuOpen(false)
+      requestLeave(() => {
+        void switchWorkspace(workspace)
+      })
     },
-    [workspaceId, switchWorkspace]
+    [workspaceId, switchWorkspace, requestLeave]
   )
 
   const handleSidebarClick = (e: React.MouseEvent<HTMLElement>) => {

@@ -144,8 +144,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description:
-        `Provider model ID. Supported models: ${IMAGE_GENERATE_MODEL_IDS}. Provider is inferred from model when omitted.`,
+      description: `Provider model ID. Supported models: ${IMAGE_GENERATE_MODEL_IDS}. Provider is inferred from model when omitted.`,
     },
     prompt: {
       type: 'string',

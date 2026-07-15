@@ -1,6 +1,7 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
 import { Read as ReadTool, WorkspaceFile } from '@/lib/copilot/generated/tool-catalog-v1'
 import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
 import { resolveToolDisplay } from '@/lib/copilot/tools/client/store-utils'
@@ -184,9 +185,11 @@ function isHiddenToolCall(toolName: string | undefined): boolean {
   return isToolHiddenInUi(toolName)
 }
 
-function resolveAgentLabel(key: string, brandName?: string): string {
-  if (key === 'mothership') return brandName || 'Sim'
-  return SUBAGENT_LABELS[key] ?? humanizeToolName(key)
+function resolveAgentLabel(key: string): string {
+  if (key === 'mothership') return resolveAssistantDisplayLabel('mothership')
+  const mapped = SUBAGENT_LABELS[key]
+  if (mapped) return mapped
+  return resolveAssistantDisplayLabel(humanizeToolName(key))
 }
 
 function isDelegatingTool(tc: NonNullable<ContentBlock['toolCall']>): boolean {

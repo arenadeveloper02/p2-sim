@@ -268,7 +268,9 @@ export function getImageBlockModelsForProvider(provider: string): ImageBlockMode
   return IMAGE_BLOCK_MODEL_DEFINITIONS.filter((model) => model.provider === provider)
 }
 
-export function getImageBlockModelDefinition(modelId: string): ImageBlockModelDefinition | undefined {
+export function getImageBlockModelDefinition(
+  modelId: string
+): ImageBlockModelDefinition | undefined {
   const normalized = normalizeImageModelId(modelId) ?? modelId
   return IMAGE_BLOCK_MODEL_DEFINITIONS.find((model) => model.id === normalized)
 }

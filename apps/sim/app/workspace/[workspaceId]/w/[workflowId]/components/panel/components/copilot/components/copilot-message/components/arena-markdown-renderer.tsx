@@ -1,13 +1,12 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
+import { Code, cn, Tooltip } from '@sim/emcn'
 import { Check, Copy } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
-import { Code, Tooltip } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
 
 /**
  * Recursively extracts text content from React elements
@@ -183,11 +182,23 @@ export default function ArenaCopilotMarkdownRenderer({
       // Paragraph
       p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) =>
         variant === 'inline' ? (
-          <span className={cn('my-0 inline text-base leading-relaxed', bodyTextClassName, fontClassName)}>
+          <span
+            className={cn(
+              'my-0 inline text-base leading-relaxed',
+              bodyTextClassName,
+              fontClassName
+            )}
+          >
             {children}
           </span>
         ) : (
-          <p className={cn('my-2 text-base leading-relaxed last:mb-0', bodyTextClassName, fontClassName)}>
+          <p
+            className={cn(
+              'my-2 text-base leading-relaxed last:mb-0',
+              bodyTextClassName,
+              fontClassName
+            )}
+          >
             {children}
           </p>
         ),
@@ -235,10 +246,7 @@ export default function ArenaCopilotMarkdownRenderer({
         children,
         ordered,
       }: React.LiHTMLAttributes<HTMLLIElement> & { ordered?: boolean }) => (
-        <li
-          className={cn(bodyTextClassName, fontClassName)}
-          style={{ display: 'list-item' }}
-        >
+        <li className={cn(bodyTextClassName, fontClassName)} style={{ display: 'list-item' }}>
           {children}
         </li>
       ),
@@ -399,7 +407,13 @@ export default function ArenaCopilotMarkdownRenderer({
 
       // Blockquotes
       blockquote: ({ children }: React.HTMLAttributes<HTMLQuoteElement>) => (
-        <blockquote className={cn('my-4 border-gray-300 border-l-4 py-1 pl-4 italic dark:border-gray-600', bodyTextClassName, fontClassName)}>
+        <blockquote
+          className={cn(
+            'my-4 border-gray-300 border-l-4 py-1 pl-4 italic dark:border-gray-600',
+            bodyTextClassName,
+            fontClassName
+          )}
+        >
           {children}
         </blockquote>
       ),
@@ -418,7 +432,13 @@ export default function ArenaCopilotMarkdownRenderer({
       table: ({ children }: React.TableHTMLAttributes<HTMLTableElement>) => (
         <div className='my-4 w-full overflow-x-auto overflow-y-visible'>
           <div className='inline-block min-w-full align-middle'>
-            <table className={cn('min-w-full table-auto border border-gray-300 text-sm dark:border-gray-700', bodyTextClassName, fontClassName)}>
+            <table
+              className={cn(
+                'min-w-full table-auto border border-gray-300 text-sm dark:border-gray-700',
+                bodyTextClassName,
+                fontClassName
+              )}
+            >
               {children}
             </table>
           </div>

@@ -1,11 +1,10 @@
 'use client'
 
 import * as React from 'react'
+import { Combobox, type ComboboxOption, cn } from '@sim/emcn'
 import axios from 'axios'
-import { Combobox, type ComboboxOption } from '@/components/emcn'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
-import { cn } from '@/lib/core/utils/cn'
 import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
 import { arenaSiblingSubBlockStoreKey } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'

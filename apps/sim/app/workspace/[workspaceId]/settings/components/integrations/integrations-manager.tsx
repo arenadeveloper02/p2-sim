@@ -9,17 +9,13 @@ import {
   useRef,
   useState,
 } from 'react'
-import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
-import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
-import Image from 'next/image'
-import { useParams, useSearchParams } from 'next/navigation'
 import {
   Avatar,
   AvatarFallback,
   Badge,
   Button,
   Combobox,
+  cn,
   focusFirstTextInputIn,
   Input,
   Label,
@@ -32,9 +28,13 @@ import {
   Skeleton,
   Textarea,
   Tooltip,
-} from '@/components/emcn'
+} from '@sim/emcn'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
+import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
+import Image from 'next/image'
+import { useParams, useSearchParams } from 'next/navigation'
 import { useSession } from '@/lib/auth/auth-client'
-import { cn } from '@/lib/core/utils/cn'
 import { writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import { getCanonicalScopesForProvider, getServiceConfigByProviderId } from '@/lib/oauth'
 import { ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID } from '@/lib/oauth/types'

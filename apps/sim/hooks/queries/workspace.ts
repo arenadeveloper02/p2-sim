@@ -42,6 +42,12 @@ export const workspaceKeys = {
 
 export type { Workspace, WorkspaceCreationPolicy, WorkspaceMember, WorkspacePermissions }
 
+export const WORKSPACE_PERMISSIONS_STALE_TIME = 30 * 1000
+export const WORKSPACE_LIST_STALE_TIME = 30 * 1000
+export const WORKSPACE_SETTINGS_STALE_TIME = 30 * 1000
+export const WORKSPACE_MEMBERS_STALE_TIME = 5 * 60 * 1000
+export const WORKSPACE_ADMIN_LIST_STALE_TIME = 60 * 1000
+
 async function fetchWorkspaces(
   scope: WorkspaceQueryScope = 'active',
   signal?: AbortSignal
@@ -52,7 +58,8 @@ async function fetchWorkspaces(
       data.workspaces?.map((workspace: Workspace) => ({
         ...workspace,
         organizationId: workspace.organizationId ?? null,
-        workspaceMode: workspace.workspaceMode ?? 'grandfathered_shared',
+        workspaceMode: workspace.workspaceMode ?? 'organization',
+        isPersonal: workspace.isPersonal ?? false,
         inviteMembersEnabled: workspace.inviteMembersEnabled ?? false,
         inviteDisabledReason: workspace.inviteDisabledReason ?? null,
         inviteUpgradeRequired: workspace.inviteUpgradeRequired ?? false,
@@ -64,7 +71,8 @@ async function fetchWorkspaces(
           ...data.creationPolicy,
           organizationId: data.creationPolicy.organizationId ?? null,
           reason: data.creationPolicy.reason ?? null,
-          workspaceMode: data.creationPolicy.workspaceMode ?? 'personal',
+          workspaceMode: data.creationPolicy.workspaceMode ?? 'organization',
+          isPersonal: data.creationPolicy.isPersonal ?? false,
         }
       : null,
   }
@@ -83,7 +91,7 @@ export function useWorkspacesQuery(enabled = true, scope: WorkspaceQueryScope = 
     queryFn: ({ signal }) => fetchWorkspaces(scope, signal),
     select: selectWorkspaces,
     enabled,
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -97,7 +105,7 @@ export function useWorkspacesWithMetadata(enabled = true) {
     queryKey: workspaceKeys.list('active'),
     queryFn: ({ signal }) => fetchWorkspaces('active', signal),
     enabled,
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_LIST_STALE_TIME,
   })
 }
 
@@ -107,7 +115,7 @@ export function useWorkspaceCreationPolicy(enabled = true) {
     queryFn: ({ signal }) => fetchWorkspaces('active', signal),
     select: (data) => data.creationPolicy,
     enabled,
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_LIST_STALE_TIME,
   })
 }
 
@@ -250,7 +258,7 @@ export function useWorkspacePermissionsQuery(workspaceId: string | null | undefi
     queryKey: workspaceKeys.permissions(workspaceId ?? ''),
     queryFn: ({ signal }) => fetchWorkspacePermissions(workspaceId as string, signal),
     enabled: Boolean(workspaceId),
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_PERMISSIONS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -275,7 +283,7 @@ export function useWorkspaceMembersQuery(workspaceId: string | null | undefined)
     queryKey: workspaceKeys.members(workspaceId ?? ''),
     queryFn: ({ signal }) => fetchWorkspaceMembers(workspaceId as string, signal),
     enabled: Boolean(workspaceId),
-    staleTime: 5 * 60 * 1000,
+    staleTime: WORKSPACE_MEMBERS_STALE_TIME,
   })
 }
 
@@ -302,7 +310,7 @@ export function prefetchWorkspaceSettings(queryClient: QueryClient, workspaceId:
   queryClient.prefetchQuery({
     queryKey: workspaceKeys.settings(workspaceId),
     queryFn: ({ signal }) => fetchWorkspaceSettings(workspaceId, signal),
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_SETTINGS_STALE_TIME,
   })
 }
 
@@ -315,7 +323,7 @@ export function useWorkspaceSettings(workspaceId: string) {
     queryKey: workspaceKeys.settings(workspaceId),
     queryFn: ({ signal }) => fetchWorkspaceSettings(workspaceId, signal),
     enabled: !!workspaceId,
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_SETTINGS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -401,7 +409,7 @@ export function useAdminWorkspaces(userId: string | undefined, organizationId?: 
     queryKey: [...workspaceKeys.adminList(userId), organizationId ?? ''] as const,
     queryFn: ({ signal }) => fetchAdminWorkspaces(userId, organizationId, signal),
     enabled: Boolean(userId),
-    staleTime: 60 * 1000,
+    staleTime: WORKSPACE_ADMIN_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
