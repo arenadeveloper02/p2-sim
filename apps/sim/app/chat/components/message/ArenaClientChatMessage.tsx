@@ -55,7 +55,6 @@ import { DeployedInlineLoader } from '@/app/chat/components/message/components/d
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
 import {
   CHAT_ERROR_MESSAGES,
-  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_TEXT_BODY,
   DEPLOYED_CHAT_TEXT_MUTED,
 } from '@/app/chat/constants'
@@ -934,8 +933,8 @@ export const ArenaClientChatMessage = memo(
           : Boolean(message.content)
 
       return (
-        <div className='px-4 py-[5px]' data-message-id={message.id}>
-          <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
+        <div className='py-[5px]' data-message-id={message.id}>
+          <div className='w-full'>
             {message.attachments && message.attachments.length > 0 && (
               <div className='mb-2 flex justify-end'>
                 <div className='flex flex-wrap gap-2'>
@@ -1014,10 +1013,10 @@ export const ArenaClientChatMessage = memo(
 
     // For assistant messages (on the left)
     return (
-      <div className='px-4 py-[5px]' data-message-id={message.id}>
-        <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
+      <div className='py-[5px]' data-message-id={message.id}>
+        <div className='w-full'>
           <div className='flex flex-col space-y-3'>
-            <div className='px-4 py-1'>
+            <div className='py-1'>
               <div
                 className='break-words font-poppins text-[14px] font-normal leading-[1.6]'
                 style={{ color: '#2C2D33' }}

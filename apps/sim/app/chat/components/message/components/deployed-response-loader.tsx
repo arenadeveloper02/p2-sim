@@ -1,10 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import {
-  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
-  DEPLOYED_CHAT_TEXT_MUTED,
-} from '@/app/chat/constants'
+import { DEPLOYED_CHAT_TEXT_MUTED } from '@/app/chat/constants'
 import circlePatternLoader from '@/app/chat/components/message/components/circle-pattern-loader.gif'
 
 /**
@@ -12,18 +9,16 @@ import circlePatternLoader from '@/app/chat/components/message/components/circle
  */
 export function DeployedResponseLoader() {
   return (
-    <div className='px-4 py-4'>
-      <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}>
-        <div className='flex items-center'>
-          <Image
-            src={circlePatternLoader}
-            alt='Loading response'
-            width={48}
-            height={48}
-            unoptimized
-            className='mix-blend-multiply'
-          />
-        </div>
+    <div className='py-4'>
+      <div className='flex items-center'>
+        <Image
+          src={circlePatternLoader}
+          alt='Loading response'
+          width={48}
+          height={48}
+          unoptimized
+          className='mix-blend-multiply'
+        />
       </div>
     </div>
   )

@@ -195,45 +195,47 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
         ref={messagesContainerRef}
         className='!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto'
       >
-        <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} px-4 pb-8`}>
-          {messages.length === 0 ? (
-            <div className='flex min-h-full flex-col items-center justify-center py-10'>
-              <div className='space-y-2 text-center'>
-                <h3 className='font-medium text-[17px]' style={{ color: DEPLOYED_CHAT_TEXT_BODY }}>
-                  How can I help you today?
-                </h3>
-                <p className='text-[14px]' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
-                  {chatConfig?.description || 'Ask me anything.'}
-                </p>
+        <div className='px-3 md:px-4'>
+          <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} pb-8`}>
+            {messages.length === 0 ? (
+              <div className='flex min-h-full flex-col items-center justify-center py-10'>
+                <div className='space-y-2 text-center'>
+                  <h3 className='font-medium text-[17px]' style={{ color: DEPLOYED_CHAT_TEXT_BODY }}>
+                    How can I help you today?
+                  </h3>
+                  <p className='text-[14px]' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
+                    {chatConfig?.description || 'Ask me anything.'}
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            (() => {
-              const lastAssistantId = [...messages]
-                .reverse()
-                .find((m) => m.type === 'assistant' && !m.isInitialMessage)?.id
-              return messages.map((message) => (
-                <ArenaClientChatMessage
-                  key={message.id}
-                  message={message}
-                  setMessages={setMessages}
-                  workspaceIdsForKbLinks={workspaceIdsForKbLinks}
-                  onCopySegmentToInput={onAskInChat}
-                  onToggleGeneratedImage={onToggleGeneratedImage}
-                  selectedGeneratedImageIds={selectedGeneratedImageIds}
-                  selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
-                  onWelcomeQueryClick={onWelcomeQueryClick}
-                  isLastAssistantMessage={message.id === lastAssistantId}
-                  onRegenerateMessage={onRegenerateMessage}
-                />
-              ))
-            })()
-          )}
+            ) : (
+              (() => {
+                const lastAssistantId = [...messages]
+                  .reverse()
+                  .find((m) => m.type === 'assistant' && !m.isInitialMessage)?.id
+                return messages.map((message) => (
+                  <ArenaClientChatMessage
+                    key={message.id}
+                    message={message}
+                    setMessages={setMessages}
+                    workspaceIdsForKbLinks={workspaceIdsForKbLinks}
+                    onCopySegmentToInput={onAskInChat}
+                    onToggleGeneratedImage={onToggleGeneratedImage}
+                    selectedGeneratedImageIds={selectedGeneratedImageIds}
+                    selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+                    onWelcomeQueryClick={onWelcomeQueryClick}
+                    isLastAssistantMessage={message.id === lastAssistantId}
+                    onRegenerateMessage={onRegenerateMessage}
+                  />
+                ))
+              })()
+            )}
 
-          {isLoading && <DeployedResponseLoader />}
+            {isLoading && <DeployedResponseLoader />}
 
-          {/* End of messages marker for scrolling */}
-          <div ref={messagesEndRef} />
+            {/* End of messages marker for scrolling */}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
       </div>
 

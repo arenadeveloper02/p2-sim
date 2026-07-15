@@ -15,7 +15,10 @@ export const CHAT_ERROR_MESSAGES = {
 export const CHAT_REQUEST_TIMEOUT_MS = 1800000 // 30 minutes
 
 /** Shared max content width for deployed chat landing, messages, and input */
-export const DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS = 'max-w-[748px]' as const
+export const DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS = 'max-w-[768px]' as const
+
+/** Resting height for the deployed chat input shell */
+export const DEPLOYED_CHAT_INPUT_HEIGHT_CLASS = 'h-10' as const
 
 /** Deployed chat main canvas background (pale lavender-white) */
 export const DEPLOYED_CHAT_CANVAS_BG = '#FBF7FD'

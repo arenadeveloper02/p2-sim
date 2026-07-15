@@ -30,8 +30,8 @@ export default function ChatLoading() {
         </div>
       </div>
       <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
-        <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-          <Skeleton className='h-[48px] w-full rounded-[12px]' />
+        <div className='relative mx-auto max-w-3xl md:max-w-[768px]'>
+          <Skeleton className='h-10 w-full rounded-[12px]' />
         </div>
       </div>
     </div>
