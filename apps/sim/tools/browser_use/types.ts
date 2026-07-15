@@ -37,6 +37,8 @@ interface BrowserUseTaskOutput {
   liveUrl: string | null
   shareUrl: string | null
   sessionId: string | null
+  /** API-reported task cost in USD when present (used by hosted-key billing). */
+  __totalCostUsd?: number
 }
 
 export interface BrowserUseRunTaskResponse extends ToolResponse {

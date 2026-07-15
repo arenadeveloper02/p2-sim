@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { semrushHosting } from '@/tools/semrush/hosting'
 import type {
   SemrushOrganicPositionsApiResponse,
   SemrushOrganicPositionsParams,
@@ -15,10 +16,18 @@ export const semrushOrganicPositionsTool: ToolConfig<
   id: 'semrush_organic_positions',
   name: 'Semrush Organic Positions Report',
   description:
-    "Get Position Tracking organic positions report for a campaign: keywords, rankings per URL, position changes over time. Uses Sim's internal Semrush proxy; the deployment supplies the API key via SEMRUSH_API_KEY—do not ask users for an API key or workflow variables for Semrush auth.",
+    "Get Position Tracking organic positions report for a campaign: keywords, rankings per URL, position changes over time. Uses Sim's internal Semrush proxy; auth uses a hosted or BYOK Semrush key (or SEMRUSH_API_KEY on self-hosted).",
   version: '1.0.0',
 
+  hosting: semrushHosting,
+
   params: {
+    apiKey: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'Semrush API key',
+    },
     campaignId: {
       type: 'string',
       required: true,
@@ -140,9 +149,10 @@ export const semrushOrganicPositionsTool: ToolConfig<
       return path
     },
     method: 'GET',
-    headers: () => ({
+    headers: (params) => ({
       Accept: 'application/json',
       'Content-Type': 'application/json',
+      ...(params.apiKey ? { 'X-Semrush-Api-Key': params.apiKey } : {}),
     }),
   },
 

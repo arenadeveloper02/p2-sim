@@ -18,11 +18,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
     }
 
-    const apiKey = env.SEMRUSH_API_KEY
+    const apiKey = request.headers.get('x-semrush-api-key')?.trim() || env.SEMRUSH_API_KEY
     if (!apiKey) {
-      logger.error('Semrush API key not configured (SEMRUSH_API_KEY)')
+      logger.error('Semrush API key not configured (header or SEMRUSH_API_KEY)')
       return NextResponse.json(
-        { error: 'Semrush API key is not configured. Set SEMRUSH_API_KEY in environment.' },
+        {
+          error:
+            'Semrush API key is not configured. Provide a hosted/BYOK key or set SEMRUSH_API_KEY.',
+        },
         { status: 500 }
       )
     }
