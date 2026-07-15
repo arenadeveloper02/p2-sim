@@ -46,9 +46,10 @@ import {
   sortToolCallsForExecution,
   type MandatoryFollowUp,
 } from '@/local-copilot/lib/tools/format-tool-result'
+import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
-import { MODEL_WAIT_STATUS_MESSAGES } from '@/local-copilot/lib/agent/status-messages'
+import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotAgent')
@@ -357,10 +358,8 @@ export async function* runLocalCopilotAgent(
     let roundInputTokens = 0
     let roundOutputTokens = 0
 
-    // Immediate label so the chat does not sit on static “Thinking…” for the
-    // idle threshold before heartbeats start.
-    yield { type: 'status', message: MODEL_WAIT_STATUS_MESSAGES[0] }
-
+    // Status heartbeats cover the immediate first line + rotation while the
+    // model stream is quiet (including pauses after the first token).
     for await (const event of iterateWithIdleStatus({
       source: provider.chatCompletionStream({
         model: config.model,
@@ -369,9 +368,15 @@ export async function* runLocalCopilotAgent(
         signal: params.signal,
       }),
       abortSignal: params.signal,
-      messages: MODEL_WAIT_STATUS_MESSAGES.slice(1),
-      idleMs: 8000,
-      intervalMs: 8000,
+      messages: MODEL_WAIT_STATUS_FALLBACK,
+      idleMs: 0,
+      intervalMs: 4000,
+      enrichMessages: (abortSignal) =>
+        generateEngagementStatusMessages({
+          phase: 'model_wait',
+          userHint: params.message,
+          signal: abortSignal,
+        }),
     })) {
       if (event.type === 'status') {
         yield event

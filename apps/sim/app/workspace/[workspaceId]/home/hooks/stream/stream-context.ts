@@ -200,7 +200,13 @@ export function createStreamLoopContext(deps: StreamLoopDeps): StreamLoopContext
       const snapshot: Partial<ChatMessage> = {
         content: modelContent,
         contentBlocks: modelBlocks,
-        liveStatus: state.liveStatus,
+      }
+      // Always stamp liveStatus when set so later flushes cannot drop it. Clear
+      // with empty string on terminal events so normalizeMessage removes it.
+      if (state.liveStatus) {
+        snapshot.liveStatus = state.liveStatus
+      } else if (state.sawCompleteEvent || state.sawStreamError) {
+        snapshot.liveStatus = ''
       }
       if (state.streamRequestId) snapshot.requestId = state.streamRequestId
       deps.setPendingMessages((prev) => {
@@ -224,8 +230,11 @@ export function createStreamLoopContext(deps: StreamLoopDeps): StreamLoopContext
       content: modelContent,
       contentBlocks: modelBlocks,
       ...(state.streamRequestId ? { requestId: state.streamRequestId } : {}),
-      // Always pass through so a cleared status replaces a previous liveStatus.
-      liveStatus: state.liveStatus,
+      ...(state.liveStatus
+        ? { liveStatus: state.liveStatus }
+        : state.sawCompleteEvent || state.sawStreamError
+          ? { liveStatus: '' }
+          : {}),
     })
     deps.upsertMothershipChatHistory(activeChatId, (current) => {
       const streamId = deps.streamIdRef.current ?? current.activeStreamId ?? deps.assistantId

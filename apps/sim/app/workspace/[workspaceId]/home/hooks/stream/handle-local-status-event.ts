@@ -3,6 +3,7 @@ import {
   type PersistedStreamEventEnvelope,
 } from '@/lib/copilot/request/session/contract'
 import type { StreamLoopContext } from '@/app/workspace/[workspaceId]/home/hooks/stream/stream-context'
+import { setLocalLiveStatus } from '@/local-copilot/lib/client/local-live-status'
 
 type LocalStatusEvent = Extract<PersistedStreamEventEnvelope, { type: 'run' }> & {
   payload: { statusPhase: typeof LOCAL_STATUS_PHASE; message: string }
@@ -16,6 +17,7 @@ export function handleLocalStatusEvent(ctx: StreamLoopContext, parsed: LocalStat
   const message = parsed.payload.message.trim()
   if (!message) return
   ctx.state.liveStatus = message
+  setLocalLiveStatus(message)
   ctx.ops.flush()
 }
 

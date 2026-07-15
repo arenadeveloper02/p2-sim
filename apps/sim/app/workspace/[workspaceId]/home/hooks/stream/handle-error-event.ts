@@ -1,5 +1,6 @@
 import type { PersistedStreamEventEnvelope } from '@/lib/copilot/request/session/contract'
 import type { StreamLoopContext } from '@/app/workspace/[workspaceId]/home/hooks/stream/stream-context'
+import { setLocalLiveStatus } from '@/local-copilot/lib/client/local-live-status'
 
 type ErrorEvent = Extract<PersistedStreamEventEnvelope, { type: 'error' }>
 
@@ -12,6 +13,7 @@ export function handleErrorEvent(ctx: StreamLoopContext, parsed: ErrorEvent): vo
   const { state, ops, deps } = ctx
   state.sawStreamError = true
   state.liveStatus = undefined
+  setLocalLiveStatus(undefined)
   deps.setError(parsed.payload.message || parsed.payload.error || 'An error occurred')
   ops.flush()
 }
