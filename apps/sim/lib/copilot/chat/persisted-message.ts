@@ -654,8 +654,11 @@ export function normalizeMessage(raw: Record<string, unknown>): PersistedMessage
     }))
   }
 
-  if (typeof raw.liveStatus === 'string' && raw.liveStatus.trim()) {
-    msg.liveStatus = raw.liveStatus
+  if (typeof raw.liveStatus === 'string') {
+    // Empty string clears a previous liveStatus when the turn completes.
+    if (raw.liveStatus.trim()) {
+      msg.liveStatus = raw.liveStatus
+    }
   }
 
   return msg

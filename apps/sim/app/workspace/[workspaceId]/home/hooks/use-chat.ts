@@ -682,7 +682,7 @@ function buildAssistantSnapshotMessage(params: {
     content: params.content,
     timestamp: new Date().toISOString(),
     ...(params.requestId ? { requestId: params.requestId } : {}),
-    ...(params.liveStatus ? { liveStatus: params.liveStatus } : {}),
+    ...(params.liveStatus !== undefined ? { liveStatus: params.liveStatus } : {}),
     ...(rawContentBlocks.length > 0 ? { contentBlocks: rawContentBlocks } : {}),
   })
 }

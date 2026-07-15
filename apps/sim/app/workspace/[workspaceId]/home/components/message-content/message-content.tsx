@@ -835,20 +835,18 @@ function MessageContentInner({
 
   const hasTrailingContent = lastSegment.type === 'text' || lastSegment.type === 'stopped'
 
-  // Deterministic "between steps" signal: the turn is still streaming, nothing
-  // is actively running (a running tool/subagent renders its own spinner), and
-  // no trailing text is being revealed — unless Local Copilot supplied liveStatus.
+  // Prefer server liveStatus whenever the turn is still in flight — including
+  // while tool rows are executing (otherwise the static Thinking… path hides
+  // Local progress under hasRunningWork).
   const hasRunningWork = blocks.some(
     (b) => b.toolCall?.status === 'executing' || (b.type === 'subagent' && b.endedAt === undefined)
   )
-  const showTrailingThinking =
-    phase === 'streaming' &&
-    shouldShowTrailingLiveStatus({
-      isStreaming,
-      liveStatus,
-      hasTrailingContent,
-      hasRunningWork,
-    })
+  const showTrailingThinking = shouldShowTrailingLiveStatus({
+    isStreaming,
+    liveStatus,
+    hasTrailingContent,
+    hasRunningWork,
+  })
 
   return (
     <div className='space-y-[10px]'>

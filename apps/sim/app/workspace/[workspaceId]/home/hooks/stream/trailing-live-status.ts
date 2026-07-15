@@ -9,6 +9,6 @@ export function shouldShowTrailingLiveStatus(opts: {
   hasRunningWork: boolean
 }): boolean {
   if (!opts.isStreaming) return false
-  if (opts.liveStatus) return true
+  if (opts.liveStatus?.trim()) return true
   return !opts.hasTrailingContent && !opts.hasRunningWork
 }

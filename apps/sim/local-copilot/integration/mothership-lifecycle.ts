@@ -98,6 +98,11 @@ async function dispatchLocalCopilotEvent(
         ...(event.toolName ? { toolName: event.toolName } : {}),
       },
     }
+    logger.info('Arena Copilot publishing live status', {
+      message: event.message,
+      toolCallId: event.toolCallId ?? null,
+      toolName: event.toolName ?? null,
+    })
     await options.onEvent?.(statusEvent)
     return
   }

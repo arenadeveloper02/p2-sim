@@ -224,7 +224,8 @@ export function createStreamLoopContext(deps: StreamLoopDeps): StreamLoopContext
       content: modelContent,
       contentBlocks: modelBlocks,
       ...(state.streamRequestId ? { requestId: state.streamRequestId } : {}),
-      ...(state.liveStatus ? { liveStatus: state.liveStatus } : {}),
+      // Always pass through so a cleared status replaces a previous liveStatus.
+      liveStatus: state.liveStatus,
     })
     deps.upsertMothershipChatHistory(activeChatId, (current) => {
       const streamId = deps.streamIdRef.current ?? current.activeStreamId ?? deps.assistantId

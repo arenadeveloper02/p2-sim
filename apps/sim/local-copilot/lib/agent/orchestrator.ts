@@ -357,6 +357,10 @@ export async function* runLocalCopilotAgent(
     let roundInputTokens = 0
     let roundOutputTokens = 0
 
+    // Immediate label so the chat does not sit on static “Thinking…” for the
+    // idle threshold before heartbeats start.
+    yield { type: 'status', message: MODEL_WAIT_STATUS_MESSAGES[0] }
+
     for await (const event of iterateWithIdleStatus({
       source: provider.chatCompletionStream({
         model: config.model,
@@ -365,7 +369,9 @@ export async function* runLocalCopilotAgent(
         signal: params.signal,
       }),
       abortSignal: params.signal,
-      messages: MODEL_WAIT_STATUS_MESSAGES,
+      messages: MODEL_WAIT_STATUS_MESSAGES.slice(1),
+      idleMs: 8000,
+      intervalMs: 8000,
     })) {
       if (event.type === 'status') {
         yield event
