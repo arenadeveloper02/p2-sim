@@ -504,10 +504,15 @@ export function SpecialTags({
   }
 }
 
+interface PendingTagIndicatorProps {
+  /** Server-authored live status (Local Copilot). Defaults to Thinking…. */
+  label?: string
+}
+
 /**
  * Renders a "Thinking" shimmer while a special tag is still streaming in.
  */
-export function PendingTagIndicator() {
+export function PendingTagIndicator({ label = 'Thinking…' }: PendingTagIndicatorProps) {
   return (
     <div className='animate-stream-fade-in py-2'>
       <ThinkingLoader size={20} startVariant='corners' label='Thinking…' labelRatio={0.7} />

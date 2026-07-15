@@ -146,6 +146,8 @@ export interface ChatMessage {
   attachments?: ChatMessageAttachment[]
   contexts?: ChatMessageContext[]
   requestId?: string
+  /** Ephemeral Local Copilot status for the in-flight turn; not transcript prose. */
+  liveStatus?: string
 }
 
 export const SUBAGENT_LABELS: Record<string, string> = {

@@ -30,7 +30,9 @@ import {
   getEmptyDocPreviewMessage,
   getZeroByteDocPreviewMessage,
 } from './empty-doc-preview'
+import { GeneratingPreviewEngagement } from './generating-preview-engagement'
 import { useDocPreviewBinary } from './use-doc-preview-binary'
+import { useLocalGeneratingPreviewEngagement } from './use-local-generating-preview-engagement'
 import { XlsxPreview } from './xlsx-preview'
 
 const PdfViewerCore = dynamic(() => import('./pdf-viewer').then((m) => m.PdfViewerCore), {
@@ -213,7 +215,14 @@ function FileViewerContent({
   }
 
   if (category === 'iframe-previewable') {
-    return <IframePreview key={file.id} file={file} workspaceId={workspaceId} />
+    return (
+      <IframePreview
+        key={file.id}
+        file={file}
+        workspaceId={workspaceId}
+        isAgentEditing={isAgentEditing}
+      />
+    )
   }
 
   if (category === 'image-previewable') {
@@ -229,11 +238,25 @@ function FileViewerContent({
   }
 
   if (category === 'docx-previewable') {
-    return <DocxPreview key={file.id} file={file} workspaceId={workspaceId} />
+    return (
+      <DocxPreview
+        key={file.id}
+        file={file}
+        workspaceId={workspaceId}
+        isAgentEditing={isAgentEditing}
+      />
+    )
   }
 
   if (category === 'pptx-previewable') {
-    return <PptxPreview key={file.id} file={file} workspaceId={workspaceId} />
+    return (
+      <PptxPreview
+        key={file.id}
+        file={file}
+        workspaceId={workspaceId}
+        isAgentEditing={isAgentEditing}
+      />
+    )
   }
 
   if (category === 'xlsx-previewable') {
@@ -293,10 +316,13 @@ const ReadOnlyTextPreview = memo(function ReadOnlyTextPreview({
 const IframePreview = memo(function IframePreview({
   file,
   workspaceId,
+  isAgentEditing,
 }: {
   file: WorkspaceFileRecord
   workspaceId: string
+  isAgentEditing?: boolean
 }) {
+  const showGeneratingEngagement = useLocalGeneratingPreviewEngagement(isAgentEditing)
   const emptyMessage = getEmptyDocPreviewMessage(file, 'PDF')
   const preview = useDocPreviewBinary(workspaceId, file)
 
@@ -305,7 +331,12 @@ const IframePreview = memo(function IframePreview({
     return { kind: 'buffer', buffer: preview.data }
   }, [preview.data])
 
-  if (emptyMessage) return <PreviewError label='PDF' error={emptyMessage} />
+  if (emptyMessage) {
+    if (showGeneratingEngagement) {
+      return <GeneratingPreviewEngagement kind='pdf' fileName={file.name} />
+    }
+    return <PreviewError label='PDF' error={emptyMessage} />
+  }
 
   const error = resolvePreviewError(preview.error, null)
   if (error) return <PreviewError label='PDF' error={error} />
@@ -315,6 +346,9 @@ const IframePreview = memo(function IframePreview({
   }
 
   if (!bufferSource) {
+    if (showGeneratingEngagement) {
+      return <GeneratingPreviewEngagement kind='pdf' fileName={file.name} />
+    }
     return (
       <div className='relative flex h-full min-h-0 flex-1 overflow-hidden'>
         {PREVIEW_LOADING_OVERLAY}
