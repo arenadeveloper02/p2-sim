@@ -2,41 +2,67 @@ import { db } from '@sim/db'
 import { localCopilotUserAccess } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { assertLocalCopilotEnabled, getLocalCopilotConfig } from '@/local-copilot/lib/config'
 
 const logger = createLogger('LocalCopilotAccess')
 
 /**
- * Returns true when the user has an allowlist row with `hasAccess = true`
- * and Arena Copilot is enabled for the deployment.
- * Missing row, revoked access, or DB errors deny access (fail closed).
+ * Resolved Arena Copilot access flags for a user.
+ *
+ * - `hasAccess` — user may use Local and switch to Cloud (both options shown).
+ * - `localOnly` — user is restricted to Local; the switch is hidden and the
+ *   backend is forced to `local`. Takes precedence over `hasAccess`.
  */
-export async function isUserAllowedForLocalCopilot(
+export interface LocalCopilotUserAccess {
+  hasAccess: boolean
+  localOnly: boolean
+}
+
+const DENIED_ACCESS: LocalCopilotUserAccess = { hasAccess: false, localOnly: false }
+
+/**
+ * Reads the user's Arena Copilot allowlist row. Deployment disabled, missing
+ * user id, missing row, or DB errors all deny access (fail closed).
+ */
+export async function getLocalCopilotUserAccess(
   userId: string | undefined | null
-): Promise<boolean> {
+): Promise<LocalCopilotUserAccess> {
   const config = getLocalCopilotConfig()
-  if (!config.enabled) return false
-  if (!userId?.trim()) return false
+  if (!config.enabled) return DENIED_ACCESS
+  if (!userId?.trim()) return DENIED_ACCESS
 
   try {
     const [row] = await db
-      .select({ hasAccess: localCopilotUserAccess.hasAccess })
+      .select({
+        hasAccess: localCopilotUserAccess.hasAccess,
+        localOnly: localCopilotUserAccess.localOnly,
+      })
       .from(localCopilotUserAccess)
-      .where(
-        and(eq(localCopilotUserAccess.userId, userId), eq(localCopilotUserAccess.hasAccess, true))
-      )
+      .where(eq(localCopilotUserAccess.userId, userId))
       .limit(1)
 
-    return Boolean(row)
+    if (!row) return DENIED_ACCESS
+    return { hasAccess: Boolean(row.hasAccess), localOnly: Boolean(row.localOnly) }
   } catch (error) {
     logger.error('Failed to check Arena Copilot user access; denying', {
       userId,
       error: getErrorMessage(error),
     })
-    return false
+    return DENIED_ACCESS
   }
+}
+
+/**
+ * Returns true when the user may use the Local copilot at all — either full
+ * access (`hasAccess`) or local-restricted access (`localOnly`).
+ */
+export async function isUserAllowedForLocalCopilot(
+  userId: string | undefined | null
+): Promise<boolean> {
+  const { hasAccess, localOnly } = await getLocalCopilotUserAccess(userId)
+  return hasAccess || localOnly
 }
 
 /**

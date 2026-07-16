@@ -50,7 +50,7 @@ import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { resolveWorkflowIdForUser } from '@/lib/workflows/utils'
-import { isUserAllowedForLocalCopilot } from '@/local-copilot/lib/access'
+import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import {
@@ -736,9 +736,14 @@ export async function handleUnifiedChatPost(req: NextRequest) {
 
     const body = ChatMessageSchema.parse(await req.json())
     const requestedCopilotBackend = parseCopilotBackendPreference(body.copilotBackend)
-    const userAllowedForLocal = await isUserAllowedForLocalCopilot(authenticatedUserId)
-    const copilotBackend: CopilotBackendPreference | undefined =
-      requestedCopilotBackend === 'local' && userAllowedForLocal
+    const { hasAccess, localOnly } = await getLocalCopilotUserAccess(authenticatedUserId)
+    const userAllowedForLocal = hasAccess || localOnly
+    // Local-only users are pinned to Local regardless of any stored or forged
+    // `external` preference, mirroring the server-side routing guard so chat
+    // title generation and routing never leak to the cloud mothership.
+    const copilotBackend: CopilotBackendPreference | undefined = localOnly
+      ? 'local'
+      : requestedCopilotBackend === 'local' && userAllowedForLocal
         ? 'local'
         : requestedCopilotBackend === 'external'
           ? 'external'
