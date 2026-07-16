@@ -71,18 +71,10 @@ interface TableCell {
 
 interface TableRowPayload {
   tableCells?: TableCell[]
-  rowHeight?: Dimension
-}
-
-interface PageElementTransform {
-  scaleX?: number
-  scaleY?: number
 }
 
 interface PresentationElement {
   objectId?: string
-  size?: { width?: Dimension; height?: Dimension }
-  transform?: PageElementTransform
   table?: {
     rows?: number
     columns?: number
@@ -91,20 +83,14 @@ interface PresentationElement {
   }
 }
 
-/** Vertical layout of a table shape on the slide (from a fetched presentation). */
-export interface TableSlideLayout {
-  /** Rendered height of the table bounding box on the slide (EMU). */
-  heightBudgetEmu: number
-  /** Per-row heights from the template before content fill (EMU). */
-  templateRowHeightsEmu: number[]
-}
-
-/** Google Slides API: 1 pt = 12_700 EMU. Heuristic defaults for body table text. */
-const PT_TO_EMU = 12_700
-const ESTIMATED_TABLE_FONT_SIZE_PT = 11
-const ESTIMATED_LINE_HEIGHT_EMU = Math.round(ESTIMATED_TABLE_FONT_SIZE_PT * PT_TO_EMU * 1.2)
-const ESTIMATED_CHAR_WIDTH_EMU = Math.round(ESTIMATED_TABLE_FONT_SIZE_PT * PT_TO_EMU * 0.55)
-const ESTIMATED_CELL_VERTICAL_PADDING_EMU = PT_TO_EMU * 2
+/**
+ * Default number of body rows placed on a slide once a table's content overflows the
+ * template's real physical row count. Deliberately a fixed constant rather than a
+ * height-derived estimate: Slides autofits row height to wrapped text at render time,
+ * so predicting per-cell line-wrap from character counts is unreliable and previously
+ * caused tables to be split far more aggressively than necessary (see history).
+ */
+const DEFAULT_BODY_ROWS_PER_SLIDE = 6
 
 interface PresentationSlide {
   pageElements?: PresentationElement[]
@@ -232,102 +218,14 @@ export function buildTableColumnWidthRequests(input: {
   }))
 }
 
-/** Reads table bounding height and template row heights from a fetched presentation. */
-export function findTableSlideLayout(
-  presentationData: PresentationPayload,
-  tableObjectId: string
-): TableSlideLayout | null {
-  for (const slide of presentationData.slides ?? []) {
-    for (const element of slide.pageElements ?? []) {
-      if (element.objectId !== tableObjectId || !element.table) continue
-
-      const scaleY = Math.abs(element.transform?.scaleY ?? 1)
-      const sizeHeight = readDimensionEmu(element.size?.height)
-      const templateRowHeightsEmu = (element.table.tableRows ?? []).map((row) =>
-        readDimensionEmu(row.rowHeight)
-      )
-
-      let heightBudgetEmu = sizeHeight > 0 ? sizeHeight * scaleY : 0
-      if (heightBudgetEmu <= 0 && templateRowHeightsEmu.length > 0) {
-        heightBudgetEmu = templateRowHeightsEmu.reduce((sum, height) => sum + height, 0)
-      }
-      if (heightBudgetEmu <= 0) return null
-
-      return { heightBudgetEmu, templateRowHeightsEmu }
-    }
-  }
-  return null
-}
-
 /**
- * Estimates wrapped line count for cell text given a column width (EMU).
- */
-export function estimateCellLineCount(text: string, columnWidthEmu: number): number {
-  if (!text) return 1
-  const usableWidth = Math.max(MIN_COLUMN_WIDTH_EMU, columnWidthEmu - PT_TO_EMU * 4)
-  const charsPerLine = Math.max(1, Math.floor(usableWidth / ESTIMATED_CHAR_WIDTH_EMU))
-  return Math.max(1, Math.ceil(text.length / charsPerLine))
-}
-
-/**
- * Estimates rendered row height from the tallest cell in the row (EMU).
- */
-export function estimateRowHeightEmu(row: string[], columnWidths: number[]): number {
-  let maxLines = 1
-  for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
-    const columnWidth = columnWidths[columnIndex] ?? columnWidths[0] ?? MIN_COLUMN_WIDTH_EMU
-    maxLines = Math.max(maxLines, estimateCellLineCount(row[columnIndex] ?? '', columnWidth))
-  }
-  return maxLines * ESTIMATED_LINE_HEIGHT_EMU + ESTIMATED_CELL_VERTICAL_PADDING_EMU
-}
-
-/**
- * Returns how many content rows fit in the table's vertical budget on the slide.
- */
-export function computeMaxRowsThatFitOnSlide(input: {
-  content: string[][]
-  slideLayout: TableSlideLayout
-  columnWidths: number[]
-  minRows: number
-  maxRows: number
-}): number {
-  const { content, slideLayout, minRows, maxRows } = input
-  if (content.length === 0) return minRows
-
-  const columnWidths =
-    input.columnWidths.length > 0
-      ? input.columnWidths
-      : [MIN_COLUMN_WIDTH_EMU]
-
-  const templateRows = slideLayout.templateRowHeightsEmu.length
-  const avgTemplateRowHeight =
-    templateRows > 0
-      ? slideLayout.templateRowHeightsEmu.reduce((sum, height) => sum + height, 0) / templateRows
-      : slideLayout.heightBudgetEmu / Math.max(maxRows, content.length)
-
-  let usedHeight = 0
-  let fitRows = 0
-
-  for (let rowIndex = 0; rowIndex < content.length && fitRows < maxRows; rowIndex += 1) {
-    const row = content[rowIndex] ?? []
-    const estimatedHeight = estimateRowHeightEmu(row, columnWidths)
-    const templateHeight = slideLayout.templateRowHeightsEmu[rowIndex] ?? avgTemplateRowHeight
-    const rowHeight = Math.max(estimatedHeight, templateHeight)
-
-    if (fitRows >= minRows && usedHeight + rowHeight > slideLayout.heightBudgetEmu) {
-      break
-    }
-
-    usedHeight += rowHeight
-    fitRows += 1
-  }
-
-  return Math.min(maxRows, Math.max(minRows, fitRows))
-}
-
-/**
- * Splits table content across one or more slides when rows would overflow the template
- * table height. Repeats the header row on continuation slides when `headerRow` is set.
+ * Splits table content across one or more slides when body rows exceed the template's
+ * real physical row count (read live from the fetched template presentation). Repeats
+ * the header row on continuation slides when `headerRow` is set. Content that fits
+ * within the template's real capacity is never split, no matter how much text wraps
+ * within a cell — Slides autofits row height at render time, so we don't try to
+ * predict it here. Once content genuinely overflows that capacity, every resulting
+ * slide (including the first) is chunked uniformly at `DEFAULT_BODY_ROWS_PER_SLIDE`.
  */
 export function splitTableContentAcrossSlides(input: {
   content: unknown
@@ -335,8 +233,8 @@ export function splitTableContentAcrossSlides(input: {
   maxColumns: number
   minRows: number
   headerRow?: boolean
-  slideLayout: TableSlideLayout | null
-  columnWidths: number[]
+  /** Real physical row count of the template's table (from `findTableDimensions`), when known. */
+  templateRowCount: number | null
 }): string[][][] {
   const contentRowCount = Array.isArray(input.content) ? input.content.length : 0
   const normalized = normalizeTableContent(
@@ -345,10 +243,6 @@ export function splitTableContentAcrossSlides(input: {
     input.maxColumns
   )
   if (normalized.length === 0) return []
-  if (!input.slideLayout) return [normalized]
-
-  const columnWidths =
-    input.columnWidths.length > 0 ? input.columnWidths : [MIN_COLUMN_WIDTH_EMU]
 
   const header = input.headerRow ? normalized[0] : undefined
   const bodyRows = input.headerRow ? normalized.slice(1) : normalized
@@ -357,44 +251,24 @@ export function splitTableContentAcrossSlides(input: {
     return header ? [[header]] : []
   }
 
-  const maxBodyRowsPerSlide = input.headerRow
-    ? Math.max(1, input.maxRows - 1)
-    : input.maxRows
+  const maxBodyRowsPerSlide = input.headerRow ? Math.max(1, input.maxRows - 1) : input.maxRows
 
-  const chunks: string[][][] = []
-  let bodyOffset = 0
+  const templateBodyCapacity =
+    input.templateRowCount != null
+      ? Math.max(1, input.headerRow ? input.templateRowCount - 1 : input.templateRowCount)
+      : maxBodyRowsPerSlide
 
-  while (bodyOffset < bodyRows.length) {
-    const reservedHeight = header ? estimateRowHeightEmu(header, columnWidths) : 0
-    const bodyBudget = Math.max(
-      ESTIMATED_LINE_HEIGHT_EMU,
-      input.slideLayout.heightBudgetEmu - reservedHeight
-    )
-    const bodySlideLayout: TableSlideLayout = {
-      heightBudgetEmu: bodyBudget,
-      templateRowHeightsEmu: input.slideLayout.templateRowHeightsEmu.slice(header ? 1 : 0),
-    }
-
-    const remainingBody = bodyRows.slice(bodyOffset)
-    let bodyFit = computeMaxRowsThatFitOnSlide({
-      content: remainingBody,
-      slideLayout: bodySlideLayout,
-      columnWidths,
-      minRows: 1,
-      maxRows: maxBodyRowsPerSlide,
-    })
-
-    if (bodyFit <= 0 && remainingBody.length > 0) {
-      bodyFit = 1
-    }
-    if (bodyFit <= 0) break
-
-    const chunkBody = remainingBody.slice(0, bodyFit)
-    chunks.push(header ? [header, ...chunkBody] : chunkBody)
-    bodyOffset += bodyFit
+  if (bodyRows.length <= Math.min(templateBodyCapacity, maxBodyRowsPerSlide)) {
+    return [header ? [header, ...bodyRows] : bodyRows]
   }
 
-  if (chunks.length === 0) return [normalized]
+  const rowsPerSlide = Math.min(DEFAULT_BODY_ROWS_PER_SLIDE, maxBodyRowsPerSlide)
+  const chunks: string[][][] = []
+
+  for (let offset = 0; offset < bodyRows.length; offset += rowsPerSlide) {
+    const chunkBody = bodyRows.slice(offset, offset + rowsPerSlide)
+    chunks.push(header ? [header, ...chunkBody] : chunkBody)
+  }
 
   return chunks
 }
@@ -435,8 +309,9 @@ export interface TableExpandableSlide {
 }
 
 /**
- * Duplicates slide entries when a table block's content exceeds one slide's height budget.
- * Each continuation slide reuses the same template and repeats the header row when present.
+ * Duplicates slide entries when a table block's content exceeds the template's real
+ * physical row count. Each continuation slide reuses the same template and repeats
+ * the header row when present.
  */
 export function expandSlidesForTableOverflow<T extends TableExpandableSlide>(
   slides: T[],
@@ -457,16 +332,14 @@ export function expandSlidesForTableOverflow<T extends TableExpandableSlide>(
       continue
     }
 
-    const slideLayout = findTableSlideLayout(templatePresentation, tableBlock.shapeId)
-    const columnLayout = findTableColumnLayout(templatePresentation, tableBlock.shapeId)
+    const templateDimensions = findTableDimensions(templatePresentation, tableBlock.shapeId)
     const chunks = splitTableContentAcrossSlides({
       content: tableContent,
       maxRows: tableBlock.maxRows,
       maxColumns: tableBlock.maxColumns,
       minRows: tableBlock.minRows ?? 1,
       headerRow: tableBlock.headerRow,
-      slideLayout,
-      columnWidths: columnLayout?.columnWidths ?? [],
+      templateRowCount: templateDimensions?.rows ?? null,
     })
 
     if (chunks.length <= 1) {

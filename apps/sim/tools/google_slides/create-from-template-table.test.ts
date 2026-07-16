@@ -7,14 +7,11 @@ import {
   buildTableColumnWidthRequests,
   buildTableContentRequests,
   computeColumnContentWeights,
-  computeMaxRowsThatFitOnSlide,
   distributeColumnWidthsByContent,
-  estimateCellLineCount,
   expandSlidesForTableOverflow,
   appendTableContinuationTitleSuffix,
   findTableColumnLayout,
   findTableDimensions,
-  findTableSlideLayout,
   normalizeTableContent,
   splitTableContentAcrossSlides,
 } from '@/tools/google_slides/create-from-template-table'
@@ -326,105 +323,73 @@ describe('buildTableContentRequests', () => {
   })
 })
 
-describe('findTableSlideLayout', () => {
-  it('derives height budget from element size and scaleY', () => {
-    const layout = findTableSlideLayout(
-      {
-        slides: [
-          {
-            pageElements: [
-              {
-                objectId: 'table_1',
-                size: { height: { magnitude: 2_000_000, unit: 'EMU' } },
-                transform: { scaleY: 1.5 },
-                table: {
-                  tableRows: [
-                    { rowHeight: { magnitude: 200_000, unit: 'EMU' } },
-                    { rowHeight: { magnitude: 300_000, unit: 'EMU' } },
-                  ],
-                },
-              },
-            ],
-          },
-        ],
-      },
-      'table_1'
-    )
-
-    expect(layout).toEqual({
-      heightBudgetEmu: 3_000_000,
-      templateRowHeightsEmu: [200_000, 300_000],
-    })
-  })
-})
-
-describe('computeMaxRowsThatFitOnSlide', () => {
-  it('returns fewer rows when long cell text exceeds the vertical budget', () => {
-    const longCell = 'Word '.repeat(40).trim()
-    const content = Array.from({ length: 10 }, () => ['Label', longCell])
-
-    const fitRows = computeMaxRowsThatFitOnSlide({
-      content,
-      slideLayout: {
-        heightBudgetEmu: 800_000,
-        templateRowHeightsEmu: Array.from({ length: 10 }, () => 80_000),
-      },
-      columnWidths: [700_000, 700_000],
-      minRows: 2,
-      maxRows: 10,
-    })
-
-    expect(fitRows).toBeLessThan(10)
-    expect(fitRows).toBeGreaterThanOrEqual(2)
-  })
-
-  it('wraps more text into fewer lines in wider columns', () => {
-    const narrowLines = estimateCellLineCount('abcdefghijklmnop', 500_000)
-    const wideLines = estimateCellLineCount('abcdefghijklmnop', 2_000_000)
-    expect(wideLines).toBeLessThanOrEqual(narrowLines)
-  })
-})
-
 describe('splitTableContentAcrossSlides', () => {
-  const slideLayout = {
-    heightBudgetEmu: 900_000,
-    templateRowHeightsEmu: Array.from({ length: 10 }, () => 90_000),
-  }
-  const columnWidths = [900_000, 900_000, 900_000]
   const longCell = 'A'.repeat(120)
 
-  it('returns a single chunk when all rows fit on one slide', () => {
+  it('returns a single chunk when body rows fit within the template row count', () => {
     const chunks = splitTableContentAcrossSlides({
       content: [
         ['H1', 'H2', 'H3'],
         ['Row 1', 'A', 'B'],
       ],
-      maxRows: 10,
+      maxRows: 20,
       maxColumns: 3,
       minRows: 2,
       headerRow: true,
-      slideLayout,
-      columnWidths,
+      templateRowCount: 10,
     })
 
     expect(chunks).toHaveLength(1)
     expect(chunks[0]).toHaveLength(2)
   })
 
-  it('splits body rows across slides and repeats the header row', () => {
-    const bodyRows = Array.from({ length: 10 }, (_, index) => [
+  it('keeps more than 6 body rows on one slide when the template can actually hold them', () => {
+    const bodyRows = Array.from({ length: 8 }, (_, index) => [
       `Row ${index + 1}`,
       longCell,
       longCell,
     ])
     const chunks = splitTableContentAcrossSlides({
       content: [['Col A', 'Col B', 'Col C'], ...bodyRows],
-      maxRows: 10,
+      maxRows: 20,
       maxColumns: 3,
       minRows: 2,
       headerRow: true,
-      slideLayout,
-      columnWidths,
+      templateRowCount: 10,
+    })
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toHaveLength(9)
+  })
+
+  it('never splits fewer than 6 body rows even without a known template row count', () => {
+    const bodyRows = Array.from({ length: 4 }, (_, index) => [`Row ${index + 1}`, 'A', 'B'])
+    const chunks = splitTableContentAcrossSlides({
+      content: [['Col A', 'Col B', 'Col C'], ...bodyRows],
+      maxRows: 20,
+      maxColumns: 3,
+      minRows: 2,
+      headerRow: true,
+      templateRowCount: null,
+    })
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toHaveLength(5)
+  })
+
+  it('splits into uniform 6-body-row chunks once the template row count is exceeded, repeating the header', () => {
+    const bodyRows = Array.from({ length: 13 }, (_, index) => [
+      `Row ${index + 1}`,
+      longCell,
+      longCell,
+    ])
+    const chunks = splitTableContentAcrossSlides({
+      content: [['Col A', 'Col B', 'Col C'], ...bodyRows],
+      maxRows: 20,
+      maxColumns: 3,
+      minRows: 2,
+      headerRow: true,
+      templateRowCount: 10,
     })
 
     expect(chunks.length).toBeGreaterThan(1)
@@ -432,8 +397,12 @@ describe('splitTableContentAcrossSlides', () => {
       expect(chunk[0]).toEqual(['Col A', 'Col B', 'Col C'])
     }
 
-    const totalBodyRows = chunks.reduce((sum, chunk) => sum + chunk.length - 1, 0)
-    expect(totalBodyRows).toBe(10)
+    const bodyChunkSizes = chunks.map((chunk) => chunk.length - 1)
+    expect(bodyChunkSizes.slice(0, -1)).toEqual(bodyChunkSizes.slice(0, -1).map(() => 6))
+    expect(bodyChunkSizes.at(-1)).toBeLessThanOrEqual(6)
+
+    const totalBodyRows = bodyChunkSizes.reduce((sum, size) => sum + size, 0)
+    expect(totalBodyRows).toBe(13)
   })
 })
 
@@ -468,15 +437,10 @@ describe('expandSlidesForTableOverflow', () => {
             pageElements: [
               {
                 objectId: 'table_1',
-                size: { height: { magnitude: 900_000, unit: 'EMU' } },
-                transform: { scaleY: 1 },
                 table: {
                   rows: 10,
                   columns: 3,
                   tableColumns: columnWidthsToTableColumns([900_000, 900_000, 900_000]),
-                  tableRows: Array.from({ length: 10 }, () => ({
-                    rowHeight: { magnitude: 90_000, unit: 'EMU' },
-                  })),
                 },
               },
             ],
@@ -497,6 +461,53 @@ describe('expandSlidesForTableOverflow', () => {
     expect(slides[1]?.blocks.find((block) => block.type === 'TEXT')?.content).toBe(
       'My Table (continued)'
     )
+  })
+
+  it('does not duplicate slides when content fits the template row count, even with long wrapping text', () => {
+    const longCell = 'Word '.repeat(40).trim()
+    const slides = expandSlidesForTableOverflow(
+      [
+        {
+          order: 1,
+          templateSlideObjectId: 'slide_tpl',
+          blocks: [
+            { type: 'TEXT', role: 'TITLE', shapeId: 'title_1', content: 'My Table' },
+            {
+              type: 'TABLE',
+              shapeId: 'table_1',
+              headerRow: true,
+              maxRows: 20,
+              maxColumns: 3,
+              minRows: 2,
+              content: [
+                ['Col A', 'Col B', 'Col C'],
+                ...Array.from({ length: 8 }, (_, index) => [`Row ${index + 1}`, longCell, longCell]),
+              ],
+            },
+          ],
+        },
+      ],
+      {
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                table: {
+                  rows: 10,
+                  columns: 3,
+                  tableColumns: columnWidthsToTableColumns([900_000, 900_000, 900_000]),
+                },
+              },
+            ],
+          },
+        ],
+      }
+    )
+
+    expect(slides).toHaveLength(1)
+    const tableContent = slides[0]?.blocks.find((block) => block.type === 'TABLE')?.content
+    expect(tableContent).toHaveLength(9)
   })
 })
 
