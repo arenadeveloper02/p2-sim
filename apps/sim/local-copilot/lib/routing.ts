@@ -1,5 +1,5 @@
 import { createLogger } from '@sim/logger'
-import { isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
+import { getLocalCopilotUserAccess, isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 
@@ -49,7 +49,8 @@ export async function shouldRouteToLocalCopilot(params: {
     return false
   }
 
-  if (!(await isLocalCopilotEnabledForUser(userId))) {
+  const access = await getLocalCopilotUserAccess(userId)
+  if (!access.hasAccess && !access.localOnly) {
     logger.info('Arena Copilot route skipped', {
       reason: 'disabled_or_user_not_allowed',
       workspaceId,
@@ -61,7 +62,9 @@ export async function shouldRouteToLocalCopilot(params: {
     return false
   }
 
-  if (preference === 'external') {
+  // Local-only users are always routed to Local, ignoring any stored/stale
+  // `external` preference. Full-access users may opt into Cloud.
+  if (!access.localOnly && preference === 'external') {
     logger.info('Arena Copilot route skipped', {
       reason: 'user_prefer_external',
       workspaceId,
