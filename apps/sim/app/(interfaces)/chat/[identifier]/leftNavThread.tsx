@@ -84,7 +84,8 @@ function sidebarRowStyle(_isActive: boolean): CSSProperties | undefined {
 
 function sidebarRowIconClass(isActive: boolean) {
   return cn(
-    'ml-1 size-6 shrink-0',
+    // Pulls the icon left so it lines up with the logo (row padding otherwise over-indents it).
+    '-ml-1.5 size-6 shrink-0',
     isActive ? 'text-[#155CBA]' : 'text-[var(--text-body)] group-hover:text-[#155CBA]'
   )
 }
@@ -626,7 +627,7 @@ const LeftNavThread = ({
         onClick={handleExitAgent}
         aria-label='Exit Agent'
       >
-        <span className={cn(sidebarSoftIconClass(), !collapsed && 'ml-1')}>
+        <span className={cn(sidebarSoftIconClass(), !collapsed && '-ml-1.5')}>
           <ArrowLeft className='size-4' />
         </span>
         {!collapsed && <span className={sidebarRowLabelClass(false)}>Exit Agent</span>}

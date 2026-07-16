@@ -102,15 +102,14 @@ export const ChatInput: React.FC<{
     if (!el) return
     el.style.height = 'auto'
     const singleLineHeight = 24
-    const maxHeight = landing ? singleLineHeight : MAX_TEXTAREA_HEIGHT
     const scrollHeight = el.scrollHeight
-    const newHeight = Math.min(scrollHeight, maxHeight)
+    const newHeight = Math.min(scrollHeight, MAX_TEXTAREA_HEIGHT)
     el.style.height = `${newHeight}px`
 
-    if (useDeployedChrome && !landing) {
+    if (useDeployedChrome) {
       setIsMultiLineInput(newHeight > singleLineHeight + 2 || inputValue.includes('\n'))
     }
-  }, [inputValue, landing, useDeployedChrome])
+  }, [inputValue, useDeployedChrome])
 
   const handleFileSelect = async (selectedFiles: FileList | null) => {
     if (!selectedFiles) return
@@ -228,10 +227,10 @@ export const ChatInput: React.FC<{
     !isStreaming
 
   const hasDeployedExtras =
-    attachedFiles.length > 0 || selectedGeneratedImages.length > 0 || (!landing && isMultiLineInput)
+    attachedFiles.length > 0 || selectedGeneratedImages.length > 0 || isMultiLineInput
 
   const renderDeployedControls = () => {
-    const alignControlsCenter = landing || !isMultiLineInput
+    const alignControlsCenter = !isMultiLineInput
     const controlAlignClass = alignControlsCenter
       ? 'h-full min-h-0 items-center'
       : 'items-start py-1'
@@ -280,9 +279,9 @@ export const ChatInput: React.FC<{
           rows={1}
           className={cn(
             'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] leading-6 outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[#94A3B8] placeholder:text-[16px] focus-visible:ring-0 focus-visible:ring-offset-0',
-            landing || !isMultiLineInput
-              ? 'min-h-[24px] overflow-hidden'
-              : 'min-h-[24px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+            isMultiLineInput
+              ? 'min-h-[24px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+              : 'min-h-[24px] overflow-hidden'
           )}
         />
 
