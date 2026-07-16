@@ -10,7 +10,7 @@ export function PreviewError({ label, error }: { label: string; error: string })
   return (
     <div className='flex flex-1 flex-col items-center justify-center gap-[8px]'>
       <p className='font-medium text-[14px] text-[var(--text-primary)]'>
-        Failed to preview {label}
+        Loading... {label} may take a few minutes to load.
       </p>
       <p className='text-[13px] text-[var(--text-muted)]'>{error}</p>
     </div>

@@ -163,6 +163,12 @@ export type LocalCopilotStreamEvent =
       error?: string
       resources?: MothershipResource[]
     }
+  | {
+      type: 'status'
+      message: string
+      toolCallId?: string
+      toolName?: string
+    }
   | { type: 'patch_proposed'; patch: WorkflowPatch; patchId: string }
   | { type: 'recommendations'; items: string[] }
   | { type: 'error'; message: string }
