@@ -291,34 +291,6 @@ interface LlmAppSpec {
 }
 
 /**
- * Resolves the monorepo root by walking up from the current working directory.
- * Prefers the directory that contains `bun.lock` (workspace root), not nested package roots like `apps/sim`.
- */
-export function findMonorepoRoot(startDir: string = process.cwd()): string {
-  let dir = resolve(/* turbopackIgnore: true */ startDir)
-  let packageJsonFallback = dir
-
-  while (true) {
-    if (
-      existsSync(join(/* turbopackIgnore: true */ dir, 'bun.lock')) ||
-      existsSync(join(/* turbopackIgnore: true */ dir, 'turbo.json'))
-    ) {
-      return dir
-    }
-    if (existsSync(join(/* turbopackIgnore: true */ dir, 'package.json'))) {
-      packageJsonFallback = dir
-    }
-    const parent = dirname(dir)
-    if (parent === dir) {
-      break
-    }
-    dir = parent
-  }
-
-  return packageJsonFallback
-}
-
-/**
  * Converts a display name into a safe repository folder name.
  */
 export function slugifyRepoName(name: string): string {
@@ -1646,8 +1618,8 @@ async function generateNextjsAppInner(
     })
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
+    const outputDir = getGeneratedAppDir(repoName)
     const monorepoRoot = findMonorepoRoot()
-    const outputDir = join(/* turbopackIgnore: true */ monorepoRoot, GENERATED_APPS_DIR, repoName)
 
     await mkdir(outputDir, { recursive: true })
     const fileCount = await writeAppFiles(outputDir, spec.files)

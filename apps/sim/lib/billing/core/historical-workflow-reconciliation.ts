@@ -1015,6 +1015,12 @@ async function ensureDatabaseConnection(): Promise<void> {
 /**
  * Lists one page of terminal workflow executions with ledger sums and projection drift.
  * Uses a stable descending keyset on `(started_at, execution_id)`.
+ *
+ * The `ledgerSum` subquery aliases `usage_log` and references the outer table
+ * object (not its column) because in a no-join select drizzle strips table
+ * qualifiers from columns embedded in select-list sql fragments, which would
+ * otherwise render the correlation as the tautology
+ * `"execution_id" = "execution_id"` and sum the entire table for every row.
  */
 export async function listHistoricalWorkflowExecutions(
   filter: HistoricalExecutionFilter = {},
@@ -1065,10 +1071,10 @@ async function listHistoricalWorkflowExecutionsOnce(
       costTotal: workflowExecutionLogs.costTotal,
       modelsUsed: workflowExecutionLogs.modelsUsed,
       ledgerSum: sql<string>`COALESCE((
-        SELECT SUM(${usageLog.cost})
-        FROM ${usageLog}
-        WHERE ${usageLog.executionId} = ${workflowExecutionLogs.executionId}
-          AND ${usageLog.source} = 'workflow'
+        SELECT SUM(ul.cost)
+        FROM ${usageLog} ul
+        WHERE ul.execution_id = ${workflowExecutionLogs}.execution_id
+          AND ul.source = 'workflow'
       ), 0)`,
     })
     .from(workflowExecutionLogs)
