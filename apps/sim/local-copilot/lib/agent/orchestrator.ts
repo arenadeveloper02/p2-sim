@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { getErrorMessage } from '@sim/utils/errors'
 import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { buildLocalCopilotContext, contextToPromptJson } from '@/local-copilot/lib/context/build-context'
@@ -10,6 +11,7 @@ import {
   LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
+import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
 import {
   stripLeakedToolMarkers,
@@ -33,12 +35,9 @@ import {
   type CopilotFileAttachmentRef,
 } from '@/local-copilot/lib/user-turn-content'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
-import { LOCAL_COPILOT_TOOLS } from '@/local-copilot/lib/tools/definitions'
-import {
-  executeLocalCopilotTool,
-  refreshToolContext,
-} from '@/local-copilot/lib/tools/executor'
-import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import { LOCAL_COPILOT_TOOLS, resolveLocalCopilotTools } from '@/local-copilot/lib/tools/definitions'
+import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
+import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
 import {
   buildFollowUpContinuationMessage,
   detectMandatoryFollowUp,
@@ -47,6 +46,10 @@ import {
   sortToolCallsForExecution,
   type MandatoryFollowUp,
 } from '@/local-copilot/lib/tools/format-tool-result'
+import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
+import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
+import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
+import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotAgent')
@@ -62,12 +65,18 @@ Identity:
 Response format:
 - Open with a warm, concise greeting when starting a conversation or after a long pause.
 - Briefly summarize what you see in the workspace (workflows, files, tables, knowledge bases) in plain prose. Do not greet with a generic capability bullet list.
+- Never mention cost, pricing, dollar amounts, or spend in user-facing replies — even if tool results include them (e.g. do not write "cost ~$0.016"). You may still mention runtime/duration when useful.
 - When suggesting next steps, end your message with a clickable options block in this exact format (never use markdown bullet lists for suggestions):
 
 <options>{"1":{"title":"Run Weekly Email Summary","description":"Execute the existing workflow and summarize results"},"2":{"title":"Debug the last run","description":"Inspect logs from the most recent execution"},"3":{"title":"Create a brand-new workflow","description":"Only when nothing existing fits"}}</options>
 
 - Each option title is sent as the user's next message when they click it — write titles as clear imperative commands (e.g. "Check my inbox", "Debug the last run").
 - Include 3–4 options when offering follow-ups. Omit the options block when no follow-ups are needed.
+- Charts: when the user asks for a chart, graph, plot, or visualization of data you have (tool results, logs, tables, numbers they provided), render it inline with a chart tag in this exact format (never quickchart.io links, never ASCII art, never a markdown table as a substitute):
+
+<chart>{"type":"bar","title":"Runs per day","labels":["Mon","Tue","Wed"],"series":[{"name":"Successful","data":[12,18,9]},{"name":"Failed","data":[1,0,3]}]}</chart>
+
+- Chart tag rules: \`type\` is one of "bar", "line", "area", "pie", "scatter". \`labels\` are x-axis categories (or slice names for pie). Each \`series\` entry has an optional \`name\` and a numeric \`data\` array (for scatter, data may be [x,y] pairs). Pie charts use exactly one series whose values pair with \`labels\`. Keep the JSON on a single line with no comments. Add a one-sentence takeaway in prose near the chart; do not repeat all the numbers in text.
 
 Rules:
 - You have awareness of the workspace, available blocks/integrations, and (when open) the current workflow structure, variables, logs, and credential metadata (never secrets).
@@ -102,7 +111,11 @@ Rules:
   - Image: \`generate_image\` with a clear \`prompt\` (and optional \`outputs.files\` path to save the file).
   - For variations, pass the user's exact wording in \`prompt\` (e.g. "3 variations of a red bus") — do not strip counts or the word "variations".
   - Live web / current data: \`search_online\` with \`query\` and \`toolTitle\` (uses Exa/Serper when \`EXA_API_KEY\` / Serper keys exist).
-  - Other integrations: \`list_integration_tools({ integration: "exa" })\` then \`invoke_integration_tool({ toolId: "exa_search", params: { query: "..." } })\`.
+  - Other integrations: \`list_integration_tools({ integration: "gmail" })\` (underscores, not hyphens) then \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { ... } })\`. Never call \`load_integration_tool\` — that is Cloud-only; Arena Copilot uses \`invoke_integration_tool\`.
+  - For OAuth integrations (Google Sheets, Gmail, Slack, etc.), \`params\` MUST include \`credentialId\` from \`connectedIntegrations\` for that provider (e.g. providerId \`google-email\` for Gmail, \`google-sheets\` for Sheets). If only one connected credential matches, Arena Copilot injects it automatically. Google Docs/Drive/Sheets credentials are interchangeable for Drive search + Docs/Sheets tools.
+  - Google Docs by name (not ID): first \`google_drive_list\` with \`query\` set to the document title (or \`google_drive_search\` with \`prompt\` describing the doc), pick the matching file id (\`mimeType\` \`application/vnd.google-apps.document\`), then \`google_docs_read\` / \`google_docs_write\` with that \`documentId\`. Never pass the title as \`documentId\`.
+  - Google Sheets write/update/append: pass \`spreadsheetId\`, \`sheetName\` (tab name), \`values\` as a 2D array (e.g. \`[["Name","Age"],["Alice",30]]\`). Optional \`cellRange\` like \`A1\`. Legacy \`range\` like \`Sheet1!A1\` is also accepted.
+  - Gmail drafts (one-off, no workflow): \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { to, subject, body, credentialId } })\`. \`to\` and \`body\` are required strings. For separate drafts to multiple people, call once per recipient with a single email in \`to\` (Arena also fans out if \`to\` is an array). Do not put everyone on one draft unless the user asked for a single email.
   - Only build or run a workflow when the user wants automation saved for reuse, multi-step pipelines, or scheduling.
 - For open workflows, propose incremental changes via workflow patches (requiresConfirmation). For new workflows from home chat, use create_workflow + edit_workflow.
 - Running and testing workflows:
@@ -126,6 +139,9 @@ Rules:
   - Read or update tables: \`user_table\` — use \`get\` / \`get_schema\` / \`query_rows\` to read; \`create\`, \`insert_row\`, \`batch_insert_rows\`, \`import_file\`, \`create_from_file\` to write.
   - Knowledge bases: \`knowledge_base\` — \`query\` to search/retrieve; \`add_file\` to ingest a workspace file or URL; \`create\` for new KBs; \`get\` / \`list\` to inspect.
   - Prefer existing resources in context before creating duplicates (same as workflows).
+- Workspace skills:
+  - Context may include \`skills\` (name + description). Descriptions only say when a skill applies — they are NOT the instructions.
+  - When a skill applies, call \`load_user_skill\` with its exact \`skill_name\`, then follow the returned content. Never act on the name or description alone.
 - E2B sandbox and code execution:
   - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, and \`supportedCodeLanguages\`.
   - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`.
@@ -133,7 +149,12 @@ Rules:
   - Code execution results include \`capturedOutput\` (preferred), plus \`stdout\` (prints) and \`result\` (return values). Read \`capturedOutput\` first — empty stdout with a return value is normal, not a failure.
   - Do **not** use \`function_execute\` or Daytona integration tools for workflow building, deployment, or questions you can answer without running code.
   - Do **not** tell the user about sandbox names (E2B, Daytona), empty payloads, internal retries, or "result variables" unless they explicitly asked to debug code execution. Give the answer directly.
-  - Do **not** use \`function_execute\` to create or edit DOCX/PPTX/PDF workspace files unless the user explicitly asks for sandbox code. Use \`create_file\` → \`workspace_file\` (append/update/patch) → \`edit_content\` in the next step (never parallel). For office formats, \`edit_content\` uses docxjs/pptxgenjs/pdflibjs JavaScript when \`e2b.docSandboxEnabled\` is true.
+  - Creating PPTX / DOCX / PDF (CRITICAL — always available, do not refuse):
+    1. \`create_file\` with a \`.pptx\` / \`.docx\` / \`.pdf\` path (empty shell — no inline content).
+    2. \`workspace_file\` with operation \`update\` (or \`append\`/\`patch\`) targeting that file — wait for success.
+    3. \`edit_content\` in a **later** tool round (never same batch as workspace_file) with **JavaScript** for the document API: \`pptxgenjs\` (\`globalThis.pptx\`), \`docxjs\`, or \`pdflibjs\`. Example: \`pptx.addSlide(); slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1 });\` — use the pre-initialized \`pptx\` instance; do not \`require('pptxgenjs')\` yourself.
+    - These formats compile via the built-in JS sandbox even when \`e2b.docSandboxEnabled\` is false. \`docSandboxEnabled: true\` only adds E2B extras (e.g. \`iconImage\`). Never tell the user you cannot generate PPTX because E2B is off.
+    - Do **not** use \`function_execute\` / Python \`python-pptx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
   - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.
 - Use tools to inspect context, validate workflows, fetch logs, run tests, and build or edit workflows.
 - When debugging failures, identify root cause, failing block, suggested fix, and test steps.
@@ -146,6 +167,8 @@ export interface RunAgentParams {
   message: string
   conversationId?: string
   chatId?: string
+  /** Scopes workspace_file → edit_content intents (mothership user message id when available). */
+  messageId?: string
   selectedBlockId?: string
   executionId?: string
   signal?: AbortSignal
@@ -166,13 +189,46 @@ export interface RunAgentParams {
 export async function* runLocalCopilotAgent(
   params: RunAgentParams
 ): AsyncGenerator<LocalCopilotStreamEvent, void, undefined> {
+  const startedAt = Date.now()
   const config = getLocalCopilotConfig()
-  const structuredContext = await buildLocalCopilotContext({
-    userId: params.userId,
+  logger.info('Arena Copilot agent starting', {
     workspaceId: params.workspaceId,
-    ...(params.workflowId ? { workflowId: params.workflowId } : {}),
-    selectedBlockId: params.selectedBlockId,
-    executionId: params.executionId,
+    workflowId: params.workflowId ?? null,
+    chatId: params.chatId ?? null,
+    provider: config.provider,
+    model: config.model,
+    hasApiKey: Boolean(config.apiKey),
+    messageChars: params.message.length,
+    priorTurns: params.priorMessages?.length ?? 0,
+    memory: getLocalCopilotMemorySnapshot(),
+  })
+
+  let structuredContext
+  try {
+    structuredContext = await buildLocalCopilotContext({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+      selectedBlockId: params.selectedBlockId,
+      executionId: params.executionId,
+    })
+  } catch (error) {
+    logger.error('Arena Copilot context build failed', {
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId ?? null,
+      error: getErrorMessage(error, 'context build failed'),
+      memory: getLocalCopilotMemorySnapshot(),
+    })
+    throw error
+  }
+
+  logger.info('Arena Copilot context built', {
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId ?? null,
+    workspaceWorkflowCount: structuredContext.workspaceWorkflows?.length ?? 0,
+    availableBlockCount: structuredContext.availableBlocks?.length ?? 0,
+    durationMs: Date.now() - startedAt,
+    memory: getLocalCopilotMemorySnapshot(),
   })
 
   const persistLocally = params.persistLocally !== false
@@ -243,25 +299,51 @@ export async function* runLocalCopilotAgent(
     LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
   )
 
+  const tools = await resolveLocalCopilotTools(params.workspaceId)
+
   logger.info('Arena Copilot prompt budget applied', {
     workflowDetail,
     historyTurns: historyMessages.length,
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages),
+    toolDefinitionCount: tools.length,
+    skillToolEnabled: tools.length > LOCAL_COPILOT_TOOLS.length,
+    memory: getLocalCopilotMemorySnapshot(),
   })
 
   const provider = getLocalCopilotProvider()
-  const toolCtx = {
+  const turnMessageId = params.messageId?.trim() || generateId()
+  const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId,
     chatId: params.chatId,
+    messageId: turnMessageId,
     abortSignal: params.signal,
     userPermission: params.userPermission,
     structuredContext,
     selectedBlockId: params.selectedBlockId,
     lastUserMessage: userTurnText,
+  }
+
+  /** Loads the heavy tool executor graph on first tool call only. */
+  let toolExecutorModule: typeof import('@/local-copilot/lib/tools/executor') | null = null
+  async function getToolExecutor() {
+    if (!toolExecutorModule) {
+      const loadStartedAt = Date.now()
+      logger.info('Arena Copilot lazy-loading tool executor', {
+        workspaceId: params.workspaceId,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
+      toolExecutorModule = await import('@/local-copilot/lib/tools/executor')
+      logger.info('Arena Copilot tool executor loaded', {
+        workspaceId: params.workspaceId,
+        durationMs: Date.now() - loadStartedAt,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
+    }
+    return toolExecutorModule
   }
   let assistantText = ''
   let proposedPatch: WorkflowPatch | undefined
@@ -276,12 +358,32 @@ export async function* runLocalCopilotAgent(
     let roundInputTokens = 0
     let roundOutputTokens = 0
 
-    for await (const chunk of provider.chatCompletionStream({
-      model: config.model,
-      messages,
-      tools: LOCAL_COPILOT_TOOLS,
-      signal: params.signal,
+    // Status heartbeats cover the immediate first line + rotation while the
+    // model stream is quiet (including pauses after the first token).
+    for await (const event of iterateWithIdleStatus({
+      source: provider.chatCompletionStream({
+        model: config.model,
+        messages,
+        tools,
+        signal: params.signal,
+      }),
+      abortSignal: params.signal,
+      messages: MODEL_WAIT_STATUS_FALLBACK,
+      idleMs: 0,
+      intervalMs: 4000,
+      enrichMessages: (abortSignal) =>
+        generateEngagementStatusMessages({
+          phase: 'model_wait',
+          userHint: params.message,
+          signal: abortSignal,
+        }),
     })) {
+      if (event.type === 'status') {
+        yield event
+        continue
+      }
+
+      const chunk = event.item
       if (chunk.type === 'text' && chunk.content) {
         const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
         if (!cleaned) continue
@@ -296,6 +398,16 @@ export async function* runLocalCopilotAgent(
         roundOutputTokens = chunk.usage.outputTokens
       }
     }
+
+    logger.info('Arena Copilot model round finished', {
+      round,
+      toolCallCount: pendingToolCalls.length,
+      toolNames: pendingToolCalls.map((call) => call.name),
+      assistantChars: assistantText.length,
+      inputTokens: roundInputTokens,
+      outputTokens: roundOutputTokens,
+      memory: getLocalCopilotMemorySnapshot(),
+    })
 
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
       await recordModelUsage({
@@ -362,16 +474,45 @@ export async function* runLocalCopilotAgent(
         args: parsedArgs,
       }
 
-      const result = await executeLocalCopilotTool(call.name, parsedArgs, toolCtx)
+      const { executeLocalCopilotTool, refreshToolContext } = await getToolExecutor()
+      const toolStartedAt = Date.now()
+      logger.info('Arena Copilot tool starting', {
+        toolName: call.name,
+        toolCallId: call.id,
+        workflowId: toolCtx.workflowId ?? null,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
+      const toolStatus = runToolWithStatus({
+        toolCallId: call.id,
+        toolName: call.name,
+        args: parsedArgs,
+        abortSignal: params.signal,
+        execute: (onProgress) =>
+          executeLocalCopilotTool(call.name, parsedArgs, { ...toolCtx, onProgress }),
+      })
+      let result = await toolStatus.next()
+      while (!result.done) {
+        yield result.value
+        result = await toolStatus.next()
+      }
+      const toolResult = result.value
+      logger.info('Arena Copilot tool finished', {
+        toolName: call.name,
+        toolCallId: call.id,
+        success: toolResult.success,
+        error: toolResult.error ?? null,
+        durationMs: Date.now() - toolStartedAt,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
 
-      if (result.createdWorkflowId) {
-        toolCtx.workflowId = result.createdWorkflowId
+      if (toolResult.createdWorkflowId) {
+        toolCtx.workflowId = toolResult.createdWorkflowId
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
-      } else if (call.name === 'create_workflow' && !result.success) {
+      } else if (call.name === 'create_workflow' && !toolResult.success) {
         const output =
-          result.result && typeof result.result === 'object'
-            ? (result.result as Record<string, unknown>)
+          toolResult.result && typeof toolResult.result === 'object'
+            ? (toolResult.result as Record<string, unknown>)
             : {}
         if (
           output.useRunWorkflowInstead === true &&
@@ -380,13 +521,13 @@ export async function* runLocalCopilotAgent(
         ) {
           toolCtx.workflowId = output.existingWorkflowId.trim()
         }
-      } else if (call.name === 'edit_workflow' && result.success) {
+      } else if (call.name === 'edit_workflow' && toolResult.success) {
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
-      } else if (result.success && isWorkflowScopedDelegatedTool(call.name)) {
+      } else if (toolResult.success && isWorkflowScopedDelegatedTool(call.name)) {
         const output =
-          result.result && typeof result.result === 'object'
-            ? (result.result as Record<string, unknown>)
+          toolResult.result && typeof toolResult.result === 'object'
+            ? (toolResult.result as Record<string, unknown>)
             : {}
         const resolvedWorkflowId =
           typeof output.workflowId === 'string' && output.workflowId.trim()
@@ -403,16 +544,16 @@ export async function* runLocalCopilotAgent(
         type: 'tool_call_result',
         toolCallId: call.id,
         toolName: call.name,
-        success: result.success,
-        output: result.result,
-        ...(result.error ? { error: result.error } : {}),
-        ...(result.resources?.length ? { resources: result.resources } : {}),
+        success: toolResult.success,
+        output: toolResult.result,
+        ...(toolResult.error ? { error: toolResult.error } : {}),
+        ...(toolResult.resources?.length ? { resources: toolResult.resources } : {}),
       }
 
       turnToolRecords.push({
         name: call.name,
-        success: result.success,
-        result: result.result,
+        success: toolResult.success,
+        result: toolResult.result,
       })
 
       if (persistLocally && conversationId) {
@@ -421,18 +562,18 @@ export async function* runLocalCopilotAgent(
           toolCallId: call.id,
           toolName: call.name,
           arguments: parsedArgs,
-          result: result.result,
+          result: toolResult.result,
         })
       }
 
-      if (result.patch) {
-        proposedPatch = result.patch
-        if (result.patch.recommendations) {
-          recommendations = [...recommendations, ...result.patch.recommendations]
+      if (toolResult.patch) {
+        proposedPatch = toolResult.patch
+        if (toolResult.patch.recommendations) {
+          recommendations = [...recommendations, ...toolResult.patch.recommendations]
         }
       }
 
-      const formattedToolResult = formatToolResultForLlm(call.name, result.result)
+      const formattedToolResult = formatToolResultForLlm(call.name, toolResult.result)
       const mandatoryFollowUp = detectMandatoryFollowUp(call.name, formattedToolResult)
       if (mandatoryFollowUp) {
         pendingFollowUps = [
@@ -443,8 +584,8 @@ export async function* runLocalCopilotAgent(
       pendingFollowUps = resolveMandatoryFollowUps(
         pendingFollowUps,
         call.name,
-        result.success,
-        result.result
+        toolResult.success,
+        toolResult.result
       )
 
       messages.push({
@@ -505,7 +646,15 @@ export async function* runLocalCopilotAgent(
     conversationId: conversationId ?? null,
     messageId: messageId || null,
     patchId: patchId ?? null,
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId ?? null,
     historyTurns: historyMessages.length,
+    assistantChars: assistantText.length,
+    toolCallCount: turnToolRecords.length,
+    toolNames: turnToolRecords.map((record) => record.name),
+    hasPatch: Boolean(proposedPatch),
+    durationMs: Date.now() - startedAt,
+    memory: getLocalCopilotMemorySnapshot(),
   })
   yield { type: 'done', messageId: messageId || generateId() }
 }

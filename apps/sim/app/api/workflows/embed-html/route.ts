@@ -3,6 +3,8 @@ import { toError } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { generateInternalToken } from '@/lib/auth/internal'
+import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('WorkflowEmbedHtmlApi')
@@ -14,6 +16,8 @@ const RequestSchema = z.object({
 type AgentExecuteResponse<T> = {
   output?: { result?: T }
   result?: T
+  error?: string
+  success?: boolean
 }
 
 type EmbedResolveResult = {
@@ -27,26 +31,48 @@ type EmbedHtmlResult = {
   html?: string
 }
 
-function parseEmbedCredentials(result: EmbedResolveResult | undefined): {
-  workflowId: string | null
-  apiKey: string | null
-} {
-  if (!result) {
-    return { workflowId: null, apiKey: null }
+type UpstreamAuth =
+  | { type: 'apiKey'; apiKey: string }
+  | { type: 'internalJwt'; userId: string }
+
+function parseEmbedWorkflowId(result: EmbedResolveResult | undefined): string | null {
+  if (!result) return null
+  if (typeof result.workflow_id === 'string' && result.workflow_id.trim()) {
+    return result.workflow_id.trim()
   }
-
-  const workflowId =
-    (typeof result.workflow_id === 'string' ? result.workflow_id : null) ??
-    (typeof result.workflowId === 'string' ? result.workflowId : null)
-  const apiKey =
-    (typeof result.api_key === 'string' ? result.api_key : null) ??
-    (typeof result.apiKey === 'string' ? result.apiKey : null)
-
-  return { workflowId, apiKey }
+  if (typeof result.workflowId === 'string' && result.workflowId.trim()) {
+    return result.workflowId.trim()
+  }
+  return null
 }
 
 function buildExecuteUrl(agentBaseUrl: string, workflowId: string): string {
   return `${agentBaseUrl}/api/workflows/${workflowId}/execute`
+}
+
+/**
+ * Prefer the in-cluster / same-deployment base URL when the configured agent host
+ * matches this app, so internal JWT auth works for loopback execute calls.
+ */
+function resolveExecuteBaseUrl(agentBaseUrl: string): string {
+  try {
+    const configured = new URL(agentBaseUrl)
+    const app = new URL(getBaseUrl())
+    if (configured.host === app.host) {
+      return getInternalApiBaseUrl().replace(/\/$/, '')
+    }
+  } catch {
+    // fall through to the configured agent base URL
+  }
+  return agentBaseUrl
+}
+
+/**
+ * Upstream execute auth failures must not surface as the caller's session 401.
+ */
+function mapUpstreamStatus(status: number): number {
+  if (status === 401 || status === 403) return 502
+  return status
 }
 
 function responseForLog<T>(data: AgentExecuteResponse<T>): AgentExecuteResponse<T> {
@@ -67,10 +93,25 @@ function responseForLog<T>(data: AgentExecuteResponse<T>): AgentExecuteResponse<
   return data
 }
 
+async function buildUpstreamHeaders(auth: UpstreamAuth): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  if (auth.type === 'apiKey') {
+    headers['X-API-Key'] = auth.apiKey
+    return headers
+  }
+
+  const token = await generateInternalToken(auth.userId)
+  headers.Authorization = `Bearer ${token}`
+  return headers
+}
+
 async function executeAgentWorkflow<T>(params: {
   agentBaseUrl: string
   workflowId: string
-  apiKey: string
+  auth: UpstreamAuth
   body: Record<string, unknown>
   logLabel: string
 }): Promise<
@@ -80,17 +121,14 @@ async function executeAgentWorkflow<T>(params: {
 
   logger.info(`Embed HTML upstream request: ${params.logLabel}`, {
     url,
-    apiKey: params.apiKey,
     workflowId: params.workflowId,
+    authType: params.auth.type,
     body: params.body,
   })
 
   const upstream = await fetch(url, {
     method: 'POST',
-    headers: {
-      'X-API-Key': params.apiKey,
-      'Content-Type': 'application/json',
-    },
+    headers: await buildUpstreamHeaders(params.auth),
     body: JSON.stringify(params.body),
     cache: 'no-store',
   })
@@ -99,19 +137,19 @@ async function executeAgentWorkflow<T>(params: {
     const error = await upstream.text().catch(() => '')
     logger.error(`Embed HTML upstream request failed: ${params.logLabel}`, {
       url,
-      apiKey: params.apiKey,
       workflowId: params.workflowId,
+      authType: params.auth.type,
       status: upstream.status,
       response: error,
     })
-    return { ok: false, status: upstream.status, error }
+    return { ok: false, status: mapUpstreamStatus(upstream.status), error }
   }
 
   const data = (await upstream.json()) as AgentExecuteResponse<T>
   logger.info(`Embed HTML upstream response: ${params.logLabel}`, {
     url,
-    apiKey: params.apiKey,
     workflowId: params.workflowId,
+    authType: params.auth.type,
     response: responseForLog(data),
   })
   return { ok: true, data }
@@ -123,6 +161,10 @@ export const dynamic = 'force-dynamic'
 export const POST = withRouteHandler(async (req: NextRequest) => {
   const session = await getSession()
   if (!session?.user?.id) {
+    logger.warn('Embed HTML rejected: missing Better Auth session', {
+      hasCookieHeader: Boolean(req.headers.get('cookie')),
+      origin: req.headers.get('origin'),
+    })
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -141,18 +183,21 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
   let body: z.infer<typeof RequestSchema> = {}
   try {
-    body = RequestSchema.parse(await req.json())
+    // boundary-raw-json: tolerant body parse — invalid/missing JSON falls back to empty object + default persona
+    const rawBody = await req.json()
+    body = RequestSchema.parse(rawBody)
   } catch {
     body = {}
   }
 
   const persona = body.persona?.trim() || 'CEO'
+  const executeBaseUrl = resolveExecuteBaseUrl(agentBaseUrl)
 
   try {
     const resolveResult = await executeAgentWorkflow<EmbedResolveResult>({
-      agentBaseUrl,
+      agentBaseUrl: executeBaseUrl,
       workflowId: resolveWorkflowId,
-      apiKey: resolveApiKey,
+      auth: { type: 'apiKey', apiKey: resolveApiKey },
       body: { userId: session.user.id, email: session.user.email },
       logLabel: 'resolve-credentials',
     })
@@ -170,30 +215,31 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
 
     const resolvePayload = resolveResult.data
-    const resolved = parseEmbedCredentials(resolvePayload.output?.result ?? resolvePayload.result)
+    const htmlWorkflowId = parseEmbedWorkflowId(
+      resolvePayload.output?.result ?? resolvePayload.result
+    )
 
-    logger.info('Embed HTML resolved credentials', {
-      workflowId: resolved.workflowId,
-      apiKey: resolved.apiKey,
+    logger.info('Embed HTML resolved workflow', {
+      workflowId: htmlWorkflowId,
     })
 
-    if (!resolved.workflowId || !resolved.apiKey) {
-      logger.error('Embed credential resolver returned incomplete credentials', {
+    if (!htmlWorkflowId) {
+      logger.error('Embed credential resolver returned no workflow_id', {
         resolveWorkflowId,
-        hasWorkflowId: Boolean(resolved.workflowId),
-        hasApiKey: Boolean(resolved.apiKey),
         response: resolvePayload,
       })
       return NextResponse.json(
-        { error: 'Agent API did not return workflow_id and api_key' },
+        { error: 'Agent API did not return workflow_id' },
         { status: 502 }
       )
     }
 
+    // Resolve workflows often return a stale/invalid api_key. For same-deployment
+    // loopback executes, authenticate as the logged-in user with an internal JWT.
     const htmlResult = await executeAgentWorkflow<EmbedHtmlResult>({
-      agentBaseUrl,
-      workflowId: resolved.workflowId,
-      apiKey: resolved.apiKey,
+      agentBaseUrl: executeBaseUrl,
+      workflowId: htmlWorkflowId,
+      auth: { type: 'internalJwt', userId: session.user.id },
       body: {
         persona,
         userId: session.user.id,
@@ -204,7 +250,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     if (!htmlResult.ok) {
       logger.error('Upstream embed workflow request failed', {
-        workflowId: resolved.workflowId,
+        workflowId: htmlWorkflowId,
         status: htmlResult.status,
         error: htmlResult.error,
       })
@@ -215,6 +261,17 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
 
     const htmlPayload = htmlResult.data
+    if (htmlPayload.success === false && htmlPayload.error) {
+      logger.error('Upstream embed workflow executed with error', {
+        workflowId: htmlWorkflowId,
+        error: htmlPayload.error,
+      })
+      return NextResponse.json(
+        { error: htmlPayload.error },
+        { status: 502 }
+      )
+    }
+
     const html = htmlPayload.output?.result?.html ?? htmlPayload.result?.html
     if (typeof html !== 'string' || html.trim().length === 0) {
       return NextResponse.json(

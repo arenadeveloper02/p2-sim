@@ -5,6 +5,7 @@ import { join, normalize } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { env } from '@/lib/core/config/env'
+import { isProd } from '@/lib/core/config/env-flags'
 import { executeShellInE2B, type SandboxFile } from '@/lib/execution/e2b'
 
 function sanitizeRelativeFilePath(filePath: string): string | null {
@@ -25,6 +26,19 @@ const NPM_CMD = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 export interface GeneratedAppFile {
   path: string
   content: string
+}
+
+/**
+ * Maps generated app files into E2B sandbox mounts, dropping unsafe relative paths.
+ */
+function toSandboxFiles(files: GeneratedAppFile[]): SandboxFile[] {
+  const sandboxFiles: SandboxFile[] = []
+  for (const file of files) {
+    const safePath = sanitizeRelativeFilePath(file.path)
+    if (!safePath) continue
+    sandboxFiles.push({ path: `/home/user/app/${safePath}`, content: file.content })
+  }
+  return sandboxFiles
 }
 
 export interface ValidateAppBuildResult {
@@ -72,6 +86,28 @@ function shouldSkipPackageBuildScript(
 ): boolean {
   /** package.json build runs prisma db push — only valid on Vercel/Neon, not in E2B or local sandbox validation */
   return options.requiresDatabase === true && hasPrisma
+}
+
+/**
+ * In production, generated-app validation must run in an isolated E2B sandbox.
+ * The local fallback shells out to `npm install` / `tsc` / `next build`, which
+ * spawns multi-GB, CPU-bound child processes inside the Sim server container —
+ * starving the Node event loop until the `/api/health` check times out and
+ * Docker marks the container unhealthy. When E2B is not configured in prod we
+ * skip validation instead (as `validateGeneratedAppProductionBuild` already
+ * does) rather than run heavy builds in-process.
+ */
+function skipLocalValidationInProd(stage: string): ValidateAppBuildResult | null {
+  if (!isProd) return null
+  logger.warn(
+    `Skipping local generated-app ${stage} in production: E2B_API_KEY not configured. ` +
+      'Set E2B_API_KEY so validation runs in an isolated sandbox instead of the server container.'
+  )
+  return {
+    validated: true,
+    output: `Skipped ${stage} validation (E2B not configured in production)`,
+    method: 'skipped',
+  }
 }
 
 function formatExecError(error: unknown): string {
@@ -186,13 +222,7 @@ async function validateAppTypecheckInE2b(
   files: GeneratedAppFile[],
   options: ValidateGeneratedAppBuildOptions = {}
 ): Promise<ValidateAppBuildResult> {
-  const sandboxFiles: SandboxFile[] = files
-    .map((file) => {
-      const safePath = sanitizeRelativeFilePath(file.path)
-      if (!safePath) return null
-      return { path: `/home/user/app/${safePath}`, content: file.content }
-    })
-    .filter((entry): entry is SandboxFile => entry !== null)
+  const sandboxFiles = toSandboxFiles(files)
 
   const hasPrisma = files.some((file) => file.path === 'prisma/schema.prisma')
   const shellScript = buildE2bValidationShellScript([
@@ -225,13 +255,7 @@ async function validateAppBuildInE2b(
   files: GeneratedAppFile[],
   options: ValidateGeneratedAppBuildOptions = {}
 ): Promise<ValidateAppBuildResult> {
-  const sandboxFiles: SandboxFile[] = files
-    .map((file) => {
-      const safePath = sanitizeRelativeFilePath(file.path)
-      if (!safePath) return null
-      return { path: `/home/user/app/${safePath}`, content: file.content }
-    })
-    .filter((entry): entry is SandboxFile => entry !== null)
+  const sandboxFiles = toSandboxFiles(files)
 
   const hasPrisma = files.some((file) => file.path === 'prisma/schema.prisma')
   const skipPackageBuild = shouldSkipPackageBuildScript(options, hasPrisma)
@@ -276,6 +300,9 @@ export async function validateGeneratedAppTypecheck(
     return validateAppTypecheckInE2b(files, options)
   }
 
+  const skipped = skipLocalValidationInProd('typecheck')
+  if (skipped) return skipped
+
   try {
     return await validateAppTypecheckLocally(outputDir, options)
   } catch (error) {
@@ -301,6 +328,9 @@ export async function validateGeneratedAppBuild(
     logger.info('Validating generated app build in E2B')
     return validateAppBuildInE2b(files, options)
   }
+
+  const skipped = skipLocalValidationInProd('build')
+  if (skipped) return skipped
 
   try {
     return await validateAppBuildLocally(outputDir, options)

@@ -183,6 +183,10 @@ export function toDisplayMessage(msg: PersistedMessage): ChatMessage {
     display.requestId = msg.requestId
   }
 
+  if (msg.liveStatus) {
+    display.liveStatus = msg.liveStatus
+  }
+
   if (msg.contentBlocks && msg.contentBlocks.length > 0) {
     const displayBlocks = msg.contentBlocks
       .map(toDisplayBlock)

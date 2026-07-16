@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'fs'
 import { mkdir, rm, writeFile } from 'fs/promises'
-import { dirname, join, normalize, relative, resolve } from 'path'
+import { dirname, join, normalize, relative } from 'path'
 import Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import { createLogger } from '@sim/logger'
@@ -15,6 +15,10 @@ import {
   prepareVercelProjectForDeploy,
 } from '@/lib/development/deploy-generated-app-to-vercel'
 import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
+import {
+  findMonorepoRoot,
+  getGeneratedAppDir,
+} from '@/lib/development/generated-apps-paths'
 import type { DevelopmentReferenceMedia } from '@/lib/development/resolve-development-reference-image'
 import { resolveDevelopmentDeployEnv, DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import {
@@ -102,7 +106,6 @@ function getTrackedLlmUsage(): ModelUsageByModel | undefined {
   return Object.fromEntries(acc)
 }
 
-const GENERATED_APPS_DIR = 'generated-apps'
 /** Creation and edit/repair both use Claude Fable. Override via DEVELOPMENT_ANTHROPIC_CREATION_MODEL / DEVELOPMENT_ANTHROPIC_EDIT_MODEL. */
 const DEFAULT_CREATION_MODEL = 'claude-fable-5'
 const DEFAULT_EDIT_MODEL = 'claude-fable-5'
@@ -122,16 +125,14 @@ function resolveEnvModel(...values: Array<string | undefined>): string | undefin
 function getDevelopmentModelId(purpose: DevelopmentModelPurpose): string {
   if (purpose === 'edit') {
     return (
-      resolveEnvModel(env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL, process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL) ??
+      resolveEnvModel(process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL) ??
       DEFAULT_EDIT_MODEL
     )
   }
 
   return (
     resolveEnvModel(
-      env.DEVELOPMENT_ANTHROPIC_CREATION_MODEL,
       process.env.DEVELOPMENT_ANTHROPIC_CREATION_MODEL,
-      env.DEVELOPMENT_ANTHROPIC_MODEL,
       process.env.DEVELOPMENT_ANTHROPIC_MODEL
     ) ?? DEFAULT_CREATION_MODEL
   )
@@ -287,31 +288,6 @@ interface LlmAppSpec {
   features: string[]
   requiresDatabase?: boolean
   files: GeneratedAppFile[]
-}
-
-/**
- * Resolves the monorepo root by walking up from the current working directory.
- * Prefers the directory that contains `bun.lock` (workspace root), not nested package roots like `apps/sim`.
- */
-export function findMonorepoRoot(startDir: string = process.cwd()): string {
-  let dir = resolve(startDir)
-  let packageJsonFallback = dir
-
-  while (true) {
-    if (existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'turbo.json'))) {
-      return dir
-    }
-    if (existsSync(join(dir, 'package.json'))) {
-      packageJsonFallback = dir
-    }
-    const parent = dirname(dir)
-    if (parent === dir) {
-      break
-    }
-    dir = parent
-  }
-
-  return packageJsonFallback
 }
 
 /**
@@ -1160,14 +1136,15 @@ function buildEditDatabaseContext(existingFiles: GeneratedAppFile[]): string {
 
   const fieldSummary = summarizePrismaScalarFields(schema)
   const sections = [
-    '═══ LIVE DATABASE BASELINE (ADD columns only — NEVER drop any field listed below) ═══',
+    '═══ LIVE DATABASE BASELINE (ALWAYS return this file; ADD columns only — NEVER edit/drop/retype existing fields) ═══',
     'Neon Postgres already has rows. Vercel runs prisma db push with no --accept-data-loss.',
-    'If you return prisma/schema.prisma, copy the schema below verbatim and ADD only what the user requested.',
+    'ABSOLUTE: do not drop, omit, rename, retype, or edit any immutable scalar column. Unused columns stay in the schema.',
+    'MANDATORY: every edit response MUST include prisma/schema.prisma — copy the schema below verbatim and ADD only new columns/models if needed.',
     '',
-    'Immutable scalar columns (every name must remain in your output):',
+    'Immutable scalar columns (every name AND type must remain unchanged in your output — including createdAt / updatedAt):',
     fieldSummary || '(no models parsed)',
     '',
-    '--- prisma/schema.prisma (SOURCE OF TRUTH — patch this file, do not regenerate) ---',
+    '--- prisma/schema.prisma (SOURCE OF TRUTH — always return this file; add-only, do not regenerate) ---',
     schema,
   ]
 
@@ -1268,13 +1245,14 @@ ${GENERATED_APP_COMPONENT_FILES_GUIDANCE}
 ${GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE}
 ${GENERATED_APP_JSX_GUIDANCE}
 ${GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE}
-${GENERATED_APP_DATABASE_GUIDANCE}
+${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
 ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 ${GENERATED_APP_AUTH_GUIDANCE}
 ${GENERATED_APP_README_GUIDANCE}
 ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 ${GENERATED_APP_NO_TESTS_GUIDANCE}
 ${GENERATED_APP_VALIDATION_GUIDANCE}
+When fixing prisma/schema.prisma errors: RESTORE any dropped columns (e.g. updatedAt DateTime @updatedAt). Never "fix" a deploy by removing fields — add defaults or optionality instead.
 Keep the same app purpose and repo name unless a rename is required to fix the build.
 Prefer minimal, targeted file changes over rewriting unrelated files.
 Do not leave broken imports, invalid JSX, or conflicting app/ and src/app/ directories.`
@@ -1533,6 +1511,7 @@ async function syncDatabaseWithSchemaRepair(params: {
   databaseUrl?: string
   neonProjectId?: string
   neonApiKey?: string
+  originalPrismaSchema?: string
 }): Promise<DatabaseSyncWithRepairResult> {
   let spec = params.spec
 
@@ -1552,6 +1531,7 @@ async function syncDatabaseWithSchemaRepair(params: {
       databaseUrl: params.databaseUrl,
       neonProjectId: params.neonProjectId,
       neonApiKey: params.neonApiKey,
+      originalPrismaSchema: params.originalPrismaSchema,
     })
 
     if (!result.error) {
@@ -1588,6 +1568,7 @@ async function syncDatabaseWithSchemaRepair(params: {
         truncateBuildLog(output),
         '',
         'Fix prisma/schema.prisma so prisma db push succeeds WITHOUT --force-reset and WITHOUT dropping data:',
+        '- RESTORE every dropped column named in the error (e.g. updatedAt DateTime @updatedAt) — do not leave them removed',
         '- Every new required column named in the error MUST get @default(...) — DateTime columns: @default(now()) (keep @updatedAt if present); String/Int/Boolean/enum: a sensible domain default — or become optional with ?',
         '- Do NOT remove or rename existing models or columns, and do NOT change existing column types',
         '- Keep lib/actions.ts and lib/types.ts aligned with the corrected schema',
@@ -1638,7 +1619,7 @@ async function generateNextjsAppInner(
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
     const monorepoRoot = findMonorepoRoot()
-    const outputDir = join(monorepoRoot, GENERATED_APPS_DIR, repoName)
+    const outputDir = getGeneratedAppDir(repoName)
 
     await mkdir(outputDir, { recursive: true })
     const fileCount = await writeAppFiles(outputDir, spec.files)
@@ -1952,26 +1933,34 @@ const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
 }
 
 /** Edit-mode only — never included in generate or repair prompts. */
-const EDIT_APP_PRISMA_SCHEMA_PRESERVATION = `═══ EDIT MODE: prisma/schema.prisma — ADD ONLY, NEVER DROP COLUMNS ═══
+const EDIT_APP_PRISMA_SCHEMA_PRESERVATION = `═══ EDIT MODE: prisma/schema.prisma — ALWAYS RETURN; ADD ONLY; NEVER EDIT EXISTING COLUMNS ═══
 This repository is ALREADY deployed. Neon Postgres has REAL ROWS. Vercel build runs:
   prisma generate && prisma db push && next build
-There is NO --accept-data-loss. Dropping a column FAILS the deploy (potential_dataloss).
+There is NO --accept-data-loss. Dropping or altering a column FAILS the deploy (potential_dataloss / unexecutable).
+
+ABSOLUTE RULES:
+1. ALWAYS include prisma/schema.prisma in EVERY edit response when the app has a database — even if you did not change the schema (echo the baseline file verbatim).
+2. NEVER edit an existing column. Do not change its name, data type, nullability, @default, @unique, @id, @updatedAt, @map, or @relation attributes. Leave existing field lines byte-for-byte identical.
+3. NEVER change data types of existing columns (String/Int/Boolean/DateTime/Json/enum/etc.). If you need a different type, ADD a NEW column instead.
+4. NEVER drop ANY database column. Not for cleanup. Not for refactor. Not to "match the UI". Not because a field looks unused. Leave unused columns in the schema.
 
 FORBIDDEN on edit (will break production):
-- Dropping, omitting, or skipping ANY existing column (e.g. User.updatedAt, User.createdAt, User.id, User.email — every field on every model)
+- Dropping, omitting, renaming, retyping, or modifying ANY existing column (id, createdAt, updatedAt, email, title, name, status, FKs — every scalar on every model)
+- Changing an existing field's type or attributes in any way — ADD a new column instead
 - Regenerating prisma/schema.prisma from scratch, from REPO_SUMMARY, or from memory
-- Returning a "simplified" or "cleaned up" schema with fewer fields than the input file
-- Renaming or retyping existing columns unless the user explicitly asked for that exact rename/type change
+- Returning a "simplified", "cleaned up", or "normalized" schema with fewer or altered fields than the input file
+- Removing \`updatedAt DateTime @updatedAt\` or \`createdAt DateTime @default(now())\` from any model that already has them
 
-REQUIRED workflow when you touch prisma/schema.prisma:
+REQUIRED workflow for prisma/schema.prisma on every edit:
 1. Locate prisma/schema.prisma in the user message — that exact file is your baseline.
-2. Copy it in full. Change NOTHING except what the user requested to ADD.
-3. ADD ONLY: new models, new scalar fields, new relations, new enums. Existing fields stay byte-for-byte identical (same name, type, attributes, order is fine to preserve).
+2. Copy it in full into your response files array (mandatory every edit).
+3. Change NOTHING on existing lines. ADD ONLY: new models, new scalar fields, new relations, new enums.
 4. New fields on existing models: use ? or @default(...). DateTime @updatedAt on existing models also needs @default(now()).
-5. Before returning: verify EVERY scalar field from the baseline still appears in your output. If User had "updatedAt DateTime @updatedAt" in the input, it MUST still be there.
-6. Return lib/actions.ts and lib/types.ts in the same response when schema changes.
+5. Before returning: verify EVERY scalar field from the baseline / LIVE DATABASE BASELINE still appears unchanged in your output. If Project had "updatedAt DateTime @updatedAt", it MUST still be there with the same type and attributes.
+6. If UI no longer uses a column, stop selecting it in lib/actions.ts — do NOT remove or alter it in the schema.
+7. When you ADD models/fields/relations, also return lib/actions.ts and lib/types.ts in the same response.
 
-The user's edit request is about NEW functionality — it is NOT permission to remove database columns. Unless they literally say "delete/remove/drop field X", keep all columns.`
+The user's edit request is about NEW functionality — it is NOT permission to edit, retype, rename, or remove existing database columns. Always add new columns for new data.`
 
 const EDIT_APP_SYSTEM_PROMPT = `You are a senior full-stack engineer editing an existing Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
 
@@ -1985,7 +1974,7 @@ ${GENERATED_APP_GENERATION_MANDATES}
 
 Constraints:
 - Apply the user's requested changes while preserving working architecture and unrelated code
-- Return ONLY files you create or modify (do not echo unchanged files)
+- Return ONLY files you create or modify — EXCEPTION: when the app uses a database, ALWAYS return the full prisma/schema.prisma (unchanged echo or additive update)
 - Every returned file must contain complete, real, working code — no stubs or placeholders
 - ${GENERATED_APP_ZERO_ERRORS_GUIDANCE}
 - ${GENERATED_APP_COMMON_FAILURES_GUIDANCE}
@@ -2001,7 +1990,7 @@ Constraints:
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}
 - ${GENERATED_APP_AUTH_GUIDANCE}
 - ${GENERATED_APP_DATABASE_EDIT_GUIDANCE}
-- When editing prisma/schema.prisma you MUST return lib/actions.ts and lib/types.ts in the same response — aligned includes, t.field access, and DTO field names
+- ALWAYS return prisma/schema.prisma on every database-backed edit; when you ADD schema fields also return lib/actions.ts and lib/types.ts — aligned includes, t.field access, and DTO field names
 - When editing prisma/schema.prisma or lib/types.ts, keep exports in sync — export every type from lib/types.ts and import it with \`import type\` in components; import server actions (not types) from lib/actions.ts
 - ${GENERATED_APP_README_GUIDANCE}
 - ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
@@ -2128,9 +2117,9 @@ ${editReference}
 User edit request:
 ${userInput}
 
-If you change prisma/schema.prisma, every column listed under LIVE DATABASE BASELINE must remain — add new columns only.
+DATABASE RULE (non-negotiable): ALWAYS return prisma/schema.prisma in this edit response. Never drop, rename, retype, or edit any existing column — existing field lines must stay identical. Add new columns only. If UI no longer needs a field, stop using it in code — leave it in the schema unchanged.
 
-Return JSON with app metadata and ONLY the files you changed or added.`
+Return JSON with app metadata and the files you changed or added (plus prisma/schema.prisma whenever the app uses a database).`
 
   const parsed = await requestStructuredJsonWithContinuations(
     anthropic,
@@ -2341,6 +2330,7 @@ async function editNextjsAppInner(
             databaseUrl: prepareResult.databaseUrl,
             neonProjectId: prepareResult.neonProjectId,
             neonApiKey,
+            originalPrismaSchema,
           })
           spec = dbSyncResult.spec
 

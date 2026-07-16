@@ -24,7 +24,7 @@ export const POST = withRouteHandler(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accessDenied = requireLocalCopilotAccess(session.user.email)
+    const accessDenied = await requireLocalCopilotAccess(session.user.id)
     if (accessDenied) return accessDenied
 
     const routeParams = await params

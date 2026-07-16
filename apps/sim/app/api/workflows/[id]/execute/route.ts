@@ -904,8 +904,11 @@ async function handleExecutePost(
     const syncTimeoutMs = resolveWorkflowSyncTimeoutMs({
       executionTimeout: preprocessResult.executionTimeout!,
       blocks:
-        (effectiveWorkflowStateOverride as { blocks?: Record<string, { type?: string; enabled?: boolean }> } | undefined)
-          ?.blocks ?? cachedWorkflowData?.blocks,
+        (
+          effectiveWorkflowStateOverride as
+            | { blocks?: Record<string, { type?: string; enabled?: boolean }> }
+            | undefined
+        )?.blocks ?? cachedWorkflowData?.blocks,
     })
 
     if (syncTimeoutMs !== preprocessResult.executionTimeout?.sync) {

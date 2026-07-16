@@ -72,6 +72,8 @@ interface DropdownProps {
   dependsOn?: SubBlockConfig['dependsOn']
   /** Enable search input in dropdown */
   searchable?: boolean
+  /** When true, empty is intentional and defaults must not be re-seeded on hydration */
+  clearable?: boolean
 }
 
 /**
@@ -99,6 +101,7 @@ export const Dropdown = memo(function Dropdown({
   fetchOptionById,
   dependsOn,
   searchable = false,
+  clearable = false,
 }: DropdownProps) {
   const activeSearchTarget = useActiveSearchTarget()
   const [storeValue, setStoreValue] = useSubBlockValue<string | string[]>(blockId, subBlockId) as [
@@ -240,8 +243,12 @@ export const Dropdown = memo(function Dropdown({
 
   const defaultOptionValue = useMemo(() => {
     if (multiSelect) return undefined
-    if (defaultValue !== undefined) {
+    if (defaultValue !== undefined && defaultValue !== '') {
       return defaultValue
+    }
+
+    if (clearable) {
+      return undefined
     }
 
     if (comboboxOptions.length > 0) {
@@ -249,16 +256,23 @@ export const Dropdown = memo(function Dropdown({
     }
 
     return undefined
-  }, [defaultValue, comboboxOptions, multiSelect])
+  }, [defaultValue, comboboxOptions, multiSelect, clearable])
 
   useEffect(() => {
     if (multiSelect || defaultOptionValue === undefined) {
       return
     }
-    if (storeValue === null || storeValue === undefined || storeValue === '') {
-      setStoreValue(defaultOptionValue)
+    if (storeValue !== null && storeValue !== undefined && storeValue !== '') {
+      return
     }
-  }, [storeValue, defaultOptionValue, setStoreValue, multiSelect])
+
+    if (clearable) return
+
+    const persistedSubBlock = useWorkflowStore.getState().blocks[blockId]?.subBlocks?.[subBlockId]
+    if (persistedSubBlock !== undefined) return
+
+    setStoreValue(defaultOptionValue)
+  }, [storeValue, defaultOptionValue, setStoreValue, multiSelect, clearable, blockId, subBlockId])
 
   /**
    * Normalizes variable references in JSON strings by wrapping them in quotes

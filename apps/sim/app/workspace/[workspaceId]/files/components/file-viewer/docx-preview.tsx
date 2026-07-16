@@ -5,10 +5,13 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { cn } from '@/lib/core/utils/cn'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
+import { getEmptyDocPreviewMessage, getZeroByteDocPreviewMessage } from './empty-doc-preview'
+import { GeneratingPreviewEngagement } from './generating-preview-engagement'
 import { PREVIEW_LOADING_OVERLAY, PreviewError, resolvePreviewError } from './preview-shared'
 import { PreviewToolbar } from './preview-toolbar'
 import { bindPreviewWheelZoom } from './preview-wheel-zoom'
 import { useDocPreviewBinary } from './use-doc-preview-binary'
+import { useLocalGeneratingPreviewEngagement } from './use-local-generating-preview-engagement'
 
 const logger = createLogger('DocxPreview')
 
@@ -65,10 +68,13 @@ function fitDocxToContainer(host: HTMLElement, viewport: HTMLElement, zoomPercen
 export const DocxPreview = memo(function DocxPreview({
   file,
   workspaceId,
+  isAgentEditing,
 }: {
   file: WorkspaceFileRecord
   workspaceId: string
+  isAgentEditing?: boolean
 }) {
+  const showGeneratingEngagement = useLocalGeneratingPreviewEngagement(isAgentEditing)
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const zoomPercentRef = useRef(100)
@@ -232,10 +238,25 @@ export const DocxPreview = memo(function DocxPreview({
     }
   }, [fileData, applyPostRenderStyling])
 
+  const emptyMessage = getEmptyDocPreviewMessage(file, 'document')
+  if (emptyMessage) {
+    if (showGeneratingEngagement) {
+      return <GeneratingPreviewEngagement kind='document' fileName={file.name} />
+    }
+    return <PreviewError label='document' error={emptyMessage} />
+  }
+
   const error = resolvePreviewError(preview.error, renderError)
   if (error) return <PreviewError label='document' error={error} />
 
+  if (fileData && fileData.byteLength === 0) {
+    return <PreviewError label='document' error={getZeroByteDocPreviewMessage('document')} />
+  }
+
   const showLoadingFrame = !hasRenderedPreview && (!fileData || rendering)
+  if (showLoadingFrame && showGeneratingEngagement && !fileData) {
+    return <GeneratingPreviewEngagement kind='document' fileName={file.name} />
+  }
 
   const scrollToPage = (page: number) => {
     const scrollContainer = scrollContainerRef.current

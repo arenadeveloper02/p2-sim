@@ -2,6 +2,10 @@ import { MothershipStreamV1EventType } from '@/lib/copilot/generated/mothership-
 import type { PersistedStreamEventEnvelope } from '@/lib/copilot/request/session/contract'
 import { handleCompleteEvent } from '@/app/workspace/[workspaceId]/home/hooks/stream/handle-complete-event'
 import { handleErrorEvent } from '@/app/workspace/[workspaceId]/home/hooks/stream/handle-error-event'
+import {
+  handleLocalStatusEvent,
+  isLocalStatusEvent,
+} from '@/app/workspace/[workspaceId]/home/hooks/stream/handle-local-status-event'
 import { handleResourceEvent } from '@/app/workspace/[workspaceId]/home/hooks/stream/handle-resource-event'
 import { handleRunEvent } from '@/app/workspace/[workspaceId]/home/hooks/stream/handle-run-event'
 import { handleSessionEvent } from '@/app/workspace/[workspaceId]/home/hooks/stream/handle-session-event'
@@ -38,6 +42,11 @@ export function dispatchStreamEvent(
   ctx: StreamLoopContext,
   parsed: PersistedStreamEventEnvelope
 ): void {
+  if (isLocalStatusEvent(parsed)) {
+    handleLocalStatusEvent(ctx, parsed)
+    return
+  }
+
   // The model is the single source of truth: fold every event into it first,
   // then run the handlers for their side effects (resource/query/preview) and
   // the snapshot flush, which serializes the model.

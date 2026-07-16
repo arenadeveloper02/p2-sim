@@ -398,6 +398,7 @@ export const env = createEnv({
     DOCUSIGN_CLIENT_SECRET:                z.string().optional(),                  // DocuSign OAuth client secret
     MICROSOFT_CLIENT_ID:                   z.string().optional(),                  // Microsoft OAuth client ID for Office 365/Teams
     MICROSOFT_CLIENT_SECRET:               z.string().optional(),                  // Microsoft OAuth client secret
+    MICROSOFT_TENANT_ID:                   z.string().optional(),                  // Microsoft Entra tenant ID; defaults to /common when unset
     HUBSPOT_CLIENT_ID:                     z.string().optional(),                  // HubSpot OAuth client ID
     HUBSPOT_CLIENT_SECRET:                 z.string().optional(),                  // HubSpot OAuth client secret
     SALESFORCE_CLIENT_ID:                  z.string().optional(),                  // Salesforce OAuth client ID

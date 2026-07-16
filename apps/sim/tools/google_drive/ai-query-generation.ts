@@ -1,6 +1,7 @@
 'use server'
 
 import { createLogger } from '@sim/logger'
+import { buildDriveQueryFallback } from '@/tools/google_drive/build-drive-query-fallback'
 
 const logger = createLogger('GoogleDriveAIQueryGeneration')
 
@@ -78,9 +79,7 @@ Now generate the query string for the user's prompt. Return ONLY the query strin
     const { executeProviderRequest } = await import('@/providers')
 
     // Try to use Anthropic (Claude) first, fallback to other providers
-    // @ts-expect-error - process.env is available in Node.js runtime
     const apiKey = process.env.ANTHROPIC_API_KEY
-    // @ts-expect-error - process.env is available in Node.js runtime
     const openaiKey = process.env.OPENAI_API_KEY
     const provider = apiKey ? 'anthropic' : 'openai'
     const model = apiKey ? 'claude-sonnet-4-20250514' : 'gpt-4o'
@@ -204,81 +203,8 @@ Now generate the query string for the user's prompt. Return ONLY the query strin
 
     if (hasSearchTerms && !hasKeywordSearch && queryString === 'trashed=false') {
       logger.warn('AI query missing keywords, extracting and adding them', { prompt, queryString })
-
-      // Extract keywords from prompt
-      const stopWords = new Set([
-        'find',
-        'search',
-        'show',
-        'me',
-        'my',
-        'the',
-        'a',
-        'an',
-        'of',
-        'for',
-        'from',
-        'in',
-        'on',
-        'to',
-        'with',
-        'and',
-        'or',
-        'files',
-        'file',
-        'give',
-        'get',
-        'list',
-        'lists',
-        'which',
-        'are',
-        'is',
-        'was',
-        'were',
-        'be',
-        'been',
-        'being',
-        'have',
-        'has',
-        'had',
-        'do',
-        'does',
-        'did',
-        'available',
-        'what',
-        'where',
-        'when',
-        'who',
-        'how',
-      ])
-
-      const tokens = prompt.match(/[A-Za-z0-9\-_]+/g) || []
-      const keywords: string[] = []
-      const seen = new Set<string>()
-
-      for (const token of tokens) {
-        const lower = token.toLowerCase()
-        if (stopWords.has(lower)) continue
-        if (token.length < 2) continue
-        if (seen.has(lower)) continue
-
-        keywords.push(token)
-        seen.add(lower)
-
-        if (keywords.length >= 10) break
-      }
-
-      if (keywords.length > 0) {
-        const keywordConditions = keywords.map((kw) => {
-          const safe = kw.replace(/'/g, "\\'")
-          return `(name contains '${safe}' or fullText contains '${safe}')`
-        })
-        queryString = `trashed=false and ${keywordConditions.join(' and ')}`
-        if (folderId) {
-          queryString = `${queryString} and '${folderId}' in parents`
-        }
-        logger.info('Added missing keywords to query', { keywords, queryString })
-      }
+      queryString = buildDriveQueryFallback(prompt, folderId)
+      logger.info('Added missing keywords to query', { query: queryString })
     }
 
     logger.info('Generated Drive query with AI', {
@@ -295,12 +221,7 @@ Now generate the query string for the user's prompt. Return ONLY the query strin
       folderId,
     })
 
-    // Fallback to basic query if AI fails
-    const fallbackParts: string[] = ['trashed=false']
-    if (folderId) {
-      fallbackParts.push(`'${folderId}' in parents`)
-    }
-    const fallbackQuery = fallbackParts.join(' and ')
+    const fallbackQuery = buildDriveQueryFallback(prompt, folderId)
     logger.warn('Using fallback query', { fallbackQuery })
     return fallbackQuery
   }

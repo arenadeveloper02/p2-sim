@@ -5,7 +5,10 @@ import { generateId } from '@sim/utils/id'
 import { and, eq } from 'drizzle-orm'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
+import { getOrgUsageLimit } from '@/lib/billing/core/usage'
 import { getOrgWorkspaceUsageCostForUser } from '@/lib/billing/core/usage-log'
+import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
+import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { toDecimal, toNumber } from '@/lib/billing/utils/decimal'
 
 const logger = createLogger('OrgMemberLimits')
@@ -34,6 +37,57 @@ export async function getOrgMemberUsageLimit(
 
   if (rows.length === 0) return null
   return toNumber(toDecimal(rows[0].usageLimit))
+}
+
+export type OrgMemberAllocationValidation =
+  | { ok: true }
+  | { ok: false; allocatedCredits: number; orgPoolCredits: number }
+
+/**
+ * Ensures the sum of per-member caps (including `newLimitDollars` for `userId`)
+ * does not exceed the organization's pooled credit allowance.
+ */
+export async function validateOrgMemberAllocationWithinPool(
+  organizationId: string,
+  userId: string,
+  newLimitDollars: number
+): Promise<OrgMemberAllocationValidation> {
+  const subscription = await getOrganizationSubscription(organizationId)
+  const plan = subscription?.plan ?? 'free'
+  const { limit: orgLimitDollars } = await getOrgUsageLimit(
+    organizationId,
+    plan,
+    subscription?.seats ?? null
+  )
+
+  if (orgLimitDollars >= ON_DEMAND_UNLIMITED) {
+    return { ok: true }
+  }
+
+  const rows = await db
+    .select({
+      userId: organizationMemberUsageLimit.userId,
+      usageLimit: organizationMemberUsageLimit.usageLimit,
+    })
+    .from(organizationMemberUsageLimit)
+    .where(eq(organizationMemberUsageLimit.organizationId, organizationId))
+
+  let allocatedTotal = toDecimal(newLimitDollars)
+  for (const row of rows) {
+    if (row.userId === userId) continue
+    allocatedTotal = allocatedTotal.plus(toDecimal(row.usageLimit))
+  }
+
+  const allocatedDollars = toNumber(allocatedTotal)
+  if (allocatedDollars <= orgLimitDollars) {
+    return { ok: true }
+  }
+
+  return {
+    ok: false,
+    allocatedCredits: dollarsToCredits(allocatedDollars),
+    orgPoolCredits: dollarsToCredits(orgLimitDollars),
+  }
 }
 
 /**

@@ -15,6 +15,10 @@ local refillRate = tonumber(ARGV[4])
 local refillIntervalMs = tonumber(ARGV[5])
 local ttl = tonumber(ARGV[6])
 
+if redis.call('TYPE', key).ok ~= 'hash' then
+  redis.call('DEL', key)
+end
+
 local bucket = redis.call('HMGET', key, 'tokens', 'lastRefillAt')
 local tokens = tonumber(bucket[1])
 local lastRefillAt = tonumber(bucket[2])
@@ -51,6 +55,10 @@ local now = tonumber(ARGV[1])
 local maxTokens = tonumber(ARGV[2])
 local refillRate = tonumber(ARGV[3])
 local refillIntervalMs = tonumber(ARGV[4])
+
+if redis.call('TYPE', key).ok ~= 'hash' then
+  redis.call('DEL', key)
+end
 
 local bucket = redis.call('HMGET', key, 'tokens', 'lastRefillAt')
 local tokens = tonumber(bucket[1])
