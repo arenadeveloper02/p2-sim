@@ -377,7 +377,7 @@ describe('splitTableContentAcrossSlides', () => {
     expect(chunks[0]).toHaveLength(5)
   })
 
-  it('splits into uniform 6-body-row chunks once the template row count is exceeded, repeating the header', () => {
+  it('splits into chunks sized to the template capacity (not a fixed 6) once the template row count is exceeded, repeating the header', () => {
     const bodyRows = Array.from({ length: 13 }, (_, index) => [
       `Row ${index + 1}`,
       longCell,
@@ -392,17 +392,90 @@ describe('splitTableContentAcrossSlides', () => {
       templateRowCount: 10,
     })
 
+    // templateRowCount 10 with a header row leaves a 9-body-row capacity per slide.
     expect(chunks.length).toBeGreaterThan(1)
     for (const chunk of chunks) {
       expect(chunk[0]).toEqual(['Col A', 'Col B', 'Col C'])
     }
 
     const bodyChunkSizes = chunks.map((chunk) => chunk.length - 1)
-    expect(bodyChunkSizes.slice(0, -1)).toEqual(bodyChunkSizes.slice(0, -1).map(() => 6))
-    expect(bodyChunkSizes.at(-1)).toBeLessThanOrEqual(6)
+    expect(bodyChunkSizes.slice(0, -1)).toEqual(bodyChunkSizes.slice(0, -1).map(() => 9))
+    expect(bodyChunkSizes.at(-1)).toBeLessThanOrEqual(9)
 
     const totalBodyRows = bodyChunkSizes.reduce((sum, size) => sum + size, 0)
     expect(totalBodyRows).toBe(13)
+  })
+
+  it('sizes overflow chunks to a small template capacity instead of the old fixed 6-row default', () => {
+    const bodyRows = Array.from({ length: 10 }, (_, index) => [`Row ${index + 1}`, 'A', 'B'])
+    const chunks = splitTableContentAcrossSlides({
+      content: [['Col A', 'Col B', 'Col C'], ...bodyRows],
+      maxRows: 20,
+      maxColumns: 3,
+      minRows: 1,
+      headerRow: true,
+      // Only 4 physical rows in the template -> 3 body rows/slide once a header is repeated.
+      templateRowCount: 4,
+    })
+
+    const bodyChunkSizes = chunks.map((chunk) => chunk.length - 1)
+    expect(bodyChunkSizes).toEqual([3, 3, 3, 1])
+    expect(bodyChunkSizes.reduce((sum, size) => sum + size, 0)).toBe(10)
+  })
+
+  it('sizes overflow chunks to a large template capacity instead of the old fixed 6-row default', () => {
+    const bodyRows = Array.from({ length: 25 }, (_, index) => [
+      `Row ${index + 1}`,
+      longCell,
+      longCell,
+    ])
+    const chunks = splitTableContentAcrossSlides({
+      content: [['Col A', 'Col B', 'Col C'], ...bodyRows],
+      maxRows: 30,
+      maxColumns: 3,
+      minRows: 1,
+      headerRow: true,
+      // 13 physical rows in the template -> 12 body rows/slide once a header is repeated.
+      templateRowCount: 13,
+    })
+
+    const bodyChunkSizes = chunks.map((chunk) => chunk.length - 1)
+    expect(bodyChunkSizes).toEqual([12, 12, 1])
+    expect(bodyChunkSizes.reduce((sum, size) => sum + size, 0)).toBe(25)
+  })
+
+  it('caps chunk size at maxRows when the template capacity exceeds maxRows', () => {
+    const bodyRows = Array.from({ length: 20 }, (_, index) => [`Row ${index + 1}`, 'A', 'B'])
+    const chunks = splitTableContentAcrossSlides({
+      content: [['Col A', 'Col B', 'Col C'], ...bodyRows],
+      maxRows: 5,
+      maxColumns: 3,
+      minRows: 1,
+      headerRow: true,
+      // Template physically holds far more rows than the block's configured maxRows allows.
+      templateRowCount: 50,
+    })
+
+    const bodyChunkSizes = chunks.map((chunk) => chunk.length - 1)
+    // maxRows: 5 with a header leaves a 4-body-row cap per slide, overriding the larger template capacity.
+    expect(bodyChunkSizes).toEqual([4, 4, 4, 4, 4])
+    expect(bodyChunkSizes.reduce((sum, size) => sum + size, 0)).toBe(20)
+  })
+
+  it('chunks without a header row use the full template row count as capacity', () => {
+    const bodyRows = Array.from({ length: 22 }, (_, index) => [`Row ${index + 1}`, 'A', 'B'])
+    const chunks = splitTableContentAcrossSlides({
+      content: bodyRows,
+      maxRows: 30,
+      maxColumns: 3,
+      minRows: 1,
+      headerRow: false,
+      templateRowCount: 8,
+    })
+
+    const bodyChunkSizes = chunks.map((chunk) => chunk.length)
+    expect(bodyChunkSizes).toEqual([8, 8, 6])
+    expect(bodyChunkSizes.reduce((sum, size) => sum + size, 0)).toBe(22)
   })
 })
 

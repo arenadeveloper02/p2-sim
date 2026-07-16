@@ -83,15 +83,6 @@ interface PresentationElement {
   }
 }
 
-/**
- * Default number of body rows placed on a slide once a table's content overflows the
- * template's real physical row count. Deliberately a fixed constant rather than a
- * height-derived estimate: Slides autofits row height to wrapped text at render time,
- * so predicting per-cell line-wrap from character counts is unreliable and previously
- * caused tables to be split far more aggressively than necessary (see history).
- */
-const DEFAULT_BODY_ROWS_PER_SLIDE = 6
-
 interface PresentationSlide {
   pageElements?: PresentationElement[]
 }
@@ -225,7 +216,10 @@ export function buildTableColumnWidthRequests(input: {
  * within the template's real capacity is never split, no matter how much text wraps
  * within a cell — Slides autofits row height at render time, so we don't try to
  * predict it here. Once content genuinely overflows that capacity, every resulting
- * slide (including the first) is chunked uniformly at `DEFAULT_BODY_ROWS_PER_SLIDE`.
+ * slide (including the first) is chunked at the template's actual per-slide body-row
+ * capacity (`templateBodyCapacity`), not a fixed constant — a table whose template
+ * holds 12 rows fills 12 rows per slide, one that holds 4 fills 4. Overflow rows spill
+ * onto as many continuation slides as needed, each filled to that same capacity.
  */
 export function splitTableContentAcrossSlides(input: {
   content: unknown
@@ -258,11 +252,12 @@ export function splitTableContentAcrossSlides(input: {
       ? Math.max(1, input.headerRow ? input.templateRowCount - 1 : input.templateRowCount)
       : maxBodyRowsPerSlide
 
-  if (bodyRows.length <= Math.min(templateBodyCapacity, maxBodyRowsPerSlide)) {
+  const rowsPerSlide = Math.min(templateBodyCapacity, maxBodyRowsPerSlide)
+
+  if (bodyRows.length <= rowsPerSlide) {
     return [header ? [header, ...bodyRows] : bodyRows]
   }
 
-  const rowsPerSlide = Math.min(DEFAULT_BODY_ROWS_PER_SLIDE, maxBodyRowsPerSlide)
   const chunks: string[][][] = []
 
   for (let offset = 0; offset < bodyRows.length; offset += rowsPerSlide) {
