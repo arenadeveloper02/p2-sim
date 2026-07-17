@@ -217,12 +217,12 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
         <Image
           src={logoUrl}
           alt='Logo'
-          width={collapsed ? 24 : 56}
-          height={collapsed ? 24 : 56}
-          className={cn('shrink-0 object-contain', collapsed ? 'size-6' : 'h-8 w-auto')}
+          width={24}
+          height={24}
+          className='size-6 shrink-0 object-contain'
         />
       ) : (
-        <div className={cn('shrink-0', collapsed ? 'size-6' : 'size-8')} />
+        <div className='size-6 shrink-0' />
       )}
       {!collapsed && onToggleSidebar ? <SidebarCollapseButton onClick={onToggleSidebar} /> : null}
     </div>

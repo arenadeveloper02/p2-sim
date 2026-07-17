@@ -14,7 +14,7 @@ export function NewChatNavIcon({ className }: SidebarNavIconProps) {
       aria-hidden='true'
     >
       <path
-        d='M4 0.5H20C21.933 0.5 23.5 2.067 23.5 4V20C23.5 21.933 21.933 23.5 20 23.5H4C2.067 23.5 0.5 21.933 0.5 20V4C0.5 2.067 2.067 0.5 4 0.5Z'
+        d='M0 4C0 1.79086 1.79086 0 4 0H20C22.2091 0 24 1.79086 24 4V20C24 22.2091 22.2091 24 20 24H4C1.79086 24 0 22.2091 0 20V4Z'
         fill='#F3F8FE'
       />
       <path
