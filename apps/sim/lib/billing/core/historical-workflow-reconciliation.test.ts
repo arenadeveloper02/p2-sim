@@ -76,6 +76,7 @@ import {
   HISTORICAL_RECONCILE_VERSION,
   parseHistoricalReconcileShadowRecord,
   repairLedgerProjections,
+  resolveShadowArtifactWorkspaceScope,
   snapshotStateHasCostBlocks,
   verifyLedgerProjection,
   type ExecutionClassification,
@@ -1352,6 +1353,44 @@ describe('evaluateApplyRolloutGates', () => {
 
     expect(gate.allowed).toBe(true)
     expect(gate.phase).toBe('pilot')
+  })
+
+  it('allows pilot apply when workspace is inferred from a single-workspace artifact', () => {
+    const artifactScope = resolveShadowArtifactWorkspaceScope([
+      shadowRecord({ workspaceId: 'ws-pilot' }),
+      shadowRecord({ executionId: 'exec-apply-2', workspaceId: 'ws-pilot' }),
+    ])
+
+    const gate = evaluateApplyRolloutGates({
+      recordCount: 500,
+      filter: { workspaceId: artifactScope.singleWorkspaceId, limit: 500 },
+    })
+
+    expect(gate.allowed).toBe(true)
+    expect(gate.phase).toBe('pilot')
+    expect(gate.blockers).toHaveLength(0)
+  })
+})
+
+describe('resolveShadowArtifactWorkspaceScope', () => {
+  it('returns singleWorkspaceId when all records share one workspace', () => {
+    const scope = resolveShadowArtifactWorkspaceScope([
+      shadowRecord({ workspaceId: 'ws-a' }),
+      shadowRecord({ executionId: 'exec-2', workspaceId: 'ws-a' }),
+    ])
+
+    expect(scope.workspaceIds).toEqual(['ws-a'])
+    expect(scope.singleWorkspaceId).toBe('ws-a')
+  })
+
+  it('leaves singleWorkspaceId unset for multi-workspace artifacts', () => {
+    const scope = resolveShadowArtifactWorkspaceScope([
+      shadowRecord({ workspaceId: 'ws-a' }),
+      shadowRecord({ executionId: 'exec-2', workspaceId: 'ws-b' }),
+    ])
+
+    expect(scope.workspaceIds).toEqual(['ws-a', 'ws-b'])
+    expect(scope.singleWorkspaceId).toBeUndefined()
   })
 })
 

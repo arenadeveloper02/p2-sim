@@ -17,7 +17,7 @@
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --audit --since=2020-01-01 --batch-size=1000 --only-priced-tools
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --batch-size=1000 --only-priced-tools --export=reconcile-shadow.ndjson --review-deltas
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --export=reconcile-shadow.ndjson --resume
- *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --workspace-id=<id> --batch-size=100 --only-priced-tools
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=100 --only-priced-tools
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production --only-priced-tools
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --verify --workspace-id=<id> --batch-size=1000
  *
@@ -47,6 +47,7 @@ import {
   HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY,
   HISTORICAL_RECONCILE_ROLLOUT_STEPS,
   loadHistoricalReconcileShadowArtifact,
+  resolveShadowArtifactWorkspaceScope,
   repairLedgerProjections,
   verifyLedgerProjection,
   verifyPostApplyReconciliation,
@@ -544,7 +545,6 @@ async function runApply(options: Options): Promise<number> {
   console.log(`Input artifact: ${options.inputPath}`)
   if (options.workflowId) console.log(`Workflow filter: ${options.workflowId}`)
   if (options.executionId) console.log(`Execution filter: ${options.executionId}`)
-  if (options.workspaceId) console.log(`Workspace filter: ${options.workspaceId}`)
   if (options.limit) console.log(`Limit: ${options.limit}`)
   console.log(`Batch size: ${options.batchSize}`)
   console.log(`Only priced tools: ${options.onlyPricedTools ? 'yes' : 'no (--all-tools)'}`)
@@ -552,12 +552,25 @@ async function runApply(options: Options): Promise<number> {
   const records = await loadHistoricalReconcileShadowArtifact(options.inputPath)
   console.log(`Loaded ${records.length} shadow record(s) from artifact`)
 
+  const artifactScope = resolveShadowArtifactWorkspaceScope(records)
+  const workspaceId = options.workspaceId ?? artifactScope.singleWorkspaceId
+
+  if (options.workspaceId) {
+    console.log(`Workspace filter: ${options.workspaceId} (CLI)`)
+  } else if (artifactScope.singleWorkspaceId) {
+    console.log(`Workspace scope: ${artifactScope.singleWorkspaceId} (from artifact)`)
+  } else if (artifactScope.workspaceIds.length > 1) {
+    console.log(
+      `Workspace scope: ${artifactScope.workspaceIds.length} workspaces in artifact (unfiltered; use --workspace-id to narrow)`
+    )
+  }
+
   const gate = evaluateApplyRolloutGates({
     recordCount: records.length,
     filter: {
       workflowId: options.workflowId,
       executionId: options.executionId,
-      workspaceId: options.workspaceId,
+      workspaceId,
       limit: options.limit ?? options.batchSize,
     },
     confirmProduction: options.confirmProduction,
@@ -579,7 +592,7 @@ async function runApply(options: Options): Promise<number> {
     filter: {
       workflowId: options.workflowId,
       executionId: options.executionId,
-      workspaceId: options.workspaceId,
+      workspaceId,
       limit: options.limit ?? options.batchSize,
       onlyPricedTools: options.onlyPricedTools,
     },

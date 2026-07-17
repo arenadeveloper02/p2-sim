@@ -2583,6 +2583,26 @@ export async function loadHistoricalReconcileShadowArtifact(
   return records
 }
 
+export interface ShadowArtifactWorkspaceScope {
+  workspaceIds: string[]
+  /** Set when every shadow record shares the same workspace. */
+  singleWorkspaceId?: string
+}
+
+/**
+ * Derives workspace scope from a shadow artifact. When all records belong to one
+ * workspace, that id can drive pilot apply gates without a CLI `--workspace-id`.
+ */
+export function resolveShadowArtifactWorkspaceScope(
+  records: HistoricalReconcileShadowRecord[]
+): ShadowArtifactWorkspaceScope {
+  const workspaceIds = [...new Set(records.map((record) => record.workspaceId))]
+  return {
+    workspaceIds,
+    singleWorkspaceId: workspaceIds.length === 1 ? workspaceIds[0] : undefined,
+  }
+}
+
 /** Maximum apply batch size treated as a pilot scope without `--confirm-production`. */
 export const HISTORICAL_RECONCILE_PILOT_MAX_RECORDS = 100
 
@@ -2646,7 +2666,7 @@ export const HISTORICAL_RECONCILE_ROLLOUT_STEPS: HistoricalReconcileRolloutStep[
     description:
       'Apply append-only adjustments for one workspace or narrow date range, then verify projection.',
     command:
-      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --workspace-id=<workspace-id> --batch-size=100 --only-priced-tools',
+      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=100 --only-priced-tools',
   },
   {
     step: 7,
