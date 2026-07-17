@@ -69,6 +69,21 @@ Upstream `chat.tsx` under the same route may still exist but is commented out in
 
 ---
 
+## Settings nav — Enterprise items disabled
+
+Arena intentionally hides two Enterprise settings entries that upstream still ships. Both are **commented out** in `allNavigationItems` (not deleted), so merges can reintroduce them by uncommenting.
+
+| Nav item | Id | Why / notes |
+|----------|-----|-------------|
+| Workspace Forks | `forks` | Disabled — workspace forking not offered in Arena settings. |
+| Custom blocks | `custom-blocks` | Disabled — publish-as-reusable-block flow not offered in Arena settings. |
+
+**Source of truth:** `apps/sim/app/workspace/[workspaceId]/settings/navigation.ts`
+
+When merging upstream, keep these two items commented out unless product explicitly re-enables them.
+
+---
+
 ## Other Arena touchpoints (non-exhaustive)
 
 Add rows here as more custom work lands.
@@ -82,6 +97,7 @@ Add rows here as more custom work lands.
 | Figma design generator | `apps/sim/lib/figma-design-generator.ts` |
 | Org whitelabeling / branding | `apps/sim/ee/whitelabeling/` |
 | Sidebar brand header | `apps/sim/app/workspace/.../sidebar/components/sidebar-brand-header/` |
+| Settings Enterprise nav (forks + custom-blocks off) | `apps/sim/app/workspace/.../settings/navigation.ts` |
 
 ---
 
@@ -93,7 +109,8 @@ When pulling upstream Sim into an Arena branch:
 2. **Tools & API routes** — Arena tool folders (`tools/arena/`, `tools/p2_docs/`, etc.) and `app/api/tools/arena/` routes survive the merge.
 3. **Deployed chat** — `page.tsx` still wires `ArenaDeployedChat`, not upstream `ChatClient`.
 4. **Image variations** — `resolve-image-count.server.ts` and related image-generation paths are not overwritten by upstream single-image defaults.
-5. **This file** — Update the tables above if anything was added, removed, or renamed during the merge.
+5. **Settings Enterprise nav** — Keep `forks` and `custom-blocks` commented out in `settings/navigation.ts`.
+6. **This file** — Update the tables above if anything was added, removed, or renamed during the merge.
 
 ---
 
@@ -101,4 +118,5 @@ When pulling upstream Sim into an Arena branch:
 
 | Date | Change |
 |------|--------|
+| 2026-07-17 | Document Enterprise settings: `forks` and `custom-blocks` nav items disabled |
 | 2026-07-02 | Initial notes: custom blocks registry, image variations, deployed chat refactor |
