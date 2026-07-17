@@ -3,16 +3,22 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  appendTableContinuationTitleSuffix,
   buildTableCellTextEndIndexMap,
   buildTableColumnWidthRequests,
   buildTableContentRequests,
   computeColumnContentWeights,
   distributeColumnWidthsByContent,
+  estimateCellLineCount,
+  estimateRowHeightEmu,
   expandSlidesForTableOverflow,
-  appendTableContinuationTitleSuffix,
   findTableColumnLayout,
   findTableDimensions,
+  findTableFontSizePt,
+  findTableVerticalBudget,
   normalizeTableContent,
+  packBodyRowsByCapacity,
+  resolveColumnWidthsForEstimate,
   splitTableContentAcrossSlides,
 } from '@/tools/google_slides/create-from-template-table'
 
@@ -477,6 +483,338 @@ describe('splitTableContentAcrossSlides', () => {
     expect(bodyChunkSizes).toEqual([8, 8, 6])
     expect(bodyChunkSizes.reduce((sum, size) => sum + size, 0)).toBe(22)
   })
+
+  // Column width chosen so a single line holds exactly 20 characters at the default 11pt
+  // font: usableWidth = 1_587_500 - (12_700 * 4) = 1_536_700; charWidth = 11 * 12_700 * 0.55
+  // = 76_835; 1_536_700 / 76_835 = 20 exactly.
+  const WRAP_COLUMN_WIDTH_EMU = 1_587_500
+  const SHORT_CELL = 'A'.repeat(15) // 1 line at 11pt
+  const LONG_CELL = 'B'.repeat(25) // 2 lines at 11pt (ceil(25 / 20))
+
+  it('splits a table whose rows visually overflow the slide even though the template row count says it fits', () => {
+    // Template reports 10 physical rows (9 body rows/slide), but the table sits low on the
+    // slide leaving only ~1,486,300 EMU of real vertical room — not enough for 9 two-line
+    // wrapped rows, which is exactly the reported bug (row count "fits", content overflows).
+    const bodyRows = Array.from({ length: 9 }, () => [LONG_CELL, 'x', 'y'])
+    const chunks = splitTableContentAcrossSlides({
+      content: [['ID', 'Status', 'Owner'], ...bodyRows],
+      maxRows: 20,
+      maxColumns: 3,
+      minRows: 2,
+      headerRow: true,
+      templateRowCount: 10,
+      availableHeightEmu: 1_486_300,
+      columnWidths: [WRAP_COLUMN_WIDTH_EMU, WRAP_COLUMN_WIDTH_EMU, WRAP_COLUMN_WIDTH_EMU],
+    })
+
+    const bodyChunkSizes = chunks.map((chunk) => chunk.length - 1)
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(bodyChunkSizes[0]).toBeLessThan(9)
+    for (const chunk of chunks) {
+      expect(chunk[0]).toEqual(['ID', 'Status', 'Owner'])
+    }
+    expect(bodyChunkSizes.reduce((sum, size) => sum + size, 0)).toBe(9)
+  })
+
+  it('still fills a slide to its full row-slot capacity when there is genuinely enough vertical room (guards the historical sparse-slide regression)', () => {
+    // Same 9-row-capacity template, but the table sits near the top of the slide, leaving
+    // plenty of real vertical room, and the content is short (no wrapping). A prior
+    // height-estimate attempt produced only ~2 rows/slide here regardless of available
+    // space — this asserts the fix does not regress into that.
+    const bodyRows = Array.from({ length: 9 }, () => [SHORT_CELL, 'x', 'y'])
+    const chunks = splitTableContentAcrossSlides({
+      content: [['ID', 'Status', 'Owner'], ...bodyRows],
+      maxRows: 20,
+      maxColumns: 3,
+      minRows: 2,
+      headerRow: true,
+      templateRowCount: 10,
+      availableHeightEmu: 3_000_000,
+      columnWidths: [WRAP_COLUMN_WIDTH_EMU, WRAP_COLUMN_WIDTH_EMU, WRAP_COLUMN_WIDTH_EMU],
+    })
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toHaveLength(10)
+  })
+
+  it('falls back to pure row-count capacity when availableHeightEmu is not supplied, regardless of wrapping cell text', () => {
+    const bodyRows = Array.from({ length: 9 }, () => [LONG_CELL, 'x', 'y'])
+    const chunks = splitTableContentAcrossSlides({
+      content: [['ID', 'Status', 'Owner'], ...bodyRows],
+      maxRows: 20,
+      maxColumns: 3,
+      minRows: 2,
+      headerRow: true,
+      templateRowCount: 10,
+      columnWidths: [WRAP_COLUMN_WIDTH_EMU, WRAP_COLUMN_WIDTH_EMU, WRAP_COLUMN_WIDTH_EMU],
+    })
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toHaveLength(10)
+  })
+
+  it('estimates taller rows (and fits fewer per slide) at a larger font size', () => {
+    const bodyRows = Array.from({ length: 5 }, () => [SHORT_CELL])
+
+    const defaultFontChunks = splitTableContentAcrossSlides({
+      content: [[SHORT_CELL], ...bodyRows],
+      maxRows: 20,
+      maxColumns: 1,
+      minRows: 1,
+      headerRow: true,
+      templateRowCount: 20,
+      availableHeightEmu: 1_600_000,
+      columnWidths: [WRAP_COLUMN_WIDTH_EMU],
+      fontSizePt: 11,
+    })
+
+    const largeFontChunks = splitTableContentAcrossSlides({
+      content: [[SHORT_CELL], ...bodyRows],
+      maxRows: 20,
+      maxColumns: 1,
+      minRows: 1,
+      headerRow: true,
+      templateRowCount: 20,
+      availableHeightEmu: 1_600_000,
+      columnWidths: [WRAP_COLUMN_WIDTH_EMU],
+      fontSizePt: 24,
+    })
+
+    expect(defaultFontChunks).toHaveLength(1)
+    expect(largeFontChunks.length).toBeGreaterThan(defaultFontChunks.length)
+  })
+
+  it('greedily packs rows so chunk sizes vary with actual content length instead of a uniform split', () => {
+    const bodyRows = [
+      [SHORT_CELL],
+      [SHORT_CELL],
+      [SHORT_CELL],
+      [LONG_CELL],
+      [SHORT_CELL],
+      [SHORT_CELL],
+      [LONG_CELL],
+      [LONG_CELL],
+    ]
+    const chunks = splitTableContentAcrossSlides({
+      content: [[SHORT_CELL], ...bodyRows],
+      maxRows: 30,
+      maxColumns: 1,
+      minRows: 1,
+      headerRow: true,
+      templateRowCount: 30,
+      availableHeightEmu: 1_300_000,
+      columnWidths: [WRAP_COLUMN_WIDTH_EMU],
+    })
+
+    const bodyChunkSizes = chunks.map((chunk) => chunk.length - 1)
+    expect(new Set(bodyChunkSizes).size).toBeGreaterThan(1)
+    expect(bodyChunkSizes.reduce((sum, size) => sum + size, 0)).toBe(8)
+  })
+})
+
+describe('findTableVerticalBudget', () => {
+  it('computes available height from the table transform and page size', () => {
+    const budget = findTableVerticalBudget(
+      {
+        pageSize: {
+          width: { magnitude: 9_144_000, unit: 'EMU' },
+          height: { magnitude: 5_143_500, unit: 'EMU' },
+        },
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                transform: { translateY: 3_200_000, unit: 'EMU' },
+                table: { rows: 10, columns: 3 },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    // 5_143_500 - 3_200_000 - (36pt bottom margin = 457_200) = 1_486_300
+    expect(budget).toEqual({ availableHeightEmu: 1_486_300 })
+  })
+
+  it('returns null when the page size is missing from the payload', () => {
+    const budget = findTableVerticalBudget(
+      {
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                transform: { translateY: 3_200_000, unit: 'EMU' },
+                table: { rows: 10, columns: 3 },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    expect(budget).toBeNull()
+  })
+
+  it('returns null when the table has no transform (position unknown)', () => {
+    const budget = findTableVerticalBudget(
+      {
+        pageSize: { height: { magnitude: 5_143_500, unit: 'EMU' } },
+        slides: [
+          {
+            pageElements: [{ objectId: 'table_1', table: { rows: 10, columns: 3 } }],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    expect(budget).toBeNull()
+  })
+
+  it('returns null when the table sits too low on the slide for any room to remain', () => {
+    const budget = findTableVerticalBudget(
+      {
+        pageSize: { height: { magnitude: 5_143_500, unit: 'EMU' } },
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                transform: { translateY: 5_000_000, unit: 'EMU' },
+                table: { rows: 10, columns: 3 },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    expect(budget).toBeNull()
+  })
+})
+
+describe('findTableFontSizePt', () => {
+  it('reads the real font size from the first styled cell text run', () => {
+    const fontSizePt = findTableFontSizePt(
+      {
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                table: {
+                  tableRows: [
+                    {
+                      tableCells: [
+                        {
+                          text: {
+                            textElements: [
+                              { textRun: { style: { fontSize: { magnitude: 18, unit: 'PT' } } } },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+      'table_1'
+    )
+
+    expect(fontSizePt).toBe(18)
+  })
+
+  it('falls back to the default font size when the template has no styled font size', () => {
+    const fontSizePt = findTableFontSizePt(
+      {
+        slides: [{ pageElements: [{ objectId: 'table_1', table: { tableRows: [] } }] }],
+      },
+      'table_1'
+    )
+
+    expect(fontSizePt).toBe(11)
+  })
+})
+
+describe('resolveColumnWidthsForEstimate', () => {
+  it('mirrors the final content-based width redistribution', () => {
+    const widths = resolveColumnWidthsForEstimate(
+      { columnWidths: [1_000_000, 1_000_000, 1_000_000] },
+      3,
+      [['A', 'Much longer content in this column', 'B']]
+    )
+
+    expect(widths[1]).toBeGreaterThan(widths[0]!)
+    expect(widths[1]).toBeGreaterThan(widths[2]!)
+  })
+
+  it('falls back to the minimum column width when no layout is known', () => {
+    const widths = resolveColumnWidthsForEstimate(null, 2, [['A', 'B']])
+    expect(widths).toHaveLength(2)
+    expect(widths[0]).toBeGreaterThan(0)
+  })
+})
+
+describe('estimateCellLineCount and estimateRowHeightEmu', () => {
+  it('estimates one line for text within the per-line character budget', () => {
+    expect(estimateCellLineCount('A'.repeat(15), 1_587_500, 11)).toBe(1)
+  })
+
+  it('estimates two lines once text exceeds the per-line character budget', () => {
+    expect(estimateCellLineCount('B'.repeat(25), 1_587_500, 11)).toBe(2)
+  })
+
+  it('estimates more lines at a larger font size for the same text and column width', () => {
+    const smallFontLines = estimateCellLineCount('A'.repeat(15), 1_587_500, 11)
+    const largeFontLines = estimateCellLineCount('A'.repeat(15), 1_587_500, 24)
+    expect(largeFontLines).toBeGreaterThan(smallFontLines)
+  })
+
+  it('estimates row height from the tallest wrapping cell in the row', () => {
+    const shortRowHeight = estimateRowHeightEmu(['A'.repeat(15), 'x'], [1_587_500, 1_587_500], 11)
+    const longRowHeight = estimateRowHeightEmu(['B'.repeat(25), 'x'], [1_587_500, 1_587_500], 11)
+    expect(longRowHeight).toBeGreaterThan(shortRowHeight)
+  })
+})
+
+describe('packBodyRowsByCapacity', () => {
+  it('always keeps at least one row per chunk even when a single row exceeds the available height', () => {
+    const chunks = packBodyRowsByCapacity({
+      bodyRows: [['B'.repeat(25)], ['B'.repeat(25)]],
+      rowSlotCapacity: 20,
+      availableHeightEmu: 1,
+      columnWidths: [1_587_500],
+      fontSizePt: 11,
+      headerRowHeightEmu: 0,
+    })
+
+    expect(chunks).toHaveLength(2)
+    expect(chunks.every((chunk) => chunk.length === 1)).toBe(true)
+  })
+
+  it('ignores the height budget and packs by row-slot capacity alone when availableHeightEmu is null', () => {
+    const bodyRows = Array.from({ length: 7 }, () => ['B'.repeat(25)])
+    const chunks = packBodyRowsByCapacity({
+      bodyRows,
+      rowSlotCapacity: 3,
+      availableHeightEmu: null,
+      columnWidths: [1_587_500],
+      fontSizePt: 11,
+      headerRowHeightEmu: 0,
+    })
+
+    expect(chunks.map((chunk) => chunk.length)).toEqual([3, 3, 1])
+  })
 })
 
 describe('expandSlidesForTableOverflow', () => {
@@ -498,7 +836,11 @@ describe('expandSlidesForTableOverflow', () => {
               minRows: 2,
               content: [
                 ['Col A', 'Col B', 'Col C'],
-                ...Array.from({ length: 10 }, (_, index) => [`Row ${index + 1}`, longCell, longCell]),
+                ...Array.from({ length: 10 }, (_, index) => [
+                  `Row ${index + 1}`,
+                  longCell,
+                  longCell,
+                ]),
               ],
             },
           ],
@@ -554,7 +896,11 @@ describe('expandSlidesForTableOverflow', () => {
               minRows: 2,
               content: [
                 ['Col A', 'Col B', 'Col C'],
-                ...Array.from({ length: 8 }, (_, index) => [`Row ${index + 1}`, longCell, longCell]),
+                ...Array.from({ length: 8 }, (_, index) => [
+                  `Row ${index + 1}`,
+                  longCell,
+                  longCell,
+                ]),
               ],
             },
           ],
@@ -581,6 +927,63 @@ describe('expandSlidesForTableOverflow', () => {
     expect(slides).toHaveLength(1)
     const tableContent = slides[0]?.blocks.find((block) => block.type === 'TABLE')?.content
     expect(tableContent).toHaveLength(9)
+  })
+
+  it('splits into additional continuation slides when the template payload reveals the table has too little real vertical room, even though the row count alone would fit', () => {
+    const longCell = 'B'.repeat(25)
+    const slides = expandSlidesForTableOverflow(
+      [
+        {
+          order: 1,
+          templateSlideObjectId: 'slide_tpl',
+          blocks: [
+            { type: 'TEXT', role: 'TITLE', shapeId: 'title_1', content: 'My Table' },
+            {
+              type: 'TABLE',
+              shapeId: 'table_1',
+              headerRow: true,
+              maxRows: 20,
+              maxColumns: 3,
+              minRows: 2,
+              content: [
+                ['ID', 'Status', 'Owner'],
+                ...Array.from({ length: 9 }, () => [longCell, 'x', 'y']),
+              ],
+            },
+          ],
+        },
+      ],
+      {
+        pageSize: { height: { magnitude: 5_143_500, unit: 'EMU' } },
+        slides: [
+          {
+            pageElements: [
+              {
+                objectId: 'table_1',
+                // Table sits low on the slide, leaving little real room below it —
+                // this is what the row-count-only check could not see.
+                transform: { translateY: 3_200_000, unit: 'EMU' },
+                table: {
+                  rows: 10,
+                  columns: 3,
+                  tableColumns: columnWidthsToTableColumns([1_587_500, 1_587_500, 1_587_500]),
+                },
+              },
+            ],
+          },
+        ],
+      }
+    )
+
+    expect(slides.length).toBeGreaterThan(1)
+    const tableChunks = slides.map(
+      (slide) => slide.blocks.find((block) => block.type === 'TABLE')?.content as string[][]
+    )
+    const totalBodyRows = tableChunks.reduce((sum, chunk) => sum + (chunk.length - 1), 0)
+    expect(totalBodyRows).toBe(9)
+    // The row-count cap alone (9 body rows/slide) would have kept this on one slide;
+    // the vertical-space estimate should have forced an earlier cut.
+    expect((tableChunks[0]?.length ?? 0) - 1).toBeLessThan(9)
   })
 })
 
