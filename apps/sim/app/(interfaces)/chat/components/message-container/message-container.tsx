@@ -195,7 +195,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
         ref={messagesContainerRef}
         className='!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto'
       >
-        <div className='px-3 md:px-4'>
+        <div className='px-3 md:px-4 py-4'>
           <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} pb-8`}>
             {messages.length === 0 ? (
               <div className='flex min-h-full flex-col items-center justify-center py-10'>

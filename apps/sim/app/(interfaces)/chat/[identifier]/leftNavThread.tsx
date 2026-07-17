@@ -171,7 +171,7 @@ interface SidebarHeaderProps {
 function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderProps) {
   if (collapsed && onToggleSidebar) {
     return (
-      <div className='mb-3 flex items-center justify-center'>
+      <div className='mb-6 flex items-center justify-center'>
         <button
           type='button'
           onClick={onToggleSidebar}
@@ -209,7 +209,7 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
   return (
     <div
       className={cn(
-        'mb-3 flex items-center px-0.5',
+        'mb-6 flex items-center px-0.5',
         collapsed ? 'justify-center' : 'justify-between'
       )}
     >
@@ -591,7 +591,7 @@ const LeftNavThread = ({
   const actionButtonsDisabled = isLoading || isStreaming
 
   const primaryActionButtons = (collapsed: boolean) => (
-    <div className={cn('flex flex-col gap-1', collapsed && 'items-center')}>
+    <div className={cn('flex flex-col gap-2', collapsed && 'items-center')}>
       {showReRun && onReRun && !collapsed && (
         <button
           type='button'
