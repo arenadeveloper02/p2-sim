@@ -14,6 +14,7 @@ import {
 } from '@/lib/api/contracts/oauth-connections'
 import { client } from '@/lib/auth/auth-client'
 import { readOAuthReturnContext } from '@/lib/credentials/client-state'
+import { requiresCustomOAuthApp } from '@/lib/oauth/custom-apps'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
 
 const logger = createLogger('OAuthConnectionsQuery')
@@ -304,6 +305,23 @@ export function useConnectOAuthService() {
           postArenaV3OAuthNavigateToParent(url)
         } else {
           window.location.href = url
+        }
+        return { success: true }
+      }
+
+      if (requiresCustomOAuthApp(providerId)) {
+        const returnCtx = readOAuthReturnContext()
+        const workspaceId = returnCtx?.workspaceId
+        if (!workspaceId) {
+          throw new Error('Workspace context is required to connect this integration')
+        }
+        const url = new URL(`${origin}/api/auth/oauth2/custom/${providerId}/authorize`)
+        url.searchParams.set('workspaceId', workspaceId)
+        url.searchParams.set('returnUrl', callbackURL)
+        if (delegateToParent) {
+          postArenaV3OAuthNavigateToParent(url.toString())
+        } else {
+          window.location.href = url.toString()
         }
         return { success: true }
       }

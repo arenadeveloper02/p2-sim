@@ -3051,6 +3051,74 @@ export const mcpServerOauth = pgTable(
   })
 )
 
+/**
+ * Organization-scoped "bring your own OAuth app" credentials.
+ *
+ * Lets an organization register its own OAuth app (client id/secret) for a
+ * provider instead of using Sim's shared app, so every workspace under that
+ * organization authorizes against the org's own app registration. One row
+ * per `(organizationId, providerId)` — `providerId` is the base provider key
+ * (e.g. `'zoom'`), shared across that provider's sibling services (e.g.
+ * `zoom-client`/`zoom-admin` both read the same Zoom Marketplace app).
+ * `clientSecret` is encrypted the same way as `mcpServers.oauthClientSecret`.
+ */
+export const organizationOauthApps = pgTable(
+  'organization_oauth_apps',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    providerId: text('provider_id').notNull(),
+    clientId: text('client_id').notNull(),
+    clientSecret: text('client_secret').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    orgProviderUnique: uniqueIndex('organization_oauth_apps_org_provider_unique').on(
+      table.organizationId,
+      table.providerId
+    ),
+  })
+)
+
+/**
+ * Short-lived, single-use correlation state for the custom (non-Better-Auth)
+ * OAuth authorize/callback flow used by providers with an organization-scoped
+ * custom app (see {@link organizationOauthApps}). Mirrors the correlation
+ * role `mcpServerOauth.state` plays for MCP OAuth, but generic across
+ * providers and keyed by an opaque state token rather than one row per server.
+ */
+export const oauthCustomAppState = pgTable(
+  'oauth_custom_app_state',
+  {
+    id: text('id').primaryKey(),
+    /** Opaque token minted at authorize time and echoed back by the provider. */
+    state: text('state').notNull(),
+    providerId: text('provider_id').notNull(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** Where to redirect the browser back to once the flow completes. */
+    returnUrl: text('return_url'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (table) => ({
+    stateUnique: uniqueIndex('oauth_custom_app_state_state_unique').on(table.state),
+  })
+)
+
 // SSO Provider table
 export const ssoProvider = pgTable(
   'sso_provider',

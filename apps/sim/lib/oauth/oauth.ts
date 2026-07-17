@@ -54,6 +54,11 @@ import {
   ZoomIcon,
 } from '@/components/icons'
 import { env } from '@/lib/core/config/env'
+import {
+  getCustomOAuthAppConfig,
+  getOrganizationOAuthApp,
+  requiresCustomOAuthApp,
+} from '@/lib/oauth/custom-apps'
 import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import type { OAuthProviderConfig } from './types'
 
@@ -1245,7 +1250,21 @@ interface ProviderAuthConfig {
 }
 
 /**
- * Get OAuth provider configuration for token refresh
+ * Thrown when a provider requires an organization-scoped custom OAuth app
+ * (see `requiresCustomOAuthApp`) and the org hasn't configured one, or the
+ * refresh request has no organization scope to resolve one from. Mapped to
+ * the terminal `custom_app_not_configured` error code so the credential is
+ * marked dead instead of retried against a nonexistent app.
+ */
+class MissingCustomAppError extends Error {}
+
+/**
+ * Get OAuth provider configuration for token refresh. Synchronous for every
+ * provider except the ones requiring a custom OAuth app (see
+ * `resolveCustomOAuthAppConfig`), so the common refresh path keeps its
+ * original zero-await timing — concurrent test suites mutate the global
+ * `fetch` around this call, and any added microtask here would let a
+ * concurrently-running test swap `fetch` out from under this one.
  */
 function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthConfig {
   const getCredentials = (clientId: string | undefined, clientSecret: string | undefined) => {
@@ -1584,29 +1603,6 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         supportsRefreshTokenRotation: false,
       }
     }
-    case 'zoom': {
-      const { clientId, clientSecret } = getCredentials(env.ZOOM_CLIENT_ID, env.ZOOM_CLIENT_SECRET)
-      return {
-        tokenEndpoint: 'https://zoom.us/oauth/token',
-        clientId,
-        clientSecret,
-        useBasicAuth: true,
-        supportsRefreshTokenRotation: true,
-      }
-    }
-    case 'zoom-admin': {
-      const { clientId, clientSecret } = getCredentials(
-        env.ZOOM_ADMIN_CLIENT_ID,
-        env.ZOOM_ADMIN_CLIENT_SECRET
-      )
-      return {
-        tokenEndpoint: 'https://zoom.us/oauth/token',
-        clientId,
-        clientSecret,
-        useBasicAuth: true,
-        supportsRefreshTokenRotation: true,
-      }
-    }
     case 'wordpress': {
       // WordPress.com does NOT support refresh tokens
       // Users will need to re-authorize when tokens expire (~2 weeks)
@@ -1650,6 +1646,41 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
     }
     default:
       throw new Error(`Unsupported provider: ${provider}`)
+  }
+}
+
+/**
+ * Resolve OAuth provider configuration for providers that require an
+ * organization-scoped custom OAuth app (currently `zoom`/`zoom-admin`, see
+ * `apps/sim/lib/oauth/custom-apps.ts`). There is no shared Sim app to fall
+ * back to: without an organization scope or a configured app, refresh fails
+ * terminally rather than retrying against nonexistent credentials.
+ */
+async function resolveCustomOAuthAppConfig(
+  provider: string,
+  organizationId?: string
+): Promise<ProviderAuthConfig> {
+  const customConfig = getCustomOAuthAppConfig(provider)
+  if (!customConfig) {
+    throw new Error(`Missing custom OAuth app config for provider: ${provider}`)
+  }
+  if (!organizationId) {
+    throw new MissingCustomAppError(
+      `No organization scope to resolve a custom OAuth app for provider: ${provider}`
+    )
+  }
+  const orgApp = await getOrganizationOAuthApp(organizationId, customConfig.appKey)
+  if (!orgApp) {
+    throw new MissingCustomAppError(
+      `Organization ${organizationId} has not configured a custom OAuth app for provider: ${provider}`
+    )
+  }
+  return {
+    tokenEndpoint: customConfig.tokenUrl,
+    clientId: orgApp.clientId,
+    clientSecret: orgApp.clientSecret,
+    useBasicAuth: customConfig.authentication === 'basic',
+    supportsRefreshTokenRotation: customConfig.supportsRefreshTokenRotation,
   }
 }
 
@@ -1744,7 +1775,8 @@ const TOKEN_REFRESH_TIMEOUT_MS = 15_000
 export async function refreshOAuthToken(
   providerId: string,
   refreshToken: string,
-  alias?: string
+  alias?: string,
+  organizationId?: string
 ): Promise<RefreshTokenResult> {
   try {
     const provider =
@@ -1756,7 +1788,9 @@ export async function refreshOAuthToken(
             ? 'facebook-ads'
             : getBaseProviderForService(providerId)
 
-    const config = getProviderAuthConfig(provider, alias)
+    const config = requiresCustomOAuthApp(provider)
+      ? await resolveCustomOAuthAppConfig(provider, organizationId)
+      : getProviderAuthConfig(provider, alias)
 
     const { headers, bodyParams, useJsonBody } = buildAuthRequest(config, refreshToken)
 
@@ -1851,6 +1885,9 @@ export async function refreshOAuthToken(
   } catch (error) {
     const message = toError(error).message
     logger.error('Error refreshing token:', { error: message })
+    if (error instanceof MissingCustomAppError) {
+      return { ok: false, errorCode: 'custom_app_not_configured', message }
+    }
     return { ok: false, message }
   }
 }

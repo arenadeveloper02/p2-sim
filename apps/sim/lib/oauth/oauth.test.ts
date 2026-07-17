@@ -45,16 +45,34 @@ vi.mock('@/lib/core/config/env', () =>
     SALESFORCE_CLIENT_SECRET: 'salesforce_client_secret',
     SHOPIFY_CLIENT_ID: 'shopify_client_id',
     SHOPIFY_CLIENT_SECRET: 'shopify_client_secret',
-    ZOOM_CLIENT_ID: 'zoom_client_id',
-    ZOOM_CLIENT_SECRET: 'zoom_client_secret',
-    ZOOM_ADMIN_CLIENT_ID: 'zoom_admin_client_id',
-    ZOOM_ADMIN_CLIENT_SECRET: 'zoom_admin_client_secret',
     WORDPRESS_CLIENT_ID: 'wordpress_client_id',
     WORDPRESS_CLIENT_SECRET: 'wordpress_client_secret',
     SPOTIFY_CLIENT_ID: 'spotify_client_id',
     SPOTIFY_CLIENT_SECRET: 'spotify_client_secret',
   })
 )
+
+const { mockGetOrganizationOAuthApp } = vi.hoisted(() => ({
+  mockGetOrganizationOAuthApp: vi.fn(),
+}))
+
+// Zoom has no shared Sim app; it resolves credentials from an org-scoped
+// custom OAuth app instead of env vars (see apps/sim/lib/oauth/custom-apps.ts).
+vi.mock('@/lib/oauth/custom-apps', () => ({
+  getCustomOAuthAppConfig: (providerId: string) =>
+    providerId === 'zoom' || providerId === 'zoom-admin'
+      ? {
+          appKey: 'zoom',
+          authorizationUrl: 'https://zoom.us/oauth/authorize',
+          tokenUrl: 'https://zoom.us/oauth/token',
+          userInfoUrl: 'https://api.zoom.us/v2/users/me',
+          authentication: 'basic',
+          supportsRefreshTokenRotation: true,
+        }
+      : undefined,
+  requiresCustomOAuthApp: (providerId: string) => providerId === 'zoom' || providerId === 'zoom-admin',
+  getOrganizationOAuthApp: mockGetOrganizationOAuthApp,
+}))
 
 import { refreshOAuthToken } from '@/lib/oauth'
 
@@ -111,17 +129,6 @@ describe('OAuth Token Refresh', () => {
         name: 'Asana',
         providerId: 'asana',
         endpoint: 'https://app.asana.com/-/oauth_token',
-      },
-      {
-        name: 'Zoom',
-        providerId: 'zoom',
-        endpoint: 'https://zoom.us/oauth/token',
-      },
-      {
-        name: 'Zoom Admin',
-        providerId: 'zoom-admin',
-        endpoint: 'https://zoom.us/oauth/token',
-        expectedBasicAuthPair: 'zoom_admin_client_id:zoom_admin_client_secret',
       },
       {
         name: 'Spotify',
@@ -181,6 +188,94 @@ describe('OAuth Token Refresh', () => {
         }
       )
     })
+  })
+
+  // Not `it.concurrent`: resolving org credentials awaits the mocked DB call
+  // before the token-exchange `fetch`, which briefly yields to the event
+  // loop. Running these concurrently with the shared global-`fetch` mutation
+  // used across this file risks another test swapping `fetch` out mid-flight.
+  describe('Custom OAuth App Providers (Zoom)', () => {
+    it(
+      'should use the organization custom app credentials with Basic Auth',
+      async () => {
+        mockGetOrganizationOAuthApp.mockResolvedValueOnce({
+          clientId: 'org_zoom_client_id',
+          clientSecret: 'org_zoom_client_secret',
+        })
+
+        const mockFetch = createMockFetch(defaultOAuthResponse)
+        const refreshToken = 'test_refresh_token'
+
+        const result = await withMockFetch(mockFetch, () =>
+          refreshOAuthToken('zoom', refreshToken, undefined, 'org-1')
+        )
+
+        expect(result.ok).toBe(true)
+        expect(mockGetOrganizationOAuthApp).toHaveBeenCalledWith('org-1', 'zoom')
+
+        const [, requestOptions] = mockFetch.mock.calls[0] as [
+          string,
+          { headers: Record<string, string>; body: string },
+        ]
+        const authHeader = requestOptions.headers.Authorization
+        const credentials = Buffer.from(authHeader.replace('Basic ', ''), 'base64').toString(
+          'utf-8'
+        )
+        expect(credentials).toBe('org_zoom_client_id:org_zoom_client_secret')
+      }
+    )
+
+    it(
+      'zoom-admin should resolve the same org app key ("zoom") as zoom',
+      async () => {
+        mockGetOrganizationOAuthApp.mockResolvedValueOnce({
+          clientId: 'org_zoom_client_id',
+          clientSecret: 'org_zoom_client_secret',
+        })
+
+        const mockFetch = createMockFetch(defaultOAuthResponse)
+        await withMockFetch(mockFetch, () =>
+          refreshOAuthToken('zoom-admin', 'test_refresh_token', undefined, 'org-1')
+        )
+
+        expect(mockGetOrganizationOAuthApp).toHaveBeenCalledWith('org-1', 'zoom')
+      }
+    )
+
+    it(
+      'should fail terminally with no fallback when no organization scope is available',
+      async () => {
+        const mockFetch = createMockFetch(defaultOAuthResponse)
+
+        const result = await withMockFetch(mockFetch, () =>
+          refreshOAuthToken('zoom', 'test_refresh_token')
+        )
+
+        expect(result.ok).toBe(false)
+        if (!result.ok) {
+          expect(result.errorCode).toBe('custom_app_not_configured')
+        }
+        expect(mockFetch).not.toHaveBeenCalled()
+      }
+    )
+
+    it(
+      'should fail terminally with no fallback when the org has not configured a Zoom app',
+      async () => {
+        mockGetOrganizationOAuthApp.mockResolvedValueOnce(null)
+        const mockFetch = createMockFetch(defaultOAuthResponse)
+
+        const result = await withMockFetch(mockFetch, () =>
+          refreshOAuthToken('zoom', 'test_refresh_token', undefined, 'org-without-app')
+        )
+
+        expect(result.ok).toBe(false)
+        if (!result.ok) {
+          expect(result.errorCode).toBe('custom_app_not_configured')
+        }
+        expect(mockFetch).not.toHaveBeenCalled()
+      }
+    )
   })
 
   describe('Body Credential Providers', () => {
