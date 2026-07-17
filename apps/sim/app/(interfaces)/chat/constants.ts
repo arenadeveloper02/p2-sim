@@ -20,11 +20,11 @@ export const DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS = 'max-w-[768px]' as const
 /** Resting height for the deployed chat input shell */
 export const DEPLOYED_CHAT_INPUT_HEIGHT_CLASS = 'h-10' as const
 
-/** Deployed chat main canvas background (pale lavender-white) */
-export const DEPLOYED_CHAT_CANVAS_BG = '#FBF7FD'
+/** Deployed chat main canvas background */
+export const DEPLOYED_CHAT_CANVAS_BG = '#F3F8FE'
 
-/** Subtle top tint for deployed chat canvas gradient */
-export const DEPLOYED_CHAT_CANVAS_GRADIENT_TOP = '#FDFBFE'
+/** Subtle top tint for deployed chat canvas gradient (same as canvas for a flat fill) */
+export const DEPLOYED_CHAT_CANVAS_GRADIENT_TOP = DEPLOYED_CHAT_CANVAS_BG
 
 /** Deployed chat canvas background gradient */
 export const DEPLOYED_CHAT_CANVAS_GRADIENT = `linear-gradient(180deg, ${DEPLOYED_CHAT_CANVAS_GRADIENT_TOP} 0%, ${DEPLOYED_CHAT_CANVAS_BG} 100%)`

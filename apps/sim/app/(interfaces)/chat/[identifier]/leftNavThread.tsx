@@ -14,8 +14,8 @@ import {
   Tooltip,
 } from '@sim/emcn'
 import { formatRelativeTime } from '@sim/utils/formatting'
-import { MoreHorizontal, Pin, PinOff, RefreshCw, Search, Trash2, X } from 'lucide-react'
-import Image from 'next/image'
+import { Download, MoreHorizontal, Pin, PinOff, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react'
+import Image, { type StaticImageData } from 'next/image'
 import {
   FeedbackNavIcon,
   GoldenQueriesNavIcon,
@@ -64,8 +64,10 @@ interface LeftNavThreadProps {
   isMobileOpen?: boolean
   onCloseMobile?: () => void
   searchInputRef?: React.RefObject<HTMLInputElement | null>
-  logoUrl?: string
+  logoUrl?: string | StaticImageData
   onToggleSidebar?: () => void
+  onExportChat?: () => void
+  onShareChat?: () => void
 }
 
 type SidebarActionIcon = React.ComponentType<{ className?: string }>
@@ -161,7 +163,7 @@ function SidebarCollapseButton({ onClick }: SidebarToggleButtonProps) {
 }
 
 interface SidebarHeaderProps {
-  logoUrl?: string
+  logoUrl?: string | StaticImageData
   collapsed: boolean
   onToggleSidebar?: () => void
 }
@@ -302,6 +304,8 @@ interface ThreadRowProps {
   onRenameCancel: () => void
   onDelete: () => void
   onTogglePin: () => void
+  onExportChat?: () => void
+  onShareChat?: () => void
 }
 
 function ThreadRow({
@@ -318,6 +322,8 @@ function ThreadRow({
   onRenameCancel,
   onDelete,
   onTogglePin,
+  onExportChat,
+  onShareChat,
 }: ThreadRowProps) {
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameBlurReadyRef = useRef(false)
@@ -457,6 +463,18 @@ function ThreadRow({
                 </>
               )}
             </DropdownMenuItem>
+            {isActive && onShareChat && (
+              <DropdownMenuItem onClick={onShareChat} className={THREAD_MENU_ITEM_CLASS}>
+                <Share2 />
+                Copy link
+              </DropdownMenuItem>
+            )}
+            {isActive && onExportChat && (
+              <DropdownMenuItem onClick={onExportChat} className={THREAD_MENU_ITEM_CLASS}>
+                <Download />
+                Export chat
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={onDelete} className={THREAD_MENU_ITEM_CLASS}>
               <Trash2 />
               Delete
@@ -494,6 +512,8 @@ const LeftNavThread = ({
   searchInputRef,
   logoUrl,
   onToggleSidebar,
+  onExportChat,
+  onShareChat,
 }: LeftNavThreadProps) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
@@ -718,6 +738,8 @@ const LeftNavThread = ({
                       onRenameCancel={handleRenameCancel}
                       onDelete={() => setDeleteTarget(thread)}
                       onTogglePin={() => onTogglePinThread?.(thread.chatId, !thread.pinnedAt)}
+                      onExportChat={onExportChat}
+                      onShareChat={onShareChat}
                     />
                   ))}
                 </div>

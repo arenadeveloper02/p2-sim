@@ -48,7 +48,7 @@ function DeployedChatDescriptionPreview({ text, onExpand }: DeployedChatDescript
     <div className='relative mt-3'>
       <p
         ref={descriptionRef}
-        className='max-h-[3.2em] overflow-hidden whitespace-pre-wrap text-center font-normal text-[15px] leading-[1.6]'
+        className='max-h-[3.2em] overflow-hidden whitespace-pre-wrap text-center font-normal text-[14px] leading-[1.6]'
         style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
       >
         {text}

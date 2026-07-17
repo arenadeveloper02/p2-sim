@@ -1,7 +1,7 @@
 'use client'
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChipModal, ChipModalBody, ChipModalHeader, ToastProvider, toast } from '@sim/emcn'
+import { ToastProvider, toast } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
@@ -26,6 +26,7 @@ import {
   UnauthorizedEmailError,
   VoiceInterface,
 } from '@/app/(interfaces)/chat/components'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import {
   CHAT_ERROR_MESSAGES,
   CHAT_REQUEST_TIMEOUT_MS,
@@ -54,15 +55,11 @@ import {
   useRenameDeployedChatThread,
   useSetDeployedChatThreadPinned,
 } from '@/hooks/queries/deployed-chat-threads'
-import { ArenaChatHeader } from '../components/header/arenaHeader'
 import { DeployedChatLanding } from './DeployedChatLanding'
 import { FeedbackView } from './FeedbackView'
 import LeftNavThread, { type ThreadRecord } from './leftNavThread'
 
 const logger = createLogger('ChatClient')
-
-const ARENA_LOGO_URL =
-  'https://arenav2image.s3.us-west-1.amazonaws.com/rt/calibrate/Arena_Logo_WebDashboard.svg'
 
 interface ChatConfig {
   id: string
@@ -218,7 +215,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     return window.localStorage.getItem('deployed-chat-sidebar-collapsed') === 'true'
   })
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
-  const [showKeyboardShortcutsHint, setShowKeyboardShortcutsHint] = useState(false)
 
   const [isHistoryLoading, setIsHistoryLoading] = useState<any>(true) // Start as true to prevent early modal
   const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
@@ -241,7 +237,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       chatConfig?.customizations?.logoUrl ||
       chatConfig?.customizations?.imageUrl ||
       brand.logoUrl ||
-      ARENA_LOGO_URL,
+      arenaLogo,
     [chatConfig, brand.logoUrl]
   )
   const renameThreadMutation = useRenameDeployedChatThread(identifier)
@@ -309,22 +305,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }, [currentChatId, threads])
 
   const isNewChatActive = isUnsavedChat && !showFeedbackView && !isGoldenQueriesOpen
-
-  const hideHeaderTitle = useMemo(() => {
-    if (showFeedbackView) return false
-    if (hasNonWelcomeMessages) return false
-    if (isHistoryLoading || !hasCheckedHistory) {
-      return isUnsavedChat
-    }
-    return showLandingView
-  }, [
-    showFeedbackView,
-    hasNonWelcomeMessages,
-    isHistoryLoading,
-    hasCheckedHistory,
-    isUnsavedChat,
-    showLandingView,
-  ])
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -1658,6 +1638,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             logoUrl={sidebarLogoUrl}
             onToggleSidebar={handleToggleSidebar}
             isCollapsed={isSidebarCollapsed}
+            onExportChat={handleExportChat}
+            onShareChat={handleShareChat}
           />
         </div>
 
@@ -1687,6 +1669,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             searchInputRef={threadSearchInputRef}
             logoUrl={sidebarLogoUrl}
             onToggleSidebar={handleToggleSidebar}
+            onExportChat={handleExportChat}
+            onShareChat={handleShareChat}
           />
         )}
 
@@ -1694,16 +1678,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           className='relative flex min-h-0 min-w-0 flex-1 flex-col'
           style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
         >
-          <ArenaChatHeader
-            chatConfig={chatConfig}
-            showFeedbackView={showFeedbackView}
-            hideCenterTitle={hideHeaderTitle}
-            onToggleSidebar={handleToggleSidebar}
-            onExportChat={handleExportChat}
-            onShareChat={handleShareChat}
-            onShowKeyboardShortcuts={() => setShowKeyboardShortcutsHint(true)}
-          />
-
           <div className='relative flex min-h-0 flex-1'>
             {isHistoryLoading && (
               <div
@@ -1828,34 +1802,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           onSaveQueries={handleSaveGoldenQueries}
           disabled={isStreamingResponse || isLoading || isGoldenQueriesSaving}
         />
-
-        <ChipModal open={showKeyboardShortcutsHint} onOpenChange={setShowKeyboardShortcutsHint}>
-          <ChipModalHeader onClose={() => setShowKeyboardShortcutsHint(false)}>
-            Keyboard shortcuts
-          </ChipModalHeader>
-          <ChipModalBody>
-            <ul className='space-y-2 text-[var(--text-body)] text-sm'>
-              <li>
-                <kbd className='rounded bg-[var(--surface-2)] px-1.5 py-0.5'>
-                  ⌘/Ctrl + Shift + O
-                </kbd>{' '}
-                New chat
-              </li>
-              <li>
-                <kbd className='rounded bg-[var(--surface-2)] px-1.5 py-0.5'>⌘/Ctrl + K</kbd> Search
-                chats
-              </li>
-              <li>
-                <kbd className='rounded bg-[var(--surface-2)] px-1.5 py-0.5'>/</kbd> Focus message
-                input
-              </li>
-              <li>
-                <kbd className='rounded bg-[var(--surface-2)] px-1.5 py-0.5'>Esc</kbd> Close sidebar
-                / cancel rename
-              </li>
-            </ul>
-          </ChipModalBody>
-        </ChipModal>
       </div>
     </ToastProvider>
   )
