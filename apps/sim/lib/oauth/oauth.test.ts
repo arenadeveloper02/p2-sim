@@ -59,17 +59,29 @@ const { mockGetOrganizationOAuthApp } = vi.hoisted(() => ({
 // Zoom has no shared Sim app; it resolves credentials from an org-scoped
 // custom OAuth app instead of env vars (see apps/sim/lib/oauth/custom-apps.ts).
 vi.mock('@/lib/oauth/custom-app-config', () => ({
-  getCustomOAuthAppConfig: (providerId: string) =>
-    providerId === 'zoom' || providerId === 'zoom-admin'
-      ? {
-          appKey: 'zoom',
-          authorizationUrl: 'https://zoom.us/oauth/authorize',
-          tokenUrl: 'https://zoom.us/oauth/token',
-          userInfoUrl: 'https://api.zoom.us/v2/users/me',
-          authentication: 'basic',
-          supportsRefreshTokenRotation: true,
-        }
-      : undefined,
+  getCustomOAuthAppConfig: (providerId: string) => {
+    if (providerId === 'zoom') {
+      return {
+        appKey: 'zoom',
+        authorizationUrl: 'https://zoom.us/oauth/authorize',
+        tokenUrl: 'https://zoom.us/oauth/token',
+        userInfoUrl: 'https://api.zoom.us/v2/users/me',
+        authentication: 'basic' as const,
+        supportsRefreshTokenRotation: true,
+      }
+    }
+    if (providerId === 'zoom-admin') {
+      return {
+        appKey: 'zoom-admin',
+        authorizationUrl: 'https://zoom.us/oauth/authorize',
+        tokenUrl: 'https://zoom.us/oauth/token',
+        userInfoUrl: 'https://api.zoom.us/v2/users/me',
+        authentication: 'basic' as const,
+        supportsRefreshTokenRotation: true,
+      }
+    }
+    return undefined
+  },
   requiresCustomOAuthApp: (providerId: string) =>
     providerId === 'zoom' || providerId === 'zoom-admin',
 }))
@@ -220,10 +232,10 @@ describe('OAuth Token Refresh', () => {
       expect(credentials).toBe('org_zoom_client_id:org_zoom_client_secret')
     })
 
-    it('zoom-admin should resolve the same org app key ("zoom") as zoom', async () => {
+    it('zoom-admin should resolve its own org app key ("zoom-admin")', async () => {
       mockGetOrganizationOAuthApp.mockResolvedValueOnce({
-        clientId: 'org_zoom_client_id',
-        clientSecret: 'org_zoom_client_secret',
+        clientId: 'org_zoom_admin_client_id',
+        clientSecret: 'org_zoom_admin_client_secret',
       })
 
       const mockFetch = createMockFetch(defaultOAuthResponse)
@@ -237,7 +249,7 @@ describe('OAuth Token Refresh', () => {
         )
       )
 
-      expect(mockGetOrganizationOAuthApp).toHaveBeenCalledWith('org-1', 'zoom')
+      expect(mockGetOrganizationOAuthApp).toHaveBeenCalledWith('org-1', 'zoom-admin')
     })
 
     it('should fail terminally with no fallback when no organization scope is available', async () => {

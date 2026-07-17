@@ -2772,7 +2772,9 @@ export const localCopilotToolCalls = pgTable(
     conversationId: uuid('conversation_id')
       .notNull()
       .references(() => localCopilotConversations.id, { onDelete: 'cascade' }),
-    messageId: uuid('message_id').references(() => localCopilotMessages.id, { onDelete: 'set null' }),
+    messageId: uuid('message_id').references(() => localCopilotMessages.id, {
+      onDelete: 'set null',
+    }),
     toolName: text('tool_name').notNull(),
     toolCallId: text('tool_call_id').notNull(),
     arguments: jsonb('arguments').notNull().default({}),
@@ -3057,9 +3059,10 @@ export const mcpServerOauth = pgTable(
  * Lets an organization register its own OAuth app (client id/secret) for a
  * provider instead of using Sim's shared app, so every workspace under that
  * organization authorizes against the org's own app registration. One row
- * per `(organizationId, providerId)` — `providerId` is the base provider key
- * (e.g. `'zoom'`), shared across that provider's sibling services (e.g.
- * `zoom-client`/`zoom-admin` both read the same Zoom Marketplace app).
+ * per `(organizationId, providerId)` — `providerId` is the custom-app key
+ * (e.g. `'zoom'` or `'zoom-admin'`). Distinct Marketplace / cloud apps that
+ * need separate client credentials get separate keys; sibling services that
+ * share one client map to the same key via `CUSTOM_OAUTH_APP_PROVIDERS`.
  * `clientSecret` is encrypted the same way as `mcpServers.oauthClientSecret`.
  */
 export const organizationOauthApps = pgTable(
@@ -3311,7 +3314,7 @@ export const workflowStatsMonthly = pgTable(
   'workflow_stats_monthly',
   {
     id: text('id').primaryKey(),
-    
+
     workflowId: text('workflow_id_ref'),
     workflowName: text('workflow_name'),
     workflowAuthorId: text('workflow_author_id'),

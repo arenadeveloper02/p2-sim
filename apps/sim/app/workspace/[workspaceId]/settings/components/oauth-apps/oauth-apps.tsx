@@ -5,6 +5,7 @@ import { Chip, ChipModalField, InfoCard, InfoCardItem, InfoCardList } from '@sim
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { ZoomIcon } from '@/components/icons'
+import type { OrganizationOAuthAppSummary } from '@/lib/api/contracts/organization-oauth-apps'
 import { useSession } from '@/lib/auth/auth-client'
 import { getCustomOAuthAppConfig, listCustomOAuthAppKeys } from '@/lib/oauth/custom-app-config'
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
@@ -22,14 +23,30 @@ const CUSTOM_APP_LABELS: Record<string, { name: string; description: string }> =
   zoom: {
     name: 'Zoom',
     description:
-      "Register your organization's Zoom Marketplace app so teammates can connect Zoom using your client credentials instead of a shared Sim app.",
+      "Register your organization's Zoom Marketplace user app so teammates can connect Zoom using your client credentials.",
   },
+  'zoom-admin': {
+    name: 'Zoom Admin',
+    description:
+      "Register your organization's Zoom Marketplace admin app (separate client ID/secret from the user app) for account-wide admin scopes.",
+  },
+}
+
+interface AppFormState {
+  clientId: string
+  clientSecret: string
+  saveError: string | null
+}
+
+const EMPTY_FORM: AppFormState = {
+  clientId: '',
+  clientSecret: '',
+  saveError: null,
 }
 
 /**
  * Organization settings for bringing your own OAuth app credentials.
- * Currently supports Zoom; additional providers can be added via
- * `CUSTOM_OAUTH_APP_PROVIDERS` without new UI routes.
+ * Providers come from `CUSTOM_OAUTH_APP_PROVIDERS` / `listCustomOAuthAppKeys()`.
  */
 export function OAuthAppsSettings() {
   const { data: session } = useSession()
@@ -47,73 +64,38 @@ export function OAuthAppsSettings() {
   const deleteApp = useDeleteOrganizationOAuthApp(organizationId || '')
 
   const supportedAppKeys = listCustomOAuthAppKeys()
-  const zoomApp = apps.find((app) => app.appKey === 'zoom')
+  const appsByKey = useMemo(() => {
+    const map = new Map<string, OrganizationOAuthAppSummary>()
+    for (const app of apps) {
+      map.set(app.appKey, app)
+    }
+    return map
+  }, [apps])
 
-  const [clientId, setClientId] = useState('')
-  const [clientSecret, setClientSecret] = useState('')
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [forms, setForms] = useState<Record<string, AppFormState>>({})
+
+  useEffect(() => {
+    setForms((prev) => {
+      const next: Record<string, AppFormState> = { ...prev }
+      for (const appKey of supportedAppKeys) {
+        const saved = appsByKey.get(appKey)
+        const existing = next[appKey] ?? EMPTY_FORM
+        next[appKey] = {
+          ...existing,
+          clientId: saved?.clientId ?? '',
+          // Never refill secret from the server — it is write-only after save.
+          clientSecret: saved ? '' : existing.clientSecret,
+        }
+      }
+      return next
+    })
+  }, [appsByKey, supportedAppKeys])
 
   const adminOrOwner = isAdminOrOwner(organization, session?.user?.email)
 
-  useEffect(() => {
-    if (!zoomApp) return
-    setClientId(zoomApp.clientId)
-    setClientSecret('')
-  }, [zoomApp?.clientId, zoomApp?.id])
-
-  const isConfigured = Boolean(zoomApp?.hasClientSecret && zoomApp.clientId)
-
-  const handleSave = async () => {
-    if (!organizationId) return
-    setSaveError(null)
-
-    const trimmedClientId = clientId.trim()
-    const trimmedSecret = clientSecret.trim()
-
-    if (!trimmedClientId) {
-      setSaveError('Client ID is required.')
-      return
-    }
-    if (!isConfigured && !trimmedSecret) {
-      setSaveError('Client secret is required.')
-      return
-    }
-    if (isConfigured && !trimmedSecret) {
-      setSaveError('Enter the client secret to update credentials.')
-      return
-    }
-
-    try {
-      await upsertApp.mutateAsync({
-        appKey: 'zoom',
-        clientId: trimmedClientId,
-        clientSecret: trimmedSecret,
-      })
-      setClientSecret('')
-    } catch (error) {
-      const message = getErrorMessage(error, 'Failed to save Zoom OAuth app')
-      setSaveError(message)
-      logger.error('Failed to save organization OAuth app', error)
-    }
-  }
-
-  const handleClear = async () => {
-    if (!organizationId || !isConfigured) return
-    setSaveError(null)
-    try {
-      await deleteApp.mutateAsync('zoom')
-      setClientId('')
-      setClientSecret('')
-    } catch (error) {
-      const message = getErrorMessage(error, 'Failed to remove Zoom OAuth app')
-      setSaveError(message)
-      logger.error('Failed to delete organization OAuth app', error)
-    }
-  }
-
   const providerMeta = useMemo(() => {
     return supportedAppKeys.map((appKey) => {
-      const config = getCustomOAuthAppConfig(appKey === 'zoom' ? 'zoom' : appKey)
+      const config = getCustomOAuthAppConfig(appKey)
       const labels = CUSTOM_APP_LABELS[appKey] ?? {
         name: appKey,
         description: 'Custom OAuth app credentials for this provider.',
@@ -122,6 +104,67 @@ export function OAuthAppsSettings() {
     })
   }, [supportedAppKeys])
 
+  const updateForm = (appKey: string, patch: Partial<AppFormState>) => {
+    setForms((prev) => ({
+      ...prev,
+      [appKey]: { ...(prev[appKey] ?? EMPTY_FORM), ...patch },
+    }))
+  }
+
+  const handleSave = async (appKey: string) => {
+    if (!organizationId) return
+
+    const form = forms[appKey] ?? EMPTY_FORM
+    const saved = appsByKey.get(appKey)
+    const isConfigured = Boolean(saved?.hasClientSecret && saved.clientId)
+    const trimmedClientId = form.clientId.trim()
+    const trimmedSecret = form.clientSecret.trim()
+
+    updateForm(appKey, { saveError: null })
+
+    if (!trimmedClientId) {
+      updateForm(appKey, { saveError: 'Client ID is required.' })
+      return
+    }
+    if (!isConfigured && !trimmedSecret) {
+      updateForm(appKey, { saveError: 'Client secret is required.' })
+      return
+    }
+    if (isConfigured && !trimmedSecret) {
+      updateForm(appKey, { saveError: 'Enter the client secret to update credentials.' })
+      return
+    }
+
+    try {
+      await upsertApp.mutateAsync({
+        appKey,
+        clientId: trimmedClientId,
+        clientSecret: trimmedSecret,
+      })
+      updateForm(appKey, { clientSecret: '', saveError: null })
+    } catch (error) {
+      const message = getErrorMessage(error, `Failed to save ${appKey} OAuth app`)
+      updateForm(appKey, { saveError: message })
+      logger.error('Failed to save organization OAuth app', error)
+    }
+  }
+
+  const handleClear = async (appKey: string) => {
+    if (!organizationId) return
+    const saved = appsByKey.get(appKey)
+    if (!saved?.hasClientSecret) return
+
+    updateForm(appKey, { saveError: null })
+    try {
+      await deleteApp.mutateAsync(appKey)
+      updateForm(appKey, { clientId: '', clientSecret: '', saveError: null })
+    } catch (error) {
+      const message = getErrorMessage(error, `Failed to remove ${appKey} OAuth app`)
+      updateForm(appKey, { saveError: message })
+      logger.error('Failed to delete organization OAuth app', error)
+    }
+  }
+
   if (!organizationId) {
     return (
       <SettingsPanel>
@@ -129,7 +172,7 @@ export function OAuthAppsSettings() {
           <InfoCardList>
             <InfoCardItem>
               Custom OAuth apps are only available for organization workspaces. Create or join an
-              organization to configure a Zoom Marketplace app for your team.
+              organization to configure Zoom Marketplace apps for your team.
             </InfoCardItem>
           </InfoCardList>
         </InfoCard>
@@ -156,20 +199,27 @@ export function OAuthAppsSettings() {
     )
   }
 
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+
   return (
     <SettingsPanel>
       <InfoCard>
         <InfoCardList>
           <InfoCardItem>
-            After saving or updating credentials, teammates must reconnect any existing Zoom
-            integrations — tokens issued against a previous app will not refresh.
+            To keep existing Zoom connections working without reconnecting, paste the exact client
+            ID and secret from the Marketplace apps that originally issued those tokens (the former
+            ZOOM_* / ZOOM_ADMIN_* env values). Saving a different Marketplace app will require
+            teammates to reconnect.
           </InfoCardItem>
         </InfoCardList>
       </InfoCard>
 
       {providerMeta.map(({ appKey, name, description }) => {
-        if (appKey !== 'zoom') return null
-        const rowConfigured = Boolean(zoomApp?.hasClientSecret && zoomApp.clientId)
+        const saved = appsByKey.get(appKey)
+        const form = forms[appKey] ?? EMPTY_FORM
+        const rowConfigured = Boolean(saved?.hasClientSecret && saved.clientId)
+        const callbackPath = `/api/auth/oauth2/custom/${appKey}/callback`
+        const callbackUrl = origin ? `${origin}${callbackPath}` : callbackPath
 
         return (
           <div key={appKey} className='flex flex-col gap-4'>
@@ -186,9 +236,9 @@ export function OAuthAppsSettings() {
             <ChipModalField
               type='input'
               title='Client ID'
-              value={clientId}
-              onChange={setClientId}
-              placeholder='Zoom OAuth Client ID'
+              value={form.clientId}
+              onChange={(value) => updateForm(appKey, { clientId: value })}
+              placeholder={`${name} OAuth Client ID`}
               autoComplete='off'
               disabled={appsLoading || upsertApp.isPending}
             />
@@ -196,10 +246,10 @@ export function OAuthAppsSettings() {
             <ChipModalField
               type='input'
               title='Client Secret'
-              value={clientSecret}
-              onChange={setClientSecret}
+              value={form.clientSecret}
+              onChange={(value) => updateForm(appKey, { clientSecret: value })}
               placeholder={
-                rowConfigured ? 'Enter a new secret to update' : 'Zoom OAuth Client Secret'
+                rowConfigured ? 'Enter a new secret to update' : `${name} OAuth Client Secret`
               }
               autoComplete='off'
               hint={
@@ -210,12 +260,14 @@ export function OAuthAppsSettings() {
               disabled={appsLoading || upsertApp.isPending}
             />
 
-            {saveError && <p className='text-[var(--text-error)] text-caption'>{saveError}</p>}
+            {form.saveError && (
+              <p className='text-[var(--text-error)] text-caption'>{form.saveError}</p>
+            )}
 
             <div className='flex flex-wrap items-center gap-2'>
               <Chip
                 variant='primary'
-                onClick={() => void handleSave()}
+                onClick={() => void handleSave(appKey)}
                 disabled={upsertApp.isPending || deleteApp.isPending}
               >
                 {upsertApp.isPending ? 'Saving...' : rowConfigured ? 'Update' : 'Save'}
@@ -223,25 +275,21 @@ export function OAuthAppsSettings() {
               {rowConfigured && (
                 <Chip
                   variant='ghost'
-                  onClick={() => void handleClear()}
+                  onClick={() => void handleClear(appKey)}
                   disabled={upsertApp.isPending || deleteApp.isPending}
                 >
                   {deleteApp.isPending ? 'Removing...' : 'Remove'}
                 </Chip>
               )}
             </div>
+
+            <p className='text-[var(--text-muted)] text-caption'>
+              Redirect URI for this Marketplace app:{' '}
+              <code className='text-[var(--text-body)]'>{callbackUrl}</code>
+            </p>
           </div>
         )
       })}
-
-      <p className='text-[var(--text-muted)] text-caption'>
-        Redirect URI for your Zoom app:{' '}
-        <code className='text-[var(--text-body)]'>
-          {typeof window !== 'undefined'
-            ? `${window.location.origin}/api/auth/oauth2/custom/zoom/callback`
-            : '/api/auth/oauth2/custom/zoom/callback'}
-        </code>
-      </p>
     </SettingsPanel>
   )
 }
