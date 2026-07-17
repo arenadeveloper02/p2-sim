@@ -58,7 +58,7 @@ const { mockGetOrganizationOAuthApp } = vi.hoisted(() => ({
 
 // Zoom has no shared Sim app; it resolves credentials from an org-scoped
 // custom OAuth app instead of env vars (see apps/sim/lib/oauth/custom-apps.ts).
-vi.mock('@/lib/oauth/custom-apps', () => ({
+vi.mock('@/lib/oauth/custom-app-config', () => ({
   getCustomOAuthAppConfig: (providerId: string) =>
     providerId === 'zoom' || providerId === 'zoom-admin'
       ? {
@@ -70,8 +70,8 @@ vi.mock('@/lib/oauth/custom-apps', () => ({
           supportsRefreshTokenRotation: true,
         }
       : undefined,
-  requiresCustomOAuthApp: (providerId: string) => providerId === 'zoom' || providerId === 'zoom-admin',
-  getOrganizationOAuthApp: mockGetOrganizationOAuthApp,
+  requiresCustomOAuthApp: (providerId: string) =>
+    providerId === 'zoom' || providerId === 'zoom-admin',
 }))
 
 import { refreshOAuthToken } from '@/lib/oauth'
@@ -195,87 +195,91 @@ describe('OAuth Token Refresh', () => {
   // loop. Running these concurrently with the shared global-`fetch` mutation
   // used across this file risks another test swapping `fetch` out mid-flight.
   describe('Custom OAuth App Providers (Zoom)', () => {
-    it(
-      'should use the organization custom app credentials with Basic Auth',
-      async () => {
-        mockGetOrganizationOAuthApp.mockResolvedValueOnce({
-          clientId: 'org_zoom_client_id',
-          clientSecret: 'org_zoom_client_secret',
-        })
+    it('should use the organization custom app credentials with Basic Auth', async () => {
+      mockGetOrganizationOAuthApp.mockResolvedValueOnce({
+        clientId: 'org_zoom_client_id',
+        clientSecret: 'org_zoom_client_secret',
+      })
 
-        const mockFetch = createMockFetch(defaultOAuthResponse)
-        const refreshToken = 'test_refresh_token'
+      const mockFetch = createMockFetch(defaultOAuthResponse)
+      const refreshToken = 'test_refresh_token'
 
-        const result = await withMockFetch(mockFetch, () =>
-          refreshOAuthToken('zoom', refreshToken, undefined, 'org-1')
+      const result = await withMockFetch(mockFetch, () =>
+        refreshOAuthToken('zoom', refreshToken, undefined, 'org-1', mockGetOrganizationOAuthApp)
+      )
+
+      expect(result.ok).toBe(true)
+      expect(mockGetOrganizationOAuthApp).toHaveBeenCalledWith('org-1', 'zoom')
+
+      const [, requestOptions] = mockFetch.mock.calls[0] as [
+        string,
+        { headers: Record<string, string>; body: string },
+      ]
+      const authHeader = requestOptions.headers.Authorization
+      const credentials = Buffer.from(authHeader.replace('Basic ', ''), 'base64').toString('utf-8')
+      expect(credentials).toBe('org_zoom_client_id:org_zoom_client_secret')
+    })
+
+    it('zoom-admin should resolve the same org app key ("zoom") as zoom', async () => {
+      mockGetOrganizationOAuthApp.mockResolvedValueOnce({
+        clientId: 'org_zoom_client_id',
+        clientSecret: 'org_zoom_client_secret',
+      })
+
+      const mockFetch = createMockFetch(defaultOAuthResponse)
+      await withMockFetch(mockFetch, () =>
+        refreshOAuthToken(
+          'zoom-admin',
+          'test_refresh_token',
+          undefined,
+          'org-1',
+          mockGetOrganizationOAuthApp
         )
+      )
 
-        expect(result.ok).toBe(true)
-        expect(mockGetOrganizationOAuthApp).toHaveBeenCalledWith('org-1', 'zoom')
+      expect(mockGetOrganizationOAuthApp).toHaveBeenCalledWith('org-1', 'zoom')
+    })
 
-        const [, requestOptions] = mockFetch.mock.calls[0] as [
-          string,
-          { headers: Record<string, string>; body: string },
-        ]
-        const authHeader = requestOptions.headers.Authorization
-        const credentials = Buffer.from(authHeader.replace('Basic ', ''), 'base64').toString(
-          'utf-8'
+    it('should fail terminally with no fallback when no organization scope is available', async () => {
+      const mockFetch = createMockFetch(defaultOAuthResponse)
+
+      const result = await withMockFetch(mockFetch, () =>
+        refreshOAuthToken(
+          'zoom',
+          'test_refresh_token',
+          undefined,
+          undefined,
+          mockGetOrganizationOAuthApp
         )
-        expect(credentials).toBe('org_zoom_client_id:org_zoom_client_secret')
+      )
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errorCode).toBe('custom_app_not_configured')
       }
-    )
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
 
-    it(
-      'zoom-admin should resolve the same org app key ("zoom") as zoom',
-      async () => {
-        mockGetOrganizationOAuthApp.mockResolvedValueOnce({
-          clientId: 'org_zoom_client_id',
-          clientSecret: 'org_zoom_client_secret',
-        })
+    it('should fail terminally with no fallback when the org has not configured a Zoom app', async () => {
+      mockGetOrganizationOAuthApp.mockResolvedValueOnce(null)
+      const mockFetch = createMockFetch(defaultOAuthResponse)
 
-        const mockFetch = createMockFetch(defaultOAuthResponse)
-        await withMockFetch(mockFetch, () =>
-          refreshOAuthToken('zoom-admin', 'test_refresh_token', undefined, 'org-1')
+      const result = await withMockFetch(mockFetch, () =>
+        refreshOAuthToken(
+          'zoom',
+          'test_refresh_token',
+          undefined,
+          'org-without-app',
+          mockGetOrganizationOAuthApp
         )
+      )
 
-        expect(mockGetOrganizationOAuthApp).toHaveBeenCalledWith('org-1', 'zoom')
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errorCode).toBe('custom_app_not_configured')
       }
-    )
-
-    it(
-      'should fail terminally with no fallback when no organization scope is available',
-      async () => {
-        const mockFetch = createMockFetch(defaultOAuthResponse)
-
-        const result = await withMockFetch(mockFetch, () =>
-          refreshOAuthToken('zoom', 'test_refresh_token')
-        )
-
-        expect(result.ok).toBe(false)
-        if (!result.ok) {
-          expect(result.errorCode).toBe('custom_app_not_configured')
-        }
-        expect(mockFetch).not.toHaveBeenCalled()
-      }
-    )
-
-    it(
-      'should fail terminally with no fallback when the org has not configured a Zoom app',
-      async () => {
-        mockGetOrganizationOAuthApp.mockResolvedValueOnce(null)
-        const mockFetch = createMockFetch(defaultOAuthResponse)
-
-        const result = await withMockFetch(mockFetch, () =>
-          refreshOAuthToken('zoom', 'test_refresh_token', undefined, 'org-without-app')
-        )
-
-        expect(result.ok).toBe(false)
-        if (!result.ok) {
-          expect(result.errorCode).toBe('custom_app_not_configured')
-        }
-        expect(mockFetch).not.toHaveBeenCalled()
-      }
-    )
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
   })
 
   describe('Body Credential Providers', () => {

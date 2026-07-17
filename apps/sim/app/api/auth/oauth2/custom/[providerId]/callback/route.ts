@@ -7,16 +7,12 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { customOAuthAppCallbackContract } from '@/lib/api/contracts/oauth-connections'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth/auth'
-import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { isSameOrigin } from '@/lib/core/utils/validation'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import {
-  consumeCustomOAuthAppState,
-  getCustomOAuthAppConfig,
-  getOrganizationOAuthApp,
-  requiresCustomOAuthApp,
-} from '@/lib/oauth/custom-apps'
+import { processCredentialDraft } from '@/lib/credentials/draft-processor'
+import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
+import { consumeCustomOAuthAppState, getOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
 import { safeAccountInsert } from '@/app/api/auth/oauth/utils'
 
 const logger = createLogger('CustomOAuthAppCallback')
@@ -105,10 +101,7 @@ export const GET = withRouteHandler(
         : `${baseUrl}/workspace/${stateRecord.workspaceId}/integrations`
 
     try {
-      const orgApp = await getOrganizationOAuthApp(
-        stateRecord.organizationId,
-        customConfig.appKey
-      )
+      const orgApp = await getOrganizationOAuthApp(stateRecord.organizationId, customConfig.appKey)
       if (!orgApp) {
         logger.error('Organization custom OAuth app missing at callback', {
           organizationId: stateRecord.organizationId,

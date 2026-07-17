@@ -24,13 +24,13 @@ import {
   type OAuthProvider,
   parseProvider,
 } from '@/lib/oauth'
+import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 import { getScopeDescription } from '@/lib/oauth/utils'
-import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-apps'
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { useCreateCredentialDraft, useWorkspaceCredentials } from '@/hooks/queries/credentials'
+import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
 import { useOrganization, useOrganizations } from '@/hooks/queries/organization'
 import { useOrganizationOAuthApps } from '@/hooks/queries/organization-oauth-apps'
-import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const logger = createLogger('ConnectOAuthModal')
@@ -381,8 +381,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
 
   const isPending = (isConnect && createDraft.isPending) || connectOAuthService.isPending
   const customAppBlocked =
-    needsCustomApp &&
-    (!organizationId || (isOrgAdmin && !customAppConfigured))
+    needsCustomApp && (!organizationId || (isOrgAdmin && !customAppConfigured))
   const isDisabled = isConnect
     ? !displayName.trim() || isPending || Boolean(existingCredential) || customAppBlocked
     : isPending

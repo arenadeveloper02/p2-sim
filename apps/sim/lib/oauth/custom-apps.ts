@@ -8,64 +8,8 @@ import { decryptSecret, encryptSecret } from '@/lib/core/security/encryption'
 const logger = createLogger('CustomOAuthApps')
 
 /**
- * Describes a provider that supports an organization-scoped "bring your own
- * OAuth app" — the org registers its own client id/secret instead of using
- * Sim's shared app, and every workspace under that org authorizes against
- * the org's own app registration.
- *
- * Keyed by the OAuth **service** `providerId` (the id stored on `account`/
- * `credential` rows, e.g. `'zoom'` or `'zoom-admin'`). `appKey` is the row
- * key in `organization_oauth_apps.provider_id` — sibling services that read
- * the same underlying app registration (e.g. Zoom's user app and admin app
- * are the same Marketplace app, just requesting different scopes) share one
- * `appKey` so an org only has to register the app once.
+ * Non-secret metadata returned when listing an organization's OAuth apps.
  */
-export interface CustomOAuthAppProviderConfig {
-  appKey: string
-  authorizationUrl: string
-  tokenUrl: string
-  userInfoUrl?: string
-  authentication: 'basic' | 'post'
-  supportsRefreshTokenRotation?: boolean
-}
-
-export const CUSTOM_OAUTH_APP_PROVIDERS: Record<string, CustomOAuthAppProviderConfig> = {
-  zoom: {
-    appKey: 'zoom',
-    authorizationUrl: 'https://zoom.us/oauth/authorize',
-    tokenUrl: 'https://zoom.us/oauth/token',
-    userInfoUrl: 'https://api.zoom.us/v2/users/me',
-    authentication: 'basic',
-    supportsRefreshTokenRotation: true,
-  },
-  'zoom-admin': {
-    // Shares the same Zoom Marketplace app/org row as `zoom` — an org
-    // registers one app and grants it both scope sets.
-    appKey: 'zoom',
-    authorizationUrl: 'https://zoom.us/oauth/authorize',
-    tokenUrl: 'https://zoom.us/oauth/token',
-    userInfoUrl: 'https://api.zoom.us/v2/users/me',
-    authentication: 'basic',
-    supportsRefreshTokenRotation: true,
-  },
-}
-
-/** True when `providerId` only works through an organization-scoped custom app (no shared fallback). */
-export function requiresCustomOAuthApp(providerId: string): boolean {
-  return providerId in CUSTOM_OAUTH_APP_PROVIDERS
-}
-
-export function getCustomOAuthAppConfig(
-  providerId: string
-): CustomOAuthAppProviderConfig | undefined {
-  return CUSTOM_OAUTH_APP_PROVIDERS[providerId]
-}
-
-/** Distinct app keys across all custom-app-capable providers, for settings UI listing. */
-export function listCustomOAuthAppKeys(): string[] {
-  return Array.from(new Set(Object.values(CUSTOM_OAUTH_APP_PROVIDERS).map((c) => c.appKey)))
-}
-
 export interface OrganizationOAuthAppSummary {
   id: string
   organizationId: string

@@ -11,11 +11,8 @@ import {
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import {
-  listCustomOAuthAppKeys,
-  listOrganizationOAuthApps,
-  upsertOrganizationOAuthApp,
-} from '@/lib/oauth/custom-apps'
+import { listCustomOAuthAppKeys } from '@/lib/oauth/custom-app-config'
+import { listOrganizationOAuthApps, upsertOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
 
 const logger = createLogger('OrganizationOAuthAppsAPI')
 
@@ -27,7 +24,10 @@ async function requireOrgAdmin(organizationId: string, userId: string) {
     .limit(1)
 
   if (!memberEntry) {
-    return { ok: false as const, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
+    return {
+      ok: false as const,
+      response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+    }
   }
 
   if (!isOrgAdminRole(memberEntry.role)) {
@@ -116,7 +116,10 @@ export const POST = withRouteHandler(
     if (!authz.ok) return authz.response
 
     if (!listCustomOAuthAppKeys().includes(appKey)) {
-      return NextResponse.json({ error: `Unsupported custom OAuth app: ${appKey}` }, { status: 400 })
+      return NextResponse.json(
+        { error: `Unsupported custom OAuth app: ${appKey}` },
+        { status: 400 }
+      )
     }
 
     await upsertOrganizationOAuthApp({

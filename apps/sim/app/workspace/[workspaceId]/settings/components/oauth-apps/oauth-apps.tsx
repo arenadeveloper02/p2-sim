@@ -1,26 +1,20 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Chip,
-  ChipModalField,
-  InfoCard,
-  InfoCardItem,
-  InfoCardList,
-} from '@sim/emcn'
+import { Chip, ChipModalField, InfoCard, InfoCardItem, InfoCardList } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { ZoomIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
-import { getCustomOAuthAppConfig, listCustomOAuthAppKeys } from '@/lib/oauth/custom-apps'
+import { getCustomOAuthAppConfig, listCustomOAuthAppKeys } from '@/lib/oauth/custom-app-config'
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
+import { useOrganization, useOrganizations } from '@/hooks/queries/organization'
 import {
   useDeleteOrganizationOAuthApp,
   useOrganizationOAuthApps,
   useUpsertOrganizationOAuthApp,
 } from '@/hooks/queries/organization-oauth-apps'
-import { useOrganization, useOrganizations } from '@/hooks/queries/organization'
 
 const logger = createLogger('OAuthAppsSettings')
 
@@ -28,7 +22,7 @@ const CUSTOM_APP_LABELS: Record<string, { name: string; description: string }> =
   zoom: {
     name: 'Zoom',
     description:
-      'Register your organization\'s Zoom Marketplace app so teammates can connect Zoom using your client credentials instead of a shared Sim app.',
+      "Register your organization's Zoom Marketplace app so teammates can connect Zoom using your client credentials instead of a shared Sim app.",
   },
 }
 

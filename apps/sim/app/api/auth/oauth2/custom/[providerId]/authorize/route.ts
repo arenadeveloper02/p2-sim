@@ -6,16 +6,12 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { authorizeCustomOAuthAppContract } from '@/lib/api/contracts/oauth-connections'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth/auth'
-import { createConnectDraft } from '@/lib/credentials/connect-draft'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { isSameOrigin } from '@/lib/core/utils/validation'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import {
-  createCustomOAuthAppState,
-  getCustomOAuthAppConfig,
-  getOrganizationOAuthApp,
-  requiresCustomOAuthApp,
-} from '@/lib/oauth/custom-apps'
+import { createConnectDraft } from '@/lib/credentials/connect-draft'
+import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
+import { createCustomOAuthAppState, getOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 

@@ -54,11 +54,7 @@ import {
   ZoomIcon,
 } from '@/components/icons'
 import { env } from '@/lib/core/config/env'
-import {
-  getCustomOAuthAppConfig,
-  getOrganizationOAuthApp,
-  requiresCustomOAuthApp,
-} from '@/lib/oauth/custom-apps'
+import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import type { OAuthProviderConfig } from './types'
 
@@ -1249,6 +1245,11 @@ interface ProviderAuthConfig {
   useJsonBody?: boolean
 }
 
+export type CustomOAuthAppCredentialsResolver = (
+  organizationId: string,
+  appKey: string
+) => Promise<{ clientId: string; clientSecret: string } | null>
+
 /**
  * Thrown when a provider requires an organization-scoped custom OAuth app
  * (see `requiresCustomOAuthApp`) and the org hasn't configured one, or the
@@ -1658,7 +1659,8 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
  */
 async function resolveCustomOAuthAppConfig(
   provider: string,
-  organizationId?: string
+  organizationId?: string,
+  resolveCredentials?: CustomOAuthAppCredentialsResolver
 ): Promise<ProviderAuthConfig> {
   const customConfig = getCustomOAuthAppConfig(provider)
   if (!customConfig) {
@@ -1669,7 +1671,12 @@ async function resolveCustomOAuthAppConfig(
       `No organization scope to resolve a custom OAuth app for provider: ${provider}`
     )
   }
-  const orgApp = await getOrganizationOAuthApp(organizationId, customConfig.appKey)
+  if (!resolveCredentials) {
+    throw new MissingCustomAppError(
+      `No credential resolver was provided for custom OAuth provider: ${provider}`
+    )
+  }
+  const orgApp = await resolveCredentials(organizationId, customConfig.appKey)
   if (!orgApp) {
     throw new MissingCustomAppError(
       `Organization ${organizationId} has not configured a custom OAuth app for provider: ${provider}`
@@ -1776,7 +1783,8 @@ export async function refreshOAuthToken(
   providerId: string,
   refreshToken: string,
   alias?: string,
-  organizationId?: string
+  organizationId?: string,
+  resolveCustomAppCredentials?: CustomOAuthAppCredentialsResolver
 ): Promise<RefreshTokenResult> {
   try {
     const provider =
@@ -1789,7 +1797,7 @@ export async function refreshOAuthToken(
             : getBaseProviderForService(providerId)
 
     const config = requiresCustomOAuthApp(provider)
-      ? await resolveCustomOAuthAppConfig(provider, organizationId)
+      ? await resolveCustomOAuthAppConfig(provider, organizationId, resolveCustomAppCredentials)
       : getProviderAuthConfig(provider, alias)
 
     const { headers, bodyParams, useJsonBody } = buildAuthRequest(config, refreshToken)

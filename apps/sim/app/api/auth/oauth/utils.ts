@@ -3,11 +3,12 @@ import { db } from '@sim/db'
 import { account, accountTokens, credential, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getPostgresErrorCode, toError } from '@sim/utils/errors'
-import { and, desc, eq,sql  } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { withLeaderLock } from '@/lib/concurrency/leader-lock'
 import { coalesceLocally } from '@/lib/concurrency/singleflight'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import { refreshOAuthToken } from '@/lib/oauth'
+import { getOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
 import {
   getMicrosoftRefreshTokenExpiry,
   isMicrosoftProvider,
@@ -424,7 +425,13 @@ async function performCoalescedRefresh({
       key: lockKey,
       onLeader: async () => {
         try {
-          const result = await refreshOAuthToken(providerId, refreshToken, alias, organizationId)
+          const result = await refreshOAuthToken(
+            providerId,
+            refreshToken,
+            alias,
+            organizationId,
+            getOrganizationOAuthApp
+          )
 
           if (!result.ok) {
             logger.error('Failed to refresh token', {

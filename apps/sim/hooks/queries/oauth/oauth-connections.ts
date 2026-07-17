@@ -14,8 +14,8 @@ import {
 } from '@/lib/api/contracts/oauth-connections'
 import { client } from '@/lib/auth/auth-client'
 import { readOAuthReturnContext } from '@/lib/credentials/client-state'
-import { requiresCustomOAuthApp } from '@/lib/oauth/custom-apps'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
+import { requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 
 const logger = createLogger('OAuthConnectionsQuery')
 

@@ -1,14 +1,15 @@
 import { db } from '@sim/db'
 import { member } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { deleteOrganizationOAuthAppContract } from '@/lib/api/contracts/organization-oauth-apps'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { deleteOrganizationOAuthApp, listCustomOAuthAppKeys } from '@/lib/oauth/custom-apps'
-import { isOrgAdminRole } from '@sim/platform-authz/workspace'
+import { listCustomOAuthAppKeys } from '@/lib/oauth/custom-app-config'
+import { deleteOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
 
 const logger = createLogger('OrganizationOAuthAppDeleteAPI')
 
@@ -17,7 +18,10 @@ const logger = createLogger('OrganizationOAuthAppDeleteAPI')
  * Removes an organization-scoped custom OAuth app (org admin/owner only).
  */
 export const DELETE = withRouteHandler(
-  async (_request: NextRequest, context: { params: Promise<{ id: string; providerId: string }> }) => {
+  async (
+    _request: NextRequest,
+    context: { params: Promise<{ id: string; providerId: string }> }
+  ) => {
     const session = await getSession()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -43,7 +47,10 @@ export const DELETE = withRouteHandler(
     }
 
     if (!listCustomOAuthAppKeys().includes(appKey)) {
-      return NextResponse.json({ error: `Unsupported custom OAuth app: ${appKey}` }, { status: 400 })
+      return NextResponse.json(
+        { error: `Unsupported custom OAuth app: ${appKey}` },
+        { status: 400 }
+      )
     }
 
     await deleteOrganizationOAuthApp(organizationId, appKey)
