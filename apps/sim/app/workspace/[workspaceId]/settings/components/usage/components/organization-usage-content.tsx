@@ -12,7 +12,6 @@ import { CostShareBars } from '@/app/workspace/[workspaceId]/settings/components
 import { DataHealthPanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/data-health-panel'
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import {
-  formatActorType,
   formatBillableWithCredits,
   formatSourceLabel,
   formatTokenCount,
@@ -72,8 +71,6 @@ export function OrganizationUsageContent({
 
   return (
     <div className='flex flex-col gap-8'>
-      <DataHealthPanel data={data} />
-
       <SettingsSection label='Trends'>
         <UsageTimeSeriesChart
           timeSeries={data.timeSeries}
@@ -552,56 +549,6 @@ export function OrganizationUsageContent({
         </SettingsSection>
       )}
 
-      {tab !== 'workflow' && data.byActor.length > 0 && (
-        <SettingsSection label='By actor'>
-          <p className='mb-4 text-[var(--text-secondary)] text-small'>
-            Who triggered usage across organization workspaces — stamped ledger actor when present,
-            otherwise mothership chat owner or billing user.
-          </p>
-          <CostBreakdownTable
-            rows={data.byActor}
-            getRowKey={(row) => `${row.actorType ?? 'unknown'}-${row.actorUserId ?? 'none'}`}
-            columns={[
-              {
-                key: 'actor',
-                header: 'Actor',
-                render: (row) => {
-                  const name = row.actorUserId
-                    ? (userNameById.get(row.actorUserId) ?? row.actorUserId)
-                    : '—'
-                  return (
-                    <span>
-                      {name}
-                      <span className='ml-1 text-[var(--text-muted)]'>
-                        ({formatActorType(row.actorType)})
-                      </span>
-                    </span>
-                  )
-                },
-              },
-              {
-                key: 'count',
-                header: 'Entries',
-                align: 'right',
-                render: (row) => row.count.toLocaleString(),
-              },
-              {
-                key: 'tokens',
-                header: 'Tokens',
-                align: 'right',
-                render: (row) => formatTokenCount(row.usage.totalTokens),
-              },
-              {
-                key: 'cost',
-                header: 'Billable',
-                align: 'right',
-                render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
-              },
-            ]}
-          />
-        </SettingsSection>
-      )}
-
       {tab === 'all' && data.byUser.length > 0 && (
         <SettingsSection label='By billing user'>
           <CostBreakdownTable
@@ -741,6 +688,8 @@ export function OrganizationUsageContent({
             )}
           </SettingsSection>
         )}
+
+      <DataHealthPanel data={data} />
     </div>
   )
 }

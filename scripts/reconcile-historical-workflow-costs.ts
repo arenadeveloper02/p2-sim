@@ -16,6 +16,7 @@
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --repair-projections --write --batch-size=1000
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --audit --since=2020-01-01 --batch-size=1000 --only-priced-tools
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --batch-size=1000 --only-priced-tools --export=reconcile-shadow.ndjson --review-deltas
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --export=reconcile-shadow.ndjson --resume
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --workspace-id=<id> --batch-size=100 --only-priced-tools
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production --only-priced-tools
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --verify --workspace-id=<id> --batch-size=1000
@@ -24,11 +25,18 @@
  *   --only-priced-tools  Gate to allowlisted hosted/LLM-on-tool tools (default on)
  *   --all-tools          Disable the priced-tool allowlist gate
  *   --write              Persist projection repairs (required with --repair-projections to mutate)
+ *   --resume             With --dry-run --export: keep the existing NDJSON artifact, skip executions
+ *                        already in it, and append new records (crash-safe restart)
+ *
+ * Dry-run exports stream: each record is appended to the NDJSON artifact as soon as it is
+ * computed, so an interrupted run keeps everything processed so far and can be continued
+ * with --resume.
  *
  * Long-running modes (--audit / --dry-run / --verify / --repair-projections) keep the shared DB pool
  * healthy with per-page keepalives and up to 5 retries on CONNECTION_CLOSED /
  * other transient infrastructure errors.
  */
+import { closeSync, existsSync, openSync, readFileSync, writeSync } from 'node:fs'
 import {
   aggregateShadowDeltaReview,
   applyHistoricalReconciliationBatch,
@@ -43,6 +51,7 @@ import {
   verifyLedgerProjection,
   verifyPostApplyReconciliation,
   type HistoricalReconcileProgress,
+  type HistoricalReconcileShadowRecord,
   type ReconciliationClass,
   type ReconciliationConfidence,
 } from '../apps/sim/lib/billing/core/historical-workflow-reconciliation'
@@ -56,6 +65,8 @@ interface Options {
   write: boolean
   rolloutGuide: boolean
   reviewDeltas: boolean
+  /** With --dry-run --export: keep the existing artifact, skip its executions, append new records. */
+  resume: boolean
   confirmProduction: boolean
   verifyAfterApply: boolean
   /** When true (default), gate to priced-tool allowlist. Disable with `--all-tools`. */
@@ -96,6 +107,7 @@ function parseArgs(argv: string[]): Options {
   const write = argv.includes('--write')
   const rolloutGuide = argv.includes('--rollout-guide')
   const reviewDeltas = argv.includes('--review-deltas')
+  const resume = argv.includes('--resume')
   const confirmProduction = argv.includes('--confirm-production')
   const verifyAfterApply = argv.includes('--verify-after-apply')
   const allTools = argv.includes('--all-tools')
@@ -125,6 +137,7 @@ function parseArgs(argv: string[]): Options {
     write,
     rolloutGuide,
     reviewDeltas,
+    resume,
     confirmProduction,
     verifyAfterApply,
     onlyPricedTools,
@@ -173,8 +186,12 @@ function printFilterSummary(options: Options, title: string): void {
 
 function printProgress(progress: HistoricalReconcileProgress): void {
   const suffix = progress.done ? ' (done)' : ''
+  const resumed =
+    progress.resumedSkipped && progress.resumedSkipped > 0
+      ? ` resumed_skip=${progress.resumedSkipped}`
+      : ''
   console.log(
-    `[progress] attempted=${progress.attempted} succeeded=${progress.succeeded} skipped=${progress.skipped} failed=${progress.failed} pages=${progress.pages}${suffix}`
+    `[progress] ${new Date().toISOString()} attempted=${progress.attempted} succeeded=${progress.succeeded} skipped=${progress.skipped} failed=${progress.failed}${resumed} pages=${progress.pages}${suffix}`
   )
 }
 
@@ -252,17 +269,56 @@ function toFilter(options: Options) {
 
 async function runDryRun(options: Options): Promise<number> {
   printFilterSummary(options, 'Historical Workflow Cost Shadow Reprice')
-  if (options.exportPath) console.log(`Export: ${options.exportPath}`)
+  if (options.exportPath) console.log(`Export: ${options.exportPath} (streaming append)`)
 
-  const summary = await dryRunHistoricalWorkflowReprices(toFilter(options), {
-    onProgress: printProgress,
-    onlyPricedTools: options.onlyPricedTools,
-  })
+  const excludeExecutionIds = new Set<string>()
+  let priorRecords: HistoricalReconcileShadowRecord[] = []
+  let exportFd: number | undefined
+
+  if (options.exportPath) {
+    if (options.resume && existsSync(options.exportPath)) {
+      priorRecords = await loadHistoricalReconcileShadowArtifact(options.exportPath)
+      for (const record of priorRecords) {
+        excludeExecutionIds.add(record.executionId)
+      }
+      console.log(
+        `Resume: found ${priorRecords.length} record(s) in ${options.exportPath}; their executions will be skipped and new records appended.`
+      )
+      const existingText = readFileSync(options.exportPath, 'utf8')
+      exportFd = openSync(options.exportPath, 'a')
+      // Guard against a partial trailing line from a previously interrupted run.
+      if (existingText.length > 0 && !existingText.endsWith('\n')) {
+        writeSync(exportFd, '\n')
+      }
+    } else {
+      exportFd = openSync(options.exportPath, 'w')
+    }
+  }
+
+  let summary: Awaited<ReturnType<typeof dryRunHistoricalWorkflowReprices>>
+  try {
+    summary = await dryRunHistoricalWorkflowReprices(toFilter(options), {
+      onProgress: printProgress,
+      onlyPricedTools: options.onlyPricedTools,
+      excludeExecutionIds: excludeExecutionIds.size > 0 ? excludeExecutionIds : undefined,
+      onRecord:
+        exportFd === undefined
+          ? undefined
+          : (record) => {
+              writeSync(exportFd as number, `${JSON.stringify(record)}\n`)
+            },
+    })
+  } finally {
+    if (exportFd !== undefined) closeSync(exportFd)
+  }
 
   console.log('--- Shadow reprice summary ---')
   console.log(`Attempted:             ${summary.attempted}`)
   console.log(`Succeeded:             ${summary.total}`)
   console.log(`Skipped:               ${summary.skipped}`)
+  if (summary.resumedSkipped > 0) {
+    console.log(`Resumed (in artifact): ${summary.resumedSkipped}`)
+  }
   console.log(`Failed:                ${summary.failed}`)
   console.log(`With target lines:     ${summary.withTargets}`)
   console.log(`With positive delta:   ${summary.withPositiveDelta}`)
@@ -282,11 +338,13 @@ async function runDryRun(options: Options): Promise<number> {
     }
   }
 
+  const allRecords = priorRecords.length > 0 ? [...priorRecords, ...summary.records] : summary.records
+
   if (options.reviewDeltas) {
-    printDeltaReview(summary.records)
+    printDeltaReview(allRecords)
   }
 
-  const topPositive = [...summary.records]
+  const topPositive = [...allRecords]
     .filter((record) => record.positiveDelta > 0)
     .sort((a, b) => b.positiveDelta - a.positiveDelta)
     .slice(0, 20)
@@ -304,12 +362,12 @@ async function runDryRun(options: Options): Promise<number> {
   if (options.exportPath) {
     if (summary.failed > 0) {
       console.log(
-        `\nWarning: export includes ${summary.failed} failure(s); treat the artifact as incomplete until failures are resolved or excluded.`
+        `\nWarning: run had ${summary.failed} failure(s); those executions are not in the artifact. Re-run with --resume to retry just the missing ones.`
       )
     }
-    const ndjson = summary.records.map((record) => JSON.stringify(record)).join('\n')
-    await Bun.write(options.exportPath, ndjson.length > 0 ? `${ndjson}\n` : '')
-    console.log(`\nExported shadow artifact: ${options.exportPath} (${summary.records.length} records)`)
+    console.log(
+      `\nExported shadow artifact: ${options.exportPath} (${summary.records.length} new, ${allRecords.length} total records)`
+    )
   }
 
   return summary.failed > 0 ? 1 : 0
@@ -614,6 +672,11 @@ async function main() {
 
   if (options.write && !options.repairProjections) {
     console.error('--write is only valid with --repair-projections')
+    process.exit(1)
+  }
+
+  if (options.resume && !(options.dryRun && options.exportPath)) {
+    console.error('--resume is only valid with --dry-run --export=<path>')
     process.exit(1)
   }
 

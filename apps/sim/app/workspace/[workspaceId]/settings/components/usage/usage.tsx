@@ -9,6 +9,7 @@ import {
   ButtonGroupItem,
   ChipLink,
   ChipSelect,
+  Info,
   Loader,
   RefreshCw,
   Skeleton,
@@ -26,14 +27,12 @@ import { LineagePanel } from '@/app/workspace/[workspaceId]/settings/components/
 import { OrganizationUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/organization-usage-content'
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import {
-  formatActorType,
   formatBillableWithCredits,
   formatDollarAmount,
   formatPeriodLabel,
   formatSourceLabel,
   formatTokenCount,
   formatToolLabel,
-  formatUsageMetricsSummary,
   MOTHERSHIP_USAGE_SOURCES,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
@@ -67,17 +66,38 @@ const SCOPE_LABELS: Record<UsageScope, string> = {
   organization: 'Organization',
 }
 
+const SUMMARY_METRIC_TOOLTIPS = {
+  tokens:
+    'Total input and output tokens from billing ledger rows in the selected period.',
+  invocations:
+    'Number of billed model or provider invocations recorded in the billing ledger.',
+  ledgerEntries:
+    'Rows in the billing ledger (usage_log) that contribute to cost totals in this view.',
+  executions:
+    'Distinct workflow runs in the selected period, including runs without ledger cost.',
+  chats: 'Distinct Mothership and copilot chat sessions in the selected period.',
+  runs: 'Distinct copilot or Mothership assistant runs within chats in the selected period.',
+} as const
+
 interface SummaryCardProps {
   label: string
   value: string
   hint?: string
+  infoTooltip?: string
   isLoading?: boolean
 }
 
-function SummaryCard({ label, value, hint, isLoading }: SummaryCardProps) {
+function SummaryCard({ label, value, hint, infoTooltip, isLoading }: SummaryCardProps) {
   return (
     <div className='flex min-w-0 flex-1 flex-col gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3'>
-      <span className='text-[var(--text-muted)] text-small'>{label}</span>
+      <div className='flex items-center gap-1'>
+        <span className='text-[var(--text-muted)] text-small'>{label}</span>
+        {infoTooltip && (
+          <Info side='top' align='start' className='flex-shrink-0 text-[var(--text-icon)]'>
+            {infoTooltip}
+          </Info>
+        )}
+      </div>
       {isLoading ? (
         <Skeleton className='h-7 w-24' />
       ) : (
@@ -126,8 +146,6 @@ function UsageDashboardContent({
 
   return (
     <div className='flex flex-col gap-8'>
-      <DataHealthPanel data={data} />
-
       <SettingsSection label='Trends'>
         <UsageTimeSeriesChart
           timeSeries={data.timeSeries}
@@ -471,56 +489,6 @@ function UsageDashboardContent({
         </SettingsSection>
       )}
 
-      {tab !== 'workflow' && data.byActor.length > 0 && (
-        <SettingsSection label='By actor'>
-          <p className='mb-4 text-[var(--text-secondary)] text-small'>
-            Who triggered usage — stamped ledger actor when present, otherwise mothership chat
-            owner or billing user.
-          </p>
-          <CostBreakdownTable
-            rows={data.byActor}
-            getRowKey={(row) => `${row.actorType ?? 'unknown'}-${row.actorUserId ?? 'none'}`}
-            columns={[
-              {
-                key: 'actor',
-                header: 'Actor',
-                render: (row) => {
-                  const name = row.actorUserId
-                    ? (userNameById.get(row.actorUserId) ?? row.actorUserId)
-                    : '—'
-                  return (
-                    <span>
-                      {name}
-                      <span className='ml-1 text-[var(--text-muted)]'>
-                        ({formatActorType(row.actorType)})
-                      </span>
-                    </span>
-                  )
-                },
-              },
-              {
-                key: 'count',
-                header: 'Entries',
-                align: 'right',
-                render: (row) => row.count.toLocaleString(),
-              },
-              {
-                key: 'tokens',
-                header: 'Tokens',
-                align: 'right',
-                render: (row) => formatTokenCount(row.usage.totalTokens),
-              },
-              {
-                key: 'cost',
-                header: 'Billable',
-                align: 'right',
-                render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
-              },
-            ]}
-          />
-        </SettingsSection>
-      )}
-
       {tab === 'all' && data.byUser.length > 0 && (
         <SettingsSection label='By billing user'>
           <CostBreakdownTable
@@ -660,6 +628,8 @@ function UsageDashboardContent({
             )}
           </SettingsSection>
         )}
+
+      <DataHealthPanel data={data} />
     </div>
   )
 }
@@ -926,19 +896,28 @@ export function Usage() {
               isLoading={isLoading}
             />
             <SummaryCard
-              label='Usage volume'
-              value={data ? formatUsageMetricsSummary(data.summary.usage) : '—'}
+              label='Tokens'
+              value={data ? formatTokenCount(data.summary.usage.totalTokens) : '—'}
+              infoTooltip={SUMMARY_METRIC_TOOLTIPS.tokens}
+              isLoading={isLoading}
+            />
+            <SummaryCard
+              label='Invocations'
+              value={data ? data.summary.usage.invocationCount.toLocaleString() : '—'}
+              infoTooltip={SUMMARY_METRIC_TOOLTIPS.invocations}
               isLoading={isLoading}
             />
             <SummaryCard
               label='Ledger entries'
               value={data ? data.summary.ledgerEntryCount.toLocaleString() : '—'}
+              infoTooltip={SUMMARY_METRIC_TOOLTIPS.ledgerEntries}
               isLoading={isLoading}
             />
             {(tab === 'all' || tab === 'workflow') && (
               <SummaryCard
                 label='Executions'
                 value={data ? data.summary.executionCount.toLocaleString() : '—'}
+                infoTooltip={SUMMARY_METRIC_TOOLTIPS.executions}
                 isLoading={isLoading}
               />
             )}
@@ -947,11 +926,13 @@ export function Usage() {
                 <SummaryCard
                   label='Chats'
                   value={data ? data.summary.chatCount.toLocaleString() : '—'}
+                  infoTooltip={SUMMARY_METRIC_TOOLTIPS.chats}
                   isLoading={isLoading}
                 />
                 <SummaryCard
                   label='Runs'
                   value={data ? data.summary.runCount.toLocaleString() : '—'}
+                  infoTooltip={SUMMARY_METRIC_TOOLTIPS.runs}
                   isLoading={isLoading}
                 />
               </>

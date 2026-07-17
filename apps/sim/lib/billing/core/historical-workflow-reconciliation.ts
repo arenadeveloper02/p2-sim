@@ -120,6 +120,9 @@ export const HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY = 8
 /** Emit progress after this many attempted executions (and once at completion). */
 export const HISTORICAL_RECONCILE_PROGRESS_INTERVAL = 100
 
+/** Also emit progress at least this often while a dry-run page is in flight. */
+export const HISTORICAL_RECONCILE_PROGRESS_HEARTBEAT_MS = 30_000
+
 /** Transient DB/network retries for long-running reconciliation pages. */
 export const HISTORICAL_RECONCILE_DB_RETRY_ATTEMPTS = 5
 
@@ -246,6 +249,8 @@ export interface HistoricalReconcileProgress {
   skipped: number
   failed: number
   pages: number
+  /** Executions skipped because they were already present in a resumed export artifact. */
+  resumedSkipped?: number
   done: boolean
 }
 
@@ -331,6 +336,8 @@ export interface ShadowRepriceSummary {
   total: number
   attempted: number
   skipped: number
+  /** Executions skipped because they were already present in a resumed export artifact. */
+  resumedSkipped: number
   failed: number
   failures: HistoricalReconcileFailure[]
   withTargets: number
@@ -1943,15 +1950,24 @@ export async function computeShadowRepriceForExecution(
 /**
  * Dry-run batch shadow repricer for historical workflow executions.
  * Pages through the filtered scope and reprices with bounded concurrency.
+ *
+ * Supports streaming export via `onRecord` (awaited per successful record) and
+ * resumable runs via `excludeExecutionIds` (executions already present in a
+ * previous artifact are skipped before any evidence load).
  */
 export async function dryRunHistoricalWorkflowReprices(
   filter: HistoricalExecutionFilter = {},
   options: ComputeTargetLedgerOptions & {
     onProgress?: HistoricalReconcileProgressCallback
+    /** Awaited for each successful record as soon as its page completes; use for incremental NDJSON export. */
+    onRecord?: (record: HistoricalReconcileShadowRecord) => void | Promise<void>
+    /** Execution IDs to skip (e.g. already exported by a previous interrupted run). */
+    excludeExecutionIds?: ReadonlySet<string>
   } = {}
 ): Promise<ShadowRepriceSummary> {
   const concurrency = resolveConcurrency(filter)
   const onlyPricedTools = options.onlyPricedTools ?? filter.onlyPricedTools ?? false
+  const excludeExecutionIds = options.excludeExecutionIds
   const repriceOptions: ComputeTargetLedgerOptions = {
     pricingMode: options.pricingMode,
     onlyPricedTools,
@@ -1959,58 +1975,85 @@ export async function dryRunHistoricalWorkflowReprices(
   const records: HistoricalReconcileShadowRecord[] = []
   const failures: HistoricalReconcileFailure[] = []
   let attempted = 0
+  let succeeded = 0
   let skipped = 0
+  let failed = 0
+  let resumedSkipped = 0
   let pages = 0
-  let previousEmitted = -1
+  let previousEmittedUnits = -1
+
+  const snapshotProgress = (done: boolean): HistoricalReconcileProgress => ({
+    attempted,
+    succeeded,
+    skipped,
+    failed,
+    pages,
+    resumedSkipped,
+    done,
+  })
 
   const reportProgress = (done: boolean) => {
-    const progress: HistoricalReconcileProgress = {
-      attempted,
-      succeeded: records.length,
-      skipped,
-      failed: failures.length,
-      pages,
-      done,
-    }
-    if (done || shouldEmitProgress(attempted, previousEmitted)) {
-      emitProgress(options.onProgress, progress)
-      previousEmitted = attempted
+    const units = attempted + resumedSkipped
+    if (done || shouldEmitProgress(units, previousEmittedUnits)) {
+      emitProgress(options.onProgress, snapshotProgress(done))
+      previousEmittedUnits = units
     }
   }
 
-  for await (const page of iterateHistoricalWorkflowExecutionPages(filter)) {
-    pages += 1
-    const pageResults = await mapWithConcurrency(page, concurrency, async (row) => {
-      try {
-        const record = await computeShadowRepriceForExecution(row.executionId, repriceOptions)
-        if (!record) {
-          return { kind: 'skipped' as const, executionId: row.executionId }
+  // Live counters above are updated inside workers, so this heartbeat surfaces
+  // mid-page progress during slow evidence loads (trace materialization etc).
+  const heartbeat = options.onProgress
+    ? setInterval(
+        () => emitProgress(options.onProgress, snapshotProgress(false)),
+        HISTORICAL_RECONCILE_PROGRESS_HEARTBEAT_MS
+      )
+    : undefined
+
+  try {
+    for await (const page of iterateHistoricalWorkflowExecutionPages(filter)) {
+      pages += 1
+      const rows = excludeExecutionIds
+        ? page.filter((row) => !excludeExecutionIds.has(row.executionId))
+        : page
+      resumedSkipped += page.length - rows.length
+
+      const pageResults = await mapWithConcurrency(rows, concurrency, async (row) => {
+        try {
+          const record = await computeShadowRepriceForExecution(row.executionId, repriceOptions)
+          attempted += 1
+          if (!record) {
+            skipped += 1
+            return { kind: 'skipped' as const, executionId: row.executionId }
+          }
+          succeeded += 1
+          return { kind: 'record' as const, record }
+        } catch (error) {
+          attempted += 1
+          failed += 1
+          const failure = toHistoricalExecutionFailure(row.executionId, error)
+          logger.warn('Failed to shadow-reprice execution', {
+            executionId: failure.executionId,
+            error: failure.error,
+            cause: failure.cause,
+            postgresCode: failure.postgresCode,
+          })
+          return { kind: 'failed' as const, failure }
         }
-        return { kind: 'record' as const, record }
-      } catch (error) {
-        const failure = toHistoricalExecutionFailure(row.executionId, error)
-        logger.warn('Failed to shadow-reprice execution', {
-          executionId: failure.executionId,
-          error: failure.error,
-          cause: failure.cause,
-          postgresCode: failure.postgresCode,
-        })
-        return { kind: 'failed' as const, failure }
-      }
-    })
+      })
 
-    for (const result of pageResults) {
-      attempted += 1
-      if (result.kind === 'record') {
-        records.push(result.record)
-      } else if (result.kind === 'skipped') {
-        skipped += 1
-      } else {
-        failures.push(result.failure)
+      for (const result of pageResults) {
+        if (result.kind === 'record') {
+          records.push(result.record)
+          if (options.onRecord) await options.onRecord(result.record)
+        } else if (result.kind === 'failed') {
+          failures.push(result.failure)
+        }
       }
+
+      reportProgress(false)
     }
-
-    reportProgress(false)
+  } finally {
+    if (heartbeat) clearInterval(heartbeat)
   }
 
   reportProgress(true)
@@ -2031,6 +2074,7 @@ export async function dryRunHistoricalWorkflowReprices(
     total: records.length,
     attempted,
     skipped,
+    resumedSkipped,
     failed: failures.length,
     failures,
     withTargets: records.filter((record) => record.targets.length > 0).length,
