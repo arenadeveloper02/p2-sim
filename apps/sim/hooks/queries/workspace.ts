@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiClientError } from '@/lib/api/client/errors'
@@ -22,6 +23,7 @@ import {
   type WorkspacesResponse,
 } from '@/lib/api/contracts'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
+import { setZoomAdminAccessCache } from '@/lib/workspaces/zoom-admin-access-cache'
 
 /**
  * Query key factory for workspace-related queries.
@@ -275,12 +277,14 @@ async function fetchWorkspaceZoomAdminAccess(
     params: { id: workspaceId },
     signal,
   })
+  setZoomAdminAccessCache(workspaceId, data.canUseZoomAdmin)
   return data.canUseZoomAdmin
 }
 
 /**
  * Whether Zoom Admin connect is allowed (org allowlist or env fallback).
  * Use this for "Connect Zoom admin account" UI — not only env ADMIN_WORKSPACE_IDS.
+ * Also populates the sync cache used by Zoom block operation options.
  */
 export function useCanUseZoomAdmin(workspaceId: string | null | undefined) {
   const query = useQuery({
@@ -293,6 +297,12 @@ export function useCanUseZoomAdmin(workspaceId: string | null | undefined) {
 
   const canUseZoomAdmin =
     typeof query.data === 'boolean' ? query.data : isAdminWorkspace(workspaceId)
+
+  useEffect(() => {
+    if (workspaceId && typeof query.data === 'boolean') {
+      setZoomAdminAccessCache(workspaceId, query.data)
+    }
+  }, [workspaceId, query.data])
 
   return { ...query, canUseZoomAdmin }
 }
