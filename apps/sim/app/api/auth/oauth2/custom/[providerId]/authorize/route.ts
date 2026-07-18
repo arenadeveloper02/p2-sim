@@ -13,6 +13,7 @@ import { createConnectDraft } from '@/lib/credentials/connect-draft'
 import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 import { createCustomOAuthAppState, getOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
+import { canUseZoomAdminInWorkspace } from '@/lib/workspaces/can-use-zoom-admin'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('CustomOAuthAppAuthorize')
@@ -90,6 +91,22 @@ export const GET = withRouteHandler(
         return NextResponse.redirect(
           `${baseUrl}/workspace/${workspaceId}/integrations?error=custom_oauth_app_not_configured&provider=${encodeURIComponent(providerId)}`
         )
+      }
+
+      if (providerId === 'zoom-admin') {
+        const allowed = await canUseZoomAdminInWorkspace({
+          workspaceId,
+          organizationId,
+        })
+        if (!allowed) {
+          logger.warn('Zoom Admin authorize rejected — workspace not on allowlist', {
+            workspaceId,
+            organizationId,
+          })
+          return NextResponse.redirect(
+            `${baseUrl}/workspace/${workspaceId}/integrations?error=zoom_admin_workspace_not_allowed`
+          )
+        }
       }
 
       await createConnectDraft({ userId, workspaceId, providerId })

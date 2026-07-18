@@ -1,7 +1,15 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Chip, ChipModalField, InfoCard, InfoCardItem, InfoCardList } from '@sim/emcn'
+import {
+  Chip,
+  ChipDropdown,
+  type ChipDropdownOption,
+  ChipModalField,
+  InfoCard,
+  InfoCardItem,
+  InfoCardList,
+} from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { ZoomIcon } from '@/components/icons'
@@ -16,6 +24,7 @@ import {
   useOrganizationOAuthApps,
   useUpsertOrganizationOAuthApp,
 } from '@/hooks/queries/organization-oauth-apps'
+import { useWorkspacesQuery } from '@/hooks/queries/workspace'
 import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
 const logger = createLogger('OAuthAppsSettings')
@@ -42,6 +51,7 @@ const CUSTOM_APP_LABELS: Record<string, { name: string; description: string }> =
 interface AppFormState {
   clientId: string
   clientSecret: string
+  allowedWorkspaceIds: string[]
   saveError: string | null
 }
 
@@ -49,7 +59,7 @@ function createEmptyForms(): Record<string, AppFormState> {
   return Object.fromEntries(
     SUPPORTED_APP_KEYS.map((appKey) => [
       appKey,
-      { clientId: '', clientSecret: '', saveError: null },
+      { clientId: '', clientSecret: '', allowedWorkspaceIds: [], saveError: null },
     ])
   )
 }
@@ -57,7 +67,8 @@ function createEmptyForms(): Record<string, AppFormState> {
 function buildServerSignature(apps: OrganizationOAuthAppSummary[]): string {
   return SUPPORTED_APP_KEYS.map((appKey) => {
     const app = apps.find((row) => row.appKey === appKey)
-    return `${appKey}:${app?.id ?? ''}:${app?.clientId ?? ''}`
+    const allowlist = (app?.allowedWorkspaceIds ?? []).slice().sort().join(',')
+    return `${appKey}:${app?.id ?? ''}:${app?.clientId ?? ''}:${allowlist}`
   }).join('|')
 }
 
@@ -88,6 +99,15 @@ export function OAuthAppsSettings() {
     Boolean(organizationId) && adminOrOwner
   )
   const apps = appsData ?? EMPTY_APPS
+
+  const { data: allWorkspaces = [] } = useWorkspacesQuery(Boolean(organizationId) && adminOrOwner)
+  const orgWorkspaceOptions = useMemo<ChipDropdownOption[]>(
+    () =>
+      allWorkspaces
+        .filter((workspace) => workspace.organizationId === organizationId)
+        .map((workspace) => ({ value: workspace.id, label: workspace.name })),
+    [allWorkspaces, organizationId]
+  )
 
   const upsertApp = useUpsertOrganizationOAuthApp(organizationId || '')
   const deleteApp = useDeleteOrganizationOAuthApp(organizationId || '')
@@ -134,6 +154,7 @@ export function OAuthAppsSettings() {
         next[appKey] = {
           clientId: saved?.clientId ?? '',
           clientSecret: '',
+          allowedWorkspaceIds: saved?.allowedWorkspaceIds ?? [],
           saveError: null,
         }
       }
@@ -177,6 +198,7 @@ export function OAuthAppsSettings() {
         appKey,
         clientId: trimmedClientId,
         clientSecret: trimmedSecret,
+        ...(appKey === 'zoom-admin' ? { allowedWorkspaceIds: form.allowedWorkspaceIds } : {}),
       })
       updateForm(appKey, { clientSecret: '', saveError: null })
     } catch (error) {
@@ -194,7 +216,12 @@ export function OAuthAppsSettings() {
     updateForm(appKey, { saveError: null })
     try {
       await deleteApp.mutateAsync(appKey)
-      updateForm(appKey, { clientId: '', clientSecret: '', saveError: null })
+      updateForm(appKey, {
+        clientId: '',
+        clientSecret: '',
+        allowedWorkspaceIds: [],
+        saveError: null,
+      })
     } catch (error) {
       const message = getErrorMessage(error, `Failed to remove ${appKey} OAuth app`)
       updateForm(appKey, { saveError: message })
@@ -296,6 +323,32 @@ export function OAuthAppsSettings() {
               }
               disabled={appsLoading || upsertApp.isPending}
             />
+
+            {appKey === 'zoom-admin' && (
+              <>
+                <ChipModalField type='custom' title='Allowed workspaces'>
+                  <ChipDropdown
+                    multiple
+                    value={form.allowedWorkspaceIds}
+                    onChange={(values) => updateForm(appKey, { allowedWorkspaceIds: values })}
+                    options={orgWorkspaceOptions}
+                    allLabel='Select workspaces'
+                    showAllOption={false}
+                    searchable
+                    searchPlaceholder='Search workspaces...'
+                    fullWidth
+                    flush
+                    disabled={
+                      appsLoading || upsertApp.isPending || orgWorkspaceOptions.length === 0
+                    }
+                  />
+                </ChipModalField>
+                <p className='text-[var(--text-muted)] text-caption'>
+                  Leave empty to keep env ADMIN_WORKSPACE_IDS behavior. Selecting workspaces
+                  restricts Zoom Admin to those workspaces only.
+                </p>
+              </>
+            )}
 
             {form.saveError && (
               <p className='text-[var(--text-error)] text-caption'>{form.saveError}</p>

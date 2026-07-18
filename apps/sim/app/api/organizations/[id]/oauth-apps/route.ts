@@ -12,7 +12,11 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { listCustomOAuthAppKeys } from '@/lib/oauth/custom-app-config'
-import { listOrganizationOAuthApps, upsertOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
+import {
+  listOrganizationOAuthApps,
+  upsertOrganizationOAuthApp,
+  validateOrgWorkspaceAllowlist,
+} from '@/lib/oauth/custom-apps'
 
 const logger = createLogger('OrganizationOAuthAppsAPI')
 
@@ -44,6 +48,7 @@ function toSummary(row: {
   id: string
   appKey: string
   clientId: string
+  allowedWorkspaceIds: string[]
   createdAt: Date
   updatedAt: Date
 }) {
@@ -52,6 +57,7 @@ function toSummary(row: {
     appKey: row.appKey,
     clientId: row.clientId,
     hasClientSecret: true,
+    allowedWorkspaceIds: row.allowedWorkspaceIds,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }
@@ -86,6 +92,7 @@ export const GET = withRouteHandler(
           appKey,
           clientId: '',
           hasClientSecret: false,
+          allowedWorkspaceIds: [] as string[],
           createdAt: '',
           updatedAt: '',
         })),
@@ -110,7 +117,7 @@ export const POST = withRouteHandler(
     if (!parsed.success) return parsed.response
 
     const { id: organizationId } = parsed.data.params
-    const { appKey, clientId, clientSecret } = parsed.data.body
+    const { appKey, clientId, clientSecret, allowedWorkspaceIds } = parsed.data.body
 
     const authz = await requireOrgAdmin(organizationId, session.user.id)
     if (!authz.ok) return authz.response
@@ -122,12 +129,25 @@ export const POST = withRouteHandler(
       )
     }
 
+    let resolvedAllowlist: string[] = []
+    if (appKey === 'zoom-admin') {
+      const validation = await validateOrgWorkspaceAllowlist(
+        organizationId,
+        allowedWorkspaceIds ?? []
+      )
+      if (!validation.ok) {
+        return NextResponse.json({ error: validation.error }, { status: 400 })
+      }
+      resolvedAllowlist = validation.workspaceIds
+    }
+
     await upsertOrganizationOAuthApp({
       organizationId,
       appKey,
       clientId,
       clientSecret,
       userId: session.user.id,
+      allowedWorkspaceIds: resolvedAllowlist,
     })
 
     const rows = await listOrganizationOAuthApps(organizationId)

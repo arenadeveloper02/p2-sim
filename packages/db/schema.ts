@@ -3075,6 +3075,15 @@ export const organizationOauthApps = pgTable(
     providerId: text('provider_id').notNull(),
     clientId: text('client_id').notNull(),
     clientSecret: text('client_secret').notNull(),
+    /**
+     * Workspace IDs within this organization that may use this app.
+     * Currently applied for `zoom-admin` only: non-empty list restricts access;
+     * empty list falls back to env `ADMIN_WORKSPACE_IDS`.
+     */
+    allowedWorkspaceIds: jsonb('allowed_workspace_ids')
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdBy: text('created_by')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),

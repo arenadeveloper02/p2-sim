@@ -1,8 +1,8 @@
 import { db } from '@sim/db'
-import { oauthCustomAppState, organizationOauthApps } from '@sim/db/schema'
+import { oauthCustomAppState, organizationOauthApps, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq, lt } from 'drizzle-orm'
+import { and, eq, inArray, lt } from 'drizzle-orm'
 import { decryptSecret, encryptSecret } from '@/lib/core/security/encryption'
 
 const logger = createLogger('CustomOAuthApps')
@@ -15,6 +15,7 @@ export interface OrganizationOAuthAppSummary {
   organizationId: string
   appKey: string
   clientId: string
+  allowedWorkspaceIds: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -22,6 +23,14 @@ export interface OrganizationOAuthAppSummary {
 export interface OrganizationOAuthAppCredentials {
   clientId: string
   clientSecret: string
+}
+
+function normalizeAllowedWorkspaceIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((id): id is string => typeof id === 'string')
+    .map((id) => id.trim())
+    .filter(Boolean)
 }
 
 /**
@@ -49,6 +58,29 @@ export async function getOrganizationOAuthApp(
   return { clientId: row.clientId, clientSecret: decrypted }
 }
 
+/**
+ * Returns the Zoom Admin workspace allowlist for an organization.
+ * Empty array means fall back to env `ADMIN_WORKSPACE_IDS`.
+ * `null` means the org has no `zoom-admin` app row (same as empty).
+ */
+export async function getZoomAdminAllowedWorkspaceIds(
+  organizationId: string
+): Promise<string[] | null> {
+  const [row] = await db
+    .select({ allowedWorkspaceIds: organizationOauthApps.allowedWorkspaceIds })
+    .from(organizationOauthApps)
+    .where(
+      and(
+        eq(organizationOauthApps.organizationId, organizationId),
+        eq(organizationOauthApps.providerId, 'zoom-admin')
+      )
+    )
+    .limit(1)
+
+  if (!row) return null
+  return normalizeAllowedWorkspaceIds(row.allowedWorkspaceIds)
+}
+
 /** Lists an organization's custom OAuth apps without decrypting secrets (for settings UI). */
 export async function listOrganizationOAuthApps(
   organizationId: string
@@ -63,9 +95,40 @@ export async function listOrganizationOAuthApps(
     organizationId: row.organizationId,
     appKey: row.providerId,
     clientId: row.clientId,
+    allowedWorkspaceIds: normalizeAllowedWorkspaceIds(row.allowedWorkspaceIds),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }))
+}
+
+/**
+ * Validates that every workspace ID belongs to the given organization.
+ * Returns the normalized ID list, or an error message.
+ */
+export async function validateOrgWorkspaceAllowlist(
+  organizationId: string,
+  workspaceIds: string[]
+): Promise<{ ok: true; workspaceIds: string[] } | { ok: false; error: string }> {
+  const normalized = [...new Set(workspaceIds.map((id) => id.trim()).filter(Boolean))]
+  if (normalized.length === 0) {
+    return { ok: true, workspaceIds: [] }
+  }
+
+  const rows = await db
+    .select({ id: workspace.id })
+    .from(workspace)
+    .where(and(eq(workspace.organizationId, organizationId), inArray(workspace.id, normalized)))
+
+  if (rows.length !== normalized.length) {
+    const found = new Set(rows.map((row) => row.id))
+    const missing = normalized.filter((id) => !found.has(id))
+    return {
+      ok: false,
+      error: `Workspace IDs are not part of this organization: ${missing.join(', ')}`,
+    }
+  }
+
+  return { ok: true, workspaceIds: normalized }
 }
 
 export async function upsertOrganizationOAuthApp(params: {
@@ -74,8 +137,11 @@ export async function upsertOrganizationOAuthApp(params: {
   clientId: string
   clientSecret: string
   userId: string
+  allowedWorkspaceIds?: string[]
 }): Promise<void> {
   const { organizationId, appKey, clientId, clientSecret, userId } = params
+  const allowedWorkspaceIds =
+    appKey === 'zoom-admin' ? normalizeAllowedWorkspaceIds(params.allowedWorkspaceIds ?? []) : []
   const { encrypted } = await encryptSecret(clientSecret)
   const now = new Date()
 
@@ -87,16 +153,26 @@ export async function upsertOrganizationOAuthApp(params: {
       providerId: appKey,
       clientId,
       clientSecret: encrypted,
+      allowedWorkspaceIds,
       createdBy: userId,
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: [organizationOauthApps.organizationId, organizationOauthApps.providerId],
-      set: { clientId, clientSecret: encrypted, updatedAt: now },
+      set: {
+        clientId,
+        clientSecret: encrypted,
+        allowedWorkspaceIds,
+        updatedAt: now,
+      },
     })
 
-  logger.info('Upserted organization custom OAuth app', { organizationId, appKey })
+  logger.info('Upserted organization custom OAuth app', {
+    organizationId,
+    appKey,
+    allowedWorkspaceCount: allowedWorkspaceIds.length,
+  })
 }
 
 export async function deleteOrganizationOAuthApp(

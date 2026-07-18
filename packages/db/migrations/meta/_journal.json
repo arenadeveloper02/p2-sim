@@ -1821,6 +1821,13 @@
       "when": 1784269680693,
       "tag": "0259_organization_oauth_apps",
       "breakpoints": true
+    },
+    {
+      "idx": 260,
+      "version": "7",
+      "when": 1784346820597,
+      "tag": "0260_organization_oauth_apps_allowed_workspaces",
+      "breakpoints": true
     }
   ]
 }
