@@ -5,8 +5,8 @@ import {
   deleteOrganizationOAuthAppContract,
   listOrganizationOAuthAppsContract,
   type OrganizationOAuthAppSummary,
-  upsertOrganizationOAuthAppContract,
   type UpsertOrganizationOAuthAppBody,
+  upsertOrganizationOAuthAppContract,
 } from '@/lib/api/contracts/organization-oauth-apps'
 
 const logger = createLogger('OrganizationOAuthAppsQueries')
@@ -52,6 +52,12 @@ export function useUpsertOrganizationOAuthApp(organizationId: string) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: organizationOAuthAppsKeys.list(organizationId) })
+      queryClient.invalidateQueries({
+        predicate: (query) =>
+          Array.isArray(query.queryKey) &&
+          query.queryKey[0] === 'workspace' &&
+          query.queryKey.includes('zoomAdminAccess'),
+      })
     },
     onError: (error) => {
       logger.error('Failed to save organization OAuth app', { organizationId, error })
@@ -70,6 +76,12 @@ export function useDeleteOrganizationOAuthApp(organizationId: string) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: organizationOAuthAppsKeys.list(organizationId) })
+      queryClient.invalidateQueries({
+        predicate: (query) =>
+          Array.isArray(query.queryKey) &&
+          query.queryKey[0] === 'workspace' &&
+          query.queryKey.includes('zoomAdminAccess'),
+      })
     },
     onError: (error) => {
       logger.error('Failed to delete organization OAuth app', { organizationId, error })

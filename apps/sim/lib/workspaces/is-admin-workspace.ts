@@ -144,12 +144,15 @@ export function isAdminWorkspaceOnlyTool(toolId: string | null | undefined): boo
 
 /**
  * Filters OAuth services/credentials for the current workspace (hides admin-only providers elsewhere).
+ * Pass `canUseZoomAdmin` when the org Zoom Admin allowlist (or env fallback) has been resolved.
  */
 export function filterOAuthItemsForWorkspace<T extends { providerId?: string | null }>(
   items: T[],
-  workspaceId: string | null | undefined
+  workspaceId: string | null | undefined,
+  options?: { canUseZoomAdmin?: boolean }
 ): T[] {
-  if (isAdminWorkspace(workspaceId)) return items
+  const canUseZoomAdmin = options?.canUseZoomAdmin ?? isAdminWorkspace(workspaceId)
+  if (canUseZoomAdmin) return items
   return items.filter((item) => !isAdminWorkspaceOnlyOAuthProvider(item.providerId))
 }
 

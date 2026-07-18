@@ -63,7 +63,7 @@ import {
   useDisconnectOAuthService,
   useOAuthConnections,
 } from '@/hooks/queries/oauth/oauth-connections'
-import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
+import { useCanUseZoomAdmin, useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
@@ -191,15 +191,16 @@ export function IntegrationsManager() {
   const disconnectOAuthService = useDisconnectOAuthService()
 
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId || null)
+  const { canUseZoomAdmin } = useCanUseZoomAdmin(workspaceId || null)
 
   const oauthCredentials = useMemo(() => {
     const oauth = credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account')
-    return filterOAuthItemsForWorkspace(oauth, workspaceId)
-  }, [credentials, workspaceId])
+    return filterOAuthItemsForWorkspace(oauth, workspaceId, { canUseZoomAdmin })
+  }, [credentials, workspaceId, canUseZoomAdmin])
 
   const workspaceOAuthConnections = useMemo(
-    () => filterOAuthItemsForWorkspace(oauthConnections, workspaceId),
-    [oauthConnections, workspaceId]
+    () => filterOAuthItemsForWorkspace(oauthConnections, workspaceId, { canUseZoomAdmin }),
+    [oauthConnections, workspaceId, canUseZoomAdmin]
   )
 
   const selectedCredential = useMemo(

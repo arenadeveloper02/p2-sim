@@ -277,4 +277,20 @@ export const getWorkspaceMembersContract = defineRouteContract({
   },
 })
 
+/**
+ * Whether Zoom Admin connect is allowed (org allowlist or env fallback).
+ * Readable by workspace members — no secrets.
+ */
+export const getWorkspaceZoomAdminAccessContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workspaces/[id]/zoom-admin-access',
+  params: workspaceParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      canUseZoomAdmin: z.boolean(),
+    }),
+  },
+})
+
 export type WorkspacesResponse = ContractJsonResponse<typeof listWorkspacesContract>
