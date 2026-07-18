@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiClientError } from '@/lib/api/client/errors'
@@ -297,12 +296,6 @@ export function useCanUseZoomAdmin(workspaceId: string | null | undefined) {
 
   const canUseZoomAdmin =
     typeof query.data === 'boolean' ? query.data : isAdminWorkspace(workspaceId)
-
-  useEffect(() => {
-    if (workspaceId && typeof query.data === 'boolean') {
-      setZoomAdminAccessCache(workspaceId, query.data)
-    }
-  }, [workspaceId, query.data])
 
   return { ...query, canUseZoomAdmin }
 }
