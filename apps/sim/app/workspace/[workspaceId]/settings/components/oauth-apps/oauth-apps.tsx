@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chip, ChipModalField, InfoCard, InfoCardItem, InfoCardList } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
@@ -16,8 +16,15 @@ import {
   useOrganizationOAuthApps,
   useUpsertOrganizationOAuthApp,
 } from '@/hooks/queries/organization-oauth-apps'
+import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
 const logger = createLogger('OAuthAppsSettings')
+
+/** Stable module-level list — `listCustomOAuthAppKeys()` allocates a new array each call. */
+const SUPPORTED_APP_KEYS = listCustomOAuthAppKeys()
+
+/** Stable empty fallback so `data ?? EMPTY_APPS` does not allocate a new `[]` every render. */
+const EMPTY_APPS: OrganizationOAuthAppSummary[] = []
 
 const CUSTOM_APP_LABELS: Record<string, { name: string; description: string }> = {
   zoom: {
@@ -38,11 +45,30 @@ interface AppFormState {
   saveError: string | null
 }
 
-const EMPTY_FORM: AppFormState = {
-  clientId: '',
-  clientSecret: '',
-  saveError: null,
+function createEmptyForms(): Record<string, AppFormState> {
+  return Object.fromEntries(
+    SUPPORTED_APP_KEYS.map((appKey) => [
+      appKey,
+      { clientId: '', clientSecret: '', saveError: null },
+    ])
+  )
 }
+
+function buildServerSignature(apps: OrganizationOAuthAppSummary[]): string {
+  return SUPPORTED_APP_KEYS.map((appKey) => {
+    const app = apps.find((row) => row.appKey === appKey)
+    return `${appKey}:${app?.id ?? ''}:${app?.clientId ?? ''}`
+  }).join('|')
+}
+
+const providerMeta = SUPPORTED_APP_KEYS.map((appKey) => {
+  const config = getCustomOAuthAppConfig(appKey)
+  const labels = CUSTOM_APP_LABELS[appKey] ?? {
+    name: appKey,
+    description: 'Custom OAuth app credentials for this provider.',
+  }
+  return { appKey, config, ...labels }
+})
 
 /**
  * Organization settings for bringing your own OAuth app credentials.
@@ -55,15 +81,17 @@ export function OAuthAppsSettings() {
   const organizationId = activeOrganization?.id
 
   const { data: organization, isLoading: orgLoading } = useOrganization(organizationId || '')
-  const { data: apps = [], isLoading: appsLoading } = useOrganizationOAuthApps(
+  const adminOrOwner = isAdminOrOwner(organization, session?.user?.email)
+
+  const { data: appsData, isLoading: appsLoading } = useOrganizationOAuthApps(
     organizationId,
-    Boolean(organizationId) && isAdminOrOwner(organization, session?.user?.email)
+    Boolean(organizationId) && adminOrOwner
   )
+  const apps = appsData ?? EMPTY_APPS
 
   const upsertApp = useUpsertOrganizationOAuthApp(organizationId || '')
   const deleteApp = useDeleteOrganizationOAuthApp(organizationId || '')
 
-  const supportedAppKeys = listCustomOAuthAppKeys()
   const appsByKey = useMemo(() => {
     const map = new Map<string, OrganizationOAuthAppSummary>()
     for (const app of apps) {
@@ -72,49 +100,58 @@ export function OAuthAppsSettings() {
     return map
   }, [apps])
 
-  const [forms, setForms] = useState<Record<string, AppFormState>>({})
+  const serverSignature = useMemo(() => buildServerSignature(apps), [apps])
+  const lastServerSignatureRef = useRef<string | null>(null)
 
+  const [forms, setForms] = useState<Record<string, AppFormState>>(createEmptyForms)
+
+  /**
+   * Clear any leftover unsaved-guard from a previous settings tab. Without this,
+   * sidebar section switches and Back call `requestLeave` and appear to do
+   * nothing when a discard dialog is pending but easy to miss.
+   */
   useEffect(() => {
-    setForms((prev) => {
-      const next: Record<string, AppFormState> = { ...prev }
-      for (const appKey of supportedAppKeys) {
-        const saved = appsByKey.get(appKey)
-        const existing = next[appKey] ?? EMPTY_FORM
+    useSettingsDirtyStore.getState().reset()
+    return () => {
+      useSettingsDirtyStore.getState().reset()
+    }
+  }, [])
+
+  /**
+   * Hydrate local fields only when the server snapshot actually changes — never
+   * on incidental React Query array identity churn, so typing is not wiped and
+   * the page does not re-enter setState loops that stall navigation.
+   */
+  useEffect(() => {
+    if (appsLoading) return
+    if (lastServerSignatureRef.current === serverSignature) return
+    lastServerSignatureRef.current = serverSignature
+
+    setForms(() => {
+      const next = createEmptyForms()
+      for (const appKey of SUPPORTED_APP_KEYS) {
+        const saved = apps.find((row) => row.appKey === appKey)
         next[appKey] = {
-          ...existing,
           clientId: saved?.clientId ?? '',
-          // Never refill secret from the server — it is write-only after save.
-          clientSecret: saved ? '' : existing.clientSecret,
+          clientSecret: '',
+          saveError: null,
         }
       }
       return next
     })
-  }, [appsByKey, supportedAppKeys])
-
-  const adminOrOwner = isAdminOrOwner(organization, session?.user?.email)
-
-  const providerMeta = useMemo(() => {
-    return supportedAppKeys.map((appKey) => {
-      const config = getCustomOAuthAppConfig(appKey)
-      const labels = CUSTOM_APP_LABELS[appKey] ?? {
-        name: appKey,
-        description: 'Custom OAuth app credentials for this provider.',
-      }
-      return { appKey, config, ...labels }
-    })
-  }, [supportedAppKeys])
+  }, [apps, appsLoading, serverSignature])
 
   const updateForm = (appKey: string, patch: Partial<AppFormState>) => {
     setForms((prev) => ({
       ...prev,
-      [appKey]: { ...(prev[appKey] ?? EMPTY_FORM), ...patch },
+      [appKey]: { ...prev[appKey], ...patch },
     }))
   }
 
   const handleSave = async (appKey: string) => {
     if (!organizationId) return
 
-    const form = forms[appKey] ?? EMPTY_FORM
+    const form = forms[appKey]
     const saved = appsByKey.get(appKey)
     const isConfigured = Boolean(saved?.hasClientSecret && saved.clientId)
     const trimmedClientId = form.clientId.trim()
@@ -216,7 +253,7 @@ export function OAuthAppsSettings() {
 
       {providerMeta.map(({ appKey, name, description }) => {
         const saved = appsByKey.get(appKey)
-        const form = forms[appKey] ?? EMPTY_FORM
+        const form = forms[appKey]
         const rowConfigured = Boolean(saved?.hasClientSecret && saved.clientId)
         const callbackPath = `/api/auth/oauth2/custom/${appKey}/callback`
         const callbackUrl = origin ? `${origin}${callbackPath}` : callbackPath
@@ -274,7 +311,6 @@ export function OAuthAppsSettings() {
               </Chip>
               {rowConfigured && (
                 <Chip
-                  variant='ghost'
                   onClick={() => void handleClear(appKey)}
                   disabled={upsertApp.isPending || deleteApp.isPending}
                 >
