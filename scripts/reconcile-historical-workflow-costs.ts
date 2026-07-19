@@ -27,6 +27,8 @@
  *   --write              Persist projection repairs (required with --repair-projections to mutate)
  *   --resume             With --dry-run --export: keep the existing NDJSON artifact, skip executions
  *                        already in it, and append new records (crash-safe restart)
+ *   --execution-timeout-ms=<n>
+ *                        Fail one stalled audit/dry-run execution after this deadline (default 120000)
  *
  * Dry-run exports stream: each record is appended to the NDJSON artifact as soon as it is
  * computed, so an interrupted run keeps everything processed so far and can be continued
@@ -45,6 +47,7 @@ import {
   evaluateApplyRolloutGates,
   HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE,
   HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY,
+  HISTORICAL_RECONCILE_DEFAULT_EXECUTION_TIMEOUT_MS,
   HISTORICAL_RECONCILE_ROLLOUT_STEPS,
   loadHistoricalReconcileShadowArtifact,
   resolveShadowArtifactWorkspaceScope,
@@ -84,6 +87,8 @@ interface Options {
   batchSize: number
   /** Concurrent evidence loads within a page. */
   concurrency: number
+  /** Maximum wall-clock time for one execution's evidence load and reprice. */
+  executionTimeoutMs: number
   exportPath?: string
 }
 
@@ -126,6 +131,10 @@ function parseArgs(argv: string[]): Options {
   const concurrency =
     parsePositiveInt(argv.find((arg) => arg.startsWith('--concurrency='))?.split('=')[1]) ??
     HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY
+  const executionTimeoutMs =
+    parsePositiveInt(
+      argv.find((arg) => arg.startsWith('--execution-timeout-ms='))?.split('=')[1]
+    ) ?? HISTORICAL_RECONCILE_DEFAULT_EXECUTION_TIMEOUT_MS
   const exportPath = argv.find((arg) => arg.startsWith('--export='))?.split('=')[1]
   const inputPath = argv.find((arg) => arg.startsWith('--input='))?.split('=')[1]
 
@@ -151,6 +160,7 @@ function parseArgs(argv: string[]): Options {
     limit,
     batchSize,
     concurrency,
+    executionTimeoutMs,
     exportPath,
   }
 }
@@ -181,6 +191,7 @@ function printFilterSummary(options: Options, title: string): void {
   if (options.workspaceId) console.log(`Workspace filter: ${options.workspaceId}`)
   console.log(`Batch size: ${options.batchSize}`)
   console.log(`Concurrency: ${options.concurrency}`)
+  console.log(`Per-execution timeout: ${options.executionTimeoutMs}ms`)
   console.log(`Only priced tools: ${options.onlyPricedTools ? 'yes' : 'no (--all-tools)'}`)
   if (options.limit) console.log(`Limit: ${options.limit}`)
 }
@@ -191,8 +202,14 @@ function printProgress(progress: HistoricalReconcileProgress): void {
     progress.resumedSkipped && progress.resumedSkipped > 0
       ? ` resumed_skip=${progress.resumedSkipped}`
       : ''
+  const active =
+    progress.activeExecutions && progress.activeExecutions.length > 0
+      ? ` active=${progress.activeExecutions
+          .map(({ executionId, elapsedMs }) => `${executionId}(${Math.round(elapsedMs / 1000)}s)`)
+          .join(',')}`
+      : ''
   console.log(
-    `[progress] ${new Date().toISOString()} attempted=${progress.attempted} succeeded=${progress.succeeded} skipped=${progress.skipped} failed=${progress.failed}${resumed} pages=${progress.pages}${suffix}`
+    `[progress] ${new Date().toISOString()} attempted=${progress.attempted} succeeded=${progress.succeeded} skipped=${progress.skipped} failed=${progress.failed}${resumed} pages=${progress.pages}${active}${suffix}`
   )
 }
 
@@ -264,6 +281,7 @@ function toFilter(options: Options) {
     limit: options.limit,
     batchSize: options.batchSize,
     concurrency: options.concurrency,
+    executionTimeoutMs: options.executionTimeoutMs,
     onlyPricedTools: options.onlyPricedTools,
   }
 }
@@ -331,7 +349,7 @@ async function runDryRun(options: Options): Promise<number> {
     console.log('\n--- Failures ---')
     for (const failure of summary.failures.slice(0, 20)) {
       console.log(
-        `  ${failure.executionId.slice(0, 8)}… error=${failure.error}${failure.postgresCode ? ` pg=${failure.postgresCode}` : ''} cause=${failure.cause.message}`
+        `  ${failure.executionId} error=${failure.error}${failure.postgresCode ? ` pg=${failure.postgresCode}` : ''} cause=${failure.cause.message}`
       )
     }
     if (summary.failures.length > 20) {
@@ -400,7 +418,7 @@ async function runAudit(options: Options): Promise<number> {
     console.log('\n--- Failures ---')
     for (const failure of summary.failures.slice(0, 20)) {
       console.log(
-        `  ${failure.executionId.slice(0, 8)}… error=${failure.error}${failure.postgresCode ? ` pg=${failure.postgresCode}` : ''} cause=${failure.cause.message}`
+        `  ${failure.executionId} error=${failure.error}${failure.postgresCode ? ` pg=${failure.postgresCode}` : ''} cause=${failure.cause.message}`
       )
     }
     if (summary.failures.length > 20) {
@@ -438,6 +456,7 @@ async function runAudit(options: Options): Promise<number> {
         limit: options.limit ?? null,
         batchSize: options.batchSize,
         concurrency: options.concurrency,
+        executionTimeoutMs: options.executionTimeoutMs,
         onlyPricedTools: options.onlyPricedTools,
       },
       summary: {
@@ -501,7 +520,7 @@ async function runRepairProjections(options: Options): Promise<number> {
   if (result.failures.length > 0) {
     console.log('\n--- Failures ---')
     for (const failure of result.failures.slice(0, 20)) {
-      console.log(`  ${failure.executionId.slice(0, 8)}… ${failure.message}`)
+      console.log(`  ${failure.executionId} ${failure.error}`)
     }
   }
 

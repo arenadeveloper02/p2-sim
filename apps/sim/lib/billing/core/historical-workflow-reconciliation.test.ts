@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockTransaction,
@@ -11,6 +11,7 @@ const {
   mockRecordUsage,
   mockGetHighestPrioritySubscription,
   mockCostBlockExecute,
+  mockMaterializeExecutionData,
 } = vi.hoisted(() => ({
   mockTransaction: vi.fn(),
   mockExecute: vi.fn(),
@@ -19,6 +20,7 @@ const {
   mockRecordUsage: vi.fn(),
   mockGetHighestPrioritySubscription: vi.fn(),
   mockCostBlockExecute: vi.fn(),
+  mockMaterializeExecutionData: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => ({
@@ -57,6 +59,11 @@ vi.mock('@/executor/handlers/cost/cost-handler', () => ({
   },
 }))
 
+vi.mock('@/lib/logs/execution/trace-store', () => ({
+  materializeExecutionData: mockMaterializeExecutionData,
+  TRACE_STORE_REF_KEY: 'traceStoreRef',
+}))
+
 import {
   analyzeTraceSpans,
   applyHistoricalReconciliation,
@@ -65,10 +72,12 @@ import {
   classifyExecutionEvidence,
   aggregateClassificationResults,
   computeTargetLedgerLines,
+  dryRunHistoricalWorkflowReprices,
   enrichTraceSpansForReprice,
   evaluateApplyRolloutGates,
   HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE,
   HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY,
+  HISTORICAL_RECONCILE_DEFAULT_EXECUTION_TIMEOUT_MS,
   HISTORICAL_RECONCILE_PILOT_MAX_RECORDS,
   HISTORICAL_RECONCILE_PRICING_MODE,
   HISTORICAL_RECONCILE_PROGRESS_INTERVAL,
@@ -648,7 +657,132 @@ describe('throughput defaults', () => {
   it('exposes bounded page size, concurrency, and progress interval defaults', () => {
     expect(HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE).toBe(1000)
     expect(HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY).toBe(8)
+    expect(HISTORICAL_RECONCILE_DEFAULT_EXECUTION_TIMEOUT_MS).toBe(120_000)
     expect(HISTORICAL_RECONCILE_PROGRESS_INTERVAL).toBe(100)
+  })
+})
+
+describe('dryRunHistoricalWorkflowReprices', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockExecute.mockResolvedValue([{ '?column?': 1 }])
+    mockMaterializeExecutionData.mockImplementation(
+      async (executionData: Record<string, unknown>, context: { executionId: string }) => {
+        if (context.executionId === 'exec-stuck') {
+          return new Promise<Record<string, unknown>>(() => {})
+        }
+        return executionData
+      }
+    )
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('streams completed records and times out a stalled execution without blocking the page', async () => {
+    vi.useFakeTimers()
+    const pageRows = [
+      {
+        executionId: 'exec-fast',
+        workflowId: 'wf-1',
+        workspaceId: 'ws-1',
+        startedAt: new Date('2026-07-17T10:00:00.000Z'),
+        status: 'completed',
+        trigger: 'api',
+        stateSnapshotId: 'snap-1',
+        costTotal: '0',
+        modelsUsed: null,
+        ledgerSum: '0',
+      },
+      {
+        executionId: 'exec-stuck',
+        workflowId: 'wf-1',
+        workspaceId: 'ws-1',
+        startedAt: new Date('2026-07-17T09:00:00.000Z'),
+        status: 'completed',
+        trigger: 'api',
+        stateSnapshotId: 'snap-2',
+        costTotal: '0',
+        modelsUsed: null,
+        ledgerSum: '0',
+      },
+    ]
+    const evidenceRows = pageRows.map((row) => ({
+      ...row,
+      executionData: {},
+      snapshotStateData: null,
+    }))
+    let selectCall = 0
+    mockSelect.mockImplementation(() => {
+      selectCall += 1
+      if (selectCall === 1) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue(pageRows),
+              }),
+            }),
+          }),
+        }
+      }
+      if (selectCall === 2 || selectCall === 3) {
+        const evidenceRow = evidenceRows[selectCall - 2]
+        return {
+          from: vi.fn().mockReturnValue({
+            leftJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([evidenceRow]),
+              }),
+            }),
+          }),
+        }
+      }
+      if (selectCall === 4) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              groupBy: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockResolvedValue([]),
+              }),
+            }),
+          }),
+        }
+      }
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ cost: '0' }]),
+        }),
+      }
+    })
+
+    const onRecord = vi.fn()
+    let runSettled = false
+    const run = dryRunHistoricalWorkflowReprices(
+      { limit: 2, batchSize: 2, concurrency: 2 },
+      { executionTimeoutMs: 10, onRecord }
+    ).finally(() => {
+      runSettled = true
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onRecord).toHaveBeenCalledTimes(1)
+    expect(runSettled).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(10)
+    const summary = await run
+    expect(onRecord).toHaveBeenCalledWith(expect.objectContaining({ executionId: 'exec-fast' }))
+    expect(summary).toMatchObject({
+      attempted: 2,
+      total: 1,
+      failed: 1,
+      skipped: 0,
+    })
+    expect(summary.failures[0]).toMatchObject({
+      executionId: 'exec-stuck',
+      cause: { name: 'HistoricalReconcileExecutionTimeoutError' },
+    })
   })
 })
 

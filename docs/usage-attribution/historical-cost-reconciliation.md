@@ -148,9 +148,9 @@ bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts 
 
 Defaults to `--only-priced-tools`: executions without allowlisted hosted tools, Cost blocks, or LLM-on-tool blocks are `out_of_scope` (not apply-eligible). Pass `--all-tools` to classify every terminal workflow run.
 
-`--batch-size` is the keyset page size (default `1000`). Without `--limit`, the audit walks the full filtered window page by page. Use `--limit=<n>` to cap total attempted executions, and `--concurrency=<n>` (default `8`) to bound parallel evidence loads within each page.
+`--batch-size` is the keyset page size (default `1000`). Without `--limit`, the audit walks the full filtered window page by page. Use `--limit=<n>` to cap total attempted executions, and `--concurrency=<n>` (default `8`) to bound parallel evidence loads within each page. Each audit or dry-run execution has a 120-second wall-clock deadline so a hung database or object-store read cannot block its page indefinitely. Override it only when investigating a known slow execution with `--execution-timeout-ms=<n>`.
 
-The CLI prints live `[progress]` lines about every 100 attempted executions (and once when finished). Mirror them with `tee` if you want a log file:
+The CLI prints live `[progress]` lines about every 100 attempted executions, every 30 seconds while a page is in flight, and once when finished. Heartbeats include the IDs and elapsed times of active executions, making a slow or stalled record identifiable. Mirror them with `tee` if you want a log file:
 
 ```bash
 set -o pipefail
@@ -159,7 +159,7 @@ bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts 
   --export=reconciliation-audit.json 2>&1 | tee reconciliation-audit.log
 ```
 
-Long audits reuse the shared DB pool. Each page starts with a `select 1` keepalive, and list/evidence queries retry up to 5 times on transient disconnects (`CONNECTION_CLOSED`, reset, timeout). Missing object-store traces still classify as `missing_trace_data` and are not treated as hard failures.
+Long audits reuse the shared DB pool. Each page starts with a `select 1` keepalive, and list/evidence queries retry up to 5 times on transient disconnects (`CONNECTION_CLOSED`, reset, timeout). Missing object-store traces still classify as `missing_trace_data` and are not treated as hard failures. A per-execution deadline is reported as `HistoricalReconcileExecutionTimeoutError`; the batch continues, exits nonzero, and includes that execution in `failures`.
 
 Expected change: local audit artifact only.
 
@@ -206,7 +206,23 @@ bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts 
 
 `--batch-size` pages the dry-run the same way as audit; `--limit` caps total attempted executions. Dry-run also prints `[progress]` lines and exits nonzero when any execution fails to reprice.
 
-Expected change: NDJSON artifact only.
+Expected change: NDJSON artifact only. Each successful record is appended immediately when that execution finishes; records are not held until the rest of the page completes. An interrupted run therefore preserves every completed record, including records from a partially completed page.
+
+While the dry-run is active, verify that the artifact is advancing:
+
+```bash
+wc -l reconcile-shadow.ndjson
+```
+
+If the process is interrupted or exits with failures, retain the artifact and resume it:
+
+```bash
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --dry-run --since=2026-05-01 --batch-size=1000 --only-priced-tools \
+  --export=reconcile-shadow.ndjson --review-deltas --resume
+```
+
+`--resume` validates the existing NDJSON, skips execution IDs already present, and retries missing or timed-out executions. If one execution repeatedly times out, use the ID printed in the failure/heartbeat output for a targeted investigation; do not apply an incomplete artifact. A newly created zero-line artifact contains no recoverable records and should simply be rerun with the fixed script.
 
 For each reviewed execution, verify:
 
@@ -217,7 +233,7 @@ For each reviewed execution, verify:
 - Copilot/Mothership aggregate rows are unchanged;
 - negative deltas are reported for manual treatment, never silently ignored.
 
-Generate a fresh artifact immediately before applying it.
+Generate a fresh artifact immediately before applying it. Require a `(done)` progress line, `Failed: 0`, a zero exit status, and an artifact line count matching the final `total records` count before proceeding.
 
 ## Step 5: pilot apply
 

@@ -117,6 +117,9 @@ export const HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE = 1000
 /** Default concurrent evidence loads per page. */
 export const HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY = 8
 
+/** Maximum wall-clock time for one execution's evidence load and reprice. */
+export const HISTORICAL_RECONCILE_DEFAULT_EXECUTION_TIMEOUT_MS = 120_000
+
 /** Emit progress after this many attempted executions (and once at completion). */
 export const HISTORICAL_RECONCILE_PROGRESS_INTERVAL = 100
 
@@ -230,6 +233,8 @@ export interface HistoricalExecutionFilter {
   batchSize?: number
   /** Concurrent evidence loads within a page. Defaults to {@link HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY}. */
   concurrency?: number
+  /** Per-execution deadline. Defaults to {@link HISTORICAL_RECONCILE_DEFAULT_EXECUTION_TIMEOUT_MS}. */
+  executionTimeoutMs?: number
   /**
    * When true, executions without allowlisted priced-tool / cost-block evidence
    * are classified `out_of_scope` and are not apply-eligible.
@@ -251,6 +256,8 @@ export interface HistoricalReconcileProgress {
   pages: number
   /** Executions skipped because they were already present in a resumed export artifact. */
   resumedSkipped?: number
+  /** Executions currently in flight, including their wall-clock runtime. */
+  activeExecutions?: Array<{ executionId: string; elapsedMs: number }>
   done: boolean
 }
 
@@ -991,6 +998,57 @@ function toHistoricalExecutionFailure(
   }
 }
 
+class HistoricalReconcileExecutionTimeoutError extends Error {
+  constructor(executionId: string, timeoutMs: number) {
+    super(`Historical reconciliation timed out for execution ${executionId} after ${timeoutMs}ms`)
+    this.name = 'HistoricalReconcileExecutionTimeoutError'
+  }
+}
+
+function resolveExecutionTimeoutMs(
+  filter: HistoricalExecutionFilter,
+  override?: number
+): number {
+  const requested = override ?? filter.executionTimeoutMs
+  return requested != null && Number.isFinite(requested) && requested > 0
+    ? Math.floor(requested)
+    : HISTORICAL_RECONCILE_DEFAULT_EXECUTION_TIMEOUT_MS
+}
+
+async function withHistoricalReconcileExecutionTimeout<T>(
+  executionId: string,
+  timeoutMs: number,
+  operation: () => Promise<T>
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new HistoricalReconcileExecutionTimeoutError(executionId, timeoutMs)),
+          timeoutMs
+        )
+        timer.unref?.()
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function snapshotActiveExecutions(
+  activeExecutions: ReadonlyMap<string, number>
+): HistoricalReconcileProgress['activeExecutions'] {
+  const now = Date.now()
+  return [...activeExecutions.entries()]
+    .map(([executionId, startedAt]) => ({
+      executionId,
+      elapsedMs: Math.max(0, now - startedAt),
+    }))
+    .sort((left, right) => right.elapsedMs - left.elapsedMs)
+}
+
 function withReconcileDbRetry<T>(
   operation: () => Promise<T>,
   context: Record<string, unknown>
@@ -1312,65 +1370,94 @@ export async function auditHistoricalWorkflowExecutions(
   } = {}
 ): Promise<ReconciliationAuditSummary> {
   const concurrency = resolveConcurrency(filter)
+  const executionTimeoutMs = resolveExecutionTimeoutMs(filter)
   const onlyPricedTools = options.onlyPricedTools ?? filter.onlyPricedTools ?? false
   const classifications: ExecutionClassification[] = []
   const failures: HistoricalReconcileFailure[] = []
+  const activeExecutions = new Map<string, number>()
   let attempted = 0
+  let succeeded = 0
   let skipped = 0
+  let failed = 0
   let pages = 0
   let previousEmitted = -1
 
+  const snapshotProgress = (done: boolean): HistoricalReconcileProgress => ({
+    attempted,
+    succeeded,
+    skipped,
+    failed,
+    pages,
+    activeExecutions: snapshotActiveExecutions(activeExecutions),
+    done,
+  })
+
   const reportProgress = (done: boolean) => {
-    const progress: HistoricalReconcileProgress = {
-      attempted,
-      succeeded: classifications.length,
-      skipped,
-      failed: failures.length,
-      pages,
-      done,
-    }
     if (done || shouldEmitProgress(attempted, previousEmitted)) {
-      emitProgress(options.onProgress, progress)
+      emitProgress(options.onProgress, snapshotProgress(done))
       previousEmitted = attempted
     }
   }
 
-  for await (const page of iterateHistoricalWorkflowExecutionPages(filter)) {
-    pages += 1
-    const pageResults = await mapWithConcurrency(page, concurrency, async (row) => {
-      try {
-        const evidence = await loadExecutionEvidence(row.executionId)
-        if (!evidence) {
-          return { kind: 'skipped' as const, executionId: row.executionId }
-        }
-        return {
-          kind: 'classified' as const,
-          classification: classifyExecutionEvidence(evidence, { onlyPricedTools }),
-        }
-      } catch (error) {
-        const failure = toHistoricalExecutionFailure(row.executionId, error)
-        logger.warn('Failed to classify execution', {
-          executionId: failure.executionId,
-          error: failure.error,
-          cause: failure.cause,
-          postgresCode: failure.postgresCode,
-        })
-        return { kind: 'failed' as const, failure }
-      }
-    })
+  const heartbeat = options.onProgress
+    ? setInterval(
+        () => emitProgress(options.onProgress, snapshotProgress(false)),
+        HISTORICAL_RECONCILE_PROGRESS_HEARTBEAT_MS
+      )
+    : undefined
 
-    for (const result of pageResults) {
-      attempted += 1
-      if (result.kind === 'classified') {
-        classifications.push(result.classification)
-      } else if (result.kind === 'skipped') {
-        skipped += 1
-      } else {
-        failures.push(result.failure)
+  try {
+    for await (const page of iterateHistoricalWorkflowExecutionPages(filter)) {
+      pages += 1
+      const pageResults = await mapWithConcurrency(page, concurrency, async (row) => {
+        activeExecutions.set(row.executionId, Date.now())
+        try {
+          const evidence = await withHistoricalReconcileExecutionTimeout(
+            row.executionId,
+            executionTimeoutMs,
+            () => loadExecutionEvidence(row.executionId)
+          )
+          attempted += 1
+          if (!evidence) {
+            skipped += 1
+            reportProgress(false)
+            return { kind: 'skipped' as const, executionId: row.executionId }
+          }
+          succeeded += 1
+          reportProgress(false)
+          return {
+            kind: 'classified' as const,
+            classification: classifyExecutionEvidence(evidence, { onlyPricedTools }),
+          }
+        } catch (error) {
+          attempted += 1
+          failed += 1
+          reportProgress(false)
+          const failure = toHistoricalExecutionFailure(row.executionId, error)
+          logger.warn('Failed to classify execution', {
+            executionId: failure.executionId,
+            error: failure.error,
+            cause: failure.cause,
+            postgresCode: failure.postgresCode,
+          })
+          return { kind: 'failed' as const, failure }
+        } finally {
+          activeExecutions.delete(row.executionId)
+        }
+      })
+
+      for (const result of pageResults) {
+        if (result.kind === 'classified') {
+          classifications.push(result.classification)
+        } else if (result.kind === 'failed') {
+          failures.push(result.failure)
+        }
       }
+
+      reportProgress(false)
     }
-
-    reportProgress(false)
+  } finally {
+    if (heartbeat) clearInterval(heartbeat)
   }
 
   reportProgress(true)
@@ -1959,13 +2046,16 @@ export async function dryRunHistoricalWorkflowReprices(
   filter: HistoricalExecutionFilter = {},
   options: ComputeTargetLedgerOptions & {
     onProgress?: HistoricalReconcileProgressCallback
-    /** Awaited for each successful record as soon as its page completes; use for incremental NDJSON export. */
+    /** Awaited immediately when each record completes; use for crash-safe incremental NDJSON export. */
     onRecord?: (record: HistoricalReconcileShadowRecord) => void | Promise<void>
     /** Execution IDs to skip (e.g. already exported by a previous interrupted run). */
     excludeExecutionIds?: ReadonlySet<string>
+    /** Per-execution deadline overriding the filter/default. */
+    executionTimeoutMs?: number
   } = {}
 ): Promise<ShadowRepriceSummary> {
   const concurrency = resolveConcurrency(filter)
+  const executionTimeoutMs = resolveExecutionTimeoutMs(filter, options.executionTimeoutMs)
   const onlyPricedTools = options.onlyPricedTools ?? filter.onlyPricedTools ?? false
   const excludeExecutionIds = options.excludeExecutionIds
   const repriceOptions: ComputeTargetLedgerOptions = {
@@ -1974,6 +2064,7 @@ export async function dryRunHistoricalWorkflowReprices(
   }
   const records: HistoricalReconcileShadowRecord[] = []
   const failures: HistoricalReconcileFailure[] = []
+  const activeExecutions = new Map<string, number>()
   let attempted = 0
   let succeeded = 0
   let skipped = 0
@@ -1989,6 +2080,7 @@ export async function dryRunHistoricalWorkflowReprices(
     failed,
     pages,
     resumedSkipped,
+    activeExecutions: snapshotActiveExecutions(activeExecutions),
     done,
   })
 
@@ -2018,18 +2110,24 @@ export async function dryRunHistoricalWorkflowReprices(
       resumedSkipped += page.length - rows.length
 
       const pageResults = await mapWithConcurrency(rows, concurrency, async (row) => {
+        activeExecutions.set(row.executionId, Date.now())
+        let record: HistoricalReconcileShadowRecord | null
         try {
-          const record = await computeShadowRepriceForExecution(row.executionId, repriceOptions)
+          record = await withHistoricalReconcileExecutionTimeout(
+            row.executionId,
+            executionTimeoutMs,
+            () => computeShadowRepriceForExecution(row.executionId, repriceOptions)
+          )
           attempted += 1
           if (!record) {
             skipped += 1
+            reportProgress(false)
             return { kind: 'skipped' as const, executionId: row.executionId }
           }
-          succeeded += 1
-          return { kind: 'record' as const, record }
         } catch (error) {
           attempted += 1
           failed += 1
+          reportProgress(false)
           const failure = toHistoricalExecutionFailure(row.executionId, error)
           logger.warn('Failed to shadow-reprice execution', {
             executionId: failure.executionId,
@@ -2038,13 +2136,31 @@ export async function dryRunHistoricalWorkflowReprices(
             postgresCode: failure.postgresCode,
           })
           return { kind: 'failed' as const, failure }
+        } finally {
+          activeExecutions.delete(row.executionId)
         }
+
+        if (options.onRecord) {
+          try {
+            await options.onRecord(record)
+          } catch (error) {
+            return { kind: 'export-failed' as const, error }
+          }
+        }
+
+        succeeded += 1
+        reportProgress(false)
+        return { kind: 'record' as const, record }
       })
+
+      const exportFailure = pageResults.find((result) => result.kind === 'export-failed')
+      if (exportFailure?.kind === 'export-failed') {
+        throw exportFailure.error
+      }
 
       for (const result of pageResults) {
         if (result.kind === 'record') {
           records.push(result.record)
-          if (options.onRecord) await options.onRecord(result.record)
         } else if (result.kind === 'failed') {
           failures.push(result.failure)
         }
