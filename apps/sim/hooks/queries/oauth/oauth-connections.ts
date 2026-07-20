@@ -16,6 +16,10 @@ import { client } from '@/lib/auth/auth-client'
 import { readOAuthReturnContext } from '@/lib/credentials/client-state'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
 import { requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
+import { environmentKeys } from '@/hooks/queries/environment'
+import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
+
+const OAUTH_CREDENTIALS_KEY = ['oauthCredentials'] as const
 
 const logger = createLogger('OAuthConnectionsQuery')
 
@@ -436,6 +440,10 @@ export function useDisconnectOAuthService() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: oauthConnectionsKeys.connections() })
+      queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.details() })
+      queryClient.invalidateQueries({ queryKey: OAUTH_CREDENTIALS_KEY })
+      queryClient.invalidateQueries({ queryKey: environmentKeys.all })
     },
   })
 }
