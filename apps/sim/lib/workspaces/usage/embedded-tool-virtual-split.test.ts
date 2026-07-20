@@ -22,7 +22,7 @@ describe('embedded-tool-virtual-split', () => {
           inputTokens: 1000,
           outputTokens: 100,
           toolCost: 0.04,
-          embeddedToolCosts: { image_generate: 0.04 },
+          embeddedToolCosts: { 'gpt-image-1.5': 0.04 },
         },
       },
     ])

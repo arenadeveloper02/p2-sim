@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { cn } from '@/lib/core/utils/cn'
-import { formatDollarAmount } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
+import { formatBillableWithCredits } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 
 export interface CostShareBarRow {
   id: string
@@ -84,7 +84,7 @@ export function CostShareBars({
                   <span className='text-[var(--text-muted)] text-xs'>{row.secondary}</span>
                 )}
                 <span className='tabular-nums text-[var(--text-secondary)] text-small'>
-                  {formatDollarAmount(row.billableCost)}
+                  {formatBillableWithCredits(row.billableCost)}
                 </span>
               </div>
             </div>

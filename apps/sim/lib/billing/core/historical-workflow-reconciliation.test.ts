@@ -47,6 +47,40 @@ vi.mock('@/lib/billing/core/usage-log', () => ({
       .map((key) => `${key}:${String(parts[key] ?? '')}`)
       .join('|')
   ),
+  getUsageLogCostMultiplier: () => {
+    const raw = process.env.USAGE_LOG_COST_MULTIPLIER ?? process.env.COST_MULTIPLIER
+    const parsed = raw != null ? Number(raw) : 1
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+  },
+  scaleUsageLogCost: (cost: number) => {
+    if (cost <= 0) return cost
+    const raw = process.env.USAGE_LOG_COST_MULTIPLIER ?? process.env.COST_MULTIPLIER
+    const parsed = raw != null ? Number(raw) : 1
+    const multiplier = Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+    return multiplier === 1 ? cost : cost * multiplier
+  },
+  billableReconciliationAmount: (
+    category: 'model' | 'fixed' | 'tool' | 'external',
+    rawAmount: number
+  ) => {
+    if (rawAmount <= 0) return rawAmount
+    if (category === 'external') return rawAmount
+    const raw = process.env.USAGE_LOG_COST_MULTIPLIER ?? process.env.COST_MULTIPLIER
+    const parsed = raw != null ? Number(raw) : 1
+    const multiplier = Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+    return multiplier === 1 ? rawAmount : rawAmount * multiplier
+  },
+  rawUsageAmountFromBillable: (
+    category: 'model' | 'fixed' | 'tool' | 'external',
+    billableAmount: number
+  ) => {
+    if (billableAmount <= 0) return billableAmount
+    if (category === 'external') return billableAmount
+    const raw = process.env.USAGE_LOG_COST_MULTIPLIER ?? process.env.COST_MULTIPLIER
+    const parsed = raw != null ? Number(raw) : 1
+    const multiplier = Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+    return multiplier === 1 ? billableAmount : billableAmount / multiplier
+  },
 }))
 
 vi.mock('@/lib/billing/core/plan', () => ({
@@ -83,6 +117,7 @@ import {
   HISTORICAL_RECONCILE_PROGRESS_INTERVAL,
   HISTORICAL_RECONCILE_ROLLOUT_STEPS,
   HISTORICAL_RECONCILE_VERSION,
+  isReconcilePricedToolId,
   parseHistoricalReconcileShadowRecord,
   repairLedgerProjections,
   resolveShadowArtifactWorkspaceScope,
@@ -139,6 +174,15 @@ function baseEvidence(overrides: Partial<ExecutionEvidence> = {}): ExecutionEvid
     ...overrides,
   }
 }
+
+describe('isReconcilePricedToolId', () => {
+  it('recognizes image model ids used as standalone tool descriptions', () => {
+    expect(isReconcilePricedToolId('image_generate')).toBe(true)
+    expect(isReconcilePricedToolId('gpt-image-1.5')).toBe(true)
+    expect(isReconcilePricedToolId('flux-2-pro')).toBe(true)
+    expect(isReconcilePricedToolId('unknown_tool')).toBe(false)
+  })
+})
 
 describe('analyzeTraceSpans', () => {
   it('detects legacy inline span costs', () => {
@@ -1111,7 +1155,7 @@ describe('computeTargetLedgerLines', () => {
       {
         type: 'tool',
         name: 'image_generate',
-        output: { __falaiCostDollars: 0.04 },
+        output: { model: 'flux-2-pro', __falaiCostDollars: 0.04 },
       },
     ]
 
@@ -1136,7 +1180,7 @@ describe('computeTargetLedgerLines', () => {
     )
 
     const firecrawl = targets.find((line) => line.description === 'firecrawl_scrape')
-    const image = targets.find((line) => line.description === 'image_generate')
+    const image = targets.find((line) => line.description === 'flux-2-pro')
 
     expect(firecrawl?.target).toBeCloseTo(0.008, 8)
     expect(image?.target).toBeCloseTo(0.04 * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER, 8)
@@ -1288,6 +1332,35 @@ describe('buildHistoricalAdjustmentEntries', () => {
 
     expect(result.entries).toHaveLength(0)
     expect(result.positiveDeltaTotal).toBe(0)
+  })
+
+  it('compares billable targets to billable ledger rows when a cost multiplier is set', () => {
+    const previousMultiplier = process.env.USAGE_LOG_COST_MULTIPLIER
+    process.env.USAGE_LOG_COST_MULTIPLIER = '2'
+
+    try {
+      const result = buildHistoricalAdjustmentEntries({
+        executionId: 'exec-1',
+        targets: [
+          { category: 'fixed', description: 'execution_fee', target: 0.005 },
+          { category: 'model', description: 'grok-4-latest', target: 0.065 },
+        ],
+        alreadyBilled: new Map([
+          ['fixed::execution_fee', 0.01],
+          ['model::grok-4-latest', 0.13],
+        ]),
+      })
+
+      expect(result.entries).toHaveLength(0)
+      expect(result.positiveDeltaTotal).toBe(0)
+      expect(result.negativeDeltaTotal).toBe(0)
+    } finally {
+      if (previousMultiplier === undefined) {
+        delete process.env.USAGE_LOG_COST_MULTIPLIER
+      } else {
+        process.env.USAGE_LOG_COST_MULTIPLIER = previousMultiplier
+      }
+    }
   })
 })
 

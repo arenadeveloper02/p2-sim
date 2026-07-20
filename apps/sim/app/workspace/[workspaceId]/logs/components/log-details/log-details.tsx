@@ -30,8 +30,11 @@ import { useParams, useRouter } from 'next/navigation'
 import { useQueryState } from 'nuqs'
 import { createPortal } from 'react-dom'
 import type { VerifyExecutionCostsResponse, WorkflowLogRow } from '@/lib/api/contracts/logs'
-import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
-import { apportionCredits, dollarsToCredits } from '@/lib/billing/credits/conversion'
+import {
+  apportionCredits,
+  formatApportionedCreditCost,
+  formatCreditCost,
+} from '@/lib/billing/credits/conversion'
 import { MothershipHandoffStorage } from '@/lib/core/utils/browser-storage'
 import { filterHiddenOutputKeys } from '@/lib/logs/execution/trace-spans/trace-spans'
 import type { TraceSpan } from '@/lib/logs/types'
@@ -60,16 +63,6 @@ import { formatCost } from '@/providers/utils'
 import { useLogDetailsUIStore } from '@/stores/logs/store'
 import { MAX_LOG_DETAILS_WIDTH_RATIO, MIN_LOG_DETAILS_WIDTH } from '@/stores/logs/utils'
 import type { ChatContext } from '@/stores/panel'
-
-/**
- * Renders an already-apportioned integer credit value. `dollars` is only used
- * to distinguish a genuine zero ("0 credits") from a sub-credit charge that
- * rounded down to zero ("<1 credit"); the credit figure itself is authoritative.
- */
-function creditLabel(credits: number, dollars: number): string {
-  if (credits <= 0) return dollars > 0 ? '<1 credit' : '0 credits'
-  return `${credits.toLocaleString()} ${credits === 1 ? 'credit' : 'credits'}`
-}
 
 const ADDITIVE_COST_SECTIONS = [
   { group: 'base' as const, label: 'Base cost' },
@@ -365,7 +358,6 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
       label: string
       rows: Array<{ key: string; label: string; credits: number; dollars: number }>
     }>
-    totalCredits: number
     totalDollars: number
     tokens: { input: number; output: number }
   } | null => {
@@ -388,7 +380,6 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
 
       return {
         sections,
-        totalCredits: dollarsToCredits(ledger.total),
         totalDollars: ledger.total,
         tokens: {
           input: ledger.items.reduce((sum, item) => sum + (item.inputTokens ?? 0), 0),
@@ -402,7 +393,6 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
     if (total == null) return null
     return {
       sections: [],
-      totalCredits: dollarsToCredits(total),
       totalDollars: total,
       tokens: { input: 0, output: 0 },
     }
@@ -630,7 +620,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                             {row.label}
                           </span>
                           <span className='flex-shrink-0 font-medium text-[var(--text-secondary)] text-caption tabular-nums'>
-                            {creditLabel(row.credits, row.dollars)}
+                            {formatApportionedCreditCost(row.credits, row.dollars)}
                           </span>
                         </div>
                       ))}
@@ -641,7 +631,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                       Total
                     </span>
                     <span className='font-semibold text-[var(--text-primary)] text-caption tabular-nums'>
-                      {creditLabel(costBreakdown.totalCredits, costBreakdown.totalDollars)}
+                      {formatCreditCost(costBreakdown.totalDollars) ?? '0 credits'}
                     </span>
                   </div>
                   {(costBreakdown.tokens.input > 0 || costBreakdown.tokens.output > 0) && (
@@ -656,8 +646,8 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
                   )}
                   <div className='flex flex-col gap-2 px-3 py-2'>
                     <p className='font-medium text-[var(--text-tertiary)] text-xs'>
-                      Total includes a {formatCost(BASE_EXECUTION_CHARGE)} base charge plus model
-                      and tool usage.
+                      Total includes the base run charge plus model and tool usage (billable
+                      credits).
                     </p>
                     {log.executionId && (
                       <div className='flex items-center gap-2'>

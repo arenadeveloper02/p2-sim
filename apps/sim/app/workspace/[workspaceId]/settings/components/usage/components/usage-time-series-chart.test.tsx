@@ -60,7 +60,7 @@ describe('UsageTimeSeriesChart', () => {
     )
 
     expect(container.textContent).toContain('Cost & activity over time')
-    expect(container.textContent).toContain('Billable cost')
+    expect(container.textContent).toContain('Credits')
     expect(container.textContent).toContain('Executions')
     expect(container.textContent).toContain('Active users over time')
     expect(container.textContent).toContain('3 users')
@@ -71,8 +71,8 @@ describe('UsageTimeSeriesChart', () => {
       series: Array<{ id: string; data: unknown[] }>
     }
     expect(costProps.data).toEqual([
-      { timestamp: '2026-07-01T00:00:00.000Z', value: 1.25 },
-      { timestamp: '2026-07-02T00:00:00.000Z', value: 2.5 },
+      { timestamp: '2026-07-01T00:00:00.000Z', value: 250 },
+      { timestamp: '2026-07-02T00:00:00.000Z', value: 500 },
     ])
     expect(costProps.series).toHaveLength(1)
     expect(costProps.series[0]?.id).toBe('executions')
@@ -80,6 +80,7 @@ describe('UsageTimeSeriesChart', () => {
       expect.objectContaining({
         label: '',
         color: 'var(--success)',
+        unit: ' credits',
       })
     )
 

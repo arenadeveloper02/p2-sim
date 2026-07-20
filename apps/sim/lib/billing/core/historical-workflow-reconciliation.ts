@@ -26,7 +26,9 @@ import {
   normalizeUsageToolId,
 } from '@/lib/billing/core/usage-entry-normalize'
 import {
+  billableReconciliationAmount,
   deriveBillingContext,
+  rawUsageAmountFromBillable,
   recordUsage,
   stableEventKey,
   type UsageEntry,
@@ -43,6 +45,7 @@ import { isLargeValueRef } from '@/lib/execution/payloads/large-value-ref'
 import {
   extractEmbeddedToolCostsFromSpan,
   getSpanToolOutputCost,
+  isImageGenerationBillingKey,
   normalizeEmbeddedToolCosts,
 } from '@/lib/logs/embedded-tool-costs'
 import {
@@ -575,6 +578,7 @@ export function isReconcilePricedToolId(candidate: string | null | undefined): b
   const normalized = normalizeUsageToolId(candidate.trim())
   if (!normalized) return false
   if (RECONCILE_PRICED_TOOL_ALLOWLIST_SET.has(normalized)) return true
+  if (isImageGenerationBillingKey(normalized)) return true
   for (const allowed of RECONCILE_PRICED_TOOL_ALLOWLIST_SET) {
     if (allowed.startsWith(`${normalized}_`)) return true
   }
@@ -1931,8 +1935,13 @@ function buildShadowRecord(params: {
   })
 
   const targetSum =
-    params.targets.reduce((sum, line) => sum + line.target, 0) ||
-    (params.evidence.trace.hasTraceSpans ? BASE_EXECUTION_CHARGE : 0)
+    params.targets.reduce(
+      (sum, line) => sum + billableReconciliationAmount(line.category, line.target),
+      0
+    ) ||
+    (params.evidence.trace.hasTraceSpans
+      ? billableReconciliationAmount('fixed', BASE_EXECUTION_CHARGE)
+      : 0)
 
   return {
     executionId: params.evidence.executionId,
@@ -2004,7 +2013,7 @@ export function toVerifyExecutionCostsResponse(
       lines: record.targets.map((line) => ({
         category: line.category,
         description: line.description,
-        target: line.target,
+        target: billableReconciliationAmount(line.category, line.target),
         ...(line.evidenceSource ? { evidenceSource: line.evidenceSource } : {}),
       })),
     },
@@ -2233,14 +2242,15 @@ export function buildHistoricalAdjustmentEntries(params: {
   for (const line of params.targets) {
     const key = ledgerLineKey(line.category, line.description)
     const billed = params.alreadyBilled.get(key) ?? 0
-    const delta = line.target - billed
+    const billableTarget = billableReconciliationAmount(line.category, line.target)
+    const delta = billableTarget - billed
 
     if (delta < -RECONCILIATION_EPSILON) {
       negativeDeltaTotal += Math.abs(delta)
       skippedNegativeLines.push({
         category: line.category,
         description: line.description,
-        target: line.target,
+        target: billableTarget,
         billed,
         delta,
       })
@@ -2252,12 +2262,13 @@ export function buildHistoricalAdjustmentEntries(params: {
     }
 
     positiveDeltaTotal += delta
+    const rawDelta = rawUsageAmountFromBillable(line.category, delta)
     entries.push({
       category: line.category,
       source: 'workflow',
       description: line.description,
-      cost: delta,
-      rawCost: delta,
+      cost: rawDelta,
+      rawCost: rawDelta,
       billableCost: delta,
       metadata: {
         ...(line.metadata && typeof line.metadata === 'object' && !Array.isArray(line.metadata)

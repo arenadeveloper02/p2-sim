@@ -25,6 +25,12 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
   checkWorkspaceAccess: checkWorkspaceAccessMock,
 }))
 
+vi.mock('@/lib/logs/execution/progress-markers', () => ({
+  getProgressMarkers: vi.fn().mockResolvedValue(null),
+  pickLatestStartedMarker: vi.fn((_live, row) => row ?? null),
+  pickLatestCompletedMarker: vi.fn((_live, row) => row ?? null),
+}))
+
 import { fetchLogDetail } from '@/lib/logs/fetch-log-detail'
 
 function builder(rows: unknown[]) {
@@ -45,7 +51,7 @@ describe('buildAdditiveCostLeaves', () => {
         description: 'gpt-5.5',
         cost: 0.1,
         toolCost: 0.04,
-        embeddedTools: [{ name: 'image_generate', cost: 0.04 }],
+        embeddedTools: [{ name: 'gpt-image-1.5', cost: 0.04 }],
       },
       { category: 'tool', description: 'exa_search', cost: 0.01 },
       { category: 'external', description: 'Vendor API', cost: 0.02 },
@@ -63,7 +69,7 @@ describe('buildAdditiveCostLeaves', () => {
           label: 'gpt-5.5',
           dollars: expect.closeTo(0.06, 8),
         }),
-        expect.objectContaining({ group: 'tool', label: 'Image Generator', dollars: 0.04 }),
+        expect.objectContaining({ group: 'tool', label: 'gpt-image-1.5', dollars: 0.04 }),
         expect.objectContaining({ group: 'tool', label: 'Exa Search', dollars: 0.01 }),
         expect.objectContaining({ group: 'other', label: 'Vendor API', dollars: 0.02 }),
       ])
@@ -82,7 +88,7 @@ describe('buildAdditiveCostLeaves', () => {
             id: 'tool-1',
             name: 'image_generate',
             type: 'tool',
-            output: { cost: { total: 0.03 } },
+            output: { model: 'gpt-image-1.5', cost: { total: 0.03 } },
           },
         ],
       },
@@ -98,13 +104,8 @@ describe('buildAdditiveCostLeaves', () => {
         expect.objectContaining({ group: 'model', dollars: expect.closeTo(0.03, 8) }),
         expect.objectContaining({
           group: 'tool',
-          label: 'Image Generator',
-          dollars: expect.closeTo(0.03, 8),
-        }),
-        expect.objectContaining({
-          group: 'tool',
-          label: 'Unattributed agent tools',
-          dollars: expect.closeTo(0.02, 8),
+          label: 'gpt-image-1.5',
+          dollars: expect.closeTo(0.05, 8),
         }),
       ])
     )
@@ -162,7 +163,7 @@ describe('fetchLogDetail', () => {
               inputTokens: 1000,
               outputTokens: 100,
               toolCost: 0.04,
-              embeddedToolCosts: { image_generate: 0.04 },
+              embeddedToolCosts: { 'gpt-image-1.5': 0.04 },
             },
           },
           {
@@ -173,7 +174,7 @@ describe('fetchLogDetail', () => {
               inputTokens: 2000,
               outputTokens: 200,
               toolCost: 0.067,
-              embeddedToolCosts: { image_generate: 0.067 },
+              embeddedToolCosts: { 'gpt-image-1.5': 0.067 },
             },
           },
           {
@@ -200,7 +201,7 @@ describe('fetchLogDetail', () => {
         inputTokens: 2000,
         outputTokens: 200,
         toolCost: 0.067,
-        embeddedTools: [{ name: 'image_generate', cost: 0.067 }],
+        embeddedTools: [{ name: 'gpt-image-1.5', cost: 0.067 }],
       },
       {
         category: 'fixed',

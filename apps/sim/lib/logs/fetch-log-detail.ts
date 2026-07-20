@@ -163,6 +163,7 @@ async function buildCostLedger(
       category: usageLog.category,
       description: usageLog.description,
       cost: usageLog.cost,
+      billableCost: usageLog.billableCost,
       metadata: usageLog.metadata,
     })
     .from(usageLog)
@@ -177,13 +178,13 @@ async function buildCostLedger(
     const key = `${category}::${row.description}`
     const existing = byKey.get(key)
     if (existing) {
-      existing.cost += Number(row.cost)
+      existing.cost += Number(row.billableCost ?? row.cost)
       mergeLedgerMetadata(existing, metadata)
     } else {
       const item: LedgerItem = {
         category,
         description: row.description,
-        cost: Number(row.cost),
+        cost: Number(row.billableCost ?? row.cost),
         ...(typeof metadata.inputTokens === 'number' ? { inputTokens: metadata.inputTokens } : {}),
         ...(typeof metadata.outputTokens === 'number'
           ? { outputTokens: metadata.outputTokens }

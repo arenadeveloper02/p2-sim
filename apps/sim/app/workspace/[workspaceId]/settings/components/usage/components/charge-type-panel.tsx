@@ -8,8 +8,8 @@ import {
 } from '@/app/workspace/[workspaceId]/settings/components/usage/components/cost-breakdown-table'
 import { CostShareBars } from '@/app/workspace/[workspaceId]/settings/components/usage/components/cost-share-bars'
 import {
+  formatBillableWithCredits,
   formatChargeTypeLabel,
-  formatDollarAmount,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 
@@ -41,7 +41,7 @@ export function ChargeTypePanel({ byChargeType, totalBillableCost }: ChargeTypeP
   return (
     <SettingsSection label='Cost composition'>
       <p className='mb-4 text-[var(--text-secondary)] text-small'>
-        How the {formatDollarAmount(totalBillableCost)} total breaks down — base run fee, model
+        How the {formatBillableWithCredits(totalBillableCost)} total breaks down — base run fee, model
         inference, hosted tools (including agent-embedded tools), and Cost-block pass-through.
       </p>
       <div className='mb-6'>
@@ -73,7 +73,7 @@ export function ChargeTypePanel({ byChargeType, totalBillableCost }: ChargeTypeP
           },
           {
             key: 'cost',
-            header: 'Billable',
+            header: 'Credits',
             align: 'right',
             render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
           },

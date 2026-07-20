@@ -11,6 +11,7 @@ import {
   accumulateEmbeddedToolCosts,
   extractEmbeddedToolCostsFromSpan,
   normalizeEmbeddedToolCosts,
+  resolveEmbeddedToolCostKey,
 } from '@/lib/logs/embedded-tool-costs'
 import {
   loadDeployedWorkflowState,
@@ -332,7 +333,9 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
         // These previously contributed to the run total but were never itemized
         // in the ledger (the "standalone tool gap"). Key by span name so each
         // integration gets a single, reconciling charge row.
-        const description = span.name || span.type || 'tool'
+        const rawName = span.name || span.type || 'tool'
+        const description =
+          span.type === 'tool' ? resolveEmbeddedToolCostKey(rawName, span.output) : rawName
         if (!charges[description]) {
           charges[description] = { total: 0 }
         }

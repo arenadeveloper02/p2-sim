@@ -110,7 +110,7 @@ export function OrganizationUsageContent({
               },
               {
                 key: 'cost',
-                header: 'Billable',
+                header: 'Credits',
                 align: 'right',
                 render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
               },
@@ -161,7 +161,7 @@ export function OrganizationUsageContent({
               },
               {
                 key: 'cost',
-                header: 'Billable',
+                header: 'Credits',
                 align: 'right',
                 render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
               },
@@ -237,7 +237,7 @@ export function OrganizationUsageContent({
                 },
                 {
                   key: 'cost',
-                  header: 'Billable',
+                  header: 'Credits',
                   align: 'right',
                   render: (row) => (
                     <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -266,7 +266,7 @@ export function OrganizationUsageContent({
                   },
                   {
                     key: 'cost',
-                    header: 'Billable',
+                    header: 'Credits',
                     align: 'right',
                     render: (row) => (
                       <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -401,7 +401,7 @@ export function OrganizationUsageContent({
                       },
                       {
                         key: 'cost',
-                        header: 'Billable',
+                        header: 'Credits',
                         align: 'right',
                         render: (row) => (
                           <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -473,7 +473,7 @@ export function OrganizationUsageContent({
                   },
                   {
                     key: 'cost',
-                    header: 'Billable',
+                    header: 'Credits',
                     align: 'right',
                     render: (row) => (
                       <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -507,7 +507,7 @@ export function OrganizationUsageContent({
                 },
                 {
                   key: 'cost',
-                  header: 'Billable',
+                  header: 'Credits',
                   align: 'right',
                   render: (row) => (
                     <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -536,7 +536,7 @@ export function OrganizationUsageContent({
                   },
                   {
                     key: 'cost',
-                    header: 'Billable',
+                    header: 'Credits',
                     align: 'right',
                     render: (row) => (
                       <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -568,7 +568,7 @@ export function OrganizationUsageContent({
               },
               {
                 key: 'cost',
-                header: 'Billable',
+                header: 'Credits',
                 align: 'right',
                 render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
               },
@@ -599,7 +599,7 @@ export function OrganizationUsageContent({
               },
               {
                 key: 'cost',
-                header: 'Billable',
+                header: 'Credits',
                 align: 'right',
                 render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
               },
@@ -625,7 +625,7 @@ export function OrganizationUsageContent({
                   },
                   {
                     key: 'cost',
-                    header: 'Billable',
+                    header: 'Credits',
                     align: 'right',
                     render: (row) => (
                       <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -650,7 +650,7 @@ export function OrganizationUsageContent({
                     },
                     {
                       key: 'cost',
-                      header: 'Billable',
+                      header: 'Credits',
                       align: 'right',
                       render: (row) => (
                         <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -676,7 +676,7 @@ export function OrganizationUsageContent({
                     },
                     {
                       key: 'cost',
-                      header: 'Billable',
+                      header: 'Credits',
                       align: 'right',
                       render: (row) => (
                         <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />

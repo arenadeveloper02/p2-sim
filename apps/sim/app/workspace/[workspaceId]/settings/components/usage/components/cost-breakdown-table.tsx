@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/core/utils/cn'
-import { formatDollarAmount } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
+import { formatBillableWithCredits } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 
 export interface CostBreakdownColumn<T> {
   key: string
@@ -79,20 +79,10 @@ export function CostBreakdownTable<T>({
 
 interface CostCellProps {
   billableCost: number
-  rawCost: number
-  showRaw?: boolean
+  rawCost?: number
 }
 
-/** Renders billable cost with optional raw cost when they differ. */
-export function CostCell({ billableCost, rawCost, showRaw = true }: CostCellProps) {
-  const hasRawDelta = showRaw && rawCost > 0 && Math.abs(rawCost - billableCost) > 0.0001
-
-  return (
-    <div className='flex flex-col items-end gap-0.5'>
-      <span>{formatDollarAmount(billableCost)}</span>
-      {hasRawDelta && (
-        <span className='text-[var(--text-muted)] text-xs'>raw {formatDollarAmount(rawCost)}</span>
-      )}
-    </div>
-  )
+/** Renders billable cost as credits. */
+export function CostCell({ billableCost }: CostCellProps) {
+  return <span>{formatBillableWithCredits(billableCost)}</span>
 }

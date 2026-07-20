@@ -52,6 +52,33 @@ export function scaleUsageLogCost(cost: number): number {
   return multiplier === 1 ? cost : cost * multiplier
 }
 
+/**
+ * Converts a repriced COGS target into the billable amount persisted in `usage_log.cost`.
+ * External / Cost-block rows pass through unchanged (multiplier 1).
+ */
+export function billableReconciliationAmount(
+  category: UsageLogCategory,
+  rawAmount: number
+): number {
+  if (rawAmount <= 0) return rawAmount
+  if (category === 'external') return rawAmount
+  return scaleUsageLogCost(rawAmount)
+}
+
+/**
+ * Inverse of {@link billableReconciliationAmount} for positive ledger increments.
+ * `recordUsage` scales raw entry costs, so reconciliation deltas are emitted as COGS.
+ */
+export function rawUsageAmountFromBillable(
+  category: UsageLogCategory,
+  billableAmount: number
+): number {
+  if (billableAmount <= 0) return billableAmount
+  if (category === 'external') return billableAmount
+  const multiplier = getUsageLogCostMultiplier()
+  return multiplier === 1 ? billableAmount : billableAmount / multiplier
+}
+
 function scaleUsageEntry<T extends UsageEntry>(entry: T, multiplier: number): T {
   const rawCost = entry.rawCost ?? entry.cost
   const effectiveMultiplier =

@@ -1,6 +1,25 @@
+import {
+  FALAI_IMAGE_MODEL_IDS,
+  IMAGE_BLOCK_MODEL_IDS,
+} from '@/lib/image-generation/block-model-config'
 import type { TraceSpan } from '@/lib/logs/types'
 
 export const UNATTRIBUTED_AGENT_TOOLS_ID = 'unattributed_agent_tools'
+
+/** Tool ids whose embedded costs should split by underlying image model when available. */
+export const IMAGE_AGGREGATE_TOOL_IDS = new Set([
+  'image_generate',
+  'openai_image',
+  'google_imagen',
+  'google_nano_banana',
+])
+
+const LEGACY_IMAGE_AGGREGATE_TOOL_KEY = 'image_generate'
+
+const IMAGE_GENERATION_MODEL_IDS = new Set<string>([
+  ...IMAGE_BLOCK_MODEL_IDS,
+  ...FALAI_IMAGE_MODEL_IDS,
+])
 
 type ToolCostSpan = {
   type?: string
@@ -20,7 +39,62 @@ export function getSpanToolOutputCost(span: ToolCostSpan): number {
   return typeof total === 'number' && Number.isFinite(total) && total > 0 ? total : 0
 }
 
-/** Sums billable tool output costs under a span tree, keyed by tool name. */
+/** Returns the billed image model from tool output when present. */
+export function extractToolOutputModel(output: unknown): string | null {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return null
+  const record = output as Record<string, unknown>
+
+  if (typeof record.model === 'string' && record.model.trim().length > 0) {
+    return record.model.trim()
+  }
+
+  const cost = record.cost
+  if (cost && typeof cost === 'object' && !Array.isArray(cost)) {
+    const costModel = (cost as Record<string, unknown>).model
+    if (typeof costModel === 'string' && costModel.trim().length > 0) {
+      return costModel.trim()
+    }
+  }
+
+  const metadata = record.metadata
+  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    const metaModel = (metadata as Record<string, unknown>).model
+    if (typeof metaModel === 'string' && metaModel.trim().length > 0) {
+      return metaModel.trim()
+    }
+  }
+
+  return null
+}
+
+/** True when a billing key is an image tool id or a known image generation model id. */
+export function isImageGenerationBillingKey(key: string): boolean {
+  const normalized = key.trim()
+  if (!normalized) return false
+  if (IMAGE_AGGREGATE_TOOL_IDS.has(normalized)) return true
+  return IMAGE_GENERATION_MODEL_IDS.has(normalized)
+}
+
+/**
+ * Resolves the billing key for an embedded or standalone hosted tool span.
+ * Image aggregate tools prefer the underlying model id when output includes it.
+ */
+export function resolveEmbeddedToolCostKey(toolName: string, output?: unknown): string {
+  const normalizedTool = toolName.trim() || 'unknown_tool'
+  if (!IMAGE_AGGREGATE_TOOL_IDS.has(normalizedTool)) {
+    return normalizedTool
+  }
+
+  return extractToolOutputModel(output) ?? normalizedTool
+}
+
+export function hasLegacyAggregatedImageToolCosts(
+  embeddedToolCosts: Record<string, number> | undefined
+): boolean {
+  return Boolean(embeddedToolCosts && LEGACY_IMAGE_AGGREGATE_TOOL_KEY in embeddedToolCosts)
+}
+
+/** Sums billable tool output costs under a span tree, keyed by billing id. */
 export function extractEmbeddedToolCostsFromSpan(span: ToolCostSpan): Record<string, number> {
   const costs: Record<string, number> = {}
 
@@ -28,8 +102,8 @@ export function extractEmbeddedToolCostsFromSpan(span: ToolCostSpan): Record<str
     if (node.type === 'tool') {
       const cost = getSpanToolOutputCost(node)
       if (cost > 0) {
-        const name = node.name?.trim() || 'unknown_tool'
-        costs[name] = (costs[name] ?? 0) + cost
+        const key = resolveEmbeddedToolCostKey(node.name?.trim() || 'unknown_tool', node.output)
+        costs[key] = (costs[key] ?? 0) + cost
       }
     }
     node.children?.forEach(visit)
@@ -96,8 +170,8 @@ export function extractEmbeddedToolCostsFromTrace(
     if (span.type === 'tool' && spanModel === model) {
       const cost = getSpanToolOutputCost(span)
       if (cost > 0) {
-        const name = span.name?.trim() || 'unknown_tool'
-        costs[name] = (costs[name] ?? 0) + cost
+        const key = resolveEmbeddedToolCostKey(span.name?.trim() || 'unknown_tool', span.output)
+        costs[key] = (costs[key] ?? 0) + cost
       }
     }
     span.children?.forEach((child) => visit(child, spanModel))
@@ -128,8 +202,15 @@ export function resolveEmbeddedToolsForModel(params: {
   }
 
   let named = params.embeddedToolCosts ?? {}
-  if (Object.keys(named).length === 0 && params.traceSpans) {
-    named = extractEmbeddedToolCostsFromTrace(params.traceSpans, params.model)
+  const shouldPreferTrace =
+    Boolean(params.traceSpans) &&
+    (Object.keys(named).length === 0 || hasLegacyAggregatedImageToolCosts(named))
+
+  if (shouldPreferTrace && params.traceSpans) {
+    named = normalizeEmbeddedToolCosts(
+      extractEmbeddedToolCostsFromTrace(params.traceSpans, params.model),
+      toolCost
+    )
   }
 
   const tools = Object.entries(named)
@@ -145,6 +226,8 @@ export function resolveEmbeddedToolsForModel(params: {
 
 export function formatEmbeddedToolLabel(toolId: string): string {
   if (toolId === UNATTRIBUTED_AGENT_TOOLS_ID) return 'Unattributed agent tools'
-  if (toolId === 'image_generate') return 'Image Generator'
+  if (isImageGenerationBillingKey(toolId) && !IMAGE_AGGREGATE_TOOL_IDS.has(toolId)) {
+    return toolId
+  }
   return toolId.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
 }

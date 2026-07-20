@@ -28,7 +28,6 @@ import { OrganizationUsageContent } from '@/app/workspace/[workspaceId]/settings
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import {
   formatBillableWithCredits,
-  formatDollarAmount,
   formatPeriodLabel,
   formatSourceLabel,
   formatTokenCount,
@@ -185,7 +184,7 @@ function UsageDashboardContent({
               },
               {
                 key: 'cost',
-                header: 'Billable',
+                header: 'Credits',
                 align: 'right',
                 render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
               },
@@ -249,7 +248,7 @@ function UsageDashboardContent({
                 },
                 {
                   key: 'cost',
-                  header: 'Billable',
+                  header: 'Credits',
                   align: 'right',
                   render: (row) => (
                     <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -278,7 +277,7 @@ function UsageDashboardContent({
                   },
                   {
                     key: 'cost',
-                    header: 'Billable',
+                    header: 'Credits',
                     align: 'right',
                     render: (row) => (
                       <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -354,7 +353,7 @@ function UsageDashboardContent({
                       },
                       {
                         key: 'cost',
-                        header: 'Billable',
+                        header: 'Credits',
                         align: 'right',
                         render: (row) => (
                           <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -413,7 +412,7 @@ function UsageDashboardContent({
                   },
                   {
                     key: 'cost',
-                    header: 'Billable',
+                    header: 'Credits',
                     align: 'right',
                     render: (row) => (
                       <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -447,7 +446,7 @@ function UsageDashboardContent({
                 },
                 {
                   key: 'cost',
-                  header: 'Billable',
+                  header: 'Credits',
                   align: 'right',
                   render: (row) => (
                     <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -476,7 +475,7 @@ function UsageDashboardContent({
                   },
                   {
                     key: 'cost',
-                    header: 'Billable',
+                    header: 'Credits',
                     align: 'right',
                     render: (row) => (
                       <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -508,7 +507,7 @@ function UsageDashboardContent({
               },
               {
                 key: 'cost',
-                header: 'Billable',
+                header: 'Credits',
                 align: 'right',
                 render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
               },
@@ -539,7 +538,7 @@ function UsageDashboardContent({
               },
               {
                 key: 'cost',
-                header: 'Billable',
+                header: 'Credits',
                 align: 'right',
                 render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
               },
@@ -565,7 +564,7 @@ function UsageDashboardContent({
                   },
                   {
                     key: 'cost',
-                    header: 'Billable',
+                    header: 'Credits',
                     align: 'right',
                     render: (row) => (
                       <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -590,7 +589,7 @@ function UsageDashboardContent({
                     },
                     {
                       key: 'cost',
-                      header: 'Billable',
+                      header: 'Credits',
                       align: 'right',
                       render: (row) => (
                         <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -616,7 +615,7 @@ function UsageDashboardContent({
                     },
                     {
                       key: 'cost',
-                      header: 'Billable',
+                      header: 'Credits',
                       align: 'right',
                       render: (row) => (
                         <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -885,16 +884,6 @@ export function Usage() {
           </div>
 
           <div className='flex flex-wrap gap-3'>
-            <SummaryCard
-              label='Billable cost'
-              value={data ? formatBillableWithCredits(data.summary.billableCost) : '—'}
-              isLoading={isLoading}
-            />
-            <SummaryCard
-              label='Raw cost'
-              value={data ? formatDollarAmount(data.summary.rawCost) : '—'}
-              isLoading={isLoading}
-            />
             <SummaryCard
               label='Tokens'
               value={data ? formatTokenCount(data.summary.usage.totalTokens) : '—'}

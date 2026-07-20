@@ -6,6 +6,7 @@ import {
   type LineChartMultiSeries,
   type LineChartPoint,
 } from '@/app/workspace/[workspaceId]/logs/components/dashboard/components'
+import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 
 interface UsageTimeSeriesPoint {
   bucketStart: string
@@ -35,7 +36,7 @@ export function UsageTimeSeriesChart({
   const billableData = useMemo((): LineChartPoint[] => {
     return timeSeries.map((bucket) => ({
       timestamp: bucket.bucketStart,
-      value: bucket.billableCost,
+      value: dollarsToCredits(bucket.billableCost),
     }))
   }, [timeSeries])
 
@@ -89,7 +90,7 @@ export function UsageTimeSeriesChart({
                 aria-hidden='true'
                 className='inline-block h-[2px] w-3 rounded-full bg-[var(--success)]'
               />
-              Billable cost
+              Credits
             </span>
             <span className='inline-flex items-center gap-1.5'>
               <span
@@ -101,7 +102,13 @@ export function UsageTimeSeriesChart({
           </div>
         </div>
         <div className='px-3.5 py-2.5'>
-          <LineChart data={billableData} label='' color='var(--success)' series={series} />
+          <LineChart
+            data={billableData}
+            label=''
+            color='var(--success)'
+            unit=' credits'
+            series={series}
+          />
         </div>
       </div>
 

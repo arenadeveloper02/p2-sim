@@ -470,7 +470,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
                 inputTokens: 1000,
                 outputTokens: 100,
                 toolCost: 0.04,
-                embeddedToolCosts: { image_generate: 0.04 },
+                embeddedToolCosts: { 'gpt-image-1.5': 0.04 },
               },
             },
           ],
@@ -504,7 +504,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     ])
     expect(analytics.byTool).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ toolId: 'image_generate', billableCost: 0.04 }),
+        expect.objectContaining({ toolId: 'gpt-image-1.5', billableCost: 0.04 }),
         expect.objectContaining({ toolId: 'exa_search', billableCost: 0.01 }),
       ])
     )

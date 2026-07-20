@@ -46,7 +46,7 @@ export function LineagePanel({
               </span>
             </p>
             <p className='mt-0.5 text-[var(--text-muted)] text-xs'>
-              Inclusive cost {formatBillableWithCredits(drillDown.inclusiveBillableCost)} ·{' '}
+              Inclusive credits {formatBillableWithCredits(drillDown.inclusiveBillableCost)} ·{' '}
               {drillDown.executions.length.toLocaleString()} runs in tree
             </p>
           </div>
@@ -113,7 +113,7 @@ export function LineagePanel({
             },
             {
               key: 'cost',
-              header: 'Billable',
+              header: 'Credits',
               align: 'right',
               render: (row) => (
                 <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
@@ -181,7 +181,7 @@ export function LineagePanel({
           },
           {
             key: 'cost',
-            header: 'Inclusive billable',
+            header: 'Inclusive credits',
             align: 'right',
             render: (row) => (
               <CostCell

@@ -547,7 +547,7 @@ describe('calculateCostSummary', () => {
             id: 'tool-1',
             type: 'tool',
             name: 'image_generate',
-            output: { cost: { total: 0.02 } },
+            output: { model: 'gpt-image-1.5', cost: { total: 0.02 } },
           },
           {
             id: 'tool-2',
@@ -563,7 +563,7 @@ describe('calculateCostSummary', () => {
 
     expect(result.models['gpt-4o'].toolCost).toBe(0.03)
     expect(result.models['gpt-4o'].embeddedToolCosts).toEqual({
-      image_generate: 0.02,
+      'gpt-image-1.5': 0.02,
       exa_search: 0.01,
     })
   })

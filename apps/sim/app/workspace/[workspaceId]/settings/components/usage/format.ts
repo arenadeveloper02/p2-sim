@@ -1,4 +1,4 @@
-import { formatCredits } from '@/lib/billing/credits/conversion'
+import { formatCreditCost } from '@/lib/billing/credits/conversion'
 import { formatEmbeddedToolLabel } from '@/lib/logs/embedded-tool-costs'
 import type {
   UsageActorTypeValue,
@@ -48,25 +48,9 @@ export const MOTHERSHIP_USAGE_SOURCES =
 
 type UsageMetrics = WorkspaceUsageAnalytics['summary']['usage']
 
-/**
- * Format a dollar amount for dashboard display.
- * Small non-zero values keep extra precision; larger values use currency formatting.
- */
-export function formatDollarAmount(dollars: number): string {
-  if (dollars === 0) return '$0.00'
-  if (Math.abs(dollars) < 0.01) return `$${dollars.toFixed(4)}`
-  return new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(dollars)
-}
-
-/** Format billable cost as dollars with credits in parentheses. */
+/** Format billable dollar cost as credits for the usage dashboard (1 credit = $0.005). */
 export function formatBillableWithCredits(dollars: number): string {
-  const credits = formatCredits(dollars)
-  return `${formatDollarAmount(dollars)} (${credits} credits)`
+  return formatCreditCost(dollars, { emptyForZeroOrLess: false }) ?? '—'
 }
 
 /** Format a usage_log source key for display. */
