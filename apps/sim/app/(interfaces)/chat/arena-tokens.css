@@ -1,0 +1,1000 @@
+/**
+ * Design system tokens â€” edit by hand.
+ * Figma reference: src/tokens/DS_Token_*.json
+ *
+ * Structure
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * 1. Primitives   Raw hex values â€” only place colors/sizes are defined
+ * 2. Semantic     Intent-based aliases â†’ var(--color-ds-*)
+ * 3. Layout       Spacing, radius, elevation, motion, opacity, component composite
+ * 4. Typography   Font scale primitives + composite utility classes
+ *
+ * Naming
+ * â”€â”€â”€â”€â”€â”€
+ * All tokens use the `ds-` prefix so legacy globals.css classes are unchanged.
+ * Tailwind examples: bg-ds-blue-600 Â· text-ds-text-primary Â· gap-ds-component-md Â· text-ds-heading
+ */
+
+/* =============================================================================
+   1. PRIMITIVES â€” COLOR
+   Raw palette from Figma primitives/color. Use directly for charts, tags, etc.
+   Prefer semantic tokens for UI chrome.
+   ============================================================================= */
+/**
+ * Scoped to `.deployed-chat` so Arena DS tokens only apply on the public chat
+ * surface (Tailwind v3 — `@theme` is not available).
+ */
+.deployed-chat {
+    /* â”€â”€ Base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-white: #ffffff;
+    --color-ds-black: #000000;
+    --color-ds-transparent: transparent;
+  
+    /* â”€â”€ Neutral (grey) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-grey-50: #f7f8f9;
+    --color-ds-grey-200: #e2e3e5;
+    --color-ds-grey-300: #c5c6cc;
+    --color-ds-grey-400: #a7aab2;
+    --color-ds-grey-500: #8a8d99;
+    --color-ds-grey-600: #6d717f;
+    --color-ds-grey-700: #575a66;
+    --color-ds-grey-800: #41444c;
+    --color-ds-grey-900: #2c2d33;
+  
+    /* â”€â”€ Brand (blue) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-blue-50: #f3f8fe;
+    --color-ds-blue-200: #d1e3fa;
+    --color-ds-blue-300: #a3c7f6;
+    --color-ds-blue-400: #76abf1;
+    --color-ds-blue-500: #488fed;
+    --color-ds-blue-600: #1a73e8;
+    --color-ds-blue-700: #155cba;
+    --color-ds-blue-800: #10458b;
+    --color-ds-blue-900: #0a2e5d;
+  
+    /* â”€â”€ Graphic palettes (data viz, tags, illustrations) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-pink-50: #fff7f9;
+    --color-ds-pink-200: #fedce9;
+    --color-ds-pink-300: #fcbad2;
+    --color-ds-pink-400: #fb97bc;
+    --color-ds-pink-500: #f975a5;
+    --color-ds-pink-600: #f8528f;
+    --color-ds-pink-700: #c64272;
+    --color-ds-pink-800: #953156;
+    --color-ds-pink-900: #632139;
+  
+    --color-ds-purple-50: #fbf7fd;
+    --color-ds-purple-200: #f0e0f7;
+    --color-ds-purple-300: #e1c1ef;
+    --color-ds-purple-400: #d1a2e7;
+    --color-ds-purple-500: #c283df;
+    --color-ds-purple-600: #b364d7;
+    --color-ds-purple-700: #8f50ac;
+    --color-ds-purple-800: #6b3c81;
+    --color-ds-purple-900: #482856;
+  
+    --color-ds-sea-blue-50: #f2fbfd;
+    --color-ds-sea-blue-200: #ccedf7;
+    --color-ds-sea-blue-300: #99dcef;
+    --color-ds-sea-blue-400: #66cae6;
+    --color-ds-sea-blue-500: #33b9de;
+    --color-ds-sea-blue-600: #00a7d6;
+    --color-ds-sea-blue-700: #0086ab;
+    --color-ds-sea-blue-800: #006480;
+    --color-ds-sea-blue-900: #004356;
+  
+    --color-ds-yellow-50: #fdfcf3;
+    --color-ds-yellow-200: #f9f4d0;
+    --color-ds-yellow-300: #f2e8a0;
+    --color-ds-yellow-400: #ecdd71;
+    --color-ds-yellow-500: #e5d141;
+    --color-ds-yellow-600: #dfc612;
+    --color-ds-yellow-700: #b29e0e;
+    --color-ds-yellow-800: #86770b;
+    --color-ds-yellow-900: #594f07;
+  
+    --color-ds-green-50: #f5fcf9;
+    --color-ds-green-200: #d8f4e6;
+    --color-ds-green-300: #b1e9ce;
+    --color-ds-green-400: #89deb5;
+    --color-ds-green-500: #62d39d;
+    --color-ds-green-600: #3bc884;
+    --color-ds-green-700: #2fa06a;
+    --color-ds-green-800: #23784f;
+    --color-ds-green-900: #185035;
+  
+    /* â”€â”€ Feedback (semantic status palettes) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-success-50: #f5fcf9;
+    --color-ds-success-200: #d8f4e6;
+    --color-ds-success-300: #b1e9ce;
+    --color-ds-success-400: #89deb5;
+    --color-ds-success-500: #62d39d;
+    --color-ds-success-600: #3bc884;
+    --color-ds-success-700: #2fa06a;
+    --color-ds-success-800: #23784f;
+    --color-ds-success-900: #185035;
+  
+    --color-ds-warning-50: #fff9f5;
+    --color-ds-warning-200: #fee6da;
+    --color-ds-warning-300: #fdcdb5;
+    --color-ds-warning-400: #fdb38f;
+    --color-ds-warning-500: #fc9a6a;
+    --color-ds-warning-600: #fb8145;
+    --color-ds-warning-700: #c96737;
+    --color-ds-warning-800: #974d29;
+    --color-ds-warning-900: #64341c;
+  
+    --color-ds-error-50: #fff3f3;
+    --color-ds-error-200: #fdd1d1;
+    --color-ds-error-300: #faa3a3;
+    --color-ds-error-400: #f87676;
+    --color-ds-error-500: #f54848;
+    --color-ds-error-600: #f31a1a;
+    --color-ds-error-700: #c21515;
+    --color-ds-error-800: #921010;
+    --color-ds-error-900: #610a0a;
+  
+    /* =============================================================================
+       2. SEMANTIC â€” COLOR
+       Bind components to these, not raw primitives. Wired in shadcn.css too.
+       ============================================================================= */
+  
+    /* â”€â”€ Text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-text-primary: var(--color-ds-grey-900);
+    --color-ds-text-secondary: var(--color-ds-grey-700);
+    --color-ds-text-tertiary: var(--color-ds-grey-500);
+    --color-ds-text-disabled: var(--color-ds-grey-300);
+    --color-ds-text-placeholder: var(--color-ds-grey-400);
+    --color-ds-text-inverse: var(--color-ds-white);
+    --color-ds-text-on-brand: var(--color-ds-white);
+    --color-ds-text-link: var(--color-ds-blue-600);
+    --color-ds-text-link-hover: var(--color-ds-blue-700);
+
+    /* â”€â”€ Icon â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+    --color-ds-icon-default: var(--color-ds-grey-700);
+    --color-ds-icon-subtle: var(--color-ds-grey-500);
+    --color-ds-icon-brand: var(--color-ds-blue-600);
+    --color-ds-icon-inverse: var(--color-ds-white);
+    --color-ds-icon-disabled: var(--color-ds-grey-300);
+  
+    /* â”€â”€ Surface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-surface-page: var(--color-ds-white);
+    --color-ds-surface-subtle: var(--color-ds-grey-50);
+    --color-ds-surface-raised: var(--color-ds-white);
+    --color-ds-surface-inverse: var(--color-ds-grey-900);
+    --color-ds-surface-overlay: rgb(44 45 51 / 72%); /* grey-900 @ 72% */
+  
+    /* â”€â”€ Border â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-border-default: var(--color-ds-grey-200);
+    --color-ds-border-strong: var(--color-ds-grey-400);
+    --color-ds-border-subtle: var(--color-ds-grey-50);
+    --color-ds-border-focus: var(--color-ds-blue-600);
+    --color-ds-border-error: var(--color-ds-error-600);
+    --color-ds-border-disabled: var(--color-ds-grey-300);
+  
+    /* â”€â”€ Brand â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-brand-default: var(--color-ds-blue-600);
+    --color-ds-brand-hover: var(--color-ds-blue-700);
+    --color-ds-brand-pressed: var(--color-ds-blue-800);
+    --color-ds-brand-surface: var(--color-ds-blue-50);
+  
+    /* â”€â”€ Interactive (buttons, links, controls) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-interactive-default: var(--color-ds-blue-600);
+    --color-ds-interactive-hover: var(--color-ds-blue-700);
+    --color-ds-interactive-pressed: var(--color-ds-blue-800);
+    --color-ds-interactive-disabled: var(--color-ds-grey-300);
+    --color-ds-interactive-selected: var(--color-ds-blue-50);
+    --color-ds-interactive-on-interactive: var(--color-ds-white);
+    --color-ds-interactive-destructive: var(--color-ds-error-600);
+  
+    /* â”€â”€ Focus â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-focus-ring: rgb(26 115 232 / 30%); /* blue-600 @ 30% */
+  
+    /* â”€â”€ Status â€” success â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-status-success-default: var(--color-ds-success-600);
+    --color-ds-status-success-surface: var(--color-ds-success-50);
+    --color-ds-status-success-text: var(--color-ds-success-800);
+    --color-ds-status-success-border: var(--color-ds-success-300);
+  
+    /* â”€â”€ Status â€” warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-status-warning-default: var(--color-ds-warning-600);
+    --color-ds-status-warning-surface: var(--color-ds-warning-50);
+    --color-ds-status-warning-text: var(--color-ds-warning-800);
+    --color-ds-status-warning-border: var(--color-ds-warning-300);
+  
+    /* â”€â”€ Status â€” error â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-status-error-default: var(--color-ds-error-600);
+    --color-ds-status-error-surface: var(--color-ds-error-50);
+    --color-ds-status-error-text: var(--color-ds-error-800);
+    --color-ds-status-error-border: var(--color-ds-error-300);
+  
+    /* â”€â”€ Status â€” info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --color-ds-status-info-default: var(--color-ds-blue-600);
+    --color-ds-status-info-surface: var(--color-ds-blue-50);
+    --color-ds-status-info-text: var(--color-ds-blue-800);
+    --color-ds-status-info-border: var(--color-ds-blue-300);
+  
+    /* â”€â”€ Chart & data-viz â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* Structural â€” same in Default and Colorblind Safe modes                     */
+  
+    --color-ds-chart-axis: var(--color-ds-grey-400);
+    --color-ds-chart-grid-line: var(--color-ds-grey-200);
+    --color-ds-chart-label: var(--color-ds-grey-700);
+    --color-ds-chart-background: var(--color-ds-white);
+    --color-ds-chart-tooltip-bg: var(--color-ds-grey-900);
+    --color-ds-chart-tooltip-text: var(--color-ds-white);
+    --color-ds-chart-positive: var(--color-ds-success-600);
+    --color-ds-chart-negative: var(--color-ds-error-600);
+  
+    /* Series â€” Default palette (series 6â€“7 swap under data-chart-palette)        */
+  
+    --color-ds-chart-series-1: var(--color-ds-blue-600);
+    --color-ds-chart-series-2: var(--color-ds-warning-600);
+    --color-ds-chart-series-3: var(--color-ds-purple-600);
+    --color-ds-chart-series-4: var(--color-ds-sea-blue-600);
+    --color-ds-chart-series-5: var(--color-ds-yellow-600);
+    --color-ds-chart-series-6: var(--color-ds-pink-600);
+    --color-ds-chart-series-7: var(--color-ds-green-600);
+    --color-ds-chart-series-8: var(--color-ds-grey-600);
+  
+    /* =============================================================================
+       3. LAYOUT â€” SPACING & RADIUS
+       Tailwind: gap-ds-component-md Â· p-ds-layout-lg Â· rounded-ds-md Â· shadow-ds-md
+  
+       Responsive spacing = Figma mode table (columns = breakpoints, rows = tokens)
+       â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                          XSM    SM     MD     LG     XLG
+       spacing/component/2xs   2      2      4      8      8
+       spacing/component/xs    4      4      8      12     12
+       spacing/component/sm    8      8      12     16     16
+       spacing/component/md    12     12     16     20     20
+       spacing/component/lg    16     16     24     32     32
+       spacing/component/xl    24     24     32     48     48
+  
+       spacing/layout/sm       16     16     24     32     32
+       spacing/layout/md       24     24     32     48     48
+       spacing/layout/lg       32     32     48     64     64
+       spacing/layout/xl       48     48     64     80     80
+       spacing/layout/2xl      64     64     80     96     96
+       spacing/layout/3xl      80     80     96     128    128
+       spacing/layout/4xl      96     96     128    128    128
+  
+       Breakpoints: XSM base Â· SM 640px Â· MD 768px Â· LG 1024px Â· XLG 1280px
+       Values set per column in @layer base below.
+       ============================================================================= */
+  
+    /* Registered for Tailwind â€” active values overridden per breakpoint in Â§3b */
+    --spacing-ds-component-2xs: 2px;
+    --spacing-ds-component-xs: 4px;
+    --spacing-ds-component-sm: 8px;
+    --spacing-ds-component-md: 12px;
+    --spacing-ds-component-lg: 16px;
+    --spacing-ds-component-xl: 24px;
+  
+    --spacing-ds-layout-sm: 16px;
+    --spacing-ds-layout-md: 24px;
+    --spacing-ds-layout-lg: 32px;
+    --spacing-ds-layout-xl: 48px;
+    --spacing-ds-layout-2xl: 64px;
+    --spacing-ds-layout-3xl: 80px;
+    --spacing-ds-layout-4xl: 96px;
+  
+    /* â”€â”€ Radius â€” static px values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --radius-ds-none: 0px;
+    --radius-ds-sm: 4px;
+    --radius-ds-md: 8px;
+    --radius-ds-lg: 12px;
+    --radius-ds-xl: 16px;
+    --radius-ds-pill: 24px;
+    --radius-ds-full: 9999px;
+  
+    /* â”€â”€ Elevation (box-shadow) â€” depth levels, not responsive breakpoints â”€â”€â”€ */
+    /* xsm  none                          Â· flat â€” smallest components          */
+    /* sm   0 1px 2px  rgba(44,45,51,.08) Â· chips, inline cards               */
+    /* md   0 2px 8px  rgba(44,45,51,.10) Â· cards at rest                     */
+    /* lg   0 4px 16px rgba(44,45,51,.12) Â· dropdowns, popovers, tooltips     */
+    /* xlg  0 8px 32px rgba(44,45,51,.16) Â· modals, drawers, dialogs          */
+  
+    --shadow-ds-xsm: none;
+    --shadow-ds-sm: 0px 1px 2px rgba(44, 45, 51, 0.08);
+    --shadow-ds-md: 0px 2px 8px rgba(44, 45, 51, 0.10);
+    --shadow-ds-lg: 0px 4px 16px rgba(44, 45, 51, 0.12);
+    --shadow-ds-xlg: 0px 8px 32px rgba(44, 45, 51, 0.16);
+  
+    /* â”€â”€ Component composite (Figma component/* â€” 12 properties Ã— 5 modes) â”€â”€â”€ */
+    /* XSM defaults; responsive overrides in Â§3c. Consumed by .ds-component.     */
+  
+    --ds-component-height: 24px;
+    --ds-component-padding-x: 8px;
+    --ds-component-padding-y: 4px;
+    --ds-component-gap: 4px;
+    --ds-component-icon-size: 12px;
+    --ds-component-font-size: 12px;
+    --ds-component-line-height: 16px;
+    --ds-component-letter-spacing: 0.25px;
+    --ds-component-border-width: 1px;
+    --ds-component-radius: var(--radius-ds-sm);
+    --ds-component-font-weight: 400;
+    --ds-component-elevation: var(--shadow-ds-xsm);
+  
+    /* â”€â”€ Motion / duration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* instant 0ms   Â· toggles, checkboxes                                      */
+    /* fast    100ms Â· hover, ripple, focus rings                               */
+    /* normal  200ms Â· dropdowns, tooltips, chips â€” default                     */
+    /* slow    300ms Â· modals, drawers, dialogs                                 */
+    /* slower  500ms Â· onboarding, page transitions                            */
+  
+    --duration-ds-instant: 0ms;
+    --duration-ds-fast: 100ms;
+    --duration-ds-normal: 200ms;
+    --duration-ds-slow: 300ms;
+    --duration-ds-slower: 500ms;
+  
+    /* â”€â”€ Motion / easing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --ease-ds-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-ds-decelerate: cubic-bezier(0, 0, 0.2, 1);
+    --ease-ds-accelerate: cubic-bezier(0.4, 0, 1, 1);
+    --ease-ds-sharp: cubic-bezier(0.4, 0, 0.6, 1);
+  
+    /* â”€â”€ Motion / composed transitions (duration + easing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* hover      fast + standard    Â· hover / focus state                       */
+    /* dropdown   normal + decelerate Â· dropdown open                            */
+    /* enter      slow + decelerate  Â· modal / drawer enter                      */
+    /* exit       normal + accelerate Â· modal / drawer exit                      */
+    /* accordion  normal + standard  Â· accordion expand                          */
+    /* dismiss    slow + accelerate  Â· toast / snackbar dismiss                  */
+  
+    --transition-ds-hover: 100ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-ds-dropdown: 200ms cubic-bezier(0, 0, 0.2, 1);
+    --transition-ds-enter: 300ms cubic-bezier(0, 0, 0.2, 1);
+    --transition-ds-exit: 200ms cubic-bezier(0.4, 0, 1, 1);
+    --transition-ds-accordion: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-ds-dismiss: 300ms cubic-bezier(0.4, 0, 1, 1);
+  
+    /* â”€â”€ Opacity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* disabled 0.38 Â· disabled interactive elements                             */
+    /* medium   0.60 Â· secondary overlays, placeholder shimmer                   */
+    /* overlay  0.72 Â· modal / drawer page dimming layer                         */
+    /* full     1.00 Â· fully opaque â€” default                                    */
+  
+    --opacity-ds-disabled: 0.38;
+    --opacity-ds-medium: 0.60;
+    --opacity-ds-overlay: 0.72;
+    --opacity-ds-full: 1;
+  
+    /* =============================================================================
+       4. TYPOGRAPHY â€” PRIMITIVES
+       Number scales from Figma primitives/number. Composite classes below reference these.
+       ============================================================================= */
+  
+    /* â”€â”€ Font family & weight â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --font-ds-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+    --font-weight-ds-regular: 400;
+    --font-weight-ds-medium: 500;
+    --font-weight-ds-semibold: 600;
+  
+    /* â”€â”€ Heading scale (SemiBold) â€” fontSize / lineHeight â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --text-ds-heading-xsm: 16px;
+    /** Figma `Fontsize/heading/medium` — landing title */
+    --text-ds-heading-medium: 18px;
+    --text-ds-heading-sm: 20px;
+    --text-ds-heading-md: 24px;
+    --text-ds-heading-lg: 32px;
+    --text-ds-heading-xlg: 40px;
+
+    --leading-ds-heading-xsm: 24px;
+    --leading-ds-heading-medium: 27px;
+    --leading-ds-heading-sm: 28px;
+    --leading-ds-heading-md: 32px;
+    --leading-ds-heading-lg: 40px;
+    --leading-ds-heading-xlg: 48px;
+  
+    /* â”€â”€ Body scale (Regular) â€” fontSize / lineHeight â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --text-ds-body-xsm: 12px;
+    --text-ds-body-sm: 14px;
+    --text-ds-body-md: 16px;
+    --text-ds-body-lg: 18px;
+    --text-ds-body-xlg: 20px;
+  
+    --leading-ds-body-xsm: 20px;
+    --leading-ds-body-sm: 20px;
+    --leading-ds-body-md: 24px;
+    --leading-ds-body-lg: 26px;
+    --leading-ds-body-xlg: 26px;
+  
+    /* â”€â”€ Label scale (Medium) â€” fontSize / lineHeight â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --text-ds-label-xsm: 10px;
+    --text-ds-label-sm: 12px;
+    --text-ds-label-md: 14px;
+    --text-ds-label-lg: 16px;
+    --text-ds-label-xlg: 18px;
+  
+    --leading-ds-label-xsm: 14px;
+    --leading-ds-label-sm: 14px;
+    --leading-ds-label-md: 16px;
+    --leading-ds-label-lg: 20px;
+    --leading-ds-label-xlg: 24px;
+  
+    /* â”€â”€ Letter spacing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    --tracking-ds-heading: 0;
+    --tracking-ds-body: 0;
+    --tracking-ds-label: 0.25px;
+    --tracking-ds-caption: 0.4px;
+  }
+  
+  /* =============================================================================
+     2b. CHART â€” Colorblind Safe series palette
+     Add data-chart-palette="colorblind-safe" on chart container to swap series 6â€“7.
+     ============================================================================= */
+  @layer base {
+    .deployed-chat [data-chart-palette="colorblind-safe"] {
+      --color-ds-chart-series-6: var(--color-ds-sea-blue-800);
+      --color-ds-chart-series-7: var(--color-ds-warning-800);
+    }
+  }
+  
+  /* =============================================================================
+     3b. RESPONSIVE SPACING â€” one :root block per Figma mode (desktop breakpoint)
+     Modes: XSM base Â· SM 1280 Â· MD 1440 Â· LG 1728 Â· XLG 1920
+     Each block sets all component rows + all layout-spacing rows for that mode.
+     ============================================================================= */
+  @layer base {
+    .deployed-chat {
+      /* XSM â€” spacing/component (base Â· desktop 1024) */
+      --spacing-ds-component-2xs: 2px;
+      --spacing-ds-component-xs: 4px;
+      --spacing-ds-component-sm: 8px;
+      --spacing-ds-component-md: 12px;
+      --spacing-ds-component-lg: 16px;
+      --spacing-ds-component-xl: 24px;
+  
+      /* XSM â€” spacing/layout */
+      --spacing-ds-layout-sm: 16px;
+      --spacing-ds-layout-md: 24px;
+      --spacing-ds-layout-lg: 32px;
+      --spacing-ds-layout-xl: 48px;
+      --spacing-ds-layout-2xl: 64px;
+      --spacing-ds-layout-3xl: 80px;
+      --spacing-ds-layout-4xl: 96px;
+    }
+  
+    @media (min-width: 1280px) {
+      .deployed-chat {
+        /* SM â€” spacing/component Â· desktop 1280 */
+        --spacing-ds-component-2xs: 2px;
+        --spacing-ds-component-xs: 4px;
+        --spacing-ds-component-sm: 8px;
+        --spacing-ds-component-md: 12px;
+        --spacing-ds-component-lg: 16px;
+        --spacing-ds-component-xl: 24px;
+  
+        /* SM â€” spacing/layout */
+        --spacing-ds-layout-sm: 16px;
+        --spacing-ds-layout-md: 24px;
+        --spacing-ds-layout-lg: 32px;
+        --spacing-ds-layout-xl: 48px;
+        --spacing-ds-layout-2xl: 64px;
+        --spacing-ds-layout-3xl: 80px;
+        --spacing-ds-layout-4xl: 96px;
+      }
+    }
+  
+    @media (min-width: 1440px) {
+      .deployed-chat {
+        /* MD â€” spacing/component Â· desktop 1440 */
+        --spacing-ds-component-2xs: 4px;
+        --spacing-ds-component-xs: 8px;
+        --spacing-ds-component-sm: 12px;
+        --spacing-ds-component-md: 16px;
+        --spacing-ds-component-lg: 24px;
+        --spacing-ds-component-xl: 32px;
+  
+        /* MD â€” spacing/layout */
+        --spacing-ds-layout-sm: 24px;
+        --spacing-ds-layout-md: 32px;
+        --spacing-ds-layout-lg: 48px;
+        --spacing-ds-layout-xl: 64px;
+        --spacing-ds-layout-2xl: 80px;
+        --spacing-ds-layout-3xl: 96px;
+        --spacing-ds-layout-4xl: 128px;
+      }
+    }
+  
+    @media (min-width: 1728px) {
+      .deployed-chat {
+        /* LG â€” spacing/component Â· desktop 1728 */
+        --spacing-ds-component-2xs: 8px;
+        --spacing-ds-component-xs: 12px;
+        --spacing-ds-component-sm: 16px;
+        --spacing-ds-component-md: 20px;
+        --spacing-ds-component-lg: 32px;
+        --spacing-ds-component-xl: 48px;
+  
+        /* LG â€” spacing/layout */
+        --spacing-ds-layout-sm: 32px;
+        --spacing-ds-layout-md: 48px;
+        --spacing-ds-layout-lg: 64px;
+        --spacing-ds-layout-xl: 80px;
+        --spacing-ds-layout-2xl: 96px;
+        --spacing-ds-layout-3xl: 128px;
+        --spacing-ds-layout-4xl: 128px;
+      }
+    }
+  
+    @media (min-width: 1920px) {
+      .deployed-chat {
+        /* XLG â€” spacing/component Â· desktop 1920 */
+        --spacing-ds-component-2xs: 8px;
+        --spacing-ds-component-xs: 12px;
+        --spacing-ds-component-sm: 16px;
+        --spacing-ds-component-md: 20px;
+        --spacing-ds-component-lg: 32px;
+        --spacing-ds-component-xl: 48px;
+  
+        /* XLG â€” spacing/layout */
+        --spacing-ds-layout-sm: 32px;
+        --spacing-ds-layout-md: 48px;
+        --spacing-ds-layout-lg: 64px;
+        --spacing-ds-layout-xl: 80px;
+        --spacing-ds-layout-2xl: 96px;
+        --spacing-ds-layout-3xl: 128px;
+        --spacing-ds-layout-4xl: 128px;
+      }
+    }
+  }
+  
+  /* =============================================================================
+     3c. RESPONSIVE COMPONENT â€” Figma component/* (12 props Ã— 5 desktop modes)
+     XSM base (desktop 1024) Â· SM 1280 Â· MD 1440 Â· LG 1728 Â· XLG 1920
+     ============================================================================= */
+  @layer base {
+    .deployed-chat {
+      /* XSM Â· desktop 1024 */
+      --ds-component-height: 24px;
+      --ds-component-padding-x: 8px;
+      --ds-component-padding-y: 4px;
+      --ds-component-gap: 4px;
+      --ds-component-icon-size: 12px;
+      --ds-component-font-size: var(--text-ds-body-xsm);
+      --ds-component-line-height: 16px;
+      --ds-component-letter-spacing: 0.25px;
+      --ds-component-border-width: 1px;
+      --ds-component-radius: var(--radius-ds-sm);
+      --ds-component-font-weight: 400;
+      --ds-component-elevation: var(--shadow-ds-xsm);
+    }
+  
+    @media (min-width: 1280px) {
+      .deployed-chat {
+        /* SM Â· desktop 1280 */
+        --ds-component-height: 32px;
+        --ds-component-padding-x: 12px;
+        --ds-component-padding-y: 4px;
+        --ds-component-gap: 4px;
+        --ds-component-icon-size: 16px;
+        --ds-component-font-size: var(--text-ds-body-sm);
+        --ds-component-line-height: 20px;
+        --ds-component-letter-spacing: 0.25px;
+        --ds-component-border-width: 1px;
+        --ds-component-radius: var(--radius-ds-md);
+        --ds-component-font-weight: 400;
+        --ds-component-elevation: var(--shadow-ds-sm);
+      }
+    }
+  
+    @media (min-width: 1440px) {
+      .deployed-chat {
+        /* MD Â· desktop 1440 */
+        --ds-component-height: 40px;
+        --ds-component-padding-x: 16px;
+        --ds-component-padding-y: 8px;
+        --ds-component-gap: 8px;
+        --ds-component-icon-size: 20px;
+        --ds-component-font-size: var(--text-ds-body-md);
+        --ds-component-line-height: 24px;
+        --ds-component-letter-spacing: 0px;
+        --ds-component-border-width: 1px;
+        --ds-component-radius: var(--radius-ds-lg);
+        --ds-component-font-weight: 500;
+        --ds-component-elevation: var(--shadow-ds-md);
+      }
+    }
+  
+    @media (min-width: 1728px) {
+      .deployed-chat {
+        /* LG Â· desktop 1728 */
+        --ds-component-height: 48px;
+        --ds-component-padding-x: 20px;
+        --ds-component-padding-y: 8px;
+        --ds-component-gap: 8px;
+        --ds-component-icon-size: 24px;
+        --ds-component-font-size: var(--text-ds-body-lg);
+        --ds-component-line-height: 26px;
+        --ds-component-letter-spacing: 0px;
+        --ds-component-border-width: 2px;
+        --ds-component-radius: var(--radius-ds-lg);
+        --ds-component-font-weight: 500;
+        --ds-component-elevation: var(--shadow-ds-lg);
+      }
+    }
+  
+    @media (min-width: 1920px) {
+      .deployed-chat {
+        /* XLG Â· desktop 1920 */
+        --ds-component-height: 56px;
+        --ds-component-padding-x: 24px;
+        --ds-component-padding-y: 12px;
+        --ds-component-gap: 12px;
+        --ds-component-icon-size: 28px;
+        --ds-component-font-size: var(--text-ds-body-xlg);
+        --ds-component-line-height: 28px;
+        --ds-component-letter-spacing: 0px;
+        --ds-component-border-width: 2px;
+        --ds-component-radius: var(--radius-ds-xl);
+        --ds-component-font-weight: 600;
+        --ds-component-elevation: var(--shadow-ds-xlg);
+      }
+    }
+  }
+  
+  /* =============================================================================
+     4. TYPOGRAPHY â€” COMPOSITE UTILITIES (type/*)
+     One class = Poppins + role weight + responsive size/line-height/tracking.
+  
+     Figma mode â†’ desktop breakpoint â†’ picks primitive scale key (xsm / sm / md / lg / xlg)
+     â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+     XSM  Â·  base      Â·  <1280px (incl. desktop 1024)
+     SM   Â·  â‰¥ 1280px  Â·  desktop â˜…
+     MD   Â·  â‰¥ 1440px
+     LG   Â·  â‰¥ 1728px
+     XLG  Â·  â‰¥ 1920px
+  
+     type/heading Â· SemiBold Â· letterSpacing/heading (0)
+     â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+     XSM          Â· 16/24   Â· heading/xsm
+     SM           Â· 20/28   Â· heading/sm
+     MD           Â· 24/32   Â· heading/md
+     LG           Â· 32/40   Â· heading/lg
+     XLG          Â· 40/48   Â· heading/xlg
+  
+     type/body Â· Regular Â· letterSpacing/body (0)
+     â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+     XSM       Â· 12/20   Â· body/xsm
+     SM        Â· 14/20   Â· body/sm
+     MD        Â· 16/24   Â· body/md
+     LG        Â· 18/26   Â· body/lg
+     XLG       Â· 20/26   Â· body/xlg
+  
+     type/label Â· Medium Â· letterSpacing/label (0.25px)
+     â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+     XSM        Â· 10/14   Â· label/xsm
+     SM         Â· 12/14   Â· label/sm
+     MD         Â· 14/16   Â· label/md
+     LG         Â· 16/20   Â· label/lg
+     XLG        Â· 18/24   Â· label/xlg
+  
+     type/caption Â· Regular Â· letterSpacing/caption (0.4px)
+     â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+     XSM          Â· 10/14   Â· aliases label/xsm
+     SM           Â· 12/14   Â· aliases label/sm
+     MD           Â· 14/16   Â· aliases label/md
+     LG           Â· 16/20   Â· aliases label/lg
+     XLG          Â· 20/26   Â· aliases body/xlg  â† exception
+     ============================================================================= */
+  @layer utilities {
+    /* â”€â”€ type/heading â€” Poppins SemiBold â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    .text-ds-heading {
+      font-family: var(--font-ds-sans);
+      font-weight: var(--font-weight-ds-semibold);
+      font-size: var(--text-ds-heading-xsm);
+      line-height: var(--leading-ds-heading-xsm);
+      letter-spacing: var(--tracking-ds-heading);
+    }
+  
+    @media (min-width: 1280px) {
+      .text-ds-heading {
+        font-size: var(--text-ds-heading-sm);
+        line-height: var(--leading-ds-heading-sm);
+      }
+    }
+  
+    @media (min-width: 1440px) {
+      .text-ds-heading {
+        font-size: var(--text-ds-heading-md);
+        line-height: var(--leading-ds-heading-md);
+      }
+    }
+  
+    @media (min-width: 1728px) {
+      .text-ds-heading {
+        font-size: var(--text-ds-heading-lg);
+        line-height: var(--leading-ds-heading-lg);
+      }
+    }
+  
+    @media (min-width: 1920px) {
+      .text-ds-heading {
+        font-size: var(--text-ds-heading-xlg);
+        line-height: var(--leading-ds-heading-xlg);
+      }
+    }
+  
+    /* â”€â”€ type/body â€” Poppins Regular â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    .text-ds-body {
+      font-family: var(--font-ds-sans);
+      font-weight: var(--font-weight-ds-regular);
+      font-size: var(--text-ds-body-xsm);
+      line-height: var(--leading-ds-body-xsm);
+      letter-spacing: var(--tracking-ds-body);
+    }
+  
+    @media (min-width: 1280px) {
+      .text-ds-body {
+        font-size: var(--text-ds-body-sm);
+        line-height: var(--leading-ds-body-sm);
+      }
+    }
+  
+    @media (min-width: 1440px) {
+      .text-ds-body {
+        font-size: var(--text-ds-body-md);
+        line-height: var(--leading-ds-body-md);
+      }
+    }
+  
+    @media (min-width: 1728px) {
+      .text-ds-body {
+        font-size: var(--text-ds-body-lg);
+        line-height: var(--leading-ds-body-lg);
+      }
+    }
+  
+    @media (min-width: 1920px) {
+      .text-ds-body {
+        font-size: var(--text-ds-body-xlg);
+        line-height: var(--leading-ds-body-xlg);
+      }
+    }
+  
+    /* â”€â”€ type/label â€” Poppins Medium â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  
+    .text-ds-label {
+      font-family: var(--font-ds-sans);
+      font-weight: var(--font-weight-ds-medium);
+      font-size: var(--text-ds-label-xsm);
+      line-height: var(--leading-ds-label-xsm);
+      letter-spacing: var(--tracking-ds-label);
+    }
+  
+    @media (min-width: 1280px) {
+      .text-ds-label {
+        font-size: var(--text-ds-label-sm);
+        line-height: var(--leading-ds-label-sm);
+      }
+    }
+  
+    @media (min-width: 1440px) {
+      .text-ds-label {
+        font-size: var(--text-ds-label-md);
+        line-height: var(--leading-ds-label-md);
+      }
+    }
+  
+    @media (min-width: 1728px) {
+      .text-ds-label {
+        font-size: var(--text-ds-label-lg);
+        line-height: var(--leading-ds-label-lg);
+      }
+    }
+  
+    @media (min-width: 1920px) {
+      .text-ds-label {
+        font-size: var(--text-ds-label-xlg);
+        line-height: var(--leading-ds-label-xlg);
+      }
+    }
+  
+    /* â”€â”€ type/caption â€” Poppins Regular, 0.4px tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* Size: label/* at XSMâ€“LG Â· body/xlg at XLG */
+  
+    .text-ds-caption {
+      font-family: var(--font-ds-sans);
+      font-weight: var(--font-weight-ds-regular);
+      font-size: var(--text-ds-label-xsm);
+      line-height: var(--leading-ds-label-xsm);
+      letter-spacing: var(--tracking-ds-caption);
+    }
+  
+    @media (min-width: 1280px) {
+      .text-ds-caption {
+        font-size: var(--text-ds-label-sm);
+        line-height: var(--leading-ds-label-sm);
+      }
+    }
+  
+    @media (min-width: 1440px) {
+      .text-ds-caption {
+        font-size: var(--text-ds-label-md);
+        line-height: var(--leading-ds-label-md);
+      }
+    }
+  
+    @media (min-width: 1728px) {
+      .text-ds-caption {
+        font-size: var(--text-ds-label-lg);
+        line-height: var(--leading-ds-label-lg);
+      }
+    }
+  
+    @media (min-width: 1920px) {
+      .text-ds-caption {
+        font-size: var(--text-ds-body-xlg);
+        line-height: var(--leading-ds-body-xlg);
+      }
+    }
+  
+    /* â”€â”€ ds-component â€” binds Â§3c tokens (12 Figma component/* properties) â”€â”€â”€ */
+    /* Icon children: svg or [data-slot="icon"] inherit --ds-component-icon-size */
+  
+    .ds-component {
+      display: inline-flex;
+      align-items: center;
+      font-family: var(--font-ds-sans);
+      min-height: var(--ds-component-height);
+      padding-inline: var(--ds-component-padding-x);
+      padding-block: var(--ds-component-padding-y);
+      gap: var(--ds-component-gap);
+      font-size: var(--ds-component-font-size);
+      line-height: var(--ds-component-line-height);
+      letter-spacing: var(--ds-component-letter-spacing);
+      border-width: var(--ds-component-border-width);
+      border-radius: var(--ds-component-radius);
+      font-weight: var(--ds-component-font-weight);
+      box-shadow: var(--ds-component-elevation);
+    }
+  
+    .ds-component :where(svg, [data-slot="icon"]) {
+      width: var(--ds-component-icon-size);
+      height: var(--ds-component-icon-size);
+    }
+  
+    /* â”€â”€ ds-layout â€” responsive/layout grid (375px â†’ 1920px) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* Figma: DS_Token_Responsive_Layout.json Â· mobile 375/428/768 Â· desktop below */
+    /*
+       Desktop modes (responsive/layout) â€” 6 vars Ã— 5 breakpoints
+       â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                          1024   1280   1440   1728   1920
+       layout/columns       12     12     12     12     12
+       layout/gutter        24     24     32     40     48
+       layout/margin        48     80    120    160    200
+       layout/max-width    928   1120   1200   1408   1520
+       layout/column-width  55     72     76     96    100  (reference â€” derived)
+       Inspect active mode: getComputedStyle(el).getPropertyValue('--ds-layout-breakpoint')
+    */
+  
+    .ds-layout {
+      display: grid;
+      grid-template-columns: repeat(var(--ds-layout-columns), minmax(0, 1fr));
+      gap: var(--ds-layout-gutter);
+      width: 100%;
+      max-width: min(var(--ds-layout-max-width), 100% - 2 * var(--ds-layout-margin));
+      margin-inline: auto;
+  
+      /* Mobile S â€” 375px */
+      --ds-layout-breakpoint: 375;
+      --ds-layout-columns: 4;
+      --ds-layout-gutter: 16px;
+      --ds-layout-margin: 20px;
+      --ds-layout-max-width: 335px;
+      --ds-layout-column-width: 72px;
+    }
+  
+    @media (min-width: 428px) {
+      .ds-layout {
+        /* Mobile L â€” 428px */
+        --ds-layout-breakpoint: 428;
+        --ds-layout-columns: 4;
+        --ds-layout-gutter: 16px;
+        --ds-layout-margin: 32px;
+        --ds-layout-max-width: 364px;
+        --ds-layout-column-width: 72px;
+      }
+    }
+  
+    @media (min-width: 768px) {
+      .ds-layout {
+        /* Tablet â€” 768px */
+        --ds-layout-breakpoint: 768;
+        --ds-layout-columns: 8;
+        --ds-layout-gutter: 24px;
+        --ds-layout-margin: 48px;
+        --ds-layout-max-width: 680px;
+        --ds-layout-column-width: 72px;
+      }
+    }
+  
+    @media (min-width: 1024px) {
+      .ds-layout {
+        /* Desktop â€” 1024px */
+        --ds-layout-breakpoint: 1024;
+        --ds-layout-columns: 12;
+        --ds-layout-gutter: 24px;
+        --ds-layout-margin: 48px;
+        --ds-layout-max-width: 928px;
+        --ds-layout-column-width: 55px;
+      }
+    }
+  
+    @media (min-width: 1280px) {
+      .ds-layout {
+        /* Desktop â€” 1280px */
+        --ds-layout-breakpoint: 1280;
+        --ds-layout-columns: 12;
+        --ds-layout-gutter: 24px;
+        --ds-layout-margin: 80px;
+        --ds-layout-max-width: 1120px;
+        --ds-layout-column-width: 72px;
+      }
+    }
+  
+    @media (min-width: 1440px) {
+      .ds-layout {
+        /* Desktop â€” 1440px */
+        --ds-layout-breakpoint: 1440;
+        --ds-layout-columns: 12;
+        --ds-layout-gutter: 32px;
+        --ds-layout-margin: 120px;
+        --ds-layout-max-width: 1200px;
+        --ds-layout-column-width: 76px;
+      }
+    }
+  
+    @media (min-width: 1728px) {
+      .ds-layout {
+        /* Desktop â€” 1728px */
+        --ds-layout-breakpoint: 1728;
+        --ds-layout-columns: 12;
+        --ds-layout-gutter: 40px;
+        --ds-layout-margin: 160px;
+        --ds-layout-max-width: 1408px;
+        --ds-layout-column-width: 96px;
+      }
+    }
+  
+    @media (min-width: 1920px) {
+      .ds-layout {
+        /* Desktop â€” 1920px */
+        --ds-layout-breakpoint: 1920;
+        --ds-layout-columns: 12;
+        --ds-layout-gutter: 48px;
+        --ds-layout-margin: 200px;
+        --ds-layout-max-width: 1520px;
+        --ds-layout-column-width: 100px;
+      }
+    }
+  }

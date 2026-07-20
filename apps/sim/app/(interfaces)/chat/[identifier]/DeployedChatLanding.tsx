@@ -9,8 +9,8 @@ import { ChatInput } from '@/app/(interfaces)/chat/components'
 import {
   DEPLOYED_CHAT_CANVAS_BG,
   DEPLOYED_CHAT_CANVAS_GRADIENT,
-  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_INPUT_PLACEHOLDER,
+  DEPLOYED_CHAT_LANDING_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_TEXT_BODY,
   DEPLOYED_CHAT_TEXT_DISPLAY,
   DEPLOYED_CHAT_TEXT_MUTED,
@@ -48,7 +48,7 @@ function DeployedChatDescriptionPreview({ text, onExpand }: DeployedChatDescript
     <div className='relative mt-3'>
       <p
         ref={descriptionRef}
-        className='max-h-[3.2em] overflow-hidden whitespace-pre-wrap text-center font-normal text-[14px] leading-[1.6]'
+        className='max-h-[3.2em] overflow-hidden whitespace-pre-wrap text-center font-normal text-[14px] leading-[21px]'
         style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
       >
         {text}
@@ -60,7 +60,7 @@ function DeployedChatDescriptionPreview({ text, onExpand }: DeployedChatDescript
               <button
                 type='button'
                 onClick={onExpand}
-                className='absolute right-0 bottom-0 pl-3 font-normal text-[15px] leading-[1.6] hover:text-[var(--brand-primary-hex)]'
+                className='absolute right-0 bottom-0 pl-3 font-normal text-[14px] leading-[21px] hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
                 style={{
                   color: DEPLOYED_CHAT_TEXT_MUTED,
                   background: `linear-gradient(to right, transparent, ${DEPLOYED_CHAT_CANVAS_BG} 50%)`,
@@ -147,11 +147,11 @@ export function DeployedChatLanding({
       >
         <div className='flex flex-1 flex-col items-center justify-center px-4 py-8 md:px-6'>
           <div
-            className={`flex w-full flex-col gap-5 ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} text-center`}
+            className={`flex w-full flex-col gap-6 ${DEPLOYED_CHAT_LANDING_MAX_WIDTH_CLASS} text-center`}
           >
             <div>
               <h1
-                className='font-semibold text-[24px] leading-[1.25]'
+                className='font-semibold text-[18px] leading-[27px]'
                 style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
               >
                 {title}
@@ -166,7 +166,7 @@ export function DeployedChatLanding({
             </div>
 
             <p
-              className='font-normal text-[20px] leading-[1.4]'
+              className='font-normal text-[20px] leading-[32px]'
               style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
             >
               {promptLine}

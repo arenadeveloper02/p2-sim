@@ -5,12 +5,12 @@ import {
   DEPLOYED_CHAT_CANVAS_BG,
   DEPLOYED_CHAT_DIVIDER,
   DEPLOYED_CHAT_SIDEBAR_BORDER,
+  DEPLOYED_CHAT_TEXT_BODY,
   DEPLOYED_CHAT_TEXT_DISPLAY,
 } from '@/app/(interfaces)/chat/constants'
 
-const DEPLOYED_CHAT_DESCRIPTION_MODAL_TEXT = '#2C2D33'
-const DEPLOYED_CHAT_DEPARTMENT_BADGE_TEXT = '#7C3AED'
-const DEPLOYED_CHAT_DEPARTMENT_BADGE_BORDER = '#DDD6FE'
+const DEPLOYED_CHAT_DEPARTMENT_BADGE_TEXT = '#B364D7'
+const DEPLOYED_CHAT_DEPARTMENT_BADGE_BORDER = '#F0E0F7'
 
 interface DeployedChatDescriptionModalProps {
   open: boolean
@@ -77,7 +77,7 @@ export function DeployedChatDescriptionModal({
           >
             <p
               className='whitespace-pre-wrap text-left text-[14px] font-normal leading-[1.6]'
-              style={{ color: DEPLOYED_CHAT_DESCRIPTION_MODAL_TEXT }}
+              style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
             >
               {description}
             </p>

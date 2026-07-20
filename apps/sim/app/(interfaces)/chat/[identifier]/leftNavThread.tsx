@@ -88,7 +88,9 @@ function sidebarRowIconClass(isActive: boolean) {
   return cn(
     // Pulls the icon left so it lines up with the logo (row padding otherwise over-indents it).
     '-ml-1.5 size-6 shrink-0',
-    isActive ? 'text-[#155CBA]' : 'text-[var(--text-body)] group-hover:text-[#155CBA]'
+    isActive
+      ? 'text-[var(--color-ds-text-link-hover,#155CBA)]'
+      : 'text-[var(--color-ds-icon-default,#575A66)] group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
   )
 }
 
@@ -96,13 +98,13 @@ function sidebarRowLabelClass(isActive: boolean) {
   return cn(
     'truncate text-sm',
     isActive
-      ? 'font-medium text-[#155CBA]'
-      : 'font-normal text-[var(--text-body)] group-hover:text-[#155CBA]'
+      ? 'font-medium text-[var(--color-ds-text-link-hover,#155CBA)]'
+      : 'font-normal text-[var(--color-ds-text-primary,#2C2D33)] group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
   )
 }
 
 const THREAD_MENU_ITEM_CLASS =
-  'h-9 gap-2.5 px-3 text-sm font-normal text-[#575A66] focus:bg-[#F3F8FE] data-[highlighted]:bg-[#F3F8FE] data-[highlighted]:text-[#155CBA] [&_svg]:size-4 [&_svg]:text-current'
+  'h-9 gap-2.5 px-3 text-sm font-normal text-[var(--color-ds-text-secondary,#575A66)] focus:bg-[var(--color-ds-brand-surface,#F3F8FE)] data-[highlighted]:bg-[var(--color-ds-brand-surface,#F3F8FE)] data-[highlighted]:text-[var(--color-ds-text-link-hover,#155CBA)] [&_svg]:size-4 [&_svg]:text-current'
 
 function sidebarPanelClass(collapsed: boolean) {
   return cn(
@@ -138,12 +140,12 @@ interface SidebarToggleButtonProps {
 }
 
 /**
- * Soft `#F3F8FE` shell by default; white background and blue glyph on hover.
+ * Soft brand-surface shell by default; white background and brand hover glyph.
  */
 function sidebarSoftIconClass() {
   return cn(
-    'inline-flex size-6 shrink-0 items-center justify-center rounded-[4px] bg-[#F3F8FE] text-[var(--text-body)] transition-colors',
-    'group-hover:bg-white group-hover:text-[#155CBA]'
+    'inline-flex size-6 shrink-0 items-center justify-center rounded-[4px] bg-[var(--color-ds-brand-surface,#F3F8FE)] text-[var(--color-ds-icon-default,#575A66)] transition-colors',
+    'group-hover:bg-white group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
   )
 }
 
@@ -367,7 +369,7 @@ function ThreadRow({
           }}
           onBlur={handleRenameBlur}
           autoFocus
-          className='h-7 min-w-0 flex-1 border-[#E2EAF4] bg-white'
+          className='h-7 min-w-0 flex-1 border-[var(--color-ds-blue-200,#D1E3FA)] bg-white'
         />
       </div>
     )
@@ -444,7 +446,7 @@ function ThreadRow({
           <DropdownMenuContent
             align='start'
             side='right'
-            className='min-w-[132px] rounded-lg border-[#E2EAF4] bg-white p-1.5 shadow-md'
+            className='min-w-[132px] rounded-lg border-[var(--color-ds-blue-200,#D1E3FA)] bg-white p-1.5 shadow-md'
           >
             <DropdownMenuItem onClick={onStartRename} className={THREAD_MENU_ITEM_CLASS}>
               <RenameMenuIcon />
@@ -753,7 +755,7 @@ const LeftNavThread = ({
               {!searchQuery && (
                 <button
                   type='button'
-                  className='text-[var(--brand-primary-hex)] text-sm hover:underline'
+                  className='text-[var(--color-ds-text-link,#1A73E8)] text-sm hover:underline'
                   onClick={() => onNewChat?.()}
                   disabled={isStreaming}
                 >

@@ -12,6 +12,8 @@ import { SendChatIcon } from '@/app/(interfaces)/chat/[identifier]/send-icon'
 import { VoiceInput } from '@/app/(interfaces)/chat/components/input/voice-input'
 import {
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
+  DEPLOYED_CHAT_ICON_DEFAULT,
+  DEPLOYED_CHAT_INPUT_BORDER,
   DEPLOYED_CHAT_INPUT_GLOW_SHADOW,
   DEPLOYED_CHAT_INPUT_HEIGHT_CLASS,
 } from '@/app/(interfaces)/chat/constants'
@@ -245,9 +247,10 @@ export const ChatInput: React.FC<{
               onClick={() => fileInputRef.current?.click()}
               disabled={isStreaming || attachedFiles.length >= 15}
               className={cn(
-                'flex size-7 shrink-0 items-center justify-center rounded-md text-[#64748B] transition-colors hover:bg-[#F1F5F9] disabled:cursor-not-allowed disabled:opacity-50',
+                'flex size-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[var(--color-ds-blue-50,#F3F8FE)] disabled:cursor-not-allowed disabled:opacity-50',
                 pinnedControlClass
               )}
+              style={{ color: DEPLOYED_CHAT_ICON_DEFAULT }}
             >
               <Paperclip className='size-[16px]' strokeWidth={2} />
             </button>
@@ -278,7 +281,7 @@ export const ChatInput: React.FC<{
           placeholder={isDragOver ? 'Drop files here...' : placeholder}
           rows={1}
           className={cn(
-            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] leading-6 outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[#94A3B8] placeholder:text-[16px] focus-visible:ring-0 focus-visible:ring-offset-0',
+            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] leading-6 text-[var(--color-ds-text-primary,#2C2D33)] outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[#A7AAB2] placeholder:text-[16px] focus-visible:ring-0 focus-visible:ring-offset-0',
             isMultiLineInput
               ? 'min-h-[24px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
               : 'min-h-[24px] overflow-hidden'
@@ -290,13 +293,14 @@ export const ChatInput: React.FC<{
             type='button'
             onClick={onStopStreaming}
             className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-[#DCE6F3] p-0 transition-colors hover:bg-[#CED9EA]',
+              'flex size-7 shrink-0 items-center justify-center rounded-md border-0 bg-[var(--color-ds-blue-200,#D1E3FA)] p-0 transition-colors hover:bg-[var(--color-ds-blue-300,#A3C7F6)]',
               pinnedControlClass
             )}
             title='Stop generation'
           >
             <svg
-              className='block size-[14px] fill-[#64748B]'
+              className='block size-[14px]'
+              style={{ fill: DEPLOYED_CHAT_ICON_DEFAULT }}
               viewBox='0 0 24 24'
               xmlns='http://www.w3.org/2000/svg'
             >
@@ -377,10 +381,17 @@ export const ChatInput: React.FC<{
             className={cn(
               'w-full',
               useDeployedChrome &&
-                'rounded-[20px] bg-gradient-to-r from-[#93c5fd] via-[#c4b5fd] to-[#f9a8d4] p-[1px]',
+                'rounded-[29px] border border-solid bg-[var(--color-ds-surface-page,#FFFFFF)] p-0',
               useDeployedChrome && !hasDeployedExtras && DEPLOYED_CHAT_INPUT_HEIGHT_CLASS
             )}
-            style={useDeployedChrome ? { boxShadow: DEPLOYED_CHAT_INPUT_GLOW_SHADOW } : undefined}
+            style={
+              useDeployedChrome
+                ? {
+                    borderColor: DEPLOYED_CHAT_INPUT_BORDER,
+                    boxShadow: DEPLOYED_CHAT_INPUT_GLOW_SHADOW,
+                  }
+                : undefined
+            }
           >
             <div
               role='group'
@@ -391,13 +402,13 @@ export const ChatInput: React.FC<{
                 handleKeyboardActivation(event, focusTextarea)
               }}
               className={cn(
-                'relative z-10 w-full cursor-text bg-white',
+                'relative z-10 w-full cursor-text',
                 useDeployedChrome
                   ? cn(
-                      'rounded-[19px] px-2.5',
-                      hasDeployedExtras ? 'py-1' : 'flex h-full min-w-0 items-center py-0'
+                      'rounded-[29px] bg-transparent px-4',
+                      hasDeployedExtras ? 'py-1' : 'flex h-full min-w-0 items-center py-1'
                     )
-                  : 'rounded-2xl border border-[var(--border-1)] px-2.5 py-2',
+                  : 'rounded-2xl border border-[var(--border-1)] bg-white px-2.5 py-2',
                 isDragOver && 'border-purple-500'
               )}
               onDragEnter={(e) => {
