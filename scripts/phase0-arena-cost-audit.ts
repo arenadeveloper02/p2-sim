@@ -1,53 +1,22 @@
 /**
  * Phase 0 empirical audit: compare usage_log ledger sums to workflow_execution_logs.cost_total,
- * surface drift and missing-ledger patterns, sample model/tool attribution rows, and classify
- * historical workflow executions by reconciliation evidence and risk.
+ * surface drift and missing-ledger patterns, and sample model/tool attribution rows.
+ *
+ * For historical reconciliation evidence classification, use
+ * `scripts/reconcile-historical-workflow-costs.ts --audit` instead.
  *
  * Usage:
  *   bun run scripts/phase0-arena-cost-audit.ts [--days=30] [--limit=500] [--drift-only] [--export-drift]
- *   bun run scripts/phase0-arena-cost-audit.ts --classify [--since=2020-01-01] [--until=2025-01-01]
  */
 import { db } from '@sim/db'
 import { sql } from 'drizzle-orm'
-import {
-  auditHistoricalWorkflowExecutions,
-  type ReconciliationClass,
-  type ReconciliationConfidence,
-} from '../apps/sim/lib/billing/core/historical-workflow-reconciliation'
 
 const daysArg = process.argv.find((a) => a.startsWith('--days='))
 const limitArg = process.argv.find((a) => a.startsWith('--limit='))
-const sinceArg = process.argv.find((a) => a.startsWith('--since='))
-const untilArg = process.argv.find((a) => a.startsWith('--until='))
 const DRIFT_ONLY = process.argv.includes('--drift-only')
 const EXPORT_DRIFT = process.argv.includes('--export-drift')
-const CLASSIFY = process.argv.includes('--classify')
-const EXPORT_CLASSIFY = process.argv.includes('--export-classify')
 const DAYS = daysArg ? Number.parseInt(daysArg.split('=')[1] ?? '30', 10) : 30
 const LIMIT = limitArg ? Number.parseInt(limitArg.split('=')[1] ?? '500', 10) : 500
-
-function parseDateArg(raw: string | undefined): Date | undefined {
-  if (!raw) return undefined
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed
-}
-
-const SINCE = parseDateArg(sinceArg?.split('=')[1])
-const UNTIL = parseDateArg(untilArg?.split('=')[1])
-
-function formatClassCounts(byClass: Record<ReconciliationClass, number>): string {
-  return Object.entries(byClass)
-    .filter(([, count]) => count > 0)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => `  ${name.padEnd(28)} ${count}`)
-    .join('\n')
-}
-
-function formatConfidenceCounts(byConfidence: Record<ReconciliationConfidence, number>): string {
-  return Object.entries(byConfidence)
-    .map(([name, count]) => `  ${name.padEnd(8)} ${count}`)
-    .join('\n')
-}
 
 /** postgres-js driver returns row objects at numeric indices with a `count` field. */
 function queryRows<T>(result: T[] & { count?: number }): T[] {
@@ -401,63 +370,6 @@ async function main() {
   console.log(
     `external category rows: ${externalRows[0]?.count ?? '0'}, total=$${Number.parseFloat(externalRows[0]?.total ?? '0').toFixed(4)}, with_vendor=${externalRows[0]?.with_vendor ?? '0'}`
   )
-
-  if (CLASSIFY) {
-    const since =
-      SINCE ??
-      new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000)
-    const classification = await auditHistoricalWorkflowExecutions({
-      since,
-      until: UNTIL,
-      limit: LIMIT,
-    })
-
-    console.log('\n--- Historical reconciliation evidence classification ---')
-    console.log(`Classified terminal runs: ${classification.total}`)
-    console.log(`With projection drift:   ${classification.withDrift}`)
-    console.log(`Apply-eligible (v1):     ${classification.applyEligible}`)
-    console.log('\nBy reconciliation class:')
-    console.log(formatClassCounts(classification.byClass))
-    console.log('\nBy confidence:')
-    console.log(formatConfidenceCounts(classification.byConfidence))
-
-    if (classification.topRiskExamples.length > 0) {
-      console.log('\nTop risk examples:')
-      for (const item of classification.topRiskExamples.slice(0, 15)) {
-        const secondary =
-          item.secondaryClasses.length > 0 ? ` secondary=${item.secondaryClasses.join(',')}` : ''
-        console.log(
-          `  ${item.executionId.slice(0, 8)}… class=${item.primaryClass} confidence=${item.confidence} drift=${item.drift.toFixed(6)} ledger=${item.ledgerSum.toFixed(6)} cost_total=${item.costTotal?.toFixed(6) ?? 'null'}${secondary}`
-        )
-      }
-    }
-
-    if (EXPORT_CLASSIFY) {
-      console.log('\n--- Classification export (JSON) ---')
-      console.log(
-        JSON.stringify(
-          {
-            generatedAt: new Date().toISOString(),
-            filters: {
-              since: since.toISOString(),
-              until: UNTIL?.toISOString() ?? null,
-              limit: LIMIT,
-            },
-            summary: {
-              total: classification.total,
-              byClass: classification.byClass,
-              byConfidence: classification.byConfidence,
-              applyEligible: classification.applyEligible,
-              withDrift: classification.withDrift,
-            },
-            topRiskExamples: classification.topRiskExamples,
-          },
-          null,
-          2
-        )
-      )
-    }
-  }
 
   process.exit(0)
 }
