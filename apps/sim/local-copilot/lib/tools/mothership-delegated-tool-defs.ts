@@ -47,6 +47,90 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Diffs draft vs live (or two versions) to summarize changes. Use before deploy_chat when versionDescription is required.',
   check_deployment_status:
     'Returns whether a workflow is deployed and chat/API deployment status.',
+  get_block_upstream_references:
+    'Returns the exact output reference tags each block can use (e.g. <My Agent.content>). REQUIRED: blockIds (array of block UUIDs). Call before wiring inputs that consume upstream outputs.',
+  rename_workflow: 'Renames a workflow. REQUIRED: workflowId and the new name.',
+  move_workflow:
+    'Moves workflows into a folder. REQUIRED: workflowIds (array). Omit folderId to move to the workspace root.',
+  delete_workflow:
+    'Permanently deletes workflows. REQUIRED: workflowIds (array). Destructive — only call when the user explicitly asked to delete, and name the workflows being deleted in your reply.',
+  manage_folder:
+    'Creates, renames, moves, or deletes workflow folders. Pass operation plus a VFS path (e.g. "workflows/Marketing") or folderId.',
+  deploy_api:
+    'Deploys or undeploys a workflow as an HTTP API endpoint. On deploy, versionName and versionDescription are REQUIRED (call diff_workflows(ref1: "live", ref2: "draft") when unsure what changed). Returns the endpoint and curl examples — share those with the user.',
+  deploy_mcp:
+    'Publishes a deployed workflow as a tool on a workspace MCP server. REQUIRED: serverId from list_workspace_mcp_servers (create one with create_workspace_mcp_server first when none exists).',
+  redeploy:
+    'Redeploys the current draft over an existing API deployment. REQUIRED: versionName and versionDescription.',
+  load_deployment:
+    'Loads a past deployment version (a version number or "live") into the draft workflow for inspection or rollback editing.',
+  promote_to_live:
+    'Promotes a numeric deployment version to live. REQUIRED: version as a number (find versions with get_deployment_log). Ask the user before promoting unless they explicitly requested it.',
+  update_deployment_version:
+    'Updates the name and/or description of an existing deployment version. REQUIRED: version (number, from get_deployment_log).',
+  get_deployment_log:
+    'Lists deployment versions for a workflow (version numbers, names, descriptions, timestamps). Use before promote_to_live or update_deployment_version.',
+  list_workspace_mcp_servers: 'Lists workspace MCP servers (id, name, tools).',
+  create_workspace_mcp_server:
+    'Creates a workspace MCP server. REQUIRED: name. Optionally pass deployed workflowIds to publish as tools immediately.',
+  update_workspace_mcp_server:
+    'Updates a workspace MCP server name, description, or public visibility. REQUIRED: serverId.',
+  delete_workspace_mcp_server:
+    'Deletes a workspace MCP server. REQUIRED: serverId. Destructive — only call when the user explicitly asked.',
+  manage_scheduled_task:
+    'Creates, lists, gets, updates, or deletes scheduled tasks (recurring or one-time agent prompts). For create pass args {title, prompt, cron OR time, timezone?}; recurring -> cron, one-time -> time (ISO 8601).',
+  complete_scheduled_task:
+    'Marks an until_complete scheduled task as done so it stops firing. REQUIRED: jobId.',
+  update_scheduled_task_history:
+    'Records a concise summary of what a scheduled-task run accomplished. REQUIRED: jobId and summary.',
+  get_scheduled_task_logs:
+    'Fetches recent execution logs for a scheduled task. REQUIRED: jobId. Pass includeDetails: true for tool calls and outputs.',
+  manage_credential:
+    'Renames or deletes stored OAuth credentials (operation: rename | delete). Delete is destructive — only call when the user explicitly asked. Never exposes secret values.',
+  oauth_get_auth_link:
+    "Returns an OAuth connect link for a provider (e.g. google-email, slack) so the user can authorize it. Share the returned URL — never ask for an API key when an OAuth flow exists.",
+  oauth_request_access:
+    'Requests access to an OAuth provider connection owned by another workspace member.',
+  generate_audio:
+    'Generates speech (TTS), music, or sound effects from a text prompt — no workflow required. Uses hosted/workspace keys automatically. Save output with outputs.files under files/.',
+  generate_video:
+    'Generates a short video from a text prompt (and optional reference image) — no workflow required. Uses hosted/workspace keys automatically. Save output with outputs.files under files/.',
+  ffmpeg:
+    'Runs FFmpeg operations on workspace media files (trim, concat, convert, overlay_audio, mix_audio, scale_pad, extract_audio, thumbnail, probe, …). Mount inputs via inputs.files with exact VFS paths; save results with outputs.files.',
+  delete_file:
+    'Deletes workspace files by canonical VFS paths. REQUIRED: paths (array). Destructive — only call when the user explicitly asked.',
+  rename_file:
+    'Renames a workspace file in place. REQUIRED: path and newName (including extension). Use move_file to change folders.',
+  move_file:
+    'Moves workspace files into a folder. REQUIRED: paths (array). Omit destinationPath (or pass "files") for root.',
+  list_file_folders: 'Lists folders under the workspace files tree.',
+  rename_file_folder:
+    'Renames a files-tree folder. REQUIRED: path and name (new folder name).',
+  move_file_folder:
+    'Moves a files-tree folder. REQUIRED: path. Omit destinationPath (or pass "files") for root.',
+  delete_file_folder:
+    'Deletes files-tree folders by canonical VFS paths. REQUIRED: paths (array). Destructive — only call when the user explicitly asked.',
+  set_block_enabled:
+    'Enables or disables a block in a workflow. REQUIRED: blockId and enabled (boolean). Pass workflowId on home chat.',
+  set_global_workflow_variables:
+    'Adds, edits, or deletes global workflow variables. Pass operations: [{ operation: add|edit|delete, name, type?, value? }].',
+  get_deployed_workflow_state:
+    'Returns the live/deployed workflow state (blocks, edges) for comparison with the draft.',
+  list_user_workspaces: 'Lists workspaces the current user can access (id, name, permission).',
+  search_documentation:
+    'Searches platform documentation (blocks, integrations, product). Prefer this over the local search_docs heuristic when you need deeper docs. REQUIRED: query.',
+  manage_skill:
+    'Adds, edits, lists, or deletes workspace agent skills (operation: add|edit|list|delete). After add/edit, users load them via load_user_skill.',
+  manage_custom_tool:
+    'Adds, edits, lists, or deletes custom code tools (operation: add|edit|list|delete). For add, pass OpenAI-style schema + JavaScript code body.',
+  manage_mcp_tool:
+    'Adds, edits, lists, or deletes MCP server configs used by agent blocks (operation: add|edit|list|delete). Distinct from workspace MCP deploy servers.',
+  generate_api_key:
+    'Creates a workspace API key. REQUIRED: name (descriptive label). Returns the key once — share it carefully with the user.',
+  restore_resource:
+    'Restores an archived/deleted resource. REQUIRED: type (workflow|table|file|knowledgebase|folder|file_folder) and id.',
+  get_platform_actions:
+    'Lists available platform UI actions the agent can suggest or trigger (navigation and settings helpers).',
 }
 
 /** Tools delegated to registered Mothership/copilot server handlers. */
@@ -77,6 +161,50 @@ export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'get_block_outputs',
   'diff_workflows',
   'check_deployment_status',
+  'get_block_upstream_references',
+  'rename_workflow',
+  'move_workflow',
+  'delete_workflow',
+  'manage_folder',
+  'deploy_api',
+  'deploy_mcp',
+  'redeploy',
+  'load_deployment',
+  'promote_to_live',
+  'update_deployment_version',
+  'get_deployment_log',
+  'list_workspace_mcp_servers',
+  'create_workspace_mcp_server',
+  'update_workspace_mcp_server',
+  'delete_workspace_mcp_server',
+  'manage_scheduled_task',
+  'complete_scheduled_task',
+  'update_scheduled_task_history',
+  'get_scheduled_task_logs',
+  'manage_credential',
+  'oauth_get_auth_link',
+  'oauth_request_access',
+  'generate_audio',
+  'generate_video',
+  'ffmpeg',
+  'delete_file',
+  'rename_file',
+  'move_file',
+  'list_file_folders',
+  'rename_file_folder',
+  'move_file_folder',
+  'delete_file_folder',
+  'set_block_enabled',
+  'set_global_workflow_variables',
+  'get_deployed_workflow_state',
+  'list_user_workspaces',
+  'search_documentation',
+  'manage_skill',
+  'manage_custom_tool',
+  'manage_mcp_tool',
+  'generate_api_key',
+  'restore_resource',
+  'get_platform_actions',
 ] as const
 
 export type MothershipDelegatedToolName = (typeof MOTHERSHIP_DELEGATED_TOOL_NAMES)[number]
@@ -90,6 +218,18 @@ export const WORKFLOW_SCOPED_DELEGATED_TOOLS = new Set<MothershipDelegatedToolNa
   'get_block_outputs',
   'diff_workflows',
   'check_deployment_status',
+  'get_block_upstream_references',
+  'rename_workflow',
+  'deploy_api',
+  'deploy_mcp',
+  'redeploy',
+  'load_deployment',
+  'promote_to_live',
+  'update_deployment_version',
+  'get_deployment_log',
+  'set_block_enabled',
+  'set_global_workflow_variables',
+  'get_deployed_workflow_state',
 ])
 
 export function isWorkflowScopedDelegatedTool(toolName: string): boolean {

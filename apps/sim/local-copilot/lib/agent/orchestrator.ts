@@ -9,6 +9,7 @@ import {
   estimateChatMessagesTokens,
   fitPromptToTokenBudget,
   LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
+  LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
@@ -131,17 +132,37 @@ Rules:
   - On deploy, \`versionName\` and \`versionDescription\` are required. For first deploy, use a sensible label (e.g. versionName: "Initial chat deploy", versionDescription: "First chat deployment"). On updates, call \`diff_workflows\` with ref1 "live" and ref2 "draft" first if unsure what changed.
   - Call \`get_block_outputs\` when you need \`outputConfigs\` (typically the agent block's \`content\` path for chat responses).
   - On success, return the \`chatUrl\` from the tool result so the user can open the deployed chat.
+- Other deployment surfaces:
+  - API endpoint: \`deploy_api\` (versionName + versionDescription required on deploy; returns endpoint + curl examples — share them). Update an existing API deployment with \`redeploy\`.
+  - MCP tool: \`list_workspace_mcp_servers\` first; \`create_workspace_mcp_server\` when none fits; then \`deploy_mcp\` with the serverId. The workflow must be deployed as API first.
+  - Versions: \`get_deployment_log\` lists versions; \`promote_to_live\` promotes a numeric version (confirm with the user first unless explicitly requested); \`load_deployment\` loads a past version (or "live") into the draft; \`update_deployment_version\` edits version name/description.
+- Workflow management:
+  - \`rename_workflow\` (workflowId + name), \`move_workflow\` / \`delete_workflow\` (workflowIds arrays), \`manage_folder\` for folder create/rename/move/delete.
+  - delete_workflow and delete_workspace_mcp_server are destructive — only call them when the user explicitly asked, and name what you are deleting in your reply.
+- Scheduled tasks:
+  - \`manage_scheduled_task\` creates/lists/updates/deletes scheduled agent prompts. Recurring -> args.cron; one-time -> args.time (ISO 8601); always set args.timezone when the user mentions one.
+  - \`get_scheduled_task_logs\` (jobId) inspects past runs. \`complete_scheduled_task\` stops an until_complete task; \`update_scheduled_task_history\` records what a run did.
+- Credentials and OAuth:
+  - When an integration is not connected, call \`oauth_get_auth_link\` with the provider (e.g. google-email, slack) and share the returned link — never ask the user to paste an API key for OAuth providers.
+  - \`manage_credential\` renames or deletes stored credentials (delete only on explicit request). \`oauth_request_access\` asks another member to share their connection.
+- Media (no workflow required, hosted/workspace keys applied automatically):
+  - \`generate_audio\` for speech/music/sound effects, \`generate_video\` for short clips — pass the user's full request in \`prompt\` and save results via \`outputs.files\` under files/.
+  - \`ffmpeg\` for editing workspace media (trim, concat, convert, overlays, thumbnails). Mount sources via \`inputs.files\` with exact VFS paths from context or glob.
 - Files, tables, and knowledge bases:
   - Context includes \`workspaceFiles\` (id, name, vfs path), \`tables\`, and \`knowledgeBases\`.
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
   - Create files: \`create_file_folder\` when needed, then \`create_file\` with \`content\` for markdown/text/json/csv (one step). Never call \`create_file\` without \`content\` for .md files unless you will immediately follow with \`workspace_file\` update + \`edit_content\`.
+  - Rename/move/delete files: \`rename_file\`, \`move_file\`, \`delete_file\` (paths arrays). Folders: \`list_file_folders\`, \`rename_file_folder\`, \`move_file_folder\`, \`delete_file_folder\`. Delete only when the user explicitly asked.
   - Read or update existing files: \`workspace_file\` (update/append/patch) then \`edit_content\` in the **next** step with the body — never parallel.
   - Read or update tables: \`user_table\` — use \`get\` / \`get_schema\` / \`query_rows\` to read; \`create\`, \`insert_row\`, \`batch_insert_rows\`, \`import_file\`, \`create_from_file\` to write.
   - Knowledge bases: \`knowledge_base\` — \`query\` to search/retrieve; \`add_file\` to ingest a workspace file or URL; \`create\` for new KBs; \`get\` / \`list\` to inspect.
   - Prefer existing resources in context before creating duplicates (same as workflows).
-- Workspace skills:
+  - Restore archived items with \`restore_resource\` (type + id). Disable a block with \`set_block_enabled\`; edit workflow globals with \`set_global_workflow_variables\`.
+- Workspace skills and custom tools:
   - Context may include \`skills\` (name + description). Descriptions only say when a skill applies — they are NOT the instructions.
   - When a skill applies, call \`load_user_skill\` with its exact \`skill_name\`, then follow the returned content. Never act on the name or description alone.
+  - Create/edit/list skills with \`manage_skill\`; custom code tools with \`manage_custom_tool\`; agent MCP server configs with \`manage_mcp_tool\` (distinct from \`*_workspace_mcp_server\` deploy tools).
+  - Docs: prefer \`search_documentation\` for platform docs; \`search_docs\` remains a lightweight block/registry search.
 - E2B sandbox and code execution:
   - Context includes \`e2b\`: \`enabled\`, \`docSandboxEnabled\`, and \`supportedCodeLanguages\`.
   - When \`e2b.enabled\` is true, use \`function_execute\` for Python, shell, and JavaScript with workspace files/tables mounted via \`inputs\`. Save outputs with \`outputs.files\` or \`outputPath\`.
@@ -273,7 +294,11 @@ export async function* runLocalCopilotAgent(
         )
       : []
 
-  const workflowDetail = resolveWorkflowContextDetail(structuredContext)
+  const workflowDetail = resolveWorkflowContextDetail(
+    structuredContext,
+    LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
+    config.model
+  )
   const contextJson = contextToPromptJson(structuredContext, { workflowDetail })
   const userTurn = await buildLocalCopilotUserTurn({
     message: params.message,
@@ -296,7 +321,8 @@ export async function* runLocalCopilotAgent(
       ...historyMessages,
       userTurn,
     ],
-    LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
+    LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
+    config.model
   )
 
   const tools = await resolveLocalCopilotTools(params.workspaceId)
@@ -306,7 +332,8 @@ export async function* runLocalCopilotAgent(
     historyTurns: historyMessages.length,
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
-    estimatedPromptTokens: estimateChatMessagesTokens(messages),
+    estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
+    tokenCountModel: config.model,
     toolDefinitionCount: tools.length,
     skillToolEnabled: tools.length > LOCAL_COPILOT_TOOLS.length,
     memory: getLocalCopilotMemorySnapshot(),

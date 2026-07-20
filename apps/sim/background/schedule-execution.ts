@@ -1306,6 +1306,12 @@ export async function executeJobInline(payload: JobExecutionPayload) {
       workspaceId: jobRecord.sourceWorkspaceId,
       userId: jobRecord.sourceUserId,
       chatId: jobRecord.sourceChatId || generateId(),
+      /**
+       * Scheduled tasks run headless with no client toggle, so pin the local
+       * backend explicitly. Routing still falls back to the cloud mothership
+       * when the owner is not on the local-copilot allowlist.
+       */
+      copilotBackend: 'local',
       ...(jobRecord.contexts && jobRecord.contexts.length > 0
         ? { contexts: jobRecord.contexts }
         : {}),
