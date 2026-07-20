@@ -151,7 +151,7 @@ export function DeployedChatLanding({
           >
             <div>
               <h1
-                className='font-semibold text-[18px] leading-[27px]'
+                className='font-semibold text-[length:var(--text-ds-heading-md,24px)] leading-[var(--leading-ds-heading-md,32px)]'
                 style={{ color: DEPLOYED_CHAT_TEXT_DISPLAY }}
               >
                 {title}
@@ -166,7 +166,7 @@ export function DeployedChatLanding({
             </div>
 
             <p
-              className='font-normal text-[20px] leading-[32px]'
+              className='font-normal text-[length:var(--text-ds-heading-sm,20px)] leading-[var(--leading-ds-heading-sm,28px)]'
               style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
             >
               {promptLine}

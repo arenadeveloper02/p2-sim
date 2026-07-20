@@ -392,18 +392,16 @@
     --font-weight-ds-medium: 500;
     --font-weight-ds-semibold: 600;
   
-    /* â”€â”€ Heading scale (SemiBold) â€” fontSize / lineHeight â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-  
+    /* Heading scale (SemiBold) — fontSize / lineHeight
+       Figma size names map 1:1: xsm · sm · md · lg · xlg */
+
     --text-ds-heading-xsm: 16px;
-    /** Figma `Fontsize/heading/medium` — landing title */
-    --text-ds-heading-medium: 18px;
     --text-ds-heading-sm: 20px;
     --text-ds-heading-md: 24px;
     --text-ds-heading-lg: 32px;
     --text-ds-heading-xlg: 40px;
 
     --leading-ds-heading-xsm: 24px;
-    --leading-ds-heading-medium: 27px;
     --leading-ds-heading-sm: 28px;
     --leading-ds-heading-md: 32px;
     --leading-ds-heading-lg: 40px;
