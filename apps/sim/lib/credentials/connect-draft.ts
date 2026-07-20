@@ -17,6 +17,10 @@ const DRAFT_TTL_MS = 15 * 60 * 1000
  * materialize the real credential after the OAuth callback; starting the clock
  * here guarantees the draft outlives the (≤5 min) OAuth round-trip rather than
  * expiring mid-flow and silently producing no credential.
+ *
+ * When a draft already exists (saved from the connect modal with a user-chosen
+ * display name), the upsert only refreshes the TTL — it does not overwrite
+ * `displayName`, `description`, or `credentialId`.
  */
 export async function createConnectDraft(params: {
   userId: string
@@ -62,7 +66,7 @@ export async function createConnectDraft(params: {
         pendingCredentialDraft.providerId,
         pendingCredentialDraft.workspaceId,
       ],
-      set: { displayName, expiresAt, createdAt: now },
+      set: { expiresAt, createdAt: now },
     })
 
   logger.info('Created OAuth connect credential draft', { userId, workspaceId, providerId })
