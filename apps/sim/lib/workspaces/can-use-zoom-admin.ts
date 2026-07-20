@@ -3,6 +3,7 @@ import { workspace } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { getZoomAdminAllowedWorkspaceIds } from '@/lib/oauth/custom-apps'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
+import { isZoomAdminEnabledForOrganization } from '@/lib/workspaces/zoom-admin-org'
 
 export interface CanUseZoomAdminInWorkspaceParams {
   workspaceId: string
@@ -13,9 +14,10 @@ export interface CanUseZoomAdminInWorkspaceParams {
 /**
  * Returns whether Zoom Admin (connect + account recording ops) is allowed in a workspace.
  *
- * 1. If the workspace's org has a `zoom-admin` app with a **non-empty**
+ * 1. Organization must be on env `ZOOM_ADMIN_ORG_IDS` (empty → deny all orgs).
+ * 2. If the workspace's org has a `zoom-admin` app with a **non-empty**
  *    `allowedWorkspaceIds` list → allow only when the workspace is in that list.
- * 2. Otherwise → fall back to env `ADMIN_WORKSPACE_IDS` / `NEXT_PUBLIC_ADMIN_WORKSPACE_IDS`
+ * 3. Otherwise → fall back to env `ADMIN_WORKSPACE_IDS` / `NEXT_PUBLIC_ADMIN_WORKSPACE_IDS`
  *    via {@link isAdminWorkspace}.
  */
 export async function canUseZoomAdminInWorkspace(
@@ -34,11 +36,13 @@ export async function canUseZoomAdminInWorkspace(
     organizationId = row?.organizationId ?? null
   }
 
-  if (organizationId) {
-    const allowlist = await getZoomAdminAllowedWorkspaceIds(organizationId)
-    if (allowlist && allowlist.length > 0) {
-      return allowlist.includes(workspaceId)
-    }
+  if (!organizationId || !isZoomAdminEnabledForOrganization(organizationId)) {
+    return false
+  }
+
+  const allowlist = await getZoomAdminAllowedWorkspaceIds(organizationId)
+  if (allowlist && allowlist.length > 0) {
+    return allowlist.includes(workspaceId)
   }
 
   return isAdminWorkspace(workspaceId)

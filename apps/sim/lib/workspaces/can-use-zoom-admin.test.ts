@@ -11,6 +11,7 @@ const { mockGetZoomAdminAllowedWorkspaceIds } = vi.hoisted(() => ({
 vi.mock('@/lib/core/config/env', () =>
   createEnvMock({
     ADMIN_WORKSPACE_IDS: '["ws-env-admin"]',
+    ZOOM_ADMIN_ORG_IDS: '["org-1"]',
   })
 )
 
@@ -76,5 +77,18 @@ describe('canUseZoomAdminInWorkspace', () => {
     await expect(
       canUseZoomAdminInWorkspace({ workspaceId: '', organizationId: 'org-1' })
     ).resolves.toBe(false)
+  })
+
+  it('returns false when organization is not on ZOOM_ADMIN_ORG_IDS', async () => {
+    mockGetZoomAdminAllowedWorkspaceIds.mockResolvedValue(['ws-allowed'])
+
+    await expect(
+      canUseZoomAdminInWorkspace({
+        workspaceId: 'ws-allowed',
+        organizationId: 'org-other',
+      })
+    ).resolves.toBe(false)
+
+    expect(mockGetZoomAdminAllowedWorkspaceIds).not.toHaveBeenCalled()
   })
 })

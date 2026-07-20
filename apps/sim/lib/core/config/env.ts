@@ -39,6 +39,7 @@ export const env = createEnv({
     ALLOWED_LOGIN_DOMAINS:                 z.string().optional(),                  // Comma-separated list of allowed email domains for login
     INTERNAL_USER_DOMAINS:                 z.string().optional(),                  // Comma-separated internal employee email domains (e.g. "thearena.ai"); used for isClientUser email fallback
     ADMIN_WORKSPACE_IDS:                   z.array(z.string()).optional(),         // Workspace IDs treated as admin workspaces (JSON array or comma-separated; used by isAdminWorkspace)
+    ZOOM_ADMIN_ORG_IDS:                    z.array(z.string()).optional(),         // Organization IDs allowed to configure/use Zoom Admin custom OAuth apps (JSON array or comma-separated)
     BLOCKED_SIGNUP_DOMAINS:                z.string().optional(),                  // Comma-separated list of email domains blocked from signing up (e.g., "gmail.com,yahoo.com")
     BLOCKED_EMAILS:                        z.string().optional(),                  // Comma-separated list of specific email addresses banned from the platform (signup, sign-in, executions)
     SIGNUP_MX_VALIDATION_ENABLED:          z.boolean().optional(),                 // Opt-in: validate the email's MX backend at signup (blocks no-MX domains and denylisted shared spam backends). Off by default; enable on hosted/abuse-targeted deployments.

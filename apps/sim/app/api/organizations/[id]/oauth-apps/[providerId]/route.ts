@@ -10,6 +10,7 @@ import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { listCustomOAuthAppKeys } from '@/lib/oauth/custom-app-config'
 import { deleteOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
+import { isZoomAdminEnabledForOrganization } from '@/lib/workspaces/zoom-admin-org'
 
 const logger = createLogger('OrganizationOAuthAppDeleteAPI')
 
@@ -50,6 +51,13 @@ export const DELETE = withRouteHandler(
       return NextResponse.json(
         { error: `Unsupported custom OAuth app: ${appKey}` },
         { status: 400 }
+      )
+    }
+
+    if (appKey === 'zoom-admin' && !isZoomAdminEnabledForOrganization(organizationId)) {
+      return NextResponse.json(
+        { error: 'Zoom Admin is not available for this organization' },
+        { status: 403 }
       )
     }
 

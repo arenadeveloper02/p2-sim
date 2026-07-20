@@ -99,6 +99,15 @@ export function OAuthAppsSettings() {
     Boolean(organizationId) && adminOrOwner
   )
   const apps = appsData ?? EMPTY_APPS
+  /** Hide Zoom Admin until/unless the list API returns it (org allowlisted via ZOOM_ADMIN_ORG_IDS). */
+  const visibleProviderMeta = useMemo(
+    () =>
+      providerMeta.filter(
+        (provider) =>
+          provider.appKey !== 'zoom-admin' || apps.some((app) => app.appKey === 'zoom-admin')
+      ),
+    [apps]
+  )
 
   const { data: allWorkspaces = [] } = useWorkspacesQuery(Boolean(organizationId) && adminOrOwner)
   const orgWorkspaceOptions = useMemo<ChipDropdownOption[]>(
@@ -278,7 +287,7 @@ export function OAuthAppsSettings() {
         </InfoCardList>
       </InfoCard>
 
-      {providerMeta.map(({ appKey, name, description }) => {
+      {visibleProviderMeta.map(({ appKey, name, description }) => {
         const saved = appsByKey.get(appKey)
         const form = forms[appKey]
         const rowConfigured = Boolean(saved?.hasClientSecret && saved.clientId)

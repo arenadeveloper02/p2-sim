@@ -17,6 +17,10 @@ import {
   upsertOrganizationOAuthApp,
   validateOrgWorkspaceAllowlist,
 } from '@/lib/oauth/custom-apps'
+import {
+  isZoomAdminEnabledForOrganization,
+  listCustomOAuthAppKeysForOrganization,
+} from '@/lib/workspaces/zoom-admin-org'
 
 const logger = createLogger('OrganizationOAuthAppsAPI')
 
@@ -81,11 +85,14 @@ export const GET = withRouteHandler(
     const authz = await requireOrgAdmin(organizationId, session.user.id)
     if (!authz.ok) return authz.response
 
+    const appKeys = listCustomOAuthAppKeysForOrganization(organizationId)
     const rows = await listOrganizationOAuthApps(organizationId)
-    const configuredKeys = new Set(rows.map((row) => row.appKey))
+    const configuredKeys = new Set(
+      rows.filter((row) => appKeys.includes(row.appKey)).map((row) => row.appKey)
+    )
     const apps = [
-      ...rows.map((row) => toSummary(row)),
-      ...listCustomOAuthAppKeys()
+      ...rows.filter((row) => appKeys.includes(row.appKey)).map((row) => toSummary(row)),
+      ...appKeys
         .filter((appKey) => !configuredKeys.has(appKey))
         .map((appKey) => ({
           id: '',
@@ -126,6 +133,13 @@ export const POST = withRouteHandler(
       return NextResponse.json(
         { error: `Unsupported custom OAuth app: ${appKey}` },
         { status: 400 }
+      )
+    }
+
+    if (appKey === 'zoom-admin' && !isZoomAdminEnabledForOrganization(organizationId)) {
+      return NextResponse.json(
+        { error: 'Zoom Admin is not available for this organization' },
+        { status: 403 }
       )
     }
 
