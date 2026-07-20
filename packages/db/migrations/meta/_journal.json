@@ -1807,6 +1807,27 @@
       "when": 1783531236677,
       "tag": "0257_majestic_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 258,
+      "version": "7",
+      "when": 1784269672362,
+      "tag": "0258_prior_schema_drift",
+      "breakpoints": true
+    },
+    {
+      "idx": 259,
+      "version": "7",
+      "when": 1784269680693,
+      "tag": "0259_organization_oauth_apps",
+      "breakpoints": true
+    },
+    {
+      "idx": 260,
+      "version": "7",
+      "when": 1784346820597,
+      "tag": "0260_organization_oauth_apps_allowed_workspaces",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "organization_oauth_apps" ADD COLUMN "allowed_workspace_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;

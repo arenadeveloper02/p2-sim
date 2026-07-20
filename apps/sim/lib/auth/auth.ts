@@ -736,7 +736,6 @@ export const auth = betterAuth({
         'github',
         'email-password',
         'facebook-ads',
-        'zoom-admin',
         ...SSO_TRUSTED_PROVIDERS,
         ...additionalTrustedSsoProviders,
       ],
@@ -2864,114 +2863,6 @@ export const auth = betterAuth({
             }
           },
         },
-
-        {
-          providerId: 'zoom',
-          clientId: env.ZOOM_CLIENT_ID as string,
-          clientSecret: env.ZOOM_CLIENT_SECRET as string,
-          authorizationUrl: 'https://zoom.us/oauth/authorize',
-          tokenUrl: 'https://zoom.us/oauth/token',
-          userInfoUrl: 'https://api.zoom.us/v2/users/me',
-          scopes: getCanonicalScopesForProvider('zoom'),
-          responseType: 'code',
-          accessType: 'offline',
-          authentication: 'basic',
-          prompt: 'consent',
-          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/zoom`,
-          getUserInfo: async (tokens) => {
-            try {
-              logger.info('Fetching Zoom user profile')
-
-              const response = await fetch('https://api.zoom.us/v2/users/me', {
-                headers: {
-                  Authorization: `Bearer ${tokens.accessToken}`,
-                },
-              })
-
-              if (!response.ok) {
-                await response.text().catch(() => {})
-                logger.error('Failed to fetch Zoom user info', {
-                  status: response.status,
-                  statusText: response.statusText,
-                })
-                throw new Error('Failed to fetch user info')
-              }
-
-              const profile = await response.json()
-
-              return {
-                id: `${profile.id.toString()}-${generateId()}`,
-                name:
-                  `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Zoom User',
-                email: profile.email || `${profile.id}@zoom.user`,
-                emailVerified: profile.verified === 1,
-                image: profile.pic_url || undefined,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              }
-            } catch (error) {
-              logger.error('Error in Zoom getUserInfo:', { error })
-              return null
-            }
-          },
-        },
-
-        // Zoom admin (account-wide) provider — optional; requires ZOOM_ADMIN_* env vars
-        ...(env.ZOOM_ADMIN_CLIENT_ID?.trim() && env.ZOOM_ADMIN_CLIENT_SECRET?.trim()
-          ? [
-              {
-                providerId: 'zoom-admin',
-                clientId: env.ZOOM_ADMIN_CLIENT_ID as string,
-                clientSecret: env.ZOOM_ADMIN_CLIENT_SECRET as string,
-                authorizationUrl: 'https://zoom.us/oauth/authorize',
-                tokenUrl: 'https://zoom.us/oauth/token',
-                userInfoUrl: 'https://api.zoom.us/v2/users/me',
-                scopes: getCanonicalScopesForProvider('zoom-admin'),
-                responseType: 'code' as const,
-                accessType: 'offline' as const,
-                authentication: 'basic' as const,
-                prompt: 'consent' as const,
-                redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/zoom-admin`,
-                getUserInfo: async (tokens: { accessToken?: string }) => {
-                  try {
-                    logger.info('Fetching Zoom admin OAuth user profile')
-
-                    const response = await fetch('https://api.zoom.us/v2/users/me', {
-                      headers: {
-                        Authorization: `Bearer ${tokens.accessToken}`,
-                      },
-                    })
-
-                    if (!response.ok) {
-                      await response.text().catch(() => {})
-                      logger.error('Failed to fetch Zoom admin OAuth user info', {
-                        status: response.status,
-                        statusText: response.statusText,
-                      })
-                      throw new Error('Failed to fetch user info')
-                    }
-
-                    const profile = await response.json()
-
-                    return {
-                      id: `${profile.id.toString()}-${generateId()}`,
-                      name:
-                        `${profile.first_name || ''} ${profile.last_name || ''}`.trim() ||
-                        'Zoom User',
-                      email: profile.email || `${profile.id}@zoom.user`,
-                      emailVerified: profile.verified === 1,
-                      image: profile.pic_url || undefined,
-                      createdAt: new Date(),
-                      updatedAt: new Date(),
-                    }
-                  } catch (error) {
-                    logger.error('Error in Zoom admin getUserInfo:', { error })
-                    return null
-                  }
-                },
-              },
-            ]
-          : []),
 
         // Spotify provider
         {
