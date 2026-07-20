@@ -98,7 +98,6 @@ import {
 } from '@/lib/oauth/microsoft'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
 import { captureServerEvent, getPostHogClient } from '@/lib/posthog/server'
-import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 import { disableUserResources } from '@/lib/workflows/lifecycle'
 import { SSO_TRUSTED_PROVIDERS } from '@/ee/sso/constants'
 import { createAnonymousSession, ensureAnonymousUserExists } from './anonymous'
@@ -641,46 +640,6 @@ export const auth = betterAuth({
               .update(schema.account)
               .set({ refreshTokenExpiresAt: getMicrosoftRefreshTokenExpiry() })
               .where(eq(schema.account.id, account.id))
-          }
-
-          // Sync webhooks for credential sets after connecting a new credential
-          const requestId = generateId().slice(0, 8)
-          const userMemberships = await db
-            .select({
-              credentialSetId: schema.credentialSetMember.credentialSetId,
-              providerId: schema.credentialSet.providerId,
-            })
-            .from(schema.credentialSetMember)
-            .innerJoin(
-              schema.credentialSet,
-              eq(schema.credentialSetMember.credentialSetId, schema.credentialSet.id)
-            )
-            .where(
-              and(
-                eq(schema.credentialSetMember.userId, account.userId),
-                eq(schema.credentialSetMember.status, 'active')
-              )
-            )
-
-          for (const membership of userMemberships) {
-            if (membership.providerId === account.providerId) {
-              try {
-                await syncAllWebhooksForCredentialSet(membership.credentialSetId, requestId)
-                logger.info('[account.create.after] Synced webhooks after credential connect', {
-                  credentialSetId: membership.credentialSetId,
-                  providerId: account.providerId,
-                })
-              } catch (error) {
-                logger.error(
-                  '[account.create.after] Failed to sync webhooks after credential connect',
-                  {
-                    credentialSetId: membership.credentialSetId,
-                    providerId: account.providerId,
-                    error,
-                  }
-                )
-              }
-            }
           }
 
           try {
@@ -3260,6 +3219,7 @@ export const auth = betterAuth({
                 params: { allow_promotion_codes: true },
               }),
               onSubscriptionComplete: async ({
+                event,
                 stripeSubscription,
                 subscription,
               }: {
@@ -3313,7 +3273,7 @@ export const auth = betterAuth({
                   throw orgError
                 }
 
-                await handleSubscriptionCreated(resolvedSubscription)
+                await handleSubscriptionCreated(resolvedSubscription, event.id)
 
                 await syncSubscriptionUsageLimits(resolvedSubscription)
 

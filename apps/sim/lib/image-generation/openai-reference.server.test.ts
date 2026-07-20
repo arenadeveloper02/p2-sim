@@ -91,10 +91,7 @@ describe('generateOpenAIImageEdit', () => {
       {
         model: 'gpt-image-2',
         prompt: 'Composite image 1 and image 2',
-        inputImages: [
-          'https://example.com/a.png',
-          'https://example.com/b.png',
-        ],
+        inputImages: ['https://example.com/a.png', 'https://example.com/b.png'],
       },
       { userId: 'user-1', requestId: 'req-2' }
     )

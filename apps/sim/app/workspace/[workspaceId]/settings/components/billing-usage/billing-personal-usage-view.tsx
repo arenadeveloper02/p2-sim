@@ -7,7 +7,7 @@ import {
   Info,
   Server,
   Workflow,
-} from '@/components/emcn'
+} from '@sim/emcn'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import type { CreditUsageSummary } from '@/lib/api/contracts/billing-credit-usage'

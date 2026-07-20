@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button, Combobox, cn } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateShortId } from '@sim/utils/id'
@@ -8,13 +9,30 @@ import { randomFloat } from '@sim/utils/random'
 import { useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { Button, Combobox } from '@/components/emcn/components'
 import { Progress } from '@/components/ui/progress'
 import { isApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
 import { fileDeleteContract } from '@/lib/api/contracts/storage-transfer'
-import { cn } from '@/lib/core/utils/cn'
+import {
+  getConversationImageRefKey,
+  listConversationFileOptions,
+} from '@/lib/chat/conversation-image-catalog'
+import {
+  getImageBlockModelDefinition,
+  normalizeImageModelId,
+  supportsMultipleReferenceImages,
+} from '@/lib/image-generation/block-model-config'
+import {
+  buildReferenceFileValue,
+  type ConversationImageRef,
+  type ParsedReferenceFileValue,
+  parseReferenceFileValue,
+} from '@/lib/image-generation/reference-files'
 import { getExtensionFromMimeType } from '@/lib/uploads/utils/file-utils'
+import {
+  ConversationImagePicker,
+  ConversationImagePickerActions,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/conversation-image-picker'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -27,22 +45,6 @@ import {
 } from '@/hooks/queries/workspace-files'
 import { getProviderAttachmentMaxBytes } from '@/providers/attachments'
 import { getProviderFromModel } from '@/providers/utils'
-import {
-  ConversationImagePicker,
-  ConversationImagePickerActions,
-} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/conversation-image-picker'
-import { listConversationFileOptions, getConversationImageRefKey } from '@/lib/chat/conversation-image-catalog'
-import {
-  buildReferenceFileValue,
-  type ConversationImageRef,
-  parseReferenceFileValue,
-  type ParsedReferenceFileValue,
-} from '@/lib/image-generation/reference-files'
-import {
-  getImageBlockModelDefinition,
-  normalizeImageModelId,
-  supportsMultipleReferenceImages,
-} from '@/lib/image-generation/block-model-config'
 import { useChatStore } from '@/stores/chat/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -73,9 +75,17 @@ interface FileUploadProps {
   isPreview?: boolean
   previewValue?: any | null
   disabled?: boolean
+  /**
+   * Controlled value. When `onValueChange` is provided the component reads from
+   * this prop and writes through `onValueChange` instead of the subblock store,
+   * letting it be embedded where the value lives outside a subblock (e.g. a
+   * single field inside the input-format editor).
+   */
+  value?: UploadedFile | UploadedFile[] | null
+  onValueChange?: (value: UploadedFile | UploadedFile[] | null) => void
 }
 
-interface UploadedFile {
+export interface UploadedFile {
   name: string
   path: string
   key?: string
@@ -203,9 +213,25 @@ export function FileUpload({
   isPreview = false,
   previewValue,
   disabled = false,
+  value: controlledValue,
+  onValueChange,
 }: FileUploadProps) {
   const activeSearchTarget = useActiveSearchTarget()
   const [storeValue, setStoreValue] = useSubBlockValue(blockId, subBlockId)
+  const isControlled = onValueChange !== undefined
+
+  /**
+   * Persists a new value. In controlled mode the caller owns persistence; in
+   * store mode we write through the subblock store and notify collaborators.
+   */
+  const commitValue = (next: UploadedFile | UploadedFile[] | null) => {
+    if (isControlled) {
+      onValueChange(next)
+      return
+    }
+    setStoreValue(next)
+    useWorkflowStore.getState().triggerUpdate()
+  }
   const [modelValue] = useSubBlockValue(blockId, 'model')
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -276,7 +302,7 @@ export function FileUpload({
   const uploadFileMutation = useUploadWorkspaceFile()
   const queryClient = useQueryClient()
 
-  const value = isPreview ? previewValue : storeValue
+  const value = isControlled ? controlledValue : isPreview ? previewValue : storeValue
 
   const parsedReferenceValue = useMemo(
     () => (useCombinedChatReferenceMode ? parseReferenceFileValue(value) : null),
@@ -661,7 +687,6 @@ export function FileUpload({
       }
     }
 
-    useWorkflowStore.getState().triggerUpdate()
     logger.info(`Selected workspace file: ${selectedFile.name}`, activeWorkflowId)
   }
 
@@ -720,8 +745,6 @@ export function FileUpload({
           setStoreValue(null)
         }
       }
-
-      useWorkflowStore.getState().triggerUpdate()
     } catch (error) {
       logger.error(getErrorMessage(error, 'Failed to remove file'), activeWorkflowId)
     } finally {
@@ -851,9 +874,7 @@ export function FileUpload({
         : effectiveMultiple
           ? [...parsedReferenceValue.conversationImages, ref]
           : [ref],
-      ...(exists || effectiveMultiple
-        ? {}
-        : { includeStartFiles: false, workspaceFiles: [] }),
+      ...(exists || effectiveMultiple ? {} : { includeStartFiles: false, workspaceFiles: [] }),
     })
   }
 
@@ -1003,7 +1024,9 @@ export function FileUpload({
             disabled={disabled}
             actionLabel='Select from conversation'
             hideLabel={
-              conversationFileMode === 'all' ? 'Hide conversation files' : 'Hide conversation images'
+              conversationFileMode === 'all'
+                ? 'Hide conversation files'
+                : 'Hide conversation images'
             }
           />
           {showConversationPicker && (
@@ -1020,9 +1043,7 @@ export function FileUpload({
                   : undefined
               }
               sectionLabel={
-                conversationFileMode === 'all'
-                  ? 'Select files from this conversation'
-                  : undefined
+                conversationFileMode === 'all' ? 'Select files from this conversation' : undefined
               }
             />
           )}
@@ -1050,44 +1071,45 @@ export function FileUpload({
       )}
 
       {/* Selected reference thumbnails and file list */}
-      {!isUsingStartFiles || useCombinedChatReferenceMode ? (
-        (hasFiles || isUploading) && (
-          <div className={cn('space-y-2', effectiveMultiple && 'mb-2')}>
-            {useCombinedChatReferenceMode && (conversationImages.length > 0 || isUsingStartFiles) && (
-              <div className='flex flex-wrap gap-2'>
-                {isUsingStartFiles && (
-                  <div className='flex h-[56px] min-w-[120px] items-center rounded-md border border-[var(--border-1)] bg-[var(--surface-5)] px-2 text-[var(--text-primary)] text-xs'>
-                    Chat uploads
+      {!isUsingStartFiles || useCombinedChatReferenceMode
+        ? (hasFiles || isUploading) && (
+            <div className={cn('space-y-2', effectiveMultiple && 'mb-2')}>
+              {useCombinedChatReferenceMode &&
+                (conversationImages.length > 0 || isUsingStartFiles) && (
+                  <div className='flex flex-wrap gap-2'>
+                    {isUsingStartFiles && (
+                      <div className='flex h-[56px] min-w-[120px] items-center rounded-md border border-[var(--border-1)] bg-[var(--surface-5)] px-2 text-[var(--text-primary)] text-xs'>
+                        Chat uploads
+                      </div>
+                    )}
+                    {conversationImages.map(renderConversationImageItem)}
                   </div>
                 )}
-                {conversationImages.map(renderConversationImageItem)}
-              </div>
-            )}
-            {effectiveMultiple &&
-              filesArray.map((file, index) => {
-                const isCurrentlyUploading = uploadingFiles.some(
-                  (uploadingFile) => uploadingFile.name === file.name
-                )
-                return !isCurrentlyUploading && renderFileItem(file, index)
-              })}
-            {isUploading && (
-              <>
-                {uploadingFiles.map(renderUploadingItem)}
-                <div className='mt-1'>
-                  <Progress
-                    value={uploadProgress}
-                    className='h-2 w-full'
-                    indicatorClassName='bg-foreground'
-                  />
-                  <div className='mt-1 text-center text-muted-foreground text-xs'>
-                    {uploadProgress < 100 ? 'Uploading...' : 'Upload complete!'}
+              {effectiveMultiple &&
+                filesArray.map((file, index) => {
+                  const isCurrentlyUploading = uploadingFiles.some(
+                    (uploadingFile) => uploadingFile.name === file.name
+                  )
+                  return !isCurrentlyUploading && renderFileItem(file, index)
+                })}
+              {isUploading && (
+                <>
+                  {uploadingFiles.map(renderUploadingItem)}
+                  <div className='mt-1'>
+                    <Progress
+                      value={uploadProgress}
+                      className='h-2 w-full'
+                      indicatorClassName='bg-foreground'
+                    />
+                    <div className='mt-1 text-center text-muted-foreground text-xs'>
+                      {uploadProgress < 100 ? 'Uploading...' : 'Upload complete!'}
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
-          </div>
-        )
-      ) : null}
+                </>
+              )}
+            </div>
+          )
+        : null}
 
       {(() => {
         const canSelectWorkspaceFiles = !isUsingStartFiles || useCombinedChatReferenceMode

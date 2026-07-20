@@ -1,5 +1,5 @@
 {
-  "id": "a1f8c3d2-6b4e-4a91-9f2c-ledger0248ab",
+  "id": "c8c8a4e3-682c-4a0d-a612-71d9020717ab",
   "prevId": "9bc000af-3e10-4674-97af-24486107212f",
   "version": "7",
   "dialect": "postgresql",
@@ -8775,6 +8775,13 @@
           "notNull": true,
           "default": 0
         },
+        "limit_notifications": {
+          "name": "limit_notifications",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
         "departed_member_usage": {
           "name": "departed_member_usage",
           "type": "numeric",
@@ -11605,18 +11612,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "raw_cost": {
-          "name": "raw_cost",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "billable_cost": {
-          "name": "billable_cost",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
         "event_key": {
           "name": "event_key",
           "type": "text",
@@ -11645,54 +11640,6 @@
         "billing_period_end": {
           "name": "billing_period_end",
           "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "vendor": {
-          "name": "vendor",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tool_id": {
-          "name": "tool_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chat_id": {
-          "name": "chat_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "numeric",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "unit": {
-          "name": "unit",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pricing_snapshot": {
-          "name": "pricing_snapshot",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -11874,65 +11821,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "usage_log_workspace_source_created_at_idx": {
-          "name": "usage_log_workspace_source_created_at_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "source",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "usage_log_chat_id_idx": {
-          "name": "usage_log_chat_id_idx",
-          "columns": [
-            {
-              "expression": "chat_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"usage_log\".\"chat_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "usage_log_run_id_idx": {
-          "name": "usage_log_run_id_idx",
-          "columns": [
-            {
-              "expression": "run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"usage_log\".\"run_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -11959,24 +11847,6 @@
           "tableFrom": "usage_log",
           "tableTo": "workflow",
           "columnsFrom": ["workflow_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "usage_log_chat_id_copilot_chats_id_fk": {
-          "name": "usage_log_chat_id_copilot_chats_id_fk",
-          "tableFrom": "usage_log",
-          "tableTo": "copilot_chats",
-          "columnsFrom": ["chat_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "usage_log_run_id_copilot_runs_id_fk": {
-          "name": "usage_log_run_id_copilot_runs_id_fk",
-          "tableFrom": "usage_log",
-          "tableTo": "copilot_runs",
-          "columnsFrom": ["run_id"],
           "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
@@ -12314,6 +12184,13 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": false
+        },
+        "limit_notifications": {
+          "name": "limit_notifications",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
         }
       },
       "indexes": {},

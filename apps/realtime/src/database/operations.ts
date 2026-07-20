@@ -2,6 +2,7 @@ import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import * as schema from '@sim/db'
 import {
   instrumentPoolClient,
+  resolveDbUrl,
   workflow,
   workflowBlocks,
   workflowEdges,
@@ -31,15 +32,20 @@ import { env } from '@/env'
 
 const logger = createLogger('SocketDatabase')
 
-const connectionString = env.DATABASE_URL
+// Both realtime pools (this socketDb + the shared @sim/db pool) resolve the
+// realtime-keyed URL when set, falling back to the shared DATABASE_URL.
+const connectionString =
+  resolveDbUrl('DATABASE_URL', process.env.SIM_DB_ROLE ?? 'realtime') ?? env.DATABASE_URL
+// Realtime process footprint = this socketDb pool + the shared @sim/db pool.
 const socketDb = drizzle(
   instrumentPoolClient(
     postgres(connectionString, {
       prepare: false,
       idle_timeout: 10,
       connect_timeout: 20,
-      max: 15,
+      max: 10,
       onnotice: () => {},
+      connection: { application_name: process.env.DB_APP_NAME ?? 'sim-realtime' },
     }),
     'socketDb'
   ),
@@ -567,6 +573,39 @@ async function handleBlockOperationTx(
       logger.debug(
         `Updated block canonical mode: ${payload.id} -> ${payload.canonicalId}: ${payload.canonicalMode}`
       )
+      break
+    }
+
+    case BLOCK_OPERATIONS.REPLACE_CANONICAL_MODES: {
+      if (!payload.id || !payload.data?.canonicalModes) {
+        throw new Error('Missing required fields for replace canonical modes operation')
+      }
+
+      const existingBlock = await tx
+        .select({ data: workflowBlocks.data })
+        .from(workflowBlocks)
+        .where(and(eq(workflowBlocks.id, payload.id), eq(workflowBlocks.workflowId, workflowId)))
+        .limit(1)
+
+      const currentData = (existingBlock?.[0]?.data as Record<string, unknown>) || {}
+
+      const updateResult = await tx
+        .update(workflowBlocks)
+        .set({
+          data: {
+            ...currentData,
+            canonicalModes: payload.data.canonicalModes,
+          },
+          updatedAt: new Date(),
+        })
+        .where(and(eq(workflowBlocks.id, payload.id), eq(workflowBlocks.workflowId, workflowId)))
+        .returning({ id: workflowBlocks.id })
+
+      if (updateResult.length === 0) {
+        throw new Error(`Block ${payload.id} not found in workflow ${workflowId}`)
+      }
+
+      logger.debug(`Replaced block canonical modes: ${payload.id}`)
       break
     }
 

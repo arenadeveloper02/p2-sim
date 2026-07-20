@@ -9,27 +9,30 @@ import {
   useRef,
   useState,
 } from 'react'
+import {
+  Button,
+  Calendar,
+  ChipCombobox,
+  type ComboboxOption,
+  cn,
+  Library,
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  RefreshCw,
+  toast,
+} from '@sim/emcn'
+import { Download, Workflow } from '@sim/emcn/icons'
 import { formatDuration } from '@sim/utils/formatting'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import { useQueryState } from 'nuqs'
-import {
-  Button,
-  ChipCombobox,
-  type ComboboxOption,
-  DatePicker,
-  Library,
-  RefreshCw,
-  toast,
-} from '@/components/emcn'
-import { Download, Workflow } from '@/components/emcn/icons'
 import type {
   WorkflowLogDetail,
   WorkflowLogRow,
   WorkflowLogSummary,
 } from '@/lib/api/contracts/logs'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
-import { cn } from '@/lib/core/utils/cn'
 import {
   getEndDateFromTimeRange,
   getStartDateFromTimeRange,
@@ -52,7 +55,7 @@ import type {
   SearchConfig,
   SortConfig,
 } from '@/app/workspace/[workspaceId]/components'
-import { Resource } from '@/app/workspace/[workspaceId]/components'
+import { Resource, type ResourceTableHandle } from '@/app/workspace/[workspaceId]/components'
 import { useLogFilters } from '@/app/workspace/[workspaceId]/logs/hooks/use-log-filters'
 import { useSearchState } from '@/app/workspace/[workspaceId]/logs/hooks/use-search-state'
 import {
@@ -264,6 +267,7 @@ export default function Logs() {
   const selectedLogIndexRef = useRef(-1)
   const selectedLogIdRef = useRef<string | null>(null)
   const shouldScrollIntoViewRef = useRef(false)
+  const resourceTableRef = useRef<ResourceTableHandle>(null)
   const logsRefetchRef = useRef<() => void>(() => {})
   const activeLogRefetchRef = useRef<() => void>(() => {})
   const activeLogTabRef = useRef<string>('overview')
@@ -616,10 +620,8 @@ export default function Logs() {
   useEffect(() => {
     if (!selectedLogId || !shouldScrollIntoViewRef.current) return
     shouldScrollIntoViewRef.current = false
-    const row = document.querySelector(`[data-row-id="${selectedLogId}"]`) as HTMLElement | null
-    if (row) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }
+    // Route through the virtualizer; a querySelector would miss windowed-out rows.
+    resourceTableRef.current?.scrollToRow(selectedLogId)
   }, [selectedLogId, selectedLogIndex])
 
   const effectiveSidebarOpen =
@@ -1173,6 +1175,8 @@ export default function Logs() {
           </div>
         ) : (
           <Resource.Table
+            apiRef={resourceTableRef}
+            virtualized
             columns={LOG_COLUMNS}
             rows={rows}
             selectedRowId={selectedLogId}
@@ -1475,10 +1479,7 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
             className='w-full'
             maxHeight={320}
           />
-          <DatePicker
-            mode='range'
-            showTrigger={false}
-            showTime
+          <Popover
             open={datePickerOpen}
             onOpenChange={(isOpen) => {
               if (!isOpen) {
@@ -1489,11 +1490,19 @@ function LogsFilterPanel({ searchQuery, onSearchQueryChange }: LogsFilterPanelPr
                 }
               }
             }}
-            startDate={startDate}
-            endDate={endDate}
-            onRangeChange={handleDateRangeApply}
-            onCancel={handleDatePickerCancel}
-          />
+          >
+            <PopoverAnchor className='pointer-events-none absolute inset-0' />
+            <PopoverContent align='start' sideOffset={4} className='w-auto p-0'>
+              <Calendar
+                mode='range'
+                showTime
+                startDate={startDate}
+                endDate={endDate}
+                onRangeChange={handleDateRangeApply}
+                onCancel={handleDatePickerCancel}
+              />
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 

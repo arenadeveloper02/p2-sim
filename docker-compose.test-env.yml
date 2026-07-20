@@ -7,13 +7,13 @@ services:
     deploy:
       resources:
         limits:
-          memory: 8G
+          memory: 16G
     env_file:
       - apps/sim/.env
     environment:
       - NODE_ENV=production
-      - NEXT_TELEMETRY_DISABLED=1
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - NEXT_TELEMETRY_DISABLED=1
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
@@ -63,7 +63,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 6G
     env_file:
       - apps/realtime/.env
     environment:

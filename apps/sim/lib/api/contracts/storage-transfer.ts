@@ -3,6 +3,7 @@ import {
   batchPresignedUploadResponseSchema,
   presignedUploadResponseSchema,
 } from '@/lib/api/contracts/file-uploads'
+import { workspaceFileIdSchema } from '@/lib/api/contracts/primitives'
 import {
   type ContractBodyInput,
   type ContractJsonResponse,
@@ -104,6 +105,15 @@ export const dropboxUploadBodySchema = z.object({
   mode: z.enum(['add', 'overwrite']).optional().nullable(),
   autorename: z.boolean().optional().nullable(),
   mute: z.boolean().optional().nullable(),
+})
+
+export const jupyterUploadBodySchema = z.object({
+  serverUrl: z.string().min(1, 'Server URL is required'),
+  token: z.string().min(1, 'Token is required'),
+  directory: z.string().optional().nullable(),
+  file: FileInputSchema.optional().nullable(),
+  fileContent: z.string().optional().nullable(),
+  fileName: z.string().optional().nullable(),
 })
 
 export const wordpressUploadBodySchema = z.object({
@@ -282,14 +292,10 @@ export const storageContextSchema = z.enum([
   'org-logos',
 ])
 
-export const downloadContextSchema = z.union([storageContextSchema, z.literal('general')])
-
 export const fileDownloadBodySchema = z
   .object({
     key: z.string().optional(),
     name: z.string().optional(),
-    isExecutionFile: z.boolean().optional(),
-    context: downloadContextSchema.optional(),
     url: z
       .string()
       .url()
@@ -469,11 +475,11 @@ export const fileServeQuerySchema = z.object({
 })
 
 export const fileViewParamsSchema = z.object({
-  id: z.string().uuid('File ID must be a valid UUID'),
+  id: workspaceFileIdSchema,
 })
 
 export const fileExportParamsSchema = z.object({
-  id: z.string().uuid('File ID must be a valid UUID'),
+  id: workspaceFileIdSchema,
 })
 
 export const boxUploadContract = defineRouteContract({
@@ -487,6 +493,13 @@ export const dropboxUploadContract = defineRouteContract({
   method: 'POST',
   path: '/api/tools/dropbox/upload',
   body: dropboxUploadBodySchema,
+  response: { mode: 'json', schema: jsonResponseSchema },
+})
+
+export const jupyterUploadContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/tools/jupyter/upload',
+  body: jupyterUploadBodySchema,
   response: { mode: 'json', schema: jsonResponseSchema },
 })
 
@@ -740,6 +753,8 @@ export type BoxUploadBody = ContractBodyInput<typeof boxUploadContract>
 export type BoxUploadResponse = ContractJsonResponse<typeof boxUploadContract>
 export type DropboxUploadBody = ContractBodyInput<typeof dropboxUploadContract>
 export type DropboxUploadResponse = ContractJsonResponse<typeof dropboxUploadContract>
+export type JupyterUploadBody = ContractBodyInput<typeof jupyterUploadContract>
+export type JupyterUploadResponse = ContractJsonResponse<typeof jupyterUploadContract>
 export type WordPressUploadBody = ContractBodyInput<typeof wordpressUploadContract>
 export type WordPressUploadResponse = ContractJsonResponse<typeof wordpressUploadContract>
 export type SftpDownloadBody = ContractBodyInput<typeof sftpDownloadContract>

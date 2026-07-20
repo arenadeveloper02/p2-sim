@@ -7,7 +7,7 @@ import {
   Info,
   Server,
   Workflow,
-} from '@/components/emcn'
+} from '@sim/emcn'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import type { CreditUsageSummary } from '@/lib/api/contracts/billing-credit-usage'
 import { BillingUsageMetricCard } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-metric-card'

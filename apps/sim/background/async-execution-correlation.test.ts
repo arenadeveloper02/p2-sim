@@ -57,7 +57,7 @@ describe('async execution correlation fallbacks', () => {
     expect(scheduleExecutionTaskOptions).toMatchObject({
       queue: {
         name: 'schedule-execution',
-        concurrencyLimit: 50,
+        concurrencyLimit: 30,
       },
     })
   })

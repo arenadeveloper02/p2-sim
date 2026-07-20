@@ -40,14 +40,21 @@ import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { resolveEffectivePiiRedaction } from '@/lib/billing/retention'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
-import { isFeatureEnabled } from '@/lib/core/config/feature-flags'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { filterForDisplay } from '@/lib/core/utils/display-filters'
 import {
   collectLargeValueReferenceKeys,
   replaceLargeValueReferenceKeysWithClient,
 } from '@/lib/execution/payloads/large-value-metadata'
+import { redactLargeValueRefs } from '@/lib/logs/execution/pii-large-values'
 import { type RedactablePayload, redactPIIFromExecution } from '@/lib/logs/execution/pii-redaction'
+import {
+  clearProgressMarkers,
+  type ExecutionProgressMarkers,
+  getProgressMarkers,
+  pickLatestCompletedMarker,
+  pickLatestStartedMarker,
+} from '@/lib/logs/execution/progress-markers'
 import { snapshotService } from '@/lib/logs/execution/snapshot/service'
 import {
   externalizeExecutionData,
@@ -428,8 +435,15 @@ export class ExecutionLogger implements IExecutionLoggerService {
     return minimalWithSize.executionData
   }
 
+  /**
+   * Assemble the final `execution_data` for the terminal UPDATE. Live progress
+   * markers are sourced from `progressMarkers` (Redis, current run) and fall back
+   * to markers already on the row — the legacy SQL path and resumed rows that
+   * folded markers in at their prior pause boundary.
+   */
   private buildCompletedExecutionData(params: {
     existingExecutionData?: WorkflowExecutionLog['executionData']
+    progressMarkers?: ExecutionProgressMarkers
     traceSpans?: TraceSpan[]
     finalOutput: BlockOutputData
     finalizationPath?: ExecutionFinalizationPath
@@ -447,6 +461,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
   }): WorkflowExecutionLog['executionData'] {
     const {
       existingExecutionData,
+      progressMarkers,
       traceSpans,
       finalOutput,
       finalizationPath,
@@ -456,6 +471,15 @@ export class ExecutionLogger implements IExecutionLoggerService {
       workflowInput,
     } = params
     const traceSpanCount = countTraceSpans(traceSpans)
+
+    const lastStartedBlock = pickLatestStartedMarker(
+      progressMarkers?.lastStartedBlock,
+      existingExecutionData?.lastStartedBlock
+    )
+    const lastCompletedBlock = pickLatestCompletedMarker(
+      progressMarkers?.lastCompletedBlock,
+      existingExecutionData?.lastCompletedBlock
+    )
 
     return {
       ...(existingExecutionData?.environment
@@ -470,12 +494,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
           }
         : {}),
       ...(existingExecutionData?.error ? { error: existingExecutionData.error } : {}),
-      ...(existingExecutionData?.lastStartedBlock
-        ? { lastStartedBlock: existingExecutionData.lastStartedBlock }
-        : {}),
-      ...(existingExecutionData?.lastCompletedBlock
-        ? { lastCompletedBlock: existingExecutionData.lastCompletedBlock }
-        : {}),
+      ...(lastStartedBlock ? { lastStartedBlock } : {}),
+      ...(lastCompletedBlock ? { lastCompletedBlock } : {}),
       ...(Array.isArray(existingExecutionData?.userAttachments) &&
       existingExecutionData.userAttachments.length > 0
         ? { userAttachments: existingExecutionData.userAttachments }
@@ -652,11 +672,10 @@ export class ExecutionLogger implements IExecutionLoggerService {
    */
   private async applyPiiRedaction(
     workspaceId: string | null,
-    payload: RedactablePayload
+    payload: RedactablePayload,
+    storeContext: { workflowId?: string | null; executionId: string; userId?: string | null }
   ): Promise<RedactablePayload> {
     if (!workspaceId) return payload
-
-    if (!(await isFeatureEnabled('pii-redaction'))) return payload
 
     const [row] = await db
       .select({ orgSettings: organization.dataRetentionSettings })
@@ -666,15 +685,37 @@ export class ExecutionLogger implements IExecutionLoggerService {
       .limit(1)
     if (!row) return payload
 
-    // Rules are only writable by enterprise orgs (route-gated), so an enabled
-    // rule already implies entitlement. We deliberately do NOT re-check
-    // `isWorkspaceOnEnterprisePlan` here: it returns false on transient lookup
-    // errors, which would silently skip masking and leak PII (fail-open). When
-    // rules are present we always redact (fail-safe; over-redaction at worst).
-    const config = resolveEffectivePiiRedaction({ orgSettings: row.orgSettings, workspaceId })
+    // Resolve from stored rules UNCONDITIONALLY — deliberately NOT gated on the
+    // `pii-redaction` feature flag or the enterprise-plan check. Rules are only
+    // writable by entitled orgs (route-gated), so their presence is the source of
+    // truth; re-checking the flag/plan here returns false on a transient read and
+    // would silently skip masking, leaking PII (fail-open). Absence of rules
+    // yields the disabled default, so non-PII orgs incur only the lookup.
+    const config = resolveEffectivePiiRedaction({ orgSettings: row.orgSettings, workspaceId }).logs
     if (!config.enabled) return payload
 
-    return redactPIIFromExecution(payload, { entityTypes: config.entityTypes })
+    // The string redactor can't reach values already offloaded to large-value
+    // storage (>8MB refs). Always hydrate → mask → re-store them under the LOGS
+    // policy, even if the block-output stage already masked before offload: that
+    // used the block-output entity set, which can differ from the logs set, so
+    // the log's large values must get the logs policy applied like inline content
+    // does. Masking is idempotent, so already-masked spans are unaffected; a ref
+    // that can't be materialized/re-stored falls back to a marker.
+    const working = await redactLargeValueRefs(payload, {
+      entityTypes: config.entityTypes,
+      language: config.language,
+      store: {
+        workspaceId,
+        workflowId: storeContext.workflowId ?? undefined,
+        executionId: storeContext.executionId,
+        userId: storeContext.userId ?? undefined,
+      },
+    })
+
+    return redactPIIFromExecution(working, {
+      entityTypes: config.entityTypes,
+      language: config.language,
+    })
   }
 
   async completeWorkflowExecution(params: {
@@ -728,7 +769,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
     completionFailure?: string
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,
@@ -823,8 +864,11 @@ export class ExecutionLogger implements IExecutionLoggerService {
       models: costSummary.models,
     }
 
+    const progressMarkers = await getProgressMarkers(executionId)
+
     const builtExecutionData = this.buildCompletedExecutionData({
       existingExecutionData,
+      progressMarkers: progressMarkers ?? undefined,
       traceSpans: mergedTraceSpans,
       finalOutput,
       finalizationPath,
@@ -853,25 +897,35 @@ export class ExecutionLogger implements IExecutionLoggerService {
     const redactedWorkflowInput =
       filteredWorkflowInput !== undefined ? redactApiKeys(filteredWorkflowInput) : undefined
 
-    const pii = await this.applyPiiRedaction(existingLog?.workspaceId ?? null, {
-      traceSpans: redactedTraceSpans,
-      finalOutput: redactedFinalOutput,
-      ...(redactedWorkflowInput !== undefined ? { workflowInput: redactedWorkflowInput } : {}),
-      ...(builtExecutionData.error !== undefined ? { error: builtExecutionData.error } : {}),
-      ...(builtExecutionData.completionFailure !== undefined
-        ? { completionFailure: builtExecutionData.completionFailure }
-        : {}),
-      ...(builtExecutionData.trigger !== undefined ? { trigger: builtExecutionData.trigger } : {}),
-      ...(builtExecutionData.executionState !== undefined
-        ? { executionState: builtExecutionData.executionState }
-        : {}),
-      ...(builtExecutionData.environment !== undefined
-        ? { environment: builtExecutionData.environment }
-        : {}),
-      ...(builtExecutionData.correlation !== undefined
-        ? { correlation: builtExecutionData.correlation }
-        : {}),
-    })
+    const pii = await this.applyPiiRedaction(
+      existingLog?.workspaceId ?? null,
+      {
+        traceSpans: redactedTraceSpans,
+        finalOutput: redactedFinalOutput,
+        ...(redactedWorkflowInput !== undefined ? { workflowInput: redactedWorkflowInput } : {}),
+        ...(builtExecutionData.error !== undefined ? { error: builtExecutionData.error } : {}),
+        ...(builtExecutionData.completionFailure !== undefined
+          ? { completionFailure: builtExecutionData.completionFailure }
+          : {}),
+        ...(builtExecutionData.trigger !== undefined
+          ? { trigger: builtExecutionData.trigger }
+          : {}),
+        ...(builtExecutionData.executionState !== undefined
+          ? { executionState: builtExecutionData.executionState }
+          : {}),
+        ...(builtExecutionData.environment !== undefined
+          ? { environment: builtExecutionData.environment }
+          : {}),
+        ...(builtExecutionData.correlation !== undefined
+          ? { correlation: builtExecutionData.correlation }
+          : {}),
+      },
+      {
+        workflowId: existingLog?.workflowId ?? null,
+        executionId,
+        userId: billingUserId,
+      }
+    )
 
     const rawDurationMs =
       isResume && existingLog?.startedAt
@@ -984,6 +1038,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
 
       return log
     })
+
+    if (progressMarkers !== null) void clearProgressMarkers(executionId)
 
     try {
       // Skip workflow lookup if workflow was deleted.
@@ -1100,6 +1156,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           userEmail: emailContext.userEmail,
           userName: emailContext.userName || undefined,
           planName: emailContext.planName,
+          workspaceId: updatedLog.workspaceId,
           percentBefore,
           percentAfter,
           currentUsageAfter,
@@ -1116,6 +1173,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           scope: 'organization',
           organizationId: emailContext.organizationId,
           planName: emailContext.planName,
+          workspaceId: updatedLog.workspaceId,
           percentBefore,
           percentAfter,
           currentUsageAfter,

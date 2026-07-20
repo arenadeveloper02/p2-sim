@@ -31,6 +31,10 @@ export const SUBBLOCK_ID_MIGRATIONS: Record<string, Record<string, string>> = {
     credentialAdmin: 'credential',
     manualCredentialAdmin: 'manualCredential',
   },
+  algolia: {
+    listPage: 'page',
+    listHitsPerPage: 'hitsPerPage',
+  },
   kalshi: {
     settlementStatus: '_removed_settlementStatus',
   },

@@ -1,15 +1,17 @@
 'use client'
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { cn } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { cn } from '@/lib/core/utils/cn'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { getEmptyDocPreviewMessage, getZeroByteDocPreviewMessage } from './empty-doc-preview'
+import { GeneratingPreviewEngagement } from './generating-preview-engagement'
 import { PREVIEW_LOADING_OVERLAY, PreviewError, resolvePreviewError } from './preview-shared'
 import { PreviewToolbar } from './preview-toolbar'
 import { bindPreviewWheelZoom } from './preview-wheel-zoom'
 import { useDocPreviewBinary } from './use-doc-preview-binary'
+import { useLocalGeneratingPreviewEngagement } from './use-local-generating-preview-engagement'
 
 const logger = createLogger('DocxPreview')
 
@@ -66,10 +68,13 @@ function fitDocxToContainer(host: HTMLElement, viewport: HTMLElement, zoomPercen
 export const DocxPreview = memo(function DocxPreview({
   file,
   workspaceId,
+  isAgentEditing,
 }: {
   file: WorkspaceFileRecord
   workspaceId: string
+  isAgentEditing?: boolean
 }) {
+  const showGeneratingEngagement = useLocalGeneratingPreviewEngagement(isAgentEditing)
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const zoomPercentRef = useRef(100)
@@ -234,7 +239,12 @@ export const DocxPreview = memo(function DocxPreview({
   }, [fileData, applyPostRenderStyling])
 
   const emptyMessage = getEmptyDocPreviewMessage(file, 'document')
-  if (emptyMessage) return <PreviewError label='document' error={emptyMessage} />
+  if (emptyMessage) {
+    if (showGeneratingEngagement) {
+      return <GeneratingPreviewEngagement kind='document' fileName={file.name} />
+    }
+    return <PreviewError label='document' error={emptyMessage} />
+  }
 
   const error = resolvePreviewError(preview.error, renderError)
   if (error) return <PreviewError label='document' error={error} />
@@ -244,6 +254,9 @@ export const DocxPreview = memo(function DocxPreview({
   }
 
   const showLoadingFrame = !hasRenderedPreview && (!fileData || rendering)
+  if (showLoadingFrame && showGeneratingEngagement && !fileData) {
+    return <GeneratingPreviewEngagement kind='document' fileName={file.name} />
+  }
 
   const scrollToPage = (page: number) => {
     const scrollContainer = scrollContainerRef.current

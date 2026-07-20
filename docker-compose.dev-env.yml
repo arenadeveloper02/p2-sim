@@ -9,18 +9,18 @@ services:
     deploy:
       resources:
         limits:
-          memory: 8G
+          memory: 16G
     env_file:
       - apps/sim/.env
     environment:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
-      - SOCKET_SERVER_URL=http://realtime:3002
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your_encryption_key_here}
+      - FREESTYLE_API_KEY=${FREESTYLE_API_KEY:-placeholder}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-placeholder}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-placeholder}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-placeholder}
@@ -28,7 +28,7 @@ services:
       - RESEND_API_KEY=${RESEND_API_KEY:-placeholder}
       - OLLAMA_URL=${OLLAMA_URL:-http://localhost:11434}
       - SOCKET_SERVER_URL=${SOCKET_SERVER_URL:-http://realtime:3002}
-      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://realtime:3002}
+      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3002}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_API_KEY_1=${OPENAI_API_KEY_1:-}
       - OPENAI_API_KEY_2=${OPENAI_API_KEY_2:-}
@@ -43,11 +43,9 @@ services:
       - XAI_API_KEY_3=${XAI_API_KEY_3:-}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - REDIS_URL=${REDIS_URL:-}
-      - COPILOT_API_KEY=${COPILOT_API_KEY}
-      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL}
-
+      - COPILOT_API_KEY=${COPILOT_API_KEY:-}
+      - SIM_AGENT_API_URL=${SIM_AGENT_API_URL:-}
     depends_on:
       db:
         condition: service_healthy
@@ -70,7 +68,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 6G
     env_file:
       - apps/realtime/.env
     environment:

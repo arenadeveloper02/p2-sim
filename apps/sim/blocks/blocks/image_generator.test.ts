@@ -4,8 +4,8 @@
 import { describe, expect, it } from 'vitest'
 import { ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
 import { AGENT_TOOL_BLOCK_TYPES } from '@/blocks/utils'
-import { createLLMToolSchema } from '@/tools/params'
 import { imageGenerateTool } from '@/tools/image/generate'
+import { createLLMToolSchema } from '@/tools/params'
 
 describe('ImageGeneratorV2Block', () => {
   it('is eligible as an agent tool', () => {
@@ -83,7 +83,9 @@ describe('ImageGeneratorV2Block', () => {
   })
 
   it('uses a single always-visible model combobox with all block models', () => {
-    const modelSubBlocks = ImageGeneratorV2Block.subBlocks.filter((subBlock) => subBlock.id === 'model')
+    const modelSubBlocks = ImageGeneratorV2Block.subBlocks.filter(
+      (subBlock) => subBlock.id === 'model'
+    )
 
     expect(modelSubBlocks).toHaveLength(1)
     expect(modelSubBlocks[0]?.condition).toBeUndefined()
@@ -93,8 +95,12 @@ describe('ImageGeneratorV2Block', () => {
   })
 
   it('allows clearing provider without hiding the model field', () => {
-    const providerSubBlock = ImageGeneratorV2Block.subBlocks.find((subBlock) => subBlock.id === 'provider')
-    const modelSubBlock = ImageGeneratorV2Block.subBlocks.find((subBlock) => subBlock.id === 'model')
+    const providerSubBlock = ImageGeneratorV2Block.subBlocks.find(
+      (subBlock) => subBlock.id === 'provider'
+    )
+    const modelSubBlock = ImageGeneratorV2Block.subBlocks.find(
+      (subBlock) => subBlock.id === 'model'
+    )
 
     expect(providerSubBlock?.clearable).toBe(true)
     expect(providerSubBlock?.value?.({})).toBe('')

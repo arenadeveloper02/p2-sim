@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
 } from 'react'
+import { noop } from '@sim/utils/helpers'
 import type { MothershipResource } from '@/app/workspace/[workspaceId]/home/types'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import type { ChatContext } from '@/stores/panel'
@@ -35,8 +36,6 @@ interface ChatSurfaceContextValue {
   copilotBackend?: CopilotBackendPreference
   setCopilotBackend?: (value: CopilotBackendPreference) => void
 }
-
-const noop = () => {}
 
 const ChatSurfaceContext = createContext<ChatSurfaceContextValue>({
   onContextAdd: noop,

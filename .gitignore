@@ -97,6 +97,12 @@ i18n.cache
 .claude/scheduled_tasks.lock
 .deepsec/
 
+# Personal Cursor Skills
+.cursor/skills/ask-sim/
+
+# Python (apps/pii tests/tooling)
+__pycache__/
+.pytest_cache/
 # Development block local generated apps (under apps/sim when Next cwd is apps/sim)
 /generated-apps/
 /apps/sim/generated-apps/

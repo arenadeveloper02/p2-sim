@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { type NextRequest, NextResponse } from 'next/server'
 import { functionExecuteContract } from '@/lib/api/contracts'
 import { parseRequest } from '@/lib/api/server'
@@ -111,13 +112,13 @@ const JS_RESERVED_WORDS = new Set([
   'public',
 ])
 
-type TypeScriptModule = typeof import('typescript')
+type TypeScriptModule = typeof import('@typescript/typescript6')
 
 let typescriptModulePromise: Promise<TypeScriptModule> | null = null
 
 async function loadTypeScriptModule(): Promise<TypeScriptModule> {
   if (!typescriptModulePromise) {
-    typescriptModulePromise = import('typescript').then(
+    typescriptModulePromise = import('@typescript/typescript6').then(
       (mod) => (mod?.default ?? mod) as TypeScriptModule,
       (error) => {
         typescriptModulePromise = null
@@ -1023,7 +1024,7 @@ async function maybeExportSandboxFileToWorkspace(args: {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to export sandbox file',
+        error: getErrorMessage(error, 'Failed to export sandbox file'),
         output: { result: null, stdout: cleanStdout(stdout), executionTime },
       },
       { status: 400 }
@@ -1167,7 +1168,7 @@ async function maybeExportSandboxFilesToWorkspace(args: {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Invalid sandbox output destination',
+        error: getErrorMessage(error, 'Invalid sandbox output destination'),
         output: {
           result: null,
           stdout: cleanStdout(args.stdout),
@@ -1222,7 +1223,7 @@ async function maybeExportSandboxFilesToWorkspace(args: {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Failed to export sandbox files',
+        error: getErrorMessage(error, 'Failed to export sandbox files'),
         output: {
           result: null,
           stdout: cleanStdout(args.stdout),

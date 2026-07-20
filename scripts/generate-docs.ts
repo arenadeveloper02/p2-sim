@@ -37,6 +37,7 @@ const TRIGGER_DOCS_OUTPUT_PATH = DOCS_OUTPUT_PATH
 /** Hand-written integration pages in DOCS_OUTPUT_PATH that the generator must never clobber. */
 const HANDWRITTEN_INTEGRATION_DOCS = new Set([
   'index',
+  'a2a',
   'google-service-account',
   'atlassian-service-account',
   'hubspot-setup',
@@ -162,6 +163,17 @@ interface BlockConfig {
   operations?: OperationInfo[]
   docsLink?: string
   [key: string]: any
+}
+
+/**
+ * True when a block's source text marks it as an unreleased `preview: true`
+ * block. THE single preview gate for this script — every surface it emits
+ * (docs .mdx, integrations.json, icon mapping) must consult this, because a
+ * missed gate publishes an unreleased block to docs.sim.ai, the catalog, the
+ * sitemap, and OG images. Mirrors the `hideFromToolbar` source-text checks.
+ */
+function isPreviewSource(blockContent: string): boolean {
+  return /preview\s*:\s*true/.test(blockContent)
 }
 
 /**
@@ -296,6 +308,11 @@ async function generateIconMapping(options: {
 
           // Check hideFromToolbar - skip hidden blocks for docs but NOT for icon mapping
           const hideFromToolbar = /hideFromToolbar\s*:\s*true/.test(blockContent)
+
+          // Unreleased preview blocks never reach any public surface, icon map included.
+          if (isPreviewSource(blockContent)) {
+            continue
+          }
 
           // Get block type
           const blockType =
@@ -982,6 +999,14 @@ function extractAllBlockConfigs(fileContent: string): BlockConfig[] {
         continue
       }
 
+      // Unreleased preview blocks stay out of every generated surface: docs
+      // .mdx pages, integrations.json (landing + workspace catalog + sitemap +
+      // OG images), and the icon mapping.
+      if (isPreviewSource(blockContent)) {
+        console.log(`Skipping ${blockName}Block - preview is true`)
+        continue
+      }
+
       // Pass fileContent to enable spread inheritance resolution
       const config = extractBlockConfigFromContent(blockContent, blockName, fileContent)
       if (config) {
@@ -1138,8 +1163,12 @@ function extractBlockConfigFromContent(
  * also naturally selects the canonical version. Recategorizing a block to
  * `'blocks'` or `'triggers'` removes it from all integration surfaces.
  */
-function isIntegrationBlock(config: { category?: string; hideFromToolbar?: boolean }): boolean {
-  return config.category === 'tools' && !config.hideFromToolbar
+function isIntegrationBlock(config: {
+  category?: string
+  hideFromToolbar?: boolean
+  preview?: boolean
+}): boolean {
+  return config.category === 'tools' && !config.hideFromToolbar && !config.preview
 }
 
 /**

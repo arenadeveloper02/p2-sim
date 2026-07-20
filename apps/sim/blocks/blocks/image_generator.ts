@@ -14,11 +14,7 @@ import {
 import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-files'
 import { mergeUrlsAndDeduplicate, parseImageUrls } from '@/lib/utils/parse-image-urls'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
-import {
-  createVersionedToolSelector,
-  normalizeFileInput,
-  parseOptionalBooleanInput,
-} from '@/blocks/utils'
+import { createVersionedToolSelector, parseOptionalBooleanInput } from '@/blocks/utils'
 import { START_FILES_REF } from '@/executor/constants'
 import type { ImageGenerationResponse } from '@/tools/image/types'
 
@@ -1204,10 +1200,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
 
         const { provider, model } = reconcileImageProviderAndModel({
           provider: typeof params.provider === 'string' ? params.provider : undefined,
-          model:
-            typeof params.model === 'string'
-              ? normalizeImageModelId(params.model)
-              : undefined,
+          model: typeof params.model === 'string' ? normalizeImageModelId(params.model) : undefined,
         })
         const referenceInputs =
           provider === 'openai' || provider === 'gemini'

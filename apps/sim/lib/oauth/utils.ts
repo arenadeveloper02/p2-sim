@@ -242,13 +242,6 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'GroupMember.ReadWrite.All': 'Read and write all group memberships',
   'Directory.Read.All': 'Read directory data',
 
-  // Discord scopes
-  identify: 'Read Discord user',
-  bot: 'Read Discord bot',
-  'messages.read': 'Read Discord messages',
-  guilds: 'Read Discord guilds',
-  'guilds.members.read': 'Read Discord guild members',
-
   // Reddit scopes
   identity: 'Access Reddit identity',
   submit: 'Submit posts and comments',
@@ -278,9 +271,10 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'channels:read': 'View public channels',
   'channels:history': 'Read channel messages',
   'channels:write': 'Create and manage public channels',
+  'channels:manage': 'Create, archive, and rename public channels',
   'groups:read': 'View private channels',
   'groups:history': 'Read private messages',
-  'groups:write': 'Create and manage private channels',
+  'groups:write': 'Create, archive, and manage private channels',
   'chat:write': 'Send messages',
   'chat:write.public': 'Post to public channels',
   'assistant:write': 'Set assistant thread status, title, and suggested prompts',
@@ -295,6 +289,7 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'canvases:read': 'Read canvas sections',
   'canvases:write': 'Create, edit, and delete canvas documents',
   'reactions:write': 'Add emoji reactions to messages',
+  'reactions:read': 'View emoji reactions on messages',
 
   // Webflow scopes
   'sites:read': 'View Webflow sites',

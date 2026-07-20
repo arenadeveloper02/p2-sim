@@ -18,6 +18,9 @@ import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
 
 const logger = createLogger('OAuthConnectionsQuery')
 
+export const OAUTH_CONNECTIONS_STALE_TIME = 30 * 1000
+export const OAUTH_CONNECTED_ACCOUNTS_STALE_TIME = 60 * 1000
+
 /**
  * `postMessage` `data.type` when Sim is embedded in Arena (`?from=arena_v3`) and the user starts OAuth.
  * The parent should set `window.location.href = data.url` (top-level navigation) so the provider can redirect back to Sim.
@@ -261,7 +264,7 @@ export function useOAuthConnections() {
   return useQuery({
     queryKey: oauthConnectionsKeys.connections(),
     queryFn: ({ signal }) => fetchOAuthConnections(signal),
-    staleTime: 30 * 1000,
+    staleTime: OAUTH_CONNECTIONS_STALE_TIME,
     retry: false,
   })
 }
@@ -443,7 +446,7 @@ export function useConnectedAccounts(provider: string, options?: { enabled?: boo
     queryKey: oauthConnectionsKeys.account(provider),
     queryFn: ({ signal }) => fetchConnectedAccounts(provider, signal),
     enabled: options?.enabled ?? true,
-    staleTime: 60 * 1000,
+    staleTime: OAUTH_CONNECTED_ACCOUNTS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }

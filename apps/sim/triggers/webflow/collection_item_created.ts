@@ -5,7 +5,6 @@ import {
   webflowCollectionsSelectorContract,
   webflowSitesSelectorContract,
 } from '@/lib/api/contracts/selectors/webflow'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import type { TriggerConfig } from '../types'
 
 const logger = createLogger('webflow-collection-item-created-trigger')
@@ -62,6 +61,7 @@ export const webflowCollectionItemCreatedTrigger: TriggerConfig = {
         value: 'webflow_collection_item_created',
       },
       fetchOptions: async (blockId: string) => {
+        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -82,6 +82,7 @@ export const webflowCollectionItemCreatedTrigger: TriggerConfig = {
         }
       },
       fetchOptionById: async (blockId: string, optionId: string) => {
+        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -115,6 +116,7 @@ export const webflowCollectionItemCreatedTrigger: TriggerConfig = {
         value: 'webflow_collection_item_created',
       },
       fetchOptions: async (blockId: string) => {
+        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
@@ -138,6 +140,7 @@ export const webflowCollectionItemCreatedTrigger: TriggerConfig = {
         }
       },
       fetchOptionById: async (blockId: string, optionId: string) => {
+        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null

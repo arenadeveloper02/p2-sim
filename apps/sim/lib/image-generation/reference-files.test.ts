@@ -2,9 +2,9 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { CONVERSATION_IMAGE_REF_SOURCE } from '@/lib/image-generation/reference-files'
 import {
   buildReferenceFileValue,
+  CONVERSATION_IMAGE_REF_SOURCE,
   flattenReferenceFileInputs,
   isConversationImageRef,
   normalizeReferenceFileParams,
@@ -58,7 +58,11 @@ describe('reference-files', () => {
     const fileB = { id: 'b', name: 'b.png', url: '/b', size: 2, type: 'image/png', key: 'k2' }
     const workspaceFile = { name: 'c.png', path: '/c', size: 3, type: 'image/png' }
 
-    expect(flattenReferenceFileInputs([[fileA, fileB], workspaceFile])).toEqual([fileA, fileB, workspaceFile])
+    expect(flattenReferenceFileInputs([[fileA, fileB], workspaceFile])).toEqual([
+      fileA,
+      fileB,
+      workspaceFile,
+    ])
   })
 
   it('normalizes mixed reference file params for agent blocks', () => {
@@ -71,8 +75,9 @@ describe('reference-files', () => {
       type: 'application/pdf',
     }
 
-    expect(
-      normalizeReferenceFileParams([START_FILES_REF, conversationFile])
-    ).toEqual([START_FILES_REF, conversationFile])
+    expect(normalizeReferenceFileParams([START_FILES_REF, conversationFile])).toEqual([
+      START_FILES_REF,
+      conversationFile,
+    ])
   })
 })

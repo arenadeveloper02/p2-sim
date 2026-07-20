@@ -46,12 +46,21 @@ import {
 import { client } from '@/lib/auth/auth-client'
 import { isEnterprise, isPaid, isTeam } from '@/lib/billing/plan-helpers'
 import { hasPaidSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
-import { workspaceCredentialKeys } from '@/hooks/queries/credentials'
 import { subscriptionKeys } from '@/hooks/queries/subscription'
+import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
 import { workspaceKeys } from '@/hooks/queries/workspace'
 
 const logger = createLogger('OrganizationQueries')
 const invitationListsKey = ['invitations', 'list'] as const
+
+export const ORGANIZATION_ROSTER_STALE_TIME = 30 * 1000
+export const ORGANIZATION_LIST_STALE_TIME = 30 * 1000
+export const ORGANIZATION_DETAIL_STALE_TIME = 30 * 1000
+export const ORGANIZATION_SUBSCRIPTION_STALE_TIME = 30 * 1000
+export const ORGANIZATION_BILLING_STALE_TIME = 30 * 1000
+export const ORGANIZATION_MEMBERS_STALE_TIME = 30 * 1000
+export const ORGANIZATION_MEMBER_USAGE_LIMIT_STALE_TIME = 30 * 1000
+export const ORGANIZATION_MY_MEMBER_CREDITS_STALE_TIME = 30 * 1000
 
 type OrganizationSubscriptionCandidate = {
   id: string
@@ -159,7 +168,7 @@ export function useOrganizationRoster(orgId: string | undefined | null) {
     queryKey: organizationKeys.roster(orgId ?? ''),
     queryFn: ({ signal }) => fetchOrganizationRoster(orgId as string, signal),
     enabled: !!orgId,
-    staleTime: 30 * 1000,
+    staleTime: ORGANIZATION_ROSTER_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -188,7 +197,7 @@ export function useOrganizations() {
   return useQuery({
     queryKey: organizationKeys.lists(),
     queryFn: ({ signal }) => fetchOrganizations(signal),
-    staleTime: 30 * 1000,
+    staleTime: ORGANIZATION_LIST_STALE_TIME,
   })
 }
 
@@ -216,7 +225,7 @@ export function useOrganization(orgId: string) {
     queryKey: organizationKeys.detail(orgId),
     queryFn: ({ signal }) => fetchOrganization(orgId, signal),
     enabled: !!orgId,
-    staleTime: 30 * 1000,
+    staleTime: ORGANIZATION_DETAIL_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -263,7 +272,7 @@ export function useOrganizationSubscription(orgId: string) {
     queryFn: ({ signal }) => fetchOrganizationSubscription(orgId, signal),
     enabled: !!orgId,
     retry: false,
-    staleTime: 30 * 1000,
+    staleTime: ORGANIZATION_SUBSCRIPTION_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -300,7 +309,7 @@ export function useOrganizationBilling(
     queryFn: ({ signal }) => fetchOrganizationBilling(orgId, signal),
     enabled: !!orgId && (options?.enabled ?? true),
     retry: false,
-    staleTime: 30 * 1000,
+    staleTime: ORGANIZATION_BILLING_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -340,7 +349,7 @@ export function useOrganizationMembers(orgId: string) {
     queryKey: organizationKeys.memberUsage(orgId),
     queryFn: ({ signal }) => fetchOrganizationMembers(orgId, signal),
     enabled: !!orgId,
-    staleTime: 30 * 1000,
+    staleTime: ORGANIZATION_MEMBERS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -553,7 +562,7 @@ export function useOrganizationMemberUsageLimit(orgId?: string, userId?: string,
     queryFn: ({ signal }) =>
       fetchOrganizationMemberUsageLimit(orgId as string, userId as string, signal),
     enabled: Boolean(orgId) && Boolean(userId) && enabled,
-    staleTime: 30 * 1000,
+    staleTime: ORGANIZATION_MEMBER_USAGE_LIMIT_STALE_TIME,
   })
 }
 
@@ -602,7 +611,7 @@ export function useMyMemberCredits(workspaceId?: string) {
     queryKey: organizationKeys.myMemberCredits(workspaceId ?? ''),
     queryFn: ({ signal }) => fetchMyMemberCredits(workspaceId as string, signal),
     enabled: Boolean(workspaceId),
-    staleTime: 30 * 1000,
+    staleTime: ORGANIZATION_MY_MEMBER_CREDITS_STALE_TIME,
   })
 }
 

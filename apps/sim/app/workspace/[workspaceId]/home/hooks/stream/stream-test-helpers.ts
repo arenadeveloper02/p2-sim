@@ -46,12 +46,13 @@ export function makeStreamLoopDeps(overrides: Partial<StreamLoopDeps> = {}): Str
     removePreviewSessionImmediate: vi.fn(),
     promoteFileResource: vi.fn(),
     shouldAutoActivatePreviewSession: vi.fn(() => true),
-    buildAssistantSnapshotMessage: vi.fn(({ id, content, contentBlocks, requestId }) => ({
+    buildAssistantSnapshotMessage: vi.fn(({ id, content, contentBlocks, requestId, liveStatus }) => ({
       id,
       role: 'assistant',
       content,
       contentBlocks,
       ...(requestId ? { requestId } : {}),
+      ...(liveStatus ? { liveStatus } : {}),
       // double-cast-allowed: vi.fn wrapper loses the exact snapshot-builder signature in this test fixture
     })) as unknown as StreamLoopDeps['buildAssistantSnapshotMessage'],
     hasTerminalPersistedAssistantForStream: vi.fn(() => false),
