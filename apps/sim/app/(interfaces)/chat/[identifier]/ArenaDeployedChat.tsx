@@ -7,7 +7,6 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
-import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
@@ -27,6 +26,7 @@ import {
   VoiceInterface,
 } from '@/app/(interfaces)/chat/components'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
+import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
 import {
   CHAT_ERROR_MESSAGES,
   CHAT_REQUEST_TIMEOUT_MS,
@@ -1550,8 +1550,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   if (isAutoLoginInProgress) {
     return (
-      <div className='fixed inset-0 z-[110] flex items-center justify-center bg-background'>
-        <LoadingAgentP2 size='lg' />
+      <div
+        className='fixed inset-0 z-[110] flex items-center justify-center'
+        style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+      >
+        <DeployedResponseLoader size={160} className='py-0' />
       </div>
     )
   }
@@ -1684,7 +1687,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                 className='absolute inset-0 z-[105] flex items-center justify-center'
                 style={{ backgroundColor: `${DEPLOYED_CHAT_CANVAS_BG}99` }}
               >
-                <LoadingAgentP2 size='lg' />
+                <DeployedResponseLoader size={160} className='py-0' />
               </div>
             )}
 

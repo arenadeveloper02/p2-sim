@@ -13,9 +13,9 @@ import { VoiceInput } from '@/app/(interfaces)/chat/components/input/voice-input
 import {
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_ICON_DEFAULT,
-  DEPLOYED_CHAT_INPUT_BORDER,
   DEPLOYED_CHAT_INPUT_GLOW_SHADOW,
   DEPLOYED_CHAT_INPUT_HEIGHT_CLASS,
+  DEPLOYED_CHAT_INPUT_SHELL_BACKGROUND,
 } from '@/app/(interfaces)/chat/constants'
 
 const logger = createLogger('ChatInput')
@@ -46,7 +46,7 @@ export const ChatInput: React.FC<{
   sttAvailable?: boolean
   /** When true, input is positioned within the flex main column instead of fixed viewport offsets */
   embedded?: boolean
-  /** Landing-page styling with gradient border */
+  /** Landing-page layout; deployed chrome is driven by `landing || embedded` */
   landing?: boolean
   placeholder?: string
 }> = ({
@@ -381,13 +381,13 @@ export const ChatInput: React.FC<{
             className={cn(
               'w-full',
               useDeployedChrome &&
-                'rounded-[29px] border border-solid bg-[var(--color-ds-surface-page,#FFFFFF)] p-0',
+                'rounded-[29px] border border-solid border-transparent p-0',
               useDeployedChrome && !hasDeployedExtras && DEPLOYED_CHAT_INPUT_HEIGHT_CLASS
             )}
             style={
               useDeployedChrome
                 ? {
-                    borderColor: DEPLOYED_CHAT_INPUT_BORDER,
+                    background: DEPLOYED_CHAT_INPUT_SHELL_BACKGROUND,
                     boxShadow: DEPLOYED_CHAT_INPUT_GLOW_SHADOW,
                   }
                 : undefined

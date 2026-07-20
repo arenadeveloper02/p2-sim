@@ -4,6 +4,38 @@ interface SidebarNavIconProps {
   className?: string
 }
 
+/**
+ * Sidebar collapse/expand control from Collapse.svg (soft plate + panel glyph).
+ */
+export function CollapseNavIcon({ className }: SidebarNavIconProps) {
+  return (
+    <svg
+      viewBox='0 0 24 24'
+      fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+      className={cn(
+        'size-6 shrink-0 text-[var(--color-ds-icon-default,#575A66)] transition-colors',
+        'group-hover:text-[var(--color-ds-text-link-hover,#155CBA)]',
+        '[&_.collapse-icon-plate]:fill-[var(--color-ds-brand-surface,#F3F8FE)]',
+        'group-hover:[&_.collapse-icon-plate]:fill-white',
+        className
+      )}
+      aria-hidden='true'
+    >
+      <path
+        className='collapse-icon-plate transition-colors'
+        d='M4 0.5H20C21.933 0.5 23.5 2.067 23.5 4V20C23.5 21.933 21.933 23.5 20 23.5H4C2.067 23.5 0.5 21.933 0.5 20V4C0.5 2.067 2.067 0.5 4 0.5Z'
+      />
+      <path
+        fillRule='evenodd'
+        clipRule='evenodd'
+        d='M5.55579 5.27273C5.55579 4.56982 5.88678 4 6.58968 4H8.7715C8.84589 4 8.91879 4.00638 8.98967 4.01863V4H16.9897C17.793 4 18.4442 4.65122 18.4442 5.45455V18.5455C18.4442 19.3488 17.793 20 16.9897 20H6.95332C6.25041 20 5.55579 19.4302 5.55579 18.7273V11.4405C5.55579 11.4405 5.55579 11.4405 5.55579 11.2985V10.2807C5.55579 9.30564 5.55579 9.67345 5.55579 9.28682V5.27273ZM6.62358 5.09091C6.62358 5.27273 6.62358 5.17231 6.62358 5.27273V9.28682C6.62358 9.34205 6.62358 9.28682 6.62358 9.42879V10.4466C6.62358 11.4405 6.62358 11.0538 6.62358 11.4405V18.7273C6.62358 18.8277 6.62358 18.7273 6.62358 18.9091H8.95332V5.27273C8.95332 5.17231 8.87192 5.09091 8.7715 5.09091H6.62358ZM10.0806 5.09091V18.9091H16.9897C17.1905 18.9091 17.3533 18.7463 17.3533 18.5455V5.45455C17.3533 5.25371 17.1905 5.09091 16.9897 5.09091H10.0806Z'
+        fill='currentColor'
+      />
+    </svg>
+  )
+}
+
 export function NewChatNavIcon({ className }: SidebarNavIconProps) {
   return (
     <svg
@@ -13,10 +45,6 @@ export function NewChatNavIcon({ className }: SidebarNavIconProps) {
       className={cn('size-6 shrink-0', className)}
       aria-hidden='true'
     >
-      <path
-        d='M0 4C0 1.79086 1.79086 0 4 0H20C22.2091 0 24 1.79086 24 4V20C24 22.2091 22.2091 24 20 24H4C1.79086 24 0 22.2091 0 20V4Z'
-        fill='#F3F8FE'
-      />
       <path
         d='M12 7.81818C12.3012 7.81818 12.5455 8.06239 12.5455 8.36364V11.4545H15.6364C15.9376 11.4545 16.1818 11.6988 16.1818 12C16.1818 12.3012 15.9376 12.5455 15.6364 12.5455H12.5455V15.6364C12.5455 15.9376 12.3012 16.1818 12 16.1818C11.6988 16.1818 11.4545 15.9376 11.4545 15.6364V12.5455H8.36364C8.06239 12.5455 7.81818 12.3012 7.81818 12C7.81818 11.6988 8.06239 11.4545 8.36364 11.4545H11.4545V8.36364C11.4545 8.06239 11.6988 7.81818 12 7.81818Z'
         fill='currentColor'

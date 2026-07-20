@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { cn, Tooltip } from '@sim/emcn'
+import { Tooltip } from '@sim/emcn'
 // import MarkdownRenderer from './components/markdown-renderer'
 // import { toastError, toastSuccess } from '@/components/ui'
 import { createLogger } from '@sim/logger'
@@ -27,6 +27,7 @@ import {
   CopyMessageIcon,
   DislikeMessageIcon,
   LikeMessageIcon,
+  messageActionIconButtonClass,
 } from '@/app/(interfaces)/chat/components/message/components/message-action-icons'
 import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/components/streaming-indicator'
 import type {
@@ -986,7 +987,7 @@ export const ArenaClientChatMessage = memo(
             {hasUserText && (
               <div className='flex justify-end'>
                 <div className='max-w-[min(80%,560px)]'>
-                  <div className='bg-white px-4 py-3'>
+                  <div className='rounded-[var(--radius-ds-md,8px)] bg-white px-4 py-3'>
                     <div
                       className='whitespace-pre-wrap break-words font-normal font-poppins text-[14px] leading-[1.6]'
                       style={{ color: '#2C2D33' }}
@@ -1113,7 +1114,7 @@ export const ArenaClientChatMessage = memo(
                           <Tooltip.Trigger asChild>
                             <button
                               type='button'
-                              className='flex size-6 items-center justify-center p-0 text-[#575A66] transition-colors hover:text-[#155CBA]'
+                              className={messageActionIconButtonClass()}
                               onClick={() => {
                                 handleCopy()
                               }}
@@ -1139,7 +1140,7 @@ export const ArenaClientChatMessage = memo(
                           <Tooltip.Trigger asChild>
                             <button
                               type='button'
-                              className='flex size-6 items-center justify-center p-0 text-[#575A66] transition-colors hover:text-[#155CBA]'
+                              className={messageActionIconButtonClass()}
                               onClick={onRegenerateMessage}
                               aria-label='Regenerate response'
                             >
@@ -1168,11 +1169,8 @@ export const ArenaClientChatMessage = memo(
                                         <button
                                           type='button'
                                           ref={likeButtonRef}
-                                          className={cn(
-                                            'flex size-6 items-center justify-center p-0 transition-colors hover:text-[#155CBA]',
+                                          className={messageActionIconButtonClass(
                                             message?.liked === true
-                                              ? 'text-[#155CBA]'
-                                              : 'text-[#575A66]'
                                           )}
                                           onClick={() => {
                                             handleLike(message?.executionId || '')
@@ -1222,11 +1220,8 @@ export const ArenaClientChatMessage = memo(
                                         <button
                                           type='button'
                                           ref={dislikeButtonRef}
-                                          className={cn(
-                                            'flex size-6 items-center justify-center p-0 transition-colors hover:text-[#155CBA]',
+                                          className={messageActionIconButtonClass(
                                             message?.liked === false
-                                              ? 'text-[#155CBA]'
-                                              : 'text-[#575A66]'
                                           )}
                                           onClick={() => {
                                             handleDislike(message?.executionId || '')

@@ -2,7 +2,6 @@
 
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft,
   ChipConfirmModal,
   ChipInput,
   cn,
@@ -10,13 +9,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  PanelLeft,
   Tooltip,
 } from '@sim/emcn'
 import { formatRelativeTime } from '@sim/utils/formatting'
-import { Download, MoreHorizontal, Pin, PinOff, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Download, MoreHorizontal, Pin, PinOff, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react'
 import Image, { type StaticImageData } from 'next/image'
 import {
+  CollapseNavIcon,
   FeedbackNavIcon,
   GoldenQueriesNavIcon,
   NewChatNavIcon,
@@ -157,9 +156,7 @@ function SidebarCollapseButton({ onClick }: SidebarToggleButtonProps) {
       className='group flex size-6 shrink-0 items-center justify-center p-0'
       aria-label='Collapse sidebar'
     >
-      <span className={sidebarSoftIconClass()}>
-        <PanelLeft className='size-4' />
-      </span>
+      <CollapseNavIcon />
     </button>
   )
 }
@@ -170,6 +167,28 @@ interface SidebarHeaderProps {
   onToggleSidebar?: () => void
 }
 
+/**
+ * Fills the 24px icon plate; cover crops transparent padding so the mark
+ * matches nav-icon visual weight (object-contain letterboxes and looks small).
+ */
+function SidebarLogoImage({
+  logoUrl,
+  className,
+}: {
+  logoUrl: string | StaticImageData
+  className?: string
+}) {
+  return (
+    <Image
+      src={logoUrl}
+      alt='Logo'
+      width={24}
+      height={24}
+      className={cn('size-6 shrink-0 rounded-[var(--radius-ds-sm,4px)] object-cover', className)}
+    />
+  )
+}
+
 function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderProps) {
   if (collapsed && onToggleSidebar) {
     return (
@@ -177,31 +196,21 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
         <button
           type='button'
           onClick={onToggleSidebar}
-          className='group relative flex size-6 items-center justify-center p-0'
+          className='group relative flex size-6 items-center justify-center overflow-hidden rounded-[var(--radius-ds-sm,4px)] p-0'
           aria-label='Expand sidebar'
         >
           {logoUrl ? (
             <>
-              <Image
-                src={logoUrl}
-                alt='Logo'
-                width={24}
-                height={24}
-                className='size-6 shrink-0 object-contain opacity-100 transition-opacity group-hover:opacity-0'
+              <SidebarLogoImage
+                logoUrl={logoUrl}
+                className='opacity-100 transition-opacity group-hover:opacity-0'
               />
-              <span
-                className={cn(
-                  sidebarSoftIconClass(),
-                  'absolute inset-0 opacity-0 group-hover:opacity-100'
-                )}
-              >
-                <PanelLeft className='size-4 rotate-180' />
-              </span>
+              <CollapseNavIcon
+                className='absolute inset-0 rotate-180 opacity-0 group-hover:opacity-100'
+              />
             </>
           ) : (
-            <span className={sidebarSoftIconClass()}>
-              <PanelLeft className='size-4 rotate-180' />
-            </span>
+            <CollapseNavIcon className='rotate-180' />
           )}
         </button>
       </div>
@@ -215,17 +224,7 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
         collapsed ? 'justify-center' : 'justify-between'
       )}
     >
-      {logoUrl ? (
-        <Image
-          src={logoUrl}
-          alt='Logo'
-          width={24}
-          height={24}
-          className='size-6 shrink-0 object-contain'
-        />
-      ) : (
-        <div className='size-6 shrink-0' />
-      )}
+      {logoUrl ? <SidebarLogoImage logoUrl={logoUrl} /> : <div className='size-6 shrink-0' />}
       {!collapsed && onToggleSidebar ? <SidebarCollapseButton onClick={onToggleSidebar} /> : null}
     </div>
   )
@@ -687,7 +686,10 @@ const LeftNavThread = ({
       <hr className='my-3' style={{ borderColor: DEPLOYED_CHAT_DIVIDER }} />
 
       <div className='flex min-h-0 flex-1 flex-col'>
-        <p className='mb-1 px-1 font-medium text-xs' style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}>
+        <p
+          className='mb-[var(--spacing-ds-component-md,12px)] px-1 font-medium text-xs'
+          style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}
+        >
           Chats
         </p>
 
@@ -717,33 +719,40 @@ const LeftNavThread = ({
           ) : groupedThreads.length > 0 ? (
             <div className='flex flex-col gap-2'>
               {groupedThreads.map((group) => (
-                <div key={group.label} className='flex flex-col gap-1'>
-                  <p className='px-1 text-[var(--text-muted)] text-xs'>{group.label}</p>
-                  {group.threads.map((thread) => (
-                    <ThreadRow
-                      key={thread.chatId}
-                      thread={thread}
-                      isActive={
-                        currentChatId === thread.chatId &&
-                        !showFeedbackView &&
-                        !isGoldenQueriesOpen &&
-                        !isNewChatActive
-                      }
-                      isRenaming={renamingChatId === thread.chatId}
-                      renameValue={renameValue}
-                      isStreaming={isStreaming}
-                      onSelect={() => handleSelectThread(thread.chatId)}
-                      onRefresh={() => onRefreshThread?.()}
-                      onStartRename={() => handleStartRename(thread)}
-                      onRenameChange={setRenameValue}
-                      onRenameSave={handleRenameSave}
-                      onRenameCancel={handleRenameCancel}
-                      onDelete={() => setDeleteTarget(thread)}
-                      onTogglePin={() => onTogglePinThread?.(thread.chatId, !thread.pinnedAt)}
-                      onExportChat={onExportChat}
-                      onShareChat={onShareChat}
-                    />
-                  ))}
+                <div key={group.label} className='flex flex-col'>
+                  <p
+                    className='mb-[var(--spacing-ds-component-md,12px)] px-1 text-xs'
+                    style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}
+                  >
+                    {group.label}
+                  </p>
+                  <div className='flex flex-col gap-1'>
+                    {group.threads.map((thread) => (
+                      <ThreadRow
+                        key={thread.chatId}
+                        thread={thread}
+                        isActive={
+                          currentChatId === thread.chatId &&
+                          !showFeedbackView &&
+                          !isGoldenQueriesOpen &&
+                          !isNewChatActive
+                        }
+                        isRenaming={renamingChatId === thread.chatId}
+                        renameValue={renameValue}
+                        isStreaming={isStreaming}
+                        onSelect={() => handleSelectThread(thread.chatId)}
+                        onRefresh={() => onRefreshThread?.()}
+                        onStartRename={() => handleStartRename(thread)}
+                        onRenameChange={setRenameValue}
+                        onRenameSave={handleRenameSave}
+                        onRenameCancel={handleRenameCancel}
+                        onDelete={() => setDeleteTarget(thread)}
+                        onTogglePin={() => onTogglePinThread?.(thread.chatId, !thread.pinnedAt)}
+                        onExportChat={onExportChat}
+                        onShareChat={onShareChat}
+                      />
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

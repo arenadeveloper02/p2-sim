@@ -81,16 +81,31 @@ export const DEPLOYED_CHAT_ACTIVE_THREAD_COLOR = '#155CBA'
 export const DEPLOYED_CHAT_ACTIVE_THREAD_BG = '#F3F8FE'
 
 /**
- * Input outline.
+ * Input outline start (left).
  * Figma: `color/blue/600` · DS: `--color-ds-blue-600`
  */
 export const DEPLOYED_CHAT_INPUT_BORDER = '#1A73E8'
 
 /**
- * Soft outer glow for deployed chat input.
- * Figma: drop-shadow using `color/purple/200`
+ * Input outline end (right) for the pill gradient stroke.
+ * Figma Search bar visual · DS: `--color-ds-purple-600`
  */
-export const DEPLOYED_CHAT_INPUT_GLOW_SHADOW = '0 0 16px #F0E0F7'
+export const DEPLOYED_CHAT_INPUT_BORDER_END = '#B364D7'
+
+/**
+ * Pill shell fill + gradient stroke (works with `border-radius`).
+ * Inner white on padding-box; blue→purple on border-box.
+ */
+export const DEPLOYED_CHAT_INPUT_SHELL_BACKGROUND = [
+  'linear-gradient(#FFFFFF, #FFFFFF) padding-box',
+  `linear-gradient(90deg, ${DEPLOYED_CHAT_INPUT_BORDER} 0%, ${DEPLOYED_CHAT_INPUT_BORDER_END} 100%) border-box`,
+].join(', ')
+
+/**
+ * Soft outer glow for deployed chat input.
+ * Figma: drop-shadow `0 0 16px` · `color/blue/200`
+ */
+export const DEPLOYED_CHAT_INPUT_GLOW_SHADOW = '0 0 16px #D1E3FA'
 
 /**
  * Input placeholder color.
