@@ -1164,6 +1164,8 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'meeting:read:registrant:admin',
           'meeting:read:list_polls:admin',
           'meeting:read:participant:admin',
+          'meeting:read:list_summaries:admin',
+          'meeting:read:summary:admin',
 
           'cloud_recording:read:list_recording_registrants:admin',
           'cloud_recording:read:list_recording_files:admin',
