@@ -161,6 +161,33 @@ describe('stream session contract parser', () => {
     })
   })
 
+  it('accepts synthetic local status envelopes', () => {
+    const event = {
+      ...BASE_ENVELOPE,
+      type: 'run' as const,
+      payload: {
+        statusPhase: 'agent_live_status' as const,
+        message: 'Writing Deck.pptx…',
+      },
+    }
+
+    const parsed = parsePersistedStreamEventEnvelope(event)
+    expect(parsed).toEqual({
+      ok: true,
+      event,
+    })
+  })
+
+  it('rejects run envelopes with neither contract kind nor statusPhase', () => {
+    expect(
+      parsePersistedStreamEventEnvelope({
+        ...BASE_ENVELOPE,
+        type: 'run',
+        payload: { message: 'nope' },
+      }).ok
+    ).toBe(false)
+  })
+
   it('rejects invalid tool events with structured validation errors', () => {
     const parsed = parsePersistedStreamEventEnvelope({
       ...BASE_ENVELOPE,

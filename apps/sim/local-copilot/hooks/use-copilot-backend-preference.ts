@@ -15,6 +15,7 @@ export function useCopilotBackendPreference(): {
 } {
   const { data: config, isSuccess } = useLocalCopilotConfig()
   const canSwitchBackend = isSuccess ? Boolean(config?.canSwitchBackend) : false
+  const localOnly = isSuccess ? Boolean(config?.localOnly) : false
   const [copilotBackend, setCopilotBackendState] = useState<CopilotBackendPreference>(() =>
     readCopilotBackendPreference()
   )
@@ -30,11 +31,16 @@ export function useCopilotBackendPreference(): {
     writeCopilotBackendPreference(value)
   }, [])
 
+  // Resolve the effective backend once config loads:
+  // local-only forces `local`; full access honors the stored preference;
+  // no access forces `external` (Cloud).
   const effectiveBackend: CopilotBackendPreference = !isSuccess
     ? copilotBackend
-    : canSwitchBackend
-      ? copilotBackend
-      : 'external'
+    : localOnly
+      ? 'local'
+      : canSwitchBackend
+        ? copilotBackend
+        : 'external'
 
   return {
     canSwitchBackend,

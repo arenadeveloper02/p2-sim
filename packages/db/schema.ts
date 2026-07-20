@@ -2859,6 +2859,7 @@ export const localCopilotUserAccess = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     email: text('email').notNull(),
     hasAccess: boolean('has_access').notNull().default(false),
+    localOnly: boolean('local_only').notNull().default(false),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },

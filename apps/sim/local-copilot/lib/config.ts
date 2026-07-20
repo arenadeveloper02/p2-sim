@@ -2,8 +2,8 @@ import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { isHosted } from '@/lib/core/config/env-flags'
 import type { LocalCopilotConfig, LocalCopilotProviderId } from '@/local-copilot/lib/types'
 
-/** Latest Claude model registered in `@/providers/models`. */
-const DEFAULT_MODEL = 'claude-opus-4-8'
+/** Default Local Copilot main agent model (override with `COPILOT_MODEL`). */
+const DEFAULT_MODEL = 'claude-sonnet-4-6'
 const DEFAULT_PROVIDER: LocalCopilotProviderId = 'anthropic'
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {

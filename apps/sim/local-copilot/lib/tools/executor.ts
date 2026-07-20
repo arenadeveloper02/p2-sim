@@ -61,6 +61,8 @@ export interface ToolExecutionContext {
   selectedBlockId?: string
   /** Latest user message — used to preserve variation counts for generate_image. */
   lastUserMessage?: string
+  /** Optional live-status callback for long-running tools (fire-and-forget). */
+  onProgress?: (message: string) => void
 }
 
 function requireWorkflowContext(

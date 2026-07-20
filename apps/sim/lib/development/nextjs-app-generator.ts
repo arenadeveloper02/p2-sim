@@ -1163,6 +1163,36 @@ function buildEditDatabaseContext(existingFiles: GeneratedAppFile[]): string {
 }
 
 /**
+ * Prominent schema baseline for repair prompts — prefers the deployed schema
+ * (pre-edit) over the current working copy so dropped columns are visible.
+ */
+function buildPrismaSchemaBaselineContext(
+  files: GeneratedAppFile[],
+  originalPrismaSchema?: string
+): string {
+  const schema = originalPrismaSchema?.trim()
+    ? originalPrismaSchema
+    : getFileContentByPath(files, 'prisma/schema.prisma')
+  if (!schema?.trim()) {
+    return ''
+  }
+
+  const fieldSummary = summarizePrismaScalarFields(schema)
+  return [
+    '═══ LIVE DATABASE SCHEMA BASELINE (prisma/schema.prisma as deployed — ADD columns only; NEVER drop/rename/retype existing ones) ═══',
+    'The live Neon Postgres database matches this schema and has rows. Deploy runs prisma db push with NO --accept-data-loss, so ANY dropped or altered column fails the deploy with potential_dataloss.',
+    'If you return prisma/schema.prisma, it MUST contain every model and every scalar column listed below unchanged (same name, same type, same attributes). You may ONLY ADD new models, columns, relations, or enums.',
+    'If the current repository copy of prisma/schema.prisma is missing any column listed below, that is a bug — restore the missing column exactly as written here.',
+    '',
+    'Immutable scalar columns (every one must appear unchanged in any schema you return):',
+    fieldSummary || '(no models parsed)',
+    '',
+    '--- prisma/schema.prisma (deployed baseline) ---',
+    schema,
+  ].join('\n')
+}
+
+/**
  * Serializes the current file set for repair and edit prompts so changes are
  * grounded in the real code instead of re-guessed from the app description.
  */
@@ -1204,7 +1234,8 @@ function buildRepairFileContext(
 async function repairAppSpecWithLlm(
   spec: LlmAppSpec,
   buildLog: string,
-  userInput: string
+  userInput: string,
+  options: { originalPrismaSchema?: string } = {}
 ): Promise<LlmAppSpec> {
   const repairSystemPrompt = `You are a senior full-stack engineer fixing a Next.js ${PINNED_NEXT_VERSION} App Router project that failed pre-deploy validation (structure checks and/or npm install + prisma generate + next build in E2B).
 
@@ -1253,17 +1284,21 @@ ${GENERATED_APP_README_GUIDANCE}
 ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 ${GENERATED_APP_NO_TESTS_GUIDANCE}
 ${GENERATED_APP_VALIDATION_GUIDANCE}
+When the user message contains a "LIVE DATABASE SCHEMA BASELINE" section, that schema is the authoritative shape of the live database: any prisma/schema.prisma you return MUST be a strict superset of it — every listed model and scalar column unchanged, additions only, drops NEVER.
 When fixing prisma/schema.prisma errors: RESTORE any dropped columns (e.g. updatedAt DateTime @updatedAt). Never "fix" a deploy by removing fields — add defaults or optionality instead.
+When the build log contains "potential_dataloss", "--accept-data-loss", or "You are about to drop the column \`X\` on the \`Y\` table": the LIVE database still has column X even if the current schema file omits it — ADD column X back to model Y in prisma/schema.prisma with its original name/type plus @default(...) (e.g. \`updatedAt DateTime @updatedAt @default(now())\`) or optional ?. NEVER resolve it by leaving the column out, adding --accept-data-loss / --force-reset, or editing the build script — restoring the column in the schema is the ONLY valid fix.
 Keep the same app purpose and repo name unless a rename is required to fix the build.
 Prefer minimal, targeted file changes over rewriting unrelated files.
 Do not leave broken imports, invalid JSX, or conflicting app/ and src/app/ directories.`
+
+  const schemaBaseline = buildPrismaSchemaBaselineContext(spec.files, options.originalPrismaSchema)
 
   const userPrompt = `Original request:\n${userInput}
 
 App name: ${spec.appName}
 Repository name: ${spec.repoName}
 
-Build log (errors to fix):
+${schemaBaseline ? `${schemaBaseline}\n\n` : ''}Build log (errors to fix):
 ${truncateBuildLog(buildLog)}
 
 Current repository files (source of truth — fix the errors above IN this code):
@@ -1403,7 +1438,8 @@ async function validateAndRepairUntilBuildPasses(
       currentSpec = await repairAppSpecWithLlm(
         currentSpec,
         `${buildOutput}\n\nFix every structure issue above before the app can build.`,
-        userInput
+        userInput,
+        { originalPrismaSchema: options.originalPrismaSchema }
       )
       continue
     }
@@ -1433,7 +1469,9 @@ async function validateAndRepairUntilBuildPasses(
         method: fastResult.method,
       })
 
-      currentSpec = await repairAppSpecWithLlm(currentSpec, fastResult.output, userInput)
+      currentSpec = await repairAppSpecWithLlm(currentSpec, fastResult.output, userInput, {
+        originalPrismaSchema: options.originalPrismaSchema,
+      })
 
       const nextCacheDir = join(outputDir, '.next')
       if (existsSync(nextCacheDir)) {
@@ -1475,7 +1513,9 @@ async function validateAndRepairUntilBuildPasses(
       method: finalResult.method,
     })
 
-    currentSpec = await repairAppSpecWithLlm(currentSpec, finalResult.output, userInput)
+    currentSpec = await repairAppSpecWithLlm(currentSpec, finalResult.output, userInput, {
+      originalPrismaSchema: options.originalPrismaSchema,
+    })
 
     const nextCacheDir = join(outputDir, '.next')
     if (existsSync(nextCacheDir)) {
@@ -1581,7 +1621,8 @@ async function syncDatabaseWithSchemaRepair(params: {
         '- Do NOT remove or rename existing models or columns, and do NOT change existing column types',
         '- Keep lib/actions.ts and lib/types.ts aligned with the corrected schema',
       ].join('\n'),
-      params.userInput
+      params.userInput,
+      { originalPrismaSchema: params.originalPrismaSchema }
     )
     await writeAppFiles(params.outputDir, spec.files)
   }
@@ -1963,6 +2004,14 @@ REQUIRED workflow for prisma/schema.prisma on every edit:
 5. Before returning: verify EVERY scalar field from the baseline / LIVE DATABASE BASELINE still appears unchanged in your output. If Project had "updatedAt DateTime @updatedAt", it MUST still be there with the same type and attributes.
 6. If UI no longer uses a column, stop selecting it in lib/actions.ts — do NOT remove or alter it in the schema.
 7. When you ADD models/fields/relations, also return lib/actions.ts and lib/types.ts in the same response.
+
+LIVE-DATABASE DRIFT RECOVERY (the LIVE database outranks the baseline file):
+- The baseline schema file can be MISSING columns that still exist in the live database (a previous bad edit removed them from the file). Echoing such a baseline verbatim re-triggers the drop and fails every deploy with potential_dataloss.
+- If the edit request, a build log, or a deploy error contains "potential_dataloss", "--accept-data-loss", or "You are about to drop the column \`X\` on the \`Y\` table": the live table HAS column X — you MUST ADD column X back to model Y in prisma/schema.prisma with its original name and type. Re-adding a live column is additive and always allowed.
+- When re-adding a dropped column, make it executable against existing rows: \`updatedAt DateTime @updatedAt @default(now())\`, \`createdAt DateTime @default(now())\`, other required scalars get @default(...) or become optional with ?.
+- NEVER "resolve" a potential_dataloss error by keeping the column removed, adding --accept-data-loss, adding --force-reset, or changing the build script — the ONLY fix is restoring the column in the schema.
+
+FINAL SELF-CHECK before returning (mandatory): for EVERY model, compare your output field list against the "Immutable scalar columns" list in the LIVE DATABASE BASELINE. Every listed column MUST appear in your output with identical name, type, and attributes, PLUS any column a deploy error said would be dropped. If even one is missing, your response is wrong — fix it before returning.
 
 The user's edit request is about NEW functionality — it is NOT permission to edit, retype, rename, or remove existing database columns. Always add new columns for new data.`
 

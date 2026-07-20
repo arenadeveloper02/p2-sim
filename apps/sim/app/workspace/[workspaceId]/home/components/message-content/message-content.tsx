@@ -8,6 +8,7 @@ import { resolveToolDisplay } from '@/lib/copilot/tools/client/store-utils'
 import { ClientToolCallState } from '@/lib/copilot/tools/client/tool-call-state'
 import { getToolDisplayTitle, humanizeToolName } from '@/lib/copilot/tools/tool-display'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
+import { shouldShowTrailingLiveStatus } from '@/app/workspace/[workspaceId]/home/hooks/stream/trailing-live-status'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import type { ContentBlock, OptionItem, ToolCallData } from '../../types'
 import { SUBAGENT_LABELS } from '../../types'
@@ -778,6 +779,7 @@ interface MessageContentProps {
   blocks: ContentBlock[]
   fallbackContent: string
   isStreaming: boolean
+  liveStatus?: string
   onOptionSelect?: (id: string) => void
   onPhaseChange?: (phase: MessagePhase) => void
 }
@@ -786,6 +788,7 @@ function MessageContentInner({
   blocks,
   fallbackContent,
   isStreaming = false,
+  liveStatus,
   onOptionSelect,
   onPhaseChange,
 }: MessageContentProps) {
@@ -823,7 +826,7 @@ function MessageContentInner({
     if (isStreaming) {
       return (
         <div className='space-y-[10px]'>
-          <PendingTagIndicator />
+          <PendingTagIndicator label={liveStatus} />
         </div>
       )
     }
@@ -832,14 +835,18 @@ function MessageContentInner({
 
   const hasTrailingContent = lastSegment.type === 'text' || lastSegment.type === 'stopped'
 
-  // Deterministic "between steps" signal: the turn is still streaming, nothing
-  // is actively running (a running tool/subagent renders its own spinner), and
-  // no trailing text is being revealed. Derived from explicit node state rather
-  // than guessing from the shape of the last segment.
+  // Prefer server liveStatus whenever the turn is still in flight — including
+  // while tool rows are executing (otherwise the static Thinking… path hides
+  // Local progress under hasRunningWork).
   const hasRunningWork = blocks.some(
     (b) => b.toolCall?.status === 'executing' || (b.type === 'subagent' && b.endedAt === undefined)
   )
-  const showTrailingThinking = phase === 'streaming' && !hasTrailingContent && !hasRunningWork
+  const showTrailingThinking = shouldShowTrailingLiveStatus({
+    isStreaming,
+    liveStatus,
+    hasTrailingContent,
+    hasRunningWork,
+  })
 
   return (
     <div className='space-y-[10px]'>
@@ -898,7 +905,7 @@ function MessageContentInner({
       })}
       {showTrailingThinking && (
         <div className='animate-stream-fade-in-delayed opacity-0'>
-          <PendingTagIndicator />
+          <PendingTagIndicator label={liveStatus} />
         </div>
       )}
     </div>
