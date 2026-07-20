@@ -4,6 +4,7 @@ import { omit } from '@sim/utils/object'
 import type OpenAI from 'openai'
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import { formatCreditCost } from '@/lib/billing/credits/conversion'
 import { env } from '@/lib/core/config/env'
 import { getBlacklistedProvidersFromEnv, isHosted } from '@/lib/core/config/env-flags'
@@ -155,7 +156,10 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
   cerebras: buildProviderMetadata('cerebras'),
   groq: buildProviderMetadata('groq'),
   sakana: buildProviderMetadata('sakana'),
+  nvidia: buildProviderMetadata('nvidia'),
   meta: buildProviderMetadata('meta'),
+  zai: buildProviderMetadata('zai'),
+  kimi: buildProviderMetadata('kimi'),
   mistral: buildProviderMetadata('mistral'),
   bedrock: buildProviderMetadata('bedrock'),
   openrouter: buildProviderMetadata('openrouter'),
@@ -900,8 +904,14 @@ export function getApiKey(provider: string, model: string, userProvidedKey?: str
   const isOpenAIModel = provider === 'openai'
   const isClaudeModel = provider === 'anthropic'
   const isGeminiModel = provider === 'google'
+  const isZaiModel = provider === 'zai'
+  const isXaiModel = provider === 'xai'
+  const isKimiModel = provider === 'kimi'
 
-  if (isHosted && (isOpenAIModel || isClaudeModel || isGeminiModel)) {
+  if (
+    isHosted &&
+    (isOpenAIModel || isClaudeModel || isGeminiModel || isZaiModel || isXaiModel || isKimiModel)
+  ) {
     const hostedModels = getHostedModels()
     const isModelHosted = hostedModels.some((m) => m.toLowerCase() === model.toLowerCase())
 
@@ -1289,6 +1299,7 @@ export function prepareToolExecution(
     blockNameMapping?: Record<string, string>
     isDeployedContext?: boolean
     callChain?: string[]
+    billingAttribution?: BillingAttributionSnapshot
   }
 ): {
   toolParams: Record<string, any>
@@ -1306,10 +1317,10 @@ export function prepareToolExecution(
 
   const executionParams = {
     ...toolParams,
-    ...(request.workflowId
+    ...(request.workflowId || request.billingAttribution
       ? {
           _context: {
-            workflowId: request.workflowId,
+            ...(request.workflowId ? { workflowId: request.workflowId } : {}),
             ...(request.workspaceId ? { workspaceId: request.workspaceId } : {}),
             ...(request.chatId ? { chatId: request.chatId } : {}),
             ...(request.userId ? { userId: request.userId } : {}),
@@ -1317,6 +1328,9 @@ export function prepareToolExecution(
               ? { isDeployedContext: request.isDeployedContext }
               : {}),
             ...(request.callChain ? { callChain: request.callChain } : {}),
+            ...(request.billingAttribution
+              ? { billingAttribution: request.billingAttribution }
+              : {}),
           },
         }
       : {}),
