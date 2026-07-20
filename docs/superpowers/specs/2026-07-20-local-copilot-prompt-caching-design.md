@@ -184,4 +184,8 @@ Update local-copilot overview/README briefly:
 - Cache-aware Local billing (`calculateCost` with cache read/write rates)
 - Explicit breakpoints deeper in multi-turn history if automatic lookback proves insufficient (>20 blocks)
 - Provider-agnostic cache abstractions for OpenAI
-)
+
+## Operator notes
+
+- When `COPILOT_PROVIDER=anthropic`, Local Copilot sends Anthropic `cache_control` on the last tool definition and the static system prompt block (plus top-level automatic caching).
+- Verify cache hits via `Arena Copilot model round finished` logs: look for `cacheReadTokens` / `cacheCreationTokens`.
