@@ -27,6 +27,9 @@ jobs:
           bun-version: 1.3.11
 
       - name: Check committed secrets
+        env:
+          # Helm unittest fixtures use placeholder DB URLs (e.g. postgresql://x:x@x:5432/x)
+          SECRETS_SCAN_EXCLUDE_PREFIXES: helm/sim/tests/
         run: bun run check:secrets
 
   test-build:
