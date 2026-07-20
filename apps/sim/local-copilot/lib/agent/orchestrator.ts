@@ -357,6 +357,8 @@ export async function* runLocalCopilotAgent(
     const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
     let roundInputTokens = 0
     let roundOutputTokens = 0
+    let roundCacheReadTokens: number | undefined
+    let roundCacheCreationTokens: number | undefined
 
     // Status heartbeats cover the immediate first line + rotation while the
     // model stream is quiet (including pauses after the first token).
@@ -396,6 +398,8 @@ export async function* runLocalCopilotAgent(
       if (chunk.type === 'done' && chunk.usage) {
         roundInputTokens = chunk.usage.inputTokens
         roundOutputTokens = chunk.usage.outputTokens
+        roundCacheReadTokens = chunk.usage.cacheReadTokens
+        roundCacheCreationTokens = chunk.usage.cacheCreationTokens
       }
     }
 
@@ -406,6 +410,8 @@ export async function* runLocalCopilotAgent(
       assistantChars: assistantText.length,
       inputTokens: roundInputTokens,
       outputTokens: roundOutputTokens,
+      cacheReadTokens: roundCacheReadTokens,
+      cacheCreationTokens: roundCacheCreationTokens,
       memory: getLocalCopilotMemorySnapshot(),
     })
 
