@@ -30,6 +30,8 @@ export interface ChatCompletionRequest {
 export interface TokenUsage {
   inputTokens: number
   outputTokens: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
 }
 
 export interface ChatCompletionChunk {
