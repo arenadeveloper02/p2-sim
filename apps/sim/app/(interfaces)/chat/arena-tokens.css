@@ -276,7 +276,7 @@
        spacing/layout/4xl      96     96     128    128    128
   
        Breakpoints: XSM base Â· SM 640px Â· MD 768px Â· LG 1024px Â· XLG 1280px
-       Values set per column in @layer base below.
+       Values set per column in responsive blocks below.
        ============================================================================= */
   
     /* Registered for Tailwind â€” active values overridden per breakpoint in Â§3b */
@@ -449,29 +449,49 @@
      2b. CHART â€” Colorblind Safe series palette
      Add data-chart-palette="colorblind-safe" on chart container to swap series 6â€“7.
      ============================================================================= */
-  @layer base {
-    .deployed-chat [data-chart-palette="colorblind-safe"] {
-      --color-ds-chart-series-6: var(--color-ds-sea-blue-800);
-      --color-ds-chart-series-7: var(--color-ds-warning-800);
-    }
+  
+  .deployed-chat [data-chart-palette="colorblind-safe"] {
+    --color-ds-chart-series-6: var(--color-ds-sea-blue-800);
+    --color-ds-chart-series-7: var(--color-ds-warning-800);
   }
+
   
   /* =============================================================================
      3b. RESPONSIVE SPACING â€” one :root block per Figma mode (desktop breakpoint)
      Modes: XSM base Â· SM 1280 Â· MD 1440 Â· LG 1728 Â· XLG 1920
      Each block sets all component rows + all layout-spacing rows for that mode.
      ============================================================================= */
-  @layer base {
+  
+  .deployed-chat {
+    /* XSM â€” spacing/component (base Â· desktop 1024) */
+    --spacing-ds-component-2xs: 2px;
+    --spacing-ds-component-xs: 4px;
+    --spacing-ds-component-sm: 8px;
+    --spacing-ds-component-md: 12px;
+    --spacing-ds-component-lg: 16px;
+    --spacing-ds-component-xl: 24px;
+
+    /* XSM â€” spacing/layout */
+    --spacing-ds-layout-sm: 16px;
+    --spacing-ds-layout-md: 24px;
+    --spacing-ds-layout-lg: 32px;
+    --spacing-ds-layout-xl: 48px;
+    --spacing-ds-layout-2xl: 64px;
+    --spacing-ds-layout-3xl: 80px;
+    --spacing-ds-layout-4xl: 96px;
+  }
+
+  @media (min-width: 1280px) {
     .deployed-chat {
-      /* XSM â€” spacing/component (base Â· desktop 1024) */
+      /* SM â€” spacing/component Â· desktop 1280 */
       --spacing-ds-component-2xs: 2px;
       --spacing-ds-component-xs: 4px;
       --spacing-ds-component-sm: 8px;
       --spacing-ds-component-md: 12px;
       --spacing-ds-component-lg: 16px;
       --spacing-ds-component-xl: 24px;
-  
-      /* XSM â€” spacing/layout */
+
+      /* SM â€” spacing/layout */
       --spacing-ds-layout-sm: 16px;
       --spacing-ds-layout-md: 24px;
       --spacing-ds-layout-lg: 32px;
@@ -480,185 +500,165 @@
       --spacing-ds-layout-3xl: 80px;
       --spacing-ds-layout-4xl: 96px;
     }
-  
-    @media (min-width: 1280px) {
-      .deployed-chat {
-        /* SM â€” spacing/component Â· desktop 1280 */
-        --spacing-ds-component-2xs: 2px;
-        --spacing-ds-component-xs: 4px;
-        --spacing-ds-component-sm: 8px;
-        --spacing-ds-component-md: 12px;
-        --spacing-ds-component-lg: 16px;
-        --spacing-ds-component-xl: 24px;
-  
-        /* SM â€” spacing/layout */
-        --spacing-ds-layout-sm: 16px;
-        --spacing-ds-layout-md: 24px;
-        --spacing-ds-layout-lg: 32px;
-        --spacing-ds-layout-xl: 48px;
-        --spacing-ds-layout-2xl: 64px;
-        --spacing-ds-layout-3xl: 80px;
-        --spacing-ds-layout-4xl: 96px;
-      }
-    }
-  
-    @media (min-width: 1440px) {
-      .deployed-chat {
-        /* MD â€” spacing/component Â· desktop 1440 */
-        --spacing-ds-component-2xs: 4px;
-        --spacing-ds-component-xs: 8px;
-        --spacing-ds-component-sm: 12px;
-        --spacing-ds-component-md: 16px;
-        --spacing-ds-component-lg: 24px;
-        --spacing-ds-component-xl: 32px;
-  
-        /* MD â€” spacing/layout */
-        --spacing-ds-layout-sm: 24px;
-        --spacing-ds-layout-md: 32px;
-        --spacing-ds-layout-lg: 48px;
-        --spacing-ds-layout-xl: 64px;
-        --spacing-ds-layout-2xl: 80px;
-        --spacing-ds-layout-3xl: 96px;
-        --spacing-ds-layout-4xl: 128px;
-      }
-    }
-  
-    @media (min-width: 1728px) {
-      .deployed-chat {
-        /* LG â€” spacing/component Â· desktop 1728 */
-        --spacing-ds-component-2xs: 8px;
-        --spacing-ds-component-xs: 12px;
-        --spacing-ds-component-sm: 16px;
-        --spacing-ds-component-md: 20px;
-        --spacing-ds-component-lg: 32px;
-        --spacing-ds-component-xl: 48px;
-  
-        /* LG â€” spacing/layout */
-        --spacing-ds-layout-sm: 32px;
-        --spacing-ds-layout-md: 48px;
-        --spacing-ds-layout-lg: 64px;
-        --spacing-ds-layout-xl: 80px;
-        --spacing-ds-layout-2xl: 96px;
-        --spacing-ds-layout-3xl: 128px;
-        --spacing-ds-layout-4xl: 128px;
-      }
-    }
-  
-    @media (min-width: 1920px) {
-      .deployed-chat {
-        /* XLG â€” spacing/component Â· desktop 1920 */
-        --spacing-ds-component-2xs: 8px;
-        --spacing-ds-component-xs: 12px;
-        --spacing-ds-component-sm: 16px;
-        --spacing-ds-component-md: 20px;
-        --spacing-ds-component-lg: 32px;
-        --spacing-ds-component-xl: 48px;
-  
-        /* XLG â€” spacing/layout */
-        --spacing-ds-layout-sm: 32px;
-        --spacing-ds-layout-md: 48px;
-        --spacing-ds-layout-lg: 64px;
-        --spacing-ds-layout-xl: 80px;
-        --spacing-ds-layout-2xl: 96px;
-        --spacing-ds-layout-3xl: 128px;
-        --spacing-ds-layout-4xl: 128px;
-      }
+  }
+
+  @media (min-width: 1440px) {
+    .deployed-chat {
+      /* MD â€” spacing/component Â· desktop 1440 */
+      --spacing-ds-component-2xs: 4px;
+      --spacing-ds-component-xs: 8px;
+      --spacing-ds-component-sm: 12px;
+      --spacing-ds-component-md: 16px;
+      --spacing-ds-component-lg: 24px;
+      --spacing-ds-component-xl: 32px;
+
+      /* MD â€” spacing/layout */
+      --spacing-ds-layout-sm: 24px;
+      --spacing-ds-layout-md: 32px;
+      --spacing-ds-layout-lg: 48px;
+      --spacing-ds-layout-xl: 64px;
+      --spacing-ds-layout-2xl: 80px;
+      --spacing-ds-layout-3xl: 96px;
+      --spacing-ds-layout-4xl: 128px;
     }
   }
+
+  @media (min-width: 1728px) {
+    .deployed-chat {
+      /* LG â€” spacing/component Â· desktop 1728 */
+      --spacing-ds-component-2xs: 8px;
+      --spacing-ds-component-xs: 12px;
+      --spacing-ds-component-sm: 16px;
+      --spacing-ds-component-md: 20px;
+      --spacing-ds-component-lg: 32px;
+      --spacing-ds-component-xl: 48px;
+
+      /* LG â€” spacing/layout */
+      --spacing-ds-layout-sm: 32px;
+      --spacing-ds-layout-md: 48px;
+      --spacing-ds-layout-lg: 64px;
+      --spacing-ds-layout-xl: 80px;
+      --spacing-ds-layout-2xl: 96px;
+      --spacing-ds-layout-3xl: 128px;
+      --spacing-ds-layout-4xl: 128px;
+    }
+  }
+
+  @media (min-width: 1920px) {
+    .deployed-chat {
+      /* XLG â€” spacing/component Â· desktop 1920 */
+      --spacing-ds-component-2xs: 8px;
+      --spacing-ds-component-xs: 12px;
+      --spacing-ds-component-sm: 16px;
+      --spacing-ds-component-md: 20px;
+      --spacing-ds-component-lg: 32px;
+      --spacing-ds-component-xl: 48px;
+
+      /* XLG â€” spacing/layout */
+      --spacing-ds-layout-sm: 32px;
+      --spacing-ds-layout-md: 48px;
+      --spacing-ds-layout-lg: 64px;
+      --spacing-ds-layout-xl: 80px;
+      --spacing-ds-layout-2xl: 96px;
+      --spacing-ds-layout-3xl: 128px;
+      --spacing-ds-layout-4xl: 128px;
+    }
+  }
+
   
   /* =============================================================================
      3c. RESPONSIVE COMPONENT â€” Figma component/* (12 props Ã— 5 desktop modes)
      XSM base (desktop 1024) Â· SM 1280 Â· MD 1440 Â· LG 1728 Â· XLG 1920
      ============================================================================= */
-  @layer base {
+  
+  .deployed-chat {
+    /* XSM Â· desktop 1024 */
+    --ds-component-height: 24px;
+    --ds-component-padding-x: 8px;
+    --ds-component-padding-y: 4px;
+    --ds-component-gap: 4px;
+    --ds-component-icon-size: 12px;
+    --ds-component-font-size: var(--text-ds-body-xsm);
+    --ds-component-line-height: 16px;
+    --ds-component-letter-spacing: 0.25px;
+    --ds-component-border-width: 1px;
+    --ds-component-radius: var(--radius-ds-sm);
+    --ds-component-font-weight: 400;
+    --ds-component-elevation: var(--shadow-ds-xsm);
+  }
+
+  @media (min-width: 1280px) {
     .deployed-chat {
-      /* XSM Â· desktop 1024 */
-      --ds-component-height: 24px;
-      --ds-component-padding-x: 8px;
+      /* SM Â· desktop 1280 */
+      --ds-component-height: 32px;
+      --ds-component-padding-x: 12px;
       --ds-component-padding-y: 4px;
       --ds-component-gap: 4px;
-      --ds-component-icon-size: 12px;
-      --ds-component-font-size: var(--text-ds-body-xsm);
-      --ds-component-line-height: 16px;
+      --ds-component-icon-size: 16px;
+      --ds-component-font-size: var(--text-ds-body-sm);
+      --ds-component-line-height: 20px;
       --ds-component-letter-spacing: 0.25px;
       --ds-component-border-width: 1px;
-      --ds-component-radius: var(--radius-ds-sm);
+      --ds-component-radius: var(--radius-ds-md);
       --ds-component-font-weight: 400;
-      --ds-component-elevation: var(--shadow-ds-xsm);
-    }
-  
-    @media (min-width: 1280px) {
-      .deployed-chat {
-        /* SM Â· desktop 1280 */
-        --ds-component-height: 32px;
-        --ds-component-padding-x: 12px;
-        --ds-component-padding-y: 4px;
-        --ds-component-gap: 4px;
-        --ds-component-icon-size: 16px;
-        --ds-component-font-size: var(--text-ds-body-sm);
-        --ds-component-line-height: 20px;
-        --ds-component-letter-spacing: 0.25px;
-        --ds-component-border-width: 1px;
-        --ds-component-radius: var(--radius-ds-md);
-        --ds-component-font-weight: 400;
-        --ds-component-elevation: var(--shadow-ds-sm);
-      }
-    }
-  
-    @media (min-width: 1440px) {
-      .deployed-chat {
-        /* MD Â· desktop 1440 */
-        --ds-component-height: 40px;
-        --ds-component-padding-x: 16px;
-        --ds-component-padding-y: 8px;
-        --ds-component-gap: 8px;
-        --ds-component-icon-size: 20px;
-        --ds-component-font-size: var(--text-ds-body-md);
-        --ds-component-line-height: 24px;
-        --ds-component-letter-spacing: 0px;
-        --ds-component-border-width: 1px;
-        --ds-component-radius: var(--radius-ds-lg);
-        --ds-component-font-weight: 500;
-        --ds-component-elevation: var(--shadow-ds-md);
-      }
-    }
-  
-    @media (min-width: 1728px) {
-      .deployed-chat {
-        /* LG Â· desktop 1728 */
-        --ds-component-height: 48px;
-        --ds-component-padding-x: 20px;
-        --ds-component-padding-y: 8px;
-        --ds-component-gap: 8px;
-        --ds-component-icon-size: 24px;
-        --ds-component-font-size: var(--text-ds-body-lg);
-        --ds-component-line-height: 26px;
-        --ds-component-letter-spacing: 0px;
-        --ds-component-border-width: 2px;
-        --ds-component-radius: var(--radius-ds-lg);
-        --ds-component-font-weight: 500;
-        --ds-component-elevation: var(--shadow-ds-lg);
-      }
-    }
-  
-    @media (min-width: 1920px) {
-      .deployed-chat {
-        /* XLG Â· desktop 1920 */
-        --ds-component-height: 56px;
-        --ds-component-padding-x: 24px;
-        --ds-component-padding-y: 12px;
-        --ds-component-gap: 12px;
-        --ds-component-icon-size: 28px;
-        --ds-component-font-size: var(--text-ds-body-xlg);
-        --ds-component-line-height: 28px;
-        --ds-component-letter-spacing: 0px;
-        --ds-component-border-width: 2px;
-        --ds-component-radius: var(--radius-ds-xl);
-        --ds-component-font-weight: 600;
-        --ds-component-elevation: var(--shadow-ds-xlg);
-      }
+      --ds-component-elevation: var(--shadow-ds-sm);
     }
   }
+
+  @media (min-width: 1440px) {
+    .deployed-chat {
+      /* MD Â· desktop 1440 */
+      --ds-component-height: 40px;
+      --ds-component-padding-x: 16px;
+      --ds-component-padding-y: 8px;
+      --ds-component-gap: 8px;
+      --ds-component-icon-size: 20px;
+      --ds-component-font-size: var(--text-ds-body-md);
+      --ds-component-line-height: 24px;
+      --ds-component-letter-spacing: 0px;
+      --ds-component-border-width: 1px;
+      --ds-component-radius: var(--radius-ds-lg);
+      --ds-component-font-weight: 500;
+      --ds-component-elevation: var(--shadow-ds-md);
+    }
+  }
+
+  @media (min-width: 1728px) {
+    .deployed-chat {
+      /* LG Â· desktop 1728 */
+      --ds-component-height: 48px;
+      --ds-component-padding-x: 20px;
+      --ds-component-padding-y: 8px;
+      --ds-component-gap: 8px;
+      --ds-component-icon-size: 24px;
+      --ds-component-font-size: var(--text-ds-body-lg);
+      --ds-component-line-height: 26px;
+      --ds-component-letter-spacing: 0px;
+      --ds-component-border-width: 2px;
+      --ds-component-radius: var(--radius-ds-lg);
+      --ds-component-font-weight: 500;
+      --ds-component-elevation: var(--shadow-ds-lg);
+    }
+  }
+
+  @media (min-width: 1920px) {
+    .deployed-chat {
+      /* XLG Â· desktop 1920 */
+      --ds-component-height: 56px;
+      --ds-component-padding-x: 24px;
+      --ds-component-padding-y: 12px;
+      --ds-component-gap: 12px;
+      --ds-component-icon-size: 28px;
+      --ds-component-font-size: var(--text-ds-body-xlg);
+      --ds-component-line-height: 28px;
+      --ds-component-letter-spacing: 0px;
+      --ds-component-border-width: 2px;
+      --ds-component-radius: var(--radius-ds-xl);
+      --ds-component-font-weight: 600;
+      --ds-component-elevation: var(--shadow-ds-xlg);
+    }
+  }
+
   
   /* =============================================================================
      4. TYPOGRAPHY â€” COMPOSITE UTILITIES (type/*)
@@ -704,297 +704,296 @@
      LG           Â· 16/20   Â· aliases label/lg
      XLG          Â· 20/26   Â· aliases body/xlg  â† exception
      ============================================================================= */
-  @layer utilities {
-    /* â”€â”€ type/heading â€” Poppins SemiBold â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   
+  /* â”€â”€ type/heading â€” Poppins SemiBold â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  .text-ds-heading {
+    font-family: var(--font-ds-sans);
+    font-weight: var(--font-weight-ds-semibold);
+    font-size: var(--text-ds-heading-xsm);
+    line-height: var(--leading-ds-heading-xsm);
+    letter-spacing: var(--tracking-ds-heading);
+  }
+
+  @media (min-width: 1280px) {
     .text-ds-heading {
-      font-family: var(--font-ds-sans);
-      font-weight: var(--font-weight-ds-semibold);
-      font-size: var(--text-ds-heading-xsm);
-      line-height: var(--leading-ds-heading-xsm);
-      letter-spacing: var(--tracking-ds-heading);
+      font-size: var(--text-ds-heading-sm);
+      line-height: var(--leading-ds-heading-sm);
     }
-  
-    @media (min-width: 1280px) {
-      .text-ds-heading {
-        font-size: var(--text-ds-heading-sm);
-        line-height: var(--leading-ds-heading-sm);
-      }
+  }
+
+  @media (min-width: 1440px) {
+    .text-ds-heading {
+      font-size: var(--text-ds-heading-md);
+      line-height: var(--leading-ds-heading-md);
     }
-  
-    @media (min-width: 1440px) {
-      .text-ds-heading {
-        font-size: var(--text-ds-heading-md);
-        line-height: var(--leading-ds-heading-md);
-      }
+  }
+
+  @media (min-width: 1728px) {
+    .text-ds-heading {
+      font-size: var(--text-ds-heading-lg);
+      line-height: var(--leading-ds-heading-lg);
     }
-  
-    @media (min-width: 1728px) {
-      .text-ds-heading {
-        font-size: var(--text-ds-heading-lg);
-        line-height: var(--leading-ds-heading-lg);
-      }
+  }
+
+  @media (min-width: 1920px) {
+    .text-ds-heading {
+      font-size: var(--text-ds-heading-xlg);
+      line-height: var(--leading-ds-heading-xlg);
     }
-  
-    @media (min-width: 1920px) {
-      .text-ds-heading {
-        font-size: var(--text-ds-heading-xlg);
-        line-height: var(--leading-ds-heading-xlg);
-      }
-    }
-  
-    /* â”€â”€ type/body â€” Poppins Regular â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-  
+  }
+
+  /* â”€â”€ type/body â€” Poppins Regular â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  .text-ds-body {
+    font-family: var(--font-ds-sans);
+    font-weight: var(--font-weight-ds-regular);
+    font-size: var(--text-ds-body-xsm);
+    line-height: var(--leading-ds-body-xsm);
+    letter-spacing: var(--tracking-ds-body);
+  }
+
+  @media (min-width: 1280px) {
     .text-ds-body {
-      font-family: var(--font-ds-sans);
-      font-weight: var(--font-weight-ds-regular);
-      font-size: var(--text-ds-body-xsm);
-      line-height: var(--leading-ds-body-xsm);
-      letter-spacing: var(--tracking-ds-body);
+      font-size: var(--text-ds-body-sm);
+      line-height: var(--leading-ds-body-sm);
     }
-  
-    @media (min-width: 1280px) {
-      .text-ds-body {
-        font-size: var(--text-ds-body-sm);
-        line-height: var(--leading-ds-body-sm);
-      }
+  }
+
+  @media (min-width: 1440px) {
+    .text-ds-body {
+      font-size: var(--text-ds-body-md);
+      line-height: var(--leading-ds-body-md);
     }
-  
-    @media (min-width: 1440px) {
-      .text-ds-body {
-        font-size: var(--text-ds-body-md);
-        line-height: var(--leading-ds-body-md);
-      }
+  }
+
+  @media (min-width: 1728px) {
+    .text-ds-body {
+      font-size: var(--text-ds-body-lg);
+      line-height: var(--leading-ds-body-lg);
     }
-  
-    @media (min-width: 1728px) {
-      .text-ds-body {
-        font-size: var(--text-ds-body-lg);
-        line-height: var(--leading-ds-body-lg);
-      }
+  }
+
+  @media (min-width: 1920px) {
+    .text-ds-body {
+      font-size: var(--text-ds-body-xlg);
+      line-height: var(--leading-ds-body-xlg);
     }
-  
-    @media (min-width: 1920px) {
-      .text-ds-body {
-        font-size: var(--text-ds-body-xlg);
-        line-height: var(--leading-ds-body-xlg);
-      }
-    }
-  
-    /* â”€â”€ type/label â€” Poppins Medium â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-  
+  }
+
+  /* â”€â”€ type/label â€” Poppins Medium â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  .text-ds-label {
+    font-family: var(--font-ds-sans);
+    font-weight: var(--font-weight-ds-medium);
+    font-size: var(--text-ds-label-xsm);
+    line-height: var(--leading-ds-label-xsm);
+    letter-spacing: var(--tracking-ds-label);
+  }
+
+  @media (min-width: 1280px) {
     .text-ds-label {
-      font-family: var(--font-ds-sans);
-      font-weight: var(--font-weight-ds-medium);
-      font-size: var(--text-ds-label-xsm);
-      line-height: var(--leading-ds-label-xsm);
-      letter-spacing: var(--tracking-ds-label);
+      font-size: var(--text-ds-label-sm);
+      line-height: var(--leading-ds-label-sm);
     }
-  
-    @media (min-width: 1280px) {
-      .text-ds-label {
-        font-size: var(--text-ds-label-sm);
-        line-height: var(--leading-ds-label-sm);
-      }
+  }
+
+  @media (min-width: 1440px) {
+    .text-ds-label {
+      font-size: var(--text-ds-label-md);
+      line-height: var(--leading-ds-label-md);
     }
-  
-    @media (min-width: 1440px) {
-      .text-ds-label {
-        font-size: var(--text-ds-label-md);
-        line-height: var(--leading-ds-label-md);
-      }
+  }
+
+  @media (min-width: 1728px) {
+    .text-ds-label {
+      font-size: var(--text-ds-label-lg);
+      line-height: var(--leading-ds-label-lg);
     }
-  
-    @media (min-width: 1728px) {
-      .text-ds-label {
-        font-size: var(--text-ds-label-lg);
-        line-height: var(--leading-ds-label-lg);
-      }
+  }
+
+  @media (min-width: 1920px) {
+    .text-ds-label {
+      font-size: var(--text-ds-label-xlg);
+      line-height: var(--leading-ds-label-xlg);
     }
-  
-    @media (min-width: 1920px) {
-      .text-ds-label {
-        font-size: var(--text-ds-label-xlg);
-        line-height: var(--leading-ds-label-xlg);
-      }
-    }
-  
-    /* â”€â”€ type/caption â€” Poppins Regular, 0.4px tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    /* Size: label/* at XSMâ€“LG Â· body/xlg at XLG */
-  
+  }
+
+  /* â”€â”€ type/caption â€” Poppins Regular, 0.4px tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* Size: label/* at XSMâ€“LG Â· body/xlg at XLG */
+
+  .text-ds-caption {
+    font-family: var(--font-ds-sans);
+    font-weight: var(--font-weight-ds-regular);
+    font-size: var(--text-ds-label-xsm);
+    line-height: var(--leading-ds-label-xsm);
+    letter-spacing: var(--tracking-ds-caption);
+  }
+
+  @media (min-width: 1280px) {
     .text-ds-caption {
-      font-family: var(--font-ds-sans);
-      font-weight: var(--font-weight-ds-regular);
-      font-size: var(--text-ds-label-xsm);
-      line-height: var(--leading-ds-label-xsm);
-      letter-spacing: var(--tracking-ds-caption);
+      font-size: var(--text-ds-label-sm);
+      line-height: var(--leading-ds-label-sm);
     }
-  
-    @media (min-width: 1280px) {
-      .text-ds-caption {
-        font-size: var(--text-ds-label-sm);
-        line-height: var(--leading-ds-label-sm);
-      }
+  }
+
+  @media (min-width: 1440px) {
+    .text-ds-caption {
+      font-size: var(--text-ds-label-md);
+      line-height: var(--leading-ds-label-md);
     }
-  
-    @media (min-width: 1440px) {
-      .text-ds-caption {
-        font-size: var(--text-ds-label-md);
-        line-height: var(--leading-ds-label-md);
-      }
+  }
+
+  @media (min-width: 1728px) {
+    .text-ds-caption {
+      font-size: var(--text-ds-label-lg);
+      line-height: var(--leading-ds-label-lg);
     }
-  
-    @media (min-width: 1728px) {
-      .text-ds-caption {
-        font-size: var(--text-ds-label-lg);
-        line-height: var(--leading-ds-label-lg);
-      }
+  }
+
+  @media (min-width: 1920px) {
+    .text-ds-caption {
+      font-size: var(--text-ds-body-xlg);
+      line-height: var(--leading-ds-body-xlg);
     }
-  
-    @media (min-width: 1920px) {
-      .text-ds-caption {
-        font-size: var(--text-ds-body-xlg);
-        line-height: var(--leading-ds-body-xlg);
-      }
-    }
-  
-    /* â”€â”€ ds-component â€” binds Â§3c tokens (12 Figma component/* properties) â”€â”€â”€ */
-    /* Icon children: svg or [data-slot="icon"] inherit --ds-component-icon-size */
-  
-    .ds-component {
-      display: inline-flex;
-      align-items: center;
-      font-family: var(--font-ds-sans);
-      min-height: var(--ds-component-height);
-      padding-inline: var(--ds-component-padding-x);
-      padding-block: var(--ds-component-padding-y);
-      gap: var(--ds-component-gap);
-      font-size: var(--ds-component-font-size);
-      line-height: var(--ds-component-line-height);
-      letter-spacing: var(--ds-component-letter-spacing);
-      border-width: var(--ds-component-border-width);
-      border-radius: var(--ds-component-radius);
-      font-weight: var(--ds-component-font-weight);
-      box-shadow: var(--ds-component-elevation);
-    }
-  
-    .ds-component :where(svg, [data-slot="icon"]) {
-      width: var(--ds-component-icon-size);
-      height: var(--ds-component-icon-size);
-    }
-  
-    /* â”€â”€ ds-layout â€” responsive/layout grid (375px â†’ 1920px) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    /* Figma: DS_Token_Responsive_Layout.json Â· mobile 375/428/768 Â· desktop below */
-    /*
-       Desktop modes (responsive/layout) â€” 6 vars Ã— 5 breakpoints
-       â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                          1024   1280   1440   1728   1920
-       layout/columns       12     12     12     12     12
-       layout/gutter        24     24     32     40     48
-       layout/margin        48     80    120    160    200
-       layout/max-width    928   1120   1200   1408   1520
-       layout/column-width  55     72     76     96    100  (reference â€” derived)
-       Inspect active mode: getComputedStyle(el).getPropertyValue('--ds-layout-breakpoint')
-    */
-  
+  }
+
+  /* â”€â”€ ds-component â€” binds Â§3c tokens (12 Figma component/* properties) â”€â”€â”€ */
+  /* Icon children: svg or [data-slot="icon"] inherit --ds-component-icon-size */
+
+  .ds-component {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-ds-sans);
+    min-height: var(--ds-component-height);
+    padding-inline: var(--ds-component-padding-x);
+    padding-block: var(--ds-component-padding-y);
+    gap: var(--ds-component-gap);
+    font-size: var(--ds-component-font-size);
+    line-height: var(--ds-component-line-height);
+    letter-spacing: var(--ds-component-letter-spacing);
+    border-width: var(--ds-component-border-width);
+    border-radius: var(--ds-component-radius);
+    font-weight: var(--ds-component-font-weight);
+    box-shadow: var(--ds-component-elevation);
+  }
+
+  .ds-component :where(svg, [data-slot="icon"]) {
+    width: var(--ds-component-icon-size);
+    height: var(--ds-component-icon-size);
+  }
+
+  /* â”€â”€ ds-layout â€” responsive/layout grid (375px â†’ 1920px) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* Figma: DS_Token_Responsive_Layout.json Â· mobile 375/428/768 Â· desktop below */
+  /*
+     Desktop modes (responsive/layout) â€” 6 vars Ã— 5 breakpoints
+     â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                        1024   1280   1440   1728   1920
+     layout/columns       12     12     12     12     12
+     layout/gutter        24     24     32     40     48
+     layout/margin        48     80    120    160    200
+     layout/max-width    928   1120   1200   1408   1520
+     layout/column-width  55     72     76     96    100  (reference â€” derived)
+     Inspect active mode: getComputedStyle(el).getPropertyValue('--ds-layout-breakpoint')
+  */
+
+  .ds-layout {
+    display: grid;
+    grid-template-columns: repeat(var(--ds-layout-columns), minmax(0, 1fr));
+    gap: var(--ds-layout-gutter);
+    width: 100%;
+    max-width: min(var(--ds-layout-max-width), 100% - 2 * var(--ds-layout-margin));
+    margin-inline: auto;
+
+    /* Mobile S â€” 375px */
+    --ds-layout-breakpoint: 375;
+    --ds-layout-columns: 4;
+    --ds-layout-gutter: 16px;
+    --ds-layout-margin: 20px;
+    --ds-layout-max-width: 335px;
+    --ds-layout-column-width: 72px;
+  }
+
+  @media (min-width: 428px) {
     .ds-layout {
-      display: grid;
-      grid-template-columns: repeat(var(--ds-layout-columns), minmax(0, 1fr));
-      gap: var(--ds-layout-gutter);
-      width: 100%;
-      max-width: min(var(--ds-layout-max-width), 100% - 2 * var(--ds-layout-margin));
-      margin-inline: auto;
-  
-      /* Mobile S â€” 375px */
-      --ds-layout-breakpoint: 375;
+      /* Mobile L â€” 428px */
+      --ds-layout-breakpoint: 428;
       --ds-layout-columns: 4;
       --ds-layout-gutter: 16px;
-      --ds-layout-margin: 20px;
-      --ds-layout-max-width: 335px;
+      --ds-layout-margin: 32px;
+      --ds-layout-max-width: 364px;
       --ds-layout-column-width: 72px;
     }
-  
-    @media (min-width: 428px) {
-      .ds-layout {
-        /* Mobile L â€” 428px */
-        --ds-layout-breakpoint: 428;
-        --ds-layout-columns: 4;
-        --ds-layout-gutter: 16px;
-        --ds-layout-margin: 32px;
-        --ds-layout-max-width: 364px;
-        --ds-layout-column-width: 72px;
-      }
+  }
+
+  @media (min-width: 768px) {
+    .ds-layout {
+      /* Tablet â€” 768px */
+      --ds-layout-breakpoint: 768;
+      --ds-layout-columns: 8;
+      --ds-layout-gutter: 24px;
+      --ds-layout-margin: 48px;
+      --ds-layout-max-width: 680px;
+      --ds-layout-column-width: 72px;
     }
-  
-    @media (min-width: 768px) {
-      .ds-layout {
-        /* Tablet â€” 768px */
-        --ds-layout-breakpoint: 768;
-        --ds-layout-columns: 8;
-        --ds-layout-gutter: 24px;
-        --ds-layout-margin: 48px;
-        --ds-layout-max-width: 680px;
-        --ds-layout-column-width: 72px;
-      }
+  }
+
+  @media (min-width: 1024px) {
+    .ds-layout {
+      /* Desktop â€” 1024px */
+      --ds-layout-breakpoint: 1024;
+      --ds-layout-columns: 12;
+      --ds-layout-gutter: 24px;
+      --ds-layout-margin: 48px;
+      --ds-layout-max-width: 928px;
+      --ds-layout-column-width: 55px;
     }
-  
-    @media (min-width: 1024px) {
-      .ds-layout {
-        /* Desktop â€” 1024px */
-        --ds-layout-breakpoint: 1024;
-        --ds-layout-columns: 12;
-        --ds-layout-gutter: 24px;
-        --ds-layout-margin: 48px;
-        --ds-layout-max-width: 928px;
-        --ds-layout-column-width: 55px;
-      }
+  }
+
+  @media (min-width: 1280px) {
+    .ds-layout {
+      /* Desktop â€” 1280px */
+      --ds-layout-breakpoint: 1280;
+      --ds-layout-columns: 12;
+      --ds-layout-gutter: 24px;
+      --ds-layout-margin: 80px;
+      --ds-layout-max-width: 1120px;
+      --ds-layout-column-width: 72px;
     }
-  
-    @media (min-width: 1280px) {
-      .ds-layout {
-        /* Desktop â€” 1280px */
-        --ds-layout-breakpoint: 1280;
-        --ds-layout-columns: 12;
-        --ds-layout-gutter: 24px;
-        --ds-layout-margin: 80px;
-        --ds-layout-max-width: 1120px;
-        --ds-layout-column-width: 72px;
-      }
+  }
+
+  @media (min-width: 1440px) {
+    .ds-layout {
+      /* Desktop â€” 1440px */
+      --ds-layout-breakpoint: 1440;
+      --ds-layout-columns: 12;
+      --ds-layout-gutter: 32px;
+      --ds-layout-margin: 120px;
+      --ds-layout-max-width: 1200px;
+      --ds-layout-column-width: 76px;
     }
-  
-    @media (min-width: 1440px) {
-      .ds-layout {
-        /* Desktop â€” 1440px */
-        --ds-layout-breakpoint: 1440;
-        --ds-layout-columns: 12;
-        --ds-layout-gutter: 32px;
-        --ds-layout-margin: 120px;
-        --ds-layout-max-width: 1200px;
-        --ds-layout-column-width: 76px;
-      }
+  }
+
+  @media (min-width: 1728px) {
+    .ds-layout {
+      /* Desktop â€” 1728px */
+      --ds-layout-breakpoint: 1728;
+      --ds-layout-columns: 12;
+      --ds-layout-gutter: 40px;
+      --ds-layout-margin: 160px;
+      --ds-layout-max-width: 1408px;
+      --ds-layout-column-width: 96px;
     }
-  
-    @media (min-width: 1728px) {
-      .ds-layout {
-        /* Desktop â€” 1728px */
-        --ds-layout-breakpoint: 1728;
-        --ds-layout-columns: 12;
-        --ds-layout-gutter: 40px;
-        --ds-layout-margin: 160px;
-        --ds-layout-max-width: 1408px;
-        --ds-layout-column-width: 96px;
-      }
-    }
-  
-    @media (min-width: 1920px) {
-      .ds-layout {
-        /* Desktop â€” 1920px */
-        --ds-layout-breakpoint: 1920;
-        --ds-layout-columns: 12;
-        --ds-layout-gutter: 48px;
-        --ds-layout-margin: 200px;
-        --ds-layout-max-width: 1520px;
-        --ds-layout-column-width: 100px;
-      }
+  }
+
+  @media (min-width: 1920px) {
+    .ds-layout {
+      /* Desktop â€” 1920px */
+      --ds-layout-breakpoint: 1920;
+      --ds-layout-columns: 12;
+      --ds-layout-gutter: 48px;
+      --ds-layout-margin: 200px;
+      --ds-layout-max-width: 1520px;
+      --ds-layout-column-width: 100px;
     }
   }
