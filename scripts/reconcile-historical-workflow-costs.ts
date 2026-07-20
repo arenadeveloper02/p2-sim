@@ -231,11 +231,14 @@ function printDeltaReview(
   console.log('\n--- Delta review totals ---')
   console.log(`Executions:            ${review.totals.executions}`)
   console.log(`Apply-eligible:        ${review.totals.applyEligible}`)
-  console.log(`Total positive delta:  $${review.totals.positiveDelta.toFixed(6)}`)
-  console.log(`Total negative delta:  $${review.totals.negativeDelta.toFixed(6)}`)
+  console.log(`Candidate positive:    $${review.totals.positiveDelta.toFixed(6)}`)
+  console.log(`Candidate negative:    $${review.totals.negativeDelta.toFixed(6)}`)
+  console.log(`Eligible positive:     $${review.totals.eligiblePositiveDelta.toFixed(6)}`)
+  console.log(`Eligible negative:     $${review.totals.eligibleNegativeDelta.toFixed(6)}`)
+  console.log(`Out-of-scope positive: $${review.totals.outOfScopePositiveDelta.toFixed(6)}`)
 
   if (review.byWorkspace.length > 0) {
-    console.log('\n--- Top workspaces by positive delta ---')
+    console.log('\n--- Top apply-eligible workspaces by positive delta ---')
     for (const bucket of review.byWorkspace) {
       console.log(
         `  ${bucket.id} executions=${bucket.executions} positive=$${bucket.positiveDelta.toFixed(6)} negative=$${bucket.negativeDelta.toFixed(6)} apply=${bucket.applyEligible}`
@@ -244,7 +247,7 @@ function printDeltaReview(
   }
 
   if (review.byWorkflow.length > 0) {
-    console.log('\n--- Top workflows by positive delta ---')
+    console.log('\n--- Top apply-eligible workflows by positive delta ---')
     for (const bucket of review.byWorkflow) {
       console.log(
         `  ${bucket.id} executions=${bucket.executions} positive=$${bucket.positiveDelta.toFixed(6)} negative=$${bucket.negativeDelta.toFixed(6)} apply=${bucket.applyEligible}`
@@ -253,7 +256,7 @@ function printDeltaReview(
   }
 
   if (review.byModel.length > 0) {
-    console.log('\n--- Top models by positive delta ---')
+    console.log('\n--- Top apply-eligible models by positive delta ---')
     for (const bucket of review.byModel) {
       console.log(
         `  ${bucket.description} executions=${bucket.executions} positive=$${bucket.positiveDelta.toFixed(6)}`
@@ -262,7 +265,7 @@ function printDeltaReview(
   }
 
   if (review.byTool.length > 0) {
-    console.log('\n--- Top tools by positive delta ---')
+    console.log('\n--- Top apply-eligible tools by positive delta ---')
     for (const bucket of review.byTool) {
       console.log(
         `  ${bucket.description} executions=${bucket.executions} positive=$${bucket.positiveDelta.toFixed(6)}`
@@ -364,12 +367,12 @@ async function runDryRun(options: Options): Promise<number> {
   }
 
   const topPositive = [...allRecords]
-    .filter((record) => record.positiveDelta > 0)
+    .filter((record) => record.applyEligible && record.positiveDelta > 0)
     .sort((a, b) => b.positiveDelta - a.positiveDelta)
     .slice(0, 20)
 
   if (topPositive.length > 0) {
-    console.log('\n--- Top positive delta examples ---')
+    console.log('\n--- Top apply-eligible positive delta examples ---')
     for (const record of topPositive) {
       const warningText = record.warnings.length > 0 ? ` warnings=${record.warnings.join(';')}` : ''
       console.log(
@@ -625,6 +628,19 @@ async function runApply(options: Options): Promise<number> {
   console.log(`Errors:                 ${batch.errors}`)
   console.log(`Positive delta applied: $${batch.totalPositiveDeltaApplied.toFixed(6)}`)
   console.log(`Negative delta skipped: $${batch.totalNegativeDeltaSkipped.toFixed(6)}`)
+
+  const skippedReasons = new Map<string, number>()
+  for (const result of batch.results) {
+    if (result.status !== 'skipped') continue
+    const reason = result.reason ?? 'unspecified'
+    skippedReasons.set(reason, (skippedReasons.get(reason) ?? 0) + 1)
+  }
+  if (skippedReasons.size > 0) {
+    console.log('\n--- Skipped reasons ---')
+    for (const [reason, count] of skippedReasons) {
+      console.log(`  ${reason}: ${count}`)
+    }
+  }
 
   const notable = batch.results.filter(
     (result) => result.status === 'applied' || result.status === 'error'

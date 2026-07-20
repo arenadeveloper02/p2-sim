@@ -86,6 +86,7 @@ import {
   parseHistoricalReconcileShadowRecord,
   repairLedgerProjections,
   resolveShadowArtifactWorkspaceScope,
+  shadowRecordHasPricedToolEvidence,
   snapshotStateHasCostBlocks,
   verifyLedgerProjection,
   type ExecutionClassification,
@@ -530,6 +531,46 @@ describe('classifyExecutionEvidence', () => {
     expect(result.primaryClass).not.toBe('out_of_scope')
   })
 
+  it('keeps missing priced-tool costs eligible when cost_total already matches the ledger', () => {
+    const result = classifyExecutionEvidence(
+      baseEvidence({
+        costTotal: BASE_EXECUTION_CHARGE,
+        ledgerSum: BASE_EXECUTION_CHARGE,
+        drift: 0,
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 2,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 1,
+          spansWithHostedToolMetadata: 1,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 0,
+          modelsInSpans: ['gpt-4o'],
+          hostedToolSignals: ['exa_cost_dollars'],
+        },
+        traceSpans: [
+          {
+            type: 'model',
+            model: 'gpt-4o',
+            tokens: { input: 1000, output: 500, total: 1500 },
+          },
+          {
+            type: 'tool',
+            name: 'exa_search',
+            output: { __costDollars: 0.007 },
+          },
+        ],
+      }),
+      { onlyPricedTools: true }
+    )
+
+    expect(result.primaryClass).toBe('cost_stripped_needs_reprice')
+    expect(result.applyEligible).toBe(true)
+  })
+
   it('treats cost blocks as in-scope under onlyPricedTools', () => {
     const result = classifyExecutionEvidence(
       baseEvidence({
@@ -784,6 +825,94 @@ describe('dryRunHistoricalWorkflowReprices', () => {
       cause: { name: 'HistoricalReconcileExecutionTimeoutError' },
     })
   })
+
+  it('exports an eligible priced-tool adjustment when the projection already matches its ledger', async () => {
+    const pageRow = {
+      executionId: 'exec-missing-cost',
+      workflowId: 'wf-1',
+      workspaceId: 'ws-1',
+      startedAt: new Date('2026-07-17T10:00:00.000Z'),
+      status: 'completed',
+      trigger: 'api',
+      stateSnapshotId: 'snap-1',
+      costTotal: BASE_EXECUTION_CHARGE.toString(),
+      modelsUsed: ['gpt-4o'],
+      ledgerSum: BASE_EXECUTION_CHARGE.toString(),
+    }
+    const evidenceRow = {
+      ...pageRow,
+      executionData: {
+        traceSpans: [
+          {
+            type: 'model',
+            model: 'gpt-4o',
+            tokens: { input: 1000, output: 500, total: 1500 },
+          },
+          {
+            type: 'tool',
+            name: 'exa_search',
+            output: { __costDollars: 0.007 },
+          },
+        ],
+      },
+      snapshotStateData: null,
+    }
+    let selectCall = 0
+    mockSelect.mockImplementation(() => {
+      selectCall += 1
+      if (selectCall === 1) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([pageRow]),
+              }),
+            }),
+          }),
+        }
+      }
+      if (selectCall === 2) {
+        return {
+          from: vi.fn().mockReturnValue({
+            leftJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([evidenceRow]),
+              }),
+            }),
+          }),
+        }
+      }
+      if (selectCall === 3) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              groupBy: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockResolvedValue([]),
+              }),
+            }),
+          }),
+        }
+      }
+      const cost = selectCall === 5 ? BASE_EXECUTION_CHARGE.toString() : '0'
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ cost }]),
+        }),
+      }
+    })
+
+    const summary = await dryRunHistoricalWorkflowReprices(
+      { limit: 1, batchSize: 2, concurrency: 1, onlyPricedTools: true },
+      { onlyPricedTools: true }
+    )
+
+    expect(summary.records[0]).toMatchObject({
+      executionId: 'exec-missing-cost',
+      applyEligible: true,
+      pricedToolScope: true,
+    })
+    expect(summary.records[0]?.positiveDelta).toBeGreaterThan(0)
+  })
 })
 
 function shadowRecord(
@@ -803,6 +932,7 @@ function shadowRecord(
     negativeDelta: 0,
     confidence: 'high',
     applyEligible: true,
+    pricedToolScope: true,
     primaryClass: 'span_cost_legacy',
     warnings: [],
     blockers: [],
@@ -1176,6 +1306,9 @@ describe('parseHistoricalReconcileShadowRecord', () => {
       executionId: 'exec-1',
       workspaceId: 'ws-1',
       pricingMode: HISTORICAL_RECONCILE_PRICING_MODE,
+      applyEligible: false,
+      pricedToolScope: false,
+      warnings: ['priced_tool_scope_missing_regenerate_artifact'],
     })
   })
 })
@@ -1241,6 +1374,21 @@ describe('applyHistoricalReconciliation', () => {
 
     expect(result.status).toBe('skipped')
     expect(result.reason).toBe('not_apply_eligible')
+    expect(mockTransaction).not.toHaveBeenCalled()
+  })
+
+  it('requires regenerating artifacts that predate persisted priced-tool scope', async () => {
+    const result = await applyHistoricalReconciliation({
+      record: shadowRecord({
+        applyEligible: false,
+        pricedToolScope: false,
+        warnings: ['priced_tool_scope_missing_regenerate_artifact'],
+      }),
+      userId: 'user-1',
+    })
+
+    expect(result.status).toBe('skipped')
+    expect(result.reason).toBe('artifact_missing_priced_tool_scope')
     expect(mockTransaction).not.toHaveBeenCalled()
   })
 
@@ -1433,15 +1581,41 @@ describe('aggregateShadowDeltaReview', () => {
         ledgerLines: [{ category: 'model', description: 'gpt-4o', cost: 0.01 }],
         targets: [{ category: 'model', description: 'gpt-4o', target: 0.02 }],
       }),
+      shadowRecord({
+        executionId: 'exec-out-of-scope',
+        workspaceId: 'ws-b',
+        workflowId: 'wf-c',
+        positiveDelta: 0.5,
+        applyEligible: false,
+        pricedToolScope: false,
+        primaryClass: 'out_of_scope',
+        targets: [{ category: 'model', description: 'gpt-4o', target: 0.5 }],
+      }),
     ])
 
-    expect(review.totals.executions).toBe(2)
-    expect(review.totals.positiveDelta).toBeCloseTo(0.04, 8)
+    expect(review.totals.executions).toBe(3)
+    expect(review.totals.positiveDelta).toBeCloseTo(0.54, 8)
     expect(review.totals.negativeDelta).toBeCloseTo(0.01, 8)
+    expect(review.totals.eligiblePositiveDelta).toBeCloseTo(0.04, 8)
+    expect(review.totals.eligibleNegativeDelta).toBeCloseTo(0.01, 8)
+    expect(review.totals.outOfScopePositiveDelta).toBeCloseTo(0.5, 8)
     expect(review.byWorkspace[0]?.id).toBe('ws-a')
     expect(review.byWorkflow).toHaveLength(2)
     expect(review.byModel[0]?.description).toBe('gpt-4o')
     expect(review.byTool[0]?.description).toBe('firecrawl_scrape')
+  })
+})
+
+describe('shadowRecordHasPricedToolEvidence', () => {
+  it('preserves the dry-run scope decision when targets only contain model costs', () => {
+    const record = shadowRecord({
+      primaryClass: 'cost_stripped_needs_reprice',
+      targets: [{ category: 'model', description: 'gpt-4o', target: 0.02 }],
+      ledgerLines: [],
+      pricedToolScope: true,
+    })
+
+    expect(shadowRecordHasPricedToolEvidence(record)).toBe(true)
   })
 })
 

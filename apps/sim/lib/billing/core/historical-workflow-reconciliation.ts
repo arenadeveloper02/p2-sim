@@ -130,6 +130,7 @@ export const HISTORICAL_RECONCILE_PROGRESS_HEARTBEAT_MS = 30_000
 export const HISTORICAL_RECONCILE_DB_RETRY_ATTEMPTS = 5
 
 const HISTORICAL_RECONCILE_LOCK_TIMEOUT_MS = 10_000
+const MISSING_PRICED_TOOL_SCOPE_WARNING = 'priced_tool_scope_missing_regenerate_artifact'
 
 export interface ReconciliationTargetLine {
   category: UsageLogCategory
@@ -159,6 +160,7 @@ export interface HistoricalReconcileShadowRecord {
   negativeDelta: number
   confidence: ReconciliationConfidence
   applyEligible: boolean
+  pricedToolScope: boolean
   primaryClass: ReconciliationClass
   warnings: string[]
   blockers: string[]
@@ -653,6 +655,7 @@ export function executionHasPricedToolSignal(evidence: ExecutionEvidence): boole
 export function shadowRecordHasPricedToolEvidence(
   record: HistoricalReconcileShadowRecord
 ): boolean {
+  if (record.pricedToolScope) return true
   if (record.primaryClass === 'out_of_scope') return false
   if (record.primaryClass === 'cost_block' || record.primaryClass === 'hosted_tool') {
     return true
@@ -850,7 +853,6 @@ export function classifyExecutionEvidence(
   )
 
   const applyEligible =
-    hasDrift &&
     blockers.length === 0 &&
     primaryClass !== 'mothership_risk' &&
     primaryClass !== 'missing_trace_data' &&
@@ -1909,6 +1911,7 @@ export async function computeTargetLedgerLines(
 function buildShadowRecord(params: {
   evidence: ExecutionEvidence
   classification: ExecutionClassification
+  pricedToolScope: boolean
   targets: ReconciliationTargetLine[]
   warnings: string[]
   pricingMode?: HistoricalReconcilePricingMode
@@ -1944,7 +1947,10 @@ function buildShadowRecord(params: {
     positiveDelta: adjustment.positiveDeltaTotal,
     negativeDelta: adjustment.negativeDeltaTotal,
     confidence: params.classification.confidence,
-    applyEligible: params.classification.applyEligible,
+    applyEligible:
+      params.classification.applyEligible &&
+      adjustment.positiveDeltaTotal > RECONCILIATION_EPSILON,
+    pricedToolScope: params.pricedToolScope,
     primaryClass: params.classification.primaryClass,
     warnings: [...new Set([...params.classification.warnings, ...params.warnings])],
     blockers: params.classification.blockers,
@@ -2023,11 +2029,13 @@ export async function computeShadowRepriceForExecution(
   const classification = classifyExecutionEvidence(evidence, {
     onlyPricedTools: options.onlyPricedTools,
   })
+  const pricedToolScope = executionHasPricedToolSignal(evidence)
   const { targets, warnings } = await computeTargetLedgerLines(evidence, options)
 
   return buildShadowRecord({
     evidence,
     classification,
+    pricedToolScope,
     targets,
     warnings,
     pricingMode: options.pricingMode,
@@ -2405,9 +2413,16 @@ export function parseHistoricalReconcileShadowRecord(
       positiveDelta: typeof parsed.positiveDelta === 'number' ? parsed.positiveDelta : 0,
       negativeDelta: typeof parsed.negativeDelta === 'number' ? parsed.negativeDelta : 0,
       confidence: parsed.confidence ?? 'low',
-      applyEligible: parsed.applyEligible === true,
+      applyEligible:
+        parsed.applyEligible === true && typeof parsed.pricedToolScope === 'boolean',
+      pricedToolScope: parsed.pricedToolScope === true,
       primaryClass: parsed.primaryClass ?? 'missing_trace_data',
-      warnings: Array.isArray(parsed.warnings) ? parsed.warnings : [],
+      warnings: [
+        ...(Array.isArray(parsed.warnings) ? parsed.warnings : []),
+        ...(typeof parsed.pricedToolScope === 'boolean'
+          ? []
+          : [MISSING_PRICED_TOOL_SCOPE_WARNING]),
+      ],
       blockers: Array.isArray(parsed.blockers) ? parsed.blockers : [],
       targets: parsed.targets,
       pricingMode: parsed.pricingMode ?? HISTORICAL_RECONCILE_PRICING_MODE,
@@ -2428,6 +2443,21 @@ export async function applyHistoricalReconciliation(params: {
 }): Promise<ApplyHistoricalReconciliationResult> {
   const { record, userId } = params
   const requireEligible = params.requireEligible ?? true
+
+  if (record.warnings.includes(MISSING_PRICED_TOOL_SCOPE_WARNING)) {
+    return {
+      executionId: record.executionId,
+      status: 'skipped',
+      reason: 'artifact_missing_priced_tool_scope',
+      entriesInserted: 0,
+      positiveDeltaApplied: 0,
+      negativeDeltaSkipped: record.negativeDelta,
+      ledgerSumBefore: record.ledgerSum,
+      ledgerSumAfter: record.ledgerSum,
+      costTotalBefore: record.costTotal,
+      costTotalAfter: record.costTotal ?? record.ledgerSum,
+    }
+  }
 
   if (requireEligible && !record.applyEligible) {
     return {
@@ -2871,6 +2901,9 @@ export interface ShadowDeltaReviewBreakdown {
     applyEligible: number
     positiveDelta: number
     negativeDelta: number
+    eligiblePositiveDelta: number
+    eligibleNegativeDelta: number
+    outOfScopePositiveDelta: number
   }
   byWorkspace: ShadowDeltaBucket[]
   byWorkflow: ShadowDeltaBucket[]
@@ -2986,18 +3019,27 @@ export function aggregateShadowDeltaReview(
   let applyEligible = 0
   let positiveDelta = 0
   let negativeDelta = 0
+  let eligiblePositiveDelta = 0
+  let eligibleNegativeDelta = 0
+  let outOfScopePositiveDelta = 0
 
   for (const record of records) {
+    positiveDelta += record.positiveDelta
+    negativeDelta += record.negativeDelta
+    if (record.primaryClass === 'out_of_scope') {
+      outOfScopePositiveDelta += record.positiveDelta
+    }
+    if (!record.applyEligible) continue
+
+    applyEligible += 1
+    eligiblePositiveDelta += record.positiveDelta
+    eligibleNegativeDelta += record.negativeDelta
     upsertShadowDeltaBucket(byWorkspace, record.workspaceId, record)
     upsertShadowDeltaBucket(
       byWorkflow,
       record.workflowId ?? '(no-workflow)',
       record
     )
-
-    if (record.applyEligible) applyEligible += 1
-    positiveDelta += record.positiveDelta
-    negativeDelta += record.negativeDelta
 
     const alreadyBilled = ledgerLinesToBilledMap(record.ledgerLines ?? [])
     for (const line of record.targets) {
@@ -3029,6 +3071,9 @@ export function aggregateShadowDeltaReview(
       applyEligible,
       positiveDelta,
       negativeDelta,
+      eligiblePositiveDelta,
+      eligibleNegativeDelta,
+      outOfScopePositiveDelta,
     },
     byWorkspace: sortBuckets([...byWorkspace.values()]),
     byWorkflow: sortBuckets([...byWorkflow.values()]),
