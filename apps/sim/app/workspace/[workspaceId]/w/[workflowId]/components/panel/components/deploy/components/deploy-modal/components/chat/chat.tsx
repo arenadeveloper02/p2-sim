@@ -98,7 +98,22 @@ interface FormErrors {
   password?: string
   emails?: string
   outputBlocks?: string
+  redirectUrl?: string
   general?: string
+}
+
+const DEPLOYMENT_TYPE_OPTIONS = [
+  { value: 'chat', label: 'As Chat' },
+  { value: 'app', label: 'As App' },
+] as const
+
+function isValidRedirectUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' || url.protocol === 'http:'
+  } catch {
+    return false
+  }
 }
 
 const initialFormData: ChatFormData = {
@@ -113,6 +128,8 @@ const initialFormData: ChatFormData = {
     "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
   goldenQueries: [],
   selectedOutputBlocks: [],
+  deploymentType: 'chat',
+  redirectUrl: '',
 }
 
 export function ChatDeploy({
@@ -226,6 +243,14 @@ export function ChatDeploy({
       newErrors.outputBlocks = 'Please select at least one output block'
     }
 
+    if (formData.deploymentType === 'app') {
+      if (!formData.redirectUrl.trim()) {
+        newErrors.redirectUrl = 'Redirection URL is required when deploying as an app'
+      } else if (!isValidRedirectUrl(formData.redirectUrl.trim())) {
+        newErrors.redirectUrl = 'Enter a valid URL starting with http:// or https://'
+      }
+    }
+
     if (!formData.department?.trim()) {
       newErrors.general = 'Category is required'
     }
@@ -243,6 +268,7 @@ export function ChatDeploy({
       Boolean(existingChat)) &&
     ((formData.authType !== 'email' && formData.authType !== 'sso') ||
       formData.emails.length > 0) &&
+    (formData.deploymentType !== 'app' || isValidRedirectUrl(formData.redirectUrl.trim())) &&
     !hasInvalidEmails
 
   useEffect(() => {
@@ -284,6 +310,8 @@ export function ChatDeploy({
               (config: { blockId: string; path: string }) => `${config.blockId}_${config.path}`
             )
           : [],
+        deploymentType: existingChat.deploymentType || 'chat',
+        redirectUrl: existingChat.redirectUrl || '',
       })
 
       if (existingChat.customizations?.imageUrl) {
@@ -387,9 +415,13 @@ export function ChatDeploy({
       onDeployed?.()
       onVersionActivated?.()
 
-      if (isNewChat && chatUrl) {
-        const url = `${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`
-        window.open(url, '_blank', 'noopener,noreferrer')
+      if (isNewChat) {
+        if (formData.deploymentType === 'app' && formData.redirectUrl.trim()) {
+          window.open(formData.redirectUrl.trim(), '_blank', 'noopener,noreferrer')
+        } else if (chatUrl) {
+          const url = `${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`
+          window.open(url, '_blank', 'noopener,noreferrer')
+        }
       }
 
       hasInitializedFormRef.current = false
@@ -457,6 +489,49 @@ export function ChatDeploy({
             onValidationChange={setIsIdentifierValid}
             isEditingExisting={!!existingChat}
           /> */}
+
+        <div>
+          <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+            Deployment type
+          </Label>
+          <CustomSelect
+            value={formData.deploymentType}
+            onChange={(value) => updateField('deploymentType', value as ChatFormData['deploymentType'])}
+            disabled={chatSubmitting}
+            placeholder='Select deployment type'
+            options={DEPLOYMENT_TYPE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
+          />
+          <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
+            {formData.deploymentType === 'app'
+              ? 'The listing card will open your external app URL instead of the built-in chat page'
+              : 'The listing card will open the built-in chat page'}
+          </p>
+        </div>
+
+        {formData.deploymentType === 'app' && (
+          <div>
+            <Label
+              htmlFor='redirectUrl'
+              className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+            >
+              Redirection URL
+            </Label>
+            <ChipInput
+              id='redirectUrl'
+              placeholder='https://company-research-agent-app.vercel.app/'
+              value={formData.redirectUrl}
+              onChange={(e) => updateField('redirectUrl', e.target.value)}
+              required
+              disabled={chatSubmitting}
+            />
+            {errors.redirectUrl && (
+              <p className='mt-1 text-destructive text-sm'>{errors.redirectUrl}</p>
+            )}
+          </div>
+        )}
 
         <div>
           <Label

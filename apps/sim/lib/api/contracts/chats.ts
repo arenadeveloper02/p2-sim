@@ -22,6 +22,19 @@ export const deployedChatOutputConfigSchema = z.object({
   path: z.string().optional(),
 })
 
+export const chatDeploymentTypeSchema = z.enum(['chat', 'app'])
+export type ChatDeploymentType = z.output<typeof chatDeploymentTypeSchema>
+
+export const chatRedirectUrlSchema = z
+  .string()
+  .trim()
+  .url('Redirect URL must be a valid URL')
+  .max(2048, 'Redirect URL is too long')
+  .refine(
+    (value) => value.startsWith('https://') || value.startsWith('http://'),
+    'Redirect URL must start with http:// or https://'
+  )
+
 export const chatCustomizationsSchema = z.object({
   primaryColor: z.string(),
   welcomeMessage: z.string(),
@@ -43,6 +56,8 @@ export const createChatBodySchema = z.object({
   password: z.string().optional(),
   allowedEmails: z.array(z.string()).optional().default([]),
   outputConfigs: z.array(chatOutputConfigSchema).optional().default([]),
+  deploymentType: chatDeploymentTypeSchema.optional().default('chat'),
+  redirectUrl: chatRedirectUrlSchema.optional(),
 })
 export type CreateChatBody = z.input<typeof createChatBodySchema>
 
@@ -61,6 +76,8 @@ export const updateChatBodySchema = z.object({
   password: z.string().optional(),
   allowedEmails: z.array(z.string()).optional(),
   outputConfigs: z.array(chatOutputConfigSchema).optional(),
+  deploymentType: chatDeploymentTypeSchema.optional(),
+  redirectUrl: chatRedirectUrlSchema.optional(),
 })
 export type UpdateChatBody = z.input<typeof updateChatBodySchema>
 

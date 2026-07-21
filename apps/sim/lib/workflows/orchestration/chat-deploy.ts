@@ -30,6 +30,8 @@ export interface ChatDeployPayload {
   password?: string | null
   allowedEmails?: string[]
   outputConfigs?: Array<{ blockId: string; path: string }>
+  deploymentType?: 'chat' | 'app'
+  redirectUrl?: string | null
   workspaceId?: string | null
   deployOptions?: Pick<
     PerformFullDeployParams,
@@ -65,7 +67,11 @@ export async function performChatDeploy(
     password,
     allowedEmails = [],
     outputConfigs = [],
+    deploymentType = 'chat',
   } = params
+
+  const redirectUrlValue =
+    deploymentType === 'app' && params.redirectUrl?.trim() ? params.redirectUrl.trim() : null
 
   const departmentValue = params.department?.trim() ? params.department.trim() : null
   const remarksValue = params.remarks?.trim() ? params.remarks.trim() : null
@@ -128,6 +134,8 @@ export async function performChatDeploy(
         password: passwordToStore,
         allowedEmails: authType === 'email' || authType === 'sso' ? allowedEmails : [],
         outputConfigs,
+        deploymentType,
+        redirectUrl: redirectUrlValue,
         updatedAt: new Date(),
       })
       .where(eq(chat.id, chatId))
@@ -155,6 +163,8 @@ export async function performChatDeploy(
       password: encryptedPassword,
       allowedEmails: authType === 'email' || authType === 'sso' ? allowedEmails : [],
       outputConfigs,
+      deploymentType,
+      redirectUrl: redirectUrlValue,
       createdAt: new Date(),
       updatedAt: new Date(),
     })

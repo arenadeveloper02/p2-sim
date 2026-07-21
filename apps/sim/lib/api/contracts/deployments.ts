@@ -141,6 +141,8 @@ export const chatDetailSchema = z.object({
       .optional()
   ),
   isActive: z.boolean(),
+  deploymentType: z.preprocess((value) => value ?? 'chat', z.enum(['chat', 'app'])),
+  redirectUrl: z.preprocess((value) => value ?? null, z.string().nullable()),
   chatUrl: z.string(),
   hasPassword: z.boolean(),
 })
