@@ -8,6 +8,7 @@ import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
+import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import { readSSEEvents } from '@/lib/core/utils/sse'
 import type { ChatMessage } from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
@@ -568,6 +569,18 @@ function formatForkStreamOutputValue(value: unknown): string | null {
   }
 
   if (typeof value === 'object') {
+    const chartOutput = formatChartDeployOutputForChat(value)
+    if (chartOutput) {
+      return chartOutput
+    }
+    if (
+      value &&
+      typeof value === 'object' &&
+      'charts' in value &&
+      Array.isArray((value as { charts?: unknown }).charts)
+    ) {
+      return null
+    }
     try {
       return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
     } catch {

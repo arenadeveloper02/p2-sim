@@ -1,13 +1,14 @@
 import { createSign } from 'crypto'
 import { db } from '@sim/db'
-import { account, accountTokens, credential } from '@sim/db/schema'
+import { account, accountTokens, credential, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getPostgresErrorCode, toError } from '@sim/utils/errors'
-import { and, desc, eq,sql  } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 import { withLeaderLock } from '@/lib/concurrency/leader-lock'
 import { coalesceLocally } from '@/lib/concurrency/singleflight'
 import { decryptSecret } from '@/lib/core/security/encryption'
 import { refreshOAuthToken } from '@/lib/oauth'
+import { getOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
 import {
   getMicrosoftRefreshTokenExpiry,
   isMicrosoftProvider,
@@ -52,6 +53,8 @@ interface AccountInsertData {
 export interface ResolvedCredential {
   accountId: string
   workspaceId?: string
+  /** The credential's workspace's owning organization, if any (used to resolve org-scoped custom OAuth apps). */
+  organizationId?: string
   usedCredentialTable: boolean
   credentialType?: string
   credentialId?: string
@@ -60,7 +63,9 @@ export interface ResolvedCredential {
 
 /**
  * Resolves a credential ID to its underlying account ID.
- * If `credentialId` matches a `credential` row, returns its `accountId` and `workspaceId`.
+ * If `credentialId` matches a `credential` row, returns its `accountId`, `workspaceId`,
+ * and the workspace's owning `organizationId` (needed to resolve org-scoped custom OAuth
+ * apps — see `apps/sim/lib/oauth/custom-apps.ts` — during refresh).
  * For service_account credentials, returns credentialId and type instead of accountId.
  * Otherwise assumes `credentialId` is already a raw `account.id` (legacy).
  */
@@ -74,8 +79,10 @@ export async function resolveOAuthAccountId(
       accountId: credential.accountId,
       workspaceId: credential.workspaceId,
       providerId: credential.providerId,
+      organizationId: workspace.organizationId,
     })
     .from(credential)
+    .leftJoin(workspace, eq(workspace.id, credential.workspaceId))
     .where(eq(credential.id, credentialId))
     .limit(1)
 
@@ -86,6 +93,7 @@ export async function resolveOAuthAccountId(
         credentialId: credentialRow.id,
         credentialType: 'service_account',
         workspaceId: credentialRow.workspaceId,
+        organizationId: credentialRow.organizationId ?? undefined,
         providerId: credentialRow.providerId ?? undefined,
         usedCredentialTable: true,
       }
@@ -97,6 +105,7 @@ export async function resolveOAuthAccountId(
     return {
       accountId: credentialRow.accountId,
       workspaceId: credentialRow.workspaceId,
+      organizationId: credentialRow.organizationId ?? undefined,
       usedCredentialTable: true,
     }
   }
@@ -368,6 +377,8 @@ interface CoalescedRefreshOptions {
   targetTable?: 'account' | 'account_tokens'
   /** HubSpot shared-tenant alias for per-portal OAuth app credentials. */
   alias?: string
+  /** Owning organization of the credential's workspace, for org-scoped custom OAuth apps (e.g. Zoom). */
+  organizationId?: string
 }
 
 function resolveHubSpotRefreshAlias(credential: {
@@ -387,6 +398,7 @@ async function performCoalescedRefresh({
   userId,
   targetTable = 'account',
   alias,
+  organizationId,
 }: CoalescedRefreshOptions): Promise<string | null> {
   const logContext = {
     ...(requestId ? { requestId } : {}),
@@ -413,7 +425,13 @@ async function performCoalescedRefresh({
       key: lockKey,
       onLeader: async () => {
         try {
-          const result = await refreshOAuthToken(providerId, refreshToken, alias)
+          const result = await refreshOAuthToken(
+            providerId,
+            refreshToken,
+            alias,
+            organizationId,
+            getOrganizationOAuthApp
+          )
 
           if (!result.ok) {
             logger.error('Failed to refresh token', {
@@ -662,6 +680,7 @@ export async function refreshAccessTokenIfNeeded(
       requestId,
       userId: credential.userId,
       alias: resolveHubSpotRefreshAlias(credential),
+      organizationId: resolved.organizationId,
     })
     if (fresh) return fresh
     // If refresh was only triggered proactively (Microsoft refresh-token aging),
@@ -683,12 +702,30 @@ export async function refreshAccessTokenIfNeeded(
 }
 
 /**
+ * Resolves the organization that owns `workspaceId`, for threading into
+ * org-scoped custom OAuth app lookups (see `apps/sim/lib/oauth/custom-apps.ts`)
+ * during token refresh.
+ */
+export async function getOrganizationIdForWorkspace(
+  workspaceId: string | null | undefined
+): Promise<string | undefined> {
+  if (!workspaceId) return undefined
+  const [ws] = await db
+    .select({ organizationId: workspace.organizationId })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId))
+    .limit(1)
+  return ws?.organizationId ?? undefined
+}
+
+/**
  * Enhanced version that returns additional information about the refresh operation
  */
 export async function refreshTokenIfNeeded(
   requestId: string,
   credential: any,
-  credentialId: string
+  credentialId: string,
+  organizationId?: string
 ): Promise<{ accessToken: string; refreshed: boolean }> {
   const resolvedCredentialId = credential.resolvedCredentialId ?? credentialId
 
@@ -792,6 +829,7 @@ export async function refreshTokenIfNeeded(
     userId: credential.userId,
     targetTable: inAccountTokens ? 'account_tokens' : 'account',
     alias: resolveHubSpotRefreshAlias(credential),
+    organizationId,
   })
   if (fresh) return { accessToken: fresh, refreshed: true }
 
