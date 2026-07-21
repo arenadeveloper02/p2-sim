@@ -10,6 +10,7 @@ import {
   getWorkspaceMembersContract,
   getWorkspaceOwnerBillingContract,
   getWorkspacePermissionsContract,
+  getWorkspaceZoomAdminAccessContract,
   listWorkspacesContract,
   updateWorkspaceContract,
   type Workspace,
@@ -20,6 +21,8 @@ import {
   type WorkspaceQueryScope,
   type WorkspacesResponse,
 } from '@/lib/api/contracts'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
+import { setZoomAdminAccessCache } from '@/lib/workspaces/zoom-admin-access-cache'
 
 /**
  * Query key factory for workspace-related queries.
@@ -36,11 +39,19 @@ export const workspaceKeys = {
   permissions: (id: string) => [...workspaceKeys.detail(id), 'permissions'] as const,
   members: (id: string) => [...workspaceKeys.detail(id), 'members'] as const,
   ownerBilling: (id: string) => [...workspaceKeys.detail(id), 'ownerBilling'] as const,
+  zoomAdminAccess: (id: string) => [...workspaceKeys.detail(id), 'zoomAdminAccess'] as const,
   adminLists: () => [...workspaceKeys.all, 'adminList'] as const,
   adminList: (userId: string | undefined) => [...workspaceKeys.adminLists(), userId ?? ''] as const,
 }
 
 export type { Workspace, WorkspaceCreationPolicy, WorkspaceMember, WorkspacePermissions }
+
+export const WORKSPACE_PERMISSIONS_STALE_TIME = 30 * 1000
+export const WORKSPACE_LIST_STALE_TIME = 30 * 1000
+export const WORKSPACE_SETTINGS_STALE_TIME = 30 * 1000
+export const WORKSPACE_MEMBERS_STALE_TIME = 5 * 60 * 1000
+export const WORKSPACE_ADMIN_LIST_STALE_TIME = 60 * 1000
+export const WORKSPACE_ZOOM_ADMIN_ACCESS_STALE_TIME = 60 * 1000
 
 async function fetchWorkspaces(
   scope: WorkspaceQueryScope = 'active',
@@ -85,7 +96,7 @@ export function useWorkspacesQuery(enabled = true, scope: WorkspaceQueryScope = 
     queryFn: ({ signal }) => fetchWorkspaces(scope, signal),
     select: selectWorkspaces,
     enabled,
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -99,7 +110,7 @@ export function useWorkspacesWithMetadata(enabled = true) {
     queryKey: workspaceKeys.list('active'),
     queryFn: ({ signal }) => fetchWorkspaces('active', signal),
     enabled,
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_LIST_STALE_TIME,
   })
 }
 
@@ -109,7 +120,7 @@ export function useWorkspaceCreationPolicy(enabled = true) {
     queryFn: ({ signal }) => fetchWorkspaces('active', signal),
     select: (data) => data.creationPolicy,
     enabled,
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_LIST_STALE_TIME,
   })
 }
 
@@ -252,9 +263,41 @@ export function useWorkspacePermissionsQuery(workspaceId: string | null | undefi
     queryKey: workspaceKeys.permissions(workspaceId ?? ''),
     queryFn: ({ signal }) => fetchWorkspacePermissions(workspaceId as string, signal),
     enabled: Boolean(workspaceId),
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_PERMISSIONS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
+}
+
+async function fetchWorkspaceZoomAdminAccess(
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<boolean> {
+  const data = await requestJson(getWorkspaceZoomAdminAccessContract, {
+    params: { id: workspaceId },
+    signal,
+  })
+  setZoomAdminAccessCache(workspaceId, data.canUseZoomAdmin)
+  return data.canUseZoomAdmin
+}
+
+/**
+ * Whether Zoom Admin connect is allowed (org allowlist or env fallback).
+ * Use this for "Connect Zoom admin account" UI — not only env ADMIN_WORKSPACE_IDS.
+ * Also populates the sync cache used by Zoom block operation options.
+ */
+export function useCanUseZoomAdmin(workspaceId: string | null | undefined) {
+  const query = useQuery({
+    queryKey: workspaceKeys.zoomAdminAccess(workspaceId ?? ''),
+    queryFn: ({ signal }) => fetchWorkspaceZoomAdminAccess(workspaceId as string, signal),
+    enabled: Boolean(workspaceId),
+    staleTime: WORKSPACE_ZOOM_ADMIN_ACCESS_STALE_TIME,
+    placeholderData: keepPreviousData,
+  })
+
+  const canUseZoomAdmin =
+    typeof query.data === 'boolean' ? query.data : isAdminWorkspace(workspaceId)
+
+  return { ...query, canUseZoomAdmin }
 }
 
 async function fetchWorkspaceMembers(
@@ -277,7 +320,7 @@ export function useWorkspaceMembersQuery(workspaceId: string | null | undefined)
     queryKey: workspaceKeys.members(workspaceId ?? ''),
     queryFn: ({ signal }) => fetchWorkspaceMembers(workspaceId as string, signal),
     enabled: Boolean(workspaceId),
-    staleTime: 5 * 60 * 1000,
+    staleTime: WORKSPACE_MEMBERS_STALE_TIME,
   })
 }
 
@@ -304,7 +347,7 @@ export function prefetchWorkspaceSettings(queryClient: QueryClient, workspaceId:
   queryClient.prefetchQuery({
     queryKey: workspaceKeys.settings(workspaceId),
     queryFn: ({ signal }) => fetchWorkspaceSettings(workspaceId, signal),
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_SETTINGS_STALE_TIME,
   })
 }
 
@@ -317,7 +360,7 @@ export function useWorkspaceSettings(workspaceId: string) {
     queryKey: workspaceKeys.settings(workspaceId),
     queryFn: ({ signal }) => fetchWorkspaceSettings(workspaceId, signal),
     enabled: !!workspaceId,
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_SETTINGS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -403,7 +446,7 @@ export function useAdminWorkspaces(userId: string | undefined, organizationId?: 
     queryKey: [...workspaceKeys.adminList(userId), organizationId ?? ''] as const,
     queryFn: ({ signal }) => fetchAdminWorkspaces(userId, organizationId, signal),
     enabled: Boolean(userId),
-    staleTime: 60 * 1000,
+    staleTime: WORKSPACE_ADMIN_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }

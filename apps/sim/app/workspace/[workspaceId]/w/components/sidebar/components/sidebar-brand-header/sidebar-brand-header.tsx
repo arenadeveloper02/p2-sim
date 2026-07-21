@@ -2,9 +2,8 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { chipVariants } from '@/components/emcn'
-import { ArrowLeft } from '@/components/emcn/icons'
-import { cn } from '@/lib/core/utils/cn'
+import { chipVariants, cn } from '@sim/emcn'
+import { ArrowLeft } from '@sim/emcn/icons'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 
 interface SidebarBrandHeaderProps {

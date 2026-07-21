@@ -1,9 +1,9 @@
 'use client'
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { cn } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { cn } from '@/lib/core/utils/cn'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { getEmptyDocPreviewMessage, getZeroByteDocPreviewMessage } from './empty-doc-preview'
 import { GeneratingPreviewEngagement } from './generating-preview-engagement'

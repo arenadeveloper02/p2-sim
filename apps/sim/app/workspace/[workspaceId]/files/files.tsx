@@ -1,11 +1,6 @@
 'use client'
 
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { useParams, useRouter } from 'next/navigation'
-import { useQueryStates } from 'nuqs'
-import { usePostHog } from 'posthog-js/react'
 import {
   Button,
   ChipCombobox,
@@ -22,9 +17,15 @@ import {
   Trash,
   toast,
   Upload,
-} from '@/components/emcn'
-import { Download, Send } from '@/components/emcn/icons'
+} from '@sim/emcn'
+import { Download, Send } from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage, toError } from '@sim/utils/errors'
+import { useParams, useRouter } from 'next/navigation'
+import { useQueryStates } from 'nuqs'
+import { usePostHog } from 'posthog-js/react'
 import { getDocumentIcon } from '@/components/icons/document-icons'
+import { useLimitUpgradeToast } from '@/lib/billing/client'
 import { captureEvent } from '@/lib/posthog/client'
 import { triggerFileDownload } from '@/lib/uploads/client/download'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
@@ -77,7 +78,7 @@ import type { MoveOptionNode } from '@/app/workspace/[workspaceId]/files/move-op
 import { filesParsers, filesUrlKeys } from '@/app/workspace/[workspaceId]/files/search-params'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
-import { useWorkspaceMembersQuery } from '@/hooks/queries/workspace'
+import { useWorkspaceMembersQuery, type WorkspaceMember } from '@/hooks/queries/workspace'
 import {
   useBulkArchiveWorkspaceFileItems,
   useCreateWorkspaceFileFolder,
@@ -170,6 +171,7 @@ function formatFileType(mimeType: string | null, filename: string): string {
 export function Files() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const saveRef = useRef<(() => Promise<void>) | null>(null)
+  const discardRef = useRef<(() => void) | null>(null)
 
   const params = useParams()
   const router = useRouter()
@@ -196,7 +198,13 @@ export function Files() {
   const { data: files = EMPTY_WORKSPACE_FILES, isLoading, error } = useWorkspaceFiles(workspaceId)
   const { data: folders = EMPTY_WORKSPACE_FILE_FOLDERS } = useWorkspaceFileFolders(workspaceId)
   const { data: members } = useWorkspaceMembersQuery(workspaceId)
+  const membersById = useMemo(() => {
+    const map = new Map<string, WorkspaceMember>()
+    for (const member of members ?? []) map.set(member.userId, member)
+    return map
+  }, [members])
   const uploadFile = useUploadWorkspaceFile()
+  const notifyLimit = useLimitUpgradeToast()
   const deleteFile = useDeleteWorkspaceFile()
   const renameFile = useRenameWorkspaceFile()
   const createFolder = useCreateWorkspaceFileFolder()
@@ -414,8 +422,8 @@ export function Files() {
           cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
           break
         case 'owner':
-          cmp = (members?.find((m) => m.userId === a.uploadedBy)?.name ?? '').localeCompare(
-            members?.find((m) => m.userId === b.uploadedBy)?.name ?? ''
+          cmp = (membersById.get(a.uploadedBy)?.name ?? '').localeCompare(
+            membersById.get(b.uploadedBy)?.name ?? ''
           )
           break
       }
@@ -429,7 +437,7 @@ export function Files() {
     sizeFilter,
     uploadedByFilter,
     activeSort,
-    members,
+    membersById,
   ])
 
   const baseRows: ResourceRow[] = useMemo(() => {
@@ -451,7 +459,7 @@ export function Files() {
           label: 'Folder',
         },
         created: timeCell(folder.createdAt),
-        owner: ownerCell(folder.userId, members),
+        owner: ownerCell(folder.userId, membersById),
         updated: timeCell(folder.updatedAt),
       },
     }))
@@ -473,7 +481,7 @@ export function Files() {
             label: formatFileType(file.type, file.name),
           },
           created: timeCell(file.uploadedAt),
-          owner: ownerCell(file.uploadedBy, members),
+          owner: ownerCell(file.uploadedBy, membersById),
           updated: timeCell(file.updatedAt),
         },
       }
@@ -481,7 +489,7 @@ export function Files() {
     })
 
     return [...folderRows, ...fileRows]
-  }, [visibleFolders, filteredFiles, members, folderSizeMap])
+  }, [visibleFolders, filteredFiles, membersById, folderSizeMap])
 
   const rows: ResourceRow[] = useMemo(() => {
     if (!listRename.editingId) return baseRows
@@ -523,22 +531,16 @@ export function Files() {
 
   const isAllSelected =
     visibleRowIds.length > 0 && visibleRowIds.every((id) => selectedRowIds.has(id))
-  const selectedFileIds = useMemo(
-    () =>
-      Array.from(selectedRowIds)
-        .map(parseRowId)
-        .filter((item) => item.kind === 'file')
-        .map((item) => item.id),
-    [selectedRowIds]
-  )
-  const selectedFolderIds = useMemo(
-    () =>
-      Array.from(selectedRowIds)
-        .map(parseRowId)
-        .filter((item) => item.kind === 'folder')
-        .map((item) => item.id),
-    [selectedRowIds]
-  )
+  const { selectedFileIds, selectedFolderIds } = useMemo(() => {
+    const fileIds: string[] = []
+    const folderIds: string[] = []
+    for (const rowId of selectedRowIds) {
+      const item = parseRowId(rowId)
+      if (item.kind === 'file') fileIds.push(item.id)
+      else folderIds.push(item.id)
+    }
+    return { selectedFileIds: fileIds, selectedFolderIds: folderIds }
+  }, [selectedRowIds])
 
   const selectableConfig = useMemo(
     () => ({
@@ -699,6 +701,12 @@ export function Files() {
             })
           } catch (err) {
             logger.error('Error uploading file:', err)
+            const message = getErrorMessage(err)
+            if (/storage limit/i.test(message)) {
+              notifyLimit('storage', message)
+            } else {
+              toast.error(`Failed to upload "${allowedFiles[i].name}"`)
+            }
           }
         }
       } catch (err) {
@@ -708,7 +716,7 @@ export function Files() {
         setUploadProgress({ completed: 0, total: 0, currentPercent: 0 })
       }
     },
-    [workspaceId, canEdit, currentFolderId]
+    [workspaceId, canEdit, currentFolderId, notifyLimit]
   )
 
   const rowDragDropConfig = useMemo<RowDragDropConfig>(
@@ -718,7 +726,7 @@ export function Files() {
       isAnyDragActive: draggedRowIds.size > 0,
       isRowDraggable: (rowId) => canEdit && listRename.editingId !== rowId,
       isRowDropTarget: (rowId) => canEdit && parseRowId(rowId).kind === 'folder',
-      onDragStart: (e: DragEvent<HTMLTableRowElement>, rowId) => {
+      onDragStart: (e: DragEvent<HTMLDivElement>, rowId) => {
         if (!canEdit || listRename.editingId === rowId) {
           e.preventDefault()
           return
@@ -761,7 +769,7 @@ export function Files() {
         e.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, ghost.offsetHeight / 2)
         dragGhostRef.current = ghost
       },
-      onDragOver: (e: DragEvent<HTMLTableRowElement>, rowId) => {
+      onDragOver: (e: DragEvent<HTMLDivElement>, rowId) => {
         const sourceRowIds = draggedRowIdsRef.current
         const isExternalFileDrag = hasExternalFiles(e.dataTransfer)
         if (!isExternalFileDrag && isInvalidDropTarget(rowId, sourceRowIds)) return
@@ -771,12 +779,12 @@ export function Files() {
         e.dataTransfer.dropEffect = isExternalFileDrag ? 'copy' : 'move'
         setActiveDropTargetId(rowId)
       },
-      onDragLeave: (e: DragEvent<HTMLTableRowElement>, rowId) => {
+      onDragLeave: (e: DragEvent<HTMLDivElement>, rowId) => {
         const relatedTarget = e.relatedTarget
         if (relatedTarget instanceof Node && e.currentTarget.contains(relatedTarget)) return
         setActiveDropTargetId((current) => (current === rowId ? null : current))
       },
-      onDrop: (e: DragEvent<HTMLTableRowElement>, rowId) => {
+      onDrop: (e: DragEvent<HTMLDivElement>, rowId) => {
         e.preventDefault()
         e.stopPropagation()
         dragCounterRef.current = 0
@@ -963,6 +971,15 @@ export function Files() {
     await saveRef.current()
   }, [])
 
+  const handleSaveStatusChange = useCallback((status: SaveStatus, retry?: () => Promise<void>) => {
+    setSaveStatus(status)
+    if (status === 'error') {
+      toast.error(`Failed to save "${selectedFileRef.current?.name ?? 'file'}"`, {
+        action: { label: 'Retry', onClick: () => void retry?.() },
+      })
+    }
+  }, [])
+
   const handleNavigateFromFileDetail = useCallback(
     (url: string) => {
       if (isDirtyRef.current) {
@@ -1099,6 +1116,7 @@ export function Files() {
   ])
 
   const handleDiscardChanges = () => {
+    discardRef.current?.()
     setShowUnsavedChangesAlert(false)
     setIsDirty(false)
     setSaveStatus('idle')
@@ -1351,16 +1369,8 @@ export function Files() {
         handleSave()
       }
     }
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!isDirtyRef.current) return
-      e.preventDefault()
-    }
     window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-    }
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleSave])
 
   const selectedRowIdsRef = useRef(selectedRowIds)
@@ -1421,24 +1431,14 @@ export function Files() {
   const fileActions = useMemo<ResourceAction[]>(() => {
     if (!selectedFile) return []
     // A large CSV renders as a read-only streamed preview (no editor), so it gets neither the
-    // Save action nor the edit/split/preview toggle — just like a non-editable file.
+    // edit/split/preview toggle nor autosave — just like a non-editable file.
     const streamOnly = isCsvStreamOnly(selectedFile)
     const canEditText = isTextEditable(selectedFile) && !streamOnly
     const canPreview = isPreviewable(selectedFile) && !streamOnly
-    // Markdown renders in the single-surface inline editor, which has no raw/split/preview
-    // modes — so it keeps Save but drops the mode toggle.
+    // Markdown renders in the single-surface inline editor, which has no raw/split/preview modes.
     const isInlineMarkdown = isMarkdownFile(selectedFile)
     const hasSplitView = canEditText && canPreview && !isInlineMarkdown
     const showPreviewToggle = canPreview && !isInlineMarkdown
-
-    const saveLabel =
-      saveStatus === 'saving'
-        ? 'Saving...'
-        : saveStatus === 'saved'
-          ? 'Saved'
-          : saveStatus === 'error'
-            ? 'Save failed'
-            : 'Save'
 
     const nextModeLabel =
       previewMode === 'editor' ? 'Split' : previewMode === 'split' ? 'Preview' : 'Edit'
@@ -1446,18 +1446,6 @@ export function Files() {
       previewMode === 'editor' ? Columns2 : previewMode === 'split' ? Eye : Pencil
 
     return [
-      ...(canEditText
-        ? [
-            {
-              text: saveLabel,
-              onSelect: handleSave,
-              disabled:
-                (!isDirty && saveStatus === 'idle') ||
-                saveStatus === 'saving' ||
-                saveStatus === 'saved',
-            },
-          ]
-        : []),
       ...(hasSplitView
         ? [
             {
@@ -1498,12 +1486,9 @@ export function Files() {
   }, [
     selectedFile,
     canEdit,
-    saveStatus,
     previewMode,
-    isDirty,
     handleCyclePreviewMode,
     handleTogglePreview,
-    handleSave,
     handleDownloadSelected,
     handleShareSelected,
     handleDeleteSelected,
@@ -1741,7 +1726,7 @@ export function Files() {
       uploadedByFilter.length === 0
         ? 'All'
         : uploadedByFilter.length === 1
-          ? (members?.find((m) => m.userId === uploadedByFilter[0])?.name ?? '1 member')
+          ? (membersById.get(uploadedByFilter[0])?.name ?? '1 member')
           : `${uploadedByFilter.length} members`
 
     return (
@@ -1823,7 +1808,7 @@ export function Files() {
         )}
       </div>
     )
-  }, [typeFilter, sizeFilter, uploadedByFilter, memberOptions, members, hasActiveFilters])
+  }, [typeFilter, sizeFilter, uploadedByFilter, memberOptions, membersById, hasActiveFilters])
 
   const filterTags: FilterTag[] = useMemo(() => {
     const tags: FilterTag[] = []
@@ -1855,12 +1840,12 @@ export function Files() {
     if (uploadedByFilter.length > 0) {
       const label =
         uploadedByFilter.length === 1
-          ? `Uploaded by: ${members?.find((m) => m.userId === uploadedByFilter[0])?.name ?? '1 member'}`
+          ? `Uploaded by: ${membersById.get(uploadedByFilter[0])?.name ?? '1 member'}`
           : `Uploaded by: ${uploadedByFilter.length} members`
       tags.push({ label, onRemove: () => setUploadedByFilter([]) })
     }
     return tags
-  }, [typeFilter, sizeFilter, uploadedByFilter, members])
+  }, [typeFilter, sizeFilter, uploadedByFilter, membersById])
 
   if (fileIdFromRoute && !selectedFile && isLoading) {
     return (
@@ -1890,8 +1875,9 @@ export function Files() {
             previewMode={previewMode}
             autoFocus={isNewFile || justCreatedFileIdRef.current === selectedFile.id}
             onDirtyChange={setIsDirty}
-            onSaveStatusChange={setSaveStatus}
+            onSaveStatusChange={handleSaveStatusChange}
             saveRef={saveRef}
+            discardRef={discardRef}
           />
 
           <ChipConfirmModal

@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { Button } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
+import { Button, cn } from '@sim/emcn'
 import { LocalCopilotChat } from '@/local-copilot/components/local-copilot-chat'
 import {
   useLocalCopilot,

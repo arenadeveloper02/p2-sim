@@ -1,8 +1,8 @@
 // file: utils/isBase64.ts
 
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
+import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@sim/emcn'
 import { AlertTriangle, Check, Download, Expand, X } from 'lucide-react'
-import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@/components/emcn'
 import { normalizeImageUrlForCompare } from '@/lib/chat/assistant-assets'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 
@@ -1018,7 +1018,10 @@ function normalizeExtractedImageUrl(raw: string): string | null {
     const before = candidate
     candidate = candidate.replace(LIST_ITEM_PREFIX, '').trim()
     candidate = candidate.replace(BLOCKQUOTE_PREFIX, '').trim()
-    candidate = candidate.replace(/^[`"'(<\[]+/, '').replace(/[`"')\]>]+$/, '').trim()
+    candidate = candidate
+      .replace(/^[`"'(<[]+/, '')
+      .replace(/[`"')\]>]+$/, '')
+      .trim()
     candidate = candidate.replace(/^\(+/, '').replace(/\)+$/, '').trim()
     candidate = candidate.replace(URL_END_CHARS, '').trim()
     if (candidate === before) break
@@ -1039,11 +1042,7 @@ function normalizeExtractedImageUrl(raw: string): string | null {
   return null
 }
 
-function addUniqueImageUrl(
-  raw: string | undefined,
-  seen: Set<string>,
-  urls: string[]
-): void {
+function addUniqueImageUrl(raw: string | undefined, seen: Set<string>, urls: string[]): void {
   const normalized = normalizeExtractedImageUrl(raw ?? '')
   if (!normalized) return
   const key = normalizeUrlDedupeKey(normalized)
@@ -1146,7 +1145,10 @@ function removeImageUrlsFromProse(raw: string, urls: string[]): string {
     }
   }
 
-  return proseLines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return proseLines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 /**

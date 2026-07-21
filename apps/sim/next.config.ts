@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { NextConfig } from 'next'
 import { env, isTruthy } from './lib/core/config/env'
 import { isDev } from './lib/core/config/env-flags'
@@ -7,11 +8,52 @@ import {
   getWorkflowExecutionCSPPolicy,
 } from './lib/core/security/csp'
 
+/**
+ * Dev-only escape hatch: when `SIM_DEV_MINIMAL_REGISTRY=1` (`bun run dev:minimal`),
+ * swap the heavy block and tool registries for tiny curated variants via a
+ * Turbopack/webpack resolve alias. The shared workspace layout drags the
+ * ~247-tool registry (~2,074 modules) into every route via providers/utils →
+ * tools/params, and the editor/executor pull all ~268 block configs; aliasing
+ * both to minimal variants stops Turbopack from compiling those graphs, cutting
+ * dev compile-time RAM (e.g. /logs ~16GB → ~5GB, 4.9min → ~15s). Only the
+ * curated core blocks/tools work in this mode. Never enabled in production.
+ */
+const useMinimalRegistry = isDev && process.env.SIM_DEV_MINIMAL_REGISTRY === '1'
+const minimalRegistryAlias: Record<string, string> = useMinimalRegistry
+  ? {
+      '@/tools/registry': './tools/registry.minimal.ts',
+      '@/blocks/registry-maps': './blocks/registry-maps.minimal.ts',
+    }
+  : {}
+
 const nextConfig: NextConfig = {
   devIndicators: false,
   poweredByHeader: false,
+  turbopack: {
+    root: path.join(import.meta.dirname, '../..'),
+    resolveAlias: minimalRegistryAlias,
+  },
+  webpack: (config) => {
+    if (useMinimalRegistry) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        '@/tools/registry$': path.resolve(import.meta.dirname, 'tools/registry.minimal.ts'),
+        '@/blocks/registry-maps$': path.resolve(
+          import.meta.dirname,
+          'blocks/registry-maps.minimal.ts'
+        ),
+      }
+    }
+    return config
+  },
   images: {
     formats: ['image/avif', 'image/webp'],
+    /**
+     * Allowed `quality` values for next/image. 75 is the app-wide default;
+     * 90 exists for large photographic marketing assets (the landing hero
+     * backdrop) where the default visibly softens texture.
+     */
+    qualities: [75, 90],
     remotePatterns: [
       {
         protocol: 'https',
@@ -96,6 +138,7 @@ const nextConfig: NextConfig = {
     'isolated-vm',
     '@e2b/code-interpreter',
     'e2b',
+    '@earendil-works/pi-coding-agent',
   ],
   outputFileTracingIncludes: {
     '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
@@ -106,7 +149,8 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    optimizeCss: true,
+    optimizeCss: !isDev,
+    turbopackFileSystemCacheForDev: false,
     preloadEntriesOnStart: false,
     optimizePackageImports: [
       'lodash',
@@ -147,11 +191,13 @@ const nextConfig: NextConfig = {
     '@t3-oss/env-nextjs',
     '@t3-oss/env-core',
     '@sim/db',
+    '@sim/emcn',
+    '@sim/workflow-renderer',
   ],
   async headers() {
     return [
       {
-        source: '/:all*(svg|jpg|jpeg|png|gif|ico|webp|avif|woff|woff2|ttf|eot)',
+        source: '/((?!api/).*\\.(?:svg|jpg|jpeg|png|gif|ico|webp|avif|woff|woff2|ttf|eot))',
         headers: [
           {
             key: 'Cache-Control',
@@ -180,8 +226,9 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // Exclude Vercel internal resources and static assets from strict COEP, Google Drive Picker to prevent 'refused to connect' issue
-        source: '/((?!_next|_vercel|api|favicon.ico|w/.*|workspace/.*|api/tools/drive).*)',
+        // Exclude Vercel internal resources and static assets from strict COEP, Google Drive Picker
+        // and the /demo Cal.com booking embed to prevent 'refused to connect' / slow-load issues
+        source: '/((?!_next|_vercel|api|favicon.ico|w/.*|workspace/.*|api/tools/drive|demo).*)',
         headers: [
           {
             key: 'Cross-Origin-Embedder-Policy',
@@ -194,8 +241,8 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // For main app routes, Google Drive Picker, and Vercel resources - use permissive policies
-        source: '/(w/.*|workspace/.*|api/tools/drive|_next/.*|_vercel/.*)',
+        // For main app routes, Google Drive Picker, the /demo Cal.com embed, and Vercel resources - use permissive policies
+        source: '/(w/.*|workspace/.*|api/tools/drive|demo.*|_next/.*|_vercel/.*)',
         headers: [
           {
             key: 'Cross-Origin-Embedder-Policy',
@@ -281,11 +328,6 @@ const nextConfig: NextConfig = {
         source: '/team',
         destination: 'https://cal.com/emirkarabeg/sim-team',
         permanent: false,
-      },
-      {
-        source: '/careers',
-        destination: 'https://jobs.ashbyhq.com/sim',
-        permanent: true,
       }
     )
 
@@ -302,6 +344,18 @@ const nextConfig: NextConfig = {
         permanent: true,
       }
     )
+
+    /**
+     * The marketing Academy course/lesson pages were removed; content is
+     * consolidated into the docs site instead. Old course/lesson slugs have
+     * no equivalent path there, so every sub-path collapses to the new
+     * landing page rather than forwarding to a path that may not exist.
+     */
+    redirects.push({
+      source: '/academy/:path*',
+      destination: 'https://docs.sim.ai/academy',
+      permanent: true,
+    })
 
     // Move root feeds to blog namespace
     redirects.push(
@@ -334,6 +388,58 @@ const nextConfig: NextConfig = {
       destination: '/integrations/incident-io',
       permanent: true,
     })
+
+    /**
+     * Legacy integration slug: the SAP block's display name was fixed from
+     * `SAP S/4HANA` to `SAP S4HANA`, which moved its catalog slug. Preserves
+     * the previously indexed landing URL.
+     */
+    redirects.push({
+      source: '/integrations/sap-s-4hana',
+      destination: '/integrations/sap-s4hana',
+      permanent: true,
+    })
+
+    /**
+     * Legacy integration slug: the Cal.com block's display name briefly
+     * shipped as `CalCom` before being fixed to `Cal Com`/`Cal.com`, which
+     * moved its catalog slug from `calcom` to `cal-com`.
+     */
+    redirects.push({
+      source: '/integrations/calcom',
+      destination: '/integrations/cal-com',
+      permanent: true,
+    })
+
+    /**
+     * The partner program page was removed; routes existing links/bookmarks
+     * to contact instead of leaving a dead, previously-indexed URL.
+     */
+    redirects.push({
+      source: '/partners',
+      destination: '/contact',
+      permanent: true,
+    })
+
+    /**
+     * AEO/GEO-style posts (listicles, comparisons, how-tos) were split out of
+     * `/blog` into the dedicated `/library` section so `/blog` stays
+     * editorial-only. Preserve previously indexed URLs for the moved posts.
+     */
+    for (const slug of [
+      'best-zapier-alternatives',
+      'ai-agents-vs-rpa',
+      'ai-agent-vs-chatbot',
+      'openai-vs-n8n-vs-sim',
+      'ai-agent-ideas',
+      'how-to-create-an-ai-agent',
+    ]) {
+      redirects.push({
+        source: `/blog/${slug}`,
+        destination: `/library/${slug}`,
+        permanent: true,
+      })
+    }
 
     return redirects
   },

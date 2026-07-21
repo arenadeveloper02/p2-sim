@@ -9,17 +9,13 @@ import {
   useRef,
   useState,
 } from 'react'
-import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
-import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
-import Image from 'next/image'
-import { useParams, useSearchParams } from 'next/navigation'
 import {
   Avatar,
   AvatarFallback,
   Badge,
   Button,
   Combobox,
+  cn,
   focusFirstTextInputIn,
   Input,
   Label,
@@ -32,9 +28,13 @@ import {
   Skeleton,
   Textarea,
   Tooltip,
-} from '@/components/emcn'
+} from '@sim/emcn'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
+import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
+import Image from 'next/image'
+import { useParams, useSearchParams } from 'next/navigation'
 import { useSession } from '@/lib/auth/auth-client'
-import { cn } from '@/lib/core/utils/cn'
 import { writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import { getCanonicalScopesForProvider, getServiceConfigByProviderId } from '@/lib/oauth'
 import { ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID } from '@/lib/oauth/types'
@@ -63,7 +63,7 @@ import {
   useDisconnectOAuthService,
   useOAuthConnections,
 } from '@/hooks/queries/oauth/oauth-connections'
-import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
+import { useCanUseZoomAdmin, useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
@@ -191,15 +191,16 @@ export function IntegrationsManager() {
   const disconnectOAuthService = useDisconnectOAuthService()
 
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId || null)
+  const { canUseZoomAdmin } = useCanUseZoomAdmin(workspaceId || null)
 
   const oauthCredentials = useMemo(() => {
     const oauth = credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account')
-    return filterOAuthItemsForWorkspace(oauth, workspaceId)
-  }, [credentials, workspaceId])
+    return filterOAuthItemsForWorkspace(oauth, workspaceId, { canUseZoomAdmin })
+  }, [credentials, workspaceId, canUseZoomAdmin])
 
   const workspaceOAuthConnections = useMemo(
-    () => filterOAuthItemsForWorkspace(oauthConnections, workspaceId),
-    [oauthConnections, workspaceId]
+    () => filterOAuthItemsForWorkspace(oauthConnections, workspaceId, { canUseZoomAdmin }),
+    [oauthConnections, workspaceId, canUseZoomAdmin]
   )
 
   const selectedCredential = useMemo(

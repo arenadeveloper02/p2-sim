@@ -6,6 +6,11 @@ import dynamic from 'next/dynamic'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { getFileExtension } from '@/lib/uploads/utils/file-utils'
 import { useWorkspaceFileBinary, useWorkspaceFileContent } from '@/hooks/queries/workspace-files'
+import {
+  createWorkspaceFileContentSource,
+  type FileContentSource,
+  FileContentSourceProvider,
+} from '@/hooks/use-file-content-source'
 import { CsvTablePreview } from './csv-table-preview'
 import { DocxPreview } from './docx-preview'
 import { resolveFileCategory } from './file-category'
@@ -84,6 +89,12 @@ export type PreviewMode = 'editor' | 'split' | 'preview'
 interface FileViewerProps {
   file: WorkspaceFileRecord
   workspaceId: string
+  /**
+   * Content source for this view. Defaults to a workspace-scoped source derived from `workspaceId`;
+   * the public share page passes a token-scoped source. Provided to descendants (renderers, embedded
+   * images) via {@link FileContentSourceProvider}.
+   */
+  contentSource?: FileContentSource
   canEdit: boolean
   /**
    * Render a read-only preview with no editing affordances. Text files render
@@ -94,8 +105,12 @@ interface FileViewerProps {
   previewMode?: PreviewMode
   autoFocus?: boolean
   onDirtyChange?: (isDirty: boolean) => void
-  onSaveStatusChange?: (status: 'idle' | 'saving' | 'saved' | 'error') => void
+  onSaveStatusChange?: (
+    status: 'idle' | 'saving' | 'saved' | 'error',
+    retry?: () => Promise<void>
+  ) => void
   saveRef?: React.MutableRefObject<(() => Promise<void>) | null>
+  discardRef?: React.MutableRefObject<(() => void) | null>
   streamingContent?: string
   isAgentEditing?: boolean
   streamIsIncremental?: boolean
@@ -103,7 +118,20 @@ interface FileViewerProps {
   previewContextKey?: string
 }
 
-export function FileViewer({
+export function FileViewer(props: FileViewerProps) {
+  const { contentSource, workspaceId } = props
+  const source = useMemo(
+    () => contentSource ?? createWorkspaceFileContentSource(workspaceId),
+    [contentSource, workspaceId]
+  )
+  return (
+    <FileContentSourceProvider value={source}>
+      <FileViewerContent {...props} />
+    </FileContentSourceProvider>
+  )
+}
+
+function FileViewerContent({
   file,
   workspaceId,
   canEdit,
@@ -113,6 +141,7 @@ export function FileViewer({
   onDirtyChange,
   onSaveStatusChange,
   saveRef,
+  discardRef,
   streamingContent,
   isAgentEditing,
   streamIsIncremental,
@@ -156,6 +185,7 @@ export function FileViewer({
           onDirtyChange={onDirtyChange}
           onSaveStatusChange={onSaveStatusChange}
           saveRef={saveRef}
+          discardRef={discardRef}
           streamingContent={streamingContent}
           isAgentEditing={isAgentEditing}
           streamIsIncremental={streamIsIncremental}
@@ -175,6 +205,7 @@ export function FileViewer({
         onDirtyChange={onDirtyChange}
         onSaveStatusChange={onSaveStatusChange}
         saveRef={saveRef}
+        discardRef={discardRef}
         streamingContent={streamingContent}
         isAgentEditing={isAgentEditing}
         disableStreamingAutoScroll={disableStreamingAutoScroll}

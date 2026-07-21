@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ChevronDown, Expandable, ExpandableContent, PillsRing } from '@/components/emcn'
+import { ChevronDown, cn, Expandable, ExpandableContent, PillsRing } from '@sim/emcn'
 import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
-import { cn } from '@/lib/core/utils/cn'
 import type { ToolCallData } from '../../../../types'
 import { getAgentIcon, isToolDone } from '../../utils'
 import { ToolCallItem } from './tool-call-item'

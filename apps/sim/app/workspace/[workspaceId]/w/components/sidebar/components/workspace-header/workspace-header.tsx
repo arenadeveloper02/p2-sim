@@ -1,13 +1,12 @@
 'use client'
 
 import { memo, useEffect, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { MoreHorizontal } from 'lucide-react'
 import {
   ChevronDown,
   Chip,
   ChipConfirmModal,
   chipVariants,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuSeparator,
@@ -15,11 +14,12 @@ import {
   Plus,
   Send,
   Skeleton,
-} from '@/components/emcn'
-import { ManageWorkspace, PanelLeft } from '@/components/emcn/icons'
+} from '@sim/emcn'
+import { ManageWorkspace, PanelLeft } from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { MoreHorizontal } from 'lucide-react'
 import { useSession } from '@/lib/auth/auth-client'
 // import { env } from '@/lib/core/config/env'
-import { cn } from '@/lib/core/utils/cn'
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'

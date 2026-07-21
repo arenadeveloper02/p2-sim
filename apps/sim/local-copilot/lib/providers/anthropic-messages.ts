@@ -1,5 +1,12 @@
+import { getAnthropicAutomaticCacheControl } from '@/lib/anthropic/prompt-cache'
 import type { ChatMessage, ChatMessageContentPart } from '@/local-copilot/lib/providers/types'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
+
+export type AnthropicSystemBlock = {
+  type: 'text'
+  text: string
+  cache_control?: ReturnType<typeof getAnthropicAutomaticCacheControl>
+}
 
 export type AnthropicContentBlock =
   | { type: 'text'; text: string }
@@ -66,7 +73,7 @@ export function sanitizeToolMessagePairing(messages: ChatMessage[]): ChatMessage
  * Batches consecutive tool results into a single user message per Anthropic requirements.
  */
 export function convertMessagesToAnthropic(messages: ChatMessage[]): {
-  system: string
+  system: AnthropicSystemBlock[] | undefined
   anthropicMessages: AnthropicMessage[]
 } {
   const systemParts: string[] = []
@@ -77,7 +84,10 @@ export function convertMessagesToAnthropic(messages: ChatMessage[]): {
     const message = sanitized[index]
 
     if (message.role === 'system') {
-      systemParts.push(getMessageContentText(message.content))
+      const text = getMessageContentText(message.content).trim()
+      if (text) {
+        systemParts.push(text)
+      }
       continue
     }
 
@@ -133,5 +143,14 @@ export function convertMessagesToAnthropic(messages: ChatMessage[]): {
     })
   }
 
-  return { system: systemParts.join('\n\n'), anthropicMessages }
+  const system: AnthropicSystemBlock[] | undefined =
+    systemParts.length === 0
+      ? undefined
+      : systemParts.map((text, index) =>
+          index === 0
+            ? { type: 'text' as const, text, cache_control: getAnthropicAutomaticCacheControl() }
+            : { type: 'text' as const, text }
+        )
+
+  return { system, anthropicMessages }
 }

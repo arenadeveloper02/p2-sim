@@ -1,7 +1,6 @@
 'use client'
 
-import { DatePicker } from '@/components/emcn'
-import { Combobox, type ComboboxOption } from '@/components/emcn/components'
+import { ChipDatePicker, Combobox, type ComboboxOption } from '@sim/emcn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 
 interface SlackDateRangeSelectorProps {
@@ -98,7 +97,7 @@ export function SlackDateInput({
   }
 
   return (
-    <DatePicker
+    <ChipDatePicker
       value={value || ''}
       onChange={handleDateChange}
       placeholder={placeholder || 'Pick a date'}

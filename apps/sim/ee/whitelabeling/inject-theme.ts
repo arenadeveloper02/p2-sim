@@ -1,18 +1,5 @@
+import { getContrastTextColor, isDarkColor } from '@/lib/colors'
 import { getBrandConfig } from './branding'
-
-// Helper to detect if background is dark
-function isDarkBackground(hexColor: string): boolean {
-  const hex = hexColor.replace('#', '')
-  const r = Number.parseInt(hex.substr(0, 2), 16)
-  const g = Number.parseInt(hex.substr(2, 2), 16)
-  const b = Number.parseInt(hex.substr(4, 2), 16)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return luminance < 0.5
-}
-
-function getContrastTextColor(hexColor: string): string {
-  return isDarkBackground(hexColor) ? '#ffffff' : '#000000'
-}
 
 export function generateThemeCSS(): string {
   const cssVars: string[] = []
@@ -84,7 +71,7 @@ export function generateThemeCSS(): string {
   }
 
   if (process.env.NEXT_PUBLIC_BRAND_BACKGROUND_COLOR) {
-    const isDark = isDarkBackground(process.env.NEXT_PUBLIC_BRAND_BACKGROUND_COLOR)
+    const isDark = isDarkColor(process.env.NEXT_PUBLIC_BRAND_BACKGROUND_COLOR)
     if (isDark) {
       cssVars.push(`--brand-is-dark: 1;`)
     }

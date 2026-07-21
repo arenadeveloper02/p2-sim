@@ -3,6 +3,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { truncateStatusMessage } from '@/local-copilot/lib/agent/status-messages'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
+import { collectCompletionText } from '@/local-copilot/lib/providers/collect-text'
 import { createOpenAiCompatibleProvider } from '@/local-copilot/lib/providers/openai-compatible'
 import { getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
 import type { LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
@@ -147,30 +148,6 @@ export function engagementContextFromTool(
   }
 }
 
-async function collectCompletionText(
-  provider: LocalCopilotProvider,
-  model: string,
-  prompt: string,
-  signal?: AbortSignal
-): Promise<string> {
-  let text = ''
-  for await (const chunk of provider.chatCompletionStream({
-    model,
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: prompt },
-    ],
-    temperature: ENGAGEMENT_TEMPERATURE,
-    maxTokens: ENGAGEMENT_MAX_TOKENS,
-    signal,
-  })) {
-    if (chunk.type === 'text' && chunk.content) {
-      text += chunk.content
-    }
-  }
-  return text.trim()
-}
-
 /** Parses a JSON string array from model output; returns null when invalid. */
 export function parseEngagementMessages(raw: string): string[] | null {
   const trimmed = raw.trim()
@@ -222,7 +199,17 @@ export async function generateEngagementStatusMessages(
   ctx.signal?.addEventListener('abort', onParentAbort, { once: true })
 
   try {
-    const completion = collectCompletionText(provider, model, prompt, timeout.signal)
+    const completion = collectCompletionText({
+      provider,
+      model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: prompt },
+      ],
+      temperature: ENGAGEMENT_TEMPERATURE,
+      maxTokens: ENGAGEMENT_MAX_TOKENS,
+      signal: timeout.signal,
+    })
     const raced = await Promise.race([
       completion.then((text) => ({ ok: true as const, text })),
       sleep(ENGAGEMENT_TIMEOUT_MS).then(() => ({ ok: false as const })),

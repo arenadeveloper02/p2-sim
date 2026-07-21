@@ -1,15 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, ChipConfirmModal, chipVariants, cn } from '@sim/emcn'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, usePathname, useRouter } from 'next/navigation'
-import { ChevronDown, ChipConfirmModal, chipVariants } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
 import { isEnterprise } from '@/lib/billing/plan-helpers'
 import { isHosted } from '@/lib/core/config/env-flags'
-import { cn } from '@/lib/core/utils/cn'
 import { getUserRole } from '@/lib/workspaces/organization'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import {
   allNavigationItems,
@@ -22,8 +22,10 @@ import {
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 import { useSSOProviders } from '@/ee/sso/hooks/sso'
+import { useForkingAvailable } from '@/ee/workspace-forking/hooks/use-forking-available'
 import { prefetchWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { prefetchGeneralSettings, useGeneralSettings } from '@/hooks/queries/general-settings'
+import { useInboxConfig } from '@/hooks/queries/inbox'
 import { useOrganizations } from '@/hooks/queries/organization'
 import { prefetchSubscriptionData, useSubscriptionData } from '@/hooks/queries/subscription'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
@@ -49,12 +51,12 @@ export function SettingsSidebar({
 
   const queryClient = useQueryClient()
 
-  const requestNavigation = useSettingsDirtyStore((s) => s.requestNavigation)
-  const confirmNavigation = useSettingsDirtyStore((s) => s.confirmNavigation)
-  const cancelNavigation = useSettingsDirtyStore((s) => s.cancelNavigation)
-  const isDirty = useSettingsDirtyStore((s) => s.isDirty)
+  const requestLeave = useSettingsDirtyStore((s) => s.requestLeave)
+  const confirmLeave = useSettingsDirtyStore((s) => s.confirmLeave)
+  const cancelLeave = useSettingsDirtyStore((s) => s.cancelLeave)
+  const pendingLeave = useSettingsDirtyStore((s) => s.pendingLeave)
+  const showDiscardDialog = pendingLeave !== null
 
-  const [showDiscardDialog, setShowDiscardDialog] = useState(false)
   const [hasOverflowTop, setHasOverflowTop] = useState(false)
 
   const { data: session } = useSession()
@@ -64,12 +66,17 @@ export function SettingsSidebar({
     enabled: isBillingEnabled,
     staleTime: 5 * 60 * 1000,
   })
+  const { data: inboxConfig } = useInboxConfig(workspaceId)
   const { data: ssoProvidersData, isLoading: isLoadingSSO } = useSSOProviders({
     enabled: !isHosted,
   })
 
   const activeOrganization = organizationsData?.activeOrganization
   const { config: permissionConfig } = usePermissionConfig()
+  // Mirrors the fork EE gate: the WORKSPACE's plan (not the viewer's) plus
+  // workspace admin - matching the Forks page's own gate and the server check.
+  const forkingAvailable = useForkingAvailable(workspaceId)
+  const { canAdmin: canAdminWorkspace } = useUserPermissionsContext()
 
   const userEmail = session?.user?.email
   const userId = session?.user?.id
@@ -79,6 +86,7 @@ export function SettingsSidebar({
   const isAdmin = userRole === 'admin'
   const isOrgAdminOrOwner = isOwner || isAdmin
   const subscriptionAccess = getSubscriptionAccessState(subscriptionData?.data)
+  const inboxEntitled = inboxConfig?.entitled ?? false
   const hasTeamPlan = subscriptionAccess.hasUsableTeamAccess
   const hasEnterprisePlan = subscriptionAccess.hasUsableEnterpriseAccess
   const isEnterprisePlan = isEnterprise(subscriptionData?.data?.plan)
@@ -116,6 +124,9 @@ export function SettingsSidebar({
       if (item.id === 'custom-tools' && permissionConfig.disableCustomTools) {
         return false
       }
+      if (item.id === 'forks' && !(forkingAvailable && canAdminWorkspace)) {
+        return false
+      }
 
       if (item.selfHostedOverride && !isHosted) {
         if (item.id === 'sso') {
@@ -125,13 +136,15 @@ export function SettingsSidebar({
         return true
       }
 
-      if (item.requiresTeam && (!hasTeamPlan || !isOrgAdminOrOwner)) {
+      const orgAdminSatisfied = isOrgAdminOrOwner || item.allowNonOrgAdmin
+
+      if (item.requiresTeam && (!hasTeamPlan || !orgAdminSatisfied)) {
         return false
       }
 
       if (
         item.requiresEnterprise &&
-        (!hasEnterprisePlan || !isOrgAdminOrOwner) &&
+        (!hasEnterprisePlan || !orgAdminSatisfied) &&
         !item.showWhenLocked
       ) {
         return false
@@ -168,6 +181,8 @@ export function SettingsSidebar({
     permissionConfig,
     isSuperUser,
     generalSettings?.superUserModeEnabled,
+    forkingAvailable,
+    canAdminWorkspace,
   ])
 
   const activeSection = useMemo(() => {
@@ -202,27 +217,18 @@ export function SettingsSidebar({
   const { popSettingsReturnUrl, getSettingsHref } = useSettingsNavigation()
 
   const handleBack = useCallback(() => {
-    if (isDirty) {
-      setShowDiscardDialog(true)
-      return
-    }
-    router.push(popSettingsReturnUrl(`/workspace/${workspaceId}/home`))
-  }, [router, popSettingsReturnUrl, workspaceId, isDirty])
+    requestLeave(() => {
+      router.push(popSettingsReturnUrl(`/workspace/${workspaceId}/home`))
+    })
+  }, [requestLeave, router, popSettingsReturnUrl, workspaceId])
 
   const handleConfirmDiscard = useCallback(() => {
-    const section = confirmNavigation()
-    setShowDiscardDialog(false)
-    if (section) {
-      router.replace(getSettingsHref({ section }), { scroll: false })
-    } else {
-      router.push(popSettingsReturnUrl(`/workspace/${workspaceId}/home`))
-    }
-  }, [confirmNavigation, router, getSettingsHref, popSettingsReturnUrl, workspaceId])
+    confirmLeave()
+  }, [confirmLeave])
 
   const handleCancelDiscard = useCallback(() => {
-    cancelNavigation()
-    setShowDiscardDialog(false)
-  }, [cancelNavigation])
+    cancelLeave()
+  }, [cancelLeave])
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -297,7 +303,11 @@ export function SettingsSidebar({
                   {sectionItems.map((item) => {
                     const Icon = item.icon
                     const active = activeSection === item.id
-                    const isLocked = item.requiresMax && !subscriptionAccess.hasUsableMaxAccess
+                    const isLocked =
+                      item.requiresMax &&
+                      (item.id === 'inbox'
+                        ? !inboxEntitled
+                        : !subscriptionAccess.hasUsableMaxAccess)
                     const itemClassName = chipVariants({ active, fullWidth: true })
                     const content = (
                       <>
@@ -331,11 +341,9 @@ export function SettingsSidebar({
                         onClick={() => {
                           const section = item.id as SettingsSection
                           if (section === activeSection) return
-                          if (!requestNavigation(section)) {
-                            setShowDiscardDialog(true)
-                            return
-                          }
-                          router.replace(getSettingsHref({ section }), { scroll: false })
+                          requestLeave(() => {
+                            router.replace(getSettingsHref({ section }), { scroll: false })
+                          })
                         }}
                       >
                         {content}
