@@ -216,20 +216,25 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
                 const lastAssistantId = [...messages]
                   .reverse()
                   .find((m) => m.type === 'assistant' && !m.isInitialMessage)?.id
-                return messages.map((message) => (
-                  <ArenaClientChatMessage
+                return messages.map((message, index) => (
+                  // 40px gap between conversation turns: each new user message starts a turn
+                  <div
                     key={message.id}
-                    message={message}
-                    setMessages={setMessages}
-                    workspaceIdsForKbLinks={workspaceIdsForKbLinks}
-                    onCopySegmentToInput={onAskInChat}
-                    onToggleGeneratedImage={onToggleGeneratedImage}
-                    selectedGeneratedImageIds={selectedGeneratedImageIds}
-                    selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
-                    onWelcomeQueryClick={onWelcomeQueryClick}
-                    isLastAssistantMessage={message.id === lastAssistantId}
-                    onRegenerateMessage={onRegenerateMessage}
-                  />
+                    className={message.type === 'user' && index > 0 ? 'mt-10' : undefined}
+                  >
+                    <ArenaClientChatMessage
+                      message={message}
+                      setMessages={setMessages}
+                      workspaceIdsForKbLinks={workspaceIdsForKbLinks}
+                      onCopySegmentToInput={onAskInChat}
+                      onToggleGeneratedImage={onToggleGeneratedImage}
+                      selectedGeneratedImageIds={selectedGeneratedImageIds}
+                      selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+                      onWelcomeQueryClick={onWelcomeQueryClick}
+                      isLastAssistantMessage={message.id === lastAssistantId}
+                      onRegenerateMessage={onRegenerateMessage}
+                    />
+                  </div>
                 ))
               })()
             )}
