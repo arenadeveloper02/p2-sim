@@ -2,6 +2,10 @@
 
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
 import { formatBillableWithCredits } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
+import {
+  hasMissingChatIdAttribution,
+  LEGACY_UNATTRIBUTED_CHAT_TITLE,
+} from '@/app/workspace/[workspaceId]/settings/components/usage/legacy-unattributed-chat'
 
 interface AttributionBannerProps {
   data: {
@@ -12,8 +16,7 @@ interface AttributionBannerProps {
 /** Warns when ledger rows lack chat or execution join keys. */
 export function AttributionBanner({ data }: AttributionBannerProps) {
   const { missingChatId, missingExecutionId } = data.attribution
-  const hasMissingChat =
-    missingChatId.billableCost > 0 || missingChatId.count > 0 || missingChatId.rawCost > 0
+  const hasMissingChat = hasMissingChatIdAttribution(missingChatId)
   const hasMissingExecution =
     missingExecutionId.billableCost > 0 ||
     missingExecutionId.count > 0 ||
@@ -30,7 +33,7 @@ export function AttributionBanner({ data }: AttributionBannerProps) {
       <div className='mt-3 flex flex-col gap-2 sm:flex-row sm:gap-6'>
         {hasMissingChat && (
           <div className='text-small'>
-            <span className='text-[var(--text-muted)]'>Missing chat ID: </span>
+            <span className='text-[var(--text-muted)]'>{LEGACY_UNATTRIBUTED_CHAT_TITLE}: </span>
             <span className='text-[var(--text-primary)] tabular-nums'>
               {formatBillableWithCredits(missingChatId.billableCost)}
             </span>
@@ -43,9 +46,7 @@ export function AttributionBanner({ data }: AttributionBannerProps) {
             <span className='text-[var(--text-primary)] tabular-nums'>
               {formatBillableWithCredits(missingExecutionId.billableCost)}
             </span>
-            <span className='ml-1 text-[var(--text-muted)]'>
-              ({missingExecutionId.count} rows)
-            </span>
+            <span className='ml-1 text-[var(--text-muted)]'>({missingExecutionId.count} rows)</span>
           </div>
         )}
       </div>

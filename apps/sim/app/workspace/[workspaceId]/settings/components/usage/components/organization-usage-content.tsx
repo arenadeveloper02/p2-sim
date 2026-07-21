@@ -3,6 +3,8 @@
 import { useMemo } from 'react'
 import { ChipLink } from '@sim/emcn'
 import type { OrganizationUsageAnalytics } from '@/lib/api/contracts/organization-usage'
+import { getMothershipChatPath } from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
+import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { ChargeTypePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/charge-type-panel'
 import {
   CostBreakdownTable,
@@ -17,9 +19,18 @@ import {
   formatTokenCount,
   formatToolLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
+import {
+  buildWorkflowAverageCostChartRows,
+  buildWorkflowTotalCostChartRows,
+} from '@/app/workspace/[workspaceId]/settings/components/usage/workflow-chart-rows'
+import {
+  isLegacyUnattributedChatId,
+  LEGACY_UNATTRIBUTED_CHAT_ID,
+  LEGACY_UNATTRIBUTED_CHAT_TITLE,
+  withLegacyUnattributedChatRow,
+} from '@/app/workspace/[workspaceId]/settings/components/usage/legacy-unattributed-chat'
 import type { UsageTab } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
-import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
-import { getMothershipChatPath } from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
+import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-helpers'
 
 interface OrganizationUsageContentProps {
   data: OrganizationUsageAnalytics
@@ -59,14 +70,39 @@ export function OrganizationUsageContent({
 
   const workflowChartRows = useMemo(
     () =>
-      data.workflow.byWorkflow.map((row) => ({
-        id: `${row.workspaceId}-${row.workflowId ?? row.workflowName ?? 'unknown'}`,
-        label: row.workflowName ?? row.workflowId ?? 'Unknown workflow',
-        billableCost: row.billableCost,
-        secondary: `${row.workspaceName} · ${row.executionCount.toLocaleString()} runs`,
-        href: row.workflowId ? workflowLogsHref(row.workspaceId, row.workflowId) : undefined,
-      })),
+      buildWorkflowTotalCostChartRows(data.workflow.byWorkflow, (workflowId, workspaceId) =>
+        workspaceId ? workflowLogsHref(workspaceId, workflowId) : undefined
+      ),
     [data.workflow.byWorkflow]
+  )
+
+  const workflowAverageChartRows = useMemo(
+    () =>
+      buildWorkflowAverageCostChartRows(data.workflow.byWorkflow, (workflowId, workspaceId) =>
+        workspaceId ? workflowLogsHref(workspaceId, workflowId) : undefined
+      ),
+    [data.workflow.byWorkflow]
+  )
+
+  const mothershipByChatRows = useMemo(
+    () =>
+      withLegacyUnattributedChatRow(
+        data.copilot.byChat ?? [],
+        data.attribution.missingChatId,
+        (bucket) => ({
+          chatId: LEGACY_UNATTRIBUTED_CHAT_ID,
+          title: LEGACY_UNATTRIBUTED_CHAT_TITLE,
+          chatType: 'copilot' as const,
+          userId: '',
+          runCount: 0,
+          billableCost: bucket.billableCost,
+          rawCost: bucket.rawCost,
+          count: bucket.count,
+          workspaceId: '',
+          workspaceName: '—',
+        })
+      ),
+    [data.attribution.missingChatId, data.copilot.byChat]
   )
 
   return (
@@ -189,6 +225,17 @@ export function OrganizationUsageContent({
               />
             </div>
           )}
+          {workflowAverageChartRows.length > 0 && (
+            <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3'>
+              <p className='mb-3 font-medium text-[var(--text-primary)] text-small'>
+                Highest average cost per run
+              </p>
+              <CostShareBars
+                rows={workflowAverageChartRows}
+                emptyMessage='No workflow cost in this period.'
+              />
+            </div>
+          )}
           {data.workflow.byWorkflow.length > 0 && (
             <CostBreakdownTable
               rows={data.workflow.byWorkflow}
@@ -234,6 +281,17 @@ export function OrganizationUsageContent({
                   header: 'Runs',
                   align: 'right',
                   render: (row) => row.executionCount.toLocaleString(),
+                },
+                {
+                  key: 'avgCost',
+                  header: 'Avg credits/run',
+                  align: 'right',
+                  render: (row) =>
+                    row.executionCount > 0
+                      ? formatBillableWithCredits(
+                          averageBillableCostPerRun(row.billableCost, row.executionCount)
+                        )
+                      : '—',
                 },
                 {
                   key: 'cost',
@@ -413,13 +471,13 @@ export function OrganizationUsageContent({
               )}
             </div>
           )}
-          {(data.copilot.byChat?.length ?? 0) > 0 && (
+          {mothershipByChatRows.length > 0 && (
             <div className='mb-6'>
               <p className='mb-2 text-[var(--text-muted)] text-small'>
-                Most expensive chats (top {data.copilot.byChat.length})
+                Most expensive chats (top {mothershipByChatRows.length})
               </p>
               <CostBreakdownTable
-                rows={data.copilot.byChat}
+                rows={mothershipByChatRows}
                 getRowKey={(row) => `${row.workspaceId}-${row.chatId}`}
                 emptyMessage='No mothership chat cost in this period.'
                 columns={[
@@ -427,6 +485,13 @@ export function OrganizationUsageContent({
                     key: 'chat',
                     header: 'Chat',
                     render: (row) => {
+                      if (isLegacyUnattributedChatId(row.chatId)) {
+                        return (
+                          <span className='text-[var(--text-secondary)]'>
+                            {LEGACY_UNATTRIBUTED_CHAT_TITLE}
+                          </span>
+                        )
+                      }
                       const label = row.title?.trim() || `${row.chatId.slice(0, 8)}…`
                       if (row.chatType === 'mothership') {
                         return (
@@ -445,31 +510,45 @@ export function OrganizationUsageContent({
                   {
                     key: 'workspace',
                     header: 'Workspace',
-                    render: (row) => (
-                      <ChipLink
-                        href={workspaceUsageHref(row.workspaceId)}
-                        target='_blank'
-                        rel='noopener noreferrer'
-                      >
-                        {row.workspaceName}
-                      </ChipLink>
-                    ),
+                    render: (row) =>
+                      isLegacyUnattributedChatId(row.chatId) ? (
+                        '—'
+                      ) : (
+                        <ChipLink
+                          href={workspaceUsageHref(row.workspaceId)}
+                          target='_blank'
+                          rel='noopener noreferrer'
+                        >
+                          {row.workspaceName}
+                        </ChipLink>
+                      ),
                   },
                   {
                     key: 'user',
                     header: 'Owner',
-                    render: (row) => userNameById.get(row.userId) ?? row.userId,
+                    render: (row) =>
+                      isLegacyUnattributedChatId(row.chatId)
+                        ? '—'
+                        : (userNameById.get(row.userId) ?? row.userId),
                   },
                   {
                     key: 'type',
                     header: 'Type',
-                    render: (row) => <span className='capitalize'>{row.chatType}</span>,
+                    render: (row) =>
+                      isLegacyUnattributedChatId(row.chatId) ? (
+                        <span>Legacy</span>
+                      ) : (
+                        <span className='capitalize'>{row.chatType}</span>
+                      ),
                   },
                   {
                     key: 'runs',
                     header: 'Runs',
                     align: 'right',
-                    render: (row) => row.runCount.toLocaleString(),
+                    render: (row) =>
+                      isLegacyUnattributedChatId(row.chatId)
+                        ? `${row.count.toLocaleString()} rows`
+                        : row.runCount.toLocaleString(),
                   },
                   {
                     key: 'cost',

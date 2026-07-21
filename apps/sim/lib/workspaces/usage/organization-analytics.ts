@@ -47,6 +47,7 @@ import {
   resolvePeriodFromDateCandidates,
   resolvedActorTypeExpr,
   resolvedActorUserIdExpr,
+  sortByBillableCostDesc,
   timeBucketExpr,
   usageMetricsSelect,
   WORKFLOW_SOURCE,
@@ -669,13 +670,15 @@ export async function getOrganizationUsageAnalytics(
 
     const embeddedToolSplit = computeEmbeddedToolVirtualSplit(modelMetadataRows)
 
-    const bySource = bySourceRows.map((row) => ({
-      source: row.source,
-      billableCost: parseDecimal(row.billableCost),
-      rawCost: parseDecimal(row.rawCost),
-      count: row.count,
-      usage: mapUsageMetrics(row),
-    }))
+    const bySource = sortByBillableCostDesc(
+      bySourceRows.map((row) => ({
+        source: row.source,
+        billableCost: parseDecimal(row.billableCost),
+        rawCost: parseDecimal(row.rawCost),
+        count: row.count,
+        usage: mapUsageMetrics(row),
+      }))
+    )
 
     const CHARGE_TYPE_ORDER: UsageChargeTypeValue[] = [
       'base_run',
@@ -895,13 +898,15 @@ export async function getOrganizationUsageAnalytics(
           totalProjectedCost: parseDecimal(workflowSummary?.totalProjectedCost),
           totalLedgerCost: parseDecimal(workflowLedger?.totalLedgerCost),
         },
-        byTrigger: workflowByTriggerRows.map((row) => ({
-          trigger: row.trigger,
-          executionCount: row.executionCount,
-          billableCost: parseDecimal(row.billableCost),
-          rawCost: parseDecimal(row.rawCost),
-          count: row.count,
-        })),
+        byTrigger: sortByBillableCostDesc(
+          workflowByTriggerRows.map((row) => ({
+            trigger: row.trigger,
+            executionCount: row.executionCount,
+            billableCost: parseDecimal(row.billableCost),
+            rawCost: parseDecimal(row.rawCost),
+            count: row.count,
+          }))
+        ),
         byWorkflow: mapExpensiveWorkflowRows(expensiveWorkflowRows).map((row) => ({
           workspaceId: row.workspaceId,
           workspaceName:
@@ -922,14 +927,16 @@ export async function getOrganizationUsageAnalytics(
         runs: {
           total: runSummary?.total ?? 0,
         },
-        byChatType: copilotByTypeRows.map((row) => ({
-          chatType: parseChatType(row.chatType),
-          chatCount: row.chatCount,
-          runCount: row.runCount,
-          billableCost: parseDecimal(row.billableCost),
-          rawCost: parseDecimal(row.rawCost),
-          count: row.count,
-        })),
+        byChatType: sortByBillableCostDesc(
+          copilotByTypeRows.map((row) => ({
+            chatType: parseChatType(row.chatType),
+            chatCount: row.chatCount,
+            runCount: row.runCount,
+            billableCost: parseDecimal(row.billableCost),
+            rawCost: parseDecimal(row.rawCost),
+            count: row.count,
+          }))
+        ),
         byChat: mapExpensiveCopilotChatRows(
           expensiveChatRows.filter(
             (row): row is (typeof row & { workspaceId: string }) => row.workspaceId !== null
@@ -947,35 +954,39 @@ export async function getOrganizationUsageAnalytics(
           rawCost: row.rawCost,
           count: row.count,
         })),
-        byModel: copilotByModelRows.map((row) => ({
-          model: row.model,
-          billableCost: parseDecimal(row.billableCost),
-          rawCost: parseDecimal(row.rawCost),
-          count: row.count,
-        })),
+        byModel: sortByBillableCostDesc(
+          copilotByModelRows.map((row) => ({
+            model: row.model,
+            billableCost: parseDecimal(row.billableCost),
+            rawCost: parseDecimal(row.rawCost),
+            count: row.count,
+          }))
+        ),
         triggeredWorkflows: {
           executionCount: triggeredWorkflowTotal.executionCount,
           billableCost: triggeredWorkflowTotal.billableCost,
           rawCost: triggeredWorkflowTotal.rawCost,
-          byChat: triggeredWorkflowRows
-            .filter(
-              (
-                row
-              ): row is typeof row & { triggeringChatId: string; workspaceId: string } =>
-                row.triggeringChatId !== null && row.workspaceId !== null
-            )
-            .map((row) => ({
-              workspaceId: row.workspaceId,
-              workspaceName: workspaceNameById.get(row.workspaceId) ?? row.workspaceId,
-              triggeringChatId: row.triggeringChatId,
-              executionCount: row.executionCount,
-              billableCost: parseDecimal(row.billableCost),
-              rawCost: parseDecimal(row.rawCost),
-            })),
+          byChat: sortByBillableCostDesc(
+            triggeredWorkflowRows
+              .filter(
+                (
+                  row
+                ): row is typeof row & { triggeringChatId: string; workspaceId: string } =>
+                  row.triggeringChatId !== null && row.workspaceId !== null
+              )
+              .map((row) => ({
+                workspaceId: row.workspaceId,
+                workspaceName: workspaceNameById.get(row.workspaceId) ?? row.workspaceId,
+                triggeringChatId: row.triggeringChatId,
+                executionCount: row.executionCount,
+                billableCost: parseDecimal(row.billableCost),
+                rawCost: parseDecimal(row.rawCost),
+              }))
+          ),
         },
       },
-      byActor: byActorRows
-        .map((row) => ({
+      byActor: sortByBillableCostDesc(
+        byActorRows.map((row) => ({
           actorUserId: row.actorUserId,
           actorType: parseActorType(row.actorType),
           billableCost: parseDecimal(row.billableCost),
@@ -983,37 +994,41 @@ export async function getOrganizationUsageAnalytics(
           count: row.count,
           usage: mapUsageMetrics(row),
         }))
-        .sort((a, b) => b.billableCost - a.billableCost),
-      byUser: byUserRows
-        .map((row) => ({
+      ),
+      byUser: sortByBillableCostDesc(
+        byUserRows.map((row) => ({
           userId: row.userId,
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
           count: row.count,
         }))
-        .sort((a, b) => b.billableCost - a.billableCost),
-      bySource,
-      byModel: subtractEmbeddedFromBucketRows(
-        byModelRows.map((row) => ({
-          model: row.model,
-          billableCost: parseDecimal(row.billableCost),
-          rawCost: parseDecimal(row.rawCost),
-          count: row.count,
-        })),
-        (row) => row.model,
-        embeddedToolSplit.byModelEmbedded
       ),
-      byProvider: subtractEmbeddedFromBucketRows(
-        byProviderRows
-          .filter((row): row is typeof row & { provider: string } => row.provider !== null)
-          .map((row) => ({
-            provider: row.provider,
+      bySource,
+      byModel: sortByBillableCostDesc(
+        subtractEmbeddedFromBucketRows(
+          byModelRows.map((row) => ({
+            model: row.model,
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
             count: row.count,
           })),
-        (row) => row.provider,
-        embeddedToolSplit.byProviderEmbedded
+          (row) => row.model,
+          embeddedToolSplit.byModelEmbedded
+        )
+      ),
+      byProvider: sortByBillableCostDesc(
+        subtractEmbeddedFromBucketRows(
+          byProviderRows
+            .filter((row): row is typeof row & { provider: string } => row.provider !== null)
+            .map((row) => ({
+              provider: row.provider,
+              billableCost: parseDecimal(row.billableCost),
+              rawCost: parseDecimal(row.rawCost),
+              count: row.count,
+            })),
+          (row) => row.provider,
+          embeddedToolSplit.byProviderEmbedded
+        )
       ),
       byTool: mergeEmbeddedToolBucketRows(
         byToolRows
@@ -1026,12 +1041,14 @@ export async function getOrganizationUsageAnalytics(
           })),
         embeddedToolSplit.byToolEmbedded
       ),
-      byVendor: byVendorRows.map((row) => ({
-        vendor: row.vendor,
-        billableCost: parseDecimal(row.billableCost),
-        rawCost: parseDecimal(row.rawCost),
-        count: row.count,
-      })),
+      byVendor: sortByBillableCostDesc(
+        byVendorRows.map((row) => ({
+          vendor: row.vendor,
+          billableCost: parseDecimal(row.billableCost),
+          rawCost: parseDecimal(row.rawCost),
+          count: row.count,
+        }))
+      ),
       timeSeries,
       lineage: {
         roots: lineageRootRows

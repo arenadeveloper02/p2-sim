@@ -1,8 +1,6 @@
 'use client'
 
 import { useMemo } from 'react'
-import { useParams } from 'next/navigation'
-import { useQueryStates } from 'nuqs'
 import {
   Badge,
   ButtonGroup,
@@ -15,7 +13,12 @@ import {
   RefreshCw,
   Skeleton,
 } from '@sim/emcn'
+import { useParams } from 'next/navigation'
+import { useQueryStates } from 'nuqs'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
+import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-helpers'
+import { getMothershipChatPath } from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
+import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { ChargeTypePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/charge-type-panel'
 import {
   CostBreakdownTable,
@@ -35,24 +38,29 @@ import {
   MOTHERSHIP_USAGE_SOURCES,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
-  type UsagePeriod,
-  type UsageScope,
-  type UsageTab,
+  buildWorkflowAverageCostChartRows,
+  buildWorkflowTotalCostChartRows,
+} from '@/app/workspace/[workspaceId]/settings/components/usage/workflow-chart-rows'
+import {
+  isLegacyUnattributedChatId,
+  LEGACY_UNATTRIBUTED_CHAT_ID,
+  LEGACY_UNATTRIBUTED_CHAT_TITLE,
+  withLegacyUnattributedChatRow,
+} from '@/app/workspace/[workspaceId]/settings/components/usage/legacy-unattributed-chat'
+import {
   USAGE_PERIODS,
   USAGE_SCOPES,
   USAGE_TABS,
+  type UsagePeriod,
+  type UsageScope,
+  type UsageTab,
   usageParsers,
   usageUrlKeys,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
-import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
-import { getMothershipChatPath } from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
 import { useAdminOrganizations, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useOrganizationUsageAnalytics } from '@/hooks/queries/organization-usage'
+import { useWorkspacePermissionsQuery, useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useWorkspaceUsageAnalytics } from '@/hooks/queries/workspace-usage'
-import {
-  useWorkspacePermissionsQuery,
-  useWorkspaceSettings,
-} from '@/hooks/queries/workspace'
 
 const TAB_LABELS: Record<UsageTab, string> = {
   all: 'All sources',
@@ -66,14 +74,11 @@ const SCOPE_LABELS: Record<UsageScope, string> = {
 }
 
 const SUMMARY_METRIC_TOOLTIPS = {
-  tokens:
-    'Total input and output tokens from billing ledger rows in the selected period.',
-  invocations:
-    'Number of billed model or provider invocations recorded in the billing ledger.',
+  tokens: 'Total input and output tokens from billing ledger rows in the selected period.',
+  invocations: 'Number of billed model or provider invocations recorded in the billing ledger.',
   ledgerEntries:
     'Rows in the billing ledger (usage_log) that contribute to cost totals in this view.',
-  executions:
-    'Distinct workflow runs in the selected period, including runs without ledger cost.',
+  executions: 'Distinct workflow runs in the selected period, including runs without ledger cost.',
   chats: 'Distinct Mothership and copilot chat sessions in the selected period.',
   runs: 'Distinct copilot or Mothership assistant runs within chats in the selected period.',
 } as const
@@ -131,16 +136,37 @@ function UsageDashboardContent({
 
   const workflowChartRows = useMemo(
     () =>
-      data.workflow.byWorkflow.map((row) => ({
-        id: row.workflowId ?? row.workflowName ?? 'unknown',
-        label: row.workflowName ?? row.workflowId ?? 'Unknown workflow',
-        billableCost: row.billableCost,
-        secondary: `${row.executionCount.toLocaleString()} runs`,
-        href: row.workflowId
-          ? `/workspace/${workspaceId}/logs?workflowIds=${row.workflowId}`
-          : undefined,
-      })),
+      buildWorkflowTotalCostChartRows(data.workflow.byWorkflow, (workflowId) =>
+        `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
+      ),
     [data.workflow.byWorkflow, workspaceId]
+  )
+
+  const workflowAverageChartRows = useMemo(
+    () =>
+      buildWorkflowAverageCostChartRows(data.workflow.byWorkflow, (workflowId) =>
+        `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
+      ),
+    [data.workflow.byWorkflow, workspaceId]
+  )
+
+  const mothershipByChatRows = useMemo(
+    () =>
+      withLegacyUnattributedChatRow(
+        data.copilot.byChat ?? [],
+        data.attribution.missingChatId,
+        (bucket) => ({
+          chatId: LEGACY_UNATTRIBUTED_CHAT_ID,
+          title: LEGACY_UNATTRIBUTED_CHAT_TITLE,
+          chatType: 'copilot' as const,
+          userId: '',
+          runCount: 0,
+          billableCost: bucket.billableCost,
+          rawCost: bucket.rawCost,
+          count: bucket.count,
+        })
+      ),
+    [data.attribution.missingChatId, data.copilot.byChat]
   )
 
   return (
@@ -200,17 +226,32 @@ function UsageDashboardContent({
               {data.workflow.executions.total.toLocaleString()} executions ·{' '}
               {data.workflow.executions.withProjectedCost.toLocaleString()} with projected cost
             </p>
-            <ChipLink href={`/workspace/${workspaceId}/logs`} target='_blank' rel='noopener noreferrer'>
+            <ChipLink
+              href={`/workspace/${workspaceId}/logs`}
+              target='_blank'
+              rel='noopener noreferrer'
+            >
               View execution logs
             </ChipLink>
           </div>
           {workflowChartRows.length > 0 && (
             <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3'>
               <p className='mb-3 font-medium text-[var(--text-primary)] text-small'>
-                Cost by workflow
+                Most expensive workflows
               </p>
               <CostShareBars
                 rows={workflowChartRows}
+                emptyMessage='No workflow cost in this period.'
+              />
+            </div>
+          )}
+          {workflowAverageChartRows.length > 0 && (
+            <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3'>
+              <p className='mb-3 font-medium text-[var(--text-primary)] text-small'>
+                Highest average cost per run
+              </p>
+              <CostShareBars
+                rows={workflowAverageChartRows}
                 emptyMessage='No workflow cost in this period.'
               />
             </div>
@@ -245,6 +286,17 @@ function UsageDashboardContent({
                   header: 'Runs',
                   align: 'right',
                   render: (row) => row.executionCount.toLocaleString(),
+                },
+                {
+                  key: 'avgCost',
+                  header: 'Avg credits/run',
+                  align: 'right',
+                  render: (row) =>
+                    row.executionCount > 0
+                      ? formatBillableWithCredits(
+                          averageBillableCostPerRun(row.billableCost, row.executionCount)
+                        )
+                      : '—',
                 },
                 {
                   key: 'cost',
@@ -365,13 +417,13 @@ function UsageDashboardContent({
               )}
             </div>
           )}
-          {(data.copilot.byChat?.length ?? 0) > 0 && (
+          {mothershipByChatRows.length > 0 && (
             <div className='mb-6'>
               <p className='mb-2 text-[var(--text-muted)] text-small'>
-                Most expensive chats (top {data.copilot.byChat.length})
+                Most expensive chats (top {mothershipByChatRows.length})
               </p>
               <CostBreakdownTable
-                rows={data.copilot.byChat}
+                rows={mothershipByChatRows}
                 getRowKey={(row) => row.chatId}
                 emptyMessage='No mothership chat cost in this period.'
                 columns={[
@@ -379,6 +431,13 @@ function UsageDashboardContent({
                     key: 'chat',
                     header: 'Chat',
                     render: (row) => {
+                      if (isLegacyUnattributedChatId(row.chatId)) {
+                        return (
+                          <span className='text-[var(--text-secondary)]'>
+                            {LEGACY_UNATTRIBUTED_CHAT_TITLE}
+                          </span>
+                        )
+                      }
                       const label = row.title?.trim() || `${row.chatId.slice(0, 8)}…`
                       if (row.chatType === 'mothership') {
                         return (
@@ -397,18 +456,29 @@ function UsageDashboardContent({
                   {
                     key: 'user',
                     header: 'Owner',
-                    render: (row) => userNameById.get(row.userId) ?? row.userId,
+                    render: (row) =>
+                      isLegacyUnattributedChatId(row.chatId)
+                        ? '—'
+                        : (userNameById.get(row.userId) ?? row.userId),
                   },
                   {
                     key: 'type',
                     header: 'Type',
-                    render: (row) => <span className='capitalize'>{row.chatType}</span>,
+                    render: (row) =>
+                      isLegacyUnattributedChatId(row.chatId) ? (
+                        <span>Legacy</span>
+                      ) : (
+                        <span className='capitalize'>{row.chatType}</span>
+                      ),
                   },
                   {
                     key: 'runs',
                     header: 'Runs',
                     align: 'right',
-                    render: (row) => row.runCount.toLocaleString(),
+                    render: (row) =>
+                      isLegacyUnattributedChatId(row.chatId)
+                        ? `${row.count.toLocaleString()} rows`
+                        : row.runCount.toLocaleString(),
                   },
                   {
                     key: 'cost',
@@ -662,9 +732,7 @@ export function Usage() {
   const isOrganizationScope = effectiveScope === 'organization'
 
   const analyticsQuery = useMemo(() => {
-    const base = allTime
-      ? { allTime: 'true' as const }
-      : { period: period as UsagePeriod }
+    const base = allTime ? { allTime: 'true' as const } : { period: period as UsagePeriod }
 
     if (tab === 'workflow') return { ...base, sources: 'workflow' }
     if (tab === 'mothership') return { ...base, sources: MOTHERSHIP_USAGE_SOURCES }
@@ -673,9 +741,7 @@ export function Usage() {
 
   const workspaceAnalyticsQuery = useMemo(() => {
     const withLineage =
-      !isOrganizationScope &&
-      rootExecutionId &&
-      (tab === 'workflow' || tab === 'all')
+      !isOrganizationScope && rootExecutionId && (tab === 'workflow' || tab === 'all')
         ? { rootExecutionId }
         : {}
 

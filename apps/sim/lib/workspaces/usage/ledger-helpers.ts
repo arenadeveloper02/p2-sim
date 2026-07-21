@@ -440,8 +440,8 @@ export function mapExpensiveCopilotChatRows(
   rows: ExpensiveCopilotChatDbRow[],
   limit = TOP_EXPENSIVE_COPILOT_CHATS
 ): ExpensiveCopilotChatRow[] {
-  return rows
-    .map((row) => ({
+  return sortByBillableCostDesc(
+    rows.map((row) => ({
       workspaceId: row.workspaceId,
       workspaceName: row.workspaceName,
       chatId: row.chatId,
@@ -453,8 +453,7 @@ export function mapExpensiveCopilotChatRows(
       rawCost: parseDecimal(row.rawCost),
       count: row.count,
     }))
-    .sort((a, b) => b.billableCost - a.billableCost)
-    .slice(0, limit)
+  ).slice(0, limit)
 }
 
 /**
@@ -499,8 +498,8 @@ export function mapExpensiveWorkflowRows(
   rows: ExpensiveWorkflowDbRow[],
   limit = TOP_EXPENSIVE_WORKFLOWS
 ): ExpensiveWorkflowRow[] {
-  return rows
-    .map((row) => ({
+  return sortByBillableCostDesc(
+    rows.map((row) => ({
       workspaceId: row.workspaceId,
       workspaceName: row.workspaceName,
       workflowId: row.workflowId,
@@ -510,6 +509,32 @@ export function mapExpensiveWorkflowRows(
       rawCost: parseDecimal(row.rawCost),
       count: row.count,
     }))
-    .sort((a, b) => b.billableCost - a.billableCost)
-    .slice(0, limit)
+  ).slice(0, limit)
+}
+
+/** Sorts cost buckets highest billable cost first. */
+export function sortByBillableCostDesc<T extends { billableCost: number }>(
+  rows: readonly T[]
+): T[] {
+  return [...rows].sort((a, b) => b.billableCost - a.billableCost)
+}
+
+/** Average billable credits per workflow run; zero when inputs are non-positive. */
+export function averageBillableCostPerRun(
+  billableCost: number,
+  executionCount: number
+): number {
+  if (executionCount <= 0 || billableCost <= 0) return 0
+  return billableCost / executionCount
+}
+
+/** Sorts workflow rows by highest average billable cost per run. */
+export function sortByAverageBillableCostPerRunDesc<
+  T extends { billableCost: number; executionCount: number },
+>(rows: readonly T[]): T[] {
+  return [...rows].sort(
+    (a, b) =>
+      averageBillableCostPerRun(b.billableCost, b.executionCount) -
+      averageBillableCostPerRun(a.billableCost, a.executionCount)
+  )
 }
