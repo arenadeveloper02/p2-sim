@@ -105,6 +105,8 @@ export const chatDeploymentStatusSchema = z.object({
     .object({
       id: z.string(),
       identifier: z.string(),
+      deploymentType: z.preprocess((value) => value ?? 'chat', z.enum(['chat', 'app'])).optional(),
+      redirectUrl: z.preprocess((value) => value ?? null, z.string().nullable()).optional(),
     })
     .passthrough()
     .nullable(),
