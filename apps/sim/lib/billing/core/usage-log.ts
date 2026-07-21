@@ -930,45 +930,6 @@ export async function getUsageCreditsByLogId(
   )
 }
 
-interface UsageLogFilter {
-  source?: UsageLogSource
-  workspaceId?: string
-  startDate?: Date
-  endDate?: Date
-}
-
-function buildUsageLogConditions(userId: string, filter: UsageLogFilter) {
-  const conditions = [eq(usageLog.userId, userId)]
-  if (filter.source) conditions.push(eq(usageLog.source, filter.source))
-  if (filter.workspaceId) conditions.push(eq(usageLog.workspaceId, filter.workspaceId))
-  if (filter.startDate) conditions.push(gte(usageLog.createdAt, filter.startDate))
-  if (filter.endDate) conditions.push(lte(usageLog.createdAt, filter.endDate))
-  return conditions
-}
-
-/**
- * Apportions credits across every log matching the filter (not just one
- * page), so a row's `creditCost` is identical everywhere it's shown — the
- * paginated list and the CSV export both call this rather than each
- * apportioning their own subset, which would let the same row disagree
- * between the two (or between pages of the same list) since apportionment
- * depends on the complete set's total.
- */
-export async function getUsageCreditsByLogId(
-  userId: string,
-  filter: UsageLogFilter
-): Promise<Record<string, number>> {
-  const rows = await dbReplica
-    .select({ id: usageLog.id, cost: usageLog.cost })
-    .from(usageLog)
-    .where(and(...buildUsageLogConditions(userId, filter)))
-    .orderBy(desc(usageLog.createdAt), desc(usageLog.id))
-
-  return apportionCredits(
-    rows.map((row) => ({ key: row.id, dollars: Number.parseFloat(row.cost) }))
-  )
-}
-
 /**
  * Options for querying usage logs
  */

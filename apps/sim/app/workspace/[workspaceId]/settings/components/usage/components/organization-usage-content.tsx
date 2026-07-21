@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { ChipLink } from '@/components/emcn'
+import { ChipLink } from '@sim/emcn'
 import type { OrganizationUsageAnalytics } from '@/lib/api/contracts/organization-usage'
 import { ChargeTypePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/charge-type-panel'
 import {

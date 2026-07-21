@@ -1,7 +1,6 @@
 'use client'
 
-import { Badge } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
+import { Badge, cn } from '@sim/emcn'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
 import { AttributionBanner } from '@/app/workspace/[workspaceId]/settings/components/usage/components/attribution-banner'
 

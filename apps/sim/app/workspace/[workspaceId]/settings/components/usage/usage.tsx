@@ -9,12 +9,12 @@ import {
   ButtonGroupItem,
   ChipLink,
   ChipSelect,
+  cn,
   Info,
   Loader,
   RefreshCw,
   Skeleton,
-} from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
+} from '@sim/emcn'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
 import { ChargeTypePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/charge-type-panel'
 import {

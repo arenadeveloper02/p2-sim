@@ -1,6 +1,6 @@
 'use client'
 
-import { ChipLink } from '@/components/emcn'
+import { ChipLink } from '@sim/emcn'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
 import {
   CostBreakdownTable,
