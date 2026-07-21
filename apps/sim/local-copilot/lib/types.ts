@@ -172,7 +172,16 @@ export type LocalCopilotStreamEvent =
   | { type: 'patch_proposed'; patch: WorkflowPatch; patchId: string }
   | { type: 'recommendations'; items: string[] }
   | { type: 'error'; message: string }
-  | { type: 'done'; messageId: string }
+  | {
+      type: 'done'
+      messageId: string
+      /** Aggregated model tokens for this turn (used for mothership billing). */
+      usage?: {
+        model: string
+        inputTokens: number
+        outputTokens: number
+      }
+    }
 
 export interface LocalCopilotMessageContent {
   text: string

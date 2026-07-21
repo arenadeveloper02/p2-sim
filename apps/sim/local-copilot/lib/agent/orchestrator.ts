@@ -212,10 +212,17 @@ export async function* runLocalCopilotAgent(
 ): AsyncGenerator<LocalCopilotStreamEvent, void, undefined> {
   const startedAt = Date.now()
   const config = getLocalCopilotConfig()
+  /**
+   * Unique per user turn. Mothership Local has no local conversationId, and
+   * round indexes reset each turn — without this, usage_log eventKeys collide
+   * and later turns are dropped by onConflictDoNothing.
+   */
+  const usageTurnId = params.messageId?.trim() || generateId()
   logger.info('Arena Copilot agent starting', {
     workspaceId: params.workspaceId,
     workflowId: params.workflowId ?? null,
     chatId: params.chatId ?? null,
+    usageTurnId,
     provider: config.provider,
     model: config.model,
     hasApiKey: Boolean(config.apiKey),
@@ -340,13 +347,12 @@ export async function* runLocalCopilotAgent(
   })
 
   const provider = getLocalCopilotProvider()
-  const turnMessageId = params.messageId?.trim() || generateId()
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId,
     chatId: params.chatId,
-    messageId: turnMessageId,
+    messageId: usageTurnId,
     abortSignal: params.signal,
     userPermission: params.userPermission,
     structuredContext,
@@ -379,6 +385,8 @@ export async function* runLocalCopilotAgent(
   const maxToolRounds = MAX_TOOL_ITERATIONS
   let pendingFollowUps: MandatoryFollowUp[] = []
   let forcedFollowUpRounds = 0
+  let turnInputTokens = 0
+  let turnOutputTokens = 0
 
   for (let round = 0; round < maxToolRounds; round++) {
     const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
@@ -432,6 +440,8 @@ export async function* runLocalCopilotAgent(
 
     logger.info('Arena Copilot model round finished', {
       round,
+      model: config.model,
+      provider: config.provider,
       toolCallCount: pendingToolCalls.length,
       toolNames: pendingToolCalls.map((call) => call.name),
       assistantChars: assistantText.length,
@@ -442,6 +452,9 @@ export async function* runLocalCopilotAgent(
       memory: getLocalCopilotMemorySnapshot(),
     })
 
+    turnInputTokens += roundInputTokens
+    turnOutputTokens += roundOutputTokens
+
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
       await recordModelUsage({
         userId: params.userId,
@@ -451,9 +464,7 @@ export async function* runLocalCopilotAgent(
         inputTokens: roundInputTokens,
         outputTokens: roundOutputTokens,
         source: 'copilot',
-        sourceReference: conversationId
-          ? `local-copilot:${conversationId}:round-${round}`
-          : `local-copilot:${params.workspaceId}:round-${round}`,
+        sourceReference: `local-copilot:${usageTurnId}:round-${round}`,
       })
     }
 
@@ -678,18 +689,35 @@ export async function* runLocalCopilotAgent(
   logger.info('Arena Copilot turn complete', {
     conversationId: conversationId ?? null,
     messageId: messageId || null,
+    usageTurnId,
     patchId: patchId ?? null,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId ?? null,
+    model: config.model,
+    provider: config.provider,
     historyTurns: historyMessages.length,
     assistantChars: assistantText.length,
     toolCallCount: turnToolRecords.length,
     toolNames: turnToolRecords.map((record) => record.name),
+    inputTokens: turnInputTokens,
+    outputTokens: turnOutputTokens,
     hasPatch: Boolean(proposedPatch),
     durationMs: Date.now() - startedAt,
     memory: getLocalCopilotMemorySnapshot(),
   })
-  yield { type: 'done', messageId: messageId || generateId() }
+  yield {
+    type: 'done',
+    messageId: messageId || generateId(),
+    ...(turnInputTokens > 0 || turnOutputTokens > 0
+      ? {
+          usage: {
+            model: config.model,
+            inputTokens: turnInputTokens,
+            outputTokens: turnOutputTokens,
+          },
+        }
+      : {}),
+  }
 }
 
 export function formatSSE(event: LocalCopilotStreamEvent): string {
