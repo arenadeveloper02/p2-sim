@@ -48,17 +48,40 @@ Do not write to production until all checks pass:
 
 ### Mothership chat_id attribution (Usage joins)
 
-Settings → Usage joins mothership/copilot billable cost via `usage_log.chat_id`. Rows missing `chat_id` show as activity without ledger cost.
+Settings → Usage joins mothership/copilot billable cost via `usage_log.chat_id`. Rows missing `chat_id` show as activity without ledger cost (positive Mothership composition with zero per-chat credits).
+
+Reconciliation is **exact-only**. Fuzzy time-window and hashed Arena Copilot matches are reported for review and never applied.
+
+Implementation: `apps/sim/lib/billing/core/mothership-chat-attribution-reconciliation.ts`  
+CLI: `scripts/backfill-mothership-chat-attribution.ts`
 
 ```bash
-# High-confidence only (Sim update-cost event keys + run_id)
-bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts --dry-run
-bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts
+# Audit populations (exact / fuzzy-unique / ambiguous / orphan / sha256)
+bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts \
+  --audit --workspace-id=<workspace_id>
 
-# Also attach Arena Copilot historical rows via unique run time-window matches
-bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts --fuzzy --dry-run
-bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts --fuzzy
+# Dry-run: paginate the full exact scope, write NDJSON shadow artifact
+bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts \
+  --dry-run --workspace-id=<workspace_id> --artifact=mothership-chat-attribution-shadow.ndjson
+
+# Apply exact event-key + existing-run-id matches only (chat_id IS NULL guards)
+bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts \
+  --apply --workspace-id=<workspace_id> --artifact=mothership-chat-attribution-apply.ndjson
+
+# Verify scoped SUM(cost)/SUM(raw_cost)/SUM(billable_cost) unchanged
+bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts \
+  --verify --workspace-id=<workspace_id>
+
+# Guarded rollback from an apply artifact (clears chat_id only; costs unchanged)
+bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts \
+  --rollback --rollback-from=mothership-chat-attribution-apply.ndjson --workspace-id=<workspace_id>
 ```
+
+Optional scopes: `--sources=copilot,workspace-chat`, `--start=ISO`, `--end=ISO`, `--batch-size=N`.
+
+For the diagnosed workspace (`1f43034d-182e-4fc6-93aa-118f55652bc3`), expect the safe pass to attach **160 of 222** rows and leave **62** unchanged for review. Total ledger dollars/credits must remain byte-for-byte unchanged across apply and rollback.
+
+`--fuzzy` apply is removed. Fuzzy-unique rows appear in audit/dry-run reports only.
 
 Run the preflight checks:
 

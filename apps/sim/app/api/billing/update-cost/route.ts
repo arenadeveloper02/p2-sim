@@ -7,14 +7,15 @@ import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { billingUpdateCostContract } from '@/lib/api/contracts/subscription'
 import { parseRequest } from '@/lib/api/server'
+import { resolveMothershipChatAttributionFromMessageId } from '@/lib/billing/core/mothership-chat-attribution'
 import { recordCumulativeUsage, recordUsage, scaleUsageLogCost } from '@/lib/billing/core/usage-log'
 import { getUsageLogCostMultiplier } from '@/lib/billing/core/usage-log-cost-multiplier'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { BillingRouteOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
-import { withIncomingGoSpan } from '@/lib/copilot/request/otel'
 import { checkInternalApiKey } from '@/lib/copilot/request/http'
+import { withIncomingGoSpan } from '@/lib/copilot/request/otel'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -206,10 +207,36 @@ async function updateCostInner(req: NextRequest, span: Span): Promise<NextRespon
     })
 
     const attributedWorkspaceId = await resolveAttributableWorkspaceId(requestId, workspaceId)
-    const attributedChatId = await resolveAttributableChatId(requestId, chatId)
-    const attributedRunId = await resolveAttributableRunId(requestId, runId)
+    let attributedChatId = await resolveAttributableChatId(requestId, chatId)
+    let attributedRunId = await resolveAttributableRunId(requestId, runId)
     /** Mothership/copilot requests are always user-triggered; stamp ledger actor from the billed user. */
     const executionActor = { actorUserId: userId, actorType: 'user' as const }
+
+    // When Go omits chatId/runId (or supplies a foreign UUID), recover attribution
+    // from the update-cost message/stream id so Usage can join per-chat cost.
+    if ((!attributedChatId || !attributedRunId) && idempotencyKey) {
+      const messageId = idempotencyKey.endsWith('-billing')
+        ? idempotencyKey.slice(0, -'-billing'.length)
+        : idempotencyKey
+      const resolved = await resolveMothershipChatAttributionFromMessageId({
+        messageId,
+        userId,
+        workspaceId: attributedWorkspaceId,
+      })
+      if (resolved) {
+        if (!attributedChatId) {
+          attributedChatId = resolved.chatId
+          logger.info(`[${requestId}] Resolved chat attribution from message/stream id`, {
+            messageId,
+            chatId: resolved.chatId,
+            resolvedVia: resolved.resolvedVia,
+          })
+        }
+        if (!attributedRunId && resolved.runId) {
+          attributedRunId = resolved.runId
+        }
+      }
+    }
 
     // Go sends the request's CUMULATIVE vendor COGS, possibly more than once (a
     // mid-loop provider-error flush, then the recovered terminal flush, plus

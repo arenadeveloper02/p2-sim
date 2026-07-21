@@ -22,8 +22,11 @@ import type {
 import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
-import type { CopilotContextEntry, CopilotFileAttachmentRef } from '@/local-copilot/lib/user-turn-content'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
+import type {
+  CopilotContextEntry,
+  CopilotFileAttachmentRef,
+} from '@/local-copilot/lib/user-turn-content'
 
 const logger = createLogger('LocalCopilotMothershipLifecycle')
 
@@ -60,7 +63,8 @@ function extractFileAttachments(value: unknown): CopilotFileAttachmentRef[] | un
     const key = extractString(record.key)
     const filename = extractString(record.filename)
     const mediaType = extractString(record.media_type)
-    const size = typeof record.size === 'number' && Number.isFinite(record.size) ? record.size : null
+    const size =
+      typeof record.size === 'number' && Number.isFinite(record.size) ? record.size : null
     if (!key || !filename || !mediaType || size === null) return []
     return [{ key, filename, media_type: mediaType, size }]
   })
@@ -313,6 +317,11 @@ export async function runLocalCopilotMothershipLifecycle(
   const toolArgsByCallId = new Map<string, Record<string, unknown>>()
   const userMessageId =
     typeof requestPayload.messageId === 'string' ? requestPayload.messageId : undefined
+  const isMothershipBlockExecute =
+    typeof options.goRoute === 'string' && options.goRoute.startsWith('/api/mothership/execute')
+  /** Workflow owns block cost via `result.cost`; interactive Local chat writes the ledger. */
+  const writeChatLedger = !isMothershipBlockExecute
+  let turnCost: { input: number; output: number; total: number } | undefined
 
   let priorMessages: Awaited<ReturnType<typeof loadMothershipChatHistoryForLocalCopilot>> = []
   if (options.chatId) {
@@ -336,9 +345,14 @@ export async function runLocalCopilotMothershipLifecycle(
       workspaceId,
       message,
       chatId: options.chatId,
+      runId: options.runId ?? execContext.runId,
       ...(userMessageId ? { messageId: userMessageId } : {}),
+      ...(isMothershipBlockExecute && (options.executionId ?? execContext.executionId)
+        ? { parentExecutionId: options.executionId ?? execContext.executionId }
+        : {}),
       priorMessages,
       persistLocally: false,
+      writeChatLedger,
       ...(contexts ? { contexts } : {}),
       ...(fileAttachments ? { fileAttachments } : {}),
       ...(workspaceContext ? { workspaceContext } : {}),
@@ -361,14 +375,11 @@ export async function runLocalCopilotMothershipLifecycle(
 
       eventCount += 1
       if (event.type === 'tool_call_start') toolCallCount += 1
+      if (event.type === 'done' && event.cost) {
+        turnCost = event.cost
+      }
 
-      await dispatchLocalCopilotEvent(
-        event,
-        context,
-        execContext,
-        options,
-        toolArgsByCallId
-      )
+      await dispatchLocalCopilotEvent(event, context, execContext, options, toolArgsByCallId)
     }
 
     const status =
@@ -385,10 +396,15 @@ export async function runLocalCopilotMothershipLifecycle(
       eventCount,
       toolCallCount,
       errorCount: context.errors.length,
+      turnCost: turnCost?.total ?? 0,
+      writeChatLedger,
       durationMs: Date.now() - startedAt,
       memory: getLocalCopilotMemorySnapshot(),
     })
 
+    // Complete without cost so handleCompleteEvent does not also POST update-cost
+    // (Local interactive already wrote the chat ledger; block execute returns cost
+    // on the orchestrator result for the workflow logger only).
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.complete,
@@ -398,6 +414,10 @@ export async function runLocalCopilotMothershipLifecycle(
       execContext,
       options
     )
+
+    if (isMothershipBlockExecute && turnCost && turnCost.total > 0) {
+      context.cost = turnCost
+    }
   } catch (error) {
     const messageText = getErrorMessage(error, 'Arena Copilot failed')
     logger.error('Arena Copilot mothership lifecycle failed', {

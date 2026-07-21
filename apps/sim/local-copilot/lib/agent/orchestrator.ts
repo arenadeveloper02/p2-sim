@@ -1,9 +1,18 @@
 import { createLogger } from '@sim/logger'
-import { generateId } from '@sim/utils/id'
 import { getErrorMessage } from '@sim/utils/errors'
-import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
+import { generateId } from '@sim/utils/id'
+import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
+import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
+import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
+import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
+import { recordLocalCopilotTurnUsage } from '@/local-copilot/lib/billing/record-turn-usage'
+import { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
-import { buildLocalCopilotContext, contextToPromptJson } from '@/local-copilot/lib/context/build-context'
+import {
+  buildLocalCopilotContext,
+  contextToPromptJson,
+} from '@/local-copilot/lib/context/build-context'
 import {
   compactChatHistory,
   estimateChatMessagesTokens,
@@ -14,12 +23,6 @@ import {
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
 import {
-  stripLeakedToolMarkers,
-  synthesizeAssistantSummaryFromTools,
-  type ToolTurnRecord,
-} from '@/local-copilot/lib/synthesize-assistant-summary'
-import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
-import {
   appendMessage,
   createConversation,
   getMessages,
@@ -29,28 +32,32 @@ import {
 import { getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import {
-  buildLocalCopilotUserTurn,
-  getLocalCopilotUserTurnText,
-  type CopilotContextEntry,
-  type CopilotFileAttachmentRef,
-} from '@/local-copilot/lib/user-turn-content'
-import { MAX_TOOL_ITERATIONS } from '@/providers'
-import { LOCAL_COPILOT_TOOLS, resolveLocalCopilotTools } from '@/local-copilot/lib/tools/definitions'
-import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
+  stripLeakedToolMarkers,
+  synthesizeAssistantSummaryFromTools,
+  type ToolTurnRecord,
+} from '@/local-copilot/lib/synthesize-assistant-summary'
+import {
+  LOCAL_COPILOT_TOOLS,
+  resolveLocalCopilotTools,
+} from '@/local-copilot/lib/tools/definitions'
 import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
 import {
   buildFollowUpContinuationMessage,
   detectMandatoryFollowUp,
   formatToolResultForLlm,
+  type MandatoryFollowUp,
   resolveMandatoryFollowUps,
   sortToolCallsForExecution,
-  type MandatoryFollowUp,
 } from '@/local-copilot/lib/tools/format-tool-result'
-import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
-import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
-import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
-import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
+import {
+  buildLocalCopilotUserTurn,
+  type CopilotContextEntry,
+  type CopilotFileAttachmentRef,
+  getLocalCopilotUserTurnText,
+} from '@/local-copilot/lib/user-turn-content'
+import { MAX_TOOL_ITERATIONS } from '@/providers'
 
 const logger = createLogger('LocalCopilotAgent')
 
@@ -169,13 +176,22 @@ export interface RunAgentParams {
   chatId?: string
   /** Scopes workspace_file → edit_content intents (mothership user message id when available). */
   messageId?: string
+  /** Copilot run id for Usage joins (`usage_log.run_id`). */
+  runId?: string
   selectedBlockId?: string
   executionId?: string
+  /** Parent workflow execution when Local runs inside a mothership block. */
+  parentExecutionId?: string
   signal?: AbortSignal
   /** Prior turns from mothership chat (`copilot_messages`). */
   priorMessages?: ChatMessage[]
   /** When false, skip `local_copilot_*` persistence (mothership chat owns the transcript). */
   persistLocally?: boolean
+  /**
+   * When false, accumulate cost but do not write `usage_log` (workflow logger owns
+   * mothership-block cost via `result.cost`). Defaults to true for interactive chat.
+   */
+  writeChatLedger?: boolean
   /** Workspace permission for write tools (create_file, user_table create, knowledge_base add_file). */
   userPermission?: string
   /** Mothership request context entries (upload hints, resource tags, etc.). */
@@ -232,6 +248,8 @@ export async function* runLocalCopilotAgent(
   })
 
   const persistLocally = params.persistLocally !== false
+  const writeChatLedger = params.writeChatLedger !== false
+  const turnCost = new LocalTurnCostAccumulator()
 
   let conversationId = params.conversationId
   if (persistLocally) {
@@ -410,23 +428,14 @@ export async function* runLocalCopilotAgent(
     })
 
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
-      // Arena Copilot (local mothership) bills via Sim `models.ts` pricing under
-      // source `copilot`. Sim Cloud mothership uses Go pricing + `workspace-chat`
-      // / `mothership_block` via `/api/billing/update-cost` — keep these separate.
-      await recordModelUsage({
-        userId: params.userId,
-        workspaceId: params.workspaceId,
-        workflowId: params.workflowId,
-        ...(params.chatId ? { chatId: params.chatId } : {}),
+      // Arena Copilot (local mothership) accumulates model cost for one end-of-turn
+      // ledger write. Sim Cloud mothership uses Go pricing + `workspace-chat` /
+      // `mothership_block` via `/api/billing/update-cost` — keep these separate.
+      turnCost.addModelUsage({
         model: config.model,
         inputTokens: roundInputTokens,
         outputTokens: roundOutputTokens,
-        source: 'copilot',
-        sourceReference: params.chatId
-          ? `arena-copilot:${params.chatId}:round-${round}`
-          : conversationId
-            ? `arena-copilot:${conversationId}:round-${round}`
-            : `arena-copilot:${params.workspaceId}:round-${round}`,
+        provider: config.provider,
       })
     }
 
@@ -562,6 +571,11 @@ export async function* runLocalCopilotAgent(
         result: toolResult.result,
       })
 
+      turnCost.addToolBilling({
+        toolName: call.name,
+        billing: toolResult.billing,
+      })
+
       if (persistLocally && conversationId) {
         await recordToolCall({
           conversationId,
@@ -648,6 +662,8 @@ export async function* runLocalCopilotAgent(
     })
   }
 
+  const costSummary = turnCost.summarize()
+
   logger.info('Arena Copilot turn complete', {
     conversationId: conversationId ?? null,
     messageId: messageId || null,
@@ -659,10 +675,43 @@ export async function* runLocalCopilotAgent(
     toolCallCount: turnToolRecords.length,
     toolNames: turnToolRecords.map((record) => record.name),
     hasPatch: Boolean(proposedPatch),
+    turnCost: costSummary.total,
+    writeChatLedger,
     durationMs: Date.now() - startedAt,
     memory: getLocalCopilotMemorySnapshot(),
   })
-  yield { type: 'done', messageId: messageId || generateId() }
+
+  if (writeChatLedger) {
+    await recordLocalCopilotTurnUsage({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      chatId: params.chatId,
+      runId: params.runId,
+      conversationId: conversationId ?? undefined,
+      messageId: turnMessageId,
+      summary: costSummary,
+      executionActor: { actorUserId: params.userId, actorType: 'user' },
+      parentExecutionId: params.parentExecutionId,
+      rootExecutionId: params.parentExecutionId,
+      triggeringChatId: params.chatId,
+      triggeringRunId: params.runId,
+    })
+  }
+
+  yield {
+    type: 'done',
+    messageId: messageId || turnMessageId,
+    ...(costSummary.total > 0
+      ? {
+          cost: {
+            input: costSummary.input,
+            output: costSummary.output,
+            total: costSummary.total,
+          },
+        }
+      : {}),
+  }
 }
 
 export function formatSSE(event: LocalCopilotStreamEvent): string {

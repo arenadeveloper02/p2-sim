@@ -1,19 +1,20 @@
-import { createLogger } from '@sim/logger'
 import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNull } from 'drizzle-orm'
-import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
-import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
-import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
+import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
+import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
+import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
-  MOTHERSHIP_DELEGATED_TOOL_NAMES,
-  WORKFLOW_SCOPED_DELEGATED_TOOLS,
-  type MothershipDelegatedToolName,
+  buildMothershipDelegatedToolDefinitions,
   isMothershipDelegatedTool,
   isWorkflowScopedDelegatedTool,
-  buildMothershipDelegatedToolDefinitions,
+  MOTHERSHIP_DELEGATED_TOOL_NAMES,
+  type MothershipDelegatedToolName,
+  WORKFLOW_SCOPED_DELEGATED_TOOLS,
 } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
+import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 
 export {
   MOTHERSHIP_DELEGATED_TOOL_NAMES,
@@ -35,7 +36,9 @@ async function ensureCopilotToolRuntime(): Promise<Set<string>> {
     logger.info('Arena Copilot registering mothership tool handlers', {
       memory: getLocalCopilotMemorySnapshot(),
     })
-    const { ensureHandlersRegistered } = await import('@/lib/copilot/tool-executor/register-handlers')
+    const { ensureHandlersRegistered } = await import(
+      '@/lib/copilot/tool-executor/register-handlers'
+    )
     ensureHandlersRegistered()
     handlersRegistered = true
     logger.info('Arena Copilot mothership tool handlers registered', {
@@ -56,19 +59,14 @@ async function ensureCopilotToolRuntime(): Promise<Set<string>> {
   return copilotServerToolNames
 }
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function isUuid(value: string): boolean {
   return UUID_PATTERN.test(value)
 }
 
 function normalizeWorkflowName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[()]/g, ' ')
-    .replace(/\s+/g, ' ')
+  return name.trim().toLowerCase().replace(/[()]/g, ' ').replace(/\s+/g, ' ')
 }
 
 function matchWorkflowByName(
@@ -213,10 +211,7 @@ async function executeCopilotServerTool(
 const VARIATION_INTENT_PATTERN =
   /\b(?:variations?|versions?|options?|alternatives?|[1-5]|one|two|three|four|five)\b/i
 
-function enrichGenerateImagePrompt(
-  args: Record<string, unknown>,
-  lastUserMessage?: string
-): void {
+function enrichGenerateImagePrompt(args: Record<string, unknown>, lastUserMessage?: string): void {
   const prompt = args.prompt
   if (typeof prompt !== 'string' || !lastUserMessage?.trim()) return
   if (VARIATION_INTENT_PATTERN.test(prompt)) return
@@ -240,10 +235,7 @@ function enrichSearchOnlineArgs(args: Record<string, unknown>): void {
   }
 
   const query = typeof args.query === 'string' ? args.query.trim() : ''
-  if (
-    query &&
-    (typeof args.toolTitle !== 'string' || !args.toolTitle.trim())
-  ) {
+  if (query && (typeof args.toolTitle !== 'string' || !args.toolTitle.trim())) {
     args.toolTitle = query.length > 48 ? `${query.slice(0, 45)}...` : query
   }
 }
@@ -301,12 +293,12 @@ export async function executeMothershipDelegatedTool(
       const { adaptListIntegrationToolsForLocal } = await import(
         '@/local-copilot/lib/tools/adapt-list-integration-tools'
       )
-      return {
+      return withBillingFromResult({
         ...result,
         result: adaptListIntegrationToolsForLocal(result.result),
-      }
+      })
     }
-    return result
+    return withBillingFromResult(result)
   }
 
   // Remaining delegated tools are sim-routed (run_workflow, function_execute, …).
@@ -329,11 +321,17 @@ export async function executeMothershipDelegatedTool(
     })
   }
 
-  return {
+  return withBillingFromResult({
     toolName,
     success: result.success,
     result: result.output ?? (result.error ? { error: result.error } : {}),
     error: result.error,
     resources: result.resources,
-  }
+  })
+}
+
+function withBillingFromResult(result: ToolExecutionResult): ToolExecutionResult {
+  if (result.billing) return result
+  const billing = extractLocalToolBillingMetadata(result.result)
+  return billing ? { ...result, billing } : result
 }

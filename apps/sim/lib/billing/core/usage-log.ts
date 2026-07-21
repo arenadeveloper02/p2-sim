@@ -15,8 +15,8 @@ import {
 import { logUsageSkip } from '@/lib/billing/core/usage-skip-metrics'
 import { apportionCredits } from '@/lib/billing/credits/conversion'
 import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
-import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import type { DbClient, DbOrTx } from '@/lib/db/types'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 
 const logger = createLogger('UsageLog')
 
@@ -84,8 +84,7 @@ function scaleUsageEntry<T extends UsageEntry>(entry: T, multiplier: number): T 
   const effectiveMultiplier =
     entry.category === 'external' ? 1 : (entry.pricingSnapshot?.multiplier ?? multiplier)
   const billableCost =
-    entry.billableCost ??
-    (effectiveMultiplier === 1 ? rawCost : rawCost * effectiveMultiplier)
+    entry.billableCost ?? (effectiveMultiplier === 1 ? rawCost : rawCost * effectiveMultiplier)
 
   let metadata = entry.metadata
   if (
@@ -719,6 +718,88 @@ export interface RecordCumulativeUsageResult {
   total: number
 }
 
+interface CumulativeRowAttribution {
+  workspaceId: string | null
+  chatId: string | null
+  runId: string | null
+  actorUserId: string | null
+  actorType: string | null
+  parentExecutionId: string | null
+  rootExecutionId: string | null
+  triggeringChatId: string | null
+  triggeringRunId: string | null
+}
+
+/**
+ * Builds an UPDATE patch that fills only NULL attribution/lineage columns.
+ * Never overwrites existing values or touches cost fields.
+ */
+export function buildNullOnlyAttributionFill(
+  existing: CumulativeRowAttribution,
+  incoming: {
+    workspaceId?: string
+    chatId?: string
+    runId?: string
+    parentExecutionId?: string
+    rootExecutionId?: string
+    triggeringChatId?: string
+    triggeringRunId?: string
+    executionActor?: ExecutionActor
+  }
+): Partial<{
+  workspaceId: string
+  chatId: string
+  runId: string
+  actorUserId: string
+  actorType: string
+  parentExecutionId: string
+  rootExecutionId: string
+  triggeringChatId: string
+  triggeringRunId: string
+}> {
+  const patch: Partial<{
+    workspaceId: string
+    chatId: string
+    runId: string
+    actorUserId: string
+    actorType: string
+    parentExecutionId: string
+    rootExecutionId: string
+    triggeringChatId: string
+    triggeringRunId: string
+  }> = {}
+
+  if (!existing.workspaceId && incoming.workspaceId) {
+    patch.workspaceId = incoming.workspaceId
+  }
+  if (!existing.chatId && incoming.chatId) {
+    patch.chatId = incoming.chatId
+  }
+  if (!existing.runId && incoming.runId) {
+    patch.runId = incoming.runId
+  }
+  if (!existing.parentExecutionId && incoming.parentExecutionId) {
+    patch.parentExecutionId = incoming.parentExecutionId
+  }
+  if (!existing.rootExecutionId && (incoming.rootExecutionId ?? incoming.parentExecutionId)) {
+    patch.rootExecutionId = incoming.rootExecutionId ?? incoming.parentExecutionId
+  }
+  if (!existing.triggeringChatId && incoming.triggeringChatId) {
+    patch.triggeringChatId = incoming.triggeringChatId
+  }
+  if (!existing.triggeringRunId && incoming.triggeringRunId) {
+    patch.triggeringRunId = incoming.triggeringRunId
+  }
+  if (!existing.actorUserId && incoming.executionActor?.actorUserId) {
+    patch.actorUserId = incoming.executionActor.actorUserId
+  }
+  if (!existing.actorType && incoming.executionActor?.actorType) {
+    patch.actorType = incoming.executionActor.actorType
+  }
+
+  return patch
+}
+
 /**
  * Bounds the wait for the per-event-key advisory lock (and any row/index lock
  * waits inside the critical section). The Go mothership gives each UpdateCost
@@ -797,24 +878,48 @@ export async function recordCumulativeUsage(
           cost: usageLog.cost,
           rawCost: usageLog.rawCost,
           pricingSnapshot: usageLog.pricingSnapshot,
+          workspaceId: usageLog.workspaceId,
+          chatId: usageLog.chatId,
+          runId: usageLog.runId,
+          actorUserId: usageLog.actorUserId,
+          actorType: usageLog.actorType,
+          parentExecutionId: usageLog.parentExecutionId,
+          rootExecutionId: usageLog.rootExecutionId,
+          triggeringChatId: usageLog.triggeringChatId,
+          triggeringRunId: usageLog.triggeringRunId,
         })
         .from(usageLog)
         .where(eq(usageLog.eventKey, eventKey))
         .limit(1)
 
-      const recordedRaw = existing
-        ? Number.parseFloat(existing.rawCost ?? existing.cost)
-        : 0
+      const recordedRaw = existing ? Number.parseFloat(existing.rawCost ?? existing.cost) : 0
       const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recordedRaw, cost)
 
       if (!shouldBill) {
+        // Duplicate / non-increasing flush: never change cost, but self-heal
+        // missing attribution so a Cloud-first write without chatId can be
+        // repaired by a later Sim retry that carries chat/run/actor.
+        if (existing) {
+          const nullFill = buildNullOnlyAttributionFill(existing, {
+            workspaceId,
+            chatId,
+            runId,
+            parentExecutionId,
+            rootExecutionId,
+            triggeringChatId,
+            triggeringRunId,
+            executionActor,
+          })
+          if (Object.keys(nullFill).length > 0) {
+            await tx.update(usageLog).set(nullFill).where(eq(usageLog.id, existing.id))
+          }
+        }
         return { billed: false, delta: 0, total: recordedRaw }
       }
 
       const existingSnapshot = existing?.pricingSnapshot as UsagePricingSnapshot | null
       const lockedMultiplier = existingSnapshot?.multiplier ?? envMultiplier
-      const billableTotal =
-        lockedMultiplier === 1 ? newTotal : newTotal * lockedMultiplier
+      const billableTotal = lockedMultiplier === 1 ? newTotal : newTotal * lockedMultiplier
 
       const firstFlushSnapshot =
         pricingSnapshot ?? buildModelPricingSnapshot(canonicalModel, lockedMultiplier)
@@ -825,6 +930,14 @@ export async function recordCumulativeUsage(
         ...(runId ? { runId } : {}),
         ...(provider ? { provider } : {}),
         ...(vendor ? { vendor } : {}),
+        ...(executionActor?.actorUserId ? { actorUserId: executionActor.actorUserId } : {}),
+        ...(executionActor?.actorType ? { actorType: executionActor.actorType } : {}),
+        ...(parentExecutionId ? { parentExecutionId } : {}),
+        ...(rootExecutionId || parentExecutionId
+          ? { rootExecutionId: rootExecutionId ?? parentExecutionId }
+          : {}),
+        ...(triggeringChatId ? { triggeringChatId } : {}),
+        ...(triggeringRunId ? { triggeringRunId } : {}),
       }
 
       if (existing) {

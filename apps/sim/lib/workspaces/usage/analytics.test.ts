@@ -28,10 +28,7 @@ function emptyTail(count: number) {
   return Array.from({ length: count }, () => [])
 }
 
-function buildAnalyticsQueue(
-  overrides: Record<number, unknown[]>,
-  count = ANALYTICS_QUERY_COUNT
-) {
+function buildAnalyticsQueue(overrides: Record<number, unknown[]>, count = ANALYTICS_QUERY_COUNT) {
   const results = emptyTail(count)
   for (const [index, value] of Object.entries(overrides)) {
     results[Number(index)] = value
@@ -191,6 +188,62 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     expect(analytics.workflow.executions.totalLedgerCost).toBe(6)
     expect(analytics.dataHealth.limitedAttribution).toBe(false)
     expect(analytics.copilot.triggeredWorkflows.executionCount).toBe(0)
+  })
+
+  it('surfaces mothership charge-type cost with 94 chats / 282 runs but zero per-chat credits when ledger chat_id is absent', async () => {
+    wireTerminalQueue(
+      buildAnalyticsQueue({
+        0: [
+          {
+            source: 'workspace-chat',
+            billableCost: '140.17',
+            rawCost: '140.17',
+            count: 160,
+            ...EMPTY_USAGE,
+            invocationCount: 160,
+          },
+        ],
+        1: [{ chargeType: 'mothership', billableCost: '140.17', rawCost: '140.17', count: 160 }],
+        2: [{ ...EMPTY_USAGE, invocationCount: 160 }],
+        3: [
+          {
+            missingChatIdCost: '140.17',
+            missingChatIdCount: 160,
+            missingChatIdRawCost: '140.17',
+            missingExecutionIdCost: '0',
+            missingExecutionIdCount: 0,
+            missingExecutionIdRawCost: '0',
+          },
+        ],
+        4: [{ total: 0, withProjectedCost: 0, totalProjectedCost: '0' }],
+        5: [{ totalLedgerCost: '0' }],
+        8: [{ total: 94, withLedgerCost: 0 }],
+        9: [{ total: 282 }],
+        12: [],
+        25: [{ totalRows: 160, nullWorkspaceRows: 0, missingActorRows: 0 }],
+        26: [{ executionsWithCostNoLedger: 0, costTotalDriftCount: 0 }],
+      })
+    )
+
+    const analytics = await getWorkspaceUsageAnalytics({
+      workspaceId: WORKSPACE_ID,
+      period: '30d',
+    })
+
+    expect(analytics.byChargeType).toEqual([
+      expect.objectContaining({ chargeType: 'mothership', billableCost: 140.17, count: 160 }),
+    ])
+    expect(analytics.copilot.chats.total).toBe(94)
+    expect(analytics.copilot.chats.withLedgerCost).toBe(0)
+    expect(analytics.copilot.runs.total).toBe(282)
+    expect(analytics.copilot.byChat).toEqual([])
+    expect(analytics.attribution.missingChatId).toEqual({
+      billableCost: 140.17,
+      rawCost: 140.17,
+      count: 160,
+    })
+    expect(analytics.summary.chatCount).toBe(94)
+    expect(analytics.summary.billableCost).toBeCloseTo(140.17, 8)
   })
 
   it('surfaces copilot transcripts that lack ledger rows and unattributed mothership cost', async () => {

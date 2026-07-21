@@ -1,5 +1,5 @@
-import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { BlockState, Variable, WorkflowState } from '@sim/workflow-types/workflow'
+import type { MothershipResource } from '@/lib/copilot/resources/types'
 
 export interface LocalCopilotE2bCapabilities {
   enabled: boolean
@@ -172,7 +172,7 @@ export type LocalCopilotStreamEvent =
   | { type: 'patch_proposed'; patch: WorkflowPatch; patchId: string }
   | { type: 'recommendations'; items: string[] }
   | { type: 'error'; message: string }
-  | { type: 'done'; messageId: string }
+  | { type: 'done'; messageId: string; cost?: { input: number; output: number; total: number } }
 
 export interface LocalCopilotMessageContent {
   text: string
