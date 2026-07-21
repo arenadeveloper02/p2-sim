@@ -131,7 +131,12 @@ import {
 } from '@/lib/billing/core/historical-workflow-reconciliation'
 import { calculateCostSummary } from '@/lib/logs/execution/logging-factory'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
-import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
+import {
+  FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
+  FALAI_IMAGE_FALLBACK_PROVIDER_COST_DOLLARS,
+  FALAI_VIDEO_FALLBACK_PROVIDER_COST_DOLLARS,
+} from '@/lib/tools/falai-pricing'
+import { EXA_FALLBACK_COST_USD } from '@/tools/exa/hosting'
 
 function baseEvidence(overrides: Partial<ExecutionEvidence> = {}): ExecutionEvidence {
   const trace: TraceEvidenceSummary = {
@@ -180,6 +185,7 @@ describe('isReconcilePricedToolId', () => {
     expect(isReconcilePricedToolId('image_generate')).toBe(true)
     expect(isReconcilePricedToolId('gpt-image-1.5')).toBe(true)
     expect(isReconcilePricedToolId('flux-2-pro')).toBe(true)
+    expect(isReconcilePricedToolId('video_falai')).toBe(true)
     expect(isReconcilePricedToolId('unknown_tool')).toBe(false)
   })
 })
@@ -1066,6 +1072,263 @@ describe('enrichTraceSpansForReprice', () => {
     expect(enriched?.[0]?.cost?.toolCost).toBeCloseTo(0.01, 8)
     expect(enriched?.[0]?.cost?.total ?? 0).toBeGreaterThan(0.01)
   })
+
+  it('catalog-reprices successful agent-embedded image_generate without __imageBilling', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'agent',
+        model: 'gpt-5.5',
+        output: {
+          cost: { input: 0.08, output: 0.02, total: 0.1 },
+        },
+        children: [
+          {
+            type: 'tool',
+            name: 'image_generate',
+            status: 'success',
+            input: {
+              provider: 'openai',
+              model: 'gpt-image-2',
+              quality: 'auto',
+              size: 'auto',
+              numImages: 1,
+            },
+            output: {
+              imageUrl: 'https://example.com/image.png',
+              model: 'gpt-image-2',
+              metadata: {
+                provider: 'openai',
+                model: 'gpt-image-2',
+                count: 1,
+              },
+            },
+          },
+        ],
+      },
+    ])
+
+    expect(enriched?.[0]?.cost?.toolCost).toBeCloseTo(0.053, 8)
+    expect(enriched?.[0]?.cost?.total).toBeCloseTo(0.153, 8)
+    expect(enriched?.[0]?.children?.[0]?.output?.cost).toEqual(
+      expect.objectContaining({ total: 0.053 })
+    )
+  })
+
+  it('does not catalog-reprice failed agent-embedded image_generate spans', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'agent',
+        model: 'gpt-5.5',
+        output: {
+          cost: { input: 0.08, output: 0.02, total: 0.1 },
+        },
+        children: [
+          {
+            type: 'tool',
+            name: 'image_generate',
+            status: 'success',
+            input: {
+              provider: 'openai',
+              model: 'gpt-image-2',
+              quality: 'auto',
+              numImages: 1,
+            },
+            output: {
+              error: true,
+              message: 'No image data found in response',
+              tool: 'image_generate',
+            },
+          },
+        ],
+      },
+    ])
+
+    expect(enriched?.[0]?.cost?.toolCost ?? 0).toBe(0)
+    expect(enriched?.[0]?.cost?.total).toBeCloseTo(0.1, 8)
+  })
+
+  it('catalog-reprices stripped Exa standalone and under-agent spans to fallback', () => {
+    const standalone = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'exa_search',
+        output: { results: [{ url: 'https://example.com' }] },
+      },
+    ])
+    expect(standalone?.[0]?.cost?.total).toBeCloseTo(EXA_FALLBACK_COST_USD, 8)
+
+    const underAgent = enrichTraceSpansForReprice([
+      {
+        type: 'agent',
+        model: 'gpt-4o',
+        output: { cost: { input: 0.01, output: 0.01, total: 0.02 } },
+        children: [
+          {
+            type: 'tool',
+            name: 'exa_search',
+            output: { results: [{ url: 'https://example.com' }] },
+          },
+        ],
+      },
+    ])
+    expect(underAgent?.[0]?.cost?.toolCost).toBeCloseTo(EXA_FALLBACK_COST_USD, 8)
+    expect(underAgent?.[0]?.children?.[0]?.output?.cost).toEqual(
+      expect.objectContaining({ total: EXA_FALLBACK_COST_USD })
+    )
+  })
+
+  it('catalog-reprices Serper from searchResults + num credits', () => {
+    const oneCredit = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'serper_search',
+        input: { num: 10 },
+        output: { searchResults: [{ title: 'a' }] },
+      },
+    ])
+    expect(oneCredit?.[0]?.cost?.total).toBeCloseTo(0.001, 8)
+
+    const twoCredits = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'serper_search',
+        input: { num: 20 },
+        output: { searchResults: [{ title: 'a' }] },
+      },
+    ])
+    expect(twoCredits?.[0]?.cost?.total).toBeCloseTo(0.002, 8)
+
+    const missingResults = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'serper_search',
+        input: { num: 10 },
+        output: { organic: [] },
+      },
+    ])
+    expect(missingResults?.[0]?.cost?.total ?? 0).toBe(0)
+  })
+
+  it('catalog-reprices successful Semrush to placeholder rate', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'semrush_query',
+        output: { data: { result: 'ok' } },
+      },
+    ])
+    expect(enriched?.[0]?.cost?.total).toBeCloseTo(0.01, 8)
+  })
+
+  it('catalog-reprices Browser Use from steps or API total', () => {
+    const fromApi = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'browser_use_run_task',
+        output: { __totalCostUsd: 0.042 },
+      },
+    ])
+    expect(fromApi?.[0]?.cost?.total).toBeCloseTo(0.042, 8)
+
+    const fromSteps = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'browser_use_run_task',
+        output: { steps: [{}, {}, {}] },
+      },
+    ])
+    // $0.01 init + $0.006 × 3 steps
+    expect(fromSteps?.[0]?.cost?.total).toBeCloseTo(0.028, 8)
+  })
+
+  it('does not invent Firecrawl cost without credits', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'firecrawl_scrape',
+        output: { markdown: '# hello' },
+      },
+    ])
+    expect(enriched?.[0]?.cost?.total ?? 0).toBe(0)
+  })
+
+  it('rebuilds LLM-on-tool cost from retained llmUsage', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'development_generate_app',
+        output: {
+          llmUsage: { 'gpt-4o': { inputTokens: 1000, outputTokens: 500 } },
+        },
+      },
+    ])
+    expect(enriched?.[0]?.cost?.total).toBeGreaterThan(0)
+  })
+
+  it('prefers video_falai __falaiCostDollars and floors stripped successful video', () => {
+    const withMeta = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'video_falai',
+        output: {
+          videoUrl: 'https://example.com/v.mp4',
+          __falaiCostDollars: 0.2,
+        },
+      },
+    ])
+    expect(withMeta?.[0]?.cost?.total).toBeCloseTo(0.2 * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER, 8)
+
+    const stripped = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'video_falai',
+        output: { videoUrl: 'https://example.com/v.mp4' },
+      },
+    ])
+    expect(stripped?.[0]?.cost?.total).toBeCloseTo(
+      FALAI_VIDEO_FALLBACK_PROVIDER_COST_DOLLARS * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
+      8
+    )
+
+    const failed = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'video_falai',
+        output: { error: true, message: 'generation failed', videoUrl: '' },
+      },
+    ])
+    expect(failed?.[0]?.cost?.total ?? 0).toBe(0)
+  })
+
+  it('floors Fal image_generate when billing events were stripped', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'image_generate',
+        input: { provider: 'falai', model: 'flux-2-pro' },
+        output: {
+          imageUrl: 'https://example.com/image.png',
+          provider: 'falai',
+          model: 'flux-2-pro',
+        },
+      },
+    ])
+    expect(enriched?.[0]?.cost?.total).toBeCloseTo(
+      FALAI_IMAGE_FALLBACK_PROVIDER_COST_DOLLARS * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
+      8
+    )
+  })
+
+  it('does not catalog-charge failed hosted tools', () => {
+    const enriched = enrichTraceSpansForReprice([
+      {
+        type: 'tool',
+        name: 'exa_search',
+        output: { error: true, message: 'timeout' },
+      },
+    ])
+    expect(enriched?.[0]?.cost?.total ?? 0).toBe(0)
+  })
 })
 
 describe('computeTargetLedgerLines', () => {
@@ -1254,6 +1517,84 @@ describe('computeTargetLedgerLines', () => {
     expect(external?.target).toBeCloseTo(2.5, 8)
     expect(external?.evidenceSource).toBe('cost_block_snapshot')
     expect(mockCostBlockExecute).toHaveBeenCalled()
+  })
+
+  it('includes snapshot cost block and stripped Exa tool in the same target set', async () => {
+    mockCostBlockExecute.mockResolvedValue({
+      recorded: true,
+      cost: { total: 2.5 },
+      raw: { vendor: 'Twilio', label: 'SMS Cost' },
+      units: 5,
+    })
+
+    const snapshotState = {
+      blocks: {
+        cost1: {
+          id: 'cost1',
+          name: 'SMS Cost',
+          type: 'cost',
+          position: { x: 0, y: 0 },
+          subBlocks: {
+            mode: { id: 'mode', type: 'short-input', value: 'fixed' },
+            amount: { id: 'amount', type: 'short-input', value: 2.5 },
+          },
+          outputs: {},
+          enabled: true,
+          horizontalHandles: true,
+          advancedMode: false,
+          height: 0,
+        },
+      },
+      edges: [],
+      loops: {},
+      parallels: {},
+    }
+
+    const traceSpans = [
+      {
+        type: 'cost',
+        blockId: 'cost1',
+        name: 'SMS Cost',
+        status: 'success' as const,
+        output: { raw: { vendor: 'Twilio' } },
+      },
+      {
+        type: 'tool',
+        name: 'exa_search',
+        output: { results: [{ url: 'https://example.com' }] },
+      },
+    ]
+
+    const { targets } = await computeTargetLedgerLines(
+      baseEvidence({
+        workflowId: 'wf-1',
+        snapshotHasCostBlocks: true,
+        snapshotState,
+        trace: {
+          hasTraceSpans: true,
+          traceSpanCount: 2,
+          traceStoreExternalized: false,
+          traceStoreMaterialized: true,
+          traceStoreExpired: false,
+          spansWithInlineCost: 0,
+          spansWithTokensNoCost: 0,
+          spansWithHostedToolMetadata: 0,
+          spansWithEmbeddedToolCost: 0,
+          spansWithCostBlockType: 1,
+          modelsInSpans: [],
+          hostedToolSignals: [],
+        },
+        traceSpans,
+      })
+    )
+
+    const external = targets.find((line) => line.category === 'external')
+    const exa = targets.find(
+      (line) => line.category === 'tool' && line.description === 'exa_search'
+    )
+    expect(external?.target).toBeCloseTo(2.5, 8)
+    expect(external?.evidenceSource).toBe('cost_block_snapshot')
+    expect(exa?.target).toBeCloseTo(EXA_FALLBACK_COST_USD, 8)
   })
 
   it('reports unrecoverable evidence when trace store is expired and no snapshot cost blocks exist', async () => {

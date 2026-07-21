@@ -21,6 +21,11 @@ import {
   resolveExternalDescription,
 } from '@/lib/billing/core/cost-block-reprice'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/plan'
+import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
+import {
+  buildToolLlmCostFields,
+  buildToolLlmCostFromModelUsage,
+} from '@/lib/billing/core/tool-llm-cost'
 import {
   normalizeUsageModelId,
   normalizeUsageToolId,
@@ -42,9 +47,11 @@ import {
 } from '@/lib/core/errors/retryable-infrastructure'
 import { mapWithConcurrency } from '@/lib/core/utils/concurrency'
 import { isLargeValueRef } from '@/lib/execution/payloads/large-value-ref'
+import { reconcileImageProviderAndModel } from '@/lib/image-generation/block-model-config'
 import {
   extractEmbeddedToolCostsFromSpan,
   getSpanToolOutputCost,
+  IMAGE_AGGREGATE_TOOL_IDS,
   isImageGenerationBillingKey,
   normalizeEmbeddedToolCosts,
 } from '@/lib/logs/embedded-tool-costs'
@@ -54,10 +61,23 @@ import {
 } from '@/lib/logs/execution/logging-factory'
 import { materializeExecutionData, TRACE_STORE_REF_KEY } from '@/lib/logs/execution/trace-store'
 import type { WorkflowState } from '@/lib/logs/types'
-import type { SerializedBlock, SerializedConnection, SerializedWorkflow } from '@/serializer/types'
-import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
+import {
+  FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
+  FALAI_IMAGE_FALLBACK_PROVIDER_COST_DOLLARS,
+  FALAI_VIDEO_FALLBACK_PROVIDER_COST_DOLLARS,
+} from '@/lib/tools/falai-pricing'
 import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
 import { resolveBlockModelCost, shouldBillModelUsage } from '@/providers/utils'
+import type { SerializedBlock, SerializedConnection, SerializedWorkflow } from '@/serializer/types'
+import {
+  browserUseHosting,
+  readBrowserUseTotalCostUsd,
+} from '@/tools/browser_use/hosting'
+import { exaHosting } from '@/tools/exa/hosting'
+import { semrushHosting } from '@/tools/semrush/hosting'
+import { searchTool as serperSearchTool } from '@/tools/serper/search'
+import type { ToolHostingPricing } from '@/tools/types'
+import { falaiVideoTool } from '@/tools/video/falai'
 import { and, asc, desc, eq, gte, inArray, lt, lte, or, sql } from 'drizzle-orm'
 
 const logger = createLogger('HistoricalWorkflowReconciliation')
@@ -89,6 +109,7 @@ export const RECONCILE_PRICED_TOOL_ALLOWLIST = [
   'image_generate',
   'openai_image',
   'google_nano_banana',
+  'video_falai',
   // LLM-on-tool-output
   'google_ads_v1_query',
   'google_ads_query',
@@ -98,6 +119,17 @@ export const RECONCILE_PRICED_TOOL_ALLOWLIST = [
   'figma_to_html_ai',
   'figma_create',
 ] as const
+
+/** Allowlisted tool ids that bill via LLM tokens on tool output (not vendor credits). */
+const LLM_ON_TOOL_ALLOWLIST = new Set([
+  'google_ads_v1_query',
+  'google_ads_query',
+  'facebook_ads_query',
+  'development_generate_app',
+  'development_edit_app',
+  'figma_to_html_ai',
+  'figma_create',
+])
 
 export type ReconcilePricedToolId = (typeof RECONCILE_PRICED_TOOL_ALLOWLIST)[number]
 
@@ -397,6 +429,7 @@ interface TraceSpanLike {
   name?: string
   toolId?: string
   model?: string
+  status?: string
   cost?: { input?: number; output?: number; total?: number; toolCost?: number }
   tokens?: {
     input?: number
@@ -405,6 +438,7 @@ interface TraceSpanLike {
     prompt?: number
     completion?: number
   }
+  input?: Record<string, unknown>
   output?: Record<string, unknown>
   children?: TraceSpanLike[]
 }
@@ -1587,6 +1621,20 @@ function computeStandaloneToolCost(span: TraceSpanLike): {
     }
   }
 
+  const browserUseReported = readBrowserUseTotalCostUsd(output)
+  if (
+    browserUseReported != null &&
+    browserUseReported > 0 &&
+    (resolveSpanToolId(span) === 'browser_use_run_task' ||
+      typeof output.__totalCostUsd === 'number')
+  ) {
+    return {
+      cost: browserUseReported,
+      reason: 'browser_use_cost',
+      evidenceSource: 'browser_use_cost',
+    }
+  }
+
   if (typeof output.__falaiCostDollars === 'number' && output.__falaiCostDollars > 0) {
     return {
       cost: output.__falaiCostDollars * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
@@ -1597,15 +1645,30 @@ function computeStandaloneToolCost(span: TraceSpanLike): {
 
   if (output.__imageBilling) {
     try {
-      const { cost } = calculateHostedImageToolCost({}, output)
+      const { cost } = calculateHostedImageToolCost(span.input ?? {}, output)
       return {
         cost,
         reason: 'image_billing',
         evidenceSource: 'image_billing',
       }
     } catch {
-      return null
+      // Fall through to catalog reprice from input / output.metadata.
     }
+  }
+
+  const imageCatalog = computeImageCatalogToolCost(span)
+  if (imageCatalog) {
+    return imageCatalog
+  }
+
+  const hostedCatalog = computeHostedCatalogToolCost(span)
+  if (hostedCatalog) {
+    return hostedCatalog
+  }
+
+  const llmOnTool = computeLlmOnToolCost(span)
+  if (llmOnTool) {
+    return llmOnTool
   }
 
   const outputCost = getSpanToolOutputCost(span)
@@ -1620,6 +1683,339 @@ function computeStandaloneToolCost(span: TraceSpanLike): {
   return null
 }
 
+/** Resolves the tool id used for allowlist / catalog routing. */
+function resolveSpanToolId(span: TraceSpanLike): string {
+  const raw = span.toolId?.trim() || span.name?.trim() || ''
+  return normalizeUsageToolId(raw)
+}
+
+/** True when a tool span failed and must not receive catalog fallback charges. */
+function isFailedToolSpan(span: TraceSpanLike): boolean {
+  if (span.status === 'error') return true
+  const output = span.output
+  if (!output) return true
+  if (output.error === true) return true
+  if (typeof output.error === 'string' && output.error.trim().length > 0) return true
+  return false
+}
+
+/**
+ * Invokes live hosting `getCost` so reconcile rates stay shared with runtime billing.
+ * Returns null when pricing throws or yields a non-positive cost.
+ */
+function extractHostingGetCost(
+  pricing: ToolHostingPricing,
+  params: Record<string, unknown>,
+  output: Record<string, unknown>
+): number | null {
+  if (pricing.type === 'per_request') {
+    return pricing.cost > 0 ? pricing.cost : null
+  }
+  if (pricing.type !== 'custom') return null
+
+  try {
+    const result = pricing.getCost(params, output)
+    const cost = typeof result === 'number' ? result : result.cost
+    if (typeof cost === 'number' && Number.isFinite(cost) && cost > 0) {
+      return cost
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** True when an image span should use the Fal.ai image floor (Fal model, no billing event). */
+function isFalImageToolSpan(span: TraceSpanLike): boolean {
+  const input = span.input ?? {}
+  const output = span.output ?? {}
+  const metadata =
+    output.metadata && typeof output.metadata === 'object' && !Array.isArray(output.metadata)
+      ? (output.metadata as Record<string, unknown>)
+      : {}
+
+  if (input.provider === 'falai' || output.provider === 'falai' || metadata.provider === 'falai') {
+    return true
+  }
+
+  const modelCandidate =
+    (typeof input.model === 'string' && input.model) ||
+    (typeof output.model === 'string' && output.model) ||
+    (typeof metadata.model === 'string' && metadata.model) ||
+    undefined
+  const providerCandidate =
+    (typeof input.provider === 'string' && input.provider) ||
+    (typeof output.provider === 'string' && output.provider) ||
+    (typeof metadata.provider === 'string' && metadata.provider) ||
+    undefined
+
+  const reconciled = reconcileImageProviderAndModel({
+    provider: providerCandidate,
+    model: modelCandidate,
+  })
+  return reconciled.provider === 'falai'
+}
+
+/** True when a video tool span produced a billable video (not a failed generate). */
+function isSuccessfulVideoToolSpan(span: TraceSpanLike): boolean {
+  if (isFailedToolSpan(span) || !span.output) return false
+  const output = span.output
+  if (typeof output.videoUrl === 'string' && output.videoUrl.length > 0) return true
+  if (typeof output.video === 'string' && output.video.length > 0) return true
+  return true
+}
+
+/**
+ * Catalog-fallback pricing for allowlisted hosted tools when vendor `__*` fields
+ * were stripped. Reuses live hosting `getCost` / Fal floors — does not invent
+ * Firecrawl credits.
+ */
+function computeHostedCatalogToolCost(span: TraceSpanLike): {
+  cost: number
+  reason: string
+  evidenceSource: string
+} | null {
+  const toolId = resolveSpanToolId(span)
+  if (!toolId || !span.output || isFailedToolSpan(span)) return null
+
+  const params = span.input ?? {}
+  const output = span.output
+
+  if (toolId.startsWith('exa_')) {
+    const cost = extractHostingGetCost(exaHosting.pricing, params, output)
+    if (cost != null) {
+      return {
+        cost,
+        reason: 'hosted_catalog_reprice',
+        evidenceSource: 'hosted_catalog_reprice',
+      }
+    }
+  }
+
+  if (toolId === 'serper_search' && serperSearchTool?.hosting) {
+    const cost = extractHostingGetCost(serperSearchTool.hosting.pricing, params, output)
+    if (cost != null) {
+      return {
+        cost,
+        reason: 'hosted_catalog_reprice',
+        evidenceSource: 'hosted_catalog_reprice',
+      }
+    }
+  }
+
+  if (toolId.startsWith('semrush_')) {
+    const cost = extractHostingGetCost(semrushHosting.pricing, params, output)
+    if (cost != null) {
+      return {
+        cost,
+        reason: 'hosted_catalog_reprice',
+        evidenceSource: 'hosted_catalog_reprice',
+      }
+    }
+  }
+
+  if (toolId === 'browser_use_run_task') {
+    const cost = extractHostingGetCost(browserUseHosting.pricing, params, output)
+    if (cost != null) {
+      return {
+        cost,
+        reason: 'hosted_catalog_reprice',
+        evidenceSource: 'hosted_catalog_reprice',
+      }
+    }
+  }
+
+  if (toolId === 'video_falai' && isSuccessfulVideoToolSpan(span) && falaiVideoTool?.hosting) {
+    const fromGetCost = extractHostingGetCost(falaiVideoTool.hosting.pricing, params, output)
+    if (fromGetCost != null) {
+      return {
+        cost: fromGetCost,
+        reason: 'falai_cost_dollars',
+        evidenceSource: 'falai_cost_dollars',
+      }
+    }
+    return {
+      cost: FALAI_VIDEO_FALLBACK_PROVIDER_COST_DOLLARS * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
+      reason: 'falai_video_catalog_reprice',
+      evidenceSource: 'falai_video_catalog_reprice',
+    }
+  }
+
+  if (
+    (IMAGE_AGGREGATE_TOOL_IDS.has(toolId) || isImageGenerationBillingKey(toolId)) &&
+    isSuccessfulImageToolSpan(span) &&
+    isFalImageToolSpan(span)
+  ) {
+    return {
+      cost: FALAI_IMAGE_FALLBACK_PROVIDER_COST_DOLLARS * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
+      reason: 'falai_image_catalog_reprice',
+      evidenceSource: 'falai_image_catalog_reprice',
+    }
+  }
+
+  return null
+}
+
+/** True when the tool id is an allowlisted LLM-on-tool block. */
+function isLlmOnToolId(toolId: string): boolean {
+  if (LLM_ON_TOOL_ALLOWLIST.has(toolId)) return true
+  if (toolId.startsWith('google_ads_')) return true
+  if (toolId.startsWith('development_')) return true
+  return false
+}
+
+/**
+ * Rebuilds LLM-on-tool cost from retained `llmUsage` or tokens+model when
+ * `output.cost` was stripped before persist.
+ */
+function computeLlmOnToolCost(span: TraceSpanLike): {
+  cost: number
+  reason: string
+  evidenceSource: string
+} | null {
+  const toolId = resolveSpanToolId(span)
+  if (!toolId || !isLlmOnToolId(toolId) || !span.output || isFailedToolSpan(span)) {
+    return null
+  }
+
+  const output = span.output
+
+  if (output.llmUsage && typeof output.llmUsage === 'object' && !Array.isArray(output.llmUsage)) {
+    const fields = buildToolLlmCostFromModelUsage(output.llmUsage as ModelUsageByModel)
+    if (fields && fields.cost.total > 0) {
+      return {
+        cost: fields.cost.total,
+        reason: 'llm_on_tool_rebuild',
+        evidenceSource: 'llm_on_tool_rebuild',
+      }
+    }
+  }
+
+  const metadata =
+    output.metadata && typeof output.metadata === 'object' && !Array.isArray(output.metadata)
+      ? (output.metadata as Record<string, unknown>)
+      : null
+
+  const model =
+    (typeof output.model === 'string' && output.model.trim()) ||
+    (typeof span.model === 'string' && span.model.trim()) ||
+    (typeof metadata?.aiModel === 'string' && metadata.aiModel.trim()) ||
+    ''
+
+  let inputTokens = 0
+  let outputTokens = 0
+  const tokens = output.tokens
+  if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
+    const record = tokens as Record<string, unknown>
+    inputTokens = typeof record.input === 'number' ? record.input : 0
+    outputTokens = typeof record.output === 'number' ? record.output : 0
+  } else if (metadata) {
+    inputTokens = typeof metadata.inputTokens === 'number' ? metadata.inputTokens : 0
+    outputTokens = typeof metadata.outputTokens === 'number' ? metadata.outputTokens : 0
+  }
+
+  const fields = buildToolLlmCostFields(model, inputTokens, outputTokens)
+  if (!fields || !(fields.cost.total > 0)) return null
+
+  return {
+    cost: fields.cost.total,
+    reason: 'llm_on_tool_rebuild',
+    evidenceSource: 'llm_on_tool_rebuild',
+  }
+}
+
+/**
+ * True when an image tool span produced a billable image (not a failed generate).
+ */
+function isSuccessfulImageToolSpan(span: TraceSpanLike): boolean {
+  const output = span.output
+  if (!output) return false
+  if (output.error === true) return false
+  if (typeof output.message === 'string' && /no image data/i.test(output.message)) {
+    return false
+  }
+  if (output.__imageBilling && typeof output.__imageBilling === 'object') return true
+  if (typeof output.imageUrl === 'string' && output.imageUrl.length > 0) return true
+  if (typeof output.image === 'string' && output.image.length > 0) return true
+  if (Array.isArray(output.images) && output.images.length > 0) return true
+  return false
+}
+
+/**
+ * Prices a successful cost-stripped image tool from catalog dimensions on
+ * `input` / `output.metadata` when `__imageBilling` was not retained.
+ */
+function computeImageCatalogToolCost(span: TraceSpanLike): {
+  cost: number
+  reason: string
+  evidenceSource: string
+} | null {
+  const toolName = span.name?.trim() || span.toolId?.trim() || ''
+  if (
+    !toolName ||
+    (!IMAGE_AGGREGATE_TOOL_IDS.has(toolName) && !isImageGenerationBillingKey(toolName))
+  ) {
+    return null
+  }
+  if (!span.output || !isSuccessfulImageToolSpan(span)) return null
+
+  try {
+    const { cost } = calculateHostedImageToolCost(span.input ?? {}, span.output)
+    if (!(cost > 0)) return null
+    return {
+      cost,
+      reason: 'image_catalog_reprice',
+      evidenceSource: 'image_catalog_reprice',
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Promotes retained `output.cost` onto `span.cost` for agent/model spans so
+ * calculateCostSummary can see model totals that were never copied to the span
+ * root. Tool spans are left alone — hosted-tool reprice prefers `__costDollars`
+ * / credits / `__imageBilling` over a possibly-stale `output.cost`.
+ */
+function promoteOutputCostToSpan(span: TraceSpanLike): void {
+  if (span.type === 'tool') return
+  if (hasInlineSpanCost(span)) return
+  const outputCost = span.output?.cost
+  if (!outputCost || typeof outputCost !== 'object' || Array.isArray(outputCost)) return
+  const record = outputCost as Record<string, unknown>
+  const total = record.total
+  if (typeof total !== 'number' || !Number.isFinite(total) || total <= 0) return
+
+  span.cost = {
+    input: typeof record.input === 'number' ? record.input : 0,
+    output: typeof record.output === 'number' ? record.output : 0,
+    total,
+    ...(typeof record.toolCost === 'number' && record.toolCost > 0
+      ? { toolCost: record.toolCost }
+      : {}),
+  }
+}
+
+/**
+ * Seeds `output.cost.total` on a cloned tool span so
+ * {@link extractEmbeddedToolCostsFromSpan} can fold it into the parent agent.
+ */
+function seedToolOutputCost(span: TraceSpanLike, cost: number): void {
+  if (!(cost > 0)) return
+  const existing =
+    span.output?.cost && typeof span.output.cost === 'object' && !Array.isArray(span.output.cost)
+      ? (span.output.cost as Record<string, unknown>)
+      : {}
+  span.output = {
+    ...(span.output ?? {}),
+    cost: {
+      ...existing,
+      total: cost,
+    },
+  }
+}
+
 /**
  * Enriches cost-stripped trace spans with repriced model, tool, and embedded-tool costs.
  */
@@ -1632,6 +2028,11 @@ export function enrichTraceSpansForReprice(
   const visit = (span: TraceSpanLike, underAgent: boolean) => {
     const isAgent = span.type === 'agent' || Boolean(span.model)
     const nextUnderAgent = underAgent || isAgent
+
+    // Enrich children first so agent-embedded tool costs exist before fold-up.
+    span.children?.forEach((child) => visit(child, nextUnderAgent))
+
+    promoteOutputCostToSpan(span)
 
     if (!hasInlineSpanCost(span)) {
       if (span.model && hasTokenCounts(span) && shouldBillModelUsage(span.model)) {
@@ -1654,6 +2055,13 @@ export function enrichTraceSpansForReprice(
       }
     }
 
+    if (span.type === 'tool' && underAgent && getSpanToolOutputCost(span) <= 0) {
+      const toolCost = computeStandaloneToolCost(span)
+      if (toolCost) {
+        seedToolOutputCost(span, toolCost.cost)
+      }
+    }
+
     if (isAgent && (!hasInlineSpanCost(span) || (span.cost?.toolCost ?? 0) <= 0)) {
       const embeddedRaw = extractEmbeddedToolCostsFromSpan(span)
       const embeddedTotal = Object.values(embeddedRaw).reduce((sum, value) => sum + value, 0)
@@ -1661,18 +2069,16 @@ export function enrichTraceSpansForReprice(
         const toolCost = embeddedTotal
         const normalized = normalizeEmbeddedToolCosts(embeddedRaw, toolCost)
         const normalizedTotal = Object.values(normalized).reduce((sum, value) => sum + value, 0)
-        const baseTotal = span.cost?.total ?? 0
+        const modelOnlyTotal = Math.max(0, (span.cost?.total ?? 0) - (span.cost?.toolCost ?? 0))
         span.cost = {
           ...(span.cost ?? {}),
           input: span.cost?.input ?? 0,
           output: span.cost?.output ?? 0,
           toolCost: normalizedTotal,
-          total: baseTotal + normalizedTotal,
+          total: modelOnlyTotal + normalizedTotal,
         }
       }
     }
-
-    span.children?.forEach((child) => visit(child, nextUnderAgent))
   }
 
   for (const span of cloned) {

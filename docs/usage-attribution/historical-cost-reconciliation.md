@@ -40,7 +40,7 @@ Do not write to production until all checks pass:
   - Exa: prefer API `costDollars.total`; else `$0.007`/request
   - Semrush: `$0.01`/request (PLACEHOLDER)
   - Browser Use: prefer API total cost; else `$0.01` init + `$0.006 × steps` (PLACEHOLDER)
-  - Fal.ai: hosted-key markup `× 1.5`; image tools use `IMAGE_MODEL_PRICING`
+  - Fal.ai: hosted-key markup `× 1.5`; image tools use `IMAGE_MODEL_PRICING` (Fal image floor `$0.05 × 1.5` when billing events stripped); `video_falai` floor `$0.25 × 1.5` when `__falaiCostDollars` stripped
   - External Cost blocks: multiplier `1`
 - LLM-behind-tool blocks (Google Ads, Facebook Ads, Dev, Figma AI) return cost on tool `output.cost` (not a separate side-channel ledger write).
 - Copilot and Mothership chat totals remain Go-reported aggregates. Sim cannot reconstruct their historical internal tool costs.
@@ -196,6 +196,8 @@ Proceed only with high- or medium-confidence workflow evidence:
 - agent-embedded tool metadata or retained tool output cost;
 - Cost block configuration from the execution snapshot;
 - Go cost returned from a workflow Mothership block.
+
+Cost-stripped allowlisted hosted tools (Exa, Serper, Semrush, Browser Use, Fal `image_generate` / `video_falai`, and LLM-on-tool blocks) reprice via the same live hosting `getCost` / catalog fallbacks as runtime billing. Fal video without `__falaiCostDollars` uses the `$0.25 × 1.5` floor. Firecrawl still requires retained credits; Serper requires `searchResults`; expression Cost blocks stay skipped — none of those are invented.
 
 Do not auto-apply BYOK ambiguity, missing traces, expression Cost blocks, Mothership double-count risk, unsupported image/tool pricing, or negative target deltas.
 
