@@ -1,6 +1,6 @@
 import type { CostShareBarRow } from '@/app/workspace/[workspaceId]/settings/components/usage/components/cost-share-bars'
 import { formatBillableWithCredits } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
-import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-helpers'
+import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-utils'
 
 interface WorkflowUsageRow {
   workflowId: string | null

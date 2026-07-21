@@ -30,7 +30,7 @@ import {
   withLegacyUnattributedChatRow,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/legacy-unattributed-chat'
 import type { UsageTab } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
-import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-helpers'
+import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-utils'
 
 interface OrganizationUsageContentProps {
   data: OrganizationUsageAnalytics

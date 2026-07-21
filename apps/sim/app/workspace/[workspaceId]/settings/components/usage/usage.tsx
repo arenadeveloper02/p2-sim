@@ -16,7 +16,7 @@ import {
 import { useParams } from 'next/navigation'
 import { useQueryStates } from 'nuqs'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
-import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-helpers'
+import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-utils'
 import { getMothershipChatPath } from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { ChargeTypePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/charge-type-panel'
