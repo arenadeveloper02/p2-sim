@@ -97,10 +97,16 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       password,
       allowedEmails = [],
       outputConfigs = [],
+      deploymentType = 'chat',
+      redirectUrl,
     } = parsed.data.body
 
     if (authType === 'password' && !password) {
       return createErrorResponse('Password is required when using password protection', 400)
+    }
+
+    if (deploymentType === 'app' && !redirectUrl?.trim()) {
+      return createErrorResponse('Redirect URL is required when deploying as an app', 400)
     }
 
     if (authType === 'email' && (!Array.isArray(allowedEmails) || allowedEmails.length === 0)) {
@@ -146,6 +152,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       password,
       allowedEmails,
       outputConfigs,
+      deploymentType,
+      redirectUrl,
       workspaceId: workflowRecord.workspaceId,
     })
 

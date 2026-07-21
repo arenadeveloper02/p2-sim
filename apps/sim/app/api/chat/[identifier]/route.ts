@@ -1132,6 +1132,7 @@ export const GET = withRouteHandler(
           allowedEmails: chat.allowedEmails,
           outputConfigs: chat.outputConfigs,
           department: chat.department,
+          deploymentType: chat.deploymentType,
         })
         .from(chat)
         .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
@@ -1147,6 +1148,11 @@ export const GET = withRouteHandler(
       if (!deployment.isActive) {
         logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
         return createErrorResponse('This chat is currently unavailable', 403)
+      }
+
+      if (deployment.deploymentType === 'app') {
+        logger.warn(`[${requestId}] Chat is deployed as an external app: ${identifier}`)
+        return createErrorResponse('Chat not found', 404)
       }
 
       // Extract Start Block inputFormat for chat UI (before auth checks so it's available in all responses)
