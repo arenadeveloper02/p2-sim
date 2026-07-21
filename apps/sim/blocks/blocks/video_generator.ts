@@ -91,10 +91,10 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       title: 'Provider',
       type: 'dropdown',
       options: [
-        { label: 'Runway Gen-4', id: 'runway' },
-        { label: 'Google Veo 3', id: 'veo' },
-        { label: 'Luma Dream Machine', id: 'luma' },
-        { label: 'MiniMax Hailuo', id: 'minimax' },
+        // { label: 'Runway Gen-4', id: 'runway' },
+        // { label: 'Google Veo 3', id: 'veo' },
+        // { label: 'Luma Dream Machine', id: 'luma' },
+        // { label: 'MiniMax Hailuo', id: 'minimax' },
         { label: 'Fal.ai (Multi-Model)', id: 'falai' },
       ],
       value: () => 'falai',
@@ -767,46 +767,51 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       dependsOn: ['model'],
     },
 
-    // API Key
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your provider API key',
-      password: true,
-      required: true,
-      hideWhenHosted: true,
-      condition: { field: 'provider', value: 'falai' },
-    },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your provider API key',
-      password: true,
-      required: true,
-      condition: { field: 'provider', value: 'falai', not: true },
-    },
+    // API Key (hosted Fal.ai key is injected by Sim)
+    // {
+    //   id: 'apiKey',
+    //   title: 'API Key',
+    //   type: 'short-input',
+    //   placeholder: 'Enter your Fal.ai API key',
+    //   password: true,
+    //   required: true,
+    //   hideWhenHosted: true,
+    // },
+    // {
+    //   id: 'apiKey',
+    //   title: 'API Key',
+    //   type: 'short-input',
+    //   placeholder: 'Enter your provider API key',
+    //   password: true,
+    //   required: true,
+    //   condition: { field: 'provider', value: 'falai', not: true },
+    // },
   ],
 
   tools: {
-    access: ['video_runway', 'video_veo', 'video_luma', 'video_minimax', 'video_falai'],
+    access: [
+      // 'video_runway',
+      // 'video_veo',
+      // 'video_luma',
+      // 'video_minimax',
+      'video_falai',
+    ],
     config: {
       tool: (params) => {
         // Select tool based on provider
         switch (params.provider) {
-          case 'runway':
-            return 'video_runway'
-          case 'veo':
-            return 'video_veo'
-          case 'luma':
-            return 'video_luma'
-          case 'minimax':
-            return 'video_minimax'
+          // case 'runway':
+          //   return 'video_runway'
+          // case 'veo':
+          //   return 'video_veo'
+          // case 'luma':
+          //   return 'video_luma'
+          // case 'minimax':
+          //   return 'video_minimax'
           case 'falai':
             return 'video_falai'
           default:
-            return 'video_runway'
+            return 'video_falai'
         }
       },
       params: (params) => ({
@@ -837,7 +842,7 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       type: 'string',
       description: 'Video generation provider (runway, veo, luma, minimax, falai)',
     },
-    apiKey: { type: 'string', description: 'Provider API key' },
+    // apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
       description: 'Provider-specific model',
@@ -898,10 +903,10 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       title: 'Provider',
       type: 'dropdown',
       options: [
-        { label: 'Runway Gen-4', id: 'runway' },
-        { label: 'Google Veo 3', id: 'veo' },
-        { label: 'Luma Dream Machine', id: 'luma' },
-        { label: 'MiniMax Hailuo', id: 'minimax' },
+        // { label: 'Runway Gen-4', id: 'runway' },
+        // { label: 'Google Veo 3', id: 'veo' },
+        // { label: 'Luma Dream Machine', id: 'luma' },
+        // { label: 'MiniMax Hailuo', id: 'minimax' },
         { label: 'Fal.ai (Multi-Model)', id: 'falai' },
       ],
       commandSearchable: true,
@@ -1541,43 +1546,49 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       },
       dependsOn: ['model'],
     },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your provider API key',
-      password: true,
-      required: true,
-      hideWhenHosted: true,
-      condition: { field: 'provider', value: 'falai' },
-    },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your provider API key',
-      password: true,
-      required: true,
-      condition: { field: 'provider', value: 'falai', not: true },
-    },
+    // API Key (hosted Fal.ai key is injected by Sim)
+    // {
+    //   id: 'apiKey',
+    //   title: 'API Key',
+    //   type: 'short-input',
+    //   placeholder: 'Enter your Fal.ai API key',
+    //   password: true,
+    //   required: true,
+    //   hideWhenHosted: true,
+    // },
+    // {
+    //   id: 'apiKey',
+    //   title: 'API Key',
+    //   type: 'short-input',
+    //   placeholder: 'Enter your provider API key',
+    //   password: true,
+    //   required: true,
+    //   condition: { field: 'provider', value: 'falai', not: true },
+    // },
   ],
   tools: {
-    access: ['video_runway', 'video_veo', 'video_luma', 'video_minimax', 'video_falai'],
+    access: [
+      // 'video_runway',
+      // 'video_veo',
+      // 'video_luma',
+      // 'video_minimax',
+      'video_falai',
+    ],
     config: {
       tool: (params) => {
         switch (params.provider) {
-          case 'runway':
-            return 'video_runway'
-          case 'veo':
-            return 'video_veo'
-          case 'luma':
-            return 'video_luma'
-          case 'minimax':
-            return 'video_minimax'
+          // case 'runway':
+          //   return 'video_runway'
+          // case 'veo':
+          //   return 'video_veo'
+          // case 'luma':
+          //   return 'video_luma'
+          // case 'minimax':
+          //   return 'video_minimax'
           case 'falai':
             return 'video_falai'
           default:
-            return 'video_runway'
+            return 'video_falai'
         }
       },
       params: (params) => ({
@@ -1607,7 +1618,7 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       type: 'string',
       description: 'Video generation provider (runway, veo, luma, minimax, falai)',
     },
-    apiKey: { type: 'string', description: 'Provider API key' },
+    // apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
       description: 'Provider-specific model',
