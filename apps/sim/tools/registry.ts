@@ -443,6 +443,7 @@ import {
   calendlyListScheduledEventsTool,
   calendlyListWebhooksTool,
 } from '@/tools/calendly'
+import { chartValidateTool } from '@/tools/chart_generation/validate'
 import { clayPopulateTool } from '@/tools/clay'
 import {
   clerkAddOrganizationMemberTool,
@@ -758,6 +759,7 @@ import {
   deploymentsPromoteTool,
   deploymentsUndeployTool,
 } from '@/tools/deployments'
+import { developmentEditAppTool, developmentGenerateAppTool } from '@/tools/development'
 import {
   devinAppendSessionTagsTool,
   devinArchiveSessionTool,
@@ -771,7 +773,6 @@ import {
   devinSendMessageTool,
   devinTerminateSessionTool,
 } from '@/tools/devin'
-import { developmentEditAppTool, developmentGenerateAppTool } from '@/tools/development'
 import {
   discordAddReactionTool,
   discordArchiveThreadTool,
@@ -5677,6 +5678,7 @@ export const tools: Record<string, ToolConfig> = {
   calendly_list_webhooks: calendlyListWebhooksTool,
   calendly_create_webhook: calendlyCreateWebhookTool,
   calendly_delete_webhook: calendlyDeleteWebhookTool,
+  chart_validate: chartValidateTool,
   calcom_create_booking: calcomCreateBookingTool,
   calcom_get_booking: calcomGetBookingTool,
   calcom_list_bookings: calcomListBookingsTool,
