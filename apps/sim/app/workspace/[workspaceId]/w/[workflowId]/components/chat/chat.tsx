@@ -213,6 +213,70 @@ const formatOutputContent = (output: unknown): string => {
   return ''
 }
 
+/**
+ * Reads a selected output value from the streaming `final` event's block output
+ * map (`{ [blockId]: { [path]: value } }`), mirroring the deployed chat's
+ * getForkBlockOutputValue path resolution.
+ */
+const getFinalOutputValue = (
+  output: Record<string, unknown>,
+  blockId: string,
+  path: string
+): unknown => {
+  const blockOutputs = output[blockId]
+  if (!blockOutputs || typeof blockOutputs !== 'object') {
+    return undefined
+  }
+  const outputs = blockOutputs as Record<string, unknown>
+
+  if (!path || path === 'content') {
+    if (outputs.content !== undefined) return outputs.content
+    if (outputs.result !== undefined) return outputs.result
+    return outputs
+  }
+
+  if (outputs[path] !== undefined) {
+    return outputs[path]
+  }
+
+  if (path.includes('.')) {
+    return path.split('.').reduce<unknown>((current, segment) => {
+      if (current && typeof current === 'object' && segment in current) {
+        return (current as Record<string, unknown>)[segment]
+      }
+      return undefined
+    }, outputs)
+  }
+
+  return undefined
+}
+
+/**
+ * Normalizes chart output from the streaming `final` event so the floating chat
+ * renders ECharts like the deployed chat. Returns the formatted chart string, or
+ * null when no selected output contains a renderable chart (leaving the streamed
+ * text untouched). This covers object-shaped / mixed responses (e.g. prose + a
+ * `{ charts: [...] }` wrapper) that the raw streamed text does not parse cleanly.
+ */
+const resolveStreamedChartContent = (
+  output: Record<string, unknown> | null,
+  selectedOutputs: string[]
+): string | null => {
+  if (!output) {
+    return null
+  }
+  for (const outputId of selectedOutputs) {
+    const blockId = extractBlockIdFromOutputId(outputId)
+    const path = extractPathFromOutputId(outputId, blockId)
+    const value = getFinalOutputValue(output, blockId, path)
+    const chartContent = formatChartDeployOutputForChat(value)
+    if (chartContent) {
+      return chartContent
+    }
+  }
+  return null
+}
+
 const getImageUrlsFromOutput = (output: unknown): string[] => {
   const extractedUrls = extractGeneratedImagesFromData(output).map((image) => image.url)
   if (extractedUrls.length > 0) {
@@ -674,6 +738,7 @@ export function Chat() {
       }
 
       let finalError: string | null = null
+      let finalOutput: Record<string, unknown> | null = null
       try {
         await readSSEEvents<{ event?: string; data?: ExecutionResult; chunk?: string }>(reader, {
           onParseError: (_data, e) => {
@@ -685,6 +750,13 @@ export function Chat() {
             if (event === 'final' && eventData) {
               if ('success' in eventData && !eventData.success) {
                 finalError = eventData.error || 'Workflow execution failed'
+              }
+              if (
+                'output' in eventData &&
+                eventData.output &&
+                typeof eventData.output === 'object'
+              ) {
+                finalOutput = eventData.output as Record<string, unknown>
               }
               return true
             }
@@ -702,8 +774,11 @@ export function Chat() {
             responseMessageId,
             `${accumulatedContent ? '\n\n' : ''}Error: ${finalError}`
           )
+          finalizeMessageStream(responseMessageId)
+        } else {
+          const chartContent = resolveStreamedChartContent(finalOutput, selectedOutputs)
+          finalizeMessageStream(responseMessageId, chartContent ?? undefined)
         }
-        finalizeMessageStream(responseMessageId)
       } catch (error) {
         if ((error as Error)?.name !== 'AbortError') {
           logger.error('Error processing stream:', error)
