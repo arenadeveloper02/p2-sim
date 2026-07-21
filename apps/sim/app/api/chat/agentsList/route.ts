@@ -67,6 +67,7 @@ function toAgentListItem(row: AgentChatRow) {
     workflow_description: row.description,
     status: 'published',
     identifier: row.identifier,
+    deployment_type: row.deploymentType === 'app' ? 'app' : 'chat',
     redirect_url:
       appRedirectUrl ??
       `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,

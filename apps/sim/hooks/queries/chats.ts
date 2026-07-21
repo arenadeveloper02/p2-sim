@@ -254,7 +254,8 @@ function buildChatPayload(
   formData: ChatFormData,
   imageUrl?: string | null
 ): CreateChatBody {
-  const outputConfigs = parseOutputConfigs(formData.selectedOutputBlocks)
+  const outputConfigs =
+    formData.deploymentType === 'app' ? [] : parseOutputConfigs(formData.selectedOutputBlocks)
 
   return {
     workflowId,
