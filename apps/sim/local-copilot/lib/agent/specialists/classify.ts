@@ -46,9 +46,10 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
   },
   {
     domain: 'file',
-    weight: 2,
+    weight: 3,
     patterns: [
-      /\b(file|folder|vfs|markdown|csv|docx|pptx|pdf|read\s+file|write\s+file|glob|grep)\b/i,
+      /\b(file|folder|vfs|markdown|csv|docx?|pptx?|pdf|slides?|deck|presentation|powerpoint|read\s+file|write\s+file|glob|grep)\b/i,
+      /\b(create|make|generate|build|write)\s+(an?\s+)?(ppt|pptx|powerpoint|presentation|slides?|deck|docx?|pdf|document)\b/i,
     ],
   },
   {

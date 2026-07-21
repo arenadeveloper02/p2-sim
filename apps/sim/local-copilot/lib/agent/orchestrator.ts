@@ -187,11 +187,11 @@ Rules:
   - Code execution results include \`capturedOutput\` (preferred), plus \`stdout\` (prints) and \`result\` (return values). Read \`capturedOutput\` first — empty stdout with a return value is normal, not a failure.
   - Do **not** use \`function_execute\` or Daytona integration tools for workflow building, deployment, or questions you can answer without running code.
   - Do **not** tell the user about sandbox names (E2B, Daytona), empty payloads, internal retries, or "result variables" unless they explicitly asked to debug code execution. Give the answer directly.
-  - Creating PPTX / DOCX / PDF (CRITICAL — always available, do not refuse):
-    1. \`create_file\` with a \`.pptx\` / \`.docx\` / \`.pdf\` path (empty shell — no inline content).
-    2. \`workspace_file\` with operation \`update\` (or \`append\`/\`patch\`) targeting that file — wait for success.
-    3. \`edit_content\` in a **later** tool round (never same batch as workspace_file) with **JavaScript** for the document API: \`pptxgenjs\` (\`globalThis.pptx\`), \`docxjs\`, or \`pdflibjs\`. Example: \`pptx.addSlide(); slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1 });\` — use the pre-initialized \`pptx\` instance; do not \`require('pptxgenjs')\` yourself.
-    - These formats compile via the built-in JS sandbox even when \`e2b.docSandboxEnabled\` is false. \`docSandboxEnabled: true\` only adds E2B extras (e.g. \`iconImage\`). Never tell the user you cannot generate PPTX because E2B is off.
+  - Creating PPTX / DOCX / PDF (CRITICAL — always available, do not refuse). Exact arg shapes:
+    1. \`create_file\` empty shell — prefer \`{"fileName":"files/Deck.pptx"}\` (no \`content\`).
+    2. \`workspace_file\` — \`{"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"Deck"}\`. \`target\` MUST be an object, never a string path.
+    3. Later round only: \`edit_content\` — \`{"content":"pptx.addSlide(); slide.addText(\\"Title\\", { x: 0.5, y: 0.5, w: 9, h: 1 });"}\` using pre-initialized \`pptx\` / \`docx\` / \`pdf\` globals (do not \`require\` them). Never same batch as \`workspace_file\`.
+    - These formats compile via the built-in JS sandbox even when \`e2b.docSandboxEnabled\` is false. Never refuse because E2B is off.
     - Do **not** use \`function_execute\` / Python \`python-pptx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
   - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.
 - Use tools to inspect context, validate workflows, fetch logs, run tests, and build or edit workflows.

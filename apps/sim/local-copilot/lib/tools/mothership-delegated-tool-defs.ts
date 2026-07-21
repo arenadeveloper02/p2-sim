@@ -22,10 +22,10 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
   grep: 'Searches file contents under a workspace path pattern.',
   create_file:
-    'Creates a workspace file at a VFS path. For markdown/text/json/csv/html, ALWAYS pass `content` with the full file body in the same call. Without `content`, only an empty shell is created — you must then call workspace_file update + edit_content. Office formats (docx/pptx/pdf) cannot take inline content; use the empty shell + workspace_file + edit_content flow.',
+    'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds.',
   create_file_folder: 'Creates a folder under the workspace files tree.',
   workspace_file:
-    'Reads, creates, appends, updates, or deletes workspace files by path or file id.',
+    'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..."}, title (short UI label). Example: {"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"SambaNova deck"}. Does not write the body — call edit_content in the NEXT tool round with content. Never pass target as a bare string path.',
   download_to_workspace_file: 'Downloads a URL into a workspace file.',
   user_table:
     'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file.',
@@ -42,7 +42,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   function_execute:
     'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',
   edit_content:
-    'Writes or patches file content after workspace_file. For pptx/docx/pdf use pptxgenjs/docxjs/pdflibjs JavaScript (pre-initialized globals). Compiles via built-in JS sandbox; E2B doc sandbox is optional when e2b.docSandboxEnabled is true.',
+    'Writes the body after a successful workspace_file in a prior round. REQUIRED: content (string). For pptx/docx/pdf put JavaScript using pre-initialized globals (pptx / docx / pdf) — e.g. pptx.addSlide(); slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1 }). Never emit in the same batch as workspace_file.',
   deploy_chat:
     'Deploys or undeploys a workflow as a shareable chat interface. Performs the full workflow deploy plus chat surface setup. REQUIRED on deploy: workflowId, identifier (URL slug), title, versionName, versionDescription. Call get_block_outputs for outputConfigs (agent content path). Call diff_workflows(ref1: "live", ref2: "draft") when unsure what changed. Returns chatUrl on success — share that with the user.',
   get_block_outputs:
@@ -266,12 +266,20 @@ export function buildMothershipDelegatedToolDefinitions(): LocalCopilotToolDefin
 
     let parameters = baseParameters
     if (name === 'create_file' && baseParameters.type === 'object') {
+      const existingProperties =
+        (baseParameters.properties as Record<string, unknown>) ?? {}
+      const fileNameProp = existingProperties.fileName as Record<string, unknown> | undefined
       const properties = {
-        ...((baseParameters.properties as Record<string, unknown>) ?? {}),
+        ...existingProperties,
+        fileName: {
+          ...(fileNameProp ?? { type: 'string' }),
+          description:
+            'Preferred workspace VFS path or filename (e.g. "files/Deck.pptx"). Use this for new files instead of nested outputs.',
+        },
         content: {
           type: 'string',
           description:
-            'Full file body for text files (.md, .txt, .json, .csv, .html). Required when creating markdown or text content — omitting this creates an empty shell only.',
+            'Full file body for text files (.md, .txt, .json, .csv, .html). Required when creating markdown or text content. Omit for pptx/docx/pdf empty shells.',
         },
       }
       parameters = { ...baseParameters, properties }
