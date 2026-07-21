@@ -239,7 +239,7 @@ export function ChatDeploy({
       newErrors.emails = `At least one email or domain is required when using ${formData.authType === 'sso' ? 'SSO' : 'email'} access control`
     }
 
-    if (formData.selectedOutputBlocks.length === 0) {
+    if (formData.deploymentType !== 'app' && formData.selectedOutputBlocks.length === 0) {
       newErrors.outputBlocks = 'Please select at least one output block'
     }
 
@@ -262,7 +262,7 @@ export function ChatDeploy({
   const isFormValid =
     isIdentifierValid &&
     Boolean(formData.title.trim()) &&
-    formData.selectedOutputBlocks.length > 0 &&
+    (formData.deploymentType === 'app' || formData.selectedOutputBlocks.length > 0) &&
     (formData.authType !== 'password' ||
       Boolean(formData.password.trim()) ||
       Boolean(existingChat)) &&
@@ -585,24 +585,26 @@ export function ChatDeploy({
             )}
           </div>
 
-          <div>
-            <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
-              Output
-            </Label>
-            <OutputSelect
-              workflowId={workflowId}
-              selectedOutputs={formData.selectedOutputBlocks}
-              onOutputSelect={handleOutputSelect}
-              placeholder='Select which block outputs to use'
-              disabled={chatSubmitting}
-              className='w-full'
-            />
-            {errors.outputBlocks && (
-              <p className='mt-[6.5px] text-[var(--text-error)] text-caption'>
-                {errors.outputBlocks}
-              </p>
-            )}
-          </div>
+          {formData.deploymentType !== 'app' && (
+            <div>
+              <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
+                Output
+              </Label>
+              <OutputSelect
+                workflowId={workflowId}
+                selectedOutputs={formData.selectedOutputBlocks}
+                onOutputSelect={handleOutputSelect}
+                placeholder='Select which block outputs to use'
+                disabled={chatSubmitting}
+                className='w-full'
+              />
+              {errors.outputBlocks && (
+                <p className='mt-[6.5px] text-[var(--text-error)] text-caption'>
+                  {errors.outputBlocks}
+                </p>
+              )}
+            </div>
+          )}
 
           <AuthSelector
             isExistingChat={!!existingChat}
