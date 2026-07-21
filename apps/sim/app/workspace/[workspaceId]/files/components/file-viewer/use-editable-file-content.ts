@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
+import { toast } from '@sim/emcn'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import {
   useUpdateWorkspaceFileContent,
@@ -34,8 +35,18 @@ interface UseEditableFileContentOptions {
   streamingContent?: string
   isAgentEditing?: boolean
   onDirtyChange?: (isDirty: boolean) => void
-  onSaveStatusChange?: (status: SaveStatus) => void
+  /** `retry` is this instance's own `saveImmediately`, passed alongside an `'error'` status so a caller-side retry never depends on a shared, remount-able ref. */
+  onSaveStatusChange?: (status: SaveStatus, retry?: () => Promise<void>) => void
   saveRef?: React.MutableRefObject<(() => Promise<void>) | null>
+  /** Bridges an imperative "discard the current draft" command up to the caller, mirroring `saveRef`. */
+  discardRef?: React.MutableRefObject<(() => void) | null>
+  /**
+   * Optional transform applied to the fetched content before it becomes the editor's baseline. A
+   * surface whose editor re-serializes its content to a canonical form (the rich markdown editor)
+   * passes its normalizer so an already-canonical file never reads as dirty on open. Applied only to
+   * the at-rest baseline, never while an agent stream is in flight. Stable reference required.
+   */
+  normalizeBaseline?: (raw: string) => string
 }
 
 interface EditableFileContent {
@@ -108,6 +119,8 @@ export function useEditableFileContent({
   onDirtyChange,
   onSaveStatusChange,
   saveRef,
+  discardRef,
+  normalizeBaseline,
 }: UseEditableFileContentOptions): EditableFileContent {
   const onDirtyChangeRef = useRef(onDirtyChange)
   const onSaveStatusChangeRef = useRef(onSaveStatusChange)
@@ -125,6 +138,24 @@ export function useEditableFileContent({
     GENERATED_SOURCE_FILE_TYPES.has(file.type)
   )
 
+  /**
+   * Latches once this mount has ever streamed (agent edit). A mount that streams keeps the raw fetched
+   * value as its baseline for its whole life, so normalization can never perturb the stream-reconcile
+   * comparisons in {@link syncTextEditorContentState}. A pure at-rest open never latches and normalizes
+   * freely. Set during render (not an effect) so it is observed before the baseline is derived.
+   */
+  const everStreamedRef = useRef(false)
+  if (streamingContent !== undefined || isAgentEditing) everStreamedRef.current = true
+
+  // Re-derived only when the fetched content changes (never on a stream-flag flip), so the dirty
+  // baseline stays stable through a post-stream reconcile.
+  const baselineContent = useMemo(() => {
+    if (fetchedContent === undefined || !normalizeBaseline || everStreamedRef.current) {
+      return fetchedContent
+    }
+    return normalizeBaseline(fetchedContent)
+  }, [fetchedContent, normalizeBaseline])
+
   const updateContent = useUpdateWorkspaceFileContent()
   const updateContentRef = useRef(updateContent)
   updateContentRef.current = updateContent
@@ -138,7 +169,7 @@ export function useEditableFileContent({
     markSavedContent,
   } = useFileContentState({
     canReconcileToFetchedContent: file.key.length > 0,
-    fetchedContent,
+    fetchedContent: baselineContent,
     streamingContent,
   })
 
@@ -156,17 +187,28 @@ export function useEditableFileContent({
   const contentRef = useRef(content)
   contentRef.current = content
 
-  const onSave = useCallback(async () => {
-    const next = contentRef.current
-    await updateContentRef.current.mutateAsync({ workspaceId, fileId: file.id, content: next })
-    markSavedContent(next)
-  }, [workspaceId, file.id, markSavedContent])
+  const onSave = useCallback(
+    async (overrideContent?: string) => {
+      const next = overrideContent ?? contentRef.current
+      await updateContentRef.current.mutateAsync({ workspaceId, fileId: file.id, content: next })
+      markSavedContent(next)
+    },
+    [workspaceId, file.id, markSavedContent]
+  )
 
-  const { saveStatus, saveImmediately, isDirty } = useAutosave({
+  const autosaveEnabled = canEdit && isInitialized && !isStreamInteractionLocked
+
+  const { saveStatus, saveImmediately, isDirty, discard } = useAutosave({
     content,
     savedContent,
     onSave,
-    enabled: canEdit && isInitialized && !isStreamInteractionLocked,
+    enabled: autosaveEnabled,
+    draftKey: autosaveEnabled ? `${workspaceId}:${file.id}` : undefined,
+    onRestoreDraft: setDraftContent,
+    onDiscardCorrectionFailed: () =>
+      toast.error(
+        `Failed to discard "${file.name}" — the server may still have the discarded edit`
+      ),
   })
 
   useEffect(() => {
@@ -174,8 +216,11 @@ export function useEditableFileContent({
   }, [isDirty])
 
   useEffect(() => {
-    onSaveStatusChangeRef.current?.(saveStatus)
-  }, [saveStatus])
+    onSaveStatusChangeRef.current?.(
+      saveStatus,
+      saveStatus === 'error' ? saveImmediately : undefined
+    )
+  }, [saveStatus, saveImmediately])
 
   useEffect(() => {
     if (!saveRef) return
@@ -186,6 +231,21 @@ export function useEditableFileContent({
       }
     }
   }, [saveImmediately, saveRef])
+
+  const discardChanges = useCallback(() => {
+    discard()
+    setDraftContent(savedContent)
+  }, [discard, setDraftContent, savedContent])
+
+  useEffect(() => {
+    if (!discardRef) return
+    discardRef.current = discardChanges
+    return () => {
+      if (discardRef.current === discardChanges) {
+        discardRef.current = null
+      }
+    }
+  }, [discardChanges, discardRef])
 
   return {
     content: displayContent,

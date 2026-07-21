@@ -108,6 +108,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       contexts,
       workflowId,
       executionId,
+      copilotBackend,
       userMetadata,
     } = validation.data.body
 
@@ -238,6 +239,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         chatId: effectiveChatId,
         workflowId,
         executionId,
+        copilotBackend,
         simRequestId: requestId,
         goRoute: '/api/mothership/execute',
         autoExecuteTools: true,
@@ -338,12 +340,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
                   : 'Mothership execute error',
                 {
                   requestId,
-                  error: error instanceof Error ? error.message : 'Unknown error',
+                  error: getErrorMessage(error, 'Unknown error'),
                 }
               )
               send({
                 type: 'error',
-                error: error instanceof Error ? error.message : 'Internal server error',
+                error: getErrorMessage(error, 'Internal server error'),
               })
             } finally {
               allowExplicitAbort = false

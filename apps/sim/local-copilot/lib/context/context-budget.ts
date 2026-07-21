@@ -1,11 +1,14 @@
 import type { Edge } from 'reactflow'
-import { estimateTokens } from '@/lib/chunkers/utils'
-import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { truncate } from '@sim/utils/string'
+import { getAccurateTokenCount, truncateToTokenLimit } from '@/lib/tokenization/estimators'
+import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
-import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
+
+/** Fallback tiktoken model when the configured provider model has no encoding. */
+const DEFAULT_TOKEN_COUNT_MODEL = 'gpt-4o'
 
 /** Total prompt budget before calling the LLM (input side; leaves room for tools + output). */
 export const LOCAL_COPILOT_PROMPT_TOKEN_BUDGET = 120_000
@@ -39,10 +42,17 @@ interface HistoryTurn {
 }
 
 /**
- * Estimates tokens for a list of chat messages (rough: chars / 4).
+ * Counts tokens for chat messages with js-tiktoken (`getAccurateTokenCount`).
+ * Falls back to chars/4 only if encoding fails inside the tokenizer helper.
  */
-export function estimateChatMessagesTokens(messages: ChatMessage[]): number {
-  return messages.reduce((sum, message) => sum + estimateTokens(getMessageContentText(message.content)), 0)
+export function estimateChatMessagesTokens(
+  messages: ChatMessage[],
+  model: string = DEFAULT_TOKEN_COUNT_MODEL
+): number {
+  return messages.reduce(
+    (sum, message) => sum + getAccurateTokenCount(getMessageContentText(message.content), model),
+    0
+  )
 }
 
 /**
@@ -88,9 +98,10 @@ export function compactChatHistory(
  */
 export function fitPromptToTokenBudget(
   messages: ChatMessage[],
-  tokenBudget: number = LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
+  tokenBudget: number = LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
+  model: string = DEFAULT_TOKEN_COUNT_MODEL
 ): ChatMessage[] {
-  if (estimateChatMessagesTokens(messages) <= tokenBudget) return messages
+  if (estimateChatMessagesTokens(messages, model) <= tokenBudget) return messages
 
   const systemMessages = messages.filter((message) => message.role === 'system')
   const conversational = messages.filter((message) => message.role !== 'system')
@@ -99,10 +110,10 @@ export function fitPromptToTokenBudget(
   let keptTurns = [...turns]
   while (
     keptTurns.length > 1 &&
-    estimateChatMessagesTokens([
-      ...systemMessages,
-      ...keptTurns.flatMap((turn) => turn.messages),
-    ]) > tokenBudget
+    estimateChatMessagesTokens(
+      [...systemMessages, ...keptTurns.flatMap((turn) => turn.messages)],
+      model
+    ) > tokenBudget
   ) {
     keptTurns.shift()
   }
@@ -111,22 +122,23 @@ export function fitPromptToTokenBudget(
 
   if (
     trimmedConversation.length === 1 &&
-    estimateChatMessagesTokens([...systemMessages, ...trimmedConversation]) > tokenBudget
+    estimateChatMessagesTokens([...systemMessages, ...trimmedConversation], model) > tokenBudget
   ) {
     const last = trimmedConversation[0]
-    const overhead = estimateChatMessagesTokens(systemMessages)
-    const remainingChars = Math.max(500, (tokenBudget - overhead) * 4)
+    const overhead = estimateChatMessagesTokens(systemMessages, model)
+    const remainingTokens = Math.max(125, tokenBudget - overhead)
     const lastText = getMessageContentText(last.content)
+    const truncatedText = truncateToTokenLimit(lastText, remainingTokens, model)
     trimmedConversation = [
       {
         ...last,
         content:
           typeof last.content === 'string'
-            ? truncate(lastText, remainingChars)
+            ? truncatedText
             : [
                 {
                   type: 'text' as const,
-                  text: truncate(lastText, remainingChars),
+                  text: truncatedText,
                 },
                 ...last.content.filter((part) => part.type === 'image'),
               ],
@@ -142,7 +154,8 @@ export function fitPromptToTokenBudget(
  */
 export function resolveWorkflowContextDetail(
   context: LocalCopilotStructuredContext,
-  workflowFullStateTokenBudget: number = LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET
+  workflowFullStateTokenBudget: number = LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
+  model: string = DEFAULT_TOKEN_COUNT_MODEL
 ): WorkflowContextDetail {
   if (!context.workflow) return 'full'
 
@@ -151,7 +164,7 @@ export function resolveWorkflowContextDetail(
     null,
     2
   )
-  if (estimateTokens(fullWorkflowJson) <= workflowFullStateTokenBudget) return 'full'
+  if (getAccurateTokenCount(fullWorkflowJson, model) <= workflowFullStateTokenBudget) return 'full'
   return 'compact'
 }
 
@@ -181,6 +194,7 @@ export function buildContextPromptPayload(
       tables: context.tables,
       workspaceFiles: context.workspaceFiles,
       skills: context.skills,
+      userMemories: context.userMemories,
       execution: context.execution,
       availableIntegrations: context.availableIntegrations,
       availableBlocks: context.availableBlocks,

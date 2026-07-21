@@ -6,68 +6,70 @@ import Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
+import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
+import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
 import {
   deployPreparedVercelProject,
   prepareVercelProjectForDeploy,
 } from '@/lib/development/deploy-generated-app-to-vercel'
-import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
 import {
   findMonorepoRoot,
   getGeneratedAppDir,
 } from '@/lib/development/generated-apps-paths'
-import type { DevelopmentReferenceMedia } from '@/lib/development/resolve-development-reference-image'
-import { resolveDevelopmentDeployEnv, DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import {
-  GENERATED_APP_NEON_DATABASE_GUIDANCE,
-  GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE,
-  GENERATED_APP_DATABASE_FILE_PATHS,
+  formatBuildErrorsSummary,
+  logGeneratedAppValidationErrors,
+} from '@/lib/development/format-generated-app-build-errors'
+import {
+  buildRepoSummaryContent,
+  ensureRepoSummaryFile,
+  GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE,
   GENERATED_APP_AUTH_GUIDANCE,
   GENERATED_APP_COMMON_FAILURES_GUIDANCE,
-  GENERATED_APP_DATABASE_GUIDANCE,
-  GENERATED_APP_DATABASE_EDIT_GUIDANCE,
-  GENERATED_APP_DEPENDENCY_GUIDANCE,
-  GENERATED_APP_IMPORT_GUIDANCE,
   GENERATED_APP_COMPONENT_FILES_GUIDANCE,
-  GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE,
+  GENERATED_APP_DATABASE_EDIT_GUIDANCE,
+  GENERATED_APP_DATABASE_FILE_PATHS,
+  GENERATED_APP_DATABASE_GUIDANCE,
+  GENERATED_APP_DEPENDENCY_GUIDANCE,
   GENERATED_APP_GENERATION_MANDATES,
-  GENERATED_APP_NO_TESTS_GUIDANCE,
+  GENERATED_APP_IMPORT_GUIDANCE,
   GENERATED_APP_JSX_GUIDANCE,
-  GENERATED_APP_APP_ROUTER_DOCUMENT_GUIDANCE,
+  GENERATED_APP_NO_TESTS_GUIDANCE,
+  GENERATED_APP_NULL_SAFETY_GUIDANCE,
+  GENERATED_APP_PAGE_CLIENT_CONTRACT_GUIDANCE,
+  GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE,
   GENERATED_APP_README_GUIDANCE,
   GENERATED_APP_REFERENCE_PDF_GUIDANCE,
   GENERATED_APP_REPO_SUMMARY_GUIDANCE,
   GENERATED_APP_REPO_SUMMARY_PATH,
   GENERATED_APP_STYLING_GUIDANCE,
   GENERATED_APP_TYPESCRIPT_GUIDANCE,
-  GENERATED_APP_NULL_SAFETY_GUIDANCE,
   GENERATED_APP_VALIDATION_GUIDANCE,
   GENERATED_APP_ZERO_ERRORS_GUIDANCE,
+  normalizeGeneratedAppFiles,
   PINNED_NEXT_VERSION,
   PINNED_REACT_VERSION,
-  buildRepoSummaryContent,
-  ensureRepoSummaryFile,
-  normalizeGeneratedAppFiles,
 } from '@/lib/development/normalize-generated-app-files'
 import {
   ensureGitHubRepository,
   pushGeneratedAppToGitHub,
 } from '@/lib/development/push-generated-app-to-github'
 import {
-  formatBuildErrorsSummary,
-  logGeneratedAppValidationErrors,
-} from '@/lib/development/format-generated-app-build-errors'
+  DEVELOPMENT_REQUIRES_DATABASE,
+  resolveDevelopmentDeployEnv,
+} from '@/lib/development/resolve-development-env'
+import type { DevelopmentReferenceMedia } from '@/lib/development/resolve-development-reference-image'
 import {
   validateGeneratedAppPreDeploy,
   validateGeneratedAppProductionBuild,
 } from '@/lib/development/validate-generated-app-build'
 import {
+  collectReferencedAliasPathsInFiles,
   formatStructureValidationIssues,
   validateGeneratedAppStructure,
-  collectReferencedAliasPathsInFiles,
 } from '@/lib/development/validate-generated-app-structure'
 import { supportsTemperature } from '@/providers/utils'
 
@@ -125,8 +127,10 @@ function resolveEnvModel(...values: Array<string | undefined>): string | undefin
 function getDevelopmentModelId(purpose: DevelopmentModelPurpose): string {
   if (purpose === 'edit') {
     return (
-      resolveEnvModel(process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL) ??
-      DEFAULT_EDIT_MODEL
+      resolveEnvModel(
+        env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL,
+        process.env.DEVELOPMENT_ANTHROPIC_EDIT_MODEL
+      ) ?? DEFAULT_EDIT_MODEL
     )
   }
 
@@ -294,12 +298,14 @@ interface LlmAppSpec {
  * Converts a display name into a safe repository folder name.
  */
 export function slugifyRepoName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64) || 'generated-app'
+  return (
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 64) || 'generated-app'
+  )
 }
 
 /**
@@ -375,9 +381,7 @@ function truncateBuildLog(output: string): string {
 }
 
 /** Development block always provisions Neon Postgres + Prisma for generated apps. */
-function resolveRequiresDatabase(
-  _spec: Pick<LlmAppSpec, 'requiresDatabase' | 'files'>
-): boolean {
+function resolveRequiresDatabase(_spec: Pick<LlmAppSpec, 'requiresDatabase' | 'files'>): boolean {
   return DEVELOPMENT_REQUIRES_DATABASE
 }
 
@@ -577,9 +581,7 @@ function mergeManifestFilePaths(
   manifestPaths: string[],
   requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
 ): string[] {
-  const normalized = manifestPaths
-    .map((p) => p.replace(/\\/g, '/').trim())
-    .filter(Boolean)
+  const normalized = manifestPaths.map((p) => p.replace(/\\/g, '/').trim()).filter(Boolean)
   const requiredSet = new Set<string>(REQUIRED_APP_FILE_PATHS)
   if (requiresDatabase) {
     for (const path of GENERATED_APP_DATABASE_FILE_PATHS) {
@@ -979,7 +981,12 @@ async function requestBatchedAppSpecFromLlm(
   referenceImage?: DevelopmentReferenceMedia
 ): Promise<LlmAppSpec> {
   const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
-  const manifest = await requestAppManifestFromLlm(anthropic, userInput, repoNameHint, referenceImage)
+  const manifest = await requestAppManifestFromLlm(
+    anthropic,
+    userInput,
+    repoNameHint,
+    referenceImage
+  )
 
   const pathBatches = chunkArray(manifest.filePaths, FILES_PER_BATCH)
 
@@ -996,10 +1003,7 @@ async function requestBatchedAppSpecFromLlm(
       userInput,
       appName: manifest.appName,
       description: manifest.description,
-      existingPaths: [
-        ...manifest.filePaths,
-        ...allFiles.map((f) => f.path.replace(/\\/g, '/')),
-      ],
+      existingPaths: [...manifest.filePaths, ...allFiles.map((f) => f.path.replace(/\\/g, '/'))],
       referenceImage,
     })
     allFiles.push(...batchFiles)
@@ -1162,6 +1166,36 @@ function buildEditDatabaseContext(existingFiles: GeneratedAppFile[]): string {
 }
 
 /**
+ * Prominent schema baseline for repair prompts — prefers the deployed schema
+ * (pre-edit) over the current working copy so dropped columns are visible.
+ */
+function buildPrismaSchemaBaselineContext(
+  files: GeneratedAppFile[],
+  originalPrismaSchema?: string
+): string {
+  const schema = originalPrismaSchema?.trim()
+    ? originalPrismaSchema
+    : getFileContentByPath(files, 'prisma/schema.prisma')
+  if (!schema?.trim()) {
+    return ''
+  }
+
+  const fieldSummary = summarizePrismaScalarFields(schema)
+  return [
+    '═══ LIVE DATABASE SCHEMA BASELINE (prisma/schema.prisma as deployed — ADD columns only; NEVER drop/rename/retype existing ones) ═══',
+    'The live Neon Postgres database matches this schema and has rows. Deploy runs prisma db push with NO --accept-data-loss, so ANY dropped or altered column fails the deploy with potential_dataloss.',
+    'If you return prisma/schema.prisma, it MUST contain every model and every scalar column listed below unchanged (same name, same type, same attributes). You may ONLY ADD new models, columns, relations, or enums.',
+    'If the current repository copy of prisma/schema.prisma is missing any column listed below, that is a bug — restore the missing column exactly as written here.',
+    '',
+    'Immutable scalar columns (every one must appear unchanged in any schema you return):',
+    fieldSummary || '(no models parsed)',
+    '',
+    '--- prisma/schema.prisma (deployed baseline) ---',
+    schema,
+  ].join('\n')
+}
+
+/**
  * Serializes the current file set for repair and edit prompts so changes are
  * grounded in the real code instead of re-guessed from the app description.
  */
@@ -1203,7 +1237,8 @@ function buildRepairFileContext(
 async function repairAppSpecWithLlm(
   spec: LlmAppSpec,
   buildLog: string,
-  userInput: string
+  userInput: string,
+  options: { originalPrismaSchema?: string } = {}
 ): Promise<LlmAppSpec> {
   const repairSystemPrompt = `You are a senior full-stack engineer fixing a Next.js ${PINNED_NEXT_VERSION} App Router project that failed pre-deploy validation (structure checks and/or npm install + prisma generate + next build in E2B).
 
@@ -1252,17 +1287,21 @@ ${GENERATED_APP_README_GUIDANCE}
 ${GENERATED_APP_REPO_SUMMARY_GUIDANCE}
 ${GENERATED_APP_NO_TESTS_GUIDANCE}
 ${GENERATED_APP_VALIDATION_GUIDANCE}
+When the user message contains a "LIVE DATABASE SCHEMA BASELINE" section, that schema is the authoritative shape of the live database: any prisma/schema.prisma you return MUST be a strict superset of it — every listed model and scalar column unchanged, additions only, drops NEVER.
 When fixing prisma/schema.prisma errors: RESTORE any dropped columns (e.g. updatedAt DateTime @updatedAt). Never "fix" a deploy by removing fields — add defaults or optionality instead.
+When the build log contains "potential_dataloss", "--accept-data-loss", or "You are about to drop the column \`X\` on the \`Y\` table": the LIVE database still has column X even if the current schema file omits it — ADD column X back to model Y in prisma/schema.prisma with its original name/type plus @default(...) (e.g. \`updatedAt DateTime @updatedAt @default(now())\`) or optional ?. NEVER resolve it by leaving the column out, adding --accept-data-loss / --force-reset, or editing the build script — restoring the column in the schema is the ONLY valid fix.
 Keep the same app purpose and repo name unless a rename is required to fix the build.
 Prefer minimal, targeted file changes over rewriting unrelated files.
 Do not leave broken imports, invalid JSX, or conflicting app/ and src/app/ directories.`
+
+  const schemaBaseline = buildPrismaSchemaBaselineContext(spec.files, options.originalPrismaSchema)
 
   const userPrompt = `Original request:\n${userInput}
 
 App name: ${spec.appName}
 Repository name: ${spec.repoName}
 
-Build log (errors to fix):
+${schemaBaseline ? `${schemaBaseline}\n\n` : ''}Build log (errors to fix):
 ${truncateBuildLog(buildLog)}
 
 Current repository files (source of truth — fix the errors above IN this code):
@@ -1402,12 +1441,17 @@ async function validateAndRepairUntilBuildPasses(
       currentSpec = await repairAppSpecWithLlm(
         currentSpec,
         `${buildOutput}\n\nFix every structure issue above before the app can build.`,
-        userInput
+        userInput,
+        { originalPrismaSchema: options.originalPrismaSchema }
       )
       continue
     }
 
-    const fastResult = await validateGeneratedAppPreDeploy(outputDir, currentSpec.files, validationOptions)
+    const fastResult = await validateGeneratedAppPreDeploy(
+      outputDir,
+      currentSpec.files,
+      validationOptions
+    )
     buildOutput = `[${fastResult.method}:typecheck] ${fastResult.output}`
 
     if (!fastResult.validated) {
@@ -1428,7 +1472,9 @@ async function validateAndRepairUntilBuildPasses(
         method: fastResult.method,
       })
 
-      currentSpec = await repairAppSpecWithLlm(currentSpec, fastResult.output, userInput)
+      currentSpec = await repairAppSpecWithLlm(currentSpec, fastResult.output, userInput, {
+        originalPrismaSchema: options.originalPrismaSchema,
+      })
 
       const nextCacheDir = join(outputDir, '.next')
       if (existsSync(nextCacheDir)) {
@@ -1470,7 +1516,9 @@ async function validateAndRepairUntilBuildPasses(
       method: finalResult.method,
     })
 
-    currentSpec = await repairAppSpecWithLlm(currentSpec, finalResult.output, userInput)
+    currentSpec = await repairAppSpecWithLlm(currentSpec, finalResult.output, userInput, {
+      originalPrismaSchema: options.originalPrismaSchema,
+    })
 
     const nextCacheDir = join(outputDir, '.next')
     if (existsSync(nextCacheDir)) {
@@ -1540,10 +1588,13 @@ async function syncDatabaseWithSchemaRepair(params: {
 
     const output = [result.output, result.error].filter(Boolean).join('\n')
     if (!DB_PUSH_UNEXECUTABLE_PATTERN.test(output)) {
-      logger.warn('Database schema sync failed (non-schema error) — continuing, Vercel build will retry db push', {
-        repoName: params.repoName,
-        error: result.error,
-      })
+      logger.warn(
+        'Database schema sync failed (non-schema error) — continuing, Vercel build will retry db push',
+        {
+          repoName: params.repoName,
+          error: result.error,
+        }
+      )
       return { spec, applied: false }
     }
 
@@ -1573,7 +1624,8 @@ async function syncDatabaseWithSchemaRepair(params: {
         '- Do NOT remove or rename existing models or columns, and do NOT change existing column types',
         '- Keep lib/actions.ts and lib/types.ts aligned with the corrected schema',
       ].join('\n'),
-      params.userInput
+      params.userInput,
+      { originalPrismaSchema: params.originalPrismaSchema }
     )
     await writeAppFiles(params.outputDir, spec.files)
   }
@@ -1605,11 +1657,7 @@ async function generateNextjsAppInner(
 ): Promise<GenerateNextjsAppResult> {
   try {
     const generationStartedAt = Date.now()
-    let spec = await generateAppSpecWithLlm(
-      userInput,
-      input.repoName?.trim(),
-      input.referenceImage
-    )
+    let spec = await generateAppSpecWithLlm(userInput, input.repoName?.trim(), input.referenceImage)
     logger.info('LLM app generation finished', {
       durationMs: Date.now() - generationStartedAt,
       fileCount: spec.files.length,
@@ -1960,6 +2008,14 @@ REQUIRED workflow for prisma/schema.prisma on every edit:
 6. If UI no longer uses a column, stop selecting it in lib/actions.ts — do NOT remove or alter it in the schema.
 7. When you ADD models/fields/relations, also return lib/actions.ts and lib/types.ts in the same response.
 
+LIVE-DATABASE DRIFT RECOVERY (the LIVE database outranks the baseline file):
+- The baseline schema file can be MISSING columns that still exist in the live database (a previous bad edit removed them from the file). Echoing such a baseline verbatim re-triggers the drop and fails every deploy with potential_dataloss.
+- If the edit request, a build log, or a deploy error contains "potential_dataloss", "--accept-data-loss", or "You are about to drop the column \`X\` on the \`Y\` table": the live table HAS column X — you MUST ADD column X back to model Y in prisma/schema.prisma with its original name and type. Re-adding a live column is additive and always allowed.
+- When re-adding a dropped column, make it executable against existing rows: \`updatedAt DateTime @updatedAt @default(now())\`, \`createdAt DateTime @default(now())\`, other required scalars get @default(...) or become optional with ?.
+- NEVER "resolve" a potential_dataloss error by keeping the column removed, adding --accept-data-loss, adding --force-reset, or changing the build script — the ONLY fix is restoring the column in the schema.
+
+FINAL SELF-CHECK before returning (mandatory): for EVERY model, compare your output field list against the "Immutable scalar columns" list in the LIVE DATABASE BASELINE. Every listed column MUST appear in your output with identical name, type, and attributes, PLUS any column a deploy error said would be dropped. If even one is missing, your response is wrong — fix it before returning.
+
 The user's edit request is about NEW functionality — it is NOT permission to edit, retype, rename, or remove existing database columns. Always add new columns for new data.`
 
 const EDIT_APP_SYSTEM_PROMPT = `You are a senior full-stack engineer editing an existing Next.js ${PINNED_NEXT_VERSION} App Router project (React ${PINNED_REACT_VERSION}).
@@ -2180,14 +2236,16 @@ async function editNextjsAppInner(
   try {
     const { ensureLocalGeneratedApp } = await import('@/lib/development/ensure-local-generated-app')
     const { readGeneratedAppFiles } = await import('@/lib/development/read-generated-app-files')
-    const {
-      ensureGitHubRepository,
-      pushRepoChangesToGitHub,
-    } = await import('@/lib/development/push-generated-app-to-github')
+    const { ensureGitHubRepository, pushRepoChangesToGitHub } = await import(
+      '@/lib/development/push-generated-app-to-github'
+    )
 
     const localResult = await ensureLocalGeneratedApp(repoName)
     if (!localResult.success || !localResult.outputDir) {
-      return { success: false, error: localResult.error ?? 'Failed to prepare local repository copy' }
+      return {
+        success: false,
+        error: localResult.error ?? 'Failed to prepare local repository copy',
+      }
     }
 
     const outputDir = localResult.outputDir
@@ -2199,7 +2257,12 @@ async function editNextjsAppInner(
       (file) => file.path.replace(/\\/g, '/') === 'prisma/schema.prisma'
     )?.content
     const generationStartedAt = Date.now()
-    let spec = await requestAppEditsFromLlm(userInput, repoName, existingFiles, input.referenceImage)
+    let spec = await requestAppEditsFromLlm(
+      userInput,
+      repoName,
+      existingFiles,
+      input.referenceImage
+    )
     logger.info('LLM app edit finished', {
       durationMs: Date.now() - generationStartedAt,
       changedFiles: spec.files.length,
@@ -2428,7 +2491,10 @@ async function editNextjsAppInner(
       try {
         await rm(outputDir, { recursive: true, force: true })
         resolvedAbsoluteOutputPath = undefined
-        logger.info('Removed local generated app folder after edit publish', { outputDir, repoName })
+        logger.info('Removed local generated app folder after edit publish', {
+          outputDir,
+          repoName,
+        })
       } catch (cleanupError) {
         logger.warn('Failed to remove local generated app folder after edit', {
           outputDir,

@@ -15,8 +15,16 @@ import {
 import { client } from '@/lib/auth/auth-client'
 import { readOAuthReturnContext } from '@/lib/credentials/client-state'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
+import { requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
+import { environmentKeys } from '@/hooks/queries/environment'
+import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
+
+const OAUTH_CREDENTIALS_KEY = ['oauthCredentials'] as const
 
 const logger = createLogger('OAuthConnectionsQuery')
+
+export const OAUTH_CONNECTIONS_STALE_TIME = 30 * 1000
+export const OAUTH_CONNECTED_ACCOUNTS_STALE_TIME = 60 * 1000
 
 /**
  * `postMessage` `data.type` when Sim is embedded in Arena (`?from=arena_v3`) and the user starts OAuth.
@@ -261,7 +269,7 @@ export function useOAuthConnections() {
   return useQuery({
     queryKey: oauthConnectionsKeys.connections(),
     queryFn: ({ signal }) => fetchOAuthConnections(signal),
-    staleTime: 30 * 1000,
+    staleTime: OAUTH_CONNECTIONS_STALE_TIME,
     retry: false,
   })
 }
@@ -301,6 +309,23 @@ export function useConnectOAuthService() {
           postArenaV3OAuthNavigateToParent(url)
         } else {
           window.location.href = url
+        }
+        return { success: true }
+      }
+
+      if (requiresCustomOAuthApp(providerId)) {
+        const returnCtx = readOAuthReturnContext()
+        const workspaceId = returnCtx?.workspaceId
+        if (!workspaceId) {
+          throw new Error('Workspace context is required to connect this integration')
+        }
+        const url = new URL(`${origin}/api/auth/oauth2/custom/${providerId}/authorize`)
+        url.searchParams.set('workspaceId', workspaceId)
+        url.searchParams.set('returnUrl', callbackURL)
+        if (delegateToParent) {
+          postArenaV3OAuthNavigateToParent(url.toString())
+        } else {
+          window.location.href = url.toString()
         }
         return { success: true }
       }
@@ -415,6 +440,10 @@ export function useDisconnectOAuthService() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: oauthConnectionsKeys.connections() })
+      queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.details() })
+      queryClient.invalidateQueries({ queryKey: OAUTH_CREDENTIALS_KEY })
+      queryClient.invalidateQueries({ queryKey: environmentKeys.all })
     },
   })
 }
@@ -443,7 +472,7 @@ export function useConnectedAccounts(provider: string, options?: { enabled?: boo
     queryKey: oauthConnectionsKeys.account(provider),
     queryFn: ({ signal }) => fetchConnectedAccounts(provider, signal),
     enabled: options?.enabled ?? true,
-    staleTime: 60 * 1000,
+    staleTime: OAUTH_CONNECTED_ACCOUNTS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }

@@ -242,13 +242,6 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'GroupMember.ReadWrite.All': 'Read and write all group memberships',
   'Directory.Read.All': 'Read directory data',
 
-  // Discord scopes
-  identify: 'Read Discord user',
-  bot: 'Read Discord bot',
-  'messages.read': 'Read Discord messages',
-  guilds: 'Read Discord guilds',
-  'guilds.members.read': 'Read Discord guild members',
-
   // Reddit scopes
   identity: 'Access Reddit identity',
   submit: 'Submit posts and comments',
@@ -278,9 +271,10 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'channels:read': 'View public channels',
   'channels:history': 'Read channel messages',
   'channels:write': 'Create and manage public channels',
+  'channels:manage': 'Create, archive, and rename public channels',
   'groups:read': 'View private channels',
   'groups:history': 'Read private messages',
-  'groups:write': 'Create and manage private channels',
+  'groups:write': 'Create, archive, and manage private channels',
   'chat:write': 'Send messages',
   'chat:write.public': 'Post to public channels',
   'assistant:write': 'Set assistant thread status, title, and suggested prompts',
@@ -295,6 +289,7 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'canvases:read': 'Read canvas sections',
   'canvases:write': 'Create, edit, and delete canvas documents',
   'reactions:write': 'Add emoji reactions to messages',
+  'reactions:read': 'View emoji reactions on messages',
 
   // Webflow scopes
   'sites:read': 'View Webflow sites',
@@ -508,12 +503,23 @@ export function getProviderIdFromServiceId(serviceId: string): string {
 /**
  * Looks up the OAuth service registered under the given service id (the key in
  * a provider's `services` map). Returns `null` when no provider registers it.
+ *
+ * Also accepts a base provider id (e.g. `zoom`) and resolves that provider's
+ * `defaultService` — so catalog entries / deep links that still use the
+ * provider key keep working after a service was renamed (e.g. `zoom` →
+ * `zoom-client`).
  */
 export function getServiceConfigByServiceId(serviceId: string): OAuthServiceConfig | null {
   for (const provider of Object.values(OAUTH_PROVIDERS)) {
     const service = provider.services[serviceId]
     if (service) return service
   }
+
+  const provider = OAUTH_PROVIDERS[serviceId]
+  if (provider?.defaultService) {
+    return provider.services[provider.defaultService] ?? null
+  }
+
   return null
 }
 

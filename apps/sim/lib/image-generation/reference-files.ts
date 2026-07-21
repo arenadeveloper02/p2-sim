@@ -39,7 +39,10 @@ export function isWorkspaceUploadedFile(value: unknown): value is Record<string,
     return false
   }
   const record = value as Record<string, unknown>
-  return typeof record.name === 'string' && (typeof record.path === 'string' || typeof record.url === 'string')
+  return (
+    typeof record.name === 'string' &&
+    (typeof record.path === 'string' || typeof record.url === 'string')
+  )
 }
 
 export interface ParsedReferenceFileValue {

@@ -76,6 +76,8 @@ const STATIC_SCRIPT_SRC = [
   'https://apis.google.com',
   'https://assets.onedollarstats.com',
   'https://challenges.cloudflare.com',
+  // Cal.com booking embed (landing /demo) — embed.js is served from app.cal.com
+  'https://app.cal.com',
   ...(isReactGrabEnabled ? ['https://unpkg.com'] : []),
   ...(isHosted
     ? [
@@ -111,6 +113,9 @@ const STATIC_CONNECT_SRC = [
   'https://github.com/*',
   'https://challenges.cloudflare.com',
   'https://quickchart.io',
+  // Cal.com booking embed (landing /demo) — embed XHR/availability calls
+  'https://app.cal.com',
+  'https://cal.com',
   ...(isReactGrabEnabled ? ['https://www.react-grab.com'] : []),
   ...(isDev ? ['ws://localhost:4722'] : []),
   ...(isHosted
@@ -130,6 +135,9 @@ const STATIC_FRAME_SRC = [
   "'self'",
   'blob:',
   'https://challenges.cloudflare.com',
+  // Cal.com booking embed (landing /demo) — the booking iframe
+  'https://app.cal.com',
+  'https://cal.com',
   'https://drive.google.com',
   'https://docs.google.com',
   'https://*.google.com',

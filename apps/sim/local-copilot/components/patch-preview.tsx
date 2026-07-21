@@ -1,6 +1,6 @@
 'use client'
 
-import { cn } from '@/lib/core/utils/cn'
+import { cn } from '@sim/emcn'
 import type { WorkflowPatch, WorkflowPatchOperation } from '@/local-copilot/lib/types'
 
 interface PatchPreviewProps {

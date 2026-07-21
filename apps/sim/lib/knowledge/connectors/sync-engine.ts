@@ -7,11 +7,12 @@ import {
   knowledgeConnectorSyncLog,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getErrorMessage, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { randomInt } from '@sim/utils/random'
 import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { decryptApiKey } from '@/lib/api-key/crypto'
+import { resolveTriggerRegion } from '@/lib/core/async-jobs/region'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import type { DocumentData } from '@/lib/knowledge/documents/service'
 import {
@@ -325,7 +326,7 @@ export async function dispatchSync(
         fullSync: options?.fullSync,
         requestId,
       },
-      { tags }
+      { tags, region: await resolveTriggerRegion() }
     )
     logger.info(`Dispatched connector sync to Trigger.dev`, { connectorId, requestId })
   } else {
@@ -732,8 +733,7 @@ export async function executeSync(
             result.docsFailed++
             logger.error('Failed to hydrate deferred document', {
               connectorId,
-              error:
-                outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+              error: getErrorMessage(outcome.reason),
             })
           }
         }
@@ -798,8 +798,7 @@ export async function executeSync(
           logger.error('Failed to process document', {
             connectorId,
             externalId: batch[j].extDoc.externalId,
-            error:
-              outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+            error: getErrorMessage(outcome.reason),
           })
         }
       }

@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { existsSync } from 'fs'
 import { mkdir, rm } from 'fs/promises'
 import { join } from 'path'
-import { promisify } from 'node:util'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { getGeneratedAppDir } from '@/lib/development/generated-apps-paths'
@@ -30,10 +30,7 @@ interface GitHubRepoResponse {
   owner: { login: string }
 }
 
-async function githubFetch<T>(
-  token: string,
-  path: string
-): Promise<{ data: T; status: number }> {
+async function githubFetch<T>(token: string, path: string): Promise<{ data: T; status: number }> {
   const response = await fetch(`${GITHUB_API}${path}`, {
     headers: {
       Accept: 'application/vnd.github+json',
@@ -78,10 +75,7 @@ async function runGit(cwd: string, args: string[]): Promise<void> {
   })
 }
 
-async function cloneRepository(
-  remoteUrl: string,
-  outputDir: string
-): Promise<void> {
+async function cloneRepository(remoteUrl: string, outputDir: string): Promise<void> {
   await mkdir(join(outputDir, '..'), { recursive: true })
   await execFileAsync('git', ['clone', '--depth', '1', remoteUrl, outputDir], {
     encoding: 'utf-8',
@@ -97,7 +91,9 @@ async function pullLatestChanges(outputDir: string): Promise<void> {
 /**
  * Ensures a local copy of the generated app exists, cloning from GitHub when needed.
  */
-export async function ensureLocalGeneratedApp(repoName: string): Promise<EnsureLocalGeneratedAppResult> {
+export async function ensureLocalGeneratedApp(
+  repoName: string
+): Promise<EnsureLocalGeneratedAppResult> {
   const trimmedRepoName = repoName.trim()
   if (!trimmedRepoName) {
     return { success: false, error: 'Repository name is required' }

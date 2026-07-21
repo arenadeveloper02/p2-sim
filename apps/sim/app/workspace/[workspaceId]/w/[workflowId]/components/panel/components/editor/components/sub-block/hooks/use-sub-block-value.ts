@@ -3,11 +3,11 @@ import { createLogger } from '@sim/logger'
 import { isEqual } from 'es-toolkit'
 import { useShallow } from 'zustand/react/shallow'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
-import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import {
   normalizeImageModelId,
   resolveImageProviderForModel,
 } from '@/lib/image-generation/block-model-config'
+import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { getProviderFromModel } from '@/providers/utils'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -184,7 +184,12 @@ export function useSubBlockValue<T = any>(
           }
         }
 
-        if (subBlockId === 'model' && isImageGeneratorBlock && newValue && typeof newValue === 'string') {
+        if (
+          subBlockId === 'model' &&
+          isImageGeneratorBlock &&
+          newValue &&
+          typeof newValue === 'string'
+        ) {
           const normalizedModel = normalizeImageModelId(newValue)
           const resolvedProvider = normalizedModel
             ? resolveImageProviderForModel(normalizedModel)

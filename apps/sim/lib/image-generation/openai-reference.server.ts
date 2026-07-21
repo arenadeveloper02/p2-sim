@@ -5,8 +5,8 @@ import {
   readResponseJsonWithLimit,
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
-import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { GPT_IMAGE_2_MAX_REFERENCE_IMAGES } from '@/lib/image-generation/block-model-config'
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { resolveProviderInlineImageData } from '@/app/api/google/api-service'
 
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024

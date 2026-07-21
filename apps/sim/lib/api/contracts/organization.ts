@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   type PiiRedactionSettings,
   piiRedactionSettingsSchema,
+  retentionOverridesSchema,
   workspaceIdSchema,
 } from '@/lib/api/contracts/primitives'
 import { organizationBillingDataSchema } from '@/lib/api/contracts/subscription'
@@ -109,6 +110,7 @@ export const updateOrganizationDataRetentionBodySchema = z.object({
   softDeleteRetentionHours: organizationDataRetentionHoursSchema,
   taskCleanupHours: organizationDataRetentionHoursSchema,
   piiRedaction: piiRedactionSettingsSchema.optional(),
+  retentionOverrides: retentionOverridesSchema.optional(),
 })
 
 export type UpdateOrganizationDataRetentionBody = z.input<
@@ -120,6 +122,7 @@ const organizationRetentionValuesSchema = z.object({
   softDeleteRetentionHours: z.number().int().nullable(),
   taskCleanupHours: z.number().int().nullable(),
   piiRedaction: piiRedactionSettingsSchema.nullable(),
+  retentionOverrides: retentionOverridesSchema.nullable(),
 })
 
 export type OrganizationRetentionValues = z.output<typeof organizationRetentionValuesSchema>
@@ -130,6 +133,7 @@ const organizationDataRetentionDataSchema = z.object({
   configured: organizationRetentionValuesSchema,
   effective: organizationRetentionValuesSchema,
   piiRedactionEnabled: z.boolean(),
+  piiGranularRedactionEnabled: z.boolean(),
 })
 
 export type OrganizationDataRetention = z.output<typeof organizationDataRetentionDataSchema>

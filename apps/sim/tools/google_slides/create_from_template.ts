@@ -1,7 +1,5 @@
 import { SignJWT } from 'jose'
 import { createLogger } from '@sim/logger'
-import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
-import type { ToolConfig } from '@/tools/types'
 import {
   buildTableCellTextEndIndexMap,
   buildTableContentRequests,
@@ -9,6 +7,8 @@ import {
   findTableColumnLayout,
   findTableDimensions,
 } from '@/tools/google_slides/create-from-template-table'
+import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
+import type { ToolConfig } from '@/tools/types'
 import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
 import type { PresentationSchema } from './templates/schema'
 

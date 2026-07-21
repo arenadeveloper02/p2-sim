@@ -4,11 +4,11 @@
 import { describe, expect, it } from 'vitest'
 import type { StoredTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/types'
 import {
+  buildInitialAgentToolParams,
   isAgentToolPickerBlock,
   isCustomToolAlreadySelected,
   isMcpToolAlreadySelected,
   isWorkflowAlreadySelected,
-  buildInitialAgentToolParams,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/utils'
 import { AgentBlock } from '@/blocks/blocks/agent'
 import { ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'

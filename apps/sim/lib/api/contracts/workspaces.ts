@@ -24,6 +24,9 @@ export const workspaceSchema = z.object({
   inviteMembersEnabled: z.boolean().optional(),
   inviteDisabledReason: z.string().nullable().optional(),
   inviteUpgradeRequired: z.boolean().optional(),
+  // Source workspace id when this was created as a fork (null otherwise). Optional
+  // because not every workspace response builder includes the column.
+  forkedFromWorkspaceId: z.string().nullable().optional(),
 })
 
 export type Workspace = z.output<typeof workspaceSchema>
@@ -270,6 +273,22 @@ export const getWorkspaceMembersContract = defineRouteContract({
     mode: 'json',
     schema: z.object({
       members: z.array(workspaceMemberSchema),
+    }),
+  },
+})
+
+/**
+ * Whether Zoom Admin connect is allowed (org allowlist or env fallback).
+ * Readable by workspace members — no secrets.
+ */
+export const getWorkspaceZoomAdminAccessContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workspaces/[id]/zoom-admin-access',
+  params: workspaceParamsSchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      canUseZoomAdmin: z.boolean(),
     }),
   },
 })

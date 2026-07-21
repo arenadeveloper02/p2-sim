@@ -2,7 +2,6 @@ import { createLogger } from '@sim/logger'
 import { MailServerIcon } from '@/components/icons'
 import { requestJson } from '@/lib/api/client/request'
 import { imapMailboxesContract } from '@/lib/api/contracts/tools/imap'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import type { TriggerConfig } from '@/triggers/types'
 
 const logger = createLogger('ImapPollingTrigger')
@@ -78,6 +77,7 @@ export const imapPollingTrigger: TriggerConfig = {
       required: false,
       options: [],
       fetchOptions: async (blockId: string) => {
+        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const store = useSubBlockStore.getState()
         const host = store.getValue(blockId, 'host') as string | null
         const port = store.getValue(blockId, 'port') as string | null

@@ -35,6 +35,8 @@ export const chatKeys = {
   config: (identifier?: string) => [...chatKeys.configs(), identifier ?? ''] as const,
 }
 
+export const DEPLOYED_CHAT_CONFIG_STALE_TIME = 60 * 1000
+
 /**
  * Auth types for chat access control
  */
@@ -97,7 +99,7 @@ export function useDeployedChatConfig(identifier: string) {
     queryKey: chatKeys.config(identifier),
     queryFn: ({ signal }) => fetchDeployedChatConfig(identifier, signal),
     enabled: Boolean(identifier),
-    staleTime: 60 * 1000,
+    staleTime: DEPLOYED_CHAT_CONFIG_STALE_TIME,
     retry: false,
   })
 }

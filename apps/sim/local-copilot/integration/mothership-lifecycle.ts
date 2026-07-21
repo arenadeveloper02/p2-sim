@@ -20,6 +20,7 @@ import type {
   StreamingContext,
 } from '@/lib/copilot/request/types'
 import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
+import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import type { CopilotContextEntry, CopilotFileAttachmentRef } from '@/local-copilot/lib/user-turn-content'
@@ -313,6 +314,13 @@ export async function runLocalCopilotMothershipLifecycle(
   const toolArgsByCallId = new Map<string, Record<string, unknown>>()
   const userMessageId =
     typeof requestPayload.messageId === 'string' ? requestPayload.messageId : undefined
+  let turnUsage:
+    | {
+        model: string
+        inputTokens: number
+        outputTokens: number
+      }
+    | undefined
 
   let priorMessages: Awaited<ReturnType<typeof loadMothershipChatHistoryForLocalCopilot>> = []
   if (options.chatId) {
@@ -361,6 +369,9 @@ export async function runLocalCopilotMothershipLifecycle(
 
       eventCount += 1
       if (event.type === 'tool_call_start') toolCallCount += 1
+      if (event.type === 'done' && event.usage) {
+        turnUsage = event.usage
+      }
 
       await dispatchLocalCopilotEvent(
         event,
@@ -378,6 +389,30 @@ export async function runLocalCopilotMothershipLifecycle(
           ? MothershipStreamV1CompletionStatus.cancelled
           : MothershipStreamV1CompletionStatus.complete
 
+    const billingModel = turnUsage?.model || getLocalCopilotConfig().model
+    context.billingModel = billingModel
+
+    // Include usage for traces; omit cost so `/api/billing/update-cost` does not
+    // double-bill — Local already writes usage_log via recordModelUsage per round.
+    const completePayload: {
+      status: typeof status
+      usage?: {
+        model: string
+        input_tokens: number
+        output_tokens: number
+        total_tokens: number
+      }
+    } = { status }
+
+    if (turnUsage && (turnUsage.inputTokens > 0 || turnUsage.outputTokens > 0)) {
+      completePayload.usage = {
+        model: billingModel,
+        input_tokens: turnUsage.inputTokens,
+        output_tokens: turnUsage.outputTokens,
+        total_tokens: turnUsage.inputTokens + turnUsage.outputTokens,
+      }
+    }
+
     logger.info('Arena Copilot mothership lifecycle finished', {
       workspaceId,
       workflowId: workflowId ?? null,
@@ -385,6 +420,9 @@ export async function runLocalCopilotMothershipLifecycle(
       eventCount,
       toolCallCount,
       errorCount: context.errors.length,
+      model: billingModel,
+      inputTokens: turnUsage?.inputTokens ?? 0,
+      outputTokens: turnUsage?.outputTokens ?? 0,
       durationMs: Date.now() - startedAt,
       memory: getLocalCopilotMemorySnapshot(),
     })
@@ -392,7 +430,7 @@ export async function runLocalCopilotMothershipLifecycle(
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.complete,
-        payload: { status },
+        payload: completePayload,
       },
       context,
       execContext,

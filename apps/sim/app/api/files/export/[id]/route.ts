@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import JSZip from 'jszip'
@@ -7,7 +8,9 @@ import { NextResponse } from 'next/server'
 import { fileExportContract } from '@/lib/api/contracts/storage-transfer'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { extractEmbeddedImageIds } from '@/lib/copilot/tools/server/files/embedded-image-refs'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { captureServerEvent } from '@/lib/posthog/server'
 import type { StorageContext } from '@/lib/uploads/config'
 import { USE_BLOB_STORAGE } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
@@ -19,9 +22,6 @@ const logger = createLogger('FilesExportAPI')
 
 const MARKDOWN_MIME_TYPES = new Set(['text/markdown', 'text/x-markdown'])
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown'])
-const VIEW_URL_RE =
-  /\/api\/files\/view\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi
-const MAX_EMBEDDED_IMAGES = 50
 
 function isMarkdown(originalName: string, contentType: string): boolean {
   if (MARKDOWN_MIME_TYPES.has(contentType)) return true
@@ -70,9 +70,45 @@ export const GET = withRouteHandler(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    /**
+     * Records the egress only at a real success exit (serve redirect, plain
+     * markdown, or bundled zip) so a mid-export failure never logs a download
+     * that never happened.
+     */
+    const auditExport = (format: 'file' | 'markdown' | 'zip', assetCount: number) => {
+      recordAudit({
+        workspaceId: record.workspaceId ?? null,
+        actorId: userId,
+        action: AuditAction.FILE_DOWNLOADED,
+        resourceType: AuditResourceType.FILE,
+        resourceId: record.id,
+        resourceName: record.originalName,
+        description: `Exported file "${record.originalName}"`,
+        metadata: {
+          fileId: record.id,
+          fileName: record.originalName,
+          bytes: record.size,
+          format,
+          assetCount,
+        },
+        request,
+      })
+      captureServerEvent(
+        userId,
+        'file_downloaded',
+        {
+          ...(record.workspaceId ? { workspace_id: record.workspaceId } : {}),
+          is_bulk: assetCount > 0,
+          file_count: 1 + assetCount,
+        },
+        record.workspaceId ? { groups: { workspace: record.workspaceId } } : undefined
+      )
+    }
+
     if (!isMarkdown(record.originalName, record.contentType)) {
       const storagePrefix = USE_BLOB_STORAGE ? 'blob' : 's3'
       const servePath = `/api/files/serve/${storagePrefix}/${encodeURIComponent(record.key)}`
+      auditExport('file', 0)
       return NextResponse.redirect(new URL(servePath, request.url), { status: 302 })
     }
 
@@ -82,16 +118,14 @@ export const GET = withRouteHandler(
     })
     let mdContent = mdBuffer.toString('utf-8')
 
-    const imageIds = [...new Set([...mdContent.matchAll(VIEW_URL_RE)].map((m) => m[1]))].slice(
-      0,
-      MAX_EMBEDDED_IMAGES
-    )
+    const imageIds = extractEmbeddedImageIds(mdContent)
 
     logger.info('Exporting markdown', { id, imageCount: imageIds.length })
 
     if (imageIds.length === 0) {
       const mdName = safeFilename(record.originalName)
       const mdBytes = Buffer.from(mdContent, 'utf-8')
+      auditExport('markdown', 0)
       return new NextResponse(new Uint8Array(mdBytes), {
         status: 200,
         headers: {
@@ -139,10 +173,11 @@ export const GET = withRouteHandler(
     for (const [imageId, asset] of assetMap) {
       const escapedId = imageId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const replacement = `./assets/${asset.filename}`
-      mdContent = mdContent.replace(
-        new RegExp(`/api/files/view/${escapedId}`, 'g'),
-        () => replacement
-      )
+      // Rewrite both embed spellings the extractor resolves to this id — the view URL and the in-app
+      // `/workspace/<ws>/files/<id>` path — so a bundled asset never leaves a broken link in the export.
+      mdContent = mdContent
+        .replace(new RegExp(`/api/files/view/${escapedId}`, 'g'), () => replacement)
+        .replace(new RegExp(`/workspace/[A-Za-z0-9-]+/files/${escapedId}`, 'g'), () => replacement)
     }
 
     const zip = new JSZip()
@@ -155,6 +190,7 @@ export const GET = withRouteHandler(
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
     const zipName = safeFilename(`${record.originalName.replace(/\.[^.]+$/, '')}.zip`)
 
+    auditExport('zip', assetMap.size)
     return new NextResponse(new Uint8Array(zipBuffer), {
       status: 200,
       headers: {
