@@ -93,6 +93,17 @@ export interface LocalCopilotStructuredContext {
   workspaceFiles?: Array<{ id: string; name: string; path: string; type: string; size: number }>
   /** User-created workspace skills (name + description). Load full body via load_user_skill. */
   skills?: Array<{ id: string; name: string; description: string }>
+  /**
+   * High-confidence user memories (preferences/entities) for this user + workspace.
+   * Full CRUD via the `user_memory` tool.
+   */
+  userMemories?: Array<{
+    key: string
+    value: string
+    memoryType: string
+    source: string
+    confidence: number
+  }>
   execution: LocalCopilotExecutionContext
   availableIntegrations: string[]
   availableBlocks: LocalCopilotBlockSummary[]

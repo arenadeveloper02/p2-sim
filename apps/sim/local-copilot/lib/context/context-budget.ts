@@ -194,6 +194,7 @@ export function buildContextPromptPayload(
       tables: context.tables,
       workspaceFiles: context.workspaceFiles,
       skills: context.skills,
+      userMemories: context.userMemories,
       execution: context.execution,
       availableIntegrations: context.availableIntegrations,
       availableBlocks: context.availableBlocks,

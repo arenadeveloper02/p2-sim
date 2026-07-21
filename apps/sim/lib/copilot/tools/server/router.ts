@@ -20,6 +20,7 @@ import {
   MoveFileFolder,
   RenameFile,
   RenameFileFolder,
+  UserMemory,
   UserTable,
   WorkspaceFile,
 } from '@/lib/copilot/generated/tool-catalog-v1'
@@ -54,6 +55,7 @@ import { ffmpegServerTool } from '@/lib/copilot/tools/server/media/ffmpeg'
 import { generateAudioServerTool } from '@/lib/copilot/tools/server/media/generate-audio'
 import { generateVideoServerTool } from '@/lib/copilot/tools/server/media/generate-video'
 import { searchOnlineServerTool } from '@/lib/copilot/tools/server/other/search-online'
+import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { userTableServerTool } from '@/lib/copilot/tools/server/table/user-table'
 import { getCredentialsServerTool } from '@/lib/copilot/tools/server/user/get-credentials'
 import { setEnvironmentVariablesServerTool } from '@/lib/copilot/tools/server/user/set-environment-variables'
@@ -144,6 +146,7 @@ const WRITE_ACTIONS: Record<string, string[]> = {
   [Ffmpeg.id]: ['*'],
   // Paid external-provider lookups (hosted-key cost), like the media tools.
   [enrichmentRunServerTool.name]: ['*'],
+  [UserMemory.id]: ['add', 'delete', 'correct'],
 }
 
 function isWritePermission(userPermission: string): boolean {
@@ -167,6 +170,7 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
   [getJobLogsServerTool.name]: getJobLogsServerTool,
   [searchDocumentationServerTool.name]: searchDocumentationServerTool,
   [searchOnlineServerTool.name]: searchOnlineServerTool,
+  [userMemoryServerTool.name]: userMemoryServerTool,
   [setEnvironmentVariablesServerTool.name]: setEnvironmentVariablesServerTool,
   [getCredentialsServerTool.name]: getCredentialsServerTool,
   [knowledgeBaseServerTool.name]: knowledgeBaseServerTool,

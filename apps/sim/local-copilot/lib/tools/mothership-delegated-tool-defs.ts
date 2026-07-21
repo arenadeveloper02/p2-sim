@@ -6,6 +6,10 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Executes a workflow and returns block outputs, executionId, and status. Call get_workflow_run_options first when trigger inputs are unknown.',
   run_workflow_until_block:
     'Runs a workflow until a specific block completes, then returns partial outputs.',
+  run_block:
+    'Runs a single block in isolation using a prior execution snapshot. REQUIRED: blockId. Prefer after run_workflow when debugging one block. Pass workflowId on home chat.',
+  run_from_block:
+    'Re-runs a workflow from a given block using a prior execution snapshot for upstream state. REQUIRED: startBlockId. Prefer after run_workflow when iterating mid-pipeline. Pass workflowId on home chat.',
   get_workflow_run_options:
     'Returns runnable triggers, input schemas, and mock payloads for a workflow before running it.',
   query_logs:
@@ -131,12 +135,16 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Restores an archived/deleted resource. REQUIRED: type (workflow|table|file|knowledgebase|folder|file_folder) and id.',
   get_platform_actions:
     'Lists available platform UI actions the agent can suggest or trigger (navigation and settings helpers).',
+  user_memory:
+    'Long-lived user preferences and facts across chats. Operations: add, search, delete, correct, list. Use add when the user says remember/prefer/always; search before assuming preferences; correct when they fix a remembered value. REQUIRED: operation. For add: key + value. For search: query. For delete/correct: key (correct also needs correct_value).',
 }
 
 /** Tools delegated to registered Mothership/copilot server handlers. */
 export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'run_workflow',
   'run_workflow_until_block',
+  'run_block',
+  'run_from_block',
   'get_workflow_run_options',
   'query_logs',
   'get_workflow_data',
@@ -205,6 +213,7 @@ export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'generate_api_key',
   'restore_resource',
   'get_platform_actions',
+  'user_memory',
 ] as const
 
 export type MothershipDelegatedToolName = (typeof MOTHERSHIP_DELEGATED_TOOL_NAMES)[number]
@@ -212,6 +221,8 @@ export type MothershipDelegatedToolName = (typeof MOTHERSHIP_DELEGATED_TOOL_NAME
 export const WORKFLOW_SCOPED_DELEGATED_TOOLS = new Set<MothershipDelegatedToolName>([
   'run_workflow',
   'run_workflow_until_block',
+  'run_block',
+  'run_from_block',
   'get_workflow_run_options',
   'get_workflow_data',
   'deploy_chat',
