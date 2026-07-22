@@ -13,6 +13,7 @@ import { getSession } from '@/lib/auth'
 import {
   assertKnownSizeWithinLimit,
   isPayloadSizeLimitError,
+  MAX_MULTIPART_OVERHEAD_BYTES,
   readFileToBufferWithLimit,
   readFormDataWithLimit,
 } from '@/lib/core/utils/stream-limits'
@@ -20,6 +21,7 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import type { StorageContext } from '@/lib/uploads/config'
 import { generateKnowledgeBaseFileKey } from '@/lib/uploads/contexts/knowledge-base/knowledge-base-file-manager'
+import { generateOrgLogoFileKey } from '@/lib/uploads/contexts/org-logos/utils'
 import { generateWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { MAX_WORKSPACE_FORMDATA_FILE_SIZE } from '@/lib/uploads/shared/types'
 import { isImageFileType, resolveFileType } from '@/lib/uploads/utils/file-utils'
@@ -28,7 +30,7 @@ import {
   SUPPORTED_IMAGE_EXTENSIONS,
   validateFileType,
 } from '@/lib/uploads/utils/validation'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { getUserEntityPermissions, isOrganizationAdminOrOwner } from '@/lib/workspaces/permissions/utils'
 import { createErrorResponse, InvalidRequestError } from '@/app/api/files/utils'
 import {
   IMAGE_FUSION_ALLOWED_EXTENSIONS,
@@ -36,7 +38,6 @@ import {
 } from '@/app/api/files/validators/image-fusion'
 
 const ALLOWED_EXTENSIONS = new Set<string>(SUPPORTED_ATTACHMENT_EXTENSIONS)
-const MAX_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
 
 function validateFileExtension(filename: string): boolean {
   const extension = filename.split('.').pop()?.toLowerCase()
@@ -94,6 +95,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       workflowId: formData.get('workflowId'),
       executionId: formData.get('executionId'),
       workspaceId: formData.get('workspaceId'),
+      organizationId: formData.get('organizationId'),
       context: formData.get('context'),
       uploadContext: formData.get('uploadContext'),
     })
@@ -107,6 +109,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       workflowId,
       executionId,
       workspaceId,
+      organizationId,
       context: contextParam,
       uploadContext,
     } = formFields
@@ -114,7 +117,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     // Context must be explicitly provided
     if (!contextParam) {
       throw new InvalidRequestError(
-        'Upload requires explicit context parameter (knowledge-base, workspace, execution, copilot, chat, profile-pictures, or workspace-logos)'
+        'Upload requires explicit context parameter (knowledge-base, workspace, execution, copilot, chat, profile-pictures, workspace-logos, or org-logos)'
       )
     }
 
@@ -123,6 +126,29 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     const storageService = await import('@/lib/uploads/core/storage-service')
     const usingCloudStorage = storageService.hasCloudStorage()
     logger.info(`Using storage mode: ${usingCloudStorage ? 'Cloud' : 'Local'} for file upload`)
+
+    // Execution context requires a workspace write/admin permission check. Resolve it once per
+    // request (not per file) since workspaceId is invariant across all files in the upload.
+    let executionUploadContext:
+      | { workspaceId: string; workflowId: string; executionId: string }
+      | undefined
+    if (context === 'execution') {
+      if (!workflowId || !executionId || !workspaceId) {
+        throw new InvalidRequestError(
+          'Execution context requires workflowId, executionId, and workspaceId parameters'
+        )
+      }
+
+      const permission = await getUserEntityPermissions(session.user.id, 'workspace', workspaceId)
+      if (permission !== 'write' && permission !== 'admin') {
+        return NextResponse.json(
+          { error: 'Write or Admin access required for execution uploads' },
+          { status: 403 }
+        )
+      }
+
+      executionUploadContext = { workspaceId, workflowId, executionId }
+    }
 
     const uploadResults = []
 
@@ -152,20 +178,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       })
 
       // Handle execution context
-      if (context === 'execution') {
-        if (!workflowId || !executionId) {
-          throw new InvalidRequestError(
-            'Execution context requires workflowId and executionId parameters'
-          )
-        }
-
+      if (context === 'execution' && executionUploadContext) {
         const { uploadExecutionFile } = await import('@/lib/uploads/contexts/execution')
         const userFile = await uploadExecutionFile(
-          {
-            workspaceId: workspaceId || '',
-            workflowId,
-            executionId,
-          },
+          executionUploadContext,
           buffer,
           originalName,
           file.type,
@@ -340,7 +356,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         context === 'copilot' ||
         context === 'chat' ||
         context === 'profile-pictures' ||
-        context === 'workspace-logos'
+        context === 'workspace-logos' ||
+        context === 'org-logos'
       ) {
         if (context !== 'copilot') {
           const mimeType = file.type
@@ -372,6 +389,19 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           }
         }
 
+        if (context === 'org-logos') {
+          if (!organizationId) {
+            throw new InvalidRequestError('org-logos context requires organizationId parameter')
+          }
+          const canManageOrg = await isOrganizationAdminOrOwner(session.user.id, organizationId)
+          if (!canManageOrg) {
+            return NextResponse.json(
+              { error: 'Organization owner or admin access required for org logo uploads' },
+              { status: 403 }
+            )
+          }
+        }
+
         if (context === 'chat' && workspaceId) {
           const permission = await getUserEntityPermissions(
             session.user.id,
@@ -392,7 +422,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         const timestamp = Date.now()
         const safeFileName = sanitizeFileName(originalName)
-        const storageKey = `${context}/${timestamp}-${safeFileName}`
+        const storageKey =
+          context === 'org-logos' && organizationId
+            ? generateOrgLogoFileKey(organizationId, originalName)
+            : `${context}/${timestamp}-${safeFileName}`
 
         const metadata: Record<string, string> = {
           originalName: originalName,
@@ -403,6 +436,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         if (workspaceId && context === 'chat') {
           metadata.workspaceId = workspaceId
+        }
+        if (organizationId && context === 'org-logos') {
+          metadata.organizationId = organizationId
         }
 
         const fileInfo = await storageService.uploadFile({
@@ -464,7 +500,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       // Unknown context
       throw new InvalidRequestError(
-        `Unsupported context: ${context}. Use knowledge-base, workspace, execution, copilot, chat, profile-pictures, or workspace-logos`
+        `Unsupported context: ${context}. Use knowledge-base, workspace, execution, copilot, chat, profile-pictures, workspace-logos, or org-logos`
       )
     }
 

@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from 'react'
+import { Tooltip } from '@sim/emcn'
 import { Check, Copy } from 'lucide-react'
-import { Tooltip } from '@/components/emcn'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
-import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'
-import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
+import { resolveEChartsOptionsFromContent, stripEChartsJsonFromContent } from '@/lib/chart-generation/echarts-option'
+import { ChatEChartsRenderer } from '@/app/(interfaces)/chat/components/message/components/chat-echarts-renderer'
+import { ChatFileDownload } from '@/app/(interfaces)/chat/components/message/components/file-download'
+import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/components/streaming-indicator'
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components'
 import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
@@ -206,6 +208,11 @@ export function ChatMessage({
     return new Map(entries)
   }, [message.generatedImages])
 
+  const messageChartOptions = useMemo(
+    () => resolveEChartsOptionsFromContent(message.content),
+    [message.content]
+  )
+
   const getGeneratedImageSelectionProps = useCallback(
     (imageUrl?: string) => {
       if (!imageUrl || !onToggleGeneratedImage) {
@@ -275,6 +282,21 @@ export function ChatMessage({
   const renderContent = (content: unknown) => {
     if (!content) {
       return null
+    }
+
+    if (content === message.content && messageChartOptions) {
+      const prose =
+        typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
+      return (
+        <>
+          {prose ? (
+            <ArenaCopilotMarkdownRenderer content={prose} renderImage={renderMarkdownImage} />
+          ) : null}
+          {messageChartOptions.map((option, index) => (
+            <ChatEChartsRenderer key={index} option={option} />
+          ))}
+        </>
+      )
     }
 
     try {

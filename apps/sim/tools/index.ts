@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { isValidUuid } from '@sim/utils/id'
-import { randomFloat } from '@sim/utils/random'
+import { backoffWithJitter, parseRetryAfter } from '@sim/utils/retry'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import { generateInternalToken } from '@/lib/auth/internal'
 import { isHosted } from '@/lib/core/config/env-flags'
@@ -182,6 +182,36 @@ async function executeImageGenerationWrapperV2Direct(
     success: true,
     output: result.output,
   }
+}
+
+async function executeDevelopmentGenerateAppDirect(
+  params: Record<string, any>
+): Promise<ToolResponse> {
+  const [{ generateNextjsApp }, { mapGenerateAppResultToToolResponse }] = await Promise.all([
+    import('@/lib/development/nextjs-app-generator'),
+    import('@/tools/development/map-generate-app-response'),
+  ])
+  return mapGenerateAppResultToToolResponse(
+    await generateNextjsApp({
+      userInput: params.userInput,
+      repoName: params.repoName,
+      privateRepo: params.privateRepo,
+    })
+  )
+}
+
+async function executeDevelopmentEditAppDirect(params: Record<string, any>): Promise<ToolResponse> {
+  const [{ editNextjsApp }, { mapGenerateAppResultToToolResponse }] = await Promise.all([
+    import('@/lib/development/nextjs-app-generator'),
+    import('@/tools/development/map-generate-app-response'),
+  ])
+  return mapGenerateAppResultToToolResponse(
+    await editNextjsApp({
+      userInput: params.userInput,
+      repoName: params.repoName,
+      referenceImage: params.referenceImage,
+    })
+  )
 }
 
 function resolveToolScope(
@@ -382,11 +412,24 @@ async function injectOAuthCredentialFromUserContextIfNeeded(
   if (!userId || !workspaceId) return
   try {
     const accessible = await getAccessibleOAuthCredentials(workspaceId, userId)
-    const match = accessible.find((c) => c.providerId === oauth.provider)
+    const exact = accessible.find((c) => c.providerId === oauth.provider)
+    const googleDriveScopeProviders = new Set([
+      'google-drive',
+      'google-docs',
+      'google-sheets',
+      'google-slides',
+      'google-forms',
+    ])
+    const match =
+      exact ??
+      (googleDriveScopeProviders.has(oauth.provider)
+        ? accessible.find((c) => googleDriveScopeProviders.has(c.providerId))
+        : undefined)
     if (!match) return
     params.credential = match.id
     logger.info(`[${requestId}] Auto-resolved OAuth credential for ${tool.id}`, {
       provider: oauth.provider,
+      credentialProvider: match.providerId,
       credentialId: match.id,
     })
   } catch (error) {
@@ -687,7 +730,7 @@ async function executeWithRetry<T>(
         throw error
       }
 
-      const delayMs = baseDelayMs * 2 ** attempt
+      const delayMs = backoffWithJitter(attempt + 1, null, { baseMs: baseDelayMs })
 
       // Track throttling event via telemetry
       PlatformEvents.hostedKeyRateLimited({
@@ -883,6 +926,28 @@ async function applyHostedKeyCostToResult(
 }
 
 import { normalizeToolId } from '@/tools/normalize'
+
+async function maybeRecordToolModelUsage(
+  toolId: string,
+  result: ToolResponse,
+  scope: ToolExecutionScope,
+  params: Record<string, unknown>
+): Promise<void> {
+  if (typeof window !== 'undefined' || !result.success) {
+    return
+  }
+
+  const normalizedToolId = normalizeToolId(toolId)
+  if (normalizedToolId !== 'figma_to_html_ai') {
+    return
+  }
+
+  const { recordFigmaToHtmlAiModelUsage } = await import(
+    '@/lib/billing/core/record-model-usage.server'
+  )
+  const fileKey = typeof params.fileKey === 'string' ? params.fileKey : undefined
+  await recordFigmaToHtmlAiModelUsage(result, scope, fileKey)
+}
 
 /**
  * Maximum request body sizes before we fail with a clear error.
@@ -1151,10 +1216,13 @@ export async function executeTool(
             ? 'mcp'
             : undefined
 
-    if (toolKind && scope.userId && scope.workspaceId) {
+    // Runs for ALL tools (not just kinded ones) so the per-tool `deniedTools`
+    // denylist is enforced alongside the existing mcp/custom/skill gates.
+    if (scope.userId && scope.workspaceId) {
       await assertPermissionsAllowed({
         userId: scope.userId,
         workspaceId: scope.workspaceId,
+        toolId: normalizedToolId,
         toolKind,
         ctx: executionContext,
       })
@@ -1402,16 +1470,20 @@ export async function executeTool(
     // Check for direct execution (no HTTP request needed)
     const wrapperBaseToolId = getImageGenerationWrapperBaseToolId(normalizedToolId)
     const directExecution =
-      normalizedToolId === 'google_nano_banana'
-        ? executeNanoBananaDirect
-        : normalizedToolId === 'image_generate'
-          ? executeImageGenerateDirect
-          : normalizedToolId === 'openai_image'
-            ? executeOpenAIImageDirect
-            : wrapperBaseToolId
-              ? (params: Record<string, any>) =>
-                  executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-              : tool.directExecution
+    normalizedToolId === 'google_nano_banana'
+      ? executeNanoBananaDirect
+      : normalizedToolId === 'image_generate'
+        ? executeImageGenerateDirect
+        : normalizedToolId === 'openai_image'
+          ? executeOpenAIImageDirect
+          : wrapperBaseToolId
+            ? (params: Record<string, any>) =>
+                executeImageGenerationWrapperV2Direct(normalizedToolId, params)
+      : normalizedToolId === 'development_generate_app'
+        ? executeDevelopmentGenerateAppDirect
+        : normalizedToolId === 'development_edit_app'
+          ? executeDevelopmentEditAppDirect
+          : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)
@@ -1449,6 +1521,8 @@ export async function executeTool(
       } else if (hostedKeyForMetrics) {
         hostedKeyMetrics.recordFailed({ ...hostedKeyForMetrics, reason: 'other' })
       }
+
+      await maybeRecordToolModelUsage(toolId, finalResult, scope, contextParams)
 
       const strippedOutput = postProcessToolOutput(normalizedToolId, finalResult.output ?? {})
 
@@ -1524,6 +1598,8 @@ export async function executeTool(
     } else if (hostedKeyForMetrics) {
       hostedKeyMetrics.recordFailed({ ...hostedKeyForMetrics, reason: 'other' })
     }
+
+    await maybeRecordToolModelUsage(toolId, finalResult, scope, contextParams)
 
     const strippedOutput = postProcessToolOutput(normalizedToolId, finalResult.output ?? {})
 
@@ -1757,26 +1833,6 @@ function isRetryableFailure(error: unknown, status?: number): boolean {
   return false
 }
 
-function calculateBackoff(attempt: number, initialDelayMs: number, maxDelayMs: number): number {
-  const base = Math.min(initialDelayMs * 2 ** attempt, maxDelayMs)
-  return Math.round(base / 2 + randomFloat() * (base / 2))
-}
-
-function parseRetryAfterHeader(header: string | null): number {
-  if (!header) return 0
-  const trimmed = header.trim()
-  if (/^\d+$/.test(trimmed)) {
-    const seconds = Number.parseInt(trimmed, 10)
-    return seconds > 0 ? seconds * 1000 : 0
-  }
-  const date = new Date(trimmed)
-  if (!Number.isNaN(date.getTime())) {
-    const deltaMs = date.getTime() - Date.now()
-    return deltaMs > 0 ? deltaMs : 0
-  }
-  return 0
-}
-
 function shouldRetryWithoutReadingBody(
   status: number,
   headers: { get(name: string): string | null },
@@ -1786,7 +1842,10 @@ function shouldRetryWithoutReadingBody(
   if (!retryConfig || isLastAttempt || !isRetryableFailure(null, status)) {
     return false
   }
-  return parseRetryAfterHeader(headers.get('retry-after')) <= retryConfig.maxDelayMs
+  return (
+    (parseRetryAfter(headers.get('retry-after'), Number.POSITIVE_INFINITY) ?? 0) <=
+    retryConfig.maxDelayMs
+  )
 }
 
 /**
@@ -1884,6 +1943,9 @@ async function executeToolRequest(
     }
 
     const headers = new Headers(requestParams.headers)
+    if (!headers.has('User-Agent')) {
+      headers.set('User-Agent', 'Sim')
+    }
     await addInternalAuthIfNeeded(
       headers,
       isInternalRoute,
@@ -1990,6 +2052,15 @@ async function executeToolRequest(
               }
               throw new Error(`Request timed out after ${timeout}ms`)
             }
+            if (
+              error instanceof TypeError &&
+              error.message === 'fetch failed' &&
+              timeout >= DEFAULT_EXECUTION_TIMEOUT_MS
+            ) {
+              throw new Error(
+                `Internal tool request failed (connection closed or timed out after ${timeout}ms). Long-running tools may need a workflow with a Development block or async execution mode.`
+              )
+            }
             throw error
           } finally {
             clearTimeout(timeoutId)
@@ -2047,11 +2118,10 @@ async function executeToolRequest(
         if (!retryConfig || isLastAttempt || !isRetryableFailure(error)) {
           throw error
         }
-        const delayMs = calculateBackoff(
-          attempt,
-          retryConfig.initialDelayMs,
-          retryConfig.maxDelayMs
-        )
+        const delayMs = backoffWithJitter(attempt + 1, null, {
+          baseMs: retryConfig.initialDelayMs,
+          maxMs: retryConfig.maxDelayMs,
+        })
         logger.warn(
           `[${requestId}] Retrying ${toolId} after error (attempt ${attempt + 1}/${maxAttempts})`,
           { delayMs }
@@ -2067,8 +2137,11 @@ async function executeToolRequest(
         !response.ok &&
         isRetryableFailure(null, response.status)
       ) {
-        const retryAfterMs = parseRetryAfterHeader(response.headers.get('retry-after'))
-        if (retryAfterMs > retryConfig.maxDelayMs) {
+        const retryAfterMs = parseRetryAfter(
+          response.headers.get('retry-after'),
+          Number.POSITIVE_INFINITY
+        )
+        if (retryAfterMs !== null && retryAfterMs > retryConfig.maxDelayMs) {
           logger.warn(
             `[${requestId}] Retry-After (${retryAfterMs}ms) exceeds maxDelayMs (${retryConfig.maxDelayMs}ms), skipping retry`
           )
@@ -2079,12 +2152,10 @@ async function executeToolRequest(
         } catch {
           // Ignore errors when consuming body
         }
-        const backoffMs = calculateBackoff(
-          attempt,
-          retryConfig.initialDelayMs,
-          retryConfig.maxDelayMs
-        )
-        const delayMs = Math.max(backoffMs, retryAfterMs)
+        const delayMs = backoffWithJitter(attempt + 1, retryAfterMs, {
+          baseMs: retryConfig.initialDelayMs,
+          maxMs: retryConfig.maxDelayMs,
+        })
         logger.warn(
           `[${requestId}] Retrying ${toolId} after HTTP ${response.status} (attempt ${attempt + 1}/${maxAttempts})`,
           { delayMs }

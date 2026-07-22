@@ -8,6 +8,7 @@ import {
   createValidatedEdge,
   normalizeBlockIdsInOperations,
 } from './builders'
+import { normalizeBlockReferencesInInputs } from './reference-normalization'
 import {
   handleAddOperation,
   handleDeleteOperation,
@@ -24,6 +25,36 @@ import type {
 import { logSkippedItem, type SkippedItem } from './types'
 
 const logger = createLogger('EditWorkflowServerTool')
+
+function normalizeOperationInputReferences(
+  operation: EditWorkflowOperation,
+  blocks: Record<string, { name?: string; type?: string } | undefined>
+): EditWorkflowOperation {
+  if (!operation.params) return operation
+
+  const params = { ...operation.params }
+
+  if (params.inputs) {
+    params.inputs = normalizeBlockReferencesInInputs(params.inputs, blocks)
+  }
+
+  if (params.nestedNodes) {
+    params.nestedNodes = Object.fromEntries(
+      Object.entries(params.nestedNodes).map(([childId, childBlock]) => {
+        if (!childBlock?.inputs) return [childId, childBlock]
+        return [
+          childId,
+          {
+            ...childBlock,
+            inputs: normalizeBlockReferencesInInputs(childBlock.inputs, blocks),
+          },
+        ]
+      })
+    )
+  }
+
+  return { ...operation, params }
+}
 
 type OperationHandler = (op: EditWorkflowOperation, ctx: OperationContext) => void
 
@@ -210,12 +241,19 @@ export function applyOperationsToWorkflowState(
     const handler = OPERATION_HANDLERS[operation_type]
     if (!handler) continue
 
+    const operationWithNormalizedReferences = normalizeOperationInputReferences(
+      operation,
+      (modifiedState as { blocks?: Record<string, { name?: string; type?: string }> }).blocks ?? {}
+    )
+
     logger.debug(`Executing operation: ${operation_type} for block ${block_id}`, {
-      params: operation.params ? Object.keys(operation.params) : [],
+      params: operationWithNormalizedReferences.params
+        ? Object.keys(operationWithNormalizedReferences.params)
+        : [],
       currentBlockCount: Object.keys((modifiedState as any).blocks || {}).length,
     })
 
-    handler(operation, ctx)
+    handler(operationWithNormalizedReferences, ctx)
   }
 
   // Pass 2: Create all edges from deferred connections

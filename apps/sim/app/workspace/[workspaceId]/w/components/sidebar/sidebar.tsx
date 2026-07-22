@@ -1,17 +1,12 @@
 'use client'
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { MoreHorizontal, Pin } from 'lucide-react'
-import Image from 'next/image'
-import Link from 'next/link'
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { usePostHog } from 'posthog-js/react'
 import {
   Button,
   Chip,
   ChipLink,
   chipVariants,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -23,9 +18,8 @@ import {
   Skeleton,
   Tooltip,
   Upload,
-} from '@/components/emcn'
+} from '@sim/emcn'
 import {
-  ArrowLeft,
   BookOpen,
   Calendar,
   Database,
@@ -39,10 +33,15 @@ import {
   Table,
   Task,
   Workflow,
-} from '@/components/emcn/icons'
+} from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { MoreHorizontal, Pin } from 'lucide-react'
+import Image from 'next/image'
+import Link from 'next/link'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { cn } from '@/lib/core/utils/cn'
 import { isMacPlatform } from '@/lib/core/utils/platform'
 import { buildFolderTree, getFolderPath } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'
@@ -59,6 +58,7 @@ import {
   NavItemContextMenu,
   SearchModal,
   SettingsSidebar,
+  SidebarBrandHeader,
   WorkflowList,
   WorkspaceHeader,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components'
@@ -90,6 +90,8 @@ import {
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/utils'
 import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
+import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
+import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
@@ -113,6 +115,7 @@ import { SIDEBAR_WIDTH } from '@/stores/constants'
 import { useFolderStore } from '@/stores/folders/store'
 import { useSearchModalStore } from '@/stores/modals/search/store'
 import { useProvidersStore } from '@/stores/providers'
+import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 import { useSidebarStore } from '@/stores/sidebar/store'
 
 const logger = createLogger('Sidebar')
@@ -303,10 +306,10 @@ const SidebarNavItem = memo(function SidebarNavItem({
       onClick={
         item.onClick
           ? (e) => {
-              if (e.ctrlKey || e.metaKey || e.shiftKey) return
-              e.preventDefault()
-              item.onClick!()
-            }
+            if (e.ctrlKey || e.metaKey || e.shiftKey) return
+            e.preventDefault()
+            item.onClick!()
+          }
           : undefined
       }
       onContextMenu={onContextMenu ? (e) => onContextMenu(e, item.href!) : undefined}
@@ -379,6 +382,7 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
   const { config: permissionConfig, filterBlocks } = usePermissionConfig()
   const { navigateToSettings, getSettingsHref } = useSettingsNavigation()
   const initializeSearchData = useSearchModalStore((state) => state.initializeData)
+  const customBlockOverlayVersion = useCustomBlockOverlayVersion()
   const providers = useProvidersStore((state) => state.providers)
   const providerModelSignature = useMemo(
     () =>
@@ -390,7 +394,7 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
 
   useEffect(() => {
     initializeSearchData(filterBlocks)
-  }, [initializeSearchData, filterBlocks, providerModelSignature])
+  }, [initializeSearchData, filterBlocks, providerModelSignature, customBlockOverlayVersion])
 
   const setSidebarWidth = useSidebarStore((state) => state.setSidebarWidth)
   const toggleCollapsed = useSidebarStore((state) => state.toggleCollapsed)
@@ -535,19 +539,19 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
   const collapsedRootItems = useMemo(() => {
     type RootItem =
       | {
-          kind: 'folder'
-          sortOrder: number
-          createdAt?: Date
-          id: string
-          node: (typeof folderTree)[number]
-        }
+        kind: 'folder'
+        sortOrder: number
+        createdAt?: Date
+        id: string
+        node: (typeof folderTree)[number]
+      }
       | {
-          kind: 'workflow'
-          sortOrder: number
-          createdAt?: Date
-          id: string
-          workflow: (typeof regularWorkflows)[number]
-        }
+        kind: 'workflow'
+        sortOrder: number
+        createdAt?: Date
+        id: string
+        workflow: (typeof regularWorkflows)[number]
+      }
     const items: RootItem[] = [
       ...folderTree.map((node) => ({
         kind: 'folder' as const,
@@ -677,8 +681,8 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
       setMenuOpenChatId(chatId)
       const rect = e.currentTarget.getBoundingClientRect()
       handleChatContextMenuBase({
-        preventDefault: () => {},
-        stopPropagation: () => {},
+        preventDefault: () => { },
+        stopPropagation: () => { },
         clientX: rect.right,
         clientY: rect.top,
       } as React.MouseEvent)
@@ -818,9 +822,9 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
     () =>
       fetchedChats
         ? fetchedChats.map((t) => ({
-            ...t,
-            href: `/workspace/${workspaceId}/chat/${t.id}`,
-          }))
+          ...t,
+          href: `/workspace/${workspaceId}/chat/${t.id}`,
+        }))
         : [],
     [fetchedChats, workspaceId]
   )
@@ -834,10 +838,10 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
       permissionConfig.hideTablesTab
         ? []
         : fetchedTables.map((t) => ({
-            id: t.id,
-            name: t.name,
-            href: `/workspace/${workspaceId}/tables/${t.id}`,
-          })),
+          id: t.id,
+          name: t.name,
+          href: `/workspace/${workspaceId}/tables/${t.id}`,
+        })),
     [fetchedTables, workspaceId, permissionConfig.hideTablesTab]
   )
 
@@ -846,11 +850,11 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
       permissionConfig.hideFilesTab
         ? []
         : fetchedFiles.map((f) => ({
-            id: f.id,
-            name: f.name,
-            href: `/workspace/${workspaceId}/files/${f.id}`,
-            folderPath: f.folderPath ? f.folderPath.split('/').filter(Boolean) : undefined,
-          })),
+          id: f.id,
+          name: f.name,
+          href: `/workspace/${workspaceId}/files/${f.id}`,
+          folderPath: f.folderPath ? f.folderPath.split('/').filter(Boolean) : undefined,
+        })),
     [fetchedFiles, workspaceId, permissionConfig.hideFilesTab]
   )
 
@@ -859,10 +863,10 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
       permissionConfig.hideKnowledgeBaseTab
         ? []
         : fetchedKnowledgeBases.map((kb) => ({
-            id: kb.id,
-            name: kb.name,
-            href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
-          })),
+          id: kb.id,
+          name: kb.name,
+          href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
+        })),
     [fetchedKnowledgeBases, workspaceId, permissionConfig.hideKnowledgeBaseTab]
   )
 
@@ -1087,16 +1091,21 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
     fileInputRef.current?.click()
   }
 
+  const requestLeave = useSettingsDirtyStore((s) => s.requestLeave)
+
   const handleWorkspaceSwitch = useCallback(
-    async (workspace: Workspace) => {
+    (workspace: Workspace) => {
       if (workspace.id === workspaceId) {
         setIsWorkspaceMenuOpen(false)
         return
       }
-      await switchWorkspace(workspace)
+      // Close the switcher first so the settings discard dialog (if any) is visible.
       setIsWorkspaceMenuOpen(false)
+      requestLeave(() => {
+        void switchWorkspace(workspace)
+      })
     },
-    [workspaceId, switchWorkspace]
+    [workspaceId, switchWorkspace, requestLeave]
   )
 
   const handleSidebarClick = (e: React.MouseEvent<HTMLElement>) => {
@@ -1172,20 +1181,30 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
 
   const handleOpenHelpFromMenu = useCallback(() => setIsHelpModalOpen(true), [])
 
-  const handleOpenDocs = useCallback(() => {
-    window.open('https://docs.sim.ai', '_blank', 'noopener,noreferrer')
-    captureEvent(posthog, 'docs_opened', { source: 'help_menu' })
-  }, [posthog])
-
   const handleChatRenameBlur = useCallback(
     () => void chatFlyoutRename.saveRename(),
     [chatFlyoutRename.saveRename]
   )
 
   const handleOpenArenaDocs = useCallback(() => {
-    window.open('/arena-ai-docs', '_blank', 'noopener,noreferrer')
+    window.open(resolveBrandDocsUrl(brand?.documentationUrl), '_blank', 'noopener,noreferrer')
     captureEvent(posthog, 'arena_docs_opened', { source: 'help_menu' })
-  }, [posthog])
+  }, [brand?.documentationUrl, posthog])
+
+  const handleContactSupport = useCallback(() => {
+    if (!brand?.supportEmail) return
+    window.location.href = `mailto:${brand.supportEmail}`
+  }, [brand?.supportEmail])
+
+  const handleOpenTerms = useCallback(() => {
+    if (!brand?.termsUrl) return
+    window.open(brand.termsUrl, '_blank', 'noopener,noreferrer')
+  }, [brand?.termsUrl])
+
+  const handleOpenPrivacy = useCallback(() => {
+    if (!brand?.privacyUrl) return
+    window.open(brand.privacyUrl, '_blank', 'noopener,noreferrer')
+  }, [brand?.privacyUrl])
 
   const handleWorkflowRenameBlur = useCallback(
     () => void workflowFlyoutRename.saveRename(),
@@ -1251,57 +1270,6 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
     ])
   )
 
-  const renderArenaLogo = () => {
-    return (
-      <>
-        {arenaHubAgentsUrl ? (
-          <div
-            className={cn(
-              'flex flex-shrink-0 items-center px-2.5 pb-1.5',
-              isCollapsed && 'justify-center'
-            )}
-          >
-            <SidebarTooltip label='Back to Arena agents' enabled={isCollapsed} side='right'>
-              <Link
-                href={arenaHubAgentsUrl}
-                className={cn(
-                  'group flex h-[30px] min-w-0 items-center gap-2 rounded-lg px-1 text-[var(--text-body)] text-sm hover-hover:bg-[var(--surface-hover)]',
-                  isCollapsed ? 'w-[30px] flex-shrink-0 justify-center' : 'flex-1'
-                )}
-                aria-label='Back to Arena agents'
-              >
-                <ArrowLeft className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
-                <span className='sidebar-collapse-hide truncate font-base'>Back</span>
-              </Link>
-            </SidebarTooltip>
-          </div>
-        ) : null}
-        {brand?.logoUrlBlacktext && (
-          <div className='flex h-[40px] flex-shrink-0 items-center pl-2'>
-            <Link
-              href={`/workspace/${workspaceId}/home`}
-              className={cn(
-                'sidebar-collapse-hide !transition-none group items-center rounded-[8px] hover-hover:bg-[var(--surface-hover)]',
-                isCollapsed ? 'contents' : 'flex'
-              )}
-              tabIndex={isCollapsed ? -1 : undefined}
-              aria-label={brand.name}
-            >
-              <Image
-                src={brand?.logoUrlBlacktext || ''}
-                alt={brand?.name || ''}
-                width={34}
-                height={28}
-                className=' flex-shrink-0 object-contain'
-                unoptimized
-              />
-            </Link>
-          </div>
-        )}
-      </>
-    )
-  }
-
   return (
     <>
       <input
@@ -1330,8 +1298,16 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
           onClick={handleSidebarClick}
         >
           <div className='flex h-full flex-col'>
-            {renderArenaLogo()}
-            <div className='flex flex-shrink-0 items-center px-2 pt-3'>
+            <SidebarBrandHeader
+              workspaceId={workspaceId}
+              isCollapsed={isCollapsed}
+              showCollapsedTooltips={showCollapsedTooltips}
+              brandLogoUrl={brand?.logoUrl || brand?.logoUrlBlacktext}
+              brandWordmarkUrl={brand?.wordmarkUrl}
+              brandName={brand?.name}
+              arenaHubAgentsUrl={arenaHubAgentsUrl}
+            />
+            <div className='flex flex-shrink-0 items-center px-2 pt-2'>
               <WorkspaceHeader
                 activeWorkspace={activeWorkspace}
                 workspaceId={workspaceId}
@@ -1722,14 +1698,28 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
                       </DropdownMenuTrigger>
                     </SidebarTooltip>
                     <DropdownMenuContent align='start' side='top' sideOffset={4}>
-                      {/* <DropdownMenuItem onSelect={handleOpenDocs}>
-                        <BookOpen className='h-[14px] w-[14px]' />
-                        Docs
-                      </DropdownMenuItem> */}
                       <DropdownMenuItem onSelect={handleOpenArenaDocs}>
                         <BookOpen className='h-[14px] w-[14px]' />
                         Docs
                       </DropdownMenuItem>
+                      {brand?.supportEmail ? (
+                        <DropdownMenuItem onSelect={handleContactSupport}>
+                          <HelpCircle className='h-[14px] w-[14px]' />
+                          Contact support
+                        </DropdownMenuItem>
+                      ) : null}
+                      {brand?.termsUrl ? (
+                        <DropdownMenuItem onSelect={handleOpenTerms}>
+                          <BookOpen className='h-[14px] w-[14px]' />
+                          Terms of service
+                        </DropdownMenuItem>
+                      ) : null}
+                      {brand?.privacyUrl ? (
+                        <DropdownMenuItem onSelect={handleOpenPrivacy}>
+                          <BookOpen className='h-[14px] w-[14px]' />
+                          Privacy policy
+                        </DropdownMenuItem>
+                      ) : null}
                       <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
                         <HelpCircle className='h-[14px] w-[14px]' />
                         Report an issue

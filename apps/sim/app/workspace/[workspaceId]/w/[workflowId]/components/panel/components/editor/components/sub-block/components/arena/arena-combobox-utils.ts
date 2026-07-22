@@ -1,4 +1,4 @@
-import type { ComboboxOption } from '@/components/emcn'
+import type { ComboboxOption } from '@sim/emcn'
 
 /**
  * If the stored value is not in the fetched list (stale or loading), add a display row

@@ -2,7 +2,8 @@ import { env, getEnv } from '@/lib/core/config/env'
 import { isProd } from '@/lib/core/config/env-flags'
 
 /** Canonical base URL for the public-facing marketing site. No trailing slash. */
-export const SITE_URL = 'https://www.sim.ai'
+// export const SITE_URL = 'https://www.sim.ai'
+export const SITE_URL = 'https://thearena.ai'
 
 function hasHttpProtocol(url: string): boolean {
   return /^https?:\/\//i.test(url)
@@ -131,6 +132,9 @@ export function getLoginRedirectUrl(hostname: string): string {
   if (hostname === 'test-agent.thearena.ai') {
     return 'https://test.thearena.ai/'
   }
+  if (hostname === 'test-v1-agent.thearena.ai') {
+    return 'https://test.thearena.ai/'
+  }
   if (hostname === 'sandbox-agent.thearena.ai') {
     return 'https://sandbox.thearena.ai/'
   }
@@ -206,6 +210,21 @@ export function isLocalhostUrl(url: string): boolean {
  */
 export function getBrowserOrigin(): string | null {
   return typeof window !== 'undefined' ? window.location.origin : null
+}
+
+/**
+ * Validates that a URL uses an http(s) scheme before it is opened in a new window.
+ * Rejects `javascript:`, `data:`, `blob:`, `vbscript:`, and other schemes that could
+ * execute script in the chat origin, since `file.url` originates from untrusted
+ * workflow/agent output.
+ */
+export function isSafeHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, getBrowserOrigin() ?? undefined)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 /**

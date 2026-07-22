@@ -1,13 +1,12 @@
 'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
+import { Code, cn, Tooltip } from '@sim/emcn'
 import { Check, Copy } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
-import { Code, Tooltip } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
 
 /**
  * Recursively extracts text content from React elements

@@ -1,15 +1,14 @@
 import { createLogger } from '@sim/logger'
 import { AgentIcon } from '@/components/icons'
+import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-files'
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import {
   getAgentModelOptions,
   getProviderCredentialSubBlocks,
-  normalizeFileInput,
   RESPONSE_FORMAT_WAND_CONFIG,
 } from '@/blocks/utils'
 import { START_FILES_REF } from '@/executor/constants'
-import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-files'
 import {
   getBaseModelProviders,
   getMaxTemperature,

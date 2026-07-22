@@ -6,6 +6,11 @@ import dynamic from 'next/dynamic'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { getFileExtension } from '@/lib/uploads/utils/file-utils'
 import { useWorkspaceFileBinary, useWorkspaceFileContent } from '@/hooks/queries/workspace-files'
+import {
+  createWorkspaceFileContentSource,
+  type FileContentSource,
+  FileContentSourceProvider,
+} from '@/hooks/use-file-content-source'
 import { CsvTablePreview } from './csv-table-preview'
 import { DocxPreview } from './docx-preview'
 import { resolveFileCategory } from './file-category'
@@ -21,7 +26,13 @@ import {
   resolvePreviewError,
 } from './preview-shared'
 import { TextEditor } from './text-editor'
+import {
+  getEmptyDocPreviewMessage,
+  getZeroByteDocPreviewMessage,
+} from './empty-doc-preview'
+import { GeneratingPreviewEngagement } from './generating-preview-engagement'
 import { useDocPreviewBinary } from './use-doc-preview-binary'
+import { useLocalGeneratingPreviewEngagement } from './use-local-generating-preview-engagement'
 import { XlsxPreview } from './xlsx-preview'
 
 const PdfViewerCore = dynamic(() => import('./pdf-viewer').then((m) => m.PdfViewerCore), {
@@ -78,6 +89,12 @@ export type PreviewMode = 'editor' | 'split' | 'preview'
 interface FileViewerProps {
   file: WorkspaceFileRecord
   workspaceId: string
+  /**
+   * Content source for this view. Defaults to a workspace-scoped source derived from `workspaceId`;
+   * the public share page passes a token-scoped source. Provided to descendants (renderers, embedded
+   * images) via {@link FileContentSourceProvider}.
+   */
+  contentSource?: FileContentSource
   canEdit: boolean
   /**
    * Render a read-only preview with no editing affordances. Text files render
@@ -88,8 +105,12 @@ interface FileViewerProps {
   previewMode?: PreviewMode
   autoFocus?: boolean
   onDirtyChange?: (isDirty: boolean) => void
-  onSaveStatusChange?: (status: 'idle' | 'saving' | 'saved' | 'error') => void
+  onSaveStatusChange?: (
+    status: 'idle' | 'saving' | 'saved' | 'error',
+    retry?: () => Promise<void>
+  ) => void
   saveRef?: React.MutableRefObject<(() => Promise<void>) | null>
+  discardRef?: React.MutableRefObject<(() => void) | null>
   streamingContent?: string
   isAgentEditing?: boolean
   streamIsIncremental?: boolean
@@ -97,7 +118,20 @@ interface FileViewerProps {
   previewContextKey?: string
 }
 
-export function FileViewer({
+export function FileViewer(props: FileViewerProps) {
+  const { contentSource, workspaceId } = props
+  const source = useMemo(
+    () => contentSource ?? createWorkspaceFileContentSource(workspaceId),
+    [contentSource, workspaceId]
+  )
+  return (
+    <FileContentSourceProvider value={source}>
+      <FileViewerContent {...props} />
+    </FileContentSourceProvider>
+  )
+}
+
+function FileViewerContent({
   file,
   workspaceId,
   canEdit,
@@ -107,6 +141,7 @@ export function FileViewer({
   onDirtyChange,
   onSaveStatusChange,
   saveRef,
+  discardRef,
   streamingContent,
   isAgentEditing,
   streamIsIncremental,
@@ -150,6 +185,7 @@ export function FileViewer({
           onDirtyChange={onDirtyChange}
           onSaveStatusChange={onSaveStatusChange}
           saveRef={saveRef}
+          discardRef={discardRef}
           streamingContent={streamingContent}
           isAgentEditing={isAgentEditing}
           streamIsIncremental={streamIsIncremental}
@@ -169,6 +205,7 @@ export function FileViewer({
         onDirtyChange={onDirtyChange}
         onSaveStatusChange={onSaveStatusChange}
         saveRef={saveRef}
+        discardRef={discardRef}
         streamingContent={streamingContent}
         isAgentEditing={isAgentEditing}
         disableStreamingAutoScroll={disableStreamingAutoScroll}
@@ -178,7 +215,14 @@ export function FileViewer({
   }
 
   if (category === 'iframe-previewable') {
-    return <IframePreview key={file.id} file={file} workspaceId={workspaceId} />
+    return (
+      <IframePreview
+        key={file.id}
+        file={file}
+        workspaceId={workspaceId}
+        isAgentEditing={isAgentEditing}
+      />
+    )
   }
 
   if (category === 'image-previewable') {
@@ -194,11 +238,25 @@ export function FileViewer({
   }
 
   if (category === 'docx-previewable') {
-    return <DocxPreview key={file.id} file={file} workspaceId={workspaceId} />
+    return (
+      <DocxPreview
+        key={file.id}
+        file={file}
+        workspaceId={workspaceId}
+        isAgentEditing={isAgentEditing}
+      />
+    )
   }
 
   if (category === 'pptx-previewable') {
-    return <PptxPreview key={file.id} file={file} workspaceId={workspaceId} />
+    return (
+      <PptxPreview
+        key={file.id}
+        file={file}
+        workspaceId={workspaceId}
+        isAgentEditing={isAgentEditing}
+      />
+    )
   }
 
   if (category === 'xlsx-previewable') {
@@ -258,28 +316,52 @@ const ReadOnlyTextPreview = memo(function ReadOnlyTextPreview({
 const IframePreview = memo(function IframePreview({
   file,
   workspaceId,
+  isAgentEditing,
 }: {
   file: WorkspaceFileRecord
   workspaceId: string
+  isAgentEditing?: boolean
 }) {
+  const showGeneratingEngagement = useLocalGeneratingPreviewEngagement(isAgentEditing)
+  const emptyMessage = getEmptyDocPreviewMessage(file, 'PDF')
   const preview = useDocPreviewBinary(workspaceId, file)
 
-  const bufferSource = useMemo<PdfDocumentSource | null>(
-    () => (preview.data ? { kind: 'buffer', buffer: preview.data } : null),
-    [preview.data]
-  )
+  const bufferSource = useMemo<PdfDocumentSource | null>(() => {
+    if (!preview.data || preview.data.byteLength === 0) return null
+    return { kind: 'buffer', buffer: preview.data }
+  }, [preview.data])
+
+  if (emptyMessage) {
+    if (showGeneratingEngagement) {
+      return <GeneratingPreviewEngagement kind='pdf' fileName={file.name} />
+    }
+    return <PreviewError label='PDF' error={emptyMessage} />
+  }
 
   const error = resolvePreviewError(preview.error, null)
   if (error) return <PreviewError label='PDF' error={error} />
 
+  if (preview.data && preview.data.byteLength === 0) {
+    return <PreviewError label='PDF' error={getZeroByteDocPreviewMessage('PDF')} />
+  }
+
   if (!bufferSource) {
-    return <div className='relative flex flex-1 overflow-hidden'>{PREVIEW_LOADING_OVERLAY}</div>
+    if (showGeneratingEngagement) {
+      return <GeneratingPreviewEngagement kind='pdf' fileName={file.name} />
+    }
+    return (
+      <div className='relative flex h-full min-h-0 flex-1 overflow-hidden'>
+        {PREVIEW_LOADING_OVERLAY}
+      </div>
+    )
   }
 
   return (
-    <PreviewErrorBoundary key={`${file.id}:${preview.dataUpdatedAt}`} label='PDF'>
-      <PdfViewerCore source={bufferSource} filename={file.name} />
-    </PreviewErrorBoundary>
+    <div className='flex h-full min-h-0 flex-1 flex-col overflow-hidden'>
+      <PreviewErrorBoundary key={`${file.id}:${preview.dataUpdatedAt}`} label='PDF'>
+        <PdfViewerCore source={bufferSource} filename={file.name} />
+      </PreviewErrorBoundary>
+    </div>
   )
 })
 

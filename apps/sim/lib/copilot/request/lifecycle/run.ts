@@ -3,7 +3,10 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
-import { checkSelfHostedMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import {
+  checkMothershipUsageLimits,
+  checkSelfHostedMothershipUsageLimits,
+} from '@/lib/billing/calculations/usage-monitor'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { createRunSegment, updateRunStatus } from '@/lib/copilot/async-runs/repository'
 import { SIM_AGENT_VERSION, TOOL_WATCHDOG_RESUME_GRACE_MS } from '@/lib/copilot/constants'
@@ -42,9 +45,11 @@ import type {
   StreamingContext,
 } from '@/lib/copilot/request/types'
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
+import { hasCopilotApiKey } from '@/lib/copilot/server/copilot-api-keys'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
 import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
+import { shouldRouteToLocalCopilot } from '@/local-copilot/lib/routing'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 
 const logger = createLogger('CopilotLifecycle')
@@ -67,6 +72,8 @@ function resultContent(context: StreamingContext, options: CopilotLifecycleOptio
 
 export interface CopilotLifecycleOptions extends OrchestratorOptions {
   userId: string
+  userEmail?: string
+  copilotBackend?: 'local' | 'external'
   workflowId?: string
   workspaceId?: string
   chatId?: string
@@ -157,11 +164,61 @@ export async function runCopilotLifecycle(
     if (!isHosted && isBillingEnabled && execContext.userId) {
       const mothershipLimit = await checkSelfHostedMothershipUsageLimits(execContext.userId)
       if (mothershipLimit.isExceeded) {
-        throw new BillingLimitError(execContext.userId)
+        throw new BillingLimitError(execContext.userId, {
+          message: mothershipLimit.message,
+          scope: 'pooled',
+        })
       }
     }
 
-    await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
+    if (isHosted && isBillingEnabled && execContext.userId) {
+      const usage = await checkMothershipUsageLimits(execContext.userId, workspaceId)
+      if (usage.isExceeded) {
+        throw new BillingLimitError(execContext.userId, {
+          message: usage.message,
+          scope: usage.scope,
+        })
+      }
+    }
+
+    if (
+      await shouldRouteToLocalCopilot({
+        workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId,
+        workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId,
+        userId: lifecycleOptions.userId,
+        copilotBackend: lifecycleOptions.copilotBackend,
+      })
+    ) {
+      logger.info('Delegating copilot turn to Arena Copilot', {
+        chatId: context.chatId,
+        requestId: context.requestId,
+        workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId ?? null,
+        workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId ?? null,
+      })
+      const { runLocalCopilotMothershipLifecycle } = await import(
+        '@/local-copilot/integration/mothership-lifecycle'
+      )
+      await runLocalCopilotMothershipLifecycle(
+        requestPayload,
+        context,
+        execContext,
+        lifecycleOptions
+      )
+    } else {
+      logger.info('Delegating copilot turn to external Mothership', {
+        chatId: context.chatId,
+        requestId: context.requestId,
+        workspaceId: lifecycleOptions.workspaceId ?? requestPayload.workspaceId ?? null,
+        workflowId: lifecycleOptions.workflowId ?? requestPayload.workflowId ?? null,
+      })
+      if (!hasCopilotApiKey()) {
+        throw new CopilotBackendError(
+          'Cloud copilot is not configured on this deployment (missing COPILOT_API_KEY). Switch the chat input toggle to Local to use Arena Copilot with your ANTHROPIC_API_KEY, or add COPILOT_API_KEY for Sim Cloud Mothership.',
+          { status: 401, body: 'Missing COPILOT_API_KEY' }
+        )
+      }
+      await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
+    }
 
     const result: OrchestratorResult = {
       success: context.errors.length === 0 && !context.wasAborted,
@@ -191,7 +248,10 @@ export async function runCopilotLifecycle(
     return result
   } catch (error) {
     if (error instanceof BillingLimitError) {
-      await handleBillingLimitResponse(error.userId, context, execContext, lifecycleOptions)
+      await handleBillingLimitResponse(error.userId, context, execContext, lifecycleOptions, {
+        message: error.message,
+        scope: error.scope,
+      })
       const result: OrchestratorResult = {
         success: context.errors.length === 0 && !context.wasAborted,
         cancelled: false,
@@ -690,7 +750,10 @@ async function runCheckpointLoop(
       context.trace.endSpan(streamSpan, RequestTraceV1SpanStatus.error)
       context.trace.setActiveSpan(undefined)
       if (streamError instanceof BillingLimitError) {
-        await handleBillingLimitResponse(streamError.userId, context, execContext, options)
+        await handleBillingLimitResponse(streamError.userId, context, execContext, options, {
+          message: streamError.message,
+          scope: streamError.scope,
+        })
         break
       }
       if (

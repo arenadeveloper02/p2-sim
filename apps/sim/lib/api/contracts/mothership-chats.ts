@@ -85,6 +85,13 @@ export const mothershipExecuteBodySchema = z.object({
   contexts: z.array(scheduleContextSchema).optional(),
   workflowId: z.string().optional(),
   executionId: z.string().optional(),
+  /**
+   * Explicit backend selection for the headless run. Scheduled tasks pin
+   * `local` so they stay on Arena Copilot instead of relying on the routing
+   * default; omitted means "use the default routing decision". Non-allowlisted
+   * users still fall back to the cloud mothership regardless of this value.
+   */
+  copilotBackend: z.enum(['local', 'external']).optional(),
   userMetadata: z
     .object({
       name: z.string().optional(),

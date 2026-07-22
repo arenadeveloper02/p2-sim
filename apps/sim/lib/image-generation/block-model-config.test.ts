@@ -56,9 +56,7 @@ describe('reconcileImageProviderAndModel', () => {
   })
 
   it('coerces provider from gpt-image-2 when provider is gemini', () => {
-    expect(
-      reconcileImageProviderAndModel({ provider: 'gemini', model: 'gpt-image-2' })
-    ).toEqual({
+    expect(reconcileImageProviderAndModel({ provider: 'gemini', model: 'gpt-image-2' })).toEqual({
       provider: 'openai',
       model: 'gpt-image-2',
       coerced: true,

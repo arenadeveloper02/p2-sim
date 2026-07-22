@@ -1,4 +1,29 @@
 import type { BrandConfig, OrganizationWhitelabelSettings } from '@/lib/branding/types'
+import { getContrastTextColor } from '@/lib/colors'
+
+export const DEFAULT_WORKSPACE_DOCS_PATH = '/arena-ai-docs'
+
+/**
+ * Resolve the documentation URL shown in workspace help menus.
+ */
+export function resolveBrandDocsUrl(documentationUrl?: string): string {
+  return documentationUrl?.trim() || DEFAULT_WORKSPACE_DOCS_PATH
+}
+
+/**
+ * Resolve the favicon URL for an organization: dedicated favicon, then logo, then wordmark.
+ */
+export function resolveOrgFaviconUrl(
+  orgSettings: OrganizationWhitelabelSettings | null | undefined,
+  instanceFaviconUrl?: string
+): string | undefined {
+  if (!orgSettings) {
+    return instanceFaviconUrl
+  }
+
+  const resolvedLogo = orgSettings.logoUrl || orgSettings.wordmarkUrl
+  return orgSettings.faviconUrl || resolvedLogo || instanceFaviconUrl
+}
 
 /**
  * Merge org-level whitelabel settings over the instance-level brand config.
@@ -12,11 +37,18 @@ export function mergeOrgBrandConfig(
     return instanceConfig
   }
 
+  const orgLogo = orgSettings.logoUrl
+  const orgWordmark = orgSettings.wordmarkUrl
+  const resolvedLogo = orgLogo || orgWordmark
+  const resolvedWordmark = orgWordmark || orgLogo
+
   return {
     ...instanceConfig,
     name: orgSettings.brandName || instanceConfig.name,
-    logoUrl: orgSettings.logoUrl || instanceConfig.logoUrl,
-    wordmarkUrl: orgSettings.wordmarkUrl || instanceConfig.wordmarkUrl,
+    logoUrl: resolvedLogo || instanceConfig.logoUrl,
+    logoUrlBlacktext: resolvedLogo || instanceConfig.logoUrlBlacktext,
+    wordmarkUrl: resolvedWordmark || instanceConfig.wordmarkUrl,
+    faviconUrl: resolveOrgFaviconUrl(orgSettings, instanceConfig.faviconUrl),
     supportEmail: orgSettings.supportEmail || instanceConfig.supportEmail,
     documentationUrl: orgSettings.documentationUrl || instanceConfig.documentationUrl,
     termsUrl: orgSettings.termsUrl || instanceConfig.termsUrl,
@@ -34,27 +66,10 @@ export function mergeOrgBrandConfig(
         orgSettings.brandName ||
           orgSettings.logoUrl ||
           orgSettings.wordmarkUrl ||
+          orgSettings.faviconUrl ||
           orgSettings.primaryColor
       ),
   }
-}
-
-function isDarkBackground(hex: string): boolean {
-  let clean = hex.replace('#', '')
-  if (clean.length === 3) {
-    clean = clean
-      .split('')
-      .map((c) => c + c)
-      .join('')
-  }
-  const r = Number.parseInt(clean.slice(0, 2), 16)
-  const g = Number.parseInt(clean.slice(2, 4), 16)
-  const b = Number.parseInt(clean.slice(4, 6), 16)
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5
-}
-
-function getContrastTextColor(hex: string): string {
-  return isDarkBackground(hex) ? '#ffffff' : '#000000'
 }
 
 /**

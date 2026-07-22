@@ -9,6 +9,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { pdfjs, Document as ReactPdfDocument, Page as ReactPdfPage } from 'react-pdf'
 import 'react-pdf/dist/Page/TextLayer.css'
+import { toPdfDocumentFile } from '@/app/workspace/[workspaceId]/files/components/file-viewer/pdf-preview'
 import { PREVIEW_LOADING_OVERLAY } from '@/app/workspace/[workspaceId]/files/components/file-viewer/preview-shared'
 import { PreviewToolbar } from '@/app/workspace/[workspaceId]/files/components/file-viewer/preview-toolbar'
 import { bindPreviewWheelZoom } from '@/app/workspace/[workspaceId]/files/components/file-viewer/preview-wheel-zoom'
@@ -43,7 +44,7 @@ interface PdfViewerCoreProps {
 function PdfError({ error }: { error: string }) {
   return (
     <div className='flex flex-1 flex-col items-center justify-center gap-[8px]'>
-      <p className='font-medium text-[14px] text-[var(--text-body)]'>Failed to preview PDF</p>
+      <p className='font-medium text-[14px] text-[var(--text-body)]'>Loading... PDF may take a few minutes to load.</p>
       <p className='text-[13px] text-[var(--text-muted)]'>{error}</p>
     </div>
   )
@@ -67,14 +68,12 @@ export const PdfViewerCore = memo(function PdfViewerCore({ source, filename }: P
 
   const sourceValue = source.kind === 'url' ? source.url : source.buffer
   /**
-   * The buffer copy (`slice(0)`) is load-bearing: pdf.js transfers — and
-   * detaches — the ArrayBuffer it receives to its worker, so handing over the
-   * caller's buffer would leave it unusable on the next render or remount.
+   * Memoize the Document `file` prop (react-pdf compares by reference). Prefer a
+   * Blob over `{ data: Uint8Array }`: pdf.js transfers TypedArrays to the worker
+   * and detaches them, so a remount or Document reload that reuses the memoized
+   * object fails with a blank preview / "Failed to load PDF".
    */
-  const file = useMemo(
-    () => (source.kind === 'url' ? source.url : { data: new Uint8Array(source.buffer.slice(0)) }),
-    [sourceValue]
-  )
+  const file = useMemo(() => toPdfDocumentFile(source), [sourceValue])
 
   /**
    * The first non-zero measurement applies immediately so the document renders
@@ -185,7 +184,7 @@ export const PdfViewerCore = memo(function PdfViewerCore({ source, filename }: P
   }, [applyZoomAt])
 
   return (
-    <div className='flex flex-1 flex-col overflow-hidden'>
+    <div className='flex h-full min-h-0 flex-1 flex-col overflow-hidden'>
       {pageCount > 0 && !loadError && (
         <PreviewToolbar
           navigation={{

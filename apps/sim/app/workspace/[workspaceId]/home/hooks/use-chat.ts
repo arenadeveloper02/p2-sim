@@ -12,6 +12,7 @@ import { getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId, generateShortId } from '@sim/utils/id'
 import { isRecordLike } from '@sim/utils/object'
+import { truncate } from '@sim/utils/string'
 import { useQueryClient } from '@tanstack/react-query'
 import { usePathname, useRouter } from 'next/navigation'
 import { requestJson } from '@/lib/api/client/request'
@@ -54,6 +55,7 @@ import {
   isFilePreviewSession,
 } from '@/lib/copilot/request/session/file-preview-session-contract'
 import type { StreamBatchEvent } from '@/lib/copilot/request/session/types'
+import { buildUsageUpgradeContent } from '@/lib/copilot/request/tools/usage-upgrade'
 import {
   bindRunToolToExecution,
   cancelRunToolExecution,
@@ -63,12 +65,9 @@ import {
 } from '@/lib/copilot/tools/client/run-tool-execution'
 import { setCurrentChatTraceparent } from '@/lib/copilot/tools/client/trace-context'
 import { isWorkflowToolName } from '@/lib/copilot/tools/workflow-tools'
+import { readSSELines } from '@/lib/core/utils/sse'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { useFilePreviewController } from '@/app/workspace/[workspaceId]/home/hooks/preview'
-import {
-  getMothershipChatPath,
-  readMothershipChatSearch,
-} from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
 import {
   applyTurnTerminal,
   createStreamLoopContext,
@@ -76,8 +75,13 @@ import {
   finalizeResidualToolCalls,
 } from '@/app/workspace/[workspaceId]/home/hooks/stream'
 import {
+  getMothershipChatPath,
+  readMothershipChatSearch,
+} from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
+import {
   fetchMothershipChatHistory,
   type MothershipChatHistory,
+  type MothershipChatMetadata,
   mothershipChatKeys,
   useMothershipChatHistory,
 } from '@/hooks/queries/mothership-chats'
@@ -667,6 +671,7 @@ function buildAssistantSnapshotMessage(params: {
   content: string
   contentBlocks: ContentBlock[]
   requestId?: string
+  liveStatus?: string
 }): PersistedMessage {
   const rawContentBlocks = params.contentBlocks
     .map(toRawPersistedContentBlock)
@@ -678,6 +683,7 @@ function buildAssistantSnapshotMessage(params: {
     content: params.content,
     timestamp: new Date().toISOString(),
     ...(params.requestId ? { requestId: params.requestId } : {}),
+    ...(params.liveStatus !== undefined ? { liveStatus: params.liveStatus } : {}),
     ...(rawContentBlocks.length > 0 ? { contentBlocks: rawContentBlocks } : {}),
   })
 }
@@ -1017,6 +1023,8 @@ export interface UseChatOptions {
   activeResourceState?: [string | null, Dispatch<SetStateAction<string | null>>]
   /** Fired when the server's `traceparent` response header arrives, before any stream content. */
   onRequestStarted?: (info: { requestId: string; userMessageId: string }) => void
+  /** Home chat: user-selected local vs external copilot backend. */
+  getCopilotBackend?: () => 'local' | 'external'
 }
 
 interface ActiveStreamRecovery {
@@ -1053,7 +1061,12 @@ export function getMothershipUseChatOptions(
 export function getWorkflowCopilotUseChatOptions(
   options: Pick<
     UseChatOptions,
-    'workflowId' | 'onToolResult' | 'onTitleUpdate' | 'onStreamEnd' | 'onRequestStarted'
+    | 'workflowId'
+    | 'onToolResult'
+    | 'onTitleUpdate'
+    | 'onStreamEnd'
+    | 'onRequestStarted'
+    | 'getCopilotBackend'
   > = {}
 ): UseChatOptions {
   return {
@@ -1113,7 +1126,9 @@ export function useChat(
   const onStreamEndRef = useRef(options?.onStreamEnd)
   onStreamEndRef.current = options?.onStreamEnd
   const onRequestStartedRef = useRef(options?.onRequestStarted)
+  const getCopilotBackendRef = useRef(options?.getCopilotBackend)
   onRequestStartedRef.current = options?.onRequestStarted
+  getCopilotBackendRef.current = options?.getCopilotBackend
 
   const getCurrentRequestId = useCallback(() => {
     const traceId = streamTraceparentRef.current?.split('-')[1] ?? ''
@@ -1959,7 +1974,6 @@ export function useChat(
         shouldContinue?: () => boolean
       }
     ) => {
-      const decoder = new TextDecoder()
       const ctx = createStreamLoopContext({
         workspaceId,
         queryClient,
@@ -2014,71 +2028,47 @@ export function useChat(
         return { sawStreamError: false, sawComplete: false }
       }
       streamReaderRef.current = reader
-      let buffer = ''
 
       try {
-        const pendingLines: string[] = []
+        await readSSELines(reader, {
+          onData: (raw) => {
+            if (state.sawCompleteEvent) return true
+            if (ops.isStale()) return
 
-        while (true) {
-          if (pendingLines.length === 0) {
-            // Don't read another chunk after `complete` has drained.
-            if (state.sawCompleteEvent) break
-            const { done, value } = await reader.read()
-            if (done) break
-            if (ops.isStale()) continue
-
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split('\n')
-            buffer = lines.pop() || ''
-            pendingLines.push(...lines)
-            if (pendingLines.length === 0) {
-              continue
+            const parsedResult = parsePersistedStreamEventEnvelopeJson(raw)
+            if (!parsedResult.ok) {
+              const error = createStreamSchemaValidationError(parsedResult, 'Live SSE event.')
+              logger.error('Rejected chat SSE event due to client-side schema enforcement', {
+                reason: parsedResult.reason,
+                message: parsedResult.message,
+                errors: parsedResult.errors,
+                error: error.message,
+              })
+              throw error
             }
-          }
+            const parsed = parsedResult.event
 
-          const line = pendingLines.shift()
-          if (line === undefined) {
-            continue
-          }
-          if (ops.isStale()) {
-            pendingLines.length = 0
-            continue
-          }
-          if (!line.startsWith('data: ')) continue
-          const raw = line.slice(6)
+            if (parsed.trace?.requestId && parsed.trace.requestId !== state.streamRequestId) {
+              state.streamRequestId = parsed.trace.requestId
+              streamRequestIdRef.current = state.streamRequestId
+              ops.flush()
+            }
+            if (parsed.stream?.streamId) {
+              streamIdRef.current = parsed.stream.streamId
+            }
+            const eventCursor = parsed.stream?.cursor ?? String(parsed.seq)
+            if (isAlreadyProcessedStreamCursor(eventCursor, lastCursorRef.current)) {
+              return
+            }
+            if (eventCursor) {
+              lastCursorRef.current = eventCursor
+            }
 
-          const parsedResult = parsePersistedStreamEventEnvelopeJson(raw)
-          if (!parsedResult.ok) {
-            const error = createStreamSchemaValidationError(parsedResult, 'Live SSE event.')
-            logger.error('Rejected chat SSE event due to client-side schema enforcement', {
-              reason: parsedResult.reason,
-              message: parsedResult.message,
-              errors: parsedResult.errors,
-              error: error.message,
-            })
-            throw error
-          }
-          const parsed = parsedResult.event
-
-          if (parsed.trace?.requestId && parsed.trace.requestId !== state.streamRequestId) {
-            state.streamRequestId = parsed.trace.requestId
-            streamRequestIdRef.current = state.streamRequestId
-            ops.flush()
-          }
-          if (parsed.stream?.streamId) {
-            streamIdRef.current = parsed.stream.streamId
-          }
-          const eventCursor = parsed.stream?.cursor ?? String(parsed.seq)
-          if (isAlreadyProcessedStreamCursor(eventCursor, lastCursorRef.current)) {
-            continue
-          }
-          if (eventCursor) {
-            lastCursorRef.current = eventCursor
-          }
-
-          logger.debug('SSE event received', parsed)
-          dispatchStreamEvent(ctx, parsed)
-        }
+            logger.debug('SSE event received', parsed)
+            dispatchStreamEvent(ctx, parsed)
+            if (state.sawCompleteEvent) return true
+          },
+        })
       } finally {
         if (state.sawStreamError && !state.sawCompleteEvent) {
           applyTurnTerminal(state.model, 'error')
@@ -3373,6 +3363,9 @@ export function useChat(
                 ...(workflowIdRef.current ? { workflowId: workflowIdRef.current } : {}),
                 userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                 effectiveWorkspaceId,
+                ...(getCopilotBackendRef.current
+                  ? { copilotBackend: getCopilotBackendRef.current() }
+                  : {}),
               }),
               signal: abortController.signal,
             })
@@ -3395,6 +3388,125 @@ export function useChat(
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
+
+          // Pre-stream billing/member-credit gate: server returns JSON 402 after
+          // persisting the user + `<usage_upgrade>` assistant turn and releasing
+          // the stream lock. Adopt chatId (new chats), show the upgrade card,
+          // skip reconnect, then invalidate detail so refresh reloads from DB.
+          if (response.status === 402 && !isResolvedWorkflowExecution) {
+            const message =
+              typeof errorData.error === 'string' && errorData.error.trim().length > 0
+                ? errorData.error
+                : 'Usage limit exceeded. Please upgrade your plan to continue.'
+            const scope = typeof errorData.scope === 'string' ? errorData.scope : undefined
+            const serverChatId =
+              typeof errorData.chatId === 'string' && errorData.chatId.trim().length > 0
+                ? errorData.chatId
+                : undefined
+            const serverTitle =
+              typeof errorData.title === 'string' && errorData.title.trim().length > 0
+                ? errorData.title.trim()
+                : undefined
+            const syntheticContent = buildUsageUpgradeContent(message, { scope })
+            const assistantSnapshot = buildAssistantSnapshotMessage({
+              id: assistantId,
+              content: syntheticContent,
+              contentBlocks: [],
+            })
+            const wasNewChat = Boolean(serverChatId && serverChatId !== requestChatId)
+
+            if (wasNewChat && serverChatId) {
+              // Don't invalidate the list here — seed it first, then reconcile
+              // via invalidateChatQueries below (same order as useCreateMothershipChat).
+              adoptResolvedChatId(serverChatId, {
+                replaceHomeHistory: true,
+              })
+              requestChatId = serverChatId
+              streamTargetChatId = serverChatId
+
+              // Optimistic sidebar row — same pattern as useCreateMothershipChat.
+              // 402 never starts SSE, so without this the Chats list stays stale
+              // until a full page refresh.
+              const existing =
+                queryClient.getQueryData<MothershipChatMetadata[]>(
+                  mothershipChatKeys.list(workspaceId)
+                ) ?? []
+              if (!existing.some((chat) => chat.id === serverChatId)) {
+                const listTitle =
+                  serverTitle ||
+                  truncate(optimisticUserMessage.content.trim(), 60).trim() ||
+                  'New chat'
+                const newChat: MothershipChatMetadata = {
+                  id: serverChatId,
+                  name: listTitle,
+                  updatedAt: new Date(),
+                  isActive: false,
+                  isUnread: false,
+                  isPinned: false,
+                }
+                const pinnedCount = existing.findIndex((chat) => !chat.isPinned)
+                const insertAt = pinnedCount === -1 ? existing.length : pinnedCount
+                queryClient.setQueryData<MothershipChatMetadata[]>(
+                  mothershipChatKeys.list(workspaceId),
+                  [...existing.slice(0, insertAt), newChat, ...existing.slice(insertAt)]
+                )
+              }
+            }
+
+            const targetChatId = serverChatId ?? streamTargetChatId ?? requestChatId
+
+            if (targetChatId) {
+              upsertChatHistory(targetChatId, (current) => {
+                const withoutTurn = current.messages.filter(
+                  (persistedMessage) =>
+                    persistedMessage.id !== userMessageId && persistedMessage.id !== assistantId
+                )
+                return {
+                  ...current,
+                  id: targetChatId,
+                  activeStreamId: null,
+                  ...(serverTitle ? { title: serverTitle } : {}),
+                  messages: [...withoutTurn, cachedUserMsg, assistantSnapshot],
+                }
+              })
+            }
+
+            setPendingMessages((prev) => {
+              const withoutTurn = prev.filter(
+                (pendingMessage) =>
+                  pendingMessage.id !== userMessageId && pendingMessage.id !== assistantId
+              )
+              return [
+                ...withoutTurn,
+                optimisticUserMessage,
+                {
+                  ...optimisticAssistantMessage,
+                  content: syntheticContent,
+                  contentBlocks: [],
+                },
+              ]
+            })
+
+            if (queuedSendHandoff) {
+              clearQueuedSendHandoffState(queuedSendHandoff.id)
+            }
+
+            if (streamGenRef.current === gen) {
+              locallyTerminalStreamIdRef.current =
+                streamIdRef.current ?? activeTurnRef.current?.userMessageId ?? userMessageId
+              abortController.abort('billing_limit')
+              abortControllerRef.current = null
+              clearActiveTurn()
+              setTransportIdle()
+              invalidateChatQueries({
+                includeDetail: Boolean(targetChatId),
+                ...(targetChatId ? { targetChatId } : {}),
+              })
+              notifyTurnEnded({ error: true })
+            }
+            return consumedByTranscript
+          }
+
           if (response.status === 409 && !isResolvedWorkflowExecution) {
             const conflictStreamId =
               typeof errorData.activeStreamId === 'string'
@@ -3522,6 +3634,8 @@ export function useChat(
       adoptResolvedChatId,
       setTransportIdle,
       setTransportStreaming,
+      invalidateChatQueries,
+      notifyTurnEnded,
     ]
   )
   const sendMessage = useCallback(

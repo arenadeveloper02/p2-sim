@@ -2,28 +2,9 @@ import { createLogger } from '@sim/logger'
 import { GmailIcon } from '@/components/icons'
 import { requestJson } from '@/lib/api/client/request'
 import { gmailLabelsSelectorContract } from '@/lib/api/contracts/selectors/google'
-import { isCredentialSetValue } from '@/executor/constants'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import type { TriggerConfig } from '@/triggers/types'
 
 const logger = createLogger('GmailPollingTrigger')
-
-// Gmail system labels that exist for all accounts (used as defaults for credential sets)
-const GMAIL_SYSTEM_LABELS = [
-  { id: 'INBOX', label: 'Inbox' },
-  { id: 'SENT', label: 'Sent' },
-  { id: 'DRAFT', label: 'Drafts' },
-  { id: 'SPAM', label: 'Spam' },
-  { id: 'TRASH', label: 'Trash' },
-  { id: 'STARRED', label: 'Starred' },
-  { id: 'IMPORTANT', label: 'Important' },
-  { id: 'UNREAD', label: 'Unread' },
-  { id: 'CATEGORY_PERSONAL', label: 'Category: Personal' },
-  { id: 'CATEGORY_SOCIAL', label: 'Category: Social' },
-  { id: 'CATEGORY_PROMOTIONS', label: 'Category: Promotions' },
-  { id: 'CATEGORY_UPDATES', label: 'Category: Updates' },
-  { id: 'CATEGORY_FORUMS', label: 'Category: Forums' },
-]
 
 export const gmailPollingTrigger: TriggerConfig = {
   id: 'gmail_poller',
@@ -44,7 +25,6 @@ export const gmailPollingTrigger: TriggerConfig = {
       requiredScopes: [],
       required: true,
       mode: 'trigger',
-      supportsCredentialSets: true,
     },
     {
       id: 'labelIds',
@@ -56,16 +36,13 @@ export const gmailPollingTrigger: TriggerConfig = {
       required: false,
       options: [], // Will be populated dynamically from user's Gmail labels
       fetchOptions: async (blockId: string) => {
+        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
         const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
           | string
           | null
         if (!credentialId) {
           // Return a sentinel to prevent infinite retry loops when credential is missing
           throw new Error('No Gmail credential selected')
-        }
-        // Return default system labels for credential sets (can't fetch user-specific labels for a pool)
-        if (isCredentialSetValue(credentialId)) {
-          return GMAIL_SYSTEM_LABELS
         }
         try {
           const data = await requestJson(gmailLabelsSelectorContract, {
@@ -207,7 +184,7 @@ Return ONLY the Gmail search query, no explanations or markdown.`,
         description: 'HTML email body',
       },
       labels: {
-        type: 'string',
+        type: 'array',
         description: 'Email labels array',
       },
       hasAttachments: {
