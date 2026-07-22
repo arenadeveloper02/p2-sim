@@ -419,18 +419,6 @@ function ThreadRow({
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
-        {isActive && (
-          <button
-            type='button'
-            className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-white'
-            onClick={onRefresh}
-            disabled={isStreaming}
-            aria-label='Refresh conversation'
-          >
-            <RefreshCw className='size-3.5' />
-          </button>
-        )}
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -464,14 +452,22 @@ function ThreadRow({
                 </>
               )}
             </DropdownMenuItem>
-            {isActive && onShareChat && (
-              <DropdownMenuItem onClick={onShareChat} className={THREAD_MENU_ITEM_CLASS}>
+            {onShareChat && (
+              <DropdownMenuItem
+                onClick={onShareChat}
+                disabled={!isActive}
+                className={THREAD_MENU_ITEM_CLASS}
+              >
                 <Share2 />
                 Copy link
               </DropdownMenuItem>
             )}
-            {isActive && onExportChat && (
-              <DropdownMenuItem onClick={onExportChat} className={THREAD_MENU_ITEM_CLASS}>
+            {onExportChat && (
+              <DropdownMenuItem
+                onClick={onExportChat}
+                disabled={!isActive}
+                className={THREAD_MENU_ITEM_CLASS}
+              >
                 <Download />
                 Export chat
               </DropdownMenuItem>

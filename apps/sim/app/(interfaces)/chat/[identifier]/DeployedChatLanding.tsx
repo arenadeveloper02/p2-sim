@@ -133,7 +133,6 @@ export function DeployedChatLanding({
   const firstName = getDeployedChatFirstName(userName)
   const descriptionSource = resolveDeployedChatLandingDescription({
     title,
-    description: chatConfig.description,
     welcomeMessage: chatConfig.customizations?.welcomeMessage,
   })
 
