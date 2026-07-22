@@ -57,6 +57,7 @@ vi.mock('@/lib/core/config/env', () =>
 )
 
 import { DEFAULT_MAX_ERROR_BODY_BYTES } from '@/lib/core/utils/stream-limits'
+
 const { mockGetOrganizationOAuthApp } = vi.hoisted(() => ({
   mockGetOrganizationOAuthApp: vi.fn(),
 }))

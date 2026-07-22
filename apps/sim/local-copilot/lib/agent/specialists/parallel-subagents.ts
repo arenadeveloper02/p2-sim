@@ -5,9 +5,9 @@ import { truncate } from '@sim/utils/string'
 import { MAX_PARALLEL_SUBAGENTS } from '@/local-copilot/lib/agent/specialists/classify'
 import type { LocalCopilotSpecialistDomain } from '@/local-copilot/lib/agent/specialists/domains'
 import {
-  SPECIALIST_FINDINGS_MAX_CHARS,
   executeSpecialistLoop,
   type RunSpecialistPassParams,
+  SPECIALIST_FINDINGS_MAX_CHARS,
   type SpecialistPassResult,
 } from '@/local-copilot/lib/agent/specialists/specialist-pass'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'

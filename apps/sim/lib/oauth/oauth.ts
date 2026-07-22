@@ -62,8 +62,8 @@ import {
   DEFAULT_MAX_ERROR_BODY_BYTES,
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
-import { parseInstagramLongLivedToken } from '@/lib/oauth/instagram'
 import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
+import { parseInstagramLongLivedToken } from '@/lib/oauth/instagram'
 import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import type { OAuthProviderConfig } from './types'
 

@@ -1,6 +1,5 @@
 import { truncate } from '@sim/utils/string'
 import type { Edge } from 'reactflow'
-import { estimateTokens } from '@/lib/chunkers/utils'
 import { getAccurateTokenCount, truncateToTokenLimit } from '@/lib/tokenization/estimators'
 import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'

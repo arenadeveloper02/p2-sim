@@ -18,9 +18,12 @@ import { Tooltip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  resolveEChartsOptionsFromContent,
+  stripEChartsJsonFromContent,
+} from '@/lib/chart-generation/echarts-option'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
-import { resolveEChartsOptionsFromContent, stripEChartsJsonFromContent } from '@/lib/chart-generation/echarts-option'
 import { ChatEChartsRenderer } from '@/app/(interfaces)/chat/components/message/components/chat-echarts-renderer'
 import { KnowledgeResultsModal } from '@/app/(interfaces)/chat/components/message/components/knowledge-results-modal'
 import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/components/streaming-indicator'
@@ -398,8 +401,7 @@ export const ArenaClientChatMessage = memo(
       }
 
       if (content === message.content && messageChartOptions) {
-        const prose =
-          typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
+        const prose = typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
         return (
           <>
             {prose ? renderStringContent(prose) : null}

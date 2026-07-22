@@ -21,9 +21,7 @@ export function toAnthropicTools(tools: ChatCompletionRequest['tools']) {
     name: tool.name,
     description: tool.description,
     input_schema: tool.parameters as Record<string, unknown>,
-    ...(index === all.length - 1
-      ? { cache_control: getAnthropicAutomaticCacheControl() }
-      : {}),
+    ...(index === all.length - 1 ? { cache_control: getAnthropicAutomaticCacheControl() } : {}),
   }))
 }
 

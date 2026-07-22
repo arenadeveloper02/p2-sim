@@ -19,13 +19,13 @@ import {
   type WorkspaceQueryScope,
   type WorkspacesResponse,
 } from '@/lib/api/contracts'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
+import { setZoomAdminAccessCache } from '@/lib/workspaces/zoom-admin-access-cache'
 import {
   normalizeWorkspace,
   normalizeWorkspacesResponse,
   WORKSPACE_LIST_STALE_TIME,
 } from '@/hooks/queries/utils/workspace-list-query'
-import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
-import { setZoomAdminAccessCache } from '@/lib/workspaces/zoom-admin-access-cache'
 
 /**
  * Query key factory for workspace-related queries.

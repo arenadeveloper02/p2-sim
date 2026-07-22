@@ -283,7 +283,7 @@ const ARENA_CUSTOM_SETTINGS_SECTIONS: readonly SettingsSectionRegistryEntry[] = 
     docsLink: 'https://docs.sim.ai/platform/enterprise/custom-oauth-apps',
     unified: {
       id: 'oauth-apps',
-      description: 'Register your organization\'s OAuth app credentials for integrations like Zoom.',
+      description: "Register your organization's OAuth app credentials for integrations like Zoom.",
       group: 'subscription',
       hideWhenBillingDisabled: true,
       requiresHosted: true,

@@ -21,8 +21,8 @@ import {
   type TokenServiceAccountSecretBlob,
 } from '@/lib/credentials/token-service-accounts/server'
 import { refreshOAuthToken } from '@/lib/oauth'
-import { isInstagramProvider, shouldProactivelyRefreshInstagramToken } from '@/lib/oauth/instagram'
 import { getOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
+import { isInstagramProvider, shouldProactivelyRefreshInstagramToken } from '@/lib/oauth/instagram'
 import {
   getMicrosoftRefreshTokenExpiry,
   isMicrosoftProvider,

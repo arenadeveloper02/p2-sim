@@ -121,12 +121,7 @@ const FILE_TOOLS = [
   'restore_resource',
 ] as const
 
-const DATA_TOOLS = [
-  'user_table',
-  'knowledge_base',
-  'enrichment_run',
-  'materialize_file',
-] as const
+const DATA_TOOLS = ['user_table', 'knowledge_base', 'enrichment_run', 'materialize_file'] as const
 
 const AUTH_TOOLS = [
   'manage_credential',
@@ -137,12 +132,7 @@ const AUTH_TOOLS = [
   'list_integration_tools',
 ] as const
 
-const MEDIA_TOOLS = [
-  'generate_image',
-  'generate_audio',
-  'generate_video',
-  'ffmpeg',
-] as const
+const MEDIA_TOOLS = ['generate_image', 'generate_audio', 'generate_video', 'ffmpeg'] as const
 
 const SCHEDULE_TOOLS = [
   'manage_scheduled_task',

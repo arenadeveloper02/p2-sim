@@ -1,13 +1,14 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { truncate } from '@sim/utils/string'
 import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
+import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import {
   domainSystemHint,
   filterToolsByNames,
-  toolNamesForDomain,
   type LocalCopilotSpecialistDomain,
+  toolNamesForDomain,
 } from '@/local-copilot/lib/agent/specialists/domains'
-import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
 import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
@@ -16,7 +17,6 @@ import {
   sortToolCallsForExecution,
 } from '@/local-copilot/lib/tools/format-tool-result'
 import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
-import { truncate } from '@sim/utils/string'
 
 const logger = createLogger('LocalCopilotSpecialistPass')
 

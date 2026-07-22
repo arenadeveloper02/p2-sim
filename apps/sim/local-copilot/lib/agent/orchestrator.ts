@@ -5,6 +5,18 @@ import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
+import {
+  classifyLocalCopilotIntent,
+  selectParallelSubagentDomains,
+  specialistPassDomain,
+} from '@/local-copilot/lib/agent/specialists/classify'
+import {
+  domainSystemHint,
+  filterToolsByNames,
+  toolNamesForIntent,
+} from '@/local-copilot/lib/agent/specialists/domains'
+import { runParallelSubagents } from '@/local-copilot/lib/agent/specialists/parallel-subagents'
+import { runSpecialistPass } from '@/local-copilot/lib/agent/specialists/specialist-pass'
 import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
 import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
@@ -49,18 +61,6 @@ import {
   resolveMandatoryFollowUps,
   sortToolCallsForExecution,
 } from '@/local-copilot/lib/tools/format-tool-result'
-import {
-  classifyLocalCopilotIntent,
-  selectParallelSubagentDomains,
-  specialistPassDomain,
-} from '@/local-copilot/lib/agent/specialists/classify'
-import {
-  domainSystemHint,
-  filterToolsByNames,
-  toolNamesForIntent,
-} from '@/local-copilot/lib/agent/specialists/domains'
-import { runParallelSubagents } from '@/local-copilot/lib/agent/specialists/parallel-subagents'
-import { runSpecialistPass } from '@/local-copilot/lib/agent/specialists/specialist-pass'
 import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 import {
