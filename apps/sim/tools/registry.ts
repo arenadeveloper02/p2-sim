@@ -443,6 +443,7 @@ import {
   calendlyListScheduledEventsTool,
   calendlyListWebhooksTool,
 } from '@/tools/calendly'
+import { chartGenerateTool } from '@/tools/chart_generation/generate'
 import { chartValidateTool } from '@/tools/chart_generation/validate'
 import { clayPopulateTool } from '@/tools/clay'
 import {
@@ -5679,6 +5680,7 @@ export const tools: Record<string, ToolConfig> = {
   calendly_create_webhook: calendlyCreateWebhookTool,
   calendly_delete_webhook: calendlyDeleteWebhookTool,
   chart_validate: chartValidateTool,
+  chart_generate: chartGenerateTool,
   calcom_create_booking: calcomCreateBookingTool,
   calcom_get_booking: calcomGetBookingTool,
   calcom_list_bookings: calcomListBookingsTool,

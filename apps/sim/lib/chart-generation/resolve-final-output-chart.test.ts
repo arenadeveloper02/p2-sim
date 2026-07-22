@@ -75,11 +75,55 @@ describe('resolveChartContentFromFinalOutput', () => {
     expectRenderable(result)
   })
 
+  it('recovers the chart from an Agent block tool-call result (deep scan)', () => {
+    // Shape produced when the Agent block calls Chart Generator as a tool:
+    // the chart is nested under toolCalls.list[].result, not the agent content.
+    const finalOutput = {
+      content: 'Here is the line chart you asked for.',
+      model: 'gpt-5.5',
+      toolCalls: {
+        list: [
+          {
+            name: 'chart_generator',
+            arguments: { userRequest: 'line chart' },
+            result: {
+              charts: [lineTrendlineOption],
+              count: 1,
+              valid: true,
+              skipped: false,
+              content: contentString,
+              dashboard: { charts: [lineTrendlineOption], count: 1 },
+            },
+          },
+        ],
+        count: 1,
+      },
+    }
+    const result = resolveChartContentFromFinalOutput(finalOutput, [])
+    expectRenderable(result)
+  })
+
   it('returns null for text-only output (no regression on plain responses)', () => {
     expect(resolveChartContentFromFinalOutput({ content: 'just a summary, no chart' }, [])).toBeNull()
     expect(resolveChartContentFromFinalOutput('hello world', [])).toBeNull()
     expect(resolveChartContentFromFinalOutput(null, [])).toBeNull()
     expect(resolveChartContentFromFinalOutput(undefined, [])).toBeNull()
+  })
+
+  it('returns null when an Agent tool-call skipped chart generation (text-only)', () => {
+    const finalOutput = {
+      content: 'No chart requested, here is a summary.',
+      toolCalls: {
+        list: [
+          {
+            name: 'chart_generator',
+            result: { charts: [], count: 0, valid: false, skipped: true, content: 'summary text' },
+          },
+        ],
+        count: 1,
+      },
+    }
+    expect(resolveChartContentFromFinalOutput(finalOutput, [])).toBeNull()
   })
 })
 

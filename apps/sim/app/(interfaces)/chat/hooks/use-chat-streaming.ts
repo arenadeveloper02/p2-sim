@@ -8,7 +8,11 @@ import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
-import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
+import {
+  extractChartsFromData,
+  formatChartDeployOutputForChat,
+  formatChartsForChat,
+} from '@/lib/chart-generation/echarts-option'
 import { readSSEEvents } from '@/lib/core/utils/sse'
 import type { ChatMessage } from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
@@ -454,9 +458,42 @@ function collectForkConfiguredOutputs(
     if (formatted) {
       formattedOutputs.push(formatted)
     }
+
+    // Surface charts nested inside the full block output (e.g. the Agent block
+    // calling Chart Generator as a tool, where the chart lands in
+    // `toolCalls.list[].result`). Only append charts not already rendered by the
+    // selected value, so the standalone Chart Generator block never duplicates.
+    const chartFromNested = resolveNestedChartOutput(blockOutputs, value)
+    if (chartFromNested) {
+      formattedOutputs.push(chartFromNested)
+    }
   }
 
   return { formattedOutputs, extractedFiles, generatedImages }
+}
+
+/**
+ * Returns chart content found deeper in the block output than the selected value
+ * (Agent tool-call results), de-duplicated against charts already present in the
+ * selected value. Returns null when there is nothing new to render.
+ */
+function resolveNestedChartOutput(
+  blockOutputs: Record<string, unknown>,
+  selectedValue: unknown
+): string | null {
+  const allCharts = extractChartsFromData(blockOutputs)
+  if (allCharts.length === 0) {
+    return null
+  }
+
+  const existingSignatures = new Set(
+    extractChartsFromData(selectedValue).map((option) => JSON.stringify(option))
+  )
+  const newCharts = allCharts.filter(
+    (option) => !existingSignatures.has(JSON.stringify(option))
+  )
+
+  return formatChartsForChat(newCharts)
 }
 
 function resolveForkFallbackContent(finalData: StreamFinalData): string | undefined {

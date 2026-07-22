@@ -259,6 +259,81 @@ export function resolveEChartsOptionsFromContent(content: unknown): EChartsOptio
   return resolveEChartsOptionsFromParsed(content)
 }
 
+/** Maximum recursion depth when scanning arbitrary tool output for charts. */
+const MAX_CHART_SCAN_DEPTH = 8
+
+function chartSignature(option: EChartsOptionLike): string {
+  try {
+    return JSON.stringify(option)
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Recursively extracts every renderable ECharts option from arbitrary data,
+ * mirroring `extractGeneratedImagesFromData` for images. This is what lets a
+ * chart produced by the Chart Generator when it is called as an Agent tool
+ * surface for rendering: the chart is nested inside the agent block output at
+ * `toolCalls.list[].result.{charts,content,dashboard}` rather than in the
+ * agent's own `content`. Detection stays permissive and type-agnostic (delegated
+ * to `resolveEChartsOptionsFromContent`), and results are de-duplicated by option
+ * signature so the same chart found via `charts`/`content`/`dashboard` counts once.
+ */
+export function extractChartsFromData(
+  data: unknown,
+  charts: EChartsOptionLike[] = [],
+  seen: Set<string> = new Set(),
+  depth = 0
+): EChartsOptionLike[] {
+  if (data === null || data === undefined || depth > MAX_CHART_SCAN_DEPTH) {
+    return charts
+  }
+
+  const direct = resolveEChartsOptionsFromContent(data)
+  if (direct && direct.length > 0) {
+    for (const option of direct) {
+      const sig = chartSignature(option)
+      if (sig && !seen.has(sig)) {
+        seen.add(sig)
+        charts.push(option)
+      }
+    }
+    return charts
+  }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      extractChartsFromData(item, charts, seen, depth + 1)
+    }
+    return charts
+  }
+
+  if (typeof data === 'object') {
+    for (const value of Object.values(data as Record<string, unknown>)) {
+      extractChartsFromData(value, charts, seen, depth + 1)
+    }
+  }
+
+  return charts
+}
+
+/**
+ * Formats extracted charts into chat message content (a fenced JSON block the
+ * renderers already understand), or null when there are no charts.
+ */
+export function formatChartsForChat(charts: EChartsOptionLike[]): string | null {
+  if (!charts || charts.length === 0) {
+    return null
+  }
+  const payload = charts.length === 1 ? charts[0] : { charts }
+  try {
+    return `\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``
+  } catch {
+    return null
+  }
+}
+
 /**
  * Returns a defensive copy of the option with oversized series data truncated.
  * Falls back to the original option if cloning fails.

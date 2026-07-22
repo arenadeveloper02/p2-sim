@@ -21,7 +21,11 @@
  * never altered.
  */
 
-import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
+import {
+  extractChartsFromData,
+  formatChartDeployOutputForChat,
+  formatChartsForChat,
+} from '@/lib/chart-generation/echarts-option'
 import {
   extractBlockIdFromOutputId,
   extractPathFromOutputId,
@@ -108,6 +112,15 @@ export function resolveChartContentFromFinalOutput(
         return chartContent
       }
     }
+  }
+
+  // 4. Deep scan for charts buried in nested structures — specifically the Agent
+  //    block calling Chart Generator as a tool, where the chart lands in
+  //    `toolCalls.list[].result` rather than at the top level.
+  const deepCharts = extractChartsFromData(finalOutput)
+  const deepContent = formatChartsForChat(deepCharts)
+  if (deepContent) {
+    return deepContent
   }
 
   return null

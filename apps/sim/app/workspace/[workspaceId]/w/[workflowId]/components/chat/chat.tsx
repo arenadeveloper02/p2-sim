@@ -26,7 +26,10 @@ import {
   extractGeneratedImagesFromData,
   isAssistantImageUrl,
 } from '@/lib/chat/assistant-assets'
-import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
+import {
+  formatChartDeployOutputForChat,
+  hasRenderableChartDeployOutput,
+} from '@/lib/chart-generation/echarts-option'
 import { resolveChartContentFromFinalOutput } from '@/lib/chart-generation/resolve-final-output-chart'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import {
@@ -728,7 +731,20 @@ export function Chat() {
           finalizeMessageStream(responseMessageId)
         } else {
           const chartContent = resolveStreamedChartContent(finalOutput, selectedOutputs)
-          finalizeMessageStream(responseMessageId, chartContent ?? undefined)
+          if (chartContent) {
+            const streamedText = accumulatedContent.trim()
+            // When the streamed answer already renders a chart (standalone Chart
+            // Generator block), replace it with the resolved chart. When there is
+            // separate answer text without a chart (Agent block that called Chart
+            // Generator as a tool), keep the text and append the chart below it.
+            const finalContent =
+              !streamedText || hasRenderableChartDeployOutput(streamedText)
+                ? chartContent
+                : `${streamedText}\n\n${chartContent}`
+            finalizeMessageStream(responseMessageId, finalContent)
+          } else {
+            finalizeMessageStream(responseMessageId)
+          }
         }
       } catch (error) {
         if ((error as Error)?.name !== 'AbortError') {
