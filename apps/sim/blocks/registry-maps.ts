@@ -190,6 +190,7 @@ import { LoopsBlock, LoopsBlockMeta } from '@/blocks/blocks/loops'
 import { LumaBlock, LumaBlockMeta } from '@/blocks/blocks/luma'
 import { MailchimpBlock, MailchimpBlockMeta } from '@/blocks/blocks/mailchimp'
 import { MailgunBlock, MailgunBlockMeta } from '@/blocks/blocks/mailgun'
+import { ManagedAgentBlock, ManagedAgentBlockMeta } from '@/blocks/blocks/managed_agent'
 import { ManualTriggerBlock } from '@/blocks/blocks/manual_trigger'
 import { McpBlock } from '@/blocks/blocks/mcp'
 import { Mem0Block, Mem0BlockMeta } from '@/blocks/blocks/mem0'
@@ -536,6 +537,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   luma: LumaBlock,
   mailchimp: MailchimpBlock,
   mailgun: MailgunBlock,
+  managed_agent: ManagedAgentBlock,
   manual_trigger: ManualTriggerBlock,
   mcp: McpBlock,
   mem0: Mem0Block,
@@ -840,6 +842,7 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   luma: LumaBlockMeta,
   mailchimp: MailchimpBlockMeta,
   mailgun: MailgunBlockMeta,
+  managed_agent: ManagedAgentBlockMeta,
   mem0: Mem0BlockMeta,
   microsoft_ad: MicrosoftAdBlockMeta,
   microsoft_dataverse: MicrosoftDataverseBlockMeta,

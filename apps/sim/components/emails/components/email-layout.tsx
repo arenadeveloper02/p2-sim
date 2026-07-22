@@ -60,9 +60,9 @@ export function EmailLayout({
               src={logoPng || brand.logoUrl || `${baseUrl}/brand/color/email/wordmark.png`}
               // width='48'
               // height='48'
-              height='34'
               {...(hasCustomLogo ? {} : { width: '70' })}
               alt={brand.name}
+              {...(hasCustomLogo ? { height: '34' } : { height: '41', width: '68' })}
               style={hasCustomLogo ? { display: 'block', width: 'auto' } : { display: 'block' }}
             />
           </Section>

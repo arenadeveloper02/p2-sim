@@ -63,6 +63,7 @@ import {
   useActiveSearchTarget,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { getAllBlocks, getBlock } from '@/blocks'
+import { isCustomBlockType } from '@/blocks/custom/build-config'
 import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { getTileIconColorClass } from '@/blocks/icon-color'
 import type { SubBlockConfig as BlockSubBlockConfig } from '@/blocks/types'
@@ -776,7 +777,9 @@ export const ToolInput = memo(function ToolInput({
     if (hasMultipleOperations(blockType)) {
       return false
     }
-    if (blockType === 'workflow' || blockType === 'knowledge') {
+    // Custom blocks all share toolId `workflow_executor`, so dedup-by-toolId would
+    // block a second (distinct) custom block — allow multiple like workflow/knowledge.
+    if (blockType === 'workflow' || blockType === 'knowledge' || isCustomBlockType(blockType)) {
       return false
     }
     return selectedTools.some((tool) => tool.toolId === toolId)
@@ -814,14 +817,12 @@ export const ToolInput = memo(function ToolInput({
       const operationOptions = hasOperations ? getOperationOptions(toolBlock.type) : []
       const defaultOperation = operationOptions.length > 0 ? operationOptions[0].id : undefined
 
-      const toolId = getToolIdForOperation(toolBlock.type, defaultOperation)
+      const toolId = getToolIdForOperation(toolBlock.type, defaultOperation, toolBlock)
       if (!toolId) return
 
       if (isToolAlreadySelected(toolId, toolBlock.type)) return
 
-      const toolParams = getToolParametersConfig(toolId, toolBlock.type, {
-        operation: defaultOperation,
-      })
+      const toolParams = getToolParametersConfig(toolId, toolBlock.type, undefined, toolBlock)
       if (!toolParams) return
 
       const initialParams = buildInitialAgentToolParams(
@@ -1026,7 +1027,7 @@ export const ToolInput = memo(function ToolInput({
 
       const tool = selectedTools[toolIndex]
 
-      const newToolId = getToolIdForOperation(tool.type, operation)
+      const newToolId = getToolIdForOperation(tool.type, operation, getBlock(tool.type))
 
       if (!newToolId) {
         return
@@ -1625,7 +1626,7 @@ export const ToolInput = memo(function ToolInput({
       groups.push({
         section: 'Built-in Tools',
         items: builtInTools.map((block) => {
-          const toolId = getToolIdForOperation(block.type, undefined)
+          const toolId = getToolIdForOperation(block.type, undefined, block)
           const alreadySelected = toolId ? isToolAlreadySelected(toolId, block.type) : false
           return {
             label: block.name,
@@ -1642,7 +1643,7 @@ export const ToolInput = memo(function ToolInput({
       groups.push({
         section: 'Integrations',
         items: integrations.map((block) => {
-          const toolId = getToolIdForOperation(block.type, undefined)
+          const toolId = getToolIdForOperation(block.type, undefined, block)
           const alreadySelected = toolId ? isToolAlreadySelected(toolId, block.type) : false
           return {
             label: block.name,
@@ -1741,15 +1742,22 @@ export const ToolInput = memo(function ToolInput({
 
           const currentToolId =
             !isCustomTool && !isMcpTool
-              ? getToolIdForOperation(tool.type, tool.operation) || tool.toolId || ''
+              ? getToolIdForOperation(tool.type, tool.operation, toolBlock ?? undefined) ||
+                tool.toolId ||
+                ''
               : tool.toolId || ''
 
           const toolParams =
             !isCustomTool && !isMcpTool && currentToolId
-              ? getToolParametersConfig(currentToolId, tool.type, {
-                  ...tool.params,
-                  operation: tool.operation,
-                })
+              ? getToolParametersConfig(
+                  currentToolId,
+                  tool.type,
+                  {
+                    operation: tool.operation,
+                    ...tool.params,
+                  },
+                  toolBlock ?? undefined
+                )
               : null
 
           const toolScopedOverrides = scopeCanonicalModesForTool(
@@ -1767,7 +1775,8 @@ export const ToolInput = memo(function ToolInput({
                     ...tool.params,
                     operation: tool.operation,
                   },
-                  toolScopedOverrides
+                  toolScopedOverrides,
+                  toolBlock ?? undefined
                 )
               : null
 

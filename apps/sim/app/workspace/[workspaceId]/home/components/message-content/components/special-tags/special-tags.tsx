@@ -645,12 +645,12 @@ export function SpecialTags({
 }
 
 interface PendingTagIndicatorProps {
-  /** Server-authored live status (Local Copilot). Defaults to Thinking…. */
-  label?: string
+  /** Activity phrase next to the loader; crossfades on change. */
+  label: string
 }
 
 /**
- * Renders a "Thinking" shimmer while a special tag is still streaming in.
+ * Renders the turn-level activity shimmer.
  */
 export function PendingTagIndicator({ label = 'Thinking…' }: PendingTagIndicatorProps) {
   return (
@@ -668,6 +668,14 @@ export function PendingTagIndicator({ label = 'Thinking…' }: PendingTagIndicat
     </div>
   )
 }
+
+// export function PendingTagIndicator({ label }: PendingTagIndicatorProps) {
+//   return (
+//     <div className='animate-stream-fade-in py-2'>
+//       <ThinkingLoader size={20} startVariant='corners' label={label} labelRatio={0.7} />
+//     </div>
+//   )
+// }
 
 interface OptionsDisplayProps {
   data: OptionsTagData
