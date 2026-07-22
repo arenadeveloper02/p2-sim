@@ -105,37 +105,36 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
 
     // Validate duration (provider-specific constraints)
-    if (provider === 'veo') {
-      if (duration !== undefined && ![4, 6, 8].includes(duration)) {
-        return NextResponse.json(
-          { error: 'Duration must be 4, 6, or 8 seconds for Veo' },
-          { status: 400 }
-        )
-      }
-    } else if (provider === 'minimax') {
-      if (duration !== undefined && ![6, 10].includes(duration)) {
-        return NextResponse.json(
-          { error: 'Duration must be 6 or 10 seconds for MiniMax' },
-          { status: 400 }
-        )
-      }
-    } else if (provider !== 'falai' && duration !== undefined && (duration < 5 || duration > 10)) {
-      // Fal.ai has variable duration constraints per model, skip validation
-      return NextResponse.json(
-        { error: 'Duration must be between 5 and 10 seconds' },
-        { status: 400 }
-      )
-    }
+    // if (provider === 'veo') {
+    //   if (duration !== undefined && ![4, 6, 8].includes(duration)) {
+    //     return NextResponse.json(
+    //       { error: 'Duration must be 4, 6, or 8 seconds for Veo' },
+    //       { status: 400 }
+    //     )
+    //   }
+    // } else if (provider === 'minimax') {
+    //   if (duration !== undefined && ![6, 10].includes(duration)) {
+    //     return NextResponse.json(
+    //       { error: 'Duration must be 6 or 10 seconds for MiniMax' },
+    //       { status: 400 }
+    //     )
+    //   }
+    // } else if (provider !== 'falai' && duration !== undefined && (duration < 5 || duration > 10)) {
+    //   return NextResponse.json(
+    //     { error: 'Duration must be between 5 and 10 seconds' },
+    //     { status: 400 }
+    //   )
+    // }
 
-    if (provider !== 'falai') {
-      const validAspectRatios = provider === 'veo' ? ['16:9', '9:16'] : ['16:9', '9:16', '1:1']
-      if (aspectRatio && !validAspectRatios.includes(aspectRatio)) {
-        return NextResponse.json(
-          { error: `Aspect ratio must be ${validAspectRatios.join(', ')}` },
-          { status: 400 }
-        )
-      }
-    }
+    // if (provider !== 'falai') {
+    //   const validAspectRatios = provider === 'veo' ? ['16:9', '9:16'] : ['16:9', '9:16', '1:1']
+    //   if (aspectRatio && !validAspectRatios.includes(aspectRatio)) {
+    //     return NextResponse.json(
+    //       { error: `Aspect ratio must be ${validAspectRatios.join(', ')}` },
+    //       { status: 400 }
+    //     )
+    //   }
+    // }
 
     logger.info(`[${requestId}] Generating video with ${provider}, model: ${model || 'default'}`)
 
@@ -147,84 +146,88 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     let actualDuration: number | undefined
     let falaiCost: FalAICostMetadata | undefined
 
-    if (body.visualReference) {
-      const denied = await assertToolFileAccess(
-        body.visualReference.key,
-        authResult.userId,
-        requestId,
-        logger
-      )
-      if (denied) return denied
-    }
+    // if (body.visualReference) {
+    //   const denied = await assertToolFileAccess(
+    //     body.visualReference.key,
+    //     authResult.userId,
+    //     requestId,
+    //     logger
+    //   )
+    //   if (denied) return denied
+    // }
 
     try {
-      if (provider === 'runway') {
-        const result = await generateWithRunway(
-          apiKey,
-          model || 'gen-4',
-          prompt,
-          duration || 5,
-          aspectRatio || '16:9',
-          resolution || '1080p',
-          body.visualReference,
-          requestId,
-          logger
-        )
-        videoBuffer = result.buffer
-        width = result.width
-        height = result.height
-        jobId = result.jobId
-        actualDuration = result.duration
-      } else if (provider === 'veo') {
-        const result = await generateWithVeo(
-          apiKey,
-          model || 'veo-3',
-          prompt,
-          duration || 8, // Default to 8 seconds (valid: 4, 6, or 8)
-          aspectRatio || '16:9',
-          resolution || '1080p',
-          requestId,
-          logger
-        )
-        videoBuffer = result.buffer
-        width = result.width
-        height = result.height
-        jobId = result.jobId
-        actualDuration = result.duration
-      } else if (provider === 'luma') {
-        const result = await generateWithLuma(
-          apiKey,
-          model || 'ray-2',
-          prompt,
-          duration || 5,
-          aspectRatio || '16:9',
-          resolution || '1080p',
-          body.cameraControl,
-          requestId,
-          logger
-        )
-        videoBuffer = result.buffer
-        width = result.width
-        height = result.height
-        jobId = result.jobId
-        actualDuration = result.duration
-      } else if (provider === 'minimax') {
-        const result = await generateWithMiniMax(
-          apiKey,
-          model || 'hailuo-2.3',
-          prompt,
-          duration || 6,
-          body.promptOptimizer !== false,
-          body.endpoint,
-          requestId,
-          logger
-        )
-        videoBuffer = result.buffer
-        width = result.width
-        height = result.height
-        jobId = result.jobId
-        actualDuration = result.duration
-      } else if (provider === 'falai') {
+      if (!apiKey) {
+        return NextResponse.json({ error: 'Fal.ai API key is required' }, { status: 400 })
+      }
+      // if (provider === 'runway') {
+      //   const result = await generateWithRunway(
+      //     apiKey,
+      //     model || 'gen-4',
+      //     prompt,
+      //     duration || 5,
+      //     aspectRatio || '16:9',
+      //     resolution || '1080p',
+      //     body.visualReference,
+      //     requestId,
+      //     logger
+      //   )
+      //   videoBuffer = result.buffer
+      //   width = result.width
+      //   height = result.height
+      //   jobId = result.jobId
+      //   actualDuration = result.duration
+      // } else if (provider === 'veo') {
+      //   const result = await generateWithVeo(
+      //     apiKey,
+      //     model || 'veo-3',
+      //     prompt,
+      //     duration || 8,
+      //     aspectRatio || '16:9',
+      //     resolution || '1080p',
+      //     requestId,
+      //     logger
+      //   )
+      //   videoBuffer = result.buffer
+      //   width = result.width
+      //   height = result.height
+      //   jobId = result.jobId
+      //   actualDuration = result.duration
+      // } else if (provider === 'luma') {
+      //   const result = await generateWithLuma(
+      //     apiKey,
+      //     model || 'ray-2',
+      //     prompt,
+      //     duration || 5,
+      //     aspectRatio || '16:9',
+      //     resolution || '1080p',
+      //     body.cameraControl,
+      //     requestId,
+      //     logger
+      //   )
+      //   videoBuffer = result.buffer
+      //   width = result.width
+      //   height = result.height
+      //   jobId = result.jobId
+      //   actualDuration = result.duration
+      // } else if (provider === 'minimax') {
+      //   const result = await generateWithMiniMax(
+      //     apiKey,
+      //     model || 'hailuo-2.3',
+      //     prompt,
+      //     duration || 6,
+      //     body.promptOptimizer !== false,
+      //     body.endpoint,
+      //     requestId,
+      //     logger
+      //   )
+      //   videoBuffer = result.buffer
+      //   width = result.width
+      //   height = result.height
+      //   jobId = result.jobId
+      //   actualDuration = result.duration
+      // } else
+      if (provider === 'falai') {
         if (!model) {
           return NextResponse.json(
             { error: 'Model is required for Fal.ai provider' },
@@ -358,6 +361,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   }
 })
 
+/* Disabled direct provider integrations
 async function generateWithRunway(
   apiKey: string,
   model: string,
@@ -885,6 +889,8 @@ async function generateWithMiniMax(
 
   throw new Error('MiniMax generation timed out')
 }
+
+*/
 
 type FalAIDurationFormat = 'number' | 'seconds' | 'string'
 
