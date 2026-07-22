@@ -11,6 +11,7 @@ import { generateId } from '@sim/utils/id'
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { deployedChatPostContract, goldenQueriesSchema } from '@/lib/api/contracts/chats'
+import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
@@ -904,6 +905,18 @@ export const POST = withRouteHandler(
                             return value
                           }
                           if (typeof value === 'object') {
+                            const chartOutput = formatChartDeployOutputForChat(value)
+                            if (chartOutput) {
+                              return chartOutput
+                            }
+                            if (
+                              value &&
+                              typeof value === 'object' &&
+                              'charts' in value &&
+                              Array.isArray((value as { charts?: unknown }).charts)
+                            ) {
+                              return null
+                            }
                             try {
                               return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
                             } catch {

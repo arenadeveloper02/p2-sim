@@ -54,6 +54,7 @@ import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copil
 import { env } from '@/lib/core/config/env'
 import { isCopilotBillingAttributionV1Enabled, isHosted } from '@/lib/core/config/env-flags'
 import { isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
+import { generateLocalChatTitle } from '@/local-copilot/lib/agent/chat-title'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 
 export { SSE_RESPONSE_HEADERS }
@@ -524,8 +525,7 @@ export async function requestChatTitle(params: {
   if (!message || !model) return null
 
   if ((await isLocalCopilotEnabledForUser(userId)) && copilotBackend !== 'external') {
-    const trimmed = message.trim().replace(/\s+/g, ' ')
-    return trimmed.length > 60 ? `${trimmed.slice(0, 57)}...` : trimmed
+    return generateLocalChatTitle(message)
   }
 
   const headers: Record<string, string> = {

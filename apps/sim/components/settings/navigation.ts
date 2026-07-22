@@ -79,6 +79,7 @@ export type UnifiedSettingsSection =
   | 'billing'
   | 'teammates'
   | 'organization'
+  | 'oauth-apps'
   | 'sso'
   | 'whitelabeling'
   | 'copilot'
@@ -275,6 +276,22 @@ export const WORKSPACE_SETTINGS_GROUPS = [
   { key: 'enterprise', title: 'Enterprise' },
 ] as const
 
+const ARENA_CUSTOM_SETTINGS_SECTIONS: readonly SettingsSectionRegistryEntry[] = [
+  {
+    label: 'Custom OAuth Apps',
+    icon: Key,
+    docsLink: 'https://docs.sim.ai/platform/enterprise/custom-oauth-apps',
+    unified: {
+      id: 'oauth-apps',
+      description: 'Register your organization\'s OAuth app credentials for integrations like Zoom.',
+      group: 'subscription',
+      hideWhenBillingDisabled: true,
+      requiresHosted: true,
+      requiresTeam: true,
+    },
+  },
+]
+
 export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] = [
   {
     label: 'General',
@@ -427,17 +444,17 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
   },
   {
-    label: 'Sim API keys',
+    label: 'Arena API keys',
     icon: TerminalWindow,
     unified: {
       id: 'apikeys',
-      description: 'Create and manage API keys for the Sim API.',
+      description: 'Create and manage API keys for the Arena API.',
       group: 'system',
     },
     planes: {
       account: {
         id: 'api-keys',
-        description: 'Create and manage your personal Sim API keys.',
+        description: 'Create and manage your personal Arena API keys.',
         group: 'developer',
         order: 2,
       },
@@ -623,6 +640,7 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
   //     account: { id: 'mothership', group: 'platform', order: 5 },
   //   },
   // },
+  ...ARENA_CUSTOM_SETTINGS_SECTIONS,
 ]
 
 export function buildUnifiedSettingsNavigation(): UnifiedSettingsNavigationItem[] {

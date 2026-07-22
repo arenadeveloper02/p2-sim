@@ -1,17 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockIsAdminWorkspace, mockResolveWorkspaceIdForAdminCheck } = vi.hoisted(() => ({
-  mockIsAdminWorkspace: vi.fn(() => false),
+const { mockResolveZoomAdminAccessForUi, mockResolveWorkspaceIdForAdminCheck } = vi.hoisted(() => ({
+  mockResolveZoomAdminAccessForUi: vi.fn(() => false),
   mockResolveWorkspaceIdForAdminCheck: vi.fn(() => 'ws-normal'),
 }))
 
 vi.mock('@/lib/workspaces/is-admin-workspace', () => ({
-  ADMIN_WORKSPACE_ONLY_TOOL_IDS: [
-    'zoom_list_account_recordings',
-    'zoom_get_account_recordings_with_transcript',
-  ],
-  isAdminWorkspace: mockIsAdminWorkspace,
   resolveWorkspaceIdForAdminCheck: mockResolveWorkspaceIdForAdminCheck,
+}))
+
+vi.mock('@/lib/workspaces/zoom-admin-access-cache', () => ({
+  resolveZoomAdminAccessForUi: mockResolveZoomAdminAccessForUi,
 }))
 
 import { ZoomBlock } from '@/blocks/blocks/zoom'
@@ -26,7 +25,7 @@ describe('ZoomBlock', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockIsAdminWorkspace.mockReturnValue(false)
+    mockResolveZoomAdminAccessForUi.mockReturnValue(false)
     mockResolveWorkspaceIdForAdminCheck.mockReturnValue('ws-normal')
   })
 
@@ -83,8 +82,8 @@ describe('ZoomBlock', () => {
     expect(optionIds).toContain('zoom_list_recordings')
   })
 
-  it('shows account recording operations in admin workspaces', () => {
-    mockIsAdminWorkspace.mockReturnValue(true)
+  it('shows account recording operations when Zoom Admin access is allowed', () => {
+    mockResolveZoomAdminAccessForUi.mockReturnValue(true)
 
     const operationSubBlock = ZoomBlock.subBlocks.find((subBlock) => subBlock.id === 'operation')
     const options =
@@ -97,24 +96,8 @@ describe('ZoomBlock', () => {
     expect(optionIds).toContain('zoom_get_account_recordings_with_transcript')
   })
 
-  it('rejects account recording operations outside admin workspaces at execution', () => {
-    expect(() =>
-      paramsFunction({
-        operation: 'zoom_list_account_recordings',
-        oauthCredential: 'selected-cred',
-      })
-    ).toThrow(/admin workspace/i)
-
-    expect(() =>
-      toolFunction({
-        operation: 'zoom_get_account_recordings_with_transcript',
-        oauthCredential: 'selected-cred',
-      })
-    ).toThrow(/admin workspace/i)
-  })
-
-  it('allows account recording operations in admin workspaces', () => {
-    mockIsAdminWorkspace.mockReturnValue(true)
+  it('allows account recording operations when Zoom Admin access is allowed', () => {
+    mockResolveZoomAdminAccessForUi.mockReturnValue(true)
 
     const result = paramsFunction({
       operation: 'zoom_list_account_recordings',

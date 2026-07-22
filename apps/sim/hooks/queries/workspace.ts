@@ -9,6 +9,7 @@ import {
   getWorkspaceContract,
   getWorkspaceMembersContract,
   getWorkspacePermissionsContract,
+  getWorkspaceZoomAdminAccessContract,
   listWorkspacesContract,
   updateWorkspaceContract,
   type Workspace,
@@ -23,6 +24,8 @@ import {
   normalizeWorkspacesResponse,
   WORKSPACE_LIST_STALE_TIME,
 } from '@/hooks/queries/utils/workspace-list-query'
+import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
+import { setZoomAdminAccessCache } from '@/lib/workspaces/zoom-admin-access-cache'
 
 /**
  * Query key factory for workspace-related queries.
@@ -38,6 +41,7 @@ export const workspaceKeys = {
   settings: (id: string) => [...workspaceKeys.detail(id), 'settings'] as const,
   permissions: (id: string) => [...workspaceKeys.detail(id), 'permissions'] as const,
   members: (id: string) => [...workspaceKeys.detail(id), 'members'] as const,
+  zoomAdminAccess: (id: string) => [...workspaceKeys.detail(id), 'zoomAdminAccess'] as const,
   adminLists: () => [...workspaceKeys.all, 'adminList'] as const,
   adminList: (userId: string | undefined) => [...workspaceKeys.adminLists(), userId ?? ''] as const,
 }
@@ -48,6 +52,7 @@ export const WORKSPACE_PERMISSIONS_STALE_TIME = 30 * 1000
 export const WORKSPACE_SETTINGS_STALE_TIME = 30 * 1000
 export const WORKSPACE_MEMBERS_STALE_TIME = 5 * 60 * 1000
 export const WORKSPACE_ADMIN_LIST_STALE_TIME = 60 * 1000
+export const WORKSPACE_ZOOM_ADMIN_ACCESS_STALE_TIME = 60 * 1000
 
 async function fetchWorkspaces(
   scope: WorkspaceQueryScope = 'active',
@@ -210,6 +215,38 @@ export function useWorkspacePermissionsQuery(workspaceId: string | null | undefi
     staleTime: WORKSPACE_PERMISSIONS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
+}
+
+async function fetchWorkspaceZoomAdminAccess(
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<boolean> {
+  const data = await requestJson(getWorkspaceZoomAdminAccessContract, {
+    params: { id: workspaceId },
+    signal,
+  })
+  setZoomAdminAccessCache(workspaceId, data.canUseZoomAdmin)
+  return data.canUseZoomAdmin
+}
+
+/**
+ * Whether Zoom Admin connect is allowed (org allowlist or env fallback).
+ * Use this for "Connect Zoom admin account" UI — not only env ADMIN_WORKSPACE_IDS.
+ * Also populates the sync cache used by Zoom block operation options.
+ */
+export function useCanUseZoomAdmin(workspaceId: string | null | undefined) {
+  const query = useQuery({
+    queryKey: workspaceKeys.zoomAdminAccess(workspaceId ?? ''),
+    queryFn: ({ signal }) => fetchWorkspaceZoomAdminAccess(workspaceId as string, signal),
+    enabled: Boolean(workspaceId),
+    staleTime: WORKSPACE_ZOOM_ADMIN_ACCESS_STALE_TIME,
+    placeholderData: keepPreviousData,
+  })
+
+  const canUseZoomAdmin =
+    typeof query.data === 'boolean' ? query.data : isAdminWorkspace(workspaceId)
+
+  return { ...query, canUseZoomAdmin }
 }
 
 async function fetchWorkspaceMembers(

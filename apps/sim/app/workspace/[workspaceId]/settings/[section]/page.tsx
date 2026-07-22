@@ -58,7 +58,7 @@ const WORKSPACE_SECTION_MAP: Partial<Record<SettingsSection, WorkspaceSettingsSe
 }
 
 const ORGANIZATION_SECTION_MAP: Partial<Record<SettingsSection, OrganizationSettingsSection>> = {
-  organization: 'members',
+  organization: 'organization',
   billing: 'billing',
   'access-control': 'access-control',
   'audit-logs': 'audit-logs',
@@ -66,6 +66,7 @@ const ORGANIZATION_SECTION_MAP: Partial<Record<SettingsSection, OrganizationSett
   'data-retention': 'data-retention',
   'data-drains': 'data-drains',
   whitelabeling: 'whitelabeling',
+  'oauth-apps': 'oauth-apps',
 }
 
 function parseSection(section: string): SettingsSection | null {

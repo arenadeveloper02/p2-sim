@@ -2,18 +2,23 @@ import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNull } from 'drizzle-orm'
+import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
-  buildMothershipDelegatedToolDefinitions,
+  enrichCreateFileArgs,
+  enrichEditContentArgs,
+  enrichWorkspaceFileArgs,
+} from '@/local-copilot/lib/tools/enrich-file-tool-args'
+import {
+  MOTHERSHIP_DELEGATED_TOOL_NAMES,
+  WORKFLOW_SCOPED_DELEGATED_TOOLS,
+  type MothershipDelegatedToolName,
   isMothershipDelegatedTool,
   isWorkflowScopedDelegatedTool,
-  MOTHERSHIP_DELEGATED_TOOL_NAMES,
-  type MothershipDelegatedToolName,
-  WORKFLOW_SCOPED_DELEGATED_TOOLS,
+  buildMothershipDelegatedToolDefinitions,
 } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
-import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 
 export {
   MOTHERSHIP_DELEGATED_TOOL_NAMES,
@@ -277,6 +282,18 @@ export async function executeMothershipDelegatedTool(
 
   if (toolName === 'search_online') {
     enrichSearchOnlineArgs(enrichedArgs)
+  }
+
+  if (toolName === 'create_file') {
+    enrichCreateFileArgs(enrichedArgs)
+  }
+
+  if (toolName === 'workspace_file') {
+    enrichWorkspaceFileArgs(enrichedArgs)
+  }
+
+  if (toolName === 'edit_content') {
+    enrichEditContentArgs(enrichedArgs)
   }
 
   // Arena always runs server-registry tools in-process via ServerToolAdapter.

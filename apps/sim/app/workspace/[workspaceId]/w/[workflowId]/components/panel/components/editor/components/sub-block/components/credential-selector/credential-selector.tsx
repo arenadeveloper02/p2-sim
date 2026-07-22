@@ -29,6 +29,7 @@ import { useHubSpotAccountOptions } from '@/hooks/queries/hubspot-accounts'
 import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
 import { useOAuthCredentials } from '@/hooks/queries/oauth/oauth-credentials'
 import { useUnipileAccountOptions } from '@/hooks/queries/unipile'
+import { useCanUseZoomAdmin } from '@/hooks/queries/workspace'
 import { useCredentialRefreshTriggers } from '@/hooks/use-credential-refresh-triggers'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 
@@ -66,11 +67,13 @@ export function CredentialSelector({
   const requiredScopes = subBlock.requiredScopes || []
   const label = subBlock.placeholder || 'Select credential'
   const serviceId = subBlock.serviceId || ''
+  const { canUseZoomAdmin } = useCanUseZoomAdmin(workspaceId)
   const additionalConnectOptions = useMemo(() => {
     const options = subBlock.additionalConnectOptions || []
     if (options.length === 0) return options
-    return isAdminWorkspace(workspaceId) ? options : []
-  }, [subBlock.additionalConnectOptions, workspaceId])
+    // Zoom Admin connect: org allowlist or env ADMIN_WORKSPACE_IDS (same as authorize).
+    return canUseZoomAdmin ? options : []
+  }, [subBlock.additionalConnectOptions, canUseZoomAdmin])
   const isAllCredentials = !serviceId
 
   const { depsSatisfied, dependsOn } = useDependsOnGate(blockId, subBlock, {

@@ -262,6 +262,44 @@ export const authorizeOAuth2Contract = defineRouteContract({
   response: { mode: 'redirect' },
 })
 
+/**
+ * Providers that bypass Better Auth's static registration and resolve an
+ * organization-scoped custom OAuth app at request time (see
+ * `apps/sim/lib/oauth/custom-apps.ts`). `providerId` is a route param here
+ * since these routes are generic over any current or future custom-app
+ * provider, unlike `authorizeOAuth2Contract`'s query-param form.
+ */
+export const customOAuthAppParamsSchema = z.object({
+  providerId: z.string().min(1, 'providerId is required'),
+})
+
+export const authorizeCustomOAuthAppQuerySchema = z.object({
+  workspaceId: workspaceIdSchema,
+  returnUrl: z.string().min(1).optional(),
+})
+
+export const authorizeCustomOAuthAppContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/auth/oauth2/custom/[providerId]/authorize',
+  params: customOAuthAppParamsSchema,
+  query: authorizeCustomOAuthAppQuerySchema,
+  response: { mode: 'redirect' },
+})
+
+export const customOAuthAppCallbackQuerySchema = z.object({
+  code: z.string().optional(),
+  state: z.string().optional(),
+  error: z.string().optional(),
+})
+
+export const customOAuthAppCallbackContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/auth/oauth2/custom/[providerId]/callback',
+  params: customOAuthAppParamsSchema,
+  query: customOAuthAppCallbackQuerySchema,
+  response: { mode: 'redirect' },
+})
+
 export type StoreTrelloTokenBody = ContractBody<typeof storeTrelloTokenContract>
 export type StoreTrelloTokenBodyInput = ContractBodyInput<typeof storeTrelloTokenContract>
 export type StoreTrelloTokenResponse = ContractJsonResponse<typeof storeTrelloTokenContract>

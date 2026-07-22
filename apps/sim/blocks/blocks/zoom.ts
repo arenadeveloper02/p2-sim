@@ -1,11 +1,8 @@
 import { ZoomIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
 import type { SubBlockCondition } from '@/lib/workflows/subblocks/visibility'
-import {
-  ADMIN_WORKSPACE_ONLY_TOOL_IDS,
-  isAdminWorkspace,
-  resolveWorkspaceIdForAdminCheck,
-} from '@/lib/workspaces/is-admin-workspace'
+import { resolveWorkspaceIdForAdminCheck } from '@/lib/workspaces/is-admin-workspace'
+import { resolveZoomAdminAccessForUi } from '@/lib/workspaces/zoom-admin-access-cache'
 import type { BlockConfig, BlockMeta } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { ZoomResponse } from '@/tools/zoom/types'
@@ -23,8 +20,11 @@ const ZOOM_MEETING_SUBBLOCK_OPS = [
 
 const ZOOM_MEETING_OPS_LIST = [...ZOOM_MEETING_SUBBLOCK_OPS]
 
-/** Account-level recording tools; require admin workspace + zoom-admin OAuth. */
-const ZOOM_ADMIN_ACCOUNT_OPERATIONS = ADMIN_WORKSPACE_ONLY_TOOL_IDS
+/** Account-level recording tools; require Zoom Admin access + zoom-admin OAuth. */
+const ZOOM_ADMIN_ACCOUNT_OPERATIONS = [
+  'zoom_list_account_recordings',
+  'zoom_get_account_recordings_with_transcript',
+] as const
 
 const ZOOM_OPERATION_OPTIONS = [
   { label: 'Create Meeting', id: 'zoom_create_meeting' },
@@ -46,8 +46,8 @@ const ZOOM_OPERATION_OPTIONS = [
 ] as const
 
 function getZoomOperationOptions(): Array<{ label: string; id: string }> {
-  const isAdmin = isAdminWorkspace(resolveWorkspaceIdForAdminCheck())
-  if (isAdmin) {
+  const canUseZoomAdmin = resolveZoomAdminAccessForUi(resolveWorkspaceIdForAdminCheck())
+  if (canUseZoomAdmin) {
     return [...ZOOM_OPERATION_OPTIONS]
   }
   return ZOOM_OPERATION_OPTIONS.filter(

@@ -73,6 +73,11 @@ const WorkflowMcpServers = dynamic(() =>
     '@/app/workspace/[workspaceId]/settings/components/workflow-mcp-servers/workflow-mcp-servers'
   ).then((m) => m.WorkflowMcpServers)
 )
+const OAuthAppsSettings = dynamic(() =>
+  import('@/app/workspace/[workspaceId]/settings/components/oauth-apps/oauth-apps').then(
+    (m) => m.OAuthAppsSettings
+  )
+)
 const AccessControl = dynamic(() =>
   import('@/ee/access-control/components/access-control').then((m) => m.AccessControl)
 )
@@ -159,6 +164,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
           billingHref={`/workspace/${hostContext.workspace.id}/settings/billing`}
         />
       )}
+      {isBillingEnabled && effectiveSection === 'oauth-apps' && <OAuthAppsSettings />}
       {effectiveSection === 'sso' && organizationId && <SSO organizationId={organizationId} />}
       {effectiveSection === 'data-retention' && organizationId && (
         <DataRetentionSettings organizationId={organizationId} />

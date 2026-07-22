@@ -16,6 +16,7 @@ import { captureServerEvent } from '@/lib/posthog/server'
 import {
   getCredential,
   getOAuthToken,
+  getOrganizationIdForWorkspace,
   refreshTokenIfNeeded,
   resolveOAuthAccountId,
   resolveServiceAccountToken,
@@ -250,10 +251,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     const oauthWorkspaceId = authz.workspaceId ?? null
 
     try {
+      const organizationId = await getOrganizationIdForWorkspace(oauthWorkspaceId)
       const { accessToken } = await refreshTokenIfNeeded(
         requestId,
         credential,
-        resolvedCredentialId
+        resolvedCredentialId,
+        organizationId
       )
 
       if (oauthActorId) {
@@ -361,10 +364,12 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const workspaceId = authz.workspaceId ?? null
 
     try {
+      const organizationId = await getOrganizationIdForWorkspace(workspaceId)
       const { accessToken } = await refreshTokenIfNeeded(
         requestId,
         credential,
-        resolvedCredentialId
+        resolvedCredentialId,
+        organizationId
       )
 
       if (actorId) {

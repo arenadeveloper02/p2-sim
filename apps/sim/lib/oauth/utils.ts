@@ -517,12 +517,23 @@ export function getProviderIdFromServiceId(serviceId: string): string {
 /**
  * Looks up the OAuth service registered under the given service id (the key in
  * a provider's `services` map). Returns `null` when no provider registers it.
+ *
+ * Also accepts a base provider id (e.g. `zoom`) and resolves that provider's
+ * `defaultService` — so catalog entries / deep links that still use the
+ * provider key keep working after a service was renamed (e.g. `zoom` →
+ * `zoom-client`).
  */
 export function getServiceConfigByServiceId(serviceId: string): OAuthServiceConfig | null {
   for (const provider of Object.values(OAUTH_PROVIDERS)) {
     const service = provider.services[serviceId]
     if (service) return service
   }
+
+  const provider = OAUTH_PROVIDERS[serviceId]
+  if (provider?.defaultService) {
+    return provider.services[provider.defaultService] ?? null
+  }
+
   return null
 }
 

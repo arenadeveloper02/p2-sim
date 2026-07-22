@@ -26,6 +26,7 @@ import {
   extractGeneratedImagesFromData,
   isAssistantImageUrl,
 } from '@/lib/chat/assistant-assets'
+import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import {
   extractBlockIdFromOutputId,
@@ -197,6 +198,10 @@ const extractOutputFromLogs = (logs: BlockLog[] | undefined, outputId: string): 
  * @returns Formatted string, markdown code block for objects, or empty string
  */
 const formatOutputContent = (output: unknown): string => {
+  const chartContent = formatChartDeployOutputForChat(output)
+  if (chartContent) {
+    return chartContent
+  }
   if (typeof output === 'string') {
     return output
   }

@@ -111,6 +111,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       mcpTools,
       workflowId,
       executionId,
+      copilotBackend,
       userMetadata,
     } = validation.data.body
 
@@ -284,6 +285,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         chatId: effectiveChatId,
         workflowId,
         executionId,
+        copilotBackend,
         simRequestId: requestId,
         goRoute: '/api/mothership/execute',
         autoExecuteTools: true,

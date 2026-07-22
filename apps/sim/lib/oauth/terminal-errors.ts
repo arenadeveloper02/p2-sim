@@ -13,6 +13,10 @@ const TERMINAL_ERRORS = new Set<string>([
   'invalid_client',
   'bad_redirect_uri',
   'token_revoked',
+  // Org-scoped custom OAuth app (e.g. Zoom) has no app configured, or the
+  // refresh request had no organization scope to resolve one from. Retrying
+  // against a nonexistent app would never succeed, so treat it as terminal.
+  'custom_app_not_configured',
 ])
 
 const DEAD_CACHE_TTL_SEC = 60 * 60

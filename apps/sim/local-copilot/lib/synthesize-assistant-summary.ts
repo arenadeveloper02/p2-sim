@@ -86,10 +86,21 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
       continue
     }
 
-    if (record.name === 'run_workflow') {
+    if (
+      record.name === 'run_workflow' ||
+      record.name === 'run_block' ||
+      record.name === 'run_from_block' ||
+      record.name === 'run_workflow_until_block'
+    ) {
       const payload = asRecord(record.result)
       const status = typeof payload.status === 'string' ? payload.status : 'completed'
-      parts.push(`Workflow run ${status}.`)
+      const label =
+        record.name === 'run_block'
+          ? 'Block run'
+          : record.name === 'run_from_block'
+            ? 'Run-from-block'
+            : 'Workflow run'
+      parts.push(`${label} ${status}.`)
       continue
     }
 

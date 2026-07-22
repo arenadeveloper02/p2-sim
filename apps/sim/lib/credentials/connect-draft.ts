@@ -10,8 +10,17 @@ const logger = createLogger('OAuthConnectDraft')
 const DRAFT_TTL_MS = 15 * 60 * 1000
 
 /**
- * Creates the pending credential draft at OAuth click time so custom and
- * generic OAuth callbacks can materialize the connected workspace credential.
+ * Creates the pending credential draft at OAuth click time so its TTL starts when
+ * the user actually initiates the connect. Better Auth's `account.create.after`
+ * hook (and custom OAuth flows that call `processCredentialDraft` directly —
+ * Shopify, Trello, and the org-scoped custom-app flow for Zoom) consumes this
+ * draft to materialize the real credential after the OAuth callback; starting
+ * the clock here guarantees the draft outlives the (≤5 min) OAuth round-trip
+ * rather than expiring mid-flow and silently producing no credential.
+ *
+ * On conflict, `displayName` and `credentialId` are rewritten (not just the
+ * TTL). A plain connect that reuses a stale reconnect draft row would otherwise
+ * silently rebind the old credential instead of creating a new one.
  */
 export async function createConnectDraft(params: {
   userId: string

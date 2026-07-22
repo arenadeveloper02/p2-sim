@@ -2986,6 +2986,40 @@ export const localCopilotUserAccess = pgTable(
   })
 )
 
+/**
+ * Long-lived Arena Copilot memories (preferences, entities, corrections).
+ * Scoped to a user; optional workspaceId narrows visibility to one workspace.
+ * Cloud Go `user_memory` is separate — this table is Local/self-hosted only.
+ */
+export const localCopilotUserMemory = pgTable(
+  'local_copilot_user_memory',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    value: text('value').notNull(),
+    memoryType: text('memory_type').notNull().default('preference'),
+    source: text('source').notNull().default('explicit'),
+    confidence: doublePrecision('confidence').notNull().default(1),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userKeyGlobalUnique: uniqueIndex('local_copilot_user_memory_user_key_global_uidx')
+      .on(table.userId, table.key)
+      .where(sql`${table.workspaceId} IS NULL`),
+    userWorkspaceKeyUnique: uniqueIndex('local_copilot_user_memory_user_workspace_key_uidx')
+      .on(table.userId, table.workspaceId, table.key)
+      .where(sql`${table.workspaceId} IS NOT NULL`),
+    userIdIdx: index('local_copilot_user_memory_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('local_copilot_user_memory_workspace_id_idx').on(table.workspaceId),
+    memoryTypeIdx: index('local_copilot_user_memory_type_idx').on(table.memoryType),
+  })
+)
+
 export type LocalCopilotPatchStatus = (typeof localCopilotPatchStatusEnum.enumValues)[number]
 export type LocalCopilotAuditStatus = (typeof localCopilotAuditStatusEnum.enumValues)[number]
 
@@ -3247,6 +3281,84 @@ export const mcpServerOauth = pgTable(
   (table) => ({
     serverUnique: uniqueIndex('mcp_server_oauth_server_unique').on(table.mcpServerId),
     stateIdx: index('mcp_server_oauth_state_idx').on(table.state),
+  })
+)
+
+/**
+ * Organization-scoped "bring your own OAuth app" credentials.
+ *
+ * Lets an organization register its own OAuth app (client id/secret) for a
+ * provider instead of using Sim's shared app, so every workspace under that
+ * organization authorizes against the org's own app registration. One row
+ * per `(organizationId, providerId)` — `providerId` is the custom-app key
+ * (e.g. `'zoom'` or `'zoom-admin'`). Distinct Marketplace / cloud apps that
+ * need separate client credentials get separate keys; sibling services that
+ * share one client map to the same key via `CUSTOM_OAUTH_APP_PROVIDERS`.
+ * `clientSecret` is encrypted the same way as `mcpServers.oauthClientSecret`.
+ */
+export const organizationOauthApps = pgTable(
+  'organization_oauth_apps',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    providerId: text('provider_id').notNull(),
+    clientId: text('client_id').notNull(),
+    clientSecret: text('client_secret').notNull(),
+    /**
+     * Workspace IDs within this organization that may use this app.
+     * Currently applied for `zoom-admin` only: non-empty list restricts access;
+     * empty list falls back to env `ADMIN_WORKSPACE_IDS`.
+     */
+    allowedWorkspaceIds: jsonb('allowed_workspace_ids')
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    orgProviderUnique: uniqueIndex('organization_oauth_apps_org_provider_unique').on(
+      table.organizationId,
+      table.providerId
+    ),
+  })
+)
+
+/**
+ * Short-lived, single-use correlation state for the custom (non-Better-Auth)
+ * OAuth authorize/callback flow used by providers with an organization-scoped
+ * custom app (see {@link organizationOauthApps}). Mirrors the correlation
+ * role `mcpServerOauth.state` plays for MCP OAuth, but generic across
+ * providers and keyed by an opaque state token rather than one row per server.
+ */
+export const oauthCustomAppState = pgTable(
+  'oauth_custom_app_state',
+  {
+    id: text('id').primaryKey(),
+    /** Opaque token minted at authorize time and echoed back by the provider. */
+    state: text('state').notNull(),
+    providerId: text('provider_id').notNull(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** Where to redirect the browser back to once the flow completes. */
+    returnUrl: text('return_url'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (table) => ({
+    stateUnique: uniqueIndex('oauth_custom_app_state_state_unique').on(table.state),
   })
 )
 
