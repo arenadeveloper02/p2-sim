@@ -873,11 +873,11 @@ export async function* runLocalCopilotAgent(
   }
 
   if (!assistantText.trim() && turnToolRecords.length > 0) {
-    const synthesized = synthesizeAssistantSummaryFromTools(turnToolRecords)
-    if (synthesized) {
-      assistantText = synthesized
-      yield { type: 'text_delta', content: synthesized }
-    }
+    const synthesized =
+      synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+      'I finished the requested steps, but had nothing further to add.'
+    assistantText = synthesized
+    yield { type: 'text_delta', content: synthesized }
   }
 
   if (recommendations.length) {
