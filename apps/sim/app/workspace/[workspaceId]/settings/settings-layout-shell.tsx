@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { useLayoutEffect, useState } from 'react'
 import { cn } from '@sim/emcn'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { useSettingsBeforeUnload } from '@/components/settings/use-settings-before-unload'
 
 interface SettingsLayoutShellProps {
   children: ReactNode
@@ -25,6 +26,7 @@ export function SettingsLayoutShell({ children }: SettingsLayoutShellProps) {
 
   const isIntegrationsSection = Boolean(pathname?.includes('/settings/integrations'))
   const useEmbedSurface = isIntegrationsSection && (fromArenaV3 || inGenericIframe)
+  useSettingsBeforeUnload()
 
   return (
     <div

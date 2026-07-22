@@ -29,7 +29,7 @@ const DEFAULT_API_ALLOWED_HEADERS =
   'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key, Authorization'
 
 const WORKFLOW_EXECUTE_HEADERS =
-  'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key'
+  'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-API-Key, X-Execution-Id'
 
 /** Subpaths under /api/chat/* that serve the workspace UI, not embeds. */
 const EMBED_RESERVED_SEGMENTS = new Set(['manage', 'validate'])
@@ -257,7 +257,10 @@ function handleInvitationRedirects(
 function handleSecurityFiltering(request: NextRequest): NextResponse | null {
   const userAgent = request.headers.get('user-agent') || ''
   const { pathname } = request.nextUrl
-  const isWebhookEndpoint = pathname.startsWith('/api/webhooks/trigger/')
+  const isWebhookEndpoint =
+    pathname.startsWith('/api/webhooks/trigger/') ||
+    pathname.startsWith('/api/webhooks/tiktok') ||
+    pathname.startsWith('/api/webhooks/agentmail')
   const isMcpEndpoint = pathname.startsWith('/api/mcp/')
   const isMcpOauthDiscoveryEndpoint =
     pathname.startsWith('/.well-known/oauth-authorization-server') ||
@@ -378,7 +381,6 @@ export async function proxy(request: NextRequest) {
   response.headers.set('Content-Security-Policy', generateRuntimeCSP())
   response.headers.set('X-Content-Type-Options', 'nosniff')
   // response.headers.set('X-Frame-Options', 'SAMEORIGIN')
-
 
   return track(request, response)
 }

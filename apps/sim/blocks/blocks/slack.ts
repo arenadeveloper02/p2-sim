@@ -1,7 +1,7 @@
 import { BookOpen, ClipboardList, File, Table, Users } from '@sim/emcn/icons'
 import { GoogleTranslateIcon, GreptileIcon, LinearIcon, SlackIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import type { BlockConfig, BlockMeta } from '@/blocks/types'
+import type { BlockConfig, BlockMeta, SubBlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
 import type { SlackResponse } from '@/tools/slack/types'
@@ -21,6 +21,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
   bgColor: '#611f69',
   icon: SlackIcon,
   triggerAllowed: true,
+  // Superseded by slack_v2, but stays discoverable until v2 GAs — hiding both
+  // would leave no Slack block in the toolbar while v2 is preview-gated. At v2
+  // GA this becomes `hideFromToolbar: true` (superseded-version paradigm).
   subBlocks: [
     {
       id: 'operation',
@@ -131,7 +134,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.channels',
       placeholder: 'Select Slack channel',
       mode: 'basic',
-      dependsOn: { all: ['authMethod', 'credential'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       condition: (values?: Record<string, unknown>) => {
         const op = values?.operation as string
         if (op === 'ephemeral') {
@@ -177,7 +180,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'channel',
       placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: (values?: Record<string, unknown>) => {
         const op = values?.operation as string
@@ -227,7 +230,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod', 'credential'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       condition: {
         field: 'destinationType',
         value: 'dm',
@@ -240,7 +243,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'dmUserId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'destinationType',
@@ -257,7 +260,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod', 'credential'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       condition: {
         field: 'operation',
         value: 'ephemeral',
@@ -270,7 +273,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'ephemeralUser',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -741,7 +744,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod', 'credential'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       condition: {
         field: 'operation',
         value: 'get_user',
@@ -754,7 +757,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'short-input',
       canonicalParamId: 'userId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1162,7 +1165,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       selectorKey: 'slack.users',
       placeholder: 'Select Slack user',
       mode: 'basic',
-      dependsOn: { all: ['authMethod', 'credential'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       condition: {
         field: 'operation',
         value: 'get_user_presence',
@@ -1235,7 +1238,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       canonicalParamId: 'presenceUserId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1583,7 +1586,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       selectorKey: 'slack.users',
       placeholder: 'Select user to publish Home tab to',
       mode: 'basic',
-      dependsOn: { all: ['authMethod', 'credential'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       condition: {
         field: 'operation',
         value: 'publish_view',
@@ -1596,7 +1599,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       canonicalParamId: 'publishUserId',
       placeholder: 'Enter Slack user ID (e.g., U0BPQUNTA)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1919,6 +1922,8 @@ Return ONLY the integer Unix timestamp - no explanations, no quotes, no extra te
         const {
           oauthCredential,
           authMethod,
+          botToken,
+          botCredential,
           operation,
           destinationType,
           channel,
@@ -2072,8 +2077,20 @@ Return ONLY the integer Unix timestamp - no explanations, no quotes, no extra te
         // Always use the selected Slack OAuth credential; choose token type later.
         // - Sim Bot (oauth): uses bot token (accessToken) from the credential
         // - Custom Bot (bot_token): uses user token (idToken) from the credential
-        baseParams.credential = oauthCredential
         baseParams.useUserToken = authMethod === 'bot_token'
+        // Handle authentication based on method. Custom Bot resolves to a token
+        // server-side: v2 selects a reusable bot credential; v1 pastes a raw
+        // token (kept for back-compat).
+        if (authMethod === 'bot_token') {
+          if (botCredential) {
+            baseParams.credential = botCredential
+          } else if (botToken) {
+            baseParams.accessToken = botToken
+          }
+        } else {
+          // Default to OAuth
+          baseParams.credential = oauthCredential
+        }
 
         switch (operation) {
           case 'send': {
@@ -2665,6 +2682,8 @@ Return ONLY the integer Unix timestamp - no explanations, no quotes, no extra te
       type: 'boolean',
       description: 'Use user token (id_token) instead of bot token',
     },
+    botToken: { type: 'string', description: 'Bot token' },
+    botCredential: { type: 'string', description: 'Custom Slack bot credential id' },
     channel: { type: 'string', description: 'Channel identifier (canonical param)' },
     dmUserId: { type: 'string', description: 'User ID for DM recipient (canonical param)' },
     text: { type: 'string', description: 'Message text' },
@@ -3186,7 +3205,9 @@ Return ONLY the integer Unix timestamp - no explanations, no quotes, no extra te
       },
     },
   },
-  // New: Trigger capabilities
+  // Trigger capabilities moved to slack_v2 so the trigger surfaces once.
+  // Legacy webhook trigger stays available while slack_v2 (which hosts the
+  // redesigned slack_oauth trigger) is preview-gated; drops at v2 GA.
   triggers: {
     enabled: true,
     available: ['slack_webhook'],
@@ -3345,3 +3366,72 @@ export const SlackBlockMeta = {
     },
   ],
 } as const satisfies BlockMeta
+
+/**
+ * Custom Bot picker used by slack_v2 in place of v1's raw bot-token field — a
+ * canonical basic/advanced pair (dropdown + manual credential-ID paste),
+ * mirroring the OAuth `credential`/`manualCredential` pair.
+ */
+const SLACK_CUSTOM_BOT_SUBBLOCKS: SubBlockConfig[] = [
+  {
+    id: 'customBotCredential',
+    title: 'Slack Bot',
+    type: 'oauth-input',
+    canonicalParamId: 'botCredential',
+    mode: 'basic',
+    serviceId: 'slack',
+    credentialKind: 'custom-bot',
+    requiredScopes: getScopesForService('slack'),
+    placeholder: 'Select a connected bot',
+    dependsOn: ['authMethod'],
+    condition: { field: 'authMethod', value: 'bot_token' },
+    required: true,
+  },
+  {
+    id: 'manualCustomBotCredential',
+    title: 'Bot Credential ID',
+    type: 'short-input',
+    canonicalParamId: 'botCredential',
+    mode: 'advanced',
+    placeholder: 'Enter bot credential ID',
+    dependsOn: ['authMethod'],
+    condition: { field: 'authMethod', value: 'bot_token' },
+    required: true,
+  },
+]
+
+const SLACK_WEBHOOK_TRIGGER_SUBBLOCK_IDS = new Set(
+  getTrigger('slack_webhook').subBlocks.map((sb) => sb.id)
+)
+
+/**
+ * slack_v2 — the go-forward Slack action block. Identical operations, tools, and
+ * outputs to v1 (shared by reference), but the "Custom Bot" auth method selects
+ * a reusable bot credential set up once, instead of pasting a raw token. Also
+ * hosts the redesigned slack_oauth trigger (v1 keeps the legacy slack_webhook).
+ */
+export const SlackV2Block: BlockConfig<SlackResponse> = {
+  ...SlackBlock,
+  type: 'slack_v2',
+  hideFromToolbar: false,
+  // Preview-gated: hidden from every discovery surface until revealed via the
+  // block-visibility AppConfig (hosted) or PREVIEW_BLOCKS=slack_v2 (dev /
+  // self-host). At GA: drop this flag, add SlackV2BlockMeta + docs, and set
+  // hideFromToolbar on v1.
+  preview: true,
+  subBlocks: [
+    ...SlackBlock.subBlocks.flatMap((sb) => {
+      // Drop the legacy paste-secret trigger config (v1 hosts slack_webhook)
+      // and v1's raw bot-token auth field — the trigger set includes an
+      // id-colliding 'botToken', so the set check covers both.
+      if (SLACK_WEBHOOK_TRIGGER_SUBBLOCK_IDS.has(sb.id)) return []
+      if (sb.id === 'authMethod') return [sb, ...SLACK_CUSTOM_BOT_SUBBLOCKS]
+      return [sb]
+    }),
+    ...getTrigger('slack_oauth').subBlocks,
+  ],
+  triggers: {
+    enabled: true,
+    available: ['slack_oauth'],
+  },
+}

@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { sanitizeRenderedHyperlinks } from '@/lib/core/security/url-safety'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
 import { getEmptyDocPreviewMessage, getZeroByteDocPreviewMessage } from './empty-doc-preview'
 import { GeneratingPreviewEngagement } from './generating-preview-engagement'
@@ -215,6 +216,7 @@ export const DocxPreview = memo(function DocxPreview({
           ignoreHeight: false,
         })
         if (!cancelled && containerRef.current) {
+          sanitizeRenderedHyperlinks(containerRef.current)
           applyPostRenderStyling()
           setHasRenderedPreview(true)
           setDocumentRenderVersion((version) => version + 1)

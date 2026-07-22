@@ -1205,6 +1205,7 @@ export class AgentBlockHandler implements BlockHandler {
         blockNameMapping,
         isDeployedContext: ctx.isDeployedContext,
         callChain: ctx.callChain,
+        billingAttribution: ctx.metadata.billingAttribution,
         reasoningEffort: providerRequest.reasoningEffort,
         verbosity: providerRequest.verbosity,
         thinkingLevel: providerRequest.thinkingLevel,

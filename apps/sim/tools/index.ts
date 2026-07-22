@@ -5,6 +5,11 @@ import { isValidUuid } from '@sim/utils/id'
 import { backoffWithJitter, parseRetryAfter } from '@sim/utils/retry'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import { generateInternalToken } from '@/lib/auth/internal'
+import {
+  BILLING_ATTRIBUTION_HEADER,
+  type BillingAttributionSnapshot,
+  serializeBillingAttributionHeader,
+} from '@/lib/billing/core/billing-attribution'
 import { isHosted } from '@/lib/core/config/env-flags'
 import { DEFAULT_EXECUTION_TIMEOUT_MS, getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { getHostedKeyRateLimiter } from '@/lib/core/rate-limiter'
@@ -37,6 +42,7 @@ import { assertPermissionsAllowed } from '@/ee/access-control/utils/permission-c
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
 import type { ExecutionContext, UserFile } from '@/executor/types'
+import { resolveEnvVarReferences } from '@/executor/utils/reference-validation'
 import type { ErrorInfo } from '@/tools/error-extractors'
 import { extractErrorMessage } from '@/tools/error-extractors'
 import { getImageGenerationWrapperBaseToolId } from '@/tools/image_generation/wrapper-ids'
@@ -68,6 +74,7 @@ interface ToolExecutionScope {
   isDeployedContext?: boolean
   enforceCredentialAccess?: boolean
   copilotToolExecution?: boolean
+  billingAttribution?: BillingAttributionSnapshot
 }
 
 async function executeNanoBananaDirect(params: Record<string, any>): Promise<ToolResponse> {
@@ -233,6 +240,8 @@ function resolveToolScope(
     copilotToolExecution: (executionContext?.copilotToolExecution ?? ctx?.copilotToolExecution) as
       | boolean
       | undefined,
+    billingAttribution: (executionContext?.metadata.billingAttribution ??
+      ctx?.billingAttribution) as BillingAttributionSnapshot | undefined,
   }
 }
 
@@ -332,6 +341,71 @@ async function normalizeCopilotFileParams(
         values.map((item) => resolveCopilotFileReference(item, scope.workspaceId!, paramId))
       )
     }
+  }
+}
+
+/**
+ * Resolves whole-value {{ENV_VAR}} references in user-only params for copilot
+ * tool executions. Chat agents never see secret values (the workspace VFS
+ * exposes env var names only), so they pass references; workflow runs resolve
+ * these in the executor, and this is the equivalent step for direct tool
+ * calls, delegating to the executor's resolver so both paths share one set of
+ * reference semantics. Resolution is deliberately restricted to params
+ * declared `visibility: 'user-only'` (API keys and other operator-supplied
+ * secrets) and to values that are exactly one reference, so LLM-writable
+ * params (URLs, headers, bodies) can never be used to extract secret values.
+ *
+ * Mutates only the given params object — callers pass the per-execution copy,
+ * never the copilot-side tool-call state, so decrypted values cannot leak
+ * into failure logs or persisted chat state.
+ */
+async function resolveCopilotEnvReferences(
+  tool: ToolConfig,
+  params: Record<string, unknown>,
+  scope: ToolExecutionScope
+): Promise<void> {
+  if (!scope.copilotToolExecution) {
+    return
+  }
+
+  const pending: Array<{ paramId: string; value: string }> = []
+  for (const [paramId, paramDef] of Object.entries(tool.params || {})) {
+    if (paramDef?.visibility !== 'user-only') continue
+    const value = params[paramId]
+    if (typeof value === 'string' && value.startsWith('{{') && value.endsWith('}}')) {
+      pending.push({ paramId, value })
+    }
+  }
+
+  if (pending.length === 0) {
+    return
+  }
+
+  if (!scope.userId) {
+    throw new Error(
+      `Cannot resolve environment variable reference in parameter "${pending[0].paramId}" without an authenticated user context.`
+    )
+  }
+
+  const { getEffectiveDecryptedEnv } = await import('@/lib/environment/utils')
+  const envVars = await getEffectiveDecryptedEnv(scope.userId, scope.workspaceId)
+
+  for (const { paramId, value } of pending) {
+    const missingKeys: string[] = []
+    const resolved = resolveEnvVarReferences(value, envVars, {
+      allowEmbedded: false,
+      missingKeys,
+    })
+    if (missingKeys.length > 0) {
+      const scopeHint = scope.workspaceId
+        ? ''
+        : ' (no workspace context — only personal variables are available here)'
+      throw new Error(
+        `Environment variable "${missingKeys[0]}" referenced by parameter "${paramId}" was not found${scopeHint}. ` +
+          `Check environment/variables.json for available variable names.`
+      )
+    }
+    params[paramId] = resolved as string
   }
 }
 
@@ -890,6 +964,15 @@ export function postProcessToolOutput(toolId: string, output: Record<string, unk
 /**
  * Apply post-execution hosted-key cost tracking to a successful tool result.
  * Reports custom dimension usage, calculates cost, and merges it into the output.
+ *
+ * Billing capture differs by caller:
+ * - Workflow executions bill `output.cost.total` through trace spans and the
+ *   execution ledger (`recordUsage`), so the `cost` field alone suffices.
+ * - Copilot tool executions have no execution ledger. Their only billing hook
+ *   is Go's `extractServiceCost`, which reads a top-level `_serviceCost` field
+ *   from the tool result and charges it through the per-round update-cost
+ *   callback (the same path the media tools use). Without it, hosted-key spend
+ *   from copilot-dispatched integration tools is never charged.
  */
 async function applyHostedKeyCostToResult(
   finalResult: ToolResponse,
@@ -915,12 +998,16 @@ async function applyHostedKeyCostToResult(
   hostedKeyMetrics.recordCostCharged(hostedKeyCost, { provider, tool: tool.id })
 
   if (hostedKeyCost > 0) {
+    const { copilotToolExecution } = resolveToolScope(params, executionContext)
     finalResult.output = {
       ...finalResult.output,
       cost: {
         ...metadata,
         total: hostedKeyCost,
       },
+      // Copilot-only: workflow runs must not emit _serviceCost or the cost
+      // would be billed twice (execution ledger + Go service charge).
+      ...(copilotToolExecution ? { _serviceCost: { service: provider, cost: hostedKeyCost } } : {}),
     }
   }
 }
@@ -1208,7 +1295,7 @@ export async function executeTool(
     const scope = resolveToolScope(params, executionContext)
 
     const toolKind: 'skill' | 'custom' | 'mcp' | undefined =
-      normalizedToolId === 'load_skill' || normalizedToolId === 'load_user_skill'
+      normalizedToolId === 'load_skill'
         ? 'skill'
         : isCustomTool(normalizedToolId)
           ? 'custom'
@@ -1228,7 +1315,7 @@ export async function executeTool(
       })
     }
 
-    if (normalizedToolId === 'load_skill' || normalizedToolId === 'load_user_skill') {
+    if (normalizedToolId === 'load_skill') {
       const skillName = params.skill_name
       if (!skillName || !scope.workspaceId) {
         return {
@@ -1284,6 +1371,12 @@ export async function executeTool(
 
     // Ensure context is preserved if it exists
     const contextParams = { ...params }
+    if (scope.billingAttribution) {
+      contextParams._context = {
+        ...(contextParams._context as Record<string, unknown> | undefined),
+        billingAttribution: scope.billingAttribution,
+      }
+    }
 
     if (tool) {
       await injectOAuthCredentialFromUserContextIfNeeded(
@@ -1305,6 +1398,7 @@ export async function executeTool(
     await normalizeCopilotFileParams(tool, contextParams, scope)
     normalizeCopilotCredentialParams(contextParams)
     enforceCopilotCredentialSelection(toolId, tool, contextParams, scope)
+    await resolveCopilotEnvReferences(tool, contextParams, scope)
 
     if (normalizedToolId.startsWith('unipile_')) {
       await injectUnipileAccountIdFromCredentialIfNeeded(contextParams, requestId)
@@ -1443,6 +1537,9 @@ export async function executeTool(
         if (data.domain && !contextParams.domain) {
           contextParams.domain = data.domain
         }
+        if (data.authStyle && !contextParams.authStyle) {
+          contextParams.authStyle = data.authStyle
+        }
 
         // Avoid passing token-selection hints downstream.
         contextParams.useUserToken = undefined
@@ -1470,20 +1567,20 @@ export async function executeTool(
     // Check for direct execution (no HTTP request needed)
     const wrapperBaseToolId = getImageGenerationWrapperBaseToolId(normalizedToolId)
     const directExecution =
-    normalizedToolId === 'google_nano_banana'
-      ? executeNanoBananaDirect
-      : normalizedToolId === 'image_generate'
-        ? executeImageGenerateDirect
-        : normalizedToolId === 'openai_image'
-          ? executeOpenAIImageDirect
-          : wrapperBaseToolId
-            ? (params: Record<string, any>) =>
-                executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-      : normalizedToolId === 'development_generate_app'
-        ? executeDevelopmentGenerateAppDirect
-        : normalizedToolId === 'development_edit_app'
-          ? executeDevelopmentEditAppDirect
-          : tool.directExecution
+      normalizedToolId === 'google_nano_banana'
+        ? executeNanoBananaDirect
+        : normalizedToolId === 'image_generate'
+          ? executeImageGenerateDirect
+          : normalizedToolId === 'openai_image'
+            ? executeOpenAIImageDirect
+            : wrapperBaseToolId
+              ? (params: Record<string, any>) =>
+                  executeImageGenerationWrapperV2Direct(normalizedToolId, params)
+              : normalizedToolId === 'development_generate_app'
+                ? executeDevelopmentGenerateAppDirect
+                : normalizedToolId === 'development_edit_app'
+                  ? executeDevelopmentEditAppDirect
+                  : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)
@@ -1953,6 +2050,12 @@ async function executeToolRequest(
       toolId,
       params._context?.userId
     )
+    if (isInternalRoute && params._context?.billingAttribution) {
+      headers.set(
+        BILLING_ATTRIBUTION_HEADER,
+        serializeBillingAttributionHeader(params._context.billingAttribution)
+      )
+    }
 
     const shouldPropagateCallChain = isInternalRoute || isSelfOriginUrl(fullUrl)
     if (shouldPropagateCallChain) {
@@ -2569,12 +2672,29 @@ async function executeMcpTool(
     if (mcpScope.callChain && mcpScope.callChain.length > 0) {
       headers[SIM_VIA_HEADER] = serializeCallChain(mcpScope.callChain)
     }
+    if (mcpScope.billingAttribution) {
+      headers[BILLING_ATTRIBUTION_HEADER] = serializeBillingAttributionHeader(
+        mcpScope.billingAttribution
+      )
+    }
 
     if (!mcpScope.workspaceId) {
       return {
         success: false,
         output: {},
         error: `Missing workspaceId in execution context for MCP tool ${toolName}`,
+        timing: {
+          startTime: actualStartTime,
+          endTime: new Date().toISOString(),
+          duration: Date.now() - new Date(actualStartTime).getTime(),
+        },
+      }
+    }
+    if (!mcpScope.billingAttribution) {
+      return {
+        success: false,
+        output: {},
+        error: `Missing billing attribution in execution context for MCP tool ${toolName}`,
         timing: {
           startTime: actualStartTime,
           endTime: new Date().toISOString(),

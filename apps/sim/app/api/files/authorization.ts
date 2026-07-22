@@ -6,7 +6,6 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { getFileMetadata } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
-import { S3_CHAT_CONFIG } from '@/lib/uploads/config'
 import { extractOrganizationIdFromOrgLogoKey } from '@/lib/uploads/contexts/org-logos/utils'
 import type { StorageConfig } from '@/lib/uploads/core/storage-client'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
@@ -830,14 +829,6 @@ export async function assertToolFileAccess(
  * Get chat storage configuration based on current storage provider
  */
 async function getChatStorageConfig(): Promise<StorageConfig> {
-  const { USE_S3_STORAGE } = await import('@/lib/uploads/config')
-
-  if (USE_S3_STORAGE) {
-    return {
-      bucket: S3_CHAT_CONFIG.bucket,
-      region: S3_CHAT_CONFIG.region,
-    }
-  }
-
-  return {}
+  const { getStorageConfig } = await import('@/lib/uploads/config')
+  return getStorageConfig('chat')
 }

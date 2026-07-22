@@ -68,6 +68,7 @@ function buildActionsMenu(actions: RowAction[]) {
 }
 
 interface OrganizationMemberListsProps {
+  canManage: boolean
   organizationId: string
   roster: OrganizationRoster | null | undefined
   isLoadingRoster: boolean
@@ -83,6 +84,7 @@ interface OrganizationMemberListsProps {
  * section; sections with no matches collapse while a search is active.
  */
 export function OrganizationMemberLists({
+  canManage,
   organizationId,
   roster,
   isLoadingRoster,
@@ -114,8 +116,8 @@ export function OrganizationMemberLists({
     const isSelf = member.userId === currentUserId
     const isOwner = member.role === 'owner'
     const isExternal = member.role === 'external'
-    const editable = !isSelf && !isOwner && !isExternal
-    const canRemove = !isSelf && !isOwner
+    const editable = canManage && !isSelf && !isOwner && !isExternal
+    const canRemove = canManage && !isSelf && !isOwner
 
     return (
       <MemberRow
@@ -152,7 +154,7 @@ export function OrganizationMemberLists({
         }
         menu={buildActionsMenu([
           { label: 'Copy email', onSelect: () => copyToClipboard(member.email) },
-          ...(!isOwner
+          ...(canManage && !isOwner
             ? [
                 {
                   label: 'Manage Credits',
@@ -188,7 +190,7 @@ export function OrganizationMemberLists({
           // ...(isSelf && isOwner && onTransferOwnership
           //   ? [{ label: 'Transfer ownership', onSelect: () => onTransferOwnership() }]
           //   : []),
-          ...(isSelf && !isOwner
+          ...(canManage && isSelf && !isOwner
             ? [
                 {
                   label: 'Leave organization',
@@ -226,21 +228,25 @@ export function OrganizationMemberLists({
       roleControl={roleControl}
       menu={buildActionsMenu([
         { label: 'Copy email', onSelect: () => copyToClipboard(invitation.email) },
-        {
-          label: 'Resend invite',
-          onSelect: () =>
-            resendInvitation
-              .mutateAsync({ invitationId: invitation.id, orgId: organizationId })
-              .catch((error) => logger.error('Failed to resend invitation', { error })),
-        },
-        {
-          label: 'Revoke invite',
-          destructive: true,
-          onSelect: () =>
-            cancelInvitation
-              .mutateAsync({ invitationId: invitation.id, orgId: organizationId })
-              .catch((error) => logger.error('Failed to revoke invitation', { error })),
-        },
+        ...(canManage
+          ? [
+              {
+                label: 'Resend invite',
+                onSelect: () =>
+                  resendInvitation
+                    .mutateAsync({ invitationId: invitation.id, orgId: organizationId })
+                    .catch((error) => logger.error('Failed to resend invitation', { error })),
+              },
+              {
+                label: 'Revoke invite',
+                destructive: true,
+                onSelect: () =>
+                  cancelInvitation
+                    .mutateAsync({ invitationId: invitation.id, orgId: organizationId })
+                    .catch((error) => logger.error('Failed to revoke invitation', { error })),
+              },
+            ]
+          : []),
       ])}
     />
   )
@@ -268,7 +274,7 @@ export function OrganizationMemberLists({
         }
         options={ORG_ROLE_OPTIONS}
         matchTriggerWidth={false}
-        disabled={updateInvitation.isPending}
+        disabled={!canManage || updateInvitation.isPending}
       />
     )
     return renderInviteRow(invitation, 'org-invite', roleControl)
@@ -282,9 +288,10 @@ export function OrganizationMemberLists({
     const rowUserIsOrgAdmin = isOrgAdminRole(member.role)
     const isSelf = member.userId === currentUserId
     const wouldDemoteSelf = isSelf && access.permission === 'admin'
-    const disabled = rowUserIsOrgAdmin || wouldDemoteSelf || updatePermissions.isPending
+    const disabled =
+      !canManage || rowUserIsOrgAdmin || wouldDemoteSelf || updatePermissions.isPending
     const lockReason = rowUserIsOrgAdmin ? workspaceRoleLockReason('org-admin') : null
-    const canRemoveFromWorkspace = !rowUserIsOrgAdmin && !isSelf
+    const canRemoveFromWorkspace = canManage && !rowUserIsOrgAdmin && !isSelf
 
     return (
       <MemberRow
@@ -357,7 +364,7 @@ export function OrganizationMemberLists({
         }
         options={WORKSPACE_ROLE_OPTIONS}
         matchTriggerWidth={false}
-        disabled={updateInvitation.isPending}
+        disabled={!canManage || updateInvitation.isPending}
       />
     )
     return renderInviteRow(invitation, `ws-${workspaceId}-invite`, roleControl)
@@ -458,15 +465,17 @@ export function OrganizationMemberLists({
         )
       })}
 
-      <ManageCreditsModal
-        key={creditsTarget?.userId ?? 'none'}
-        open={creditsTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setCreditsTarget(null)
-        }}
-        organizationId={organizationId}
-        member={creditsTarget}
-      />
+      {canManage && (
+        <ManageCreditsModal
+          key={creditsTarget?.userId ?? 'none'}
+          open={creditsTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setCreditsTarget(null)
+          }}
+          organizationId={organizationId}
+          member={creditsTarget}
+        />
+      )}
     </>
   )
 }

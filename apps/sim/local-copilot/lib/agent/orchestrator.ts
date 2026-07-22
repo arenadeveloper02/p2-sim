@@ -1,9 +1,17 @@
 import { createLogger } from '@sim/logger'
-import { generateId } from '@sim/utils/id'
 import { getErrorMessage } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
+import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
+import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
+import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
+import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
-import { buildLocalCopilotContext, contextToPromptJson } from '@/local-copilot/lib/context/build-context'
+import {
+  buildLocalCopilotContext,
+  contextToPromptJson,
+} from '@/local-copilot/lib/context/build-context'
 import {
   compactChatHistory,
   estimateChatMessagesTokens,
@@ -14,12 +22,6 @@ import {
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
 import {
-  stripLeakedToolMarkers,
-  synthesizeAssistantSummaryFromTools,
-  type ToolTurnRecord,
-} from '@/local-copilot/lib/synthesize-assistant-summary'
-import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
-import {
   appendMessage,
   createConversation,
   getMessages,
@@ -29,28 +31,32 @@ import {
 import { getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import {
-  buildLocalCopilotUserTurn,
-  getLocalCopilotUserTurnText,
-  type CopilotContextEntry,
-  type CopilotFileAttachmentRef,
-} from '@/local-copilot/lib/user-turn-content'
-import { MAX_TOOL_ITERATIONS } from '@/providers'
-import { LOCAL_COPILOT_TOOLS, resolveLocalCopilotTools } from '@/local-copilot/lib/tools/definitions'
-import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
+  stripLeakedToolMarkers,
+  synthesizeAssistantSummaryFromTools,
+  type ToolTurnRecord,
+} from '@/local-copilot/lib/synthesize-assistant-summary'
+import {
+  LOCAL_COPILOT_TOOLS,
+  resolveLocalCopilotTools,
+} from '@/local-copilot/lib/tools/definitions'
 import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
 import {
   buildFollowUpContinuationMessage,
   detectMandatoryFollowUp,
   formatToolResultForLlm,
+  type MandatoryFollowUp,
   resolveMandatoryFollowUps,
   sortToolCallsForExecution,
-  type MandatoryFollowUp,
 } from '@/local-copilot/lib/tools/format-tool-result'
-import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
-import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
-import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
-import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
+import {
+  buildLocalCopilotUserTurn,
+  type CopilotContextEntry,
+  type CopilotFileAttachmentRef,
+  getLocalCopilotUserTurnText,
+} from '@/local-copilot/lib/user-turn-content'
+import { MAX_TOOL_ITERATIONS } from '@/providers'
 
 const logger = createLogger('LocalCopilotAgent')
 

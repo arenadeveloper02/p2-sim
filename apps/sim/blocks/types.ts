@@ -262,7 +262,7 @@ export interface SubBlockConfig {
   id: string
   title?: string
   type: SubBlockType
-  mode?: 'basic' | 'advanced' | 'both' | 'trigger' | 'trigger-advanced' // Default is 'both' if not specified. 'trigger' means only shown in trigger mode. 'trigger-advanced' is for advanced canonical pair members shown in trigger mode
+  mode?: 'basic' | 'advanced' | 'both' | 'trigger' | 'trigger-advanced' // Default is 'both' if not specified. 'trigger' means only shown in trigger mode. 'trigger-advanced' is the advanced side of a trigger field — either a canonical pair member or a standalone field shown under the block-level advanced toggle
   canonicalParamId?: string
   /** Controls parameter visibility in agent/tool-input context */
   paramVisibility?: 'user-or-llm' | 'user-only' | 'llm-only' | 'hidden'
@@ -374,6 +374,19 @@ export interface SubBlockConfig {
     label: string
     serviceId: string
   }>
+  /**
+   * Narrows an `oauth-input` selector to a specific credential kind. `'custom-bot'`
+   * lists only reusable custom Slack bot credentials (service-account type) and its
+   * connect row opens the custom-bot setup modal instead of the OAuth flow.
+   */
+  credentialKind?: 'custom-bot'
+  /**
+   * Opts a trigger-mode `oauth-input` selector into listing service-account
+   * credentials, which are otherwise excluded in trigger mode. Set only when the
+   * trigger's server-side polling path can resolve the provider's service-account
+   * token (see `resolveOAuthCredential` in `@/lib/webhooks/polling/utils`).
+   */
+  allowServiceAccounts?: boolean
   // Selector properties — declarative mapping to a SelectorKey
   selectorKey?: SelectorKey
   selectorAllowSearch?: boolean
@@ -389,6 +402,11 @@ export interface SubBlockConfig {
   allowStartFilesReference?: boolean
   /** When allowStartFilesReference is true, limits conversation picker to images or all attachments. */
   conversationFileMode?: 'images' | 'all'
+  /**
+   * When true, FileUpload checks for S3/Blob and warns / disables new uploads if missing.
+   * Used by providers (e.g. Instagram) that need a Meta-fetchable public HTTPS URL.
+   */
+  requiresCloudStorage?: boolean
   // Slider-specific properties
   step?: number
   integer?: boolean
@@ -499,6 +517,12 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
   hideFromToolbar?: boolean
   /** When true, the block appears in the toolbar and search only for admin workspaces. */
   adminWorkspaceOnly?: boolean
+  /**
+   * For published custom blocks only: the bound source workflow's id. Discovery
+   * surfaces use it to hide a workflow's own block on that workflow's canvas
+   * (placing it would recurse).
+   */
+  sourceWorkflowId?: string
   /**
    * Marks an unreleased block. Preview blocks are hidden from every discovery
    * surface (toolbar, search, mentions, copilot/VFS, docs) in every environment —

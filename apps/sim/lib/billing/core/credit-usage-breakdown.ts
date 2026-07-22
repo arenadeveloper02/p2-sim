@@ -3,9 +3,14 @@ import { member, usageLog, user, userStats, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/predicates'
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm'
-import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
+import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
+import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { getOrgMemberLedgerByUser } from '@/lib/billing/core/organization'
+import {
+  getHighestPrioritySubscription,
+  resolveBillingInterval,
+} from '@/lib/billing/core/subscription'
 import { getOrgUsageLimit, getUserUsageData } from '@/lib/billing/core/usage'
 import {
   COPILOT_USAGE_SOURCES,
@@ -13,14 +18,12 @@ import {
   getBillingPeriodUsageCostByUser,
   type UsageLogSource,
 } from '@/lib/billing/core/usage-log'
+import { apportionCredits, dollarsToCredits } from '@/lib/billing/credits/conversion'
 import {
   computeDailyRefreshConsumed,
   getOrgMemberRefreshBounds,
 } from '@/lib/billing/credits/daily-refresh'
-import { apportionCredits, dollarsToCredits } from '@/lib/billing/credits/conversion'
-import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { getPlanTierDollars, isPaid } from '@/lib/billing/plan-helpers'
-import { getHighestPrioritySubscription, resolveBillingInterval } from '@/lib/billing/core/subscription'
 import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
 import type { DbClient } from '@/lib/db/types'
 
@@ -497,9 +500,7 @@ export async function getCreditUsageSummary(params: {
       const [membership] = await executor
         .select({ role: member.role })
         .from(member)
-        .where(
-          and(eq(member.organizationId, organizationId), eq(member.userId, params.userId))
-        )
+        .where(and(eq(member.organizationId, organizationId), eq(member.userId, params.userId)))
         .limit(1)
 
       if (!membership) {

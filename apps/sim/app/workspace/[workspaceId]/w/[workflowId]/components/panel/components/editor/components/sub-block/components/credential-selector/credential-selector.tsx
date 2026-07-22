@@ -16,6 +16,7 @@ import {
 import { getMissingRequiredScopes, getRequiredScopesForCredential } from '@/lib/oauth/utils'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { ConnectOAuthModal } from '@/app/workspace/[workspaceId]/components/connect-oauth-modal'
+import { ConnectSlackBotModal } from '@/app/workspace/[workspaceId]/integrations/components/connect-slack-bot-modal/connect-slack-bot-modal'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
@@ -56,6 +57,7 @@ export function CredentialSelector({
   const workspaceId = (params?.workspaceId as string) || ''
   const [showConnectModal, setShowConnectModal] = useState(false)
   const [showOAuthModal, setShowOAuthModal] = useState(false)
+  const [showSlackBotModal, setShowSlackBotModal] = useState(false)
   const [editingValue, setEditingValue] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
@@ -144,8 +146,18 @@ export function CredentialSelector({
         : rawCredentials,
     [rawCredentials, isTriggerMode]
   )
+  const credentialKind = subBlock.credentialKind
 
-  const credentials = useMemo(() => selectionPool, [selectionPool])
+  const credentials = useMemo(() => {
+    // A custom-bot picker lists only the reusable Slack bot credentials
+    // (service-account type), including in trigger mode.
+    if (credentialKind === 'custom-bot') {
+      return rawCredentials.filter((cred) => cred.type === 'service_account')
+    }
+    return isTriggerMode && !subBlock.allowServiceAccounts
+      ? rawCredentials.filter((cred) => cred.type !== 'service_account')
+      : rawCredentials
+  }, [rawCredentials, isTriggerMode, credentialKind, subBlock.allowServiceAccounts])
 
   const selectedCredential = useMemo(
     () => selectionPool.find((cred) => cred.id === selectedId),
@@ -259,8 +271,12 @@ export function CredentialSelector({
   )
 
   const handleAddCredential = useCallback(() => {
+    if (credentialKind === 'custom-bot') {
+      setShowSlackBotModal(true)
+      return
+    }
     setShowConnectModal(true)
-  }, [])
+  }, [credentialKind])
 
   const handleUnipileReconnect = useCallback(
     async (credentialId: string) => {
@@ -418,9 +434,13 @@ export function CredentialSelector({
 
     options.push({
       label:
-        credentials.length > 0
-          ? `Connect another ${getProviderName(provider)} account`
-          : `Connect ${getProviderName(provider)} account`,
+        credentialKind === 'custom-bot'
+          ? credentials.length > 0
+            ? 'Connect another custom bot'
+            : 'Set up a custom bot'
+          : credentials.length > 0
+            ? `Connect another ${getProviderName(provider)} account`
+            : `Connect ${getProviderName(provider)} account`,
       value: '__connect_account__',
       iconElement: <ExternalLink className='size-3' />,
     })
@@ -435,6 +455,7 @@ export function CredentialSelector({
     isSharedHubspotWorkspace,
     hubspotAccountOptions,
     credentials,
+    credentialKind,
     provider,
     getProviderIcon,
     getProviderName,
@@ -654,6 +675,18 @@ export function CredentialSelector({
           requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
           serviceId={reauthorizeServiceId}
+        />
+      )}
+
+      {showSlackBotModal && (
+        <ConnectSlackBotModal
+          open={showSlackBotModal}
+          onOpenChange={setShowSlackBotModal}
+          workspaceId={workspaceId}
+          onCreated={(newCredentialId) => {
+            setStoreValue(newCredentialId)
+            refetchCredentials()
+          }}
         />
       )}
     </div>

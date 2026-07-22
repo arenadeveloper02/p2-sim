@@ -1,21 +1,20 @@
 import { db } from '@sim/db'
-import { workspace, workflow } from '@sim/db/schema'
+import { workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, desc, eq, isNull } from 'drizzle-orm'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
-import { getAllBlocks } from '@/blocks/registry'
-import type { BlockConfig } from '@/blocks/types'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 import { listLogs } from '@/lib/logs/list-logs'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
+import { getAllBlocks } from '@/blocks/registry'
+import type { BlockConfig } from '@/blocks/types'
+import { getLocalCopilotConfig, isSelfHostedDeployment } from '@/local-copilot/lib/config'
+import { buildContextPromptPayload } from '@/local-copilot/lib/context/context-budget'
+import { getLocalCopilotE2bCapabilities } from '@/local-copilot/lib/context/e2b-capabilities'
 import {
   loadWorkspaceIntegrations,
   oauthIntegrationsToCredentialMetadata,
 } from '@/local-copilot/lib/context/load-workspace-integrations'
 import { loadWorkspaceResourceSummaries } from '@/local-copilot/lib/context/load-workspace-resources'
-import { getLocalCopilotE2bCapabilities } from '@/local-copilot/lib/context/e2b-capabilities'
-import { isSelfHostedDeployment, getLocalCopilotConfig } from '@/local-copilot/lib/config'
-import { buildContextPromptPayload } from '@/local-copilot/lib/context/context-budget'
-import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import { loadWorkspaceSkillSummaries } from '@/local-copilot/lib/tools/user-skills'
 import type {
   LocalCopilotBlockSummary,

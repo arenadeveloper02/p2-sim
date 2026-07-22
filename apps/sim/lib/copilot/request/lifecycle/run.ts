@@ -7,9 +7,19 @@ import {
   checkMothershipUsageLimits,
   checkSelfHostedMothershipUsageLimits,
 } from '@/lib/billing/calculations/usage-monitor'
+import {
+  type AttributedBillingRequestEnvelope,
+  assertBillingAttributionSnapshot,
+  type BillingAttributionSnapshot,
+  createAttributedBillingRequestEnvelope,
+} from '@/lib/billing/core/billing-attribution'
 import { isWorkspaceOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { createRunSegment, updateRunStatus } from '@/lib/copilot/async-runs/repository'
 import { SIM_AGENT_VERSION, TOOL_WATCHDOG_RESUME_GRACE_MS } from '@/lib/copilot/constants'
+import {
+  COPILOT_BILLING_PROTOCOL,
+  COPILOT_BILLING_PROTOCOL_HEADER,
+} from '@/lib/copilot/generated/billing-protocol-v1'
 import {
   MothershipStreamV1EventType,
   MothershipStreamV1RunKind,
@@ -48,9 +58,13 @@ import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copil
 import { hasCopilotApiKey } from '@/lib/copilot/server/copilot-api-keys'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
-import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
-import { shouldRouteToLocalCopilot } from '@/local-copilot/lib/routing'
+import {
+  isBillingEnabled,
+  isCopilotBillingAttributionV1Enabled,
+  isHosted,
+} from '@/lib/core/config/env-flags'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
+import { shouldRouteToLocalCopilot } from '@/local-copilot/lib/routing'
 
 const logger = createLogger('CopilotLifecycle')
 
@@ -85,6 +99,7 @@ export interface CopilotLifecycleOptions extends OrchestratorOptions {
   otelContext?: Context
   onGoTraceId?: (goTraceId: string) => void
   executionContext?: ExecutionContext
+  billingAttribution?: BillingAttributionSnapshot
 }
 
 export async function runCopilotLifecycle(
@@ -126,6 +141,8 @@ export async function runCopilotLifecycle(
             executionId: resolvedExecutionId,
             runId: resolvedRunId,
             abortSignal: options.abortSignal,
+            billingAttribution:
+              options.billingAttribution ?? options.executionContext.billingAttribution,
           },
         }
       : {}),
@@ -141,7 +158,30 @@ export async function runCopilotLifecycle(
       executionId: resolvedExecutionId,
       runId: resolvedRunId,
       abortSignal: lifecycleOptions.abortSignal,
+      billingAttribution: lifecycleOptions.billingAttribution,
     }))
+  const shouldUseHostedBillingProtocol = isHosted && isCopilotBillingAttributionV1Enabled
+  if (
+    shouldUseHostedBillingProtocol &&
+    execContext.workspaceId &&
+    !execContext.billingAttribution
+  ) {
+    throw new Error('Billing attribution is required for hosted Copilot execution')
+  }
+  let hostedBillingRequest: AttributedBillingRequestEnvelope | undefined
+  if (execContext.billingAttribution) {
+    const billingAttribution = assertBillingAttributionSnapshot(execContext.billingAttribution)
+    if (
+      billingAttribution.actorUserId !== execContext.userId ||
+      billingAttribution.workspaceId !== execContext.workspaceId
+    ) {
+      throw new Error('Copilot billing attribution does not match its actor and workspace')
+    }
+    execContext.billingAttribution = billingAttribution
+    if (shouldUseHostedBillingProtocol) {
+      hostedBillingRequest = createAttributedBillingRequestEnvelope(billingAttribution)
+    }
+  }
 
   const billingModel =
     typeof requestPayload.model === 'string' && requestPayload.model.trim().length > 0
@@ -217,7 +257,14 @@ export async function runCopilotLifecycle(
           { status: 401, body: 'Missing COPILOT_API_KEY' }
         )
       }
-      await runCheckpointLoop(requestPayload, context, execContext, lifecycleOptions, goRoute)
+      await runCheckpointLoop(
+        requestPayload,
+        context,
+        execContext,
+        lifecycleOptions,
+        goRoute,
+        hostedBillingRequest
+      )
     }
 
     const result: OrchestratorResult = {
@@ -358,12 +405,21 @@ function isPerSubagentContinuation(c: AsyncContinuation): boolean {
 // Shared header set for every Sim -> Go mothership request (initial stream and
 // every resume leg), so the auth/source/version headers can't drift between the
 // sequential path and the concurrent per-subagent resume legs.
-function mothershipRequestHeaders(): Record<string, string> {
+function mothershipRequestHeaders(
+  hostedBillingRequest?: AttributedBillingRequestEnvelope
+): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     ...(env.COPILOT_API_KEY ? { 'x-api-key': env.COPILOT_API_KEY } : {}),
     ...getMothershipSourceEnvHeaders(),
     'X-Client-Version': SIM_AGENT_VERSION,
+    ...(hostedBillingRequest
+      ? hostedBillingRequest.headers
+      : isHosted && !isCopilotBillingAttributionV1Enabled
+        ? {
+            [COPILOT_BILLING_PROTOCOL_HEADER]: COPILOT_BILLING_PROTOCOL.legacy,
+          }
+        : {}),
   }
 }
 
@@ -453,7 +509,8 @@ async function runResumeLegWithRetry(
   body: Record<string, unknown>,
   leg: StreamingContext,
   execContext: ExecutionContext,
-  options: CopilotLifecycleOptions
+  options: CopilotLifecycleOptions,
+  hostedBillingRequest?: AttributedBillingRequestEnvelope
 ): Promise<void> {
   let attempt = 0
   for (;;) {
@@ -463,7 +520,11 @@ async function runResumeLegWithRetry(
     try {
       await runStreamLoop(
         url,
-        { method: 'POST', headers: mothershipRequestHeaders(), body: JSON.stringify(legBody) },
+        {
+          method: 'POST',
+          headers: mothershipRequestHeaders(hostedBillingRequest),
+          body: JSON.stringify(legBody),
+        },
         leg,
         execContext,
         options
@@ -500,7 +561,8 @@ async function driveOneChildChain(
   execContext: ExecutionContext,
   options: CopilotLifecycleOptions,
   baseURL: string,
-  workspaceId?: string
+  workspaceId?: string,
+  hostedBillingRequest?: AttributedBillingRequestEnvelope
 ): Promise<AsyncContinuation | null> {
   // ParentToolCallID is the SAME subagent's stable identity across re-pauses;
   // the checkpoint id rotates each re-pause (the prior one is already claimed).
@@ -530,7 +592,8 @@ async function driveOneChildChain(
       },
       leg,
       execContext,
-      options
+      options,
+      hostedBillingRequest
     )
     mergeResumeLegOutputs(context, leg)
 
@@ -583,7 +646,8 @@ async function driveSubagentChains(
   execContext: ExecutionContext,
   options: CopilotLifecycleOptions,
   baseURL: string,
-  workspaceId?: string
+  workspaceId?: string,
+  hostedBillingRequest?: AttributedBillingRequestEnvelope
 ): Promise<AsyncContinuation | null> {
   const frames = continuation.frames ?? []
   logger.info('Driving subagent checkpoint chains concurrently', {
@@ -604,16 +668,22 @@ async function driveSubagentChains(
   try {
     const followOns = await Promise.all(
       frames.map((frame) =>
-        driveOneChildChain(frame, context, execContext, legOptions, baseURL, workspaceId).catch(
-          (error) => {
-            // First real failure wins and cancels the siblings; their resulting
-            // AbortErrors arrive later and don't overwrite it. Swallow here so
-            // Promise.all doesn't reject before every leg has unwound.
-            if (firstError === undefined) firstError = error
-            fanoutController.abort()
-            return null
-          }
-        )
+        driveOneChildChain(
+          frame,
+          context,
+          execContext,
+          legOptions,
+          baseURL,
+          workspaceId,
+          hostedBillingRequest
+        ).catch((error) => {
+          // First real failure wins and cancels the siblings; their resulting
+          // AbortErrors arrive later and don't overwrite it. Swallow here so
+          // Promise.all doesn't reject before every leg has unwound.
+          if (firstError === undefined) firstError = error
+          fanoutController.abort()
+          return null
+        })
       )
     )
     if (firstError !== undefined) throw firstError
@@ -632,7 +702,8 @@ async function runCheckpointLoop(
   context: StreamingContext,
   execContext: ExecutionContext,
   options: CopilotLifecycleOptions,
-  initialRoute: string
+  initialRoute: string,
+  hostedBillingRequest?: AttributedBillingRequestEnvelope
 ): Promise<void> {
   let route = initialRoute
   let payload: Record<string, unknown> = initialPayload
@@ -731,7 +802,7 @@ async function runCheckpointLoop(
         `${mothershipBaseURL}${route}`,
         {
           method: 'POST',
-          headers: mothershipRequestHeaders(),
+          headers: mothershipRequestHeaders(hostedBillingRequest),
           body: JSON.stringify(legPayload),
         },
         context,
@@ -820,7 +891,8 @@ async function runCheckpointLoop(
           execContext,
           options,
           mothershipBaseURL,
-          lifecycleWorkspaceId
+          lifecycleWorkspaceId,
+          hostedBillingRequest
         )
       }
       if (!next) break
@@ -993,9 +1065,19 @@ async function buildExecutionContext(
     executionId?: string
     runId?: string
     abortSignal?: AbortSignal
+    billingAttribution?: BillingAttributionSnapshot
   }
 ): Promise<ExecutionContext> {
-  const { userId, workflowId, workspaceId, chatId, executionId, runId, abortSignal } = params
+  const {
+    userId,
+    workflowId,
+    workspaceId,
+    chatId,
+    executionId,
+    runId,
+    abortSignal,
+    billingAttribution,
+  } = params
   const userTimezone =
     typeof requestPayload?.userTimezone === 'string' ? requestPayload.userTimezone : undefined
   const requestMode = typeof requestPayload?.mode === 'string' ? requestPayload.mode : undefined
@@ -1004,7 +1086,10 @@ async function buildExecutionContext(
 
   let execContext: ExecutionContext
   if (workflowId) {
-    execContext = await prepareExecutionContext(userId, workflowId, chatId)
+    execContext = await prepareExecutionContext(userId, workflowId, chatId, {
+      workspaceId,
+      billingAttribution,
+    })
   } else {
     const decryptedEnvVars = await getEffectiveDecryptedEnv(userId, workspaceId)
     execContext = {
@@ -1013,6 +1098,7 @@ async function buildExecutionContext(
       workspaceId,
       chatId,
       decryptedEnvVars,
+      billingAttribution,
     }
   }
 
@@ -1025,6 +1111,7 @@ async function buildExecutionContext(
   execContext.executionId = executionId
   execContext.runId = runId
   execContext.abortSignal = abortSignal
+  if (billingAttribution) execContext.billingAttribution = billingAttribution
   return execContext
 }
 

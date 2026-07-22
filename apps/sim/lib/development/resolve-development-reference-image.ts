@@ -1,9 +1,6 @@
 import type { Logger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import {
-  processSingleFileToUserFile,
-  type RawFileInput,
-} from '@/lib/uploads/utils/file-utils'
+import { processSingleFileToUserFile, type RawFileInput } from '@/lib/uploads/utils/file-utils'
 import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
 import { assertToolFileAccess } from '@/app/api/files/authorization'
 
@@ -32,10 +29,7 @@ function isPdfFileName(name?: string): boolean {
   return (name ?? '').trim().toLowerCase().endsWith('.pdf')
 }
 
-function assertPdfReference(
-  mimeType: string | undefined,
-  fileName: string | undefined
-): void {
+function assertPdfReference(mimeType: string | undefined, fileName: string | undefined): void {
   if (!isPdfMimeType(mimeType) && !isPdfFileName(fileName)) {
     throw new Error('Reference file must be a PDF (.pdf)')
   }

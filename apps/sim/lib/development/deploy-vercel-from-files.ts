@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { createLogger } from '@sim/logger'
-import { sleep } from '@sim/utils/helpers'
 import { toError } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
 import { readGeneratedAppFiles } from '@/lib/development/read-generated-app-files'
 
 const logger = createLogger('DeployVercelFromFiles')

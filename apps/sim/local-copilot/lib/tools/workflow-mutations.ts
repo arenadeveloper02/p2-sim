@@ -1,7 +1,7 @@
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import type { ToolCallResult } from '@/lib/copilot/request/types'
-import { editWorkflowServerTool } from '@/lib/copilot/tools/server/workflow/edit-workflow'
 import { executeCreateWorkflow } from '@/lib/copilot/tools/handlers/workflow/mutations'
+import { editWorkflowServerTool } from '@/lib/copilot/tools/server/workflow/edit-workflow'
 import type { EditWorkflowParams } from '@/lib/copilot/tools/server/workflow/edit-workflow/types'
 
 export interface LocalCopilotMutationContext {
@@ -82,6 +82,10 @@ export async function runEditWorkflowTool(
 
     return { success: true, output: result }
   } catch (error) {
-    return { success: false, error: getErrorMessage(error, toError(error).message), output: undefined }
+    return {
+      success: false,
+      error: getErrorMessage(error, toError(error).message),
+      output: undefined,
+    }
   }
 }

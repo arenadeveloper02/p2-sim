@@ -169,12 +169,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     () =>
       welcomeMessage
         ? {
-          id: 'welcome',
-          content: welcomeMessage,
-          type: 'assistant',
-          timestamp: new Date(),
-          isInitialMessage: true,
-        }
+            id: 'welcome',
+            content: welcomeMessage,
+            type: 'assistant',
+            timestamp: new Date(),
+            isInitialMessage: true,
+          }
         : null,
     [welcomeMessage]
   )
@@ -256,14 +256,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             setMessages([
               ...(chatConfig?.customizations?.welcomeMessage
                 ? [
-                  {
-                    id: 'welcome',
-                    content: chatConfig.customizations.welcomeMessage,
-                    type: 'assistant',
-                    isInitialMessage: true,
-                    timestamp: new Date(),
-                  },
-                ]
+                    {
+                      id: 'welcome',
+                      content: chatConfig.customizations.welcomeMessage,
+                      type: 'assistant',
+                      isInitialMessage: true,
+                      timestamp: new Date(),
+                    },
+                  ]
                 : []),
               ...data.logs.flatMap((log: any) => {
                 const messages = []
@@ -366,8 +366,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           // Attempt a safe, one-time auto-login for email-gated chats when an email cookie exists
           if (errorData.error === 'auth_required_email') {
             try {
-              const autoLoginKey = `chat:autoLoginTried:${identifier}:${new URLSearchParams(window.location.search).get('chatId') || 'nochat'
-                }`
+              const autoLoginKey = `chat:autoLoginTried:${identifier}:${
+                new URLSearchParams(window.location.search).get('chatId') || 'nochat'
+              }`
               const alreadyTried =
                 typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
               const cookieEmail = Cookies.get('email')
@@ -599,10 +600,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const audioHandler =
         shouldPlayAudio && chatConfig?.id
           ? createAudioStreamHandler(
-            streamTextToAudio,
-            DEFAULT_VOICE_SETTINGS.voiceId,
-            chatConfig.id
-          )
+              streamTextToAudio,
+              DEFAULT_VOICE_SETTINGS.voiceId,
+              chatConfig.id
+            )
           : undefined
 
       logger.info('Starting to handle streamed response:', { shouldPlayAudio })

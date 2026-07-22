@@ -1,4 +1,4 @@
-import { Container, Section } from '@react-email/components'
+import { Container, Img, Link, Section } from '@react-email/components'
 import { baseStyles, colors, spacing, typography } from '@/components/emails/_styles'
 import { isHosted } from '@/lib/core/config/env-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -59,53 +59,67 @@ export function EmailFooter({
               </td>
             </tr>
 
-            {/* Social links row */}
-            <tr>
-              <td style={baseStyles.gutter} width={spacing.gutter}>
-                &nbsp;
-              </td>
-              <td>
-                <table cellPadding={0} cellSpacing={0} style={{ border: 0 }}>
-                  <tbody>
-                    {/* <tr>
-                      <td align='left' style={{ padding: '0 8px 0 0' }}>
-                        <Link href={`${baseUrl}/x`} rel='noopener noreferrer'>
-                          <Img
-                            src={`${baseUrl}/static/x-icon.png`}
-                            width='20'
-                            height='20'
-                            alt='X'
-                          />
-                        </Link>
-                      </td>
-                      <td align='left' style={{ padding: '0 8px' }}>
-                        <Link href={`${baseUrl}/discord`} rel='noopener noreferrer'>
-                          <Img
-                            src={`${baseUrl}/static/discord-icon.png`}
-                            width='20'
-                            height='20'
-                            alt='Discord'
-                          />
-                        </Link>
-                      </td>
-                      <td align='left' style={{ padding: '0 8px' }}>
-                        <Link href={`${baseUrl}/github`} rel='noopener noreferrer'>
-                          <Img
-                            src={`${baseUrl}/static/github-icon.png`}
-                            width='20'
-                            height='20'
-                            alt='GitHub'
-                          />
-                        </Link>
-                      </td>
-                    </tr> */}
-                  </tbody>
-                </table>
-              </td>
-              <td style={baseStyles.gutter} width={spacing.gutter}>
-                &nbsp;
-              </td>
-            </tr>
+            {/* Social links row — hidden for whitelabeled instances */}
+            {!isWhitelabeled && (
+              <>
+                <tr>
+                  <td style={baseStyles.gutter} width={spacing.gutter}>
+                    &nbsp;
+                  </td>
+                  <td>
+                    <table cellPadding={0} cellSpacing={0} style={{ border: 0 }}>
+                      <tbody>
+                        <tr>
+                          {/* <td align='left' style={{ padding: '0 8px 0 0' }}>
+                            <Link href={`${baseUrl}/x`} rel='noopener noreferrer'>
+                              <Img
+                                src={`${baseUrl}/static/x-icon.png`}
+                                width='20'
+                                height='20'
+                                alt='X'
+                              />
+                            </Link>
+                          </td> */}
+                          <td align='left' style={{ padding: '0 8px' }}>
+                            <Link href={`${baseUrl}/linkedin`} rel='noopener noreferrer'>
+                              <Img
+                                src={`${baseUrl}/static/linkedin-icon.png`}
+                                width='20'
+                                height='20'
+                                alt='LinkedIn'
+                              />
+                            </Link>
+                          </td>
+                          {/* <td align='left' style={{ padding: '0 8px' }}>
+                            <Link href={`${baseUrl}/github`} rel='noopener noreferrer'>
+                              <Img
+                                src={`${baseUrl}/static/github-icon.png`}
+                                width='20'
+                                height='20'
+                                alt='GitHub'
+                              />
+                            </Link>
+                          </td> */}
+                          <td align='left' style={{ padding: '0 8px' }}>
+                            <Link href={`${baseUrl}/slack`} rel='noopener noreferrer'>
+                              <Img
+                                src={`${baseUrl}/static/slack-icon.png`}
+                                width='20'
+                                height='20'
+                                alt='Slack'
+                              />
+                            </Link>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </td>
+                  <td style={baseStyles.gutter} width={spacing.gutter}>
+                    &nbsp;
+                  </td>
+                </tr>
+              </>
+            )}
 
             <tr>
               <td style={baseStyles.spacer} height={16}>

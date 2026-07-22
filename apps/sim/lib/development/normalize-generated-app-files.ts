@@ -44,7 +44,10 @@ const AUTO_ADD_DEPENDENCIES: Record<string, string> = {
 }
 
 /** Runtime packages auto-added only when a generated file imports them. Version-pinned dev types travel with them. */
-const AUTO_ADD_DEPENDENCIES_WITH_TYPES: Record<string, { dep: string; devTypes: string; typesPackage: string }> = {
+const AUTO_ADD_DEPENDENCIES_WITH_TYPES: Record<
+  string,
+  { dep: string; devTypes: string; typesPackage: string }
+> = {
   jsonwebtoken: { dep: '^9.0.2', devTypes: '^9.0.9', typesPackage: '@types/jsonwebtoken' },
   bcryptjs: { dep: '^2.4.3', devTypes: '^2.4.6', typesPackage: '@types/bcryptjs' },
 }
@@ -443,10 +446,7 @@ export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Ne
 - MANDATORY: always return prisma/schema.prisma on every edit; when you ADD models/fields/relations also return lib/actions.ts + lib/types.ts together
 - Read the provided lib/actions.ts and lib/types.ts in context before editing — extend their patterns, do not invent conflicting field names`
 
-export const GENERATED_APP_DATABASE_FILE_PATHS = [
-  'prisma/schema.prisma',
-  'lib/prisma.ts',
-] as const
+export const GENERATED_APP_DATABASE_FILE_PATHS = ['prisma/schema.prisma', 'lib/prisma.ts'] as const
 
 const PINNED_PRISMA_VERSION = '^6.9.0'
 
@@ -698,7 +698,10 @@ function isComponentAliasPath(importPath: string): boolean {
   return (
     importPath.startsWith('components/') ||
     /^components\//.test(importPath) ||
-    importPath.split('/').pop()?.match(/^[A-Z]/) !== null
+    importPath
+      .split('/')
+      .pop()
+      ?.match(/^[A-Z]/) !== null
   )
 }
 
@@ -761,7 +764,9 @@ export function collectUsedNpmPackageNames(files: GeneratedAppFile[]): Set<strin
           continue
         }
 
-        const pkg = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
+        const pkg = spec.startsWith('@')
+          ? spec.split('/').slice(0, 2).join('/')
+          : spec.split('/')[0]
         packages.add(pkg)
       }
     }
@@ -1088,7 +1093,9 @@ export function sanitizeComponentFileImports(content: string): string {
   result = result.replace(
     /^import\s+type\s*\{([^}]*)\}\s*from\s*['"]@\/lib\/actions['"]\s*;?\s*$/gm,
     (_match, imports: string) => {
-      const names = parseNamedImportBinding(imports).filter((name) => !REACT_BUILTIN_TYPES.has(name))
+      const names = parseNamedImportBinding(imports).filter(
+        (name) => !REACT_BUILTIN_TYPES.has(name)
+      )
       if (names.length === 0) {
         return ''
       }
@@ -1124,7 +1131,12 @@ export function sanitizeComponentFileImports(content: string): string {
     const line = passthroughLines[index]
     const trimmed = line.trim()
 
-    if (!mergedInserted && trimmed && !trimmed.startsWith('import ') && trimmed !== "'use client'") {
+    if (
+      !mergedInserted &&
+      trimmed &&
+      !trimmed.startsWith('import ') &&
+      trimmed !== "'use client'"
+    ) {
       output.push(mergedImport)
       mergedInserted = true
     }
@@ -1149,7 +1161,10 @@ export function sanitizeComponentFileImports(content: string): string {
     }
   }
 
-  return output.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()
+  return output
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd()
 }
 
 /**
@@ -1167,7 +1182,7 @@ export function ensureDatabasePagesAreDynamic(files: GeneratedAppFile[]): Genera
       return file
     }
     if (
-      !file.content.includes("@/lib/actions") &&
+      !file.content.includes('@/lib/actions') &&
       !file.content.includes("from '@/lib/prisma'") &&
       !file.content.includes('from "@/lib/prisma"')
     ) {
@@ -1177,7 +1192,11 @@ export function ensureDatabasePagesAreDynamic(files: GeneratedAppFile[]): Genera
     const importEnd = file.content.lastIndexOf('\nimport ')
     const metadataIdx = file.content.indexOf('export const metadata')
     const insertAt =
-      metadataIdx >= 0 ? metadataIdx : importEnd >= 0 ? file.content.indexOf('\n', importEnd) + 1 : 0
+      metadataIdx >= 0
+        ? metadataIdx
+        : importEnd >= 0
+          ? file.content.indexOf('\n', importEnd) + 1
+          : 0
 
     return {
       ...file,
@@ -1247,7 +1266,9 @@ function pagePathToRoute(pagePath: string): string | undefined {
 
   const routeSegments = match[1]
     .split('/')
-    .map((segment) => (segment.startsWith('[') && segment.endsWith(']') ? `:${segment.slice(1, -1)}` : segment))
+    .map((segment) =>
+      segment.startsWith('[') && segment.endsWith(']') ? `:${segment.slice(1, -1)}` : segment
+    )
     .join('/')
 
   return `/${routeSegments}`
@@ -1266,9 +1287,7 @@ function collectAppRoutes(files: GeneratedAppFile[]): string[] {
   return [...routes].sort()
 }
 
-function collectAppRouteEntries(
-  files: GeneratedAppFile[]
-): Array<{ route: string; file: string }> {
+function collectAppRouteEntries(files: GeneratedAppFile[]): Array<{ route: string; file: string }> {
   const entries: Array<{ route: string; file: string }> = []
 
   for (const file of files) {
@@ -1352,8 +1371,7 @@ export function buildReadmeContent(
     readPackageName(files)?.replace(/-/g, ' ') ||
     'Generated App'
   const description =
-    options.description?.trim() ||
-    `${appName} — a Next.js app generated with Sim Development.`
+    options.description?.trim() || `${appName} — a Next.js app generated with Sim Development.`
   const features =
     options.features && options.features.length > 0
       ? options.features
@@ -1451,8 +1469,7 @@ export function buildRepoSummaryContent(
     readPackageName(files)?.replace(/-/g, ' ') ||
     'Generated App'
   const description =
-    options.description?.trim() ||
-    `${appName} — a Next.js app generated with Sim Development.`
+    options.description?.trim() || `${appName} — a Next.js app generated with Sim Development.`
   const features =
     options.features && options.features.length > 0
       ? options.features
@@ -1496,7 +1513,10 @@ export function buildRepoSummaryContent(
 
   const inventorySections = Object.entries(groupedPaths)
     .filter(([, groupPaths]) => groupPaths.length > 0)
-    .map(([label, groupPaths]) => `### ${label}\n\n${groupPaths.map((path) => `- \`${path}\``).join('\n')}`)
+    .map(
+      ([label, groupPaths]) =>
+        `### ${label}\n\n${groupPaths.map((path) => `- \`${path}\``).join('\n')}`
+    )
     .join('\n\n')
 
   const latestChangeSection = options.latestUserRequest?.trim()

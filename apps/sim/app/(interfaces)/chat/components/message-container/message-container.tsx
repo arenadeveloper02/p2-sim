@@ -1,6 +1,5 @@
 'use client'
 
-import { Button } from '@sim/emcn'
 import {
   type Dispatch,
   memo,
@@ -11,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Button } from '@sim/emcn'
 import { ArrowDown, MessageCircle } from 'lucide-react'
 import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClientChatMessage'
 

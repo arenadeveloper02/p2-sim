@@ -333,6 +333,74 @@ describe('Knowledge Search API Route', () => {
       })
     })
 
+    it('fails before embedding work when an internal workspace request omits attribution', async () => {
+      hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+        success: true,
+        userId: 'user-123',
+        authType: 'internal_jwt',
+      })
+      mockCheckKnowledgeBaseAccess.mockResolvedValue({
+        hasAccess: true,
+        knowledgeBase: {
+          id: 'kb-123',
+          userId: 'user-123',
+          workspaceId: 'workspace-123',
+          embeddingModel: 'text-embedding-3-small',
+        },
+      })
+
+      const req = createMockRequest('POST', {
+        ...validSearchData,
+        skipUsageBilling: true,
+      })
+      const response = await POST(req)
+
+      expect(response.status).toBe(500)
+      expect(mockGenerateSearchEmbedding).not.toHaveBeenCalled()
+    })
+
+    it('uses the immutable header for an internal unmetered workspace search', async () => {
+      hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
+        success: true,
+        userId: 'user-123',
+        authType: 'internal_jwt',
+      })
+      mockCheckKnowledgeBaseAccess.mockResolvedValue({
+        hasAccess: true,
+        knowledgeBase: {
+          id: 'kb-123',
+          userId: 'user-123',
+          workspaceId: 'workspace-123',
+          embeddingModel: 'text-embedding-3-small',
+        },
+      })
+      mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
+      const attribution = encodeURIComponent(
+        JSON.stringify({
+          actorUserId: 'user-123',
+          workspaceId: 'workspace-123',
+          organizationId: 'organization-123',
+          billedAccountUserId: 'owner-123',
+          billingEntity: { type: 'organization', id: 'organization-123' },
+          billingPeriod: {
+            start: '2026-07-01T00:00:00.000Z',
+            end: '2026-08-01T00:00:00.000Z',
+          },
+          payerSubscription: null,
+        })
+      )
+
+      const req = createMockRequest(
+        'POST',
+        { ...validSearchData, skipUsageBilling: true },
+        { 'x-sim-billing-attribution': attribution }
+      )
+      const response = await POST(req)
+
+      expect(response.status).toBe(200)
+      expect(mockGenerateSearchEmbedding).toHaveBeenCalledOnce()
+    })
+
     it.concurrent('should return unauthorized for unauthenticated request', async () => {
       hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
         success: false,
@@ -367,7 +435,7 @@ describe('Knowledge Search API Route', () => {
       expect(data.error).toBe('Workflow not found')
     })
 
-    it('should return not found for non-existent knowledge base', async () => {
+    it('should allow search even when knowledge base access check fails', async () => {
       mockGetUserId.mockResolvedValue('user-123')
 
       mockCheckKnowledgeBaseAccess.mockResolvedValue({
@@ -375,15 +443,19 @@ describe('Knowledge Search API Route', () => {
         notFound: true,
       })
 
+      mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
+
       const req = createMockRequest('POST', validSearchData)
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(404)
-      expect(data.error).toBe('Knowledge base not found or access denied')
+      expect(response.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(data.data.knowledgeBaseIds).toEqual(['kb-123'])
+      expect(mockHandleVectorOnlySearch).toHaveBeenCalled()
     })
 
-    it('should return not found for some missing knowledge bases', async () => {
+    it('should allow search when some knowledge bases fail the access check', async () => {
       const multiKbData = {
         ...validSearchData,
         knowledgeBaseIds: ['kb-123', 'kb-missing'],
@@ -395,12 +467,20 @@ describe('Knowledge Search API Route', () => {
         .mockResolvedValueOnce({ hasAccess: true, knowledgeBase: mockKnowledgeBases[0] })
         .mockResolvedValueOnce({ hasAccess: false, notFound: true })
 
+      mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
+
       const req = createMockRequest('POST', multiKbData)
       const response = await POST(req)
       const data = await response.json()
 
-      expect(response.status).toBe(404)
-      expect(data.error).toBe('Knowledge bases not found or access denied: kb-missing')
+      expect(response.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(data.data.knowledgeBaseIds).toEqual(['kb-123', 'kb-missing'])
+      expect(mockHandleVectorOnlySearch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          knowledgeBaseIds: ['kb-123', 'kb-missing'],
+        })
+      )
     })
 
     it.concurrent('should validate search parameters', async () => {

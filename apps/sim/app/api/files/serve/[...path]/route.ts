@@ -11,13 +11,13 @@ import {
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
-import { parseWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
-import { downloadFile } from '@/lib/uploads/core/storage-service'
 // import {
 //   compileDocumentIfNeeded,
 //   getWorkspaceIdForCompile,
 // } from '@/lib/uploads/utils/compile-document'
 import { ORG_LOGOS_S3_PREFIX } from '@/lib/uploads/contexts/org-logos/utils'
+import { parseWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { inferContextFromKey } from '@/lib/uploads/utils/file-utils'
 import { canAccessAgentGeneratedImageViaDeployedChat } from '@/app/api/chat/utils'
 import { verifyFileAccess } from '@/app/api/files/authorization'
@@ -101,7 +101,8 @@ export const GET = withRouteHandler(
       const fullPath = decodedPath.join('/')
       const isS3Path = decodedPath[0] === 's3'
       const isBlobPath = decodedPath[0] === 'blob'
-      const isCloudPath = isS3Path || isBlobPath
+      const isGcsPath = path[0] === 'gcs'
+      const isCloudPath = isS3Path || isBlobPath || isGcsPath
       const cloudKey = isCloudPath ? decodedPath.slice(1).join('/') : fullPath
 
       // Handle agent-generated-images paths specially

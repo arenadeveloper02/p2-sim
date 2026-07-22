@@ -1,4 +1,4 @@
-import React, { type HTMLAttributes, memo, type ReactNode, useMemo, useState } from 'react'
+import React, { type HTMLAttributes, memo, type ReactNode, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
@@ -131,8 +131,8 @@ const COMPONENTS = {
               : normalizedLanguage === 'jsx'
                 ? 'jsx'
                 : normalizedLanguage === 'bash' ||
-                  normalizedLanguage === 'shell' ||
-                  normalizedLanguage === 'sh'
+                    normalizedLanguage === 'shell' ||
+                    normalizedLanguage === 'sh'
                   ? 'bash'
                   : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
                     ? 'yaml'
@@ -184,7 +184,6 @@ const COMPONENTS = {
     )
   },
 
-
   inlineCode: ({ children }: { children?: React.ReactNode }) => (
     <code className='rounded bg-[var(--surface-5)] px-1 py-0.5 font-mono text-[var(--text-primary)] text-inherit'>
       {children}
@@ -234,12 +233,7 @@ const COMPONENTS = {
     </td>
   ),
   img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
-    <img
-      src={src}
-      alt={alt || 'Image'}
-      className='my-3 h-auto max-w-full rounded-md'
-      {...props}
-    />
+    <img src={src} alt={alt || 'Image'} className='my-3 h-auto max-w-full rounded-md' {...props} />
   ),
 }
 
@@ -253,4 +247,4 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { content: 
   )
 })
 
-export default MarkdownRenderer;
+export default MarkdownRenderer

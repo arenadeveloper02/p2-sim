@@ -17,7 +17,7 @@ export function PatchPreview({ patch, className }: PatchPreviewProps) {
       )}
     >
       <div>
-        <p className='text-[13px] font-medium text-[var(--text-body)]'>{patch.summary}</p>
+        <p className='font-medium text-[13px] text-[var(--text-body)]'>{patch.summary}</p>
         <p className='text-[12px] text-[var(--text-muted)]'>
           {patch.changes.length} change{patch.changes.length === 1 ? '' : 's'} — review before
           applying
@@ -30,8 +30,7 @@ export function PatchPreview({ patch, className }: PatchPreviewProps) {
             key={`${change.operation}-${index}`}
             className='rounded-md bg-[var(--surface-2)] px-2 py-1.5 font-mono text-[11px] text-[var(--text-body)]'
           >
-            <span className='text-[var(--text-accent)]'>{change.operation}</span>
-            {' '}
+            <span className='text-[var(--text-accent)]'>{change.operation}</span>{' '}
             {formatChangeDetail(change)}
           </li>
         ))}
@@ -39,7 +38,7 @@ export function PatchPreview({ patch, className }: PatchPreviewProps) {
 
       {patch.warnings?.length ? (
         <div className='flex flex-col gap-1'>
-          <p className='text-[12px] font-medium text-[var(--text-warning)]'>Warnings</p>
+          <p className='font-medium text-[12px] text-[var(--text-warning)]'>Warnings</p>
           {patch.warnings.map((warning) => (
             <p key={warning} className='text-[12px] text-[var(--text-muted)]'>
               {warning}
@@ -50,7 +49,7 @@ export function PatchPreview({ patch, className }: PatchPreviewProps) {
 
       {patch.recommendations?.length ? (
         <div className='flex flex-col gap-1'>
-          <p className='text-[12px] font-medium text-[var(--text-body)]'>Recommendations</p>
+          <p className='font-medium text-[12px] text-[var(--text-body)]'>Recommendations</p>
           {patch.recommendations.map((item) => (
             <p key={item} className='text-[12px] text-[var(--text-muted)]'>
               {item}

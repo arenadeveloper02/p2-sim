@@ -1,10 +1,10 @@
+import { truncate } from '@sim/utils/string'
 import type { Edge } from 'reactflow'
 import { estimateTokens } from '@/lib/chunkers/utils'
 import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
-import { truncate } from '@sim/utils/string'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
-import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 
 /** Total prompt budget before calling the LLM (input side; leaves room for tools + output). */
@@ -42,7 +42,10 @@ interface HistoryTurn {
  * Estimates tokens for a list of chat messages (rough: chars / 4).
  */
 export function estimateChatMessagesTokens(messages: ChatMessage[]): number {
-  return messages.reduce((sum, message) => sum + estimateTokens(getMessageContentText(message.content)), 0)
+  return messages.reduce(
+    (sum, message) => sum + estimateTokens(getMessageContentText(message.content)),
+    0
+  )
 }
 
 /**
@@ -96,13 +99,11 @@ export function fitPromptToTokenBudget(
   const conversational = messages.filter((message) => message.role !== 'system')
   const turns = groupHistoryTurns(conversational)
 
-  let keptTurns = [...turns]
+  const keptTurns = [...turns]
   while (
     keptTurns.length > 1 &&
-    estimateChatMessagesTokens([
-      ...systemMessages,
-      ...keptTurns.flatMap((turn) => turn.messages),
-    ]) > tokenBudget
+    estimateChatMessagesTokens([...systemMessages, ...keptTurns.flatMap((turn) => turn.messages)]) >
+      tokenBudget
   ) {
     keptTurns.shift()
   }

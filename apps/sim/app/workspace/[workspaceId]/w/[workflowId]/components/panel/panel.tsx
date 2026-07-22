@@ -40,6 +40,7 @@ import {
 } from '@/lib/api/contracts/copilot'
 import { getWorkflowNormalizedStateContract } from '@/lib/api/contracts/workflows'
 import { useSession } from '@/lib/auth/auth-client'
+import { getWorkspaceUsageLimitAction } from '@/lib/billing/workspace-permissions'
 import {
   MOTHERSHIP_SEND_MESSAGE_EVENT,
   type MothershipSendMessageDetail,
@@ -55,11 +56,10 @@ import {
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
 import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components'
-import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
-import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
 import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
+import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
 import {
@@ -91,6 +91,8 @@ import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
+import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
+import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
 import { useChatStore } from '@/stores/chat/store'
 import type { ChatContext, PanelTab } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel'
@@ -201,11 +203,10 @@ export const Panel = memo(function Panel() {
 
   const panelRef = useRef<HTMLElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { activeTab, setActiveTab, panelWidth, _hasHydrated, setHasHydrated } = usePanelStore(
+  const { activeTab, setActiveTab, _hasHydrated, setHasHydrated } = usePanelStore(
     useShallow((state) => ({
       activeTab: state.activeTab,
       setActiveTab: state.setActiveTab,
-      panelWidth: state.panelWidth,
       _hasHydrated: state._hasHydrated,
       setHasHydrated: state.setHasHydrated,
     }))
@@ -214,6 +215,7 @@ export const Panel = memo(function Panel() {
     focusSearch: () => void
   } | null>(null)
   const { data: session } = useSession()
+  const hostContext = useWorkspaceHostContext()
 
   // State
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -229,13 +231,7 @@ export const Panel = memo(function Panel() {
   const duplicateWorkflowMutation = useDuplicateWorkflowMutation()
   const { data: workflows = {} } = useWorkflowMap(workspaceId)
   const { data: folders = {} } = useFolderMap(workspaceId)
-  const { activeWorkflowId, hydration } = useWorkflowRegistry(
-    useShallow((state) => ({
-      activeWorkflowId: state.activeWorkflowId,
-      hydration: state.hydration,
-    }))
-  )
-  const isRegistryLoading = hydration.phase === 'idle' || hydration.phase === 'state-loading'
+  const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const { data: workspaceData } = useWorkspaceSettings(workspaceId)
   // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
   const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
@@ -265,16 +261,18 @@ export const Panel = memo(function Panel() {
   })
 
   // Usage limits hook
-  const { usageExceeded } = useUsageLimits({
-    context: 'user',
-    autoRefresh: !isRegistryLoading,
-  })
+  const {
+    usageExceeded,
+    message: usageLimitMessage,
+    scope: usageLimitScope,
+    isLoading: isUsageGateLoading,
+  } = useUsageLimits({ workspaceId })
 
   // Workflow execution hook
   const { handleRunWorkflow, handleCancelExecution, isExecuting } = useWorkflowExecution()
 
   // Panel resize hook
-  const { handleMouseDown } = usePanelResize()
+  const { handlePointerDown } = usePanelResize()
 
   /**
    * Opens subscription settings modal
@@ -298,12 +296,30 @@ export const Panel = memo(function Panel() {
       'Workspace Name': workspaceName || '',
       'Workspace ID': workspaceId || '',
     })
+    if (isUsageGateLoading) return
+
     if (usageExceeded) {
-      openSubscriptionSettings()
+      const action = getWorkspaceUsageLimitAction(hostContext, session?.user?.id, {
+        message: usageLimitMessage,
+        scope: usageLimitScope,
+      })
+      if (action.type === 'manage-billing') {
+        openSubscriptionSettings()
+      } else {
+        toast.error(action.message)
+      }
       return
     }
     await handleRunWorkflow()
-  }, [usageExceeded, handleRunWorkflow])
+  }, [
+    usageExceeded,
+    usageLimitMessage,
+    usageLimitScope,
+    isUsageGateLoading,
+    hostContext,
+    session?.user?.id,
+    handleRunWorkflow,
+  ])
 
   // Chat state
   const { isChatOpen, setIsChatOpen } = useChatStore(
@@ -701,7 +717,8 @@ export const Panel = memo(function Panel() {
   const isLoadingPermissions = userPermissions.isLoading
   const hasValidationErrors = false // TODO: Add validation logic if needed
   const isWorkflowBlocked = isExecuting || hasValidationErrors
-  const isButtonDisabled = !isExecuting && (isWorkflowBlocked || (!canRun && !isLoadingPermissions))
+  const isButtonDisabled =
+    !isExecuting && (isUsageGateLoading || isWorkflowBlocked || (!canRun && !isLoadingPermissions))
 
   /**
    * Register global keyboard shortcuts using the central commands registry.
@@ -1047,7 +1064,7 @@ export const Panel = memo(function Panel() {
         {/* Resize Handle */}
         <div
           className='absolute top-0 bottom-0 left-[-4px] z-20 w-[8px] cursor-ew-resize'
-          onMouseDown={handleMouseDown}
+          onPointerDown={handlePointerDown}
           role='separator'
           aria-orientation='vertical'
           aria-label='Resize panel'

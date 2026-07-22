@@ -16,7 +16,7 @@ export function BillingPageShell() {
       </div>
       <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
         <div className='mx-auto flex max-w-[48rem] flex-col gap-7 pb-3'>
-          <div className='[&>div]:!h-auto [&>div]:!min-h-0 [&>div>div:first-child]:hidden [&>div>div:last-child]:!overflow-visible [&>div>div:last-child]:!flex-none [&>div>div:last-child]:!px-0'>
+          <div className='[&>div]:!h-auto [&>div]:!min-h-0 [&>div>div:last-child]:!overflow-visible [&>div>div:last-child]:!flex-none [&>div>div:last-child]:!px-0 [&>div>div:first-child]:hidden'>
             <Billing />
           </div>
           <BillingCreditUsagePanel />

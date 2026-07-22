@@ -46,6 +46,7 @@ import {
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
+import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import type { ChatContext } from '@/stores/panel'
 import {
   ChatSurfaceProvider,
@@ -57,7 +58,6 @@ import {
   type UserInputHandle,
 } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
-import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
 
 const logger = createLogger('Home')
@@ -145,7 +145,7 @@ export function Home({ chatId, userName, userId }: HomeProps) {
           filename: `${seed.workflowName}.json`,
           workspaceId,
           nameOverride: seed.workflowName,
-          descriptionOverride: seed.workflowDescription || 'Imported from landing template',
+          descriptionOverride: seed.workflowDescription || undefined,
           createWorkflow: async ({ name, description, workspaceId }) => {
             return requestJson(createWorkflowContract, {
               body: {

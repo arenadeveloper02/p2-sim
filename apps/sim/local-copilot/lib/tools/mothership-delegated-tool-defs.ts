@@ -33,8 +33,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Generates an image from a text prompt (no workflow). Uses hosted/workspace keys automatically. Pass the user full request in `prompt`, including variation counts (e.g. "3 variations"). Optional outputs.files path to save under files/.',
   search_online:
     'Live web search (Exa when keys are configured). Use for current events and live data — no workflow required. REQUIRED: query (search string) and toolTitle (short UI label, e.g. "Tealium ads").',
-  enrichment_run:
-    'Runs a one-off table enrichment lookup inline (no table/workflow required).',
+  enrichment_run: 'Runs a one-off table enrichment lookup inline (no table/workflow required).',
   function_execute:
     'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',
   edit_content:
@@ -45,8 +44,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Lists block output paths for a workflow (use before deploy_chat outputConfigs to pick agent blockId + path, usually content).',
   diff_workflows:
     'Diffs draft vs live (or two versions) to summarize changes. Use before deploy_chat when versionDescription is required.',
-  check_deployment_status:
-    'Returns whether a workflow is deployed and chat/API deployment status.',
+  check_deployment_status: 'Returns whether a workflow is deployed and chat/API deployment status.',
 }
 
 /** Tools delegated to registered Mothership/copilot server handlers. */
@@ -96,7 +94,9 @@ export function isWorkflowScopedDelegatedTool(toolName: string): boolean {
   return WORKFLOW_SCOPED_DELEGATED_TOOLS.has(toolName as MothershipDelegatedToolName)
 }
 
-export function isMothershipDelegatedTool(toolName: string): toolName is MothershipDelegatedToolName {
+export function isMothershipDelegatedTool(
+  toolName: string
+): toolName is MothershipDelegatedToolName {
   return (MOTHERSHIP_DELEGATED_TOOL_NAMES as readonly string[]).includes(toolName)
 }
 

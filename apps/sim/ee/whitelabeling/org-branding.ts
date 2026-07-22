@@ -1,10 +1,10 @@
+import { cache } from 'react'
 import { db } from '@sim/db'
 import { organization } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
-import { cache } from 'react'
-import type { OrganizationWhitelabelSettings } from '@/lib/branding/types'
 import { getSession } from '@/lib/auth'
+import type { OrganizationWhitelabelSettings } from '@/lib/branding/types'
 
 const logger = createLogger('OrgBranding')
 

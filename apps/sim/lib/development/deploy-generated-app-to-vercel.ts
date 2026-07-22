@@ -1,10 +1,10 @@
 import { createLogger } from '@sim/logger'
-import { sleep } from '@sim/utils/helpers'
 import { toError } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
+import { logGeneratedAppValidationErrors } from '@/lib/development/format-generated-app-build-errors'
 import { provisionNeonDatabase } from '@/lib/development/provision-vercel-neon-database'
 import { DEVELOPMENT_REQUIRES_DATABASE } from '@/lib/development/resolve-development-env'
 import { projectHasDatabaseUrl } from '@/lib/development/vercel-project-env'
-import { logGeneratedAppValidationErrors } from '@/lib/development/format-generated-app-build-errors'
 
 const logger = createLogger('DeployGeneratedAppToVercel')
 
@@ -340,7 +340,9 @@ async function fetchDeploymentBuildLog(
   deploymentId: string,
   teamId?: string
 ): Promise<string> {
-  const { data, status } = await vercelRequest<VercelDeploymentEvent[] | { events?: VercelDeploymentEvent[] }>(
+  const { data, status } = await vercelRequest<
+    VercelDeploymentEvent[] | { events?: VercelDeploymentEvent[] }
+  >(
     token,
     `/v3/deployments/${encodeURIComponent(deploymentId)}/events?direction=backward&limit=-1`,
     { method: 'GET' },
@@ -358,8 +360,7 @@ async function fetchDeploymentBuildLog(
 
   const focused = lines.filter(
     (line) =>
-      /error|failed|ERR!|Module not found|Type error|Cannot find/i.test(line) ||
-      lines.length <= 40
+      /error|failed|ERR!|Module not found|Type error|Cannot find/i.test(line) || lines.length <= 40
   )
 
   const log = (focused.length > 0 ? focused : lines).join('\n')
@@ -436,7 +437,10 @@ export async function prepareVercelProjectForDeploy(
   const githubOwner = input.githubOwner?.trim()
   const githubRepoName = input.githubRepoName?.trim()
   if (!githubOwner || !githubRepoName) {
-    return { success: false, error: 'GitHub owner and repository name are required for Vercel deploy' }
+    return {
+      success: false,
+      error: 'GitHub owner and repository name are required for Vercel deploy',
+    }
   }
 
   const projectName = input.projectName.trim()
@@ -449,12 +453,7 @@ export async function prepareVercelProjectForDeploy(
 
     if (!isProjectLinkedToGitHubRepo(project, githubRepo)) {
       try {
-        project = await linkVercelProjectToGitHub(
-          token,
-          project.id,
-          githubRepo,
-          input.vercelTeamId
-        )
+        project = await linkVercelProjectToGitHub(token, project.id, githubRepo, input.vercelTeamId)
       } catch (error) {
         logger.warn('Failed to refresh Vercel project GitHub link', {
           projectId: project.id,
@@ -553,7 +552,10 @@ export async function deployPreparedVercelProject(
   const githubOwner = input.githubOwner?.trim()
   const githubRepoName = input.githubRepoName?.trim()
   if (!githubOwner || !githubRepoName) {
-    return { success: false, error: 'GitHub owner and repository name are required for Vercel deploy' }
+    return {
+      success: false,
+      error: 'GitHub owner and repository name are required for Vercel deploy',
+    }
   }
 
   try {
@@ -565,11 +567,8 @@ export async function deployPreparedVercelProject(
     let remoteUrl: string | undefined
 
     if (input.githubToken?.trim()) {
-      const {
-        fetchGitHubRepositoryDetails,
-        waitForGitHubCommit,
-        fetchGitHubBranchHeadSha,
-      } = await import('@/lib/development/fetch-github-repository')
+      const { fetchGitHubRepositoryDetails, waitForGitHubCommit, fetchGitHubBranchHeadSha } =
+        await import('@/lib/development/fetch-github-repository')
 
       const repoDetails = await fetchGitHubRepositoryDetails(
         input.githubToken,

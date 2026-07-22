@@ -1,10 +1,13 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ChevronDown, cn, Expandable, ExpandableContent, PillsRing } from '@sim/emcn'
+import { ChevronDown, cn, Expandable, ExpandableContent } from '@sim/emcn'
+import { ShimmerText } from '@/components/ui'
 import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
+import { useSmoothText } from '@/hooks/use-smooth-text'
 import type { ToolCallData } from '../../../../types'
 import { getAgentIcon, isToolDone } from '../../utils'
+import { renderInlineMarkdown } from './inline-markdown'
 import { ToolCallItem } from './tool-call-item'
 
 /**
@@ -65,11 +68,7 @@ export function AgentGroup({
   const AgentIcon = getAgentIcon(agentName)
   const hasItems = items.length > 0
   const resolved = isAgentGroupResolved(items)
-  // Pure projection of the run's own state: a subagent header spins while it is
-  // delegating with no resolved work yet. A terminal turn closes the lane (its
-  // subagent block is stamped ended), which clears `isDelegating`, so no
-  // transport gating is needed to stop an aborted-before-first-tool spinner.
-  const showDelegatingSpinner = isDelegating && !resolved
+  const isWorking = (isDelegating && !resolved) || (isStreaming && isLaneOpen)
 
   // Expand while the turn is live and any of: the lane is open (the subagent is
   // actively running), this is the current/latest section, or there is unresolved
@@ -91,19 +90,19 @@ export function AgentGroup({
         <button
           type='button'
           onClick={() => setManualExpanded(!expanded)}
-          className='flex cursor-pointer items-center gap-2'
+          className='group/agent flex cursor-pointer items-center gap-2'
         >
           <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
-            {showDelegatingSpinner ? (
-              <PillsRing className='size-[15px] text-[var(--text-icon)]' animate />
-            ) : (
-              <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
-            )}
+            <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
           </div>
-          <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
+          {isWorking ? (
+            <ShimmerText className='text-sm'>{resolvedAgentLabel}</ShimmerText>
+          ) : (
+            <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
+          )}
           <ChevronDown
             className={cn(
-              'h-[7px] w-[9px] text-[var(--text-icon)] transition-transform duration-150',
+              'h-[7px] w-[9px] text-[var(--text-icon)] opacity-0 transition-[transform,opacity] duration-150 group-hover/agent:opacity-100 group-focus-visible/agent:opacity-100',
               !expanded && '-rotate-90'
             )}
           />
@@ -111,13 +110,13 @@ export function AgentGroup({
       ) : (
         <div className='flex items-center gap-2'>
           <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
-            {showDelegatingSpinner ? (
-              <PillsRing className='size-[15px] text-[var(--text-icon)]' animate />
-            ) : (
-              <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
-            )}
+            <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
           </div>
-          <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
+          {isWorking ? (
+            <ShimmerText className='text-sm'>{resolvedAgentLabel}</ShimmerText>
+          ) : (
+            <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
+          )}
         </div>
       )}
       {hasItems && (
@@ -133,6 +132,7 @@ export function AgentGroup({
                         toolName={item.data.toolName}
                         displayTitle={item.data.displayTitle}
                         status={item.data.status}
+                        params={item.data.params}
                         streamingArgs={item.data.streamingArgs}
                       />
                     )
@@ -153,12 +153,11 @@ export function AgentGroup({
                     )
                   }
                   return (
-                    <span
+                    <NarrationText
                       key={`text-${idx}`}
-                      className='pl-6 text-[13px] text-[var(--text-secondary)] leading-[18px] opacity-60'
-                    >
-                      {item.content.trim()}
-                    </span>
+                      content={item.content}
+                      isStreaming={isStreaming && idx === items.length - 1}
+                    />
                   )
                 })}
               </div>
@@ -167,6 +166,27 @@ export function AgentGroup({
         </Expandable>
       )}
     </div>
+  )
+}
+
+interface NarrationTextProps {
+  content: string
+  /** This row is the group's live tail — pace its reveal like top-level text. */
+  isStreaming: boolean
+}
+
+/**
+ * A narration row inside an agent group. The live tail row is
+ * paced with {@link useSmoothText} so streamed chunks reveal word-by-word
+ * instead of popping in, matching the top-level text treatment.
+ */
+function NarrationText({ content, isStreaming }: NarrationTextProps) {
+  const revealed = useSmoothText(content, isStreaming)
+
+  return (
+    <span className='pl-6 text-[13px] text-[var(--text-muted)] leading-[18px]'>
+      {renderInlineMarkdown(revealed.trim())}
+    </span>
   )
 }
 
@@ -181,19 +201,23 @@ function BoundedViewport({ children, isStreaming }: BoundedViewportProps) {
   const ref = useRef<HTMLDivElement>(null)
   const rafRef = useRef<number | null>(null)
   const stickToBottomRef = useRef(true)
+  const prevScrollTopRef = useRef(0)
   const [hasOverflow, setHasOverflow] = useState(false)
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    // Any upward user input detaches auto-stick. A subsequent scroll-to-bottom
-    // (wheel back down or dragging scrollbar) re-attaches it.
+    // Upward user input detaches auto-stick; a downward scroll reaching the
+    // bottom re-attaches it (a small upward flick can't re-stick itself).
     const handleWheel = (e: WheelEvent) => {
       if (e.deltaY < 0) stickToBottomRef.current = false
     }
     const handleScroll = () => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-      if (distance < BOTTOM_STICK_THRESHOLD_PX) stickToBottomRef.current = true
+      if (distance < BOTTOM_STICK_THRESHOLD_PX && el.scrollTop > prevScrollTopRef.current) {
+        stickToBottomRef.current = true
+      }
+      prevScrollTopRef.current = el.scrollTop
     }
     el.addEventListener('wheel', handleWheel, { passive: true })
     el.addEventListener('scroll', handleScroll, { passive: true })
@@ -240,7 +264,10 @@ function BoundedViewport({ children, isStreaming }: BoundedViewportProps) {
 
   return (
     <div className='relative'>
-      <div ref={ref} className={cn('max-h-[110px] overflow-y-auto pr-2', hasOverflow && 'py-1')}>
+      <div
+        ref={ref}
+        className={cn('scrollbar-hide max-h-[110px] overflow-y-auto pr-2', hasOverflow && 'py-1')}
+      >
         {children}
       </div>
       {hasOverflow && (

@@ -18,10 +18,7 @@ function asRecord(value: unknown): Record<string, unknown> {
  * @param options.trim When `false`, preserves leading/trailing whitespace — required
  *   for streaming deltas where spaces live on chunk boundaries. Defaults to `true`.
  */
-export function stripLeakedToolMarkers(
-  text: string,
-  options?: { trim?: boolean }
-): string {
+export function stripLeakedToolMarkers(text: string, options?: { trim?: boolean }): string {
   const stripped = text.replace(LEAKED_TOOL_MARKER_PATTERN, '').replace(/\n{3,}/g, '\n\n')
   return options?.trim === false ? stripped : stripped.trim()
 }
@@ -99,11 +96,18 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     if (record.name === 'function_execute' || record.name === 'invoke_integration_tool') {
       const captured = extractCapturedOutput(record.result)
       if (captured) {
-        parts.push(captured.length > 4_000 ? `${captured.slice(0, 4_000)}\n\n[... output truncated]` : captured)
+        parts.push(
+          captured.length > 4_000
+            ? `${captured.slice(0, 4_000)}\n\n[... output truncated]`
+            : captured
+        )
       }
     }
   }
 
-  const summary = parts.map((part) => part.trim()).filter(Boolean).join('\n\n')
+  const summary = parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join('\n\n')
   return summary || null
 }

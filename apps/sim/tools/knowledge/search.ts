@@ -207,6 +207,19 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
           chunkIndex: { type: 'number', description: 'Index of the chunk within the document' },
           similarity: { type: 'number', description: 'Similarity score of the result' },
           metadata: { type: 'object', description: 'Metadata of the result, including tags' },
+          chunkId: {
+            type: 'string',
+            description: 'Chunk ID for deep links into the knowledge base',
+          },
+          knowledgeBaseId: {
+            type: 'string',
+            description: 'Knowledge base ID the chunk belongs to',
+          },
+          workspaceId: {
+            type: 'string',
+            description: 'Workspace ID for "View in Knowledge Base" links',
+            optional: true,
+          },
         },
       },
     },

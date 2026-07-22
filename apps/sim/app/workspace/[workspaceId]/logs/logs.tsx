@@ -46,6 +46,7 @@ import {
   type TriggerData,
   type WorkflowData,
 } from '@/lib/logs/search-suggestions'
+import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
 import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import type {
   FilterTag,
@@ -60,14 +61,16 @@ import { useLogFilters } from '@/app/workspace/[workspaceId]/logs/hooks/use-log-
 import { useSearchState } from '@/app/workspace/[workspaceId]/logs/hooks/use-search-state'
 import {
   executionIdParam,
+  executionIdWriteOptions,
   logDetailsTabParam,
   logDetailsTabUrlKeys,
+  logFilterUrlKeys,
+  logSortParams,
 } from '@/app/workspace/[workspaceId]/logs/search-params'
 import type { Suggestion } from '@/app/workspace/[workspaceId]/logs/types'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { getBlock } from '@/blocks/registry'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
-import type { LogSortBy, LogSortOrder } from '@/hooks/queries/logs'
 import {
   fetchLogDetail,
   logKeys,
@@ -81,6 +84,7 @@ import {
 } from '@/hooks/queries/logs'
 import { useWorkflowMap, useWorkflows } from '@/hooks/queries/workflows'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useUrlSort } from '@/hooks/use-url-sort'
 import { useFilterStore } from '@/stores/logs/filters/store'
 import { CORE_TRIGGER_TYPES } from '@/stores/logs/filters/types'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -99,7 +103,6 @@ import {
 } from './utils'
 
 const LOGS_PER_PAGE = 50 as const
-const SORTABLE_COLUMNS: readonly LogSortBy[] = ['date', 'duration', 'cost', 'status'] as const
 const REFRESH_SPINNER_DURATION_MS = 1000 as const
 const LIVE_REFRESH_INTERVAL_MS = 10_000 as const
 const ACTIVE_RUN_DETAIL_REFRESH_MS = 3_000 as const
@@ -239,7 +242,7 @@ export default function Logs() {
     isSidebarOpen: false,
   })
 
-  const [executionId] = useQueryState(executionIdParam.key, executionIdParam.parser)
+  const [executionId, setExecutionId] = useQueryState(executionIdParam.key, executionIdParam.parser)
   const [pendingExecutionId, setPendingExecutionId] = useState<string | null>(() => executionId)
 
   /**
@@ -255,9 +258,10 @@ export default function Logs() {
   /**
    * `urlSearchQuery` is the instant nuqs value (its URL write is debounced inside
    * `useLogFilters`); the query/filtering still debounce off it to avoid
-   * per-keystroke fetches.
+   * per-keystroke fetches. The raw value is written to the URL, so trim here on
+   * read — the server keeps receiving a trimmed query.
    */
-  const debouncedSearchQuery = useDebounce(urlSearchQuery, 300)
+  const debouncedSearchQuery = useDebounce(urlSearchQuery, SEARCH_DEBOUNCE_MS).trim()
 
   const isLive = true
   const [isVisuallyRefreshing, setIsVisuallyRefreshing] = useState(false)
@@ -266,16 +270,26 @@ export default function Logs() {
   const logsRef = useRef<WorkflowLogSummary[]>([])
   const selectedLogIndexRef = useRef(-1)
   const selectedLogIdRef = useRef<string | null>(null)
+  const isSidebarOpenRef = useRef(false)
   const shouldScrollIntoViewRef = useRef(false)
   const resourceTableRef = useRef<ResourceTableHandle>(null)
   const logsRefetchRef = useRef<() => void>(() => {})
   const activeLogRefetchRef = useRef<() => void>(() => {})
   const activeLogTabRef = useRef<string>('overview')
   const logsQueryRef = useRef({ isFetching: false, hasNextPage: false, fetchNextPage: () => {} })
-  const [activeSort, setActiveSort] = useState<{
-    column: string
-    direction: 'asc' | 'desc'
-  } | null>(null)
+
+  /**
+   * URL-backed sort (`sort` + `dir`). The defaults match the server's default
+   * ordering, so a clean URL means "no active sort" and clearing the sort
+   * writes the defaults back (which `clearOnDefault` strips from the URL).
+   */
+  const {
+    sort: sortBy,
+    dir: sortOrder,
+    activeSort,
+    onSort,
+    onClear: onClearSort,
+  } = useUrlSort(logSortParams, logFilterUrlKeys)
   const userPermissions = useUserPermissionsContext()
   const workflows = useWorkflowRegistry((state) => state.workflows)
 
@@ -303,12 +317,6 @@ export default function Logs() {
   const previewDetailQuery = useLogDetail(previewLogId ?? undefined, workspaceId, {
     refetchInterval,
   })
-
-  const sortBy: LogSortBy =
-    activeSort && SORTABLE_COLUMNS.includes(activeSort.column as LogSortBy)
-      ? (activeSort.column as LogSortBy)
-      : 'date'
-  const sortOrder: LogSortOrder = activeSort?.direction ?? 'desc'
 
   const logFilters = useMemo(
     () => ({
@@ -380,6 +388,7 @@ export default function Logs() {
   logsRef.current = logs
   selectedLogIndexRef.current = selectedLogIndex
   selectedLogIdRef.current = selectedLogId
+  isSidebarOpenRef.current = isSidebarOpen
   logsRefetchRef.current = logsQuery.refetch
   activeLogRefetchRef.current = selectedDetailQuery.refetch
   logsQueryRef.current = {
@@ -457,31 +466,69 @@ export default function Logs() {
     })
   }, [debouncedSearchQuery, level, timeRange, triggers, workflowIds, workflows])
 
-  const handleLogClick = useCallback((rowId: string) => {
-    dispatch({ type: 'TOGGLE_LOG', logId: rowId })
-  }, [])
+  /**
+   * The single write path for user-driven `executionId` changes. Cancels any
+   * in-flight deep-link resolution first — an explicit interaction supersedes
+   * it, otherwise the resolved row would open over the user's selection and
+   * leave the URL pointing at a different run than the panel shows.
+   */
+  const writeExecutionId = useCallback(
+    (value: string | null) => {
+      setPendingExecutionId(null)
+      void setExecutionId(value, executionIdWriteOptions)
+    },
+    [setExecutionId]
+  )
+
+  /**
+   * Mirrors the reducer's TOGGLE_LOG branch: clicking the already-open row
+   * closes the sidebar (strip `executionId`); any other click opens the row
+   * (sync `executionId` to it so the URL always deep-links the open run).
+   */
+  const handleLogClick = useCallback(
+    (rowId: string) => {
+      const opens = !(selectedLogIdRef.current === rowId && isSidebarOpenRef.current)
+      dispatch({ type: 'TOGGLE_LOG', logId: rowId })
+      if (opens) {
+        const log = logsRef.current.find((l) => l.id === rowId)
+        writeExecutionId(log?.executionId ?? null)
+      } else {
+        writeExecutionId(null)
+      }
+    },
+    [writeExecutionId]
+  )
 
   const handleNavigateNext = useCallback(() => {
     const idx = selectedLogIndexRef.current
     const currentLogs = logsRef.current
     if (idx >= 0 && idx < currentLogs.length - 1) {
+      const nextLog = currentLogs[idx + 1]
       shouldScrollIntoViewRef.current = true
-      dispatch({ type: 'SELECT_LOG', logId: currentLogs[idx + 1].id })
+      dispatch({ type: 'SELECT_LOG', logId: nextLog.id })
+      if (isSidebarOpenRef.current) {
+        writeExecutionId(nextLog.executionId ?? null)
+      }
     }
-  }, [])
+  }, [writeExecutionId])
 
   const handleNavigatePrev = useCallback(() => {
     const idx = selectedLogIndexRef.current
     if (idx > 0) {
+      const prevLog = logsRef.current[idx - 1]
       shouldScrollIntoViewRef.current = true
-      dispatch({ type: 'SELECT_LOG', logId: logsRef.current[idx - 1].id })
+      dispatch({ type: 'SELECT_LOG', logId: prevLog.id })
+      if (isSidebarOpenRef.current) {
+        writeExecutionId(prevLog.executionId ?? null)
+      }
     }
-  }, [])
+  }, [writeExecutionId])
 
   const handleCloseSidebar = useCallback(() => {
     dispatch({ type: 'CLOSE_SIDEBAR' })
+    writeExecutionId(null)
     activeLogTabRef.current = 'overview'
-  }, [])
+  }, [writeExecutionId])
 
   /**
    * Strip the `tab` param whenever the detail panel transitions from open to
@@ -710,6 +757,9 @@ export default function Logs() {
 
   const handleNavigateNextEvent = useEffectEvent(handleNavigateNext)
   const handleNavigatePrevEvent = useEffectEvent(handleNavigatePrev)
+  const writeExecutionIdEvent = useEffectEvent((value: string | null) => {
+    writeExecutionId(value)
+  })
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -744,7 +794,14 @@ export default function Logs() {
 
       if (e.key === 'Enter' && selectedLogIdRef.current) {
         e.preventDefault()
+        const willOpen = !isSidebarOpenRef.current
         dispatch({ type: 'TOGGLE_SIDEBAR' })
+        if (willOpen) {
+          const log = currentLogs.find((l) => l.id === selectedLogIdRef.current)
+          writeExecutionIdEvent(log?.executionId ?? null)
+        } else {
+          writeExecutionIdEvent(null)
+        }
       }
     }
 
@@ -1068,10 +1125,10 @@ export default function Logs() {
         { id: 'status', label: 'Status' },
       ],
       active: activeSort,
-      onSort: (column, direction) => setActiveSort({ column, direction }),
-      onClear: () => setActiveSort(null),
+      onSort,
+      onClear: onClearSort,
     }),
-    [activeSort]
+    [activeSort, onSort, onClearSort]
   )
 
   const searchConfig = useMemo<SearchConfig>(

@@ -4,7 +4,6 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { DbOrTx } from '@/lib/db/types'
-import { cleanupWebhooksForWorkflow } from '@/lib/webhooks/deploy'
 import type { BlockState } from '@/lib/workflows/schedules/utils'
 import { findScheduleBlocks, validateScheduleBlock } from '@/lib/workflows/schedules/validation'
 
@@ -31,7 +30,8 @@ export async function createSchedulesForDeploy(
   workflowId: string,
   blocks: Record<string, BlockState>,
   tx?: DbOrTx,
-  deploymentVersionId?: string
+  deploymentVersionId?: string,
+  deploymentOperationId?: string
 ): Promise<ScheduleDeployResult> {
   const scheduleBlocks = findScheduleBlocks(blocks)
 
@@ -81,11 +81,13 @@ export async function createSchedulesForDeploy(
         .select({ id: workflowSchedule.id, blockId: workflowSchedule.blockId })
         .from(workflowSchedule)
         .where(
-          and(
-            eq(workflowSchedule.workflowId, workflowId),
-            isNull(workflowSchedule.archivedAt),
-            eq(workflowSchedule.sourceType, 'workflow')
-          )
+          deploymentVersionId
+            ? and(
+                eq(workflowSchedule.workflowId, workflowId),
+                eq(workflowSchedule.deploymentVersionId, deploymentVersionId),
+                isNull(workflowSchedule.archivedAt)
+              )
+            : and(eq(workflowSchedule.workflowId, workflowId), isNull(workflowSchedule.archivedAt))
         )
 
       const orphanedScheduleIds = existingSchedules
@@ -98,7 +100,6 @@ export async function createSchedulesForDeploy(
         )
         await trx.delete(workflowSchedule).where(inArray(workflowSchedule.id, orphanedScheduleIds))
       }
-
       const keptIds = new Set(
         existingSchedules.filter((s) => !orphanedScheduleIds.includes(s.id)).map((s) => s.id)
       )
@@ -107,7 +108,6 @@ export async function createSchedulesForDeploy(
         const { blockId, cronExpression, nextRunAt, timezone } = validated
         const scheduleId = generateId()
         const now = new Date()
-
         const rowsForBlock = existingSchedules.filter(
           (s) => s.blockId === blockId && keptIds.has(s.id)
         )
@@ -122,64 +122,56 @@ export async function createSchedulesForDeploy(
           }
         }
 
-        const primaryRow = rowsForBlock[0]
-
-        const setValues = {
-          deploymentVersionId: deploymentVersionId ?? null,
+        const values = {
+          id: scheduleId,
+          workflowId,
+          deploymentVersionId: deploymentVersionId || null,
+          deploymentOperationId: deploymentOperationId || null,
           blockId,
           cronExpression,
+          triggerType: 'schedule',
+          createdAt: now,
           updatedAt: now,
           nextRunAt,
           timezone,
-          status: 'active' as const,
+          status: 'active',
           failedCount: 0,
           infraRetryCount: 0,
         }
 
-        if (primaryRow) {
-          await trx
-            .update(workflowSchedule)
-            .set(setValues)
-            .where(eq(workflowSchedule.id, primaryRow.id))
-
-          logger.info(`Schedule updated for workflow ${workflowId}, block ${blockId}`, {
-            scheduleId: primaryRow.id,
-            cronExpression,
-            nextRunAt: nextRunAt?.toISOString(),
-          })
-
-          lastScheduleInfo = {
-            scheduleId: primaryRow.id,
-            cronExpression,
-            nextRunAt,
-            timezone,
-          }
-        } else {
-          const scheduleId = crypto.randomUUID()
-          await trx.insert(workflowSchedule).values({
-            id: scheduleId,
-            workflowId,
-            deploymentVersionId: deploymentVersionId ?? null,
-            blockId,
-            cronExpression,
-            triggerType: 'schedule',
-            createdAt: now,
-            updatedAt: now,
-            nextRunAt,
-            timezone,
-            status: 'active',
-            failedCount: 0,
-            sourceType: 'workflow',
-          })
-
-          logger.info(`Schedule created for workflow ${workflowId}, block ${blockId}`, {
-            scheduleId,
-            cronExpression,
-            nextRunAt: nextRunAt?.toISOString(),
-          })
-
-          lastScheduleInfo = { scheduleId, cronExpression, nextRunAt, timezone }
+        const setValues = {
+          blockId,
+          cronExpression,
+          ...(deploymentVersionId ? { deploymentVersionId } : {}),
+          ...(deploymentOperationId ? { deploymentOperationId } : {}),
+          updatedAt: now,
+          nextRunAt,
+          timezone,
+          status: 'active',
+          failedCount: 0,
+          infraRetryCount: 0,
         }
+
+        await trx
+          .insert(workflowSchedule)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [
+              workflowSchedule.workflowId,
+              workflowSchedule.blockId,
+              workflowSchedule.deploymentVersionId,
+            ],
+            targetWhere: isNull(workflowSchedule.archivedAt),
+            set: setValues,
+          })
+
+        logger.info(`Schedule created/updated for workflow ${workflowId}, block ${blockId}`, {
+          scheduleId: values.id,
+          cronExpression,
+          nextRunAt: nextRunAt?.toISOString(),
+        })
+
+        lastScheduleInfo = { scheduleId: values.id, cronExpression, nextRunAt, timezone }
       }
     }
 
@@ -226,35 +218,4 @@ export async function deleteSchedulesForWorkflow(
       ? `Deleted schedules for workflow ${workflowId} deployment ${deploymentVersionId}`
       : `Deleted all schedules for workflow ${workflowId}`
   )
-}
-
-async function cleanupDeploymentVersion(params: {
-  workflowId: string
-  workflow: Record<string, unknown>
-  requestId: string
-  deploymentVersionId: string
-  /**
-   * If true, skip external subscription cleanup (already done by saveTriggerWebhooksForDeploy).
-   * Only deletes DB records.
-   */
-  skipExternalCleanup?: boolean
-  strictExternalCleanup?: boolean
-}): Promise<void> {
-  const {
-    workflowId,
-    workflow,
-    requestId,
-    deploymentVersionId,
-    skipExternalCleanup = false,
-    strictExternalCleanup = false,
-  } = params
-  await cleanupWebhooksForWorkflow(
-    workflowId,
-    workflow,
-    requestId,
-    deploymentVersionId,
-    skipExternalCleanup,
-    strictExternalCleanup
-  )
-  await deleteSchedulesForWorkflow(workflowId, db, deploymentVersionId)
 }

@@ -8,6 +8,7 @@ import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import type { StorageContext } from '@/lib/uploads/config'
+import { getServeStoragePrefix } from '@/lib/uploads/config'
 import {
   generateBatchPresignedUploadUrls,
   hasCloudStorage,
@@ -162,7 +163,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       )
     }
 
-    const storagePrefix = 's3'
+    const storagePrefix = getServeStoragePrefix()
 
     return NextResponse.json({
       files: presignedUrls.map((urlResponse, index) => {

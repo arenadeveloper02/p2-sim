@@ -1,6 +1,6 @@
-import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { truncate } from '@sim/utils/string'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
+import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 
 const FUNCTION_EXECUTE_STDOUT_MAX = 12_000
 
@@ -123,13 +123,14 @@ function enrichCodeExecutionResultForLlm(record: Record<string, unknown>): Recor
   return formatted
 }
 
-function enrichInvokeIntegrationResultForLlm(record: Record<string, unknown>): Record<string, unknown> {
+function enrichInvokeIntegrationResultForLlm(
+  record: Record<string, unknown>
+): Record<string, unknown> {
   const output = asRecord(record.output)
   const toolId = typeof record.toolId === 'string' ? record.toolId : ''
 
   if (toolId.startsWith('daytona_') || 'exitCode' in output) {
-    const capturedOutput =
-      (typeof output.result === 'string' && output.result.trim()) || undefined
+    const capturedOutput = (typeof output.result === 'string' && output.result.trim()) || undefined
     return {
       ...record,
       ...(capturedOutput ? { capturedOutput, readOutputFrom: 'result' } : {}),
@@ -307,9 +308,7 @@ export function detectMandatoryFollowUp(
   if (parsed.needsFollowUpPopulate === true) {
     return {
       id: 'create_workflow:populate',
-      hint:
-        hint ??
-        'New workflow created. Call edit_workflow with add operations to populate it.',
+      hint: hint ?? 'New workflow created. Call edit_workflow with add operations to populate it.',
       resolveWith: ['edit_workflow'],
     }
   }

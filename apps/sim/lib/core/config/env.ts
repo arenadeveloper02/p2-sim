@@ -51,8 +51,12 @@ export const env = createEnv({
     INTERNAL_JWT_SECRET:                   z.string().min(32).optional(),          // Dedicated signing key for internal JWTs (falls back to INTERNAL_API_SECRET); separating limits blast radius if one leaks
 
     // Copilot
-    COPILOT_API_KEY:                       z.string().min(1).optional(),           // Primary secret for internal sim agent API authentication
+    COPILOT_API_KEY:                       z.string().min(1).optional(),           // Secret for internal sim agent API authentication
     COPILOT_API_KEY_2:                     z.string().min(1).optional(),           // Optional backup sim agent API key (failover when primary is rate-limited or rejected)
+    /** Enables attributed-v1 only after compatible Copilot instances are deployed. */
+    COPILOT_BILLING_ATTRIBUTION_V1_ENABLED: z.boolean().optional(),
+    /** Rejects markerless old-Go billing traffic only when explicitly enabled. */
+    COPILOT_BILLING_PROTOCOL_REQUIRED:     z.boolean().optional(),
     SIM_AGENT_API_URL:                     z.string().url().optional(),            // URL for internal sim agent API
     COPILOT_SOURCE_ENV:                    z.enum(['dev', 'staging', 'prod']).optional(), // Source Sim environment sent to mothership for callbacks
     COPILOT_DEV_URL:                       z.string().url().optional(),            // Sim agent API URL for the dev mothership environment
@@ -73,7 +77,7 @@ export const env = createEnv({
     STRIPE_WEBHOOK_SECRET:                 z.string().min(1).optional(),           // General Stripe webhook secret
     STRIPE_FREE_PRICE_ID:                  z.string().min(1).optional(),           // Stripe price ID for free tier
     FREE_TIER_COST_LIMIT:                  z.number().optional(),                  // Cost limit for free tier users
-    FREE_STORAGE_LIMIT_GB:                 z.number().optional().default(5),       // Storage limit in GB for free tier users
+    FREE_STORAGE_LIMIT_GB:                 z.number().optional(),                  // Free-tier storage limit in GB (default 5). With billing disabled, setting it explicitly opts into storage enforcement
     STRIPE_PRO_PRICE_ID:                   z.string().min(1).optional(),           // Stripe price ID for pro tier
     PRO_TIER_COST_LIMIT:                   z.number().optional(),                  // Cost limit for pro tier users
     PRO_STORAGE_LIMIT_GB:                  z.number().optional().default(50),      // Storage limit in GB for pro tier users
@@ -83,8 +87,11 @@ export const env = createEnv({
     STRIPE_ENTERPRISE_PRICE_ID:            z.string().min(1).optional(),           // Stripe price ID for enterprise tier
     ENTERPRISE_TIER_COST_LIMIT:            z.number().optional(),                  // Cost limit for enterprise tier users
     ENTERPRISE_STORAGE_LIMIT_GB:           z.number().optional().default(500),     // Default storage limit in GB for enterprise tier (can be overridden per org)
+    BILLING_CONCURRENCY_LIMIT_FREE:         z.string().optional(),                  // In-flight executions per free billing account
+    BILLING_CONCURRENCY_LIMIT_PRO:          z.string().optional(),                  // In-flight executions per Pro-tier billing account (Pro and Pro for Teams)
+    BILLING_CONCURRENCY_LIMIT_TEAM:         z.string().optional(),                  // In-flight executions per Max-tier billing account (Max and Max for Teams)
+    BILLING_CONCURRENCY_LIMIT_ENTERPRISE:   z.string().optional(),                  // In-flight executions per Enterprise billing account (metadata-overridable)
     BILLING_ENABLED:                       z.boolean().optional(),                 // Enable billing enforcement and usage tracking
-    FREE_API_DEPLOYMENT_GATE_ENABLED:      z.boolean().optional(),                 // Block free-plan accounts from programmatic execution (API/MCP/A2A/generic webhooks/chat embeds). Requires BILLING_ENABLED. Off by default for dark rollout
     TABLE_SNAPSHOT_CACHE:                  z.boolean().optional(),                 // Mount tables into sandboxes by reference via a version-keyed CSV snapshot in object storage instead of draining the whole table into web-process heap
     PII_REDACTION:                         z.boolean().optional(),                 // Redact PII from workflow logs via configurable Data Retention rules (Presidio at the logger persist choke point) and expose the Data Retention config UI
     PII_GRANULAR_REDACTION:                z.boolean().optional(),                 // Expose the execution-altering PII redaction stages (redact workflow input + block outputs in-flight) in the Data Retention config; layered on top of PII_REDACTION
@@ -101,6 +108,8 @@ export const env = createEnv({
     ENTERPRISE_TABLE_ROWS_LIMIT:           z.number().optional(),                  // Max rows per table on enterprise tier (default: 1000000)
     TABLE_MAX_ROW_SIZE_BYTES:              z.number().optional(),                  // Max serialized size in bytes of a single user-table row (default: 409600)
     TABLE_MAX_PAGE_BYTES:                  z.number().optional(),                  // Dev-preview: byte budget per row-page read; pages cut early past it (unset = disabled)
+    TABLE_DISPATCH_CONCURRENCY_FREE:       z.number().optional(),                  // Rows one table run executes in parallel on free tier (default: 20)
+    TABLE_DISPATCH_CONCURRENCY_PAID:       z.number().optional(),                  // Rows one table run executes in parallel on paid tiers (default: 50)
 
     // Credit-tier Stripe prices (monthly)
     STRIPE_PRICE_TIER_25_MO:               z.string().min(1).optional(),           // Pro: $25/mo (6,000 credits)
@@ -137,6 +146,8 @@ export const env = createEnv({
     SMTP_USER:                             z.string().min(1).optional(),           // SMTP username
     SMTP_PASS:                             z.string().min(1).optional(),           // SMTP password
     SMTP_SECURE:                           z.boolean().optional(),                 // Force TLS on connect (defaults to true on port 465); read via envBoolean to handle string values from process.env
+    GMAIL_CREDENTIALS_JSON:                z.string().optional(),                  // Inline Google service-account JSON with domain-wide delegation for the Gmail API mail provider
+    GMAIL_SENDER:                          z.string().min(1).optional(),           // Google Workspace user the Gmail service account impersonates when sending (e.g., noreply@yourdomain.com)
 
     // SMS & Messaging
     TWILIO_ACCOUNT_SID:                    z.string().min(1).optional(),           // Twilio Account SID for SMS sending
@@ -150,9 +161,6 @@ export const env = createEnv({
     OPENAI_API_KEY_3:                      z.string().min(1).optional(),           // Additional OpenAI API key for load balancing
     OPENROUTER_API_KEY:                    z.string().min(1).optional(),           // OpenRouter API key
     XAI_API_KEY:                           z.string().min(1).optional(),  
-    XAI_API_KEY_1:                         z.string().min(1).optional(), 
-    XAI_API_KEY_2:                         z.string().min(1).optional(), 
-    XAI_API_KEY_3:                         z.string().min(1).optional(), 
     MISTRAL_API_KEY:                       z.string().min(1).optional(),           // Mistral AI API key
     ANTHROPIC_API_KEY:                     z.string().min(1).optional(),           // Primary Anthropic Claude API key
     ANTHROPIC_API_KEY_1:                   z.string().min(1).optional(),           // Primary Anthropic Claude API key
@@ -162,6 +170,15 @@ export const env = createEnv({
     GEMINI_API_KEY_1:                      z.string().min(1).optional(),           // Primary Gemini API key
     GEMINI_API_KEY_2:                      z.string().min(1).optional(),           // Additional Gemini API key for load balancing
     GEMINI_API_KEY_3:                      z.string().min(1).optional(),           // Additional Gemini API key for load balancing
+    ZAI_API_KEY_1:                         z.string().min(1).optional(),           // Primary Z.ai API key for load balancing
+    ZAI_API_KEY_2:                         z.string().min(1).optional(),           // Additional Z.ai API key for load balancing
+    ZAI_API_KEY_3:                         z.string().min(1).optional(),           // Additional Z.ai API key for load balancing
+    KIMI_API_KEY_1:                        z.string().min(1).optional(),           // Primary Kimi (Moonshot AI) API key for load balancing
+    KIMI_API_KEY_2:                        z.string().min(1).optional(),           // Additional Kimi API key for load balancing
+    KIMI_API_KEY_3:                        z.string().min(1).optional(),           // Additional Kimi API key for load balancing
+    XAI_API_KEY_1:                         z.string().min(1).optional(),           // Primary xAI API key for load balancing
+    XAI_API_KEY_2:                         z.string().min(1).optional(),           // Additional xAI API key for load balancing
+    XAI_API_KEY_3:                         z.string().min(1).optional(),           // Additional xAI API key for load balancing
     OLLAMA_URL:                            z.string().url().optional(),            // Ollama local LLM server URL
     VLLM_BASE_URL:                         z.string().url().optional(),            // vLLM self-hosted base URL (OpenAI-compatible)
     VLLM_API_KEY:                          z.string().optional(),                  // Optional bearer token for vLLM
@@ -303,6 +320,18 @@ export const env = createEnv({
     AZURE_STORAGE_AGENT_GENERATED_IMAGES_CONTAINER_NAME: z.string().optional(),    // Azure container for agent-generated images
     AZURE_STORAGE_WORKSPACE_LOGOS_CONTAINER_NAME: z.string().optional(),            // Azure container for workspace logos
 
+    // Cloud Storage - Google Cloud Storage
+    GCS_PROJECT_ID:                        z.string().optional(),                  // GCP project ID (optional — inferred from credentials/ADC when unset)
+    GCS_CREDENTIALS_JSON:                  z.string().optional(),                  // Inline service-account JSON. Omit to use Application Default Credentials (Workload Identity, GOOGLE_APPLICATION_CREDENTIALS)
+    GCS_BUCKET_NAME:                       z.string().optional(),                  // GCS bucket for general file storage (enables GCS)
+    GCS_KB_BUCKET_NAME:                    z.string().optional(),                  // GCS bucket for knowledge base files
+    GCS_EXECUTION_FILES_BUCKET_NAME:       z.string().optional(),                  // GCS bucket for workflow execution files
+    GCS_CHAT_BUCKET_NAME:                  z.string().optional(),                  // GCS bucket for chat logos
+    GCS_COPILOT_BUCKET_NAME:               z.string().optional(),                  // GCS bucket for copilot files
+    GCS_PROFILE_PICTURES_BUCKET_NAME:      z.string().optional(),                  // GCS bucket for profile pictures
+    GCS_OG_IMAGES_BUCKET_NAME:             z.string().optional(),                  // GCS bucket for OpenGraph images
+    GCS_WORKSPACE_LOGOS_BUCKET_NAME:       z.string().optional(),                  // GCS bucket for workspace logos
+
 
     // Admission & Burst Protection
     ADMISSION_GATE_MAX_INFLIGHT:           z.string().optional().default('500'),   // Max concurrent in-flight execution requests per pod
@@ -314,8 +343,9 @@ export const env = createEnv({
     RATE_LIMIT_WINDOW_MS:                  z.string().optional().default('60000'), // Rate limit window duration in milliseconds (default: 1 minute)
     MANUAL_EXECUTION_LIMIT:                z.string().optional().default('999999'),// Manual execution bypass value (effectively unlimited)
     DISABLE_EXECUTION_RATE_LIMIT:          z.string().optional(),                  // When set (e.g. true), skip execution rate limits (self-hosted / EC2)
-    RATE_LIMIT_FREE_SYNC:                  z.string().optional().default('50'),    // Free tier sync API executions per minute
-    RATE_LIMIT_FREE_ASYNC:                 z.string().optional().default('200'),   // Free tier async API executions per minute
+    RATE_LIMIT_FREE_SYNC:                  z.string().optional(),                  // Free tier sync API executions per minute (default 50). With billing disabled, setting it explicitly opts into rate limiting
+    RATE_LIMIT_FREE_ASYNC:                 z.string().optional(),                  // Free tier async API executions per minute (default 200). With billing disabled, setting it explicitly opts into rate limiting
+    RATE_LIMIT_FREE_API_ENDPOINT:          z.string().optional(),                  // Free tier v1 API endpoint requests per minute (default 30). With billing disabled, setting it explicitly opts into rate limiting
     RATE_LIMIT_PRO_SYNC:                   z.string().optional().default('150'),   // Pro tier sync API executions per minute
     RATE_LIMIT_PRO_ASYNC:                  z.string().optional().default('1000'),  // Pro tier async API executions per minute
     RATE_LIMIT_TEAM_SYNC:                  z.string().optional().default('300'),   // Team tier sync API executions per minute
@@ -397,6 +427,8 @@ export const env = createEnv({
 
     X_CLIENT_ID:                           z.string().optional(),                  // X (Twitter) OAuth client ID
     X_CLIENT_SECRET:                       z.string().optional(),                  // X (Twitter) OAuth client secret
+    TIKTOK_CLIENT_ID:                      z.string().optional(),                  // TikTok OAuth client key (TikTok calls this "client_key")
+    TIKTOK_CLIENT_SECRET:                  z.string().optional(),                  // TikTok OAuth client secret
     CONFLUENCE_CLIENT_ID:                  z.string().optional(),                  // Atlassian Confluence OAuth client ID
     CONFLUENCE_CLIENT_SECRET:              z.string().optional(),                  // Atlassian Confluence OAuth client secret
     JIRA_CLIENT_ID:                        z.string().optional(),                  // Atlassian Jira OAuth client ID
@@ -429,6 +461,8 @@ export const env = createEnv({
     PIPEDRIVE_CLIENT_SECRET:               z.string().optional(),                  // Pipedrive OAuth client secret
     LINEAR_CLIENT_ID:                      z.string().optional(),                  // Linear OAuth client ID
     LINEAR_CLIENT_SECRET:                  z.string().optional(),                  // Linear OAuth client secret
+    CLICKUP_CLIENT_ID:                     z.string().optional(),                  // ClickUp OAuth client ID
+    CLICKUP_CLIENT_SECRET:                 z.string().optional(),                  // ClickUp OAuth client secret
     BOX_CLIENT_ID:                         z.string().optional(),                  // Box OAuth client ID
     BOX_CLIENT_SECRET:                     z.string().optional(),                  // Box OAuth client secret
     DROPBOX_CLIENT_ID:                     z.string().optional(),                  // Dropbox OAuth client ID
@@ -437,6 +471,7 @@ export const env = createEnv({
     FB_CLIENT_SECRET:                      z.string().optional(),                  // Meta (Facebook) Ads OAuth client secret
     SLACK_CLIENT_ID:                       z.string().optional(),                  // Slack OAuth client ID
     SLACK_CLIENT_SECRET:                   z.string().optional(),                  // Slack OAuth client secret
+    SLACK_SIGNING_SECRET:                  z.string().optional(),                  // Official Sim Slack app signing secret (verifies inbound events for the native OAuth trigger)
     REDDIT_CLIENT_ID:                      z.string().optional(),                  // Reddit OAuth client ID
     REDDIT_CLIENT_SECRET:                  z.string().optional(),                  // Reddit OAuth client secret
     WEBFLOW_CLIENT_ID:                     z.string().optional(),                  // Webflow OAuth client ID
@@ -444,6 +479,8 @@ export const env = createEnv({
     TRELLO_API_KEY:                        z.string().optional(),                  // Trello API Key
     LINKEDIN_CLIENT_ID:                    z.string().optional(),                  // LinkedIn OAuth client ID
     LINKEDIN_CLIENT_SECRET:                z.string().optional(),                  // LinkedIn OAuth client secret
+    INSTAGRAM_CLIENT_ID:                   z.string().optional(),                  // Instagram App ID (Business Login)
+    INSTAGRAM_CLIENT_SECRET:               z.string().optional(),                  // Instagram App Secret (Business Login)
     SHOPIFY_CLIENT_ID:                     z.string().optional(),                  // Shopify OAuth client ID
     SHOPIFY_CLIENT_SECRET:                 z.string().optional(),                  // Shopify OAuth client secret
     ZOOM_CLIENT_ID:                        z.string().optional(),                  // Zoom OAuth client ID (user-managed / personal Zoom app)

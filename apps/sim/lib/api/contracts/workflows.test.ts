@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   executeWorkflowBodySchema,
   getWorkflowResponseDataSchema,
+  updateWorkflowBodySchema,
+  workflowListItemSchema,
 } from '@/lib/api/contracts/workflows'
 
 describe('workflow contracts', () => {
@@ -92,5 +94,25 @@ describe('workflow contracts', () => {
     expect(parsed.state.blocks['block-1'].advancedMode).toBeUndefined()
     expect(parsed.state.blocks['block-1'].horizontalHandles).toBeUndefined()
     expect(parsed.state.blocks['block-1'].locked).toBeUndefined()
+  })
+  it('updateWorkflowBodySchema accepts forkSyncExcluded and leaves it optional', () => {
+    expect(updateWorkflowBodySchema.parse({ forkSyncExcluded: true }).forkSyncExcluded).toBe(true)
+    expect(updateWorkflowBodySchema.parse({}).forkSyncExcluded).toBeUndefined()
+  })
+
+  it('workflowListItemSchema defaults an absent forkSyncExcluded to false (old-server tolerance)', () => {
+    const item = workflowListItemSchema.parse({
+      id: 'wf-1',
+      name: 'Alpha',
+      description: null,
+      workspaceId: 'ws-1',
+      folderId: null,
+      sortOrder: 0,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      archivedAt: null,
+      locked: false,
+    })
+    expect(item.forkSyncExcluded).toBe(false)
   })
 })

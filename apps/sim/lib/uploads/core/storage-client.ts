@@ -1,4 +1,4 @@
-import { USE_S3_STORAGE } from '@/lib/uploads/config'
+import { USE_BLOB_STORAGE, USE_GCS_STORAGE, USE_S3_STORAGE } from '@/lib/uploads/config'
 import type { StorageConfig } from '@/lib/uploads/shared/types'
 
 export type { StorageConfig } from '@/lib/uploads/shared/types'
@@ -6,8 +6,10 @@ export type { StorageConfig } from '@/lib/uploads/shared/types'
 /**
  * Get the current storage provider name
  */
-export function getStorageProvider(): 's3' | 'local' | 'blob' {
+export function getStorageProvider(): 'blob' | 's3' | 'gcs' | 'local' {
+  if (USE_BLOB_STORAGE) return 'blob'
   if (USE_S3_STORAGE) return 's3'
+  if (USE_GCS_STORAGE) return 'gcs'
   return 'local'
 }
 
@@ -60,6 +62,11 @@ export async function getFileMetadata(
 
     const response = await s3Client.send(command)
     return response.Metadata || {}
+  }
+
+  if (USE_GCS_STORAGE) {
+    const { getGcsObjectMetadata } = await import('@/lib/uploads/providers/gcs/client')
+    return getGcsObjectMetadata(key, customConfig?.bucket ? { bucket: customConfig.bucket } : undefined)
   }
 
   return {}

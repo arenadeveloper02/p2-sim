@@ -54,6 +54,11 @@ export const knowledgeSearchBodySchema = z
       .optional()
       .nullable()
       .transform((val) => val || undefined),
+    /**
+     * When true, knowledgeBaseIds may be KB names (not only UUIDs) and are
+     * resolved to IDs before search.
+     */
+    advancedMode: z.boolean().optional(),
   })
   .refine(
     (data) => {

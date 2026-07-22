@@ -60,9 +60,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     return NextResponse.json({ error: 'Storage not configured' }, { status: 500 })
   }
 
-  const { getPresignedUrlWithConfig } = await import(
-    '@/lib/uploads/providers/s3/client'
-  )
+  const { getPresignedUrlWithConfig } = await import('@/lib/uploads/providers/s3/client')
   const presignedUrl = await getPresignedUrlWithConfig(key, { bucket, region }, 3600)
 
   logger.info('Generated presigned URL for agent image', { key })

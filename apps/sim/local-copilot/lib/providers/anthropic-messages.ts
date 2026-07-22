@@ -1,5 +1,5 @@
-import type { ChatMessage, ChatMessageContentPart } from '@/local-copilot/lib/providers/types'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
+import type { ChatMessage, ChatMessageContentPart } from '@/local-copilot/lib/providers/types'
 
 export type AnthropicContentBlock =
   | { type: 'text'; text: string }

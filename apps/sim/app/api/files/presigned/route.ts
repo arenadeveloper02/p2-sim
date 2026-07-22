@@ -7,6 +7,7 @@ import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
+import { getServeStoragePrefix } from '@/lib/uploads/config'
 import { generateExecutionFileKey } from '@/lib/uploads/contexts/execution/utils'
 import { generateKnowledgeBaseFileKey } from '@/lib/uploads/contexts/knowledge-base/knowledge-base-file-manager'
 import { generateOrgLogoFileKey } from '@/lib/uploads/contexts/org-logos/utils'
@@ -15,7 +16,10 @@ import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/
 import { insertFileMetadata, recordKnowledgeBaseFileOwnership } from '@/lib/uploads/server/metadata'
 import { isImageFileType } from '@/lib/uploads/utils/file-utils'
 import { validateAttachmentFileType, validateFileType } from '@/lib/uploads/utils/validation'
-import { getUserEntityPermissions, isOrganizationAdminOrOwner } from '@/lib/workspaces/permissions/utils'
+import {
+  getUserEntityPermissions,
+  isOrganizationAdminOrOwner,
+} from '@/lib/workspaces/permissions/utils'
 import { createErrorResponse } from '@/app/api/files/utils'
 
 const logger = createLogger('PresignedUploadAPI')
@@ -355,8 +359,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         expirationSeconds: 3600, // 1 hour
       })
     }
-
-    const finalPath = `/api/files/serve/s3/${encodeURIComponent(presignedUrlResponse.key)}?context=${uploadType}`
+    //----------------our code -----------------------
+    // const finalPath = `/api/files/serve/s3/${encodeURIComponent(presignedUrlResponse.key)}?context=${uploadType}`
+    const finalPath = `/api/files/serve/${getServeStoragePrefix()}/${encodeURIComponent(presignedUrlResponse.key)}?context=${uploadType}`
 
     return NextResponse.json({
       fileName,

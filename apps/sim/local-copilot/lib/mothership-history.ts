@@ -7,8 +7,8 @@ import {
   MothershipStreamV1EventType,
   MothershipStreamV1TextChannel,
 } from '@/lib/copilot/generated/mothership-stream-v1'
-import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import { LOCAL_COPILOT_MAX_HISTORY_MESSAGES } from '@/local-copilot/lib/context/context-budget'
+import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import { stripLeakedToolMarkers } from '@/local-copilot/lib/synthesize-assistant-summary'
 
 const MAX_HISTORY_MESSAGES = LOCAL_COPILOT_MAX_HISTORY_MESSAGES

@@ -148,10 +148,12 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Create Contact', id: 'create_contact' },
         { label: 'Update Contact', id: 'update_contact' },
         { label: 'Search Contacts', id: 'search_contacts' },
+        { label: 'Delete Contact', id: 'delete_contact' },
         { label: 'Get Companies', id: 'get_companies' },
         { label: 'Create Company', id: 'create_company' },
         { label: 'Update Company', id: 'update_company' },
         { label: 'Search Companies', id: 'search_companies' },
+        { label: 'Delete Company', id: 'delete_company' },
         { label: 'Get Deals', id: 'get_deals' },
         { label: 'List Campaigns', id: 'list_campaigns' },
         { label: 'Get Campaign', id: 'get_campaign' },
@@ -180,10 +182,12 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Create Deal', id: 'create_deal' },
         { label: 'Update Deal', id: 'update_deal' },
         { label: 'Search Deals', id: 'search_deals' },
+        { label: 'Delete Deal', id: 'delete_deal' },
         { label: 'Get Tickets', id: 'get_tickets' },
         { label: 'Create Ticket', id: 'create_ticket' },
         { label: 'Update Ticket', id: 'update_ticket' },
         { label: 'Search Tickets', id: 'search_tickets' },
+        { label: 'Delete Ticket', id: 'delete_ticket' },
         { label: 'Get Notes', id: 'get_notes' },
         { label: 'Create Note', id: 'create_note' },
         { label: 'Search Notes', id: 'search_notes' },
@@ -193,10 +197,15 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Get Properties', id: 'get_properties' },
         { label: 'List Associations', id: 'list_associations' },
         { label: 'Create Association', id: 'create_association' },
+        { label: 'Delete Association', id: 'delete_association' },
+        { label: 'Get Association Labels', id: 'get_association_labels' },
         { label: 'Get Line Items', id: 'get_line_items' },
         { label: 'Create Line Item', id: 'create_line_item' },
         { label: 'Update Line Item', id: 'update_line_item' },
+        { label: 'Search Line Items', id: 'search_line_items' },
+        { label: 'Delete Line Item', id: 'delete_line_item' },
         { label: 'Get Quotes', id: 'get_quotes' },
+        { label: 'Search Quotes', id: 'search_quotes' },
         { label: 'Get Appointments', id: 'get_appointments' },
         { label: 'Create Appointment', id: 'create_appointment' },
         { label: 'Update Appointment', id: 'update_appointment' },
@@ -205,6 +214,9 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
         { label: 'Get Marketing Events', id: 'get_marketing_events' },
         { label: 'Get Lists', id: 'get_lists' },
         { label: 'Create List', id: 'create_list' },
+        { label: 'Get List Members', id: 'get_list_memberships' },
+        { label: 'Add List Members', id: 'add_list_memberships' },
+        { label: 'Remove List Members', id: 'remove_list_memberships' },
         { label: 'Get Users', id: 'get_users' },
       ],
       value: () => 'get_contacts',
@@ -244,6 +256,14 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'short-input',
       placeholder: 'Numeric ID, or email (requires ID Property below)',
       condition: { field: 'operation', value: 'update_contact' },
+      required: true,
+    },
+    {
+      id: 'contactId',
+      title: 'Contact ID',
+      type: 'short-input',
+      placeholder: 'Numeric ID of the contact to delete',
+      condition: { field: 'operation', value: 'delete_contact' },
       required: true,
     },
     {
@@ -557,6 +577,14 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       required: true,
     },
     {
+      id: 'companyId',
+      title: 'Company ID',
+      type: 'short-input',
+      placeholder: 'Numeric ID of the company to delete',
+      condition: { field: 'operation', value: 'delete_company' },
+      required: true,
+    },
+    {
       id: 'dealId',
       title: 'Deal ID',
       type: 'short-input',
@@ -572,6 +600,14 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       required: true,
     },
     {
+      id: 'dealId',
+      title: 'Deal ID',
+      type: 'short-input',
+      placeholder: 'Numeric ID of the deal to delete',
+      condition: { field: 'operation', value: 'delete_deal' },
+      required: true,
+    },
+    {
       id: 'ticketId',
       title: 'Ticket ID',
       type: 'short-input',
@@ -584,6 +620,14 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'short-input',
       placeholder: 'Numeric ID, or custom ID (requires ID Property below)',
       condition: { field: 'operation', value: 'update_ticket' },
+      required: true,
+    },
+    {
+      id: 'ticketId',
+      title: 'Ticket ID',
+      type: 'short-input',
+      placeholder: 'Numeric ID of the ticket to delete',
+      condition: { field: 'operation', value: 'delete_ticket' },
       required: true,
     },
     {
@@ -607,7 +651,13 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       placeholder: 'e.g., "contacts", "companies", "deals", "tickets"',
       condition: {
         field: 'operation',
-        value: ['get_properties', 'list_associations', 'create_association'],
+        value: [
+          'get_properties',
+          'list_associations',
+          'create_association',
+          'delete_association',
+          'get_association_labels',
+        ],
       },
       required: true,
     },
@@ -635,7 +685,10 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       title: 'Record ID',
       type: 'short-input',
       placeholder: 'ID of the source record',
-      condition: { field: 'operation', value: ['list_associations', 'create_association'] },
+      condition: {
+        field: 'operation',
+        value: ['list_associations', 'create_association', 'delete_association'],
+      },
       required: true,
     },
     {
@@ -643,7 +696,15 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       title: 'To Object Type',
       type: 'short-input',
       placeholder: 'e.g., "emails", "notes", "contacts"',
-      condition: { field: 'operation', value: ['list_associations', 'create_association'] },
+      condition: {
+        field: 'operation',
+        value: [
+          'list_associations',
+          'create_association',
+          'delete_association',
+          'get_association_labels',
+        ],
+      },
       required: true,
     },
     {
@@ -651,7 +712,7 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       title: 'To Record ID',
       type: 'short-input',
       placeholder: 'ID of the target record',
-      condition: { field: 'operation', value: 'create_association' },
+      condition: { field: 'operation', value: ['create_association', 'delete_association'] },
       required: true,
     },
     {
@@ -688,6 +749,14 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       type: 'short-input',
       placeholder: 'Numeric ID, or custom ID (requires ID Property below)',
       condition: { field: 'operation', value: 'update_line_item' },
+      required: true,
+    },
+    {
+      id: 'lineItemId',
+      title: 'Line Item ID',
+      type: 'short-input',
+      placeholder: 'Numeric ID of the line item to delete',
+      condition: { field: 'operation', value: 'delete_line_item' },
       required: true,
     },
     {
@@ -795,6 +864,28 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       condition: { field: 'operation', value: 'get_lists' },
     },
     {
+      id: 'listId',
+      title: 'List ID',
+      type: 'short-input',
+      placeholder: 'ID of the list',
+      condition: {
+        field: 'operation',
+        value: ['get_list_memberships', 'add_list_memberships', 'remove_list_memberships'],
+      },
+      required: true,
+    },
+    {
+      id: 'recordIds',
+      title: 'Record IDs',
+      type: 'short-input',
+      placeholder: 'Comma-separated record IDs (e.g., "123,456") or JSON array',
+      condition: {
+        field: 'operation',
+        value: ['add_list_memberships', 'remove_list_memberships'],
+      },
+      required: true,
+    },
+    {
       id: 'listName',
       title: 'List Name',
       type: 'short-input',
@@ -850,6 +941,7 @@ export const HubSpotBlock: BlockConfig<HubSpotResponse> = {
       id: 'propertiesToSet',
       title: 'Properties',
       type: 'long-input',
+      required: true,
       placeholder:
         'JSON object with properties (e.g., {"email": "test@example.com", "firstname": "John"})',
       condition: {
@@ -1078,6 +1170,7 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'list_associations',
           'get_marketing_events',
           'get_lists',
+          'get_list_memberships',
           'search_contacts',
           'search_companies',
           'list_campaigns',
@@ -1091,6 +1184,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'search_tickets',
           'search_notes',
           'search_emails',
+          'search_line_items',
+          'search_quotes',
         ],
       },
     },
@@ -1118,6 +1213,7 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'get_users',
           'get_marketing_events',
           'get_lists',
+          'get_list_memberships',
           'search_contacts',
           'search_companies',
           'list_campaigns',
@@ -1133,6 +1229,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'search_tickets',
           'search_notes',
           'search_emails',
+          'search_line_items',
+          'search_quotes',
         ],
       },
     },
@@ -1150,6 +1248,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'search_tickets',
           'search_notes',
           'search_emails',
+          'search_line_items',
+          'search_quotes',
           'get_lists',
         ],
       },
@@ -1169,6 +1269,8 @@ Return ONLY the JSON object with properties - no explanations, no markdown, no e
           'search_tickets',
           'search_notes',
           'search_emails',
+          'search_line_items',
+          'search_quotes',
         ],
       },
       wandConfig: {
@@ -1380,6 +1482,8 @@ Return ONLY the JSON array of filter groups - no explanations, no markdown, no e
           'search_tickets',
           'search_notes',
           'search_emails',
+          'search_line_items',
+          'search_quotes',
         ],
       },
       wandConfig: {
@@ -1512,6 +1616,8 @@ Return ONLY the JSON array of sort objects - no explanations, no markdown, no ex
           'search_tickets',
           'search_notes',
           'search_emails',
+          'search_line_items',
+          'search_quotes',
         ],
       },
       wandConfig: {
@@ -1704,6 +1810,18 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       'hubspot_get_properties',
       'hubspot_list_associations',
       'hubspot_create_association',
+      'hubspot_delete_association',
+      'hubspot_get_association_labels',
+      'hubspot_delete_contact',
+      'hubspot_delete_company',
+      'hubspot_delete_deal',
+      'hubspot_delete_ticket',
+      'hubspot_delete_line_item',
+      'hubspot_search_line_items',
+      'hubspot_search_quotes',
+      'hubspot_get_list_memberships',
+      'hubspot_add_list_memberships',
+      'hubspot_remove_list_memberships',
       'hubspot_list_line_items',
       'hubspot_get_line_item',
       'hubspot_create_line_item',
@@ -1734,6 +1852,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_update_contact'
           case 'search_contacts':
             return 'hubspot_search_contacts'
+          case 'delete_contact':
+            return 'hubspot_delete_contact'
           case 'get_companies':
             return params.companyId ? 'hubspot_get_company' : 'hubspot_list_companies'
           case 'create_company':
@@ -1742,6 +1862,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_update_company'
           case 'search_companies':
             return 'hubspot_search_companies'
+          case 'delete_company':
+            return 'hubspot_delete_company'
           case 'get_deals':
             return params.dealId ? 'hubspot_get_deal' : 'hubspot_list_deals'
           case 'list_campaigns':
@@ -1798,6 +1920,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_update_deal'
           case 'search_deals':
             return 'hubspot_search_deals'
+          case 'delete_deal':
+            return 'hubspot_delete_deal'
           case 'get_tickets':
             return params.ticketId ? 'hubspot_get_ticket' : 'hubspot_list_tickets'
           case 'create_ticket':
@@ -1806,6 +1930,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_update_ticket'
           case 'search_tickets':
             return 'hubspot_search_tickets'
+          case 'delete_ticket':
+            return 'hubspot_delete_ticket'
           case 'get_notes':
             return params.noteId ? 'hubspot_get_note' : 'hubspot_list_notes'
           case 'create_note':
@@ -1824,14 +1950,24 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return 'hubspot_list_associations'
           case 'create_association':
             return 'hubspot_create_association'
+          case 'delete_association':
+            return 'hubspot_delete_association'
+          case 'get_association_labels':
+            return 'hubspot_get_association_labels'
           case 'get_line_items':
             return params.lineItemId ? 'hubspot_get_line_item' : 'hubspot_list_line_items'
           case 'create_line_item':
             return 'hubspot_create_line_item'
           case 'update_line_item':
             return 'hubspot_update_line_item'
+          case 'search_line_items':
+            return 'hubspot_search_line_items'
+          case 'delete_line_item':
+            return 'hubspot_delete_line_item'
           case 'get_quotes':
             return params.quoteId ? 'hubspot_get_quote' : 'hubspot_list_quotes'
+          case 'search_quotes':
+            return 'hubspot_search_quotes'
           case 'get_appointments':
             return params.appointmentId ? 'hubspot_get_appointment' : 'hubspot_list_appointments'
           case 'create_appointment':
@@ -1848,6 +1984,12 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
             return params.listId ? 'hubspot_get_list' : 'hubspot_list_lists'
           case 'create_list':
             return 'hubspot_create_list'
+          case 'get_list_memberships':
+            return 'hubspot_get_list_memberships'
+          case 'add_list_memberships':
+            return 'hubspot_add_list_memberships'
+          case 'remove_list_memberships':
+            return 'hubspot_remove_list_memberships'
           default:
             throw new Error(`Unknown operation: ${params.operation}`)
         }
@@ -1925,6 +2067,8 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
           'search_tickets',
           'search_notes',
           'search_emails',
+          'search_line_items',
+          'search_quotes',
         ]
         if (searchProperties && searchOps.includes(operation as string)) {
           cleanParams.properties = searchProperties
@@ -2100,6 +2244,10 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
     propertyName: { type: 'string', description: 'Property name for Get Property' },
     dataSensitivity: { type: 'string', description: 'Data sensitivity filter for properties API' },
     listName: { type: 'string', description: 'Name for new list' },
+    recordIds: {
+      type: 'json',
+      description: 'Record IDs for list membership changes (JSON array or comma-separated)',
+    },
     objectTypeId: { type: 'string', description: 'Object type ID for list' },
     processingType: { type: 'string', description: 'List processing type (MANUAL or DYNAMIC)' },
   },
@@ -2161,12 +2309,23 @@ Return ONLY the JSON array of property names - no explanations, no markdown, no 
       type: 'string',
       description: 'Associated target record ID (for create association)',
     },
-    labels: { type: 'json', description: 'Association labels (for create association)' },
+    labels: {
+      type: 'json',
+      description: 'Association labels (for create association and get association labels)',
+    },
+    deleted: { type: 'boolean', description: 'Whether the record was archived (for delete)' },
+    memberships: {
+      type: 'json',
+      description: 'Array of list membership records (recordId, membershipTimestamp)',
+    },
+    recordIdsAdded: { type: 'json', description: 'Record IDs added to the list' },
+    recordIdsRemoved: { type: 'json', description: 'Record IDs removed from the list' },
+    recordIdsMissing: { type: 'json', description: 'Requested record IDs that were not found' },
     total: { type: 'number', description: 'Total number of matching results (for search)' },
     paging: { type: 'json', description: 'Pagination info with next/prev cursors' },
     metadata: { type: 'json', description: 'Operation metadata' },
     success: { type: 'boolean', description: 'Operation success status' },
-  } as any,
+  },
   triggerAllowed: true,
   triggers: {
     enabled: true,
@@ -2303,6 +2462,13 @@ export const HubSpotBlockMeta = {
       description: 'Find contacts in a lead stage that have no logged email activity.',
       content:
         '# Audit Contacts Missing Activity\n\nSurface leads with no recorded email history.\n\n## Steps\n1. Get properties for contacts to read the hs_lead_status options and confirm the target stage value.\n2. Search contacts filtered to that lead status, paginating through all results.\n3. For each contact, list associations to emails and flag those with zero associated emails.\n4. Collect the contacts that need follow-up.\n\n## Output\nReturn the list of contact IDs with no logged email activity, ready for backfill.',
+    },
+    {
+      name: 'maintain-static-list',
+      description:
+        'Search HubSpot records and keep a manual list in sync by adding and removing members.',
+      content:
+        '# Maintain Static List\n\nKeep a manual (static) list aligned with a search criterion.\n\n## Steps\n1. Search contacts (or other records) matching the target criteria, paginating through all results.\n2. Get list members to read the current membership of the list.\n3. Add list members for matching records that are missing.\n4. Remove list members for records that no longer match.\n\n## Output\nReturn the list ID with counts of records added and removed.',
     },
     {
       name: 'inspect-property-options',
