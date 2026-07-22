@@ -2869,6 +2869,40 @@ export const localCopilotUserAccess = pgTable(
   })
 )
 
+/**
+ * Long-lived Arena Copilot memories (preferences, entities, corrections).
+ * Scoped to a user; optional workspaceId narrows visibility to one workspace.
+ * Cloud Go `user_memory` is separate — this table is Local/self-hosted only.
+ */
+export const localCopilotUserMemory = pgTable(
+  'local_copilot_user_memory',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    value: text('value').notNull(),
+    memoryType: text('memory_type').notNull().default('preference'),
+    source: text('source').notNull().default('explicit'),
+    confidence: doublePrecision('confidence').notNull().default(1),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    userKeyGlobalUnique: uniqueIndex('local_copilot_user_memory_user_key_global_uidx')
+      .on(table.userId, table.key)
+      .where(sql`${table.workspaceId} IS NULL`),
+    userWorkspaceKeyUnique: uniqueIndex('local_copilot_user_memory_user_workspace_key_uidx')
+      .on(table.userId, table.workspaceId, table.key)
+      .where(sql`${table.workspaceId} IS NOT NULL`),
+    userIdIdx: index('local_copilot_user_memory_user_id_idx').on(table.userId),
+    workspaceIdIdx: index('local_copilot_user_memory_workspace_id_idx').on(table.workspaceId),
+    memoryTypeIdx: index('local_copilot_user_memory_type_idx').on(table.memoryType),
+  })
+)
+
 export type LocalCopilotPatchStatus = (typeof localCopilotPatchStatusEnum.enumValues)[number]
 export type LocalCopilotAuditStatus = (typeof localCopilotAuditStatusEnum.enumValues)[number]
 

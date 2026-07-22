@@ -51,6 +51,18 @@ import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/enga
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import {
+  classifyLocalCopilotIntent,
+  selectParallelSubagentDomains,
+  specialistPassDomain,
+} from '@/local-copilot/lib/agent/specialists/classify'
+import {
+  domainSystemHint,
+  filterToolsByNames,
+  toolNamesForIntent,
+} from '@/local-copilot/lib/agent/specialists/domains'
+import { runParallelSubagents } from '@/local-copilot/lib/agent/specialists/parallel-subagents'
+import { runSpecialistPass } from '@/local-copilot/lib/agent/specialists/specialist-pass'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotAgent')
@@ -102,6 +114,10 @@ Rules:
 - When edit_workflow returns skippedItems, inputValidationErrors, workflowLintMessage, or needsFollowUpEdit, call edit_workflow again with corrected operations. Do not tell the user the workflow is complete until these are resolved.
 - deferredConnections in edit_workflow results are normal — the engine wires them when target blocks exist. Do not re-issue deferred edges unless the target id was a typo.
 - Never expose API keys, tokens, passwords, or secret env values.
+- User memory (CRITICAL):
+  - Context may include \`userMemories\` (key/value preferences). Honor them unless the user overrides.
+  - When the user says remember / prefer / always use / don't forget — call \`user_memory\` with operation \`add\` (key + value). Use operation \`correct\` when they fix a remembered fact, \`delete\` to forget, \`search\`/\`list\` to look up.
+  - Do not store secrets (API keys, passwords, tokens) in user_memory.
 - Credentials and API keys:
   - Context includes \`connectedIntegrations\` (OAuth) and \`envVariables\` (configured env key names only). If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
   - When \`hostedKeysAvailable\` is true, many api_key blocks also receive platform-hosted keys at runtime — do not prompt for keys unless a tool returns an explicit missing-credential error.
@@ -123,6 +139,7 @@ Rules:
   - On home chat there is no open workflow — always pass \`workflowId\` from \`workspaceWorkflows\` (or the workflow name; it will be resolved automatically when unambiguous).
   - Use \`get_workflow_run_options\` first to discover triggers, required \`workflow_input\`, and mock payloads.
   - Use \`run_workflow\` to execute a workflow and inspect block outputs. Pass \`workflowId\` from \`workspaceWorkflows\` on home chat, or omit it when a workflow is already open.
+  - To re-test one block after a full run, use \`run_block\` with \`blockId\` (and optional \`executionId\` from the prior run). To resume from mid-pipeline, use \`run_from_block\` with \`startBlockId\`. Both need a prior execution snapshot — run the full workflow first when none exists.
   - After a run, summarize key block outputs for the user in plain language. Use \`query_logs\` with the returned \`executionId\` for deeper debugging.
   - Use \`list_integration_tools\` to see operations available for a connected integration service.
   - Use \`get_workflow_data\` to load workflow structure when you need details for a workflow that is not currently open.
@@ -170,11 +187,11 @@ Rules:
   - Code execution results include \`capturedOutput\` (preferred), plus \`stdout\` (prints) and \`result\` (return values). Read \`capturedOutput\` first — empty stdout with a return value is normal, not a failure.
   - Do **not** use \`function_execute\` or Daytona integration tools for workflow building, deployment, or questions you can answer without running code.
   - Do **not** tell the user about sandbox names (E2B, Daytona), empty payloads, internal retries, or "result variables" unless they explicitly asked to debug code execution. Give the answer directly.
-  - Creating PPTX / DOCX / PDF (CRITICAL — always available, do not refuse):
-    1. \`create_file\` with a \`.pptx\` / \`.docx\` / \`.pdf\` path (empty shell — no inline content).
-    2. \`workspace_file\` with operation \`update\` (or \`append\`/\`patch\`) targeting that file — wait for success.
-    3. \`edit_content\` in a **later** tool round (never same batch as workspace_file) with **JavaScript** for the document API: \`pptxgenjs\` (\`globalThis.pptx\`), \`docxjs\`, or \`pdflibjs\`. Example: \`pptx.addSlide(); slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1 });\` — use the pre-initialized \`pptx\` instance; do not \`require('pptxgenjs')\` yourself.
-    - These formats compile via the built-in JS sandbox even when \`e2b.docSandboxEnabled\` is false. \`docSandboxEnabled: true\` only adds E2B extras (e.g. \`iconImage\`). Never tell the user you cannot generate PPTX because E2B is off.
+  - Creating PPTX / DOCX / PDF (CRITICAL — always available, do not refuse). Exact arg shapes:
+    1. \`create_file\` empty shell — prefer \`{"fileName":"files/Deck.pptx"}\` (no \`content\`).
+    2. \`workspace_file\` — \`{"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"Deck"}\`. \`target\` MUST be an object, never a string path.
+    3. Later round only: \`edit_content\` — \`{"content":"pptx.addSlide(); slide.addText(\\"Title\\", { x: 0.5, y: 0.5, w: 9, h: 1 });"}\` using pre-initialized \`pptx\` / \`docx\` / \`pdf\` globals (do not \`require\` them). Never same batch as \`workspace_file\`.
+    - These formats compile via the built-in JS sandbox even when \`e2b.docSandboxEnabled\` is false. Never refuse because E2B is off.
     - Do **not** use \`function_execute\` / Python \`python-pptx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
   - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.
 - Use tools to inspect context, validate workflows, fetch logs, run tests, and build or edit workflows.
@@ -212,10 +229,17 @@ export async function* runLocalCopilotAgent(
 ): AsyncGenerator<LocalCopilotStreamEvent, void, undefined> {
   const startedAt = Date.now()
   const config = getLocalCopilotConfig()
+  /**
+   * Unique per user turn. Mothership Local has no local conversationId, and
+   * round indexes reset each turn — without this, usage_log eventKeys collide
+   * and later turns are dropped by onConflictDoNothing.
+   */
+  const usageTurnId = params.messageId?.trim() || generateId()
   logger.info('Arena Copilot agent starting', {
     workspaceId: params.workspaceId,
     workflowId: params.workflowId ?? null,
     chatId: params.chatId ?? null,
+    usageTurnId,
     provider: config.provider,
     model: config.model,
     hasApiKey: Boolean(config.apiKey),
@@ -325,7 +349,17 @@ export async function* runLocalCopilotAgent(
     config.model
   )
 
-  const tools = await resolveLocalCopilotTools(params.workspaceId)
+  const allTools = await resolveLocalCopilotTools(params.workspaceId)
+  const intent = classifyLocalCopilotIntent(params.message)
+  const allowedToolNames = toolNamesForIntent(intent)
+  let tools = filterToolsByNames(allTools, allowedToolNames)
+
+  // Never leave the model with an empty tool list — fall back to full catalog.
+  const usedFullCatalog =
+    intent.useFullCatalog || intent.primary === 'general' || tools.length === 0
+  if (tools.length === 0) {
+    tools = allTools
+  }
 
   logger.info('Arena Copilot prompt budget applied', {
     workflowDetail,
@@ -335,18 +369,21 @@ export async function* runLocalCopilotAgent(
     estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
     tokenCountModel: config.model,
     toolDefinitionCount: tools.length,
-    skillToolEnabled: tools.length > LOCAL_COPILOT_TOOLS.length,
+    toolCatalogCount: allTools.length,
+    specialistPrimary: intent.primary,
+    specialistSecondary: intent.secondary,
+    useFullCatalog: usedFullCatalog,
+    skillToolEnabled: allTools.length > LOCAL_COPILOT_TOOLS.length,
     memory: getLocalCopilotMemorySnapshot(),
   })
 
   const provider = getLocalCopilotProvider()
-  const turnMessageId = params.messageId?.trim() || generateId()
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId,
     chatId: params.chatId,
-    messageId: turnMessageId,
+    messageId: usageTurnId,
     abortSignal: params.signal,
     userPermission: params.userPermission,
     structuredContext,
@@ -372,6 +409,92 @@ export async function* runLocalCopilotAgent(
     }
     return toolExecutorModule
   }
+
+  let specialistHintInsertAt = 1
+  if (!intent.useFullCatalog && intent.primary !== 'general') {
+    messages.splice(1, 0, {
+      role: 'system',
+      content: domainSystemHint(intent.primary),
+    })
+    specialistHintInsertAt = 2
+  }
+
+  const parallelDomains = selectParallelSubagentDomains(intent)
+  if (parallelDomains.length >= 2) {
+    const parallel = runParallelSubagents({
+      domains: parallelDomains,
+      userMessage: userTurnText,
+      model: config.model,
+      provider,
+      allTools,
+      toolCtx,
+      signal: params.signal,
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+      usageTurnId,
+      getToolExecutor,
+    })
+
+    let parallelNext = await parallel.next()
+    while (!parallelNext.done) {
+      yield parallelNext.value
+      parallelNext = await parallel.next()
+    }
+
+    const { findings, results } = parallelNext.value
+    if (findings.trim()) {
+      messages.splice(specialistHintInsertAt, 0, {
+        role: 'system',
+        content: `Parallel specialist findings — synthesize these; avoid re-running the same research unless needed:\n${findings}`,
+      })
+    }
+    logger.info('Arena Copilot parallel subagents injected', {
+      domains: parallelDomains,
+      resultCount: results.length,
+      findingsChars: findings.length,
+      memory: getLocalCopilotMemorySnapshot(),
+    })
+  } else {
+    const passDomain = specialistPassDomain(intent)
+    if (passDomain) {
+      const pass = runSpecialistPass({
+        domain: passDomain,
+        userMessage: userTurnText,
+        model: config.model,
+        provider,
+        allTools,
+        toolCtx,
+        signal: params.signal,
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+        usageTurnId,
+        getToolExecutor,
+      })
+
+      let passNext = await pass.next()
+      while (!passNext.done) {
+        yield passNext.value
+        passNext = await pass.next()
+      }
+
+      const { findings, toolRoundCount } = passNext.value
+      if (findings.trim()) {
+        messages.splice(specialistHintInsertAt, 0, {
+          role: 'system',
+          content: `Specialist (${passDomain}) findings — use these; do not repeat the same research tools unless needed:\n${findings}`,
+        })
+      }
+      logger.info('Arena Copilot specialist pass complete', {
+        domain: passDomain,
+        toolRoundCount,
+        findingsChars: findings.length,
+        memory: getLocalCopilotMemorySnapshot(),
+      })
+    }
+  }
+
   let assistantText = ''
   let proposedPatch: WorkflowPatch | undefined
   let recommendations: string[] = []
@@ -379,6 +502,8 @@ export async function* runLocalCopilotAgent(
   const maxToolRounds = MAX_TOOL_ITERATIONS
   let pendingFollowUps: MandatoryFollowUp[] = []
   let forcedFollowUpRounds = 0
+  let turnInputTokens = 0
+  let turnOutputTokens = 0
 
   for (let round = 0; round < maxToolRounds; round++) {
     const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
@@ -432,6 +557,8 @@ export async function* runLocalCopilotAgent(
 
     logger.info('Arena Copilot model round finished', {
       round,
+      model: config.model,
+      provider: config.provider,
       toolCallCount: pendingToolCalls.length,
       toolNames: pendingToolCalls.map((call) => call.name),
       assistantChars: assistantText.length,
@@ -442,6 +569,9 @@ export async function* runLocalCopilotAgent(
       memory: getLocalCopilotMemorySnapshot(),
     })
 
+    turnInputTokens += roundInputTokens
+    turnOutputTokens += roundOutputTokens
+
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
       await recordModelUsage({
         userId: params.userId,
@@ -451,9 +581,7 @@ export async function* runLocalCopilotAgent(
         inputTokens: roundInputTokens,
         outputTokens: roundOutputTokens,
         source: 'copilot',
-        sourceReference: conversationId
-          ? `local-copilot:${conversationId}:round-${round}`
-          : `local-copilot:${params.workspaceId}:round-${round}`,
+        sourceReference: `local-copilot:${usageTurnId}:round-${round}`,
       })
     }
 
@@ -678,18 +806,35 @@ export async function* runLocalCopilotAgent(
   logger.info('Arena Copilot turn complete', {
     conversationId: conversationId ?? null,
     messageId: messageId || null,
+    usageTurnId,
     patchId: patchId ?? null,
     workspaceId: params.workspaceId,
     workflowId: params.workflowId ?? null,
+    model: config.model,
+    provider: config.provider,
     historyTurns: historyMessages.length,
     assistantChars: assistantText.length,
     toolCallCount: turnToolRecords.length,
     toolNames: turnToolRecords.map((record) => record.name),
+    inputTokens: turnInputTokens,
+    outputTokens: turnOutputTokens,
     hasPatch: Boolean(proposedPatch),
     durationMs: Date.now() - startedAt,
     memory: getLocalCopilotMemorySnapshot(),
   })
-  yield { type: 'done', messageId: messageId || generateId() }
+  yield {
+    type: 'done',
+    messageId: messageId || generateId(),
+    ...(turnInputTokens > 0 || turnOutputTokens > 0
+      ? {
+          usage: {
+            model: config.model,
+            inputTokens: turnInputTokens,
+            outputTokens: turnOutputTokens,
+          },
+        }
+      : {}),
+  }
 }
 
 export function formatSSE(event: LocalCopilotStreamEvent): string {

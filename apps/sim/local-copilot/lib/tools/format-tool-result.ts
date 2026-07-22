@@ -10,6 +10,8 @@ const TOOL_EXECUTION_ORDER: Record<string, number> = {
   get_workflow_run_options: 2,
   run_workflow: 3,
   run_workflow_until_block: 3,
+  run_block: 3,
+  run_from_block: 3,
   // Office docs: shell → intent → body. edit_content needs a prior workspace_file intent.
   create_file_folder: 10,
   create_file: 11,

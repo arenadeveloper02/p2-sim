@@ -6,6 +6,10 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Executes a workflow and returns block outputs, executionId, and status. Call get_workflow_run_options first when trigger inputs are unknown.',
   run_workflow_until_block:
     'Runs a workflow until a specific block completes, then returns partial outputs.',
+  run_block:
+    'Runs a single block in isolation using a prior execution snapshot. REQUIRED: blockId. Prefer after run_workflow when debugging one block. Pass workflowId on home chat.',
+  run_from_block:
+    'Re-runs a workflow from a given block using a prior execution snapshot for upstream state. REQUIRED: startBlockId. Prefer after run_workflow when iterating mid-pipeline. Pass workflowId on home chat.',
   get_workflow_run_options:
     'Returns runnable triggers, input schemas, and mock payloads for a workflow before running it.',
   query_logs:
@@ -18,10 +22,10 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
   grep: 'Searches file contents under a workspace path pattern.',
   create_file:
-    'Creates a workspace file at a VFS path. For markdown/text/json/csv/html, ALWAYS pass `content` with the full file body in the same call. Without `content`, only an empty shell is created — you must then call workspace_file update + edit_content. Office formats (docx/pptx/pdf) cannot take inline content; use the empty shell + workspace_file + edit_content flow.',
+    'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds.',
   create_file_folder: 'Creates a folder under the workspace files tree.',
   workspace_file:
-    'Reads, creates, appends, updates, or deletes workspace files by path or file id.',
+    'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..."}, title (short UI label). Example: {"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"SambaNova deck"}. Does not write the body — call edit_content in the NEXT tool round with content. Never pass target as a bare string path.',
   download_to_workspace_file: 'Downloads a URL into a workspace file.',
   user_table:
     'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file.',
@@ -38,7 +42,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   function_execute:
     'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',
   edit_content:
-    'Writes or patches file content after workspace_file. For pptx/docx/pdf use pptxgenjs/docxjs/pdflibjs JavaScript (pre-initialized globals). Compiles via built-in JS sandbox; E2B doc sandbox is optional when e2b.docSandboxEnabled is true.',
+    'Writes the body after a successful workspace_file in a prior round. REQUIRED: content (string). For pptx/docx/pdf put JavaScript using pre-initialized globals (pptx / docx / pdf) — e.g. pptx.addSlide(); slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1 }). Never emit in the same batch as workspace_file.',
   deploy_chat:
     'Deploys or undeploys a workflow as a shareable chat interface. Performs the full workflow deploy plus chat surface setup. REQUIRED on deploy: workflowId, identifier (URL slug), title, versionName, versionDescription. Call get_block_outputs for outputConfigs (agent content path). Call diff_workflows(ref1: "live", ref2: "draft") when unsure what changed. Returns chatUrl on success — share that with the user.',
   get_block_outputs:
@@ -131,12 +135,16 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Restores an archived/deleted resource. REQUIRED: type (workflow|table|file|knowledgebase|folder|file_folder) and id.',
   get_platform_actions:
     'Lists available platform UI actions the agent can suggest or trigger (navigation and settings helpers).',
+  user_memory:
+    'Long-lived user preferences and facts across chats. Operations: add, search, delete, correct, list. Use add when the user says remember/prefer/always; search before assuming preferences; correct when they fix a remembered value. REQUIRED: operation. For add: key + value. For search: query. For delete/correct: key (correct also needs correct_value).',
 }
 
 /** Tools delegated to registered Mothership/copilot server handlers. */
 export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'run_workflow',
   'run_workflow_until_block',
+  'run_block',
+  'run_from_block',
   'get_workflow_run_options',
   'query_logs',
   'get_workflow_data',
@@ -205,6 +213,7 @@ export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'generate_api_key',
   'restore_resource',
   'get_platform_actions',
+  'user_memory',
 ] as const
 
 export type MothershipDelegatedToolName = (typeof MOTHERSHIP_DELEGATED_TOOL_NAMES)[number]
@@ -212,6 +221,8 @@ export type MothershipDelegatedToolName = (typeof MOTHERSHIP_DELEGATED_TOOL_NAME
 export const WORKFLOW_SCOPED_DELEGATED_TOOLS = new Set<MothershipDelegatedToolName>([
   'run_workflow',
   'run_workflow_until_block',
+  'run_block',
+  'run_from_block',
   'get_workflow_run_options',
   'get_workflow_data',
   'deploy_chat',
@@ -255,12 +266,20 @@ export function buildMothershipDelegatedToolDefinitions(): LocalCopilotToolDefin
 
     let parameters = baseParameters
     if (name === 'create_file' && baseParameters.type === 'object') {
+      const existingProperties =
+        (baseParameters.properties as Record<string, unknown>) ?? {}
+      const fileNameProp = existingProperties.fileName as Record<string, unknown> | undefined
       const properties = {
-        ...((baseParameters.properties as Record<string, unknown>) ?? {}),
+        ...existingProperties,
+        fileName: {
+          ...(fileNameProp ?? { type: 'string' }),
+          description:
+            'Preferred workspace VFS path or filename (e.g. "files/Deck.pptx"). Use this for new files instead of nested outputs.',
+        },
         content: {
           type: 'string',
           description:
-            'Full file body for text files (.md, .txt, .json, .csv, .html). Required when creating markdown or text content — omitting this creates an empty shell only.',
+            'Full file body for text files (.md, .txt, .json, .csv, .html). Required when creating markdown or text content. Omit for pptx/docx/pdf empty shells.',
         },
       }
       parameters = { ...baseParameters, properties }

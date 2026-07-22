@@ -7,6 +7,11 @@ import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import {
+  enrichCreateFileArgs,
+  enrichEditContentArgs,
+  enrichWorkspaceFileArgs,
+} from '@/local-copilot/lib/tools/enrich-file-tool-args'
+import {
   MOTHERSHIP_DELEGATED_TOOL_NAMES,
   WORKFLOW_SCOPED_DELEGATED_TOOLS,
   type MothershipDelegatedToolName,
@@ -286,6 +291,18 @@ export async function executeMothershipDelegatedTool(
 
   if (toolName === 'search_online') {
     enrichSearchOnlineArgs(enrichedArgs)
+  }
+
+  if (toolName === 'create_file') {
+    enrichCreateFileArgs(enrichedArgs)
+  }
+
+  if (toolName === 'workspace_file') {
+    enrichWorkspaceFileArgs(enrichedArgs)
+  }
+
+  if (toolName === 'edit_content') {
+    enrichEditContentArgs(enrichedArgs)
   }
 
   // Arena always runs server-registry tools in-process via ServerToolAdapter.

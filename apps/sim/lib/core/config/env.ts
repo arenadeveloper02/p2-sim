@@ -123,6 +123,7 @@ export const env = createEnv({
 
      // Firecrawl
      FIRECRAWL_API_KEY:                     z.string().min(1).optional(),           // Firecrawl API key for web crawling
+     CONTEXT7_API_KEY:                      z.string().min(1).optional(),           // Context7 API key for library docs (search_library_docs)
      
     // Email & Communication
     EMAIL_VERIFICATION_ENABLED:            z.boolean().optional(),                 // Enable email verification for user registration and login (defaults to false)
