@@ -27,6 +27,7 @@ import {
   isAssistantImageUrl,
 } from '@/lib/chat/assistant-assets'
 import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
+import { resolveChartContentFromFinalOutput } from '@/lib/chart-generation/resolve-final-output-chart'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import {
   extractBlockIdFromOutputId,
@@ -214,68 +215,18 @@ const formatOutputContent = (output: unknown): string => {
 }
 
 /**
- * Reads a selected output value from the streaming `final` event's block output
- * map (`{ [blockId]: { [path]: value } }`), mirroring the deployed chat's
- * getForkBlockOutputValue path resolution.
- */
-const getFinalOutputValue = (
-  output: Record<string, unknown>,
-  blockId: string,
-  path: string
-): unknown => {
-  const blockOutputs = output[blockId]
-  if (!blockOutputs || typeof blockOutputs !== 'object') {
-    return undefined
-  }
-  const outputs = blockOutputs as Record<string, unknown>
-
-  if (!path || path === 'content') {
-    if (outputs.content !== undefined) return outputs.content
-    if (outputs.result !== undefined) return outputs.result
-    return outputs
-  }
-
-  if (outputs[path] !== undefined) {
-    return outputs[path]
-  }
-
-  if (path.includes('.')) {
-    return path.split('.').reduce<unknown>((current, segment) => {
-      if (current && typeof current === 'object' && segment in current) {
-        return (current as Record<string, unknown>)[segment]
-      }
-      return undefined
-    }, outputs)
-  }
-
-  return undefined
-}
-
-/**
  * Normalizes chart output from the streaming `final` event so the floating chat
  * renders ECharts like the deployed chat. Returns the formatted chart string, or
- * null when no selected output contains a renderable chart (leaving the streamed
- * text untouched). This covers object-shaped / mixed responses (e.g. prose + a
- * `{ charts: [...] }` wrapper) that the raw streamed text does not parse cleanly.
+ * null when no renderable chart is present (leaving the streamed text untouched).
+ *
+ * Delegates to the shared, shape-agnostic resolver so charts are recovered
+ * whether the `final` output is keyed by block id or is the workflow's
+ * aggregated terminal output (which carries top-level `charts`/`content`).
  */
 const resolveStreamedChartContent = (
   output: Record<string, unknown> | null,
   selectedOutputs: string[]
-): string | null => {
-  if (!output) {
-    return null
-  }
-  for (const outputId of selectedOutputs) {
-    const blockId = extractBlockIdFromOutputId(outputId)
-    const path = extractPathFromOutputId(outputId, blockId)
-    const value = getFinalOutputValue(output, blockId, path)
-    const chartContent = formatChartDeployOutputForChat(value)
-    if (chartContent) {
-      return chartContent
-    }
-  }
-  return null
-}
+): string | null => resolveChartContentFromFinalOutput(output, selectedOutputs)
 
 const getImageUrlsFromOutput = (output: unknown): string[] => {
   const extractedUrls = extractGeneratedImagesFromData(output).map((image) => image.url)
