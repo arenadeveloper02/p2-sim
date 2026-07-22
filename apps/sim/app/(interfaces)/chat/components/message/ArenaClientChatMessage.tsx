@@ -22,6 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
 import { DeployedInlineLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
+import { FeedbackBox } from '@/app/(interfaces)/chat/components/message/components/feedback-box'
 import { KnowledgeResultsModal } from '@/app/(interfaces)/chat/components/message/components/knowledge-results-modal'
 import {
   CopyMessageIcon,
@@ -36,6 +37,7 @@ import type {
   KnowledgeResultChunk,
 } from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
+import { parseWelcomeSegments } from '@/app/(interfaces)/chat/utils/welcome-message-ctas'
 import {
   downloadImage,
   extractAllBase64Images,
@@ -52,7 +54,6 @@ import {
   resolveMessageImagesAndProse,
   S3UploadFailedAlert,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
-import { FeedbackBox } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/feedback-box'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
 
 const arenaChatMessageLogger = createLogger('ArenaClientChatMessage')
@@ -126,43 +127,6 @@ interface LineWithPipeHoverProps {
   line: string
   onCopySegment: (text: string) => void
   renderImage?: (args: { src: string; alt?: string }) => ReactNode
-}
-
-type WelcomeSegment =
-  | { type: 'text'; value: string }
-  | { type: 'query'; value: string; raw: string }
-
-function parseWelcomeSegments(content: string): WelcomeSegment[] {
-  const segments: WelcomeSegment[] = []
-  const pattern = /\{\{([\s\S]*?)\}\}/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-
-  while ((match = pattern.exec(content)) !== null) {
-    const fullMatch = match[0]
-    const innerText = match[1] ?? ''
-    const start = match.index
-    const end = start + fullMatch.length
-
-    if (start > lastIndex) {
-      segments.push({ type: 'text', value: content.slice(lastIndex, start) })
-    }
-
-    const query = innerText.trim()
-    if (query.length > 0) {
-      segments.push({ type: 'query', value: query, raw: fullMatch })
-    } else {
-      segments.push({ type: 'text', value: fullMatch })
-    }
-
-    lastIndex = end
-  }
-
-  if (lastIndex < content.length) {
-    segments.push({ type: 'text', value: content.slice(lastIndex) })
-  }
-
-  return segments
 }
 
 function LineWithPipeHover({ line, onCopySegment, renderImage }: LineWithPipeHoverProps) {
@@ -1182,7 +1146,7 @@ export const ArenaClientChatMessage = memo(
                                       </Tooltip.Trigger>
                                     </PopoverTrigger>
                                     <PopoverContent
-                                      className='z-[9999] w-[400px]'
+                                      className='z-[9999] w-[400px] border-0 bg-transparent shadow-none'
                                       align='start'
                                       side={popoverSide}
                                       sideOffset={-15}
@@ -1235,7 +1199,7 @@ export const ArenaClientChatMessage = memo(
                                       </Tooltip.Trigger>
                                     </PopoverTrigger>
                                     <PopoverContent
-                                      className='z-[9999] w-[400px]'
+                                      className='z-[9999] w-[400px] border-0 bg-transparent shadow-none'
                                       align='start'
                                       side={popoverSide}
                                       sideOffset={-15}

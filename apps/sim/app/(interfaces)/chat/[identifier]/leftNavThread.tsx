@@ -597,7 +597,7 @@ const LeftNavThread = ({
           disabled={actionButtonsDisabled}
           title='Re-run workflow with new input values'
         >
-          <RefreshCw className={sidebarRowIconClass(false)} />
+          <RefreshCw className={cn(sidebarRowIconClass(false), 'size-4')} />
           <span className={sidebarRowLabelClass(false)}>Re-Run</span>
         </button>
       )}

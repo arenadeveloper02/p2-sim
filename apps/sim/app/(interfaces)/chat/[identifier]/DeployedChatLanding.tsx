@@ -6,6 +6,7 @@ import { Tooltip } from '@sim/emcn'
 import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 import { DeployedChatDescriptionModal } from '@/app/(interfaces)/chat/[identifier]/DeployedChatDescriptionModal'
 import { ChatInput } from '@/app/(interfaces)/chat/components'
+import { WelcomeMessageWithCtas } from '@/app/(interfaces)/chat/components/message/components/welcome-message-with-ctas'
 import {
   DEPLOYED_CHAT_CANVAS_BG,
   DEPLOYED_CHAT_CANVAS_GRADIENT,
@@ -23,9 +24,14 @@ import {
 interface DeployedChatDescriptionPreviewProps {
   text: string
   onExpand: () => void
+  onWelcomeQueryClick?: (query: string) => void
 }
 
-function DeployedChatDescriptionPreview({ text, onExpand }: DeployedChatDescriptionPreviewProps) {
+function DeployedChatDescriptionPreview({
+  text,
+  onExpand,
+  onWelcomeQueryClick,
+}: DeployedChatDescriptionPreviewProps) {
   const descriptionRef = useRef<HTMLParagraphElement>(null)
   const [isTruncated, setIsTruncated] = useState(false)
 
@@ -51,7 +57,11 @@ function DeployedChatDescriptionPreview({ text, onExpand }: DeployedChatDescript
         className='max-h-[3.2em] overflow-hidden whitespace-pre-wrap text-center font-normal text-[14px] leading-[21px]'
         style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}
       >
-        {text}
+        <WelcomeMessageWithCtas
+          content={text}
+          variant='landing'
+          onQueryClick={onWelcomeQueryClick}
+        />
       </p>
       {isTruncated && (
         <Tooltip.Provider>
@@ -110,6 +120,8 @@ interface DeployedChatLandingProps {
   selectedGeneratedImages?: SelectedGeneratedImage[]
   onRemoveSelectedGeneratedImage?: (imageId: string) => void
   inputWrapperRef?: RefObject<HTMLDivElement | null>
+  /** When set, `{{query}}` tokens in the welcome message submit that query */
+  onWelcomeQueryClick?: (query: string) => void
 }
 
 export function DeployedChatLanding({
@@ -126,6 +138,7 @@ export function DeployedChatLanding({
   selectedGeneratedImages,
   onRemoveSelectedGeneratedImage,
   inputWrapperRef,
+  onWelcomeQueryClick,
 }: DeployedChatLandingProps) {
   const [isDescriptionModalOpen, setIsDescriptionModalOpen] = useState(false)
 
@@ -137,6 +150,11 @@ export function DeployedChatLanding({
   })
 
   const promptLine = `What should we get done${firstName ? `, ${firstName}` : ''}?`
+
+  const handleWelcomeQueryClick = (query: string) => {
+    setIsDescriptionModalOpen(false)
+    onWelcomeQueryClick?.(query)
+  }
 
   return (
     <>
@@ -160,6 +178,7 @@ export function DeployedChatLanding({
                 <DeployedChatDescriptionPreview
                   text={descriptionSource}
                   onExpand={() => setIsDescriptionModalOpen(true)}
+                  onWelcomeQueryClick={handleWelcomeQueryClick}
                 />
               )}
             </div>
@@ -196,6 +215,7 @@ export function DeployedChatLanding({
         title={title}
         description={descriptionSource}
         department={department}
+        onWelcomeQueryClick={handleWelcomeQueryClick}
       />
     </>
   )

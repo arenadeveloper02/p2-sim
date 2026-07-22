@@ -1722,6 +1722,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                   selectedGeneratedImages={effectiveGeneratedImages}
                   onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                   inputWrapperRef={chatInputWrapperRef}
+                  onWelcomeQueryClick={handleWelcomeQueryClick}
                 />
               ) : (
                 <>

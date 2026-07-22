@@ -1,6 +1,7 @@
 'use client'
 
 import { Modal, ModalContent } from '@sim/emcn'
+import { WelcomeMessageWithCtas } from '@/app/(interfaces)/chat/components/message/components/welcome-message-with-ctas'
 import {
   DEPLOYED_CHAT_CANVAS_BG,
   DEPLOYED_CHAT_DIVIDER,
@@ -18,6 +19,8 @@ interface DeployedChatDescriptionModalProps {
   title: string
   description: string
   department?: string | null
+  /** When set, `{{query}}` tokens submit that query and close the modal */
+  onWelcomeQueryClick?: (query: string) => void
 }
 
 function shouldShowDepartmentBadge(department?: string | null): boolean {
@@ -32,8 +35,14 @@ export function DeployedChatDescriptionModal({
   title,
   description,
   department,
+  onWelcomeQueryClick,
 }: DeployedChatDescriptionModalProps) {
   const showBadge = shouldShowDepartmentBadge(department)
+
+  const handleQueryClick = (query: string) => {
+    onOpenChange(false)
+    onWelcomeQueryClick?.(query)
+  }
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -76,10 +85,14 @@ export function DeployedChatDescriptionModal({
             style={{ borderColor: DEPLOYED_CHAT_DIVIDER }}
           >
             <p
-              className='whitespace-pre-wrap text-left text-[14px] font-normal leading-[1.6]'
+              className='whitespace-pre-wrap text-left font-normal text-[14px] leading-[1.6]'
               style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
             >
-              {description}
+              <WelcomeMessageWithCtas
+                content={description}
+                variant='landing'
+                onQueryClick={onWelcomeQueryClick ? handleQueryClick : undefined}
+              />
             </p>
           </div>
         </div>
