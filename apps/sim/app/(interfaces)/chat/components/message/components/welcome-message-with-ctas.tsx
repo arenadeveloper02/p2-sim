@@ -1,7 +1,11 @@
 'use client'
 
 import { cn } from '@sim/emcn'
-import { parseWelcomeSegments } from '@/app/(interfaces)/chat/utils/welcome-message-ctas'
+import { DEPLOYED_CHAT_DIVIDER, DEPLOYED_CHAT_TEXT_BODY } from '@/app/(interfaces)/chat/constants'
+import {
+  parseWelcomeSegments,
+  type WelcomeSegment,
+} from '@/app/(interfaces)/chat/utils/welcome-message-ctas'
 
 export type WelcomeMessageCtaVariant = 'chat' | 'landing'
 
@@ -10,10 +14,39 @@ interface WelcomeMessageWithCtasProps {
   onQueryClick?: (query: string) => void
   className?: string
   /**
-   * `chat` matches in-message welcome chips; `landing` is inline brand-link CTAs
-   * inside muted landing / modal body copy.
+   * `chat` is stacked suggestion chips under welcome copy; `landing` is inline
+   * brand-link CTAs inside muted landing / modal body copy.
    */
   variant?: WelcomeMessageCtaVariant
+}
+
+type WelcomeRenderPart = { type: 'text'; value: string } | { type: 'queries'; values: string[] }
+
+/**
+ * Collapses whitespace-only gaps between query CTAs so flex gap owns spacing,
+ * and keeps meaningful welcome copy as text parts.
+ */
+function groupWelcomeParts(segments: WelcomeSegment[]): WelcomeRenderPart[] {
+  const parts: WelcomeRenderPart[] = []
+
+  for (const segment of segments) {
+    if (segment.type === 'text') {
+      if (/^\s*$/.test(segment.value)) {
+        continue
+      }
+      parts.push({ type: 'text', value: segment.value.replace(/\n{3,}/g, '\n\n').trimEnd() })
+      continue
+    }
+
+    const last = parts[parts.length - 1]
+    if (last?.type === 'queries') {
+      last.values.push(segment.value)
+    } else {
+      parts.push({ type: 'queries', values: [segment.value] })
+    }
+  }
+
+  return parts
 }
 
 /**
@@ -30,26 +63,45 @@ export function WelcomeMessageWithCtas({
   )
 
   if (variant === 'chat') {
+    const parts = groupWelcomeParts(segments)
+
     return (
-      <div className={cn('flex max-w-full flex-col gap-0.25 break-words', className)}>
-        {segments.map((segment, index) => {
-          if (segment.type === 'text') {
+      <div className={cn('flex max-w-full flex-col break-words', className)}>
+        {parts.map((part, index) => {
+          if (part.type === 'text') {
             return (
-              <span key={`w-text-${index}`} className='whitespace-pre-wrap'>
-                {segment.value}
+              <span
+                key={`w-text-${index}`}
+                className='whitespace-pre-wrap'
+                style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
+              >
+                {part.value}
               </span>
             )
           }
+
           return (
-            <button
-              key={`w-query-${index}`}
-              type='button'
-              className='w-fit max-w-full cursor-pointer self-start rounded-md bg-[var(--surface-1)] px-2.5 py-1 text-left font-medium text-[var(--text-primary)] shadow-[0_3px_10px_rgba(0,0,0,0.18)] transition-all duration-150 ease-out hover:bg-[var(--surface-4)] hover:text-[1.02em] hover:shadow-[0_6px_14px_rgba(0,0,0,0.22)] active:translate-y-px active:shadow-sm'
-              onClick={() => onQueryClick?.(segment.value)}
-              title='Run this query'
+            <div
+              key={`w-queries-${index}`}
+              className={cn('flex max-w-full flex-col items-start gap-2', index > 0 && 'mt-3')}
             >
-              {segment.value}
-            </button>
+              {part.values.map((query, queryIndex) => (
+                <button
+                  key={`w-query-${index}-${queryIndex}`}
+                  type='button'
+                  className={cn(
+                    'w-fit max-w-full cursor-pointer rounded-lg border bg-white px-3 py-1.5 text-left font-medium text-[14px] leading-[21px] transition-colors',
+                    'text-[var(--color-ds-text-primary,#2C2D33)]',
+                    'hover:bg-[var(--color-ds-brand-surface,#F3F8FE)] hover:text-[var(--color-ds-text-link-hover,#155CBA)]'
+                  )}
+                  style={{ borderColor: DEPLOYED_CHAT_DIVIDER }}
+                  onClick={() => onQueryClick?.(query)}
+                  title='Run this query'
+                >
+                  {query}
+                </button>
+              ))}
+            </div>
           )
         })}
       </div>

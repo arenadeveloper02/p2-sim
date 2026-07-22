@@ -31,13 +31,13 @@ import {
   messageActionIconButtonClass,
 } from '@/app/(interfaces)/chat/components/message/components/message-action-icons'
 import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/components/streaming-indicator'
+import { WelcomeMessageWithCtas } from '@/app/(interfaces)/chat/components/message/components/welcome-message-with-ctas'
 import type {
   ChatAttachment,
   KnowledgeRef,
   KnowledgeResultChunk,
 } from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
-import { parseWelcomeSegments } from '@/app/(interfaces)/chat/utils/welcome-message-ctas'
 import {
   downloadImage,
   extractAllBase64Images,
@@ -249,35 +249,9 @@ export const ArenaClientChatMessage = memo(
     }, [])
 
     const renderWelcomeMessage = useCallback(
-      (str: string) => {
-        const segments = parseWelcomeSegments(str).filter(
-          (s) => s.type !== 'text' || s.value.length > 0
-        )
-        return (
-          <div className='flex max-w-full flex-col gap-0.25 break-words'>
-            {segments.map((segment, index) => {
-              if (segment.type === 'text') {
-                return (
-                  <span key={`w-text-${index}`} className='whitespace-pre-wrap'>
-                    {segment.value}
-                  </span>
-                )
-              }
-              return (
-                <button
-                  key={`w-query-${index}`}
-                  type='button'
-                  className='w-fit max-w-full cursor-pointer self-start rounded-md bg-[var(--surface-1)] px-2.5 py-1 text-left font-medium text-[var(--text-primary)] shadow-[0_3px_10px_rgba(0,0,0,0.18)] transition-all duration-150 ease-out hover:bg-[var(--surface-4)] hover:text-[1.02em] hover:shadow-[0_6px_14px_rgba(0,0,0,0.22)] active:translate-y-px active:shadow-sm'
-                  onClick={() => onWelcomeQueryClick?.(segment.value)}
-                  title='Run this query'
-                >
-                  {segment.value}
-                </button>
-              )
-            })}
-          </div>
-        )
-      },
+      (str: string) => (
+        <WelcomeMessageWithCtas content={str} variant='chat' onQueryClick={onWelcomeQueryClick} />
+      ),
       [onWelcomeQueryClick]
     )
 
