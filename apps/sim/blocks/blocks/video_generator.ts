@@ -77,7 +77,7 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
   hideFromToolbar: true,
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Generate high-quality videos from text prompts using leading AI providers. Supports multiple models, aspect ratios, resolutions, and provider-specific features like world consistency, camera controls, and audio generation.',
+    'Generate high-quality videos from text prompts via hosted Fal.ai. Supports multiple models (including Veo, Sora, Kling, MiniMax, WAN, and LTX), aspect ratios, resolutions, prompt optimization, and native audio controls.',
   docsLink: 'https://docs.sim.ai/integrations/video-generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
@@ -91,10 +91,10 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       title: 'Provider',
       type: 'dropdown',
       options: [
-        { label: 'Runway Gen-4', id: 'runway' },
-        { label: 'Google Veo 3', id: 'veo' },
-        { label: 'Luma Dream Machine', id: 'luma' },
-        { label: 'MiniMax Hailuo', id: 'minimax' },
+        // { label: 'Runway Gen-4', id: 'runway' },
+        // { label: 'Google Veo 3', id: 'veo' },
+        // { label: 'Luma Dream Machine', id: 'luma' },
+        // { label: 'MiniMax Hailuo', id: 'minimax' },
         { label: 'Fal.ai (Multi-Model)', id: 'falai' },
       ],
       value: () => 'falai',
@@ -767,46 +767,42 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       dependsOn: ['model'],
     },
 
-    // API Key
+    // API Key — hidden on hosted Sim; Fal.ai key is injected from env / BYOK
     {
       id: 'apiKey',
       title: 'API Key',
       type: 'short-input',
-      placeholder: 'Enter your provider API key',
+      placeholder: 'Enter your Fal.ai API key',
       password: true,
       required: true,
       hideWhenHosted: true,
-      condition: { field: 'provider', value: 'falai' },
-    },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your provider API key',
-      password: true,
-      required: true,
-      condition: { field: 'provider', value: 'falai', not: true },
     },
   ],
 
   tools: {
-    access: ['video_runway', 'video_veo', 'video_luma', 'video_minimax', 'video_falai'],
+    access: [
+      // 'video_runway',
+      // 'video_veo',
+      // 'video_luma',
+      // 'video_minimax',
+      'video_falai',
+    ],
     config: {
       tool: (params) => {
         // Select tool based on provider
         switch (params.provider) {
-          case 'runway':
-            return 'video_runway'
-          case 'veo':
-            return 'video_veo'
-          case 'luma':
-            return 'video_luma'
-          case 'minimax':
-            return 'video_minimax'
+          // case 'runway':
+          //   return 'video_runway'
+          // case 'veo':
+          //   return 'video_veo'
+          // case 'luma':
+          //   return 'video_luma'
+          // case 'minimax':
+          //   return 'video_minimax'
           case 'falai':
             return 'video_falai'
           default:
-            return 'video_runway'
+            return 'video_falai'
         }
       },
       params: (params) => ({
@@ -835,12 +831,12 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
   inputs: {
     provider: {
       type: 'string',
-      description: 'Video generation provider (runway, veo, luma, minimax, falai)',
+      description: 'Video generation provider (falai)',
     },
     apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
-      description: 'Provider-specific model',
+      description: 'Fal.ai model',
     },
     endpoint: {
       type: 'string',
@@ -850,11 +846,11 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
     duration: { type: 'number', description: 'Video duration in seconds' },
     aspectRatio: {
       type: 'string',
-      description: 'Aspect ratio for supported providers and models',
+      description: 'Aspect ratio for supported models',
     },
     resolution: {
       type: 'string',
-      description: 'Video resolution for supported providers and models',
+      description: 'Video resolution for supported models',
     },
     visualReference: { type: 'json', description: 'Reference image for Runway (UserFile)' },
     consistencyMode: {
@@ -898,10 +894,10 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       title: 'Provider',
       type: 'dropdown',
       options: [
-        { label: 'Runway Gen-4', id: 'runway' },
-        { label: 'Google Veo 3', id: 'veo' },
-        { label: 'Luma Dream Machine', id: 'luma' },
-        { label: 'MiniMax Hailuo', id: 'minimax' },
+        // { label: 'Runway Gen-4', id: 'runway' },
+        // { label: 'Google Veo 3', id: 'veo' },
+        // { label: 'Luma Dream Machine', id: 'luma' },
+        // { label: 'MiniMax Hailuo', id: 'minimax' },
         { label: 'Fal.ai (Multi-Model)', id: 'falai' },
       ],
       commandSearchable: true,
@@ -1541,43 +1537,40 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       },
       dependsOn: ['model'],
     },
+    // API Key — hidden on hosted Sim; Fal.ai key is injected from env / BYOK
     {
       id: 'apiKey',
       title: 'API Key',
       type: 'short-input',
-      placeholder: 'Enter your provider API key',
+      placeholder: 'Enter your Fal.ai API key',
       password: true,
       required: true,
       hideWhenHosted: true,
-      condition: { field: 'provider', value: 'falai' },
-    },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      placeholder: 'Enter your provider API key',
-      password: true,
-      required: true,
-      condition: { field: 'provider', value: 'falai', not: true },
     },
   ],
   tools: {
-    access: ['video_runway', 'video_veo', 'video_luma', 'video_minimax', 'video_falai'],
+    access: [
+      // 'video_runway',
+      // 'video_veo',
+      // 'video_luma',
+      // 'video_minimax',
+      'video_falai',
+    ],
     config: {
       tool: (params) => {
         switch (params.provider) {
-          case 'runway':
-            return 'video_runway'
-          case 'veo':
-            return 'video_veo'
-          case 'luma':
-            return 'video_luma'
-          case 'minimax':
-            return 'video_minimax'
+          // case 'runway':
+          //   return 'video_runway'
+          // case 'veo':
+          //   return 'video_veo'
+          // case 'luma':
+          //   return 'video_luma'
+          // case 'minimax':
+          //   return 'video_minimax'
           case 'falai':
             return 'video_falai'
           default:
-            return 'video_runway'
+            return 'video_falai'
         }
       },
       params: (params) => ({
@@ -1605,12 +1598,12 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
   inputs: {
     provider: {
       type: 'string',
-      description: 'Video generation provider (runway, veo, luma, minimax, falai)',
+      description: 'Video generation provider (falai)',
     },
     apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
-      description: 'Provider-specific model',
+      description: 'Fal.ai model',
     },
     endpoint: {
       type: 'string',
@@ -1620,11 +1613,11 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
     duration: { type: 'number', description: 'Video duration in seconds' },
     aspectRatio: {
       type: 'string',
-      description: 'Aspect ratio for supported providers and models',
+      description: 'Aspect ratio for supported models',
     },
     resolution: {
       type: 'string',
-      description: 'Video resolution for supported providers and models',
+      description: 'Video resolution for supported models',
     },
     visualReference: { type: 'json', description: 'Reference image for Runway (UserFile)' },
     consistencyMode: {
@@ -1653,7 +1646,7 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
   name: 'Video Generator',
   description: 'Generate videos from text using AI',
   longDescription:
-    'Generate high-quality videos from text prompts using leading AI providers. Supports Runway, Google Veo, Luma, MiniMax, and Fal.ai multi-model generation with provider-specific durations, aspect ratios, resolutions, prompt optimization, and native audio controls.',
+    'Generate high-quality videos from text prompts via hosted Fal.ai. Supports multiple models (including Veo, Sora, Kling, MiniMax, Seedance, WAN, and LTX), aspect ratios, resolutions, prompt optimization, and native audio controls.',
   docsLink: 'https://docs.sim.ai/integrations/video_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
