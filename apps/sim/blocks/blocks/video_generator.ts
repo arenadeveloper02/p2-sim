@@ -77,7 +77,7 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
   hideFromToolbar: true,
   authMode: AuthMode.ApiKey,
   longDescription:
-    'Generate high-quality videos from text prompts using leading AI providers. Supports multiple models, aspect ratios, resolutions, and provider-specific features like world consistency, camera controls, and audio generation.',
+    'Generate high-quality videos from text prompts via hosted Fal.ai. Supports multiple models (including Veo, Sora, Kling, MiniMax, WAN, and LTX), aspect ratios, resolutions, prompt optimization, and native audio controls.',
   docsLink: 'https://docs.sim.ai/integrations/video-generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
@@ -840,12 +840,12 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
   inputs: {
     provider: {
       type: 'string',
-      description: 'Video generation provider (runway, veo, luma, minimax, falai)',
+      description: 'Video generation provider (falai)',
     },
     // apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
-      description: 'Provider-specific model',
+      description: 'Fal.ai model',
     },
     endpoint: {
       type: 'string',
@@ -855,11 +855,11 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
     duration: { type: 'number', description: 'Video duration in seconds' },
     aspectRatio: {
       type: 'string',
-      description: 'Aspect ratio for supported providers and models',
+      description: 'Aspect ratio for supported models',
     },
     resolution: {
       type: 'string',
-      description: 'Video resolution for supported providers and models',
+      description: 'Video resolution for supported models',
     },
     visualReference: { type: 'json', description: 'Reference image for Runway (UserFile)' },
     consistencyMode: {
@@ -1616,12 +1616,12 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
   inputs: {
     provider: {
       type: 'string',
-      description: 'Video generation provider (runway, veo, luma, minimax, falai)',
+      description: 'Video generation provider (falai)',
     },
     // apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
-      description: 'Provider-specific model',
+      description: 'Fal.ai model',
     },
     endpoint: {
       type: 'string',
@@ -1631,11 +1631,11 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
     duration: { type: 'number', description: 'Video duration in seconds' },
     aspectRatio: {
       type: 'string',
-      description: 'Aspect ratio for supported providers and models',
+      description: 'Aspect ratio for supported models',
     },
     resolution: {
       type: 'string',
-      description: 'Video resolution for supported providers and models',
+      description: 'Video resolution for supported models',
     },
     visualReference: { type: 'json', description: 'Reference image for Runway (UserFile)' },
     consistencyMode: {
@@ -1664,7 +1664,7 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
   name: 'Video Generator',
   description: 'Generate videos from text using AI',
   longDescription:
-    'Generate high-quality videos from text prompts using leading AI providers. Supports Runway, Google Veo, Luma, MiniMax, and Fal.ai multi-model generation with provider-specific durations, aspect ratios, resolutions, prompt optimization, and native audio controls.',
+    'Generate high-quality videos from text prompts via hosted Fal.ai. Supports multiple models (including Veo, Sora, Kling, MiniMax, Seedance, WAN, and LTX), aspect ratios, resolutions, prompt optimization, and native audio controls.',
   docsLink: 'https://docs.sim.ai/integrations/video_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
