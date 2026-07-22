@@ -86,6 +86,8 @@ interface ChatDeployProps {
   onDeployed?: () => void
   onVersionActivated?: () => void
   chatAlreadyExists?: boolean | any
+  /** Chat tab vs App tab — controls which fields are shown and which deploymentType is saved */
+  mode?: 'chat' | 'app'
 }
 
 export type ExistingChat = ChatDetail
@@ -102,11 +104,6 @@ interface FormErrors {
   general?: string
 }
 
-const DEPLOYMENT_TYPE_OPTIONS = [
-  { value: 'chat', label: 'As Chat' },
-  { value: 'app', label: 'As App' },
-] as const
-
 function isValidRedirectUrl(value: string): boolean {
   try {
     const url = new URL(value)
@@ -116,20 +113,22 @@ function isValidRedirectUrl(value: string): boolean {
   }
 }
 
-const initialFormData: ChatFormData = {
-  identifier: '',
-  title: '',
-  description: '',
-  department: '',
-  authType: 'email',
-  password: '',
-  emails: [],
-  welcomeMessage:
-    "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
-  goldenQueries: [],
-  selectedOutputBlocks: [],
-  deploymentType: 'chat',
-  redirectUrl: '',
+function createInitialFormData(mode: 'chat' | 'app'): ChatFormData {
+  return {
+    identifier: '',
+    title: '',
+    description: '',
+    department: '',
+    authType: 'email',
+    password: '',
+    emails: [],
+    welcomeMessage:
+      "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
+    goldenQueries: [],
+    selectedOutputBlocks: [],
+    deploymentType: mode,
+    redirectUrl: '',
+  }
 }
 
 export function ChatDeploy({
@@ -148,7 +147,12 @@ export function ChatDeploy({
   onDeployed,
   onVersionActivated,
   chatAlreadyExists,
+  mode = 'chat',
 }: ChatDeployProps) {
+  const isAppMode = mode === 'app'
+  const formId = isAppMode ? 'app-deploy-form' : 'chat-deploy-form'
+  const initialFormData = createInitialFormData(mode)
+
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [internalShowDeleteConfirmation, setInternalShowDeleteConfirmation] = useState(false)
 
@@ -191,17 +195,22 @@ export function ChatDeploy({
       prevWorkflowIdForFormRef.current !== null &&
       prevWorkflowIdForFormRef.current !== workflowId
     ) {
-      setFormData({ ...initialFormData, identifier: workflowId || '' })
+      setFormData({ ...createInitialFormData(mode), identifier: workflowId || '' })
       setImageUrl(null)
       hasInitializedFormRef.current = false
       hasSetDefaultKnowledgeOutputs.current = false
       setErrors({})
     }
     prevWorkflowIdForFormRef.current = workflowId
-  }, [workflowId])
+  }, [workflowId, mode])
 
   const updateField = <K extends keyof ChatFormData>(field: K, value: ChatFormData[K]) => {
-    setFormData((prev) => ({ ...prev, identifier: workflowId, [field]: value }))
+    setFormData((prev) => ({
+      ...prev,
+      identifier: workflowId,
+      deploymentType: mode,
+      [field]: value,
+    }))
     if (errors[field as keyof FormErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
     }
@@ -213,12 +222,6 @@ export function ChatDeploy({
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {}
-
-    // if (!formData.identifier.trim()) {
-    //   newErrors.identifier = 'Identifier is required'
-    // } else if (!IDENTIFIER_PATTERN.test(formData.identifier)) {
-    //   newErrors.identifier = 'Identifier can only contain lowercase letters, numbers, and hyphens'
-    // }
 
     if (!formData.title.trim()) {
       newErrors.title = 'Title is required'
@@ -239,11 +242,11 @@ export function ChatDeploy({
       newErrors.emails = `At least one email or domain is required when using ${formData.authType === 'sso' ? 'SSO' : 'email'} access control`
     }
 
-    if (formData.deploymentType !== 'app' && formData.selectedOutputBlocks.length === 0) {
+    if (!isAppMode && formData.selectedOutputBlocks.length === 0) {
       newErrors.outputBlocks = 'Please select at least one output block'
     }
 
-    if (formData.deploymentType === 'app') {
+    if (isAppMode) {
       if (!formData.redirectUrl.trim()) {
         newErrors.redirectUrl = 'Redirection URL is required when deploying as an app'
       } else if (!isValidRedirectUrl(formData.redirectUrl.trim())) {
@@ -262,13 +265,13 @@ export function ChatDeploy({
   const isFormValid =
     isIdentifierValid &&
     Boolean(formData.title.trim()) &&
-    (formData.deploymentType === 'app' || formData.selectedOutputBlocks.length > 0) &&
+    (isAppMode || formData.selectedOutputBlocks.length > 0) &&
     (formData.authType !== 'password' ||
       Boolean(formData.password.trim()) ||
       Boolean(existingChat)) &&
     ((formData.authType !== 'email' && formData.authType !== 'sso') ||
       formData.emails.length > 0) &&
-    (formData.deploymentType !== 'app' || isValidRedirectUrl(formData.redirectUrl.trim())) &&
+    (!isAppMode || isValidRedirectUrl(formData.redirectUrl.trim())) &&
     !hasInvalidEmails
 
   useEffect(() => {
@@ -277,14 +280,12 @@ export function ChatDeploy({
 
   useEffect(() => {
     if (workflowId) {
-      //set the identifier to the workflow id valid true
       setIsIdentifierValid(true)
     }
   }, [workflowId])
 
   useEffect(() => {
     if (existingChat && !hasInitializedFormRef.current) {
-      // Deduplicate emails when initializing from existingChat
       const allowedEmails = Array.isArray(existingChat.allowedEmails)
         ? existingChat.allowedEmails
         : []
@@ -298,7 +299,6 @@ export function ChatDeploy({
         authType: existingChat.authType || 'public',
         password: '',
         emails: uniqueEmails,
-        // Only use default if welcomeMessage is undefined/null, not if it's an empty string
         welcomeMessage:
           existingChat.customizations?.welcomeMessage !== undefined &&
           existingChat.customizations?.welcomeMessage !== null
@@ -310,8 +310,8 @@ export function ChatDeploy({
               (config: { blockId: string; path: string }) => `${config.blockId}_${config.path}`
             )
           : [],
-        deploymentType: existingChat.deploymentType || 'chat',
-        redirectUrl: existingChat.redirectUrl || '',
+        deploymentType: mode,
+        redirectUrl: isAppMode ? existingChat.redirectUrl || '' : '',
       })
 
       if (existingChat.customizations?.imageUrl) {
@@ -320,15 +320,16 @@ export function ChatDeploy({
 
       hasInitializedFormRef.current = true
     } else if (!existingChat && !isLoadingChat) {
-      setFormData(initialFormData)
+      setFormData(createInitialFormData(mode))
       setImageUrl(null)
       hasInitializedFormRef.current = false
       hasSetDefaultKnowledgeOutputs.current = false
     }
-  }, [existingChat, isLoadingChat])
+  }, [existingChat, isLoadingChat, mode, isAppMode, workflowId])
 
   useEffect(() => {
     if (
+      !isAppMode &&
       !existingChat &&
       !isLoadingChat &&
       workflowId &&
@@ -343,7 +344,7 @@ export function ChatDeploy({
         ],
       }))
     }
-  }, [existingChat, isLoadingChat, workflowId, knowledgeResultOutputIds])
+  }, [existingChat, isLoadingChat, workflowId, knowledgeResultOutputIds, isAppMode])
 
   const handleOutputSelect = useCallback(
     (newValues: string[]) => {
@@ -394,19 +395,25 @@ export function ChatDeploy({
       }
 
       let chatUrl: string
+      const submitFormData: ChatFormData = {
+        ...formData,
+        deploymentType: mode,
+        redirectUrl: isAppMode ? formData.redirectUrl : '',
+        selectedOutputBlocks: isAppMode ? [] : formData.selectedOutputBlocks,
+      }
 
       if (existingChat?.id) {
         const result = await updateChatMutation.mutateAsync({
           chatId: existingChat.id,
           workflowId,
-          formData,
+          formData: submitFormData,
           imageUrl,
         })
         chatUrl = result.chatUrl
       } else {
         const result = await createChatMutation.mutateAsync({
           workflowId,
-          formData,
+          formData: submitFormData,
           imageUrl,
         })
         chatUrl = result.chatUrl
@@ -416,8 +423,8 @@ export function ChatDeploy({
       onVersionActivated?.()
 
       if (isNewChat) {
-        if (formData.deploymentType === 'app' && formData.redirectUrl.trim()) {
-          window.open(formData.redirectUrl.trim(), '_blank', 'noopener,noreferrer')
+        if (isAppMode && submitFormData.redirectUrl.trim()) {
+          window.open(submitFormData.redirectUrl.trim(), '_blank', 'noopener,noreferrer')
         } else if (chatUrl) {
           const url = `${chatUrl}?workspaceId=${workflowWorkspaceId}&fromControlBar=true`
           window.open(url, '_blank', 'noopener,noreferrer')
@@ -469,7 +476,7 @@ export function ChatDeploy({
   return (
     <>
       <form
-        id='chat-deploy-form'
+        id={formId}
         ref={formRef}
         onSubmit={handleSubmit}
         className='-mx-1 space-y-4 overflow-y-auto px-1'
@@ -481,67 +488,15 @@ export function ChatDeploy({
           </div>
         )}
 
-        {/* <IdentifierInput
-            value={formData.identifier}
-            onChange={(value) => updateField('identifier', value)}
-            originalIdentifier={existingChat?.identifier || undefined}
-            disabled={chatSubmitting}
-            onValidationChange={setIsIdentifierValid}
-            isEditingExisting={!!existingChat}
-          /> */}
-
-        <div>
-          <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
-            Deployment type
-          </Label>
-          <CustomSelect
-            value={formData.deploymentType}
-            onChange={(value) => updateField('deploymentType', value as ChatFormData['deploymentType'])}
-            disabled={chatSubmitting}
-            placeholder='Select deployment type'
-            options={DEPLOYMENT_TYPE_OPTIONS.map((option) => ({
-              value: option.value,
-              label: option.label,
-            }))}
-          />
-          <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
-            {formData.deploymentType === 'app'
-              ? 'The listing card will open your external app URL instead of the built-in chat page'
-              : 'The listing card will open the built-in chat page'}
-          </p>
-        </div>
-
-        {formData.deploymentType === 'app' && (
-          <div>
-            <Label
-              htmlFor='redirectUrl'
-              className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
-            >
-              Redirection URL
-            </Label>
-            <ChipInput
-              id='redirectUrl'
-              placeholder='https://company-research-agent-app.vercel.app/'
-              value={formData.redirectUrl}
-              onChange={(e) => updateField('redirectUrl', e.target.value)}
-              required
-              disabled={chatSubmitting}
-            />
-            {errors.redirectUrl && (
-              <p className='mt-1 text-destructive text-sm'>{errors.redirectUrl}</p>
-            )}
-          </div>
-        )}
-
         <div>
           <Label
-            htmlFor='title'
+            htmlFor={`${formId}-title`}
             className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
           >
             Title
           </Label>
           <ChipInput
-            id='title'
+            id={`${formId}-title`}
             placeholder='Customer Support Assistant'
             value={formData.title}
             onChange={(e) => updateField('title', e.target.value)}
@@ -572,8 +527,12 @@ export function ChatDeploy({
               Description
             </Label>
             <Textarea
-              id='description'
-              placeholder='A brief description of what this chat does'
+              id={`${formId}-description`}
+              placeholder={
+                isAppMode
+                  ? 'A brief description of what this app does'
+                  : 'A brief description of what this chat does'
+              }
               value={formData.description}
               onChange={(e) => updateField('description', e.target.value)}
               rows={3}
@@ -585,7 +544,27 @@ export function ChatDeploy({
             )}
           </div>
 
-          {formData.deploymentType !== 'app' && (
+          {isAppMode ? (
+            <div>
+              <Label
+                htmlFor={`${formId}-redirectUrl`}
+                className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+              >
+                Redirection URL
+              </Label>
+              <ChipInput
+                id={`${formId}-redirectUrl`}
+                placeholder='https://company-research-agent-app.vercel.app/'
+                value={formData.redirectUrl}
+                onChange={(e) => updateField('redirectUrl', e.target.value)}
+                required
+                disabled={chatSubmitting}
+              />
+              {errors.redirectUrl && (
+                <p className='mt-1 text-destructive text-sm'>{errors.redirectUrl}</p>
+              )}
+            </div>
+          ) : (
             <div>
               <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
                 Output
@@ -608,7 +587,7 @@ export function ChatDeploy({
 
           <AuthSelector
             isExistingChat={!!existingChat}
-            key={`${existingChat?.id ?? 'new'}-${formInitCounter}`}
+            key={`${mode}-${existingChat?.id ?? 'new'}-${formInitCounter}`}
             authType={formData.authType}
             password={formData.password}
             emails={formData.emails}
@@ -622,13 +601,13 @@ export function ChatDeploy({
           />
           <div>
             <Label
-              htmlFor='welcomeMessage'
+              htmlFor={`${formId}-welcomeMessage`}
               className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'
             >
               Welcome message
             </Label>
             <Textarea
-              id='welcomeMessage'
+              id={`${formId}-welcomeMessage`}
               placeholder='Enter a welcome message for your chat'
               value={formData.welcomeMessage}
               onChange={(e) => updateField('welcomeMessage', e.target.value)}
@@ -640,32 +619,6 @@ export function ChatDeploy({
               This message will be displayed when users first open the chat
             </p>
           </div>
-          {/* <div>
-            <Label
-              htmlFor='goldenQueries'
-              className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
-            >
-              Golden queries
-            </Label>
-            <Textarea
-              id='goldenQueries'
-              placeholder='Add one query per line'
-              value={formData.goldenQueries.join('\n')}
-              onChange={(e) => {
-                const parsedQueries = e.target.value
-                  .split('\n')
-                  .map((query) => query.trim())
-                  .filter((query) => query.length > 0)
-                updateField('goldenQueries', parsedQueries)
-              }}
-              rows={4}
-              disabled={chatSubmitting}
-              className='min-h-[96px] resize-none'
-            />
-            <p className='mt-[6.5px] text-[11px] text-[var(--text-secondary)]'>
-              These queries appear in the deployed chat for one-click execution
-            </p>
-          </div> */}
 
           <button
             type='button'
@@ -679,14 +632,16 @@ export function ChatDeploy({
       <ChipConfirmModal
         open={showDeleteConfirmation}
         onOpenChange={setShowDeleteConfirmation}
-        srTitle='Delete Chat'
-        title='Delete Chat'
+        srTitle={isAppMode ? 'Delete App' : 'Delete Chat'}
+        title={isAppMode ? 'Delete App' : 'Delete Chat'}
         text={[
           'Are you sure you want to delete ',
-          { text: existingChat?.title || 'this chat', bold: true },
+          { text: existingChat?.title || (isAppMode ? 'this app' : 'this chat'), bold: true },
           '? ',
           {
-            text: `This will remove the chat at "${getEmailDomain()}/chat/${existingChat?.identifier ?? ''}" and make it unavailable to all users.`,
+            text: isAppMode
+              ? 'This will remove the app deployment and make it unavailable to all users.'
+              : `This will remove the chat at "${getEmailDomain()}/chat/${existingChat?.identifier ?? ''}" and make it unavailable to all users.`,
             error: true,
           },
           ' This action cannot be undone.',
@@ -705,7 +660,6 @@ export function ChatDeploy({
         }}
         srTitle='Unselect knowledge base results'
         title='Unselect knowledge base results'
-        // description='Knowledge base reference will not be shown for the generated output.'
         confirm={{
           label: 'Continue',
           variant: 'primary',

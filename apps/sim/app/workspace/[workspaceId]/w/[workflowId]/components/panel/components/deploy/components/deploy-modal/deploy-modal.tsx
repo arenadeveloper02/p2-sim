@@ -110,9 +110,9 @@ interface WorkflowDeploymentInfoUI {
   isPublicApi: boolean
 }
 
-type TabView = 'general' | 'api' | 'chat' | 'mcp'
+type TabView = 'general' | 'api' | 'chat' | 'app' | 'mcp'
 
-const DEPLOY_MODAL_TABS = new Set<TabView>(['general', 'api', 'chat', 'mcp'])
+const DEPLOY_MODAL_TABS = new Set<TabView>(['general', 'api', 'chat', 'app', 'mcp'])
 
 function isDeployModalTab(value: unknown): value is TabView {
   return typeof value === 'string' && DEPLOY_MODAL_TABS.has(value as TabView)
@@ -147,6 +147,7 @@ export function DeployModal({
   const [isFinalizingDeploy, setIsFinalizingDeploy] = useState(false)
   const [isActivatingVersion, setIsActivatingVersion] = useState(false)
   const [isChatFormValid, setIsChatFormValid] = useState(false)
+  const [isAppFormValid, setIsAppFormValid] = useState(false)
   const [selectedStreamingOutputs, setSelectedStreamingOutputs] = useState<string[]>([])
 
   const [undeployTargetWorkflowId, setUndeployTargetWorkflowId] = useState<string | null>(null)
@@ -156,7 +157,9 @@ export function DeployModal({
   const [mcpActiveServerId, setMcpActiveServerId] = useState<string | null>(null)
 
   const [chatSuccess, setChatSuccess] = useState(false)
+  const [appSuccess, setAppSuccess] = useState(false)
   const chatSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const appSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const deployActionIdRef = useRef(0)
   const activateVersionInFlightRef = useRef(false)
 
@@ -286,6 +289,7 @@ export function DeployModal({
       setDeployError(null)
       setDeployWarnings([])
       setChatSuccess(false)
+      setAppSuccess(false)
 
       const currentOutputs = selectedStreamingOutputsRef.current
       if (currentOutputs.length > 0) {
@@ -312,6 +316,9 @@ export function DeployModal({
     return () => {
       if (chatSuccessTimeoutRef.current) {
         clearTimeout(chatSuccessTimeoutRef.current)
+      }
+      if (appSuccessTimeoutRef.current) {
+        clearTimeout(appSuccessTimeoutRef.current)
       }
     }
   }, [open, workflowId])
@@ -522,9 +529,24 @@ export function DeployModal({
     chatSuccessTimeoutRef.current = setTimeout(() => setChatSuccess(false), 2000)
   }
 
+  const handleAppDeployed = async () => {
+    if (!workflowId) return
+
+    invalidateDeploymentQueries(queryClient, workflowId)
+
+    if (appSuccessTimeoutRef.current) {
+      clearTimeout(appSuccessTimeoutRef.current)
+    }
+    setAppSuccess(true)
+    appSuccessTimeoutRef.current = setTimeout(() => setAppSuccess(false), 2000)
+  }
+
   const handleRefetchChat = async () => {
     await refetchChatInfo()
   }
+
+  const isExistingChatDeployment = chatExists && existingChat?.deploymentType !== 'app'
+  const isExistingAppDeployment = chatExists && existingChat?.deploymentType === 'app'
 
   const handleChatFormSubmit = () => {
     const form = document.getElementById('chat-deploy-form') as HTMLFormElement
@@ -532,18 +554,23 @@ export function DeployModal({
       'Workspace Name': workspaceName,
       'Workspace ID': workflowWorkspaceId || '',
       'Deploy Workflow Tab': 'Chat',
-      CTA: chatExists ? 'Update' : 'Launch Chat',
+      CTA: isExistingChatDeployment ? 'Update' : 'Launch Chat',
       'Workflow Name': workflowMetadata?.name || '',
       'Workflow ID': workflowId || '',
     })
-    // if (form) {
-    //   const updateTrigger = form.querySelector('[data-update-trigger]') as HTMLButtonElement
-    //   if (updateTrigger) {
-    //     updateTrigger.click()
-    //   } else {
-    //     form.requestSubmit()
-    //   }
-    // }
+    form?.requestSubmit()
+  }
+
+  const handleAppFormSubmit = () => {
+    const form = document.getElementById('app-deploy-form') as HTMLFormElement
+    workflowDeployEvent({
+      'Workspace Name': workspaceName,
+      'Workspace ID': workflowWorkspaceId || '',
+      'Deploy Workflow Tab': 'App',
+      CTA: isExistingAppDeployment ? 'Update' : 'Launch App',
+      'Workflow Name': workflowMetadata?.name || '',
+      'Workflow ID': workflowId || '',
+    })
     form?.requestSubmit()
   }
 
@@ -551,6 +578,19 @@ export function DeployModal({
     const form = document.getElementById('chat-deploy-form') as HTMLFormElement
     deleteDeployedWorkflowCTAEvent({
       'Deploy Workflow Tab': 'Chat',
+    })
+    if (form) {
+      const deleteButton = form.querySelector('[data-delete-trigger]') as HTMLButtonElement
+      if (deleteButton) {
+        deleteButton.click()
+      }
+    }
+  }
+
+  const handleAppDelete = () => {
+    const form = document.getElementById('app-deploy-form') as HTMLFormElement
+    deleteDeployedWorkflowCTAEvent({
+      'Deploy Workflow Tab': 'App',
     })
     if (form) {
       const deleteButton = form.querySelector('[data-delete-trigger]') as HTMLButtonElement
@@ -594,6 +634,9 @@ export function DeployModal({
               )}
               {!permissionConfig.hideDeployChatbot && (
                 <ModalTabsTrigger value='chat'>Chat</ModalTabsTrigger>
+              )}
+              {!permissionConfig.hideDeployChatbot && (
+                <ModalTabsTrigger value='app'>App</ModalTabsTrigger>
               )}
             </ModalTabsList>
 
@@ -653,6 +696,7 @@ export function DeployModal({
 
               <ModalTabsContent value='chat'>
                 <ChatDeploy
+                  mode='chat'
                   workflowId={workflowId || ''}
                   workflowWorkspaceId={workflowWorkspaceId || ''}
                   deploymentInfo={deploymentInfo}
@@ -665,7 +709,26 @@ export function DeployModal({
                   onDeploymentComplete={handleCloseModal}
                   onDeployed={handleChatDeployed}
                   onVersionActivated={() => {}}
-                  chatAlreadyExists={chatExists}
+                  chatAlreadyExists={isExistingChatDeployment}
+                />
+              </ModalTabsContent>
+
+              <ModalTabsContent value='app'>
+                <ChatDeploy
+                  mode='app'
+                  workflowId={workflowId || ''}
+                  workflowWorkspaceId={workflowWorkspaceId || ''}
+                  deploymentInfo={deploymentInfo}
+                  existingChat={existingChat as ExistingChat | null}
+                  isLoadingChat={isLoadingChat}
+                  onRefetchChat={handleRefetchChat}
+                  chatSubmitting={chatSubmitting}
+                  setChatSubmitting={setChatSubmitting}
+                  onValidationChange={setIsAppFormValid}
+                  onDeploymentComplete={handleCloseModal}
+                  onDeployed={handleAppDeployed}
+                  onVersionActivated={() => {}}
+                  chatAlreadyExists={isExistingAppDeployment}
                 />
               </ModalTabsContent>
 
@@ -726,7 +789,7 @@ export function DeployModal({
             <ModalFooter className='items-center justify-between'>
               <div />
               <div className='flex items-center gap-2'>
-                {chatExists && (
+                {isExistingChatDeployment && (
                   <Button
                     type='button'
                     variant='default'
@@ -743,16 +806,51 @@ export function DeployModal({
                   disabled={chatSubmitting || !isChatFormValid}
                 >
                   {chatSuccess
-                    ? chatExists
+                    ? isExistingChatDeployment
                       ? 'Updated'
                       : 'Launched'
                     : chatSubmitting
-                      ? chatExists
+                      ? isExistingChatDeployment
                         ? 'Updating...'
                         : 'Launching...'
-                      : chatExists
+                      : isExistingChatDeployment
                         ? 'Update'
                         : 'Launch Chat'}
+                </Button>
+              </div>
+            </ModalFooter>
+          )}
+          {activeTab === 'app' && (
+            <ModalFooter className='items-center justify-between'>
+              <div />
+              <div className='flex items-center gap-2'>
+                {isExistingAppDeployment && (
+                  <Button
+                    type='button'
+                    variant='default'
+                    onClick={handleAppDelete}
+                    disabled={chatSubmitting}
+                  >
+                    Delete
+                  </Button>
+                )}
+                <Button
+                  type='button'
+                  variant='tertiary'
+                  onClick={handleAppFormSubmit}
+                  disabled={chatSubmitting || !isAppFormValid}
+                >
+                  {appSuccess
+                    ? isExistingAppDeployment
+                      ? 'Updated'
+                      : 'Launched'
+                    : chatSubmitting
+                      ? isExistingAppDeployment
+                        ? 'Updating...'
+                        : 'Launching...'
+                      : isExistingAppDeployment
+                        ? 'Update'
+                        : 'Launch App'}
                 </Button>
               </div>
             </ModalFooter>
