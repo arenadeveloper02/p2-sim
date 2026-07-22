@@ -1,5 +1,5 @@
 import { normalizeChartOutput } from '@/lib/chart-generation/normalize-chart-output'
-import { runChartGenerate } from '@/lib/chart-generation/run-chart-generate'
+import { runChartGenerate } from '@/lib/chart-generation/run-chart-generate.server'
 import type { BlockOutput } from '@/blocks/types'
 import { BlockType } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
