@@ -29,6 +29,7 @@ import { DataHealthPanel } from '@/app/workspace/[workspaceId]/settings/componen
 import { LineagePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/lineage-panel'
 import { OrganizationUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/organization-usage-content'
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
+import { UserUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/user-usage-content'
 import {
   formatBillableWithCredits,
   formatPeriodLabel,
@@ -49,8 +50,8 @@ import {
 } from '@/app/workspace/[workspaceId]/settings/components/usage/legacy-unattributed-chat'
 import {
   USAGE_PERIODS,
-  USAGE_SCOPES,
   USAGE_TABS,
+  USER_WORKSPACE_FILTER_ALL,
   type UsagePeriod,
   type UsageScope,
   type UsageTab,
@@ -59,6 +60,7 @@ import {
 } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
 import { useAdminOrganizations, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useOrganizationUsageAnalytics } from '@/hooks/queries/organization-usage'
+import { useUserUsageAnalytics } from '@/hooks/queries/user-usage'
 import { useWorkspacePermissionsQuery, useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useWorkspaceUsageAnalytics } from '@/hooks/queries/workspace-usage'
 
@@ -69,9 +71,12 @@ const TAB_LABELS: Record<UsageTab, string> = {
 }
 
 const SCOPE_LABELS: Record<UsageScope, string> = {
+  user: 'User',
   workspace: 'Workspace',
   organization: 'Organization',
 }
+
+const USER_WORKSPACE_FILTER_CURRENT = 'current' as const
 
 const SUMMARY_METRIC_TOOLTIPS = {
   tokens: 'Total input and output tokens from billing ledger rows in the selected period.',
@@ -705,8 +710,10 @@ function UsageDashboardContent({
 
 export function Usage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [{ scope, tab, period, allTime, rootExecutionId, orgWorkspaceId }, setUsageParams] =
-    useQueryStates(usageParsers, usageUrlKeys)
+  const [
+    { scope, tab, period, allTime, rootExecutionId, orgWorkspaceId, userWorkspaceId },
+    setUsageParams,
+  ] = useQueryStates(usageParsers, usageUrlKeys)
 
   const { data: permissions, isPending: permissionsLoading } =
     useWorkspacePermissionsQuery(workspaceId)
@@ -727,9 +734,24 @@ export function Usage() {
       adminOrganizations?.organizations.some((organization) => organization.id === organizationId)
   )
 
-  const effectiveScope: UsageScope =
-    canViewOrganizationUsage && scope === 'organization' ? 'organization' : 'workspace'
+  const availableScopes = useMemo(() => {
+    const scopes: UsageScope[] = ['user']
+    if (isWorkspaceAdmin) scopes.push('workspace')
+    if (canViewOrganizationUsage) scopes.push('organization')
+    return scopes
+  }, [canViewOrganizationUsage, isWorkspaceAdmin])
+
+  const effectiveScope: UsageScope = availableScopes.includes(scope) ? scope : 'user'
+  const isUserScope = effectiveScope === 'user'
+  const isWorkspaceScope = effectiveScope === 'workspace'
   const isOrganizationScope = effectiveScope === 'organization'
+  const showScopeToggle = availableScopes.length > 1
+
+  const isUserAllWorkspaces = isUserScope && userWorkspaceId === USER_WORKSPACE_FILTER_ALL
+  const resolvedUserWorkspaceId = isUserAllWorkspaces
+    ? undefined
+    : (userWorkspaceId ?? workspaceId)
+  const userLineageWorkspaceId = isUserAllWorkspaces ? null : (resolvedUserWorkspaceId ?? null)
 
   const analyticsQuery = useMemo(() => {
     const base = allTime ? { allTime: 'true' as const } : { period: period as UsagePeriod }
@@ -741,12 +763,12 @@ export function Usage() {
 
   const workspaceAnalyticsQuery = useMemo(() => {
     const withLineage =
-      !isOrganizationScope && rootExecutionId && (tab === 'workflow' || tab === 'all')
+      isWorkspaceScope && rootExecutionId && (tab === 'workflow' || tab === 'all')
         ? { rootExecutionId }
         : {}
 
     return { ...analyticsQuery, ...withLineage }
-  }, [analyticsQuery, isOrganizationScope, rootExecutionId, tab])
+  }, [analyticsQuery, isWorkspaceScope, rootExecutionId, tab])
 
   const organizationAnalyticsQuery = useMemo(
     () => ({
@@ -756,6 +778,26 @@ export function Usage() {
     [analyticsQuery, orgWorkspaceId]
   )
 
+  const userAnalyticsQuery = useMemo(() => {
+    const withWorkspace = resolvedUserWorkspaceId
+      ? { workspaceId: resolvedUserWorkspaceId }
+      : {}
+    const withLineage =
+      userLineageWorkspaceId && rootExecutionId && (tab === 'workflow' || tab === 'all')
+        ? { rootExecutionId }
+        : {}
+
+    return { ...analyticsQuery, ...withWorkspace, ...withLineage }
+  }, [analyticsQuery, resolvedUserWorkspaceId, rootExecutionId, tab, userLineageWorkspaceId])
+
+  const {
+    data: userData,
+    isLoading: userLoading,
+    isFetching: userFetching,
+    error: userError,
+    refetch: refetchUser,
+  } = useUserUsageAnalytics(userAnalyticsQuery, isUserScope)
+
   const {
     data: workspaceData,
     isLoading: workspaceLoading,
@@ -763,7 +805,7 @@ export function Usage() {
     error: workspaceError,
     refetch: refetchWorkspace,
   } = useWorkspaceUsageAnalytics(
-    isWorkspaceAdmin && !isOrganizationScope ? workspaceId : undefined,
+    isWorkspaceAdmin && isWorkspaceScope ? workspaceId : undefined,
     workspaceAnalyticsQuery
   )
 
@@ -787,15 +829,46 @@ export function Usage() {
     return options
   }, [organizationData?.workspaces])
 
+  const userWorkspaceFilterOptions = useMemo(() => {
+    const options = [
+      { label: 'Current workspace', value: USER_WORKSPACE_FILTER_CURRENT },
+      { label: 'All workspaces', value: USER_WORKSPACE_FILTER_ALL },
+    ]
+    for (const ws of userData?.workspaces ?? []) {
+      if (ws.id === workspaceId) continue
+      options.push({ label: ws.name, value: ws.id })
+    }
+    return options
+  }, [userData?.workspaces, workspaceId])
+
+  const userWorkspaceSelectValue =
+    userWorkspaceId === USER_WORKSPACE_FILTER_ALL
+      ? USER_WORKSPACE_FILTER_ALL
+      : userWorkspaceId
+        ? userWorkspaceId
+        : USER_WORKSPACE_FILTER_CURRENT
+
   const { data: organizationRoster } = useOrganizationRoster(
     isOrganizationScope && canViewOrganizationUsage ? organizationId : undefined
   )
 
-  const data = isOrganizationScope ? organizationData : workspaceData
-  const isLoading = isOrganizationScope ? organizationAnalyticsLoading : workspaceLoading
-  const isFetching = isOrganizationScope ? organizationFetching : workspaceFetching
-  const error = isOrganizationScope ? organizationError : workspaceError
-  const refetch = isOrganizationScope ? refetchOrganization : refetchWorkspace
+  const data = isUserScope ? userData : isOrganizationScope ? organizationData : workspaceData
+  const isLoading = isUserScope
+    ? userLoading
+    : isOrganizationScope
+      ? organizationAnalyticsLoading
+      : workspaceLoading
+  const isFetching = isUserScope
+    ? userFetching
+    : isOrganizationScope
+      ? organizationFetching
+      : workspaceFetching
+  const error = isUserScope ? userError : isOrganizationScope ? organizationError : workspaceError
+  const refetch = isUserScope
+    ? refetchUser
+    : isOrganizationScope
+      ? refetchOrganization
+      : refetchWorkspace
 
   const workspaceUserNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -835,25 +908,19 @@ export function Usage() {
     )
   }
 
-  if (!isWorkspaceAdmin) {
-    return (
-      <div className='px-6 py-8'>
-        <p className='text-[var(--text-secondary)] text-small'>
-          Workspace admin access is required to view usage analytics.
-        </p>
-      </div>
-    )
-  }
-
   const periodLabel = allTime
     ? 'All time'
     : data
       ? `${formatPeriodLabel(period)} · ${new Date(data.period.startTime).toLocaleDateString()} – ${new Date(data.period.endTime).toLocaleDateString()}`
       : formatPeriodLabel(period)
 
-  const emptyCopy = isOrganizationScope
-    ? 'No billing ledger entries were found across organization workspaces in the selected period. Workflow and mothership activity may still exist without cost rows.'
-    : 'No billing ledger entries were found for this workspace in the selected period. Workflow and mothership activity may still exist without cost rows.'
+  const emptyCopy = isUserScope
+    ? isUserAllWorkspaces
+      ? 'No billing ledger entries were found for your activity across membership workspaces in the selected period. Workflow and mothership activity may still exist without cost rows.'
+      : 'No billing ledger entries were found for your activity in this workspace in the selected period. Workflow and mothership activity may still exist without cost rows.'
+    : isOrganizationScope
+      ? 'No billing ledger entries were found across organization workspaces in the selected period. Workflow and mothership activity may still exist without cost rows.'
+      : 'No billing ledger entries were found for this workspace in the selected period. Workflow and mothership activity may still exist without cost rows.'
 
   return (
     <div className='flex h-full flex-col bg-[var(--bg)]'>
@@ -877,19 +944,24 @@ export function Usage() {
             </div>
 
             <div className='flex flex-wrap items-center gap-3'>
-              {canViewOrganizationUsage && (
+              {showScopeToggle && (
                 <ButtonGroup
                   value={effectiveScope}
                   onValueChange={(value) => {
                     const nextScope = value as UsageScope
                     void setUsageParams({
                       scope: nextScope,
-                      rootExecutionId: nextScope === 'organization' ? null : rootExecutionId,
-                      orgWorkspaceId: nextScope === 'workspace' ? null : orgWorkspaceId,
+                      rootExecutionId:
+                        nextScope === 'organization' ||
+                        (nextScope === 'user' && userWorkspaceId === USER_WORKSPACE_FILTER_ALL)
+                          ? null
+                          : rootExecutionId,
+                      orgWorkspaceId: nextScope === 'organization' ? orgWorkspaceId : null,
+                      userWorkspaceId: nextScope === 'user' ? userWorkspaceId : null,
                     })
                   }}
                 >
-                  {USAGE_SCOPES.map((scopeId) => (
+                  {availableScopes.map((scopeId) => (
                     <ButtonGroupItem key={scopeId} value={scopeId}>
                       {SCOPE_LABELS[scopeId]}
                     </ButtonGroupItem>
@@ -903,7 +975,9 @@ export function Usage() {
                   void setUsageParams({
                     tab: value as UsageTab,
                     rootExecutionId:
-                      value === 'mothership' || isOrganizationScope ? null : rootExecutionId,
+                      value === 'mothership' || isOrganizationScope || isUserAllWorkspaces
+                        ? null
+                        : rootExecutionId,
                   })
                 }
               >
@@ -913,6 +987,27 @@ export function Usage() {
                   </ButtonGroupItem>
                 ))}
               </ButtonGroup>
+
+              {isUserScope && (
+                <ChipSelect
+                  align='start'
+                  value={userWorkspaceSelectValue}
+                  onChange={(value) => {
+                    const nextFilter =
+                      value === USER_WORKSPACE_FILTER_CURRENT
+                        ? null
+                        : value === USER_WORKSPACE_FILTER_ALL
+                          ? USER_WORKSPACE_FILTER_ALL
+                          : value
+                    void setUsageParams({
+                      userWorkspaceId: nextFilter,
+                      rootExecutionId:
+                        nextFilter === USER_WORKSPACE_FILTER_ALL ? null : rootExecutionId,
+                    })
+                  }}
+                  options={userWorkspaceFilterOptions}
+                />
+              )}
 
               {isOrganizationScope && (
                 <ChipSelect
@@ -1009,7 +1104,19 @@ export function Usage() {
             </div>
           )}
 
-          {data && !isOrganizationScope && workspaceData && (
+          {data && isUserScope && userData && (
+            <UserUsageContent
+              data={userData}
+              tab={tab}
+              showByWorkspace={isUserAllWorkspaces}
+              lineageWorkspaceId={userLineageWorkspaceId}
+              rootExecutionId={rootExecutionId}
+              onSelectRoot={handleSelectRoot}
+              onClearDrillDown={handleClearDrillDown}
+            />
+          )}
+
+          {data && isWorkspaceScope && workspaceData && (
             <UsageDashboardContent
               workspaceId={workspaceId}
               data={workspaceData}
