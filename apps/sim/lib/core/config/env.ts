@@ -39,6 +39,7 @@ export const env = createEnv({
     ALLOWED_LOGIN_DOMAINS:                 z.string().optional(),                  // Comma-separated list of allowed email domains for login
     INTERNAL_USER_DOMAINS:                 z.string().optional(),                  // Comma-separated internal employee email domains (e.g. "thearena.ai"); used for isClientUser email fallback
     ADMIN_WORKSPACE_IDS:                   z.array(z.string()).optional(),         // Workspace IDs treated as admin workspaces (JSON array or comma-separated; used by isAdminWorkspace)
+    ZOOM_ADMIN_ORG_IDS:                    z.array(z.string()).optional(),         // Organization IDs allowed to configure/use Zoom Admin custom OAuth apps (JSON array or comma-separated)
     BLOCKED_SIGNUP_DOMAINS:                z.string().optional(),                  // Comma-separated list of email domains blocked from signing up (e.g., "gmail.com,yahoo.com")
     BLOCKED_EMAILS:                        z.string().optional(),                  // Comma-separated list of specific email addresses banned from the platform (signup, sign-in, executions)
     SIGNUP_MX_VALIDATION_ENABLED:          z.boolean().optional(),                 // Opt-in: validate the email's MX backend at signup (blocks no-MX domains and denylisted shared spam backends). Off by default; enable on hosted/abuse-targeted deployments.
@@ -122,6 +123,7 @@ export const env = createEnv({
 
      // Firecrawl
      FIRECRAWL_API_KEY:                     z.string().min(1).optional(),           // Firecrawl API key for web crawling
+     CONTEXT7_API_KEY:                      z.string().min(1).optional(),           // Context7 API key for library docs (search_library_docs)
      
     // Email & Communication
     EMAIL_VERIFICATION_ENABLED:            z.boolean().optional(),                 // Enable email verification for user registration and login (defaults to false)
@@ -446,10 +448,6 @@ export const env = createEnv({
     LINKEDIN_CLIENT_SECRET:                z.string().optional(),                  // LinkedIn OAuth client secret
     SHOPIFY_CLIENT_ID:                     z.string().optional(),                  // Shopify OAuth client ID
     SHOPIFY_CLIENT_SECRET:                 z.string().optional(),                  // Shopify OAuth client secret
-    ZOOM_CLIENT_ID:                        z.string().optional(),                  // Zoom OAuth client ID (user-managed / personal Zoom app)
-    ZOOM_CLIENT_SECRET:                    z.string().optional(),                  // Zoom OAuth client secret (user-managed app)
-    ZOOM_ADMIN_CLIENT_ID:                  z.string().optional(),                  // Zoom OAuth client ID for the admin/account-wide Zoom Marketplace app
-    ZOOM_ADMIN_CLIENT_SECRET:              z.string().optional(),                  // Zoom OAuth client secret for the admin app
     WORDPRESS_CLIENT_ID:                   z.string().optional(),                  // WordPress.com OAuth client ID
     WORDPRESS_CLIENT_SECRET:               z.string().optional(),                  // WordPress.com OAuth client secret
     SPOTIFY_CLIENT_ID:                     z.string().optional(),                  // Spotify OAuth client ID

@@ -15,6 +15,11 @@ import {
 import { client } from '@/lib/auth/auth-client'
 import { readOAuthReturnContext } from '@/lib/credentials/client-state'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
+import { requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
+import { environmentKeys } from '@/hooks/queries/environment'
+import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
+
+const OAUTH_CREDENTIALS_KEY = ['oauthCredentials'] as const
 
 const logger = createLogger('OAuthConnectionsQuery')
 
@@ -308,6 +313,23 @@ export function useConnectOAuthService() {
         return { success: true }
       }
 
+      if (requiresCustomOAuthApp(providerId)) {
+        const returnCtx = readOAuthReturnContext()
+        const workspaceId = returnCtx?.workspaceId
+        if (!workspaceId) {
+          throw new Error('Workspace context is required to connect this integration')
+        }
+        const url = new URL(`${origin}/api/auth/oauth2/custom/${providerId}/authorize`)
+        url.searchParams.set('workspaceId', workspaceId)
+        url.searchParams.set('returnUrl', callbackURL)
+        if (delegateToParent) {
+          postArenaV3OAuthNavigateToParent(url.toString())
+        } else {
+          window.location.href = url.toString()
+        }
+        return { success: true }
+      }
+
       if (providerId === 'unipile_linkedin') {
         const returnCtx = readOAuthReturnContext()
         const response = await fetch(`${origin}/api/auth/unipile/hosted/link`, {
@@ -418,6 +440,10 @@ export function useDisconnectOAuthService() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: oauthConnectionsKeys.connections() })
+      queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.details() })
+      queryClient.invalidateQueries({ queryKey: OAUTH_CREDENTIALS_KEY })
+      queryClient.invalidateQueries({ queryKey: environmentKeys.all })
     },
   })
 }

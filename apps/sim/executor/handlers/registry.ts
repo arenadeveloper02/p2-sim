@@ -7,6 +7,7 @@
 
 import { AgentBlockHandler } from '@/executor/handlers/agent/agent-handler'
 import { ApiBlockHandler } from '@/executor/handlers/api/api-handler'
+import { ChartGeneratorBlockHandler } from '@/executor/handlers/chart-generator/chart-generator-handler'
 import { ConditionBlockHandler } from '@/executor/handlers/condition/condition-handler'
 import { CostBlockHandler } from '@/executor/handlers/cost/cost-handler'
 import { CredentialBlockHandler } from '@/executor/handlers/credential/credential-handler'
@@ -46,6 +47,7 @@ export function createBlockHandlers(): BlockHandler[] {
     new WorkflowBlockHandler(),
     new WaitBlockHandler(),
     new EvaluatorBlockHandler(),
+    new ChartGeneratorBlockHandler(),
     new CredentialBlockHandler(),
     new CostBlockHandler(),
     new GenericBlockHandler(),

@@ -27,6 +27,7 @@ import { BrightDataBlock, BrightDataBlockMeta } from '@/blocks/blocks/brightdata
 import { BrowserUseBlock, BrowserUseBlockMeta } from '@/blocks/blocks/browser_use'
 import { CalComBlock, CalComBlockMeta } from '@/blocks/blocks/calcom'
 import { CalendlyBlock, CalendlyBlockMeta } from '@/blocks/blocks/calendly'
+import { ChartGeneratorBlock, ChartGeneratorBlockMeta } from '@/blocks/blocks/chart_generator'
 import { ChatTriggerBlock } from '@/blocks/blocks/chat_trigger'
 import { CirclebackBlock, CirclebackBlockMeta } from '@/blocks/blocks/circleback'
 import { ClayBlock, ClayBlockMeta } from '@/blocks/blocks/clay'
@@ -387,6 +388,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   browser_use: BrowserUseBlock,
   calcom: CalComBlock,
   calendly: CalendlyBlock,
+  chart_generator: ChartGeneratorBlock,
   chat_trigger: ChatTriggerBlock,
   circleback: CirclebackBlock,
   clay: ClayBlock,
@@ -711,6 +713,7 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   browser_use: BrowserUseBlockMeta,
   calcom: CalComBlockMeta,
   calendly: CalendlyBlockMeta,
+  chart_generator: ChartGeneratorBlockMeta,
   circleback: CirclebackBlockMeta,
   clay: ClayBlockMeta,
   clerk: ClerkBlockMeta,
