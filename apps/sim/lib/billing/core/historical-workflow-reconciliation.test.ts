@@ -102,6 +102,7 @@ import {
   analyzeTraceSpans,
   applyHistoricalReconciliation,
   aggregateShadowDeltaReview,
+  backfillModelBreakdownMetadata,
   buildHistoricalAdjustmentEntries,
   classifyExecutionEvidence,
   aggregateClassificationResults,
@@ -109,6 +110,8 @@ import {
   dryRunHistoricalWorkflowReprices,
   enrichTraceSpansForReprice,
   evaluateApplyRolloutGates,
+  HISTORICAL_BREAKDOWN_BACKFILL_VERSION,
+  inferHistoricalUsageMultiplier,
   HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE,
   HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY,
   HISTORICAL_RECONCILE_DEFAULT_EXECUTION_TIMEOUT_MS,
@@ -118,7 +121,9 @@ import {
   HISTORICAL_RECONCILE_ROLLOUT_STEPS,
   HISTORICAL_RECONCILE_VERSION,
   isReconcilePricedToolId,
+  modelBreakdownAlreadyPresent,
   parseHistoricalReconcileShadowRecord,
+  planModelBreakdownPatches,
   repairLedgerProjections,
   resolveShadowArtifactWorkspaceScope,
   shadowRecordHasPricedToolEvidence,
@@ -2357,6 +2362,7 @@ describe('rollout sequence', () => {
       'staging_shadow',
       'delta_review',
       'pilot_apply',
+      'backfill_breakdowns',
       'post_pilot_verify',
       'production_apply',
       'final_verify',
@@ -2377,5 +2383,293 @@ describe('rollout sequence', () => {
     const repair = HISTORICAL_RECONCILE_ROLLOUT_STEPS.find((step) => step.name === 'repair_projections')
     expect(repair?.command).toContain('--repair-projections')
     expect(repair?.command).toContain('--write')
+  })
+
+  it('includes metadata-only breakdown backfill after pilot apply', () => {
+    const step = HISTORICAL_RECONCILE_ROLLOUT_STEPS.find((item) => item.name === 'backfill_breakdowns')
+    expect(step?.command).toContain('--backfill-breakdowns')
+    expect(step?.command).toContain('--write')
+  })
+})
+
+describe('inferHistoricalUsageMultiplier', () => {
+  it('snaps billed/catalog ratios to 1x or 2x', () => {
+    expect(inferHistoricalUsageMultiplier(0.4049, 0.4049)).toBe(1)
+    expect(inferHistoricalUsageMultiplier(0.8098, 0.4049)).toBe(2)
+  })
+
+  it('returns null when the ratio is neither 1x nor 2x', () => {
+    expect(inferHistoricalUsageMultiplier(0.6, 0.4049)).toBeNull()
+  })
+})
+
+describe('planModelBreakdownPatches', () => {
+  function shadowRecord(
+    overrides: Partial<HistoricalReconcileShadowRecord> = {}
+  ): HistoricalReconcileShadowRecord {
+    return {
+      executionId: 'exec-1',
+      workflowId: 'wf-1',
+      workspaceId: 'ws-1',
+      startedAt: '2026-06-30T11:29:47.162Z',
+      status: 'completed',
+      ledgerSum: 0.8198,
+      ledgerLines: [
+        { category: 'model', description: 'gpt-5.5', cost: 0.8098 },
+        { category: 'fixed', description: 'execution_fee', cost: 0.01 },
+      ],
+      costTotal: 0.8198,
+      targetSum: 0.4099,
+      positiveDelta: 0,
+      negativeDelta: 0.4099,
+      confidence: 'medium',
+      applyEligible: false,
+      pricedToolScope: true,
+      primaryClass: 'cost_stripped_needs_reprice',
+      warnings: [],
+      blockers: [],
+      targets: [
+        {
+          category: 'fixed',
+          description: 'execution_fee',
+          target: 0.005,
+        },
+        {
+          category: 'model',
+          description: 'gpt-5.5',
+          target: 0.4049,
+          metadata: {
+            inputTokens: 100,
+            outputTokens: 20,
+            toolCost: 0.201,
+            embeddedToolCosts: { 'gemini-3.1-flash-image-preview': 0.201 },
+          },
+        },
+      ],
+      pricingMode: HISTORICAL_RECONCILE_PRICING_MODE,
+      ...overrides,
+    }
+  }
+
+  it('scales catalog breakdowns with inferred historical 2x multiplier', () => {
+    const { patches, skips } = planModelBreakdownPatches(shadowRecord())
+    expect(skips).toEqual([])
+    expect(patches).toHaveLength(1)
+    expect(patches[0]?.historicalMultiplier).toBe(2)
+    expect(patches[0]?.scale).toBe(2)
+    expect(patches[0]?.toolCost).toBeCloseTo(0.402, 8)
+    expect(patches[0]?.embeddedToolCosts).toEqual({
+      'gemini-3.1-flash-image-preview': 0.402,
+    })
+  })
+
+  it('keeps 1x when billed already matches catalog target', () => {
+    const { patches } = planModelBreakdownPatches(
+      shadowRecord({
+        ledgerSum: 0.4099,
+        ledgerLines: [
+          { category: 'model', description: 'gpt-5.5', cost: 0.4049 },
+          { category: 'fixed', description: 'execution_fee', cost: 0.005 },
+        ],
+        targetSum: 0.4099,
+        negativeDelta: 0,
+      })
+    )
+    expect(patches[0]?.historicalMultiplier).toBe(1)
+    expect(patches[0]?.scale).toBe(1)
+    expect(patches[0]?.toolCost).toBeCloseTo(0.201, 8)
+  })
+
+  it('skips when billed/catalog ratio is not 1x or 2x', () => {
+    const { patches, skips } = planModelBreakdownPatches(
+      shadowRecord({
+        ledgerLines: [
+          { category: 'model', description: 'gpt-5.5', cost: 0.6 },
+          { category: 'fixed', description: 'execution_fee', cost: 0.01 },
+        ],
+      })
+    )
+    expect(patches).toEqual([])
+    expect(skips[0]?.reason).toBe('ambiguous_multiplier')
+  })
+
+  it('skips out_of_scope records', () => {
+    const { patches, skips } = planModelBreakdownPatches(
+      shadowRecord({
+        pricedToolScope: false,
+        primaryClass: 'out_of_scope',
+        targets: [{ category: 'fixed', description: 'execution_fee', target: 0.005 }],
+      })
+    )
+    expect(patches).toEqual([])
+    expect(skips[0]?.reason).toBe('out_of_scope')
+  })
+})
+
+describe('modelBreakdownAlreadyPresent', () => {
+  it('detects equivalent embedded metadata', () => {
+    expect(
+      modelBreakdownAlreadyPresent({
+        existingMetadata: {
+          toolCost: 0.201,
+          embeddedToolCosts: { 'gpt-image-2': 0.201 },
+        },
+        toolCost: 0.201,
+        embeddedToolCosts: { 'gpt-image-2': 0.201 },
+      })
+    ).toBe(true)
+  })
+
+  it('returns false when embedded tools are missing', () => {
+    expect(
+      modelBreakdownAlreadyPresent({
+        existingMetadata: { inputTokens: 10, outputTokens: 5 },
+        toolCost: 0.201,
+        embeddedToolCosts: { 'gpt-image-2': 0.201 },
+      })
+    ).toBe(false)
+  })
+})
+
+describe('backfillModelBreakdownMetadata', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('dry-runs a metadata patch without changing cost columns', async () => {
+    mockSelect.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          {
+            id: 'ul-1',
+            cost: '0.8098',
+            metadata: { inputTokens: 10, outputTokens: 5 },
+          },
+        ]),
+      }),
+    })
+
+    const result = await backfillModelBreakdownMetadata(
+      [
+        {
+          executionId: 'exec-1',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+          startedAt: '2026-06-30T11:29:47.162Z',
+          status: 'completed',
+          ledgerSum: 0.8198,
+          ledgerLines: [
+            { category: 'model', description: 'gpt-5.5', cost: 0.8098 },
+            { category: 'fixed', description: 'execution_fee', cost: 0.01 },
+          ],
+          costTotal: 0.8198,
+          targetSum: 0.4099,
+          positiveDelta: 0,
+          negativeDelta: 0.4099,
+          confidence: 'medium',
+          applyEligible: false,
+          pricedToolScope: true,
+          primaryClass: 'cost_stripped_needs_reprice',
+          warnings: [],
+          blockers: [],
+          targets: [
+            {
+              category: 'model',
+              description: 'gpt-5.5',
+              target: 0.4049,
+              metadata: {
+                inputTokens: 10,
+                outputTokens: 5,
+                toolCost: 0.201,
+                embeddedToolCosts: { 'gemini-3.1-flash-image-preview': 0.201 },
+              },
+            },
+          ],
+          pricingMode: HISTORICAL_RECONCILE_PRICING_MODE,
+        },
+      ],
+      { dryRun: true }
+    )
+
+    expect(result.wouldPatch).toBe(1)
+    expect(result.patched).toBe(0)
+    expect(result.results[0]).toMatchObject({
+      status: 'would_patch',
+      usageLogId: 'ul-1',
+      toolCost: 0.402,
+    })
+    expect(mockUpdate).not.toHaveBeenCalled()
+  })
+
+  it('writes metadata only when dryRun is false', async () => {
+    mockSelect.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          {
+            id: 'ul-2',
+            cost: '0.4049',
+            metadata: { inputTokens: 10, outputTokens: 5 },
+          },
+        ]),
+      }),
+    })
+    const updateWhere = vi.fn().mockResolvedValue(undefined)
+    const updateSet = vi.fn().mockReturnValue({ where: updateWhere })
+    mockUpdate.mockReturnValue({ set: updateSet })
+
+    const result = await backfillModelBreakdownMetadata(
+      [
+        {
+          executionId: 'exec-2',
+          workflowId: 'wf-1',
+          workspaceId: 'ws-1',
+          startedAt: '2026-06-30T11:29:47.162Z',
+          status: 'completed',
+          ledgerSum: 0.4099,
+          ledgerLines: [
+            { category: 'model', description: 'gpt-5.5', cost: 0.4049 },
+            { category: 'fixed', description: 'execution_fee', cost: 0.005 },
+          ],
+          costTotal: 0.4099,
+          targetSum: 0.4099,
+          positiveDelta: 0,
+          negativeDelta: 0,
+          confidence: 'medium',
+          applyEligible: false,
+          pricedToolScope: true,
+          primaryClass: 'cost_stripped_needs_reprice',
+          warnings: [],
+          blockers: [],
+          targets: [
+            {
+              category: 'model',
+              description: 'gpt-5.5',
+              target: 0.4049,
+              metadata: {
+                inputTokens: 10,
+                outputTokens: 5,
+                toolCost: 0.201,
+                embeddedToolCosts: { 'gpt-image-2': 0.201 },
+              },
+            },
+          ],
+          pricingMode: HISTORICAL_RECONCILE_PRICING_MODE,
+        },
+      ],
+      { dryRun: false }
+    )
+
+    expect(result.patched).toBe(1)
+    expect(updateSet).toHaveBeenCalledWith({
+      metadata: expect.objectContaining({
+        inputTokens: 10,
+        outputTokens: 5,
+        toolCost: 0.201,
+        embeddedToolCosts: { 'gpt-image-2': 0.201 },
+        backfill: HISTORICAL_BREAKDOWN_BACKFILL_VERSION,
+        historicalMultiplier: 1,
+      }),
+    })
+    expect(updateWhere).toHaveBeenCalled()
   })
 })

@@ -7,6 +7,7 @@
  *   --repair-projections   Sync cost_total to workflow ledger sum (preview by default; --write to persist)
  *   --dry-run              Compute target ledger lines and export NDJSON shadow artifact
  *   --apply                Apply adjustments from a dry-run NDJSON artifact (gated rollout)
+ *   --backfill-breakdowns  Patch model usage_log metadata with toolCost/embeddedToolCosts from a shadow artifact (preview by default; --write to persist). Does not change costs.
  *   --verify               Verify cost_total equals workflow ledger projection (post-apply gate)
  *   --rollout-guide        Print the recommended ops rollout sequence
  *
@@ -19,12 +20,14 @@
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --dry-run --since=2020-01-01 --export=reconcile-shadow.ndjson --resume
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=100 --only-priced-tools
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production --only-priced-tools
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --backfill-breakdowns --input=reconcile-shadow.ndjson
+ *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --backfill-breakdowns --input=reconcile-shadow.ndjson --write --workspace-id=<id>
  *   bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --verify --workspace-id=<id> --batch-size=1000
  *
  * Flags:
  *   --only-priced-tools  Gate to allowlisted hosted/LLM-on-tool tools (default on)
  *   --all-tools          Disable the priced-tool allowlist gate
- *   --write              Persist projection repairs (required with --repair-projections to mutate)
+ *   --write              Persist projection repairs or breakdown backfills (required to mutate)
  *   --resume             With --dry-run --export: keep the existing NDJSON artifact, skip executions
  *                        already in it, and append new records (crash-safe restart)
  *   --execution-timeout-ms=<n>
@@ -43,6 +46,7 @@ import {
   aggregateShadowDeltaReview,
   applyHistoricalReconciliationBatch,
   auditHistoricalWorkflowExecutions,
+  backfillModelBreakdownMetadata,
   dryRunHistoricalWorkflowReprices,
   evaluateApplyRolloutGates,
   HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE,
@@ -66,6 +70,7 @@ interface Options {
   apply: boolean
   verify: boolean
   repairProjections: boolean
+  backfillBreakdowns: boolean
   write: boolean
   rolloutGuide: boolean
   reviewDeltas: boolean
@@ -110,6 +115,7 @@ function parseArgs(argv: string[]): Options {
   const apply = argv.includes('--apply')
   const verify = argv.includes('--verify')
   const repairProjections = argv.includes('--repair-projections')
+  const backfillBreakdowns = argv.includes('--backfill-breakdowns')
   const write = argv.includes('--write')
   const rolloutGuide = argv.includes('--rollout-guide')
   const reviewDeltas = argv.includes('--review-deltas')
@@ -144,6 +150,7 @@ function parseArgs(argv: string[]): Options {
     apply,
     verify,
     repairProjections,
+    backfillBreakdowns,
     write,
     rolloutGuide,
     reviewDeltas,
@@ -683,6 +690,96 @@ async function runApply(options: Options): Promise<number> {
   return batch.errors > 0 ? 1 : 0
 }
 
+async function runBackfillBreakdowns(options: Options): Promise<number> {
+  if (!options.inputPath) {
+    throw new Error('--backfill-breakdowns requires --input=<shadow-artifact.ndjson>')
+  }
+
+  const dryRun = !options.write
+  printFilterSummary(
+    options,
+    dryRun
+      ? 'Historical Model Breakdown Backfill (dry-run)'
+      : 'Historical Model Breakdown Backfill (write)'
+  )
+  console.log(`Input artifact: ${options.inputPath}`)
+  console.log(
+    `Mode: ${
+      dryRun
+        ? 'dry-run (pass --write to persist metadata only)'
+        : 'WRITE — patching usage_log.metadata only (costs unchanged)'
+    }\n`
+  )
+
+  const loaded = await loadHistoricalReconcileShadowArtifact(options.inputPath)
+  let records = loaded
+
+  if (options.workspaceId) {
+    records = records.filter((record) => record.workspaceId === options.workspaceId)
+  }
+  if (options.executionId) {
+    records = records.filter((record) => record.executionId === options.executionId)
+  }
+  if (options.workflowId) {
+    records = records.filter((record) => record.workflowId === options.workflowId)
+  }
+  if (options.limit != null && options.limit > 0) {
+    records = records.slice(0, options.limit)
+  }
+
+  console.log(`Loaded ${loaded.length} shadow record(s); scoped to ${records.length}`)
+
+  const result = await backfillModelBreakdownMetadata(records, { dryRun })
+
+  console.log('\n--- Breakdown backfill summary ---')
+  console.log(`Processed executions: ${result.processed}`)
+  console.log(`Would patch:          ${result.wouldPatch}`)
+  console.log(`Patched:              ${result.patched}${dryRun ? ' (dry-run — 0 writes)' : ''}`)
+  console.log(`Skipped:              ${result.skipped}`)
+  console.log(`Errors:               ${result.errors}`)
+
+  const actionable = result.results.filter(
+    (item) => item.status === 'would_patch' || item.status === 'patched'
+  )
+  if (actionable.length > 0) {
+    console.log('\n--- Patches ---')
+    for (const item of actionable.slice(0, 30)) {
+      const tools = item.embeddedToolCosts
+        ? Object.entries(item.embeddedToolCosts)
+            .map(([name, cost]) => `${name}=$${cost.toFixed(6)}`)
+            .join(', ')
+        : ''
+      console.log(
+        `  ${item.executionId.slice(0, 8)}… model=${item.modelDescription} toolCost=$${
+          item.toolCost?.toFixed(6) ?? '0'
+        } [${tools}] status=${item.status}`
+      )
+    }
+    if (actionable.length > 30) {
+      console.log(`  … and ${actionable.length - 30} more`)
+    }
+  }
+
+  const skipCounts = new Map<string, number>()
+  for (const skip of result.skips) {
+    skipCounts.set(skip.reason, (skipCounts.get(skip.reason) ?? 0) + 1)
+  }
+  if (skipCounts.size > 0) {
+    console.log('\n--- Skip reasons ---')
+    for (const [reason, count] of [...skipCounts.entries()].sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${reason}: ${count}`)
+    }
+  }
+
+  if (dryRun && result.wouldPatch > 0) {
+    console.log(
+      `\nPreview only. Re-run with --write to patch metadata on ${result.wouldPatch} model row(s).`
+    )
+  }
+
+  return result.errors > 0 ? 1 : 0
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
 
@@ -697,10 +794,11 @@ async function main() {
     options.apply,
     options.verify,
     options.repairProjections,
+    options.backfillBreakdowns,
   ].filter(Boolean).length
   if (modeCount > 1) {
     console.error(
-      'Use only one mode: --audit, --repair-projections, --dry-run, --apply, or --verify'
+      'Use only one mode: --audit, --repair-projections, --dry-run, --apply, --backfill-breakdowns, or --verify'
     )
     process.exit(1)
   }
@@ -710,16 +808,17 @@ async function main() {
     !options.dryRun &&
     !options.apply &&
     !options.verify &&
-    !options.repairProjections
+    !options.repairProjections &&
+    !options.backfillBreakdowns
   ) {
     console.error(
-      'No mode selected. Supported: --audit, --repair-projections, --dry-run, --apply, --verify, --rollout-guide'
+      'No mode selected. Supported: --audit, --repair-projections, --dry-run, --apply, --backfill-breakdowns, --verify, --rollout-guide'
     )
     process.exit(1)
   }
 
-  if (options.write && !options.repairProjections) {
-    console.error('--write is only valid with --repair-projections')
+  if (options.write && !options.repairProjections && !options.backfillBreakdowns) {
+    console.error('--write is only valid with --repair-projections or --backfill-breakdowns')
     process.exit(1)
   }
 
@@ -734,6 +833,8 @@ async function main() {
     exitCode = await runAudit(options)
   } else if (options.repairProjections) {
     exitCode = await runRepairProjections(options)
+  } else if (options.backfillBreakdowns) {
+    exitCode = await runBackfillBreakdowns(options)
   } else if (options.dryRun) {
     exitCode = await runDryRun(options)
   } else if (options.verify) {

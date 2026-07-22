@@ -14,6 +14,10 @@ WHERE usage_log.source = 'workflow'
 
 Agent-embedded tools remain folded into the model row as `toolCost` and `embeddedToolCosts`; the log detail and Usage analytics split them virtually. Do not create duplicate standalone tool ledger rows.
 
+When ledger **dollars are already correct** but model rows are missing `toolCost` / `embeddedToolCosts`, use `--backfill-breakdowns` (preview, then `--write`). That mode patches `usage_log.metadata` only — it never changes `cost`, `raw_cost`, `billable_cost`, or `cost_total`.
+
+Breakdown dollars are scaled by an inferred historical multiplier of **1× or 2×** (the only values Sim has used): each model line’s billed cost is matched to catalog COGS × `{1, 2}`. Live `USAGE_LOG_COST_MULTIPLIER` does not need to match history. Ratios that are not close to 1 or 2 are skipped as `ambiguous_multiplier`.
+
 ## Current baseline
 
 The initial full-history audit found:
@@ -278,6 +282,28 @@ Expected change:
 - repeat of the same artifact is idempotent.
 
 Do not use production apply until the implementation supports the approved correction policy for negative deltas, BYOK evidence, artifact staleness, and historical billing attribution.
+
+## Step 5b: backfill tool breakdowns (metadata only)
+
+When apply reports `not_apply_eligible` because totals already match, but Log detail / Usage still lack the image (or other embedded) tool split, patch metadata from the same shadow artifact:
+
+```bash
+# Preview
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --backfill-breakdowns --input=reconcile-workspace.ndjson \
+  --workspace-id=<workspace-id>
+
+# Persist metadata only (costs unchanged)
+bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts \
+  --backfill-breakdowns --input=reconcile-workspace.ndjson \
+  --workspace-id=<workspace-id> --write
+```
+
+Expected change:
+
+- model `usage_log.metadata.toolCost` + `embeddedToolCosts` populated (scaled to the billed model line);
+- `usage_log.cost` / `raw_cost` / `billable_cost` and `cost_total` unchanged;
+- idempotent when the breakdown is already present.
 
 ## Step 6: verify the pilot
 

@@ -3233,6 +3233,14 @@ export const HISTORICAL_RECONCILE_ROLLOUT_STEPS: HistoricalReconcileRolloutStep[
   },
   {
     step: 7,
+    name: 'backfill_breakdowns',
+    description:
+      'When totals are already correct but model rows lack toolCost/embeddedToolCosts, patch usage_log.metadata only (preview, then --write). Does not change costs.',
+    command:
+      'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --backfill-breakdowns --input=reconcile-shadow.ndjson --write --workspace-id=<workspace-id>',
+  },
+  {
+    step: 8,
     name: 'post_pilot_verify',
     description:
       'Re-run drift audit and ledger projection verification for the pilot workspace.',
@@ -3240,7 +3248,7 @@ export const HISTORICAL_RECONCILE_ROLLOUT_STEPS: HistoricalReconcileRolloutStep[
       'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --verify --workspace-id=<workspace-id> --batch-size=1000',
   },
   {
-    step: 8,
+    step: 9,
     name: 'production_apply',
     description:
       'Apply in small production batches only after pilot verification passes.',
@@ -3248,7 +3256,7 @@ export const HISTORICAL_RECONCILE_ROLLOUT_STEPS: HistoricalReconcileRolloutStep[
       'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production --only-priced-tools',
   },
   {
-    step: 9,
+    step: 10,
     name: 'final_verify',
     description: 'Confirm cost_total equals workflow ledger sums after the full rollout.',
     command:
@@ -3668,6 +3676,481 @@ export async function repairLedgerProjections(
     failed,
     failures,
     pages,
+  }
+}
+
+/** Provenance stamp written onto patched model `usage_log.metadata`. */
+export const HISTORICAL_BREAKDOWN_BACKFILL_VERSION = 'historical-breakdown-v1'
+
+/**
+ * Only multipliers Sim has ever used for `USAGE_LOG_COST_MULTIPLIER` /
+ * `COST_MULTIPLIER`. Breakdown backfill snaps billed/catalog ratios to these.
+ */
+export const HISTORICAL_USAGE_MULTIPLIER_CANDIDATES = [1, 2] as const
+
+export type HistoricalUsageMultiplier = (typeof HISTORICAL_USAGE_MULTIPLIER_CANDIDATES)[number]
+
+/** Relative tolerance when matching billed model cost to catalog × {1, 2}. */
+export const HISTORICAL_MULTIPLIER_MATCH_RELATIVE_TOLERANCE = 0.02
+
+export interface ModelBreakdownPatchPlan {
+  executionId: string
+  workspaceId: string
+  workflowId: string | null
+  modelDescription: string
+  billedModelCost: number
+  targetModelCost: number
+  /** Inferred historical billable multiplier (`1` or `2`). */
+  historicalMultiplier: HistoricalUsageMultiplier
+  scale: number
+  toolCost: number
+  embeddedToolCosts: Record<string, number>
+}
+
+export type ModelBreakdownSkipReason =
+  | 'out_of_scope'
+  | 'no_model_breakdown_target'
+  | 'no_model_ledger_line'
+  | 'zero_target_model_cost'
+  | 'ambiguous_multiplier'
+  | 'tool_cost_exceeds_model'
+  | 'already_present'
+
+export interface ModelBreakdownSkip {
+  executionId: string
+  modelDescription?: string
+  reason: ModelBreakdownSkipReason
+}
+
+export interface ModelBreakdownBackfillResult {
+  executionId: string
+  modelDescription: string
+  status: 'patched' | 'would_patch' | 'skipped' | 'error'
+  reason?: string
+  usageLogId?: string
+  historicalMultiplier?: HistoricalUsageMultiplier
+  toolCost?: number
+  embeddedToolCosts?: Record<string, number>
+}
+
+export interface ModelBreakdownBackfillBatchResult {
+  dryRun: boolean
+  processed: number
+  patched: number
+  wouldPatch: number
+  skipped: number
+  errors: number
+  results: ModelBreakdownBackfillResult[]
+  skips: ModelBreakdownSkip[]
+}
+
+function readTargetToolCost(metadata: UsageLogMetadata | undefined): number {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return 0
+  const toolCost = (metadata as { toolCost?: unknown }).toolCost
+  return typeof toolCost === 'number' && Number.isFinite(toolCost) && toolCost > 0 ? toolCost : 0
+}
+
+function readTargetEmbeddedToolCosts(
+  metadata: UsageLogMetadata | undefined
+): Record<string, number> {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {}
+  const raw = (metadata as { embeddedToolCosts?: unknown }).embeddedToolCosts
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: Record<string, number> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      out[key] = value
+    }
+  }
+  return out
+}
+
+function scaleEmbeddedToolCosts(
+  embedded: Record<string, number>,
+  scale: number
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [key, value] of Object.entries(embedded)) {
+    const scaled = Number.parseFloat((value * scale).toFixed(8))
+    if (scaled > 0) out[key] = scaled
+  }
+  return out
+}
+
+function embeddedBreakdownMatches(
+  existing: Record<string, number>,
+  next: Record<string, number>
+): boolean {
+  const existingKeys = Object.keys(existing)
+  const nextKeys = Object.keys(next)
+  if (existingKeys.length === 0 || nextKeys.length === 0) return false
+  if (existingKeys.length !== nextKeys.length) return false
+  for (const key of nextKeys) {
+    const left = existing[key]
+    const right = next[key]
+    if (typeof left !== 'number' || Math.abs(left - right) > RECONCILIATION_EPSILON) {
+      return false
+    }
+  }
+  return true
+}
+
+/**
+ * Infers whether a model ledger line was billed under historical multiplier 1×
+ * or 2× by comparing billed dollars to the catalog COGS target.
+ * Returns null when the ratio is not close to either candidate.
+ */
+export function inferHistoricalUsageMultiplier(
+  billedModelCost: number,
+  catalogTargetCost: number
+): HistoricalUsageMultiplier | null {
+  if (!(billedModelCost > 0) || !(catalogTargetCost > 0)) return null
+
+  let best: HistoricalUsageMultiplier | null = null
+  let bestError = Number.POSITIVE_INFINITY
+
+  for (const candidate of HISTORICAL_USAGE_MULTIPLIER_CANDIDATES) {
+    const expected = catalogTargetCost * candidate
+    const error = Math.abs(billedModelCost - expected)
+    const tolerance = Math.max(
+      RECONCILIATION_EPSILON,
+      expected * HISTORICAL_MULTIPLIER_MATCH_RELATIVE_TOLERANCE
+    )
+    if (error <= tolerance && error < bestError) {
+      best = candidate
+      bestError = error
+    }
+  }
+
+  return best
+}
+
+/**
+ * True when existing model metadata already carries an equivalent embedded
+ * tool breakdown (so a metadata-only backfill would be a no-op).
+ */
+export function modelBreakdownAlreadyPresent(params: {
+  existingMetadata: unknown
+  toolCost: number
+  embeddedToolCosts: Record<string, number>
+}): boolean {
+  const existing =
+    params.existingMetadata &&
+    typeof params.existingMetadata === 'object' &&
+    !Array.isArray(params.existingMetadata)
+      ? (params.existingMetadata as Record<string, unknown>)
+      : null
+  if (!existing) return false
+
+  const existingToolCost =
+    typeof existing.toolCost === 'number' && Number.isFinite(existing.toolCost)
+      ? existing.toolCost
+      : 0
+  const existingEmbedded = readTargetEmbeddedToolCosts(existing)
+
+  if (Object.keys(params.embeddedToolCosts).length === 0) return false
+  if (!embeddedBreakdownMatches(existingEmbedded, params.embeddedToolCosts)) return false
+  if (params.toolCost > 0 && existingToolCost > 0) {
+    return Math.abs(existingToolCost - params.toolCost) <= RECONCILIATION_EPSILON
+  }
+  return existingToolCost > 0 || Object.keys(existingEmbedded).length > 0
+}
+
+/**
+ * Plans metadata-only model breakdown patches from a shadow reprice record.
+ * Catalog COGS breakdowns are scaled by an inferred historical multiplier of
+ * **1× or 2×** (the only values Sim has used) so virtual splits match
+ * `usage_log.cost` without requiring the live env multiplier to match history.
+ *
+ * Does not change ledger dollars — only proposes `toolCost` / `embeddedToolCosts`.
+ */
+export function planModelBreakdownPatches(record: HistoricalReconcileShadowRecord): {
+  patches: ModelBreakdownPatchPlan[]
+  skips: ModelBreakdownSkip[]
+} {
+  const patches: ModelBreakdownPatchPlan[] = []
+  const skips: ModelBreakdownSkip[] = []
+
+  if (record.primaryClass === 'out_of_scope' || !record.pricedToolScope) {
+    skips.push({ executionId: record.executionId, reason: 'out_of_scope' })
+    return { patches, skips }
+  }
+
+  const modelTargets = record.targets.filter(
+    (line) =>
+      line.category === 'model' &&
+      (readTargetToolCost(line.metadata) > 0 ||
+        Object.keys(readTargetEmbeddedToolCosts(line.metadata)).length > 0)
+  )
+
+  if (modelTargets.length === 0) {
+    skips.push({ executionId: record.executionId, reason: 'no_model_breakdown_target' })
+    return { patches, skips }
+  }
+
+  for (const target of modelTargets) {
+    const billedModelCost =
+      record.ledgerLines.find(
+        (line) => line.category === 'model' && line.description === target.description
+      )?.cost ?? 0
+
+    if (!(billedModelCost > RECONCILIATION_EPSILON)) {
+      skips.push({
+        executionId: record.executionId,
+        modelDescription: target.description,
+        reason: 'no_model_ledger_line',
+      })
+      continue
+    }
+
+    if (!(target.target > RECONCILIATION_EPSILON)) {
+      skips.push({
+        executionId: record.executionId,
+        modelDescription: target.description,
+        reason: 'zero_target_model_cost',
+      })
+      continue
+    }
+
+    const historicalMultiplier = inferHistoricalUsageMultiplier(billedModelCost, target.target)
+    if (historicalMultiplier == null) {
+      skips.push({
+        executionId: record.executionId,
+        modelDescription: target.description,
+        reason: 'ambiguous_multiplier',
+      })
+      continue
+    }
+
+    const scale = historicalMultiplier
+    const rawToolCost = readTargetToolCost(target.metadata)
+    const rawEmbedded = readTargetEmbeddedToolCosts(target.metadata)
+    const toolCost = Number.parseFloat((rawToolCost * scale).toFixed(8))
+    const embeddedToolCosts = scaleEmbeddedToolCosts(rawEmbedded, scale)
+
+    if (toolCost > billedModelCost + RECONCILIATION_EPSILON) {
+      skips.push({
+        executionId: record.executionId,
+        modelDescription: target.description,
+        reason: 'tool_cost_exceeds_model',
+      })
+      continue
+    }
+
+    if (Object.keys(embeddedToolCosts).length === 0 && !(toolCost > 0)) {
+      skips.push({
+        executionId: record.executionId,
+        modelDescription: target.description,
+        reason: 'no_model_breakdown_target',
+      })
+      continue
+    }
+
+    patches.push({
+      executionId: record.executionId,
+      workspaceId: record.workspaceId,
+      workflowId: record.workflowId,
+      modelDescription: target.description,
+      billedModelCost,
+      targetModelCost: target.target,
+      historicalMultiplier,
+      scale,
+      toolCost,
+      embeddedToolCosts,
+    })
+  }
+
+  return { patches, skips }
+}
+
+async function loadWorkflowModelUsageRows(params: {
+  executionId: string
+  modelDescription: string
+}): Promise<Array<{ id: string; cost: string; metadata: unknown }>> {
+  return db
+    .select({
+      id: usageLog.id,
+      cost: usageLog.cost,
+      metadata: usageLog.metadata,
+    })
+    .from(usageLog)
+    .where(
+      and(
+        eq(usageLog.executionId, params.executionId),
+        eq(usageLog.source, 'workflow'),
+        eq(usageLog.category, 'model'),
+        eq(usageLog.description, params.modelDescription)
+      )
+    )
+}
+
+/**
+ * Applies metadata-only embedded-tool breakdowns from shadow records onto
+ * existing workflow model `usage_log` rows. Never changes `cost` / `raw_cost` /
+ * `billable_cost` or `workflow_execution_logs.cost_total`.
+ *
+ * Defaults to dry-run; pass `{ dryRun: false }` (CLI `--write`) to persist.
+ */
+export async function backfillModelBreakdownMetadata(
+  records: HistoricalReconcileShadowRecord[],
+  options: { dryRun?: boolean } = {}
+): Promise<ModelBreakdownBackfillBatchResult> {
+  const dryRun = options.dryRun !== false
+  const results: ModelBreakdownBackfillResult[] = []
+  const skips: ModelBreakdownSkip[] = []
+  let patched = 0
+  let wouldPatch = 0
+  let skipped = 0
+  let errors = 0
+
+  for (const record of records) {
+    const planned = planModelBreakdownPatches(record)
+    skips.push(...planned.skips)
+    skipped += planned.skips.length
+
+    for (const patch of planned.patches) {
+      try {
+        const rows = await withReconcileDbRetry(
+          () =>
+            loadWorkflowModelUsageRows({
+              executionId: patch.executionId,
+              modelDescription: patch.modelDescription,
+            }),
+          {
+            operation: 'loadWorkflowModelUsageRows',
+            executionId: patch.executionId,
+            modelDescription: patch.modelDescription,
+          }
+        )
+
+        if (rows.length === 0) {
+          skipped += 1
+          skips.push({
+            executionId: patch.executionId,
+            modelDescription: patch.modelDescription,
+            reason: 'no_model_ledger_line',
+          })
+          results.push({
+            executionId: patch.executionId,
+            modelDescription: patch.modelDescription,
+            status: 'skipped',
+            reason: 'no_model_ledger_line',
+          })
+          continue
+        }
+
+        const primary = [...rows].sort(
+          (left, right) => parseDecimal(right.cost) - parseDecimal(left.cost)
+        )[0]!
+
+        if (
+          modelBreakdownAlreadyPresent({
+            existingMetadata: primary.metadata,
+            toolCost: patch.toolCost,
+            embeddedToolCosts: patch.embeddedToolCosts,
+          })
+        ) {
+          skipped += 1
+          skips.push({
+            executionId: patch.executionId,
+            modelDescription: patch.modelDescription,
+            reason: 'already_present',
+          })
+          results.push({
+            executionId: patch.executionId,
+            modelDescription: patch.modelDescription,
+            status: 'skipped',
+            reason: 'already_present',
+            usageLogId: primary.id,
+          })
+          continue
+        }
+
+        const existing =
+          primary.metadata &&
+          typeof primary.metadata === 'object' &&
+          !Array.isArray(primary.metadata)
+            ? (primary.metadata as Record<string, unknown>)
+            : {}
+
+        const nextMetadata = {
+          ...existing,
+          ...(typeof existing.inputTokens === 'number'
+            ? { inputTokens: existing.inputTokens }
+            : {}),
+          ...(typeof existing.outputTokens === 'number'
+            ? { outputTokens: existing.outputTokens }
+            : {}),
+          toolCost: patch.toolCost,
+          embeddedToolCosts: patch.embeddedToolCosts,
+          backfill: HISTORICAL_BREAKDOWN_BACKFILL_VERSION,
+          historicalMultiplier: patch.historicalMultiplier,
+        }
+
+        if (dryRun) {
+          wouldPatch += 1
+          results.push({
+            executionId: patch.executionId,
+            modelDescription: patch.modelDescription,
+            status: 'would_patch',
+            usageLogId: primary.id,
+            historicalMultiplier: patch.historicalMultiplier,
+            toolCost: patch.toolCost,
+            embeddedToolCosts: patch.embeddedToolCosts,
+          })
+          continue
+        }
+
+        await withReconcileDbRetry(
+          async () => {
+            await db
+              .update(usageLog)
+              .set({ metadata: nextMetadata })
+              .where(eq(usageLog.id, primary.id))
+          },
+          {
+            operation: 'backfillModelBreakdownMetadata',
+            executionId: patch.executionId,
+            usageLogId: primary.id,
+          }
+        )
+
+        patched += 1
+        results.push({
+          executionId: patch.executionId,
+          modelDescription: patch.modelDescription,
+          status: 'patched',
+          usageLogId: primary.id,
+          historicalMultiplier: patch.historicalMultiplier,
+          toolCost: patch.toolCost,
+          embeddedToolCosts: patch.embeddedToolCosts,
+        })
+      } catch (error) {
+        errors += 1
+        results.push({
+          executionId: patch.executionId,
+          modelDescription: patch.modelDescription,
+          status: 'error',
+          reason: getErrorMessage(error, 'breakdown_backfill_failed'),
+        })
+        logger.warn('Failed to backfill model breakdown metadata', {
+          executionId: patch.executionId,
+          modelDescription: patch.modelDescription,
+          error: getErrorMessage(error),
+        })
+      }
+    }
+  }
+
+  return {
+    dryRun,
+    processed: records.length,
+    patched,
+    wouldPatch,
+    skipped,
+    errors,
+    results,
+    skips,
   }
 }
 
