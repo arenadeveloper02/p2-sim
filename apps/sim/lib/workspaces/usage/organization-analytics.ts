@@ -28,6 +28,7 @@ import {
   buildLedgerJoinConditions,
   chargeTypeExpr,
   coerceToDate,
+  densifyTimeSeries,
   EMPTY_USAGE_METRICS,
   executionBucketExpr,
   isHumanActorCondition,
@@ -795,7 +796,7 @@ export async function getOrganizationUsageAnalytics(
       }
     }
 
-    timeSeries.sort((a, b) => a.bucketStart.localeCompare(b.bucketStart))
+    const densifiedTimeSeries = densifyTimeSeries(timeSeries, period, useHourlyBuckets)
 
     const periodActiveUserCount = activeUserPeriodRows[0]?.activeUserCount ?? 0
 
@@ -1049,7 +1050,7 @@ export async function getOrganizationUsageAnalytics(
           count: row.count,
         }))
       ),
-      timeSeries,
+      timeSeries: densifiedTimeSeries,
       lineage: {
         roots: lineageRootRows
           .filter(

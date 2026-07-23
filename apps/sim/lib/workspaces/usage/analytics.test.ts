@@ -566,7 +566,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     expect(chargeTypeTotal).toBeCloseTo(analytics.summary.billableCost, 8)
   })
 
-  it('merges active-user buckets into timeSeries and exposes period total', async () => {
+  it('merges active-user buckets into timeSeries and densifies the full period', async () => {
     wireTerminalQueue(
       buildAnalyticsQueue({
         3: ATTRIBUTION_OK,
@@ -612,10 +612,12 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
 
     const analytics = await getWorkspaceUsageAnalytics({
       workspaceId: WORKSPACE_ID,
-      period: '30d',
+      startTime: '2026-07-01T00:00:00.000Z',
+      endTime: '2026-07-05T12:00:00.000Z',
     })
 
     expect(analytics.summary.activeUserCount).toBe(4)
+    expect(analytics.timeSeries).toHaveLength(5)
     expect(analytics.timeSeries).toEqual([
       expect.objectContaining({
         bucketStart: '2026-07-01T00:00:00.000Z',
@@ -634,6 +636,18 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         billableCost: 0,
         executionCount: 0,
         activeUserCount: 2,
+      }),
+      expect.objectContaining({
+        bucketStart: '2026-07-04T00:00:00.000Z',
+        billableCost: 0,
+        executionCount: 0,
+        activeUserCount: 0,
+      }),
+      expect.objectContaining({
+        bucketStart: '2026-07-05T00:00:00.000Z',
+        billableCost: 0,
+        executionCount: 0,
+        activeUserCount: 0,
       }),
     ])
   })

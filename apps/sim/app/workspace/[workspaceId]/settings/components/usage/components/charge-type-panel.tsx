@@ -39,10 +39,20 @@ export function ChargeTypePanel({ byChargeType, totalBillableCost }: ChargeTypeP
   if (byChargeType.length === 0) return null
 
   return (
-    <SettingsSection label='Cost composition'>
+    <SettingsSection
+      label='Cost composition'
+      action={
+        <div className='flex items-baseline gap-2'>
+          <span className='text-[var(--text-muted)] text-small'>Total Credits</span>
+          <span className='font-medium text-[var(--text-primary)] text-small tabular-nums'>
+            {formatBillableWithCredits(totalBillableCost)}
+          </span>
+        </div>
+      }
+    >
       <p className='mb-4 text-[var(--text-secondary)] text-small'>
-        How the {formatBillableWithCredits(totalBillableCost)} total breaks down — base run fee, model
-        inference, hosted tools (including agent-embedded tools), and Cost-block pass-through.
+        How total credits break down — base run fee, model inference, hosted tools (including
+        agent-embedded tools), and Cost-block pass-through.
       </p>
       <div className='mb-6'>
         <CostShareBars rows={chartRows} emptyMessage='No charge-type data for this period.' />

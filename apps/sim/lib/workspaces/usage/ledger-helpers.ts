@@ -321,6 +321,72 @@ export function executionBucketExpr(useHourly: boolean) {
     : sql`date_trunc('day', ${workflowExecutionLogs.startedAt})`
 }
 
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+
+/** Usage dashboard time-series point shared by workspace and org analytics. */
+export interface UsageTimeSeriesBucket {
+  bucketStart: string
+  billableCost: number
+  rawCost: number
+  executionCount: number
+  activeUserCount: number
+  usage: UsageMetrics
+}
+
+/** Truncates a timestamp to the UTC hour or day boundary used by `date_trunc`. */
+export function truncateToBucketStart(date: Date, useHourly: boolean): Date {
+  const truncated = new Date(date.getTime())
+  if (useHourly) {
+    truncated.setUTCMinutes(0, 0, 0)
+  } else {
+    truncated.setUTCHours(0, 0, 0, 0)
+  }
+  return truncated
+}
+
+/**
+ * Fills zero-valued buckets across `[period.start, period.end]` so Cost & activity
+ * and Active users charts span the selected window even when usage is sparse.
+ */
+export function densifyTimeSeries(
+  buckets: UsageTimeSeriesBucket[],
+  period: ResolvedPeriod,
+  useHourly: boolean
+): UsageTimeSeriesBucket[] {
+  const byStart = new Map(buckets.map((bucket) => [bucket.bucketStart, bucket]))
+  const stepMs = useHourly ? HOUR_MS : DAY_MS
+  const cursor = truncateToBucketStart(ensurePeriodDate(period.start), useHourly)
+  const endMs = ensurePeriodDate(period.end).getTime()
+
+  const densified: UsageTimeSeriesBucket[] = []
+  for (let t = cursor.getTime(); t <= endMs; t += stepMs) {
+    const bucketStart = new Date(t).toISOString()
+    const existing = byStart.get(bucketStart)
+    if (existing) {
+      densified.push(existing)
+      byStart.delete(bucketStart)
+    } else {
+      densified.push({
+        bucketStart,
+        billableCost: 0,
+        rawCost: 0,
+        executionCount: 0,
+        activeUserCount: 0,
+        usage: { ...EMPTY_USAGE_METRICS },
+      })
+    }
+  }
+
+  // Preserve any buckets that did not land on the UTC truncation grid.
+  for (const leftover of byStart.values()) {
+    densified.push(leftover)
+  }
+
+  densified.sort((a, b) => a.bucketStart.localeCompare(b.bucketStart))
+  return densified
+}
+
 export function parseActorType(value: string | null | undefined) {
   if (!value) return null
   const parsed = usageActorTypeSchema.safeParse(value)
