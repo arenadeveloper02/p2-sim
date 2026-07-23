@@ -411,7 +411,7 @@ export async function runLocalCopilotMothershipLifecycle(
     context.billingModel = billingModel
 
     // Include usage for traces; omit cost so `/api/billing/update-cost` does not
-    // double-bill — Local already writes usage_log via recordModelUsage per round.
+    // double-bill — Local already writes usage_log via recordLocalCopilotTurnUsage once per turn.
     const completePayload: {
       status: typeof status
       usage?: {

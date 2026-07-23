@@ -454,6 +454,7 @@ export async function* runLocalCopilotAgent(
       workspaceId: params.workspaceId,
       ...(params.workflowId ? { workflowId: params.workflowId } : {}),
       usageTurnId,
+      turnCost,
       getToolExecutor,
     })
 
@@ -491,6 +492,7 @@ export async function* runLocalCopilotAgent(
         workspaceId: params.workspaceId,
         ...(params.workflowId ? { workflowId: params.workflowId } : {}),
         usageTurnId,
+        turnCost,
         getToolExecutor,
       })
 
@@ -862,7 +864,7 @@ export async function* runLocalCopilotAgent(
       chatId: params.chatId,
       runId: params.runId,
       conversationId: conversationId ?? undefined,
-      messageId: turnMessageId,
+      messageId: usageTurnId,
       summary: costSummary,
       executionActor: { actorUserId: params.userId, actorType: 'user' },
       parentExecutionId: params.parentExecutionId,
@@ -874,7 +876,7 @@ export async function* runLocalCopilotAgent(
 
   yield {
     type: 'done',
-    messageId: messageId || turnMessageId,
+    messageId: messageId || usageTurnId,
     ...(turnInputTokens > 0 || turnOutputTokens > 0
       ? {
           usage: {

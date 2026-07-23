@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
+import { truncate } from '@sim/utils/string'
 import {
   domainSystemHint,
   filterToolsByNames,
@@ -8,6 +8,7 @@ import {
   type LocalCopilotSpecialistDomain,
 } from '@/local-copilot/lib/agent/specialists/domains'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
+import type { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
 import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
@@ -16,7 +17,6 @@ import {
   sortToolCallsForExecution,
 } from '@/local-copilot/lib/tools/format-tool-result'
 import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
-import { truncate } from '@sim/utils/string'
 
 const logger = createLogger('LocalCopilotSpecialistPass')
 
@@ -38,6 +38,11 @@ export interface RunSpecialistPassParams {
   workspaceId: string
   workflowId?: string
   usageTurnId: string
+  /**
+   * Shared with the parent turn so specialist model/tool cost flushes once via
+   * `recordLocalCopilotTurnUsage` with chatId / runId / message-scoped keys.
+   */
+  turnCost: LocalTurnCostAccumulator
   getToolExecutor: () => Promise<typeof import('@/local-copilot/lib/tools/executor')>
 }
 
@@ -115,21 +120,19 @@ export async function executeSpecialistLoop(
     }
 
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
-      await recordModelUsage({
-        userId: params.userId,
-        workspaceId: params.workspaceId,
-        workflowId: params.workflowId,
+      // Accumulate into the parent turn ledger — do not call recordModelUsage
+      // here (that writes null chat_id rows and can double-count vs end-of-turn).
+      params.turnCost.addModelUsage({
         model: params.model,
         inputTokens: roundInputTokens,
         outputTokens: roundOutputTokens,
-        source: 'copilot',
-        sourceReference: `local-copilot:${params.usageTurnId}:specialist-${params.domain}-${round}`,
       })
     }
 
     logger.info('Arena Copilot specialist round finished', {
       domain: params.domain,
       round,
+      usageTurnId: params.usageTurnId,
       toolCallCount: pendingToolCalls.length,
       toolNames: pendingToolCalls.map((call) => call.name),
       memory: getLocalCopilotMemorySnapshot(),
@@ -190,6 +193,11 @@ export async function executeSpecialistLoop(
         output: toolResult.result,
         ...(toolResult.error ? { error: toolResult.error } : {}),
         ...(toolResult.resources?.length ? { resources: toolResult.resources } : {}),
+      })
+
+      params.turnCost.addToolBilling({
+        toolName: call.name,
+        billing: toolResult.billing,
       })
 
       const llmPayload = formatToolResultForLlm(call.name, toolResult.result ?? toolResult.error)
