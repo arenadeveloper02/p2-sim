@@ -30,7 +30,10 @@ import {
   SUPPORTED_IMAGE_EXTENSIONS,
   validateFileType,
 } from '@/lib/uploads/utils/validation'
-import { getUserEntityPermissions, isOrganizationAdminOrOwner } from '@/lib/workspaces/permissions/utils'
+import {
+  getUserEntityPermissions,
+  isOrganizationAdminOrOwner,
+} from '@/lib/workspaces/permissions/utils'
 import { createErrorResponse, InvalidRequestError } from '@/app/api/files/utils'
 import {
   IMAGE_FUSION_ALLOWED_EXTENSIONS,

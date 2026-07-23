@@ -1,6 +1,5 @@
 'use client'
 
-import { Button } from '@sim/emcn'
 import {
   type Dispatch,
   memo,
@@ -12,12 +11,15 @@ import {
   useState,
 } from 'react'
 import { ArrowDown, MessageCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
+import {
+  DEPLOYED_CHAT_CANVAS_GRADIENT,
+  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
+  DEPLOYED_CHAT_TEXT_BODY,
+  DEPLOYED_CHAT_TEXT_MUTED,
+} from '@/app/(interfaces)/chat/constants'
 import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClientChatMessage'
-
-// import {
-//   type ChatMessage,
-//   ClientChatMessage,
-// } from '@/app/(interfaces)/chat/components/message/message'
 
 interface ChatMessageContainerProps {
   messages: ChatMessage[]
@@ -53,6 +55,8 @@ interface ChatMessageContainerProps {
   selectedGeneratedImageIdsKey?: string
   /** When welcome message query chips are clicked, trigger execution with this query */
   onWelcomeQueryClick?: (text: string) => void
+  /** Regenerate the last assistant response */
+  onRegenerateMessage?: () => void
 }
 
 export const ChatMessageContainer = memo(function ChatMessageContainer({
@@ -72,8 +76,8 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   selectedGeneratedImageIds,
   selectedGeneratedImageIdsKey,
   onWelcomeQueryClick,
+  onRegenerateMessage,
 }: ChatMessageContainerProps) {
-  const loadingLabel = isStreaming ? 'Fetching' : 'Thinking'
   const [selectionTip, setSelectionTip] = useState<{
     text: string
     top: number
@@ -167,7 +171,10 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   }, [selectionTip])
 
   return (
-    <div className='relative flex flex-1 flex-col overflow-hidden bg-white'>
+    <div
+      className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden'
+      style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
+    >
       {/* "Ask this in chat" tip - fixed near selection */}
       {selectionTip && onAskInChat && (
         <button
@@ -189,71 +196,63 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
       {/* Scrollable Messages Area */}
       <div
         ref={messagesContainerRef}
-        className='!scroll-smooth absolute inset-0 h-[calc(100%-65px)] touch-pan-y overflow-y-auto overscroll-auto'
+        className='!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto'
       >
-        <div className='ml-64 w-[calc(100%-270px)] px-4 pb-8'>
-          {messages.length === 0 ? (
-            <div className='flex flex-col items-center justify-center py-10'>
-              <div className='space-y-2 text-center'>
-                <h3 className='font-medium text-[var(--text-primary)] text-lg'>
-                  How can I help you today?
-                </h3>
-                <p className='text-[var(--text-muted)] text-sm'>
-                  {chatConfig?.description || 'Ask me anything.'}
-                </p>
-              </div>
-            </div>
-          ) : (
-            messages.map((message) => (
-              <ArenaClientChatMessage
-                key={message.id}
-                message={message}
-                setMessages={setMessages}
-                workspaceIdsForKbLinks={workspaceIdsForKbLinks}
-                onCopySegmentToInput={onAskInChat}
-                onToggleGeneratedImage={onToggleGeneratedImage}
-                selectedGeneratedImageIds={selectedGeneratedImageIds}
-                selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
-                onWelcomeQueryClick={onWelcomeQueryClick}
-              />
-            ))
-          )}
-
-          {/* Loading indicator with label and bouncing dots (when executing) */}
-          {isLoading && (
-            <div className='px-4 py-5'>
-              <div className='mx-auto max-w-3xl'>
-                <div className='flex items-center gap-2'>
-                  <div className='flex gap-1' aria-hidden>
-                    <span
-                      className='h-2 w-2 animate-bounce rounded-full bg-gray-600 [animation-delay:0ms] [animation-duration:1s] dark:bg-gray-400'
-                      style={{ animationDelay: '0ms' }}
-                    />
-                    <span
-                      className='h-2 w-2 animate-bounce rounded-full bg-gray-600 [animation-duration:1s] dark:bg-gray-400'
-                      style={{ animationDelay: '150ms' }}
-                    />
-                    <span
-                      className='h-2 w-2 animate-bounce rounded-full bg-gray-600 [animation-duration:1s] dark:bg-gray-400'
-                      style={{ animationDelay: '300ms' }}
-                    />
-                  </div>
-                  <span className='font-medium text-muted-foreground text-sm'>
-                    {loadingLabel}...
-                  </span>
+        <div className='px-3 md:px-4 py-4'>
+          <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} pb-8`}>
+            {messages.length === 0 ? (
+              <div className='flex min-h-full flex-col items-center justify-center py-10'>
+                <div className='space-y-2 text-center'>
+                  <h3
+                    className='font-medium text-[17px]'
+                    style={{ color: DEPLOYED_CHAT_TEXT_BODY }}
+                  >
+                    How can I help you today?
+                  </h3>
+                  <p className='text-[14px]' style={{ color: DEPLOYED_CHAT_TEXT_MUTED }}>
+                    {chatConfig?.description || 'Ask me anything.'}
+                  </p>
                 </div>
               </div>
-            </div>
-          )}
+            ) : (
+              (() => {
+                const lastAssistantId = [...messages]
+                  .reverse()
+                  .find((m) => m.type === 'assistant' && !m.isInitialMessage)?.id
+                return messages.map((message, index) => (
+                  // 40px gap between conversation turns: each new user message starts a turn
+                  <div
+                    key={message.id}
+                    className={message.type === 'user' && index > 0 ? 'mt-10' : undefined}
+                  >
+                    <ArenaClientChatMessage
+                      message={message}
+                      setMessages={setMessages}
+                      workspaceIdsForKbLinks={workspaceIdsForKbLinks}
+                      onCopySegmentToInput={onAskInChat}
+                      onToggleGeneratedImage={onToggleGeneratedImage}
+                      selectedGeneratedImageIds={selectedGeneratedImageIds}
+                      selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+                      onWelcomeQueryClick={onWelcomeQueryClick}
+                      isLastAssistantMessage={message.id === lastAssistantId}
+                      onRegenerateMessage={onRegenerateMessage}
+                    />
+                  </div>
+                ))
+              })()
+            )}
 
-          {/* End of messages marker for scrolling */}
-          <div ref={messagesEndRef} />
+            {isLoading && <DeployedResponseLoader isStreaming={isStreaming} />}
+
+            {/* End of messages marker for scrolling */}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
       </div>
 
       {/* Scroll to bottom button - appears when user scrolls up */}
       {showScrollButton && (
-        <div className='-translate-x-1/2 absolute bottom-16 left-1/2 z-20 ml-[9%] transform'>
+        <div className='-translate-x-1/2 absolute bottom-4 left-1/2 z-20 transform'>
           <Button
             onClick={scrollToBottom}
             size='sm'

@@ -49,10 +49,10 @@ export {
   isSubagentSpanStreamEvent,
   isSyntheticFilePreviewEventEnvelope,
   isSyntheticLocalStatusEventEnvelope,
-  LOCAL_STATUS_PHASE,
   isToolArgsDeltaStreamEvent,
   isToolCallStreamEvent,
   isToolResultStreamEvent,
+  LOCAL_STATUS_PHASE,
   parsePersistedStreamEventEnvelope,
   parsePersistedStreamEventEnvelopeJson,
 } from './contract'

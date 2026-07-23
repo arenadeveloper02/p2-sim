@@ -45,7 +45,11 @@ const CLIENT_HOOK_PATTERNS = [
   /\bonSubmit\s*=/,
 ]
 
-const TAILWIND_CONFIG_PATHS = ['tailwind.config.ts', 'tailwind.config.js', 'tailwind.config.mjs'] as const
+const TAILWIND_CONFIG_PATHS = [
+  'tailwind.config.ts',
+  'tailwind.config.js',
+  'tailwind.config.mjs',
+] as const
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, '/')
@@ -121,10 +125,13 @@ function toComponentName(filePath: string): string {
 function componentAcceptsProps(content: string, componentName: string): boolean {
   return (
     new RegExp(`export\\s+function\\s+${componentName}\\s*\\(\\s*\\{`, 'm').test(content) ||
-    new RegExp(`export\\s+default\\s+function\\s+${componentName}\\s*\\(\\s*\\{`, 'm').test(content) ||
-    new RegExp(`export\\s+(?:function|default\\s+function)\\s+${componentName}\\s*\\([^)]+:`, 'm').test(
+    new RegExp(`export\\s+default\\s+function\\s+${componentName}\\s*\\(\\s*\\{`, 'm').test(
       content
-    )
+    ) ||
+    new RegExp(
+      `export\\s+(?:function|default\\s+function)\\s+${componentName}\\s*\\([^)]+:`,
+      'm'
+    ).test(content)
   )
 }
 
@@ -271,7 +278,12 @@ function checkActionImports(files: GeneratedAppFile[]): string[] {
         .split(',')
         .map((part) => part.trim())
         .filter(Boolean)
-        .map((part) => part.replace(/^type\s+/, '').split(/\s+as\s+/)[0]?.trim())
+        .map((part) =>
+          part
+            .replace(/^type\s+/, '')
+            .split(/\s+as\s+/)[0]
+            ?.trim()
+        )
         .filter((symbol): symbol is string => Boolean(symbol))
 
       for (const symbol of symbols) {
@@ -340,10 +352,7 @@ function readPackageJson(files: GeneratedAppFile[]): {
   }
 }
 
-function checkPrismaUsage(
-  files: GeneratedAppFile[],
-  requiresDatabase: boolean
-): string[] {
+function checkPrismaUsage(files: GeneratedAppFile[], requiresDatabase: boolean): string[] {
   const pathSet = new Set(files.map((file) => normalizePath(file.path)))
   const issues: string[] = []
   const pkg = readPackageJson(files)
@@ -363,7 +372,9 @@ function checkPrismaUsage(
       issues.push('Database app package.json is missing @prisma/client and/or prisma dependencies')
     }
 
-    const schemaContent = files.find((file) => normalizePath(file.path) === 'prisma/schema.prisma')?.content
+    const schemaContent = files.find(
+      (file) => normalizePath(file.path) === 'prisma/schema.prisma'
+    )?.content
     if (schemaContent) {
       if (/\bdirectUrl\b/.test(schemaContent)) {
         issues.push(
@@ -380,18 +391,24 @@ function checkPrismaUsage(
 
     const envExample = files.find((file) => normalizePath(file.path) === '.env.example')?.content
     if (envExample && /DATABASE_URL_UNPOOLED|DIRECT_URL/.test(envExample)) {
-      issues.push('.env.example must only use DATABASE_URL — remove DATABASE_URL_UNPOOLED and DIRECT_URL')
+      issues.push(
+        '.env.example must only use DATABASE_URL — remove DATABASE_URL_UNPOOLED and DIRECT_URL'
+      )
     }
 
     return issues
   }
 
   if (hasPrismaSchema || hasPrismaClient) {
-    issues.push('Non-database app must not include Prisma files (prisma/schema.prisma, lib/prisma.ts)')
+    issues.push(
+      'Non-database app must not include Prisma files (prisma/schema.prisma, lib/prisma.ts)'
+    )
   }
 
   if (hasPrismaDep) {
-    issues.push('Non-database app package.json must not include @prisma/client or prisma dependencies')
+    issues.push(
+      'Non-database app package.json must not include @prisma/client or prisma dependencies'
+    )
   }
 
   return issues
@@ -403,11 +420,20 @@ function toComponentNameFromPath(filePath: string): string {
 }
 
 function isStubComponent(content: string, componentName: string): boolean {
-  const stripped = content.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim()
+  const stripped = content
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .trim()
 
   const stubPatterns = [
-    new RegExp(`return\\s*\\(\\s*<(?:div|main|section|span)[^>]*>\\s*${componentName}\\s*</(?:div|main|section|span)>\\s*\\)`, 'm'),
-    new RegExp(`return\\s*<(?:div|main|section|span)[^>]*>\\s*${componentName}\\s*</(?:div|main|section|span)>`, 'm'),
+    new RegExp(
+      `return\\s*\\(\\s*<(?:div|main|section|span)[^>]*>\\s*${componentName}\\s*</(?:div|main|section|span)>\\s*\\)`,
+      'm'
+    ),
+    new RegExp(
+      `return\\s*<(?:div|main|section|span)[^>]*>\\s*${componentName}\\s*</(?:div|main|section|span)>`,
+      'm'
+    ),
     new RegExp(`return\\s*\\(\\s*['"\`]${componentName}['"\`]\\s*\\)`, 'm'),
   ]
 
@@ -477,7 +503,9 @@ function checkJsxSyntax(files: GeneratedAppFile[]): string[] {
     }
 
     const lines = file.content.split('\n')
-    const useClientIndex = lines.findIndex((line) => line.trim() === '"use client"' || line.trim() === "'use client'")
+    const useClientIndex = lines.findIndex(
+      (line) => line.trim() === '"use client"' || line.trim() === "'use client'"
+    )
     if (useClientIndex > 0) {
       const before = lines.slice(0, useClientIndex).some((line) => line.trim().length > 0)
       if (before) {
@@ -588,9 +616,7 @@ function checkPrismaSchemaMigrationSafety(
     return []
   }
 
-  const newSchemaFile = files.find(
-    (file) => normalizePath(file.path) === 'prisma/schema.prisma'
-  )
+  const newSchemaFile = files.find((file) => normalizePath(file.path) === 'prisma/schema.prisma')
   if (!newSchemaFile || newSchemaFile.content === originalSchema) {
     return []
   }
@@ -620,7 +646,11 @@ function checkPrismaSchemaMigrationSafety(
         continue
       }
 
-      if (newField.type !== oldField.type && !oldModels.has(oldField.type) && !newModels.has(newField.type)) {
+      if (
+        newField.type !== oldField.type &&
+        !oldModels.has(oldField.type) &&
+        !newModels.has(newField.type)
+      ) {
         issues.push(
           `prisma/schema.prisma: field ${modelName}.${fieldName} changed type ${oldField.type} -> ${newField.type} — prisma db push cannot cast existing rows on deploy. Keep the original type or add a NEW optional field instead`
         )

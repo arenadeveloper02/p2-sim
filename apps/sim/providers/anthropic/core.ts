@@ -3,6 +3,10 @@ import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema
 import type { RawMessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages'
 import type { Logger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
+import {
+  getAnthropicAutomaticCacheControl,
+  supportsAnthropicAutomaticPromptCaching,
+} from '@/lib/anthropic/prompt-cache'
 import type { BlockTokens, IterationToolCall, StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import {
@@ -28,10 +32,6 @@ import {
   sumToolCosts,
 } from '@/providers/utils'
 import { executeTool } from '@/tools'
-import {
-  getAnthropicAutomaticCacheControl,
-  supportsAnthropicAutomaticPromptCaching,
-} from '@/lib/anthropic/prompt-cache'
 
 /**
  * Configuration for creating an Anthropic provider instance.

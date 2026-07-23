@@ -2,8 +2,8 @@ import { db } from '@sim/db'
 import { skill } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
-import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
 import { LOAD_USER_SKILL_TOOL_NAME } from '@/lib/mothership/skills'
+import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotUserSkills')

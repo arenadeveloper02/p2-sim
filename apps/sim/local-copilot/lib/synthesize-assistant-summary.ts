@@ -1,6 +1,8 @@
+import { truncate } from '@sim/utils/string'
 import { extractCapturedOutput } from '@/local-copilot/lib/tools/format-tool-result'
 
 const LEAKED_TOOL_MARKER_PATTERN = /\[Tool [^\]]+\]/g
+const GENERIC_MESSAGE_MAX_CHARS = 4_000
 
 export interface ToolTurnRecord {
   name: string
@@ -18,10 +20,7 @@ function asRecord(value: unknown): Record<string, unknown> {
  * @param options.trim When `false`, preserves leading/trailing whitespace — required
  *   for streaming deltas where spaces live on chunk boundaries. Defaults to `true`.
  */
-export function stripLeakedToolMarkers(
-  text: string,
-  options?: { trim?: boolean }
-): string {
+export function stripLeakedToolMarkers(text: string, options?: { trim?: boolean }): string {
   const stripped = text.replace(LEAKED_TOOL_MARKER_PATTERN, '').replace(/\n{3,}/g, '\n\n')
   return options?.trim === false ? stripped : stripped.trim()
 }
@@ -110,11 +109,24 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     if (record.name === 'function_execute' || record.name === 'invoke_integration_tool') {
       const captured = extractCapturedOutput(record.result)
       if (captured) {
-        parts.push(captured.length > 4_000 ? `${captured.slice(0, 4_000)}\n\n[... output truncated]` : captured)
+        parts.push(truncate(captured, GENERIC_MESSAGE_MAX_CHARS))
       }
+      continue
+    }
+
+    // Specialists and other tools often finish with only a `message` payload.
+    // Without this, the mothership UI can settle with zero renderable prose
+    // (specialist tool names are absorbed as empty subagent groups).
+    const payload = asRecord(record.result)
+    const message = typeof payload.message === 'string' ? payload.message.trim() : ''
+    if (message) {
+      parts.push(truncate(message, GENERIC_MESSAGE_MAX_CHARS))
     }
   }
 
-  const summary = parts.map((part) => part.trim()).filter(Boolean).join('\n\n')
+  const summary = parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join('\n\n')
   return summary || null
 }

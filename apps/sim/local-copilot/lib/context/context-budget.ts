@@ -1,5 +1,5 @@
-import type { Edge } from 'reactflow'
 import { truncate } from '@sim/utils/string'
+import type { Edge } from 'reactflow'
 import { getAccurateTokenCount, truncateToTokenLimit } from '@/lib/tokenization/estimators'
 import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
@@ -107,7 +107,7 @@ export function fitPromptToTokenBudget(
   const conversational = messages.filter((message) => message.role !== 'system')
   const turns = groupHistoryTurns(conversational)
 
-  let keptTurns = [...turns]
+  const keptTurns = [...turns]
   while (
     keptTurns.length > 1 &&
     estimateChatMessagesTokens(

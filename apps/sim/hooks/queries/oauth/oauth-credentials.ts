@@ -148,11 +148,7 @@ export function useCredentialName(
     isHubSpotSharedAccountAlias(credentialId)
 
   const shouldFetchDetail = Boolean(
-    credentialId &&
-      !selectedCredential &&
-      providerId &&
-      workflowId &&
-      !isHubSpotAlias
+    credentialId && !selectedCredential && providerId && workflowId && !isHubSpotAlias
   )
 
   const { data: foreignCredentials = [], isFetching: foreignLoading } = useOAuthCredentialDetail(

@@ -23,8 +23,11 @@ import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
-import type { CopilotContextEntry, CopilotFileAttachmentRef } from '@/local-copilot/lib/user-turn-content'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
+import type {
+  CopilotContextEntry,
+  CopilotFileAttachmentRef,
+} from '@/local-copilot/lib/user-turn-content'
 
 const logger = createLogger('LocalCopilotMothershipLifecycle')
 
@@ -61,7 +64,8 @@ function extractFileAttachments(value: unknown): CopilotFileAttachmentRef[] | un
     const key = extractString(record.key)
     const filename = extractString(record.filename)
     const mediaType = extractString(record.media_type)
-    const size = typeof record.size === 'number' && Number.isFinite(record.size) ? record.size : null
+    const size =
+      typeof record.size === 'number' && Number.isFinite(record.size) ? record.size : null
     if (!key || !filename || !mediaType || size === null) return []
     return [{ key, filename, media_type: mediaType, size }]
   })
@@ -373,13 +377,7 @@ export async function runLocalCopilotMothershipLifecycle(
         turnUsage = event.usage
       }
 
-      await dispatchLocalCopilotEvent(
-        event,
-        context,
-        execContext,
-        options,
-        toolArgsByCallId
-      )
+      await dispatchLocalCopilotEvent(event, context, execContext, options, toolArgsByCallId)
     }
 
     const status =
