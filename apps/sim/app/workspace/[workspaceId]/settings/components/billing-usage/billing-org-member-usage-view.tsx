@@ -1,15 +1,9 @@
 'use client'
 
+import { CircleInfo, Credit, Info, Server, Workflow } from '@sim/emcn'
 import { useParams } from 'next/navigation'
-import {
-  CircleInfo,
-  Credit,
-  Info,
-  Server,
-  Workflow,
-} from '@sim/emcn'
-import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import type { CreditUsageSummary } from '@/lib/api/contracts/billing-credit-usage'
+import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { BillingUsageMetricCard } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-metric-card'
 import { BillingUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-section'
 import { BillingUsageSourceRow } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-source-row'
@@ -95,9 +89,7 @@ export function BillingOrgMemberUsageView({ data }: BillingOrgMemberUsageViewPro
                   ? `${formatCreditCount(display.allocatedCredits)} credits`
                   : '—'
               }
-              hint={
-                display.allocatedCredits != null ? 'Set by your organization admin' : undefined
-              }
+              hint={display.allocatedCredits != null ? 'Set by your organization admin' : undefined}
               icon={<Credit className='size-[14px] text-amber-700' />}
               iconClassName='bg-amber-500/10'
             />

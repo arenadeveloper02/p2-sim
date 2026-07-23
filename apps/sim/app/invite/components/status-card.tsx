@@ -96,7 +96,7 @@ export function InviteStatusCard({
             </Chip>
           )
         )}
-      </div >
+      </div>
     </>
   )
 }

@@ -1,7 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('SemrushQueryAPI')
 
@@ -48,16 +47,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
     }
 
-    const apiKey = env.SEMRUSH_API_KEY
+    const { searchParams } = new URL(request.url)
+    const apiKey = searchParams.get('apiKey')?.trim()
     if (!apiKey) {
-      logger.error('Semrush API key not configured (SEMRUSH_API_KEY)')
       return NextResponse.json(
-        { error: 'Semrush API key is not configured. Set SEMRUSH_API_KEY in environment.' },
-        { status: 500 }
+        { error: 'Semrush API key is required. Configure it on the Semrush block.' },
+        { status: 400 }
       )
     }
 
-    const { searchParams } = new URL(request.url)
     const rawDomain = searchParams.get('domain')
     const rawUrl = searchParams.get('url')
     const type = coerceSemrushTypeParam(searchParams.get('type'), rawDomain, rawUrl)

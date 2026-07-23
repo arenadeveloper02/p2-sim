@@ -32,6 +32,7 @@ import {
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { resolveWorkflowSyncTimeoutMs } from '@/lib/development/execution-timeout'
 import {
   buildNextCallChain,
   parseCallChain,
@@ -63,7 +64,6 @@ import {
   hydrateUserFilesWithBase64,
 } from '@/lib/uploads/utils/user-file-base64.server'
 import { getCustomBlockRowsForWorkspace } from '@/lib/workflows/custom-blocks/operations'
-import { resolveWorkflowSyncTimeoutMs } from '@/lib/development/execution-timeout'
 import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import { type ExecutionEvent, encodeSSEEvent } from '@/lib/workflows/executor/execution-events'

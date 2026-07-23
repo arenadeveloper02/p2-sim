@@ -52,7 +52,13 @@ export interface ValidateGeneratedAppBuildOptions {
 }
 
 const DUMMY_DATABASE_URL = 'postgresql://user:pass@localhost:5432/validate?sslmode=disable'
-const NPM_INSTALL_ARGS = ['install', '--include=dev', '--legacy-peer-deps', '--no-audit', '--no-fund'] as const
+const NPM_INSTALL_ARGS = [
+  'install',
+  '--include=dev',
+  '--legacy-peer-deps',
+  '--no-audit',
+  '--no-fund',
+] as const
 
 /**
  * NODE_ENV must be 'production' (never 'development'): `next build` under a
@@ -192,13 +198,20 @@ async function validateAppBuildLocally(
   try {
     logger.info('Running local npm install for generated app', { outputDir })
     logs.push('=== npm install ===')
-    logs.push(await runNpmInDir(outputDir, [...NPM_INSTALL_ARGS], databaseEnv, FULL_BUILD_TIMEOUT_MS))
+    logs.push(
+      await runNpmInDir(outputDir, [...NPM_INSTALL_ARGS], databaseEnv, FULL_BUILD_TIMEOUT_MS)
+    )
 
     if (skipPackageBuild) {
       logger.info('Running prisma generate for generated app build validation', { outputDir })
       logs.push('=== prisma generate ===')
       logs.push(
-        await runNpmInDir(outputDir, ['exec', 'prisma', 'generate'], databaseEnv, FULL_BUILD_TIMEOUT_MS)
+        await runNpmInDir(
+          outputDir,
+          ['exec', 'prisma', 'generate'],
+          databaseEnv,
+          FULL_BUILD_TIMEOUT_MS
+        )
       )
       logger.info('Running next build without prisma db push (validation only)', { outputDir })
       logs.push('=== next build ===')

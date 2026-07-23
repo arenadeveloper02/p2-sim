@@ -1,28 +1,8 @@
-import React, { type HTMLAttributes, memo, type ReactNode, useMemo, useState } from 'react'
+import React, { type HTMLAttributes, memo, type ReactNode, useState } from 'react'
+import { Code } from '@sim/emcn'
 import { Check, Copy } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
-import { Code, Tooltip } from '@sim/emcn'
-
-export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Tooltip.Root delayDuration={300}>
-      <Tooltip.Trigger asChild>
-        <a
-          href={href}
-          className='text-[var(--text-primary)] underline decoration-dashed underline-offset-4'
-          target='_blank'
-          rel='noopener noreferrer'
-        >
-          {children}
-        </a>
-      </Tooltip.Trigger>
-      <Tooltip.Content side='top' align='center' sideOffset={5} className='max-w-sm'>
-        <span className='truncate font-medium text-xs'>{href}</span>
-      </Tooltip.Content>
-    </Tooltip.Root>
-  )
-}
 
 const COMPONENTS = {
   p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => (
@@ -131,8 +111,8 @@ const COMPONENTS = {
               : normalizedLanguage === 'jsx'
                 ? 'jsx'
                 : normalizedLanguage === 'bash' ||
-                  normalizedLanguage === 'shell' ||
-                  normalizedLanguage === 'sh'
+                    normalizedLanguage === 'shell' ||
+                    normalizedLanguage === 'sh'
                   ? 'bash'
                   : normalizedLanguage === 'yaml' || normalizedLanguage === 'yml'
                     ? 'yaml'
@@ -184,7 +164,6 @@ const COMPONENTS = {
     )
   },
 
-
   inlineCode: ({ children }: { children?: React.ReactNode }) => (
     <code className='rounded bg-[var(--surface-5)] px-1 py-0.5 font-mono text-[var(--text-primary)] text-inherit'>
       {children}
@@ -200,9 +179,15 @@ const COMPONENTS = {
   hr: () => <hr className='my-8 border-[var(--divider)] border-t' />,
 
   a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <LinkWithPreview href={href || '#'} {...props}>
+    <a
+      href={href || '#'}
+      className='text-[var(--color-ds-text-primary,#2C2D33)] underline decoration-dashed underline-offset-4 transition-colors hover:text-[var(--color-ds-text-link-hover,#155CBA)] hover:decoration-[var(--color-ds-text-link-hover,#155CBA)]'
+      target='_blank'
+      rel='noopener noreferrer'
+      {...props}
+    >
       {children}
-    </LinkWithPreview>
+    </a>
   ),
 
   table: ({ children }: React.TableHTMLAttributes<HTMLTableElement>) => (
@@ -234,12 +219,7 @@ const COMPONENTS = {
     </td>
   ),
   img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => (
-    <img
-      src={src}
-      alt={alt || 'Image'}
-      className='my-3 h-auto max-w-full rounded-md'
-      {...props}
-    />
+    <img src={src} alt={alt || 'Image'} className='my-3 h-auto max-w-full rounded-md' {...props} />
   ),
 }
 
@@ -253,4 +233,4 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { content: 
   )
 })
 
-export default MarkdownRenderer;
+export default MarkdownRenderer

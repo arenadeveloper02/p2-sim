@@ -11,26 +11,25 @@ async function fetchDevelopmentRepos(): Promise<Array<{ label: string; id: strin
     return _inflightRepoFetch
   }
 
-  _inflightRepoFetch = (
+  _inflightRepoFetch =
     // boundary-raw-fetch: internal JSON GET for Development block repo dropdown hydration
     fetch('/api/tools/development/repos', { credentials: 'same-origin' })
-    .then((response) => response.json())
-    .then((data) => {
-      _inflightRepoFetch = null
-      if (!data?.success || !Array.isArray(data.repos)) {
-        return []
-      }
+      .then((response) => response.json())
+      .then((data) => {
+        _inflightRepoFetch = null
+        if (!data?.success || !Array.isArray(data.repos)) {
+          return []
+        }
 
-      return data.repos.map((repo: { id: string; name: string; source?: string }) => ({
-        id: repo.id,
-        label:repo.name,
-      }))
-    })
-    .catch(() => {
-      _inflightRepoFetch = null
-      return []
-    })
-  )
+        return data.repos.map((repo: { id: string; name: string; source?: string }) => ({
+          id: repo.id,
+          label: repo.name,
+        }))
+      })
+      .catch(() => {
+        _inflightRepoFetch = null
+        return []
+      })
 
   return _inflightRepoFetch
 }

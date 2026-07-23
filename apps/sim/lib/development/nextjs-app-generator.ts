@@ -17,13 +17,10 @@ import {
   prepareVercelProjectForDeploy,
 } from '@/lib/development/deploy-generated-app-to-vercel'
 import {
-  findMonorepoRoot,
-  getGeneratedAppDir,
-} from '@/lib/development/generated-apps-paths'
-import {
   formatBuildErrorsSummary,
   logGeneratedAppValidationErrors,
 } from '@/lib/development/format-generated-app-build-errors'
+import { findMonorepoRoot, getGeneratedAppDir } from '@/lib/development/generated-apps-paths'
 import {
   buildRepoSummaryContent,
   ensureRepoSummaryFile,

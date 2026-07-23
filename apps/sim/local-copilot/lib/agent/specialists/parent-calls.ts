@@ -5,13 +5,13 @@ import { truncate } from '@sim/utils/string'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
 import {
   isSpecialistDomain,
-  MAX_PARALLEL_SUBAGENTS,
   type LocalCopilotCloudSpecialistDomain,
+  MAX_PARALLEL_SUBAGENTS,
 } from '@/local-copilot/lib/agent/specialists/domains'
 import {
-  SPECIALIST_FINDINGS_MAX_CHARS,
   executeSpecialistLoop,
   type RunSpecialistPassParams,
+  SPECIALIST_FINDINGS_MAX_CHARS,
   type SpecialistPassResult,
 } from '@/local-copilot/lib/agent/specialists/specialist-pass'
 import { resolveSpecialistBrief } from '@/local-copilot/lib/agent/specialists/specialist-tools'

@@ -4,13 +4,13 @@ import { sleep } from '@sim/utils/helpers'
 import { truncate } from '@sim/utils/string'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
 import {
-  MAX_PARALLEL_SUBAGENTS,
   type LocalCopilotCloudSpecialistDomain,
+  MAX_PARALLEL_SUBAGENTS,
 } from '@/local-copilot/lib/agent/specialists/domains'
 import {
-  SPECIALIST_FINDINGS_MAX_CHARS,
   executeSpecialistLoop,
   type RunSpecialistPassParams,
+  SPECIALIST_FINDINGS_MAX_CHARS,
   type SpecialistPassResult,
 } from '@/local-copilot/lib/agent/specialists/specialist-pass'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'

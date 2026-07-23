@@ -49,8 +49,8 @@ import { hasCopilotApiKey } from '@/lib/copilot/server/copilot-api-keys'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { env } from '@/lib/core/config/env'
 import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
-import { shouldRouteToLocalCopilot } from '@/local-copilot/lib/routing'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
+import { shouldRouteToLocalCopilot } from '@/local-copilot/lib/routing'
 
 const logger = createLogger('CopilotLifecycle')
 

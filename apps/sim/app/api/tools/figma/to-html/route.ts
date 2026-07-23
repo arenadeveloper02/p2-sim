@@ -49,7 +49,6 @@ interface FigmaImageAssets {
   nodeRenders: Record<string, string>
 }
 
-
 /** Extracts the source node entry from a nodes response, or the whole-file response. */
 function getFigmaSource(figmaData: any, nodeId?: string): any {
   if (nodeId && figmaData.nodes) {

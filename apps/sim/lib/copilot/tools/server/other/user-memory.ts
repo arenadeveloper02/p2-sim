@@ -1,10 +1,10 @@
 import { db } from '@sim/db'
 import { localCopilotUserMemory } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { truncate } from '@sim/utils/string'
 import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm'
 import { UserMemory } from '@/lib/copilot/generated/tool-catalog-v1'
 import type { BaseServerTool, ServerToolContext } from '@/lib/copilot/tools/server/base-tool'
-import { truncate } from '@sim/utils/string'
 
 const logger = createLogger('UserMemoryServerTool')
 
@@ -294,10 +294,7 @@ async function searchMemories(
       and(
         eq(localCopilotUserMemory.userId, userId),
         scope,
-        or(
-          ilike(localCopilotUserMemory.key, pattern),
-          ilike(localCopilotUserMemory.value, pattern)
-        )
+        or(ilike(localCopilotUserMemory.key, pattern), ilike(localCopilotUserMemory.value, pattern))
       )
     )
     .orderBy(desc(localCopilotUserMemory.confidence), desc(localCopilotUserMemory.updatedAt))
@@ -356,7 +353,11 @@ export const userMemoryServerTool: BaseServerTool<UserMemoryParams, UserMemoryRe
   async execute(params: UserMemoryParams, context?: ServerToolContext): Promise<UserMemoryResult> {
     const userId = context?.userId
     if (!userId) {
-      return { operation: params.operation ?? 'unknown', success: false, error: 'userId is required' }
+      return {
+        operation: params.operation ?? 'unknown',
+        success: false,
+        error: 'userId is required',
+      }
     }
 
     const operation = typeof params.operation === 'string' ? params.operation.trim() : ''

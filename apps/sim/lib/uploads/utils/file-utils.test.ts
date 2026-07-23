@@ -131,7 +131,6 @@ describe('isNetworkError', () => {
   })
 })
 
-
 describe('file-utils storage context inference', () => {
   it('recognizes agent-generated image storage keys', () => {
     expect(

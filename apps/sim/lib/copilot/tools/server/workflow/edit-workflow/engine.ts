@@ -8,7 +8,6 @@ import {
   createValidatedEdge,
   normalizeBlockIdsInOperations,
 } from './builders'
-import { normalizeBlockReferencesInInputs } from './reference-normalization'
 import {
   handleAddOperation,
   handleDeleteOperation,
@@ -16,6 +15,7 @@ import {
   handleExtractFromSubflowOperation,
   handleInsertIntoSubflowOperation,
 } from './operations'
+import { normalizeBlockReferencesInInputs } from './reference-normalization'
 import type {
   ApplyOperationsResult,
   EditWorkflowOperation,

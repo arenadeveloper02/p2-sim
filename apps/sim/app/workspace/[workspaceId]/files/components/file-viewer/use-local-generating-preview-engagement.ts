@@ -11,7 +11,5 @@ import { useLocalLiveStatus } from '@/local-copilot/hooks/use-local-live-status'
 export function useLocalGeneratingPreviewEngagement(isAgentEditing?: boolean): boolean {
   const { copilotBackend } = useCopilotBackendPreference()
   const liveStatus = useLocalLiveStatus()
-  return (
-    copilotBackend === 'local' && (Boolean(isAgentEditing) || Boolean(liveStatus?.trim()))
-  )
+  return copilotBackend === 'local' && (Boolean(isAgentEditing) || Boolean(liveStatus?.trim()))
 }

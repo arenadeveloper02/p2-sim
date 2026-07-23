@@ -2,20 +2,20 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
 import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
+import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
 import {
   domainSystemHint,
   filterToolsByNames,
-  toolNamesForDomain,
   type LocalCopilotCloudSpecialistDomain,
   type LocalCopilotSpecialistDomain,
+  toolNamesForDomain,
 } from '@/local-copilot/lib/agent/specialists/domains'
 import {
   buildSpecialistUserMessage,
   getParentSpecialistToolDefinitions,
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
-import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
 import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
@@ -109,7 +109,9 @@ export async function executeSpecialistLoop(
       domain: params.domain,
       findings: entered.reason,
       toolRoundCount: 0,
-      events: [{ type: 'status', message: `${params.domain} specialist skipped: ${entered.reason}` }],
+      events: [
+        { type: 'status', message: `${params.domain} specialist skipped: ${entered.reason}` },
+      ],
       success: false,
       error: entered.reason,
     }
