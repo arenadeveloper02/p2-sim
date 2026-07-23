@@ -15,19 +15,14 @@ export function normalizeComparableText(text: string): string {
 
 /**
  * Resolves landing description text while omitting values that duplicate the title.
+ * Always prefers welcome message; chat description is not shown on landing.
  */
 export function resolveDeployedChatLandingDescription(params: {
   title: string
-  description?: string
   welcomeMessage?: string
 }): string {
   const titleNorm = normalizeComparableText(params.title)
-  const description = params.description?.trim() || ''
   const welcomeMessage = params.welcomeMessage?.trim() || ''
-
-  if (description && normalizeComparableText(description) !== titleNorm) {
-    return description
-  }
 
   if (welcomeMessage && normalizeComparableText(welcomeMessage) !== titleNorm) {
     return welcomeMessage

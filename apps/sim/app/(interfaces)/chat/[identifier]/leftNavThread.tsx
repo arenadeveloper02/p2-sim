@@ -12,17 +12,7 @@ import {
   Tooltip,
 } from '@sim/emcn'
 import { formatRelativeTime } from '@sim/utils/formatting'
-import {
-  ArrowLeft,
-  Download,
-  MoreHorizontal,
-  Pin,
-  PinOff,
-  RefreshCw,
-  Search,
-  Trash2,
-  X,
-} from 'lucide-react'
+import { ArrowLeft, Download, MoreHorizontal, Pin, PinOff, Search, Trash2, X } from 'lucide-react'
 import Image, { type StaticImageData } from 'next/image'
 import {
   CollapseNavIcon,
@@ -425,18 +415,6 @@ function ThreadRow({
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
-        {isActive && (
-          <button
-            type='button'
-            className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-white'
-            onClick={onRefresh}
-            disabled={isStreaming}
-            aria-label='Refresh conversation'
-          >
-            <RefreshCw className='size-3.5' />
-          </button>
-        )}
-
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -470,8 +448,12 @@ function ThreadRow({
                 </>
               )}
             </DropdownMenuItem>
-            {isActive && onExportChat && (
-              <DropdownMenuItem onClick={onExportChat} className={THREAD_MENU_ITEM_CLASS}>
+            {onExportChat && (
+              <DropdownMenuItem
+                onClick={onExportChat}
+                disabled={!isActive}
+                className={THREAD_MENU_ITEM_CLASS}
+              >
                 <Download />
                 Export chat
               </DropdownMenuItem>
