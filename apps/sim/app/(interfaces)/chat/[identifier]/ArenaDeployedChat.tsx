@@ -1,11 +1,12 @@
 'use client'
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ToastProvider, toast } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
-import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { noop } from '@/lib/core/utils/request'
@@ -24,8 +25,22 @@ import {
   UnauthorizedEmailError,
   VoiceInterface,
 } from '@/app/(interfaces)/chat/components'
-import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/(interfaces)/chat/constants'
-import { useAudioStreaming, useChatStreaming } from '@/app/(interfaces)/chat/hooks'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
+import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
+import {
+  CHAT_ERROR_MESSAGES,
+  CHAT_REQUEST_TIMEOUT_MS,
+  DEPLOYED_CHAT_CANVAS_BG,
+  DEPLOYED_CHAT_CANVAS_GRADIENT,
+  DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
+  DEPLOYED_CHAT_INPUT_PLACEHOLDER,
+} from '@/app/(interfaces)/chat/constants'
+import {
+  useAudioStreaming,
+  useChatKeyboardShortcuts,
+  useChatStreaming,
+} from '@/app/(interfaces)/chat/hooks'
+import { downloadTextFile, exportChatAsMarkdown } from '@/app/(interfaces)/chat/utils/export-chat'
 // import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
   deployedChatPromptSentEvent,
@@ -33,9 +48,16 @@ import {
   deployedNewChatEvent,
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
-import { ArenaChatHeader } from '../components/header/arenaHeader'
+import { useBrandConfig } from '@/ee/whitelabeling/branding'
+import {
+  useDeleteDeployedChatThread,
+  useDeployedChatThreads,
+  useRenameDeployedChatThread,
+  useSetDeployedChatThreadPinned,
+} from '@/hooks/queries/deployed-chat-threads'
+import { DeployedChatLanding } from './DeployedChatLanding'
 import { FeedbackView } from './FeedbackView'
-import LeftNavThread from './leftNavThread'
+import LeftNavThread, { type ThreadRecord } from './leftNavThread'
 
 const logger = createLogger('ChatClient')
 
@@ -56,14 +78,6 @@ interface ChatConfig {
   inputFormat?: InputFormatField[]
   /** Workspace IDs the current user can access; when set, "View in Knowledge Base" links are shown for KB refs in that workspace */
   userWorkspaceIds?: string[]
-}
-
-interface ThreadRecord {
-  chatId: string
-  title: string
-  workflowId: string
-  createdAt: string
-  updatedAt: string
 }
 
 interface AudioStreamingOptions {
@@ -180,6 +194,7 @@ function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T 
 
 export default function ChatClient({ identifier }: { identifier: string }) {
   const router = useRouter()
+  const brand = useBrandConfig()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -187,14 +202,20 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const [starCount, setStarCount] = useState('3.4k')
+  const threadSearchInputRef = useRef<HTMLInputElement>(null)
+  const chatInputWrapperRef = useRef<HTMLDivElement>(null)
   const [conversationId, setConversationId] = useState('')
 
-  // Left threads state managed here
-  const [currentChatId, setCurrentChatId] = useState<string | null>()
-  const [threads, setThreads] = useState<ThreadRecord[]>([])
-  const [isThreadsLoading, setIsThreadsLoading] = useState<boolean>(true)
-  const [threadsError, setThreadsError] = useState<string | null>(null)
+  const [currentChatId, setCurrentChatId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    return new URLSearchParams(window.location.search).get('chatId')
+  })
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('deployed-chat-sidebar-collapsed') === 'true'
+  })
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
+
   const [isHistoryLoading, setIsHistoryLoading] = useState<any>(true) // Start as true to prevent early modal
   const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
   const [hasCheckedHistory, setHasCheckedHistory] = useState<boolean>(false)
@@ -207,10 +228,29 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | 'sso' | null>(null)
   const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState<boolean>(false)
 
+  const threadsQuery = useDeployedChatThreads(identifier, Boolean(chatConfig) && !authRequired)
+  const threads = threadsQuery.data ?? []
+  const isThreadsLoading = threadsQuery.isLoading
+  const threadsError = threadsQuery.error?.message ?? null
+  const sidebarLogoUrl = useMemo(
+    () =>
+      chatConfig?.customizations?.logoUrl ||
+      chatConfig?.customizations?.imageUrl ||
+      brand.logoUrl ||
+      arenaLogo,
+    [chatConfig, brand.logoUrl]
+  )
+  const renameThreadMutation = useRenameDeployedChatThread(identifier)
+  const deleteThreadMutation = useDeleteDeployedChatThread(identifier)
+  const pinThreadMutation = useSetDeployedChatThreadPinned(identifier)
+
   // Start Block input modal state
   const [isInputModalOpen, setIsInputModalOpen] = useState(false)
   const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
   const hasShownModalRef = useRef<boolean>(false)
+  const hasInitializedThreadNavigationRef = useRef(false)
+  const historyAbortRef = useRef<AbortController | null>(null)
+  const historyRequestChatIdRef = useRef<string | null>(null)
   const hasNonWelcomeMessages = useMemo(
     () => messages.some((message) => !message.isInitialMessage),
     [messages]
@@ -238,6 +278,33 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
   const [askInChatText, setAskInChatText] = useState('')
   const [userName, setUserName] = useState<string | null>(null)
+
+  const showLandingView = useMemo(() => {
+    if (showFeedbackView) return false
+
+    const isExistingThread = Boolean(
+      currentChatId && threads.some((thread) => thread.chatId === currentChatId)
+    )
+    if (isExistingThread && (isHistoryLoading || !hasCheckedHistory)) {
+      return false
+    }
+
+    return !hasNonWelcomeMessages
+  }, [
+    showFeedbackView,
+    hasNonWelcomeMessages,
+    currentChatId,
+    threads,
+    isHistoryLoading,
+    hasCheckedHistory,
+  ])
+
+  const isUnsavedChat = useMemo(() => {
+    if (!currentChatId) return false
+    return !threads.some((thread) => thread.chatId === currentChatId)
+  }, [currentChatId, threads])
+
+  const isNewChatActive = isUnsavedChat && !showFeedbackView && !isGoldenQueriesOpen
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
@@ -312,124 +379,148 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   useEffect(() => {
     const workflowId = identifier
 
-    const fetchHistory = async (workflowId: string, chatId: string | null) => {
-      // Only fetch history if we have a chatId
-      if (!chatId) {
-        // No chatId means no history - can show modal
-        hasShownModalRef.current = false
-        setIsHistoryLoading(false)
-        setHasCheckedHistory(true)
-        return
+    const buildWelcomeMessages = (): ChatMessage[] => {
+      const initialMessages: ChatMessage[] = []
+
+      if (userName) {
+        initialMessages.push({
+          id: 'greeting',
+          content: `Hi ${userName}, welcome to the chat!`,
+          type: 'assistant',
+          timestamp: new Date(),
+          isInitialMessage: true,
+        })
       }
+
+      if (chatConfig?.customizations?.welcomeMessage) {
+        initialMessages.push({
+          id: 'welcome',
+          content: chatConfig.customizations.welcomeMessage,
+          type: 'assistant',
+          isInitialMessage: true,
+          timestamp: new Date(),
+        })
+      }
+
+      return initialMessages
+    }
+
+    const applyHistoryResult = (
+      requestChatId: string,
+      nextMessages: ChatMessage[],
+      hasHistory: boolean
+    ) => {
+      if (historyRequestChatIdRef.current !== requestChatId) return
+      setMessages(nextMessages)
+      hasShownModalRef.current = hasHistory
+      setIsHistoryLoading(false)
+      setHasCheckedHistory(true)
+    }
+
+    const fetchHistory = async (workflowId: string, chatId: string, signal: AbortSignal) => {
+      const requestChatId = chatId
+      historyRequestChatIdRef.current = requestChatId
 
       try {
         setIsHistoryLoading(true)
-        const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`)
+        const response = await fetch(`/api/chat/${workflowId}/history?chatId=${chatId}`, {
+          signal,
+        })
+
+        if (signal.aborted || historyRequestChatIdRef.current !== requestChatId) return
+
         if (response.ok) {
           const data = await response.json()
 
-          // Check if there's any chat history in the API response
           if (data?.logs?.length === 0) {
-            // No history found - mark that we can show modal after loading completes
-            hasShownModalRef.current = false
-            setIsHistoryLoading(false)
-            setHasCheckedHistory(true)
+            applyHistoryResult(requestChatId, buildWelcomeMessages(), false)
           } else {
-            // History exists - load messages and prevent modal from showing
-            const initialMessages: ChatMessage[] = []
+            const initialMessages = buildWelcomeMessages()
 
-            // Add personalized greeting if user name is available
-            if (userName) {
-              initialMessages.push({
-                id: 'greeting',
-                content: `Hi ${userName}, welcome to the chat!`,
-                type: 'assistant',
-                timestamp: new Date(),
-                isInitialMessage: true,
-              })
-            }
+            applyHistoryResult(
+              requestChatId,
+              [
+                ...initialMessages,
+                ...data.logs.flatMap((log: any) => {
+                  const historyMessages = []
+                  if (
+                    log.userInput ||
+                    (Array.isArray(log.attachments) && log.attachments.length > 0)
+                  ) {
+                    historyMessages.push({
+                      id: `${log.id}-user`,
+                      content: log.userInput || '',
+                      type: 'user',
+                      timestamp: new Date(log.startedAt),
+                      attachments: Array.isArray(log.attachments) ? log.attachments : undefined,
+                    })
+                  }
+                  if (log.modelOutput) {
+                    historyMessages.push({
+                      id: `${log.id}-assistant`,
+                      content: log.modelOutput || '',
+                      type: 'assistant',
+                      timestamp: new Date(log.endedAt || log.startedAt),
+                      isStreaming: false,
+                      executionId: log?.executionId || '',
+                      liked: log.liked,
+                      generatedImages: Array.isArray(log.generatedImages)
+                        ? log.generatedImages
+                        : undefined,
+                      knowledgeRefs: Array.isArray(log.knowledgeRefs)
+                        ? log.knowledgeRefs
+                        : undefined,
+                    })
+                  }
+                  return historyMessages
+                }),
+              ],
+              true
+            )
 
-            // Add welcome message if it exists
-            if (chatConfig?.customizations?.welcomeMessage) {
-              initialMessages.push({
-                id: 'welcome',
-                content: chatConfig.customizations.welcomeMessage,
-                type: 'assistant',
-                isInitialMessage: true,
-                timestamp: new Date(),
-              })
-            }
-
-            setMessages([
-              ...initialMessages,
-              // Flatten and process logs as before
-              ...data.logs.flatMap((log: any) => {
-                const messages = []
-                if (
-                  log.userInput ||
-                  (Array.isArray(log.attachments) && log.attachments.length > 0)
-                ) {
-                  messages.push({
-                    id: `${log.id}-user`,
-                    content: log.userInput || '',
-                    type: 'user',
-                    timestamp: new Date(log.startedAt),
-                    attachments: Array.isArray(log.attachments) ? log.attachments : undefined,
-                  })
-                }
-                if (log.modelOutput) {
-                  messages.push({
-                    id: `${log.id}-assistant`,
-                    content: log.modelOutput || '',
-                    type: 'assistant',
-                    timestamp: new Date(log.endedAt || log.startedAt),
-                    isStreaming: false,
-                    executionId: log?.executionId || '',
-                    liked: log.liked,
-                    generatedImages: Array.isArray(log.generatedImages)
-                      ? log.generatedImages
-                      : undefined,
-                    knowledgeRefs: Array.isArray(log.knowledgeRefs) ? log.knowledgeRefs : undefined,
-                  })
-                }
-                return messages
-              }),
-            ])
-            // History exists - mark modal as shown so it won't appear
-            hasShownModalRef.current = true
             setTimeout(() => {
               setTimeout(() => {
                 scrollToBottom()
               }, 100)
             }, 500)
-            setIsHistoryLoading(false)
-            setHasCheckedHistory(true)
           }
         } else {
-          // If history fetch fails (404, etc.), treat as no history - can show modal
-          logger.warn(`History fetch failed with status ${response.status}, treating as no history`)
-          hasShownModalRef.current = false
-          setIsHistoryLoading(false)
-          setHasCheckedHistory(true)
+          logger.warn(`History fetch failed with status ${response.status}`)
+          toast({ message: 'Failed to load chat history. Please try again.' })
+          applyHistoryResult(requestChatId, buildWelcomeMessages(), false)
         }
       } catch (error) {
-        // If history fetch errors, treat as no history - can show modal
-        logger.error('Error fetching history, treating as no history:', error)
+        if (signal.aborted) return
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (historyRequestChatIdRef.current !== requestChatId) return
+        logger.error('Error fetching history:', error)
+        toast({ message: getErrorMessage(error, 'Failed to load chat history. Please try again.') })
+        applyHistoryResult(requestChatId, buildWelcomeMessages(), false)
+      }
+    }
+
+    if (!workflowId || Object.keys(chatConfig || {}).length === 0) {
+      return
+    }
+
+    if (!currentChatId) {
+      if (hasInitializedThreadNavigationRef.current) {
         hasShownModalRef.current = false
         setIsHistoryLoading(false)
         setHasCheckedHistory(true)
       }
+      return
     }
 
-    if (workflowId && Object.keys(chatConfig || {}).length > 0 && currentChatId) {
-      fetchHistory(workflowId, currentChatId)
-    } else if (workflowId && Object.keys(chatConfig || {}).length > 0 && !currentChatId) {
-      // Chat config loaded but no chatId yet - no history, can show modal
-      hasShownModalRef.current = false
-      setIsHistoryLoading(false)
-      setHasCheckedHistory(true)
+    historyAbortRef.current?.abort()
+    const controller = new AbortController()
+    historyAbortRef.current = controller
+    void fetchHistory(workflowId, currentChatId, controller.signal)
+
+    return () => {
+      controller.abort()
     }
-  }, [identifier, chatConfig, currentChatId, historyRefreshKey])
+  }, [identifier, chatConfig, currentChatId, historyRefreshKey, userName, scrollToBottom])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -678,7 +769,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       dataUrl?: string
     }>,
     forceExecution = false, // Allow execution even with empty input (e.g., when form is submitted)
-    overrideValues?: Record<string, unknown> // Override values for Start Block inputs (e.g., from form submission)
+    overrideValues?: Record<string, unknown>, // Override values for Start Block inputs (e.g., from form submission)
+    regenerate = false
   ) => {
     const messageToSend = messageParam ?? inputValue
     // Allow execution if forceExecution is true (form submission) or if there's input/files
@@ -722,7 +814,16 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         })),
       ]
 
-      if (messageToSend.trim() || combinedFiles.length > 0) {
+      if (regenerate) {
+        // Drop the previous assistant response(s) after the last user turn —
+        // including Start Block form submits where messageToSend is empty.
+        setMessages((prev) => {
+          const lastUserIndex = [...prev].reverse().findIndex((m) => m.type === 'user')
+          if (lastUserIndex === -1) return prev
+          const index = prev.length - 1 - lastUserIndex
+          return prev.slice(0, index + 1)
+        })
+      } else if (messageToSend.trim() || combinedFiles.length > 0) {
         // Add the user's message to the chat
         const userMessage: ChatMessage = {
           id: generateId(),
@@ -1049,15 +1150,17 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setStartBlockInputs(values)
       setIsInputModalOpen(false)
 
-      // Add a system message summarizing received inputs
       const formattedInputs = Object.entries(values)
         .map(([key, value]) => `${key}: ${value ?? ''}`)
         .join(', ')
 
+      // Show submitted Start Block values as a user message so copy/regenerate
+      // (assistant-only actions) are not offered on this bubble.
       const inputMessage: ChatMessage = {
         id: generateId(),
         content: `Inputs received: ${formattedInputs}`,
-        type: 'assistant',
+        type: 'user',
+        isStartBlockInputsSummary: true,
         timestamp: new Date(),
       }
 
@@ -1122,83 +1225,17 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }, [messages.length])
 
-  // Get chatId from URL params
+  // Keep chatId in sync when the URL query changes (e.g. back/forward navigation)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const chatId = params.get('chatId')
-    setCurrentChatId(chatId)
+    const syncChatIdFromUrl = () => {
+      const chatId = new URLSearchParams(window.location.search).get('chatId')
+      setCurrentChatId(chatId)
+    }
+
+    syncChatIdFromUrl()
+    window.addEventListener('popstate', syncChatIdFromUrl)
+    return () => window.removeEventListener('popstate', syncChatIdFromUrl)
   }, [])
-
-  const fetchThreads = useCallback(
-    async (workflowId: string, isInitialLoad = false) => {
-      try {
-        if (isInitialLoad) {
-          setIsThreadsLoading(true)
-        }
-        setThreadsError(null)
-        const response = await fetch(`/api/chat/${workflowId}/all-history`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-        })
-        if (!response.ok) {
-          throw new Error(`Failed to fetch threads: ${response.status}`)
-        }
-        const data = (await response.json()) as { records: ThreadRecord[]; total: number }
-        const list = data.records || []
-        setThreads(list)
-
-        // Only handle initial navigation on first load
-        if (isInitialLoad) {
-          const params = new URLSearchParams(window.location.search)
-          const urlChatId = params.get('chatId')
-
-          // If no chatId in URL, decide default
-          if (!urlChatId) {
-            if (list.length > 0) {
-              const firstId = list[0].chatId
-              setCurrentChatId(firstId)
-              params.set('chatId', firstId)
-              const newUrl = `/chat/${workflowId}?${params.toString()}`
-              router.push(newUrl)
-            } else {
-              // No threads exist yet: generate a new UUID chatId for a fresh chat
-              const newId = generateId()
-              setCurrentChatId(newId)
-              params.set('chatId', newId)
-              const newUrl = `/chat/${workflowId}?${params.toString()}`
-              router.push(newUrl)
-            }
-          }
-        }
-      } catch (err) {
-        logger.error('Error fetching threads:', err)
-        setThreadsError(err instanceof Error ? err.message : 'Failed to fetch threads')
-        setThreads([])
-      } finally {
-        setIsThreadsLoading(false)
-      }
-    },
-    [router]
-  )
-
-  useEffect(() => {
-    if (identifier && chatConfig && !authRequired) {
-      fetchThreads(identifier, true)
-    }
-  }, [identifier, fetchThreads, chatConfig, authRequired])
-
-  // Check if current chatId exists in threads when conversation is finished
-  useEffect(() => {
-    if (isConversationFinished && currentChatId) {
-      const chatIdExists = threads.some((thread) => thread.chatId === currentChatId)
-
-      if (!chatIdExists) {
-        fetchThreads(identifier, false)
-      }
-      // Reset the flag
-      setIsConversationFinished(false)
-    }
-  }, [isConversationFinished, currentChatId, threads, fetchThreads, identifier])
 
   const updateUrlChatId = useCallback(
     (newChatId: string) => {
@@ -1210,19 +1247,50 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [router, identifier]
   )
 
+  useEffect(() => {
+    if (!identifier || !chatConfig || authRequired || isThreadsLoading) return
+    if (hasInitializedThreadNavigationRef.current) return
+
+    const params = new URLSearchParams(window.location.search)
+    const urlChatId = params.get('chatId')
+
+    if (!urlChatId) {
+      if (threads.length > 0) {
+        const firstId = threads[0].chatId
+        setCurrentChatId(firstId)
+        updateUrlChatId(firstId)
+      } else {
+        const newId = generateId()
+        setCurrentChatId(newId)
+        updateUrlChatId(newId)
+      }
+    }
+
+    hasInitializedThreadNavigationRef.current = true
+  }, [identifier, chatConfig, authRequired, isThreadsLoading, threads, updateUrlChatId])
+
+  useEffect(() => {
+    if (isConversationFinished && currentChatId) {
+      const chatIdExists = threads.some((thread) => thread.chatId === currentChatId)
+
+      if (!chatIdExists) {
+        void threadsQuery.refetch()
+      }
+      setIsConversationFinished(false)
+    }
+  }, [isConversationFinished, currentChatId, threads, threadsQuery])
+
   // Handle thread selection - must be defined before conditional returns
   const handleSelectThread = useCallback(
     (chatId: string) => {
       if (currentChatId === chatId) return
       setShowFeedbackView(false)
+      setIsGoldenQueriesOpen(false)
       setFeedbackError(null)
       setShowScrollButton(false)
+      setIsHistoryLoading(true)
+      setHasCheckedHistory(false)
       setCurrentChatId(chatId)
-      // Clear messages except greeting and welcome (initial messages)
-      setMessages((prev) => {
-        const initialMessages = prev.filter((m) => (m as any).isInitialMessage)
-        return initialMessages.length > 0 ? initialMessages : []
-      })
       updateUrlChatId(chatId)
 
       deployedChatThreadSelectedEvent({
@@ -1232,12 +1300,20 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         'Conversation(chat) ID': chatId,
       })
     },
-    [currentChatId, chatConfig?.customizations?.headerText, chatConfig?.title, chatDepartment]
+    [
+      currentChatId,
+      chatConfig?.customizations?.headerText,
+      chatConfig?.title,
+      chatDepartment,
+      identifier,
+      updateUrlChatId,
+    ]
   )
 
   const handleRefreshThread = useCallback(() => {
     if (!currentChatId) return
     setShowFeedbackView(false)
+    setIsGoldenQueriesOpen(false)
     setFeedbackError(null)
     setIsHistoryLoading(true)
     setHasCheckedHistory(false)
@@ -1246,8 +1322,12 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   const handleNewChat = useCallback(() => {
     setShowFeedbackView(false)
+    setIsGoldenQueriesOpen(false)
     setFeedbackError(null)
     setShowScrollButton(false)
+    setIsHistoryLoading(true)
+    setHasCheckedHistory(false)
+    hasShownModalRef.current = false
     const id = generateId()
     setCurrentChatId(id)
     // Clear messages except initial messages (greeting + welcome)
@@ -1364,15 +1444,107 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [identifier, feedbackPageSize]
   )
 
+  const handleRegenerateLastResponse = useCallback(() => {
+    const lastUserMessage = [...messages].reverse().find((message) => message.type === 'user')
+    if (!lastUserMessage || typeof lastUserMessage.content !== 'string') return
+
+    // Form-submit summary is not a typed query — re-run with stored Start Block values.
+    if (lastUserMessage.isStartBlockInputsSummary) {
+      void handleSendMessage('', false, undefined, true, startBlockInputs, true)
+      return
+    }
+
+    void handleSendMessage(lastUserMessage.content, false, undefined, false, undefined, true)
+  }, [messages, handleSendMessage, startBlockInputs])
+
   const handleViewFeedback = useCallback(() => {
+    setIsGoldenQueriesOpen(false)
     setShowFeedbackView(true)
     setFeedbackPage(1)
     fetchFeedbackPage(1)
   }, [fetchFeedbackPage])
 
   const handleViewGoldenQueries = useCallback(() => {
+    setShowFeedbackView(false)
+    setFeedbackError(null)
     setIsGoldenQueriesOpen(true)
   }, [])
+
+  const handleToggleSidebar = useCallback(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsMobileSidebarOpen((prev) => !prev)
+      return
+    }
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev
+      window.localStorage.setItem('deployed-chat-sidebar-collapsed', String(next))
+      return next
+    })
+  }, [])
+
+  const handleRenameThread = useCallback(
+    (chatId: string, title: string) => {
+      renameThreadMutation.mutate(
+        { identifier, chatId, title },
+        {
+          onError: (error) => {
+            toast({ message: getErrorMessage(error, 'Failed to rename chat') })
+          },
+        }
+      )
+    },
+    [identifier, renameThreadMutation]
+  )
+
+  const handleDeleteThread = useCallback(
+    async (chatId: string) => {
+      try {
+        await deleteThreadMutation.mutateAsync({ identifier, chatId })
+      } catch (error) {
+        toast({ message: getErrorMessage(error, 'Failed to delete chat') })
+        return
+      }
+
+      if (currentChatId === chatId) {
+        const remaining = threads.filter((thread) => thread.chatId !== chatId)
+        if (remaining.length > 0) {
+          handleSelectThread(remaining[0].chatId)
+        } else {
+          handleNewChat()
+        }
+      }
+    },
+    [identifier, deleteThreadMutation, currentChatId, threads, handleSelectThread, handleNewChat]
+  )
+
+  const handleTogglePinThread = useCallback(
+    (chatId: string, pinned: boolean) => {
+      pinThreadMutation.mutate({ identifier, chatId, pinned })
+    },
+    [identifier, pinThreadMutation]
+  )
+
+  const handleExportChat = useCallback(() => {
+    const title =
+      threads.find((thread) => thread.chatId === currentChatId)?.title ||
+      chatConfig?.customizations?.headerText ||
+      chatConfig?.title ||
+      'chat'
+    const markdown = exportChatAsMarkdown(messages, title)
+    downloadTextFile(markdown, `${title.replace(/\s+/g, '-').toLowerCase()}.md`)
+  }, [messages, threads, currentChatId, chatConfig])
+
+  const handleFocusChatInput = useCallback(() => {
+    chatInputWrapperRef.current?.querySelector('textarea')?.focus()
+  }, [])
+
+  useChatKeyboardShortcuts({
+    enabled: Boolean(chatConfig) && !authRequired && !showFeedbackView,
+    onNewChat: handleNewChat,
+    onFocusSearch: () => threadSearchInputRef.current?.focus(),
+    onFocusInput: handleFocusChatInput,
+    onCloseSidebar: () => setIsMobileSidebarOpen(false),
+  })
 
   const handleBackFromFeedback = useCallback(() => {
     setShowFeedbackView(false)
@@ -1381,8 +1553,11 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   if (isAutoLoginInProgress) {
     return (
-      <div className='fixed inset-0 z-[110] flex items-center justify-center bg-background'>
-        <LoadingAgentP2 size='lg' />
+      <div
+        className='fixed inset-0 z-[110] flex items-center justify-center'
+        style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+      >
+        <DeployedResponseLoader size={160} className='py-0' />
       </div>
     )
   }
@@ -1439,128 +1614,201 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   // Standard text-based chat interface
   return (
-    <div className='fixed inset-0 z-[100] flex flex-col bg-background text-foreground'>
-      {/* Header component */}
-      <div className='relative z-[60] shrink-0'>
-        <ArenaChatHeader
-          chatConfig={chatConfig}
-          starCount={starCount}
-          showFeedbackView={showFeedbackView}
-        />
-      </div>
+    <ToastProvider>
+      <div
+        className='fixed inset-0 z-[100] flex'
+        style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
+      >
+        <div className='hidden h-full shrink-0 md:flex'>
+          <LeftNavThread
+            threads={threads as ThreadRecord[]}
+            isLoading={isThreadsLoading}
+            error={threadsError || null}
+            currentChatId={currentChatId || ''}
+            onSelectThread={handleSelectThread}
+            onRefreshThread={handleRefreshThread}
+            onNewChat={handleNewChat}
+            onRenameThread={handleRenameThread}
+            onDeleteThread={handleDeleteThread}
+            onTogglePinThread={handleTogglePinThread}
+            isStreaming={isStreamingResponse || isLoading}
+            workflowId={identifier}
+            showReRun={customFields.length > 0}
+            showFeedbackView={showFeedbackView}
+            isGoldenQueriesOpen={isGoldenQueriesOpen}
+            isNewChatActive={isNewChatActive}
+            onReRun={handleRerun}
+            onViewFeedback={handleViewFeedback}
+            onViewGoldenQueries={handleViewGoldenQueries}
+            searchInputRef={threadSearchInputRef}
+            logoUrl={sidebarLogoUrl}
+            onToggleSidebar={handleToggleSidebar}
+            isCollapsed={isSidebarCollapsed}
+            onExportChat={handleExportChat}
+          />
+        </div>
 
-      <div className='relative flex min-h-0 flex-1 flex-col'>
-        {isHistoryLoading && (
-          <div className='absolute inset-y-0 right-0 left-[320px] z-[105] flex items-center justify-center bg-white/60 pb-[6%]'>
-            <LoadingAgentP2 size='lg' />
-          </div>
+        {isMobileSidebarOpen && (
+          <LeftNavThread
+            threads={threads as ThreadRecord[]}
+            isLoading={isThreadsLoading}
+            error={threadsError || null}
+            currentChatId={currentChatId || ''}
+            onSelectThread={handleSelectThread}
+            onRefreshThread={handleRefreshThread}
+            onNewChat={handleNewChat}
+            onRenameThread={handleRenameThread}
+            onDeleteThread={handleDeleteThread}
+            onTogglePinThread={handleTogglePinThread}
+            isStreaming={isStreamingResponse || isLoading}
+            workflowId={identifier}
+            showReRun={customFields.length > 0}
+            showFeedbackView={showFeedbackView}
+            isGoldenQueriesOpen={isGoldenQueriesOpen}
+            isNewChatActive={isNewChatActive}
+            onReRun={handleRerun}
+            onViewFeedback={handleViewFeedback}
+            onViewGoldenQueries={handleViewGoldenQueries}
+            isMobileOpen
+            onCloseMobile={() => setIsMobileSidebarOpen(false)}
+            searchInputRef={threadSearchInputRef}
+            logoUrl={sidebarLogoUrl}
+            onToggleSidebar={handleToggleSidebar}
+            onExportChat={handleExportChat}
+          />
         )}
 
-        <LeftNavThread
-          threads={threads}
-          isLoading={isThreadsLoading}
-          error={threadsError || null}
-          currentChatId={currentChatId || ''}
-          onSelectThread={handleSelectThread}
-          onRefreshThread={handleRefreshThread}
-          onNewChat={handleNewChat}
-          isStreaming={isStreamingResponse || isLoading}
-          workflowId={identifier}
-          showReRun={customFields.length > 0}
-          showFeedbackView={showFeedbackView}
-          onReRun={handleRerun}
-          onViewFeedback={handleViewFeedback}
-          onViewGoldenQueries={handleViewGoldenQueries}
-        />
+        <div
+          className='relative flex min-h-0 min-w-0 flex-1 flex-col'
+          style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
+        >
+          <div className='relative flex min-h-0 flex-1'>
+            {isHistoryLoading && (
+              <div
+                className='absolute inset-0 z-[105] flex items-center justify-center'
+                style={{ backgroundColor: `${DEPLOYED_CHAT_CANVAS_BG}99` }}
+              >
+                <DeployedResponseLoader size={160} className='py-0' />
+              </div>
+            )}
 
-        {showFeedbackView ? (
-          <div className='absolute inset-0 left-[320px]'>
-            <FeedbackView
-              feedbackData={feedbackData}
-              isLoading={isFeedbackLoading}
-              error={feedbackError}
-              workflowTitle={chatConfig?.title}
-              page={feedbackPage}
-              pageSize={feedbackPageSize}
-              totalPages={feedbackTotalPages}
-              totalCount={feedbackTotalCount}
-              onPageChange={fetchFeedbackPage}
-              onBack={handleBackFromFeedback}
-            />
-          </div>
-        ) : (
-          <div className='flex min-h-0 flex-1 flex-col'>
-            {/* Message Container component */}
-            <ChatMessageContainer
-              messages={messages}
-              isLoading={isLoading}
-              isStreaming={isStreamingResponse}
-              showScrollButton={showScrollButton}
-              messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
-              messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-              scrollToBottom={scrollToBottom}
-              scrollToMessage={scrollToMessage}
-              chatConfig={chatConfig}
-              setMessages={setMessages}
-              workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
-              onAskInChat={(text) => setAskInChatText(text)}
-              onToggleGeneratedImage={toggleGeneratedImageSelection}
-              selectedGeneratedImageIds={selectedGeneratedImageIds}
-              selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
-              onWelcomeQueryClick={handleWelcomeQueryClick}
-            />
-
-            {/* Input area (free-standing at the bottom) */}
-            <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
-              <div className='relative mx-auto max-w-3xl md:max-w-[748px]'>
-                <ChatInput
+            <div className='flex min-h-0 min-w-0 flex-1 flex-col'>
+              {showFeedbackView ? (
+                <FeedbackView
+                  feedbackData={feedbackData}
+                  isLoading={isFeedbackLoading}
+                  error={feedbackError}
+                  workflowTitle={chatConfig?.title}
+                  page={feedbackPage}
+                  pageSize={feedbackPageSize}
+                  totalPages={feedbackTotalPages}
+                  totalCount={feedbackTotalCount}
+                  onPageChange={fetchFeedbackPage}
+                  onBack={handleBackFromFeedback}
+                />
+              ) : showLandingView ? (
+                <DeployedChatLanding
+                  chatConfig={chatConfig}
+                  department={chatDepartment}
+                  userName={userName}
+                  isStreaming={isStreamingResponse}
+                  isLoading={isLoading}
                   insertText={askInChatText}
                   onInsertConsumed={() => setAskInChatText('')}
-                  onSubmit={(
-                    value: string,
-                    isVoiceInput?: boolean,
-                    files?: Array<{
-                      id: string
-                      name: string
-                      size: number
-                      type: string
-                      file: File
-                      dataUrl?: string
-                    }>
-                  ) => {
+                  onSubmit={(value, isVoiceInput, files) => {
                     void handleSendMessage(value, isVoiceInput, files)
                   }}
-                  isStreaming={isLoading || isStreamingResponse}
                   onStopStreaming={() => stopStreaming(setMessages)}
                   onVoiceStart={handleVoiceStart}
                   selectedGeneratedImages={effectiveGeneratedImages}
                   onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
+                  inputWrapperRef={chatInputWrapperRef}
+                  onWelcomeQueryClick={handleWelcomeQueryClick}
                 />
-              </div>
+              ) : (
+                <>
+                  <div className='relative flex min-h-0 flex-1 flex-col overflow-hidden'>
+                    <ChatMessageContainer
+                      messages={messages}
+                      isLoading={isLoading}
+                      isStreaming={isStreamingResponse}
+                      showScrollButton={showScrollButton}
+                      messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
+                      messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
+                      scrollToBottom={scrollToBottom}
+                      scrollToMessage={scrollToMessage}
+                      chatConfig={chatConfig}
+                      setMessages={setMessages}
+                      workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
+                      onAskInChat={(text) => setAskInChatText(text)}
+                      onToggleGeneratedImage={toggleGeneratedImageSelection}
+                      selectedGeneratedImageIds={selectedGeneratedImageIds}
+                      selectedGeneratedImageIdsKey={selectedGeneratedImageIdsKey}
+                      onWelcomeQueryClick={handleWelcomeQueryClick}
+                      onRegenerateMessage={handleRegenerateLastResponse}
+                    />
+                  </div>
+
+                  <div
+                    ref={chatInputWrapperRef}
+                    className='relative w-full shrink-0 p-3 pb-4 md:p-4 md:pb-6'
+                  >
+                    <div
+                      className={`relative mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS}`}
+                    >
+                      <ChatInput
+                        embedded
+                        placeholder={DEPLOYED_CHAT_INPUT_PLACEHOLDER}
+                        insertText={askInChatText}
+                        onInsertConsumed={() => setAskInChatText('')}
+                        onSubmit={(
+                          value: string,
+                          isVoiceInput?: boolean,
+                          files?: Array<{
+                            id: string
+                            name: string
+                            size: number
+                            type: string
+                            file: File
+                            dataUrl?: string
+                          }>
+                        ) => {
+                          void handleSendMessage(value, isVoiceInput, files)
+                        }}
+                        isStreaming={isLoading || isStreamingResponse}
+                        onStopStreaming={() => stopStreaming(setMessages)}
+                        onVoiceStart={handleVoiceStart}
+                        selectedGeneratedImages={effectiveGeneratedImages}
+                        onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
+        </div>
+
+        {/* Start Block Input Modal */}
+        {customFields.length > 0 && (
+          <StartBlockInputModal
+            open={isInputModalOpen}
+            onOpenChange={setIsInputModalOpen}
+            inputFormat={chatConfig.inputFormat}
+            onSubmit={handleStartBlockInputsSubmit}
+            initialValues={startBlockInputs}
+          />
         )}
-      </div>
 
-      {/* Start Block Input Modal */}
-      {customFields.length > 0 && (
-        <StartBlockInputModal
-          open={isInputModalOpen}
-          onOpenChange={setIsInputModalOpen}
-          inputFormat={chatConfig.inputFormat}
-          onSubmit={handleStartBlockInputsSubmit}
-          initialValues={startBlockInputs}
+        <GoldenQueriesModal
+          open={isGoldenQueriesOpen}
+          onOpenChange={setIsGoldenQueriesOpen}
+          queries={goldenQueries}
+          onSelectQuery={handleGoldenQuerySelect}
+          onSaveQueries={handleSaveGoldenQueries}
+          disabled={isStreamingResponse || isLoading || isGoldenQueriesSaving}
         />
-      )}
-
-      <GoldenQueriesModal
-        open={isGoldenQueriesOpen}
-        onOpenChange={setIsGoldenQueriesOpen}
-        queries={goldenQueries}
-        onSelectQuery={handleGoldenQuerySelect}
-        onSaveQueries={handleSaveGoldenQueries}
-        disabled={isStreamingResponse || isLoading || isGoldenQueriesSaving}
-      />
-    </div>
+      </div>
+    </ToastProvider>
   )
 }

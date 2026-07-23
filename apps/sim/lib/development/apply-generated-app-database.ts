@@ -5,13 +5,13 @@ import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import type { GeneratedAppFile } from '@/lib/development/validate-generated-app-build'
 import {
   buildRepoSummaryContent,
   GENERATED_APP_REPO_SUMMARY_PATH,
   type NormalizeGeneratedAppFilesOptions,
 } from '@/lib/development/normalize-generated-app-files'
 import { resolveNeonConnectionUri } from '@/lib/development/provision-neon-via-api'
+import type { GeneratedAppFile } from '@/lib/development/validate-generated-app-build'
 import { getPrismaSchemaMigrationSafetyIssues } from '@/lib/development/validate-generated-app-structure'
 
 const logger = createLogger('ApplyGeneratedAppDatabase')
@@ -109,7 +109,9 @@ export async function resolveGeneratedAppDatabaseUrl(
 
   let neonProjectId = input.neonProjectId?.trim()
   if (!neonProjectId && input.files) {
-    const summary = input.files.find((file) => file.path === GENERATED_APP_REPO_SUMMARY_PATH)?.content
+    const summary = input.files.find(
+      (file) => file.path === GENERATED_APP_REPO_SUMMARY_PATH
+    )?.content
     if (summary) {
       neonProjectId = parseNeonProjectIdFromRepoSummary(summary)
     }
@@ -145,7 +147,11 @@ export async function applyGeneratedAppDatabase(
   }
 
   if (!existsSync(schemaPath)) {
-    return { success: false, output: '', error: 'prisma/schema.prisma is missing from the generated app' }
+    return {
+      success: false,
+      output: '',
+      error: 'prisma/schema.prisma is missing from the generated app',
+    }
   }
 
   const logs: string[] = []
@@ -180,7 +186,16 @@ export async function applyGeneratedAppDatabase(
       logs.push(
         await runNpmInDir(
           outputDir,
-          ['exec', 'prisma', 'db', 'execute', '--file', 'db/seed.sql', '--schema', 'prisma/schema.prisma'],
+          [
+            'exec',
+            'prisma',
+            'db',
+            'execute',
+            '--file',
+            'db/seed.sql',
+            '--schema',
+            'prisma/schema.prisma',
+          ],
           databaseEnv
         )
       )
@@ -227,7 +242,9 @@ export async function syncGeneratedAppDatabase(
 
   const databaseUrl = await resolveGeneratedAppDatabaseUrl(input)
   if (!databaseUrl) {
-    logger.info('Skipping local database sync — connection URL unavailable (Vercel build will run prisma db push)')
+    logger.info(
+      'Skipping local database sync — connection URL unavailable (Vercel build will run prisma db push)'
+    )
     return { applied: false }
   }
 

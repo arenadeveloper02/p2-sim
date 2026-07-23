@@ -66,8 +66,8 @@ vi.mock('@/lib/billing/core/usage-log', () => ({
   getOrgWorkspaceUsageCostForUser: mockGetOrgWorkspaceUsageCostForUser,
 }))
 
-import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
+import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import {
   getOrgMemberUsageLimit,
@@ -132,17 +132,17 @@ describe('validateOrgMemberAllocationWithinPool', () => {
       ],
     ]
 
-    await expect(
-      validateOrgMemberAllocationWithinPool('org-1', 'user-2', 500)
-    ).resolves.toEqual({ ok: true })
+    await expect(validateOrgMemberAllocationWithinPool('org-1', 'user-2', 500)).resolves.toEqual({
+      ok: true,
+    })
   })
 
   it('replaces the target member limit instead of double-counting it', async () => {
     mockDbState.selectResults = [[{ userId: 'user-2', usageLimit: '1500' }]]
 
-    await expect(
-      validateOrgMemberAllocationWithinPool('org-1', 'user-2', 500)
-    ).resolves.toEqual({ ok: true })
+    await expect(validateOrgMemberAllocationWithinPool('org-1', 'user-2', 500)).resolves.toEqual({
+      ok: true,
+    })
   })
 
   it('fails when allocated credits would exceed the org pool', async () => {
@@ -160,9 +160,9 @@ describe('validateOrgMemberAllocationWithinPool', () => {
   it('skips validation for on-demand unlimited org pools', async () => {
     mockGetOrgUsageLimit.mockResolvedValue({ limit: ON_DEMAND_UNLIMITED })
 
-    await expect(
-      validateOrgMemberAllocationWithinPool('org-1', 'user-2', 600)
-    ).resolves.toEqual({ ok: true })
+    await expect(validateOrgMemberAllocationWithinPool('org-1', 'user-2', 600)).resolves.toEqual({
+      ok: true,
+    })
   })
 })
 

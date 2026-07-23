@@ -9,19 +9,14 @@ import { getValidationErrorMessage, parseRequest, validationErrorResponse } from
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
-  assertKnownSizeWithinLimit,
   DEFAULT_MAX_ERROR_BODY_BYTES,
   isPayloadSizeLimitError,
-  PayloadSizeLimitError,
   readResponseJsonWithLimit,
   readResponseTextWithLimit,
   readResponseToBufferWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
-import { downloadFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
-import { assertToolFileAccess } from '@/app/api/files/authorization'
-import type { UserFile } from '@/executor/types'
 
 const logger = createLogger('VideoProxyAPI')
 const MAX_VIDEO_OUTPUT_BYTES = 250 * 1024 * 1024

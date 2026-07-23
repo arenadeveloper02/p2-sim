@@ -63,7 +63,10 @@ export const developmentGenerateAppTool: ToolConfig<
   transformResponse: async (response) => {
     const data = await response.json()
     if (!response.ok) {
-      return mapGenerateAppResultToToolResponse({ success: false, error: data.error ?? response.statusText })
+      return mapGenerateAppResultToToolResponse({
+        success: false,
+        error: data.error ?? response.statusText,
+      })
     }
     return mapGenerateAppResultToToolResponse(data)
   },

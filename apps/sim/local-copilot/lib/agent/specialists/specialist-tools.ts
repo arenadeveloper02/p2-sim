@@ -105,7 +105,10 @@ const SPECIALIST_SPECS: SpecialistToolSpec[] = [
     domain: 'media',
     description: 'Media Agent — image/audio/video generation and ffmpeg.',
     properties: {
-      prompt: { type: 'string', description: 'Optional brief instruction to scope the media task.' },
+      prompt: {
+        type: 'string',
+        description: 'Optional brief instruction to scope the media task.',
+      },
     },
     briefKeys: ['prompt'],
   },

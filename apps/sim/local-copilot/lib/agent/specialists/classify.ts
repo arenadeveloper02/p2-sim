@@ -69,9 +69,7 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
   {
     domain: 'auth',
     weight: 3,
-    patterns: [
-      /\b(oauth|credential|api\s*key|connect\s+(gmail|slack|google)|authorize|auth)\b/i,
-    ],
+    patterns: [/\b(oauth|credential|api\s*key|connect\s+(gmail|slack|google)|authorize|auth)\b/i],
   },
   {
     domain: 'media',

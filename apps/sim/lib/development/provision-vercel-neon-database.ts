@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
-import { sleep } from '@sim/utils/helpers'
 import { toError } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
 import {
   isVercelManagedNeonError,
   provisionNeonDatabaseViaApi,
@@ -162,7 +162,10 @@ async function listNeonIntegrationConfigurations(
   teamId?: string
 ): Promise<VercelIntegrationConfiguration[]> {
   const query = neonDiscoveryQuery()
-  const paths = [`/v2/integrations/configurations?${query}`, `/v1/integrations/configurations?${query}`]
+  const paths = [
+    `/v2/integrations/configurations?${query}`,
+    `/v1/integrations/configurations?${query}`,
+  ]
 
   for (const path of paths) {
     const { data, status } = await vercelRequest<
@@ -237,9 +240,7 @@ async function resolveNeonIntegrationConfigurationId(
     return configured
   }
 
-  const teamCandidates = teamId?.trim()
-    ? [teamId.trim(), undefined]
-    : [undefined]
+  const teamCandidates = teamId?.trim() ? [teamId.trim(), undefined] : [undefined]
 
   for (const candidateTeamId of teamCandidates) {
     const configurations = await listNeonIntegrationConfigurations(token, candidateTeamId)
@@ -417,7 +418,10 @@ async function provisionNeonDatabaseViaVercelMarketplace(
 
     const resourceId = resolveStoreResourceId(createdStore)
     if (!resourceId) {
-      return { success: false, error: 'Vercel Neon store was created but no resource id was returned' }
+      return {
+        success: false,
+        error: 'Vercel Neon store was created but no resource id was returned',
+      }
     }
 
     const readyStore = isStoreReady(createdStore.status)
@@ -447,7 +451,11 @@ async function provisionNeonDatabaseViaVercelMarketplace(
       }
     }
 
-    const hasDatabaseUrl = await waitForProjectDatabaseUrl(token, vercelProjectId, input.vercelTeamId)
+    const hasDatabaseUrl = await waitForProjectDatabaseUrl(
+      token,
+      vercelProjectId,
+      input.vercelTeamId
+    )
     if (!hasDatabaseUrl) {
       return {
         success: false,
@@ -512,7 +520,9 @@ export async function provisionNeonDatabase(
     }
 
     if (isVercelManagedNeonError(apiResult.error)) {
-      logger.info('Neon organization is Vercel-managed; falling back to Vercel marketplace provisioning')
+      logger.info(
+        'Neon organization is Vercel-managed; falling back to Vercel marketplace provisioning'
+      )
       const marketplaceResult = await provisionNeonDatabaseViaVercelMarketplace(input)
       if (marketplaceResult.success) {
         return marketplaceResult

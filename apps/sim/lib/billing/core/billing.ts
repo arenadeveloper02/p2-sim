@@ -1,20 +1,12 @@
 import { db } from '@sim/db'
-import {
-  member,
-  organization,
-  subscription,
-  userStats,
-} from '@sim/db/schema'
+import { member, organization, subscription, userStats } from '@sim/db/schema'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import {
   getHighestPrioritySubscription,
   resolveBillingInterval,
 } from '@/lib/billing/core/subscription'
 import { getOrgUsageLimit, getUserUsageData } from '@/lib/billing/core/usage'
-import {
-  COPILOT_USAGE_SOURCES,
-  getBillingPeriodUsageCost,
-} from '@/lib/billing/core/usage-log'
+import { COPILOT_USAGE_SOURCES, getBillingPeriodUsageCost } from '@/lib/billing/core/usage-log'
 import { getCreditBalance } from '@/lib/billing/credits/balance'
 import {
   computeDailyRefreshConsumed,

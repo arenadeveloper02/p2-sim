@@ -270,11 +270,11 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       isMemberLimit
         ? undefined
         : {
-          action: {
-            label: 'Upgrade',
-            onClick: () => navigateToSettings({ section: 'billing' }),
-          },
-        }
+            action: {
+              label: 'Upgrade',
+              onClick: () => navigateToSettings({ section: 'billing' }),
+            },
+          }
     )
   }
 
@@ -371,7 +371,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         try {
           const resources = JSON.parse(resourcesJson) as MothershipResource[]
           editorRef.current.insertResources(resources)
-        } catch { }
+        } catch {}
         textareaRef.current?.focus()
         return
       }
@@ -382,7 +382,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         try {
           const resource = JSON.parse(resourceJson) as MothershipResource
           editorRef.current.insertResources([resource])
-        } catch { }
+        } catch {}
         textareaRef.current?.focus()
         return
       }

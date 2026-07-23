@@ -30,8 +30,7 @@ export function PatchPreview({ patch, className }: PatchPreviewProps) {
             key={`${change.operation}-${index}`}
             className='rounded-md bg-[var(--surface-2)] px-2 py-1.5 font-mono text-[11px] text-[var(--text-body)]'
           >
-            <span className='text-[var(--text-accent)]'>{change.operation}</span>
-            {' '}
+            <span className='text-[var(--text-accent)]'>{change.operation}</span>{' '}
             {formatChangeDetail(change)}
           </li>
         ))}
