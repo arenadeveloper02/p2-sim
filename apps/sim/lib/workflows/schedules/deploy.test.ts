@@ -760,8 +760,8 @@ describe('Schedule Deploy Utilities', () => {
           deploymentOperationId: 'operation-1',
           status: 'active',
           failedCount: 0,
-        })
-      )
+        }),
+      })
       expect(mockInsert).not.toHaveBeenCalled()
     })
 

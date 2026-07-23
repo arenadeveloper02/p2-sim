@@ -490,7 +490,7 @@ export function CredentialSelector({
         value: '__connect_account__',
         iconElement: <ExternalLink className='size-3' />,
       })
-     options.push(...additionalConnectItems)
+      options.push(...additionalConnectItems)
     }
 
     return options

@@ -281,7 +281,7 @@ export const ChatInput: React.FC<{
           placeholder={isDragOver ? 'Drop files here...' : placeholder}
           rows={1}
           className={cn(
-            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] leading-6 text-[var(--color-ds-text-primary,#2C2D33)] outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[#A7AAB2] placeholder:text-[16px] focus-visible:ring-0 focus-visible:ring-offset-0',
+            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] text-[var(--color-ds-text-primary,#2C2D33)] leading-6 outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[#A7AAB2] placeholder:text-[16px] focus-visible:ring-0 focus-visible:ring-offset-0',
             isMultiLineInput
               ? 'min-h-[24px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
               : 'min-h-[24px] overflow-hidden'
@@ -380,8 +380,7 @@ export const ChatInput: React.FC<{
           <div
             className={cn(
               'w-full',
-              useDeployedChrome &&
-                'rounded-[29px] border border-solid border-transparent p-0',
+              useDeployedChrome && 'rounded-[29px] border border-transparent border-solid p-0',
               useDeployedChrome && !hasDeployedExtras && DEPLOYED_CHAT_INPUT_HEIGHT_CLASS
             )}
             style={

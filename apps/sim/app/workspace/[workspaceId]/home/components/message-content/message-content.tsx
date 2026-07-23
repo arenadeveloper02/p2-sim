@@ -22,7 +22,6 @@ import {
   humanizeToolName,
 } from '@/lib/copilot/tools/tool-display'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
-import { shouldShowTrailingLiveStatus } from '@/app/workspace/[workspaceId]/home/hooks/stream/trailing-live-status'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import type { ContentBlock, OptionItem, ToolCallData } from '../../types'
 import { SUBAGENT_LABELS } from '../../types'

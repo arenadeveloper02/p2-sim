@@ -4,8 +4,8 @@ import { createLogger } from '@sim/logger'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { createErrorResponse } from '@/app/api/workflows/utils'
 import { addCorsHeaders } from '@/app/api/chat/utils'
+import { createErrorResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('DeployedChatThreadAuth')
 

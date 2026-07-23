@@ -54,7 +54,7 @@ describe('getWorkspaceCreationPolicy', () => {
   afterEach(() => {
     mockFeatureFlags.isBillingEnabled = true
   })
-  
+
   it('blocks free users once they already own one non-organization workspace', async () => {
     queueTableRows(workspace, [{ value: 1 }])
     mockGetUserOrganization.mockResolvedValueOnce(null)

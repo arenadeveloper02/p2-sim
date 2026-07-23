@@ -20,7 +20,7 @@ function isMissingColumnError(error: unknown): boolean {
   return (
     message.includes('archived_at') ||
     message.includes('pinned_at') ||
-    message.includes('column') && message.includes('does not exist')
+    (message.includes('column') && message.includes('does not exist'))
   )
 }
 

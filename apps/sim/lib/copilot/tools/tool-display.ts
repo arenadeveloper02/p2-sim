@@ -485,7 +485,6 @@ const TOOL_TITLES: Record<string, string> = {
   research: 'Research Agent',
   scout: 'Scout Agent',
   search: 'Search Agent',
-  file: 'File Agent',
   media: 'Media Agent',
   file: 'File Agent',
   superagent: 'Executing action',

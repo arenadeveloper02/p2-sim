@@ -22,7 +22,12 @@ export const listDeployedChatThreadsResponseSchema = z.object({
 
 export const updateDeployedChatThreadBodySchema = z
   .object({
-    title: z.string().trim().min(1, 'Title cannot be empty').max(100, 'Title is too long').optional(),
+    title: z
+      .string()
+      .trim()
+      .min(1, 'Title cannot be empty')
+      .max(100, 'Title is too long')
+      .optional(),
     pinned: z.boolean().optional(),
   })
   .refine((data) => data.title !== undefined || data.pinned !== undefined, {

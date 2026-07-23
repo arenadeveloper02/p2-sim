@@ -1,11 +1,8 @@
-import { db } from '@sim/db'
-import { deployedChat } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { generateRequestId } from '@/lib/core/utils/request'
-import { listDeployedChatThreadsForUser } from '@/lib/chat/deployed-chat-threads'
 import { resolveDeployedChatThreadAccess } from '@/lib/chat/deployed-chat-thread-auth'
+import { listDeployedChatThreadsForUser } from '@/lib/chat/deployed-chat-threads'
+import { generateRequestId } from '@/lib/core/utils/request'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import { addCorsHeaders } from '../../utils'
 

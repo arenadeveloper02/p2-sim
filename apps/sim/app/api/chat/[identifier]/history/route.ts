@@ -113,10 +113,7 @@ export async function GET(
     let conditions = and(
       eq(workflowExecutionLogs.workflowId, deploymentWorkflowId),
       eq(workflowExecutionLogs.isExternalChat, true),
-      or(
-        eq(workflowExecutionLogs.userId, executingUserId),
-        isNull(workflowExecutionLogs.userId)
-      )
+      or(eq(workflowExecutionLogs.userId, executingUserId), isNull(workflowExecutionLogs.userId))
     )
 
     // Add date range filters if provided
