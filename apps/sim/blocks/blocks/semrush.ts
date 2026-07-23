@@ -75,15 +75,14 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
         value: ['tracking_position_organic'],
       },
     },
-    // Position tracking URL mask (unique id avoids duplicate React keys with `url` for url_organic;
-    // canonicalParamId maps to tool param `url` for semrush_organic_positions)
+    // Unique id (not `url`) so it does not collide with the url_organic `url` subblock.
+    // tools.config.params maps trackingUrl → url for semrush_organic_positions.
     {
       id: 'trackingUrl',
       title: 'Tracked URL',
       type: 'short-input',
       placeholder: '*.example.com/* or *.apple.com/*:*.amazon.com/*',
       required: true,
-      canonicalParamId: 'url',
       description: 'URL with mask; use : to separate multiple domains',
       condition: {
         field: 'operation',
