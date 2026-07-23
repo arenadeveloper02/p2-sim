@@ -1020,6 +1020,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       <ChatMessageContainer
         messages={displayMessages}
         isLoading={isLoading}
+        isStreaming={isStreamingResponse}
         showScrollButton={showScrollButton}
         messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
         messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}

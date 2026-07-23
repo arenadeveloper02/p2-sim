@@ -24,6 +24,8 @@ import { ArenaClientChatMessage, type ChatMessage } from '../message/ArenaClient
 interface ChatMessageContainerProps {
   messages: ChatMessage[]
   isLoading: boolean
+  /** When true, response is streaming (show "Fetching..." instead of "Thinking...") */
+  isStreaming?: boolean
   showScrollButton: boolean
   messagesContainerRef: RefObject<HTMLDivElement>
   messagesEndRef: RefObject<HTMLDivElement>
@@ -60,6 +62,7 @@ interface ChatMessageContainerProps {
 export const ChatMessageContainer = memo(function ChatMessageContainer({
   messages,
   isLoading,
+  isStreaming = false,
   showScrollButton,
   messagesContainerRef,
   messagesEndRef,
@@ -239,7 +242,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
               })()
             )}
 
-            {isLoading && <DeployedResponseLoader />}
+            {isLoading && <DeployedResponseLoader isStreaming={isStreaming} />}
 
             {/* End of messages marker for scrolling */}
             <div ref={messagesEndRef} />
