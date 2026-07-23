@@ -604,8 +604,6 @@ export async function* runLocalCopilotAgent(
         inputTokens: roundInputTokens,
         outputTokens: roundOutputTokens,
         provider: config.provider,
-        source: 'copilot',
-        sourceReference: `local-copilot:${usageTurnId}:round-${round}`,
       })
     }
 
