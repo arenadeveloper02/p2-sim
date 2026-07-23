@@ -78,6 +78,12 @@ ENV DATABASE_URL=${DATABASE_URL}
 # ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
 # ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
+# Node heap for `next build`. CI can keep a lower value; EC2 warm builds should
+# pass a higher ARG (e.g. 16384–24576 on a 32GB host). Read by apps/sim
+# package.json `build` script via BUILD_MAX_OLD_SPACE_MB.
+ARG BUILD_MAX_OLD_SPACE_MB=8192
+ENV BUILD_MAX_OLD_SPACE_MB=${BUILD_MAX_OLD_SPACE_MB}
+
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \
     --mount=type=cache,id=turbo-cache-${TARGETPLATFORM},target=/app/.turbo \
