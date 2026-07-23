@@ -19,8 +19,13 @@ import { createLogger } from '@sim/logger'
 import { formatRelativeTime } from '@sim/utils/formatting'
 import { Check, RefreshCw } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  resolveEChartsOptionsFromContent,
+  stripEChartsJsonFromContent,
+} from '@/lib/chart-generation/echarts-option'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
+import { ChatEChartsRenderer } from '@/app/(interfaces)/chat/components/message/components/chat-echarts-renderer'
 import { DeployedInlineLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
 import { FeedbackBox } from '@/app/(interfaces)/chat/components/message/components/feedback-box'
 import { KnowledgeResultsModal } from '@/app/(interfaces)/chat/components/message/components/knowledge-results-modal'
@@ -233,6 +238,11 @@ export const ArenaClientChatMessage = memo(
       return typeof message.content === 'object' && message.content !== null
     }, [message.content])
 
+    const messageChartOptions = useMemo(
+      () => resolveEChartsOptionsFromContent(message.content),
+      [message.content]
+    )
+
     // Since tool calls are now handled via SSE events and stored in message.toolCalls,
     // we can use the content directly without parsing
     const cleanTextContent = message.content
@@ -375,6 +385,18 @@ export const ArenaClientChatMessage = memo(
     const renderContent = (content: unknown) => {
       if (!content) {
         return null
+      }
+
+      if (content === message.content && messageChartOptions) {
+        const prose = typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
+        return (
+          <>
+            {prose ? renderStringContent(prose) : null}
+            {messageChartOptions.map((option, index) => (
+              <ChatEChartsRenderer key={index} option={option} />
+            ))}
+          </>
+        )
       }
 
       try {

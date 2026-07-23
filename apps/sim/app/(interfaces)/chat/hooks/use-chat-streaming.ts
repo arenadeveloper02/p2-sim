@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import {
   type AssistantChatFile as ChatFile,
   extractAssistantFilesFromData,
@@ -568,6 +569,18 @@ function formatForkStreamOutputValue(value: unknown): string | null {
   }
 
   if (typeof value === 'object') {
+    const chartOutput = formatChartDeployOutputForChat(value)
+    if (chartOutput) {
+      return chartOutput
+    }
+    if (
+      value &&
+      typeof value === 'object' &&
+      'charts' in value &&
+      Array.isArray((value as { charts?: unknown }).charts)
+    ) {
+      return null
+    }
     try {
       return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
     } catch {

@@ -1,6 +1,8 @@
+import { truncate } from '@sim/utils/string'
 import { extractCapturedOutput } from '@/local-copilot/lib/tools/format-tool-result'
 
 const LEAKED_TOOL_MARKER_PATTERN = /\[Tool [^\]]+\]/g
+const GENERIC_MESSAGE_MAX_CHARS = 4_000
 
 export interface ToolTurnRecord {
   name: string
@@ -86,22 +88,39 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
       continue
     }
 
-    if (record.name === 'run_workflow') {
+    if (
+      record.name === 'run_workflow' ||
+      record.name === 'run_block' ||
+      record.name === 'run_from_block' ||
+      record.name === 'run_workflow_until_block'
+    ) {
       const payload = asRecord(record.result)
       const status = typeof payload.status === 'string' ? payload.status : 'completed'
-      parts.push(`Workflow run ${status}.`)
+      const label =
+        record.name === 'run_block'
+          ? 'Block run'
+          : record.name === 'run_from_block'
+            ? 'Run-from-block'
+            : 'Workflow run'
+      parts.push(`${label} ${status}.`)
       continue
     }
 
     if (record.name === 'function_execute' || record.name === 'invoke_integration_tool') {
       const captured = extractCapturedOutput(record.result)
       if (captured) {
-        parts.push(
-          captured.length > 4_000
-            ? `${captured.slice(0, 4_000)}\n\n[... output truncated]`
-            : captured
-        )
+        parts.push(truncate(captured, GENERIC_MESSAGE_MAX_CHARS))
       }
+      continue
+    }
+
+    // Specialists and other tools often finish with only a `message` payload.
+    // Without this, the mothership UI can settle with zero renderable prose
+    // (specialist tool names are absorbed as empty subagent groups).
+    const payload = asRecord(record.result)
+    const message = typeof payload.message === 'string' ? payload.message.trim() : ''
+    if (message) {
+      parts.push(truncate(message, GENERIC_MESSAGE_MAX_CHARS))
     }
   }
 

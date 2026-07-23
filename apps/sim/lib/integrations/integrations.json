@@ -20717,7 +20717,7 @@
       ],
       "triggerCount": 6,
       "authType": "oauth",
-      "oauthServiceId": "zoom",
+      "oauthServiceId": "zoom-client",
       "category": "tools",
       "integrationType": "communication",
       "tags": ["meeting", "calendar", "scheduling"]

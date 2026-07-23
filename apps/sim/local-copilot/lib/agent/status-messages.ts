@@ -35,11 +35,24 @@ export function buildToolStartStatus(toolName: string, args: Record<string, unkn
   if (toolName === 'edit_content' || toolName === 'workspace_file') {
     return truncateStatusMessage(file ? `Writing ${file}…` : 'Writing file…')
   }
-  if (toolName === 'run_workflow' || toolName === 'run_workflow_until_block') {
+  if (
+    toolName === 'run_workflow' ||
+    toolName === 'run_workflow_until_block' ||
+    toolName === 'run_block' ||
+    toolName === 'run_from_block'
+  ) {
     const name =
       typeof args.workflowName === 'string' && args.workflowName.trim()
         ? args.workflowName.trim()
         : undefined
+    if (toolName === 'run_block') {
+      return truncateStatusMessage(name ? `Running block in “${name}”…` : 'Running block…')
+    }
+    if (toolName === 'run_from_block') {
+      return truncateStatusMessage(
+        name ? `Running from block in “${name}”…` : 'Running from block…'
+      )
+    }
     return truncateStatusMessage(name ? `Running workflow “${name}”…` : 'Running workflow…')
   }
   if (toolName === 'development_generate_app') {

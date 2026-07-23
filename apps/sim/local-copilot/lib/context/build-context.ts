@@ -3,6 +3,7 @@ import { workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 import { and, desc, eq, isNull } from 'drizzle-orm'
+import { loadUserMemoriesForContext } from '@/lib/copilot/tools/server/other/user-memory'
 import { listLogs } from '@/lib/logs/list-logs'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { getAllBlocks } from '@/blocks/registry'
@@ -50,6 +51,7 @@ export async function buildLocalCopilotContext(
   const credentials = oauthIntegrationsToCredentialMetadata(integrations.connectedIntegrations)
   const resources = await loadWorkspaceResourceSummaries(workspaceId)
   const skills = await loadWorkspaceSkillSummaries(workspaceId)
+  const userMemories = await loadUserMemoriesForContext(userId, workspaceId)
   const availableBlocks = summarizeBlocks(getAllBlocks())
   const availableIntegrations = [...new Set(availableBlocks.map((block) => block.category))].sort()
 
@@ -65,6 +67,17 @@ export async function buildLocalCopilotContext(
     tables: resources.tables,
     workspaceFiles: resources.workspaceFiles,
     ...(skills.length > 0 ? { skills } : {}),
+    ...(userMemories.length > 0
+      ? {
+          userMemories: userMemories.map((memory) => ({
+            key: memory.key,
+            value: memory.value,
+            memoryType: memory.memoryType,
+            source: memory.source,
+            confidence: memory.confidence,
+          })),
+        }
+      : {}),
   }
 
   if (!workflowId) {
@@ -117,6 +130,7 @@ export async function buildLocalCopilotContext(
       tableCount: resources.tables.length,
       knowledgeBaseCount: resources.knowledgeBases.length,
       skillCount: skills.length,
+      userMemoryCount: userMemories.length,
       envVariableCount: integrations.envVariables.length,
       connectedIntegrationCount: integrations.connectedIntegrations.length,
       provider: getLocalCopilotConfig().provider,

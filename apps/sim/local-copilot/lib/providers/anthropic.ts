@@ -5,6 +5,7 @@ import { convertMessagesToAnthropic } from '@/local-copilot/lib/providers/anthro
 import type {
   ChatCompletionRequest,
   LocalCopilotProvider,
+  TokenUsage,
 } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotConfig } from '@/local-copilot/lib/types'
 import { supportsTemperature } from '@/providers/models'
@@ -14,13 +15,33 @@ const logger = createLogger('LocalCopilotAnthropicProvider')
 const ANTHROPIC_API_VERSION = '2023-06-01'
 const ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
 
-function toAnthropicTools(tools: ChatCompletionRequest['tools']) {
+export function toAnthropicTools(tools: ChatCompletionRequest['tools']) {
   if (!tools?.length) return undefined
-  return tools.map((tool) => ({
+  return tools.map((tool, index, all) => ({
     name: tool.name,
     description: tool.description,
     input_schema: tool.parameters as Record<string, unknown>,
+    ...(index === all.length - 1 ? { cache_control: getAnthropicAutomaticCacheControl() } : {}),
   }))
+}
+
+export function parseAnthropicUsage(usage: {
+  input_tokens?: number
+  output_tokens?: number
+  cache_read_input_tokens?: number
+  cache_creation_input_tokens?: number
+}): TokenUsage {
+  const result: TokenUsage = {
+    inputTokens: usage.input_tokens ?? 0,
+    outputTokens: usage.output_tokens ?? 0,
+  }
+  if (typeof usage.cache_read_input_tokens === 'number') {
+    result.cacheReadTokens = usage.cache_read_input_tokens
+  }
+  if (typeof usage.cache_creation_input_tokens === 'number') {
+    result.cacheCreationTokens = usage.cache_creation_input_tokens
+  }
+  return result
 }
 
 export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilotProvider {
@@ -74,8 +95,7 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
       const decoder = new TextDecoder()
       let buffer = ''
       const toolCalls = new Map<number, { id: string; name: string; arguments: string }>()
-      let inputTokens = 0
-      let outputTokens = 0
+      let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 }
 
       while (true) {
         const { done, value } = await reader.read()
@@ -104,9 +124,18 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
             const data = JSON.parse(dataLine) as Record<string, unknown>
 
             if (eventType === 'message_start') {
-              const message = data.message as { usage?: { input_tokens?: number } } | undefined
-              if (typeof message?.usage?.input_tokens === 'number') {
-                inputTokens = message.usage.input_tokens
+              const message = data.message as
+                | {
+                    usage?: {
+                      input_tokens?: number
+                      output_tokens?: number
+                      cache_read_input_tokens?: number
+                      cache_creation_input_tokens?: number
+                    }
+                  }
+                | undefined
+              if (message?.usage) {
+                usage = parseAnthropicUsage(message.usage)
               }
             }
 
@@ -137,9 +166,23 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
 
             if (eventType === 'message_delta') {
               const delta = data.delta as { stop_reason?: string } | undefined
-              const usage = data.usage as { output_tokens?: number } | undefined
-              if (typeof usage?.output_tokens === 'number') {
-                outputTokens = usage.output_tokens
+              const deltaUsage = data.usage as
+                | {
+                    output_tokens?: number
+                    cache_read_input_tokens?: number
+                    cache_creation_input_tokens?: number
+                  }
+                | undefined
+              if (deltaUsage) {
+                if (typeof deltaUsage.output_tokens === 'number') {
+                  usage.outputTokens = deltaUsage.output_tokens
+                }
+                if (typeof deltaUsage.cache_read_input_tokens === 'number') {
+                  usage.cacheReadTokens = deltaUsage.cache_read_input_tokens
+                }
+                if (typeof deltaUsage.cache_creation_input_tokens === 'number') {
+                  usage.cacheCreationTokens = deltaUsage.cache_creation_input_tokens
+                }
               }
               if (delta?.stop_reason === 'tool_use') {
                 for (const call of toolCalls.values()) {
@@ -151,7 +194,7 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
                 yield {
                   type: 'done',
                   finishReason: 'stop',
-                  usage: { inputTokens, outputTokens },
+                  usage,
                 }
               }
             }
@@ -160,7 +203,7 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
               yield {
                 type: 'done',
                 finishReason: 'stop',
-                usage: { inputTokens, outputTokens },
+                usage,
               }
             }
           } catch {}

@@ -78,7 +78,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         workspaceId,
         type: 'mothership',
         title: null,
-        model: 'claude-opus-4-8',
+        model: 'claude-opus-4-6',
         updatedAt: now,
         lastSeenAt: now,
       })

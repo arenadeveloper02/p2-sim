@@ -29,6 +29,7 @@ export type SettingsSection =
   | 'billing'
   | 'teammates'
   | 'organization'
+  | 'oauth-apps'
   | 'sso'
   | 'whitelabeling'
   | 'copilot'
@@ -162,6 +163,16 @@ export const allNavigationItems: NavigationItem[] = [
     label: 'Organization',
     description: "Manage your organization's members and seats.",
     icon: Users,
+    section: 'subscription',
+    hideWhenBillingDisabled: true,
+    requiresHosted: true,
+    requiresTeam: true,
+  },
+  {
+    id: 'oauth-apps',
+    label: 'Custom OAuth Apps',
+    description: "Register your organization's OAuth app credentials for integrations like Zoom.",
+    icon: Key,
     section: 'subscription',
     hideWhenBillingDisabled: true,
     requiresHosted: true,

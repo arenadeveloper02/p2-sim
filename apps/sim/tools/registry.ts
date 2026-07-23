@@ -443,6 +443,7 @@ import {
   calendlyListScheduledEventsTool,
   calendlyListWebhooksTool,
 } from '@/tools/calendly'
+import { chartValidateTool } from '@/tools/chart_generation/validate'
 import { clayPopulateTool } from '@/tools/clay'
 import {
   clerkAddOrganizationMemberTool,
@@ -4428,10 +4429,10 @@ import {
 } from '@/tools/vercel'
 import {
   falaiVideoTool,
-  lumaVideoTool,
-  minimaxVideoTool,
-  runwayVideoTool,
-  veoVideoTool,
+  // lumaVideoTool,
+  // minimaxVideoTool,
+  // runwayVideoTool,
+  // veoVideoTool,
 } from '@/tools/video'
 import { visionTool, visionToolV2 } from '@/tools/vision'
 import {
@@ -5677,6 +5678,7 @@ export const tools: Record<string, ToolConfig> = {
   calendly_list_webhooks: calendlyListWebhooksTool,
   calendly_create_webhook: calendlyCreateWebhookTool,
   calendly_delete_webhook: calendlyDeleteWebhookTool,
+  chart_validate: chartValidateTool,
   calcom_create_booking: calcomCreateBookingTool,
   calcom_get_booking: calcomGetBookingTool,
   calcom_list_bookings: calcomListBookingsTool,
@@ -7443,10 +7445,10 @@ export const tools: Record<string, ToolConfig> = {
   tts_google: googleTtsTool,
   tts_azure: azureTtsTool,
   tts_playht: playhtTtsTool,
-  video_runway: runwayVideoTool,
-  video_veo: veoVideoTool,
-  video_luma: lumaVideoTool,
-  video_minimax: minimaxVideoTool,
+  // video_runway: runwayVideoTool,
+  // video_veo: veoVideoTool,
+  // video_luma: lumaVideoTool,
+  // video_minimax: minimaxVideoTool,
   video_falai: falaiVideoTool,
   s3_get_object: s3GetObjectTool,
   s3_put_object: s3PutObjectTool,

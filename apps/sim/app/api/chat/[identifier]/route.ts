@@ -14,6 +14,7 @@ import { deployedChatPostContract, goldenQueriesSchema } from '@/lib/api/contrac
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
+import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import { getAgentDepartmentLabel } from '@/lib/chat/arena-departments'
 import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
 import {
@@ -902,6 +903,18 @@ export const POST = withRouteHandler(
                             return value
                           }
                           if (typeof value === 'object') {
+                            const chartOutput = formatChartDeployOutputForChat(value)
+                            if (chartOutput) {
+                              return chartOutput
+                            }
+                            if (
+                              value &&
+                              typeof value === 'object' &&
+                              'charts' in value &&
+                              Array.isArray((value as { charts?: unknown }).charts)
+                            ) {
+                              return null
+                            }
                             try {
                               return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
                             } catch {

@@ -29,6 +29,8 @@ const SECTION_TITLES: Record<string, string> = {
   billing: 'Billing',
   teammates: 'Teammates',
   team: 'Team',
+  organization: 'Organization',
+  'oauth-apps': 'Custom OAuth Apps',
   sso: 'Single Sign-On',
   whitelabeling: 'Whitelabeling',
   copilot: 'Chat Keys',

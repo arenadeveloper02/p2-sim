@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { ChipTag, Combobox, type ComboboxOption } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
@@ -6,6 +14,10 @@ import { isRecordLike } from '@sim/utils/object'
 import { isEqual } from 'es-toolkit'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { buildCanonicalIndex, resolveDependencyValue } from '@/lib/workflows/subblocks/visibility'
+import {
+  getZoomAdminAccessEpoch,
+  subscribeZoomAdminAccess,
+} from '@/lib/workspaces/zoom-admin-access-cache'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -199,9 +211,16 @@ export const Dropdown = memo(function Dropdown({
     [fetchOptionsIfNeeded]
   )
 
+  /** Re-evaluate function options when Zoom Admin allowlist cache updates. */
+  const zoomAdminAccessEpoch = useSyncExternalStore(
+    subscribeZoomAdminAccess,
+    getZoomAdminAccessEpoch,
+    getZoomAdminAccessEpoch
+  )
+
   const evaluatedOptions = useMemo(() => {
     return typeof options === 'function' ? options() : options
-  }, [options])
+  }, [options, zoomAdminAccessEpoch])
 
   const normalizedFetchedOptions = useMemo(() => {
     return fetchedOptions.map((opt) => ({ label: opt.label, id: opt.id }))

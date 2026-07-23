@@ -21,6 +21,7 @@ import { AlertCircle, ArrowUp, MoreVertical, Paperclip, Square, X } from 'lucide
 import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useSession } from '@/lib/auth/auth-client'
+import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
@@ -199,6 +200,10 @@ const extractOutputFromLogs = (logs: BlockLog[] | undefined, outputId: string): 
  * @returns Formatted string, markdown code block for objects, or empty string
  */
 const formatOutputContent = (output: unknown): string => {
+  const chartContent = formatChartDeployOutputForChat(output)
+  if (chartContent) {
+    return chartContent
+  }
   if (typeof output === 'string') {
     return output
   }
