@@ -127,10 +127,16 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
   id: 'semrush_query',
   name: 'Semrush Query',
   description:
-    "Query Semrush SEO data API for keywords, backlinks, domain rank, and more. Calls Sim's internal Semrush proxy; the deployment supplies the API key via SEMRUSH_API_KEY—do not ask users for an API key or workflow variables for Semrush auth.",
+    'Query Semrush SEO data API for keywords, backlinks, domain rank, and more. Requires a Semrush API key configured on the block.',
   version: '1.0.0',
 
   params: {
+    apiKey: {
+      type: 'string',
+      required: true,
+      visibility: 'user-only',
+      description: 'Semrush API key',
+    },
     url: {
       type: 'string',
       required: false,
@@ -225,6 +231,7 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
         }
       }
 
+      queryParams.append('apiKey', params.apiKey)
       const path = `/api/tools/semrush/query?${queryParams.toString()}`
       logger.info('Semrush: Using internal proxy', {
         reportType,
