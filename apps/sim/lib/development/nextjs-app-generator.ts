@@ -1274,6 +1274,7 @@ Common TypeScript error codes and their generic fixes:
 - TS18047 / TS2531 "possibly null": add \`if (!x) return\` guards after getContext('2d'), ref.current, .find(), getElementById, searchParams.get() — never use the \`!\` assertion
 - TS2305 "has no exported member": export the missing symbol from the module that defines it, in the same response as the importer
 - TS2307 "Cannot find module": add the imported package to package.json dependencies (and its @types/* to devDependencies when it ships no types)
+- npm ETARGET / "No matching version found for caniuse-lite": REMOVE caniuse-lite, browserslist, and update-browserslist-db from package.json dependencies, devDependencies, and overrides — do NOT pin them; delete any package-lock.json
 - TS2322 "IntrinsicAttributes & XxxClientProps" / missing prop: make page JSX prop names exactly match the Client component's Props interface; include every prop; update page AND component together
 - TS2322/TS2538/TS2464 involving \`unknown\`: replace \`unknown\`/\`unknown[]\` props and \`.map()\` params with concrete interfaces from lib/types.ts (string ids/labels)
 - TS1109 "Expression expected": usually a split import — give each package its own \`import { ... } from '...'\` block
