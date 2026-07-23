@@ -11,6 +11,7 @@ import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
 import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
+import { appendArenaSystemPrompt } from '@/lib/development/arena/prompts'
 import {
   deployPreparedVercelProject,
   prepareVercelProjectForDeploy,
@@ -78,6 +79,15 @@ const logger = createLogger('NextjsAppGenerator')
 type LlmUsageAccumulator = Map<string, { inputTokens: number; outputTokens: number }>
 
 const llmUsageStorage = new AsyncLocalStorage<LlmUsageAccumulator>()
+const arenaModeStorage = new AsyncLocalStorage<boolean>()
+
+function isArenaMode(): boolean {
+  return arenaModeStorage.getStore() === true
+}
+
+async function runWithArenaMode<T>(arenaMode: boolean, fn: () => Promise<T>): Promise<T> {
+  return arenaModeStorage.run(arenaMode, fn)
+}
 
 function runWithLlmUsageTracking<T>(fn: () => Promise<T>): Promise<T> {
   return llmUsageStorage.run(new Map(), fn)
@@ -244,6 +254,8 @@ export interface GenerateNextjsAppInput {
   repoName?: string
   privateRepo?: boolean
   referenceImage?: DevelopmentReferenceMedia
+  /** When true, inject Arena iframe emailId scaffold and Arena system-prompt mandates. */
+  arenaMode?: boolean
 }
 
 export interface GeneratedAppFile {
@@ -396,6 +408,8 @@ interface NormalizeAppSpecOptions {
    * so injected fallbacks (schema, README) cannot clobber real files on merge.
    */
   skipFileNormalization?: boolean
+  /** When true, inject Arena iframe emailId scaffold into the generated app. */
+  arenaMode?: boolean
 }
 
 /**
@@ -484,6 +498,7 @@ function normalizeAppSpec(
       features: parsed.features,
       repoName: parsed.repoName,
       latestUserRequest: options.latestUserRequest,
+      arenaMode: options.arenaMode ?? isArenaMode(),
     })
   }
 
@@ -633,10 +648,11 @@ function augmentSystemPromptForReferenceImage(
   systemPrompt: string,
   referenceMedia?: DevelopmentReferenceMedia
 ): string {
+  let prompt = appendArenaSystemPrompt(systemPrompt, isArenaMode())
   if (!referenceMedia) {
-    return systemPrompt
+    return prompt
   }
-  return `${systemPrompt}\n\n- ${GENERATED_APP_REFERENCE_PDF_GUIDANCE}`
+  return `${prompt}\n\n- ${GENERATED_APP_REFERENCE_PDF_GUIDANCE}`
 }
 
 function buildReferenceContentBlock(
@@ -1389,6 +1405,8 @@ function startGitHubRepositoryPrepIfConfigured(params: {
 interface ValidateAndRepairOptions {
   /** Deployed prisma/schema.prisma content — enables db push migration-safety checks on edits. */
   originalPrismaSchema?: string
+  /** When true, keep Arena iframe emailId scaffold during repair normalization. */
+  arenaMode?: boolean
 }
 
 async function validateAndRepairUntilBuildPasses(
@@ -1411,6 +1429,7 @@ async function validateAndRepairUntilBuildPasses(
       features: currentSpec.features,
       repoName: currentSpec.repoName,
       latestUserRequest: userInput,
+      arenaMode: options.arenaMode ?? isArenaMode(),
     })
     await writeAppFiles(outputDir, currentSpec.files)
 
@@ -1645,7 +1664,9 @@ export async function generateNextjsApp(
   }
 
   return runWithLlmUsageTracking(async () => {
-    const result = await generateNextjsAppInner(input, userInput)
+    const result = await runWithArenaMode(input.arenaMode === true, () =>
+      generateNextjsAppInner(input, userInput)
+    )
     const llmUsage = getTrackedLlmUsage()
     return llmUsage ? { ...result, llmUsage } : result
   })
@@ -1954,6 +1975,8 @@ export interface EditNextjsAppInput {
   userInput: string
   repoName: string
   referenceImage?: DevelopmentReferenceMedia
+  /** When true, inject Arena iframe emailId scaffold and Arena system-prompt mandates. */
+  arenaMode?: boolean
 }
 
 const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
@@ -2222,7 +2245,9 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
   }
 
   return runWithLlmUsageTracking(async () => {
-    const result = await editNextjsAppInner(input, userInput, repoName)
+    const result = await runWithArenaMode(input.arenaMode === true, () =>
+      editNextjsAppInner(input, userInput, repoName)
+    )
     const llmUsage = getTrackedLlmUsage()
     return llmUsage ? { ...result, llmUsage } : result
   })

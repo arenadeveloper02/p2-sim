@@ -1,18 +1,18 @@
 import { mapGenerateAppResultToToolResponse } from '@/tools/development/map-generate-app-response'
 import type {
-  DevelopmentGenerateAppParams,
-  DevelopmentGenerateAppResponse,
+  DevelopmentEditAppParams,
+  DevelopmentEditAppResponse,
 } from '@/tools/development/types'
 import type { ToolConfig } from '@/tools/types'
 
-export const developmentGenerateAppTool: ToolConfig<
-  DevelopmentGenerateAppParams,
-  DevelopmentGenerateAppResponse
+export const arenaDevelopmentEditAppTool: ToolConfig<
+  DevelopmentEditAppParams,
+  DevelopmentEditAppResponse
 > = {
-  id: 'development_generate_app',
-  name: 'Generate Next.js App',
+  id: 'arena_development_edit_app',
+  name: 'Edit Arena Next.js App',
   description:
-    'Generate a production-ready Next.js application, push to GitHub, and deploy to Vercel (credentials from .env)',
+    'Edit an existing Arena Next.js app (preserves iframe emailId gate), then push to GitHub and deploy to Vercel',
   version: '1.0.0',
 
   params: {
@@ -20,40 +20,33 @@ export const developmentGenerateAppTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'App idea, features, pages, UI style, auth needs, and any other requirements',
+      description: 'Requested code changes, features, UI updates, or bug fixes for the existing app',
     },
     repoName: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-or-llm',
-      description: 'Repository folder name (kebab-case). Derived from the app name if omitted',
-    },
-    privateRepo: {
-      type: 'boolean',
-      required: false,
-      visibility: 'user-only',
-      description: 'Create the GitHub repository as private',
-      default: false,
+      description: 'Repository name of the existing generated app to edit',
     },
     referenceImage: {
       type: 'json',
       required: false,
       visibility: 'user-only',
-      description: 'Optional design PDF — layout, theme, and styling follow the reference',
+      description:
+        'Optional design PDF — layout, theme, and styling follow the reference when editing UI',
     },
   },
 
   request: {
-    url: '/api/tools/development/generate',
+    url: '/api/tools/development/edit',
     method: 'POST',
-    /** LLM + optional E2B build can exceed the default 5-minute internal fetch limit */
     timeout: 600_000,
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
       userInput: params.userInput,
       repoName: params.repoName,
-      privateRepo: params.privateRepo,
       ...(params.referenceImage != null ? { referenceImage: params.referenceImage } : {}),
+      arenaMode: true,
       workspaceId: params._context?.workspaceId,
       workflowId: params._context?.workflowId,
       executionId: params._context?.executionId,
@@ -63,19 +56,22 @@ export const developmentGenerateAppTool: ToolConfig<
   transformResponse: async (response) => {
     const data = await response.json()
     if (!response.ok) {
-      return mapGenerateAppResultToToolResponse({ success: false, error: data.error ?? response.statusText })
+      return mapGenerateAppResultToToolResponse({
+        success: false,
+        error: data.error ?? response.statusText,
+      })
     }
     return mapGenerateAppResultToToolResponse(data)
   },
 
   outputs: {
-    content: { type: 'string', description: 'Summary of the generation result' },
+    content: { type: 'string', description: 'Summary of the edit result' },
     appName: { type: 'string', description: 'Human-readable application name' },
-    repoName: { type: 'string', description: 'Repository folder name that was created' },
-    description: { type: 'string', description: 'Short description of the generated app' },
+    repoName: { type: 'string', description: 'Repository folder name that was edited' },
+    description: { type: 'string', description: 'Short description of the app' },
     features: {
       type: 'json',
-      description: 'List of main features included in the generated app',
+      description: 'List of main features included in the app',
     },
     outputPath: {
       type: 'string',
@@ -165,7 +161,7 @@ export const developmentGenerateAppTool: ToolConfig<
     },
     requiresDatabase: {
       type: 'boolean',
-      description: 'Whether the generated app needs Neon Postgres persistence',
+      description: 'Whether the app needs Neon Postgres persistence',
       optional: true,
     },
     databaseProvisioned: {

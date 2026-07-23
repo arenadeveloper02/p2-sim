@@ -27,7 +27,8 @@ const billingContextSchema = z.object({
 const RequestSchema = z.object({
   userInput: z.string().min(1, 'userInput is required'),
   repoName: z.string().min(1, 'repoName is required'),
-  referenceImage: RawFileInputSchema.optional(),
+  referenceImage: RawFileInputSchema.nullish(),
+  arenaMode: z.boolean().optional(),
   ...billingContextSchema.shape,
 })
 
@@ -71,12 +72,14 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   logger.info('Editing Next.js app', {
     repoName: parsed.data.repoName,
     hasReferencePdf: Boolean(referenceImage),
+    arenaMode: parsed.data.arenaMode === true,
   })
 
   const result = await editNextjsApp({
     userInput: parsed.data.userInput,
     repoName: parsed.data.repoName,
     referenceImage,
+    arenaMode: parsed.data.arenaMode === true,
   })
 
   await recordDevelopmentModelUsage(result.llmUsage, {

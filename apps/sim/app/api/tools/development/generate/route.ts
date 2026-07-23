@@ -28,7 +28,8 @@ const RequestSchema = z.object({
   userInput: z.string().min(1, 'userInput is required'),
   repoName: z.string().optional(),
   privateRepo: z.boolean().optional(),
-  referenceImage: RawFileInputSchema.optional(),
+  referenceImage: RawFileInputSchema.nullish(),
+  arenaMode: z.boolean().optional(),
   ...billingContextSchema.shape,
 })
 
@@ -73,6 +74,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     repoName: parsed.data.repoName,
     privateRepo: parsed.data.privateRepo,
     hasReferenceImage: Boolean(referenceImage),
+    arenaMode: parsed.data.arenaMode === true,
   })
 
   const result = await generateNextjsApp({
@@ -80,6 +82,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     repoName: parsed.data.repoName,
     privateRepo: parsed.data.privateRepo,
     referenceImage,
+    arenaMode: parsed.data.arenaMode === true,
   })
 
   await recordDevelopmentModelUsage(result.llmUsage, {

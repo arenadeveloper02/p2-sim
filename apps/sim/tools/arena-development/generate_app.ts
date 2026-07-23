@@ -5,14 +5,14 @@ import type {
 } from '@/tools/development/types'
 import type { ToolConfig } from '@/tools/types'
 
-export const developmentGenerateAppTool: ToolConfig<
+export const arenaDevelopmentGenerateAppTool: ToolConfig<
   DevelopmentGenerateAppParams,
   DevelopmentGenerateAppResponse
 > = {
-  id: 'development_generate_app',
-  name: 'Generate Next.js App',
+  id: 'arena_development_generate_app',
+  name: 'Generate Arena Next.js App',
   description:
-    'Generate a production-ready Next.js application, push to GitHub, and deploy to Vercel (credentials from .env)',
+    'Generate an iframe-ready Next.js app with emailId gate, push to GitHub, and deploy to Vercel',
   version: '1.0.0',
 
   params: {
@@ -46,7 +46,6 @@ export const developmentGenerateAppTool: ToolConfig<
   request: {
     url: '/api/tools/development/generate',
     method: 'POST',
-    /** LLM + optional E2B build can exceed the default 5-minute internal fetch limit */
     timeout: 600_000,
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
@@ -54,6 +53,7 @@ export const developmentGenerateAppTool: ToolConfig<
       repoName: params.repoName,
       privateRepo: params.privateRepo,
       ...(params.referenceImage != null ? { referenceImage: params.referenceImage } : {}),
+      arenaMode: true,
       workspaceId: params._context?.workspaceId,
       workflowId: params._context?.workflowId,
       executionId: params._context?.executionId,
@@ -63,7 +63,10 @@ export const developmentGenerateAppTool: ToolConfig<
   transformResponse: async (response) => {
     const data = await response.json()
     if (!response.ok) {
-      return mapGenerateAppResultToToolResponse({ success: false, error: data.error ?? response.statusText })
+      return mapGenerateAppResultToToolResponse({
+        success: false,
+        error: data.error ?? response.statusText,
+      })
     }
     return mapGenerateAppResultToToolResponse(data)
   },

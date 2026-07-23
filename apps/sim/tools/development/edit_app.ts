@@ -44,7 +44,7 @@ export const developmentEditAppTool: ToolConfig<
     body: (params) => ({
       userInput: params.userInput,
       repoName: params.repoName,
-      referenceImage: params.referenceImage,
+      ...(params.referenceImage != null ? { referenceImage: params.referenceImage } : {}),
       workspaceId: params._context?.workspaceId,
       workflowId: params._context?.workflowId,
       executionId: params._context?.executionId,

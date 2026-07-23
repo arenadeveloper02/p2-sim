@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
 
+import { ensureArenaScaffoldFiles } from '@/lib/development/arena/scaffold'
+
 const logger = createLogger('NormalizeGeneratedApp')
 
 export interface GeneratedAppFile {
@@ -462,6 +464,8 @@ export interface NormalizeGeneratedAppFilesOptions {
   latestUserRequest?: string
   /** Neon project id — recorded in REPO_SUMMARY.md for edit-time connection reuse. */
   neonProjectId?: string
+  /** When true, inject Arena iframe emailId scaffold into the generated app. */
+  arenaMode?: boolean
 }
 
 export const GENERATED_APP_REPO_SUMMARY_GUIDANCE = `REPO_SUMMARY.md (required, auto-maintained):
@@ -1668,9 +1672,12 @@ export function normalizeGeneratedAppFiles(
   const withNextEnv = ensureNextEnvFile(withDatabase)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
-  const usedPackages = collectUsedNpmPackageNames(withRepoSummary)
+  const withArena = options.arenaMode
+    ? ensureArenaScaffoldFiles(withRepoSummary)
+    : withRepoSummary
+  const usedPackages = collectUsedNpmPackageNames(withArena)
 
-  return withRepoSummary.map((file) => {
+  return withArena.map((file) => {
     if (normalizePath(file.path) !== 'package.json') {
       return file
     }
