@@ -374,8 +374,6 @@ export interface SubBlockConfig {
     label: string
     serviceId: string
   }>
-  // Whether this credential selector supports credential sets (for trigger blocks)
-  supportsCredentialSets?: boolean
   // Selector properties — declarative mapping to a SelectorKey
   selectorKey?: SelectorKey
   selectorAllowSearch?: boolean
@@ -389,6 +387,8 @@ export interface SubBlockConfig {
   uploadContext?: 'image-fusion'
   /** When true, show "Use Start block files" so chat-uploaded files can be passed via <start.files>. */
   allowStartFilesReference?: boolean
+  /** When allowStartFilesReference is true, limits conversation picker to images or all attachments. */
+  conversationFileMode?: 'images' | 'all'
   // Slider-specific properties
   step?: number
   integer?: boolean
@@ -449,6 +449,13 @@ export interface SubBlockConfig {
     blockId: string,
     optionId: string
   ) => Promise<{ label: string; id: string } | null>
+  /**
+   * tool-input only: tool categories the consuming block cannot execute. They
+   * stay visible in the picker but are greyed out with a tooltip rather than
+   * hidden. Block/integration tools always run via `executeTool`, so only the
+   * non-registry categories (`mcp`, `custom-tool`) can be marked unsupported.
+   */
+  unsupportedToolTypes?: ('mcp' | 'custom-tool')[]
 }
 
 export interface BlockConfig<T extends ToolResponse = ToolResponse> {
@@ -492,6 +499,16 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
   hideFromToolbar?: boolean
   /** When true, the block appears in the toolbar and search only for admin workspaces. */
   adminWorkspaceOnly?: boolean
+  /**
+   * Marks an unreleased block. Preview blocks are hidden from every discovery
+   * surface (toolbar, search, mentions, copilot/VFS, docs) in every environment —
+   * hosted, self-hosted, dev, and SSR — until revealed via the hosted
+   * `block-visibility` AppConfig document or the `PREVIEW_BLOCKS` env allowlist.
+   * Fail-closed by design; distinct from {@link hideFromToolbar} (permanently
+   * hidden superseded versions). Execution of already-placed instances is never
+   * gated. Remove at GA.
+   */
+  preview?: boolean
   triggers?: {
     enabled: boolean
     available: string[] // List of trigger IDs this block supports

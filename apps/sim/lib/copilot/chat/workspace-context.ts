@@ -3,6 +3,7 @@ import {
   knowledgeBase,
   knowledgeConnector,
   mcpServers,
+  user,
   userTableDefinitions,
   workflow,
   workflowFolder,
@@ -10,6 +11,7 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { truncate } from '@sim/utils/string'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import {
   getHubSpotSharedAccountOptionIds,
@@ -27,6 +29,7 @@ import {
   getAccessibleOAuthCredentials,
 } from '@/lib/credentials/environment'
 import { listWorkspaceFiles } from '@/lib/uploads/contexts/workspace'
+import { listCustomBlockSummariesForWorkspace } from '@/lib/workflows/custom-blocks/operations'
 import { listCustomTools } from '@/lib/workflows/custom-tools/operations'
 import { listSkills } from '@/lib/workflows/skills/operations'
 import {
@@ -84,6 +87,7 @@ export interface WorkspaceMdData {
   envVariables: string[]
   tasks?: Array<{ id: string; title: string; updatedAt: Date }>
   customTools?: Array<{ id: string; name: string }>
+  customBlocks?: Array<{ type: string; name: string; description?: string }>
   mcpServers?: Array<{ id: string; name: string; url?: string | null; enabled: boolean }>
   skills?: Array<{ id: string; name: string; description: string }>
   jobs?: Array<{
@@ -290,6 +294,13 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
     sections.push(`## Custom Tools (${data.customTools.length})\n${lines.join('\n')}`)
   }
 
+  if (data.customBlocks && data.customBlocks.length > 0) {
+    const lines = [...data.customBlocks]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((b) => `- **${b.name}** (${b.type})${b.description ? ` — ${b.description}` : ''}`)
+    sections.push(`## Custom Blocks (${data.customBlocks.length})\n${lines.join('\n')}`)
+  }
+
   if (data.mcpServers && data.mcpServers.length > 0) {
     const lines = [...data.mcpServers].sort(byNameThenId).map((s) => {
       const status = s.enabled ? 'enabled' : 'disabled'
@@ -318,7 +329,7 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
         if (j.lifecycle !== 'persistent') line += ` [${j.lifecycle}]`
         if (j.cronExpression) line += `, cron: ${j.cronExpression}`
         if (j.sourceTaskName) line += `, task: ${j.sourceTaskName}`
-        const promptPreview = j.prompt.length > 80 ? `${j.prompt.slice(0, 77)}...` : j.prompt
+        const promptPreview = j.prompt.length > 80 ? truncate(j.prompt, 77) : j.prompt
         line += `\n  ${promptPreview}`
         return line
       })
@@ -387,6 +398,7 @@ async function buildWorkspaceMdData(
       mcpServerRows,
       skillRows,
       jobRows,
+      customBlockSummaries,
     ] = await Promise.all([
       getUsersWithPermissions(workspaceId),
 
@@ -472,6 +484,8 @@ async function buildWorkspaceMdData(
             isNull(workflowSchedule.archivedAt)
           )
         ),
+
+      listCustomBlockSummariesForWorkspace(workspaceId),
     ])
 
     const kbIds = kbs.map((kb) => kb.id)
@@ -552,6 +566,7 @@ async function buildWorkspaceMdData(
       envVariables: [...new Set(envCredentials.map((c) => c.envKey).filter(Boolean))] as string[],
       hubspotSharedAccounts: hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
       customTools: customTools.map((t) => ({ id: t.id, name: t.title })),
+      customBlocks: customBlockSummaries,
       mcpServers: mcpServerRows,
       skills: skillRows.map((s) => ({ id: s.id, name: s.name, description: s.description })),
       jobs: jobRows
@@ -578,6 +593,29 @@ async function buildWorkspaceMdData(
 const WORKSPACE_CONTEXT_UNAVAILABLE_MD =
   '## Workspace\n(unavailable)\n\n## Workflows\n(unavailable)\n\n## Knowledge Bases\n(unavailable)\n\n## Tables\n(unavailable)\n\n## Files\n(unavailable)\n\n## Connected Integrations\n(unavailable)'
 
+const POSITION2_SLACK_TESTING_NOTE = `## Slack — testing default (position2.com)
+
+When building or testing workflows that send Slack messages, use **#slack-testing** if no channel, user, or DM was specified. If the user names a destination, use that instead — never override it with #slack-testing.`
+
+async function appendPosition2SlackNote(markdown: string, userId: string): Promise<string> {
+  try {
+    const rows = await db
+      .select({ email: user.email })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1)
+    const email = rows[0]?.email
+    if (!email?.toLowerCase().includes('position2.com')) return markdown
+    return `${markdown}\n\n${POSITION2_SLACK_TESTING_NOTE}`
+  } catch (error) {
+    logger.warn('Failed to resolve user email for position2 Slack note', {
+      userId,
+      error: toError(error).message,
+    })
+    return markdown
+  }
+}
+
 /**
  * Generate WORKSPACE.md markdown from current DB state (primary db). The LLM
  * reads dynamic workspace state from VFS files; it never writes this file.
@@ -587,7 +625,8 @@ export async function generateWorkspaceContext(
   userId: string
 ): Promise<string> {
   const data = await buildWorkspaceMdData(workspaceId, userId)
-  return data ? buildWorkspaceMd(data) : WORKSPACE_CONTEXT_UNAVAILABLE_MD
+  if (!data) return WORKSPACE_CONTEXT_UNAVAILABLE_MD
+  return appendPosition2SlackNote(buildWorkspaceMd(data), userId)
 }
 
 /**
@@ -602,7 +641,11 @@ export async function generateWorkspaceSnapshot(
 ): Promise<{ markdown: string; snapshot: VfsSnapshotV1 } | null> {
   const data = await buildWorkspaceMdData(workspaceId, userId)
   if (!data) return null
-  return { markdown: buildWorkspaceMd(data), snapshot: buildVfsSnapshot(data) }
+  const markdown = await appendPosition2SlackNote(buildWorkspaceMd(data), userId)
+  return {
+    markdown,
+    snapshot: buildVfsSnapshot(data),
+  }
 }
 
 /**

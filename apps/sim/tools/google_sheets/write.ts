@@ -251,7 +251,7 @@ export const writeV2Tool: ToolConfig<GoogleSheetsV2ToolParams, GoogleSheetsV2Wri
 
   request: {
     url: (params) => {
-      const sheetName = params.sheetName?.trim()
+      const sheetName = params.sheetName?.trim() || 'Sheet1'
       if (!sheetName) {
         throw new Error('Sheet name is required')
       }

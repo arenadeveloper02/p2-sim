@@ -10,6 +10,7 @@ import {
   isNetworkError,
   parseInternalFileUrl,
   processSingleFileToUserFile,
+  resolveTrustedFileContext,
 } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('FileUtilsTest')
@@ -66,12 +67,33 @@ describe('inferContextFromKey', () => {
     expect(inferContextFromKey('profile-pictures/x')).toBe('profile-pictures')
     expect(inferContextFromKey('og-images/x')).toBe('og-images')
     expect(inferContextFromKey('workspace-logos/x')).toBe('workspace-logos')
+    expect(inferContextFromKey('SIM_ORG_LOGOS/org-1/logo.png')).toBe('org-logos')
     expect(inferContextFromKey('logs/x')).toBe('logs')
   })
 
   it('throws for empty or unrecognized keys', () => {
     expect(() => inferContextFromKey('')).toThrow()
     expect(() => inferContextFromKey('mystery/x')).toThrow()
+  })
+})
+
+describe('resolveTrustedFileContext', () => {
+  it('derives from the key prefix and ignores a mismatched caller context', () => {
+    expect(resolveTrustedFileContext('workspace/ws/1700000000000-abc-x.pdf', 'og-images')).toBe(
+      'workspace'
+    )
+    expect(resolveTrustedFileContext('chat/x', 'workspace-logos')).toBe('chat')
+    expect(resolveTrustedFileContext('workspace/ws/x', 'mothership')).toBe('workspace')
+  })
+
+  it('honors the caller context for legacy keys with no inferrable prefix', () => {
+    expect(resolveTrustedFileContext('legacy/ws/wf/ex/report.pdf', 'execution')).toBe('execution')
+  })
+
+  it('never resolves an un-inferrable key to a world-readable context', () => {
+    expect(() => resolveTrustedFileContext('legacy/report.pdf', 'og-images')).toThrow()
+    expect(() => resolveTrustedFileContext('legacy/report.pdf', 'profile-pictures')).toThrow()
+    expect(() => resolveTrustedFileContext('legacy/report.pdf')).toThrow()
   })
 })
 
@@ -108,6 +130,7 @@ describe('isNetworkError', () => {
     expect(isNetworkError(null)).toBe(false)
   })
 })
+
 
 describe('file-utils storage context inference', () => {
   it('recognizes agent-generated image storage keys', () => {

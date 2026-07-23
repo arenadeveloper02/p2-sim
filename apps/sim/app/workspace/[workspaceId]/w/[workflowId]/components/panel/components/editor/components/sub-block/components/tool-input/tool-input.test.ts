@@ -4,10 +4,65 @@
 import { describe, expect, it } from 'vitest'
 import type { StoredTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/types'
 import {
+  buildInitialAgentToolParams,
+  isAgentToolPickerBlock,
   isCustomToolAlreadySelected,
   isMcpToolAlreadySelected,
   isWorkflowAlreadySelected,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/utils'
+import { AgentBlock } from '@/blocks/blocks/agent'
+import { ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
+
+describe('isAgentToolPickerBlock', () => {
+  it('includes image_generator_v2 even though it is a blocks-category block', () => {
+    expect(isAgentToolPickerBlock(ImageGeneratorV2Block)).toBe(true)
+  })
+
+  it('excludes the agent block itself', () => {
+    expect(isAgentToolPickerBlock(AgentBlock)).toBe(false)
+  })
+
+  it('maps image_generator_v2 to image_generate tool access', () => {
+    expect(ImageGeneratorV2Block.tools?.access).toEqual(['image_generate'])
+  })
+})
+
+describe('buildInitialAgentToolParams', () => {
+  it('does not seed user-or-llm defaults for image_generator_v2', () => {
+    const params = buildInitialAgentToolParams('image_generator_v2', [
+      {
+        id: 'provider',
+        type: 'string',
+        required: false,
+        visibility: 'user-or-llm',
+        uiComponent: { type: 'combobox', value: () => 'gemini' },
+      },
+      {
+        id: 'model',
+        type: 'string',
+        required: false,
+        visibility: 'user-or-llm',
+        uiComponent: { type: 'combobox', value: () => 'gemini-3.1-flash-image-preview' },
+      },
+    ])
+
+    expect(params).toEqual({})
+  })
+
+  it('still seeds user-only defaults for other agent tools', () => {
+    const params = buildInitialAgentToolParams('api', [
+      {
+        id: 'method',
+        type: 'string',
+        required: true,
+        visibility: 'user-or-llm',
+        uiComponent: { type: 'dropdown', value: () => 'GET' },
+      },
+    ])
+
+    expect(params).toEqual({ method: 'GET' })
+  })
+})
 
 describe('isMcpToolAlreadySelected', () => {
   describe('basic functionality', () => {

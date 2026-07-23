@@ -5,20 +5,13 @@ import { createMockRequest } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCheckInternalAuth, mockResolveImageGenerationCount, mockExecuteTool } = vi.hoisted(
-  () => ({
-    mockCheckInternalAuth: vi.fn(),
-    mockResolveImageGenerationCount: vi.fn(),
-    mockExecuteTool: vi.fn(),
-  })
-)
+const { mockCheckInternalAuth, mockExecuteTool } = vi.hoisted(() => ({
+  mockCheckInternalAuth: vi.fn(),
+  mockExecuteTool: vi.fn(),
+}))
 
 vi.mock('@/lib/auth/hybrid', () => ({
   checkInternalAuth: mockCheckInternalAuth,
-}))
-
-vi.mock('@/lib/image-generation/resolve-image-count.server', () => ({
-  resolveImageGenerationCount: mockResolveImageGenerationCount,
 }))
 
 vi.mock('@/tools', () => ({
@@ -34,12 +27,6 @@ describe('Image Generation Wrapper API Route', () => {
     mockCheckInternalAuth.mockResolvedValue({
       success: true,
       userId: 'user-123',
-    })
-    mockResolveImageGenerationCount.mockResolvedValue({
-      imageCount: 1,
-      promptImageUrl: undefined,
-      singleImagePrompt: undefined,
-      singleImagePrompts: undefined,
     })
     mockExecuteTool.mockResolvedValue({
       success: true,
@@ -67,9 +54,6 @@ describe('Image Generation Wrapper API Route', () => {
     const data = await response.json()
 
     expect(response.status).toBe(200)
-    expect(mockResolveImageGenerationCount).toHaveBeenCalledWith({
-      prompt: 'Fuse these images together',
-    })
     expect(mockExecuteTool).toHaveBeenCalledWith(
       'google_nano_banana',
       expect.objectContaining({
@@ -112,58 +96,6 @@ describe('Image Generation Wrapper API Route', () => {
     )
   })
 
-  it('should use per-image prompts for repeated Nano Banana generations', async () => {
-    mockResolveImageGenerationCount.mockResolvedValue({
-      imageCount: 3,
-      promptImageUrl: undefined,
-      singleImagePrompt: 'Give me a variation of this image',
-      singleImagePrompts: [
-        'Give me variation 1 with a blue jersey',
-        'Give me variation 2 with a red jersey',
-        'Give me variation 3 with a green jersey',
-      ],
-    })
-
-    const request = createMockRequest('POST', {
-      baseToolId: 'google_nano_banana',
-      params: {
-        model: 'gemini-3-pro-image-preview',
-        prompt: 'Give me three variations of this image',
-        imageCount: 1,
-        inputImageUrl: 'https://example.com/source.png',
-      },
-    })
-
-    const response = await POST(request)
-
-    expect(response.status).toBe(200)
-    expect(mockExecuteTool).toHaveBeenCalledTimes(3)
-    expect(mockExecuteTool).toHaveBeenNthCalledWith(
-      1,
-      'google_nano_banana',
-      expect.objectContaining({
-        prompt: 'Give me variation 1 with a blue jersey',
-        inputImage: 'https://example.com/source.png',
-      })
-    )
-    expect(mockExecuteTool).toHaveBeenNthCalledWith(
-      2,
-      'google_nano_banana',
-      expect.objectContaining({
-        prompt: 'Give me variation 2 with a red jersey',
-        inputImage: 'https://example.com/source.png',
-      })
-    )
-    expect(mockExecuteTool).toHaveBeenNthCalledWith(
-      3,
-      'google_nano_banana',
-      expect.objectContaining({
-        prompt: 'Give me variation 3 with a green jersey',
-        inputImage: 'https://example.com/source.png',
-      })
-    )
-  })
-
   it('should route unified OpenAI requests through the server-key OpenAI image tool', async () => {
     const request = createMockRequest('POST', {
       baseToolId: 'image_generate',
@@ -182,7 +114,6 @@ describe('Image Generation Wrapper API Route', () => {
     expect(mockExecuteTool).toHaveBeenCalledWith(
       'openai_image',
       expect.objectContaining({
-        provider: 'openai',
         model: 'gpt-image-2',
         prompt: 'Generate one product hero image',
         size: '1024x1024',
@@ -191,20 +122,37 @@ describe('Image Generation Wrapper API Route', () => {
     )
   })
 
-  it('should route unified Gemini requests through Nano Banana with prompt image refs', async () => {
-    mockResolveImageGenerationCount.mockResolvedValue({
-      imageCount: 1,
-      promptImageUrl: 'https://example.com/source.png',
-      singleImagePrompt: 'Edit this product image',
-      singleImagePrompts: ['Edit this product image'],
+  it('should coerce gpt-image-2 to openai_image when provider is gemini', async () => {
+    const request = createMockRequest('POST', {
+      baseToolId: 'image_generate',
+      params: {
+        provider: 'gemini',
+        model: 'gpt-image-2',
+        prompt: 'Generate one product hero image',
+      },
     })
 
+    const response = await POST(request)
+
+    expect(response.status).toBe(200)
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      'openai_image',
+      expect.objectContaining({
+        model: 'gpt-image-2',
+        prompt: 'Generate one product hero image',
+      })
+    )
+  })
+
+  it('should route unified Gemini requests through Nano Banana with block reference images', async () => {
+    const originalPrompt = 'Edit this into a studio shot'
     const request = createMockRequest('POST', {
       baseToolId: 'image_generate',
       params: {
         provider: 'gemini',
         model: 'gemini-3-pro-image-preview',
-        prompt: 'Edit https://example.com/source.png into a studio shot',
+        prompt: originalPrompt,
+        inputImageUrl: 'https://example.com/source.png',
         resolution: '2K',
       },
     })
@@ -217,7 +165,7 @@ describe('Image Generation Wrapper API Route', () => {
       expect.objectContaining({
         provider: 'gemini',
         model: 'gemini-3-pro-image-preview',
-        prompt: 'Edit this product image',
+        prompt: originalPrompt,
         inputImage: 'https://example.com/source.png',
         imageSize: '2K',
       })
@@ -285,7 +233,6 @@ describe('Image Generation Wrapper API Route', () => {
       success: false,
       error: expect.stringContaining('upload the reference image as a file or use an image URL'),
     })
-    expect(mockResolveImageGenerationCount).not.toHaveBeenCalled()
     expect(mockExecuteTool).not.toHaveBeenCalled()
   })
 

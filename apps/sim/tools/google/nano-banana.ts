@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
@@ -72,7 +73,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Multiple reference images for fusion (Nano Banana Pro). Use image URLs or uploaded file reference objects; do not pass inline base64 image data. When provided, used instead of inputImage.',
+        'Multiple reference images for fusion. Supported on Gemini image models (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana). Use image URLs or uploaded file reference objects; do not pass inline base64 image data. When provided, used instead of inputImage.',
     },
     inputImageUrls: {
       type: 'string',
@@ -89,7 +90,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
       return '/api/google'
     },
     method: 'POST',
-    timeout: 180000,
+    timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
     headers: () => {
       return {
         'Content-Type': 'application/json',
@@ -167,7 +168,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
         },
         hasInputImages: {
           type: 'boolean',
-          description: 'Whether multiple images were provided for fusion (Nano Banana Pro)',
+          description: 'Whether multiple images were provided for fusion',
         },
         inputImageCount: {
           type: 'number',
@@ -207,7 +208,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
             },
             hasInputImages: {
               type: 'boolean',
-              description: 'Whether multiple images were provided for fusion (Nano Banana Pro)',
+              description: 'Whether multiple images were provided for fusion',
             },
             inputImageCount: {
               type: 'number',

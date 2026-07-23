@@ -12,6 +12,7 @@ import {
   isValidBlockType,
 } from '@/blocks/registry'
 import { AuthMode } from '@/blocks/types'
+import { START_FILES_REF } from '@/executor/constants'
 
 describe.concurrent('Blocks Module', () => {
   describe('Registry', () => {
@@ -174,6 +175,7 @@ describe.concurrent('Blocks Module', () => {
         'file_append',
         'file_compress',
         'file_decompress',
+        'file_manage_sharing',
       ])
       expect(block?.tools.config?.tool({ operation: 'file_compress' })).toBe('file_compress')
       expect(block?.tools.config?.tool({ operation: 'file_decompress' })).toBe('file_decompress')
@@ -241,10 +243,38 @@ describe.concurrent('Blocks Module', () => {
       expect(uploadSubBlock?.type).toBe('file-upload')
       expect(uploadSubBlock?.canonicalParamId).toBe('files')
       expect(uploadSubBlock?.multiple).toBe(true)
+      expect(uploadSubBlock?.allowStartFilesReference).toBe(true)
+      expect(uploadSubBlock?.conversationFileMode).toBe('all')
+      expect(uploadSubBlock?.defaultValue).toBe(START_FILES_REF)
       expect(advancedSubBlock?.canonicalParamId).toBe('files')
       expect(block?.inputs.files).toEqual({
         type: 'array',
         description: 'Files to include with the latest user message',
+      })
+
+      expect(
+        block?.tools.config?.params?.({
+          model: 'gpt-4o',
+          files: [
+            START_FILES_REF,
+            {
+              source: 'conversation-image',
+              id: 'att-1',
+              messageId: 'msg-1',
+              name: 'notes.pdf',
+              url: '/api/files/serve/workspace%2Fws-1%2Fnotes.pdf?context=workspace',
+              type: 'application/pdf',
+            },
+          ],
+        })
+      ).toMatchObject({
+        files: [
+          START_FILES_REF,
+          expect.objectContaining({
+            id: 'att-1',
+            name: 'notes.pdf',
+          }),
+        ],
       })
 
       expect(
@@ -509,7 +539,7 @@ describe.concurrent('Blocks Module', () => {
         expect(modelSubBlock).toBeDefined()
         expect(modelSubBlock?.type).toBe('combobox')
         expect(modelSubBlock?.required).toBe(true)
-        expect(modelSubBlock?.defaultValue).toBe('claude-sonnet-4-6')
+        expect(modelSubBlock?.defaultValue).toBe('claude-sonnet-5')
       })
 
       it('should have LLM tool access', () => {
@@ -820,11 +850,12 @@ describe.concurrent('Blocks Module', () => {
       expect(videoGeneratorBlock?.hideFromToolbar).not.toBe(true)
       expect(imageProviderSubBlock?.commandSearchable).toBe(true)
       expect(videoProviderSubBlock?.commandSearchable).toBe(true)
-      expect(imageProviderSubBlock?.value?.()).toBe('falai')
+      expect(imageProviderSubBlock?.value?.()).toBe('')
+      expect(imageProviderSubBlock?.clearable).toBe(true)
       expect(videoProviderSubBlock?.value?.()).toBe('falai')
       expect(
         Array.isArray(imageProviderOptions) ? imageProviderOptions.map((option) => option.id) : []
-      ).toContain('falai')
+      ).not.toContain('falai')
       expect(
         Array.isArray(videoProviderOptions) ? videoProviderOptions.map((option) => option.id) : []
       ).toContain('falai')
@@ -834,10 +865,7 @@ describe.concurrent('Blocks Module', () => {
 
     it('should expose GPT Image 2 and hosted OpenAI/Gemini inputs on image generator v2', () => {
       const imageGeneratorBlock = getBlock('image_generator_v2')
-      const openAIModelSubBlock = imageGeneratorBlock?.subBlocks.find(
-        (sb) =>
-          sb.id === 'model' && sb.condition?.field === 'provider' && sb.condition.value === 'openai'
-      )
+      const modelSubBlock = imageGeneratorBlock?.subBlocks.find((sb) => sb.id === 'model')
       const nonFalApiKeySubBlock = imageGeneratorBlock?.subBlocks.find(
         (sb) =>
           sb.id === 'apiKey' && sb.condition?.field === 'provider' && sb.condition.not === true
@@ -846,9 +874,10 @@ describe.concurrent('Blocks Module', () => {
         (sb) => sb.id === 'inputImage' && sb.condition?.field === 'provider'
       )
 
-      expect(openAIModelSubBlock?.options?.map((option) => option.id)).toContain('gpt-image-2')
+      expect(modelSubBlock?.options?.map((option) => option.id)).toContain('gpt-image-2')
+      expect(modelSubBlock?.condition).toBeUndefined()
       expect(nonFalApiKeySubBlock).toBeUndefined()
-      expect(geminiReferenceSubBlock?.condition?.value).toBe('gemini')
+      expect(geminiReferenceSubBlock?.condition?.value).toEqual(['openai', 'gemini'])
     })
 
     it('should mark the agent model combobox as command-searchable', () => {
@@ -863,28 +892,13 @@ describe.concurrent('Blocks Module', () => {
     it('should hide generator API keys on hosted only for Fal.ai providers', () => {
       const imageBlock = getBlock('image_generator_v2')
       const imageApiKeySubBlocks = imageBlock?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
-      const imageFalApiKeySubBlock = imageApiKeySubBlocks.find(
-        (sb) => sb.condition?.field === 'provider' && sb.condition.value === 'falai'
-      )
 
-      expect(imageApiKeySubBlocks).toHaveLength(1)
-      expect(imageFalApiKeySubBlock?.hideWhenHosted).toBe(true)
+      expect(imageApiKeySubBlocks).toHaveLength(0)
 
       const videoBlock = getBlock('video_generator_v3')
       const videoApiKeySubBlocks = videoBlock?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
-      const videoFalApiKeySubBlock = videoApiKeySubBlocks.find(
-        (sb) => sb.condition?.field === 'provider' && sb.condition.value === 'falai'
-      )
-      const videoNonFalApiKeySubBlock = videoApiKeySubBlocks.find(
-        (sb) =>
-          sb.condition?.field === 'provider' &&
-          sb.condition.value === 'falai' &&
-          sb.condition.not === true
-      )
 
-      expect(videoFalApiKeySubBlock?.hideWhenHosted).toBe(true)
-      expect(videoNonFalApiKeySubBlock).toBeDefined()
-      expect(videoNonFalApiKeySubBlock?.hideWhenHosted).not.toBe(true)
+      expect(videoApiKeySubBlocks).toHaveLength(0)
     })
 
     it('should expose reference image inputs and images output on image generator v2', () => {
@@ -893,13 +907,12 @@ describe.concurrent('Blocks Module', () => {
       const referenceImageUrls = block?.subBlocks.find((sb) => sb.id === 'inputImageUrl')
 
       expect(referenceImages?.allowStartFilesReference).toBe(true)
+      expect(referenceImages?.defaultValue).toBe(START_FILES_REF)
       expect(referenceImages?.condition?.value).toEqual(['openai', 'gemini'])
       expect(referenceImageUrls?.condition?.value).toEqual(['openai', 'gemini'])
       expect(block?.outputs.images).toBeDefined()
       expect(
-        block?.subBlocks
-          .find((sb) => sb.id === 'model' && sb.condition?.value === 'openai')
-          ?.options?.map((option) => option.id)
+        block?.subBlocks.find((sb) => sb.id === 'model')?.options?.map((option) => option.id)
       ).toContain('gpt-image-2')
     })
   })

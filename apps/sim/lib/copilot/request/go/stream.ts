@@ -90,9 +90,15 @@ export class CopilotBackendError extends Error {
 }
 
 export class BillingLimitError extends Error {
-  constructor(public readonly userId: string) {
-    super('Usage limit reached')
+  readonly scope?: 'pooled' | 'member'
+
+  constructor(
+    public readonly userId: string,
+    options?: { message?: string; scope?: 'pooled' | 'member' }
+  ) {
+    super(options?.message ?? 'Usage limit reached')
     this.name = 'BillingLimitError'
+    this.scope = options?.scope
   }
 }
 

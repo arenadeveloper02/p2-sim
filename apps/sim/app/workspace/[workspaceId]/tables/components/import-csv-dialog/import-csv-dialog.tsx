@@ -1,8 +1,6 @@
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
 import {
   Button,
   ButtonGroup,
@@ -22,7 +20,10 @@ import {
   TableHeader,
   TableRow,
   toast,
-} from '@/components/emcn'
+} from '@sim/emcn'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
+import { truncate } from '@sim/utils/string'
 import { CSV_ASYNC_IMPORT_THRESHOLD_BYTES } from '@/lib/table/constants'
 import { buildAutoMapping, parseCsvBuffer } from '@/lib/table/import'
 import type { TableDefinition } from '@/lib/table/types'
@@ -88,7 +89,7 @@ function summarizeImportError(message: string): string {
   }
 
   const trimmed = message.trim()
-  if (trimmed.length > 180) return `${trimmed.slice(0, 177)}...`
+  if (trimmed.length > 180) return truncate(trimmed, 177)
   return trimmed
 }
 

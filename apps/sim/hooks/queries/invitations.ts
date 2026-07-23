@@ -11,8 +11,8 @@ import {
   resendInvitationContract,
 } from '@/lib/api/contracts/invitations'
 import { updateWorkspacePermissionsContract } from '@/lib/api/contracts/workspaces'
-import { workspaceCredentialKeys } from '@/hooks/queries/credentials'
 import { organizationKeys } from '@/hooks/queries/organization'
+import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
 import { workspaceKeys } from '@/hooks/queries/workspace'
 
 export const invitationKeys = {
@@ -20,6 +20,8 @@ export const invitationKeys = {
   lists: () => [...invitationKeys.all, 'list'] as const,
   list: (workspaceId: string) => [...invitationKeys.lists(), workspaceId] as const,
 }
+
+export const WORKSPACE_INVITATION_LIST_STALE_TIME = 30 * 1000
 
 export interface WorkspaceInvitation {
   email: string
@@ -61,7 +63,7 @@ export function usePendingInvitations(workspaceId: string | undefined) {
     queryKey: invitationKeys.list(workspaceId ?? ''),
     queryFn: ({ signal }) => fetchPendingInvitations(workspaceId as string, signal),
     enabled: Boolean(workspaceId),
-    staleTime: 30 * 1000,
+    staleTime: WORKSPACE_INVITATION_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }

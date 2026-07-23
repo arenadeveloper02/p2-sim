@@ -47,6 +47,8 @@ export interface StreamLoopState {
   sawStreamError: boolean
   sawCompleteEvent: boolean
   scheduledTextFlushFrame: number | null
+  /** Ephemeral Local Copilot status shown under the assistant message. */
+  liveStatus: string | undefined
 }
 
 export interface StreamEventScope {
@@ -91,6 +93,7 @@ export interface StreamLoopDeps {
     content: string
     contentBlocks: ContentBlock[]
     requestId?: string
+    liveStatus?: string
   }) => PersistedMessage
   hasTerminalPersistedAssistantForStream: (
     messages: PersistedMessage[],
@@ -115,6 +118,8 @@ export interface StreamLoopDeps {
   activeTurnRef: MutableRefObject<ActiveTurn | null>
   resourcesRef: MutableRefObject<MothershipResource[]>
   workflowIdRef: MutableRefObject<string | undefined>
+  /** True when the chat surface is an embed route (no workspace sidebar). */
+  isEmbedPageRef: MutableRefObject<boolean>
   activeResourceIdRef: MutableRefObject<string | null>
   onTitleUpdateRef: MutableRefObject<(() => void) | undefined>
   onToolResultRef: MutableRefObject<
@@ -165,6 +170,7 @@ export function createStreamLoopContext(deps: StreamLoopDeps): StreamLoopContext
     sawStreamError: false,
     sawCompleteEvent: false,
     scheduledTextFlushFrame: null,
+    liveStatus: undefined,
   }
 
   const isStale = () =>
@@ -195,6 +201,13 @@ export function createStreamLoopContext(deps: StreamLoopDeps): StreamLoopContext
         content: modelContent,
         contentBlocks: modelBlocks,
       }
+      // Always stamp liveStatus when set so later flushes cannot drop it. Clear
+      // with empty string on terminal events so normalizeMessage removes it.
+      if (state.liveStatus) {
+        snapshot.liveStatus = state.liveStatus
+      } else if (state.sawCompleteEvent || state.sawStreamError) {
+        snapshot.liveStatus = ''
+      }
       if (state.streamRequestId) snapshot.requestId = state.streamRequestId
       deps.setPendingMessages((prev) => {
         if (deps.expectedGen !== undefined && deps.streamGenRef.current !== deps.expectedGen) {
@@ -217,6 +230,11 @@ export function createStreamLoopContext(deps: StreamLoopDeps): StreamLoopContext
       content: modelContent,
       contentBlocks: modelBlocks,
       ...(state.streamRequestId ? { requestId: state.streamRequestId } : {}),
+      ...(state.liveStatus
+        ? { liveStatus: state.liveStatus }
+        : state.sawCompleteEvent || state.sawStreamError
+          ? { liveStatus: '' }
+          : {}),
     })
     deps.upsertMothershipChatHistory(activeChatId, (current) => {
       const streamId = deps.streamIdRef.current ?? current.activeStreamId ?? deps.assistantId

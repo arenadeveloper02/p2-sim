@@ -214,6 +214,7 @@ describe('Model Capabilities', () => {
     it.concurrent('should return false for models that do not support temperature', () => {
       const unsupportedModels = [
         'unsupported-model',
+        'claude-sonnet-5',
         'cerebras/llama-3.3-70b',
         'o1',
         'o3',
@@ -1563,11 +1564,12 @@ describe('transformBlockTool multi-instance unique IDs', () => {
 
   const transformTable = (
     params: Record<string, unknown>,
-    canonicalModes?: Record<string, 'basic' | 'advanced'>
+    canonicalModes?: Record<string, 'basic' | 'advanced'>,
+    toolIndex?: number
   ) =>
     transformBlockTool(
       { type: 'table', operation: 'query_rows', params },
-      { selectedOperation: 'query_rows', getAllBlocks, getTool, canonicalModes }
+      { selectedOperation: 'query_rows', getAllBlocks, getTool, canonicalModes, toolIndex }
     )
 
   it('appends the table id when stored under the basic selector subblock key', async () => {
@@ -1578,9 +1580,17 @@ describe('transformBlockTool multi-instance unique IDs', () => {
   it('appends the table id resolved from the advanced manual input', async () => {
     const result = await transformTable(
       { manualTableId: 'tbl_xyz' },
-      { 'table:tableId': 'advanced' }
+      { '0:tableId': 'advanced' },
+      0
     )
     expect(result?.id).toBe('table_query_rows_tbl_xyz')
+  })
+
+  it('resolves an advanced-only manual id via the heuristic when basic is empty and no mode is set', async () => {
+    // No canonicalModes entry: routing through resolveCanonicalMode picks advanced (empty basic),
+    // where the old `?? 'basic'` fallback dropped the advanced-only value.
+    const result = await transformTable({ manualTableId: 'tbl_only' })
+    expect(result?.id).toBe('table_query_rows_tbl_only')
   })
 
   it('appends the canonical table id when already present in params', async () => {
@@ -1591,6 +1601,21 @@ describe('transformBlockTool multi-instance unique IDs', () => {
   it('falls back to the base tool id when no table is selected', async () => {
     const result = await transformTable({})
     expect(result?.id).toBe('table_query_rows')
+  })
+
+  it('regression: two Table tool instances on one Agent block resolve their canonical mode independently', async () => {
+    // Both tools are type "table" with canonicalId "tableId" and BOTH basic + advanced values
+    // populated, so only the explicit per-instance mode determines which one wins. Before the fix,
+    // canonicalModes was keyed by `${toolType}:${canonicalId}` (shared across every "table" tool),
+    // so toggling tool #0 to advanced also flipped tool #1's resolved value.
+    const sharedParams = { tableSelector: 'tbl_basic', manualTableId: 'tbl_advanced' }
+    const canonicalModes = { '0:tableId': 'advanced', '1:tableId': 'basic' }
+
+    const first = await transformTable(sharedParams, canonicalModes, 0)
+    const second = await transformTable(sharedParams, canonicalModes, 1)
+
+    expect(first?.id).toBe('table_query_rows_tbl_advanced')
+    expect(second?.id).toBe('table_query_rows_tbl_basic')
   })
 })
 
@@ -1629,11 +1654,12 @@ describe('transformBlockTool knowledge-base multi-instance unique IDs', () => {
 
   const transformKb = (
     params: Record<string, unknown>,
-    canonicalModes?: Record<string, 'basic' | 'advanced'>
+    canonicalModes?: Record<string, 'basic' | 'advanced'>,
+    toolIndex?: number
   ) =>
     transformBlockTool(
       { type: 'knowledge', operation: 'search', params },
-      { selectedOperation: 'search', getAllBlocks, getTool, canonicalModes }
+      { selectedOperation: 'search', getAllBlocks, getTool, canonicalModes, toolIndex }
     )
 
   it('appends the knowledge base id when stored under the basic selector subblock key', async () => {
@@ -1644,7 +1670,8 @@ describe('transformBlockTool knowledge-base multi-instance unique IDs', () => {
   it('appends the knowledge base id resolved from the advanced manual input', async () => {
     const result = await transformKb(
       { manualKnowledgeBaseId: 'kb_xyz' },
-      { 'knowledge:knowledgeBaseId': 'advanced' }
+      { '0:knowledgeBaseId': 'advanced' },
+      0
     )
     expect(result?.id).toBe('knowledge_search_kb_xyz')
   })
@@ -1657,5 +1684,93 @@ describe('transformBlockTool knowledge-base multi-instance unique IDs', () => {
   it('falls back to the base tool id when no knowledge base is selected', async () => {
     const result = await transformKb({})
     expect(result?.id).toBe('knowledge_search')
+  })
+})
+
+describe('transformBlockTool image generator agent tool', () => {
+  const imageGeneratorBlockDef = {
+    type: 'image_generator_v2',
+    inputs: {
+      inputImage: { type: 'json' },
+      inputImageUrl: { type: 'string' },
+    },
+    subBlocks: [
+      { id: 'provider', type: 'combobox' },
+      { id: 'model', type: 'combobox' },
+      { id: 'prompt', type: 'long-input' },
+    ],
+    tools: {
+      access: ['image_generate'],
+      config: {
+        tool: () => 'image_generate',
+        params: (params: Record<string, unknown>) => ({
+          provider: params.provider || 'openai',
+          model: params.model || 'gpt-image-2',
+          prompt: params.prompt,
+        }),
+      },
+    },
+  }
+
+  const getAllBlocks = () => [imageGeneratorBlockDef]
+  const getTool = (id: string) => ({
+    id,
+    name: 'Image Generator',
+    description: 'Generate images',
+    params: {
+      provider: { type: 'string', required: false, visibility: 'user-or-llm' },
+      apiKey: { type: 'string', required: false, visibility: 'user-only' },
+      model: { type: 'string', required: false, visibility: 'user-or-llm' },
+      prompt: { type: 'string', required: true, visibility: 'user-or-llm' },
+    },
+  })
+
+  it('exposes image_generate to the LLM with block paramsTransform applied', async () => {
+    const result = await transformBlockTool(
+      {
+        type: 'image_generator_v2',
+        title: 'Image Generator',
+        params: {
+          provider: 'openai',
+          model: 'gpt-image-2',
+          prompt: 'A red sports car',
+        },
+      },
+      { getAllBlocks, getTool }
+    )
+
+    expect(result?.id).toBe('image_generate')
+    expect(result?.name).toBe('Image Generator')
+    expect(result?.params).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-image-2',
+      prompt: 'A red sports car',
+    })
+    expect(result?.paramsTransform?.({ prompt: 'Updated prompt' })).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-image-2',
+      prompt: 'Updated prompt',
+    })
+    expect(result?.parameters?.properties).not.toHaveProperty('provider')
+    expect(result?.parameters?.properties).not.toHaveProperty('model')
+    expect(result?.parameters?.properties).not.toHaveProperty('prompt')
+  })
+
+  it('exposes unset image_generate params to the LLM except apiKey', async () => {
+    const result = await transformBlockTool(
+      {
+        type: 'image_generator_v2',
+        title: 'Image Generator',
+        params: {},
+      },
+      { getAllBlocks, getTool }
+    )
+
+    expect(result?.parameters?.properties).toHaveProperty('provider')
+    expect(result?.parameters?.properties).toHaveProperty('model')
+    expect(result?.parameters?.properties).toHaveProperty('prompt')
+    expect(result?.parameters?.properties).not.toHaveProperty('apiKey')
+    expect(result?.parameters?.required).toEqual(expect.arrayContaining(['prompt']))
+    expect(result?.parameters?.required).not.toEqual(expect.arrayContaining(['provider', 'model']))
   })
 })

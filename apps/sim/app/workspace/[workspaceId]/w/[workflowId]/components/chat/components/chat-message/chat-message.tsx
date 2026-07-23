@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from 'react'
+import { Tooltip } from '@sim/emcn'
 import { Check, Copy } from 'lucide-react'
-import { Tooltip } from '@/components/emcn'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
-import { ChatFileDownload } from '@/app/chat/components/message/components/file-download'
-import { StreamingIndicator } from '@/app/chat/components/message/components/streaming-indicator'
+import { resolveEChartsOptionsFromContent, stripEChartsJsonFromContent } from '@/lib/chart-generation/echarts-option'
+import { ChatEChartsRenderer } from '@/app/(interfaces)/chat/components/message/components/chat-echarts-renderer'
+import { ChatFileDownload } from '@/app/(interfaces)/chat/components/message/components/file-download'
+import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/components/streaming-indicator'
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components'
 import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/types'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
@@ -20,6 +22,7 @@ import {
   mergeToolOutputImageUrls,
   normalizeImageUrlForCompare,
   renderBs64Img,
+  renderChatMessageImage,
   resolveMessageImagesAndProse,
   S3UploadFailedAlert,
 } from './constants'
@@ -205,6 +208,11 @@ export function ChatMessage({
     return new Map(entries)
   }, [message.generatedImages])
 
+  const messageChartOptions = useMemo(
+    () => resolveEChartsOptionsFromContent(message.content),
+    [message.content]
+  )
+
   const getGeneratedImageSelectionProps = useCallback(
     (imageUrl?: string) => {
       if (!imageUrl || !onToggleGeneratedImage) {
@@ -234,6 +242,12 @@ export function ChatMessage({
       }
     },
     [generatedImagesByUrl, message.id, onToggleGeneratedImage, selectedGeneratedImageIds]
+  )
+
+  const renderMarkdownImage = useCallback(
+    ({ src }: { src: string; alt?: string }) =>
+      renderChatMessageImage(src, getGeneratedImageSelectionProps(src)),
+    [getGeneratedImageSelectionProps]
   )
 
   if (message.type === 'user') {
@@ -270,6 +284,21 @@ export function ChatMessage({
       return null
     }
 
+    if (content === message.content && messageChartOptions) {
+      const prose =
+        typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
+      return (
+        <>
+          {prose ? (
+            <ArenaCopilotMarkdownRenderer content={prose} renderImage={renderMarkdownImage} />
+          ) : null}
+          {messageChartOptions.map((option, index) => (
+            <ChatEChartsRenderer key={index} option={option} />
+          ))}
+        </>
+      )
+    }
+
     try {
       if (typeof content === 'object' && content !== null) {
         const o = content as Record<string, unknown>
@@ -294,7 +323,12 @@ export function ChatMessage({
         if (uniqueUrls.length > 0 || imageBase64) {
           return (
             <>
-              {proseTrim ? <ArenaCopilotMarkdownRenderer content={proseTrim} /> : null}
+              {proseTrim ? (
+                <ArenaCopilotMarkdownRenderer
+                  content={proseTrim}
+                  renderImage={renderMarkdownImage}
+                />
+              ) : null}
               {showS3 && <S3UploadFailedAlert />}
               {uniqueUrls.map((url) => (
                 <div key={normalizeImageUrlForCompare(url)} className='w-full'>
@@ -308,7 +342,11 @@ export function ChatMessage({
               ))}
               {imageBase64 && (
                 <div className='w-full'>
-                  {renderBs64Img({ isBase64: true, imageData: imageBase64 })}
+                  {renderBs64Img({
+                    isBase64: true,
+                    imageData: imageBase64,
+                    ...getGeneratedImageSelectionProps(imgRaw),
+                  })}
                 </div>
               )}
             </>
@@ -316,10 +354,17 @@ export function ChatMessage({
         }
 
         if (txtTrim) {
-          return <ArenaCopilotMarkdownRenderer content={txtTrim} />
+          return (
+            <ArenaCopilotMarkdownRenderer content={txtTrim} renderImage={renderMarkdownImage} />
+          )
         }
 
-        return <ArenaCopilotMarkdownRenderer content={JSON.stringify(content, null, 2)} />
+        return (
+          <ArenaCopilotMarkdownRenderer
+            content={JSON.stringify(content, null, 2)}
+            renderImage={renderMarkdownImage}
+          />
+        )
       }
 
       if (typeof content === 'string') {
@@ -327,7 +372,9 @@ export function ChatMessage({
         if (urls.length > 0) {
           return (
             <>
-              {prose ? <ArenaCopilotMarkdownRenderer content={prose} /> : null}
+              {prose ? (
+                <ArenaCopilotMarkdownRenderer content={prose} renderImage={renderMarkdownImage} />
+              ) : null}
               {urls.map((url) => (
                 <div key={normalizeImageUrlForCompare(url)} className='w-full'>
                   {renderBs64Img({
@@ -345,7 +392,11 @@ export function ChatMessage({
 
       if (typeof content === 'string' && isBase64(content)) {
         const cleanedContent = content.replace(/\s+/g, '')
-        return renderBs64Img({ isBase64: true, imageData: cleanedContent })
+        return renderBs64Img({
+          isBase64: true,
+          imageData: cleanedContent,
+          ...getGeneratedImageSelectionProps(content),
+        })
       }
 
       if (typeof content === 'string') {
@@ -371,19 +422,30 @@ export function ChatMessage({
           return (
             <>
               {textParts.length > 0 && (
-                <ArenaCopilotMarkdownRenderer content={textParts.join('\n\n')} />
+                <ArenaCopilotMarkdownRenderer
+                  content={textParts.join('\n\n')}
+                  renderImage={renderMarkdownImage}
+                />
               )}
               {base64Images.map((imageData, index) => (
-                <div key={index}>{renderBs64Img({ isBase64: true, imageData })}</div>
+                <div key={index}>
+                  {renderBs64Img({
+                    isBase64: true,
+                    imageData,
+                    ...getGeneratedImageSelectionProps(imageData),
+                  })}
+                </div>
               ))}
             </>
           )
         }
 
-        return <ArenaCopilotMarkdownRenderer content={content} />
+        return <ArenaCopilotMarkdownRenderer content={content} renderImage={renderMarkdownImage} />
       }
 
-      return <ArenaCopilotMarkdownRenderer content={String(content)} />
+      return (
+        <ArenaCopilotMarkdownRenderer content={String(content)} renderImage={renderMarkdownImage} />
+      )
     } catch (error) {
       return (
         <div className='rounded-lg border border-red-200 bg-red-50 p-3 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300'>

@@ -12,29 +12,27 @@ import { sha256Hex } from '@sim/security/hash'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { tasks } from '@trigger.dev/sdk'
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  gte,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  lte,
-  ne,
-  type SQL,
-  sql,
-} from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, type SQL, sql } from 'drizzle-orm'
 import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import type { HighestPrioritySubscription } from '@/lib/billing/core/plan'
+import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { recordUsage } from '@/lib/billing/core/usage-log'
+import {
+  checkAndIncrementStorageUsageInTx,
+  decrementStorageUsageInTx,
+  maybeNotifyStorageLimit,
+} from '@/lib/billing/storage'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
+import { resolveTriggerRegion } from '@/lib/core/async-jobs/region'
 import { env, envNumber } from '@/lib/core/config/env'
 import { getCostMultiplier, isTriggerDevEnabled } from '@/lib/core/config/env-flags'
+import { mapWithConcurrency } from '@/lib/core/utils/concurrency'
 import { processDocument } from '@/lib/knowledge/documents/document-processor'
+import {
+  buildTagFilterCondition,
+  type TagFilterCondition,
+} from '@/lib/knowledge/documents/tag-filter'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
 import { getEmbeddingModelInfo } from '@/lib/knowledge/embedding-models'
 import { generateEmbeddings } from '@/lib/knowledge/embeddings'
@@ -447,6 +445,7 @@ async function dispatchViaBatchTrigger(
 ): Promise<number> {
   let dispatched = 0
   const batchIds: string[] = []
+  const region = await resolveTriggerRegion()
   for (let i = 0; i < jobPayloads.length; i += TRIGGER_BATCH_SIZE) {
     const chunk = jobPayloads.slice(i, i + TRIGGER_BATCH_SIZE)
     try {
@@ -462,6 +461,7 @@ async function dispatchViaBatchTrigger(
               `knowledgeBaseId:${payload.knowledgeBaseId}`,
               `documentId:${payload.documentId}`,
             ],
+            region,
           },
         }))
       )
@@ -479,22 +479,27 @@ async function dispatchViaBatchTrigger(
   return dispatched
 }
 
+/** Each in-process job runs chunking + embedding + many DB inserts. */
+const IN_PROCESS_DISPATCH_CONCURRENCY = 5
+
 async function dispatchInProcess(
   jobPayloads: DocumentProcessingPayload[],
   requestId: string
 ): Promise<number> {
-  const results = await Promise.allSettled(
-    jobPayloads.map((p) =>
-      processDocumentAsync(p.knowledgeBaseId, p.documentId, p.docData, p.processingOptions)
-    )
+  const results = await mapWithConcurrency(
+    jobPayloads,
+    IN_PROCESS_DISPATCH_CONCURRENCY,
+    async (p) => {
+      try {
+        await processDocumentAsync(p.knowledgeBaseId, p.documentId, p.docData, p.processingOptions)
+        return true
+      } catch (error) {
+        logger.error(`[${requestId}] Document dispatch failed`, { error: getErrorMessage(error) })
+        return false
+      }
+    }
   )
-  let dispatched = 0
-  for (const r of results) {
-    if (r.status === 'fulfilled') dispatched++
-    else
-      logger.error(`[${requestId}] Document dispatch failed`, { error: getErrorMessage(r.reason) })
-  }
-  return dispatched
+  return results.filter(Boolean).length
 }
 
 export async function processDocumentAsync(
@@ -859,6 +864,33 @@ export function isTriggerAvailable(): boolean {
   return Boolean(env.TRIGGER_SECRET_KEY) && isTriggerDevEnabled
 }
 
+/**
+ * Resolves the subscription to bill for a storage-metered upload, ahead of
+ * the FOR UPDATE transaction that will insert the document row.
+ *
+ * Must run before that transaction opens: `knowledgeBase.userId` is
+ * immutable once a KB is created, so resolving it here can't go stale
+ * relative to the transaction's own read of it, and resolving it inside the
+ * transaction would open a second pooled-database-connection checkout while
+ * the first is held.
+ */
+async function resolveQuotaSubscription(
+  knowledgeBaseId: string,
+  uploadedBy: string | null
+): Promise<HighestPrioritySubscription | null> {
+  const billedUserId =
+    uploadedBy ??
+    (
+      await db
+        .select({ userId: knowledgeBase.userId })
+        .from(knowledgeBase)
+        .where(eq(knowledgeBase.id, knowledgeBaseId))
+        .limit(1)
+    )[0]?.userId
+
+  return billedUserId ? getHighestPrioritySubscription(billedUserId) : null
+}
+
 export async function createDocumentRecords(
   documents: Array<{
     filename: string
@@ -878,7 +910,17 @@ export async function createDocumentRecords(
   requestId: string,
   uploadedBy: string | null = null
 ): Promise<DocumentData[]> {
-  return await db.transaction(async (tx) => {
+  let storageBilling: {
+    userId: string
+    workspaceId: string | null
+    bytes: number
+    sub: HighestPrioritySubscription | null
+  } | null = null
+
+  const totalBytes = documents.reduce((sum, docData) => sum + (docData.fileSize || 0), 0)
+  const sub = totalBytes > 0 ? await resolveQuotaSubscription(knowledgeBaseId, uploadedBy) : null
+
+  const returnData = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT 1 FROM knowledge_base WHERE id = ${knowledgeBaseId} FOR UPDATE`)
 
     const kb = await tx
@@ -903,6 +945,15 @@ export async function createDocumentRecords(
       requestId,
       tx
     )
+
+    const billedUserId = uploadedBy ?? kb[0].userId
+    if (totalBytes > 0) {
+      const quotaCheck = await checkAndIncrementStorageUsageInTx(tx, sub, billedUserId, totalBytes)
+      if (!quotaCheck.allowed) {
+        throw new Error(quotaCheck.error || 'Storage limit exceeded')
+      }
+      storageBilling = { userId: billedUserId, workspaceId: kbWorkspaceId, bytes: totalBytes, sub }
+    }
 
     // One load per batch (was N+1); skip entirely if no doc carries tags.
     const hasTaggedDocs = documents.some((d) => d.documentTagsData)
@@ -992,145 +1043,20 @@ export async function createDocumentRecords(
 
     return returnData
   })
-}
 
-export interface TagFilterCondition {
-  tagSlot: string
-  fieldType: 'text' | 'number' | 'date' | 'boolean'
-  operator: string
-  value: unknown
-  valueTo?: unknown
-}
-
-const ALLOWED_TAG_SLOTS = new Set([
-  'tag1',
-  'tag2',
-  'tag3',
-  'tag4',
-  'tag5',
-  'tag6',
-  'tag7',
-  'number1',
-  'number2',
-  'number3',
-  'number4',
-  'number5',
-  'date1',
-  'date2',
-  'boolean1',
-  'boolean2',
-  'boolean3',
-])
-
-function escapeLikePattern(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
-}
-
-function buildTagFilterCondition(filter: TagFilterCondition): SQL | undefined {
-  if (!ALLOWED_TAG_SLOTS.has(filter.tagSlot)) return undefined
-
-  const col = document[filter.tagSlot as keyof typeof document]
-
-  if (filter.fieldType === 'text') {
-    const v = String(filter.value ?? '')
-    switch (filter.operator) {
-      case 'eq':
-        return eq(col as typeof document.tag1, v)
-      case 'neq':
-        return ne(col as typeof document.tag1, v)
-      case 'contains': {
-        const escaped = escapeLikePattern(v)
-        return sql`LOWER(${col}) LIKE LOWER(${`%${escaped}%`}) ESCAPE '\\'`
-      }
-      case 'not_contains': {
-        const escaped = escapeLikePattern(v)
-        return sql`LOWER(${col}) NOT LIKE LOWER(${`%${escaped}%`}) ESCAPE '\\'`
-      }
-      case 'starts_with': {
-        const escaped = escapeLikePattern(v)
-        return sql`LOWER(${col}) LIKE LOWER(${`${escaped}%`}) ESCAPE '\\'`
-      }
-      case 'ends_with': {
-        const escaped = escapeLikePattern(v)
-        return sql`LOWER(${col}) LIKE LOWER(${`%${escaped}`}) ESCAPE '\\'`
-      }
-      default:
-        return undefined
+  if (storageBilling) {
+    const billing: {
+      userId: string
+      workspaceId: string | null
+      bytes: number
+      sub: HighestPrioritySubscription | null
+    } = storageBilling
+    if (billing.workspaceId) {
+      void maybeNotifyStorageLimit(billing.userId, billing.workspaceId, billing.sub)
     }
   }
 
-  if (filter.fieldType === 'number') {
-    const num = Number(filter.value)
-    if (Number.isNaN(num)) return undefined
-    switch (filter.operator) {
-      case 'eq':
-        return eq(col as typeof document.number1, num)
-      case 'neq':
-        return ne(col as typeof document.number1, num)
-      case 'gt':
-        return gt(col as typeof document.number1, num)
-      case 'gte':
-        return gte(col as typeof document.number1, num)
-      case 'lt':
-        return lt(col as typeof document.number1, num)
-      case 'lte':
-        return lte(col as typeof document.number1, num)
-      case 'between': {
-        const numTo = Number(filter.valueTo)
-        if (Number.isNaN(numTo)) return undefined
-        return and(
-          gte(col as typeof document.number1, num),
-          lte(col as typeof document.number1, numTo)
-        )
-      }
-      default:
-        return undefined
-    }
-  }
-
-  if (filter.fieldType === 'date') {
-    const v = String(filter.value ?? '')
-    switch (filter.operator) {
-      case 'eq':
-        return eq(col as typeof document.date1, new Date(v))
-      case 'neq':
-        return ne(col as typeof document.date1, new Date(v))
-      case 'gt':
-        return gt(col as typeof document.date1, new Date(v))
-      case 'gte':
-        return gte(col as typeof document.date1, new Date(v))
-      case 'lt':
-        return lt(col as typeof document.date1, new Date(v))
-      case 'lte':
-        return lte(col as typeof document.date1, new Date(v))
-      case 'between': {
-        if (!filter.valueTo) return undefined
-        const valueTo = String(filter.valueTo)
-        return and(
-          gte(col as typeof document.date1, new Date(v)),
-          lte(col as typeof document.date1, new Date(valueTo))
-        )
-      }
-      default:
-        return undefined
-    }
-  }
-
-  if (filter.fieldType === 'boolean') {
-    const boolVal =
-      typeof filter.value === 'boolean' ? filter.value : parseBooleanValue(String(filter.value))
-    if (boolVal === null) return undefined
-    switch (filter.operator) {
-      case 'eq':
-        return eq(col as typeof document.boolean1, boolVal)
-      case 'neq':
-        return ne(col as typeof document.boolean1, boolVal)
-      default:
-        return undefined
-    }
-  }
-
-  return undefined
+  return returnData
 }
 
 export async function getDocuments(
@@ -1449,6 +1375,16 @@ export async function createSingleDocument(
     ...processedTags,
   }
 
+  let storageBilling: {
+    userId: string
+    workspaceId: string | null
+    bytes: number
+    sub: HighestPrioritySubscription | null
+  } | null = null
+
+  const sub =
+    documentData.fileSize > 0 ? await resolveQuotaSubscription(knowledgeBaseId, uploadedBy) : null
+
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT 1 FROM knowledge_base WHERE id = ${knowledgeBaseId} FOR UPDATE`)
 
@@ -1474,6 +1410,25 @@ export async function createSingleDocument(
       tx
     )
 
+    const billedUserId = uploadedBy ?? kb[0].userId
+    if (documentData.fileSize > 0) {
+      const quotaCheck = await checkAndIncrementStorageUsageInTx(
+        tx,
+        sub,
+        billedUserId,
+        documentData.fileSize
+      )
+      if (!quotaCheck.allowed) {
+        throw new Error(quotaCheck.error || 'Storage limit exceeded')
+      }
+      storageBilling = {
+        userId: billedUserId,
+        workspaceId: kb[0].workspaceId,
+        bytes: documentData.fileSize,
+        sub,
+      }
+    }
+
     await tx.insert(document).values(newDocument)
 
     await tx
@@ -1481,6 +1436,19 @@ export async function createSingleDocument(
       .set({ updatedAt: now })
       .where(eq(knowledgeBase.id, knowledgeBaseId))
   })
+
+  if (storageBilling) {
+    const billing: {
+      userId: string
+      workspaceId: string | null
+      bytes: number
+      sub: HighestPrioritySubscription | null
+    } = storageBilling
+    if (billing.workspaceId) {
+      void maybeNotifyStorageLimit(billing.userId, billing.workspaceId, billing.sub)
+    }
+  }
+
   logger.info(`[${requestId}] Document created: ${documentId} in knowledge base ${knowledgeBaseId}`)
 
   return newDocument as {
@@ -1991,6 +1959,9 @@ function getKnowledgeBaseStorageKey(fileUrl: string | null): string | null {
   }
 }
 
+/** Each entry deletes a storage object plus its metadata row. */
+const STORAGE_DELETE_CONCURRENCY = 10
+
 export async function deleteDocumentStorageFiles(
   documentsToDelete: Array<{ id: string; fileUrl: string | null; workspaceId?: string | null }>,
   requestId: string
@@ -2017,46 +1988,44 @@ export async function deleteDocumentStorageFiles(
     }
   }
 
-  await Promise.allSettled(
-    entries.map(async ({ doc, storageKey }) => {
-      if (!storageKey) {
+  await mapWithConcurrency(entries, STORAGE_DELETE_CONCURRENCY, async ({ doc, storageKey }) => {
+    if (!storageKey) {
+      return
+    }
+
+    // Only delete a kb/ object when its trusted ownership binding confirms the
+    // deleting document's workspace owns it. Prevents deleting another tenant's
+    // object via a document with a planted fileUrl.
+    if (storageKey.startsWith('kb/')) {
+      const bindingWorkspaceId = ownerByKey.get(storageKey)
+      if (!bindingWorkspaceId) {
+        logger.warn(`[${requestId}] Skipping storage delete: no ownership binding for key`, {
+          documentId: doc.id,
+          storageKey,
+        })
         return
       }
-
-      // Only delete a kb/ object when its trusted ownership binding confirms the
-      // deleting document's workspace owns it. Prevents deleting another tenant's
-      // object via a document with a planted fileUrl.
-      if (storageKey.startsWith('kb/')) {
-        const bindingWorkspaceId = ownerByKey.get(storageKey)
-        if (!bindingWorkspaceId) {
-          logger.warn(`[${requestId}] Skipping storage delete: no ownership binding for key`, {
-            documentId: doc.id,
-            storageKey,
-          })
-          return
-        }
-        if (!doc.workspaceId || bindingWorkspaceId !== doc.workspaceId) {
-          logger.warn(`[${requestId}] Skipping storage delete: ownership binding mismatch`, {
-            documentId: doc.id,
-            storageKey,
-            bindingWorkspaceId,
-            documentWorkspaceId: doc.workspaceId ?? null,
-          })
-          return
-        }
-      }
-
-      try {
-        await deleteFile({ key: storageKey, context: 'knowledge-base' })
-        await deleteFileMetadata(storageKey)
-      } catch (error) {
-        logger.warn(`[${requestId}] Failed to delete document storage file`, {
+      if (!doc.workspaceId || bindingWorkspaceId !== doc.workspaceId) {
+        logger.warn(`[${requestId}] Skipping storage delete: ownership binding mismatch`, {
           documentId: doc.id,
-          error: toError(error).message,
+          storageKey,
+          bindingWorkspaceId,
+          documentWorkspaceId: doc.workspaceId ?? null,
         })
+        return
       }
-    })
-  )
+    }
+
+    try {
+      await deleteFile({ key: storageKey, context: 'knowledge-base' })
+      await deleteFileMetadata(storageKey)
+    } catch (error) {
+      logger.warn(`[${requestId}] Failed to delete document storage file`, {
+        documentId: doc.id,
+        error: toError(error).message,
+      })
+    }
+  })
 }
 
 async function excludeConnectorDocuments(
@@ -2127,7 +2096,11 @@ export async function hardDeleteDocuments(
     .select({
       id: document.id,
       fileUrl: document.fileUrl,
+      fileSize: document.fileSize,
+      uploadedBy: document.uploadedBy,
+      connectorId: document.connectorId,
       workspaceId: knowledgeBase.workspaceId,
+      kbUserId: knowledgeBase.userId,
     })
     .from(document)
     .innerJoin(knowledgeBase, eq(document.knowledgeBaseId, knowledgeBase.id))
@@ -2139,18 +2112,51 @@ export async function hardDeleteDocuments(
 
   const existingIds = documentsToDelete.map((doc) => doc.id)
 
+  // Resolve owner subscriptions before the transaction (reads). Connector-synced
+  // documents are never metered at ingest, so they are excluded from billing here.
+  const candidateUserIds = new Set<string>()
+  for (const doc of documentsToDelete) {
+    if (doc.connectorId || doc.fileSize <= 0) continue
+    const billedUserId = doc.uploadedBy ?? doc.kbUserId
+    if (billedUserId) candidateUserIds.add(billedUserId)
+  }
+  const subByUser = new Map<string, HighestPrioritySubscription | null>()
+  for (const billedUserId of candidateUserIds) {
+    subByUser.set(billedUserId, await getHighestPrioritySubscription(billedUserId))
+  }
+
+  // Key everything off the rows this tx actually deleted (`returning()`) so a
+  // concurrent delete that claimed some ids first isn't double-counted here.
+  let deletedDocs: typeof documentsToDelete = []
   await db.transaction(async (tx) => {
     await tx.delete(embedding).where(inArray(embedding.documentId, existingIds))
-    await tx.delete(document).where(inArray(document.id, existingIds))
+    const deletedRows = await tx
+      .delete(document)
+      .where(inArray(document.id, existingIds))
+      .returning({ id: document.id })
+
+    const deletedIds = new Set(deletedRows.map((row) => row.id))
+    deletedDocs = documentsToDelete.filter((doc) => deletedIds.has(doc.id))
+
+    const bytesByUser = new Map<string, number>()
+    for (const doc of deletedDocs) {
+      if (doc.connectorId || doc.fileSize <= 0) continue
+      const billedUserId = doc.uploadedBy ?? doc.kbUserId
+      if (!billedUserId) continue
+      bytesByUser.set(billedUserId, (bytesByUser.get(billedUserId) ?? 0) + doc.fileSize)
+    }
+    for (const [billedUserId, bytes] of bytesByUser) {
+      await decrementStorageUsageInTx(tx, subByUser.get(billedUserId) ?? null, billedUserId, bytes)
+    }
   })
 
-  await deleteDocumentStorageFiles(documentsToDelete, requestId)
+  await deleteDocumentStorageFiles(deletedDocs, requestId)
 
-  logger.info(`[${requestId}] Hard deleted ${existingIds.length} documents`, {
-    documentIds: existingIds,
+  logger.info(`[${requestId}] Hard deleted ${deletedDocs.length} documents`, {
+    documentIds: deletedDocs.map((doc) => doc.id),
   })
 
-  return existingIds.length
+  return deletedDocs.length
 }
 
 export async function deleteDocument(

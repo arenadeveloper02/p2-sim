@@ -12,8 +12,9 @@ interface UseProfilePictureUploadProps {
   onUpload?: (url: string | null) => void
   onError?: (error: string) => void
   currentImage?: string | null
-  context?: 'profile-pictures' | 'workspace-logos'
+  context?: 'profile-pictures' | 'workspace-logos' | 'org-logos'
   workspaceId?: string
+  organizationId?: string
 }
 
 /**
@@ -26,6 +27,7 @@ export function useProfilePictureUpload({
   currentImage,
   context = 'profile-pictures',
   workspaceId,
+  organizationId,
 }: UseProfilePictureUploadProps = {}) {
   const previewRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -67,9 +69,11 @@ export function useProfilePictureUpload({
   const uploadFileToServer = useCallback(
     async (file: File): Promise<string> => {
       const presignedEndpoint =
-        context === 'workspace-logos' && workspaceId
-          ? `/api/files/presigned?type=workspace-logos&workspaceId=${encodeURIComponent(workspaceId)}`
-          : `/api/files/presigned?type=${context}`
+        context === 'org-logos' && organizationId
+          ? `/api/files/presigned?type=org-logos&organizationId=${encodeURIComponent(organizationId)}`
+          : context === 'workspace-logos' && workspaceId
+            ? `/api/files/presigned?type=workspace-logos&workspaceId=${encodeURIComponent(workspaceId)}`
+            : `/api/files/presigned?type=${context}`
 
       try {
         const result = await runUploadStrategy({
@@ -82,14 +86,14 @@ export function useProfilePictureUpload({
         return result.path
       } catch (error) {
         if (error instanceof DirectUploadError && error.code === 'FALLBACK_REQUIRED') {
-          const { path } = await uploadViaApiFallback(file, context, workspaceId)
+          const { path } = await uploadViaApiFallback(file, context, workspaceId, organizationId)
           logger.info(`${context} uploaded successfully via API fallback: ${path}`)
           return path
         }
         throw error
       }
     },
-    [context, workspaceId]
+    [context, workspaceId, organizationId]
   )
 
   const processFile = useCallback(
@@ -157,6 +161,23 @@ export function useProfilePictureUpload({
     onUploadRef.current?.(null)
   }, [])
 
+  /**
+   * Restore the preview to the stored image (`currentImage`) — for a form discard
+   * that should revert an unsaved pick/removal without clearing the saved image.
+   * Unlike {@link handleRemove}, this does not emit `onUpload(null)`.
+   */
+  const reset = useCallback(() => {
+    if (previewRef.current) {
+      URL.revokeObjectURL(previewRef.current)
+      previewRef.current = null
+    }
+    setPreviewUrl(currentImageRef.current || null)
+    setFileName(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [])
+
   useEffect(() => {
     return () => {
       if (previewRef.current) {
@@ -173,6 +194,7 @@ export function useProfilePictureUpload({
     handleFileChange,
     handleFileDrop,
     handleRemove,
+    reset,
     isUploading,
   }
 }

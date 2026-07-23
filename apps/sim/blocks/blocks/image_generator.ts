@@ -1,40 +1,43 @@
 import { ImageIcon } from '@/components/icons'
 import {
+  getReferenceImageModelIds,
+  IMAGE_BLOCK_ALL_MODEL_OPTIONS,
+  IMAGE_BLOCK_PROVIDER_OPTIONS,
+  normalizeImageModelId,
+  reconcileImageProviderAndModel,
+} from '@/lib/image-generation/block-model-config'
+import {
   NANO_BANANA_MODELS,
   NANO_BANANA_PRO_MODEL,
   resolveNanoBananaReferences,
 } from '@/lib/image-generation/nano-banana-inputs'
+import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-files'
+import { mergeUrlsAndDeduplicate, parseImageUrls } from '@/lib/utils/parse-image-urls'
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
-import {
-  createVersionedToolSelector,
-  normalizeFileInput,
-  parseOptionalBooleanInput,
-} from '@/blocks/utils'
+import { createVersionedToolSelector, parseOptionalBooleanInput } from '@/blocks/utils'
+import { START_FILES_REF } from '@/executor/constants'
 import type { ImageGenerationResponse } from '@/tools/image/types'
 
 function normalizeReferenceFiles(input: unknown): unknown[] {
-  const normalizedFiles = normalizeFileInput(input)
-  if (Array.isArray(normalizedFiles)) {
-    return normalizedFiles
-  }
-  if (normalizedFiles) {
-    return [normalizedFiles]
-  }
-  return []
+  return normalizeReferenceFileParams(input) ?? []
 }
 
-const OPENAI_GPT_IMAGE_MODELS = [
-  { label: 'GPT Image 2', id: 'gpt-image-2' },
-  { label: 'GPT Image 1.5', id: 'gpt-image-1.5' },
-  { label: 'GPT Image 1', id: 'gpt-image-1' },
-  { label: 'GPT Image 1 Mini', id: 'gpt-image-1-mini' },
-]
+function resolveFalaiNanoBanana2References(params: Record<string, unknown>): {
+  inputImages?: unknown[]
+} {
+  const references = [
+    ...normalizeReferenceFiles(params.inputImage),
+    ...normalizeReferenceFiles(params.inputImages),
+    ...mergeUrlsAndDeduplicate(
+      parseImageUrls(params.inputImageUrl),
+      parseImageUrls(params.inputImageUrls)
+    ),
+  ]
 
-const GEMINI_IMAGE_MODELS = [
-  { label: 'Nano Banana 2', id: 'gemini-3.1-flash-image-preview' },
-  { label: 'Nano Banana Pro', id: 'gemini-3-pro-image-preview' },
-  { label: 'Nano Banana', id: 'gemini-2.5-flash-image' },
-]
+  return references.length > 0 ? { inputImages: references } : {}
+}
+
+const REFERENCE_IMAGE_MODELS = getReferenceImageModelIds()
 
 const FALAI_IMAGE_MODELS = [
   { label: 'Nano Banana 2', id: 'nano-banana-2' },
@@ -116,7 +119,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '1024x1792', id: '1024x1792' },
         { label: '1792x1024', id: '1792x1024' },
       ],
-      value: () => '1024x1024',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'dall-e-3' },
       dependsOn: ['model'],
     },
@@ -130,7 +134,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '1536x1024', id: '1536x1024' },
         { label: '1024x1536', id: '1024x1536' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'gpt-image-1' },
       dependsOn: ['model'],
     },
@@ -146,7 +151,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '2K (2560x1440)', id: '2560x1440' },
         { label: '4K (3840x2160)', id: '3840x2160' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'gpt-image-2' },
       dependsOn: ['model'],
     },
@@ -158,7 +164,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'Standard', id: 'standard' },
         { label: 'HD', id: 'hd' },
       ],
-      value: () => 'standard',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'dall-e-3' },
       dependsOn: ['model'],
     },
@@ -172,7 +179,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'Medium', id: 'medium' },
         { label: 'High', id: 'high' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: ['gpt-image-1', 'gpt-image-2'] },
       dependsOn: ['model'],
     },
@@ -184,7 +192,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'Vivid', id: 'vivid' },
         { label: 'Natural', id: 'natural' },
       ],
-      value: () => 'vivid',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'dall-e-3' },
       dependsOn: ['model'],
     },
@@ -197,7 +206,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'Transparent', id: 'transparent' },
         { label: 'Opaque', id: 'opaque' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'gpt-image-1' },
       dependsOn: ['model'],
     },
@@ -209,7 +219,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'Auto', id: 'auto' },
         { label: 'Opaque', id: 'opaque' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'gpt-image-2' },
       dependsOn: ['model'],
     },
@@ -222,7 +233,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'JPEG', id: 'jpeg' },
         { label: 'WebP', id: 'webp' },
       ],
-      value: () => 'png',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: ['gpt-image-1', 'gpt-image-2'] },
       dependsOn: ['model'],
     },
@@ -234,7 +246,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'Auto', id: 'auto' },
         { label: 'Low', id: 'low' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: ['gpt-image-1', 'gpt-image-2'] },
       dependsOn: ['model'],
     },
@@ -246,7 +259,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '1K', id: '1K' },
         { label: '2K', id: '2K' },
       ],
-      value: () => '1K',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'imagen-4.0-generate-001' },
     },
     {
@@ -260,7 +274,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '9:16', id: '9:16' },
         { label: '16:9', id: '16:9' },
       ],
-      value: () => '1:1',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'imagen-4.0-generate-001' },
     },
     {
@@ -272,7 +287,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: 'Allow Adult', id: 'allow_adult' },
         { label: 'Allow All', id: 'allow_all' },
       ],
-      value: () => 'allow_adult',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: 'imagen-4.0-generate-001' },
     },
     {
@@ -291,7 +307,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '16:9', id: '16:9' },
         { label: '21:9', id: '21:9' },
       ],
-      value: () => '1:1',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'model',
         value: ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'],
@@ -306,7 +323,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '2K', id: '2K' },
         { label: '4K', id: '4K' },
       ],
-      value: () => '1K',
+      clearable: true,
+      value: () => '',
       condition: { field: 'model', value: NANO_BANANA_PRO_MODEL },
     },
     {
@@ -317,7 +335,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
       multiple: true,
       uploadContext: 'image-fusion',
       allowStartFilesReference: true,
-      defaultValue: '<start.files>',
+      defaultValue: START_FILES_REF,
       condition: {
         field: 'model',
         value: NANO_BANANA_MODELS,
@@ -328,7 +346,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
       title: 'Reference Image URLs',
       type: 'long-input',
       placeholder:
-        'Optional: add one or more image URLs or references. One image edits, multiple images fuse.',
+        'Optional: add one or more image URLs or references. Limits vary by model (up to 14 for Nano Banana 2, 11 for Pro, 3 for Nano Banana).',
       mode: 'advanced',
       condition: {
         field: 'model',
@@ -492,12 +510,12 @@ export const ImageGeneratorBlockV2: BlockConfig = {
     inputImage: {
       type: 'json',
       description:
-        'Reference images for Nano Banana as uploaded UserFiles, Start block files, or file references. One image edits; multiple images fuse on Nano Banana Pro.',
+        'Reference images for Nano Banana as uploaded UserFiles, Start block files, or file references. Multi-image fusion limits vary by model (up to 3 for Nano Banana, 11 for Pro).',
     },
     inputImageUrl: {
       type: 'string',
       description:
-        'Reference image URLs or refs for Nano Banana. One image edits; multiple images fuse on Nano Banana Pro.',
+        'Reference image URLs or refs for Nano Banana. Multi-image fusion limits vary by model (up to 3 for Nano Banana, 11 for Pro).',
     },
     inputImages: {
       type: 'json',
@@ -537,8 +555,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   name: 'Image Generator',
   description: 'Generate images',
   authMode: AuthMode.ApiKey,
-  longDescription:
-    'Generate images using OpenAI GPT Image, Google Nano Banana, or Fal.ai image models.',
+  longDescription: 'Generate images using OpenAI GPT Image or Google Nano Banana image models.',
   docsLink: 'https://docs.sim.ai/integrations/image_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
@@ -548,42 +565,34 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'provider',
       title: 'Provider',
-      type: 'dropdown',
-      options: [
-        { label: 'OpenAI', id: 'openai' },
-        { label: 'Google Gemini', id: 'gemini' },
-        { label: 'Fal.ai (Multi-Model)', id: 'falai' },
-      ],
+      type: 'combobox',
+      options: IMAGE_BLOCK_PROVIDER_OPTIONS,
+      placeholder: 'Type, select, or reference a provider...',
+      searchable: true,
       commandSearchable: true,
-      value: () => 'falai',
+      clearable: true,
+      value: () => '',
     },
     {
       id: 'model',
       title: 'Model',
-      type: 'dropdown',
-      options: OPENAI_GPT_IMAGE_MODELS,
-      value: () => 'gpt-image-1.5',
-      condition: { field: 'provider', value: 'openai' },
-      dependsOn: ['provider'],
+      type: 'combobox',
+      options: IMAGE_BLOCK_ALL_MODEL_OPTIONS,
+      placeholder: 'Type, select, or reference a model...',
+      searchable: true,
+      commandSearchable: true,
+      clearable: true,
+      value: () => '',
     },
-    {
-      id: 'model',
-      title: 'Model',
-      type: 'dropdown',
-      options: GEMINI_IMAGE_MODELS,
-      value: () => 'gemini-3.1-flash-image-preview',
-      condition: { field: 'provider', value: 'gemini' },
-      dependsOn: ['provider'],
-    },
-    {
-      id: 'model',
-      title: 'Model',
-      type: 'dropdown',
-      options: FALAI_IMAGE_MODELS,
-      value: () => 'nano-banana-2',
-      condition: { field: 'provider', value: 'falai' },
-      dependsOn: ['provider'],
-    },
+    // {
+    //   id: 'model',
+    //   title: 'Model',
+    //   type: 'dropdown',
+    //   options: FALAI_IMAGE_MODELS,
+    //   value: () => 'nano-banana-2',
+    //   condition: { field: 'provider', value: 'falai' },
+    //   dependsOn: ['provider'],
+    // },
     {
       id: 'prompt',
       title: 'Prompt',
@@ -601,7 +610,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Landscape (1536x1024)', id: '1536x1024' },
         { label: 'Portrait (1024x1536)', id: '1024x1536' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'openai',
@@ -621,7 +631,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: '2K (2560x1440)', id: '2560x1440' },
         { label: '4K (3840x2160)', id: '3840x2160' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'openai',
@@ -638,7 +649,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Landscape (1536x1024)', id: '1536x1024' },
         { label: 'Portrait (1024x1536)', id: '1024x1536' },
       ],
-      value: () => '1024x1024',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -660,7 +672,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Landscape 4:3', id: 'landscape_4_3' },
         { label: 'Landscape 16:9', id: 'landscape_16_9' },
       ],
-      value: () => 'auto_2K',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -680,7 +693,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Portrait 4:3', id: 'portrait_4_3' },
         { label: 'Portrait 16:9', id: 'portrait_16_9' },
       ],
-      value: () => 'landscape_4_3',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -691,9 +705,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: [...BASE_ASPECT_RATIO_OPTIONS, ...EXTREME_ASPECT_RATIO_OPTIONS],
-      value: () => '1:1',
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'gemini',
@@ -704,9 +721,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: BASE_ASPECT_RATIO_OPTIONS,
-      value: () => '1:1',
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'gemini',
@@ -720,13 +740,16 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: 'Auto', id: 'auto' },
         ...BASE_ASPECT_RATIO_OPTIONS,
         ...EXTREME_ASPECT_RATIO_OPTIONS,
       ],
-      value: () => 'auto',
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -737,9 +760,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: [{ label: 'Auto', id: 'auto' }, ...BASE_ASPECT_RATIO_OPTIONS],
-      value: () => '1:1',
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -750,9 +776,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: BASE_ASPECT_RATIO_OPTIONS,
-      value: () => '1:1',
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -763,7 +792,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '1:1', id: '1:1' },
         { label: '16:9', id: '16:9' },
@@ -779,7 +808,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: '19.5:9', id: '19.5:9' },
         { label: '9:19.5', id: '9:19.5' },
       ],
-      value: () => '1:1',
+      placeholder: 'Type, select, or reference an aspect ratio...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -790,14 +822,17 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '512', id: '512' },
         { label: '1K', id: '1K' },
         { label: '2K', id: '2K' },
         { label: '4K', id: '4K' },
       ],
-      value: () => '1K',
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'gemini',
@@ -808,13 +843,16 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '1K', id: '1K' },
         { label: '2K', id: '2K' },
         { label: '4K', id: '4K' },
       ],
-      value: () => '1K',
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'gemini',
@@ -825,14 +863,17 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '0.5K', id: '0.5K' },
         { label: '1K', id: '1K' },
         { label: '2K', id: '2K' },
         { label: '4K', id: '4K' },
       ],
-      value: () => '1K',
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -843,13 +884,16 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '1K', id: '1K' },
         { label: '2K', id: '2K' },
         { label: '4K', id: '4K' },
       ],
-      value: () => '1K',
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -860,12 +904,15 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     {
       id: 'resolution',
       title: 'Resolution',
-      type: 'dropdown',
+      type: 'combobox',
       options: [
         { label: '1k', id: '1k' },
         { label: '2k', id: '2k' },
       ],
-      value: () => '1k',
+      placeholder: 'Type, select, or reference a resolution...',
+      searchable: true,
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -883,7 +930,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Medium', id: 'medium' },
         { label: 'High', id: 'high' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: { field: 'provider', value: 'openai' },
       dependsOn: ['provider', 'model'],
     },
@@ -896,7 +944,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Medium', id: 'medium' },
         { label: 'Low', id: 'low' },
       ],
-      value: () => 'high',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -913,7 +962,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Transparent', id: 'transparent' },
         { label: 'Opaque', id: 'opaque' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: ['openai', 'falai'],
@@ -929,7 +979,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Auto', id: 'auto' },
         { label: 'Opaque', id: 'opaque' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'openai',
@@ -942,7 +993,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       title: 'Output Format',
       type: 'dropdown',
       options: OUTPUT_FORMAT_OPTIONS,
-      value: () => 'png',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: ['openai', 'falai'],
@@ -970,7 +1022,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'JPEG', id: 'jpeg' },
         { label: 'PNG', id: 'png' },
       ],
-      value: () => 'jpeg',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -986,7 +1039,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Auto', id: 'auto' },
         { label: 'Low', id: 'low' },
       ],
-      value: () => 'auto',
+      clearable: true,
+      value: () => '',
       condition: { field: 'provider', value: 'openai' },
       dependsOn: ['provider', 'model'],
     },
@@ -998,8 +1052,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       multiple: true,
       uploadContext: 'image-fusion',
       allowStartFilesReference: true,
-      defaultValue: '<start.files>',
-      condition: { field: 'provider', value: ['openai', 'gemini'] },
+      defaultValue: START_FILES_REF,
+      condition: {
+        field: 'provider',
+        value: ['openai', 'gemini'],
+        and: { field: 'model', value: REFERENCE_IMAGE_MODELS },
+      },
       dependsOn: ['provider', 'model'],
     },
     {
@@ -1007,9 +1065,13 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       title: 'Reference Image URLs',
       type: 'long-input',
       placeholder:
-        'Optional: add one or more image URLs or references. One image edits, multiple images fuse.',
+        'Optional: add one or more image URLs or references. Limits vary by model (up to 14 for Nano Banana 2, 11 for Pro, 3 for Nano Banana).',
       mode: 'advanced',
-      condition: { field: 'provider', value: ['openai', 'gemini'] },
+      condition: {
+        field: 'provider',
+        value: ['openai', 'gemini'],
+        and: { field: 'model', value: REFERENCE_IMAGE_MODELS },
+      },
       dependsOn: ['provider', 'model'],
     },
     {
@@ -1046,7 +1108,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: '5', id: '5' },
         { label: '6', id: '6' },
       ],
-      value: () => '4',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -1065,7 +1128,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: '4', id: '4' },
         { label: '5', id: '5' },
       ],
-      value: () => '2',
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -1081,6 +1145,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Minimal', id: 'minimal' },
         { label: 'High', id: 'high' },
       ],
+      clearable: true,
+      value: () => '',
       condition: {
         field: 'provider',
         value: 'falai',
@@ -1111,34 +1177,31 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       },
       dependsOn: ['provider', 'model'],
     },
-    {
-      id: 'apiKey',
-      title: 'API Key',
-      type: 'short-input',
-      required: true,
-      placeholder: 'Enter your provider API key',
-      password: true,
-      connectionDroppable: false,
-      hideWhenHosted: true,
-      condition: { field: 'provider', value: 'falai' },
-    },
+    // {
+    //   id: 'apiKey',
+    //   title: 'API Key',
+    //   type: 'short-input',
+    //   required: true,
+    //   placeholder: 'Enter your provider API key',
+    //   password: true,
+    //   connectionDroppable: false,
+    //   hideWhenHosted: true,
+    //   condition: { field: 'provider', value: 'falai' },
+    // },
   ],
   tools: {
     access: ['image_generate'],
     config: {
       tool: () => 'image_generate',
       params: (params) => {
-        const provider = params.provider || 'openai'
         if (!params.prompt) {
           throw new Error('Prompt is required')
         }
-        const defaultModel =
-          provider === 'gemini'
-            ? 'gemini-3.1-flash-image-preview'
-            : provider === 'falai'
-              ? 'nano-banana-2'
-              : 'gpt-image-1.5'
 
+        const { provider, model } = reconcileImageProviderAndModel({
+          provider: typeof params.provider === 'string' ? params.provider : undefined,
+          model: typeof params.model === 'string' ? normalizeImageModelId(params.model) : undefined,
+        })
         const referenceInputs =
           provider === 'openai' || provider === 'gemini'
             ? resolveNanoBananaReferences({
@@ -1151,10 +1214,13 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
                 inputImageUrls: params.inputImageUrls,
               })
             : {}
+        // provider === 'falai' && model === 'nano-banana-2'
+        //   ? resolveFalaiNanoBanana2References(params)
+        //   : ...
 
         return {
           provider,
-          model: params.model || defaultModel,
+          model,
           prompt: params.prompt,
           apiKey: params.apiKey,
           ...(params.size && { size: params.size }),
@@ -1203,12 +1269,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     inputImage: {
       type: 'json',
       description:
-        'Reference images as uploaded files, Start block files, or file references. One image edits; multiple images fuse on supported models.',
+        'Reference images as uploaded files, Start block files, or file references. GPT Image 2 accepts up to 16 references; other OpenAI models accept one. Gemini models support multi-image fusion (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana).',
     },
     inputImageUrl: {
       type: 'string',
       description:
-        'Reference image URLs or refs. One image edits; multiple images fuse on supported models.',
+        'Reference image URLs or refs. GPT Image 2 accepts up to 16 references; other OpenAI models accept one. Gemini models support multi-image fusion (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana).',
     },
     inputImages: {
       type: 'json',
@@ -1231,7 +1297,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     image: { type: 'file', description: 'Generated image file' },
     images: {
       type: 'array',
-      description: 'All generated image files when multiple images were requested',
+      description: 'All generated image files',
     },
     imageUrl: { type: 'string', description: 'Generated image URL' },
     provider: { type: 'string', description: 'Provider used' },

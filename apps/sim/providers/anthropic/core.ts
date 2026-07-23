@@ -28,6 +28,10 @@ import {
   sumToolCosts,
 } from '@/providers/utils'
 import { executeTool } from '@/tools'
+import {
+  getAnthropicAutomaticCacheControl,
+  supportsAnthropicAutomaticPromptCaching,
+} from '@/lib/anthropic/prompt-cache'
 
 /**
  * Configuration for creating an Anthropic provider instance.
@@ -51,6 +55,7 @@ interface AnthropicPayload extends Omit<Anthropic.Messages.MessageStreamParams, 
   thinking?: Anthropic.Messages.ThinkingConfigParam | { type: 'adaptive' }
   output_format?: { type: 'json_schema'; schema: Record<string, unknown> }
   output_config?: { effort: string }
+  cache_control?: ReturnType<typeof getAnthropicAutomaticCacheControl>
 }
 
 /**
@@ -84,6 +89,8 @@ const THINKING_BUDGET_TOKENS: Record<string, number> = {
 
 /**
  * Checks if a model supports adaptive thinking (thinking.type: "adaptive").
+ * Fable 5 supports ONLY adaptive thinking (always on; type: "disabled" is rejected).
+ * Sonnet 5 supports ONLY adaptive thinking (manual budget_tokens returns a 400 error).
  * Opus 4.8 and Opus 4.7 support ONLY adaptive thinking (no extended thinking / budget_tokens).
  * Opus 4.6 and Sonnet 4.6 support both extended and adaptive thinking — use adaptive.
  * Opus 4.5 supports effort but NOT adaptive thinking — it uses budget_tokens with type: "enabled".
@@ -91,6 +98,8 @@ const THINKING_BUDGET_TOKENS: Record<string, number> = {
 function supportsAdaptiveThinking(modelId: string): boolean {
   const normalizedModel = modelId.toLowerCase()
   return (
+    normalizedModel.includes('fable-5') ||
+    normalizedModel.includes('sonnet-5') ||
     normalizedModel.includes('opus-4-8') ||
     normalizedModel.includes('opus-4.8') ||
     normalizedModel.includes('opus-4-7') ||
@@ -105,7 +114,7 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 /**
  * Builds the thinking configuration for the Anthropic API based on model capabilities and level.
  *
- * - Opus 4.8, Opus 4.7: Uses adaptive thinking only (no extended thinking support)
+ * - Fable 5, Sonnet 5, Opus 4.8, Opus 4.7: Uses adaptive thinking only (no extended thinking support)
  * - Opus 4.6, Sonnet 4.6: Uses adaptive thinking with effort parameter
  * - Other models: Uses budget_tokens-based extended thinking
  *
@@ -302,6 +311,9 @@ export async function executeAnthropicProviderRequest(
       Number.parseInt(String(request.maxTokens)) || getMaxOutputTokensForModel(request.model),
     ...(supportsTemperature(request.model) && {
       temperature: Number.parseFloat(String(request.temperature ?? 0.7)),
+    }),
+    ...(supportsAnthropicAutomaticPromptCaching(config.providerId) && {
+      cache_control: getAnthropicAutomaticCacheControl(),
     }),
   }
 

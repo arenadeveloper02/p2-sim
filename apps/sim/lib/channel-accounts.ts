@@ -9,7 +9,6 @@ import { createLogger } from '@sim/logger'
 import { eq, sql } from 'drizzle-orm'
 import { getSession } from '@/lib/auth'
 import { env } from '@/lib/core/config/env'
-import { WORKSPACE_MODE } from '@/lib/workspaces/policy'
 
 const logger = createLogger('ChannelAccounts')
 
@@ -122,12 +121,12 @@ export async function getChannelAccounts(
     }
 
     const [currentWorkspace] = await db
-      .select({ workspaceMode: workspace.workspaceMode })
+      .select({ isPersonal: workspace.isPersonal })
       .from(workspace)
       .where(eq(workspace.id, workspaceId))
       .limit(1)
 
-    const isPersonalWorkspace = currentWorkspace?.workspaceMode === WORKSPACE_MODE.PERSONAL
+    const isPersonalWorkspace = currentWorkspace?.isPersonal === true
 
     const mappedResult = isPersonalWorkspace
       ? await db.execute(sql`

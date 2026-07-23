@@ -15,6 +15,8 @@ import {
   getProviderModels,
   orderModelIdsByReleaseDate,
 } from '@/providers/models'
+import { isPiSupportedProvider } from '@/providers/pi-providers'
+import { getProviderFromModel } from '@/providers/utils'
 import { useProvidersStore } from '@/stores/providers/store'
 
 export const VERTEX_MODELS = getProviderModels('vertex')
@@ -103,6 +105,23 @@ function isFreeOpenRouterModel(modelId: string): boolean {
  */
 export function getAgentModelOptions() {
   return getModelOptions().filter((opt) => isFreeOpenRouterModel(opt.id))
+}
+
+/**
+ * Model options filtered to providers the Pi Coding Agent can run (see
+ * {@link isPiSupportedProvider}), so the Pi block never offers a model that would
+ * error at execution. Uses the same `getProviderFromModel` resolution as the Pi
+ * handler, so the dropdown matches runtime behavior; unresolved/blacklisted
+ * models (which `getProviderFromModel` can throw on) are excluded.
+ */
+export function getPiModelOptions() {
+  return getModelOptions().filter((option) => {
+    try {
+      return isPiSupportedProvider(getProviderFromModel(option.id))
+    } catch {
+      return false
+    }
+  })
 }
 
 /**
@@ -613,6 +632,21 @@ export function normalizeFileInput(
 
   return files
 }
+
+/**
+ * Block types available as tools inside the Agent block tool picker.
+ * These remain canvas blocks (`category: 'blocks'`) but are also selectable as agent tools.
+ */
+export const AGENT_TOOL_BLOCK_TYPES = new Set([
+  'api',
+  'webhook_request',
+  'workflow',
+  'workflow_input',
+  'knowledge',
+  'function',
+  'table',
+  'image_generator_v2',
+])
 
 /**
  * Block types that are built-in to the platform (as opposed to third-party integrations).

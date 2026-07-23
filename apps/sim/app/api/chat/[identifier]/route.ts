@@ -11,9 +11,11 @@ import { generateId } from '@sim/utils/id'
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { deployedChatPostContract, goldenQueriesSchema } from '@/lib/api/contracts/chats'
+import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
+import { getAgentDepartmentLabel } from '@/lib/chat/arena-departments'
 import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
 import {
   toPersistedChatAttachment,
@@ -34,26 +36,6 @@ import { assertChatEmbedAllowed, setChatAuthCookie, validateChatAuth } from '@/a
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatIdentifierAPI')
-
-// Agent department mapping
-const agentDepartments = [
-  { value: 'creative', label: 'Creative' },
-  { value: 'ma', label: 'MA' },
-  { value: 'ppc', label: 'PPC' },
-  { value: 'sales', label: 'Sales' },
-  { value: 'seo', label: 'SEO' },
-  { value: 'strategy', label: 'Strategy' },
-  { value: 'waas', label: 'WAAS' },
-  { value: 'hr', label: 'HR' },
-] as const
-
-const departmentLabelMap: Record<string, string> = agentDepartments.reduce(
-  (acc, dept) => {
-    acc[dept.value] = dept.label
-    return acc
-  },
-  {} as Record<string, string>
-)
 
 function isRenderableImageUrlString(value: string): boolean {
   const trimmed = value.trim()
@@ -921,6 +903,18 @@ export const POST = withRouteHandler(
                             return value
                           }
                           if (typeof value === 'object') {
+                            const chartOutput = formatChartDeployOutputForChat(value)
+                            if (chartOutput) {
+                              return chartOutput
+                            }
+                            if (
+                              value &&
+                              typeof value === 'object' &&
+                              'charts' in value &&
+                              Array.isArray((value as { charts?: unknown }).charts)
+                            ) {
+                              return null
+                            }
                             try {
                               return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
                             } catch {
@@ -1213,8 +1207,7 @@ export const GET = withRouteHandler(
        */
       const buildChatConfigData = (userWorkspaceIds?: string[]) => {
         const departmentValue = deployment.department ?? null
-        const departmentLabel =
-          departmentValue != null ? (departmentLabelMap[departmentValue] ?? departmentValue) : null
+        const departmentLabel = getAgentDepartmentLabel(departmentValue)
 
         return {
           id: deployment.id,

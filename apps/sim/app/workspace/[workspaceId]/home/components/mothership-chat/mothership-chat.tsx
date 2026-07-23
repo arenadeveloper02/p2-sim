@@ -10,8 +10,8 @@ import {
   useRef,
   useState,
 } from 'react'
+import { cn } from '@sim/emcn'
 import { defaultRangeExtractor, type Range, useVirtualizer } from '@tanstack/react-virtual'
-import { cn } from '@/lib/core/utils/cn'
 import { MessageActions } from '@/app/workspace/[workspaceId]/components'
 import { ChatMessageAttachments } from '@/app/workspace/[workspaceId]/home/components/chat-message-attachments'
 import { ChatSurfaceProvider } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
@@ -63,6 +63,9 @@ interface MothershipChatProps {
   onContextAdd?: (context: ChatContext) => void
   onContextRemove?: (context: ChatContext) => void
   onWorkspaceResourceSelect?: (resource: MothershipResource) => void
+  canSwitchCopilotBackend?: boolean
+  copilotBackend?: 'local' | 'external'
+  setCopilotBackend?: (value: 'local' | 'external') => void
   draftScopeKey?: string
   layout?: 'mothership-view' | 'copilot-view'
   initialScrollBlocked?: boolean
@@ -189,7 +192,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
   }, [phase])
 
   if (!hasAnyBlocks && !trimmedContent && isStreaming) {
-    return <PendingTagIndicator />
+    return <PendingTagIndicator label={message.liveStatus} />
   }
 
   const hasRenderableAssistant = assistantMessageHasRenderableContent(blocks, message.content ?? '')
@@ -205,6 +208,7 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
         blocks={blocks}
         fallbackContent={message.content}
         isStreaming={isStreaming}
+        liveStatus={message.liveStatus}
         onOptionSelect={onOptionSelect}
         onPhaseChange={setPhase}
       />
@@ -241,6 +245,9 @@ export function MothershipChat({
   onContextAdd,
   onContextRemove,
   onWorkspaceResourceSelect,
+  canSwitchCopilotBackend,
+  copilotBackend,
+  setCopilotBackend,
   draftScopeKey,
   layout = 'mothership-view',
   initialScrollBlocked = false,
@@ -404,6 +411,9 @@ export function MothershipChat({
       onContextAdd={onContextAdd}
       onContextRemove={onContextRemove}
       onWorkspaceResourceSelect={onWorkspaceResourceSelect}
+      canSwitchCopilotBackend={canSwitchCopilotBackend}
+      copilotBackend={copilotBackend}
+      setCopilotBackend={setCopilotBackend}
     >
       <div className={cn('flex h-full min-h-0 flex-col', className)}>
         <div ref={setScrollElement} className={styles.scrollContainer}>

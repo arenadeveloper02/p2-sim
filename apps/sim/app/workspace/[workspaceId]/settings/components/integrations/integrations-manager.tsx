@@ -9,17 +9,13 @@ import {
   useRef,
   useState,
 } from 'react'
-import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
-import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
-import Image from 'next/image'
-import { useParams, useSearchParams } from 'next/navigation'
 import {
   Avatar,
   AvatarFallback,
   Badge,
   Button,
   Combobox,
+  cn,
   focusFirstTextInputIn,
   Input,
   Label,
@@ -32,9 +28,13 @@ import {
   Skeleton,
   Textarea,
   Tooltip,
-} from '@/components/emcn'
+} from '@sim/emcn'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
+import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
+import Image from 'next/image'
+import { useParams, useSearchParams } from 'next/navigation'
 import { useSession } from '@/lib/auth/auth-client'
-import { cn } from '@/lib/core/utils/cn'
 import { writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import { getCanonicalScopesForProvider, getServiceConfigByProviderId } from '@/lib/oauth'
 import { ATLASSIAN_SERVICE_ACCOUNT_PROVIDER_ID } from '@/lib/oauth/types'
@@ -45,7 +45,7 @@ import {
   ConnectServiceAccountModal,
   type ServiceAccountProviderId,
 } from '@/app/workspace/[workspaceId]/integrations/components/connect-service-account-modal'
-import { useBrandConfig } from '@/ee/whitelabeling'
+import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import {
   useCreateCredentialDraft,
   useDeleteWorkspaceCredential,
@@ -63,7 +63,7 @@ import {
   useDisconnectOAuthService,
   useOAuthConnections,
 } from '@/hooks/queries/oauth/oauth-connections'
-import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
+import { useCanUseZoomAdmin, useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
 
@@ -120,7 +120,7 @@ export function IntegrationsManager() {
   const searchParams = useSearchParams()
   const workspaceId = (params?.workspaceId as string) || ''
   const isArenaV3IntegrationsEmbed = searchParams.get('from') === 'arena_v3'
-  const brandConfig = useBrandConfig()
+  const brandConfig = useOrgBrandConfig()
 
   const requestedIntegrationProviderIds = useMemo(() => {
     const raw = searchParams.get('integrations')
@@ -191,15 +191,16 @@ export function IntegrationsManager() {
   const disconnectOAuthService = useDisconnectOAuthService()
 
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId || null)
+  const { canUseZoomAdmin } = useCanUseZoomAdmin(workspaceId || null)
 
   const oauthCredentials = useMemo(() => {
     const oauth = credentials.filter((c) => c.type === 'oauth' || c.type === 'service_account')
-    return filterOAuthItemsForWorkspace(oauth, workspaceId)
-  }, [credentials, workspaceId])
+    return filterOAuthItemsForWorkspace(oauth, workspaceId, { canUseZoomAdmin })
+  }, [credentials, workspaceId, canUseZoomAdmin])
 
   const workspaceOAuthConnections = useMemo(
-    () => filterOAuthItemsForWorkspace(oauthConnections, workspaceId),
-    [oauthConnections, workspaceId]
+    () => filterOAuthItemsForWorkspace(oauthConnections, workspaceId, { canUseZoomAdmin }),
+    [oauthConnections, workspaceId, canUseZoomAdmin]
   )
 
   const selectedCredential = useMemo(
@@ -1310,8 +1311,8 @@ export function IntegrationsManager() {
       <div className='flex w-[52vw] flex-col gap-2 rounded-lg bg-white p-[24px]'>
         <div className='relative right-[2%] mb-4 w-max'>
           <Image
-            src={brandConfig?.logoUrlBlacktext || ''}
-            alt='Vimi Logo'
+            src={brandConfig.logoUrlBlacktext || brandConfig.logoUrl || ''}
+            alt={brandConfig.name}
             width={100}
             height={100}
           />

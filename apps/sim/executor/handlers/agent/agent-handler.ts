@@ -3,15 +3,16 @@ import { mcpServers } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
+import { truncate } from '@sim/utils/string'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { normalizeStringRecord, normalizeWorkflowVariables } from '@/lib/core/utils/records'
+import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-files'
 import { createMcpToolId } from '@/lib/mcp/utils'
 import { processFilesToUserFiles, type RawFileInput } from '@/lib/uploads/utils/file-utils'
 import { hydrateUserFilesWithBase64 } from '@/lib/uploads/utils/user-file-base64.server'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
-import { normalizeFileInput } from '@/blocks/utils'
 import {
   validateBlockType,
   validateCustomToolsAllowed,
@@ -118,6 +119,10 @@ export class AgentBlockHandler implements BlockHandler {
     block: SerializedBlock,
     inputs: AgentInputs
   ): Promise<BlockOutput | StreamingExecution> {
+    const toolIndexByRef = new Map<ToolInput, number>(
+      (inputs.tools || []).map((tool, index) => [tool, index] as const)
+    )
+
     const filteredTools = await this.filterUnavailableMcpTools(ctx, inputs.tools || [])
 
     const memoryType = inputs.memoryType
@@ -143,7 +148,8 @@ export class AgentBlockHandler implements BlockHandler {
     const formattedTools = await this.formatTools(
       ctx,
       filteredInputs.tools || [],
-      block.canonicalModes
+      block.canonicalModes,
+      toolIndexByRef
     )
 
     const skillInputs = filteredInputs.skills ?? []
@@ -367,31 +373,38 @@ export class AgentBlockHandler implements BlockHandler {
     })
   }
 
+  /**
+   * `canonicalModes` overrides are keyed by each tool's position in the ORIGINAL, unfiltered
+   * tools array (matching what the editor wrote), not by `tool.type` - so two tool entries of
+   * the same type (e.g. two Table tools) resolve independently. `toolIndexByRef` preserves that
+   * original position across the mcp-availability filter and the mcp/other split below, both of
+   * which would otherwise renumber tools by their post-filter position.
+   */
   private async formatTools(
     ctx: ExecutionContext,
     inputTools: ToolInput[],
-    canonicalModes?: Record<string, 'basic' | 'advanced'>
+    canonicalModes?: Record<string, 'basic' | 'advanced'>,
+    toolIndexByRef?: Map<ToolInput, number>
   ): Promise<any[]> {
     if (!Array.isArray(inputTools)) return []
 
-    const filtered = inputTools.filter((tool) => {
-      const usageControl = tool.usageControl || 'auto'
-      return usageControl !== 'none'
-    })
+    const filtered = inputTools
+      .map((tool, localIndex) => ({ tool, toolIndex: toolIndexByRef?.get(tool) ?? localIndex }))
+      .filter(({ tool }) => (tool.usageControl || 'auto') !== 'none')
 
     const mcpTools: ToolInput[] = []
-    const otherTools: ToolInput[] = []
+    const otherTools: Array<{ tool: ToolInput; toolIndex: number }> = []
 
-    for (const tool of filtered) {
-      if (tool.type === 'mcp') {
-        mcpTools.push(tool)
+    for (const entry of filtered) {
+      if (entry.tool.type === 'mcp') {
+        mcpTools.push(entry.tool)
       } else {
-        otherTools.push(tool)
+        otherTools.push(entry)
       }
     }
 
     const otherResults = await Promise.all(
-      otherTools.map(async (tool) => {
+      otherTools.map(async ({ tool, toolIndex }) => {
         try {
           if (tool.type && tool.type !== 'custom-tool') {
             await validateBlockType(ctx.userId, ctx.workspaceId, tool.type, ctx)
@@ -399,7 +412,7 @@ export class AgentBlockHandler implements BlockHandler {
           if (tool.type === 'custom-tool' && (tool.schema || tool.customToolId)) {
             return await this.createCustomTool(ctx, tool)
           }
-          return this.transformBlockTool(ctx, tool, canonicalModes)
+          return this.transformBlockTool(ctx, tool, canonicalModes, toolIndex)
         } catch (error) {
           logger.error(`[AgentHandler] Error creating tool:`, { tool, error })
           return null
@@ -716,7 +729,8 @@ export class AgentBlockHandler implements BlockHandler {
   private async transformBlockTool(
     ctx: ExecutionContext,
     tool: ToolInput,
-    canonicalModes?: Record<string, 'basic' | 'advanced'>
+    canonicalModes?: Record<string, 'basic' | 'advanced'>,
+    toolIndex?: number
   ) {
     const transformedTool = await transformBlockTool(tool, {
       selectedOperation: tool.operation,
@@ -729,6 +743,7 @@ export class AgentBlockHandler implements BlockHandler {
         }),
       getTool,
       canonicalModes,
+      toolIndex,
     })
 
     if (transformedTool) {
@@ -871,7 +886,7 @@ export class AgentBlockHandler implements BlockHandler {
     messages: Message[] | undefined,
     filesInput: unknown
   ): Message[] | undefined {
-    const normalizedFiles = normalizeFileInput(filesInput)
+    const normalizedFiles = normalizeReferenceFileParams(filesInput)
     if (!normalizedFiles || normalizedFiles.length === 0) {
       return messages
     }
@@ -1384,7 +1399,7 @@ export class AgentBlockHandler implements BlockHandler {
       }
     } catch (error) {
       logger.error('LLM did not adhere to structured response format:', {
-        content: content.substring(0, 200) + (content.length > 200 ? '...' : ''),
+        content: truncate(content, 200),
         responseFormat: responseFormat,
         error: error instanceof Error ? error.message : String(error),
       })

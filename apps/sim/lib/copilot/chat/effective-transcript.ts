@@ -374,6 +374,10 @@ function buildLiveAssistantMessage(params: {
         continue
       }
       case MothershipStreamV1EventType.run: {
+        if ('statusPhase' in parsed.payload) {
+          continue
+        }
+
         if (parsed.payload.kind === MothershipStreamV1RunKind.compaction_start) {
           activeCompactionId = `compaction_${entry.eventId}`
           ensureToolBlock({

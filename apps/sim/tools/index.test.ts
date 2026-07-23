@@ -68,6 +68,14 @@ vi.mock('@/lib/core/config/env', () => ({
   getEnv: (key: string) => mockEnv[key],
   isTruthy: (val: unknown) => val === true || val === 'true' || val === '1',
   isFalsy: (val: unknown) => val === false || val === 'false' || val === '0',
+  envBoolean: (value: boolean | string | undefined | null): boolean | undefined => {
+    if (typeof value === 'boolean') return value
+    if (value === undefined || value === null || value === '') return undefined
+    const normalized = String(value).trim().toLowerCase()
+    return (
+      normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on'
+    )
+  },
 }))
 
 // Mock getBYOKKey
@@ -1890,6 +1898,28 @@ describe('MCP Tool Execution', () => {
         method: 'GET',
         retries: 3,
         retryMaxDelayMs: 5000,
+      })
+
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+      expect(result.success).toBe(false)
+    })
+
+    it('skips retry when Retry-After exceeds a maxDelayMs configured above the 30s default cap', async () => {
+      global.fetch = Object.assign(
+        vi
+          .fn()
+          .mockResolvedValueOnce(
+            makeJsonResponse(429, { error: 'rate limited' }, { 'retry-after': '50' })
+          )
+          .mockResolvedValueOnce(makeJsonResponse(200, { ok: true })),
+        { preconnect: vi.fn() }
+      ) as typeof fetch
+
+      const result = await executeTool('http_request', {
+        url: '/api/test',
+        method: 'GET',
+        retries: 3,
+        retryMaxDelayMs: 40000,
       })
 
       expect(global.fetch).toHaveBeenCalledTimes(1)

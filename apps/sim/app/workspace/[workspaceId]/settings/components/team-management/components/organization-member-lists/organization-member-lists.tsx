@@ -1,21 +1,11 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { ChipDropdown, ChipInput, Search, toast } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/predicates'
 import { getErrorMessage } from '@sim/utils/errors'
-import {
-  ChipDropdown,
-  ChipInput,
-  chipVariants,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  MoreHorizontal,
-  Search,
-  toast,
-} from '@/components/emcn'
+import { formatDate } from '@sim/utils/formatting'
 import {
   type OrgRole,
   type PermissionType,
@@ -33,6 +23,10 @@ import {
   MemberRow,
   MemberSection,
 } from '@/app/workspace/[workspaceId]/settings/components/member-list'
+import {
+  type RowAction,
+  RowActionsMenu,
+} from '@/app/workspace/[workspaceId]/settings/components/row-actions-menu'
 import {
   ManageCreditsModal,
   type ManageCreditsTarget,
@@ -65,12 +59,12 @@ function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-function formatJoinedDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US')
-}
-
 function copyToClipboard(text: string) {
   void navigator.clipboard.writeText(text)
+}
+
+function buildActionsMenu(actions: RowAction[]) {
+  return <RowActionsMenu label='Member actions' actions={actions} />
 }
 
 interface OrganizationMemberListsProps {
@@ -78,7 +72,6 @@ interface OrganizationMemberListsProps {
   roster: OrganizationRoster | null | undefined
   isLoadingRoster: boolean
   currentUserId: string
-  currentUserEmail: string
   onRemoveMember: (member: Member) => void
   onTransferOwnership?: () => void
 }
@@ -94,7 +87,6 @@ export function OrganizationMemberLists({
   roster,
   isLoadingRoster,
   currentUserId,
-  currentUserEmail,
   onRemoveMember,
   onTransferOwnership,
 }: OrganizationMemberListsProps) {
@@ -118,17 +110,6 @@ export function OrganizationMemberLists({
 
   const isActiveSearch = q.length > 0
 
-  const buildActionsMenu = (children: React.ReactNode) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button type='button' aria-label='Member actions' className={chipVariants({ flush: true })}>
-          <MoreHorizontal className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align='end'>{children}</DropdownMenuContent>
-    </DropdownMenu>
-  )
-
   const renderOrgMemberRow = (member: RosterMember) => {
     const isSelf = member.userId === currentUserId
     const isOwner = member.role === 'owner'
@@ -142,7 +123,7 @@ export function OrganizationMemberLists({
         name={member.name}
         email={member.email}
         image={member.image}
-        status={`Joined ${formatJoinedDate(member.createdAt)}`}
+        status={`Joined ${formatDate(new Date(member.createdAt))}`}
         roleControl={
           editable ? (
             <ChipDropdown
@@ -169,69 +150,64 @@ export function OrganizationMemberLists({
             />
           )
         }
-        menu={buildActionsMenu(
-          <>
-            <DropdownMenuItem onSelect={() => copyToClipboard(member.email)}>
-              Copy email
-            </DropdownMenuItem>
-            {!isOwner && (
-              <DropdownMenuItem
-                onSelect={() =>
-                  setCreditsTarget({
-                    userId: member.userId,
-                    name: member.name,
-                    email: member.email,
-                  })
-                }
-              >
-                Manage Credits
-              </DropdownMenuItem>
-            )}
-            {canRemove && (
-              <DropdownMenuItem
-                className='text-[var(--text-error)]'
-                onSelect={() =>
-                  onRemoveMember({
-                    id: member.memberId,
-                    role: member.role,
-                    user: {
-                      id: member.userId,
+        menu={buildActionsMenu([
+          { label: 'Copy email', onSelect: () => copyToClipboard(member.email) },
+          ...(!isOwner
+            ? [
+                {
+                  label: 'Manage Credits',
+                  onSelect: () =>
+                    setCreditsTarget({
+                      userId: member.userId,
                       name: member.name,
                       email: member.email,
-                      image: member.image,
-                    },
-                  })
-                }
-              >
-                Remove
-              </DropdownMenuItem>
-            )}
-            {isSelf && isOwner && onTransferOwnership && (
-              <DropdownMenuItem onSelect={() => onTransferOwnership()}>
-                Transfer ownership
-              </DropdownMenuItem>
-            )}
-            {isSelf && !isOwner && (
-              <DropdownMenuItem
-                className='text-[var(--text-error)]'
-                onSelect={() =>
-                  onRemoveMember({
-                    id: member.memberId,
-                    role: member.role,
-                    user: {
-                      id: member.userId,
-                      name: member.name,
-                      email: member.email,
-                      image: member.image,
-                    },
-                  })
-                }
-              >
-                Leave organization
-              </DropdownMenuItem>
-            )}
-          </>
-        )}
+                    }),
+                },
+              ]
+            : []),
+          ...(canRemove
+            ? [
+                {
+                  label: 'Remove',
+                  destructive: true,
+                  onSelect: () =>
+                    onRemoveMember({
+                      id: member.memberId,
+                      role: member.role,
+                      user: {
+                        id: member.userId,
+                        name: member.name,
+                        email: member.email,
+                        image: member.image,
+                      },
+                    }),
+                },
+              ]
+            : []),
+          // Temporarily hidden: transfer ownership is disabled for owners until the flow is re-enabled.
+          // ...(isSelf && isOwner && onTransferOwnership
+          //   ? [{ label: 'Transfer ownership', onSelect: () => onTransferOwnership() }]
+          //   : []),
+          ...(isSelf && !isOwner
+            ? [
+                {
+                  label: 'Leave organization',
+                  destructive: true,
+                  onSelect: () =>
+                    onRemoveMember({
+                      id: member.memberId,
+                      role: member.role,
+                      user: {
+                        id: member.userId,
+                        name: member.name,
+                        email: member.email,
+                        image: member.image,
+                      },
+                    }),
+                },
+              ]
+            : []),
+        ])}
       />
     )
   }
@@ -248,32 +224,24 @@ export function OrganizationMemberLists({
       image={invitation.inviteeImage}
       status='Invite pending'
       roleControl={roleControl}
-      menu={buildActionsMenu(
-        <>
-          <DropdownMenuItem onSelect={() => copyToClipboard(invitation.email)}>
-            Copy email
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() =>
-              resendInvitation
-                .mutateAsync({ invitationId: invitation.id, orgId: organizationId })
-                .catch((error) => logger.error('Failed to resend invitation', { error }))
-            }
-          >
-            Resend invite
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className='text-[var(--text-error)]'
-            onSelect={() =>
-              cancelInvitation
-                .mutateAsync({ invitationId: invitation.id, orgId: organizationId })
-                .catch((error) => logger.error('Failed to revoke invitation', { error }))
-            }
-          >
-            Revoke invite
-          </DropdownMenuItem>
-        </>
-      )}
+      menu={buildActionsMenu([
+        { label: 'Copy email', onSelect: () => copyToClipboard(invitation.email) },
+        {
+          label: 'Resend invite',
+          onSelect: () =>
+            resendInvitation
+              .mutateAsync({ invitationId: invitation.id, orgId: organizationId })
+              .catch((error) => logger.error('Failed to resend invitation', { error })),
+        },
+        {
+          label: 'Revoke invite',
+          destructive: true,
+          onSelect: () =>
+            cancelInvitation
+              .mutateAsync({ invitationId: invitation.id, orgId: organizationId })
+              .catch((error) => logger.error('Failed to revoke invitation', { error })),
+        },
+      ])}
     />
   )
 
@@ -324,7 +292,7 @@ export function OrganizationMemberLists({
         name={member.name}
         email={member.email}
         image={member.image}
-        status={`Joined ${formatJoinedDate(member.createdAt)}`}
+        status={`Joined ${formatDate(new Date(member.createdAt))}`}
         roleControl={
           <RoleLockTooltip reason={lockReason}>
             <ChipDropdown
@@ -346,30 +314,26 @@ export function OrganizationMemberLists({
             />
           </RoleLockTooltip>
         }
-        menu={buildActionsMenu(
-          <>
-            <DropdownMenuItem onSelect={() => copyToClipboard(member.email)}>
-              Copy email
-            </DropdownMenuItem>
-            {canRemoveFromWorkspace && (
-              <DropdownMenuItem
-                className='text-[var(--text-error)]'
-                onSelect={() =>
-                  removeWorkspaceMember
-                    .mutateAsync({ userId: member.userId, workspaceId, organizationId })
-                    .catch((error) => {
-                      logger.error('Failed to remove workspace member', { error })
-                      toast.error("Couldn't remove member", {
-                        description: getErrorMessage(error, 'Please try again in a moment.'),
-                      })
-                    })
-                }
-              >
-                Remove from workspace
-              </DropdownMenuItem>
-            )}
-          </>
-        )}
+        menu={buildActionsMenu([
+          { label: 'Copy email', onSelect: () => copyToClipboard(member.email) },
+          ...(canRemoveFromWorkspace
+            ? [
+                {
+                  label: 'Remove from workspace',
+                  destructive: true,
+                  onSelect: () =>
+                    removeWorkspaceMember
+                      .mutateAsync({ userId: member.userId, workspaceId, organizationId })
+                      .catch((error) => {
+                        logger.error('Failed to remove workspace member', { error })
+                        toast.error("Couldn't remove member", {
+                          description: getErrorMessage(error, 'Please try again in a moment.'),
+                        })
+                      }),
+                },
+              ]
+            : []),
+        ])}
       />
     )
   }
@@ -408,6 +372,38 @@ export function OrganizationMemberLists({
   const hasOrgMatches = filteredOrgMembers.length + filteredOrgPending.length > 0
   const showMembersSection = !isActiveSearch || hasOrgMatches
 
+  /**
+   * Group each workspace's members and pending invites once per roster change.
+   * This is O(workspaces × members) and independent of the search query, so
+   * hoisting it out of render keeps keystroke filtering cheap on large orgs.
+   */
+  const workspaceGroups = useMemo(
+    () =>
+      workspaces.map((workspace) => {
+        const workspaceMembers = members
+          .map((member) => ({
+            member,
+            access: member.workspaces.find((w) => w.workspaceId === workspace.id),
+          }))
+          .filter((entry): entry is { member: RosterMember; access: RosterWorkspaceAccess } =>
+            Boolean(entry.access)
+          )
+        const workspaceInvites = pendingInvitations
+          .map((invitation) => ({
+            invitation,
+            access: invitation.workspaces.find((w) => w.workspaceId === workspace.id),
+          }))
+          .filter(
+            (
+              entry
+            ): entry is { invitation: RosterPendingInvitation; access: RosterWorkspaceAccess } =>
+              Boolean(entry.access)
+          )
+        return { workspace, workspaceMembers, workspaceInvites }
+      }),
+    [workspaces, members, pendingInvitations]
+  )
+
   return (
     <>
       <div className='flex items-center gap-2'>
@@ -431,27 +427,7 @@ export function OrganizationMemberLists({
         </MemberSection>
       )}
 
-      {workspaces.map((workspace) => {
-        const workspaceMembers = members
-          .map((member) => ({
-            member,
-            access: member.workspaces.find((w) => w.workspaceId === workspace.id),
-          }))
-          .filter((entry): entry is { member: RosterMember; access: RosterWorkspaceAccess } =>
-            Boolean(entry.access)
-          )
-        const workspaceInvites = pendingInvitations
-          .map((invitation) => ({
-            invitation,
-            access: invitation.workspaces.find((w) => w.workspaceId === workspace.id),
-          }))
-          .filter(
-            (
-              entry
-            ): entry is { invitation: RosterPendingInvitation; access: RosterWorkspaceAccess } =>
-              Boolean(entry.access)
-          )
-
+      {workspaceGroups.map(({ workspace, workspaceMembers, workspaceInvites }) => {
         const visibleMembers = workspaceMembers.filter(({ member }) =>
           matches(member.name, member.email)
         )

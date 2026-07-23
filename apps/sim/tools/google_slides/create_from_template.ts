@@ -1,4 +1,12 @@
+import { SignJWT } from 'jose'
 import { createLogger } from '@sim/logger'
+import {
+  buildTableCellTextEndIndexMap,
+  buildTableContentRequests,
+  expandSlidesForTableOverflow,
+  findTableColumnLayout,
+  findTableDimensions,
+} from '@/tools/google_slides/create-from-template-table'
 import { P2_TEAM_MEMBERS } from '@/tools/p2_docs/team-members'
 import type { ToolConfig } from '@/tools/types'
 import { getPresentationIconLibrary, getTemplateMasterSchema } from './templates'
@@ -37,8 +45,14 @@ interface BlockLike {
   type: string
   role?: string
   shapeId: string
-  content?: string | string[]
+  content?: string | string[] | string[][]
   source?: 'icon_library' | 'stock_photo' | 'ai_photo' | 'generated' | 'p2_users'
+  maxRows?: number
+  maxColumns?: number
+  minRows?: number
+  minColumns?: number
+  headerRow?: boolean
+  rowLabelColumn?: boolean
 }
 
 interface SlideLike {
@@ -153,6 +167,81 @@ async function resolveAccessibleImageUrl(
   }
 
   return null
+}
+
+/**
+ * Returns true for URLs served through the Sim file-serve proxy
+ * (`/api/files/serve/…`), which require a Sim bearer token.
+ */
+function isSimInternalImageUrl(url: string): boolean {
+  try {
+    return new URL(url).pathname.includes('/api/files/serve/')
+  } catch {
+    return false
+  }
+}
+
+
+/**
+ * Generates a short-lived internal JWT that satisfies `checkSessionOrInternalAuth` on
+ * Sim API routes. Uses only `jose` (browser-safe) so this file stays client-bundle-safe.
+ */
+async function generateInternalFetchToken(): Promise<string> {
+  const secret = new TextEncoder().encode(
+    process.env.INTERNAL_JWT_SECRET || process.env.INTERNAL_API_SECRET || ''
+  )
+  return new SignJWT({ type: 'internal' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .setIssuer('sim-internal')
+    .setAudience('sim-api')
+    .sign(secret)
+}
+
+/**
+ * Converts a Sim file-serve URL into a 1-hour presigned S3 URL that Google Slides
+ * can fetch anonymously during `replaceImage`.
+ *
+ * Calls the internal `/api/tools/google_slides/presign-image` endpoint (server-only,
+ * no Node.js imports in this file). Uses a short-lived internal JWT for auth.
+ *
+ * Returns `null` if any step fails (errors are logged as warnings, not thrown).
+ */
+async function resolveSimImageToPresignedUrl(imageUrl: string): Promise<string | null> {
+  let internalToken: string
+  try {
+    internalToken = await generateInternalFetchToken()
+  } catch (err) {
+    logger.warn('Failed to generate internal token for presign request', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const presignRes = await fetch(`${appUrl}/api/tools/google_slides/presign-image`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${internalToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ imageUrl }),
+  })
+
+  if (!presignRes.ok) {
+    const err = await presignRes.json().catch(() => ({}))
+    logger.warn('Failed to get presigned URL for Sim image', {
+      imageUrl,
+      status: presignRes.status,
+      error: (err as { error?: string }).error,
+    })
+    return null
+  }
+
+  const { url } = (await presignRes.json()) as { url: string }
+  logger.info('Resolved Sim image to presigned S3 URL', { imageUrl })
+  return url
 }
 
 // --- Exponential Backoff Wrapper ---
@@ -394,7 +483,23 @@ export const createFromTemplateTool: ToolConfig<
       originalSlideCount: originalSlidesToDelete.length,
     })
 
-    const slidesOrdered = [...schema.slides]
+    const templatePresRes = await fetchWithRetry(
+      `https://slides.googleapis.com/v1/presentations/${schema.id}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
+    const templatePresData = await templatePresRes.json()
+    if (!templatePresRes.ok) {
+      throw new Error(templatePresData.error?.message || 'Failed to read template presentation for tables')
+    }
+
+    const slidesOrdered = expandSlidesForTableOverflow([...schema.slides], templatePresData)
+    if (slidesOrdered.length > schema.slides.length) {
+      logger.info('Expanded slides for table overflow', {
+        originalSlideCount: schema.slides.length,
+        expandedSlideCount: slidesOrdered.length,
+      })
+    }
+
     const slideIndexToShapeMap: Record<string, string>[] = []
 
     // 2. Duplicate Slides & Reorder (Batch)
@@ -474,6 +579,7 @@ export const createFromTemplateTool: ToolConfig<
       throw new Error(presData.error?.message || 'Failed to read presentation state for mapping')
     }
     const textEndIndexMap = buildTextEndIndexMap(presData)
+    const tableCellTextEndIndexMap = buildTableCellTextEndIndexMap(presData)
 
     // Build shape geometry map for image size restoration
     const shapeGeometryMap: Record<string, { size: any; transform: any }> = {}
@@ -503,6 +609,7 @@ export const createFromTemplateTool: ToolConfig<
       source?: BlockLike['source']
     }[] = []
 
+
     for (let s = 0; s < slidesOrdered.length; s++) {
       const slideSchema = slidesOrdered[s] as SlideLike
       const shapeMap = slideIndexToShapeMap[s] ?? {}
@@ -521,6 +628,51 @@ export const createFromTemplateTool: ToolConfig<
             batchRequests.push({ deleteText: { objectId, textRange: { type: 'ALL' } } })
             batchRequests.push({ insertText: { objectId, insertionIndex: 0, text } })
           }
+        } else if (block.type === 'TABLE') {
+          const tableObjectId = objectId
+          const maxRows = block.maxRows ?? 0
+          const maxColumns = block.maxColumns ?? 0
+          if (!maxRows || !maxColumns) {
+            logger.warn('Skipping table block with missing maxRows/maxColumns', {
+              shapeId: block.shapeId,
+            })
+            continue
+          }
+
+          const dimensions = findTableDimensions(presData, tableObjectId)
+          if (!dimensions) {
+            logger.warn('Table element not found after duplication', {
+              tableObjectId,
+              shapeId: block.shapeId,
+            })
+            continue
+          }
+
+          const layout = findTableColumnLayout(presData, tableObjectId)
+
+          const tableContent = Array.isArray(content) ? content : []
+          if (tableContent.length === 0) {
+            logger.info('Skipping empty table content; leaving template placeholders', {
+              tableObjectId,
+              shapeId: block.shapeId,
+            })
+            continue
+          }
+
+          batchRequests.push(
+            ...buildTableContentRequests({
+              tableObjectId,
+              content: tableContent,
+              templateRows: dimensions.rows,
+              templateColumns: dimensions.columns,
+              maxRows: block.maxRows,
+              maxColumns: block.maxColumns,
+              minRows: block.minRows,
+              minColumns: block.minColumns,
+              cellTextEndIndexMap: tableCellTextEndIndexMap,
+              layout: layout ?? undefined,
+            })
+          )
         } else if (block.type === 'IMAGE' && content) {
           const imageUrl = typeof content === 'string' ? content : ''
           if (imageUrl) {
@@ -547,6 +699,12 @@ export const createFromTemplateTool: ToolConfig<
 
       const checkResults = await Promise.all(
         imageCheckQueue.map(async ({ objectId, imageUrl, source }) => {
+          // Sim-internal URLs: resolve to a presigned S3 URL via internal endpoint
+          if (isSimInternalImageUrl(imageUrl)) {
+            const presignedUrl = await resolveSimImageToPresignedUrl(imageUrl)
+            return { objectId, imageUrl: presignedUrl, accessible: presignedUrl !== null }
+          }
+
           const resolvedUrl = await resolveAccessibleImageUrl(imageUrl, source)
           return {
             objectId,

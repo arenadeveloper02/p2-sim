@@ -1,14 +1,6 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
-import { useQueryClient } from '@tanstack/react-query'
-import { History, Plus, Square, Zap } from 'lucide-react'
-import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
-import { usePostHog } from 'posthog-js/react'
-import { useShallow } from 'zustand/react/shallow'
 import {
   BubbleChatClose,
   BubbleChatPreview,
@@ -30,8 +22,16 @@ import {
   PopoverTrigger,
   Trash,
   toast,
-} from '@/components/emcn'
-import { Download, Lock, Unlock } from '@/components/emcn/icons'
+} from '@sim/emcn'
+import { Download, Lock, Unlock } from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { toError } from '@sim/utils/errors'
+import { useQueryClient } from '@tanstack/react-query'
+import { History, Plus, Square, Zap } from 'lucide-react'
+import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
+import { usePostHog } from 'posthog-js/react'
+import { useShallow } from 'zustand/react/shallow'
 import { VariableIcon } from '@/components/icons'
 import { requestJson } from '@/lib/api/client/request'
 import {
@@ -55,6 +55,8 @@ import {
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
 import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components'
+import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
+import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
 import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
@@ -189,15 +191,10 @@ const EMPTY_COPILOT_CHATS: readonly CopilotChatListItem[] = []
  *
  * @returns Panel on the right side of the workflow
  */
-interface PanelProps {
-  /** Override workspaceId when rendered outside a workspace route (e.g. sandbox mode) */
-  workspaceId?: string
-}
-
-export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: PanelProps = {}) {
+export const Panel = memo(function Panel() {
   const router = useRouter()
   const params = useParams()
-  const workspaceId = propWorkspaceId ?? (params.workspaceId as string)
+  const workspaceId = params.workspaceId as string
 
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
@@ -421,6 +418,8 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
     [activeWorkflowId]
   )
 
+  const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
+
   const {
     messages: copilotMessages,
     isSending: copilotIsSending,
@@ -440,6 +439,7 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
     copilotChatId,
     getWorkflowCopilotUseChatOptions({
       workflowId: activeWorkflowId || undefined,
+      getCopilotBackend: () => copilotBackend,
       onTitleUpdate: loadCopilotChats,
       onToolResult: handleCopilotToolResult,
       onRequestStarted: ({ requestId, userMessageId }) => {
@@ -988,23 +988,32 @@ export const Panel = memo(function Panel({ workspaceId: propWorkspaceId }: Panel
                   </div>
                 </div>
 
-                <MothershipChat
-                  className='min-h-0 flex-1'
-                  messages={copilotMessages}
-                  isSending={copilotIsSending}
-                  isReconnecting={copilotIsReconnecting}
-                  onSubmit={handleCopilotSubmit}
-                  onStopGeneration={handleCopilotStopGeneration}
-                  messageQueue={copilotMessageQueue}
-                  editingQueuedId={copilotEditingQueuedId}
-                  dispatchingHeadId={copilotDispatchingHeadId}
-                  onRemoveQueuedMessage={copilotRemoveFromQueue}
-                  onSendQueuedMessage={copilotSendNow}
-                  onEditQueuedMessage={copilotEditQueuedMessage}
-                  onCancelQueueEdit={copilotCancelQueueEdit}
-                  userId={session?.user?.id}
-                  chatId={copilotResolvedChatId}
-                  layout='copilot-view'
+                <WorkflowCopilotShell
+                  workspaceId={workspaceId}
+                  workflowId={activeWorkflowId || ''}
+                  mothershipChat={
+                    <MothershipChat
+                      className='min-h-0 flex-1'
+                      messages={copilotMessages}
+                      isSending={copilotIsSending}
+                      isReconnecting={copilotIsReconnecting}
+                      onSubmit={handleCopilotSubmit}
+                      onStopGeneration={handleCopilotStopGeneration}
+                      messageQueue={copilotMessageQueue}
+                      editingQueuedId={copilotEditingQueuedId}
+                      dispatchingHeadId={copilotDispatchingHeadId}
+                      onRemoveQueuedMessage={copilotRemoveFromQueue}
+                      onSendQueuedMessage={copilotSendNow}
+                      onEditQueuedMessage={copilotEditQueuedMessage}
+                      onCancelQueueEdit={copilotCancelQueueEdit}
+                      userId={session?.user?.id}
+                      chatId={copilotResolvedChatId}
+                      layout='copilot-view'
+                      canSwitchCopilotBackend={canSwitchBackend}
+                      copilotBackend={copilotBackend}
+                      setCopilotBackend={setCopilotBackend}
+                    />
+                  }
                 />
               </div>
             )}

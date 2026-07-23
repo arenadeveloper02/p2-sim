@@ -404,6 +404,7 @@ export async function executeCreateWorkflow(
         workflowName: result.workflow.name,
         workspaceId: result.workflow.workspaceId,
         folderId: result.workflow.folderId,
+        startBlockId: result.workflow.startBlockId,
         ...(copilotSanitizedWorkflowState ? { copilotSanitizedWorkflowState } : {}),
       },
     }

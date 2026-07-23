@@ -35,6 +35,9 @@ sim-standalone.tar.gz
 # redis
 dump.rdb
 
+# AI-generated Next.js apps (Development block)
+/generated-apps/
+
 # misc
 .DS_Store
 *.pem
@@ -96,3 +99,10 @@ i18n.cache
 
 # Personal Cursor Skills
 .cursor/skills/ask-sim/
+
+# Python (apps/pii tests/tooling)
+__pycache__/
+.pytest_cache/
+# Development block local generated apps (under apps/sim when Next cwd is apps/sim)
+/generated-apps/
+/apps/sim/generated-apps/

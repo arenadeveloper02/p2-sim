@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { workspaceIdSchema } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
 const subBlockValuesSchema = z.record(z.string(), z.record(z.string(), z.unknown()))
@@ -44,6 +45,12 @@ const workflowEdgeHandleSchema = z
   .nullish()
   .transform((value) => value ?? undefined)
 
+/** Accepts legacy `null` on optional block booleans; omits them after parse. */
+const workflowOptionalBooleanSchema = z
+  .boolean()
+  .nullish()
+  .transform((value) => value ?? undefined)
+
 const workflowBlockStateSchema = z.object({
   id: z.string(),
   type: z.string(),
@@ -52,12 +59,12 @@ const workflowBlockStateSchema = z.object({
   subBlocks: z.record(z.string(), workflowSubBlockStateSchema),
   outputs: z.record(z.string(), workflowBlockOutputSchema),
   enabled: z.boolean(),
-  horizontalHandles: z.boolean().optional(),
+  horizontalHandles: workflowOptionalBooleanSchema,
   height: z.number().optional(),
-  advancedMode: z.boolean().optional(),
-  triggerMode: z.boolean().optional(),
+  advancedMode: workflowOptionalBooleanSchema,
+  triggerMode: workflowOptionalBooleanSchema,
   data: workflowBlockDataSchema.optional(),
-  locked: z.boolean().optional(),
+  locked: workflowOptionalBooleanSchema,
 })
 
 const workflowEdgeSchema = z.object({
@@ -323,7 +330,6 @@ export const executeWorkflowTriggerTypeSchema = z.enum([
   'chat',
   'webhook',
   'mcp',
-  'a2a',
   'copilot',
   'mothership',
   'workflow',
@@ -344,6 +350,13 @@ export const executeWorkflowBodySchema = z.object({
   startBlockId: z.string().optional(),
   stopAfterBlockId: z.string().optional(),
   runFromBlock: executeWorkflowRunFromBlockSchema.optional(),
+  /**
+   * Workspace of the parent execution when this call is a workflow-in-workflow
+   * invocation (e.g. the agent `workflow_executor` tool). When present, the
+   * route rejects execution of a workflow that lives in a different workspace.
+   * Direct API callers omit it and are unaffected.
+   */
+  parentWorkspaceId: workspaceIdSchema.optional(),
 })
 export type ExecuteWorkflowBody = z.input<typeof executeWorkflowBodySchema>
 

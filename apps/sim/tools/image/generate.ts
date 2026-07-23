@@ -1,6 +1,9 @@
+import { isUserFile } from '@/lib/core/utils/user-file'
+import { IMAGE_BLOCK_MODEL_IDS } from '@/lib/image-generation/block-model-config'
+import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 import type { ImageGenerationParams, ImageGenerationResponse } from '@/tools/image/types'
-import type { ToolConfig } from '@/tools/types'
+import type { ToolConfig, ToolFileData } from '@/tools/types'
 
 interface ImageGenerationRuntimeParams extends ImageGenerationParams {
   _context?: { workspaceId?: string; workflowId?: string; executionId?: string }
@@ -28,21 +31,77 @@ function extractImageUrl(image: unknown): string {
   return ''
 }
 
-function toImageFile(image: unknown, contentType = 'image/png') {
+function toImageFile(image: unknown, contentType = 'image/png'): ToolFileData | '' {
+  if (isUserFile(image)) {
+    return image
+  }
+
   const imageUrl = extractImageUrl(image)
   if (!imageUrl) {
     return ''
   }
 
-  if (isRecord(image)) {
-    return image
-  }
+  const name =
+    isRecord(image) && typeof image.name === 'string' && image.name.trim().length > 0
+      ? image.name
+      : 'generated-image.png'
+  const mimeType =
+    isRecord(image) && typeof image.mimeType === 'string' && image.mimeType.trim().length > 0
+      ? image.mimeType
+      : isRecord(image) && typeof image.type === 'string' && image.type.trim().length > 0
+        ? image.type
+        : contentType
+  const data =
+    isRecord(image) && image.data !== undefined && image.data !== null
+      ? (image.data as ToolFileData['data'])
+      : undefined
 
   return {
-    name: 'generated-image.png',
+    name,
     url: imageUrl,
-    mimeType: contentType,
+    mimeType,
+    ...(data !== undefined ? { data } : {}),
   }
+}
+
+function resolvePrimaryImageFile(
+  data: {
+    imageFile?: unknown
+    image?: unknown
+    imageUrl?: string
+    fileName?: string
+    contentType?: string
+    metadata?: { contentType?: string }
+  },
+  contentType: string
+): ToolFileData | '' {
+  if (isUserFile(data.imageFile)) {
+    return data.imageFile
+  }
+
+  if (data.imageUrl) {
+    return toImageFile(
+      {
+        name: data.fileName || 'generated-image.png',
+        url: data.imageUrl,
+        mimeType: contentType,
+      },
+      contentType
+    )
+  }
+
+  if (data.imageFile !== undefined && data.imageFile !== null && data.imageFile !== '') {
+    const normalized = toImageFile(data.imageFile, contentType)
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  if (data.image !== undefined && data.image !== null && data.image !== '') {
+    return toImageFile(data.image, contentType)
+  }
+
+  return ''
 }
 
 function normalizeImagesOutput(
@@ -58,6 +117,8 @@ function normalizeImagesOutput(
   return primary ? [primary] : []
 }
 
+const IMAGE_GENERATE_MODEL_IDS = IMAGE_BLOCK_MODEL_IDS.join(', ')
+
 export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGenerationResponse> = {
   id: 'image_generate',
   name: 'Image Generator',
@@ -67,9 +128,10 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
   params: {
     provider: {
       type: 'string',
-      required: true,
-      visibility: 'user-only',
-      description: 'Image generation provider: openai, gemini, or falai',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Image generation provider. Use openai for gpt-image-* and chatgpt-image-latest; gemini for gemini-*-image* models; falai for nano-banana-*, flux-2-pro, seedream-v4.5, and grok-imagine-image. When omitted, provider is inferred from model.',
     },
     apiKey: {
       type: 'string',
@@ -80,10 +142,9 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     },
     model: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description:
-        'Provider model ID, such as gpt-image-1.5, gemini-3.1-flash-image-preview, or nano-banana-2',
+      description: `Provider model ID. Supported models: ${IMAGE_GENERATE_MODEL_IDS}. Provider is inferred from model when omitted.`,
     },
     prompt: {
       type: 'string',
@@ -179,7 +240,8 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'json',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Multiple reference images for fusion',
+      description:
+        'Multiple reference images for fusion. Supported on Gemini models (up to 14) and subject to per-model limits.',
     },
     inputImageUrl: {
       type: 'string',
@@ -248,7 +310,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         ? '/api/tools/image'
         : '/api/tools/image-generation',
     method: 'POST',
-    timeout: 300000,
+    timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
     headers: () => ({
       'Content-Type': 'application/json',
     }),
@@ -371,19 +433,11 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       }
     }
 
-    const image =
-      data.imageFile ||
-      data.image ||
-      (data.imageUrl
-        ? {
-            name: data.fileName || 'generated-image.png',
-            url: data.imageUrl,
-            mimeType: data.contentType || 'image/png',
-          }
-        : '')
+    const contentType = data.contentType || data.metadata?.contentType || 'image/png'
+    const image = resolvePrimaryImageFile(data, contentType)
 
     const imageUrl = data.imageUrl || extractImageUrl(image)
-    const images = normalizeImagesOutput(undefined, image, data.contentType || 'image/png')
+    const images = normalizeImagesOutput(undefined, image, contentType)
 
     return {
       success: true,

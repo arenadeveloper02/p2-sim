@@ -35,6 +35,8 @@ export type AttachmentProvider =
   | 'xai'
   | 'deepseek'
   | 'cerebras'
+  | 'sakana'
+  | 'meta'
 
 export interface PreparedProviderAttachment {
   file: UserFile
@@ -93,6 +95,9 @@ export function shouldUseLargeFilePath(
 }
 
 const PDF_MIME_TYPE = 'application/pdf'
+const SVG_MIME_TYPE = 'image/svg+xml'
+/** Vision APIs reject SVG bytes as images; send SVG XML as a text document instead. */
+const SVG_DOCUMENT_MIME_TYPE = 'text/xml'
 
 const DOCUMENT_MIME_TYPES = new Set(
   Object.entries(MIME_TYPE_MAPPING)
@@ -118,7 +123,12 @@ const BEDROCK_DOCUMENT_FORMATS = new Set([
 const BEDROCK_IMAGE_FORMATS = new Set(['png', 'jpeg', 'jpg', 'gif', 'webp'])
 const BEDROCK_VIDEO_FORMATS = new Set(['mp4', 'mov', 'mkv', 'webm'])
 
-const UNSUPPORTED_FILE_PROVIDERS = new Set<AttachmentProvider>(['deepseek', 'cerebras'])
+const UNSUPPORTED_FILE_PROVIDERS = new Set<AttachmentProvider>([
+  'deepseek',
+  'cerebras',
+  'sakana',
+  'meta',
+])
 
 const PROVIDER_SUPPORTED_LABELS: Record<AttachmentProvider, string> = {
   openai: 'images and documents through the Responses API input_image/input_file parts',
@@ -137,6 +147,8 @@ const PROVIDER_SUPPORTED_LABELS: Record<AttachmentProvider, string> = {
   xai: 'images through image_url message parts on Grok vision models',
   deepseek: 'no file attachments in the current API adapter',
   cerebras: 'no file attachments in the current API adapter',
+  sakana: 'no file attachments in the current API adapter',
+  meta: 'no file attachments in the current API adapter',
 }
 
 export function getAttachmentProvider(providerId: ProviderId | string): AttachmentProvider | null {
@@ -156,6 +168,8 @@ export function getAttachmentProvider(providerId: ProviderId | string): Attachme
   if (providerId === 'xai') return 'xai'
   if (providerId === 'deepseek') return 'deepseek'
   if (providerId === 'cerebras') return 'cerebras'
+  if (providerId === 'sakana') return 'sakana'
+  if (providerId === 'meta') return 'meta'
   return null
 }
 
@@ -194,6 +208,15 @@ function isTextDocumentMimeType(mimeType: string): boolean {
 
 function isImageMimeType(mimeType: string): boolean {
   return MODEL_SUPPORTED_IMAGE_MIME_TYPES.has(mimeType)
+}
+
+function isSvgMimeType(mimeType: string): boolean {
+  return mimeType === SVG_MIME_TYPE
+}
+
+/** Providers that accept SVG XML as a document attachment instead of a vision image. */
+function providerSupportsSvgAsDocument(provider: AttachmentProvider): boolean {
+  return provider === 'openai' || provider === 'anthropic' || provider === 'google'
 }
 
 function isOpenAIDocumentMimeType(mimeType: string): boolean {
@@ -303,6 +326,8 @@ function isMimeTypeSupportedByProvider(
       return isImageMimeType(mimeType)
     case 'deepseek':
     case 'cerebras':
+    case 'sakana':
+    case 'meta':
       return false
     default: {
       const _exhaustive: never = provider
@@ -347,7 +372,17 @@ export function prepareProviderAttachments(
 
   return files.map((file) => {
     const declaredMimeType = inferAttachmentMimeType(file)
-    const contentType = getAttachmentContentType(declaredMimeType)
+    const treatSvgAsDocument = isSvgMimeType(declaredMimeType)
+
+    if (treatSvgAsDocument && !providerSupportsSvgAsDocument(provider)) {
+      throw new Error(
+        `File "${file.name}" is an SVG image, which is not supported by provider "${providerId}". Convert it to PNG, JPEG, GIF, or WebP, or use a provider that accepts document attachments (OpenAI, Anthropic, or Google).`
+      )
+    }
+
+    const contentType = treatSvgAsDocument
+      ? ('document' as const)
+      : getAttachmentContentType(declaredMimeType)
 
     if (!contentType) {
       throw new Error(
@@ -381,7 +416,9 @@ export function prepareProviderAttachments(
       )
     }
 
-    const mimeType = sniffedImageMimeType || declaredMimeType
+    const mimeType = treatSvgAsDocument
+      ? SVG_DOCUMENT_MIME_TYPE
+      : sniffedImageMimeType || declaredMimeType
     const extension = getAttachmentExtension(file, mimeType)
     const attachment = {
       file,
