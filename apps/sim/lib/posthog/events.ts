@@ -551,6 +551,10 @@ export interface PostHogEventMap {
     source: 'help_menu'
   }
 
+  // slack_community_opened: {
+  //   source: 'help_menu'
+  // }
+
   search_result_selected: {
     result_type:
       | 'block'

@@ -726,6 +726,8 @@ export const schemaMock = {
     config: 'config',
     resources: 'resources',
     lastSeenAt: 'lastSeenAt',
+    pinned: 'pinned',
+    deletedAt: 'deletedAt',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt',
   },

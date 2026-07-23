@@ -6,18 +6,20 @@
  * @vitest-environment node
  */
 import {
-  createEnvMock,
   createMockRequest,
+  dbChainMockFns,
   hybridAuthMockFns,
   knowledgeApiUtilsMock,
   knowledgeApiUtilsMockFns,
+  resetDbChainMock,
+  resetEnvMock,
+  setEnv,
   workflowAuthzMockFns,
   workflowsUtilsMock,
 } from '@sim/testing'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  mockDbChain,
   mockGetDocumentTagDefinitions,
   mockHandleTagOnlySearch,
   mockHandleVectorOnlySearch,
@@ -26,17 +28,6 @@ const {
   mockGenerateSearchEmbedding,
   mockGetDocumentMetadataByIds,
 } = vi.hoisted(() => ({
-  mockDbChain: {
-    select: vi.fn().mockReturnThis(),
-    from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
-    orderBy: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockReturnThis(),
-    innerJoin: vi.fn().mockReturnThis(),
-    leftJoin: vi.fn().mockReturnThis(),
-    groupBy: vi.fn().mockReturnThis(),
-    having: vi.fn().mockReturnThis(),
-  },
   mockGetDocumentTagDefinitions: vi.fn(),
   mockHandleTagOnlySearch: vi.fn(),
   mockHandleVectorOnlySearch: vi.fn(),
@@ -48,25 +39,7 @@ const {
 
 const mockCheckKnowledgeBaseAccess = knowledgeApiUtilsMockFns.mockCheckKnowledgeBaseAccess
 
-vi.mock('drizzle-orm', () => ({
-  and: vi.fn().mockImplementation((...args) => ({ and: args })),
-  eq: vi.fn().mockImplementation((a, b) => ({ eq: [a, b] })),
-  inArray: vi.fn().mockImplementation((field, values) => ({ inArray: [field, values] })),
-  isNull: vi.fn().mockImplementation((arg) => ({ isNull: arg })),
-  sql: vi.fn().mockImplementation((strings, ...values) => ({
-    sql: strings,
-    values,
-    as: vi.fn().mockReturnValue({ sql: strings, values, alias: 'mocked_alias' }),
-  })),
-}))
-
-vi.mock('@sim/db', () => ({
-  db: mockDbChain,
-}))
-
 vi.mock('@/lib/workflows/utils', () => workflowsUtilsMock)
-
-vi.mock('@/lib/core/config/env', () => createEnvMock({ OPENAI_API_KEY: 'test-api-key' }))
 
 vi.mock('@/lib/documents/utils', () => ({
   retryWithExponentialBackoff: vi.fn().mockImplementation((fn) => fn()),
@@ -142,12 +115,8 @@ describe('Knowledge Search API Route', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-
-    Object.values(mockDbChain).forEach((fn) => {
-      if (typeof fn === 'function') {
-        fn.mockClear().mockReturnThis()
-      }
-    })
+    resetDbChainMock()
+    setEnv({ OPENAI_API_KEY: 'test-api-key' })
 
     mockHandleTagOnlySearch.mockClear()
     mockHandleVectorOnlySearch.mockClear()
@@ -187,6 +156,11 @@ describe('Knowledge Search API Route', () => {
     vi.clearAllMocks()
   })
 
+  afterAll(() => {
+    resetDbChainMock()
+    resetEnvMock()
+  })
+
   describe('POST /api/knowledge/search', () => {
     const validSearchData = {
       knowledgeBaseIds: 'kb-123',
@@ -216,7 +190,7 @@ describe('Knowledge Search API Route', () => {
         },
       })
 
-      mockDbChain.limit.mockResolvedValue([])
+      dbChainMockFns.limit.mockResolvedValue([])
 
       mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
 
@@ -263,7 +237,7 @@ describe('Knowledge Search API Route', () => {
         .mockResolvedValueOnce({ hasAccess: true, knowledgeBase: multiKbs[0] })
         .mockResolvedValueOnce({ hasAccess: true, knowledgeBase: multiKbs[1] })
 
-      mockDbChain.limit.mockResolvedValue([])
+      dbChainMockFns.limit.mockResolvedValue([])
 
       mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
 
@@ -308,7 +282,7 @@ describe('Knowledge Search API Route', () => {
         },
       })
 
-      mockDbChain.limit.mockResolvedValue([])
+      dbChainMockFns.limit.mockResolvedValue([])
 
       mockHandleVectorOnlySearch.mockResolvedValue(mockSearchResults)
 
@@ -518,7 +492,7 @@ describe('Knowledge Search API Route', () => {
         },
       })
 
-      mockDbChain.limit.mockResolvedValueOnce(mockSearchResults) // Search results
+      dbChainMockFns.limit.mockResolvedValueOnce(mockSearchResults) // Search results
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -538,7 +512,7 @@ describe('Knowledge Search API Route', () => {
 
     it.concurrent('should handle OpenAI API errors', async () => {
       mockGetUserId.mockResolvedValue('user-123')
-      mockDbChain.limit.mockResolvedValueOnce(mockKnowledgeBases)
+      dbChainMockFns.limit.mockResolvedValueOnce(mockKnowledgeBases)
 
       mockGenerateSearchEmbedding.mockRejectedValueOnce(
         new Error('OpenAI API error: 401 Unauthorized - Invalid API key')
@@ -554,7 +528,7 @@ describe('Knowledge Search API Route', () => {
 
     it.concurrent('should handle missing OpenAI API key', async () => {
       mockGetUserId.mockResolvedValue('user-123')
-      mockDbChain.limit.mockResolvedValueOnce(mockKnowledgeBases)
+      dbChainMockFns.limit.mockResolvedValueOnce(mockKnowledgeBases)
 
       mockGenerateSearchEmbedding.mockRejectedValueOnce(new Error('OPENAI_API_KEY not configured'))
 
@@ -568,7 +542,7 @@ describe('Knowledge Search API Route', () => {
 
     it.concurrent('should handle database errors during search', async () => {
       mockGetUserId.mockResolvedValue('user-123')
-      mockDbChain.limit.mockResolvedValueOnce(mockKnowledgeBases)
+      dbChainMockFns.limit.mockResolvedValueOnce(mockKnowledgeBases)
 
       mockHandleVectorOnlySearch.mockRejectedValueOnce(new Error('Database error'))
 
@@ -582,7 +556,7 @@ describe('Knowledge Search API Route', () => {
 
     it.concurrent('should handle invalid OpenAI response format', async () => {
       mockGetUserId.mockResolvedValue('user-123')
-      mockDbChain.limit.mockResolvedValueOnce(mockKnowledgeBases)
+      dbChainMockFns.limit.mockResolvedValueOnce(mockKnowledgeBases)
 
       mockGenerateSearchEmbedding.mockRejectedValueOnce(
         new Error('Invalid response format from OpenAI embeddings API')
@@ -611,7 +585,7 @@ describe('Knowledge Search API Route', () => {
           },
         })
 
-        mockDbChain.limit.mockResolvedValueOnce(mockSearchResults)
+        dbChainMockFns.limit.mockResolvedValueOnce(mockSearchResults)
 
         mockFetch.mockResolvedValue({
           ok: true,
@@ -659,7 +633,7 @@ describe('Knowledge Search API Route', () => {
           },
         })
 
-        mockDbChain.limit.mockResolvedValueOnce(mockSearchResults)
+        dbChainMockFns.limit.mockResolvedValueOnce(mockSearchResults)
 
         mockFetch.mockResolvedValue({
           ok: true,
@@ -714,7 +688,7 @@ describe('Knowledge Search API Route', () => {
           },
         })
 
-        mockDbChain.limit.mockResolvedValueOnce(mockSearchResults)
+        dbChainMockFns.limit.mockResolvedValueOnce(mockSearchResults)
 
         mockFetch.mockResolvedValue({
           ok: true,
@@ -786,7 +760,7 @@ describe('Knowledge Search API Route', () => {
 
       mockGetDocumentTagDefinitions.mockResolvedValue(mockTagDefinitions)
 
-      mockDbChain.limit.mockResolvedValueOnce(mockTagDefinitions)
+      dbChainMockFns.limit.mockResolvedValueOnce(mockTagDefinitions)
 
       mockHandleTagOnlySearch.mockResolvedValue(mockTaggedResults)
 
@@ -832,7 +806,7 @@ describe('Knowledge Search API Route', () => {
 
       mockGetDocumentTagDefinitions.mockResolvedValue(mockTagDefinitions)
 
-      mockDbChain.limit.mockResolvedValueOnce(mockTagDefinitions)
+      dbChainMockFns.limit.mockResolvedValueOnce(mockTagDefinitions)
 
       mockHandleTagAndVectorSearch.mockResolvedValue(mockSearchResults)
 
@@ -969,7 +943,7 @@ describe('Knowledge Search API Route', () => {
         },
       })
 
-      mockDbChain.limit.mockResolvedValueOnce(mockSearchResults)
+      dbChainMockFns.limit.mockResolvedValueOnce(mockSearchResults)
 
       mockFetch.mockResolvedValue({
         ok: true,
@@ -1027,7 +1001,7 @@ describe('Knowledge Search API Route', () => {
 
       mockHandleTagOnlySearch.mockResolvedValue(mockTaggedResults)
 
-      mockDbChain.limit.mockResolvedValueOnce(mockTagDefinitions)
+      dbChainMockFns.limit.mockResolvedValueOnce(mockTagDefinitions)
 
       const req = createMockRequest('POST', multiKbTagData)
       const response = await POST(req)
@@ -1092,7 +1066,7 @@ describe('Knowledge Search API Route', () => {
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockResolvedValue([]),
       }
-      mockDbChain.select.mockReturnValueOnce(mockTagDefs)
+      dbChainMockFns.select.mockReturnValueOnce(mockTagDefs)
 
       const req = createMockRequest('POST', {
         knowledgeBaseIds: ['kb-123'],
@@ -1166,7 +1140,7 @@ describe('Knowledge Search API Route', () => {
           .fn()
           .mockResolvedValue([{ tagSlot: 'tag1', displayName: 'tag1', fieldType: 'text' }]),
       }
-      mockDbChain.select.mockReturnValueOnce(mockTagDefs)
+      dbChainMockFns.select.mockReturnValueOnce(mockTagDefs)
 
       const req = createMockRequest('POST', {
         knowledgeBaseIds: ['kb-123'],
@@ -1239,7 +1213,7 @@ describe('Knowledge Search API Route', () => {
           .fn()
           .mockResolvedValue([{ tagSlot: 'tag1', displayName: 'tag1', fieldType: 'text' }]),
       }
-      mockDbChain.select.mockReturnValueOnce(mockTagDefs)
+      dbChainMockFns.select.mockReturnValueOnce(mockTagDefs)
 
       const req = createMockRequest('POST', {
         knowledgeBaseIds: ['kb-123'],

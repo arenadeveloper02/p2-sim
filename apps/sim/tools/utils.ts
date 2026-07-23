@@ -92,6 +92,7 @@ export interface RequestParams {
   headers: Record<string, string>
   body?: string
   timeout?: number
+  proxyUrl?: string
 }
 
 /**
@@ -331,7 +332,12 @@ export async function formatRequestParams(
       ? Math.min(timeout, MAX_TIMEOUT_MS)
       : undefined
 
-  return { url, method, headers, body, timeout: validTimeout }
+  const proxyUrl =
+    typeof params.proxyUrl === 'string' && params.proxyUrl.trim()
+      ? params.proxyUrl.trim()
+      : undefined
+
+  return { url, method, headers, body, timeout: validTimeout, proxyUrl }
 }
 
 /**
