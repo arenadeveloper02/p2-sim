@@ -1,7 +1,23 @@
 import { cn } from '@sim/emcn'
+import { RefreshCw } from 'lucide-react'
 
 interface SidebarNavIconProps {
   className?: string
+}
+
+/**
+ * Re-Run control: Lucide RefreshCw at size-4 inside a size-6 plate so visual
+ * weight matches custom nav glyphs (New Chat / Golden Queries).
+ */
+export function ReRunNavIcon({ className }: SidebarNavIconProps) {
+  return (
+    <span
+      className={cn('inline-flex size-6 shrink-0 items-center justify-center', className)}
+      aria-hidden='true'
+    >
+      <RefreshCw className='size-4' />
+    </span>
+  )
 }
 
 /**

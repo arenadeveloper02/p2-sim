@@ -1,28 +1,8 @@
 import React, { type HTMLAttributes, memo, type ReactNode, useState } from 'react'
+import { Code } from '@sim/emcn'
 import { Check, Copy } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
-import { Code, Tooltip } from '@sim/emcn'
-
-export function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Tooltip.Root delayDuration={300}>
-      <Tooltip.Trigger asChild>
-        <a
-          href={href}
-          className='text-[var(--text-primary)] underline decoration-dashed underline-offset-4'
-          target='_blank'
-          rel='noopener noreferrer'
-        >
-          {children}
-        </a>
-      </Tooltip.Trigger>
-      <Tooltip.Content side='top' align='center' sideOffset={5} className='max-w-sm'>
-        <span className='truncate font-medium text-xs'>{href}</span>
-      </Tooltip.Content>
-    </Tooltip.Root>
-  )
-}
 
 const COMPONENTS = {
   p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => (
@@ -199,9 +179,15 @@ const COMPONENTS = {
   hr: () => <hr className='my-8 border-[var(--divider)] border-t' />,
 
   a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <LinkWithPreview href={href || '#'} {...props}>
+    <a
+      href={href || '#'}
+      className='text-[var(--text-primary)] underline decoration-dashed underline-offset-4'
+      target='_blank'
+      rel='noopener noreferrer'
+      {...props}
+    >
       {children}
-    </LinkWithPreview>
+    </a>
   ),
 
   table: ({ children }: React.TableHTMLAttributes<HTMLTableElement>) => (

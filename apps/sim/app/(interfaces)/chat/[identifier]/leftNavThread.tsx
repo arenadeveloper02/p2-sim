@@ -12,7 +12,17 @@ import {
   Tooltip,
 } from '@sim/emcn'
 import { formatRelativeTime } from '@sim/utils/formatting'
-import { ArrowLeft, Download, MoreHorizontal, Pin, PinOff, RefreshCw, Search, Share2, Trash2, X } from 'lucide-react'
+import {
+  ArrowLeft,
+  Download,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  RefreshCw,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react'
 import Image, { type StaticImageData } from 'next/image'
 import {
   CollapseNavIcon,
@@ -20,6 +30,7 @@ import {
   GoldenQueriesNavIcon,
   NewChatNavIcon,
   RenameMenuIcon,
+  ReRunNavIcon,
 } from '@/app/(interfaces)/chat/[identifier]/sidebar-nav-icons'
 import {
   DEPLOYED_CHAT_CANVAS_BG,
@@ -66,7 +77,6 @@ interface LeftNavThreadProps {
   logoUrl?: string | StaticImageData
   onToggleSidebar?: () => void
   onExportChat?: () => void
-  onShareChat?: () => void
 }
 
 type SidebarActionIcon = React.ComponentType<{ className?: string }>
@@ -205,9 +215,7 @@ function SidebarHeader({ logoUrl, collapsed, onToggleSidebar }: SidebarHeaderPro
                 logoUrl={logoUrl}
                 className='opacity-100 transition-opacity group-hover:opacity-0'
               />
-              <CollapseNavIcon
-                className='absolute inset-0 rotate-180 opacity-0 group-hover:opacity-100'
-              />
+              <CollapseNavIcon className='absolute inset-0 rotate-180 opacity-0 group-hover:opacity-100' />
             </>
           ) : (
             <CollapseNavIcon className='rotate-180' />
@@ -306,7 +314,6 @@ interface ThreadRowProps {
   onDelete: () => void
   onTogglePin: () => void
   onExportChat?: () => void
-  onShareChat?: () => void
 }
 
 function ThreadRow({
@@ -324,7 +331,6 @@ function ThreadRow({
   onDelete,
   onTogglePin,
   onExportChat,
-  onShareChat,
 }: ThreadRowProps) {
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameBlurReadyRef = useRef(false)
@@ -419,6 +425,18 @@ function ThreadRow({
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
       >
+        {isActive && (
+          <button
+            type='button'
+            className='flex size-6 items-center justify-center rounded text-[var(--text-icon)] hover:bg-white'
+            onClick={onRefresh}
+            disabled={isStreaming}
+            aria-label='Refresh conversation'
+          >
+            <RefreshCw className='size-3.5' />
+          </button>
+        )}
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -452,22 +470,8 @@ function ThreadRow({
                 </>
               )}
             </DropdownMenuItem>
-            {onShareChat && (
-              <DropdownMenuItem
-                onClick={onShareChat}
-                disabled={!isActive}
-                className={THREAD_MENU_ITEM_CLASS}
-              >
-                <Share2 />
-                Copy link
-              </DropdownMenuItem>
-            )}
-            {onExportChat && (
-              <DropdownMenuItem
-                onClick={onExportChat}
-                disabled={!isActive}
-                className={THREAD_MENU_ITEM_CLASS}
-              >
+            {isActive && onExportChat && (
+              <DropdownMenuItem onClick={onExportChat} className={THREAD_MENU_ITEM_CLASS}>
                 <Download />
                 Export chat
               </DropdownMenuItem>
@@ -510,7 +514,6 @@ const LeftNavThread = ({
   logoUrl,
   onToggleSidebar,
   onExportChat,
-  onShareChat,
 }: LeftNavThreadProps) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null)
@@ -589,17 +592,14 @@ const LeftNavThread = ({
 
   const primaryActionButtons = (collapsed: boolean) => (
     <div className={cn('flex flex-col gap-2', collapsed && 'items-center')}>
-      {showReRun && onReRun && !collapsed && (
-        <button
-          type='button'
-          className={cn(sidebarRowClass(false, actionButtonsDisabled), 'w-full')}
+      {showReRun && onReRun && (
+        <SidebarActionButton
+          collapsed={collapsed}
+          NavIcon={ReRunNavIcon}
+          label='Re-Run'
           onClick={onReRun}
           disabled={actionButtonsDisabled}
-          title='Re-run workflow with new input values'
-        >
-          <RefreshCw className={cn(sidebarRowIconClass(false), 'size-4')} />
-          <span className={sidebarRowLabelClass(false)}>Re-Run</span>
-        </button>
+        />
       )}
       <SidebarActionButton
         collapsed={collapsed}
@@ -745,7 +745,6 @@ const LeftNavThread = ({
                         onDelete={() => setDeleteTarget(thread)}
                         onTogglePin={() => onTogglePinThread?.(thread.chatId, !thread.pinnedAt)}
                         onExportChat={onExportChat}
-                        onShareChat={onShareChat}
                       />
                     ))}
                   </div>

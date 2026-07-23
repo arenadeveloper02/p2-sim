@@ -18,10 +18,16 @@ export function normalizeComparableText(text: string): string {
  */
 export function resolveDeployedChatLandingDescription(params: {
   title: string
+  description?: string
   welcomeMessage?: string
 }): string {
   const titleNorm = normalizeComparableText(params.title)
+  const description = params.description?.trim() || ''
   const welcomeMessage = params.welcomeMessage?.trim() || ''
+
+  if (description && normalizeComparableText(description) !== titleNorm) {
+    return description
+  }
 
   if (welcomeMessage && normalizeComparableText(welcomeMessage) !== titleNorm) {
     return welcomeMessage

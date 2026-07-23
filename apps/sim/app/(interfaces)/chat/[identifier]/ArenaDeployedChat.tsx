@@ -814,32 +814,32 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         })),
       ]
 
-      if (messageToSend.trim() || combinedFiles.length > 0) {
-        if (!regenerate) {
-          // Add the user's message to the chat
-          const userMessage: ChatMessage = {
-            id: generateId(),
-            content: messageToSend,
-            type: 'user',
-            timestamp: new Date(),
-            attachments: combinedFiles.map((file) => ({
-              id: file.id,
-              name: file.name,
-              type: file.type,
-              size: file.size,
-              dataUrl: file.dataUrl || '',
-            })),
-          }
-          userMessageId = userMessage.id
-          setMessages((prev) => [...prev, userMessage])
-        } else {
-          setMessages((prev) => {
-            const lastUserIndex = [...prev].reverse().findIndex((m) => m.type === 'user')
-            if (lastUserIndex === -1) return prev
-            const index = prev.length - 1 - lastUserIndex
-            return prev.slice(0, index + 1)
-          })
+      if (regenerate) {
+        // Drop the previous assistant response(s) after the last user turn —
+        // including Start Block form submits where messageToSend is empty.
+        setMessages((prev) => {
+          const lastUserIndex = [...prev].reverse().findIndex((m) => m.type === 'user')
+          if (lastUserIndex === -1) return prev
+          const index = prev.length - 1 - lastUserIndex
+          return prev.slice(0, index + 1)
+        })
+      } else if (messageToSend.trim() || combinedFiles.length > 0) {
+        // Add the user's message to the chat
+        const userMessage: ChatMessage = {
+          id: generateId(),
+          content: messageToSend,
+          type: 'user',
+          timestamp: new Date(),
+          attachments: combinedFiles.map((file) => ({
+            id: file.id,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataUrl: file.dataUrl || '',
+          })),
         }
+        userMessageId = userMessage.id
+        setMessages((prev) => [...prev, userMessage])
       }
 
       setInputValue('')
@@ -1150,15 +1150,17 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       setStartBlockInputs(values)
       setIsInputModalOpen(false)
 
-      // Add a system message summarizing received inputs
       const formattedInputs = Object.entries(values)
         .map(([key, value]) => `${key}: ${value ?? ''}`)
         .join(', ')
 
+      // Show submitted Start Block values as a user message so copy/regenerate
+      // (assistant-only actions) are not offered on this bubble.
       const inputMessage: ChatMessage = {
         id: generateId(),
         content: `Inputs received: ${formattedInputs}`,
-        type: 'assistant',
+        type: 'user',
+        isStartBlockInputsSummary: true,
         timestamp: new Date(),
       }
 
@@ -1445,8 +1447,15 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const handleRegenerateLastResponse = useCallback(() => {
     const lastUserMessage = [...messages].reverse().find((message) => message.type === 'user')
     if (!lastUserMessage || typeof lastUserMessage.content !== 'string') return
+
+    // Form-submit summary is not a typed query — re-run with stored Start Block values.
+    if (lastUserMessage.isStartBlockInputsSummary) {
+      void handleSendMessage('', false, undefined, true, startBlockInputs, true)
+      return
+    }
+
     void handleSendMessage(lastUserMessage.content, false, undefined, false, undefined, true)
-  }, [messages, handleSendMessage])
+  }, [messages, handleSendMessage, startBlockInputs])
 
   const handleViewFeedback = useCallback(() => {
     setIsGoldenQueriesOpen(false)
@@ -1524,12 +1533,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     const markdown = exportChatAsMarkdown(messages, title)
     downloadTextFile(markdown, `${title.replace(/\s+/g, '-').toLowerCase()}.md`)
   }, [messages, threads, currentChatId, chatConfig])
-
-  const handleShareChat = useCallback(async () => {
-    if (!currentChatId) return
-    const url = `${window.location.origin}/chat/${identifier}?chatId=${currentChatId}`
-    await navigator.clipboard.writeText(url)
-  }, [currentChatId, identifier])
 
   const handleFocusChatInput = useCallback(() => {
     chatInputWrapperRef.current?.querySelector('textarea')?.focus()
@@ -1642,7 +1645,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             onToggleSidebar={handleToggleSidebar}
             isCollapsed={isSidebarCollapsed}
             onExportChat={handleExportChat}
-            onShareChat={handleShareChat}
           />
         </div>
 
@@ -1673,7 +1675,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
             logoUrl={sidebarLogoUrl}
             onToggleSidebar={handleToggleSidebar}
             onExportChat={handleExportChat}
-            onShareChat={handleShareChat}
           />
         )}
 
