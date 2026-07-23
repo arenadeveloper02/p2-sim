@@ -35,8 +35,12 @@ import {
   buildExecutionConditions,
   buildExpensiveCopilotChatsQuery,
   buildExpensiveWorkflowsQuery,
+  buildCopilotByChatTypeQuery,
   buildLedgerConditions,
   buildLedgerJoinConditions,
+  bySourceDisplayBucketExpr,
+  bySourceDisplayLabelExpr,
+  bySourceLedgerSourceExpr,
   chargeTypeExpr,
   coerceToDate,
   densifyTimeSeries,
@@ -195,13 +199,14 @@ export async function getWorkspaceUsageAnalytics(
     ] = await Promise.all([
       dbReplica
         .select({
-          source: usageLog.source,
+          source: bySourceLedgerSourceExpr(),
+          label: bySourceDisplayLabelExpr(),
           ...ledgerCostSelect(),
           ...usageMetricsSelect(),
         })
         .from(usageLog)
         .where(and(...ledgerConditions))
-        .groupBy(usageLog.source),
+        .groupBy(bySourceDisplayBucketExpr(), bySourceLedgerSourceExpr(), bySourceDisplayLabelExpr()),
 
       dbReplica
         .select({
@@ -324,36 +329,12 @@ export async function getWorkspaceUsageAnalytics(
           )
         ),
 
-      dbReplica
-        .select({
-          chatType: copilotChats.type,
-          chatCount: sql<number>`count(distinct ${copilotChats.id})::int`,
-          runCount: sql<number>`count(distinct ${copilotRuns.id})::int`,
-          ...ledgerCostSelect(),
-        })
-        .from(copilotChats)
-        .leftJoin(
-          copilotRuns,
-          and(
-            eq(copilotRuns.chatId, copilotChats.id),
-            ...periodRange(copilotRuns.startedAt, period)
-          )
-        )
-        .leftJoin(
-          usageLog,
-          and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions)
-        )
-        .where(
-          and(
-            eq(copilotChats.workspaceId, workspaceId),
-            or(
-              and(...periodRange(copilotChats.createdAt, period)),
-              isNotNull(usageLog.id),
-              isNotNull(copilotRuns.id)
-            )
-          )
-        )
-        .groupBy(copilotChats.type),
+      buildCopilotByChatTypeQuery({
+        chatScope: eq(copilotChats.workspaceId, workspaceId),
+        ledgerJoinConditions,
+        period,
+        runWorkspaceCondition: eq(copilotRuns.workspaceId, workspaceId),
+      }),
 
       dbReplica
         .select({
@@ -648,7 +629,8 @@ export async function getWorkspaceUsageAnalytics(
 
     const bySource = sortByBillableCostDesc(
       bySourceRows.map((row) => ({
-        source: row.source,
+        source: usageLogSourceSchema.parse(row.source),
+        label: row.label,
         billableCost: parseDecimal(row.billableCost),
         rawCost: parseDecimal(row.rawCost),
         count: row.count,

@@ -15,9 +15,9 @@ import { DataHealthPanel } from '@/app/workspace/[workspaceId]/settings/componen
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import {
   formatBillableWithCredits,
-  formatSourceLabel,
   formatTokenCount,
   formatToolLabel,
+  resolveUsageSourceLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
   buildWorkflowAverageCostChartRows,
@@ -125,12 +125,12 @@ export function OrganizationUsageContent({
         <SettingsSection label='By source'>
           <CostBreakdownTable
             rows={data.bySource}
-            getRowKey={(row) => row.source}
+            getRowKey={(row) => row.label}
             columns={[
               {
                 key: 'source',
                 header: 'Source',
-                render: (row) => formatSourceLabel(row.source),
+                render: (row) => resolveUsageSourceLabel(row),
               },
               {
                 key: 'count',

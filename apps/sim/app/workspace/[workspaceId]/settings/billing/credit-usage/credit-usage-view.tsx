@@ -19,7 +19,6 @@ import { formatDateTime } from '@sim/utils/formatting'
 import { useQueryStates } from 'nuqs'
 import type { UsageLogEntry, UsageLogPeriod } from '@/lib/api/contracts/user'
 import { formatApportionedCreditCost, formatCreditsLabel } from '@/lib/billing/credits/conversion'
-import { USAGE_LOG_SOURCE_LABELS } from '@/app/api/users/me/usage-logs/source-labels'
 import { CredentialDetailLayout } from '@/app/workspace/[workspaceId]/components/credential-detail'
 import { formatDateShort } from '@/app/workspace/[workspaceId]/logs/utils'
 import {
@@ -40,7 +39,7 @@ const PERIOD_OPTIONS: ComboboxOption[] = [
 /** Workflow-sourced rows name the specific workflow; everything else uses the plain source label. */
 function rowLabel(log: UsageLogEntry): string {
   if (log.source === 'workflow' && log.workflowName) return `Workflow: ${log.workflowName}`
-  return USAGE_LOG_SOURCE_LABELS[log.source]
+  return log.sourceLabel
 }
 
 interface UsageLogRowProps {

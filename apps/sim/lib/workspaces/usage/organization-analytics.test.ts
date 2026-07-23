@@ -158,6 +158,7 @@ describe('getOrganizationUsageAnalytics', () => {
           1: [
             {
               source: 'workflow',
+              label: 'Workflow',
               billableCost: '10',
               rawCost: '9',
               count: 3,
@@ -166,6 +167,7 @@ describe('getOrganizationUsageAnalytics', () => {
             },
             {
               source: 'workspace-chat',
+              label: 'Mothership',
               billableCost: '5',
               rawCost: '5',
               count: 2,
@@ -234,6 +236,7 @@ describe('getOrganizationUsageAnalytics', () => {
           1: [
             {
               source: 'workflow',
+              label: 'Workflow',
               billableCost: '7',
               rawCost: '7',
               count: 2,
@@ -390,6 +393,7 @@ describe('getOrganizationUsageAnalytics', () => {
           1: [
             {
               source: 'workflow',
+              label: 'Workflow',
               billableCost: '3',
               rawCost: '3',
               count: 1,
@@ -457,6 +461,7 @@ describe('getOrganizationUsageAnalytics', () => {
           1: [
             {
               source: 'workflow',
+              label: 'Workflow',
               billableCost: '4',
               rawCost: '4',
               count: 1,

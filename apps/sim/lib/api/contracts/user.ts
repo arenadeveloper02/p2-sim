@@ -332,6 +332,11 @@ export const usageLogEntrySchema = z.object({
   id: z.string(),
   createdAt: z.string(),
   source: usageLogSourceSchema,
+  /**
+   * Resolved display label. Local mothership shares ledger source `copilot`
+   * with workspace Copilot — Local mothership is "Arena AI".
+   */
+  sourceLabel: z.string().min(1),
   /** Specific workflow name, populated only when `source` is `'workflow'`. */
   workflowName: z.string().nullable(),
   /**

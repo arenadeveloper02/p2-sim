@@ -111,6 +111,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         0: [
           {
             source: 'workflow',
+            label: 'Workflow',
             billableCost: '6',
             rawCost: '5',
             count: 2,
@@ -120,6 +121,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
           },
           {
             source: 'workspace-chat',
+            label: 'Mothership',
             billableCost: '2.5',
             rawCost: '2.5',
             count: 1,
@@ -128,6 +130,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
           },
           {
             source: 'mothership_block',
+            label: 'Mothership block',
             billableCost: '1',
             rawCost: '0.8',
             count: 1,
@@ -163,15 +166,23 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     expect(analytics.summary.usage.totalTokens).toBe(1200)
     expect(analytics.bySource).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ source: 'workflow', billableCost: 6, rawCost: 5, count: 2 }),
+        expect.objectContaining({
+          source: 'workflow',
+          label: 'Workflow',
+          billableCost: 6,
+          rawCost: 5,
+          count: 2,
+        }),
         expect.objectContaining({
           source: 'workspace-chat',
+          label: 'Mothership',
           billableCost: 2.5,
           rawCost: 2.5,
           count: 1,
         }),
         expect.objectContaining({
           source: 'mothership_block',
+          label: 'Mothership block',
           billableCost: 1,
           rawCost: 0.8,
           count: 1,
@@ -196,6 +207,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         0: [
           {
             source: 'workspace-chat',
+            label: 'Mothership',
             billableCost: '140.17',
             rawCost: '140.17',
             count: 160,
@@ -252,6 +264,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         0: [
           {
             source: 'workspace-chat',
+            label: 'Mothership',
             billableCost: '1.5',
             rawCost: '1.5',
             count: 1,
@@ -306,6 +319,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         0: [
           {
             source: 'workflow',
+            label: 'Workflow',
             billableCost: '4',
             rawCost: '4',
             count: 1,
@@ -344,6 +358,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
         0: [
           {
             source: 'workflow',
+            label: 'Workflow',
             billableCost: '4',
             rawCost: '4',
             count: 1,
@@ -370,7 +385,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     })
 
     expect(analytics.bySource).toEqual([
-      expect.objectContaining({ source: 'workflow', billableCost: 4, rawCost: 4, count: 1 }),
+      expect.objectContaining({ source: 'workflow', label: 'Workflow', billableCost: 4, rawCost: 4, count: 1 }),
     ])
     expect(analytics.summary.billableCost).toBe(4)
   })
@@ -494,6 +509,7 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
           0: [
             {
               source: 'workflow',
+              label: 'Workflow',
               billableCost: '0.11',
               rawCost: '0.09',
               count: 2,

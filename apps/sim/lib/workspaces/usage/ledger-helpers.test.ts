@@ -8,6 +8,20 @@ import {
   truncateToBucketStart,
 } from '@/lib/workspaces/usage/ledger-helpers'
 
+/**
+ * Documents the usage_log ⨯ copilot_runs fan-out that inflated mothership
+ * chat credits (e.g. Kangaroo 20 → 40) before run counts used a subquery.
+ */
+describe('copilot chat cost join cardinality', () => {
+  it('naive join multiplies ledger cost by run count', () => {
+    const usageRowCost = 0.102036
+    const runCount = 2
+    const naiveJoinedSum = usageRowCost * runCount
+    expect(Math.round(naiveJoinedSum * 200)).toBe(41)
+    expect(Math.round(usageRowCost * 200)).toBe(20)
+  })
+})
+
 describe('densifyTimeSeries', () => {
   it('fills zero buckets across a daily period window', () => {
     const densified = densifyTimeSeries(

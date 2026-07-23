@@ -90,6 +90,12 @@ export const workspaceUsageAnalyticsResponseSchema = z.object({
   bySource: z.array(
     costBucketSchema.extend({
       source: usageLogSourceSchema,
+      /**
+       * Display label for this bucket. Required because Local mothership and
+       * workspace Copilot both use ledger source `copilot` — Local mothership
+       * is labeled "Arena AI".
+       */
+      label: z.string().min(1),
       usage: usageMetricsSchema,
     })
   ),

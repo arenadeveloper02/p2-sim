@@ -10,7 +10,10 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, asc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
 import type { OrganizationUsageAnalytics } from '@/lib/api/contracts/organization-usage'
-import type { UsageChargeTypeValue } from '@/lib/api/contracts/workspace-usage'
+import {
+  usageLogSourceSchema,
+  type UsageChargeTypeValue,
+} from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
 import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
@@ -24,8 +27,12 @@ import {
   buildExecutionConditions,
   buildExpensiveCopilotChatsQuery,
   buildExpensiveWorkflowsQuery,
+  buildCopilotByChatTypeQuery,
   buildLedgerConditions,
   buildLedgerJoinConditions,
+  bySourceDisplayBucketExpr,
+  bySourceDisplayLabelExpr,
+  bySourceLedgerSourceExpr,
   chargeTypeExpr,
   coerceToDate,
   densifyTimeSeries,
@@ -296,13 +303,14 @@ export async function getOrganizationUsageAnalytics(
     ] = await Promise.all([
       dbReplica
         .select({
-          source: usageLog.source,
+          source: bySourceLedgerSourceExpr(),
+          label: bySourceDisplayLabelExpr(),
           ...ledgerCostSelect(),
           ...usageMetricsSelect(),
         })
         .from(usageLog)
         .where(and(...ledgerConditions))
-        .groupBy(usageLog.source),
+        .groupBy(bySourceDisplayBucketExpr(), bySourceLedgerSourceExpr(), bySourceDisplayLabelExpr()),
 
       dbReplica
         .select({
@@ -426,30 +434,12 @@ export async function getOrganizationUsageAnalytics(
           and(inArray(copilotRuns.workspaceId, workspaceIds), ...periodRange(copilotRuns.startedAt, period))
         ),
 
-      dbReplica
-        .select({
-          chatType: copilotChats.type,
-          chatCount: sql<number>`count(distinct ${copilotChats.id})::int`,
-          runCount: sql<number>`count(distinct ${copilotRuns.id})::int`,
-          ...ledgerCostSelect(),
-        })
-        .from(copilotChats)
-        .leftJoin(
-          copilotRuns,
-          and(eq(copilotRuns.chatId, copilotChats.id), ...periodRange(copilotRuns.startedAt, period))
-        )
-        .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
-        .where(
-          and(
-            inArray(copilotChats.workspaceId, workspaceIds),
-            or(
-              and(...periodRange(copilotChats.createdAt, period)),
-              isNotNull(usageLog.id),
-              isNotNull(copilotRuns.id)
-            )
-          )
-        )
-        .groupBy(copilotChats.type),
+      buildCopilotByChatTypeQuery({
+        chatScope: inArray(copilotChats.workspaceId, workspaceIds),
+        ledgerJoinConditions,
+        period,
+        runWorkspaceCondition: inArray(copilotRuns.workspaceId, workspaceIds),
+      }),
 
       dbReplica
         .select({
@@ -673,7 +663,8 @@ export async function getOrganizationUsageAnalytics(
 
     const bySource = sortByBillableCostDesc(
       bySourceRows.map((row) => ({
-        source: row.source,
+        source: usageLogSourceSchema.parse(row.source),
+        label: row.label,
         billableCost: parseDecimal(row.billableCost),
         rawCost: parseDecimal(row.rawCost),
         count: row.count,

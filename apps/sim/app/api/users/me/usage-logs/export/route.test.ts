@@ -57,7 +57,7 @@ describe('GET /api/users/me/usage-logs/export', () => {
     expect(response.headers.get('Content-Disposition')).toContain('attachment; filename=')
     expect(response.headers.get('X-Export-Truncated')).toBe('0')
     expect(header).toBe('Date,Type,Credits')
-    expect(row).toBe('2026-07-01T00:00:00.000Z,Chat,100')
+    expect(row).toBe('2026-07-01T00:00:00.000Z,Copilot,100')
   })
 
   it('sets X-Export-Truncated when the safety cap is hit with more data remaining', async () => {
