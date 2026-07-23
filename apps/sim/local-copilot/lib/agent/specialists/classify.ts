@@ -1,10 +1,12 @@
 import type {
+  LocalCopilotCloudSpecialistDomain,
   LocalCopilotIntent,
   LocalCopilotSpecialistDomain,
 } from '@/local-copilot/lib/agent/specialists/domains'
+import { MAX_PARALLEL_SUBAGENTS } from '@/local-copilot/lib/agent/specialists/domains'
 
 interface DomainPattern {
-  domain: Exclude<LocalCopilotSpecialistDomain, 'general'>
+  domain: LocalCopilotCloudSpecialistDomain
   patterns: RegExp[]
   weight: number
 }
@@ -40,7 +42,7 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     domain: 'workflow',
     weight: 2,
     patterns: [
-      /\b(build|create|edit|add|wire|connect|workflow|block|agent|automate|pipeline)\b/i,
+      /\b(build|create|edit|add|wire|connect|workflow|block|automate|pipeline)\b/i,
       /\b(modify|update|change|fix)\s+(the\s+)?(workflow|block)/i,
     ],
   },
@@ -53,11 +55,16 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     ],
   },
   {
-    domain: 'data',
-    weight: 2,
+    domain: 'knowledge',
+    weight: 3,
     patterns: [
-      /\b(table|spreadsheet|rows?|knowledge\s*base|kb\b|enrichment|vector|semantic\s+search)\b/i,
+      /\b(knowledge\s*base|kb\b|vector|semantic\s+search|ingest\s+(doc|document|file)|rag)\b/i,
     ],
+  },
+  {
+    domain: 'table',
+    weight: 3,
+    patterns: [/\b(table|spreadsheet|rows?|enrichment|enrich\s+rows?)\b/i],
   },
   {
     domain: 'auth',
@@ -72,24 +79,35 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     ],
   },
   {
-    domain: 'schedule',
+    domain: 'scheduled_task',
     weight: 3,
     patterns: [/\b(schedule|cron|recurring|every\s+day|scheduled\s+task)\b/i],
   },
+  {
+    domain: 'agent',
+    weight: 2,
+    patterns: [
+      /\b(integration\s+tool|list_integration|invoke_integration|mcp\s+tool|custom\s+tool|load_user_skill|skill)\b/i,
+      /\b(function_execute|sandbox\s+code)\b/i,
+    ],
+  },
+  {
+    domain: 'superagent',
+    weight: 3,
+    patterns: [
+      /\b(send\s+(an?\s+)?email|draft\s+(an?\s+)?email|check\s+my\s+calendar|google\s+docs?|slack\s+message)\b/i,
+      /\b(gmail|outlook|calendar|notion|hubspot)\b/i,
+    ],
+  },
 ]
 
-/**
- * Heuristic turn classifier — no extra LLM call.
- * Scores keyword hits per domain; ambiguous / weak scores → full catalog.
- */
+export { MAX_PARALLEL_SUBAGENTS }
+
 export function classifyLocalCopilotIntent(message: string): LocalCopilotIntent {
   const text = message.trim()
-  if (!text) {
-    return { primary: 'general', secondary: [], useFullCatalog: true }
-  }
+  if (!text) return { primary: 'general', secondary: [], useFullCatalog: true }
 
-  const scores = new Map<Exclude<LocalCopilotSpecialistDomain, 'general'>, number>()
-
+  const scores = new Map<LocalCopilotCloudSpecialistDomain, number>()
   for (const entry of DOMAIN_PATTERNS) {
     let hits = 0
     for (const pattern of entry.patterns) {
@@ -101,9 +119,7 @@ export function classifyLocalCopilotIntent(message: string): LocalCopilotIntent 
   }
 
   const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1])
-  if (ranked.length === 0) {
-    return { primary: 'general', secondary: [], useFullCatalog: true }
-  }
+  if (ranked.length === 0) return { primary: 'general', secondary: [], useFullCatalog: true }
 
   const [topDomain, topScore] = ranked[0]
   const secondaries = ranked
@@ -111,43 +127,28 @@ export function classifyLocalCopilotIntent(message: string): LocalCopilotIntent 
     .filter(([, score]) => score >= Math.max(2, topScore * 0.5))
     .map(([domain]) => domain)
 
-  // Weak single signal → keep full catalog so we do not over-constrain.
   if (topScore < 2 && secondaries.length === 0) {
     return { primary: 'general', secondary: [], useFullCatalog: true }
   }
-
-  // Many competing domains without a clear lead → full catalog.
   if (secondaries.length >= 3) {
     return { primary: 'general', secondary: [], useFullCatalog: true }
   }
 
-  return {
-    primary: topDomain,
-    secondary: secondaries,
-    useFullCatalog: false,
-  }
+  return { primary: topDomain, secondary: secondaries, useFullCatalog: false }
 }
 
-/**
- * Whether to run a bounded specialist pass before the main loop.
- * Triggers when research/auth must gather facts before build/run/deploy work.
- */
 export function shouldRunSpecialistPass(intent: LocalCopilotIntent): boolean {
   if (intent.useFullCatalog) return false
   if (intent.secondary.includes('research') || intent.secondary.includes('auth')) return true
   if (
     intent.primary === 'research' &&
-    intent.secondary.some(
-      (domain) => domain === 'workflow' || domain === 'run' || domain === 'deploy'
-    )
+    intent.secondary.some((d) => d === 'workflow' || d === 'run' || d === 'deploy')
   ) {
     return true
   }
   if (
     intent.primary === 'auth' &&
-    intent.secondary.some(
-      (domain) => domain === 'workflow' || domain === 'run' || domain === 'deploy'
-    )
+    intent.secondary.some((d) => d === 'workflow' || d === 'run' || d === 'deploy')
   ) {
     return true
   }
@@ -163,36 +164,31 @@ export function specialistPassDomain(
   return intent.secondary[0] ?? null
 }
 
-/** High-value domains eligible for Phase 4 parallel fan-out (ordered by priority). */
-export const PARALLEL_SUBAGENT_PRIORITY: Exclude<LocalCopilotSpecialistDomain, 'general'>[] = [
+export const PARALLEL_SUBAGENT_PRIORITY: LocalCopilotCloudSpecialistDomain[] = [
   'research',
   'workflow',
   'deploy',
   'run',
   'auth',
-  'data',
+  'knowledge',
+  'table',
   'file',
+  'agent',
+  'superagent',
+  'media',
+  'scheduled_task',
 ]
 
-export const MAX_PARALLEL_SUBAGENTS = 3
-
-/**
- * Selects domains for Phase 4 parallel subagents.
- * Requires at least two focused domains; returns at most {@link MAX_PARALLEL_SUBAGENTS}.
- */
 export function selectParallelSubagentDomains(
   intent: LocalCopilotIntent
-): Exclude<LocalCopilotSpecialistDomain, 'general'>[] {
+): LocalCopilotCloudSpecialistDomain[] {
   if (intent.useFullCatalog) return []
 
-  const candidates = new Set<Exclude<LocalCopilotSpecialistDomain, 'general'>>()
-  if (intent.primary !== 'general') {
-    candidates.add(intent.primary)
-  }
+  const candidates = new Set<LocalCopilotCloudSpecialistDomain>()
+  if (intent.primary !== 'general') candidates.add(intent.primary)
   for (const domain of intent.secondary) {
     if (domain !== 'general') candidates.add(domain)
   }
-
   if (candidates.size < 2) return []
 
   return PARALLEL_SUBAGENT_PRIORITY.filter((domain) => candidates.has(domain)).slice(

@@ -768,25 +768,16 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       dependsOn: ['model'],
     },
 
-    // API Key (hosted Fal.ai key is injected by Sim)
-    // {
-    //   id: 'apiKey',
-    //   title: 'API Key',
-    //   type: 'short-input',
-    //   placeholder: 'Enter your Fal.ai API key',
-    //   password: true,
-    //   required: true,
-    //   hideWhenHosted: true,
-    // },
-    // {
-    //   id: 'apiKey',
-    //   title: 'API Key',
-    //   type: 'short-input',
-    //   placeholder: 'Enter your provider API key',
-    //   password: true,
-    //   required: true,
-    //   condition: { field: 'provider', value: 'falai', not: true },
-    // },
+    // API Key — hidden on hosted Sim; Fal.ai key is injected from env / BYOK
+    {
+      id: 'apiKey',
+      title: 'API Key',
+      type: 'short-input',
+      placeholder: 'Enter your Fal.ai API key',
+      password: true,
+      required: true,
+      hideWhenHosted: true,
+    },
   ],
 
   tools: {
@@ -843,7 +834,7 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       type: 'string',
       description: 'Video generation provider (falai)',
     },
-    // apiKey: { type: 'string', description: 'Provider API key' },
+    apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
       description: 'Fal.ai model',
@@ -1548,25 +1539,16 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       },
       dependsOn: ['model'],
     },
-    // API Key (hosted Fal.ai key is injected by Sim)
-    // {
-    //   id: 'apiKey',
-    //   title: 'API Key',
-    //   type: 'short-input',
-    //   placeholder: 'Enter your Fal.ai API key',
-    //   password: true,
-    //   required: true,
-    //   hideWhenHosted: true,
-    // },
-    // {
-    //   id: 'apiKey',
-    //   title: 'API Key',
-    //   type: 'short-input',
-    //   placeholder: 'Enter your provider API key',
-    //   password: true,
-    //   required: true,
-    //   condition: { field: 'provider', value: 'falai', not: true },
-    // },
+    // API Key — hidden on hosted Sim; Fal.ai key is injected from env / BYOK
+    {
+      id: 'apiKey',
+      title: 'API Key',
+      type: 'short-input',
+      placeholder: 'Enter your Fal.ai API key',
+      password: true,
+      required: true,
+      hideWhenHosted: true,
+    },
   ],
   tools: {
     access: [
@@ -1620,7 +1602,7 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       type: 'string',
       description: 'Video generation provider (falai)',
     },
-    // apiKey: { type: 'string', description: 'Provider API key' },
+    apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
       description: 'Fal.ai model',

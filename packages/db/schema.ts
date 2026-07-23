@@ -3496,6 +3496,8 @@ export const deployedChat = pgTable(
     title: text('title'),
     workflowId: text('workflow_id'),
     executingUserId: text('executing_user_id'),
+    archivedAt: timestamp('archived_at'),
+    pinnedAt: timestamp('pinned_at'),
   },
   (table) => ({
     chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),

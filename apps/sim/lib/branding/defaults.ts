@@ -5,7 +5,7 @@ import type { BrandConfig } from './types'
  */
 export const defaultBrandConfig: BrandConfig = {
   name: 'Agentic AI Builder | Arena',
-  logoUrl: 'https://arenav2image.s3.us-west-1.amazonaws.com/arena_svg_white.svg',
+  logoUrl: 'https://arenav2image.s3.us-west-1.amazonaws.com/ArenaLogo.svg',
   logoUrlBlacktext:
     'https://arenav2image.s3.us-west-1.amazonaws.com/rt/calibrate/Arena_Logo_WebDashboard.svg',
   wordmarkUrl:

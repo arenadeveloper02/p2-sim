@@ -487,6 +487,7 @@ const TOOL_TITLES: Record<string, string> = {
   search: 'Search Agent',
   file: 'File Agent',
   media: 'Media Agent',
+  file: 'File Agent',
   superagent: 'Executing action',
   respond: 'Gathering thoughts',
   context_compaction: CONTEXT_COMPACTION_DISPLAY_TITLE,

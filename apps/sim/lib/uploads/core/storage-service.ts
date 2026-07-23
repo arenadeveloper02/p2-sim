@@ -32,7 +32,6 @@ import {
 
 const logger = createLogger('StorageService')
 
-
 /**
  * Create a Blob config from StorageConfig
  * @throws Error if required properties are missing
@@ -55,7 +54,6 @@ function createBlobConfig(config: StorageConfig): BlobConfig {
     connectionString: config.connectionString,
   }
 }
-
 
 /**
  * Create an S3 config from StorageConfig
