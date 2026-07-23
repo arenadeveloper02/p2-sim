@@ -52,7 +52,7 @@ export interface AttributionMatchCandidate {
   source: string
   chatId: string
   runId: string | null
-  strategy: 'update-cost-event-key' | 'existing-run-id'
+  strategy: 'update-cost-event-key' | 'existing-run-id' | 'run-window-unique'
   /** When message and stream both resolve but disagree. */
   ambiguous?: boolean
 }
@@ -61,6 +61,8 @@ export interface ReconciliationPopulationReport {
   pendingMissingChatId: number
   exactUpdateCostMatches: number
   exactRunIdMatches: number
+  /** Local copilot SHA256 rows matched to exactly one copilot_run in the time window. */
+  exactRunWindowUniqueMatches: number
   ambiguousMessageStreamDisagreement: number
   fuzzyUnique: number
   fuzzyAmbiguous: number
@@ -332,6 +334,76 @@ export async function fetchExactRunIdMatches(
   }))
 }
 
+/**
+ * Exact strategy 3: legacy Local `copilot` rows (typically SHA256 event keys) with
+ * no chat/run stamped at write time. Applies only when exactly one
+ * `copilot_runs` row matches user + workspace + occurred_at within the window.
+ */
+export async function fetchExactRunWindowUniqueMatches(
+  batchSize: number,
+  scope?: MothershipChatAttributionScope,
+  windowSeconds = DEFAULT_FUZZY_REPORT_WINDOW_SECONDS,
+  offset = 0
+): Promise<AttributionMatchCandidate[]> {
+  const rows = queryRows(
+    await db.execute<{
+      id: string
+      event_key: string | null
+      source: string
+      chat_id: string
+      run_id: string
+    }>(sql`
+      WITH pending AS (
+        SELECT
+          ul.id,
+          ul.event_key,
+          ul.source,
+          ul.user_id,
+          ul.workspace_id,
+          coalesce(ul.occurred_at, ul.created_at) AS occurred_at
+        FROM usage_log ul
+        WHERE ul.chat_id IS NULL
+          AND ul.run_id IS NULL
+          AND ul.source IN (${mothershipSourceList(scope?.sources)})
+          AND ul.workspace_id IS NOT NULL
+          AND ul.user_id IS NOT NULL
+          AND (ul.event_key IS NULL OR ul.event_key !~ '^update-cost:.+-billing$')
+          ${scopeSql(scope)}
+      ),
+      candidates AS (
+        SELECT
+          p.id,
+          p.event_key,
+          p.source,
+          cr.chat_id,
+          cr.id AS run_id,
+          count(*) OVER (PARTITION BY p.id) AS match_count
+        FROM pending p
+        INNER JOIN copilot_runs cr
+          ON cr.user_id = p.user_id
+         AND cr.workspace_id = p.workspace_id
+         AND cr.started_at BETWEEN p.occurred_at - make_interval(secs => ${windowSeconds})
+                              AND p.occurred_at + make_interval(secs => ${windowSeconds})
+      )
+      SELECT id, event_key, source, chat_id, run_id
+      FROM candidates
+      WHERE match_count = 1
+      ORDER BY id ASC
+      LIMIT ${batchSize}
+      OFFSET ${offset}
+    `)
+  )
+
+  return rows.map((row) => ({
+    id: row.id,
+    eventKey: row.event_key,
+    source: row.source,
+    chatId: row.chat_id,
+    runId: row.run_id,
+    strategy: 'run-window-unique' as const,
+  }))
+}
+
 async function reportFuzzyAndOrphanPopulations(
   scope: MothershipChatAttributionScope | undefined,
   windowSeconds: number
@@ -445,7 +517,9 @@ async function closeArtifact(stream: WriteStream | null) {
 
 /**
  * Exact-only mothership chat_id attribution reconciliation.
- * Never applies fuzzy or hashed Arena Copilot matches.
+ * Applies update-cost keys, existing run_id joins, and run-window-unique matches
+ * (exactly one copilot_run in the time window). Never applies ambiguous time-window
+ * matches.
  */
 export async function runMothershipChatAttributionReconciliation(
   options: MothershipChatAttributionReconciliationOptions
@@ -485,6 +559,7 @@ export async function runMothershipChatAttributionReconciliation(
   let ambiguousMessageStreamDisagreement = 0
   let exactUpdateCostMatches = 0
   let exactRunIdMatches = 0
+  let exactRunWindowUniqueMatches = 0
 
   const shouldWrite = mode === 'apply'
   const shouldPaginateFully = mode === 'audit' || mode === 'dry-run' || mode === 'apply'
@@ -549,6 +624,34 @@ export async function runMothershipChatAttributionReconciliation(
 
       if (matches.length < batchSize) break
     }
+
+    for (let offset = 0, batch = 0; batch < maxBatches; batch++) {
+      const matches = await fetchExactRunWindowUniqueMatches(
+        batchSize,
+        scope,
+        windowSeconds,
+        useOffset ? offset : 0
+      )
+      if (matches.length === 0) break
+
+      exactRunWindowUniqueMatches += matches.length
+      batches += 1
+      for (const match of matches) {
+        writeArtifactLine(artifact, { type: 'match', ...match })
+      }
+
+      if (shouldWrite) {
+        const n = await applyExactMatches(matches)
+        applied += n
+        log(`  run-window-unique batch ${batches}: applied ${n}`)
+      } else {
+        wouldApply += matches.length
+        offset += batchSize
+        log(`  run-window-unique batch ${batches}: would apply ${matches.length}`)
+      }
+
+      if (matches.length < batchSize) break
+    }
   }
 
   const fuzzyOrphan = await reportFuzzyAndOrphanPopulations(scope, windowSeconds)
@@ -560,6 +663,7 @@ export async function runMothershipChatAttributionReconciliation(
     pendingMissingChatId: pendingAfter,
     exactUpdateCostMatches,
     exactRunIdMatches,
+    exactRunWindowUniqueMatches,
     ambiguousMessageStreamDisagreement,
     ...fuzzyOrphan,
   }
@@ -576,7 +680,7 @@ export async function runMothershipChatAttributionReconciliation(
   await closeArtifact(artifact)
 
   log(
-    `Summary: exact=${exactUpdateCostMatches + exactRunIdMatches} applied=${applied} wouldApply=${wouldApply} pending=${pendingAfter} fuzzyUnique=${fuzzyOrphan.fuzzyUnique} ambiguous=${ambiguousMessageStreamDisagreement + fuzzyOrphan.fuzzyAmbiguous} orphan=${fuzzyOrphan.orphanUnmatched} sha256=${fuzzyOrphan.unrecoverableSha256} costOk=${costInvariantOk}`
+    `Summary: exact=${exactUpdateCostMatches + exactRunIdMatches + exactRunWindowUniqueMatches} applied=${applied} wouldApply=${wouldApply} pending=${pendingAfter} runWindowUnique=${exactRunWindowUniqueMatches} fuzzyUnique=${fuzzyOrphan.fuzzyUnique} ambiguous=${ambiguousMessageStreamDisagreement + fuzzyOrphan.fuzzyAmbiguous} orphan=${fuzzyOrphan.orphanUnmatched} sha256=${fuzzyOrphan.unrecoverableSha256} costOk=${costInvariantOk}`
   )
 
   if (!costInvariantOk) {
@@ -654,6 +758,7 @@ async function rollbackFromArtifact(
       pendingMissingChatId: await countPendingMissingChatId(scope),
       exactUpdateCostMatches: 0,
       exactRunIdMatches: 0,
+      exactRunWindowUniqueMatches: 0,
       ambiguousMessageStreamDisagreement: 0,
       fuzzyUnique: 0,
       fuzzyAmbiguous: 0,
