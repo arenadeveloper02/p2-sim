@@ -110,9 +110,16 @@ export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> =
         dataLength: data.data?.length || 0,
       })
 
+      const { cost, model, tokens, ...payload } = data
+
       return {
         success: true,
-        output: data,
+        output: {
+          ...payload,
+          ...(cost && typeof cost === 'object' ? { cost } : {}),
+          ...(typeof model === 'string' ? { model } : {}),
+          ...(tokens && typeof tokens === 'object' ? { tokens } : {}),
+        },
       }
     } catch (error) {
       logger.error('Facebook Ads query execution failed', {
@@ -137,6 +144,17 @@ export type FacebookAdsQueryResponse = {
     endpoint?: string
     date_preset?: string
     level?: string
+    cost?: {
+      input: number
+      output: number
+      total: number
+    }
+    model?: string
+    tokens?: {
+      input: number
+      output: number
+      total: number
+    }
   }
   error?: string
 }

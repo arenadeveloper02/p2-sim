@@ -11,6 +11,7 @@ import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { ALL_TAG_SLOTS } from '@/lib/knowledge/constants'
+import { recordSearchEmbeddingUsage, recordSearchRerankUsage } from '@/lib/knowledge/embeddings'
 import { getDocumentTagDefinitions } from '@/lib/knowledge/tags/service'
 import { buildUndefinedTagsError, validateTagValue } from '@/lib/knowledge/tags/utils'
 import type { StructuredFilter } from '@/lib/knowledge/types'
@@ -27,6 +28,7 @@ import {
   type SearchResult,
 } from '@/app/api/knowledge/search/utils'
 import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
+import { getRerankModelPricing } from '@/providers/models'
 import { calculateCost } from '@/providers/utils'
 
 const logger = createLogger('VectorSearchAPI')
@@ -359,6 +361,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       // }
 
       let results: SearchResult[]
+      let queryEmbeddingIsBYOK: boolean | null = null
 
       const hasFilters = structuredFilters && structuredFilters.length > 0
 
@@ -381,6 +384,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           queryEmbeddingModel,
           workspaceId
         )
+        queryEmbeddingIsBYOK = queryEmbeddingResult.isBYOK
         const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
 
         results = await handleTagAndVectorSearch({
@@ -398,6 +402,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           queryEmbeddingModel,
           workspaceId
         )
+        queryEmbeddingIsBYOK = queryEmbeddingResult.isBYOK
         const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
 
         results = await handleVectorOnlySearch({
@@ -429,6 +434,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             error: error instanceof Error ? error.message : 'Unknown error',
           })
           // Continue without cost information rather than failing the search
+        }
+
+        if (shouldMeter && queryEmbeddingIsBYOK !== null && workspaceId) {
+          await recordSearchEmbeddingUsage({
+            userId,
+            workspaceId,
+            embeddingModel: queryEmbeddingModel,
+            query: validatedData.query!,
+            isBYOK: queryEmbeddingIsBYOK,
+            sourceReference: `kb-search:${requestId}`,
+          })
         }
       }
 
@@ -471,12 +487,38 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         kbToWorkspace[row.id] = row.workspaceId
       })
 
+      let rerankerCost: number | undefined
+      let rerankerModel: string | undefined
+      let rerankerSearchUnits = 0
+
       const rerankConfig: RerankConfig = {
         ...(validatedData.rerank || {}),
         requestId,
+        workspaceId,
       }
       if (hasQuery && (rerankConfig.enabled ?? true)) {
-        results = await rerankSearchResults(validatedData.query!, results, rerankConfig)
+        const rerankResult = await rerankSearchResults(validatedData.query!, results, rerankConfig)
+        results = rerankResult.results
+        rerankerModel = rerankResult.model
+        rerankerSearchUnits = rerankResult.searchUnits
+
+        if (rerankResult.searchUnits > 0) {
+          const pricing = getRerankModelPricing(rerankResult.model)
+          rerankerCost = pricing
+            ? pricing.perSearchUnit * rerankResult.searchUnits
+            : undefined
+
+          if (shouldMeter && workspaceId) {
+            await recordSearchRerankUsage({
+              userId,
+              workspaceId,
+              model: rerankResult.model,
+              isBYOK: rerankResult.isBYOK,
+              sourceReference: `kb-search:${requestId}`,
+              searchUnits: rerankResult.searchUnits,
+            })
+          }
+        }
       }
       try {
         PlatformEvents.knowledgeBaseSearched({
@@ -534,7 +576,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
                 cost: {
                   input: cost.input,
                   output: cost.output,
-                  total: cost.total,
+                  total: cost.total + (rerankerCost ?? 0),
                   tokens: {
                     prompt: tokenCount.count,
                     completion: 0,
@@ -542,6 +584,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
                   },
                   model: queryEmbeddingModel,
                   pricing: cost.pricing,
+                  ...(rerankerCost !== undefined && { rerankerCost }),
+                  ...(rerankerModel && { rerankerModel }),
+                  ...(rerankerSearchUnits > 0 && { rerankerSearchUnits }),
                 },
               }
             : {}),

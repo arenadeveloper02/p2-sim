@@ -108,21 +108,37 @@ const costSummarySchema = z
  * of truth) for the detail view. Each item is one billed line (base fee, a
  * model, or a tool/integration); the items reconcile to `total`.
  */
+const embeddedToolCostSchema = z.object({
+  name: z.string(),
+  cost: z.number(),
+})
+
 const costLedgerItemSchema = z.object({
-  category: z.enum(['fixed', 'model', 'tool']),
+  category: z.enum(['fixed', 'model', 'tool', 'external']),
   description: z.string(),
   cost: z.number(),
   inputTokens: z.number().optional(),
   outputTokens: z.number().optional(),
+  toolCost: z.number().optional(),
+  embeddedTools: z.array(embeddedToolCostSchema).optional(),
+})
+
+const additiveCostLeafSchema = z.object({
+  key: z.string(),
+  group: z.enum(['base', 'model', 'tool', 'other']),
+  label: z.string(),
+  dollars: z.number(),
 })
 
 export const costLedgerSchema = z.object({
   total: z.number(),
   items: z.array(costLedgerItemSchema),
+  leaves: z.array(additiveCostLeafSchema),
 })
 
 export type CostLedger = z.output<typeof costLedgerSchema>
 export type CostLedgerItem = z.output<typeof costLedgerItemSchema>
+export type AdditiveCostLeaf = z.output<typeof additiveCostLeafSchema>
 
 const pauseSummarySchema = z.object({
   status: z.string().nullable(),
@@ -399,5 +415,69 @@ export const cancelWorkflowExecutionContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: cancelWorkflowExecutionResponseSchema,
+  },
+})
+
+const reconciliationClassSchema = z.enum([
+  'reconciled',
+  'ledger_projection_drift',
+  'span_cost_legacy',
+  'cost_stripped_needs_reprice',
+  'missing_trace_data',
+  'cost_block',
+  'hosted_tool',
+  'agent_embedded_tool',
+  'mothership_risk',
+  'out_of_scope',
+])
+
+const reconciliationConfidenceSchema = z.enum(['high', 'medium', 'low'])
+
+const verifyCostBilledLineSchema = z.object({
+  category: z.string(),
+  description: z.string(),
+  cost: z.number(),
+})
+
+const verifyCostExpectedLineSchema = z.object({
+  category: z.enum(['fixed', 'model', 'tool', 'external']),
+  description: z.string(),
+  target: z.number(),
+  evidenceSource: z.string().optional(),
+})
+
+export const verifyExecutionCostsResponseSchema = z.object({
+  executionId: z.string().min(1),
+  workflowId: z.string().nullable(),
+  workspaceId: z.string().min(1),
+  confidence: reconciliationConfidenceSchema,
+  primaryClass: reconciliationClassSchema,
+  applyEligible: z.boolean(),
+  blockers: z.array(z.string()),
+  warnings: z.array(z.string()),
+  billed: z.object({
+    total: z.number(),
+    lines: z.array(verifyCostBilledLineSchema),
+  }),
+  expected: z.object({
+    total: z.number(),
+    lines: z.array(verifyCostExpectedLineSchema),
+  }),
+  deltas: z.object({
+    positive: z.number(),
+    negative: z.number(),
+  }),
+  onlyPricedTools: z.literal(true),
+})
+
+export type VerifyExecutionCostsResponse = z.output<typeof verifyExecutionCostsResponseSchema>
+
+export const verifyExecutionCostsContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/logs/execution/[executionId]/verify-costs',
+  params: executionIdParamsSchema,
+  response: {
+    mode: 'json',
+    schema: verifyExecutionCostsResponseSchema,
   },
 })

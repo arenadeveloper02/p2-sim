@@ -833,7 +833,7 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       type: 'string',
       description: 'Video generation provider (falai)',
     },
-    apiKey: { type: 'string', description: 'Provider API key' },
+    // apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
       description: 'Fal.ai model',
@@ -1600,7 +1600,7 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       type: 'string',
       description: 'Video generation provider (falai)',
     },
-    apiKey: { type: 'string', description: 'Provider API key' },
+    // apiKey: { type: 'string', description: 'Provider API key' },
     model: {
       type: 'string',
       description: 'Fal.ai model',

@@ -16,6 +16,7 @@ import {
   getParentSpecialistToolDefinitions,
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
+import type { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
 import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
@@ -42,6 +43,11 @@ export interface RunSpecialistPassParams {
   workspaceId: string
   workflowId?: string
   usageTurnId: string
+  /**
+   * Shared with the parent turn so specialist model/tool cost flushes once via
+   * `recordLocalCopilotTurnUsage` with chatId / runId / message-scoped keys.
+   */
+  turnCost: LocalTurnCostAccumulator
   getToolExecutor: () => Promise<typeof import('@/local-copilot/lib/tools/executor')>
   budget: SpecialistBudget
   parentDepth?: number
@@ -193,6 +199,15 @@ export async function executeSpecialistLoop(
         break
       }
 
+    if (roundInputTokens > 0 || roundOutputTokens > 0) {
+      // Accumulate into the parent turn ledger — do not call recordModelUsage
+      // here (that writes null chat_id rows and can double-count vs end-of-turn).
+      params.turnCost.addModelUsage({
+        model: params.model,
+        inputTokens: roundInputTokens,
+        outputTokens: roundOutputTokens,
+      })
+    }
       if (roundInputTokens > 0 || roundOutputTokens > 0) {
         await recordModelUsage({
           userId: params.userId,
@@ -210,7 +225,8 @@ export async function executeSpecialistLoop(
         domain: params.domain,
         depth: entered.depth,
         round,
-        toolCallCount: pendingToolCalls.length,
+        usageTurnId: params.usageTurnId,
+      toolCallCount: pendingToolCalls.length,
         toolNames: pendingToolCalls.map((call) => call.name),
         budget: params.budget.snapshot(),
         memory: getLocalCopilotMemorySnapshot(),
@@ -317,6 +333,11 @@ export async function executeSpecialistLoop(
           ...(toolResult.error ? { error: toolResult.error } : {}),
           ...(toolResult.resources?.length ? { resources: toolResult.resources } : {}),
         })
+
+      params.turnCost.addToolBilling({
+        toolName: call.name,
+        billing: toolResult.billing,
+      })
       }
     }
 

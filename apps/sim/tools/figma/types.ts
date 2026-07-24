@@ -229,6 +229,19 @@ export interface CreateFigmaResponse extends ToolResponse {
         iteration: number
       }>
     }
+    /** Overall tool price (= summed LLM cost). */
+    cost?: {
+      input: number
+      output: number
+      total: number
+    }
+    model?: string
+    tokens?: {
+      input: number
+      output: number
+      total: number
+    }
+    llmUsage?: Record<string, { inputTokens: number; outputTokens: number }>
   }
 }
 

@@ -58,6 +58,18 @@ export interface GaqlQueryResult {
   comparisonQuery?: string
   comparisonStartDate?: string
   comparisonEndDate?: string
+  /** LLM cost from query generation (for tool output → span billing). */
+  cost?: {
+    input: number
+    output: number
+    total: number
+  }
+  model?: string
+  tokens?: {
+    input: number
+    output: number
+    total: number
+  }
 }
 
 export interface ProcessedResults {

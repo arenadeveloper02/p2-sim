@@ -30,6 +30,12 @@ export const billingUpdateCostBodySchema = z.object({
    * user's billing entity and must never fail over attribution metadata.
    */
   workspaceId: z.string().min(1).optional(),
+  /** Originating copilot chat for mothership/copilot ledger joins. Best-effort FK. */
+  chatId: z.string().uuid().optional(),
+  /** Originating copilot run for mothership/copilot ledger joins. Best-effort FK. */
+  runId: z.string().uuid().optional(),
+  /** Hosting workflow execution for mothership_block lineage (internal callers only). */
+  parentExecutionId: z.string().min(1).max(128).optional(),
 })
 export type BillingUpdateCostBody = z.input<typeof billingUpdateCostBodySchema>
 

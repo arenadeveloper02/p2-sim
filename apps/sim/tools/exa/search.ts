@@ -1,7 +1,6 @@
+import { exaHosting } from '@/tools/exa/hosting'
 import type { ExaSearchParams, ExaSearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
-
-const exaApiKey = process.env.EXA_API_KEY
 
 export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
   id: 'exa_search',
@@ -9,6 +8,8 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
   description:
     'Search the web using Exa AI. Returns relevant search results with titles, URLs, and text snippets.',
   version: '1.0.0',
+
+  hosting: exaHosting,
 
   params: {
     query: {
@@ -117,9 +118,9 @@ export const searchTool: ToolConfig<ExaSearchParams, ExaSearchResponse> = {
   request: {
     url: 'https://api.exa.ai/search',
     method: 'POST',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': exaApiKey ?? '',
+      'x-api-key': params.apiKey,
     }),
     body: (params) => {
       const body: Record<string, any> = {

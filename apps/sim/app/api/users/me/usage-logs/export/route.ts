@@ -11,7 +11,7 @@ import {
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { formatCsvValue, toCsvRow } from '@/lib/table/export-format'
 import { resolveDateRange } from '@/app/api/users/me/usage-logs/shared'
-import { USAGE_LOG_SOURCE_LABELS } from '@/app/api/users/me/usage-logs/source-labels'
+import { resolveUsageLogSourceLabel } from '@/app/api/users/me/usage-logs/source-labels'
 
 const logger = createLogger('UsageLogsExportAPI')
 
@@ -84,7 +84,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     const type =
       log.source === 'workflow' && log.workflowName
         ? `Workflow: ${log.workflowName}`
-        : USAGE_LOG_SOURCE_LABELS[log.source]
+        : resolveUsageLogSourceLabel(log.source, log.metadata)
     return toCsvRow([
       formatCsvValue(log.createdAt),
       formatCsvValue(type),

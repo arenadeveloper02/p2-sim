@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
+import { resolveChildExecutionLineage } from '@/lib/execution/lineage'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import { handlePostExecutionPauseState } from '@/lib/workflows/executor/pause-persistence'
@@ -50,6 +51,14 @@ export interface ExecuteWorkflowOptions {
     sourceExecutionId?: string
   }
   executionMode?: 'sync' | 'stream' | 'async'
+  /** Parent workflow run when triggered as a child execution. */
+  parentExecutionId?: string
+  /** Parent's root execution id when known. */
+  parentRootExecutionId?: string
+  /** Copilot chat that triggered this run (rollup only). */
+  triggeringChatId?: string
+  /** Copilot run that triggered this run (rollup only). */
+  triggeringRunId?: string
 }
 
 export interface WorkflowInfo {
@@ -80,6 +89,15 @@ export async function executeWorkflow(
 
   try {
     const sessionUserId = streamConfig?.sessionUserId ?? undefined
+    const lineage = await resolveChildExecutionLineage({
+      executionId,
+      input: {
+        parentExecutionId: streamConfig?.parentExecutionId,
+        parentRootExecutionId: streamConfig?.parentRootExecutionId,
+        triggeringChatId: streamConfig?.triggeringChatId,
+        triggeringRunId: streamConfig?.triggeringRunId,
+      },
+    })
     const metadata: ExecutionMetadata = {
       requestId,
       executionId,
@@ -97,6 +115,10 @@ export async function executeWorkflow(
       largeValueKeys: streamConfig?.largeValueKeys,
       fileKeys: streamConfig?.fileKeys,
       executionMode: streamConfig?.executionMode,
+      parentExecutionId: lineage.parentExecutionId,
+      rootExecutionId: lineage.rootExecutionId,
+      triggeringChatId: lineage.triggeringChatId,
+      triggeringRunId: lineage.triggeringRunId,
     }
 
     const snapshot = new ExecutionSnapshot(

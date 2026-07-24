@@ -626,6 +626,13 @@ async function executeWorkflowCoreImpl(
       conversationId,
       initialInput,
       workflowState: { blocks, edges, loops, parallels },
+      lineage: {
+        parentExecutionId: metadata.parentExecutionId,
+        rootExecutionId: metadata.rootExecutionId ?? executionId,
+        triggeringChatId: metadata.triggeringChatId,
+        triggeringRunId: metadata.triggeringRunId,
+      },
+      executionActor: metadata.executionActor,
     })
 
     // Use edges directly - trigger-to-trigger edges are prevented at creation time
@@ -1035,6 +1042,13 @@ async function executeWorkflowCoreImpl(
         triggerData: metadata.correlation ? { correlation: metadata.correlation } : undefined,
         skipLogCreation,
         deploymentVersionId,
+        lineage: {
+          parentExecutionId: metadata.parentExecutionId,
+          rootExecutionId: metadata.rootExecutionId ?? executionId,
+          triggeringChatId: metadata.triggeringChatId,
+          triggeringRunId: metadata.triggeringRunId,
+        },
+        executionActor: metadata.executionActor,
       })
     }
 

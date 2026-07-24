@@ -105,11 +105,13 @@ export class GenericBlockHandler implements BlockHandler {
             workflowId: ctx.workflowId,
             workspaceId: ctx.workspaceId,
             executionId: ctx.executionId,
+            rootExecutionId: ctx.metadata?.rootExecutionId ?? ctx.executionId,
             userId: ctx.userId,
             isDeployedContext: ctx.isDeployedContext,
             sessionUserId: ctx.metadata?.sessionUserId,
             workflowUserId: ctx.metadata?.workflowUserId,
             enforceCredentialAccess: ctx.enforceCredentialAccess,
+            callChain: ctx.callChain,
           },
         },
         { executionContext: ctx }

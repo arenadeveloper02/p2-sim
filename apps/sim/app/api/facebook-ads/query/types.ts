@@ -35,6 +35,18 @@ export interface ParsedFacebookQuery {
   level?: string
   filters?: any
   breakdowns?: string[] // For demographics, device, placement breakdowns
+  /** LLM cost from query parsing (for tool output → span billing). */
+  cost?: {
+    input: number
+    output: number
+    total: number
+  }
+  model?: string
+  tokens?: {
+    input: number
+    output: number
+    total: number
+  }
 }
 
 export interface FacebookAdsResponse {
@@ -46,4 +58,15 @@ export interface FacebookAdsResponse {
   account_name: string
   query: string
   timestamp: string
+  cost?: {
+    input: number
+    output: number
+    total: number
+  }
+  model?: string
+  tokens?: {
+    input: number
+    output: number
+    total: number
+  }
 }

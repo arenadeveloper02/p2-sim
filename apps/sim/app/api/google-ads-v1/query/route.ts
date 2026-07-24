@@ -159,6 +159,9 @@ export async function POST(request: NextRequest) {
       total_rows: processedResults.total_rows,
       totals: processedResults.totals,
       execution_time_ms: executionTime,
+      ...(queryResult.cost ? { cost: queryResult.cost } : {}),
+      ...(queryResult.model ? { model: queryResult.model } : {}),
+      ...(queryResult.tokens ? { tokens: queryResult.tokens } : {}),
     }
 
     return NextResponse.json(response)

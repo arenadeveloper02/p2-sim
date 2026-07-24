@@ -73,10 +73,20 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 ARG DATABASE_URL="postgresql://user:pass@localhost:5432/dummy"
 ENV DATABASE_URL=${DATABASE_URL}
 
-# Provide dummy NEXT_PUBLIC_APP_URL for build-time evaluation.
-# Runtime environments should override this with the actual URL.
-# ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
-# ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+# Provide NEXT_PUBLIC_APP_URL for build-time module evaluation (auth, webhooks).
+# CI passes the real URL via build-args; runtime env overrides at deploy time.
+ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
+ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+
+# Docker builders are memory-constrained (GH Actions ~7GB RAM). BuildKit's sandbox
+# blocks swapon() without the security.insecure entitlement, which many CI setups
+# don't (and shouldn't have to) grant. Instead of provisioning swap inside the
+# build container, cap the heap via BUILD_MAX_OLD_SPACE_MB — package.json's
+# `build` script reads this directly (defaults to 8192 if unset) and passes it
+# to `next build` as NODE_OPTIONS itself, so set it here rather than NODE_OPTIONS
+# directly (an ENV NODE_OPTIONS here would just get overridden by that script).
+# Lower this further if the build still OOMs on your runner.
+ENV BUILD_MAX_OLD_SPACE_MB=5120
 
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \
@@ -101,11 +111,20 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # ========================================
-# Install Python + Chrome + Chromedriver
+# Install Chrome + matching Chromedriver + git
 # ========================================
-RUN apt-get update && apt-get install -y \
-      python3 python3-pip python3-venv bash ffmpeg \
-      wget gnupg ca-certificates \
+# Chrome and Chromedriver versions are pinned together and installed from the
+# same Google source. Previously Chrome came from Google's repo while
+# chromedriver came from Debian's repo — those track independent version
+# lineages (Chrome proper vs. Chromium) and drift out of sync, causing
+# "This version of ChromeDriver only supports Chrome version X" failures at
+# runtime. Update CHROME_VERSION below deliberately; don't let it float.
+ARG CHROME_VERSION=127.0.6533.88
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,id=chrome-dl,target=/tmp/chrome-dl \
+    apt-get update && apt-get install -y --no-install-recommends \
+      wget gnupg ca-certificates git \
       xvfb \
       libnss3 \
       libxss1 \
@@ -122,16 +141,19 @@ RUN apt-get update && apt-get install -y \
       libpango-1.0-0 \
       libpangocairo-1.0-0 \
       fonts-liberation \
-    && wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
-         | gpg --dearmor > /usr/share/keyrings/google-linux.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-         > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y \
-      google-chrome-stable \
-      chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
+      unzip \
+    && [ -f /tmp/chrome-dl/chrome-${CHROME_VERSION}.zip ] || wget -q \
+         "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
+         -O /tmp/chrome-dl/chrome-${CHROME_VERSION}.zip \
+    && unzip -q /tmp/chrome-dl/chrome-${CHROME_VERSION}.zip -d /opt \
+    && ln -s /opt/chrome-linux64/chrome /usr/bin/google-chrome \
+    && [ -f /tmp/chrome-dl/chromedriver-${CHROME_VERSION}.zip ] || wget -q \
+         "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" \
+         -O /tmp/chrome-dl/chromedriver-${CHROME_VERSION}.zip \
+    && unzip -q /tmp/chrome-dl/chromedriver-${CHROME_VERSION}.zip -d /opt \
+    && ln -s /opt/chromedriver-linux64/chromedriver /usr/bin/chromedriver
 
-# # Environment variables for Chrome
+# Environment variables for Chrome
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
     CHROME_BIN=/usr/bin/google-chrome \
     CHROME_PATH=/usr/bin/google-chrome \
@@ -148,13 +170,6 @@ RUN groupadd -g 1001 nodejs && \
 # ========================================
 # Copy build artifacts from builder
 # ========================================
-# Install Node.js 22 (for isolated-vm worker), git (Development block GitHub push), and other runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates git \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy application artifacts from builder
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/public ./apps/sim/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/standalone ./

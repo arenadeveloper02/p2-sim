@@ -3,6 +3,7 @@ import { workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { describeError, toError } from '@sim/utils/errors'
 import { and, eq, sql } from 'drizzle-orm'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import { isRetryableInfrastructureError } from '@/lib/core/errors/retryable-infrastructure'
 import { executionLogger } from '@/lib/logs/execution/logger'
@@ -28,6 +29,7 @@ import type {
   TraceSpan,
   WorkflowState,
 } from '@/lib/logs/types'
+import type { ExecutionLineage } from '@/lib/execution/lineage'
 import type { SerializableExecutionState } from '@/executor/execution/types'
 
 type TriggerData = Record<string, unknown> & {
@@ -94,6 +96,8 @@ export interface SessionStartParams {
   initialInput?: string
   deploymentVersionId?: string // ID of the deployment version used (null for manual/editor executions)
   workflowState?: WorkflowState
+  lineage?: ExecutionLineage
+  executionActor?: ExecutionActor
 }
 
 export interface SessionCompleteParams {
@@ -285,6 +289,23 @@ export class LoggingSession {
       // Non-model billable charges (standalone tool/integration costs). Carried
       // through so the partition can't be silently dropped at this boundary.
       charges?: Record<string, { total: number }>
+      external?: Record<
+        string,
+        {
+          total: number
+          vendor?: string
+          quantity?: number
+          unit?: string
+          metadata?: {
+            originalAmount?: number
+            originalCurrency?: string
+            exchangeRate?: number
+            sourceBlockId?: string
+            responsePath?: string
+            source?: string
+          }
+        }
+      >
     }
     finalOutput: Record<string, unknown>
     traceSpans: TraceSpan[]
@@ -359,6 +380,8 @@ export class LoggingSession {
       initialInput,
       deploymentVersionId,
       workflowState,
+      lineage,
+      executionActor,
     } = params
 
     try {
@@ -401,6 +424,8 @@ export class LoggingSession {
           conversationId,
           initialInput,
           deploymentVersionId,
+          lineage,
+          executionActor,
         })
       } else {
         // Resume: no cost reload needed. Billing reconciles from the usage_log
@@ -918,6 +943,8 @@ export class LoggingSession {
           initialInput,
           deploymentVersionId,
           workflowState,
+          lineage,
+          executionActor,
         } = params
         this.trigger = createTriggerObject(this.triggerType, triggerData)
         this.correlation = triggerData?.correlation
@@ -949,6 +976,8 @@ export class LoggingSession {
           conversationId: undefined, // Not available in error fallback case
           initialInput,
           deploymentVersionId,
+          lineage,
+          executionActor,
         })
 
         if (this.requestId) {

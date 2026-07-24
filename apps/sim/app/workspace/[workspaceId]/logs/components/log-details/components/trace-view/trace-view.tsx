@@ -1006,7 +1006,7 @@ export const TraceView = memo(function TraceView({ traceSpans, runCostDollars }:
           {blockCount} {blockCount === 1 ? 'span' : 'spans'}
         </span>
         {(() => {
-          const rootCost = formatCostAmount(runCostDollars ?? normalizedSpans[0]?.cost?.total)
+          const rootCost = formatCostAmount(runCostDollars)
           return rootCost ? (
             <span className='flex-shrink-0 font-medium text-[var(--text-tertiary)] text-caption tabular-nums'>
               {rootCost}

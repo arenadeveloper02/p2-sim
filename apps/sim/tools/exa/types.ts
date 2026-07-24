@@ -60,6 +60,8 @@ interface ExaSearchResult {
 export interface ExaSearchResponse extends ToolResponse {
   output: {
     results: ExaSearchResult[]
+    /** API-reported cost when present (used by hosted-key billing). */
+    __costDollars?: number | { total?: number }
   }
 }
 
@@ -88,6 +90,8 @@ interface ExaGetContentsResult {
 export interface ExaGetContentsResponse extends ToolResponse {
   output: {
     results: ExaGetContentsResult[]
+    /** API-reported cost when present (used by hosted-key billing). */
+    __costDollars?: number | { total?: number }
   }
 }
 
@@ -130,6 +134,8 @@ interface ExaSimilarLink {
 export interface ExaFindSimilarLinksResponse extends ToolResponse {
   output: {
     similarLinks: ExaSimilarLink[]
+    /** API-reported cost when present (used by hosted-key billing). */
+    __costDollars?: number | { total?: number }
   }
 }
 
@@ -147,6 +153,8 @@ export interface ExaAnswerResponse extends ToolResponse {
       url: string
       text: string
     }[]
+    /** API-reported cost when present (used by hosted-key billing). */
+    __costDollars?: number | { total?: number }
   }
 }
 
@@ -168,6 +176,8 @@ export interface ExaResearchResponse extends ToolResponse {
       author?: string
       score: number
     }[]
+    /** API-reported cost when present (used by hosted-key billing). */
+    __costDollars?: number | { total?: number }
   }
 }
 
