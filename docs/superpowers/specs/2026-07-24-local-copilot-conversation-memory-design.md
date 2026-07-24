@@ -1,26 +1,26 @@
-# Local Copilot Conversation Memory
+# Local Copilot Session Memory
 
 **Date:** 2026-07-24  
 **Status:** Approved  
 **Scope:** Local Copilot / mothership local path only (not cloud Go agent)  
-**Approach:** Hybrid — rolling structured summary + semantic recall of older turns + recent verbatim window
+**Approach:** Rolling structured session memory + recent verbatim window; promote durable facts to `user_memory` in a follow-up
 
 ## Decisions
 
 | Topic | Choice |
 |-------|--------|
-| Problem modes | Both: forgotten decisions/Q&A **and** lost earlier tool/workflow state |
-| Cost posture | Balanced — occasional cheap LLM summary + reuse existing embedding infra |
-| Recent window | Keep last **K** turns verbatim (raise from today’s 6; default target **12**) |
-| Older dialogue | Replace naive 400-char bullet squeeze with **LLM rolling structured summary** |
-| Targeted recall | **Semantic top-K** (3–5) older turns from the same chat, matching the current user message |
-| Budget priority | Never drop the summary system message; trim semantic recalls first, then oldest recent turns |
-| Persistence | Summary on chat; turn embeddings in a new pgvector table |
-| Failure policy | Soft-fail — summary/embedding errors never fail the user turn |
+| Problem modes | Both conversational (goals/Q&A/decisions) and technical (workflow/tool state) |
+| Cost posture | Balanced — summarize only when the chat is long; short chats unchanged |
+| Persistence scope | Chat-scoped session memory now; durable prefs → existing `user_memory` later |
+| Recent window | Keep last **6–8** turns verbatim (tunable; start at current default of 6, allow raise to 8) |
+| Older dialogue | Replace naive 400-char bullet squeeze with **LLM-updated structured session memory** |
+| Semantic RAG | Out of scope for v1 (no turn embeddings / pgvector table) |
+| Storage | `copilot_chats.config.sessionMemory` JSONB — no new table for v1 |
+| Failure policy | Soft-fail — summarizer errors never fail the user turn |
 
 ## Problem
 
-In longer Local Copilot threads, conversational context is lost. Users see the model forget earlier questions and answers, decisions/constraints, and earlier tool/workflow facts (IDs, what was already edited).
+In longer Local Copilot threads, the model loses conversational and technical context. Short chats work; long ones forget earlier goals, agreements, workflow/block/file IDs, and work already done.
 
 Today’s pipeline already compresses history, but lossily:
 
@@ -28,26 +28,28 @@ Today’s pipeline already compresses history, but lossily:
 |------|---------------|--------|
 | `LOCAL_COPILOT_RECENT_TURNS_FULL` | 6 | Only last 6 turns kept verbatim |
 | `LOCAL_COPILOT_MAX_HISTORY_MESSAGES` | 50 | Hard cap before compact |
-| `summarizeHistoryTurns` | ~400 chars/message | Extractive squeeze — drops nuance, decisions, Q&A detail |
+| `summarizeHistoryTurns` | ~400 chars/message | Extractive squeeze — drops nuance, decisions, IDs |
 | `fitPromptToTokenBudget` | 120k | May drop oldest conversational turns entirely |
 
 Relevant code: `apps/sim/local-copilot/lib/context/context-budget.ts`, wired from `orchestrator.ts` after `loadMothershipChatHistoryForLocalCopilot`.
 
 ## Goals
 
-1. Preserve **user questions and assistant answers** across long threads, not only tool outcomes.
-2. Preserve **decisions, constraints, open threads, and artifact IDs** in a durable rolling memory.
-3. When the user refers back to an older topic, **semantically retrieve** the matching earlier turn(s) into the prompt.
-4. Stay within the existing **120k prompt budget** without failing the turn when memory subsystems error.
-5. Reuse existing embedding helpers (`generateSearchEmbedding`) and pgvector patterns (docs/KB).
+1. Preserve **user goals, decisions, and open questions** across long threads.
+2. Preserve **technical anchors** (workflow IDs, block names, file paths, executionIds, what was already edited/run).
+3. Stay within the existing **120k prompt budget**.
+4. Keep **short chats cheap** — no extra LLM call until a length threshold is hit.
+5. Soft-fail: memory refresh must never block or fail the user-visible turn.
+6. Leave a clean hook for **phase 2**: promote durable preferences into existing `user_memory`.
 
-## Non-goals
+## Non-goals (v1)
 
 - Changing the cloud Go Mothership agent’s history handling.
-- Cross-chat or cross-workspace retrieval (same `chatId` only).
+- Semantic retrieval / turn embeddings / new pgvector tables.
+- Cross-chat retrieval (session memory is per `chatId`).
 - Full-history verbatim replay or unbounded context windows.
-- Replacing `user_memory` preferences (orthogonal; long-lived user prefs stay there).
-- UI for browsing/editing the rolling summary.
+- UI for browsing/editing session memory.
+- Writing to `user_memory` in the same PR (phase 2 / follow-up).
 - Perfect transcript fidelity for every past message.
 
 ## Current state (relevant)
@@ -57,144 +59,160 @@ Relevant code: `apps/sim/local-copilot/lib/context/context-budget.ts`, wired fro
 | History compact | `local-copilot/lib/context/context-budget.ts` | `compactChatHistory`, `fitPromptToTokenBudget` |
 | History load | `local-copilot/lib/mothership-history.ts` | Persisted mothership messages → `ChatMessage[]` |
 | Orchestrator | `local-copilot/lib/agent/orchestrator.ts` | Compacts prior messages then fits budget |
-| Engagement model | `COPILOT_ENGAGEMENT_MODEL` | Cheap model already used for titles/status — reuse for summary refresh |
-| Embeddings | `lib/knowledge/embeddings` + `docsEmbeddings` | `generateSearchEmbedding`; pgvector cosine search pattern |
-| Chat row | `copilot_chats` | Has `config` jsonb — suitable for summary storage |
+| Lifecycle | `local-copilot/integration/mothership-lifecycle.ts` | Loads prior messages for local path |
+| Cheap model | `COPILOT_ENGAGEMENT_MODEL` | Already used for titles/status — reuse for summary refresh |
+| Chat row | `copilot_chats.config` jsonb | Store `sessionMemory` here |
+| User prefs | `user_memory` tool + `loadUserMemoriesForContext` | Phase 2 promotion target |
 
 ## Architecture
 
 ```
-Turn N arrives
+User turn
   → load prior messages
-  → load conversationSummary (chat config)
-  → semantic search top-K older turns for current user message
-       (same chatId; exclude recent-K turn ids)
+  → load sessionMemory from copilot_chats.config (if any)
+  → if turns > threshold OR history tokens > soft budget
+       AND there are turns after coveredThroughMessageId:
+         small LLM call → merge/update structured sessionMemory
+         persist to copilot_chats.config.sessionMemory
+         (hard timeout; on failure keep previous memory)
   → assemble prompt:
        [system] static instructions
        [system] workspace/workflow context
-       [system] conversation memory (rolling summary)
-       [system] relevant earlier turns (semantic top-K)
-       [messages] last K turns verbatim
-       [user] current message
-  → fitPromptToTokenBudget
-       priority: keep summary → trim recalls → trim oldest recent turns
+       [system] session memory (if present)
+       [messages] last N turns verbatim
+       [user] current turn
+  → fitPromptToTokenBudget (never drop session-memory system message first)
   → agent runs (unchanged tool loop)
-  → after turn (async, non-blocking):
-       · upsert turn embedding (user Q + assistant A, tools stripped/shortened)
-       · if turns aged out of K (or every N turns): refresh rolling summary
 ```
+
+Short chats (≤ threshold): skip summarizer; behavior matches today aside from dropping the fake 400-char path once memory exists.
 
 ### Layer responsibilities
 
 | Layer | Remembers |
-|-------|-----------|
-| Recent K turns | Exact recent dialogue |
-| Rolling summary | Goals, decisions/constraints, Q&A highlights, open threads, artifacts |
-| Semantic top-K | Older Q&A that matches *this* user message |
+|-------|--------|
+| Recent N turns | Exact recent dialogue + tool results |
+| Session memory | Goals, decisions, entities/IDs, progress, open questions |
+| Workspace context | Live workflow/workspace snapshot (unchanged) |
+| `userMemories` | Long-lived prefs (existing; phase 2 writes here) |
 
-### Rolling summary shape
+## Session memory shape
 
-Structured text (or JSON rendered to text) with fixed sections:
-
-- **User goals / intent**
-- **Decisions & constraints** (channel, naming, “don’t do X”)
-- **Q&A highlights** (important questions + answers)
-- **Open threads**
-- **Artifacts** (workflow IDs, block names, file paths, executionIds)
-
-Refresh input = previous summary + turns that just aged out of the recent window. Use `COPILOT_ENGAGEMENT_MODEL` (or equivalent cheap model). Cap summary size (e.g. ~2–3k tokens).
-
-### Semantic recall rules
-
-- Index each completed **turn** as one chunk: user question + assistant answer; tool call noise stripped or heavily shortened.
-- Query embedding from the **current user message**.
-- Retrieve top **3–5** turns from `copilot_chat_turn_embeddings` where `chatId` matches.
-- Exclude turns already present in the recent-K window.
-- Cap recalled text (~1–2k tokens total).
-- If no rows / embed key missing / search fails → omit the semantic system block.
-
-## Persistence
-
-### Conversation summary
-
-Store on the chat row, e.g. `copilot_chats.config.conversationMemory`:
+Stored under `copilot_chats.config.sessionMemory`:
 
 ```ts
 {
-  summaryText: string
-  updatedAt: string // ISO
-  coveredThroughTurnId?: string // last turn incorporated
   version: 1
+  updatedAt: string // ISO
+  coveredThroughMessageId: string // last incorporated message id
+  goals: string[]
+  decisions: string[]
+  entities: {
+    workflows: string[]
+    blocks: string[]
+    files: string[]
+    runs: string[]
+  }
+  progress: string[]
+  openQuestions: string[]
+  notes: string // short narrative glue, ≤ ~500 chars
 }
 ```
 
-Deleted with the chat (no orphan state).
+### Summarizer rules
 
-### Turn embeddings
+- **Input:** previous `sessionMemory` (or empty) + turns since `coveredThroughMessageId`.
+- **Output:** merged structured object (not a transcript dump).
+- **Model:** `COPILOT_ENGAGEMENT_MODEL` (or equivalent cheap model), low `maxTokens`.
+- **Size cap:** total rendered memory ≤ ~1–2k tokens; trim oldest `progress` / `notes` first if over.
+- **Secrets:** never store API keys, passwords, tokens, or raw credential values.
+- **IDs over dumps:** prefer names/IDs and outcomes; do not embed full tool JSON.
 
-New table `copilot_chat_turn_embeddings`:
+### Prompt injection
 
-| Column | Type | Notes |
-|--------|------|--------|
-| `id` | uuid PK | |
-| `chat_id` | uuid FK → `copilot_chats` ON DELETE CASCADE | |
-| `turn_id` | text | Stable id for the turn (e.g. user message id) |
-| `content` | text | Indexed text (Q+A) |
-| `embedding` | vector(1536) | Same dims as KB/docs (`text-embedding-3-small`) |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
+One system message:
 
-Unique `(chat_id, turn_id)`. HNSW cosine index on `embedding`, matching docs/KB pattern.
+```
+Session memory (authoritative for earlier turns):
+{json}
+```
 
-Migration must follow expand/contract zero-downtime rules (`db-migrate` skill at implementation time).
+System prompt guidance: trust session memory for older context; if recent turns conflict, prefer recent turns.
 
-## Write path (async after turn)
+## Persistence
 
-| Event | Action |
-|-------|--------|
-| Assistant turn completes | Upsert embedding for that turn (do not block SSE completion) |
-| Turns age out of recent-K **or** every N turns (default 4) | Refresh rolling summary; persist to chat config |
-| Chat deleted | Cascade wipe embeddings; summary goes with chat row |
+| Item | Location |
+|------|----------|
+| Session memory | `copilot_chats.config.sessionMemory` (merge read-modify-write with existing `config`) |
+| Chat deleted | Memory goes with the chat row |
+| Migration | None required for v1 |
 
-## Read path (each Local Copilot request)
+## Thresholds (tunable constants)
 
-1. Load `conversationMemory` from chat config.
-2. Semantic search top-K for current user message; filter out recent-K turn ids.
-3. Build history via updated `compactChatHistory` (summary + recalls + recent-K). Replace today’s `summarizeHistoryTurns` 400-char path for aged turns when a summary exists; keep extractive fallback only if summary missing.
-4. `fitPromptToTokenBudget` with drop priority: semantic recalls → oldest recent turns; **never** drop the summary system message.
-5. Raise `LOCAL_COPILOT_RECENT_TURNS_FULL` default to **12** (tunable constant).
+| Constant | Suggested default | Role |
+|----------|-------------------|------|
+| Recent turns full | 6 (allow 8) | Verbatim window |
+| Refresh after turns | > 6 turns in history | First time summarizer can run |
+| Soft history token budget | e.g. ~20–30k of history | Alternate trigger when turns are huge |
+| Summarizer timeout | 1–2s | Soft-fail ceiling |
+| Memory token cap | ~1–2k | Always fits under 120k prompt budget |
+
+Refresh only when threshold is met **and** there are uncovered turns after `coveredThroughMessageId`.
+
+## Timing
+
+**v1: sync refresh before the agent turn**, with a hard timeout.
+
+- Correctness: the turn that first crosses the threshold still sees updated memory.
+- If timeout/error: proceed with previous memory + recent turns; log warn.
+
+Async post-turn refresh is a possible optimization later; not required for v1.
 
 ## Error handling
 
-- Summary refresh failure → log; keep previous summary; continue turn.
-- Embedding upsert/search failure → log; omit semantic block; continue.
-- No OpenAI (or configured) embed credentials → semantic path disabled for the deployment; summary + recent-K still work.
-- Over budget → drop recalls first, then oldest recent turns; keep summary.
+| Failure | Behavior |
+|---------|----------|
+| Summarizer timeout / provider error | Keep previous `sessionMemory`; continue turn |
+| Invalid / unparseable summarizer JSON | Discard update; keep previous; log warn |
+| Missing `chatId` | Skip persist; fall back to extractive compact only |
+| Over 120k after assembly | `fitPromptToTokenBudget` may trim oldest recent turns; **do not drop** the session-memory system message while other conversational rows remain |
+
+## Phase 2 (follow-up, not v1)
+
+After a successful memory refresh, optionally extract durable preferences (naming conventions, “always use X”, stable entities) and write via existing `user_memory` helpers with:
+
+- `source: 'inferred'`
+- confidence ≤ 0.8
+- only prefs/entities — **not** chat-specific progress, open questions, or ephemeral run IDs
+
+No automatic promotion of secrets. Explicit user “remember this” continues to use the `user_memory` tool as today.
 
 ## Testing
 
-- `compactChatHistory` injects summary system message and does not duplicate semantically recalled turns already in recent-K.
-- `fitPromptToTokenBudget` never drops the summary system message when trimming.
-- Semantic retrieve is scoped to `chatId` and excludes the recent window.
-- Summary refresh merges aged turns into the structured sections without unbounded growth (cap enforced).
-- Soft-fail paths: empty embeddings, missing summary, search error — agent still receives recent-K + current message.
-- Unit tests around `context-budget` and new memory helpers; integration smoke on mothership local lifecycle load path optional.
+- Threshold gating: short chats do not call the summarizer.
+- Incremental merge: only turns after `coveredThroughMessageId` are sent; cursor advances on success.
+- Size cap enforced on persisted + injected memory.
+- Prompt assembly includes session memory system message and does **not** use the 400-char fake summary when memory is present.
+- Summarizer failure leaves prior memory intact and still runs the agent.
+- `fitPromptToTokenBudget` preferential retention of the session-memory system message.
+- Unit tests on `context-budget` + new `session-memory` helpers; optional lifecycle smoke.
 
 ## Implementation sketch (files)
 
 | Area | Likely touchpoints |
 |------|--------------------|
-| Budget / compact | `local-copilot/lib/context/context-budget.ts` |
-| Orchestrator assembly | `local-copilot/lib/agent/orchestrator.ts` |
-| History load | `local-copilot/lib/mothership-history.ts` + lifecycle |
-| New memory module | e.g. `local-copilot/lib/context/conversation-memory.ts` (summary refresh + assemble) |
-| Embeddings store | e.g. `local-copilot/lib/context/turn-embeddings.ts` |
-| Schema / migration | `packages/db/schema.ts` + new migration |
-| Reuse | `generateSearchEmbedding` from `@/lib/knowledge/embeddings` |
+| New module | `local-copilot/lib/context/session-memory.ts` (load, maybe-refresh, format, persist) |
+| Budget / compact | `local-copilot/lib/context/context-budget.ts` — prefer session memory over `summarizeHistoryTurns` |
+| Orchestrator | `local-copilot/lib/agent/orchestrator.ts` — call maybe-refresh before prompt assembly |
+| Lifecycle | `local-copilot/integration/mothership-lifecycle.ts` — pass `chatId` / message ids as needed |
+| Chat config R/W | thin helper around `copilot_chats.config` merge |
+| Summarizer | reuse provider + `COPILOT_ENGAGEMENT_MODEL` / `collect-text` pattern |
+| System prompt | short instruction block about trusting session memory |
 
 ## Success criteria
 
-1. A 20+ turn chat still answers follow-ups that depend on early Q&A and stated constraints.
-2. Referring to an older topic (e.g. “the Slack approach we picked”) surfaces that turn via semantic recall or summary.
-3. No user-visible failures when memory subsystems are down.
+1. A 20+ turn chat still answers follow-ups that depend on early goals, decisions, and prior tool/workflow work.
+2. Short chats (≤ ~6 turns) incur no extra summarizer latency.
+3. No user-visible failures when the summarizer is down or times out.
 4. Prompt stays within the existing 120k input budget under normal workspace context sizes.
+5. Phase 2 can promote durable facts to `user_memory` without redesigning session memory storage.
