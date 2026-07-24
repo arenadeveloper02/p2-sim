@@ -6,6 +6,7 @@ services:
       dockerfile: docker/app.Dockerfile
       args:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+        BUILD_MAX_OLD_SPACE_MB: ${BUILD_MAX_OLD_SPACE_MB:-16384}
 
   realtime:
     image: p2-sim-realtime
