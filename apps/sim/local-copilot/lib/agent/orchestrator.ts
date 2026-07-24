@@ -42,6 +42,11 @@ import {
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
+import {
+  ensureSessionMemory,
+  formatSessionMemorySystemMessage,
+  type SessionMemoryTurn,
+} from '@/local-copilot/lib/context/session-memory'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
 import {
@@ -139,6 +144,9 @@ Rules:
   - Context may include \`userMemories\` (key/value preferences). Honor them unless the user overrides.
   - When the user says remember / prefer / always use / don't forget — call \`user_memory\` with operation \`add\` (key + value). Use operation \`correct\` when they fix a remembered fact, \`delete\` to forget, \`search\`/\`list\` to look up.
   - Do not store secrets (API keys, passwords, tokens) in user_memory.
+- Session memory:
+  - A system message may include structured session memory for earlier turns (goals, decisions, entities, progress, open questions).
+  - Trust it for older context. If recent verbatim turns conflict, prefer the recent turns.
 - Credentials and API keys:
   - Context includes \`connectedIntegrations\` (OAuth) and \`envVariables\` (configured env key names only). If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
   - When \`hostedKeysAvailable\` is true, many api_key blocks also receive platform-hosted keys at runtime — do not prompt for keys unless a tool returns an explicit missing-credential error.
@@ -237,6 +245,8 @@ export interface RunAgentParams {
   signal?: AbortSignal
   /** Prior turns from mothership chat (`copilot_messages`). */
   priorMessages?: ChatMessage[]
+  /** Compact persisted turns with ids for session-memory refresh (mothership path). */
+  sessionMemoryTurns?: SessionMemoryTurn[]
   /** When false, skip `local_copilot_*` persistence (mothership chat owns the transcript). */
   persistLocally?: boolean
   /**
@@ -338,17 +348,27 @@ export async function* runLocalCopilotAgent(
     })
   }
 
-  const historyMessages: ChatMessage[] = params.priorMessages?.length
-    ? compactChatHistory(params.priorMessages)
+  const rawHistory: ChatMessage[] = params.priorMessages?.length
+    ? params.priorMessages
     : conversationId
-      ? compactChatHistory(
-          (await getMessages(conversationId)).slice(0, -1).flatMap((row) => {
-            const content = row.content as { text?: string }
-            if (!content.text) return []
-            return [{ role: row.role as 'user' | 'assistant', content: content.text }]
-          })
-        )
+      ? (await getMessages(conversationId)).slice(0, -1).flatMap((row) => {
+          const content = row.content as { text?: string }
+          if (!content.text) return []
+          return [{ role: row.role as 'user' | 'assistant', content: content.text }]
+        })
       : []
+
+  const sessionMemory = await ensureSessionMemory({
+    chatId: params.chatId,
+    userId: params.userId,
+    historyMessages: rawHistory,
+    turns: params.sessionMemoryTurns ?? [],
+    signal: params.signal,
+  })
+
+  const historyMessages: ChatMessage[] = rawHistory.length
+    ? compactChatHistory(rawHistory, { sessionMemoryPresent: Boolean(sessionMemory) })
+    : []
 
   const workflowDetail = resolveWorkflowContextDetail(
     structuredContext,
@@ -374,6 +394,7 @@ export async function* runLocalCopilotAgent(
       ...(params.workspaceContext
         ? [{ role: 'system' as const, content: `Workspace snapshot:\n${params.workspaceContext}` }]
         : []),
+      ...(sessionMemory ? [formatSessionMemorySystemMessage(sessionMemory)] : []),
       ...historyMessages,
       userTurn,
     ],
@@ -408,6 +429,7 @@ export async function* runLocalCopilotAgent(
   logger.info('Arena Copilot prompt budget applied', {
     workflowDetail,
     historyTurns: historyMessages.length,
+    sessionMemoryPresent: Boolean(sessionMemory),
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
@@ -692,6 +714,7 @@ export async function* runLocalCopilotAgent(
         getToolExecutor,
         budget: specialistBudget,
         parentDepth: 0,
+        turnCost,
       })
 
       let specialistNext = await specialistRunner.next()

@@ -112,7 +112,7 @@ async function uploadFileToVercel(
         'x-vercel-digest': digest,
         'Content-Length': String(content.length),
       },
-      body: content,
+      body: new Uint8Array(content),
     },
     teamId
   )
@@ -172,13 +172,13 @@ async function waitForDeploymentReady(
 }
 
 function resolveLiveUrl(deployment: VercelDeployment, projectName: string): string {
-  const alias = deployment.alias?.find((entry) => entry.includes('.vercel.app'))
-  if (alias) {
-    return alias.startsWith('http') ? alias : `https://${alias}`
-  }
-  if (deployment.url) {
-    return deployment.url.startsWith('http') ? deployment.url : `https://${deployment.url}`
-  }
+  // const alias = deployment.alias?.find((entry) => entry.includes('.vercel.app'))
+  // if (alias) {
+  //   return alias.startsWith('http') ? alias : `https://${alias}`
+  // }
+  // if (deployment.url) {
+  //   return deployment.url.startsWith('http') ? deployment.url : `https://${deployment.url}`
+  // }
   return `https://${projectName}.vercel.app`
 }
 

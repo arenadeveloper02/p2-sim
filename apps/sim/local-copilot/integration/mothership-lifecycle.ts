@@ -24,6 +24,7 @@ import type { LocalTurnCostSummary } from '@/local-copilot/lib/billing/turn-cost
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
+import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 import type {
   CopilotContextEntry,
@@ -332,16 +333,22 @@ export async function runLocalCopilotMothershipLifecycle(
   const writeChatLedger = !isMothershipBlockExecute
   let blockExecuteCost: LocalTurnCostSummary | undefined
 
-  let priorMessages: Awaited<ReturnType<typeof loadMothershipChatHistoryForLocalCopilot>> = []
+  let priorMessages: ChatMessage[] = []
+  let sessionMemoryTurns: Awaited<
+    ReturnType<typeof loadMothershipChatHistoryForLocalCopilot>
+  >['sessionMemoryTurns'] = []
   if (options.chatId) {
-    priorMessages = await loadMothershipChatHistoryForLocalCopilot({
+    const history = await loadMothershipChatHistoryForLocalCopilot({
       chatId: options.chatId,
       userId,
       excludeMessageId: userMessageId,
     })
+    priorMessages = history.messages
+    sessionMemoryTurns = history.sessionMemoryTurns
     logger.info('Loaded mothership chat history for Arena Copilot', {
       chatId: options.chatId,
       turns: priorMessages.length,
+      sessionMemoryTurns: sessionMemoryTurns.length,
       memory: getLocalCopilotMemorySnapshot(),
     })
   }
@@ -360,6 +367,7 @@ export async function runLocalCopilotMothershipLifecycle(
         ? { parentExecutionId: options.executionId ?? execContext.executionId }
         : {}),
       priorMessages,
+      sessionMemoryTurns,
       persistLocally: false,
       writeChatLedger,
       ...(contexts ? { contexts } : {}),
