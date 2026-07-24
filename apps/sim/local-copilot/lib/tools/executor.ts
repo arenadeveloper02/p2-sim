@@ -2,6 +2,8 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
+import type { LocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
@@ -84,6 +86,11 @@ export interface ToolExecutionResult {
   resources?: MothershipResource[]
   /** Set when create_workflow succeeds — subsequent tools use this workflow. */
   createdWorkflowId?: string
+  /**
+   * Trusted billing metadata for Local turn aggregation. Prefer this over
+   * scraping arbitrary user-facing tool output.
+   */
+  billing?: LocalToolBillingMetadata
 }
 
 function guardCreateWorkflowWhenExistingAvailable(
@@ -238,7 +245,7 @@ export async function executeLocalCopilotTool(
   logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
 
   if (isMothershipDelegatedTool(toolName)) {
-    return executeMothershipDelegatedTool(toolName, args, ctx)
+    return attachToolBilling(await executeMothershipDelegatedTool(toolName, args, ctx))
   }
 
   switch (toolName) {
@@ -361,7 +368,7 @@ export async function executeLocalCopilotTool(
       // Route those through the delegated path instead of shared executeTool → @/tools.
       if (isMothershipDelegatedTool(toolId)) {
         const delegated = await executeMothershipDelegatedTool(toolId, rawParams, ctx)
-        return {
+        return attachToolBilling({
           toolName,
           success: delegated.success,
           result: {
@@ -370,7 +377,8 @@ export async function executeLocalCopilotTool(
           },
           error: delegated.error,
           resources: delegated.resources,
-        }
+          ...(delegated.billing ? { billing: delegated.billing } : {}),
+        })
       }
 
       const params = enrichLocalIntegrationToolParams(
@@ -444,7 +452,7 @@ export async function executeLocalCopilotTool(
         executionContext
       )
 
-      return {
+      return attachToolBilling({
         toolName,
         success: integrationResult.success,
         result: {
@@ -452,7 +460,7 @@ export async function executeLocalCopilotTool(
           output: integrationResult.output ?? { error: integrationResult.error },
         },
         error: integrationResult.error,
-      }
+      })
     }
 
     case 'validate_workflow': {
@@ -607,6 +615,23 @@ export async function executeLocalCopilotTool(
     default:
       throw new Error(`Unhandled tool: ${toolName}`)
   }
+}
+
+function attachToolBilling(result: ToolExecutionResult): ToolExecutionResult {
+  if (result.billing) return result
+  const fromResult = extractLocalToolBillingMetadata(result.result)
+  if (fromResult) {
+    return { ...result, billing: fromResult }
+  }
+  // Integration tools nest the payload under `output`.
+  if (result.result && typeof result.result === 'object') {
+    const nested = (result.result as { output?: unknown }).output
+    const fromNested = extractLocalToolBillingMetadata(nested)
+    if (fromNested) {
+      return { ...result, billing: fromNested }
+    }
+  }
+  return result
 }
 
 function buildErrorAnalysis(

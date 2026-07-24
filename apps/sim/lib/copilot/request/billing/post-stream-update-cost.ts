@@ -27,12 +27,16 @@ export function resolveCopilotBillingSourceFromGoRoute(
 export interface PostStreamBillingUpdateCostInput {
   userId: string
   workspaceId?: string
+  chatId?: string
+  runId?: string
   messageId: string
   goRoute: string
   model?: string
   cost: number
   inputTokens?: number
   outputTokens?: number
+  /** Hosting workflow execution when billing a mothership block run. */
+  parentExecutionId?: string
 }
 
 /**
@@ -61,6 +65,9 @@ export async function postStreamBillingUpdateCost(
     source: resolveCopilotBillingSourceFromGoRoute(input.goRoute),
     idempotencyKey: `${input.messageId}-billing`,
     ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+    ...(input.chatId ? { chatId: input.chatId } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.parentExecutionId ? { parentExecutionId: input.parentExecutionId } : {}),
   }
 
   const url = `${getInternalApiBaseUrl()}/api/billing/update-cost`

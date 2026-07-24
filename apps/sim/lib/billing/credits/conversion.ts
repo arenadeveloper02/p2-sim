@@ -80,6 +80,21 @@ export function formatApportionedCreditCost(creditCost: number, dollarCost: numb
 }
 
 /**
+ * Format a dollar amount for display. Small non-zero values keep extra precision;
+ * larger values use currency formatting.
+ */
+export function formatDollarAmount(dollars: number): string {
+  if (dollars === 0) return '$0.00'
+  if (Math.abs(dollars) < 0.01) return `$${dollars.toFixed(4)}`
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(dollars)
+}
+
+/**
  * Splits a set of cost components into integer credits that sum *exactly* to
  * the credits of their combined total.
  *

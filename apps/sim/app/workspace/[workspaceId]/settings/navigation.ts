@@ -1,4 +1,5 @@
 import {
+  Credit,
   ClipboardList,
   Database,
   Key,
@@ -27,6 +28,7 @@ export type SettingsSection =
   | 'apikeys'
   | 'byok'
   | 'billing'
+  | 'usage'
   | 'teammates'
   | 'organization'
   | 'oauth-apps'
@@ -67,6 +69,8 @@ export interface NavigationItem {
   selfHostedOverride?: boolean
   requiresSuperUser?: boolean
   requiresAdminRole?: boolean
+  /** Visible only to workspace admins (viewer.isAdmin). */
+  requiresWorkspaceAdmin?: boolean
   /**
    * Exempt this item from the org admin/owner requirement that `requiresTeam` /
    * `requiresEnterprise` otherwise impose in the sidebar. The plan/hosted
@@ -150,6 +154,13 @@ export const allNavigationItems: NavigationItem[] = [
     icon: ClipboardList,
     section: 'subscription',
     hideWhenBillingDisabled: true,
+  },
+  {
+    id: 'usage',
+    label: 'Usage',
+    icon: Credit,
+    section: 'subscription',
+    requiresWorkspaceAdmin: true,
   },
   {
     id: 'teammates',

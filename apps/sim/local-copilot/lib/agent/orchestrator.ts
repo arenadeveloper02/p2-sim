@@ -1,7 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
@@ -25,6 +24,11 @@ import {
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
 import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
+import { recordLocalCopilotTurnUsage } from '@/local-copilot/lib/billing/record-turn-usage'
+import {
+  LocalTurnCostAccumulator,
+  type LocalTurnCostSummary,
+} from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import {
   buildLocalCopilotContext,
@@ -38,6 +42,11 @@ import {
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
+import {
+  ensureSessionMemory,
+  formatSessionMemorySystemMessage,
+  type SessionMemoryTurn,
+} from '@/local-copilot/lib/context/session-memory'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
 import {
@@ -135,6 +144,9 @@ Rules:
   - Context may include \`userMemories\` (key/value preferences). Honor them unless the user overrides.
   - When the user says remember / prefer / always use / don't forget — call \`user_memory\` with operation \`add\` (key + value). Use operation \`correct\` when they fix a remembered fact, \`delete\` to forget, \`search\`/\`list\` to look up.
   - Do not store secrets (API keys, passwords, tokens) in user_memory.
+- Session memory:
+  - A system message may include structured session memory for earlier turns (goals, decisions, entities, progress, open questions).
+  - Trust it for older context. If recent verbatim turns conflict, prefer the recent turns.
 - Credentials and API keys:
   - Context includes \`connectedIntegrations\` (OAuth) and \`envVariables\` (configured env key names only). If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
   - When \`hostedKeysAvailable\` is true, many api_key blocks also receive platform-hosted keys at runtime — do not prompt for keys unless a tool returns an explicit missing-credential error.
@@ -224,13 +236,24 @@ export interface RunAgentParams {
   chatId?: string
   /** Scopes workspace_file → edit_content intents (mothership user message id when available). */
   messageId?: string
+  /** Copilot run id for Usage joins (`usage_log.run_id`). */
+  runId?: string
   selectedBlockId?: string
   executionId?: string
+  /** Parent workflow execution when Local runs inside a mothership block. */
+  parentExecutionId?: string
   signal?: AbortSignal
   /** Prior turns from mothership chat (`copilot_messages`). */
   priorMessages?: ChatMessage[]
+  /** Compact persisted turns with ids for session-memory refresh (mothership path). */
+  sessionMemoryTurns?: SessionMemoryTurn[]
   /** When false, skip `local_copilot_*` persistence (mothership chat owns the transcript). */
   persistLocally?: boolean
+  /**
+   * When false, accumulate cost but do not write `usage_log` (workflow logger owns
+   * mothership-block cost via the generator return value). Defaults to true for interactive chat.
+   */
+  writeChatLedger?: boolean
   /** Workspace permission for write tools (create_file, user_table create, knowledge_base add_file). */
   userPermission?: string
   /** Mothership request context entries (upload hints, resource tags, etc.). */
@@ -243,7 +266,7 @@ export interface RunAgentParams {
 
 export async function* runLocalCopilotAgent(
   params: RunAgentParams
-): AsyncGenerator<LocalCopilotStreamEvent, void, undefined> {
+): AsyncGenerator<LocalCopilotStreamEvent, LocalTurnCostSummary | undefined, undefined> {
   const startedAt = Date.now()
   const config = getLocalCopilotConfig()
   /**
@@ -294,6 +317,8 @@ export async function* runLocalCopilotAgent(
   })
 
   const persistLocally = params.persistLocally !== false
+  const writeChatLedger = params.writeChatLedger !== false
+  const turnCost = new LocalTurnCostAccumulator()
 
   let conversationId = params.conversationId
   if (persistLocally) {
@@ -323,17 +348,27 @@ export async function* runLocalCopilotAgent(
     })
   }
 
-  const historyMessages: ChatMessage[] = params.priorMessages?.length
-    ? compactChatHistory(params.priorMessages)
+  const rawHistory: ChatMessage[] = params.priorMessages?.length
+    ? params.priorMessages
     : conversationId
-      ? compactChatHistory(
-          (await getMessages(conversationId)).slice(0, -1).flatMap((row) => {
-            const content = row.content as { text?: string }
-            if (!content.text) return []
-            return [{ role: row.role as 'user' | 'assistant', content: content.text }]
-          })
-        )
+      ? (await getMessages(conversationId)).slice(0, -1).flatMap((row) => {
+          const content = row.content as { text?: string }
+          if (!content.text) return []
+          return [{ role: row.role as 'user' | 'assistant', content: content.text }]
+        })
       : []
+
+  const sessionMemory = await ensureSessionMemory({
+    chatId: params.chatId,
+    userId: params.userId,
+    historyMessages: rawHistory,
+    turns: params.sessionMemoryTurns ?? [],
+    signal: params.signal,
+  })
+
+  const historyMessages: ChatMessage[] = rawHistory.length
+    ? compactChatHistory(rawHistory, { sessionMemoryPresent: Boolean(sessionMemory) })
+    : []
 
   const workflowDetail = resolveWorkflowContextDetail(
     structuredContext,
@@ -359,6 +394,7 @@ export async function* runLocalCopilotAgent(
       ...(params.workspaceContext
         ? [{ role: 'system' as const, content: `Workspace snapshot:\n${params.workspaceContext}` }]
         : []),
+      ...(sessionMemory ? [formatSessionMemorySystemMessage(sessionMemory)] : []),
       ...historyMessages,
       userTurn,
     ],
@@ -393,6 +429,7 @@ export async function* runLocalCopilotAgent(
   logger.info('Arena Copilot prompt budget applied', {
     workflowDetail,
     historyTurns: historyMessages.length,
+    sessionMemoryPresent: Boolean(sessionMemory),
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
@@ -463,6 +500,7 @@ export async function* runLocalCopilotAgent(
       workspaceId: params.workspaceId,
       ...(params.workflowId ? { workflowId: params.workflowId } : {}),
       usageTurnId,
+      turnCost,
       getToolExecutor,
       budget: specialistBudget,
     })
@@ -502,6 +540,7 @@ export async function* runLocalCopilotAgent(
         workspaceId: params.workspaceId,
         ...(params.workflowId ? { workflowId: params.workflowId } : {}),
         usageTurnId,
+        turnCost,
         getToolExecutor,
         budget: specialistBudget,
       })
@@ -607,15 +646,14 @@ export async function* runLocalCopilotAgent(
     turnOutputTokens += roundOutputTokens
 
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
-      await recordModelUsage({
-        userId: params.userId,
-        workspaceId: params.workspaceId,
-        workflowId: params.workflowId,
+      // Arena Copilot (local mothership) accumulates model cost for one end-of-turn
+      // ledger write. Sim Cloud mothership uses Go pricing + `workspace-chat` /
+      // `mothership_block` via `/api/billing/update-cost` — keep these separate.
+      turnCost.addModelUsage({
         model: config.model,
         inputTokens: roundInputTokens,
         outputTokens: roundOutputTokens,
-        source: 'copilot',
-        sourceReference: `local-copilot:${usageTurnId}:round-${round}`,
+        provider: config.provider,
       })
     }
 
@@ -676,6 +714,7 @@ export async function* runLocalCopilotAgent(
         getToolExecutor,
         budget: specialistBudget,
         parentDepth: 0,
+        turnCost,
       })
 
       let specialistNext = await specialistRunner.next()
@@ -838,6 +877,11 @@ export async function* runLocalCopilotAgent(
         result: toolResult.result,
       })
 
+      turnCost.addToolBilling({
+        toolName: call.name,
+        billing: toolResult.billing,
+      })
+
       if (persistLocally && conversationId) {
         await recordToolCall({
           conversationId,
@@ -924,6 +968,8 @@ export async function* runLocalCopilotAgent(
     })
   }
 
+  const costSummary = turnCost.summarize()
+
   logger.info('Arena Copilot turn complete', {
     conversationId: conversationId ?? null,
     messageId: messageId || null,
@@ -940,12 +986,33 @@ export async function* runLocalCopilotAgent(
     inputTokens: turnInputTokens,
     outputTokens: turnOutputTokens,
     hasPatch: Boolean(proposedPatch),
+    turnCost: costSummary.total,
+    writeChatLedger,
     durationMs: Date.now() - startedAt,
     memory: getLocalCopilotMemorySnapshot(),
   })
+
+  if (writeChatLedger) {
+    await recordLocalCopilotTurnUsage({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      chatId: params.chatId,
+      runId: params.runId,
+      conversationId: conversationId ?? undefined,
+      messageId: usageTurnId,
+      summary: costSummary,
+      executionActor: { actorUserId: params.userId, actorType: 'user' },
+      parentExecutionId: params.parentExecutionId,
+      rootExecutionId: params.parentExecutionId,
+      triggeringChatId: params.chatId,
+      triggeringRunId: params.runId,
+    })
+  }
+
   yield {
     type: 'done',
-    messageId: messageId || generateId(),
+    messageId: messageId || usageTurnId,
     ...(turnInputTokens > 0 || turnOutputTokens > 0
       ? {
           usage: {
@@ -956,6 +1023,12 @@ export async function* runLocalCopilotAgent(
         }
       : {}),
   }
+
+  if (!writeChatLedger && costSummary.total > 0) {
+    return costSummary
+  }
+
+  return undefined
 }
 
 export function formatSSE(event: LocalCopilotStreamEvent): string {

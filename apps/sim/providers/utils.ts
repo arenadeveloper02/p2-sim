@@ -6,7 +6,7 @@ import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
 import { formatCreditCost } from '@/lib/billing/credits/conversion'
 import { env } from '@/lib/core/config/env'
-import { getBlacklistedProvidersFromEnv, isHosted } from '@/lib/core/config/env-flags'
+import { getBlacklistedProvidersFromEnv, getCostMultiplier, isHosted } from '@/lib/core/config/env-flags'
 import {
   normalizeRecord,
   normalizeStringRecord,
@@ -52,6 +52,9 @@ import { mergeToolParameters, type SchemaProperty } from '@/tools/params'
 import { SPYFU_DEFAULT_OPERATION_ID } from '@/tools/spyfu/operations'
 
 const logger = createLogger('ProviderUtils')
+
+/** Log once per unknown model id so streaming paths do not spam warnings. */
+const modelsMissingPricingWarned = new Set<string>()
 
 /**
  * Checks if a workflow description is a default/placeholder description
@@ -856,6 +859,13 @@ export function calculateCost(
   }
 
   if (!pricing) {
+    if (!modelsMissingPricingWarned.has(model)) {
+      modelsMissingPricingWarned.add(model)
+      logger.warn(
+        `calculateCost: no pricing found for model "${model}" in providers/models.ts or embedding pricing; returning $0`,
+        { model }
+      )
+    }
     const defaultPricing = {
       input: 1.0,
       cachedInput: 0.5,
@@ -991,8 +1001,69 @@ export function getHostedModels(): string[] {
  * @returns true if the usage should be billed to the user
  */
 export function shouldBillModelUsage(model: string): boolean {
+  const normalized = model.trim().toLowerCase()
+  if (!normalized) return false
+
   const hostedModels = getHostedModels()
-  return hostedModels.some((hostedModel) => model.toLowerCase() === hostedModel.toLowerCase())
+  return hostedModels.some((hostedModel) => {
+    const base = hostedModel.toLowerCase()
+    return normalized === base || normalized.startsWith(`${base}-`)
+  })
+}
+
+export interface BlockModelCost {
+  input: number
+  output: number
+  total: number
+}
+
+/**
+ * Normalizes a provider API `cost` field into the block output shape.
+ */
+export function normalizeProviderCost(cost: unknown): BlockModelCost | null {
+  if (!cost || typeof cost !== 'object') return null
+
+  const record = cost as Record<string, unknown>
+  if (typeof record.total !== 'number' || !Number.isFinite(record.total)) return null
+
+  return {
+    input: typeof record.input === 'number' && Number.isFinite(record.input) ? record.input : 0,
+    output:
+      typeof record.output === 'number' && Number.isFinite(record.output) ? record.output : 0,
+    total: record.total,
+  }
+}
+
+/**
+ * Resolves billable model cost for router/evaluator blocks. Prefers the cost
+ * object returned by `/api/providers` (already BYOK- and multiplier-aware).
+ */
+export function resolveBlockModelCost(params: {
+  model: string
+  promptTokens: number
+  completionTokens: number
+  providerCost?: unknown
+  isBYOK?: boolean
+  useCachedInput?: boolean
+}): BlockModelCost {
+  if (params.isBYOK) {
+    return { input: 0, output: 0, total: 0 }
+  }
+
+  const fromProvider = normalizeProviderCost(params.providerCost)
+  if (fromProvider) return fromProvider
+
+  const multiplier = getCostMultiplier()
+  const cost = calculateCost(
+    params.model,
+    params.promptTokens,
+    params.completionTokens,
+    params.useCachedInput ?? false,
+    multiplier,
+    multiplier
+  )
+
+  return { input: cost.input, output: cost.output, total: cost.total }
 }
 
 /**

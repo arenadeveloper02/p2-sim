@@ -35,7 +35,7 @@ export async function ensureAgentGeneratedImagesDirectory(): Promise<boolean> {
 
   try {
     // Store at /apps/sim/agent-generated-images
-    const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR)
+    const baseDir = join(/* turbopackIgnore: true */ process.cwd(), LOCAL_STORAGE_DIR)
 
     if (!existsSync(baseDir)) {
       await fs.mkdir(baseDir, { recursive: true })
@@ -144,8 +144,13 @@ export async function saveGeneratedImage(
     logger.info(`Saving generated image to local storage (agent S3 not configured): ${key}`)
 
     // Structure: agent-generated-images/[workflow_id]/[user_id]/[image]
-    const baseDir = join(process.cwd(), LOCAL_STORAGE_DIR, safeWorkflowId, safeUserId)
-    if (!existsSync(join(process.cwd(), LOCAL_STORAGE_DIR))) {
+    const baseDir = join(
+      /* turbopackIgnore: true */ process.cwd(),
+      LOCAL_STORAGE_DIR,
+      safeWorkflowId,
+      safeUserId
+    )
+    if (!existsSync(join(/* turbopackIgnore: true */ process.cwd(), LOCAL_STORAGE_DIR))) {
       const success = await ensureAgentGeneratedImagesDirectory()
       if (!success) {
         throw new Error(

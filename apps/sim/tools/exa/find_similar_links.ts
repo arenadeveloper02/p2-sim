@@ -1,7 +1,6 @@
+import { exaHosting } from '@/tools/exa/hosting'
 import type { ExaFindSimilarLinksParams, ExaFindSimilarLinksResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
-
-const exaApiKey = process.env.EXA_API_KEY
 
 export const findSimilarLinksTool: ToolConfig<
   ExaFindSimilarLinksParams,
@@ -12,6 +11,8 @@ export const findSimilarLinksTool: ToolConfig<
   description:
     'Find webpages similar to a given URL using Exa AI. Returns a list of similar links with titles and text snippets.',
   version: '1.0.0',
+
+  hosting: exaHosting,
 
   params: {
     url: {
@@ -82,9 +83,9 @@ export const findSimilarLinksTool: ToolConfig<
   request: {
     url: 'https://api.exa.ai/findSimilar',
     method: 'POST',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': exaApiKey ?? '',
+      'x-api-key': params.apiKey,
     }),
     body: (params) => {
       const body: Record<string, any> = {

@@ -112,9 +112,16 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
         throw new Error(`Google Ads V1 API error: ${data.error || 'Unknown error'}`)
       }
 
+      const { cost, model, tokens, ...payload } = data
+
       return {
         success: true,
-        output: data,
+        output: {
+          ...payload,
+          ...(cost && typeof cost === 'object' ? { cost } : {}),
+          ...(typeof model === 'string' ? { model } : {}),
+          ...(tokens && typeof tokens === 'object' ? { tokens } : {}),
+        },
       }
     } catch (error) {
       logger.error('Google Ads V1 query failed', { error: toError(error).message })

@@ -33,6 +33,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     prompt: body.prompt as string,
     aspectRatio: body.aspectRatio as string | undefined,
     imageSize: body.imageSize as string | undefined,
+    apiKey: body.apiKey as string | undefined,
     inputImage: body.inputImage as unknown,
     inputImageMimeType: body.inputImageMimeType as string | undefined,
     inputImages: Array.isArray(body.inputImages) ? body.inputImages : undefined,

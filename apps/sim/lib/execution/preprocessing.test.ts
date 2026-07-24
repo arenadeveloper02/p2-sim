@@ -198,6 +198,10 @@ describe('preprocessExecution schedule actor resolution', () => {
 
     expect(result.success).toBe(true)
     expect(result.actorUserId).toBe('creator-1')
+    expect(result.executionActor).toEqual({
+      actorUserId: 'creator-1',
+      actorType: 'schedule',
+    })
     expect(mockGetScheduleExecutionActorUserId).toHaveBeenCalledWith('workspace-1', 'creator-1')
     expect(mockGetWorkspaceBilledAccountUserId).not.toHaveBeenCalled()
   })

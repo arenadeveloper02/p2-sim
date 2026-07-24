@@ -27,6 +27,7 @@ const SECTION_TITLES: Record<string, string> = {
   byok: 'BYOK',
   subscription: 'Subscription',
   billing: 'Billing',
+  usage: 'Usage',
   teammates: 'Teammates',
   team: 'Team',
   organization: 'Organization',

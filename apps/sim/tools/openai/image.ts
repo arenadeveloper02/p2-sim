@@ -4,6 +4,11 @@ import {
   IMAGE_GENERATION_DOWNLOAD_TIMEOUT_MS,
   IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
 } from '@/lib/image-generation/constants'
+import {
+  buildImageBillingMetadata,
+  calculateHostedImageToolCost,
+  getImageModelPerImageCost,
+} from '@/lib/tools/image-pricing'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { saveGeneratedImage } from '@/lib/uploads/utils/image-storage.server'
 import type { BaseImageRequestBody } from '@/tools/openai/types'
@@ -77,6 +82,12 @@ export const imageTool: ToolConfig = {
       visibility: 'user-or-llm',
       description: 'Moderation level (auto or low), only for GPT Image models',
     },
+    apiKey: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description: 'OpenAI API key',
+    },
     n: {
       type: 'number',
       required: false,
@@ -85,12 +96,34 @@ export const imageTool: ToolConfig = {
     },
   },
 
+  hosting: {
+    enabled: (params) => {
+      const model = String(params.model ?? '')
+      return model !== 'dall-e-3' && !model.startsWith('dall-e')
+    },
+    envKeyPrefix: 'OPENAI_API_KEY',
+    apiKeyParam: 'apiKey',
+    byokProviderId: 'openai',
+    pricing: {
+      type: 'custom',
+      getCost: (params, output) => calculateHostedImageToolCost(params, output),
+    },
+    rateLimit: {
+      mode: 'per_request',
+      requestsPerMinute: 20,
+      burstMultiplier: 1,
+    },
+  },
+
   request: {
     url: 'https://api.openai.com/v1/images/generations',
     method: 'POST',
     timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
-    headers: () => {
-      const apiKey = getRotatingApiKey('openai')
+    headers: (params) => {
+      const apiKey =
+        typeof params?.apiKey === 'string' && params.apiKey.trim().length > 0
+          ? params.apiKey
+          : getRotatingApiKey('openai')
       return {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
@@ -146,6 +179,19 @@ export const imageTool: ToolConfig = {
       }
 
       const modelName = String(params?.model || 'dall-e-3')
+      const resolvedSize = String(params?.size || 'auto')
+      const resolvedQuality = typeof params?.quality === 'string' ? params.quality : undefined
+      const billingDimensions = {
+        provider: 'openai' as const,
+        model: modelName,
+        size: resolvedSize,
+        quality: resolvedQuality,
+        numImages: 1,
+      }
+      const imageBilling =
+        getImageModelPerImageCost(billingDimensions) != null
+          ? buildImageBillingMetadata(billingDimensions)
+          : undefined
       let imageUrl = null
       let base64Image = null
 
@@ -312,9 +358,13 @@ export const imageTool: ToolConfig = {
           images: finalImage ? [finalImage] : [],
           metadata: {
             model: modelName,
+            provider: 'openai',
+            size: resolvedSize,
+            quality: resolvedQuality,
             stored: !!finalImageUrl,
             s3UploadFailed,
           },
+          ...(imageBilling ? { __imageBilling: imageBilling } : {}),
           s3UploadFailed,
         },
       }

@@ -17,6 +17,7 @@ import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getSocketServerUrl } from '@/lib/core/utils/urls'
 import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
+import { buildCopilotWorkflowLineageOptions } from '@/lib/copilot/tools/handlers/workflow/lineage'
 import {
   getExecutionInputForWorkflow,
   getExecutionStateForWorkflow,
@@ -496,6 +497,7 @@ export async function executeRunWorkflow(
         useDraftState,
         workflowTriggerType: 'copilot',
         triggerBlockId: prepared.triggerBlockId,
+        ...buildCopilotWorkflowLineageOptions(context),
       }
     )
 
@@ -810,6 +812,7 @@ export async function executeRunWorkflowUntilBlock(
         stopAfterBlockId: params.stopAfterBlockId,
         workflowTriggerType: 'copilot',
         triggerBlockId: prepared.triggerBlockId,
+        ...buildCopilotWorkflowLineageOptions(context),
       }
     )
 
@@ -913,6 +916,7 @@ export async function executeRunFromBlock(
           sourceSnapshot: sourceSnapshot.snapshot,
           sourceExecutionId: sourceSnapshot.executionId,
         },
+        ...buildCopilotWorkflowLineageOptions(context),
       }
     )
 
@@ -1446,6 +1450,7 @@ export async function executeRunBlock(
           sourceExecutionId: sourceSnapshot.executionId,
         },
         stopAfterBlockId: params.blockId,
+        ...buildCopilotWorkflowLineageOptions(context),
       }
     )
 
