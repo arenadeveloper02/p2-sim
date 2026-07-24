@@ -29,6 +29,8 @@ interface AgentChatRow {
   allowedEmails: unknown
   description: string | null
   identifier?: string | null
+  deploymentType?: string | null
+  redirectUrl?: string | null
 }
 
 /**
@@ -52,6 +54,7 @@ function hasAllowedEmailStartingWithAtSymbol(
 
 /** Maps a DB row to the response agent list item shape. */
 function toAgentListItem(row: AgentChatRow) {
+  const appRedirectUrl = row.deploymentType === 'app' && row.redirectUrl ? row.redirectUrl : null
   return {
     id: row.chatId,
     title: row.title,
@@ -64,7 +67,10 @@ function toAgentListItem(row: AgentChatRow) {
     workflow_description: row.description,
     status: 'published',
     identifier: row.identifier,
-    redirect_url: `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
+    deployment_type: row.deploymentType === 'app' ? 'app' : 'chat',
+    redirect_url:
+      appRedirectUrl ??
+      `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
     // allowedEmails: row.allowedEmails,
   }
 }
@@ -189,6 +195,8 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
       authorEmail: user.email,
       description: chat.description,
       identifier: chat.identifier,
+      deploymentType: chat.deploymentType,
+      redirectUrl: chat.redirectUrl,
     })
     .from(chat)
     .innerJoin(workflow, eq(chat.workflowId, workflow.id))

@@ -5,6 +5,7 @@ import { requestJson } from '@/lib/api/client/request'
 import {
   authenticateDeployedChatContract,
   type ChatAuthType,
+  type ChatDeploymentType,
   type CreateChatBody,
   type CreateChatResponse,
   createChatContract,
@@ -40,6 +41,11 @@ export const DEPLOYED_CHAT_CONFIG_STALE_TIME = 60 * 1000
  * Auth types for chat access control
  */
 export type AuthType = ChatAuthType
+
+/**
+ * Deployment surface for a chat deployment: built-in chat page or external app redirect
+ */
+export type DeploymentType = ChatDeploymentType
 
 /** Deployed chat configuration returned from the public chat endpoint. */
 export type { DeployedChatConfig }
@@ -177,6 +183,8 @@ export interface ChatFormData {
   welcomeMessage: string
   goldenQueries: string[]
   selectedOutputBlocks: string[]
+  deploymentType: DeploymentType
+  redirectUrl: string
 }
 
 /**
@@ -248,7 +256,8 @@ function buildChatPayload(
   formData: ChatFormData,
   imageUrl?: string | null
 ): CreateChatBody {
-  const outputConfigs = parseOutputConfigs(formData.selectedOutputBlocks)
+  const outputConfigs =
+    formData.deploymentType === 'app' ? [] : parseOutputConfigs(formData.selectedOutputBlocks)
 
   return {
     workflowId,
@@ -267,6 +276,10 @@ function buildChatPayload(
     allowedEmails:
       formData.authType === 'email' || formData.authType === 'sso' ? formData.emails : [],
     outputConfigs,
+    deploymentType: formData.deploymentType,
+    ...(formData.deploymentType === 'app' && formData.redirectUrl.trim()
+      ? { redirectUrl: formData.redirectUrl.trim() }
+      : {}),
   }
 }
 
