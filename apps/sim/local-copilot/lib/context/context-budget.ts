@@ -1,4 +1,3 @@
-import { truncate } from '@sim/utils/string'
 import type { Edge } from 'reactflow'
 import { getAccurateTokenCount, truncateToTokenLimit } from '@/lib/tokenization/estimators'
 import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
@@ -16,21 +15,25 @@ export const LOCAL_COPILOT_PROMPT_TOKEN_BUDGET = 120_000
 /** Workflow JSON above this size is sent as block summaries instead of full state. */
 export const LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET = 24_000
 
-/** Recent user/assistant turns kept verbatim in chat history. */
+/** Recent user/assistant turns kept verbatim (full message bodies) in chat history. */
 export const LOCAL_COPILOT_RECENT_TURNS_FULL = 6
 
-/** Hard cap on prior chat rows considered for history. */
-export const LOCAL_COPILOT_MAX_HISTORY_MESSAGES = 50
-
-/** Per-message character cap in recent history (approximate token guard). */
-export const LOCAL_COPILOT_MAX_MESSAGE_CHARS = 8_000
+/**
+ * Hard cap on prior chat rows considered for history.
+ * Sized for ~6 tool-heavy turns (user + assistant + tool result rows).
+ */
+export const LOCAL_COPILOT_MAX_HISTORY_MESSAGES = 150
 
 export type WorkflowContextDetail = 'full' | 'compact'
 
 export interface CompactChatHistoryOptions {
   recentTurnsFull?: number
   maxMessages?: number
-  maxMessageChars?: number
+  /**
+   * @deprecated Older turns are never extractively summarized anymore.
+   * Session memory (injected separately) covers aged context. Kept for call-site compat.
+   */
+  sessionMemoryPresent?: boolean
 }
 
 export interface BuildContextPromptOptions {
@@ -56,7 +59,10 @@ export function estimateChatMessagesTokens(
 }
 
 /**
- * Keeps the last K turns verbatim and compresses older turns into one system summary.
+ * Keeps the last K turns verbatim with full message bodies.
+ * Older turns are omitted here — structured session memory (injected by the
+ * orchestrator) is the summary for aged conversational + technical context.
+ * Overall size is still enforced by {@link fitPromptToTokenBudget}.
  */
 export function compactChatHistory(
   messages: ChatMessage[],
@@ -64,33 +70,15 @@ export function compactChatHistory(
 ): ChatMessage[] {
   const recentTurnsFull = options.recentTurnsFull ?? LOCAL_COPILOT_RECENT_TURNS_FULL
   const maxMessages = options.maxMessages ?? LOCAL_COPILOT_MAX_HISTORY_MESSAGES
-  const maxMessageChars = options.maxMessageChars ?? LOCAL_COPILOT_MAX_MESSAGE_CHARS
 
   const trimmed = messages.slice(-maxMessages)
   const turns = groupHistoryTurns(trimmed)
 
   if (turns.length <= recentTurnsFull) {
-    return truncateMessageContents(trimmed, maxMessageChars)
+    return trimmed
   }
 
-  const olderTurns = turns.slice(0, turns.length - recentTurnsFull)
-  const recentTurns = turns.slice(turns.length - recentTurnsFull)
-
-  const summary = summarizeHistoryTurns(olderTurns)
-  const recentMessages = truncateMessageContents(
-    recentTurns.flatMap((turn) => turn.messages),
-    maxMessageChars
-  )
-
-  if (!summary) return recentMessages
-
-  return [
-    {
-      role: 'system',
-      content: `Earlier conversation (compressed summary of ${olderTurns.length} prior turns):\n${summary}`,
-    },
-    ...recentMessages,
-  ]
+  return turns.slice(turns.length - recentTurnsFull).flatMap((turn) => turn.messages)
 }
 
 /**
@@ -304,27 +292,3 @@ function groupHistoryTurns(messages: ChatMessage[]): HistoryTurn[] {
   return turns
 }
 
-function summarizeHistoryTurns(turns: HistoryTurn[]): string {
-  return turns
-    .map((turn, index) => {
-      const lines = turn.messages.map((message) => {
-        const label = message.role === 'user' ? 'User' : 'Assistant'
-        return `- ${label}: ${truncate(getMessageContentText(message.content).replace(/\s+/g, ' ').trim(), 400)}`
-      })
-      return `Turn ${index + 1}:\n${lines.join('\n')}`
-    })
-    .join('\n\n')
-}
-
-function truncateMessageContents(messages: ChatMessage[], maxChars: number): ChatMessage[] {
-  return messages.map((message) => {
-    if (typeof message.content !== 'string') return message
-    return {
-      ...message,
-      content:
-        message.content.length > maxChars
-          ? `${truncate(message.content, maxChars)}\n\n[... message truncated for context budget]`
-          : message.content,
-    }
-  })
-}
