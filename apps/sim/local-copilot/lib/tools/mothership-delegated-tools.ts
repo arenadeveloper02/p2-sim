@@ -2,8 +2,10 @@ import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNull } from 'drizzle-orm'
+import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
+import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   enrichCreateFileArgs,
   enrichEditContentArgs,
@@ -309,12 +311,12 @@ export async function executeMothershipDelegatedTool(
       const { adaptListIntegrationToolsForLocal } = await import(
         '@/local-copilot/lib/tools/adapt-list-integration-tools'
       )
-      return {
+      return withBillingFromResult({
         ...result,
         result: adaptListIntegrationToolsForLocal(result.result),
-      }
+      })
     }
-    return result
+    return withBillingFromResult(result)
   }
 
   // Remaining delegated tools are sim-routed (run_workflow, function_execute, …).
@@ -337,11 +339,17 @@ export async function executeMothershipDelegatedTool(
     })
   }
 
-  return {
+  return withBillingFromResult({
     toolName,
     success: result.success,
     result: result.output ?? (result.error ? { error: result.error } : {}),
     error: result.error,
     resources: result.resources,
-  }
+  })
+}
+
+function withBillingFromResult(result: ToolExecutionResult): ToolExecutionResult {
+  if (result.billing) return result
+  const billing = extractLocalToolBillingMetadata(result.result)
+  return billing ? { ...result, billing } : result
 }

@@ -1339,7 +1339,7 @@ async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Prom
       continue
     }
 
-    const fullPath = join(outputDir, safePath)
+    const fullPath = join(/* turbopackIgnore: true */ outputDir, safePath)
     await mkdir(dirname(fullPath), { recursive: true })
     await writeFile(fullPath, file.content, 'utf-8')
     written++
@@ -1473,7 +1473,7 @@ async function validateAndRepairUntilBuildPasses(
         originalPrismaSchema: options.originalPrismaSchema,
       })
 
-      const nextCacheDir = join(outputDir, '.next')
+      const nextCacheDir = join(/* turbopackIgnore: true */ outputDir, '.next')
       if (existsSync(nextCacheDir)) {
         await rm(nextCacheDir, { recursive: true, force: true })
       }
@@ -1517,7 +1517,7 @@ async function validateAndRepairUntilBuildPasses(
       originalPrismaSchema: options.originalPrismaSchema,
     })
 
-    const nextCacheDir = join(outputDir, '.next')
+    const nextCacheDir = join(/* turbopackIgnore: true */ outputDir, '.next')
     if (existsSync(nextCacheDir)) {
       await rm(nextCacheDir, { recursive: true, force: true })
     }
@@ -1663,8 +1663,8 @@ async function generateNextjsAppInner(
     })
 
     const repoName = slugifyRepoName(input.repoName?.trim() || spec.repoName)
-    const monorepoRoot = findMonorepoRoot()
     const outputDir = getGeneratedAppDir(repoName)
+    const monorepoRoot = findMonorepoRoot()
 
     await mkdir(outputDir, { recursive: true })
     const fileCount = await writeAppFiles(outputDir, spec.files)

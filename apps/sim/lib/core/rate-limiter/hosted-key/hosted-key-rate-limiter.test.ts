@@ -87,9 +87,10 @@ describe('HostedKeyRateLimiter', () => {
       mockAdapter.consumeTokens.mockResolvedValue(allowedResult)
 
       process.env.EXA_API_KEY_COUNT = undefined
-      process.env.EXA_API_KEY_1 = undefined
-      process.env.EXA_API_KEY_2 = undefined
-      process.env.EXA_API_KEY_3 = undefined
+      delete process.env.EXA_API_KEY
+      delete process.env.EXA_API_KEY_1
+      delete process.env.EXA_API_KEY_2
+      delete process.env.EXA_API_KEY_3
 
       const result = await rateLimiter.acquireKey(
         testProvider,
@@ -100,6 +101,62 @@ describe('HostedKeyRateLimiter', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain('No hosted keys configured')
+    })
+
+    it('falls back to legacy singular and numbered env vars when _COUNT is unset', async () => {
+      const allowedResult: ConsumeResult = {
+        allowed: true,
+        tokensRemaining: 9,
+        resetAt: new Date(Date.now() + 60000),
+      }
+      mockAdapter.consumeTokens.mockResolvedValue(allowedResult)
+
+      process.env.OPENAI_API_KEY_COUNT = undefined
+      process.env.OPENAI_API_KEY = 'legacy-openai-primary'
+      process.env.OPENAI_API_KEY_1 = 'legacy-openai-secondary'
+      process.env.OPENAI_API_KEY_2 = undefined
+      process.env.OPENAI_API_KEY_3 = 'legacy-openai-tertiary'
+
+      const result = await rateLimiter.acquireKey(
+        'openai',
+        'OPENAI_API_KEY',
+        perRequestRateLimit,
+        'workspace-openai'
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.key).toBe('legacy-openai-primary')
+      expect(result.envVarName).toBe('OPENAI_API_KEY')
+    })
+
+    it('falls back from GOOGLE_API_KEY to GEMINI_API_KEY when _COUNT is unset', async () => {
+      const allowedResult: ConsumeResult = {
+        allowed: true,
+        tokensRemaining: 9,
+        resetAt: new Date(Date.now() + 60000),
+      }
+      mockAdapter.consumeTokens.mockResolvedValue(allowedResult)
+
+      process.env.GOOGLE_API_KEY_COUNT = undefined
+      process.env.GOOGLE_API_KEY = undefined
+      process.env.GOOGLE_API_KEY_1 = undefined
+      process.env.GOOGLE_API_KEY_2 = undefined
+      process.env.GOOGLE_API_KEY_3 = undefined
+      process.env.GEMINI_API_KEY = 'legacy-gemini-primary'
+      process.env.GEMINI_API_KEY_1 = 'legacy-gemini-secondary'
+      process.env.GEMINI_API_KEY_2 = undefined
+      process.env.GEMINI_API_KEY_3 = 'legacy-gemini-tertiary'
+
+      const result = await rateLimiter.acquireKey(
+        'google',
+        'GOOGLE_API_KEY',
+        perRequestRateLimit,
+        'workspace-google'
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.key).toBe('legacy-gemini-primary')
+      expect(result.envVarName).toBe('GEMINI_API_KEY')
     })
 
     it('should rate limit billing actor when wait exceeds the queue cap', async () => {

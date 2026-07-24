@@ -13,7 +13,7 @@ import {
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import { buildAuthHeaders } from '@/executor/utils/http'
 import { resolveVertexCredential } from '@/executor/utils/vertex-credential'
-import { calculateCost, getProviderFromModel } from '@/providers/utils'
+import { getProviderFromModel, resolveBlockModelCost } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
 
 const logger = createLogger('RouterBlockHandler')
@@ -145,12 +145,13 @@ export class RouterBlockHandler implements BlockHandler {
         total: DEFAULTS.TOKENS.TOTAL,
       }
 
-      const cost = calculateCost(
-        result.model,
-        tokens.input || DEFAULTS.TOKENS.PROMPT,
-        tokens.output || DEFAULTS.TOKENS.COMPLETION,
-        false
-      )
+      const cost = resolveBlockModelCost({
+        model: result.model,
+        promptTokens: tokens.input || DEFAULTS.TOKENS.PROMPT,
+        completionTokens: tokens.output || DEFAULTS.TOKENS.COMPLETION,
+        providerCost: result.cost,
+        isBYOK: Boolean(routerConfig.apiKey),
+      })
 
       return {
         prompt: inputs.prompt,
@@ -160,11 +161,7 @@ export class RouterBlockHandler implements BlockHandler {
           output: tokens.output || DEFAULTS.TOKENS.COMPLETION,
           total: tokens.total || DEFAULTS.TOKENS.TOTAL,
         },
-        cost: {
-          input: cost.input,
-          output: cost.output,
-          total: cost.total,
-        },
+        cost,
         selectedPath: {
           blockId: chosenBlock.id,
           blockType: chosenBlock.type || DEFAULTS.BLOCK_TYPE,
@@ -331,12 +328,13 @@ export class RouterBlockHandler implements BlockHandler {
         total: DEFAULTS.TOKENS.TOTAL,
       }
 
-      const cost = calculateCost(
-        result.model,
-        tokens.input || DEFAULTS.TOKENS.PROMPT,
-        tokens.output || DEFAULTS.TOKENS.COMPLETION,
-        false
-      )
+      const cost = resolveBlockModelCost({
+        model: result.model,
+        promptTokens: tokens.input || DEFAULTS.TOKENS.PROMPT,
+        completionTokens: tokens.output || DEFAULTS.TOKENS.COMPLETION,
+        providerCost: result.cost,
+        isBYOK: Boolean(routerConfig.apiKey),
+      })
 
       return {
         context: inputs.context,
@@ -346,11 +344,7 @@ export class RouterBlockHandler implements BlockHandler {
           output: tokens.output || DEFAULTS.TOKENS.COMPLETION,
           total: tokens.total || DEFAULTS.TOKENS.TOTAL,
         },
-        cost: {
-          input: cost.input,
-          output: cost.output,
-          total: cost.total,
-        },
+        cost,
         selectedRoute: chosenRoute.id,
         reasoning,
         selectedPath: targetBlock

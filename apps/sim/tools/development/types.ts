@@ -1,3 +1,4 @@
+import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
 import type { ToolResponse, WorkflowToolExecutionContext } from '@/tools/types'
 
 export interface DevelopmentGenerateAppParams {
@@ -46,6 +47,20 @@ export interface DevelopmentGenerateAppResponse extends ToolResponse {
     databaseProvisioned: boolean | null
     neonProjectId: string | null
     databaseProvisionError: string | null
+    /** Overall tool price (= summed LLM cost). */
+    cost?: {
+      input: number
+      output: number
+      total: number
+    }
+    model?: string
+    tokens?: {
+      input: number
+      output: number
+      total: number
+    }
+    /** Per-model token breakdown. */
+    llmUsage?: ModelUsageByModel
   }
 }
 

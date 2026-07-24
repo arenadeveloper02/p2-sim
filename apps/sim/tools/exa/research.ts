@@ -1,11 +1,12 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
+import { exaHosting } from '@/tools/exa/hosting'
 import type { ExaResearchParams, ExaResearchResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('ExaResearchTool')
-const exaApiKey = process.env.EXA_API_KEY
 
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_TIME_MS = DEFAULT_EXECUTION_TIMEOUT_MS
@@ -16,6 +17,9 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
   description:
     'Perform comprehensive research using AI to generate detailed reports with citations',
   version: '1.0.0',
+
+  hosting: exaHosting,
+
   params: {
     query: {
       type: 'string',
@@ -40,16 +44,15 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
   request: {
     url: 'https://api.exa.ai/research/v1',
     method: 'POST',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': exaApiKey ?? '',
+      'x-api-key': params.apiKey,
     }),
     body: (params) => {
-      const body: any = {
+      const body: Record<string, unknown> = {
         instructions: params.query,
       }
 
-      // Add model if specified, otherwise use default
       if (params.model) {
         body.model = params.model
       }
@@ -84,7 +87,7 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
         const statusResponse = await fetch(`https://api.exa.ai/research/v1/${taskId}`, {
           method: 'GET',
           headers: {
-            'x-api-key': exaApiKey ?? '',
+            'x-api-key': params.apiKey,
             'Content-Type': 'application/json',
           },
         })
@@ -97,7 +100,6 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
         logger.info(`Exa research task ${taskId} status: ${taskData.status}`)
 
         if (taskData.status === 'completed') {
-          // The completed response contains output.content (text) and output.parsed (structured data)
           const content =
             taskData.output?.content || taskData.output?.parsed || 'Research completed successfully'
 
@@ -113,6 +115,7 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
                 score: 1.0,
               },
             ],
+            __costDollars: taskData.costDollars,
           }
           return result
         }
@@ -127,16 +130,16 @@ export const researchTool: ToolConfig<ExaResearchParams, ExaResearchResponse> = 
 
         await sleep(POLL_INTERVAL_MS)
         elapsedTime += POLL_INTERVAL_MS
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.error('Error polling for research task status:', {
-          message: error.message || 'Unknown error',
+          message: getErrorMessage(error, 'Unknown error'),
           taskId,
         })
 
         return {
           ...result,
           success: false,
-          error: `Error polling for research task status: ${error.message || 'Unknown error'}`,
+          error: `Error polling for research task status: ${getErrorMessage(error, 'Unknown error')}`,
         }
       }
     }

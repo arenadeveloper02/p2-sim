@@ -81,9 +81,10 @@ export async function computeDailyRefreshConsumed(
     ? and(
         eq(usageLog.billingEntityType, billingEntity.type),
         eq(usageLog.billingEntityId, billingEntity.id),
-        eq(usageLog.billingPeriodStart, periodStart)
+        eq(usageLog.billingPeriodStart, periodStart),
+        eq(usageLog.billable, true)
       )
-    : undefined
+    : eq(usageLog.billable, true)
 
   const boundedClauses = userBounds
     ? Object.entries(userBounds).flatMap(([userId, bounds]) => {

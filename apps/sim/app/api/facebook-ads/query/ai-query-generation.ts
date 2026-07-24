@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { extractProviderToolCostFields } from '@/lib/billing/core/tool-llm-cost'
 import { executeProviderRequest } from '@/providers'
 import { getApiKey } from '@/providers/utils'
 import { DEFAULT_DATE_PRESET, DEFAULT_FIELDS } from './constants'
@@ -255,6 +256,7 @@ Always return valid JSON. Never refuse to generate a response.`
       level,
       filters: parsedResponse.filters,
       breakdowns: parsedResponse.breakdowns,
+      ...extractProviderToolCostFields(aiResponse),
     }
   } catch (error) {
     logger.error('AI query parsing failed, using defaults', { error })

@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { semrushHosting } from '@/tools/semrush/hosting'
 import type {
   SemrushOrganicPositionsApiResponse,
   SemrushOrganicPositionsParams,
@@ -17,6 +18,8 @@ export const semrushOrganicPositionsTool: ToolConfig<
   description:
     'Get Position Tracking organic positions report for a campaign: keywords, rankings per URL, position changes over time. Requires a Semrush API key configured on the block.',
   version: '1.0.0',
+
+  hosting: semrushHosting,
 
   params: {
     apiKey: {
@@ -147,9 +150,10 @@ export const semrushOrganicPositionsTool: ToolConfig<
       return path
     },
     method: 'GET',
-    headers: () => ({
+    headers: (params) => ({
       Accept: 'application/json',
       'Content-Type': 'application/json',
+      ...(params.apiKey ? { 'X-Semrush-Api-Key': params.apiKey } : {}),
     }),
   },
 
