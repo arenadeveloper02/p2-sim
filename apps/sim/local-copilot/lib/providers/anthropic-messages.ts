@@ -1,6 +1,6 @@
 import { getAnthropicAutomaticCacheControl } from '@/lib/anthropic/prompt-cache'
-import type { ChatMessage, ChatMessageContentPart } from '@/local-copilot/lib/providers/types'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
+import type { ChatMessage, ChatMessageContentPart } from '@/local-copilot/lib/providers/types'
 
 export type AnthropicSystemBlock = {
   type: 'text'

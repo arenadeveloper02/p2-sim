@@ -1,5 +1,5 @@
 import { SemrushIcon } from '@/components/icons'
-import type { BlockConfig } from '@/blocks/types'
+import { AuthMode, type BlockConfig } from '@/blocks/types'
 import type { SemrushResponse } from '@/tools/semrush/types'
 
 export const SemrushBlock: BlockConfig<SemrushResponse> = {
@@ -9,11 +9,12 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
   longDescription:
     'Access Semrush SEO data including organic keywords, backlinks, domain rank, and competitor analysis.',
   bestPractices:
-    "Runs use Sim's Semrush API proxy; authentication is the server environment variable SEMRUSH_API_KEY (operators configure it on the deployment). Do not tell users to add Semrush API keys to the workflow, use {{SEMRUSH_API_KEY}}, or treat a missing block API key as user error—agents and docs should not ask for an end-user Semrush key for this native block.",
+    'Configure your Semrush API key on the block. The key is sent through the internal Semrush proxy at execution time.',
   docsLink: '',
   category: 'tools',
   bgColor: '#E0E0E0',
   icon: SemrushIcon,
+  authMode: AuthMode.ApiKey,
   subBlocks: [
     {
       id: 'operation',
@@ -28,6 +29,14 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
         { label: 'Organic Positions Report (Position Tracking)', id: 'tracking_position_organic' },
       ],
       value: () => 'url_organic',
+    },
+    {
+      id: 'apiKey',
+      title: 'API Key',
+      type: 'short-input',
+      placeholder: 'Enter your Semrush API key',
+      password: true,
+      required: true,
     },
     // URL input - shown for URL-based reports
     {
@@ -66,15 +75,14 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
         value: ['tracking_position_organic'],
       },
     },
-    // Position tracking URL mask (unique id avoids duplicate React keys with `url` for url_organic;
-    // canonicalParamId maps to tool param `url` for semrush_organic_positions)
+    // Unique id (not `url`) so it does not collide with the url_organic `url` subblock.
+    // tools.config.params maps trackingUrl → url for semrush_organic_positions.
     {
       id: 'trackingUrl',
       title: 'Tracked URL',
       type: 'short-input',
       placeholder: '*.example.com/* or *.apple.com/*:*.amazon.com/*',
       required: true,
-      canonicalParamId: 'url',
       description: 'URL with mask; use : to separate multiple domains',
       condition: {
         field: 'operation',
@@ -397,6 +405,7 @@ export const SemrushBlock: BlockConfig<SemrushResponse> = {
     },
   },
   inputs: {
+    apiKey: { type: 'string', description: 'Semrush API key' },
     operation: { type: 'string', description: 'Semrush operation selection' },
     url: { type: 'string', description: 'Page URL to analyze (url_organic report)' },
     trackingUrl: {

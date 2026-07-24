@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
-import { generateId } from '@sim/utils/id'
 import { getErrorMessage } from '@sim/utils/errors'
+import type { WorkflowState } from '@sim/workflow-types/workflow'
+import type { MothershipResource } from '@/lib/copilot/resources/types'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
@@ -8,8 +9,12 @@ import {
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
-import { getToolDefinition } from '@/local-copilot/lib/tools/definitions'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
+import { getToolDefinition } from '@/local-copilot/lib/tools/definitions'
+import {
+  enrichLocalIntegrationToolParams,
+  SEPARATE_DRAFT_RECIPIENTS_KEY,
+} from '@/local-copilot/lib/tools/enrich-integration-params'
 import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
@@ -19,13 +24,10 @@ import {
   LOAD_USER_SKILL_TOOL_NAME,
 } from '@/local-copilot/lib/tools/user-skills'
 import {
-  enrichLocalIntegrationToolParams,
-  SEPARATE_DRAFT_RECIPIENTS_KEY,
-} from '@/local-copilot/lib/tools/enrich-integration-params'
-import { runCreateWorkflowTool, runEditWorkflowTool } from '@/local-copilot/lib/tools/workflow-mutations'
-import type { MothershipResource } from '@/lib/copilot/resources/types'
+  runCreateWorkflowTool,
+  runEditWorkflowTool,
+} from '@/local-copilot/lib/tools/workflow-mutations'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
-import type { WorkflowState } from '@sim/workflow-types/workflow'
 
 const logger = createLogger('LocalCopilotToolExecutor')
 
@@ -63,7 +65,9 @@ export interface ToolExecutionContext {
   onProgress?: (message: string) => void
 }
 
-function requireWorkflowContext(ctx: ToolExecutionContext): NonNullable<LocalCopilotStructuredContext['workflow']> {
+function requireWorkflowContext(
+  ctx: ToolExecutionContext
+): NonNullable<LocalCopilotStructuredContext['workflow']> {
   if (!ctx.workflowId || !ctx.structuredContext.workflow) {
     throw new Error('Open a workflow in the editor to use this action.')
   }
@@ -91,8 +95,7 @@ function guardCreateWorkflowWhenExistingAvailable(
   const existing = ctx.structuredContext.workspaceWorkflows ?? []
   if (existing.length === 0) return null
 
-  const requestedName =
-    typeof args.name === 'string' ? args.name.trim().toLowerCase() : ''
+  const requestedName = typeof args.name === 'string' ? args.name.trim().toLowerCase() : ''
 
   let target = requestedName
     ? existing.find((workflow) => workflow.name.toLowerCase() === requestedName)
@@ -136,9 +139,7 @@ function guardCreateWorkflowWhenExistingAvailable(
     }
   }
 
-  const exactNameMatch = Boolean(
-    requestedName && target.name.toLowerCase() === requestedName
-  )
+  const exactNameMatch = Boolean(requestedName && target.name.toLowerCase() === requestedName)
 
   const reason = exactNameMatch
     ? `A workflow named "${target.name}" already exists.`
@@ -172,9 +173,7 @@ async function runLoadUserSkill(
   ctx: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
   try {
-    const { assertPermissionsAllowed } = await import(
-      '@/ee/access-control/utils/permission-check'
-    )
+    const { assertPermissionsAllowed } = await import('@/ee/access-control/utils/permission-check')
     await assertPermissionsAllowed({
       userId: ctx.userId,
       workspaceId: ctx.workspaceId,
@@ -315,14 +314,12 @@ export async function executeLocalCopilotTool(
         '@/lib/copilot/tools/registry/server-tool-adapter'
       )
       const handler = createServerToolHandler('get_blocks_metadata')
-      const metadataResult = await handler(
-        { blockIds },
-        toCopilotServerToolContext(ctx)
-      )
+      const metadataResult = await handler({ blockIds }, toCopilotServerToolContext(ctx))
       return {
         toolName,
         success: metadataResult.success,
-        result: metadataResult.output ?? (metadataResult.error ? { error: metadataResult.error } : {}),
+        result:
+          metadataResult.output ?? (metadataResult.error ? { error: metadataResult.error } : {}),
         error: metadataResult.error,
       }
     }
@@ -433,12 +430,19 @@ export async function executeLocalCopilotTool(
           },
           ...(allSucceeded
             ? {}
-            : { error: drafts.find((draft) => draft.error)?.error ?? 'Separate draft fan-out failed' }),
+            : {
+                error:
+                  drafts.find((draft) => draft.error)?.error ?? 'Separate draft fan-out failed',
+              }),
         }
       }
 
       const { [SEPARATE_DRAFT_RECIPIENTS_KEY]: _ignored, ...cleanParams } = params
-      const integrationResult = await executeCopilotRegistryTool(toolId, cleanParams, executionContext)
+      const integrationResult = await executeCopilotRegistryTool(
+        toolId,
+        cleanParams,
+        executionContext
+      )
 
       return {
         toolName,
@@ -453,7 +457,9 @@ export async function executeLocalCopilotTool(
 
     case 'validate_workflow': {
       const override =
-        args.workflowJson && typeof args.workflowJson === 'object' && !Array.isArray(args.workflowJson)
+        args.workflowJson &&
+        typeof args.workflowJson === 'object' &&
+        !Array.isArray(args.workflowJson)
           ? (args.workflowJson as Partial<WorkflowState>)
           : undefined
       const state = override?.blocks ? override : requireWorkflowContext(ctx)
@@ -466,11 +472,8 @@ export async function executeLocalCopilotTool(
         variables: state.variables ?? {},
       })
 
-      const {
-        formatWorkflowLintMessage,
-        hasWorkflowLintIssues,
-        lintEditedWorkflowState,
-      } = await import('@/lib/copilot/tools/server/workflow/edit-workflow/lint')
+      const { formatWorkflowLintMessage, hasWorkflowLintIssues, lintEditedWorkflowState } =
+        await import('@/lib/copilot/tools/server/workflow/edit-workflow/lint')
       const workflowLint = lintEditedWorkflowState({
         blocks: state.blocks ?? {},
         edges: state.edges ?? [],
@@ -505,8 +508,7 @@ export async function executeLocalCopilotTool(
 
     case 'get_execution_logs': {
       const limit = typeof args.limit === 'number' ? args.limit : 10
-      const executionId =
-        typeof args.executionId === 'string' ? args.executionId : undefined
+      const executionId = typeof args.executionId === 'string' ? args.executionId : undefined
       const { listLogs } = await import('@/lib/logs/list-logs')
       const logs = await listLogs(
         {
@@ -527,7 +529,7 @@ export async function executeLocalCopilotTool(
       const blockId =
         typeof args.blockId === 'string'
           ? args.blockId
-          : ctx.structuredContext.execution.failedBlockId ?? undefined
+          : (ctx.structuredContext.execution.failedBlockId ?? undefined)
       const executionId =
         typeof args.executionId === 'string'
           ? args.executionId

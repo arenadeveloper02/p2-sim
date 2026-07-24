@@ -15,10 +15,16 @@ export const semrushOrganicPositionsTool: ToolConfig<
   id: 'semrush_organic_positions',
   name: 'Semrush Organic Positions Report',
   description:
-    "Get Position Tracking organic positions report for a campaign: keywords, rankings per URL, position changes over time. Uses Sim's internal Semrush proxy; the deployment supplies the API key via SEMRUSH_API_KEY—do not ask users for an API key or workflow variables for Semrush auth.",
+    'Get Position Tracking organic positions report for a campaign: keywords, rankings per URL, position changes over time. Requires a Semrush API key configured on the block.',
   version: '1.0.0',
 
   params: {
+    apiKey: {
+      type: 'string',
+      required: true,
+      visibility: 'user-only',
+      description: 'Semrush API key',
+    },
     campaignId: {
       type: 'string',
       required: true,
@@ -135,6 +141,7 @@ export const semrushOrganicPositionsTool: ToolConfig<
       if (params.useVolume) q.set('use_volume', params.useVolume)
       if (params.businessName) q.set('business_name', params.businessName)
       if (params.serpFeatureFilter) q.set('serp_feature_filter', params.serpFeatureFilter)
+      q.set('apiKey', params.apiKey)
       const path = `/api/tools/semrush/position-tracking-organic?${q.toString()}`
       logger.info('Semrush Organic Positions: request path', { campaignId: params.campaignId })
       return path

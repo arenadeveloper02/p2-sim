@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useLocalLiveStatus } from '@/local-copilot/hooks/use-local-live-status'
 import {
+  type GeneratingPreviewKind,
   getGeneratingPreviewMessages,
   nextGeneratingMessageIndex,
-  type GeneratingPreviewKind,
 } from '@/app/workspace/[workspaceId]/files/components/file-viewer/generating-preview-messages'
+import { useLocalLiveStatus } from '@/local-copilot/hooks/use-local-live-status'
 
 const MESSAGE_ROTATION_MS = 3500
 

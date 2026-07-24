@@ -13,9 +13,9 @@ describe('normalizeBlockReferencesInString', () => {
   const idToName = new Map([[AGENT_BLOCK_ID, 'gpt4oagent']])
 
   it('rewrites UUID block references to normalized block names', () => {
-    expect(
-      normalizeBlockReferencesInString(`<${AGENT_BLOCK_ID}.content>`, idToName)
-    ).toBe('<gpt4oagent.content>')
+    expect(normalizeBlockReferencesInString(`<${AGENT_BLOCK_ID}.content>`, idToName)).toBe(
+      '<gpt4oagent.content>'
+    )
   })
 
   it('leaves name-based references unchanged', () => {

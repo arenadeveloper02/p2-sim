@@ -1,12 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useLocalCopilotConfig } from '@/local-copilot/hooks/use-local-copilot'
 import {
-  readCopilotBackendPreference,
   type CopilotBackendPreference,
+  readCopilotBackendPreference,
   writeCopilotBackendPreference,
 } from '@/local-copilot/lib/copilot-backend-preference'
-import { useLocalCopilotConfig } from '@/local-copilot/hooks/use-local-copilot'
 
 export function useCopilotBackendPreference(): {
   canSwitchBackend: boolean

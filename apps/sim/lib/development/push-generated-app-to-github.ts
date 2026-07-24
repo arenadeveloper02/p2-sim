@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { promisify } from 'node:util'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 
@@ -197,11 +197,7 @@ async function initCommitAndPush(
     await runGit(outputDir, ['diff', '--cached', '--quiet'])
     logger.info('No changes to commit for generated app', { outputDir })
   } catch {
-    await runGit(outputDir, [
-      'commit',
-      '-m',
-      'Initial commit',
-    ])
+    await runGit(outputDir, ['commit', '-m', 'Initial commit'])
   }
 
   await runGit(outputDir, ['branch', '-M', defaultBranch])
@@ -255,10 +251,7 @@ export async function ensureGitHubRepository(
   }
 
   try {
-    const { data: user, status: userStatus } = await githubFetch<GitHubUserResponse>(
-      token,
-      '/user'
-    )
+    const { data: user, status: userStatus } = await githubFetch<GitHubUserResponse>(token, '/user')
     if (userStatus !== 200) {
       return { success: false, error: 'Invalid GitHub token or insufficient API access' }
     }
@@ -310,10 +303,7 @@ export async function pushRepoChangesToGitHub(
   }
 
   try {
-    const { data: user, status: userStatus } = await githubFetch<GitHubUserResponse>(
-      token,
-      '/user'
-    )
+    const { data: user, status: userStatus } = await githubFetch<GitHubUserResponse>(token, '/user')
     if (userStatus !== 200) {
       return { success: false, error: 'Invalid GitHub token or insufficient API access' }
     }
@@ -425,10 +415,7 @@ export async function pushGeneratedAppToGitHub(
   }
 
   try {
-    const { data: user, status: userStatus } = await githubFetch<GitHubUserResponse>(
-      token,
-      '/user'
-    )
+    const { data: user, status: userStatus } = await githubFetch<GitHubUserResponse>(token, '/user')
     if (userStatus !== 200) {
       return { success: false, error: 'Invalid GitHub token or insufficient API access' }
     }

@@ -8,6 +8,7 @@ import { Music } from 'lucide-react'
 import { DefaultFileIcon, getDocumentIcon } from '@/components/icons/document-icons'
 import type { AssistantChatFile as ChatFile } from '@/lib/chat/assistant-assets'
 import { isSafeHttpUrl } from '@/lib/core/utils/urls'
+
 // import type { ChatFile } from '@/app/(interfaces)/chat/components/message/message'
 
 const logger = createLogger('ChatFileDownload')

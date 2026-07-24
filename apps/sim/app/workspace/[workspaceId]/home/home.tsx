@@ -46,6 +46,7 @@ import {
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
+import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import type { ChatContext } from '@/stores/panel'
 import {
   ChatSurfaceProvider,
@@ -57,7 +58,6 @@ import {
   type UserInputHandle,
 } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
-import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
 
 const logger = createLogger('Home')
@@ -457,7 +457,7 @@ export function Home({ chatId, userName, userId }: HomeProps) {
         )}
         {/* Asymmetric padding biases the group up so the full cluster (heading + input + suggestions) sits at the optical center */}
         <div className='flex min-h-full flex-col items-center justify-center px-6 pt-[2vh] pb-[22vh]'>
-          <h1 className='mb-7 max-w-[48rem] text-balance font-season text-[30px] text-[var(--text-primary)]'>
+          <h1 className='mb-7 max-w-[48rem] text-balance font-season text-[32px] text-[var(--text-primary)]'>
             What should we get done{firstName ? `, ${firstName}` : ''}?
           </h1>
           <div ref={initialViewInputRef} className='relative w-full max-w-[48rem]'>
