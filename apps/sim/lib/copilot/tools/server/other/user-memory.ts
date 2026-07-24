@@ -3,7 +3,6 @@ import { localCopilotUserMemory } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { truncate } from '@sim/utils/string'
 import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm'
-import { UserMemory } from '@/lib/copilot/generated/tool-catalog-v1'
 import type { BaseServerTool, ServerToolContext } from '@/lib/copilot/tools/server/base-tool'
 
 const logger = createLogger('UserMemoryServerTool')
@@ -348,8 +347,12 @@ async function listMemories(
   }
 }
 
+/**
+ * Not yet in mothership `tool-catalog-v1` — registered under the literal id so
+ * Local Copilot and in-flight checkpoints can call it before catalog sync.
+ */
 export const userMemoryServerTool: BaseServerTool<UserMemoryParams, UserMemoryResult> = {
-  name: UserMemory.id,
+  name: 'user_memory',
   async execute(params: UserMemoryParams, context?: ServerToolContext): Promise<UserMemoryResult> {
     const userId = context?.userId
     if (!userId) {
