@@ -1,0 +1,76 @@
+import { db } from '@sim/db'
+import { chat } from '@sim/db/schema'
+import { createLogger } from '@sim/logger'
+import { and, eq, isNull, or } from 'drizzle-orm'
+import type { NextRequest } from 'next/server'
+import { getSession } from '@/lib/auth'
+import { createErrorResponse } from '@/app/api/workflows/utils'
+import { addCorsHeaders } from '@/app/api/chat/utils'
+
+const logger = createLogger('DeployedChatThreadAuth')
+
+export interface ActiveDeployedChatDeployment {
+  id: string
+  workflowId: string
+  isActive: boolean
+}
+
+/**
+ * Resolves an active deployed chat deployment and authenticated executing user.
+ */
+export async function resolveDeployedChatThreadAccess(
+  requestId: string,
+  identifier: string,
+  request: NextRequest
+): Promise<
+  | { ok: true; deployment: ActiveDeployedChatDeployment; executingUserId: string }
+  | { ok: false; response: ReturnType<typeof createErrorResponse> }
+> {
+  const deploymentResult = await db
+    .select({
+      id: chat.id,
+      workflowId: chat.workflowId,
+      isActive: chat.isActive,
+    })
+    .from(chat)
+    .where(
+      and(
+        or(eq(chat.identifier, identifier), eq(chat.workflowId, identifier)),
+        isNull(chat.archivedAt)
+      )
+    )
+    .limit(1)
+
+  if (deploymentResult.length === 0) {
+    logger.warn(`[${requestId}] Chat not found for identifier: ${identifier}`)
+    return {
+      ok: false,
+      response: addCorsHeaders(createErrorResponse('Chat not found', 404), request),
+    }
+  }
+
+  const deployment = deploymentResult[0]
+
+  if (!deployment.isActive) {
+    logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
+    return {
+      ok: false,
+      response: addCorsHeaders(
+        createErrorResponse('This chat is currently unavailable', 403),
+        request
+      ),
+    }
+  }
+
+  const session = await getSession()
+  const executingUserId = session?.user?.id
+  if (!executingUserId) {
+    logger.info(`[${requestId}] Unauthorized deployed chat thread request: missing session user`)
+    return {
+      ok: false,
+      response: addCorsHeaders(createErrorResponse('Authentication required', 401), request),
+    }
+  }
+
+  return { ok: true, deployment, executingUserId }
+}

@@ -98,6 +98,7 @@ const TOOL_TITLES: Record<string, string> = {
   agent: 'Tools Agent',
   research: 'Research Agent',
   media: 'Media Agent',
+  file: 'File Agent',
   superagent: 'Executing action',
 }
 

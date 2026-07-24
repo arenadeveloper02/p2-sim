@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { generateId } from '@sim/utils/id'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
@@ -11,6 +12,29 @@ import {
   LocalTurnCostAccumulator,
   type LocalTurnCostSummary,
 } from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
+import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
+import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
+import { createSpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
+import {
+  classifyLocalCopilotIntent,
+  selectParallelSubagentDomains,
+  specialistPassDomain,
+} from '@/local-copilot/lib/agent/specialists/classify'
+import {
+  domainSystemHint,
+  filterToolsByNames,
+  toolNamesForIntent,
+} from '@/local-copilot/lib/agent/specialists/domains'
+import { runParallelSubagents } from '@/local-copilot/lib/agent/specialists/parallel-subagents'
+import { runParentSpecialistToolCalls } from '@/local-copilot/lib/agent/specialists/parent-calls'
+import { runSpecialistPass } from '@/local-copilot/lib/agent/specialists/specialist-pass'
+import {
+  getParentSpecialistToolDefinitions,
+  isSpecialistTool,
+} from '@/local-copilot/lib/agent/specialists/specialist-tools'
+import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import {
   buildLocalCopilotContext,
@@ -100,6 +124,11 @@ Response format:
 <chart>{"type":"bar","title":"Runs per day","labels":["Mon","Tue","Wed"],"series":[{"name":"Successful","data":[12,18,9]},{"name":"Failed","data":[1,0,3]}]}</chart>
 
 - Chart tag rules: \`type\` is one of "bar", "line", "area", "pie", "scatter". \`labels\` are x-axis categories (or slice names for pie). Each \`series\` entry has an optional \`name\` and a numeric \`data\` array (for scatter, data may be [x,y] pairs). Pie charts use exactly one series whose values pair with \`labels\`. Keep the JSON on a single line with no comments. Add a one-sentence takeaway in prose near the chart; do not repeat all the numbers in text.
+
+Specialists (hybrid orchestration):
+- Prefer specialist tools for multi-step domain work: workflow, run, deploy, auth, knowledge, table, scheduled_task, agent, research, media, file, superagent.
+- Keep leaf tools for simple single calls. Do not re-run research/auth already present in pre-pass findings unless stale or failed.
+- Use \`superagent\` for third-party integration actions; \`agent\` for listing/invoking tools and skills; \`auth\` when credentials are missing.
 
 Rules:
 - You have awareness of the workspace, available blocks/integrations, and (when open) the current workflow structure, variables, logs, and credential metadata (never secrets).
@@ -382,6 +411,18 @@ export async function* runLocalCopilotAgent(
     tools = allTools
   }
 
+  // Hybrid: intent leaf tools ∪ 12 specialist entry tools.
+  const specialistTools = getParentSpecialistToolDefinitions()
+  const seenToolNames = new Set(tools.map((tool) => tool.name))
+  for (const specialistTool of specialistTools) {
+    if (!seenToolNames.has(specialistTool.name)) {
+      tools = [...tools, specialistTool]
+      seenToolNames.add(specialistTool.name)
+    }
+  }
+
+  const specialistBudget = createSpecialistBudget()
+
   logger.info('Arena Copilot prompt budget applied', {
     workflowDetail,
     historyTurns: historyMessages.length,
@@ -394,6 +435,7 @@ export async function* runLocalCopilotAgent(
     specialistPrimary: intent.primary,
     specialistSecondary: intent.secondary,
     useFullCatalog: usedFullCatalog,
+    partitioning: 'hybrid',
     skillToolEnabled: allTools.length > LOCAL_COPILOT_TOOLS.length,
     memory: getLocalCopilotMemorySnapshot(),
   })
@@ -456,6 +498,7 @@ export async function* runLocalCopilotAgent(
       usageTurnId,
       turnCost,
       getToolExecutor,
+      budget: specialistBudget,
     })
 
     let parallelNext = await parallel.next()
@@ -475,11 +518,12 @@ export async function* runLocalCopilotAgent(
       domains: parallelDomains,
       resultCount: results.length,
       findingsChars: findings.length,
+      budget: specialistBudget.snapshot(),
       memory: getLocalCopilotMemorySnapshot(),
     })
   } else {
     const passDomain = specialistPassDomain(intent)
-    if (passDomain) {
+    if (passDomain && passDomain !== 'general') {
       const pass = runSpecialistPass({
         domain: passDomain,
         userMessage: userTurnText,
@@ -494,6 +538,7 @@ export async function* runLocalCopilotAgent(
         usageTurnId,
         turnCost,
         getToolExecutor,
+        budget: specialistBudget,
       })
 
       let passNext = await pass.next()
@@ -513,6 +558,7 @@ export async function* runLocalCopilotAgent(
         domain: passDomain,
         toolRoundCount,
         findingsChars: findings.length,
+        budget: specialistBudget.snapshot(),
         memory: getLocalCopilotMemorySnapshot(),
       })
     }
@@ -642,12 +688,99 @@ export async function* runLocalCopilotAgent(
     })
     assistantText = ''
 
+    const specialistCalls = orderedToolCalls.filter((call) => isSpecialistTool(call.name))
+    const specialistOutcomes = new Map<
+      string,
+      { success: boolean; findings: string; error?: string; output: unknown }
+    >()
+
+    if (specialistCalls.length > 0) {
+      const specialistRunner = runParentSpecialistToolCalls({
+        calls: specialistCalls,
+        lastUserMessage: userTurnText,
+        model: config.model,
+        provider,
+        allTools,
+        toolCtx,
+        signal: params.signal,
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+        usageTurnId,
+        getToolExecutor,
+        budget: specialistBudget,
+        parentDepth: 0,
+      })
+
+      let specialistNext = await specialistRunner.next()
+      while (!specialistNext.done) {
+        yield specialistNext.value
+        specialistNext = await specialistRunner.next()
+      }
+
+      for (const outcome of specialistNext.value) {
+        specialistOutcomes.set(outcome.toolCallId, {
+          success: outcome.success,
+          findings: outcome.findings,
+          ...(outcome.error ? { error: outcome.error } : {}),
+          output: {
+            success: outcome.success,
+            message: outcome.findings,
+            domain: outcome.toolName,
+          },
+        })
+      }
+    }
+
     for (const call of orderedToolCalls) {
       let parsedArgs: Record<string, unknown> = {}
       try {
         parsedArgs = JSON.parse(call.arguments || '{}') as Record<string, unknown>
       } catch {
         parsedArgs = {}
+      }
+
+      if (isSpecialistTool(call.name)) {
+        const outcome = specialistOutcomes.get(call.id) ?? {
+          success: false,
+          findings: `Specialist (${call.name}) produced no result`,
+          error: `Specialist (${call.name}) produced no result`,
+          output: {
+            success: false,
+            message: `Specialist (${call.name}) produced no result`,
+          },
+        }
+
+        turnToolRecords.push({
+          name: call.name,
+          success: outcome.success,
+          result: outcome.output,
+        })
+
+        if (persistLocally && conversationId) {
+          await recordToolCall({
+            conversationId,
+            toolCallId: call.id,
+            toolName: call.name,
+            arguments: parsedArgs,
+            result: outcome.output,
+          })
+        }
+
+        const formattedToolResult = formatToolResultForLlm(call.name, outcome.output)
+        pendingFollowUps = resolveMandatoryFollowUps(
+          pendingFollowUps,
+          call.name,
+          outcome.success,
+          outcome.output
+        )
+
+        messages.push({
+          role: 'tool',
+          toolCallId: call.id,
+          content: formattedToolResult,
+        })
+        continue
       }
 
       yield {
@@ -785,11 +918,11 @@ export async function* runLocalCopilotAgent(
   }
 
   if (!assistantText.trim() && turnToolRecords.length > 0) {
-    const synthesized = synthesizeAssistantSummaryFromTools(turnToolRecords)
-    if (synthesized) {
-      assistantText = synthesized
-      yield { type: 'text_delta', content: synthesized }
-    }
+    const synthesized =
+      synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+      'I finished the requested steps, but had nothing further to add.'
+    assistantText = synthesized
+    yield { type: 'text_delta', content: synthesized }
   }
 
   if (recommendations.length) {

@@ -86,9 +86,7 @@ export const ChartGeneratorBlock: BlockConfig = {
           return { field: 'operation', value: 'generate' }
         }
         const inner =
-          typeof subBlock.condition === 'function'
-            ? subBlock.condition(values)
-            : subBlock.condition
+          typeof subBlock.condition === 'function' ? subBlock.condition(values) : subBlock.condition
         return { field: 'operation', value: 'generate', and: inner }
       },
       dependsOn: [...(subBlock.dependsOn ?? []), 'operation', 'model'],

@@ -1471,20 +1471,20 @@ export async function executeTool(
     // Check for direct execution (no HTTP request needed)
     const wrapperBaseToolId = getImageGenerationWrapperBaseToolId(normalizedToolId)
     const directExecution =
-    normalizedToolId === 'google_nano_banana'
-      ? executeNanoBananaDirect
-      : normalizedToolId === 'image_generate'
-        ? executeImageGenerateDirect
-        : normalizedToolId === 'openai_image'
-          ? executeOpenAIImageDirect
-          : wrapperBaseToolId
-            ? (params: Record<string, any>) =>
-                executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-      : normalizedToolId === 'development_generate_app'
-        ? executeDevelopmentGenerateAppDirect
-        : normalizedToolId === 'development_edit_app'
-          ? executeDevelopmentEditAppDirect
-          : tool.directExecution
+      normalizedToolId === 'google_nano_banana'
+        ? executeNanoBananaDirect
+        : normalizedToolId === 'image_generate'
+          ? executeImageGenerateDirect
+          : normalizedToolId === 'openai_image'
+            ? executeOpenAIImageDirect
+            : wrapperBaseToolId
+              ? (params: Record<string, any>) =>
+                  executeImageGenerationWrapperV2Direct(normalizedToolId, params)
+              : normalizedToolId === 'development_generate_app'
+                ? executeDevelopmentGenerateAppDirect
+                : normalizedToolId === 'development_edit_app'
+                  ? executeDevelopmentEditAppDirect
+                  : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)

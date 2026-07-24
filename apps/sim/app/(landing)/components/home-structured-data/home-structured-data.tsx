@@ -28,7 +28,7 @@ const HOME_JSON_LD = {
       about: { '@id': `${SITE_URL}#software` },
       datePublished: '2024-01-01T00:00:00+00:00',
       description:
-          'Arena is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work.',
+        'Arena is the open-source AI workspace where teams build, deploy, and manage AI agents. Connect 1,000+ integrations and every major LLM to create agents that automate real work.',
       breadcrumb: { '@id': `${SITE_URL}#breadcrumb` },
       inLanguage: 'en-US',
       speakable: {

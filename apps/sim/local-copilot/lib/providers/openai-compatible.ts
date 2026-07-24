@@ -2,7 +2,6 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type {
-  ChatCompletionChunk,
   ChatCompletionRequest,
   LocalCopilotProvider,
 } from '@/local-copilot/lib/providers/types'
@@ -179,9 +178,7 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
                 usage: { inputTokens, outputTokens },
               }
             }
-          } catch {
-            continue
-          }
+          } catch {}
         }
       }
     },

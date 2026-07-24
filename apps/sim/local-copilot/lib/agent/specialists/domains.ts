@@ -1,25 +1,48 @@
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 /**
- * Soft-specialist domains for Local Copilot Phase 3.
- * Mirrors Cloud subagent partitions without separate agent processes.
+ * Cloud-aligned specialist domains for Local Copilot hybrid orchestration.
+ * `general` is classifier-only (not a specialist tool).
  */
 export const LOCAL_COPILOT_SPECIALIST_DOMAINS = [
   'general',
   'workflow',
   'run',
   'deploy',
-  'research',
-  'file',
-  'data',
   'auth',
+  'knowledge',
+  'table',
+  'scheduled_task',
+  'agent',
+  'research',
   'media',
-  'schedule',
+  'file',
+  'superagent',
 ] as const
 
 export type LocalCopilotSpecialistDomain = (typeof LOCAL_COPILOT_SPECIALIST_DOMAINS)[number]
 
-/** Always available so the model can discover and recover without a full catalog. */
+export const LOCAL_COPILOT_CLOUD_SPECIALIST_DOMAINS = [
+  'workflow',
+  'run',
+  'deploy',
+  'auth',
+  'knowledge',
+  'table',
+  'scheduled_task',
+  'agent',
+  'research',
+  'media',
+  'file',
+  'superagent',
+] as const
+
+export type LocalCopilotCloudSpecialistDomain =
+  (typeof LOCAL_COPILOT_CLOUD_SPECIALIST_DOMAINS)[number]
+
+/** Pre-pass / parent parallel fan-out cap. */
+export const MAX_PARALLEL_SUBAGENTS = 4
+
 export const ALWAYS_ON_TOOL_NAMES = new Set<string>([
   'search_docs',
   'search_documentation',
@@ -93,6 +116,41 @@ const DEPLOY_TOOLS = [
   'delete_workspace_mcp_server',
 ] as const
 
+const AUTH_TOOLS = [
+  'manage_credential',
+  'oauth_get_auth_link',
+  'oauth_request_access',
+  'generate_api_key',
+  'get_available_integrations',
+  'list_integration_tools',
+] as const
+
+const KNOWLEDGE_TOOLS = ['knowledge_base', 'materialize_file'] as const
+const TABLE_TOOLS = ['user_table', 'enrichment_run', 'materialize_file'] as const
+
+const SCHEDULED_TASK_TOOLS = [
+  'manage_scheduled_task',
+  'complete_scheduled_task',
+  'update_scheduled_task_history',
+  'get_scheduled_task_logs',
+] as const
+
+const AGENT_TOOLS = [
+  'list_integration_tools',
+  'invoke_integration_tool',
+  'manage_mcp_tool',
+  'manage_skill',
+  'manage_custom_tool',
+  'load_user_skill',
+  'function_execute',
+  'get_available_integrations',
+  'get_platform_actions',
+  'list_workspace_mcp_servers',
+  'create_workspace_mcp_server',
+  'update_workspace_mcp_server',
+  'delete_workspace_mcp_server',
+] as const
+
 const RESEARCH_TOOLS = [
   'search_online',
   'search_docs',
@@ -100,6 +158,8 @@ const RESEARCH_TOOLS = [
   'function_execute',
   'user_memory',
 ] as const
+
+const MEDIA_TOOLS = ['generate_image', 'generate_audio', 'generate_video', 'ffmpeg'] as const
 
 const FILE_TOOLS = [
   'read',
@@ -121,90 +181,46 @@ const FILE_TOOLS = [
   'restore_resource',
 ] as const
 
-const DATA_TOOLS = [
-  'user_table',
-  'knowledge_base',
-  'enrichment_run',
-  'materialize_file',
-] as const
+const SUPERAGENT_TOOLS = [...new Set([...AGENT_TOOLS, ...AUTH_TOOLS, 'read', 'glob'])] as const
 
-const AUTH_TOOLS = [
-  'manage_credential',
-  'oauth_get_auth_link',
-  'oauth_request_access',
-  'generate_api_key',
-  'get_available_integrations',
-  'list_integration_tools',
-] as const
-
-const MEDIA_TOOLS = [
-  'generate_image',
-  'generate_audio',
-  'generate_video',
-  'ffmpeg',
-] as const
-
-const SCHEDULE_TOOLS = [
-  'manage_scheduled_task',
-  'complete_scheduled_task',
-  'update_scheduled_task_history',
-  'get_scheduled_task_logs',
-] as const
-
-export const DOMAIN_TOOL_NAMES: Record<
-  Exclude<LocalCopilotSpecialistDomain, 'general'>,
-  readonly string[]
-> = {
+export const DOMAIN_TOOL_NAMES: Record<LocalCopilotCloudSpecialistDomain, readonly string[]> = {
   workflow: WORKFLOW_TOOLS,
   run: RUN_TOOLS,
   deploy: DEPLOY_TOOLS,
-  research: RESEARCH_TOOLS,
-  file: FILE_TOOLS,
-  data: DATA_TOOLS,
   auth: AUTH_TOOLS,
+  knowledge: KNOWLEDGE_TOOLS,
+  table: TABLE_TOOLS,
+  scheduled_task: SCHEDULED_TASK_TOOLS,
+  agent: AGENT_TOOLS,
+  research: RESEARCH_TOOLS,
   media: MEDIA_TOOLS,
-  schedule: SCHEDULE_TOOLS,
+  file: FILE_TOOLS,
+  superagent: SUPERAGENT_TOOLS,
 }
 
+export const SPECIALIST_ENTRY_TOOL_NAMES = new Set<string>(LOCAL_COPILOT_CLOUD_SPECIALIST_DOMAINS)
+
 export interface LocalCopilotIntent {
-  /** Primary domain for the main agent tool list. */
   primary: LocalCopilotSpecialistDomain
-  /** Extra domains detected on the same turn (drives specialist pass + tool union). */
   secondary: LocalCopilotSpecialistDomain[]
-  /** When true, expose the full tool catalog (ambiguous / multi-domain without clear lead). */
   useFullCatalog: boolean
 }
 
-/**
- * Builds the tool allow-list for a domain (always-on ∪ domain tools).
- */
 export function toolNamesForDomain(domain: LocalCopilotSpecialistDomain): Set<string> {
-  if (domain === 'general') {
-    return new Set() // empty means "no filter" — callers use full catalog
-  }
+  if (domain === 'general') return new Set()
   return new Set([...ALWAYS_ON_TOOL_NAMES, ...DOMAIN_TOOL_NAMES[domain]])
 }
 
-/**
- * Union of always-on + primary + secondary domain tools.
- */
 export function toolNamesForIntent(intent: LocalCopilotIntent): Set<string> | null {
-  if (intent.useFullCatalog || intent.primary === 'general') {
-    return null
-  }
+  if (intent.useFullCatalog || intent.primary === 'general') return null
   const names = toolNamesForDomain(intent.primary)
   for (const domain of intent.secondary) {
     if (domain === 'general') continue
-    for (const name of toolNamesForDomain(domain)) {
-      names.add(name)
-    }
+    for (const name of toolNamesForDomain(domain)) names.add(name)
   }
   return names
 }
 
-/**
- * Filters tool definitions to an allow-list. Unknown tools in the allow-list are ignored.
- */
 export function filterToolsByNames(
   tools: LocalCopilotToolDefinition[],
   allowedNames: Set<string> | null
@@ -213,26 +229,36 @@ export function filterToolsByNames(
   return tools.filter((tool) => allowedNames.has(tool.name))
 }
 
+export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpecialistDomain {
+  return SPECIALIST_ENTRY_TOOL_NAMES.has(name)
+}
+
 export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
   switch (domain) {
     case 'workflow':
-      return 'Focus this turn on building or editing workflows (create_workflow / edit_workflow / patches). Prefer existing workspaceWorkflows before creating new ones.'
+      return 'Focus on building or editing workflows (create_workflow / edit_workflow / patches). Prefer existing workspaceWorkflows before creating new ones.'
     case 'run':
-      return 'Focus this turn on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs).'
+      return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs).'
     case 'deploy':
-      return 'Focus this turn on deploying workflows (deploy_chat / deploy_api / redeploy / promotion) and verifying deployment status.'
-    case 'research':
-      return 'Focus this turn on research (search_online, search_docs, search_documentation). Summarize findings before proposing workflow changes.'
-    case 'file':
-      return 'Focus this turn on workspace files and VFS tools (read/glob/grep/create_file/edit_content).'
-    case 'data':
-      return 'Focus this turn on tables, knowledge bases, and enrichments.'
+      return 'Focus on deploying workflows (deploy_chat / deploy_api / redeploy / promotion) and verifying deployment status.'
     case 'auth':
-      return 'Focus this turn on credentials, OAuth links, and API keys.'
+      return 'Focus on credentials, OAuth links, and API keys.'
+    case 'knowledge':
+      return 'Focus on knowledge bases (query, ingest, create, connectors).'
+    case 'table':
+      return 'Focus on tables and enrichments (user_table, enrichment_run).'
+    case 'scheduled_task':
+      return 'Focus on scheduled tasks (create/list/update/complete/logs).'
+    case 'agent':
+      return 'Focus on integration tools, MCP tools, skills, and function_execute.'
+    case 'research':
+      return 'Focus on research (search_online, search_docs, search_documentation, user_memory).'
     case 'media':
-      return 'Focus this turn on image/audio/video generation and ffmpeg.'
-    case 'schedule':
-      return 'Focus this turn on scheduled tasks (create/list/update/complete/logs).'
+      return 'Focus on image/audio/video generation and ffmpeg.'
+    case 'file':
+      return 'Focus on workspace files and VFS tools (read/glob/grep/create_file/edit_content).'
+    case 'superagent':
+      return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:
       return 'Use whichever tools best answer the user. Prefer existing workflows before creating new ones.'
   }

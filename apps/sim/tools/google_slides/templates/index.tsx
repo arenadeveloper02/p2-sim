@@ -282,8 +282,7 @@ function buildTemplateSchema(): PresentationSchema {
               'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
             generationPrompt: '',
             shapeId: 'g392319e7c15_4_335',
-            description:
-              'Photo for the left column. Visually represents the left section topic.',
+            description: 'Photo for the left column. Visually represents the left section topic.',
             content: '',
           },
           {
@@ -358,8 +357,7 @@ function buildTemplateSchema(): PresentationSchema {
               'professional stock photography, no text or UI overlays, landscape crop, sharp subject, well-lit, corporate presentation quality',
             generationPrompt: '',
             shapeId: 'g392319e7c15_4_336',
-            description:
-              'Photo for the right column. Visually represents the right section topic.',
+            description: 'Photo for the right column. Visually represents the right section topic.',
             content: '',
           },
           {

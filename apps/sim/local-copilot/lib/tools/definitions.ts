@@ -1,6 +1,6 @@
-import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 import { buildMothershipDelegatedToolDefinitions } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 import { buildLocalCopilotUserSkillTool } from '@/local-copilot/lib/tools/user-skills'
+import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
@@ -13,7 +13,10 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
         name: { type: 'string', description: 'Workflow name' },
         description: { type: 'string', description: 'Optional workflow description' },
         folderId: { type: 'string', description: 'Optional folder ID' },
-        workspaceId: { type: 'string', description: 'Optional workspace ID (defaults to current workspace)' },
+        workspaceId: {
+          type: 'string',
+          description: 'Optional workspace ID (defaults to current workspace)',
+        },
         confirmNewWorkflow: {
           type: 'boolean',
           description:
@@ -80,7 +83,8 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   },
   {
     name: 'get_workflow_context',
-    description: 'Returns the current workflow structure, variables, credentials metadata, and execution status.',
+    description:
+      'Returns the current workflow structure, variables, credentials metadata, and execution status.',
     parameters: {
       type: 'object',
       properties: {},
@@ -89,7 +93,8 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   },
   {
     name: 'get_available_blocks',
-    description: 'Lists all block types available in this Sim deployment with categories and descriptions.',
+    description:
+      'Lists all block types available in this Sim deployment with categories and descriptions.',
     parameters: {
       type: 'object',
       properties: {
@@ -126,7 +131,8 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   },
   {
     name: 'validate_workflow',
-    description: 'Validates the current workflow JSON for structural issues, missing credentials, and disconnected blocks.',
+    description:
+      'Validates the current workflow JSON for structural issues, missing credentials, and disconnected blocks.',
     parameters: {
       type: 'object',
       properties: {

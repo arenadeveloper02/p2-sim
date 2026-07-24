@@ -2,8 +2,8 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { readChatUpload } from '@/lib/copilot/tools/handlers/upload-file-reader'
 import { isImageFileType } from '@/lib/uploads/utils/file-utils'
-import type { ChatMessage, ChatMessageContentPart } from '@/local-copilot/lib/providers/types'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
+import type { ChatMessage, ChatMessageContentPart } from '@/local-copilot/lib/providers/types'
 
 const logger = createLogger('LocalCopilotUserTurn')
 
@@ -43,7 +43,9 @@ function formatContextEntries(contexts?: CopilotContextEntry[]): string {
   return contexts.map(formatContextEntry).filter(Boolean).join('\n\n')
 }
 
-function parseUploadedFileContext(content: string): { displayName: string; mediaType: string } | null {
+function parseUploadedFileContext(
+  content: string
+): { displayName: string; mediaType: string } | null {
   const nameMatch = content.match(/^File "([^"]+)"/)
   const typeMatch = content.match(/\(([^,]+),/)
   const displayName = nameMatch?.[1]?.trim()

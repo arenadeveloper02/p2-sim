@@ -3,10 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { getAnthropicAutomaticCacheControl } from '@/lib/anthropic/prompt-cache'
-import {
-  parseAnthropicUsage,
-  toAnthropicTools,
-} from '@/local-copilot/lib/providers/anthropic'
+import { parseAnthropicUsage, toAnthropicTools } from '@/local-copilot/lib/providers/anthropic'
 
 describe('toAnthropicTools', () => {
   it('adds cache_control only on the last tool', () => {

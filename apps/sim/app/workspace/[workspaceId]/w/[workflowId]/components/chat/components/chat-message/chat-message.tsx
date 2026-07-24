@@ -1,9 +1,12 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Tooltip } from '@sim/emcn'
 import { Check, Copy } from 'lucide-react'
+import {
+  resolveEChartsOptionsFromContent,
+  stripEChartsJsonFromContent,
+} from '@/lib/chart-generation/echarts-option'
 import type { AssistantChatFile, AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import { resolveSelectableGeneratedImage } from '@/lib/chat/assistant-assets'
-import { resolveEChartsOptionsFromContent, stripEChartsJsonFromContent } from '@/lib/chart-generation/echarts-option'
 import { ChatEChartsRenderer } from '@/app/(interfaces)/chat/components/message/components/chat-echarts-renderer'
 import { ChatFileDownload } from '@/app/(interfaces)/chat/components/message/components/file-download'
 import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/components/streaming-indicator'
@@ -285,8 +288,7 @@ export function ChatMessage({
     }
 
     if (content === message.content && messageChartOptions) {
-      const prose =
-        typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
+      const prose = typeof content === 'string' ? stripEChartsJsonFromContent(content) : ''
       return (
         <>
           {prose ? (

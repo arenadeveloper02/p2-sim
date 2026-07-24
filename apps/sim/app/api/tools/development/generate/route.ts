@@ -42,7 +42,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()
   const auth = await checkInternalAuth(request, { requireWorkflowId: false })
   if (!auth.success || !auth.userId) {
-    return NextResponse.json({ success: false, error: auth.error ?? 'Authentication required' }, { status: 401 })
+    return NextResponse.json(
+      { success: false, error: auth.error ?? 'Authentication required' },
+      { status: 401 }
+    )
   }
 
   let body: unknown

@@ -1,14 +1,14 @@
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
 import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { rejectLocalCopilotPatchContract } from '@/local-copilot/contracts/local-copilot'
 import { requireLocalCopilotAccess } from '@/local-copilot/lib/access'
 import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
 import { rejectWorkflowPatch } from '@/local-copilot/lib/patches/apply'
 import { getConversation, getPatch } from '@/local-copilot/lib/persistence/store'
-import { rejectLocalCopilotPatchContract } from '@/local-copilot/contracts/local-copilot'
 
 const logger = createLogger('LocalCopilotPatchRejectAPI')
 

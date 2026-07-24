@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
-import { sleep } from '@sim/utils/helpers'
 import { toError } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
 import type { ProvisionNeonDatabaseResult } from '@/lib/development/provision-vercel-neon-database'
 import { upsertVercelProjectDatabaseUrl } from '@/lib/development/vercel-project-env'
 
@@ -163,11 +163,14 @@ async function resolveNeonOrgId(apiKey: string, orgIdHint?: string): Promise<str
   }
 
   if (organizations.length > 1) {
-    logger.warn('Multiple Neon organizations found; using the first. Set DEVELOPMENT_NEON_ORG_ID to override.', {
-      orgId,
-      orgName: organizations[0]?.name,
-      orgCount: organizations.length,
-    })
+    logger.warn(
+      'Multiple Neon organizations found; using the first. Set DEVELOPMENT_NEON_ORG_ID to override.',
+      {
+        orgId,
+        orgName: organizations[0]?.name,
+        orgCount: organizations.length,
+      }
+    )
   } else {
     logger.info('Resolved Neon org_id from API key', { orgId, orgName: organizations[0]?.name })
   }
@@ -200,14 +203,10 @@ async function createNeonProject(
     logger.info('Creating Neon project with organization-scoped API key')
   }
 
-  const { data, status } = await neonRequest<NeonCreateProjectResponse>(
-    apiKey,
-    '/projects',
-    {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }
-  )
+  const { data, status } = await neonRequest<NeonCreateProjectResponse>(apiKey, '/projects', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 
   if (status !== 200 && status !== 201) {
     const message = neonErrorMessage(data, status)
@@ -236,8 +235,7 @@ async function createNeonProject(
  */
 export async function resolveNeonConnectionUri(apiKey: string, projectId: string): Promise<string> {
   const deadline = Date.now() + CONNECTION_POLL_TIMEOUT_MS
-  const query =
-    'database_name=neondb&role_name=neondb_owner&pooled=true'
+  const query = 'database_name=neondb&role_name=neondb_owner&pooled=true'
 
   while (Date.now() < deadline) {
     const { data, status } = await neonRequest<NeonConnectionUriResponse>(

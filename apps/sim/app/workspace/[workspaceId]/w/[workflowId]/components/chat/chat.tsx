@@ -21,12 +21,12 @@ import { AlertCircle, ArrowUp, MoreVertical, Paperclip, Square, X } from 'lucide
 import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useSession } from '@/lib/auth/auth-client'
+import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
   isAssistantImageUrl,
 } from '@/lib/chat/assistant-assets'
-import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import {
   extractBlockIdFromOutputId,

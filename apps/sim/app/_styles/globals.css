@@ -226,7 +226,6 @@ html.sidebar-booting .sidebar-shell-inner {
     --brand-secondary: var(--brand-secondary-hex, #488fed);
     --brand-tertiary: var(--brand-accent-hex, #76abf1);
     --brand-tertiary-2: #33c481;
-    --warning: #ff6600;
     --brand-agent: #6f3dfa;
     /* --brand-secondary: #33b4ff; */
     --brand-accent: #33c482;

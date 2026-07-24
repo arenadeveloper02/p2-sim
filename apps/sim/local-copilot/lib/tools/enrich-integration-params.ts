@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
+import type { LocalCopilotConnectedIntegration } from '@/local-copilot/lib/types'
 import { resolveGoogleSheetsV2RangeParams } from '@/tools/google_sheets/range'
 import { getTool, resolveToolId, stripVersionSuffix } from '@/tools/utils'
-import type { LocalCopilotConnectedIntegration } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotIntegrationParams')
 
@@ -58,9 +58,7 @@ function collectEmailStrings(value: unknown): string[] {
       .filter(Boolean)
   }
   if (Array.isArray(value)) {
-    return value
-      .flatMap((item) => collectEmailStrings(item))
-      .filter(Boolean)
+    return value.flatMap((item) => collectEmailStrings(item)).filter(Boolean)
   }
   return []
 }

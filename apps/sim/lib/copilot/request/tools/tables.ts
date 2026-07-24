@@ -17,7 +17,7 @@ import { getTableById } from '@/lib/table/service'
 
 const logger = createLogger('CopilotToolResultTables')
 
-const MAX_OUTPUT_TABLE_ROWS = 10_000
+const MAX_OUTPUT_TABLE_ROWS = 30_000
 
 /**
  * Replaces a table's rows with wire rows keyed by column name. Translates the
