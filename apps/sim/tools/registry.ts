@@ -1069,6 +1069,7 @@ import {
   gammaListFoldersTool,
   gammaListThemesTool,
 } from '@/tools/gamma'
+import { generativeUiGenerateHtmlTool } from '@/tools/generative_ui'
 import {
   githubAddAssigneesTool,
   githubAddAssigneesV2Tool,
@@ -4863,6 +4864,7 @@ export const tools: Record<string, ToolConfig> = {
   gamma_check_status: gammaCheckStatusTool,
   gamma_list_themes: gammaListThemesTool,
   gamma_list_folders: gammaListFoldersTool,
+  generative_ui_generate_html: generativeUiGenerateHtmlTool,
   vision_tool: visionTool,
   vision_tool_v2: visionToolV2,
   file_parser: fileParseTool,

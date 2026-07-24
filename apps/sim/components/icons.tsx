@@ -568,6 +568,31 @@ export function DevelopmentIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function GenerativeUiIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
+      <path
+        d='M4 5H14V11H4V5Z'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinejoin='round'
+      />
+      <path
+        d='M16 8H20V19H8V13'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinejoin='round'
+      />
+      <path
+        d='M10 16H14'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+    </svg>
+  )
+}
+
 export function ChartBarIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
