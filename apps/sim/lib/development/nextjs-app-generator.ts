@@ -11,6 +11,7 @@ import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
 import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
+import { appendArenaSystemPrompt } from '@/lib/development/arena/prompts'
 import {
   deployPreparedVercelProject,
   prepareVercelProjectForDeploy,
@@ -75,6 +76,15 @@ const logger = createLogger('NextjsAppGenerator')
 type LlmUsageAccumulator = Map<string, { inputTokens: number; outputTokens: number }>
 
 const llmUsageStorage = new AsyncLocalStorage<LlmUsageAccumulator>()
+const arenaModeStorage = new AsyncLocalStorage<boolean>()
+
+function isArenaMode(): boolean {
+  return arenaModeStorage.getStore() === true
+}
+
+async function runWithArenaMode<T>(arenaMode: boolean, fn: () => Promise<T>): Promise<T> {
+  return arenaModeStorage.run(arenaMode, fn)
+}
 
 function runWithLlmUsageTracking<T>(fn: () => Promise<T>): Promise<T> {
   return llmUsageStorage.run(new Map(), fn)
@@ -241,6 +251,8 @@ export interface GenerateNextjsAppInput {
   repoName?: string
   privateRepo?: boolean
   referenceImage?: DevelopmentReferenceMedia
+  /** When true, inject Arena iframe emailId scaffold and Arena system-prompt mandates. */
+  arenaMode?: boolean
 }
 
 export interface GeneratedAppFile {
@@ -393,6 +405,8 @@ interface NormalizeAppSpecOptions {
    * so injected fallbacks (schema, README) cannot clobber real files on merge.
    */
   skipFileNormalization?: boolean
+  /** When true, inject Arena iframe emailId scaffold into the generated app. */
+  arenaMode?: boolean
 }
 
 /**
@@ -481,6 +495,7 @@ function normalizeAppSpec(
       features: parsed.features,
       repoName: parsed.repoName,
       latestUserRequest: options.latestUserRequest,
+      arenaMode: options.arenaMode ?? isArenaMode(),
     })
   }
 
@@ -630,10 +645,11 @@ function augmentSystemPromptForReferenceImage(
   systemPrompt: string,
   referenceMedia?: DevelopmentReferenceMedia
 ): string {
+  let prompt = appendArenaSystemPrompt(systemPrompt, isArenaMode())
   if (!referenceMedia) {
-    return systemPrompt
+    return prompt
   }
-  return `${systemPrompt}\n\n- ${GENERATED_APP_REFERENCE_PDF_GUIDANCE}`
+  return `${prompt}\n\n- ${GENERATED_APP_REFERENCE_PDF_GUIDANCE}`
 }
 
 function buildReferenceContentBlock(
@@ -1258,6 +1274,7 @@ Common TypeScript error codes and their generic fixes:
 - TS18047 / TS2531 "possibly null": add \`if (!x) return\` guards after getContext('2d'), ref.current, .find(), getElementById, searchParams.get() — never use the \`!\` assertion
 - TS2305 "has no exported member": export the missing symbol from the module that defines it, in the same response as the importer
 - TS2307 "Cannot find module": add the imported package to package.json dependencies (and its @types/* to devDependencies when it ships no types)
+- npm ETARGET / "No matching version found for caniuse-lite": REMOVE caniuse-lite, browserslist, and update-browserslist-db from package.json dependencies, devDependencies, and overrides — do NOT pin them; delete any package-lock.json
 - TS2322 "IntrinsicAttributes & XxxClientProps" / missing prop: make page JSX prop names exactly match the Client component's Props interface; include every prop; update page AND component together
 - TS2322/TS2538/TS2464 involving \`unknown\`: replace \`unknown\`/\`unknown[]\` props and \`.map()\` params with concrete interfaces from lib/types.ts (string ids/labels)
 - TS1109 "Expression expected": usually a split import — give each package its own \`import { ... } from '...'\` block
@@ -1386,6 +1403,8 @@ function startGitHubRepositoryPrepIfConfigured(params: {
 interface ValidateAndRepairOptions {
   /** Deployed prisma/schema.prisma content — enables db push migration-safety checks on edits. */
   originalPrismaSchema?: string
+  /** When true, keep Arena iframe emailId scaffold during repair normalization. */
+  arenaMode?: boolean
 }
 
 async function validateAndRepairUntilBuildPasses(
@@ -1408,6 +1427,7 @@ async function validateAndRepairUntilBuildPasses(
       features: currentSpec.features,
       repoName: currentSpec.repoName,
       latestUserRequest: userInput,
+      arenaMode: options.arenaMode ?? isArenaMode(),
     })
     await writeAppFiles(outputDir, currentSpec.files)
 
@@ -1642,7 +1662,9 @@ export async function generateNextjsApp(
   }
 
   return runWithLlmUsageTracking(async () => {
-    const result = await generateNextjsAppInner(input, userInput)
+    const result = await runWithArenaMode(input.arenaMode === true, () =>
+      generateNextjsAppInner(input, userInput)
+    )
     const llmUsage = getTrackedLlmUsage()
     return llmUsage ? { ...result, llmUsage } : result
   })
@@ -1951,6 +1973,8 @@ export interface EditNextjsAppInput {
   userInput: string
   repoName: string
   referenceImage?: DevelopmentReferenceMedia
+  /** When true, inject Arena iframe emailId scaffold and Arena system-prompt mandates. */
+  arenaMode?: boolean
 }
 
 const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
@@ -2219,7 +2243,9 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
   }
 
   return runWithLlmUsageTracking(async () => {
-    const result = await editNextjsAppInner(input, userInput, repoName)
+    const result = await runWithArenaMode(input.arenaMode === true, () =>
+      editNextjsAppInner(input, userInput, repoName)
+    )
     const llmUsage = getTrackedLlmUsage()
     return llmUsage ? { ...result, llmUsage } : result
   })

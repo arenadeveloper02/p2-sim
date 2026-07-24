@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
 
+import { ensureArenaScaffoldFiles } from '@/lib/development/arena/scaffold'
+
 const logger = createLogger('NormalizeGeneratedApp')
 
 export interface GeneratedAppFile {
@@ -35,6 +37,25 @@ const REACT19_COMPAT_DEPENDENCY_OVERRIDES: Record<string, string> = {
 }
 
 /**
+ * Transitive tooling the LLM sometimes pins directly (often with hallucinated or
+ * too-new versions). Leave resolution to autoprefixer/browserslist instead.
+ */
+const STRIP_DIRECT_TOOLING_DEPENDENCIES = new Set([
+  'caniuse-lite',
+  'browserslist',
+  'update-browserslist-db',
+])
+
+/** Lockfiles from the LLM freeze bad transitive versions and break fresh npm installs. */
+const GENERATED_APP_LOCKFILE_PATHS = new Set([
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'bun.lock',
+  'bun.lockb',
+])
+
+/**
  * Added to package.json when source files import the package but the LLM omitted it.
  * Import-driven only — nothing here is forced onto apps that do not use it.
  */
@@ -60,6 +81,8 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - If ANY file imports a third-party package (e.g. lucide-react, recharts, date-fns, zod, bcryptjs, jsonwebtoken), package.json dependencies MUST include that exact package — a missing dependency causes TS2307 "Cannot find module" at typecheck
 - Add matching @types/* devDependencies for packages that ship no bundled types (e.g. @types/jsonwebtoken, @types/bcryptjs)
 - When using lucide-react, pin "lucide-react": "^0.479.0" or newer (React 19 compatible) — never ^0.395.x
+- NEVER add caniuse-lite, browserslist, or update-browserslist-db as direct dependencies/devDependencies/overrides — they are transitive via autoprefixer; pinning them causes npm ETARGET install failures
+- NEVER emit package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lock
 Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use a Tailwind v4-only setup.
 next.config.ts MUST NOT include an eslint property (removed in Next.js 16 — builds no longer run ESLint from next.config)`
 
@@ -462,6 +485,8 @@ export interface NormalizeGeneratedAppFilesOptions {
   latestUserRequest?: string
   /** Neon project id — recorded in REPO_SUMMARY.md for edit-time connection reuse. */
   neonProjectId?: string
+  /** When true, inject Arena iframe emailId scaffold into the generated app. */
+  arenaMode?: boolean
 }
 
 export const GENERATED_APP_REPO_SUMMARY_GUIDANCE = `REPO_SUMMARY.md (required, auto-maintained):
@@ -570,6 +595,7 @@ export function patchPackageJsonContent(
     const pkg = JSON.parse(content) as {
       dependencies?: Record<string, string>
       devDependencies?: Record<string, string>
+      overrides?: Record<string, unknown>
       scripts?: Record<string, string>
     }
 
@@ -581,6 +607,8 @@ export function patchPackageJsonContent(
         pkg.dependencies[dep] = version
       }
     }
+
+    stripDirectToolingDependencies(pkg)
 
     if (options.usedPackages) {
       for (const usedPackage of options.usedPackages) {
@@ -622,6 +650,31 @@ export function patchPackageJsonContent(
     return `${JSON.stringify(pkg, null, 2)}\n`
   } catch {
     return content
+  }
+}
+
+function stripDirectToolingDependencies(pkg: {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+  overrides?: Record<string, unknown>
+}): void {
+  if (pkg.dependencies) {
+    for (const name of STRIP_DIRECT_TOOLING_DEPENDENCIES) {
+      delete pkg.dependencies[name]
+    }
+  }
+  if (pkg.devDependencies) {
+    for (const name of STRIP_DIRECT_TOOLING_DEPENDENCIES) {
+      delete pkg.devDependencies[name]
+    }
+  }
+  if (pkg.overrides) {
+    for (const name of STRIP_DIRECT_TOOLING_DEPENDENCIES) {
+      delete pkg.overrides[name]
+    }
+    if (Object.keys(pkg.overrides).length === 0) {
+      delete pkg.overrides
+    }
   }
 }
 
@@ -1662,7 +1715,16 @@ export function normalizeGeneratedAppFiles(
 ): GeneratedAppFile[] {
   const useSrcDir = projectUsesSrcAppDir(files)
 
-  const patched = files.map((file) => {
+  const withoutLockfiles = files.filter((file) => {
+    const path = normalizePath(file.path)
+    if (!GENERATED_APP_LOCKFILE_PATHS.has(path)) {
+      return true
+    }
+    logger.warn('Removed generated lockfile (npm must resolve transitive deps fresh)', { path })
+    return false
+  })
+
+  const patched = withoutLockfiles.map((file) => {
     const path = normalizePath(file.path)
 
     if (path === 'package.json' || path.endsWith('/package.json')) {
@@ -1688,9 +1750,12 @@ export function normalizeGeneratedAppFiles(
   const withNextEnv = ensureNextEnvFile(withDatabase)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
-  const usedPackages = collectUsedNpmPackageNames(withRepoSummary)
+  const withArena = options.arenaMode
+    ? ensureArenaScaffoldFiles(withRepoSummary)
+    : withRepoSummary
+  const usedPackages = collectUsedNpmPackageNames(withArena)
 
-  return withRepoSummary.map((file) => {
+  return withArena.map((file) => {
     if (normalizePath(file.path) !== 'package.json') {
       return file
     }

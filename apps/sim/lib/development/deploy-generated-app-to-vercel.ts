@@ -98,12 +98,33 @@ interface VercelProject {
 
 interface VercelDeployment {
   id: string
+  uid?: string
   url?: string
   readyState?: string
+  state?: string
   alias?: string[]
   inspectorUrl?: string
   errorMessage?: string
   errorCode?: string
+  target?: string | null
+  meta?: {
+    githubCommitSha?: string
+    gitCommitSha?: string
+  }
+}
+
+interface VercelDeploymentListItem {
+  uid: string
+  url?: string
+  name?: string
+  state?: string
+  readyState?: string
+  target?: string | null
+  inspectorUrl?: string
+  meta?: {
+    githubCommitSha?: string
+    gitCommitSha?: string
+  }
 }
 
 interface VercelDeploymentEvent {
@@ -114,6 +135,8 @@ interface VercelDeploymentEvent {
 }
 
 const MAX_BUILD_LOG_CHARS = 8_000
+/** Wait for GitHub-push auto-deploy before creating a duplicate API deployment. */
+const AUTO_DEPLOY_INITIAL_WAIT_MS = 90_000
 
 async function vercelRequest<T>(
   token: string,
@@ -381,15 +404,189 @@ function formatDeploymentFailure(deployment: VercelDeployment, buildLog: string)
   return parts.length > 0 ? parts.join('\n') : 'Vercel build failed (no log details returned)'
 }
 
-function resolveLiveUrl(deployment: VercelDeployment, projectName: string): string {
-  const alias = deployment.alias?.find((entry) => entry.includes('.vercel.app'))
-  if (alias) {
-    return toHttpsUrl(alias)
+/**
+ * Picks the stable production URL from a deployment alias list.
+ * Prefers `{project}.vercel.app` over deployment-hash or git-branch aliases.
+ */
+export function resolveLiveUrl(
+  deployment: Pick<VercelDeployment, 'alias' | 'url'>,
+  projectName: string
+): string {
+  const aliases = (deployment.alias ?? [])
+    .map((entry) => entry.replace(/^https?:\/\//, '').trim())
+    .filter(Boolean)
+
+  const exact = aliases.find((alias) => alias === `${projectName}.vercel.app`)
+  if (exact) {
+    return toHttpsUrl(exact)
   }
+
+  const productionLike = aliases
+    .filter((alias) => alias.endsWith('.vercel.app') && !alias.includes('-git-'))
+    .sort((left, right) => left.length - right.length)
+  if (productionLike[0]) {
+    return toHttpsUrl(productionLike[0])
+  }
+
+  const anyVercelApp = aliases.find((alias) => alias.endsWith('.vercel.app'))
+  if (anyVercelApp) {
+    return toHttpsUrl(anyVercelApp)
+  }
+
   if (deployment.url) {
     return toHttpsUrl(deployment.url)
   }
+
   return `https://${projectName}.vercel.app`
+}
+
+/**
+ * Prefer a READY deployment for the pushed commit when present in a list response.
+ */
+export function selectReadyDeploymentFromList(
+  deployments: VercelDeploymentListItem[],
+  commitSha?: string
+): VercelDeploymentListItem | undefined {
+  const normalizedSha = commitSha?.trim().toLowerCase()
+  const ready = deployments.filter((deployment) => {
+    const state = (deployment.readyState ?? deployment.state)?.toUpperCase()
+    return state === 'READY'
+  })
+
+  if (normalizedSha) {
+    const matching = ready.find((deployment) => {
+      const metaSha = (
+        deployment.meta?.githubCommitSha ??
+        deployment.meta?.gitCommitSha ??
+        ''
+      ).toLowerCase()
+      return metaSha === normalizedSha || metaSha.startsWith(normalizedSha.slice(0, 7))
+    })
+    if (matching) {
+      return matching
+    }
+  }
+
+  return ready[0]
+}
+
+async function listProjectDeployments(
+  token: string,
+  projectId: string,
+  options: { teamId?: string; commitSha?: string; limit?: number } = {}
+): Promise<VercelDeploymentListItem[]> {
+  const params = new URLSearchParams({
+    projectId,
+    target: 'production',
+    limit: String(options.limit ?? 10),
+  })
+  if (options.commitSha?.trim()) {
+    params.set('sha', options.commitSha.trim())
+  }
+
+  const { data, status } = await vercelRequest<{ deployments?: VercelDeploymentListItem[] }>(
+    token,
+    `/v6/deployments?${params.toString()}`,
+    { method: 'GET' },
+    options.teamId
+  )
+
+  if (status !== 200) {
+    throw new Error(vercelErrorMessage(data, status))
+  }
+
+  return Array.isArray(data.deployments) ? data.deployments : []
+}
+
+async function findReadyProjectDeployment(
+  token: string,
+  projectId: string,
+  teamId: string | undefined,
+  commitSha?: string
+): Promise<VercelDeployment | null> {
+  const listed = await listProjectDeployments(token, projectId, {
+    teamId,
+    commitSha,
+    limit: 10,
+  })
+  const selected = selectReadyDeploymentFromList(listed, commitSha)
+  if (!selected?.uid) {
+    return null
+  }
+
+  return getVercelDeployment(token, selected.uid, teamId)
+}
+
+async function waitForAutoDeployReady(
+  token: string,
+  projectId: string,
+  teamId: string | undefined,
+  commitSha: string,
+  timeoutMs: number
+): Promise<VercelDeployment | null> {
+  const deadline = Date.now() + timeoutMs
+
+  while (Date.now() < deadline) {
+    const ready = await findReadyProjectDeployment(token, projectId, teamId, commitSha)
+    if (ready) {
+      return ready
+    }
+
+    const listed = await listProjectDeployments(token, projectId, {
+      teamId,
+      commitSha,
+      limit: 5,
+    })
+    const hasInFlight = listed.some((deployment) => {
+      const state = (deployment.readyState ?? deployment.state)?.toUpperCase()
+      return (
+        state === 'BUILDING' ||
+        state === 'QUEUED' ||
+        state === 'INITIALIZING' ||
+        state === 'READY'
+      )
+    })
+
+    if (!hasInFlight && listed.length > 0) {
+      const allFailed = listed.every((deployment) => {
+        const state = (deployment.readyState ?? deployment.state)?.toUpperCase()
+        return state === 'ERROR' || state === 'CANCELED'
+      })
+      if (allFailed) {
+        return null
+      }
+    }
+
+    await sleep(DEPLOY_POLL_INTERVAL_MS)
+  }
+
+  return findReadyProjectDeployment(token, projectId, teamId, commitSha)
+}
+
+function toDeploySuccessResult(
+  ready: VercelDeployment,
+  project: VercelProject,
+  input: DeployPreparedVercelProjectInput
+): DeployGeneratedAppToVercelResult {
+  const vercelUrl = resolveLiveUrl(ready, project.name)
+  const vercelDeploymentUrl = ready.url ? toHttpsUrl(ready.url) : vercelUrl
+
+  logger.info('Vercel deployment ready', {
+    projectId: project.id,
+    deploymentId: ready.id,
+    vercelUrl,
+  })
+
+  return {
+    success: true,
+    vercelUrl,
+    vercelDeploymentUrl,
+    vercelProjectId: project.id,
+    vercelDeploymentId: ready.id,
+    vercelInspectorUrl: ready.inspectorUrl,
+    databaseProvisioned: input.databaseProvisioned,
+    neonProjectId: input.neonProjectId,
+  }
 }
 
 async function waitForDeploymentReady(
@@ -558,9 +755,11 @@ export async function deployPreparedVercelProject(
     }
   }
 
+  let resolvedCommitSha = input.gitCommitSha?.trim()
+
   try {
     let gitRef = input.gitRef?.trim() || DEFAULT_GIT_REF
-    let gitCommitSha = input.gitCommitSha?.trim()
+    let gitCommitSha = resolvedCommitSha
     let gitHubRepoId = input.gitHubRepoId
     let resolvedOwner = githubOwner
     let resolvedRepoName = githubRepoName
@@ -588,6 +787,7 @@ export async function deployPreparedVercelProject(
         gitCommitSha = await fetchGitHubBranchHeadSha(input.githubToken, repoDetails, gitRef)
       }
 
+      resolvedCommitSha = gitCommitSha
       logger.info('Resolved GitHub repository for Vercel deploy', {
         fullName: repoDetails.fullName,
         repoId: gitHubRepoId,
@@ -645,7 +845,7 @@ export async function deployPreparedVercelProject(
       }
     }
 
-    logger.info('Triggering Vercel deployment from Git', {
+    logger.info('Waiting for Vercel production deployment', {
       projectId: project.id,
       gitRef,
       repoId: gitHubRepoId,
@@ -653,91 +853,156 @@ export async function deployPreparedVercelProject(
       githubRepo: resolvedGithubRepo,
     })
 
-    let ready: VercelDeployment
-    try {
-      const created = await createGitDeployment(
+    // GitHub push already triggers an auto-deploy when the project is linked. Prefer that
+    // READY deployment so we do not create a duplicate API deploy and false-fail on it.
+    let ready =
+      (await waitForAutoDeployReady(
         token,
-        project,
-        gitRef,
-        gitHubRepoId,
+        project.id,
         input.vercelTeamId,
-        gitCommitSha
-      )
-      ready = await waitForDeploymentReady(token, created.id, input.vercelTeamId)
-    } catch (gitDeployError) {
-      const gitMessage = toError(gitDeployError).message
-      const shouldFallback =
-        /git_info_fail|incorrect_git_source_info|unable to fetch required git information/i.test(
-          gitMessage
-        ) && Boolean(input.outputDir)
+        gitCommitSha,
+        AUTO_DEPLOY_INITIAL_WAIT_MS
+      )) ?? undefined
 
-      if (!shouldFallback) {
-        throw gitDeployError
-      }
+    if (!ready) {
+      try {
+        const created = await createGitDeployment(
+          token,
+          project,
+          gitRef,
+          gitHubRepoId,
+          input.vercelTeamId,
+          gitCommitSha
+        )
+        ready = await waitForDeploymentReady(token, created.id, input.vercelTeamId)
+      } catch (gitDeployError) {
+        const recovered = await findReadyProjectDeployment(
+          token,
+          project.id,
+          input.vercelTeamId,
+          gitCommitSha
+        )
+        if (recovered) {
+          logger.warn(
+            'Tracked Vercel deployment failed, but a READY production deploy exists for this commit',
+            {
+              projectId: project.id,
+              commitSha: gitCommitSha,
+              recoveredDeploymentId: recovered.id,
+              error: toError(gitDeployError).message,
+            }
+          )
+          ready = recovered
+        } else {
+          const gitMessage = toError(gitDeployError).message
+          const shouldFallback =
+            /git_info_fail|incorrect_git_source_info|unable to fetch required git information/i.test(
+              gitMessage
+            ) && Boolean(input.outputDir)
 
-      logger.warn('Git-based Vercel deploy failed; falling back to file upload deploy', {
-        projectId: project.id,
-        error: gitMessage,
-      })
+          if (!shouldFallback) {
+            throw gitDeployError
+          }
 
-      const { deployVercelProjectFromFiles } = await import(
-        '@/lib/development/deploy-vercel-from-files'
-      )
-      const fileDeploy = await deployVercelProjectFromFiles({
-        vercelToken: token,
-        vercelProjectId: project.id,
-        vercelProjectName: project.name,
-        outputDir: input.outputDir as string,
-        vercelTeamId: input.vercelTeamId,
-        gitMetadata: {
-          remoteUrl,
-          commitSha: gitCommitSha,
-          commitRef: gitRef,
-          commitMessage: 'Sim Development deployment',
-        },
-      })
+          logger.warn('Git-based Vercel deploy failed; falling back to file upload deploy', {
+            projectId: project.id,
+            error: gitMessage,
+          })
 
-      if (!fileDeploy.success) {
-        return {
-          success: false,
-          error: `${gitMessage}\n\nFile upload deploy fallback also failed: ${fileDeploy.error}`,
-          vercelProjectId: input.vercelProjectId,
+          const { deployVercelProjectFromFiles } = await import(
+            '@/lib/development/deploy-vercel-from-files'
+          )
+          const fileDeploy = await deployVercelProjectFromFiles({
+            vercelToken: token,
+            vercelProjectId: project.id,
+            vercelProjectName: project.name,
+            outputDir: input.outputDir as string,
+            vercelTeamId: input.vercelTeamId,
+            gitMetadata: {
+              remoteUrl,
+              commitSha: gitCommitSha,
+              commitRef: gitRef,
+              commitMessage: 'Sim Development deployment',
+            },
+          })
+
+          if (!fileDeploy.success) {
+            const recoveredAfterFile = await findReadyProjectDeployment(
+              token,
+              project.id,
+              input.vercelTeamId,
+              gitCommitSha
+            )
+            if (recoveredAfterFile) {
+              return toDeploySuccessResult(recoveredAfterFile, project, input)
+            }
+
+            return {
+              success: false,
+              error: `${gitMessage}\n\nFile upload deploy fallback also failed: ${fileDeploy.error}`,
+              vercelProjectId: input.vercelProjectId,
+            }
+          }
+
+          return {
+            success: true,
+            vercelUrl: fileDeploy.vercelUrl,
+            vercelDeploymentUrl: fileDeploy.vercelDeploymentUrl,
+            vercelProjectId: fileDeploy.vercelProjectId,
+            vercelDeploymentId: fileDeploy.vercelDeploymentId,
+            vercelInspectorUrl: fileDeploy.vercelInspectorUrl,
+            databaseProvisioned: input.databaseProvisioned,
+            neonProjectId: input.neonProjectId,
+          }
         }
       }
+    }
 
+    if (!ready) {
       return {
-        success: true,
-        vercelUrl: fileDeploy.vercelUrl,
-        vercelDeploymentUrl: fileDeploy.vercelDeploymentUrl,
-        vercelProjectId: fileDeploy.vercelProjectId,
-        vercelDeploymentId: fileDeploy.vercelDeploymentId,
-        vercelInspectorUrl: fileDeploy.vercelInspectorUrl,
-        databaseProvisioned: input.databaseProvisioned,
-        neonProjectId: input.neonProjectId,
+        success: false,
+        error: 'Vercel deployment did not become READY',
+        vercelProjectId: input.vercelProjectId,
       }
     }
 
-    const vercelUrl = resolveLiveUrl(ready, project.name)
-    const vercelDeploymentUrl = ready.url ? toHttpsUrl(ready.url) : vercelUrl
-
-    logger.info('Vercel deployment ready', {
-      projectId: project.id,
-      deploymentId: ready.id,
-      vercelUrl,
-    })
-
-    return {
-      success: true,
-      vercelUrl,
-      vercelDeploymentUrl,
-      vercelProjectId: project.id,
-      vercelDeploymentId: ready.id,
-      vercelInspectorUrl: ready.inspectorUrl,
-      databaseProvisioned: input.databaseProvisioned,
-      neonProjectId: input.neonProjectId,
-    }
+    return toDeploySuccessResult(ready, project, input)
   } catch (error) {
     const message = toError(error).message
+    try {
+      if (resolvedCommitSha) {
+        const project = await getVercelProjectByName(
+          token,
+          input.vercelProjectName,
+          input.vercelTeamId
+        )
+        if (project) {
+          const recovered = await findReadyProjectDeployment(
+            token,
+            project.id,
+            input.vercelTeamId,
+            resolvedCommitSha
+          )
+          if (recovered) {
+            logger.warn(
+              'Vercel deploy path errored, recovering from READY production deployment',
+              {
+                projectId: project.id,
+                commitSha: resolvedCommitSha,
+                recoveredDeploymentId: recovered.id,
+                error: message,
+              }
+            )
+            return toDeploySuccessResult(recovered, project, input)
+          }
+        }
+      }
+    } catch (recoveryError) {
+      logger.warn('Failed while recovering READY Vercel deployment', {
+        error: toError(recoveryError).message,
+      })
+    }
+
     logger.error('Vercel deployment failed', { error: message })
     return { success: false, error: message, vercelProjectId: input.vercelProjectId }
   }

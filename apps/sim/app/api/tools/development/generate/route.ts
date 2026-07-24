@@ -32,7 +32,8 @@ const RequestSchema = z.object({
   userInput: z.string().min(1, 'userInput is required'),
   repoName: z.string().optional(),
   privateRepo: z.boolean().optional(),
-  referenceImage: ReferenceImageFileSchema.optional(),
+  referenceImage: RawFileInputSchema.nullish(),
+  arenaMode: z.boolean().optional(),
   workspaceId: z.string().optional(),
   workflowId: z.string().optional(),
   executionId: z.string().optional(),
@@ -66,7 +67,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   let referenceImage
   try {
     referenceImage = await resolveDevelopmentReferenceImage({
-      referenceImage: parsed.data.referenceImage,
+      referenceImage: parsed.data.referenceImage ?? undefined,
       userId: auth.userId,
       requestId,
       logger,
@@ -82,6 +83,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     repoName: parsed.data.repoName,
     privateRepo: parsed.data.privateRepo,
     hasReferenceImage: Boolean(referenceImage),
+    arenaMode: parsed.data.arenaMode === true,
   })
 
   const result = await generateNextjsApp({
@@ -89,6 +91,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     repoName: parsed.data.repoName,
     privateRepo: parsed.data.privateRepo,
     referenceImage,
+    arenaMode: parsed.data.arenaMode === true,
   })
 
   // Cost is returned on the response for span → usage_log billing (no side-channel).

@@ -1,18 +1,18 @@
 import { mapGenerateAppResultToToolResponse } from '@/tools/development/map-generate-app-response'
 import type {
-  DevelopmentEditAppParams,
-  DevelopmentEditAppResponse,
+  DevelopmentGenerateAppParams,
+  DevelopmentGenerateAppResponse,
 } from '@/tools/development/types'
 import type { ToolConfig } from '@/tools/types'
 
-export const developmentEditAppTool: ToolConfig<
-  DevelopmentEditAppParams,
-  DevelopmentEditAppResponse
+export const arenaDevelopmentGenerateAppTool: ToolConfig<
+  DevelopmentGenerateAppParams,
+  DevelopmentGenerateAppResponse
 > = {
-  id: 'development_edit_app',
-  name: 'Edit Next.js App',
+  id: 'arena_development_generate_app',
+  name: 'Generate Arena Next.js App',
   description:
-    'Edit an existing generated Next.js application using its repository context, then push to GitHub and deploy to Vercel. Reuses the existing Neon database when present; otherwise provisions one. Prisma schema changes are additive.',
+    'Generate an iframe-ready Next.js app with emailId gate, push to GitHub, and deploy to Vercel',
   version: '1.0.0',
 
   params: {
@@ -20,33 +20,40 @@ export const developmentEditAppTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description:
-        'Requested code changes, features, UI updates, or bug fixes for the existing app',
+      description: 'App idea, features, pages, UI style, auth needs, and any other requirements',
     },
     repoName: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description: 'Repository name of the existing generated app to edit',
+      description: 'Repository folder name (kebab-case). Derived from the app name if omitted',
+    },
+    privateRepo: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-only',
+      description: 'Create the GitHub repository as private',
+      default: false,
     },
     referenceImage: {
       type: 'json',
       required: false,
       visibility: 'user-only',
-      description:
-        'Optional design PDF — layout, theme, and styling follow the reference when editing UI',
+      description: 'Optional design PDF — layout, theme, and styling follow the reference',
     },
   },
 
   request: {
-    url: '/api/tools/development/edit',
+    url: '/api/tools/development/generate',
     method: 'POST',
     timeout: 600_000,
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
       userInput: params.userInput,
       repoName: params.repoName,
+      privateRepo: params.privateRepo,
       ...(params.referenceImage != null ? { referenceImage: params.referenceImage } : {}),
+      arenaMode: true,
       workspaceId: params._context?.workspaceId,
       workflowId: params._context?.workflowId,
       executionId: params._context?.executionId,
@@ -65,24 +72,24 @@ export const developmentEditAppTool: ToolConfig<
   },
 
   outputs: {
-    content: { type: 'string', description: 'Summary of the edit result' },
+    content: { type: 'string', description: 'Summary of the generation result' },
     appName: { type: 'string', description: 'Human-readable application name' },
-    repoName: { type: 'string', description: 'Repository folder name that was edited' },
-    description: { type: 'string', description: 'Short description of the app' },
+    repoName: { type: 'string', description: 'Repository folder name that was created' },
+    description: { type: 'string', description: 'Short description of the generated app' },
     features: {
       type: 'json',
-      description: 'List of main features included in the app',
+      description: 'List of main features included in the generated app',
     },
     outputPath: {
       type: 'string',
-      description: 'Relative path to the edited app inside the project (generated-apps/...)',
+      description: 'Relative path to the generated app inside the project (generated-apps/...)',
     },
     absoluteOutputPath: {
       type: 'string',
-      description: 'Absolute filesystem path to the edited app folder',
+      description: 'Absolute filesystem path to the generated app folder',
       optional: true,
     },
-    fileCount: { type: 'number', description: 'Number of files in the edited app' },
+    fileCount: { type: 'number', description: 'Number of files written' },
     buildValidated: {
       type: 'boolean',
       description:
@@ -96,7 +103,7 @@ export const developmentEditAppTool: ToolConfig<
     },
     gitPushed: {
       type: 'boolean',
-      description: 'Whether the edited app was pushed to GitHub',
+      description: 'Whether the generated app was pushed to GitHub',
       optional: true,
     },
     githubHtmlUrl: {
@@ -161,7 +168,7 @@ export const developmentEditAppTool: ToolConfig<
     },
     requiresDatabase: {
       type: 'boolean',
-      description: 'Whether the app needs Neon Postgres persistence',
+      description: 'Whether the generated app needs Neon Postgres persistence',
       optional: true,
     },
     databaseProvisioned: {
