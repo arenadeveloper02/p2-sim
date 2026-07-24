@@ -54,6 +54,8 @@ export const GET = withRouteHandler(
           outputConfigs: chat.outputConfigs,
           password: chat.password,
           isActive: chat.isActive,
+          deploymentType: chat.deploymentType,
+          redirectUrl: chat.redirectUrl,
         })
         .from(chat)
         .where(and(eq(chat.workflowId, id), isNull(chat.archivedAt)))
@@ -72,6 +74,8 @@ export const GET = withRouteHandler(
               allowedEmails: deploymentResults[0].allowedEmails,
               outputConfigs: deploymentResults[0].outputConfigs,
               hasPassword: Boolean(deploymentResults[0].password),
+              deploymentType: deploymentResults[0].deploymentType,
+              redirectUrl: deploymentResults[0].redirectUrl,
             }
           : null
 
