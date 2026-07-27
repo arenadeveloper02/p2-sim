@@ -132,8 +132,12 @@ const RunAgentExternalChat = ({
         if (response.ok) {
           const data = await response.json()
           if (data.isDeployed && data.deployment?.identifier) {
-            const url = `/chat/${data.deployment.identifier}?workspaceId=${workspaceId}&fromControlBar=true`
-            setChatUrl(url)
+            if (data.deployment.deploymentType === 'app' && data.deployment.redirectUrl) {
+              setChatUrl(data.deployment.redirectUrl)
+            } else {
+              const url = `/chat/${data.deployment.identifier}?workspaceId=${workspaceId}&fromControlBar=true`
+              setChatUrl(url)
+            }
           } else {
             setChatUrl(null)
           }
@@ -155,9 +159,13 @@ const RunAgentExternalChat = ({
     return null
   }
 
+  const isExternalUrl = chatUrl.startsWith('http://') || chatUrl.startsWith('https://')
+
   return (
     <Link
       href={chatUrl}
+      target={isExternalUrl ? '_blank' : undefined}
+      rel={isExternalUrl ? 'noopener noreferrer' : undefined}
       onClick={() =>
         workflowRunCTAEvent({
           'Workspace Name': workspaceName || '',
