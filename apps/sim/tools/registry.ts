@@ -217,6 +217,10 @@ import {
   arenaSearchTask,
   arenaSearchTaskSimple,
 } from '@/tools/arena'
+import {
+  arenaDevelopmentEditAppTool,
+  arenaDevelopmentGenerateAppTool,
+} from '@/tools/arena-development'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
   asanaAddCommentTool,
@@ -4645,6 +4649,8 @@ export const tools: Record<string, ToolConfig> = {
   arena_project_summary: arenaProjectSummary,
   arena_client_updated_tasks: arenaClientUpdatedTasks,
   arena_conversation_summary: arenaConversationSummary,
+  arena_development_generate_app: arenaDevelopmentGenerateAppTool,
+  arena_development_edit_app: arenaDevelopmentEditAppTool,
   a2a_cancel_task: a2aCancelTaskTool,
   a2a_get_agent_card: a2aGetAgentCardTool,
   a2a_get_task: a2aGetTaskTool,

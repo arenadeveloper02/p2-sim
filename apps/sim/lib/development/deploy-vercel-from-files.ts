@@ -172,13 +172,27 @@ async function waitForDeploymentReady(
 }
 
 function resolveLiveUrl(deployment: VercelDeployment, projectName: string): string {
-  // const alias = deployment.alias?.find((entry) => entry.includes('.vercel.app'))
-  // if (alias) {
-  //   return alias.startsWith('http') ? alias : `https://${alias}`
-  // }
-  // if (deployment.url) {
-  //   return deployment.url.startsWith('http') ? deployment.url : `https://${deployment.url}`
-  // }
+  const aliases = (deployment.alias ?? [])
+    .map((entry) => entry.replace(/^https?:\/\//, '').trim())
+    .filter(Boolean)
+
+  const exact = aliases.find((alias) => alias === `${projectName}.vercel.app`)
+  if (exact) {
+    return exact.startsWith('http') ? exact : `https://${exact}`
+  }
+
+  const productionLike = aliases
+    .filter((alias) => alias.endsWith('.vercel.app') && !alias.includes('-git-'))
+    .sort((left, right) => left.length - right.length)
+  if (productionLike[0]) {
+    const alias = productionLike[0]
+    return alias.startsWith('http') ? alias : `https://${alias}`
+  }
+
+  if (deployment.url) {
+    return deployment.url.startsWith('http') ? deployment.url : `https://${deployment.url}`
+  }
+
   return `https://${projectName}.vercel.app`
 }
 

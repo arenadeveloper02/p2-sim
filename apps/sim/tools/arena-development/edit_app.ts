@@ -5,14 +5,14 @@ import type {
 } from '@/tools/development/types'
 import type { ToolConfig } from '@/tools/types'
 
-export const developmentEditAppTool: ToolConfig<
+export const arenaDevelopmentEditAppTool: ToolConfig<
   DevelopmentEditAppParams,
   DevelopmentEditAppResponse
 > = {
-  id: 'development_edit_app',
-  name: 'Edit Next.js App',
+  id: 'arena_development_edit_app',
+  name: 'Edit Arena Next.js App',
   description:
-    'Edit an existing generated Next.js application using its repository context, then push to GitHub and deploy to Vercel. Reuses the existing Neon database when present; otherwise provisions one. Prisma schema changes are additive.',
+    'Edit an existing Arena Next.js app (preserves iframe emailId gate), then push to GitHub and deploy to Vercel',
   version: '1.0.0',
 
   params: {
@@ -20,8 +20,7 @@ export const developmentEditAppTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description:
-        'Requested code changes, features, UI updates, or bug fixes for the existing app',
+      description: 'Requested code changes, features, UI updates, or bug fixes for the existing app',
     },
     repoName: {
       type: 'string',
@@ -47,6 +46,7 @@ export const developmentEditAppTool: ToolConfig<
       userInput: params.userInput,
       repoName: params.repoName,
       ...(params.referenceImage != null ? { referenceImage: params.referenceImage } : {}),
+      arenaMode: true,
       workspaceId: params._context?.workspaceId,
       workflowId: params._context?.workflowId,
       executionId: params._context?.executionId,
@@ -75,14 +75,14 @@ export const developmentEditAppTool: ToolConfig<
     },
     outputPath: {
       type: 'string',
-      description: 'Relative path to the edited app inside the project (generated-apps/...)',
+      description: 'Relative path to the generated app inside the project (generated-apps/...)',
     },
     absoluteOutputPath: {
       type: 'string',
-      description: 'Absolute filesystem path to the edited app folder',
+      description: 'Absolute filesystem path to the generated app folder',
       optional: true,
     },
-    fileCount: { type: 'number', description: 'Number of files in the edited app' },
+    fileCount: { type: 'number', description: 'Number of files written' },
     buildValidated: {
       type: 'boolean',
       description:
@@ -96,7 +96,7 @@ export const developmentEditAppTool: ToolConfig<
     },
     gitPushed: {
       type: 'boolean',
-      description: 'Whether the edited app was pushed to GitHub',
+      description: 'Whether the generated app was pushed to GitHub',
       optional: true,
     },
     githubHtmlUrl: {
