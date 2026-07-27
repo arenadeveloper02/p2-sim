@@ -24,6 +24,7 @@ export const emailCatalog = defineCatalog(emailSchema, {
     Hr: standardComponentDefinitions.Hr,
     Preview: standardComponentDefinitions.Preview,
   },
+  actions: {},
 })
 
 /**

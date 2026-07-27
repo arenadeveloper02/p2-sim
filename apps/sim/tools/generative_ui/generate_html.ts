@@ -1,4 +1,4 @@
-import { generateGenerativeUiHtml } from '@/lib/generative-ui/generate-html'
+import { mapGenerativeUiResultToToolResponse } from '@/tools/generative_ui/map-response'
 import type {
   GenerativeUiGenerateHtmlParams,
   GenerativeUiGenerateHtmlResponse,
@@ -33,6 +33,8 @@ export const generativeUiGenerateHtmlTool: ToolConfig<
   request: {
     url: '/api/tools/generative_ui/generate',
     method: 'POST',
+    /** Catalog prompt + LLM + HTML render can exceed the default internal fetch limit */
+    timeout: 120_000,
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
       userInput: params.userInput,
@@ -40,33 +42,17 @@ export const generativeUiGenerateHtmlTool: ToolConfig<
     }),
   },
 
-  directExecution: async (params): Promise<GenerativeUiGenerateHtmlResponse> => {
-    const mode = params.mode === 'webpage' ? 'webpage' : 'email'
-    const result = await generateGenerativeUiHtml({
-      userInput: params.userInput,
-      mode,
-    })
-
-    if (!result.success || !result.html) {
-      return {
+  transformResponse: async (response) => {
+    const data = await response.json()
+    if (!response.ok) {
+      return mapGenerativeUiResultToToolResponse({
         success: false,
-        error: result.error ?? 'Failed to generate HTML',
-        output: {
-          html: '',
-          spec: result.spec ?? {},
-          mode,
-        },
-      }
+        error: typeof data.error === 'string' ? data.error : response.statusText,
+        mode: data.output?.mode === 'webpage' ? 'webpage' : 'email',
+        spec: data.output?.spec,
+      })
     }
-
-    return {
-      success: true,
-      output: {
-        html: result.html,
-        spec: result.spec ?? {},
-        mode: result.mode ?? mode,
-      },
-    }
+    return data as GenerativeUiGenerateHtmlResponse
   },
 
   outputs: {
