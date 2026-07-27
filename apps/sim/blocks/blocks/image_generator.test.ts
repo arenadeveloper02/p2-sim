@@ -13,8 +13,47 @@ describe('ImageGeneratorV2Block', () => {
   })
 
   it('resolves to image_generate for agent execution', () => {
-    expect(ImageGeneratorV2Block.tools?.access).toEqual(['image_generate'])
+    expect(ImageGeneratorV2Block.tools?.access).toEqual(
+      expect.arrayContaining(['image_generate'])
+    )
     expect(ImageGeneratorV2Block.tools?.config.tool?.({})).toBe('image_generate')
+  })
+
+  it('routes Ideogram provider to Ideogram tools', () => {
+    expect(ImageGeneratorV2Block.tools?.access).toEqual(
+      expect.arrayContaining(['ideogram_generate_v4', 'ideogram_remix_v3'])
+    )
+    expect(
+      ImageGeneratorV2Block.tools?.config.tool?.({
+        provider: 'ideogram',
+        operation: 'generate_v4',
+      })
+    ).toBe('ideogram_generate_v4')
+  })
+
+  it('builds Ideogram tool params when provider is ideogram', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'ideogram',
+      operation: 'generate_v4',
+      apiKey: 'ideo-key',
+      textPrompt: 'A cat',
+    })
+
+    expect(params).toMatchObject({
+      apiKey: 'ideo-key',
+      textPrompt: 'A cat',
+    })
+  })
+
+  it('omits Ideogram apiKey from tool params when unset so the server can use IDEOGRAM_API_KEY', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'ideogram',
+      operation: 'generate_v4',
+      textPrompt: 'A cat',
+    })
+
+    expect(params).not.toHaveProperty('apiKey')
+    expect(params).toMatchObject({ textPrompt: 'A cat' })
   })
 
   it('exposes unset image_generate params to the agent except apiKey', async () => {
@@ -82,13 +121,17 @@ describe('ImageGeneratorV2Block', () => {
     })
   })
 
-  it('uses a single always-visible model combobox with all block models', () => {
+  it('uses a single model combobox with all block models, hidden for Ideogram', () => {
     const modelSubBlocks = ImageGeneratorV2Block.subBlocks.filter(
       (subBlock) => subBlock.id === 'model'
     )
 
     expect(modelSubBlocks).toHaveLength(1)
-    expect(modelSubBlocks[0]?.condition).toBeUndefined()
+    expect(modelSubBlocks[0]?.condition).toEqual({
+      field: 'provider',
+      value: 'ideogram',
+      not: true,
+    })
     expect(modelSubBlocks[0]?.options?.map((option) => option.id)).toEqual(
       expect.arrayContaining(['gpt-image-2', 'gpt-image-1.5', 'gemini-3.1-flash-image-preview'])
     )
@@ -104,7 +147,12 @@ describe('ImageGeneratorV2Block', () => {
 
     expect(providerSubBlock?.clearable).toBe(true)
     expect(providerSubBlock?.value?.({})).toBe('')
-    expect(modelSubBlock?.condition).toBeUndefined()
+    // Model stays visible when provider is empty; only hidden for Ideogram.
+    expect(modelSubBlock?.condition).toEqual({
+      field: 'provider',
+      value: 'ideogram',
+      not: true,
+    })
   })
 
   it('keeps Nano Banana 2 aspect ratio and resolution optional without editor defaults', () => {
@@ -129,7 +177,7 @@ describe('ImageGeneratorV2Block', () => {
 
   it('keeps all optional image_generator_v2 combobox and dropdown fields clearable without editor defaults', () => {
     const optionalFieldTypes = new Set(['combobox', 'dropdown'])
-    const requiredFieldIds = new Set(['prompt'])
+    const requiredFieldIds = new Set(['prompt', 'operation'])
 
     const optionalConfiguredFields = ImageGeneratorV2Block.subBlocks.filter(
       (subBlock) => optionalFieldTypes.has(subBlock.type) && !requiredFieldIds.has(subBlock.id)

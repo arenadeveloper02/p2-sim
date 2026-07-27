@@ -3571,6 +3571,26 @@ export function HuggingFaceIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+/** Placeholder Ideogram mark until a brand SVG is provided. */
+export function IdeogramIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      viewBox='0 0 24 24'
+      fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+      aria-hidden='true'
+    >
+      <rect x='3' y='3' width='18' height='18' rx='4' stroke='currentColor' strokeWidth='1.5' />
+      <path
+        d='M8 15.5V8.5h2.1c1.7 0 2.75.9 2.75 2.35 0 .95-.5 1.7-1.35 2.05L13.7 15.5h-1.85l-1.9-2.35H9.7V15.5H8Zm1.7-3.9h.35c.7 0 1.1-.35 1.1-.9s-.4-.9-1.1-.9H9.7v1.8Z'
+        fill='currentColor'
+      />
+      <circle cx='16.5' cy='9' r='1.25' fill='currentColor' />
+    </svg>
+  )
+}
+
 export const ResponseIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg
     {...props}

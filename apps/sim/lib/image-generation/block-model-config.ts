@@ -1,4 +1,4 @@
-export type ImageBlockProvider = 'openai' | 'gemini'
+export type ImageBlockProvider = 'openai' | 'gemini' | 'ideogram'
 
 export type ImageProvider = ImageBlockProvider | 'falai'
 
@@ -112,6 +112,7 @@ export const IMAGE_BLOCK_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
 export const IMAGE_BLOCK_PROVIDER_OPTIONS: Array<{ label: string; id: ImageBlockProvider }> = [
   { label: 'OpenAI', id: 'openai' },
   { label: 'Google Gemini', id: 'gemini' },
+  { label: 'Ideogram', id: 'ideogram' },
 ]
 
 export interface ReconcileImageProviderAndModelInput {
@@ -153,7 +154,12 @@ export function normalizeImageModelId(modelId: string | undefined): string | und
 
 function normalizeProviderId(provider: string | undefined): ImageProvider | undefined {
   const trimmed = typeof provider === 'string' ? provider.trim() : ''
-  if (trimmed === 'openai' || trimmed === 'gemini' || trimmed === 'falai') {
+  if (
+    trimmed === 'openai' ||
+    trimmed === 'gemini' ||
+    trimmed === 'falai' ||
+    trimmed === 'ideogram'
+  ) {
     return trimmed
   }
   return undefined
@@ -189,6 +195,10 @@ export function resolveImageProviderForModel(modelId: string): ImageProvider | u
     return 'openai'
   }
 
+  if (normalized.startsWith('ideogram')) {
+    return 'ideogram'
+  }
+
   return undefined
 }
 
@@ -201,6 +211,9 @@ export function getDefaultImageModelForProvider(provider: ImageProvider): string
   }
   if (provider === 'falai') {
     return 'nano-banana-2'
+  }
+  if (provider === 'ideogram') {
+    return 'ideogram-v4'
   }
   return 'gpt-image-1.5'
 }

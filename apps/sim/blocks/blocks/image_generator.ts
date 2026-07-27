@@ -7,6 +7,12 @@ import {
   reconcileImageProviderAndModel,
 } from '@/lib/image-generation/block-model-config'
 import {
+  buildIdeogramToolParams,
+  IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS,
+  IDEOGRAM_TOOL_IDS,
+  resolveIdeogramToolId,
+} from '@/lib/image-generation/ideogram-fields'
+import {
   NANO_BANANA_MODELS,
   NANO_BANANA_PRO_MODEL,
   resolveNanoBananaReferences,
@@ -555,7 +561,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   name: 'Image Generator',
   description: 'Generate images',
   authMode: AuthMode.ApiKey,
-  longDescription: 'Generate images using OpenAI GPT Image or Google Nano Banana image models.',
+  longDescription:
+    'Generate and edit images using OpenAI GPT Image, Google Nano Banana, or Ideogram models.',
   docsLink: 'https://docs.sim.ai/integrations/image_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
@@ -583,6 +590,8 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       commandSearchable: true,
       clearable: true,
       value: () => '',
+      condition: { field: 'provider', value: 'ideogram', not: true },
+      dependsOn: ['provider'],
     },
     // {
     //   id: 'model',
@@ -599,7 +608,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       type: 'long-input',
       required: true,
       placeholder: 'Describe the image you want to generate...',
+      condition: { field: 'provider', value: 'ideogram', not: true },
+      dependsOn: ['provider'],
     },
+    ...IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS,
     {
       id: 'size',
       title: 'Size',
@@ -1190,10 +1202,19 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     // },
   ],
   tools: {
-    access: ['image_generate'],
+    access: ['image_generate', ...IDEOGRAM_TOOL_IDS],
     config: {
-      tool: () => 'image_generate',
+      tool: (params) => {
+        if (params.provider === 'ideogram') {
+          return resolveIdeogramToolId(params)
+        }
+        return 'image_generate'
+      },
       params: (params) => {
+        if (params.provider === 'ideogram') {
+          return buildIdeogramToolParams(params)
+        }
+
         if (!params.prompt) {
           throw new Error('Prompt is required')
         }
@@ -1255,6 +1276,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     provider: { type: 'string', description: 'Image generation provider' },
     prompt: { type: 'string', description: 'Image description prompt' },
     model: { type: 'string', description: 'Image generation model' },
+    operation: { type: 'string', description: 'Ideogram operation when provider is ideogram' },
     size: { type: 'string', description: 'Image size' },
     aspectRatio: { type: 'string', description: 'Image aspect ratio' },
     resolution: { type: 'string', description: 'Image resolution' },
@@ -1291,6 +1313,11 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         'Warning emitted when multiple input images were provided and the latest one was used.',
     },
     apiKey: { type: 'string', description: 'Provider API key' },
+    image: { type: 'file', description: 'Ideogram primary image input' },
+    mask: { type: 'file', description: 'Ideogram inpaint mask' },
+    images: { type: 'file[]', description: 'Ideogram edit images' },
+    textPrompt: { type: 'string', description: 'Ideogram text prompt' },
+    jsonPrompt: { type: 'json', description: 'Ideogram structured JSON prompt' },
   },
   outputs: {
     content: { type: 'string', description: 'Generated image URL or identifier' },
@@ -1300,8 +1327,17 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       description: 'All generated image files',
     },
     imageUrl: { type: 'string', description: 'Generated image URL' },
+    imageUrls: { type: 'array', description: 'Ideogram image URLs' },
     provider: { type: 'string', description: 'Provider used' },
     model: { type: 'string', description: 'Model used' },
     metadata: { type: 'json', description: 'Generation metadata' },
+    created: { type: 'string', description: 'Ideogram request creation timestamp' },
+    generationId: { type: 'string', description: 'Ideogram async generation ID' },
+    status: { type: 'string', description: 'Ideogram async generation status' },
+    jsonPrompt: { type: 'json', description: 'Ideogram structured JSON prompt output' },
+    descriptions: { type: 'array', description: 'Ideogram image descriptions' },
+    baseImageUrl: { type: 'string', description: 'Ideogram text-erased base image URL' },
+    originalImageUrl: { type: 'string', description: 'Ideogram original image URL' },
+    seed: { type: 'number', description: 'Seed used for generation' },
   },
 }

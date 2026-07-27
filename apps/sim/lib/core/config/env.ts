@@ -176,6 +176,7 @@ export const env = createEnv({
     COHERE_API_KEY_1:                      z.string().min(1).optional(),           // Primary Cohere API key for rotation
     COHERE_API_KEY_2:                      z.string().min(1).optional(),           // Additional Cohere API key for load balancing
     COHERE_API_KEY_3:                      z.string().min(1).optional(),           // Additional Cohere API key for load balancing
+    IDEOGRAM_API_KEY:                      z.string().min(1).optional(),           // Ideogram API key for Image Generator (used when block omits BYOK key)
     ELEVENLABS_API_KEY:                    z.string().min(1).optional(),           // ElevenLabs API key for text-to-speech in deployed chat
     SERPER_API_KEY:                        z.string().min(1).optional(),           // Serper API key for online search
     SPYFU_API_USER_ID:                    z.string().min(1).optional(),           // SpyFu API basic auth username

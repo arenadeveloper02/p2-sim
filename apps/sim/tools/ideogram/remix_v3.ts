@@ -1,0 +1,138 @@
+import { createIdeogramProxyTool, ideogramImagesOutputs, transformImagesOutput } from '@/tools/ideogram/create-tool'
+import type { IdeogramImagesResponse, IdeogramRemixV3Params } from '@/tools/ideogram/types'
+import { parseJsonParam } from '@/tools/ideogram/utils'
+
+export const ideogramRemixV3Tool = createIdeogramProxyTool<
+  IdeogramRemixV3Params,
+  IdeogramImagesResponse
+>({
+  id: 'ideogram_remix_v3',
+  name: 'Ideogram Remix 3.0',
+  description: 'Remix an image with Ideogram 3.0',
+  operation: 'remix_v3',
+  params: {
+    image: {
+      type: 'file',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Image to remix',
+    },
+    prompt: {
+      type: 'string',
+      required: true,
+      visibility: 'user-or-llm',
+      description: 'Prompt used to generate the remixed image',
+    },
+    imageWeight: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'How strongly the output should resemble the input image (default 50)',
+    },
+    seed: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Random seed for reproducible generation',
+    },
+    resolution: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Ideogram 3.0 resolution',
+    },
+    aspectRatio: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Aspect ratio',
+    },
+    renderingSpeed: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Rendering speed',
+    },
+    magicPrompt: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Magic prompt option: AUTO, ON, or OFF',
+    },
+    negativePrompt: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Description of what to exclude',
+    },
+    numImages: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Number of images to generate',
+    },
+    colorPalette: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Color palette JSON',
+    },
+    styleCodes: {
+      type: 'json',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Style codes JSON array',
+    },
+    styleType: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Style type',
+    },
+    stylePreset: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Style preset name',
+    },
+    styleReferenceImages: {
+      type: 'file[]',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Style reference images',
+    },
+    characterReferenceImages: {
+      type: 'file[]',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Character reference images',
+    },
+    characterReferenceImagesMask: {
+      type: 'file[]',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Masks for character reference images',
+    },
+  },
+  body: (params) => ({
+    image: params.image,
+    prompt: params.prompt,
+    imageWeight: params.imageWeight,
+    seed: params.seed,
+    resolution: params.resolution,
+    aspectRatio: params.aspectRatio,
+    renderingSpeed: params.renderingSpeed,
+    magicPrompt: params.magicPrompt,
+    negativePrompt: params.negativePrompt,
+    numImages: params.numImages,
+    colorPalette: parseJsonParam(params.colorPalette),
+    styleCodes: parseJsonParam(params.styleCodes),
+    styleType: params.styleType,
+    stylePreset: params.stylePreset,
+    styleReferenceImages: params.styleReferenceImages,
+    characterReferenceImages: params.characterReferenceImages,
+    characterReferenceImagesMask: params.characterReferenceImagesMask,
+  }),
+  transformOutput: transformImagesOutput,
+  outputs: ideogramImagesOutputs,
+})
