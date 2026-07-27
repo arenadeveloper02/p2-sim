@@ -214,22 +214,6 @@ async function executeDevelopmentEditAppDirect(params: Record<string, any>): Pro
   )
 }
 
-async function executeGenerativeUiGenerateHtmlDirect(
-  params: Record<string, any>
-): Promise<ToolResponse> {
-  const [{ generateGenerativeUiHtml }, { mapGenerativeUiResultToToolResponse }] = await Promise.all([
-    import('@/lib/generative-ui/generate-html'),
-    import('@/tools/generative_ui/map-response'),
-  ])
-  const mode = params.mode === 'webpage' ? 'webpage' : 'email'
-  return mapGenerativeUiResultToToolResponse(
-    await generateGenerativeUiHtml({
-      userInput: params.userInput,
-      mode,
-    })
-  )
-}
-
 function resolveToolScope(
   params: Record<string, unknown>,
   executionContext?: ExecutionContext
@@ -1499,9 +1483,7 @@ export async function executeTool(
                 ? executeDevelopmentGenerateAppDirect
                 : normalizedToolId === 'development_edit_app'
                   ? executeDevelopmentEditAppDirect
-                  : normalizedToolId === 'generative_ui_generate_html'
-                    ? executeGenerativeUiGenerateHtmlDirect
-                    : tool.directExecution
+                  : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)

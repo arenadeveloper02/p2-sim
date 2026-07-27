@@ -1,15 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
-import type { Spec } from '@json-render/core'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
-import {
-  emailCatalog,
-  GENERATIVE_UI_OUTPUT_RULES,
-  webpageCatalog,
-} from '@/lib/generative-ui/catalogs'
-import { renderGenerativeUiSpecToHtml } from '@/lib/generative-ui/render-spec'
 import type { GenerativeUiGenerateResult, GenerativeUiMode } from '@/lib/generative-ui/types'
 import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
 
@@ -20,10 +13,6 @@ const DEFAULT_MODEL = 'claude-haiku-4-5'
 export interface GenerateGenerativeUiHtmlParams {
   userInput: string
   mode: GenerativeUiMode
-}
-
-function getCatalog(mode: GenerativeUiMode) {
-  return mode === 'email' ? emailCatalog : webpageCatalog
 }
 
 function extractJsonFromLlmText(text: string): string {
@@ -75,6 +64,8 @@ function parseSpecJson(text: string): unknown {
 
 /**
  * Generates catalog-constrained UI JSON from a prompt, then renders HTML.
+ * Catalogs and renderers are loaded dynamically so Turbopack does not pull
+ * `@json-render/*` / `react-dom/server` into static App Router analysis.
  */
 export async function generateGenerativeUiHtml(
   params: GenerateGenerativeUiHtmlParams
@@ -85,7 +76,13 @@ export async function generateGenerativeUiHtml(
     return { success: false, error: 'userInput is required', mode }
   }
 
-  const catalog = getCatalog(mode)
+  const [{ emailCatalog, GENERATIVE_UI_OUTPUT_RULES, webpageCatalog }, { renderGenerativeUiSpecToHtml }] =
+    await Promise.all([
+      import('@/lib/generative-ui/catalogs'),
+      import('@/lib/generative-ui/render-spec'),
+    ])
+
+  const catalog = mode === 'email' ? emailCatalog : webpageCatalog
   const systemPrompt = catalog.prompt({
     customRules: [
       ...GENERATIVE_UI_OUTPUT_RULES,
@@ -135,13 +132,12 @@ export async function generateGenerativeUiHtml(
       }
     }
 
-    const spec = validation.data as Spec
-    const html = await renderGenerativeUiSpecToHtml(mode, spec)
+    const html = await renderGenerativeUiSpecToHtml(mode, validation.data)
 
     return {
       success: true,
       html,
-      spec: spec as unknown as Record<string, unknown>,
+      spec: validation.data as unknown as Record<string, unknown>,
       mode,
     }
   } catch (error) {
