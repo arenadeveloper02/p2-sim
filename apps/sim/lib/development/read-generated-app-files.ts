@@ -67,7 +67,7 @@ async function walkDirectory(
       break
     }
 
-    const absolutePath = join(currentDir, entry.name)
+    const absolutePath = join(/*turbopackIgnore: true*/ currentDir, entry.name)
     const relativePath = absolutePath.slice(rootDir.length + 1)
 
     if (entry.isDirectory()) {

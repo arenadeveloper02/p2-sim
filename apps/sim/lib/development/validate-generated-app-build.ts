@@ -141,7 +141,7 @@ async function validateAppTypecheckLocally(
   outputDir: string,
   options: ValidateGeneratedAppBuildOptions = {}
 ): Promise<ValidateAppBuildResult> {
-  if (!existsSync(join(outputDir, 'package.json'))) {
+  if (!existsSync(join(/*turbopackIgnore: true*/ outputDir, 'package.json'))) {
     return {
       validated: false,
       output: 'Typecheck validation failed: package.json is missing from the generated app',
@@ -159,7 +159,7 @@ async function validateAppTypecheckLocally(
     logs.push('=== npm install ===')
     logs.push(await runNpmInDir(outputDir, [...NPM_INSTALL_ARGS], databaseEnv))
 
-    if (options.requiresDatabase && existsSync(join(outputDir, 'prisma/schema.prisma'))) {
+    if (options.requiresDatabase && existsSync(join(/*turbopackIgnore: true*/ outputDir, 'prisma/schema.prisma'))) {
       logger.info('Running prisma generate for generated app typecheck', { outputDir })
       logs.push('=== prisma generate ===')
       logs.push(await runNpmInDir(outputDir, ['exec', 'prisma', 'generate'], databaseEnv))
@@ -180,7 +180,7 @@ async function validateAppBuildLocally(
   outputDir: string,
   options: ValidateGeneratedAppBuildOptions = {}
 ): Promise<ValidateAppBuildResult> {
-  if (!existsSync(join(outputDir, 'package.json'))) {
+  if (!existsSync(join(/*turbopackIgnore: true*/ outputDir, 'package.json'))) {
     return {
       validated: false,
       output: 'Build validation failed: package.json is missing from the generated app',
@@ -192,7 +192,7 @@ async function validateAppBuildLocally(
   const databaseEnv = options.requiresDatabase
     ? { DATABASE_URL: process.env.DATABASE_URL ?? DUMMY_DATABASE_URL }
     : {}
-  const hasPrisma = existsSync(join(outputDir, 'prisma/schema.prisma'))
+  const hasPrisma = existsSync(join(/*turbopackIgnore: true*/ outputDir, 'prisma/schema.prisma'))
   const skipPackageBuild = shouldSkipPackageBuildScript(options, hasPrisma)
 
   try {

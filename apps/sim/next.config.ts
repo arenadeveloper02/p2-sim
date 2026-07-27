@@ -3,7 +3,7 @@ import type { NextConfig } from 'next'
 import { env, isTruthy } from './lib/core/config/env'
 
 /** Monorepo root — required so Turbopack doesn't pick a stray ~/yarn.lock as the workspace root. */
-const monorepoRoot = path.resolve(__dirname, '../..')
+const monorepoRoot = path.resolve(/*turbopackIgnore: true*/ __dirname, '../..')
 
 import { isDev } from './lib/core/config/env-flags'
 import {

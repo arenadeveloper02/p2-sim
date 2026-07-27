@@ -203,7 +203,7 @@ export async function deployVercelProjectFromFiles(
     })
 
     for (const sourceFile of sourceFiles) {
-      const absolutePath = join(input.outputDir, sourceFile.path)
+      const absolutePath = join(/*turbopackIgnore: true*/ input.outputDir, sourceFile.path)
       const content = Buffer.from(sourceFile.content, 'utf-8')
       if (content.length > MAX_INLINE_FILE_BYTES) {
         throw new Error(`File ${sourceFile.path} exceeds Vercel inline upload limit`)

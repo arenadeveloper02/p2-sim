@@ -5,7 +5,6 @@ import { getValidationErrorMessage } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { generateNextjsApp } from '@/lib/development/nextjs-app-generator'
 import { recordDevelopmentModelUsage } from '@/lib/development/record-development-model-usage'
 import {
   getDevelopmentReferenceImageErrorMessage,
@@ -78,6 +77,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     hasReferenceImage: Boolean(referenceImage),
   })
 
+  // Dynamic import keeps the FS-heavy generator out of this route's static NFT graph.
+  const { generateNextjsApp } = await import('@/lib/development/nextjs-app-generator')
   const result = await generateNextjsApp({
     userInput: parsed.data.userInput,
     repoName: parsed.data.repoName,

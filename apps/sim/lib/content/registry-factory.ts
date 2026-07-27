@@ -101,7 +101,9 @@ export function createContentRegistry(config: ContentRegistryConfig): ContentReg
   ): Promise<{ width: number; height: number } | null> {
     if (ogImage.startsWith('http')) return null
     try {
-      const buffer = await fs.readFile(path.join(process.cwd(), 'public', ogImage))
+      const buffer = await fs.readFile(
+        path.join(/*turbopackIgnore: true*/ process.cwd(), 'public', ogImage)
+      )
       const { width, height } = imageSize(buffer)
       return width && height ? { width, height } : null
     } catch {

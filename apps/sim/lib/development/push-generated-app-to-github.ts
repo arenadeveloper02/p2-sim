@@ -148,7 +148,7 @@ async function ensureGitRemote(
   remoteUrl: string,
   defaultBranch: string
 ): Promise<void> {
-  const gitDir = join(outputDir, '.git')
+  const gitDir = join(/*turbopackIgnore: true*/ outputDir, '.git')
   if (!existsSync(gitDir)) {
     await runGit(outputDir, ['init'])
     await runGit(outputDir, ['branch', '-M', defaultBranch])
@@ -184,7 +184,7 @@ async function initCommitAndPush(
     throw new Error(`Output directory does not exist: ${outputDir}`)
   }
 
-  const gitDir = join(outputDir, '.git')
+  const gitDir = join(/*turbopackIgnore: true*/ outputDir, '.git')
   if (!existsSync(gitDir)) {
     await runGit(outputDir, ['init'])
   }

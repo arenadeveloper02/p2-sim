@@ -1339,7 +1339,7 @@ async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Prom
       continue
     }
 
-    const fullPath = join(outputDir, safePath)
+    const fullPath = join(/*turbopackIgnore: true*/ outputDir, safePath)
     await mkdir(dirname(fullPath), { recursive: true })
     await writeFile(fullPath, file.content, 'utf-8')
     written++
@@ -1473,7 +1473,7 @@ async function validateAndRepairUntilBuildPasses(
         originalPrismaSchema: options.originalPrismaSchema,
       })
 
-      const nextCacheDir = join(outputDir, '.next')
+      const nextCacheDir = join(/*turbopackIgnore: true*/ outputDir, '.next')
       if (existsSync(nextCacheDir)) {
         await rm(nextCacheDir, { recursive: true, force: true })
       }
@@ -1517,7 +1517,7 @@ async function validateAndRepairUntilBuildPasses(
       originalPrismaSchema: options.originalPrismaSchema,
     })
 
-    const nextCacheDir = join(outputDir, '.next')
+    const nextCacheDir = join(/*turbopackIgnore: true*/ outputDir, '.next')
     if (existsSync(nextCacheDir)) {
       await rm(nextCacheDir, { recursive: true, force: true })
     }
@@ -1666,7 +1666,7 @@ async function generateNextjsAppInner(
     const monorepoRoot = findMonorepoRoot()
     const outputDir = getGeneratedAppDir(repoName)
 
-    await mkdir(outputDir, { recursive: true })
+    await mkdir(/*turbopackIgnore: true*/ outputDir, { recursive: true })
     const fileCount = await writeAppFiles(outputDir, spec.files)
 
     if (fileCount === 0) {
@@ -1887,7 +1887,7 @@ async function generateNextjsAppInner(
 
     if (shouldRemoveLocal) {
       try {
-        await rm(outputDir, { recursive: true, force: true })
+        await rm(/*turbopackIgnore: true*/ outputDir, { recursive: true, force: true })
         resolvedAbsoluteOutputPath = undefined
         logger.info('Removed local generated app folder after publish', { outputDir, repoName })
       } catch (cleanupError) {
@@ -2486,7 +2486,7 @@ async function editNextjsAppInner(
 
     if (shouldRemoveLocal) {
       try {
-        await rm(outputDir, { recursive: true, force: true })
+        await rm(/*turbopackIgnore: true*/ outputDir, { recursive: true, force: true })
         resolvedAbsoluteOutputPath = undefined
         logger.info('Removed local generated app folder after edit publish', {
           outputDir,

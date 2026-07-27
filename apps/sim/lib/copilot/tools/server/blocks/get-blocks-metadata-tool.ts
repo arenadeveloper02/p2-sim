@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'fs'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { z } from 'zod'
@@ -338,11 +338,13 @@ export const getBlocksMetadataServerTool: BaseServerTool<
       }
 
       try {
-        const workingDir = process.cwd()
+        const workingDir = resolve(/*turbopackIgnore: true*/ process.cwd())
         const isInAppsSim = workingDir.endsWith('/apps/sim') || workingDir.endsWith('\\apps\\sim')
-        const basePath = isInAppsSim ? join(workingDir, '..', '..') : workingDir
+        const basePath = isInAppsSim
+          ? join(/*turbopackIgnore: true*/ workingDir, '..', '..')
+          : workingDir
         const docPath = join(
-          basePath,
+          /*turbopackIgnore: true*/ basePath,
           'apps',
           'docs',
           'content',

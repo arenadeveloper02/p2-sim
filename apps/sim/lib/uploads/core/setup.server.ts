@@ -3,7 +3,6 @@ import { mkdir } from 'fs/promises'
 import path, { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { env } from '@/lib/core/config/env'
-import { ensureAgentGeneratedImagesDirectory } from '@/lib/uploads/utils/image-storage.server'
 import {
   getStorageProvider,
   S3_CONFIG,
@@ -102,16 +101,21 @@ if (typeof process !== 'undefined') {
       }
     })
 
-    // Ensure agent-generated-images directory exists
-    ensureAgentGeneratedImagesDirectory().then((success) => {
-      if (success) {
-        logger.info('Agent-generated-images directory initialized')
-      } else {
-        logger.error(
-          'Failed to initialize agent-generated-images directory - check write permissions'
-        )
+    // Ensure agent-generated-images directory exists (dynamic import keeps
+    // image-storage's filesystem graph out of every uploads consumer route).
+    void import('@/lib/uploads/utils/image-storage.server').then(
+      ({ ensureAgentGeneratedImagesDirectory }) => {
+        ensureAgentGeneratedImagesDirectory().then((success) => {
+          if (success) {
+            logger.info('Agent-generated-images directory initialized')
+          } else {
+            logger.error(
+              'Failed to initialize agent-generated-images directory - check write permissions'
+            )
+          }
+        })
       }
-    })
+    )
   }
 
   if (USE_S3_STORAGE && env.S3_KB_BUCKET_NAME) {

@@ -76,7 +76,7 @@ async function runGit(cwd: string, args: string[]): Promise<void> {
 }
 
 async function cloneRepository(remoteUrl: string, outputDir: string): Promise<void> {
-  await mkdir(join(outputDir, '..'), { recursive: true })
+  await mkdir(join(/*turbopackIgnore: true*/ outputDir, '..'), { recursive: true })
   await execFileAsync('git', ['clone', '--depth', '1', remoteUrl, outputDir], {
     encoding: 'utf-8',
     maxBuffer: 10 * 1024 * 1024,
@@ -103,7 +103,7 @@ export async function ensureLocalGeneratedApp(
 
   try {
     if (existsSync(outputDir)) {
-      const gitDir = join(outputDir, '.git')
+      const gitDir = join(/*turbopackIgnore: true*/ outputDir, '.git')
       if (existsSync(gitDir)) {
         try {
           await pullLatestChanges(outputDir)

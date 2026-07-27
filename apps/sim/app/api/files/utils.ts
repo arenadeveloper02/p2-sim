@@ -134,13 +134,16 @@ export async function findLocalFile(filename: string): Promise<string | null> {
       if (segments.length === 0 || segments.some((part) => part === '..')) {
         return null
       }
-      const appAllowedDir = path.join(process.cwd(), 'agent-generated-images')
-      const appPath = path.join(appAllowedDir, ...segments)
-      const normalizedAllowed = path.resolve(appAllowedDir) + path.sep
-      const normalizedPath = path.resolve(appPath)
+      const appAllowedDir = path.join(
+        /*turbopackIgnore: true*/ process.cwd(),
+        'agent-generated-images'
+      )
+      const appPath = path.join(/*turbopackIgnore: true*/ appAllowedDir, ...segments)
+      const normalizedAllowed = path.resolve(/*turbopackIgnore: true*/ appAllowedDir) + path.sep
+      const normalizedPath = path.resolve(/*turbopackIgnore: true*/ appPath)
       const isWithinAppDir =
         normalizedPath.startsWith(normalizedAllowed) &&
-        normalizedPath !== path.resolve(appAllowedDir)
+        normalizedPath !== path.resolve(/*turbopackIgnore: true*/ appAllowedDir)
 
       if (isWithinAppDir && existsSync(appPath)) {
         return appPath
