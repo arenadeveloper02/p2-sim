@@ -71,10 +71,13 @@ fi
 
 echo "Deploying IMAGE_TAG=${IMAGE_TAG}"
 echo "Using compose file: ${COMPOSE_FILE}"
+echo "Note: migrations are not started by this script; run them manually when ready."
 
 cd "$DEPLOY_ROOT"
-docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" pull simstudio realtime migrations
-docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" up -d --remove-orphans
+# Pull app images only. Migrations stay manual (p2prod puts them behind the
+# `migrations` compose profile; do not auto-start them here).
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" pull simstudio realtime
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" up -d --remove-orphans simstudio realtime db
 
 deadline=$((SECONDS + ${DEPLOY_HEALTH_TIMEOUT_SECONDS:-240}))
 
