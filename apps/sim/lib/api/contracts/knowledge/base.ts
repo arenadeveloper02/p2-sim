@@ -172,3 +172,24 @@ export const restoreKnowledgeBaseContract = defineRouteContract({
     schema: z.object({ success: z.literal(true) }).passthrough(),
   },
 })
+
+export const copyKnowledgeBaseBodySchema = z.object({
+  targetWorkspaceId: z.string().min(1, 'Target workspace ID is required'),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .max(100, 'Name must be less than 100 characters')
+    .optional(),
+})
+export type CopyKnowledgeBaseBody = z.input<typeof copyKnowledgeBaseBodySchema>
+
+export const copyKnowledgeBaseContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/knowledge/[id]/copy',
+  params: knowledgeBaseParamsSchema,
+  body: copyKnowledgeBaseBodySchema,
+  response: {
+    mode: 'json',
+    schema: successResponseSchema(knowledgeBaseDataSchema),
+  },
+})

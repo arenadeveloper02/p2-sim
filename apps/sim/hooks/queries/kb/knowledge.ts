@@ -10,6 +10,7 @@ import {
   bulkKnowledgeDocumentsContract,
   type ChunkData,
   type ChunksPagination,
+  copyKnowledgeBaseContract,
   createKnowledgeBaseContract,
   createKnowledgeChunkContract,
   createTagDefinitionContract,
@@ -783,6 +784,44 @@ export function useDeleteKnowledgeBase(workspaceId?: string) {
       })
       queryClient.invalidateQueries({
         queryKey: knowledgeKeys.detail(variables.knowledgeBaseId),
+      })
+    },
+  })
+}
+
+interface CopyKnowledgeBaseParams {
+  knowledgeBaseId: string
+  targetWorkspaceId: string
+  name?: string
+}
+
+async function copyKnowledgeBase({
+  knowledgeBaseId,
+  targetWorkspaceId,
+  name,
+}: CopyKnowledgeBaseParams): Promise<KnowledgeBaseData> {
+  const result = await requestJson(copyKnowledgeBaseContract, {
+    params: { id: knowledgeBaseId },
+    body: { targetWorkspaceId, name },
+  })
+
+  return result.data
+}
+
+/**
+ * Copies a knowledge base into another workspace.
+ */
+export function useCopyKnowledgeBase() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: copyKnowledgeBase,
+    onError: (error) => {
+      toast.error(error.message, { duration: 5000 })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: knowledgeKeys.lists(),
       })
     },
   })
