@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
@@ -23,6 +24,10 @@ import {
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import {
+  buildStagnationSystemMessage,
+  createToolStagnationTracker,
+} from '@/local-copilot/lib/agent/tool-stagnation'
 import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
 import { recordLocalCopilotTurnUsage } from '@/local-copilot/lib/billing/record-turn-usage'
 import {
@@ -43,8 +48,15 @@ import {
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
 import {
+  extractFollowUpDirectives,
+  formatActiveDirectiveSystemMessage,
+  formatSessionConstraintsSystemMessage,
+  type PreferenceMemoryCandidate,
+} from '@/local-copilot/lib/context/follow-up-directives'
+import {
   ensureSessionMemory,
   formatSessionMemorySystemMessage,
+  mergeFollowUpDirectivesIntoSessionMemory,
   type SessionMemoryTurn,
 } from '@/local-copilot/lib/context/session-memory'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
@@ -143,10 +155,13 @@ Rules:
 - User memory (CRITICAL):
   - Context may include \`userMemories\` (key/value preferences). Honor them unless the user overrides.
   - When the user says remember / prefer / always use / don't forget — call \`user_memory\` with operation \`add\` (key + value). Use operation \`correct\` when they fix a remembered fact, \`delete\` to forget, \`search\`/\`list\` to look up.
+  - Clear preference overrides are also auto-persisted by the runtime — still honor \`userMemories\` and session constraints.
   - Do not store secrets (API keys, passwords, tokens) in user_memory.
-- Session memory:
-  - A system message may include structured session memory for earlier turns (goals, decisions, entities, progress, open questions).
+- Session memory / follow-ups (CRITICAL):
+  - A system message may include structured session memory for earlier turns (goals, decisions, constraints, activeDirective, entities, progress, open questions).
   - Trust it for older context. If recent verbatim turns conflict, prefer the recent turns.
+  - \`constraints\` and the separate "Active user directive" / "Session constraints" system messages are authoritative for corrections ("use X not Y", "don't create a new workflow"). Do not re-ask or undo them unless the user explicitly changes course.
+  - Never burn tool rounds re-doing work that constraints already forbade. If stuck after a failed retry, stop and ask — do not loop the same tool with the same args.
 - Credentials and API keys:
   - Context includes \`connectedIntegrations\` (OAuth) and \`envVariables\` (configured env key names only). If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
   - When \`hostedKeysAvailable\` is true, many api_key blocks also receive platform-hosted keys at runtime — do not prompt for keys unless a tool returns an explicit missing-credential error.
@@ -358,13 +373,32 @@ export async function* runLocalCopilotAgent(
         })
       : []
 
-  const sessionMemory = await ensureSessionMemory({
+  let sessionMemory = await ensureSessionMemory({
     chatId: params.chatId,
     userId: params.userId,
     historyMessages: rawHistory,
     turns: params.sessionMemoryTurns ?? [],
     signal: params.signal,
   })
+
+  const extractedDirectives = extractFollowUpDirectives(params.message)
+  if (extractedDirectives.constraints.length > 0 || extractedDirectives.activeDirective) {
+    sessionMemory = await mergeFollowUpDirectivesIntoSessionMemory({
+      chatId: params.chatId,
+      userId: params.userId,
+      previous: sessionMemory,
+      constraints: extractedDirectives.constraints,
+      activeDirective: extractedDirectives.activeDirective,
+    })
+  }
+
+  if (extractedDirectives.preferences.length > 0) {
+    await persistInferredUserPreferences({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      preferences: extractedDirectives.preferences,
+    })
+  }
 
   const historyMessages: ChatMessage[] = rawHistory.length
     ? compactChatHistory(rawHistory, { sessionMemoryPresent: Boolean(sessionMemory) })
@@ -384,6 +418,12 @@ export async function* runLocalCopilotAgent(
   })
   const userTurnText = getLocalCopilotUserTurnText(userTurn)
 
+  const pinnedDirective =
+    extractedDirectives.activeDirective?.trim() || sessionMemory?.activeDirective?.trim() || ''
+  const pinnedConstraints = sessionMemory?.constraints?.length
+    ? sessionMemory.constraints
+    : extractedDirectives.constraints
+
   const messages: ChatMessage[] = fitPromptToTokenBudget(
     [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -395,6 +435,10 @@ export async function* runLocalCopilotAgent(
         ? [{ role: 'system' as const, content: `Workspace snapshot:\n${params.workspaceContext}` }]
         : []),
       ...(sessionMemory ? [formatSessionMemorySystemMessage(sessionMemory)] : []),
+      ...(pinnedConstraints.length > 0
+        ? [formatSessionConstraintsSystemMessage(pinnedConstraints)]
+        : []),
+      ...(pinnedDirective ? [formatActiveDirectiveSystemMessage(pinnedDirective)] : []),
       ...historyMessages,
       userTurn,
     ],
@@ -577,8 +621,11 @@ export async function* runLocalCopilotAgent(
   let forcedFollowUpRounds = 0
   let turnInputTokens = 0
   let turnOutputTokens = 0
+  const stagnationTracker = createToolStagnationTracker()
+  let stagnationStopMessage: string | null = null
 
   for (let round = 0; round < maxToolRounds; round++) {
+    if (stagnationStopMessage) break
     const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
     let roundInputTokens = 0
     let roundOutputTokens = 0
@@ -785,6 +832,23 @@ export async function* runLocalCopilotAgent(
           toolCallId: call.id,
           content: formattedToolResult,
         })
+
+        const stagnationHit = stagnationTracker.record(
+          call.name,
+          call.arguments || '{}',
+          outcome.success,
+          outcome.output
+        )
+        if (stagnationHit) {
+          stagnationStopMessage = stagnationHit.message
+          messages.push({ role: 'system', content: buildStagnationSystemMessage(stagnationHit) })
+          logger.warn('Arena Copilot tool stagnation detected', {
+            toolName: stagnationHit.toolName,
+            count: stagnationHit.count,
+            fingerprint: stagnationHit.fingerprint,
+          })
+          break
+        }
         continue
       }
 
@@ -919,6 +983,69 @@ export async function* runLocalCopilotAgent(
         toolCallId: call.id,
         content: formattedToolResult,
       })
+
+      const stagnationHit = stagnationTracker.record(
+        call.name,
+        call.arguments || '{}',
+        toolResult.success,
+        toolResult.result
+      )
+      if (stagnationHit) {
+        stagnationStopMessage = stagnationHit.message
+        messages.push({ role: 'system', content: buildStagnationSystemMessage(stagnationHit) })
+        logger.warn('Arena Copilot tool stagnation detected', {
+          toolName: stagnationHit.toolName,
+          count: stagnationHit.count,
+          fingerprint: stagnationHit.fingerprint,
+        })
+        break
+      }
+    }
+
+    if (stagnationStopMessage) break
+  }
+
+  if (stagnationStopMessage) {
+    // One more model round with the stagnation system nudge (no tools needed).
+    // If the model stays silent, surface the stop message directly.
+    const priorAssistantChars = assistantText.length
+    for await (const event of iterateWithIdleStatus({
+      source: provider.chatCompletionStream({
+        model: config.model,
+        messages,
+        tools: [],
+        signal: params.signal,
+      }),
+      abortSignal: params.signal,
+      messages: MODEL_WAIT_STATUS_FALLBACK,
+      idleMs: 0,
+      intervalMs: 4000,
+    })) {
+      if (event.type === 'status') {
+        yield event
+        continue
+      }
+      const chunk = event.item
+      if (chunk.type === 'text' && chunk.content) {
+        const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
+        if (!cleaned) continue
+        assistantText += cleaned
+        yield { type: 'text_delta', content: cleaned }
+      }
+      if (chunk.type === 'done' && chunk.usage) {
+        turnCost.addModelUsage({
+          model: config.model,
+          inputTokens: chunk.usage.inputTokens,
+          outputTokens: chunk.usage.outputTokens,
+          provider: config.provider,
+        })
+        turnInputTokens += chunk.usage.inputTokens
+        turnOutputTokens += chunk.usage.outputTokens
+      }
+    }
+    if (assistantText.length === priorAssistantChars) {
+      assistantText += stagnationStopMessage
+      yield { type: 'text_delta', content: stagnationStopMessage }
     }
   }
 
@@ -1033,4 +1160,42 @@ export async function* runLocalCopilotAgent(
 
 export function formatSSE(event: LocalCopilotStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`
+}
+
+/**
+ * Soft-persists high-confidence preference/correction phrases into user_memory
+ * so follow-up chats honor them without the model calling the tool first.
+ */
+async function persistInferredUserPreferences(params: {
+  userId: string
+  workspaceId: string
+  preferences: PreferenceMemoryCandidate[]
+}): Promise<void> {
+  for (const preference of params.preferences.slice(0, 5)) {
+    try {
+      const result = await userMemoryServerTool.execute(
+        {
+          operation: 'add',
+          key: preference.key,
+          value: preference.value,
+          memory_type: preference.memoryType,
+          source: 'inferred',
+          confidence: 0.85,
+          workspaceId: params.workspaceId,
+        },
+        { userId: params.userId, workspaceId: params.workspaceId }
+      )
+      if (!result.success) {
+        logger.warn('Inferred user_memory persist failed', {
+          key: preference.key,
+          error: result.error ?? 'unknown',
+        })
+      }
+    } catch (error) {
+      logger.warn('Inferred user_memory persist threw', {
+        key: preference.key,
+        error: getErrorMessage(error),
+      })
+    }
+  }
 }
