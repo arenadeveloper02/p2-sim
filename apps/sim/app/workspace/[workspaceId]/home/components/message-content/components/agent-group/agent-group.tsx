@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ChevronDown, Expandable, ExpandableContent, PillsRing } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
+import { ChevronDown, cn, Expandable, ExpandableContent, PillsRing } from '@sim/emcn'
+import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
 import type { ToolCallData } from '../../../../types'
 import { getAgentIcon, isToolDone } from '../../utils'
 import { ToolCallItem } from './tool-call-item'
@@ -52,10 +52,6 @@ export function isAgentGroupResolved(items: AgentGroupItem[]): boolean {
   return hasWork
 }
 
-function displayAgentLabel(label: string): string {
-  return /\bsim\b/i.test(label) ? 'Arena AI' : label
-}
-
 export function AgentGroup({
   agentName,
   agentLabel,
@@ -65,7 +61,7 @@ export function AgentGroup({
   isCurrentSection = false,
   isLaneOpen = false,
 }: AgentGroupProps) {
-  const resolvedAgentLabel = displayAgentLabel(agentLabel)
+  const resolvedAgentLabel = resolveAssistantDisplayLabel(agentLabel)
   const AgentIcon = getAgentIcon(agentName)
   const hasItems = items.length > 0
   const resolved = isAgentGroupResolved(items)

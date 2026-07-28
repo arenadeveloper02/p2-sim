@@ -106,12 +106,36 @@ export interface SyntheticFilePreviewEventEnvelope {
   v: 1
 }
 
+/** Local Copilot ephemeral chat status — not part of the Go mothership OpenAPI contract. */
+export const LOCAL_STATUS_PHASE = 'agent_live_status' as const
+
+export interface SyntheticLocalStatusPayload {
+  message: string
+  statusPhase: typeof LOCAL_STATUS_PHASE
+  toolCallId?: string
+  toolName?: string
+}
+
+export interface SyntheticLocalStatusEventEnvelope {
+  payload: SyntheticLocalStatusPayload
+  scope?: MothershipStreamV1StreamScope
+  seq: number
+  stream: MothershipStreamV1StreamRef
+  trace?: MothershipStreamV1Trace
+  ts: string
+  type: 'run'
+  v: 1
+}
+
 export type PersistedStreamEventEnvelope =
   | MothershipStreamV1EventEnvelope
   | SyntheticFilePreviewEventEnvelope
+  | SyntheticLocalStatusEventEnvelope
 
 export type ContractStreamEvent = EnvelopeToStreamEvent<MothershipStreamV1EventEnvelope>
-export type SyntheticStreamEvent = EnvelopeToStreamEvent<SyntheticFilePreviewEventEnvelope>
+export type SyntheticStreamEvent =
+  | EnvelopeToStreamEvent<SyntheticFilePreviewEventEnvelope>
+  | EnvelopeToStreamEvent<SyntheticLocalStatusEventEnvelope>
 export type SessionStreamEvent = ContractStreamEvent | SyntheticStreamEvent
 export type StreamEvent = SessionStreamEvent
 export type ToolCallStreamEvent = Extract<
@@ -394,6 +418,42 @@ export function isSyntheticFilePreviewEventEnvelope(
   return isSyntheticEnvelopeBase(value) && isSyntheticFilePreviewPayload(value.payload)
 }
 
+function isSyntheticLocalStatusEnvelopeBase(value: unknown): value is Omit<
+  SyntheticLocalStatusEventEnvelope,
+  'payload'
+> & {
+  payload?: unknown
+} {
+  return (
+    isRecordLike(value) &&
+    value.v === 1 &&
+    value.type === 'run' &&
+    typeof value.seq === 'number' &&
+    Number.isFinite(value.seq) &&
+    typeof value.ts === 'string' &&
+    isStreamRef(value.stream) &&
+    (value.trace === undefined || isTrace(value.trace)) &&
+    (value.scope === undefined || isStreamScope(value.scope))
+  )
+}
+
+function isSyntheticLocalStatusPayload(value: unknown): value is SyntheticLocalStatusPayload {
+  return (
+    isRecordLike(value) &&
+    value.statusPhase === LOCAL_STATUS_PHASE &&
+    typeof value.message === 'string' &&
+    value.message.trim().length > 0 &&
+    isOptionalString(value.toolCallId) &&
+    isOptionalString(value.toolName)
+  )
+}
+
+export function isSyntheticLocalStatusEventEnvelope(
+  value: unknown
+): value is SyntheticLocalStatusEventEnvelope {
+  return isSyntheticLocalStatusEnvelopeBase(value) && isSyntheticLocalStatusPayload(value.payload)
+}
+
 // ---------------------------------------------------------------------------
 // Stream event type guards
 // ---------------------------------------------------------------------------
@@ -436,6 +496,10 @@ export function parsePersistedStreamEventEnvelope(value: unknown): ParseStreamEv
   }
 
   if (isSyntheticFilePreviewEventEnvelope(value)) {
+    return { ok: true, event: value }
+  }
+
+  if (isSyntheticLocalStatusEventEnvelope(value)) {
     return { ok: true, event: value }
   }
 

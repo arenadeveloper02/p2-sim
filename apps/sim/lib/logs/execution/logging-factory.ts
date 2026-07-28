@@ -8,6 +8,12 @@ import type {
   WorkflowState,
 } from '@/lib/logs/types'
 import {
+  accumulateEmbeddedToolCosts,
+  extractEmbeddedToolCostsFromSpan,
+  normalizeEmbeddedToolCosts,
+  resolveEmbeddedToolCostKey,
+} from '@/lib/logs/embedded-tool-costs'
+import {
   loadDeployedWorkflowState,
   loadWorkflowFromNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
@@ -85,7 +91,7 @@ export async function loadDeployedWorkflowStateForLogging(
   }
 }
 
-type CostTraceSpan = Pick<TraceSpan, 'cost' | 'model' | 'tokens'> & {
+type CostTraceSpan = Pick<TraceSpan, 'cost' | 'model' | 'tokens' | 'output'> & {
   type?: TraceSpan['type']
   name?: TraceSpan['name']
   children?: CostTraceSpan[]
@@ -96,6 +102,8 @@ export interface CostSummaryModel {
   output: number
   total: number
   toolCost?: number
+  /** Per-tool embedded costs normalized to `toolCost`; merged with max across boundaries. */
+  embeddedToolCosts?: Record<string, number>
   tokens: { input: number; output: number; total: number }
 }
 
@@ -109,6 +117,27 @@ export interface CostSummaryCharge {
   total: number
 }
 
+/**
+ * Third-party vendor spend from Cost blocks (`type: 'cost'` spans), keyed by span
+ * name for ledger reconciliation.
+ */
+export interface CostSummaryExternalCharge {
+  total: number
+  vendor?: string
+  quantity?: number
+  unit?: string
+  metadata?: {
+    originalAmount?: number
+    originalCurrency?: string
+    exchangeRate?: number
+    sourceBlockId?: string
+    responsePath?: string
+    quantityPath?: string
+    unitPrice?: number
+    source?: string
+  }
+}
+
 export interface CostSummary {
   totalCost: number
   totalInputCost: number
@@ -120,9 +149,55 @@ export interface CostSummary {
   models: Record<string, CostSummaryModel>
   /** Non-model billable charges keyed by span name (tool/integration costs). */
   charges: Record<string, CostSummaryCharge>
+  /** Cost-block external vendor spend keyed by span name. */
+  external: Record<string, CostSummaryExternalCharge>
 }
 
 type BillableTraceSpan = CostTraceSpan & { cost: NonNullable<TraceSpan['cost']> }
+
+interface CostBlockRawOutput {
+  amount?: number
+  currency?: string
+  exchangeRate?: number
+  vendor?: string
+  label?: string
+  source?: string
+  quantity?: number
+  unit?: string
+  unitPrice?: number
+  quantityPath?: string
+  sourceBlockId?: string
+  responsePath?: string
+}
+
+function extractExternalChargeFromSpan(span: BillableTraceSpan): {
+  description: string
+  vendor?: string
+  quantity?: number
+  unit?: string
+  metadata: CostSummaryExternalCharge['metadata']
+} {
+  const raw = (span.output?.raw ?? {}) as CostBlockRawOutput
+  const description =
+    span.name?.trim() || raw.label?.trim() || raw.vendor?.trim() || 'external'
+
+  return {
+    description,
+    vendor: raw.vendor?.trim() || undefined,
+    quantity: typeof raw.quantity === 'number' ? raw.quantity : undefined,
+    unit: raw.unit?.trim() || undefined,
+    metadata: {
+      ...(raw.amount !== undefined ? { originalAmount: raw.amount } : {}),
+      ...(raw.currency ? { originalCurrency: raw.currency } : {}),
+      ...(raw.exchangeRate !== undefined ? { exchangeRate: raw.exchangeRate } : {}),
+      ...(raw.sourceBlockId ? { sourceBlockId: raw.sourceBlockId } : {}),
+      ...(raw.responsePath ? { responsePath: raw.responsePath } : {}),
+      ...(raw.quantityPath ? { quantityPath: raw.quantityPath } : {}),
+      ...(raw.unitPrice !== undefined ? { unitPrice: raw.unitPrice } : {}),
+      ...(raw.source ? { source: raw.source } : {}),
+    },
+  }
+}
 
 function hasBillableCost(span: CostTraceSpan): span is BillableTraceSpan {
   return span.cost !== undefined
@@ -144,6 +219,7 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
       baseExecutionCharge: BASE_EXECUTION_CHARGE,
       models: {},
       charges: {},
+      external: {},
     }
   }
 
@@ -209,6 +285,7 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
   let totalCompletionTokens = 0
   const models: Record<string, CostSummaryModel> = {}
   const charges: Record<string, CostSummaryCharge> = {}
+  const external: Record<string, CostSummaryExternalCharge> = {}
 
   for (const span of costSpans) {
     totalCost += span.cost.total || 0
@@ -237,17 +314,33 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
 
       if (span.cost.toolCost) {
         models[model].toolCost = (models[model].toolCost || 0) + span.cost.toolCost
+        const embeddedRaw = extractEmbeddedToolCostsFromSpan(span)
+        const normalized = normalizeEmbeddedToolCosts(embeddedRaw, span.cost.toolCost)
+        models[model].embeddedToolCosts = accumulateEmbeddedToolCosts(
+          models[model].embeddedToolCosts,
+          normalized
+        )
       }
     } else if ((span.cost.total || 0) > 0) {
-      // Non-model billable span (e.g. a standalone hosted-key tool block).
-      // These previously contributed to the run total but were never itemized
-      // in the ledger (the "standalone tool gap"). Key by span name so each
-      // integration gets a single, reconciling charge row.
-      const description = span.name || span.type || 'tool'
-      if (!charges[description]) {
-        charges[description] = { total: 0 }
+      if (span.type === 'cost') {
+        const { description, vendor, quantity, unit, metadata } = extractExternalChargeFromSpan(span)
+        if (!external[description]) {
+          external[description] = { total: 0, vendor, quantity, unit, metadata }
+        }
+        external[description].total += span.cost.total || 0
+      } else {
+        // Non-model billable span (e.g. a standalone hosted-key tool block).
+        // These previously contributed to the run total but were never itemized
+        // in the ledger (the "standalone tool gap"). Key by span name so each
+        // integration gets a single, reconciling charge row.
+        const rawName = span.name || span.type || 'tool'
+        const description =
+          span.type === 'tool' ? resolveEmbeddedToolCostKey(rawName, span.output) : rawName
+        if (!charges[description]) {
+          charges[description] = { total: 0 }
+        }
+        charges[description].total += span.cost.total || 0
       }
-      charges[description].total += span.cost.total || 0
     }
   }
 
@@ -263,5 +356,6 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
     baseExecutionCharge: BASE_EXECUTION_CHARGE,
     models,
     charges,
+    external,
   }
 }

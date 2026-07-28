@@ -1,11 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button } from '@sim/emcn'
+import { ArrowLeft, PanelLeft } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
-import { Button } from '@/components/emcn'
-import { ArrowLeft, PanelLeft } from '@/components/emcn/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import {
   LandingPromptStorage,
@@ -18,6 +18,7 @@ import {
   useMarkMothershipChatRead,
   useMothershipChatHistory,
 } from '@/hooks/queries/mothership-chats'
+import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import type { ChatContext } from '@/stores/panel'
 import {
   ChatSurfaceProvider,
@@ -142,6 +143,8 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
     }
   }, [])
 
+  const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
+
   const {
     messages,
     isSending,
@@ -173,6 +176,7 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
       initialActiveResourceId: initialResourceId,
       resolveWorkspaceBeforeSend,
       isEmbedPage: true,
+      getCopilotBackend: () => copilotBackend,
     }),
     true
   )
@@ -371,6 +375,9 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
               userId={session?.user?.id}
               onContextAdd={handleContextAdd}
               onContextRemove={handleInitialContextRemove}
+              canSwitchCopilotBackend={canSwitchBackend}
+              copilotBackend={copilotBackend}
+              setCopilotBackend={setCopilotBackend}
             >
               <UserInput
                 defaultValue={initialPrompt}
@@ -412,6 +419,9 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
           chatId={resolvedChatId}
           onContextAdd={handleContextAdd}
           onWorkspaceResourceSelect={handleWorkspaceResourceSelect}
+          canSwitchCopilotBackend={canSwitchBackend}
+          copilotBackend={copilotBackend}
+          setCopilotBackend={setCopilotBackend}
           animateInput={isInputEntering}
           onInputAnimationEnd={isInputEntering ? () => setIsInputEntering(false) : undefined}
           initialScrollBlocked={resources.length > 0 && isResourceCollapsed}

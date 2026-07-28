@@ -231,6 +231,7 @@ describe('generateRuntimeCSP', () => {
     expect(csp).toContain('https://app.thearena.ai')
     expect(csp).toContain('https://dev-agent.thearena.ai')
     expect(csp).toContain('https://test-agent.thearena.ai')
+    expect(csp).toContain('https://test-v1-agent.thearena.ai')
     expect(csp).toContain('https://sandbox-agent.thearena.ai')
     expect(csp).toContain('https://agent.thearena.ai')
     expect(csp).toContain("frame-ancestors 'self'")

@@ -297,6 +297,21 @@ describe('getServiceConfigByServiceId', () => {
 
     expect(service).toBeNull()
   })
+
+  it.concurrent('should fall back to a provider defaultService for the provider key', () => {
+    const service = getServiceConfigByServiceId('zoom')
+
+    expect(service).toBeDefined()
+    expect(service?.providerId).toBe('zoom')
+    expect(service?.name).toBe('Zoom')
+  })
+
+  it.concurrent('should resolve the renamed zoom-client service key directly', () => {
+    const service = getServiceConfigByServiceId('zoom-client')
+
+    expect(service).toBeDefined()
+    expect(service?.providerId).toBe('zoom')
+  })
 })
 
 describe('getCanonicalScopesForProvider', () => {

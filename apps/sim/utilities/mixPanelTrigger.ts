@@ -95,6 +95,7 @@ export const setPeople = async ({
     'https://agent.thearena.ai': 'Prod',
     'https://sandbox-agent.thearena.ai': 'Sandbox',
     'https://test-agent.thearena.ai': 'Test',
+    'https://test-v1-agent.thearena.ai': 'Test V1',
     'https://dev-agent.thearena.ai': 'Dev',
   }
   registerMP(instanceMap[appUrl] || 'Dev')

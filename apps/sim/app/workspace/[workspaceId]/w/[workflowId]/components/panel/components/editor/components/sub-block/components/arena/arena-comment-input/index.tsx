@@ -1,11 +1,11 @@
 'use client'
 
 import * as React from 'react'
+import { cn, Textarea } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import axios from 'axios'
 import { ChevronsUpDown, Wand2 } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { Textarea } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/command'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
 import { env } from '@/lib/core/config/env'
-import { cn } from '@/lib/core/utils/cn'
 import { arenaSiblingSubBlockStoreKey } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'

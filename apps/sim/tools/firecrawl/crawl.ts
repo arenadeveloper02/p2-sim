@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
 import type { FirecrawlCrawlParams, FirecrawlCrawlResponse } from '@/tools/firecrawl/types'
@@ -6,7 +7,6 @@ import { CRAWLED_PAGE_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('FirecrawlCrawlTool')
-const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
 
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_TIME_MS = DEFAULT_EXECUTION_TIMEOUT_MS
@@ -70,15 +70,47 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
       description: 'Firecrawl API Key',
     },
   },
+
+  hosting: {
+    envKeyPrefix: 'FIRECRAWL_API_KEY',
+    apiKeyParam: 'apiKey',
+    byokProviderId: 'firecrawl',
+    pricing: {
+      type: 'custom',
+      getCost: (_params, output) => {
+        const creditsUsed =
+          (output.metadata as { creditsUsed?: number } | undefined)?.creditsUsed ??
+          (typeof output.creditsUsed === 'number' ? output.creditsUsed : undefined)
+        if (creditsUsed == null) {
+          throw new Error('Firecrawl response missing creditsUsed field')
+        }
+
+        if (Number.isNaN(creditsUsed)) {
+          throw new Error('Firecrawl response returned a non-numeric creditsUsed field')
+        }
+
+        // $0.001 per credit — same rate as scrape
+        return {
+          cost: creditsUsed * 0.001,
+          metadata: { creditsUsed },
+        }
+      },
+    },
+    rateLimit: {
+      mode: 'per_request',
+      requestsPerMinute: 100,
+    },
+  },
+
   request: {
     url: 'https://api.firecrawl.dev/v2/crawl',
     method: 'POST',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${firecrawlApiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
-      const body: Record<string, any> = {
+      const body: Record<string, unknown> = {
         url: params.url,
         limit: Number(params.limit) || 100,
         scrapeOptions: params.scrapeOptions || {
@@ -137,7 +169,7 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
         const statusResponse = await fetch(`https://api.firecrawl.dev/v2/crawl/${jobId}`, {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${firecrawlApiKey}`,
+            Authorization: `Bearer ${params.apiKey}`,
             'Content-Type': 'application/json',
           },
         })
@@ -150,10 +182,12 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
         logger.info(`Firecrawl crawl job ${jobId} status: ${crawlData.status}`)
 
         if (crawlData.status === 'completed') {
+          const creditsUsed = crawlData.creditsUsed || 0
           result.output = {
             pages: crawlData.data || [],
             total: crawlData.total || 0,
-            creditsUsed: crawlData.creditsUsed || 0,
+            creditsUsed,
+            metadata: { creditsUsed },
           }
           return result
         }
@@ -168,16 +202,16 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
 
         await sleep(POLL_INTERVAL_MS)
         elapsedTime += POLL_INTERVAL_MS
-      } catch (error: any) {
+      } catch (error: unknown) {
         logger.error('Error polling for crawl job status:', {
-          message: error.message || 'Unknown error',
+          message: getErrorMessage(error, 'Unknown error'),
           jobId,
         })
 
         return {
           ...result,
           success: false,
-          error: `Error polling for crawl job status: ${error.message || 'Unknown error'}`,
+          error: `Error polling for crawl job status: ${getErrorMessage(error, 'Unknown error')}`,
         }
       }
     }

@@ -19,7 +19,6 @@ import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
 import {
   evaluateWorkspaceInvitePolicy,
   getInvitePlanCategoryForOrganization,
-  getInvitePlanCategoryForUser,
   getWorkspaceCreationPolicy,
   getWorkspaceInvitePolicy,
   WORKSPACE_MODE,
@@ -96,42 +95,25 @@ export const GET = withRouteHandler(async (request: Request) => {
     await ensureWorkflowsHaveWorkspace(session.user.id, userWorkspaces[0].workspace.id)
   }
 
-  const nonOrgBilledUserIds = [
-    ...new Set(
-      userWorkspaces
-        .filter(({ workspace: ws }) => ws.workspaceMode !== WORKSPACE_MODE.ORGANIZATION)
-        .map(({ workspace: ws }) => ws.billedAccountUserId)
-    ),
-  ]
   const orgIds = [
     ...new Set(
       userWorkspaces
-        .filter(
-          ({ workspace: ws }) =>
-            ws.workspaceMode === WORKSPACE_MODE.ORGANIZATION && ws.organizationId
-        )
+        .filter(({ workspace: ws }) => ws.organizationId)
         .map(({ workspace: ws }) => ws.organizationId as string)
     ),
   ]
-  const planCategoryByBilledUser = new Map<string, PlanCategory>()
   const planCategoryByOrg = new Map<string, PlanCategory>()
-  await Promise.all([
-    ...nonOrgBilledUserIds.map(async (userId) => {
-      planCategoryByBilledUser.set(userId, await getInvitePlanCategoryForUser(userId))
-    }),
-    ...orgIds.map(async (orgId) => {
+  await Promise.all(
+    orgIds.map(async (orgId) => {
       planCategoryByOrg.set(orgId, await getInvitePlanCategoryForOrganization(orgId))
-    }),
-  ])
+    })
+  )
 
   const workspacesWithPermissions = userWorkspaces.map(
     ({ workspace: workspaceDetails, permissionType }) => {
-      const billedPlanCategory: PlanCategory =
-        workspaceDetails.workspaceMode === WORKSPACE_MODE.ORGANIZATION
-          ? workspaceDetails.organizationId
-            ? (planCategoryByOrg.get(workspaceDetails.organizationId) ?? 'free')
-            : 'free'
-          : (planCategoryByBilledUser.get(workspaceDetails.billedAccountUserId) ?? 'free')
+      const billedPlanCategory: PlanCategory = workspaceDetails.organizationId
+        ? (planCategoryByOrg.get(workspaceDetails.organizationId) ?? 'free')
+        : 'free'
       const invitePolicy = evaluateWorkspaceInvitePolicy(workspaceDetails, { billedPlanCategory })
       const callerIsBilledUser = workspaceDetails.billedAccountUserId === session.user.id
 
@@ -199,6 +181,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       organizationId: creationPolicy.organizationId,
       workspaceMode: creationPolicy.workspaceMode,
       billedAccountUserId: creationPolicy.billedAccountUserId,
+      isPersonal: creationPolicy.isPersonal,
     })
 
     captureServerEvent(
@@ -249,6 +232,7 @@ async function createDefaultWorkspace(
     organizationId: string | null
     workspaceMode: WorkspaceMode
     billedAccountUserId: string
+    isPersonal: boolean
   }
 ) {
   const firstName = userName?.split(' ')[0] || null
@@ -259,6 +243,7 @@ async function createDefaultWorkspace(
     organizationId: creationPolicy.organizationId,
     workspaceMode: creationPolicy.workspaceMode,
     billedAccountUserId: creationPolicy.billedAccountUserId,
+    isPersonal: creationPolicy.isPersonal,
   })
 }
 
@@ -270,6 +255,7 @@ interface CreateWorkspaceParams {
   organizationId: string | null
   workspaceMode: WorkspaceMode
   billedAccountUserId: string
+  isPersonal: boolean
 }
 
 async function createWorkspace({
@@ -280,6 +266,7 @@ async function createWorkspace({
   organizationId,
   workspaceMode,
   billedAccountUserId,
+  isPersonal,
 }: CreateWorkspaceParams) {
   const workspaceId = generateId()
   const workflowId = generateId()
@@ -295,6 +282,7 @@ async function createWorkspace({
         ownerId: userId,
         organizationId,
         workspaceMode,
+        isPersonal,
         billedAccountUserId,
         allowPersonalApiKeys: true,
         createdAt: now,
@@ -393,6 +381,7 @@ async function createWorkspace({
     ownerId: userId,
     organizationId,
     workspaceMode,
+    isPersonal,
     billedAccountUserId,
     allowPersonalApiKeys: true,
     createdAt: now,

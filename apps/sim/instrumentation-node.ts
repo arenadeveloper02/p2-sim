@@ -382,13 +382,21 @@ async function startLocalScheduler() {
           const response = await fetch(url, {
             method: 'GET',
             headers: {
+              Accept: 'application/json',
               Authorization: `Bearer ${cronSecret}`,
               'Content-Type': 'application/json',
             },
           })
 
           if (!response.ok) {
+            const contentType = response.headers.get('content-type') ?? ''
             const text = await response.text()
+            if (contentType.includes('text/html')) {
+              logger.warn(
+                `Schedule execution API returned ${response.status} HTML (route likely unavailable — restart the dev server or run dev:clean)`
+              )
+              return
+            }
             logger.warn(`Schedule execution API returned ${response.status}: ${text}`)
           } else {
             const result = (await response.json()) as { executedCount?: number }

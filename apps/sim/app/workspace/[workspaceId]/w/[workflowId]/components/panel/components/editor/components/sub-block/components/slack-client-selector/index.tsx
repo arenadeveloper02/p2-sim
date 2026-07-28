@@ -1,8 +1,9 @@
 'use client'
 
 import * as React from 'react'
+import { cn } from '@sim/emcn'
+import { comboboxVariants } from '@sim/emcn/components/combobox/combobox'
 import { Check, ChevronsUpDown } from 'lucide-react'
-import { comboboxVariants } from '@/components/emcn/components/combobox/combobox'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -13,7 +14,6 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { cn } from '@/lib/core/utils/cn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useArenaClientsByUser } from '@/hooks/queries/arena-clients'
 

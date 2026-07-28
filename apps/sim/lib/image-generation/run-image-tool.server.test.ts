@@ -54,6 +54,89 @@ describe('buildImageToolBodyFromExecutionParams', () => {
   })
 })
 
+describe('runImageToolGeneration validation', () => {
+  it('rejects an invalid OpenAI model before calling the provider API', async () => {
+    await expect(
+      runImageToolGeneration(
+        buildImageToolBodyFromExecutionParams({
+          provider: 'openai',
+          model: 'not-a-real-model',
+          prompt: 'A scenic mountain landscape',
+        }),
+        { userId: 'user-123', requestId: 'req-invalid-model' }
+      )
+    ).rejects.toThrow('Invalid model')
+  })
+
+  it('rejects an invalid Gemini aspect ratio before calling the provider API', async () => {
+    await expect(
+      runImageToolGeneration(
+        buildImageToolBodyFromExecutionParams({
+          provider: 'gemini',
+          model: 'gemini-3.1-flash-image-preview',
+          aspectRatio: '99:99',
+          prompt: 'A scenic mountain landscape',
+        }),
+        { userId: 'user-123', requestId: 'req-invalid-aspect' }
+      )
+    ).rejects.toThrow('Invalid aspect ratio')
+  })
+
+  it('rejects an invalid Gemini resolution before calling the provider API', async () => {
+    await expect(
+      runImageToolGeneration(
+        buildImageToolBodyFromExecutionParams({
+          provider: 'gemini',
+          model: 'gemini-3.1-flash-image-preview',
+          resolution: '8K',
+          prompt: 'A scenic mountain landscape',
+        }),
+        { userId: 'user-123', requestId: 'req-invalid-resolution' }
+      )
+    ).rejects.toThrow('Invalid resolution')
+  })
+
+  it('coerces gemini provider to openai for gpt-image-2 before calling the provider API', async () => {
+    mockSaveGeneratedImage.mockResolvedValue({
+      url: 'https://agent.thearena.ai/api/files/serve/agent-generated-images/workflow-123/user-123/image.png',
+    })
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [{ b64_json: Buffer.from('fake-image').toString('base64') }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    )
+
+    await runImageToolGeneration(
+      buildImageToolBodyFromExecutionParams({
+        provider: 'gemini',
+        model: 'gpt-image-2',
+        prompt: 'A scenic mountain landscape',
+        _context: {
+          userId: 'user-123',
+          workflowId: 'workflow-123',
+        },
+      }),
+      { userId: 'user-123', requestId: 'req-coerce-provider' }
+    )
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/images/generations',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    )
+
+    fetchMock.mockRestore()
+  })
+})
+
 describe('runImageToolGeneration storage', () => {
   beforeEach(() => {
     vi.clearAllMocks()

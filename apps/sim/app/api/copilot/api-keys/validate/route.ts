@@ -6,7 +6,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { validateCopilotApiKeyContract } from '@/lib/api/contracts/copilot'
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import {
-  checkOrgMemberUsageLimit,
+  checkMothershipUsageLimits,
   checkSelfHostedMothershipUsageLimits,
 } from '@/lib/billing/calculations/usage-monitor'
 import { CopilotValidateOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
@@ -86,43 +86,50 @@ export const POST = withRouteHandler((req: NextRequest) =>
           return NextResponse.json({ error: 'User not found' }, { status: 403 })
         }
 
-        logger.info('[API VALIDATION] Validating usage limit', { userId })
-        // const { isExceeded, currentUsage, limit } = await checkServerSideUsageLimits(userId)
-        const { isExceeded, currentUsage, limit } =
-          await checkSelfHostedMothershipUsageLimits(userId)
-        span.setAttributes({
-          [TraceAttr.BillingUsageCurrent]: currentUsage,
-          [TraceAttr.BillingUsageLimit]: limit,
-          [TraceAttr.BillingUsageExceeded]: isExceeded,
-        })
+        logger.info('[API VALIDATION] Validating usage limit', { userId, workspaceId })
 
-        logger.info('[API VALIDATION] Usage limit validated', {
-          userId,
-          currentUsage,
-          limit,
-          isExceeded,
-          selfHostedMothershipOnly: !isHosted,
-        })
+        if (!isHosted) {
+          const { isExceeded, currentUsage, limit } =
+            await checkSelfHostedMothershipUsageLimits(userId)
+          span.setAttributes({
+            [TraceAttr.BillingUsageCurrent]: currentUsage,
+            [TraceAttr.BillingUsageLimit]: limit,
+            [TraceAttr.BillingUsageExceeded]: isExceeded,
+          })
 
-        if (isExceeded) {
-          logger.info('[API VALIDATION] Usage exceeded', { userId, currentUsage, limit })
-          span.setAttribute(TraceAttr.CopilotValidateOutcome, CopilotValidateOutcome.UsageExceeded)
-          span.setAttribute(TraceAttr.HttpStatusCode, 402)
-          return new NextResponse(null, { status: 402 })
-        }
+          logger.info('[API VALIDATION] Usage limit validated', {
+            userId,
+            currentUsage,
+            limit,
+            isExceeded,
+            selfHostedMothershipOnly: true,
+          })
 
-        // Per-member org-workspace cap (hosted-only). Blocks the mothership/copilot
-        // chat request itself when the user is over their personal credit limit for
-        // the org that owns this workspace, independent of the pooled org limit.
-        // workspaceId is contract-required, so the gate can't be silently skipped.
-        if (isHosted) {
-          const memberCheck = await checkOrgMemberUsageLimit(userId, workspaceId)
-          if (memberCheck.isExceeded) {
-            logger.info('[API VALIDATION] Per-member org usage limit exceeded', {
+          if (isExceeded) {
+            logger.info('[API VALIDATION] Usage exceeded', { userId, currentUsage, limit })
+            span.setAttribute(
+              TraceAttr.CopilotValidateOutcome,
+              CopilotValidateOutcome.UsageExceeded
+            )
+            span.setAttribute(TraceAttr.HttpStatusCode, 402)
+            return new NextResponse(null, { status: 402 })
+          }
+        } else {
+          const usage = await checkMothershipUsageLimits(userId, workspaceId)
+          span.setAttribute(TraceAttr.BillingUsageExceeded, usage.isExceeded)
+
+          logger.info('[API VALIDATION] Hosted mothership usage validated', {
+            userId,
+            workspaceId,
+            isExceeded: usage.isExceeded,
+            scope: usage.scope,
+          })
+
+          if (usage.isExceeded) {
+            logger.info('[API VALIDATION] Usage exceeded', {
               userId,
               workspaceId,
-              currentUsage: memberCheck.currentUsage,
-              limit: memberCheck.limit,
+              scope: usage.scope,
             })
             span.setAttribute(
               TraceAttr.CopilotValidateOutcome,

@@ -14,6 +14,7 @@ import { deployedChatPostContract, goldenQueriesSchema } from '@/lib/api/contrac
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
+import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
 import { getAgentDepartmentLabel } from '@/lib/chat/arena-departments'
 import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
 import {
@@ -502,6 +503,7 @@ export const POST = withRouteHandler(
       }
 
       const { actorUserId, workflowRecord } = preprocessResult
+      const executionActor = preprocessResult.executionActor
       const workspaceOwnerId = actorUserId!
       const workspaceId = workflowRecord?.workspaceId
       if (!workspaceId) {
@@ -544,6 +546,7 @@ export const POST = withRouteHandler(
         chatId: payload || conversationId || undefined,
         conversationId: conversationId || undefined,
         initialInput: formattedInitialInput || undefined,
+        executionActor,
       })
 
       try {
@@ -902,6 +905,18 @@ export const POST = withRouteHandler(
                             return value
                           }
                           if (typeof value === 'object') {
+                            const chartOutput = formatChartDeployOutputForChat(value)
+                            if (chartOutput) {
+                              return chartOutput
+                            }
+                            if (
+                              value &&
+                              typeof value === 'object' &&
+                              'charts' in value &&
+                              Array.isArray((value as { charts?: unknown }).charts)
+                            ) {
+                              return null
+                            }
                             try {
                               return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
                             } catch {
@@ -1132,6 +1147,7 @@ export const GET = withRouteHandler(
           allowedEmails: chat.allowedEmails,
           outputConfigs: chat.outputConfigs,
           department: chat.department,
+          deploymentType: chat.deploymentType,
         })
         .from(chat)
         .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
@@ -1147,6 +1163,11 @@ export const GET = withRouteHandler(
       if (!deployment.isActive) {
         logger.warn(`[${requestId}] Chat is not active: ${identifier}`)
         return createErrorResponse('This chat is currently unavailable', 403)
+      }
+
+      if (deployment.deploymentType === 'app') {
+        logger.warn(`[${requestId}] Chat is deployed as an external app: ${identifier}`)
+        return createErrorResponse('Chat not found', 404)
       }
 
       // Extract Start Block inputFormat for chat UI (before auth checks so it's available in all responses)

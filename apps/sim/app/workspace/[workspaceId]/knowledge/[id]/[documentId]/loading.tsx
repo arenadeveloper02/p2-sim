@@ -1,15 +1,14 @@
 'use client'
 
+import { Plus } from '@sim/emcn'
+import { Database } from '@sim/emcn/icons'
+import { noop } from '@sim/utils/helpers'
 import { FileText } from 'lucide-react'
-import { Plus } from '@/components/emcn'
-import { Database } from '@/components/emcn/icons'
 import {
   type BreadcrumbItem,
   type ChromeActionSpec,
   ResourceChromeFallback,
 } from '@/app/workspace/[workspaceId]/components'
-
-const noop = () => {}
 
 const COLUMNS = [
   { id: 'content', header: 'Content' },

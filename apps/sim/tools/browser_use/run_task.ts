@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
+import { browserUseHosting } from '@/tools/browser_use/hosting'
 import type { BrowserUseRunTaskParams, BrowserUseRunTaskResponse } from '@/tools/browser_use/types'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
@@ -42,9 +44,9 @@ async function createSessionWithProfile(
     const data = (await response.json()) as { id: string }
     logger.info(`Created session ${data.id} with profile ${profileId}`)
     return { sessionId: data.id }
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.error('Error creating session with profile:', error)
-    return { error: `Error creating session: ${error.message}` }
+    return { error: `Error creating session: ${getErrorMessage(error)}` }
   }
 }
 
@@ -64,7 +66,7 @@ async function stopSession(sessionId: string, apiKey: string): Promise<void> {
     } else {
       logger.warn(`Failed to stop session ${sessionId}: ${response.statusText}`)
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.warn(`Error stopping session ${sessionId}:`, error)
   }
 }
@@ -86,7 +88,7 @@ async function fetchSessionLiveUrl(
       liveUrl: data.liveUrl ?? null,
       publicShareUrl: data.publicShareUrl ?? null,
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.warn(`Error fetching session ${sessionId}:`, error)
     return { liveUrl: null, publicShareUrl: null }
   }
@@ -160,7 +162,7 @@ function buildRequestBody(
 async function fetchTaskStatus(
   taskId: string,
   apiKey: string
-): Promise<{ ok: true; data: any } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
   try {
     const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
       method: 'GET',
@@ -171,19 +173,40 @@ async function fetchTaskStatus(
       return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` }
     }
 
-    return { ok: true, data: await response.json() }
-  } catch (error: any) {
-    return { ok: false, error: error.message || 'Network error' }
+    return { ok: true, data: (await response.json()) as Record<string, unknown> }
+  } catch (error: unknown) {
+    return { ok: false, error: getErrorMessage(error, 'Network error') }
   }
+}
+
+/**
+ * Extracts a dollar cost from a Browser Use task status payload when present.
+ */
+function extractTaskTotalCostUsd(taskData: Record<string, unknown>): number | undefined {
+  const candidates = [taskData.totalCostUsd, taskData.cost, taskData.__totalCostUsd]
+  for (const value of candidates) {
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      return value
+    }
+  }
+  const usage = taskData.usage
+  if (usage && typeof usage === 'object' && !Array.isArray(usage)) {
+    const usageCost = (usage as { totalCostUsd?: unknown }).totalCostUsd
+    if (typeof usageCost === 'number' && Number.isFinite(usageCost) && usageCost >= 0) {
+      return usageCost
+    }
+  }
+  return undefined
 }
 
 interface PollResult {
   success: boolean
-  output: any
-  steps: any[]
+  output: unknown
+  steps: unknown[]
   sessionId: string | null
   liveUrl: string | null
   publicShareUrl: string | null
+  totalCostUsd?: number
   error?: string
 }
 
@@ -221,8 +244,8 @@ async function pollForCompletion(taskId: string, apiKey: string): Promise<PollRe
 
     consecutiveErrors = 0
     const taskData = result.data
-    if (taskData.sessionId) sessionId = taskData.sessionId
-    const status = taskData.status
+    if (typeof taskData.sessionId === 'string') sessionId = taskData.sessionId
+    const status = typeof taskData.status === 'string' ? taskData.status : ''
 
     logger.info(`BrowserUse task ${taskId} status: ${status}`)
 
@@ -239,10 +262,11 @@ async function pollForCompletion(taskId: string, apiKey: string): Promise<PollRe
       return {
         success: status === 'finished',
         output: taskData.output ?? null,
-        steps: taskData.steps || [],
+        steps: Array.isArray(taskData.steps) ? taskData.steps : [],
         sessionId,
         liveUrl,
         publicShareUrl,
+        totalCostUsd: extractTaskTotalCostUsd(taskData),
       }
     }
 
@@ -250,14 +274,18 @@ async function pollForCompletion(taskId: string, apiKey: string): Promise<PollRe
   }
 
   const finalResult = await fetchTaskStatus(taskId, apiKey)
-  if (finalResult.ok && ['finished', 'failed', 'stopped'].includes(finalResult.data.status)) {
+  const finalStatus =
+    finalResult.ok && typeof finalResult.data.status === 'string' ? finalResult.data.status : ''
+  if (finalResult.ok && ['finished', 'failed', 'stopped'].includes(finalStatus)) {
     return {
-      success: finalResult.data.status === 'finished',
+      success: finalStatus === 'finished',
       output: finalResult.data.output ?? null,
-      steps: finalResult.data.steps || [],
-      sessionId: finalResult.data.sessionId ?? sessionId,
+      steps: Array.isArray(finalResult.data.steps) ? finalResult.data.steps : [],
+      sessionId:
+        typeof finalResult.data.sessionId === 'string' ? finalResult.data.sessionId : sessionId,
       liveUrl,
       publicShareUrl,
+      totalCostUsd: extractTaskTotalCostUsd(finalResult.data),
     }
   }
 
@@ -289,7 +317,7 @@ async function createShareUrl(sessionId: string, apiKey: string): Promise<string
 
     const data = (await response.json()) as { shareUrl?: string; shareToken?: string }
     return data.shareUrl ?? null
-  } catch (error: any) {
+  } catch (error: unknown) {
     logger.warn(`Error creating share URL for session ${sessionId}:`, error)
     return null
   }
@@ -312,6 +340,8 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
   name: 'Browser Use',
   description: 'Runs a browser automation task using BrowserUse',
   version: '1.0.0',
+
+  hosting: browserUseHosting,
 
   params: {
     task: {
@@ -477,7 +507,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
       const finalSessionId = result.sessionId ?? initialSessionId
       const shareUrl =
         result.publicShareUrl ??
-        (finalSessionId ? await createShareUrl(finalSessionId, params.apiKey) : null)
+        (finalSessionId ? await createShareUrl(finalSessionId, apiKey) : null)
 
       if (sessionId) {
         await stopSession(sessionId, apiKey)
@@ -488,15 +518,16 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
         output: {
           id: taskId,
           success: result.success,
-          output: result.output,
-          steps: result.steps,
+          output: (result.output as string | null) ?? null,
+          steps: result.steps as BrowserUseRunTaskResponse['output']['steps'],
           liveUrl: result.liveUrl,
           shareUrl,
           sessionId: finalSessionId,
+          ...(result.totalCostUsd != null ? { __totalCostUsd: result.totalCostUsd } : {}),
         },
         error: result.error,
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error('Error creating BrowserUse task:', error)
       if (sessionId) {
         await stopSession(sessionId, apiKey)
@@ -504,7 +535,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
       return {
         success: false,
         output: emptyOutput(),
-        error: `Error creating task: ${error.message}`,
+        error: `Error creating task: ${getErrorMessage(error)}`,
       }
     }
   },

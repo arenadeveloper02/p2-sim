@@ -1,4 +1,4 @@
-import { Body, Container, Head, Html, Img, Preview, Section } from '@react-email/components'
+import { Body, Container, Font, Head, Html, Img, Preview, Section } from '@react-email/components'
 import { baseStyles } from '@/components/emails/_styles'
 import { EmailFooter } from '@/components/emails/components/email-footer'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -32,10 +32,22 @@ export function EmailLayout({
   const baseUrl = getBaseUrl()
   //email can't load svg, so we use a png
   const logoPng = 'https://arenav2image.s3.us-west-1.amazonaws.com/arenaLogoTextBlack.png'
+  const hasCustomLogo = Boolean(brand.logoUrl)
 
   return (
     <Html>
-      <Head />
+      <Head>
+        <Font
+          fontFamily='Season Sans'
+          fallbackFontFamily={['Helvetica', 'sans-serif']}
+          webFont={{
+            url: `${baseUrl}/brand/fonts/SeasonSansUprightsVF.woff2`,
+            format: 'woff2',
+          }}
+          fontWeight='300 800'
+          fontStyle='normal'
+        />
+      </Head>
       <Preview>{preview}</Preview>
       <Body style={baseStyles.main}>
         {/* Main card container */}
@@ -46,10 +58,12 @@ export function EmailLayout({
               // src={logoPng || brand.logoUrl || `${baseUrl}/brand/color/email/type.png`}
               // width='70'
               src={logoPng || brand.logoUrl || `${baseUrl}/brand/color/email/wordmark.png`}
-              width='48'
-              height='48'
+              // width='48'
+              // height='48'
+              height='34'
+              {...(hasCustomLogo ? {} : { width: '70' })}
               alt={brand.name}
-              style={{ display: 'block' }}
+              style={hasCustomLogo ? { display: 'block', width: 'auto' } : { display: 'block' }}
             />
           </Section>
 

@@ -4,6 +4,7 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Image as ImageIcon,
   List,
   ListChecks,
   ListOrdered,
@@ -17,6 +18,15 @@ import {
 export interface SlashCommandContext {
   editor: Editor
   range: Range
+}
+
+/**
+ * Per-editor storage on the `slashCommand` extension. The host editor component sets `insertImage`
+ * after mount; it opens an image file picker and uploads + inserts the chosen image(s) at `at`. Null
+ * in headless/read-only contexts, where the Image command is a no-op.
+ */
+export interface SlashCommandStorage {
+  insertImage: ((at: number) => void) | null
 }
 
 export interface SlashCommandItem {
@@ -131,16 +141,32 @@ export const SLASH_COMMANDS: readonly SlashCommandItem[] = [
     aliases: ['hr', 'horizontal rule', 'separator'],
     run: ({ editor, range }) => editor.chain().focus().deleteRange(range).setHorizontalRule().run(),
   },
+  {
+    title: 'Image',
+    group: 'Media',
+    icon: ImageIcon,
+    aliases: ['picture', 'photo', 'upload', 'img'],
+    run: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run()
+      editor.storage.slashCommand.insertImage?.(editor.state.selection.from)
+    },
+  },
 ]
 
 /**
- * Filters commands by a case-insensitive match against title or aliases. Order is
- * preserved so the menu stays stable as the query narrows.
+ * Filters commands by a case-insensitive match against title or aliases. Order is preserved so the
+ * menu stays stable as the query narrows. The Image command is dropped when image insertion isn't
+ * available (`allowImages: false`) — e.g. the modal field editors, which have no upload affordance.
  */
-export function filterSlashCommands(query: string): SlashCommandItem[] {
+export function filterSlashCommands(
+  query: string,
+  options?: { allowImages?: boolean }
+): SlashCommandItem[] {
+  const allowImages = options?.allowImages ?? true
+  const available = allowImages ? SLASH_COMMANDS : SLASH_COMMANDS.filter((c) => c.title !== 'Image')
   const q = query.trim().toLowerCase()
-  if (!q) return [...SLASH_COMMANDS]
-  return SLASH_COMMANDS.filter(
+  if (!q) return [...available]
+  return available.filter(
     (command) =>
       command.title.toLowerCase().includes(q) || command.aliases.some((alias) => alias.includes(q))
   )

@@ -26,6 +26,7 @@ import {
 import { handlePostExecutionPauseState } from '@/lib/workflows/executor/pause-persistence'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import { resolveOAuthAccountId } from '@/app/api/auth/oauth/utils'
+import { WEBHOOK_EXECUTION_CONCURRENCY_LIMIT } from '@/background/concurrency-limits'
 import { getBlock } from '@/blocks'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata } from '@/executor/execution/types'
@@ -236,6 +237,18 @@ export type WebhookExecutionPayload = {
   blockId?: string
   workspaceId?: string
   credentialId?: string
+  /** Epoch ms when the webhook HTTP request was first received (for dispatch-latency metrics). */
+  webhookReceivedAt?: number
+  /** Epoch ms of the originating provider interaction (e.g. Slack x-slack-request-timestamp). */
+  triggerTimestampMs?: number
+  /**
+   * Billing actor resolved by the webhook route, set ONLY for in-process inline
+   * execution that runs microseconds after resolution. The background pass reuses
+   * it to skip the redundant billed-account lookup. Deliberately absent on queued
+   * (Trigger.dev) and persisted payloads — a deferred run could outlive a
+   * billed-account change, so it re-resolves the current actor instead.
+   */
+  resolvedActorUserId?: string
 }
 
 export async function executeWebhookJob(payload: WebhookExecutionPayload) {
@@ -361,14 +374,22 @@ async function executeWebhookJobInternal(
     checkDeployment: false,
     skipUsageLimits: true,
     workspaceId: payload.workspaceId,
+    webhookId: payload.webhookId,
     loggingSession,
+    /**
+     * Reuse the route-resolved actor only for inline execution (set on the
+     * in-process payload). When absent — queued/Trigger.dev runs — preprocessing
+     * re-resolves the current billed account. Either way the ban and
+     * archived-workflow gates run fresh against the resolved actor.
+     */
+    resolvedActorUserId: payload.resolvedActorUserId,
   })
 
   if (!preprocessResult.success) {
     throw new Error(preprocessResult.error?.message || 'Preprocessing failed in background job')
   }
 
-  const { workflowRecord, executionTimeout } = preprocessResult
+  const { workflowRecord, executionTimeout, actorUserId, executionActor } = preprocessResult
   if (!workflowRecord) {
     throw new Error(`Workflow ${payload.workflowId} not found during preprocessing`)
   }
@@ -451,7 +472,7 @@ async function executeWebhookJobInternal(
 
     if (skipMessage) {
       await loggingSession.safeStart({
-        userId: payload.userId,
+        userId: actorUserId ?? payload.userId,
         workspaceId,
         variables: {},
         triggerData: {
@@ -460,6 +481,7 @@ async function executeWebhookJobInternal(
         },
         conversationId: undefined,
         deploymentVersionId,
+        executionActor,
       })
 
       await loggingSession.safeComplete({
@@ -544,7 +566,7 @@ async function executeWebhookJobInternal(
       executionId,
       workflowId: payload.workflowId,
       workspaceId,
-      userId: payload.userId,
+      userId: actorUserId ?? payload.userId,
       sessionUserId: undefined,
       workflowUserId: workflowRecord.userId,
       triggerType: payload.provider || 'webhook',
@@ -554,6 +576,7 @@ async function executeWebhookJobInternal(
       isClientSession: false,
       credentialAccountUserId,
       correlation,
+      executionActor,
       workflowStateOverride: {
         blocks,
         edges,
@@ -564,6 +587,24 @@ async function executeWebhookJobInternal(
     }
 
     const triggerInput = input || {}
+
+    /**
+     * Surface the pre-execution latency that per-block timings cannot see: the
+     * gap between webhook receipt and the first block running, and — for
+     * trigger_id-bound providers like Slack — the true age of the interaction
+     * against its 3s expiry window. Logged structured so it is queryable/alarmable.
+     */
+    if (payload.webhookReceivedAt !== undefined || payload.triggerTimestampMs !== undefined) {
+      const now = Date.now()
+      logger.info(`[${requestId}] Webhook dispatch latency`, {
+        workflowId: payload.workflowId,
+        provider: payload.provider,
+        dispatchLatencyMs:
+          payload.webhookReceivedAt !== undefined ? now - payload.webhookReceivedAt : undefined,
+        triggerAgeMs:
+          payload.triggerTimestampMs !== undefined ? now - payload.triggerTimestampMs : undefined,
+      })
+    }
 
     const snapshot = new ExecutionSnapshot(
       metadata,
@@ -640,7 +681,7 @@ async function executeWebhookJobInternal(
 
     try {
       await loggingSession.safeStart({
-        userId: payload.userId,
+        userId: actorUserId ?? payload.userId,
         workspaceId,
         variables: {},
         triggerData: {
@@ -649,6 +690,7 @@ async function executeWebhookJobInternal(
         },
         conversationId: undefined,
         deploymentVersionId,
+        executionActor,
       })
 
       const executionResult = hasExecutionResult(error)
@@ -684,6 +726,9 @@ export const webhookExecution = task({
   machine: 'medium-1x',
   retry: {
     maxAttempts: 1,
+  },
+  queue: {
+    concurrencyLimit: WEBHOOK_EXECUTION_CONCURRENCY_LIMIT,
   },
   run: async (payload: WebhookExecutionPayload) => executeWebhookJob(payload),
 })

@@ -17,8 +17,15 @@ import {
 import { getExecutionTimeout } from '@/lib/core/execution-limits'
 import { RateLimiter } from '@/lib/core/rate-limiter/rate-limiter'
 import type { SubscriptionPlan } from '@/lib/core/rate-limiter/types'
+import {
+  resolveExecutionActor,
+  type ExecutionActor,
+} from '@/lib/execution/actor-resolution'
 import { LoggingSession, type SessionStartParams } from '@/lib/logs/execution/logging-session'
-import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
+import {
+  getScheduleExecutionActorUserId,
+  getWorkspaceBilledAccountUserId,
+} from '@/lib/workspaces/utils'
 import type { CoreTriggerType } from '@/stores/logs/filters/types'
 
 const logger = createLogger('ExecutionPreprocessing')
@@ -57,10 +64,21 @@ export interface PreprocessExecutionOptions {
   triggerData?: SessionStartParams['triggerData']
   isResumeContext?: boolean // Deprecated: no billing fallback is allowed
   useAuthenticatedUserAsActor?: boolean // If true, use the authenticated userId as actorUserId (for client-side executions and personal API keys)
+  apiKeyId?: string
+  apiKeyType?: 'personal' | 'workspace'
+  webhookId?: string
   /** @deprecated No longer used - background/async executions always use deployed state */
   useDraftState?: boolean
   /** Pre-fetched workflow row for caller context; preprocessing still re-checks active state. */
   workflowRecord?: WorkflowRecord
+  /**
+   * Billing actor already resolved by an upstream gate earlier in the same
+   * request (e.g. the webhook route's preprocessing pass, whose result is carried
+   * as the job's userId). When provided, the redundant workspace billed-account
+   * lookup is skipped. The ban, deployment, usage, and rate-limit gates still run
+   * against this actor — only the resolution is reused, never a gate.
+   */
+  resolvedActorUserId?: string
 }
 
 /**
@@ -76,6 +94,7 @@ export interface PreprocessExecutionResult {
     cause?: Record<string, unknown>
   }
   actorUserId?: string
+  executionActor?: ExecutionActor
   workflowRecord?: WorkflowRecord
   userSubscription?: SubscriptionInfo | null
   rateLimitInfo?: {
@@ -114,7 +133,11 @@ export async function preprocessExecution(
     triggerData,
     isResumeContext: _isResumeContext = false,
     useAuthenticatedUserAsActor = false,
+    apiKeyId,
+    apiKeyType,
+    webhookId: providedWebhookId,
     workflowRecord: prefetchedWorkflowRecord,
+    resolvedActorUserId,
   } = options
 
   // When `logPreprocessingErrors` is false the caller surfaces failures itself
@@ -255,13 +278,36 @@ export async function preprocessExecution(
 
   // ========== STEP 3: Resolve Billing Actor ==========
   let actorUserId: string | null = null
+  let executionActor: ExecutionActor | null = null
+
+  const correlationWebhookId =
+    triggerData?.correlation &&
+    typeof triggerData.correlation === 'object' &&
+    'webhookId' in triggerData.correlation
+      ? String((triggerData.correlation as { webhookId?: string }).webhookId ?? '').trim() ||
+        undefined
+      : undefined
+  const webhookId = providedWebhookId ?? correlationWebhookId
 
   try {
-    // For client-side executions and personal API keys, the authenticated
-    // user is the billing and permission actor — not the workspace owner.
-    if (useAuthenticatedUserAsActor && userId) {
+    if (triggerType === 'schedule') {
+      actorUserId = await getScheduleExecutionActorUserId(workspaceId, workflowRecord.userId)
+      if (actorUserId) {
+        logger.info(`[${requestId}] Using schedule execution actor for billing: ${actorUserId}`)
+      }
+    } else if (useAuthenticatedUserAsActor && userId && userId !== 'unknown') {
       actorUserId = userId
       logger.info(`[${requestId}] Using authenticated user as actor: ${actorUserId}`)
+    }
+
+    /**
+     * Reuse an actor already resolved upstream this request (e.g. the webhook
+     * route's preprocessing) to skip the redundant workspace billed-account
+     * lookup. Gates below still run against this actor.
+     */
+    if (!actorUserId && resolvedActorUserId) {
+      actorUserId = resolvedActorUserId
+      logger.info(`[${requestId}] Using pre-resolved billing actor: ${actorUserId}`)
     }
 
     if (!actorUserId && workspaceId) {
@@ -270,6 +316,16 @@ export async function preprocessExecution(
         logger.info(`[${requestId}] Using workspace billed account: ${actorUserId}`)
       }
     }
+
+    executionActor = await resolveExecutionActor({
+      triggerType,
+      workspaceId,
+      workflowUserId: workflowRecord.userId,
+      authenticatedUserId: userId,
+      apiKeyId,
+      apiKeyType,
+      webhookId,
+    })
 
     if (!actorUserId) {
       const fallbackUserId = userId || 'unknown'
@@ -732,6 +788,7 @@ export async function preprocessExecution(
   return {
     success: true,
     actorUserId,
+    executionActor: executionActor ?? undefined,
     workflowRecord,
     userSubscription,
     rateLimitInfo,

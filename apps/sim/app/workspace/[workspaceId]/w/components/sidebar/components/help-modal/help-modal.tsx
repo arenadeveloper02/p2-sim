@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
+import {
+  ChipModal,
+  ChipModalBody,
+  ChipModalField,
+  ChipModalFooter,
+  ChipModalHeader,
+} from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { useMutation } from '@tanstack/react-query'
 import imageCompression from 'browser-image-compression'
@@ -9,13 +16,8 @@ import { X } from 'lucide-react'
 import Image from 'next/image'
 import { Controller, useForm } from 'react-hook-form'
 import { z } from 'zod'
-import {
-  ChipModal,
-  ChipModalBody,
-  ChipModalField,
-  ChipModalFooter,
-  ChipModalHeader,
-} from '@/components/emcn'
+import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
+import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
 
 const logger = createLogger('HelpModal')
 
@@ -124,6 +126,7 @@ async function submitHelpRequest({
 }
 
 export function HelpModal({ open, onOpenChange, workflowId, workspaceId }: HelpModalProps) {
+  const brand = useOrgBrandConfig()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const imagesRef = useRef<ImageWithPreview[]>([])
 
@@ -264,6 +267,29 @@ export function HelpModal({ open, onOpenChange, workflowId, workspaceId }: HelpM
       <form onSubmit={handleSubmit(onSubmit)} className='flex min-h-0 flex-1 flex-col'>
         <button type='submit' hidden disabled={helpMutation.isPending || isProcessing} />
         <ChipModalBody ref={scrollContainerRef} className='max-h-[60vh]'>
+          <div className='flex flex-col gap-2 px-2 text-[13px] text-[var(--text-secondary)]'>
+            {brand.supportEmail ? (
+              <p>
+                Need help?{' '}
+                <a
+                  href={`mailto:${brand.supportEmail}`}
+                  className='text-[var(--text-body)] underline-offset-4 hover:underline'
+                >
+                  {brand.supportEmail}
+                </a>
+              </p>
+            ) : null}
+            <p>
+              <a
+                href={resolveBrandDocsUrl(brand.documentationUrl)}
+                target='_blank'
+                rel='noopener noreferrer'
+                className='text-[var(--text-body)] underline-offset-4 hover:underline'
+              >
+                View documentation
+              </a>
+            </p>
+          </div>
           <Controller
             name='type'
             control={control}

@@ -34,6 +34,7 @@ import {
   getE2BDocFormat,
   PPTXGENJS_SOURCE_MIME,
 } from './doc-compile'
+import { storeCompiledDoc } from './doc-compiled-store'
 import { buildEmbeddedImageRefWarning } from './embedded-image-refs'
 import { storeFileIntent } from './file-intent-store'
 
@@ -151,6 +152,9 @@ export interface DocumentFormatInfo {
   formatName?: 'PPTX' | 'DOCX' | 'PDF'
   sourceMime?: string
   taskId?: SandboxTaskId
+  /** Extension without dot, for content-addressed compiled artifacts. */
+  ext?: 'pptx' | 'docx' | 'pdf'
+  binaryContentType?: string
 }
 
 export function getDocumentFormatInfo(fileName: string): DocumentFormatInfo {
@@ -161,6 +165,8 @@ export function getDocumentFormatInfo(fileName: string): DocumentFormatInfo {
       formatName: 'PPTX',
       sourceMime: PPTX_SOURCE_MIME,
       taskId: 'pptx-generate',
+      ext: 'pptx',
+      binaryContentType: PPTX_MIME,
     }
   }
   if (lowerName.endsWith('.docx')) {
@@ -169,6 +175,8 @@ export function getDocumentFormatInfo(fileName: string): DocumentFormatInfo {
       formatName: 'DOCX',
       sourceMime: DOCX_SOURCE_MIME,
       taskId: 'docx-generate',
+      ext: 'docx',
+      binaryContentType: DOCX_MIME,
     }
   }
   if (lowerName.endsWith('.pdf')) {
@@ -177,9 +185,53 @@ export function getDocumentFormatInfo(fileName: string): DocumentFormatInfo {
       formatName: 'PDF',
       sourceMime: PDF_SOURCE_MIME,
       taskId: 'pdf-generate',
+      ext: 'pdf',
+      binaryContentType: PDF_MIME,
     }
   }
   return { isDoc: false }
+}
+
+/**
+ * Prefer isolated-vm JS (pptxgenjs / docxjs / pdflibjs) over E2B when the source
+ * looks like Local Copilot / Cloud JS generators. E2B PDF is Python; Local always
+ * writes JavaScript. PPTX/DOCX E2B Node can also fail while the JS sandbox works.
+ */
+export function shouldPreferJsDocSandbox(
+  ext: 'pptx' | 'docx' | 'pdf' | undefined,
+  source: string
+): boolean {
+  if (!ext) return false
+  const trimmed = source.trim()
+  if (!trimmed) return false
+
+  if (ext === 'pdf') {
+    if (/\b(reportlab|fpdf|matplotlib|pyplot)\b/i.test(trimmed)) return false
+    return (
+      /\b(pdf\.addPage|PDFLib|PDFDocument|StandardFonts|embedImage|drawImage|globalThis\.pdf)\b/.test(
+        trimmed
+      ) || /\b(await|const|let|var|async|function)\b/.test(trimmed)
+    )
+  }
+
+  // python-pptx / python-docx — keep on E2B Python when present.
+  if (
+    /\b(from\s+pptx|import\s+pptx|from\s+docx\b|import\s+docx\b|Presentation\s*\()/.test(trimmed) &&
+    !/\b(pptx\.addSlide|globalThis\.pptx|Packer\.|addSection)\b/.test(trimmed)
+  ) {
+    return false
+  }
+
+  return (
+    /\b(pptx\.addSlide|globalThis\.pptx|PptxGenJS|addSection|Packer\.|docx\.|Document\s*\()/.test(
+      trimmed
+    ) || /\b(await|const|let|var|async|function)\b/.test(trimmed)
+  )
+}
+
+/** @deprecated Prefer {@link shouldPreferJsDocSandbox} — kept for existing callers/tests. */
+export function shouldUseJsPdfSandbox(source: string): boolean {
+  return shouldPreferJsDocSandbox('pdf', source)
 }
 
 export type CompileForWriteResult =
@@ -193,6 +245,10 @@ export type CompileForWriteResult =
  * failure message. Non-doc files resolve to `fallbackMime`. Compilation happens
  * here exactly once per write; the artifact is content-addressed so a read can
  * later just load it.
+ *
+ * Office note: Local Copilot writes pptxgenjs/docxjs/pdflibjs JavaScript. Prefer the
+ * isolated-vm JS path for those sources (even when E2B is on), and always store the
+ * content-addressed binary so serve/preview never resolve 0-byte docs.
  */
 export async function compileDocForWrite(args: {
   source: string
@@ -206,6 +262,13 @@ export async function compileDocForWrite(args: {
   const docInfo = getDocumentFormatInfo(fileName)
   const e2bFmt = isE2BDocEnabled ? await getE2BDocFormat(fileName) : null
 
+  // Empty shells (create_file → workspace_file → edit_content) must not compile.
+  if (!source.trim()) {
+    if (docInfo.isDoc && docInfo.sourceMime) return { ok: true, sourceMime: docInfo.sourceMime }
+    if (e2bFmt) return { ok: true, sourceMime: e2bFmt.sourceMime }
+    return { ok: true, sourceMime: fallbackMime }
+  }
+
   if (!e2bFmt && fileName.toLowerCase().endsWith('.xlsx')) {
     return {
       ok: false,
@@ -215,7 +278,11 @@ export async function compileDocForWrite(args: {
     }
   }
 
-  if (e2bFmt) {
+  const preferJsDoc = Boolean(
+    e2bFmt && docInfo.isDoc && shouldPreferJsDocSandbox(docInfo.ext, source)
+  )
+
+  if (e2bFmt && !preferJsDoc) {
     // compileDoc is load-or-build, so an identical re-write reuses the cached
     // binary instead of re-running E2B.
     try {
@@ -237,7 +304,26 @@ export async function compileDocForWrite(args: {
 
   if (docInfo.isDoc) {
     try {
-      await runSandboxTask(docInfo.taskId!, { code: source, workspaceId }, { ownerKey, signal })
+      const compiled = await runSandboxTask(
+        docInfo.taskId!,
+        { code: source, workspaceId },
+        { ownerKey, signal }
+      )
+      if (!Buffer.isBuffer(compiled) || compiled.length === 0) {
+        return {
+          ok: false,
+          message: `${docInfo.formatName} generation produced an empty file. Add content (e.g. pptx.addSlide() / pdf.addPage()) and retry.`,
+        }
+      }
+      // Serve/preview load this artifact — without it, E2B-enabled serve returns 409
+      // forever and download paths may resolve to 0 bytes.
+      await storeCompiledDoc(
+        workspaceId,
+        source,
+        docInfo.ext!,
+        docInfo.binaryContentType!,
+        compiled
+      )
     } catch (err) {
       return {
         ok: false,

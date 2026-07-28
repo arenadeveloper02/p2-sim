@@ -3,9 +3,12 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  findCatalogModel,
   getBaseModelProviders,
+  getModelPricing,
   orderModelIdsByReleaseDate,
   PROVIDER_DEFINITIONS,
+  resolveCanonicalModelId,
 } from '@/providers/models'
 
 /** Maps a lowercased model ID to its provider's index in the catalog. */
@@ -100,5 +103,55 @@ describe('orderModelIdsByReleaseDate', () => {
     const input = Object.keys(getBaseModelProviders())
     const ordered = orderModelIdsByReleaseDate(input)
     expect([...ordered].sort()).toEqual([...input].sort())
+  })
+})
+
+describe('catalog model resolution', () => {
+  it('resolves date-suffixed Anthropic IDs to the catalog base', () => {
+    expect(resolveCanonicalModelId('claude-sonnet-4-5-20250514')).toBe('claude-sonnet-4-5')
+    expect(getModelPricing('claude-sonnet-4-5-20250514')?.input).toBe(
+      getModelPricing('claude-sonnet-4-5')?.input
+    )
+  })
+
+  it('includes pricing for high-traffic hosted gaps', () => {
+    expect(getModelPricing('gpt-4o-mini')?.input).toBeGreaterThan(0)
+    expect(getModelPricing('claude-3-7-sonnet-latest')?.input).toBeGreaterThan(0)
+  })
+
+  it('findCatalogModel matches provider-prefixed labels', () => {
+    expect(findCatalogModel('anthropic/claude-sonnet-4-6')?.model.id).toBe('claude-sonnet-4-6')
+  })
+})
+
+describe('sakana provider definition', () => {
+  const sakana = PROVIDER_DEFINITIONS.sakana
+
+  it('is registered with fugu as the default model', () => {
+    expect(sakana).toBeDefined()
+    expect(sakana.id).toBe('sakana')
+    expect(sakana.defaultModel).toBe('fugu')
+    expect(sakana.modelPatterns).toEqual([/^fugu/])
+  })
+
+  it('exposes fugu and fugu-ultra with a 1M context window', () => {
+    expect(sakana.models.map((m) => m.id)).toEqual(['fugu', 'fugu-ultra'])
+    for (const model of sakana.models) {
+      expect(model.contextWindow).toBe(1000000)
+    }
+  })
+
+  it('prices both models at the documented fugu-ultra ceiling', () => {
+    for (const model of sakana.models) {
+      expect(model.pricing.input).toBe(5)
+      expect(model.pricing.output).toBe(30)
+      expect(model.pricing.cachedInput).toBe(0.5)
+    }
+  })
+
+  it('routes bare fugu model IDs to the sakana provider', () => {
+    const baseModels = getBaseModelProviders()
+    expect(baseModels.fugu).toBe('sakana')
+    expect(baseModels['fugu-ultra']).toBe('sakana')
   })
 })

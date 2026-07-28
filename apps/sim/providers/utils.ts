@@ -1,11 +1,12 @@
 import { createLogger, type Logger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { omit } from '@sim/utils/object'
 import type OpenAI from 'openai'
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
 import { formatCreditCost } from '@/lib/billing/credits/conversion'
 import { env } from '@/lib/core/config/env'
-import { getBlacklistedProvidersFromEnv, isHosted } from '@/lib/core/config/env-flags'
+import { getBlacklistedProvidersFromEnv, getCostMultiplier, isHosted } from '@/lib/core/config/env-flags'
 import {
   normalizeRecord,
   normalizeStringRecord,
@@ -14,9 +15,10 @@ import {
 import {
   buildCanonicalIndex,
   type CanonicalGroup,
-  getCanonicalValues,
+  type CanonicalModeOverrides,
   isCanonicalPair,
-  isNonEmptyValue,
+  resolveActiveCanonicalValue,
+  scopeCanonicalModesForTool,
 } from '@/lib/workflows/subblocks/visibility'
 import { isCustomTool } from '@/executor/constants'
 import {
@@ -50,6 +52,9 @@ import { mergeToolParameters, type SchemaProperty } from '@/tools/params'
 import { SPYFU_DEFAULT_OPERATION_ID } from '@/tools/spyfu/operations'
 
 const logger = createLogger('ProviderUtils')
+
+/** Log once per unknown model id so streaming paths do not spam warnings. */
+const modelsMissingPricingWarned = new Set<string>()
 
 /**
  * Checks if a workflow description is a default/placeholder description
@@ -154,6 +159,8 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
   xai: buildProviderMetadata('xai'),
   cerebras: buildProviderMetadata('cerebras'),
   groq: buildProviderMetadata('groq'),
+  sakana: buildProviderMetadata('sakana'),
+  meta: buildProviderMetadata('meta'),
   mistral: buildProviderMetadata('mistral'),
   bedrock: buildProviderMetadata('bedrock'),
   openrouter: buildProviderMetadata('openrouter'),
@@ -523,17 +530,21 @@ function mergeOAuthCredentialDefaultsFromSubBlocks(
 function resolveCanonicalResourceParams(
   params: Record<string, any>,
   canonicalGroups: CanonicalGroup[],
-  blockType: string,
-  canonicalModes?: Record<string, 'basic' | 'advanced'>
+  scopedCanonicalModes?: CanonicalModeOverrides
 ): Record<string, any> {
   if (canonicalGroups.length === 0) return params
   const resolved = { ...params }
   for (const group of canonicalGroups) {
     const existing = resolved[group.canonicalId]
     if (existing !== undefined && existing !== null && existing !== '') continue
-    const { basicValue, advancedValue } = getCanonicalValues(group, params)
-    const pairMode = canonicalModes?.[`${blockType}:${group.canonicalId}`] ?? 'basic'
-    const chosen = pairMode === 'advanced' ? advancedValue : basicValue
+    // Route through the canonical SOT: an explicit scoped override wins, else the value heuristic -
+    // no `?? 'basic'` (which ignored an advanced-only value when basic was empty).
+    const explicitMode = scopedCanonicalModes?.[group.canonicalId]
+    const chosen = resolveActiveCanonicalValue(
+      group,
+      params,
+      explicitMode ? { [group.canonicalId]: explicitMode } : undefined
+    )
     if (chosen !== undefined) resolved[group.canonicalId] = chosen
   }
   return resolved
@@ -554,9 +565,18 @@ export async function transformBlockTool(
     getTool: (toolId: string) => any
     getToolAsync?: (toolId: string) => Promise<any>
     canonicalModes?: Record<string, 'basic' | 'advanced'>
+    /**
+     * Position of this tool within its parent agent block's `tool-input` array. Canonical-mode
+     * overrides are stored scoped by this index (`${toolIndex}:${canonicalId}`) rather than by
+     * `block.type`, so that two tool entries of the same type (e.g. two Table tools) don't share
+     * a canonical-mode override. Omit for tools with no such array position (e.g. Pi local tools).
+     */
+    toolIndex?: number
   }
 ): Promise<ProviderToolConfig | null> {
-  const { selectedOperation, getAllBlocks, getTool, getToolAsync, canonicalModes } = options
+  const { selectedOperation, getAllBlocks, getTool, getToolAsync, canonicalModes, toolIndex } =
+    options
+  const scopedCanonicalModes = scopeCanonicalModesForTool(canonicalModes, toolIndex, block.type)
 
   let blockDef = getAllBlocks().find((b: any) => b.type === block.type)
 
@@ -725,8 +745,7 @@ export async function transformBlockTool(
   const resolvedResourceParams = resolveCanonicalResourceParams(
     userProvidedParams,
     canonicalGroups,
-    block.type,
-    canonicalModes
+    scopedCanonicalModes
   )
 
   let uniqueToolId = toolConfig.id
@@ -763,21 +782,17 @@ export async function transformBlockTool(
         let result = { ...params }
 
         for (const group of canonicalGroups) {
-          const merged = result[group.canonicalId]
-          const { basicValue, advancedValue } = getCanonicalValues(group, result)
-          const scopedKey = `${block.type}:${group.canonicalId}`
-          const pairMode = canonicalModes?.[scopedKey] ?? 'basic'
-          let chosen = pairMode === 'advanced' ? advancedValue : basicValue
-
-          // Agent tool-input (and similar) only persist the merged canonical key on StoredTool.params,
-          // not the sibling subBlock id (e.g. get-meetings-client-id). Advanced mode would otherwise
-          // pick undefined from getCanonicalValues, delete the merged key, and drop the user value.
-          if (chosen === undefined && isNonEmptyValue(merged)) {
-            chosen = merged
-          }
+          // Route through the canonical SOT: an explicit scoped override wins, else the value
+          // heuristic - no `?? 'basic'` (which dropped an advanced-only value when basic was empty).
+          const explicitMode = scopedCanonicalModes?.[group.canonicalId]
+          const chosen = resolveActiveCanonicalValue(
+            group,
+            result,
+            explicitMode ? { [group.canonicalId]: explicitMode } : undefined
+          )
 
           const sourceIds = [group.basicId, ...group.advancedIds].filter(Boolean) as string[]
-          sourceIds.forEach((id) => delete result[id])
+          result = omit(result, sourceIds)
 
           if (chosen !== undefined) {
             result[group.canonicalId] = chosen
@@ -844,6 +859,13 @@ export function calculateCost(
   }
 
   if (!pricing) {
+    if (!modelsMissingPricingWarned.has(model)) {
+      modelsMissingPricingWarned.add(model)
+      logger.warn(
+        `calculateCost: no pricing found for model "${model}" in providers/models.ts or embedding pricing; returning $0`,
+        { model }
+      )
+    }
     const defaultPricing = {
       input: 1.0,
       cachedInput: 0.5,
@@ -979,8 +1001,69 @@ export function getHostedModels(): string[] {
  * @returns true if the usage should be billed to the user
  */
 export function shouldBillModelUsage(model: string): boolean {
+  const normalized = model.trim().toLowerCase()
+  if (!normalized) return false
+
   const hostedModels = getHostedModels()
-  return hostedModels.some((hostedModel) => model.toLowerCase() === hostedModel.toLowerCase())
+  return hostedModels.some((hostedModel) => {
+    const base = hostedModel.toLowerCase()
+    return normalized === base || normalized.startsWith(`${base}-`)
+  })
+}
+
+export interface BlockModelCost {
+  input: number
+  output: number
+  total: number
+}
+
+/**
+ * Normalizes a provider API `cost` field into the block output shape.
+ */
+export function normalizeProviderCost(cost: unknown): BlockModelCost | null {
+  if (!cost || typeof cost !== 'object') return null
+
+  const record = cost as Record<string, unknown>
+  if (typeof record.total !== 'number' || !Number.isFinite(record.total)) return null
+
+  return {
+    input: typeof record.input === 'number' && Number.isFinite(record.input) ? record.input : 0,
+    output:
+      typeof record.output === 'number' && Number.isFinite(record.output) ? record.output : 0,
+    total: record.total,
+  }
+}
+
+/**
+ * Resolves billable model cost for router/evaluator blocks. Prefers the cost
+ * object returned by `/api/providers` (already BYOK- and multiplier-aware).
+ */
+export function resolveBlockModelCost(params: {
+  model: string
+  promptTokens: number
+  completionTokens: number
+  providerCost?: unknown
+  isBYOK?: boolean
+  useCachedInput?: boolean
+}): BlockModelCost {
+  if (params.isBYOK) {
+    return { input: 0, output: 0, total: 0 }
+  }
+
+  const fromProvider = normalizeProviderCost(params.providerCost)
+  if (fromProvider) return fromProvider
+
+  const multiplier = getCostMultiplier()
+  const cost = calculateCost(
+    params.model,
+    params.promptTokens,
+    params.completionTokens,
+    params.useCachedInput ?? false,
+    multiplier,
+    multiplier
+  )
+
+  return { input: cost.input, output: cost.output, total: cost.total }
 }
 
 /**

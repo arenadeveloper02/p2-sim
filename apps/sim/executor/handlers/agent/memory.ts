@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, sql } from 'drizzle-orm'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { redactObjectStrings } from '@/lib/logs/execution/pii-redaction'
 import { getAccurateTokenCount } from '@/lib/tokenization/estimators'
 import { MEMORY } from '@/executor/constants'
 import type { AgentInputs, Message } from '@/executor/handlers/agent/types'
@@ -495,6 +496,11 @@ export class Memory {
       return
     }
 
+    const workspaceId = this.requireWorkspaceId(ctx)
+    this.validateConversationId(inputs.conversationId)
+
+    message = await this.maskContentForStorage(ctx, message)
+
     this.validateContent(message.content)
 
     if (!ctx.workspaceId) {
@@ -536,7 +542,57 @@ export class Memory {
     const conversationMessages = messages.filter((m) => m.role !== 'system')
     if (conversationMessages.length === 0) return
 
+    //await this.seedMemoryRecord(ctx.workspaceId, conversationId, conversationMessages)
+    this.validateConversationId(inputs.conversationId)
+
+    const key = inputs.conversationId!
+
+    let messagesToStore = conversationMessages
+    if (inputs.memoryType === 'sliding_window') {
+      const limit = this.parsePositiveInt(
+        inputs.slidingWindowSize,
+        MEMORY.DEFAULT_SLIDING_WINDOW_SIZE
+      )
+      messagesToStore = this.applyWindow(conversationMessages, limit)
+    } else if (inputs.memoryType === 'sliding_window_tokens') {
+      const maxTokens = this.parsePositiveInt(
+        inputs.slidingWindowTokens,
+        MEMORY.DEFAULT_SLIDING_WINDOW_TOKENS
+      )
+      messagesToStore = this.applyTokenWindow(conversationMessages, maxTokens, inputs.model)
+    }
+
+    messagesToStore = await Promise.all(
+      messagesToStore.map((message) => this.maskContentForStorage(ctx, message))
+    )
+
     await this.seedMemoryRecord(ctx.workspaceId, conversationId, conversationMessages)
+
+    logger.debug('Seeded memory', {
+      workspaceId: ctx.workspaceId,
+      key: conversationId,
+      count: conversationMessages.length,
+    })
+  }
+
+  /**
+   * Handlers persist messages to memory before the executor redacts block
+   * output, so mask content here too when the block-output stage is enabled —
+   * otherwise raw PII is stored in the memory table and read back on later runs.
+   * `onFailure: 'throw'` aborts rather than persisting unredacted content.
+   */
+  private async maskContentForStorage(ctx: ExecutionContext, message: Message): Promise<Message> {
+    if (!ctx.piiBlockOutputRedaction?.enabled || !message.content) {
+      return message
+    }
+    return {
+      ...message,
+      content: await redactObjectStrings(message.content, {
+        entityTypes: ctx.piiBlockOutputRedaction.entityTypes,
+        language: ctx.piiBlockOutputRedaction.language,
+        onFailure: 'throw',
+      }),
+    }
   }
 
   private requireWorkspaceId(ctx: ExecutionContext): string {

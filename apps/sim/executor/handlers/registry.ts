@@ -7,13 +7,16 @@
 
 import { AgentBlockHandler } from '@/executor/handlers/agent/agent-handler'
 import { ApiBlockHandler } from '@/executor/handlers/api/api-handler'
+import { ChartGeneratorBlockHandler } from '@/executor/handlers/chart-generator/chart-generator-handler'
 import { ConditionBlockHandler } from '@/executor/handlers/condition/condition-handler'
+import { CostBlockHandler } from '@/executor/handlers/cost/cost-handler'
 import { CredentialBlockHandler } from '@/executor/handlers/credential/credential-handler'
 import { EvaluatorBlockHandler } from '@/executor/handlers/evaluator/evaluator-handler'
 import { FunctionBlockHandler } from '@/executor/handlers/function/function-handler'
 import { GenericBlockHandler } from '@/executor/handlers/generic/generic-handler'
 import { HumanInTheLoopBlockHandler } from '@/executor/handlers/human-in-the-loop/human-in-the-loop-handler'
 import { MothershipBlockHandler } from '@/executor/handlers/mothership/mothership-handler'
+import { PiBlockHandler } from '@/executor/handlers/pi/pi-handler'
 import { ResponseBlockHandler } from '@/executor/handlers/response/response-handler'
 import { RouterBlockHandler } from '@/executor/handlers/router/router-handler'
 import { TriggerBlockHandler } from '@/executor/handlers/trigger/trigger-handler'
@@ -39,11 +42,14 @@ export function createBlockHandlers(): BlockHandler[] {
     new HumanInTheLoopBlockHandler(),
     new AgentBlockHandler(),
     new MothershipBlockHandler(),
+    new PiBlockHandler(),
     new VariablesBlockHandler(),
     new WorkflowBlockHandler(),
     new WaitBlockHandler(),
     new EvaluatorBlockHandler(),
+    new ChartGeneratorBlockHandler(),
     new CredentialBlockHandler(),
+    new CostBlockHandler(),
     new GenericBlockHandler(),
   ]
 }

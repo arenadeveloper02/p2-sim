@@ -36,6 +36,7 @@ export const isHosted =
   getEnv('NEXT_PUBLIC_APP_URL') === 'https://www.staging.sim.ai' ||
   getEnv('NEXT_PUBLIC_APP_URL') === 'https://dev-agent.thearena.ai' ||
   getEnv('NEXT_PUBLIC_APP_URL') === 'https://test-agent.thearena.ai' ||
+  getEnv('NEXT_PUBLIC_APP_URL') === 'https://test-v1-agent.thearena.ai' ||
   getEnv('NEXT_PUBLIC_APP_URL') === 'https://sandbox-agent.thearena.ai' ||
   getEnv('NEXT_PUBLIC_APP_URL') === 'http://localhost:3000' ||
   getEnv('NEXT_PUBLIC_APP_URL') === 'https://agent.thearena.ai'
@@ -47,7 +48,7 @@ export const isBillingEnabled = isTruthy(env.BILLING_ENABLED)
 
 /**
  * Block free-plan accounts from programmatic workflow execution (API key, public
- * API, MCP server, A2A agent server, generic webhooks, cross-origin chat embeds).
+ * API, MCP server, generic webhooks, cross-origin chat embeds).
  * Gated behind {@link isBillingEnabled}; off by default so the paywall can ship
  * dark and be enabled per-deployment once verified.
  */
@@ -75,6 +76,35 @@ if (isTruthy(env.DISABLE_AUTH)) {
       } else {
         logger.warn(
           'DISABLE_AUTH is enabled. Authentication is bypassed and all requests use an anonymous session. Only use this in trusted private networks.'
+        )
+      }
+    })
+    .catch(() => {
+      // Fallback during config compilation when logger is unavailable
+    })
+}
+
+/**
+ * Whether database/connector tools may connect to private, reserved, or loopback
+ * hosts (e.g. Docker/K8s service names, localhost). Off by default: the SSRF guard
+ * in {@link validateDatabaseHost} blocks these so an untrusted user cannot pivot
+ * into the deployment's internal network. Self-hosted operators can opt in when
+ * their database lives on the same private network. Blocked on the hosted platform
+ * regardless of the env var, mirroring {@link isAuthDisabled}.
+ */
+export const isPrivateDatabaseHostsAllowed = isTruthy(env.ALLOW_PRIVATE_DATABASE_HOSTS) && !isHosted
+
+if (isTruthy(env.ALLOW_PRIVATE_DATABASE_HOSTS)) {
+  import('@sim/logger')
+    .then(({ createLogger }) => {
+      const logger = createLogger('EnvFlags')
+      if (isHosted) {
+        logger.error(
+          'ALLOW_PRIVATE_DATABASE_HOSTS is set but ignored on hosted environment. Private/reserved database hosts remain blocked for security.'
+        )
+      } else {
+        logger.warn(
+          'ALLOW_PRIVATE_DATABASE_HOSTS is enabled. Database/connector tools may reach private, reserved, and loopback hosts. Only use this in trusted private networks.'
         )
       }
     })
@@ -120,12 +150,6 @@ export const isTriggerDevEnabled = isTruthy(env.TRIGGER_DEV_ENABLED)
 export const isSsoEnabled = isTruthy(env.SSO_ENABLED)
 
 /**
- * Is credential sets (email polling) enabled via env var override
- * This bypasses plan requirements for self-hosted deployments
- */
-export const isCredentialSetsEnabled = isTruthy(env.CREDENTIAL_SETS_ENABLED)
-
-/**
  * Is access control (permission groups) enabled via env var override
  * This bypasses plan requirements for self-hosted deployments
  */
@@ -168,6 +192,12 @@ export const isDataRetentionEnabled = isTruthy(env.DATA_RETENTION_ENABLED)
  * This bypasses hosted requirements for self-hosted deployments
  */
 export const isDataDrainsEnabled = isTruthy(env.DATA_DRAINS_ENABLED)
+
+/**
+ * Is workspace forking enabled via env var override
+ * This bypasses hosted (Enterprise) requirements for self-hosted deployments
+ */
+export const isForkingEnabled = isTruthy(env.FORKING_ENABLED)
 
 /**
  * Is E2B enabled for remote code execution
@@ -271,6 +301,19 @@ export function getAllowedIntegrationsFromEnv(): string[] | null {
     .map((i) => i.trim().toLowerCase())
     .filter(Boolean)
   return parsed.length > 0 ? parsed : null
+}
+
+/**
+ * Returns the preview block types revealed via the environment variable — the
+ * off-AppConfig reveal path for self-hosters and local dev. If not set or empty,
+ * returns an empty array (all `preview: true` blocks stay hidden). Block types
+ * are already lowercase snake_case, so entries are trimmed but not lowercased.
+ */
+export function getPreviewBlocksFromEnv(): string[] {
+  if (!env.PREVIEW_BLOCKS) return []
+  return env.PREVIEW_BLOCKS.split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
 }
 
 /**

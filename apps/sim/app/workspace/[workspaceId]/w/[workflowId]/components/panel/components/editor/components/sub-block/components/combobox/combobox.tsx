@@ -1,10 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Combobox, type ComboboxOption, cn } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import { isEqual } from 'es-toolkit'
 import { useReactFlow } from 'reactflow'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
-import { Combobox, type ComboboxOption } from '@/components/emcn/components'
-import { cn } from '@/lib/core/utils/cn'
 import { buildCanonicalIndex, resolveDependencyValue } from '@/lib/workflows/subblocks/visibility'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
@@ -242,7 +241,7 @@ export const ComboBox = memo(function ComboBox({
    * Priority: explicit defaultValue > gpt-5 for model field > first option
    */
   const defaultOptionValue = useMemo(() => {
-    if (defaultValue !== undefined) {
+    if (defaultValue !== undefined && defaultValue !== '') {
       // Validate that the default value exists in the available (filtered) options
       const defaultInOptions = evaluatedOptions.find((opt) => getOptionValue(opt) === defaultValue)
       if (defaultInOptions) {
@@ -259,12 +258,17 @@ export const ComboBox = memo(function ComboBox({
       }
     }
 
+    // Optional clearable comboboxes intentionally start empty; runtime defaults apply at execution.
+    if (config.clearable) {
+      return undefined
+    }
+
     if (evaluatedOptions.length > 0) {
       return getOptionValue(evaluatedOptions[0])
     }
 
     return undefined
-  }, [defaultValue, evaluatedOptions, subBlockId, getOptionValue])
+  }, [defaultValue, evaluatedOptions, subBlockId, getOptionValue, config.clearable])
 
   /**
    * Resolve the user-facing text for the current stored value.
@@ -294,12 +298,25 @@ export const ComboBox = memo(function ComboBox({
   useEffect(() => {
     if (isPermissionLoading) return
     if (defaultOptionValue === undefined) return
+    if (value !== null && value !== undefined) return
 
-    // Only set default when no value exists (initial block add)
-    if (value === null || value === undefined) {
-      setStoreValue(defaultOptionValue)
-    }
-  }, [value, defaultOptionValue, setStoreValue, isPermissionLoading])
+    // Optional clearable fields treat empty as intentional — never re-seed on hydration.
+    if (config.clearable) return
+
+    // Persisted workflows may omit or null-out optional values; do not overwrite on mount.
+    const persistedSubBlock = useWorkflowStore.getState().blocks[blockId]?.subBlocks?.[subBlockId]
+    if (persistedSubBlock !== undefined) return
+
+    setStoreValue(defaultOptionValue)
+  }, [
+    value,
+    defaultOptionValue,
+    setStoreValue,
+    isPermissionLoading,
+    config.clearable,
+    blockId,
+    subBlockId,
+  ])
 
   // Clear fetched options and hydrated option when dependencies change
   useEffect(() => {

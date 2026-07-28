@@ -83,6 +83,11 @@ export const pdfGenerateTask = defineSandboxTask<SandboxTaskInput>({
     if (!pdf) {
       throw new Error('No PDF document. Use the injected pdf object or load one with PDFLib.PDFDocument.load().');
     }
+    if (typeof pdf.getPageCount === 'function' && pdf.getPageCount() === 0) {
+      throw new Error(
+        'PDF has no pages. Call pdf.addPage() (or PDFDocument.load) and draw content before finishing.'
+      );
+    }
     const bytes = await pdf.save();
     return bytes;
   `,

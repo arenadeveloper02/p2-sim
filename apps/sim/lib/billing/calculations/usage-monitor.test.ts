@@ -44,7 +44,10 @@ vi.mock('@/lib/billing/core/usage', () => ({
   getUserUsageLimit: vi.fn(),
 }))
 
-import { checkOrgMemberUsageLimit } from '@/lib/billing/calculations/usage-monitor'
+import {
+  checkMothershipUsageLimits,
+  checkOrgMemberUsageLimit,
+} from '@/lib/billing/calculations/usage-monitor'
 
 describe('checkOrgMemberUsageLimit', () => {
   beforeEach(() => {
@@ -125,5 +128,20 @@ describe('checkOrgMemberUsageLimit', () => {
     mockGetOrgMemberWorkspaceUsage.mockRejectedValue(new Error('db unavailable'))
     const result = await checkOrgMemberUsageLimit('user-1', 'ws-1')
     expect(result.isExceeded).toBe(false)
+  })
+})
+
+describe('checkMothershipUsageLimits', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockFlags.isHosted = true
+    mockFlags.isBillingEnabled = true
+  })
+
+  it('no-ops when billing is disabled', async () => {
+    mockFlags.isBillingEnabled = false
+    const result = await checkMothershipUsageLimits('user-1', 'ws-1')
+    expect(result.isExceeded).toBe(false)
+    expect(mockDbLimit).not.toHaveBeenCalled()
   })
 })

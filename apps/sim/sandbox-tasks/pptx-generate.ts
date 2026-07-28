@@ -63,6 +63,12 @@ export const pptxGenerateTask = defineSandboxTask<SandboxTaskInput>({
     if (!globalThis.pptx) {
       throw new Error('No presentation found. globalThis.pptx was overwritten — use the pre-initialized instance and call addSlide() on it to build your presentation.');
     }
+    const slides = globalThis.pptx._slides || [];
+    if (!Array.isArray(slides) || slides.length === 0) {
+      throw new Error(
+        'Presentation has no slides. Call pptx.addSlide() and add content before finishing.'
+      );
+    }
     const bytes = await globalThis.pptx.write({ outputType: 'uint8array' });
     return bytes;
   `,

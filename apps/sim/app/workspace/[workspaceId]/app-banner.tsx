@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect } from 'react'
+import { Banner, cn } from '@sim/emcn'
 import { AlertTriangle } from 'lucide-react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Banner } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
 import { useAppBanner } from '@/hooks/queries/app-banner'
 
 /**

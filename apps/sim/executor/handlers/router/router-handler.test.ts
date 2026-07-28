@@ -114,7 +114,7 @@ describe('RouterBlockHandler', () => {
             content: 'target-block-1',
             model: 'mock-model',
             tokens: { input: 100, output: 5, total: 105 },
-            cost: 0.003,
+            cost: { input: 0.001, output: 0.002, total: 0.003 },
             timing: { total: 300 },
           }),
       })
@@ -201,6 +201,22 @@ describe('RouterBlockHandler', () => {
     })
   })
 
+  it('should use provider-reported cost for hosted router calls without BYOK', async () => {
+    const inputs = {
+      prompt: 'Choose the best option.',
+      model: 'gpt-4o',
+      temperature: 0.1,
+    }
+
+    const result = await handler.execute(mockContext, mockBlock, inputs)
+
+    expect(result.cost).toEqual({
+      input: 0.001,
+      output: 0.002,
+      total: 0.003,
+    })
+  })
+
   it('should throw error if target block is missing', async () => {
     const inputs = { prompt: 'Test' }
     mockContext.workflow!.blocks = [mockBlock, mockTargetBlock2]
@@ -238,12 +254,12 @@ describe('RouterBlockHandler', () => {
 
     await handler.execute(mockContext, mockBlock, inputs)
 
-    expect(mockGetProviderFromModel).toHaveBeenCalledWith('claude-sonnet-4-6')
+    expect(mockGetProviderFromModel).toHaveBeenCalledWith('claude-sonnet-5')
 
     const fetchCallArgs = mockFetch.mock.calls[0]
     const requestBody = JSON.parse(fetchCallArgs[1].body)
     expect(requestBody).toMatchObject({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       temperature: 0.1,
     })
   })

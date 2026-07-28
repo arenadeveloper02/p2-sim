@@ -60,15 +60,20 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        logger.info('Auto-login attempt with email from cookie')
+        const isEmbedPath =
+          typeof window !== 'undefined' && window.location.pathname.includes('/embed')
+        const callbackURL =
+          isEmbedPath && typeof window !== 'undefined' ? window.location.href : '/workspace'
+
+        logger.info('Auto-login attempt with email from cookie', { isEmbedPath })
 
         // Auto-login with email from cookie and password "Position2!"
-        // Always redirect to workspace after successful login
+        // Keep Arena iframe embeds on the current URL; otherwise go to workspace.
         const result = await client.signIn.email(
           {
             email: emailFromCookie.trim().toLowerCase(),
             password: 'Position2!',
-            callbackURL: '/workspace',
+            callbackURL,
           },
           {
             onError: (ctx) => {
@@ -79,11 +84,10 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
         )
 
         if (result?.data) {
-          // Login successful
-          logger.info('Auto-login successful')
-          // Immediately redirect to workspace
-          router.push('/workspace')
-          // Also refresh to ensure session is properly loaded
+          logger.info('Auto-login successful', { isEmbedPath })
+          if (!isEmbedPath) {
+            router.push('/workspace')
+          }
           router.refresh()
         }
       } catch (error) {

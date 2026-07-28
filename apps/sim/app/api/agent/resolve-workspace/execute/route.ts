@@ -1,10 +1,11 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
+import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import { normalizeMessage, type PersistedMessage } from '@/lib/copilot/chat/persisted-message'
 import { chatPubSub } from '@/lib/copilot/chat-status'
 import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
@@ -432,20 +433,34 @@ async function persistWorkflowChatTurn(params: {
     ],
   })
 
-  await db
-    .update(copilotChats)
-    .set({
-      messages: sql`${copilotChats.messages} || ${JSON.stringify([userMessage, assistantMessage])}::jsonb`,
-      conversationId: null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(copilotChats.id, chatId),
-        eq(copilotChats.userId, userId),
-        eq(copilotChats.type, 'mothership')
+  // Transcripts live in `copilot_messages` (not the legacy `copilot_chats.messages`
+  // JSONB blob). The mothership chat GET reads via `loadCopilotChatMessages`, so
+  // writing only to the JSONB column leaves the UI empty after stream refetch.
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(copilotChats)
+      .set({
+        conversationId: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(copilotChats.id, chatId),
+          eq(copilotChats.userId, userId),
+          eq(copilotChats.type, 'mothership')
+        )
       )
+      .returning({ model: copilotChats.model })
+
+    if (!updated) return
+
+    await appendCopilotChatMessages(
+      chatId,
+      [userMessage, assistantMessage],
+      { chatModel: updated.model ?? null },
+      tx
     )
+  })
 }
 
 export async function POST(req: NextRequest) {

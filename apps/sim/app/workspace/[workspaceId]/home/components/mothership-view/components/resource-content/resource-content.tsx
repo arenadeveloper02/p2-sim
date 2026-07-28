@@ -1,10 +1,7 @@
 'use client'
 
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { format } from 'date-fns'
-import { useRouter } from 'next/navigation'
-import { Button, PlayOutline, Skeleton, Tooltip } from '@/components/emcn'
+import { Button, PlayOutline, Skeleton, Tooltip } from '@sim/emcn'
 import {
   Calendar,
   Download,
@@ -15,7 +12,11 @@ import {
   SquareArrowUpRight,
   Workflow as WorkflowIcon,
   WorkflowX,
-} from '@/components/emcn/icons'
+} from '@sim/emcn/icons'
+import { createLogger } from '@sim/logger'
+import { useQueryClient } from '@tanstack/react-query'
+import { format } from 'date-fns'
+import { useRouter } from 'next/navigation'
 import { isApiClientError } from '@/lib/api/client/errors'
 import type { FilePreviewSession } from '@/lib/copilot/request/session'
 import {
@@ -56,7 +57,7 @@ import { useLogDetail } from '@/hooks/queries/logs'
 import { useScheduleById } from '@/hooks/queries/schedules'
 import { downloadTableExport } from '@/hooks/queries/tables'
 import { useWorkflows } from '@/hooks/queries/workflows'
-import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
+import { useWorkspaceFiles, workspaceFilesKeys } from '@/hooks/queries/workspace-files'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -628,6 +629,8 @@ function EmbeddedFile({
   previewContextKey,
 }: EmbeddedFileProps) {
   const { canEdit } = useUserPermissionsContext()
+  const queryClient = useQueryClient()
+  const retryCountRef = useRef(0)
   const { data: files = [], isLoading, isFetching } = useWorkspaceFiles(workspaceId)
   const file = useMemo(
     () =>
@@ -639,6 +642,15 @@ function EmbeddedFile({
       ),
     [files, fileId, filePath]
   )
+
+  useEffect(() => {
+    if (file || isLoading || isFetching || !fileId || !workspaceId) return
+    if (retryCountRef.current >= 3) return
+    retryCountRef.current += 1
+    void queryClient.invalidateQueries({
+      queryKey: workspaceFilesKeys.list(workspaceId, 'active'),
+    })
+  }, [file, fileId, isFetching, isLoading, queryClient, workspaceId])
 
   if (isLoading || (isFetching && !file)) return LOADING_SKELETON
 

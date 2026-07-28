@@ -36,12 +36,7 @@ export const deploymentVersionMetadataFieldsSchema = z.object({
     .min(1, 'Name cannot be empty')
     .max(100, 'Name must be 100 characters or less')
     .optional(),
-  description: z
-    .string()
-    .trim()
-    .max(2000, 'Description must be 2000 characters or less')
-    .nullable()
-    .optional(),
+  description: z.string().trim().max(50_000, 'Description is too long').nullable().optional(),
 })
 export const updateDeploymentVersionMetadataBodySchema =
   deploymentVersionMetadataFieldsSchema.refine(
@@ -110,6 +105,8 @@ export const chatDeploymentStatusSchema = z.object({
     .object({
       id: z.string(),
       identifier: z.string(),
+      deploymentType: z.preprocess((value) => value ?? 'chat', z.enum(['chat', 'app'])).optional(),
+      redirectUrl: z.preprocess((value) => value ?? null, z.string().nullable()).optional(),
     })
     .passthrough()
     .nullable(),
@@ -146,6 +143,8 @@ export const chatDetailSchema = z.object({
       .optional()
   ),
   isActive: z.boolean(),
+  deploymentType: z.preprocess((value) => value ?? 'chat', z.enum(['chat', 'app'])),
+  redirectUrl: z.preprocess((value) => value ?? null, z.string().nullable()),
   chatUrl: z.string(),
   hasPassword: z.boolean(),
 })

@@ -118,11 +118,59 @@ app.kubernetes.io/component: ollama
 {{- end }}
 
 {{/*
+PII (Presidio) specific labels
+*/}}
+{{- define "sim.pii.labels" -}}
+{{ include "sim.labels" . }}
+app.kubernetes.io/component: pii
+{{- end }}
+
+{{/*
+PII (Presidio) selector labels
+*/}}
+{{- define "sim.pii.selectorLabels" -}}
+{{ include "sim.selectorLabels" . }}
+app.kubernetes.io/component: pii
+{{- end }}
+
+{{/*
 Migrations specific labels
 */}}
 {{- define "sim.migrations.labels" -}}
 {{ include "sim.labels" . }}
 app.kubernetes.io/component: migrations
+{{- end }}
+
+{{/*
+Copilot specific labels
+*/}}
+{{- define "sim.copilot.labels" -}}
+{{ include "sim.labels" . }}
+app.kubernetes.io/component: copilot
+{{- end }}
+
+{{/*
+Copilot selector labels
+*/}}
+{{- define "sim.copilot.selectorLabels" -}}
+{{ include "sim.selectorLabels" . }}
+app.kubernetes.io/component: copilot
+{{- end }}
+
+{{/*
+Copilot PostgreSQL specific labels
+*/}}
+{{- define "sim.copilotPostgresql.labels" -}}
+{{ include "sim.labels" . }}
+app.kubernetes.io/component: copilot-postgresql
+{{- end }}
+
+{{/*
+Copilot PostgreSQL selector labels
+*/}}
+{{- define "sim.copilotPostgresql.selectorLabels" -}}
+{{ include "sim.selectorLabels" . }}
+app.kubernetes.io/component: copilot-postgresql
 {{- end }}
 
 {{/*
@@ -261,8 +309,8 @@ externalSecrets.remoteRefs.app when ESO is enabled. When ESO is on, the
 chart-managed Secret is not rendered — anything not mapped via ESO would
 be silently missing at runtime.
 
-Chart-computed keys (DATABASE_URL, SOCKET_SERVER_URL, OLLAMA_URL) are
-exempt because they're inlined on the container, not sourced from the
+Chart-computed keys (DATABASE_URL, SOCKET_SERVER_URL, OLLAMA_URL, PII_URL)
+are exempt because they're inlined on the container, not sourced from the
 Secret.
 
 Fail-fast is only safe for ESO because we can introspect remoteRefs at
@@ -273,7 +321,7 @@ than enforced.
 {{- define "sim.validateExternalSecretCoverage" -}}
 {{- if and .Values.externalSecrets .Values.externalSecrets.enabled -}}
 {{- $remoteRefs := default (dict) (default (dict) .Values.externalSecrets.remoteRefs).app -}}
-{{- $chartComputed := list "DATABASE_URL" "SOCKET_SERVER_URL" "OLLAMA_URL" -}}
+{{- $chartComputed := list "DATABASE_URL" "SOCKET_SERVER_URL" "OLLAMA_URL" "PII_URL" -}}
 {{- $appEnv := default (dict) .Values.app.env -}}
 {{/*
   Required-key coverage: these are non-optional at runtime. With ESO enabled
@@ -431,6 +479,19 @@ Ollama URL
 {{- end }}
 
 {{/*
+PII (Presidio) service URL
+*/}}
+{{- define "sim.piiUrl" -}}
+{{- if .Values.pii.enabled }}
+{{- $serviceName := printf "%s-pii" (include "sim.fullname" .) }}
+{{- $port := .Values.pii.service.port }}
+{{- printf "http://%s:%v" $serviceName $port }}
+{{- else }}
+{{- .Values.app.env.PII_URL | default "http://localhost:5001" }}
+{{- end }}
+{{- end }}
+
+{{/*
 Socket Server URL (internal)
 */}}
 {{- define "sim.socketServerUrl" -}}
@@ -580,16 +641,33 @@ Validate Copilot configuration
   {{- end -}}
   {{- if .Values.copilot.server.secret.create -}}
     {{- $env := .Values.copilot.server.env -}}
+    {{- $useExternalSecrets := and .Values.externalSecrets .Values.externalSecrets.enabled -}}
+    {{- $remoteRefs := default (dict) (default (dict) .Values.externalSecrets.remoteRefs).copilot -}}
     {{- $required := list "AGENT_API_DB_ENCRYPTION_KEY" "INTERNAL_API_SECRET" "LICENSE_KEY" "SIM_BASE_URL" "SIM_AGENT_API_KEY" "REDIS_URL" -}}
     {{- range $key := $required -}}
-      {{- if not (and $env (index $env $key) (ne (index $env $key) "")) -}}
-        {{- fail (printf "copilot.server.env.%s is required when copilot is enabled" $key) -}}
+      {{- $inEnv := and $env (index $env $key) (ne (index $env $key) "") -}}
+      {{- $mapped := index $remoteRefs $key -}}
+      {{- if not (or $inEnv (and $useExternalSecrets $mapped)) -}}
+        {{- if $useExternalSecrets -}}
+          {{- fail (printf "Required key '%s' is missing: externalSecrets.enabled=true but the key is neither set in copilot.server.env nor mapped in externalSecrets.remoteRefs.copilot. Map it via externalSecrets.remoteRefs.copilot.%s='path/in/store' so it is synced into the copilot Secret." $key $key) -}}
+        {{- else -}}
+          {{- fail (printf "copilot.server.env.%s is required when copilot is enabled" $key) -}}
+        {{- end -}}
       {{- end -}}
     {{- end -}}
-    {{- $hasOpenAI := and $env (ne (default "" (index $env "OPENAI_API_KEY_1")) "") -}}
-    {{- $hasAnthropic := and $env (ne (default "" (index $env "ANTHROPIC_API_KEY_1")) "") -}}
+    {{- if $useExternalSecrets -}}
+      {{- range $key, $value := $env -}}
+        {{- if and (ne (toString $value) "") (ne (toString $value) "<nil>") -}}
+          {{- if not (index $remoteRefs $key) -}}
+            {{- fail (printf "Key '%s' is set in copilot.server.env but externalSecrets.enabled=true and externalSecrets.remoteRefs.copilot.%s is not configured. When ESO is enabled the chart-managed copilot Secret is not rendered, so the container would start with no value. Either map it via externalSecrets.remoteRefs.copilot.%s='path/in/store' or remove it from copilot.server.env." $key $key $key) -}}
+          {{- end -}}
+        {{- end -}}
+      {{- end -}}
+    {{- end -}}
+    {{- $hasOpenAI := or (and $env (ne (default "" (index $env "OPENAI_API_KEY_1")) "")) (and $useExternalSecrets (index $remoteRefs "OPENAI_API_KEY_1")) -}}
+    {{- $hasAnthropic := or (and $env (ne (default "" (index $env "ANTHROPIC_API_KEY_1")) "")) (and $useExternalSecrets (index $remoteRefs "ANTHROPIC_API_KEY_1")) -}}
     {{- if not (or $hasOpenAI $hasAnthropic) -}}
-      {{- fail "Set at least one of copilot.server.env.OPENAI_API_KEY_1 or copilot.server.env.ANTHROPIC_API_KEY_1" -}}
+      {{- fail "Set at least one of copilot.server.env.OPENAI_API_KEY_1 or copilot.server.env.ANTHROPIC_API_KEY_1 (or map one via externalSecrets.remoteRefs.copilot when externalSecrets.enabled=true)" -}}
     {{- end -}}
   {{- end -}}
   {{- if .Values.copilot.postgresql.enabled -}}

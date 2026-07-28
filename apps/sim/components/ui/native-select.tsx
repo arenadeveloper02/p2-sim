@@ -1,6 +1,6 @@
 import * as React from 'react'
+import { cn } from '@sim/emcn'
 import { Check, ChevronDown } from 'lucide-react'
-import { cn } from '@/lib/core/utils/cn'
 
 interface SelectOption {
   value: string

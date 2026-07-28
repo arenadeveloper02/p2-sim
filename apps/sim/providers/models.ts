@@ -19,10 +19,12 @@ import {
   GeminiIcon,
   GroqIcon,
   LitellmIcon,
+  MetaIcon,
   MistralIcon,
   OllamaIcon,
   OpenAIIcon,
   OpenRouterIcon,
+  SakanaIcon,
   SambaNovaIcon,
   TogetherIcon,
   VertexIcon,
@@ -282,6 +284,69 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-04-14',
         deprecated: true,
       },
+      // GPT-5.6 family
+      {
+        id: 'gpt-5.6-sol',
+        pricing: {
+          input: 5.0,
+          cachedInput: 0.5,
+          output: 30.0,
+          updatedAt: '2026-07-09',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-07-09',
+        recommended: true,
+      },
+      {
+        id: 'gpt-5.6-terra',
+        pricing: {
+          input: 2.5,
+          cachedInput: 0.25,
+          output: 15.0,
+          updatedAt: '2026-07-09',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-07-09',
+      },
+      {
+        id: 'gpt-5.6-luna',
+        pricing: {
+          input: 1.0,
+          cachedInput: 0.1,
+          output: 6.0,
+          updatedAt: '2026-07-09',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          },
+          verbosity: {
+            values: ['low', 'medium', 'high'],
+          },
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1050000,
+        releaseDate: '2026-07-09',
+        speedOptimized: true,
+      },
       // GPT-5.5 family
       {
         id: 'gpt-5.5-pro',
@@ -320,7 +385,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1050000,
         releaseDate: '2026-04-23',
-        recommended: true,
       },
       // GPT-5.4 family
       {
@@ -652,6 +716,21 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       },
       // Legacy
       {
+        id: 'gpt-4o-mini',
+        pricing: {
+          input: 0.15,
+          cachedInput: 0.075,
+          output: 0.6,
+          updatedAt: '2026-07-09',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          maxOutputTokens: 16384,
+        },
+        contextWindow: 128000,
+        releaseDate: '2024-07-18',
+      },
+      {
         id: 'gpt-4o',
         pricing: {
           input: 2.5,
@@ -674,7 +753,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     fileAttachment: { maxBytes: 50 * 1024 * 1024, strategy: 'remote-url' },
     name: 'Anthropic',
     description: "Anthropic's Claude models",
-    defaultModel: 'claude-sonnet-4-6',
+    defaultModel: 'claude-sonnet-5',
     modelPatterns: [/^claude/],
     icon: AnthropicIcon,
     color: '#D97757',
@@ -682,6 +761,45 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: true,
     },
     models: [
+      {
+        id: 'claude-fable-5',
+        pricing: {
+          input: 10.0,
+          cachedInput: 1.0,
+          output: 50.0,
+          updatedAt: '2026-07-01',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-06-09',
+      },
+      {
+        id: 'claude-sonnet-5',
+        pricing: {
+          input: 2.0,
+          cachedInput: 0.2,
+          output: 10.0,
+          updatedAt: '2026-06-30',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          thinking: {
+            levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+            default: 'high',
+          },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-06-30',
+        recommended: true,
+      },
       {
         id: 'claude-opus-4-8',
         pricing: {
@@ -760,7 +878,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
         releaseDate: '2026-02-17',
-        recommended: true,
       },
       {
         id: 'claude-opus-4-5',
@@ -823,6 +940,27 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       //   deprecated: true,
       // },
       {
+        id: 'claude-3-7-sonnet-latest',
+        pricing: {
+          input: 3.0,
+          cachedInput: 0.3,
+          output: 15.0,
+          updatedAt: '2026-07-09',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 64000,
+          thinking: {
+            levels: ['low', 'medium', 'high'],
+            default: 'high',
+          },
+        },
+        contextWindow: 200000,
+        releaseDate: '2025-02-19',
+        deprecated: true,
+      },
+      {
         id: 'claude-sonnet-4-5',
         pricing: {
           input: 3.0,
@@ -883,22 +1021,22 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-10-15',
         speedOptimized: true,
       },
-      {
-        id: 'claude-3-haiku-20240307',
-        pricing: {
-          input: 0.25,
-          cachedInput: 0.03,
-          output: 1.25,
-          updatedAt: '2026-04-01',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 4096,
-        },
-        contextWindow: 200000,
-        releaseDate: '2024-03-13',
-        deprecated: true,
-      },
+      // {
+      //   id: 'claude-3-haiku-20240307',
+      //   pricing: {
+      //     input: 0.25,
+      //     cachedInput: 0.03,
+      //     output: 1.25,
+      //     updatedAt: '2026-04-01',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 4096,
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2024-03-13',
+      //   deprecated: true,
+      // },
     ],
   },
   'azure-openai': {
@@ -1466,22 +1604,22 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-06-17',
         speedOptimized: true,
       },
-      {
-        id: 'gemini-2.0-flash',
-        pricing: {
-          input: 0.1,
-          cachedInput: 0.025,
-          output: 0.4,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-          maxOutputTokens: 8192,
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-02-05',
-        deprecated: true,
-      },
+      // {
+      //   id: 'gemini-2.0-flash',
+      //   pricing: {
+      //     input: 0.1,
+      //     cachedInput: 0.025,
+      //     output: 0.4,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //     maxOutputTokens: 8192,
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-02-05',
+      //   deprecated: true,
+      // },
       // Retired models (as of September 24, 2025) - commented out to prevent 404 errors
       // {
       //   id: 'gemini-1.5-pro',
@@ -1535,21 +1673,21 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       //   },
       //   contextWindow: 1048576,
       // },
-      {
-        id: 'gemini-2.0-flash-lite',
-        pricing: {
-          input: 0.075,
-          output: 0.3,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-          maxOutputTokens: 8192,
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-02-25',
-        deprecated: true,
-      },
+      // {
+      //   id: 'gemini-2.0-flash-lite',
+      //   pricing: {
+      //     input: 0.075,
+      //     output: 0.3,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //     maxOutputTokens: 8192,
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-02-25',
+      //   deprecated: true,
+      // },
       {
         id: 'deep-research-pro-preview-12-2025',
         pricing: {
@@ -1723,35 +1861,35 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-06-17',
         speedOptimized: true,
       },
-      {
-        id: 'vertex/gemini-2.0-flash',
-        pricing: {
-          input: 0.15,
-          cachedInput: 0.025,
-          output: 0.6,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-02-05',
-        deprecated: true,
-      },
-      {
-        id: 'vertex/gemini-2.0-flash-lite',
-        pricing: {
-          input: 0.075,
-          output: 0.3,
-          updatedAt: '2026-04-01',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 2 },
-        },
-        contextWindow: 1048576,
-        releaseDate: '2025-02-25',
-        deprecated: true,
-      },
+      // {
+      //   id: 'vertex/gemini-2.0-flash',
+      //   pricing: {
+      //     input: 0.15,
+      //     cachedInput: 0.025,
+      //     output: 0.6,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-02-05',
+      //   deprecated: true,
+      // },
+      // {
+      //   id: 'vertex/gemini-2.0-flash-lite',
+      //   pricing: {
+      //     input: 0.075,
+      //     output: 0.3,
+      //     updatedAt: '2026-04-01',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 2 },
+      //   },
+      //   contextWindow: 1048576,
+      //   releaseDate: '2025-02-25',
+      //   deprecated: true,
+      // },
       {
         id: 'vertex/deep-research-pro-preview-12-2025',
         pricing: {
@@ -1839,7 +1977,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     fileAttachment: { maxBytes: 20 * 1024 * 1024, strategy: 'remote-url' },
     name: 'xAI',
     description: "xAI's Grok models",
-    defaultModel: 'grok-4.3',
+    defaultModel: 'grok-4.5',
     modelPatterns: [/^grok/],
     icon: xAIIcon,
     color: '#555555',
@@ -1847,6 +1985,20 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       toolUsageControl: true,
     },
     models: [
+      {
+        id: 'grok-4.5',
+        pricing: {
+          input: 2.0,
+          output: 6.0,
+          updatedAt: '2026-07-08',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+        },
+        contextWindow: 500000,
+        releaseDate: '2026-07-08',
+        recommended: true,
+      },
       {
         id: 'grok-4.3',
         pricing: {
@@ -1860,7 +2012,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 1000000,
         releaseDate: '2026-04-30',
-        recommended: true,
       },
       {
         id: 'grok-4-latest',
@@ -2209,6 +2360,79 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       //   contextWindow: 262144,
       //   releaseDate: '2025-09-05',
       // },
+    ],
+  },
+  sakana: {
+    id: 'sakana',
+    name: 'Sakana AI',
+    description: "Sakana AI's Fugu multi-agent models via an OpenAI-compatible API",
+    defaultModel: 'fugu',
+    modelPatterns: [/^fugu/],
+    icon: SakanaIcon,
+    color: '#E60000',
+    capabilities: {
+      temperature: { min: 0, max: 2 },
+      toolUsageControl: true,
+    },
+    models: [
+      {
+        id: 'fugu',
+        pricing: {
+          input: 5,
+          cachedInput: 0.5,
+          output: 30,
+          updatedAt: '2026-06-22',
+        },
+        capabilities: {},
+        contextWindow: 1000000,
+        releaseDate: '2026-06-15',
+        speedOptimized: true,
+      },
+      {
+        id: 'fugu-ultra',
+        pricing: {
+          input: 5,
+          cachedInput: 0.5,
+          output: 30,
+          updatedAt: '2026-06-22',
+        },
+        capabilities: {},
+        contextWindow: 1000000,
+        releaseDate: '2026-06-15',
+        recommended: true,
+      },
+    ],
+  },
+  meta: {
+    id: 'meta',
+    name: 'Meta',
+    description: "Meta's Muse Spark models via the Meta Model API (OpenAI-compatible)",
+    defaultModel: 'muse-spark-1.1',
+    modelPatterns: [/^muse-spark/],
+    icon: MetaIcon,
+    color: '#0082FB',
+    capabilities: {
+      temperature: { min: 0, max: 2 },
+      toolUsageControl: true,
+    },
+    models: [
+      {
+        id: 'muse-spark-1.1',
+        pricing: {
+          input: 1.25,
+          cachedInput: 0.15,
+          output: 4.25,
+          updatedAt: '2026-07-09',
+        },
+        capabilities: {
+          reasoningEffort: {
+            values: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+          },
+        },
+        contextWindow: 1048576,
+        releaseDate: '2026-07-09',
+        recommended: true,
+      },
     ],
   },
   mistral: {
@@ -3227,6 +3451,68 @@ function getAllStaticModelIds(): string[] {
 
 const STATIC_MODEL_ID_SET = new Set(getAllStaticModelIds().map((id) => id.toLowerCase()))
 
+/**
+ * Resolves a runtime model label to the canonical catalog ID when possible.
+ * Strips a leading `provider/` prefix, matches case-insensitively against the
+ * static catalog (including date-suffixed API IDs), and returns the catalog's
+ * canonical casing. Unknown labels are returned trimmed (prefix stripped when present).
+ */
+export function resolveCanonicalModelId(modelId: string): string {
+  const trimmed = modelId.trim()
+  if (!trimmed) return trimmed
+
+  const slashIdx = trimmed.indexOf('/')
+  const withoutPrefix = slashIdx > 0 ? trimmed.slice(slashIdx + 1).trim() : trimmed
+  const candidates = slashIdx > 0 ? [withoutPrefix, trimmed] : [trimmed]
+
+  for (const candidate of candidates) {
+    const catalogModel = findCatalogModel(candidate)
+    if (catalogModel) return catalogModel.model.id
+  }
+
+  const lowered = trimmed.toLowerCase()
+  for (const providerId of DYNAMIC_MODEL_PROVIDERS) {
+    if (lowered.startsWith(`${providerId}/`)) {
+      return `${providerId}/${trimmed.slice(providerId.length + 1)}`
+    }
+  }
+
+  return withoutPrefix
+}
+
+function matchesCatalogModelId(candidate: string, catalogId: string): boolean {
+  const normalizedCandidate = candidate.toLowerCase()
+  const baseId = catalogId.toLowerCase()
+  return normalizedCandidate === baseId || normalizedCandidate.startsWith(`${baseId}-`)
+}
+
+/**
+ * Finds a catalog model entry for a runtime label, including date-suffixed IDs
+ * returned by provider APIs (e.g. `claude-sonnet-4-5-20250514`).
+ */
+export function findCatalogModel(
+  modelId: string
+): { providerId: string; model: (typeof PROVIDER_DEFINITIONS)[keyof typeof PROVIDER_DEFINITIONS]['models'][number] } | null {
+  const trimmed = modelId.trim()
+  if (!trimmed) return null
+
+  const slashIdx = trimmed.indexOf('/')
+  const withoutPrefix = slashIdx > 0 ? trimmed.slice(slashIdx + 1).trim() : trimmed
+  const candidates = slashIdx > 0 ? [withoutPrefix, trimmed] : [trimmed]
+
+  for (const candidate of candidates) {
+    for (const [providerId, provider] of Object.entries(PROVIDER_DEFINITIONS)) {
+      for (const model of provider.models) {
+        if (matchesCatalogModelId(candidate, model.id)) {
+          return { providerId, model }
+        }
+      }
+    }
+  }
+
+  return null
+}
+
 export function isKnownModelId(modelId: string): boolean {
   if (!modelId || typeof modelId !== 'string') return false
   const trimmed = modelId.trim()
@@ -3322,13 +3608,7 @@ export function getProviderDefaultModel(providerId: string): string {
 }
 
 export function getModelPricing(modelId: string): ModelPricing | null {
-  for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
-    const model = provider.models.find((m) => m.id.toLowerCase() === modelId.toLowerCase())
-    if (model) {
-      return model.pricing
-    }
-  }
-  return null
+  return findCatalogModel(modelId)?.model.pricing ?? null
 }
 
 export function getModelCapabilities(modelId: string): ModelCapabilities | null {
@@ -3566,6 +3846,13 @@ export function getRerankModelPricing(
 ): { perSearchUnit: number; updatedAt: string } | null {
   return RERANK_MODEL_PRICING[modelId] || null
 }
+
+export {
+  IMAGE_MODEL_PRICING,
+  getImageModelPerImageCost,
+  type ImageBillingDimensions,
+  type ImageBillingMetadata,
+} from '@/lib/tools/image-pricing'
 
 export function getModelsWithReasoningEffort(): string[] {
   const models: string[] = []

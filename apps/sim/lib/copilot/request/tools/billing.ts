@@ -8,6 +8,7 @@ import {
   MothershipStreamV1TextChannel,
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import { sseHandlers } from '@/lib/copilot/request/handlers'
+import { buildUsageUpgradeContent } from '@/lib/copilot/request/tools/usage-upgrade'
 import type {
   ExecutionContext,
   OrchestratorOptions,
@@ -28,38 +29,40 @@ export async function handleBillingLimitResponse(
   userId: string,
   context: StreamingContext,
   execContext: ExecutionContext,
-  options: OrchestratorOptions
+  options: OrchestratorOptions,
+  limitDetails?: { message?: string; scope?: 'pooled' | 'member' }
 ): Promise<void> {
   let action: 'upgrade_plan' | 'increase_limit' = 'upgrade_plan'
   let message = "You've reached your usage limit. Please upgrade your plan to continue."
-  try {
-    const sub = await getHighestPrioritySubscription(userId)
-    if (sub && isPaid(sub.plan)) {
-      // Paid subs use the existing `increase_limit` action so the UI
-      // (`UsageUpgradeDisplay`) renders its standard button. The message
-      // text does the work of clarifying the action when the user can't
-      // actually self-serve the limit change.
-      action = 'increase_limit'
-      const orgScoped = isOrgScopedSubscription(sub, userId)
-      if (orgScoped) {
-        message = isEnterprise(sub.plan)
-          ? "You've reached your organization's usage limit for this billing period. Only an organization admin or Sim support can raise an enterprise limit — reach out to them to continue."
-          : "You've reached your organization's usage limit for this billing period. Only an organization owner or admin can raise the limit — please ask them to update it from the team billing settings."
-      } else {
-        message =
-          "You've reached your usage limit for this billing period. Please increase your usage limit from billing settings to continue."
+
+  if (limitDetails?.scope === 'member' && limitDetails.message) {
+    message = limitDetails.message
+    action = 'increase_limit'
+  } else {
+    try {
+      const sub = await getHighestPrioritySubscription(userId)
+      if (sub && isPaid(sub.plan)) {
+        // Paid subs use the existing `increase_limit` action so the UI
+        // (`UsageUpgradeDisplay`) renders its standard button. The message
+        // text does the work of clarifying the action when the user can't
+        // actually self-serve the limit change.
+        action = 'increase_limit'
+        const orgScoped = isOrgScopedSubscription(sub, userId)
+        if (orgScoped) {
+          message = isEnterprise(sub.plan)
+            ? "You've reached your organization's usage limit for this billing period. Only an organization admin or Sim support can raise an enterprise limit — reach out to them to continue."
+            : "You've reached your organization's usage limit for this billing period. Only an organization owner or admin can raise the limit — please ask them to update it from the team billing settings."
+        } else {
+          message =
+            "You've reached your usage limit for this billing period. Please increase your usage limit from billing settings to continue."
+        }
       }
+    } catch {
+      logger.warn('Failed to determine subscription plan, defaulting to upgrade_plan')
     }
-  } catch {
-    logger.warn('Failed to determine subscription plan, defaulting to upgrade_plan')
   }
 
-  const upgradePayload = JSON.stringify({
-    reason: 'usage_limit',
-    action,
-    message,
-  })
-  const syntheticContent = `<usage_upgrade>${upgradePayload}</usage_upgrade>`
+  const syntheticContent = buildUsageUpgradeContent(message, { action })
 
   const syntheticEvents: StreamEvent[] = [
     {

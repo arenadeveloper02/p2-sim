@@ -32,6 +32,7 @@ import {
   isOrgScopedSubscription,
 } from '@/lib/billing/subscriptions/utils'
 import type { BillingData, UsageData, UsageLimitInfo } from '@/lib/billing/types'
+import { buildUpgradeHref } from '@/lib/billing/upgrade-reasons'
 import { Decimal, toDecimal, toNumber } from '@/lib/billing/utils/decimal'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -184,9 +185,15 @@ export async function ensureUserStatsExists(userId: string): Promise<void> {
 /**
  * Get comprehensive usage data for a user
  */
+export interface GetUserUsageDataOptions {
+  /** When true, use `user_stats` limits and personal usage even if the user has an org-scoped subscription. */
+  personalAccount?: boolean
+}
+
 export async function getUserUsageData(
   userId: string,
-  executor: DbClient = db
+  executor: DbClient = db,
+  options?: GetUserUsageDataOptions
 ): Promise<UsageData> {
   try {
     // Write — always on the primary regardless of executor routing.
@@ -210,7 +217,7 @@ export async function getUserUsageData(
     }
 
     const stats = userStatsData[0]
-    const orgScoped = isOrgScopedSubscription(subscription, userId)
+    const orgScoped = isOrgScopedSubscription(subscription, userId) && !options?.personalAccount
     const billingPeriod =
       subscription?.periodStart && subscription.periodEnd
         ? { start: subscription.periodStart, end: subscription.periodEnd }
@@ -828,6 +835,8 @@ export async function maybeSendUsageThresholdEmail(params: {
   userEmail?: string
   userName?: string
   organizationId?: string
+  /** Workspace the usage occurred in, used to build a live upgrade/billing link. */
+  workspaceId?: string
   currentUsageAfter: number
   limit: number
 }): Promise<void> {
@@ -837,6 +846,13 @@ export async function maybeSendUsageThresholdEmail(params: {
 
     const baseUrl = getBaseUrl()
     const isFreeUser = params.planName === 'Free'
+
+    const upgradeCreditsLink = params.workspaceId
+      ? `${baseUrl}${buildUpgradeHref(params.workspaceId, 'credits')}`
+      : `${baseUrl}/workspace`
+    const billingSettingsLink = params.workspaceId
+      ? `${baseUrl}/workspace/${params.workspaceId}/settings/billing`
+      : `${baseUrl}/workspace`
 
     // Check for 80% threshold crossing — used for paid users (budget warning) and free users (upgrade nudge)
     const crosses80 = params.percentBefore < 80 && params.percentAfter >= 80
@@ -848,7 +864,7 @@ export async function maybeSendUsageThresholdEmail(params: {
 
     // For 80% threshold email (paid users only)
     if (crosses80 && !isFreeUser) {
-      const ctaLink = `${baseUrl}/workspace?billing=usage`
+      const ctaLink = billingSettingsLink
       const sendTo = async (email: string, name?: string) => {
         const prefs = await getEmailPreferences(email)
         if (prefs?.unsubscribeAll || prefs?.unsubscribeNotifications) return
@@ -903,7 +919,7 @@ export async function maybeSendUsageThresholdEmail(params: {
 
     // For 80% threshold email (free users only — skip if they also crossed 100% in same call)
     if (crosses80 && isFreeUser && !crosses100) {
-      const upgradeLink = `${baseUrl}/workspace?billing=upgrade`
+      const upgradeLink = upgradeCreditsLink
       const sendFreeTierEmail = async (email: string, name?: string) => {
         const prefs = await getEmailPreferences(email)
         if (prefs?.unsubscribeAll || prefs?.unsubscribeNotifications) return
@@ -945,7 +961,7 @@ export async function maybeSendUsageThresholdEmail(params: {
 
     // For 100% threshold email (free users only — credits exhausted)
     if (crosses100 && isFreeUser) {
-      const upgradeLink = `${baseUrl}/workspace?billing=upgrade`
+      const upgradeLink = upgradeCreditsLink
       const sendExhaustedEmail = async (email: string, name?: string) => {
         const prefs = await getEmailPreferences(email)
         if (prefs?.unsubscribeAll || prefs?.unsubscribeNotifications) return

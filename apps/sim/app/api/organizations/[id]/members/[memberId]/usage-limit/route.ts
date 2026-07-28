@@ -15,6 +15,7 @@ import {
   getOrgMemberUsageLimit,
   getOrgMemberWorkspaceUsage,
   setOrgMemberUsageLimit,
+  validateOrgMemberAllocationWithinPool,
 } from '@/lib/billing/organizations/member-limits'
 import { isHosted } from '@/lib/core/config/env-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -97,6 +98,23 @@ export const PUT = withRouteHandler(
     }
 
     const limitDollars = creditLimit === null ? null : creditsToDollars(creditLimit)
+
+    if (limitDollars !== null) {
+      const validation = await validateOrgMemberAllocationWithinPool(
+        organizationId,
+        memberId,
+        limitDollars
+      )
+      if (!validation.ok) {
+        return NextResponse.json(
+          {
+            error: `Total allocated credits (${validation.allocatedCredits.toLocaleString()}) would exceed the organization pool (${validation.orgPoolCredits.toLocaleString()} credits).`,
+          },
+          { status: 400 }
+        )
+      }
+    }
+
     await setOrgMemberUsageLimit(organizationId, memberId, limitDollars, session.user.id)
 
     logger.info('Updated per-member usage limit', {

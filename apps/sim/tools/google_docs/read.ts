@@ -24,7 +24,8 @@ export const readTool: ToolConfig<GoogleDocsToolParams, GoogleDocsReadResponse> 
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Google Docs document ID',
+      description:
+        'Google Docs document ID (Drive file id). To locate a doc by title, call google_drive_list with query set to the title first, then pass the returned file id here — do not pass the title as documentId.',
     },
   },
 

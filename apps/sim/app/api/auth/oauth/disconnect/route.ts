@@ -1,6 +1,6 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { account, credential, credentialSet, credentialSetMember } from '@sim/db/schema'
+import { account, credential } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, like, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -16,7 +16,6 @@ import {
   listAccountsToDisconnect,
   unlinkUnipileAccountsFromProvider,
 } from '@/lib/unipile/disconnect-accounts'
-import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 
 export const dynamic = 'force-dynamic'
 
@@ -118,39 +117,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       }
 
       await db.delete(account).where(inArray(account.id, targetAccountIds))
-    }
-
-    const userMemberships = await db
-      .select({
-        id: credentialSetMember.id,
-        credentialSetId: credentialSetMember.credentialSetId,
-        providerId: credentialSet.providerId,
-      })
-      .from(credentialSetMember)
-      .innerJoin(credentialSet, eq(credentialSetMember.credentialSetId, credentialSet.id))
-      .where(and(eq(credentialSetMember.userId, userId), eq(credentialSetMember.status, 'active')))
-
-    for (const membership of userMemberships) {
-      const matchesProvider =
-        membership.providerId === provider ||
-        membership.providerId === providerId ||
-        membership.providerId?.startsWith(`${provider}-`)
-
-      if (matchesProvider) {
-        try {
-          await syncAllWebhooksForCredentialSet(membership.credentialSetId, requestId)
-          logger.info(`[${requestId}] Synced webhooks after credential disconnect`, {
-            credentialSetId: membership.credentialSetId,
-            provider,
-          })
-        } catch (error) {
-          logger.error(`[${requestId}] Failed to sync webhooks after credential disconnect`, {
-            credentialSetId: membership.credentialSetId,
-            provider,
-            error,
-          })
-        }
-      }
     }
 
     recordAudit({

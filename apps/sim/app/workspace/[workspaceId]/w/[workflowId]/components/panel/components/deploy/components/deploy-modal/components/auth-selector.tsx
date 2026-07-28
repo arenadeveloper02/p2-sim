@@ -1,12 +1,11 @@
 import { useState } from 'react'
+import { Button, cn, Input, Label } from '@sim/emcn'
+import { Trash } from '@sim/emcn/icons/trash'
 import Cookies from 'js-cookie'
 import { Check, Copy, Eye, EyeOff, Loader2, Plus, RefreshCw } from 'lucide-react'
-import { Button, Input, Label } from '@/components/emcn'
-import { Trash } from '@/components/emcn/icons/trash'
 import { Card, CardContent } from '@/components/ui'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { generatePassword } from '@/lib/core/security/encryption'
-import { cn } from '@/lib/core/utils/cn'
 import type { AuthType } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/hooks/use-chat-form'
 
 interface AuthSelectorProps {

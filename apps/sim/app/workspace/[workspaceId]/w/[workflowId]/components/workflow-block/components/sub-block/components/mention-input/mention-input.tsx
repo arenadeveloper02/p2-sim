@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Tooltip } from '@sim/emcn/components'
 import { useParams } from 'next/navigation'
-import { Tooltip } from '@/components/emcn/components'
 import { SlackMentionInput } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/workflow-block/components/sub-block/components/mention-input/slack-mention-input'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useDependsOnGate } from '../../../../../panel/components/editor/components/sub-block/hooks/use-depends-on-gate'

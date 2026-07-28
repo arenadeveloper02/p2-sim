@@ -1,11 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChipDropdownOption } from '@sim/emcn'
+import { Button, ChipDropdown, Plus, Tooltip } from '@sim/emcn'
+import { Database } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams, useRouter } from 'next/navigation'
-import type { ChipDropdownOption } from '@/components/emcn'
-import { Button, ChipDropdown, Plus, Tooltip } from '@/components/emcn'
-import { Database } from '@/components/emcn/icons'
 import type { KnowledgeBaseData } from '@/lib/knowledge/types'
 import type {
   FilterTag,
@@ -24,6 +24,7 @@ import {
 } from '@/app/workspace/[workspaceId]/components'
 import { BaseTagsModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
 import {
+  CopyKnowledgeBaseModal,
   CreateBaseModal,
   DeleteKnowledgeBaseModal,
   EditKnowledgeBaseModal,
@@ -160,6 +161,7 @@ export function Knowledge() {
     null
   )
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isTagsModalOpen, setIsTagsModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -381,6 +383,10 @@ export function Knowledge() {
     setIsEditModalOpen(true)
   }, [])
 
+  const handleCopyToWorkspace = useCallback(() => {
+    setIsCopyModalOpen(true)
+  }, [])
+
   const handleDelete = useCallback(() => {
     setIsDeleteModalOpen(true)
   }, [])
@@ -590,12 +596,15 @@ export function Knowledge() {
           onViewTags={handleViewTags}
           onCopyId={handleCopyId}
           onEdit={handleEdit}
+          onCopyToWorkspace={handleCopyToWorkspace}
           onDelete={handleDelete}
           showOpenInNewTab
           showViewTags
           showEdit
+          showCopyToWorkspace
           showDelete
           disableEdit={!canEdit}
+          disableCopyToWorkspace={!canEdit}
           disableDelete={!canEdit}
         />
       )}
@@ -609,6 +618,15 @@ export function Knowledge() {
           initialDescription={activeKnowledgeBase.description || ''}
           chunkingConfig={activeKnowledgeBase.chunkingConfig}
           onSave={handleUpdateKnowledgeBase}
+        />
+      )}
+
+      {activeKnowledgeBase && (
+        <CopyKnowledgeBaseModal
+          open={isCopyModalOpen}
+          onOpenChange={setIsCopyModalOpen}
+          knowledgeBaseId={activeKnowledgeBase.id}
+          initialName={activeKnowledgeBase.name}
         />
       )}
 

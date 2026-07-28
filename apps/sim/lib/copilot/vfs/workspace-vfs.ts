@@ -1,7 +1,6 @@
 import { trace } from '@opentelemetry/api'
 import { db } from '@sim/db'
 import {
-  a2aAgent,
   chat as chatTable,
   copilotChats,
   document,
@@ -89,6 +88,7 @@ import {
   workspacePlanBackingPath,
   workspacePlansBackingFolderPath,
 } from '@/lib/copilot/vfs/workflow-aliases'
+import type { BlockVisibilityState } from '@/lib/core/config/block-visibility'
 import { isE2BDocEnabled } from '@/lib/core/config/env-flags'
 import { isFeatureEnabled } from '@/lib/core/config/feature-flags'
 import {
@@ -108,6 +108,7 @@ import {
   listWorkspaceFiles,
   type WorkspaceFileRecord,
 } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { listCustomBlocksWithInputsForWorkspace } from '@/lib/workflows/custom-blocks/operations'
 import { listCustomTools } from '@/lib/workflows/custom-tools/operations'
 import {
   loadWorkflowDeploymentSnapshot,
@@ -123,16 +124,53 @@ import {
   hasWorkspaceAdminAccess,
 } from '@/lib/workspaces/permissions/utils'
 import { computeNeedsRedeployment } from '@/app/api/workflows/utils'
-import { getAllBlocks } from '@/blocks/registry'
+import { buildCustomBlockConfig, isCustomBlockType } from '@/blocks/custom/build-config'
+import { BLOCK_REGISTRY } from '@/blocks/registry-maps'
+import type { BlockConfig, BlockIcon } from '@/blocks/types'
+import { isHiddenUnder, overlayVisibility } from '@/blocks/visibility/context'
 import { CONNECTOR_REGISTRY } from '@/connectors/registry.server'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 import { TRIGGER_REGISTRY } from '@/triggers/registry'
 
 const logger = createLogger('WorkspaceVFS')
+
+/** Placeholder icon for custom-block configs — `serializeBlockSchema` never reads it. */
+// double-cast-allowed: a no-op stands in for the unused SVG-typed BlockIcon slot
+const PLACEHOLDER_BLOCK_ICON = (() => null) as unknown as BlockIcon
 const MAX_COMPILED_ATTACHMENT_BYTES = 5 * 1024 * 1024
 
-/** Static component files, computed once and shared across all VFS instances */
+/**
+ * Static component files, computed once and shared across all VFS instances.
+ * Built from the UNGATED registry universe (preview blocks included) so this
+ * process-global cache can never be poisoned by one viewer's gated projection;
+ * per-viewer gating is applied when the map is stamped into each fresh VFS
+ * (see {@link isStaticFileHidden}).
+ */
 let staticComponentFiles: Map<string, string> | null = null
+
+/**
+ * Owning block for each `components/integrations/**` file, recorded at build
+ * time. Block/trigger schema files carry their owning type as the path
+ * basename, but integration paths use the version-stripped service name — so
+ * their owners need this lookup for the stamp-time visibility filter.
+ */
+const integrationPathOwners = new Map<string, Pick<BlockConfig, 'type' | 'preview'>>()
+
+/**
+ * Per-request visibility filter for the shared static files: hides files whose
+ * owning block is gated for this viewer (unrevealed preview blocks — the
+ * default with no context — and kill-switched types). Non-registry paths
+ * (loop/parallel, connectors, overviews) are always visible.
+ */
+function isStaticFileHidden(path: string, vis: BlockVisibilityState | null): boolean {
+  const blockMatch = path.match(/^components\/(?:blocks|triggers\/sim)\/([^/]+)\.json$/)
+  if (blockMatch) {
+    const config = BLOCK_REGISTRY[blockMatch[1]!]
+    return config ? isHiddenUnder(vis, config) : false
+  }
+  const owner = integrationPathOwners.get(path)
+  return owner ? isHiddenUnder(vis, owner) : false
+}
 
 // On-the-fly doc reads (render/extract) download the binary into the Sim process
 // and base64-stage it to E2B, so bound the input like the compile path's staging
@@ -164,7 +202,12 @@ function getStaticComponentFiles(): Map<string, string> {
 
   const files = new Map<string, string>()
 
-  const allBlocks = getAllBlocks()
+  // Raw registry, never the visibility-projected getAllBlocks: this map is a
+  // process-global shared cache, so it must hold the deterministic ungated
+  // universe. Preview blocks get schema files here (path-filterable at stamp
+  // time for revealed viewers) but are EXCLUDED from the shared aggregate
+  // files (overviews, oauth/api-key summaries) that all viewers receive.
+  const allBlocks = Object.values(BLOCK_REGISTRY)
   const visibleBlocks = allBlocks.filter((b) => !b.hideFromToolbar)
 
   let blocksFiltered = 0
@@ -182,10 +225,16 @@ function getStaticComponentFiles(): Map<string, string> {
   // Integration tools come from the shared exposed-tool set (latest version of
   // each operation owned by a visible block), the same set used to build the
   // deferred callable tools — so discovery and execution can never drift.
-  for (const { config: tool, service, operation } of getExposedIntegrationTools()) {
+  for (const exposedTool of getExposedIntegrationTools()) {
+    const { config: tool, service, operation, blockType, preview } = exposedTool
     const path = `components/integrations/${service}/${operation}.json`
     files.set(path, serializeIntegrationSchema(tool))
+    integrationPathOwners.set(path, { type: blockType, preview })
     integrationCount++
+
+    // Preview-owned tools stay out of the shared oauth/api-key aggregates —
+    // those files are identical for every viewer.
+    if (preview) continue
 
     if (tool.oauth?.required) {
       const existing = oauthServices.get(service)
@@ -314,12 +363,16 @@ function getStaticComponentFiles(): Map<string, string> {
   files.set(
     'components/triggers/triggers.md',
     serializeTriggerOverview(
-      builtinTriggerBlocks.map((b) => ({
-        id: b.type,
-        name: b.name,
-        provider: 'sim',
-        description: b.description,
-      })),
+      // The overview is a shared file — preview trigger blocks stay out of it
+      // (their per-type schema file remains discoverable for revealed viewers).
+      builtinTriggerBlocks
+        .filter((b) => !b.preview)
+        .map((b) => ({
+          id: b.type,
+          name: b.name,
+          provider: 'sim',
+          description: b.description,
+        })),
       Object.entries(TRIGGER_REGISTRY).map(([id, t]) => ({
         id,
         name: t.name,
@@ -399,6 +452,18 @@ export class WorkspaceVFS {
   private deploymentCache = new Map<string, Promise<DeploymentData | null>>()
   private _workspaceId = ''
   private _betaEnabled = false
+  /**
+   * Types of the org's CURRENT custom blocks (enabled + disabled — a disabled block
+   * still resolves/renders). Populated by {@link materializeCustomBlocks}; used to
+   * drop a placed custom block from a workflow's state when its definition has been
+   * deleted, so the copilot never sees a block it can't render.
+   *
+   * `null` means "not loaded" — either not materialized yet or the load FAILED. In
+   * that case {@link dropDeletedCustomBlocks} strips nothing, so a transient failure
+   * can't wrongly nuke every placed custom block. An empty `Set` is distinct: it
+   * means the org genuinely has no custom blocks, so any placed one IS deleted.
+   */
+  private _customBlockTypes: Set<string> | null = null
 
   get workspaceId(): string {
     return this._workspaceId
@@ -419,10 +484,43 @@ export class WorkspaceVFS {
   ): Promise<Awaited<ReturnType<typeof loadWorkflowFromNormalizedTables>>> {
     let cached = this.normalizedCache.get(workflowId)
     if (!cached) {
-      cached = loadWorkflowFromNormalizedTables(workflowId)
+      cached = loadWorkflowFromNormalizedTables(workflowId).then((n) =>
+        this.dropDeletedCustomBlocks(n)
+      )
       this.normalizedCache.set(workflowId, cached)
     }
     return cached
+  }
+
+  /**
+   * Strip placed custom blocks whose definition no longer exists from a loaded
+   * workflow (and any edges touching them), so the copilot never sees a block it
+   * can't render — mirroring how the serializer drops an unresolvable custom block.
+   * A live definition (enabled or disabled) is kept; only a DELETED one is removed.
+   * Runs lazily (after materialize), so `_customBlockTypes` is populated by then.
+   */
+  private dropDeletedCustomBlocks(
+    normalized: Awaited<ReturnType<typeof loadWorkflowFromNormalizedTables>>
+  ): Awaited<ReturnType<typeof loadWorkflowFromNormalizedTables>> {
+    // `null` = definitions never loaded (or the load failed) — strip nothing rather
+    // than treat every placed custom block as deleted.
+    if (!normalized || this._customBlockTypes === null) return normalized
+    const validTypes = this._customBlockTypes
+    const dropped = new Set<string>()
+    const blocks: Record<string, unknown> = {}
+    for (const [id, block] of Object.entries(normalized.blocks)) {
+      const type = (block as { type?: string }).type
+      if (isCustomBlockType(type) && !validTypes.has(type)) {
+        dropped.add(id)
+        continue
+      }
+      blocks[id] = block
+    }
+    if (dropped.size === 0) return normalized
+    const edges = (normalized.edges ?? []).filter(
+      (e) => !dropped.has(e.source) && !dropped.has(e.target)
+    )
+    return { ...normalized, blocks: blocks as typeof normalized.blocks, edges }
   }
 
   /** Load a workflow's deployment data once per instance (deployment.json + versions.json share it). */
@@ -517,6 +615,7 @@ export class WorkspaceVFS {
     this.lazy = new Map()
     this.normalizedCache = new Map()
     this.deploymentCache = new Map()
+    this._customBlockTypes = null
     this._workspaceId = workspaceId
     this._betaEnabled = await isFeatureEnabled('mothership-beta', { userId })
 
@@ -545,6 +644,7 @@ export class WorkspaceVFS {
               fileSummary,
               envSummary,
               toolsSummary,
+              customBlocksSummary,
               mcpServersSummary,
               skillsSummary,
               taskSummary,
@@ -558,6 +658,7 @@ export class WorkspaceVFS {
               timed('files', this.materializeFiles(workspaceId)),
               timed('environment', this.materializeEnvironment(workspaceId, userId)),
               timed('custom_tools', this.materializeCustomTools(workspaceId, userId)),
+              timed('custom_blocks', this.materializeCustomBlocks(workspaceId)),
               timed('mcp_servers', this.materializeMcpServers(workspaceId)),
               timed('skills', this.materializeSkills(workspaceId)),
               timed('tasks', this.materializeTasks(workspaceId, userId)),
@@ -577,6 +678,7 @@ export class WorkspaceVFS {
               envVariables: envSummary.envVariables,
               tasks: taskSummary,
               customTools: toolsSummary,
+              customBlocks: customBlocksSummary,
               mcpServers: mcpServersSummary,
               skills: skillsSummary,
               jobs: jobsSummary,
@@ -587,7 +689,11 @@ export class WorkspaceVFS {
 
             await timed('recently_deleted', this.materializeRecentlyDeleted(workspaceId, userId))
 
+            // Per-viewer gating happens HERE, not in the shared builder: files
+            // owned by blocks hidden for this viewer are skipped at stamp time.
+            const blockVisibility = overlayVisibility()
             for (const [path, content] of getStaticComponentFiles()) {
+              if (isStaticFileHidden(path, blockVisibility)) continue
               this.files.set(path, content)
             }
 
@@ -1673,7 +1779,7 @@ export class WorkspaceVFS {
     isDeployed: boolean,
     deployedAt: Date | null
   ): Promise<DeploymentData | null> {
-    const [chatRows, mcpRows, a2aRows, versionRows, allVersionRows] = await Promise.all([
+    const [chatRows, mcpRows, versionRows, allVersionRows] = await Promise.all([
       db
         .select({
           id: chatTable.id,
@@ -1701,23 +1807,6 @@ export class WorkspaceVFS {
             eq(workflowMcpTool.workflowId, workflowId),
             isNull(workflowMcpTool.archivedAt),
             isNull(workflowMcpServer.deletedAt)
-          )
-        ),
-      db
-        .select({
-          id: a2aAgent.id,
-          name: a2aAgent.name,
-          description: a2aAgent.description,
-          version: a2aAgent.version,
-          isPublished: a2aAgent.isPublished,
-          capabilities: a2aAgent.capabilities,
-        })
-        .from(a2aAgent)
-        .where(
-          and(
-            eq(a2aAgent.workflowId, workflowId),
-            eq(a2aAgent.workspaceId, workspaceId),
-            isNull(a2aAgent.archivedAt)
           )
         ),
       isDeployed
@@ -1750,8 +1839,7 @@ export class WorkspaceVFS {
         .orderBy(desc(workflowDeploymentVersion.version)),
     ])
 
-    const hasAnyDeployment =
-      isDeployed || chatRows.length > 0 || mcpRows.length > 0 || a2aRows.length > 0
+    const hasAnyDeployment = isDeployed || chatRows.length > 0 || mcpRows.length > 0
     if (!hasAnyDeployment && allVersionRows.length === 0) return null
 
     let needsRedeployment: boolean | undefined
@@ -1785,7 +1873,6 @@ export class WorkspaceVFS {
         : null,
       chat: chatRows[0] ?? null,
       mcp: mcpRows,
-      a2a: a2aRows[0] ?? null,
       versions: allVersionRows,
     }
   }
@@ -1815,6 +1902,54 @@ export class WorkspaceVFS {
       return toolRows.map((t) => ({ id: t.id, name: t.title }))
     } catch (err) {
       logger.warn('Failed to materialize custom tools', {
+        workspaceId,
+        error: toError(err).message,
+      })
+      return []
+    }
+  }
+
+  /**
+   * Materialize the org's published custom (deploy-as-block) blocks as VFS
+   * component files — the same `components/blocks/<type>.json` path + serializer
+   * first-party blocks use — so the agent can grep/read them. Returns the summary
+   * for `WORKSPACE_CONTEXT.md`. Per-request/per-org, so it bypasses the frozen
+   * static component cache. Only enabled blocks are exposed.
+   */
+  private async materializeCustomBlocks(
+    workspaceId: string
+  ): Promise<NonNullable<WorkspaceMdData['customBlocks']>> {
+    try {
+      const blocks = await listCustomBlocksWithInputsForWorkspace(workspaceId)
+      // Every current definition (incl. disabled) — the authoritative set used to
+      // drop deleted-definition instances from workflow state (see loadNormalized).
+      this._customBlockTypes = new Set(blocks.map((cb) => cb.type))
+      const summary: NonNullable<WorkspaceMdData['customBlocks']> = []
+
+      for (const cb of blocks) {
+        if (!cb.enabled) continue
+        const config = buildCustomBlockConfig(
+          {
+            type: cb.type,
+            name: cb.name,
+            description: cb.description,
+            workflowId: cb.workflowId,
+            exposedOutputs: cb.exposedOutputs,
+          },
+          cb.inputFields,
+          { icon: PLACEHOLDER_BLOCK_ICON }
+        )
+        this.files.set(`components/blocks/${config.type}.json`, serializeBlockSchema(config))
+        summary.push({
+          type: cb.type,
+          name: cb.name,
+          ...(cb.description ? { description: cb.description } : {}),
+        })
+      }
+
+      return summary
+    } catch (err) {
+      logger.warn('Failed to materialize custom blocks', {
         workspaceId,
         error: toError(err).message,
       })

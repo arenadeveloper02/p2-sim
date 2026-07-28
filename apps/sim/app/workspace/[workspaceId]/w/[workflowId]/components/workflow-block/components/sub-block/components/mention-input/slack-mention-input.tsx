@@ -1,11 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Button, cn, Textarea } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { AtSign, Check, User } from 'lucide-react'
-import { Button, Textarea } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
 import {
   checkTagTrigger,
   TagDropdown,

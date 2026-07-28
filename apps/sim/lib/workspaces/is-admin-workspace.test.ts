@@ -103,6 +103,14 @@ describe('filterOAuthItemsForWorkspace', () => {
   it('removes admin-only providers for non-admin workspaces', () => {
     expect(filterOAuthItemsForWorkspace(items, 'ws-other')).toEqual([items[0]])
   })
+  it('honors explicit canUseZoomAdmin over env admin workspace', () => {
+    expect(filterOAuthItemsForWorkspace(items, 'ws-admin-1', { canUseZoomAdmin: false })).toEqual([
+      items[0],
+    ])
+    expect(filterOAuthItemsForWorkspace(items, 'ws-other', { canUseZoomAdmin: true })).toEqual(
+      items
+    )
+  })
 })
 
 describe('getAdminWorkspaceContext', () => {

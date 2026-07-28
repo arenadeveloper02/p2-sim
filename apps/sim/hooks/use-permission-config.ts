@@ -26,6 +26,7 @@ export interface PermissionConfigResult {
   isBlockAllowed: (blockType: string) => boolean
   isProviderAllowed: (providerId: string) => boolean
   isModelAllowed: (model: string) => boolean
+  isToolAllowed: (toolId: string) => boolean
   isInvitationsDisabled: boolean
   isPublicApiDisabled: boolean
 }
@@ -87,6 +88,7 @@ export function usePermissionConfig(): PermissionConfigResult {
   }, [permissionData])
 
   const isInPermissionGroup = !!permissionData?.permissionGroupId
+  const isOrgAdmin = permissionData?.isOrgAdmin === true
 
   const mergedAllowedIntegrations = useMemo(() => {
     const envAllowlist = envAllowlistData?.allowedIntegrations ?? null
@@ -96,10 +98,10 @@ export function usePermissionConfig(): PermissionConfigResult {
   const isBlockAllowed = useMemo(() => {
     return (blockType: string) => {
       if (isBlockTypeAccessControlExempt(blockType)) return true
-      if (mergedAllowedIntegrations === null) return true
+      if (isOrgAdmin || mergedAllowedIntegrations === null) return true
       return mergedAllowedIntegrations.includes(blockType.toLowerCase())
     }
-  }, [mergedAllowedIntegrations])
+  }, [isOrgAdmin, mergedAllowedIntegrations])
 
   const isProviderAllowed = useMemo(() => {
     return (providerId: string) => {
@@ -116,19 +118,26 @@ export function usePermissionConfig(): PermissionConfigResult {
     }
   }, [config.deniedModels])
 
+  const isToolAllowed = useMemo(() => {
+    return (toolId: string) => {
+      if (config.deniedTools.length === 0) return true
+      return !config.deniedTools.includes(toolId)
+    }
+  }, [config.deniedTools])
+
   const filterBlocks = useMemo(() => {
     return <T extends { type: string }>(blocks: T[]): T[] => {
       const workspaceVisible = blocks.filter((block) =>
         isBlockVisibleForWorkspace(block.type, workspaceId)
       )
-      if (mergedAllowedIntegrations === null) return workspaceVisible
+      if (isOrgAdmin || mergedAllowedIntegrations === null) return workspaceVisible
       return workspaceVisible.filter(
         (block) =>
           isBlockTypeAccessControlExempt(block.type) ||
           mergedAllowedIntegrations.includes(block.type.toLowerCase())
       )
     }
-  }, [mergedAllowedIntegrations, workspaceId])
+  }, [isOrgAdmin, mergedAllowedIntegrations, workspaceId])
 
   const filterProviders = useMemo(() => {
     return (providerIds: string[]): string[] => {
@@ -162,6 +171,7 @@ export function usePermissionConfig(): PermissionConfigResult {
       isBlockAllowed,
       isProviderAllowed,
       isModelAllowed,
+      isToolAllowed,
       isInvitationsDisabled,
       isPublicApiDisabled,
     }),
@@ -174,6 +184,7 @@ export function usePermissionConfig(): PermissionConfigResult {
       isBlockAllowed,
       isProviderAllowed,
       isModelAllowed,
+      isToolAllowed,
       isInvitationsDisabled,
       isPublicApiDisabled,
     ]

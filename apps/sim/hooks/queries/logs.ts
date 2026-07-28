@@ -18,6 +18,8 @@ import {
   getLogByExecutionIdContract,
   getLogDetailContract,
   listLogsContract,
+  type VerifyExecutionCostsResponse,
+  verifyExecutionCostsContract,
   type WorkflowLogDetail,
   type WorkflowLogSummary,
   type WorkflowStats,
@@ -26,10 +28,16 @@ import { getEndDateFromTimeRange, getStartDateFromTimeRange } from '@/lib/logs/f
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import type { TimeRange } from '@/stores/logs/filters/types'
 
-export type { DashboardStatsResponse, WorkflowStats }
+export type { DashboardStatsResponse, WorkflowStats, VerifyExecutionCostsResponse }
 
 export type LogSortBy = 'date' | 'duration' | 'cost' | 'status'
 export type LogSortOrder = 'asc' | 'desc'
+
+export const LOG_LIST_STALE_TIME = 30 * 1000
+export const LOG_DETAIL_STALE_TIME = 30 * 1000
+export const LOG_BY_EXECUTION_STALE_TIME = 30 * 1000
+export const LOG_DASHBOARD_STATS_STALE_TIME = 30 * 1000
+export const EXECUTION_SNAPSHOT_STALE_TIME = 5 * 60 * 1000
 
 export const logKeys = {
   all: ['logs'] as const,
@@ -48,6 +56,9 @@ export const logKeys = {
   executionSnapshots: () => [...logKeys.all, 'executionSnapshot'] as const,
   executionSnapshot: (executionId: string | undefined) =>
     [...logKeys.executionSnapshots(), executionId ?? ''] as const,
+  verifyCosts: () => [...logKeys.all, 'verifyCosts'] as const,
+  verifyCost: (executionId: string | undefined) =>
+    [...logKeys.verifyCosts(), executionId ?? ''] as const,
 }
 
 export interface LogFilters {
@@ -169,7 +180,7 @@ export function useLogsList(
       fetchLogsPage(workspaceId as string, filters, pageParam, signal),
     enabled: Boolean(workspaceId) && (options?.enabled ?? true),
     refetchInterval: options?.refetchInterval ?? false,
-    staleTime: 30 * 1000,
+    staleTime: LOG_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
@@ -194,7 +205,7 @@ export function useLogDetail(
     queryFn: ({ signal }) => fetchLogDetail(logId as string, workspaceId as string, signal),
     enabled: Boolean(logId) && Boolean(workspaceId) && (options?.enabled ?? true),
     refetchInterval: options?.refetchInterval ?? false,
-    staleTime: 30 * 1000,
+    staleTime: LOG_DETAIL_STALE_TIME,
     retry: (failureCount, err) =>
       !(isApiClientError(err) && err.status === 404) && failureCount < 3,
   })
@@ -217,7 +228,7 @@ export function useLogByExecutionId(
       return data
     },
     enabled: Boolean(workspaceId) && Boolean(executionId),
-    staleTime: 30 * 1000,
+    staleTime: LOG_BY_EXECUTION_STALE_TIME,
   })
 }
 
@@ -225,7 +236,7 @@ export function prefetchLogDetail(queryClient: QueryClient, logId: string, works
   queryClient.prefetchQuery({
     queryKey: logKeys.detail(workspaceId, logId),
     queryFn: ({ signal }) => fetchLogDetail(logId, workspaceId, signal),
-    staleTime: 30 * 1000,
+    staleTime: LOG_DETAIL_STALE_TIME,
   })
 }
 
@@ -261,7 +272,7 @@ export function useDashboardStats(
     queryFn: ({ signal }) => fetchDashboardStats(workspaceId as string, filters, signal),
     enabled: Boolean(workspaceId) && (options?.enabled ?? true),
     refetchInterval: options?.refetchInterval ?? false,
-    staleTime: 30 * 1000,
+    staleTime: LOG_DASHBOARD_STATS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -288,7 +299,21 @@ export function useExecutionSnapshot(executionId: string | undefined) {
     queryKey: logKeys.executionSnapshot(executionId),
     queryFn: ({ signal }) => fetchExecutionSnapshot(executionId as string, signal),
     enabled: Boolean(executionId),
-    staleTime: 5 * 60 * 1000,
+    staleTime: EXECUTION_SNAPSHOT_STALE_TIME,
+  })
+}
+
+/**
+ * Read-only mutation that shadow-reprices an execution against the current catalog
+ * (priced-tool allowlist only). Does not apply ledger adjustments.
+ */
+export function useVerifyExecutionCosts() {
+  return useMutation({
+    mutationFn: async (executionId: string): Promise<VerifyExecutionCostsResponse> => {
+      return requestJson(verifyExecutionCostsContract, {
+        params: { executionId },
+      })
+    },
   })
 }
 

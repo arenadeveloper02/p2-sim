@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { slackHandler } from '@/lib/webhooks/providers/slack'
+import { handleSlackChallenge, slackHandler } from '@/lib/webhooks/providers/slack'
 
 const ctx = (body: unknown) => ({
   webhook: {},
@@ -37,7 +37,6 @@ describe('slackHandler formatInput - Events API', () => {
     expect(event.thread_ts).toBe('111.000')
     expect(event.team_id).toBe('T1')
     expect(event.event_id).toBe('Ev1')
-    // Interactivity-only fields stay empty for Events API payloads.
     expect(event.command).toBe('')
     expect(event.action_value).toBe('')
     expect(event.actions).toEqual([])
@@ -56,7 +55,13 @@ describe('slackHandler formatInput - interactivity (block_actions)', () => {
         trigger_id: 'trigger-1',
         response_url: 'https://hooks.slack.com/actions/abc',
         container: { message_ts: '999.000' },
-        message: { ts: '999.000', text: 'Approve this?', thread_ts: '999.aaa' },
+        message: {
+          ts: '999.000',
+          text: 'Approve this?',
+          thread_ts: '999.aaa',
+          blocks: [{ type: 'section', block_id: 'b1', text: { type: 'mrkdwn', text: 'Approve?' } }],
+        },
+        state: { values: { reason_block: { reason_input: { value: 'looks good' } } } },
         actions: [
           {
             action_id: 'approve_btn',
@@ -85,6 +90,49 @@ describe('slackHandler formatInput - interactivity (block_actions)', () => {
     expect(event.api_app_id).toBe('A123')
     expect(Array.isArray(event.actions)).toBe(true)
     expect((event.actions as unknown[]).length).toBe(1)
+    const message = event.message as Record<string, unknown>
+    expect(message).not.toBeNull()
+    expect(Array.isArray(message.blocks)).toBe(true)
+    expect((message.blocks as unknown[]).length).toBe(1)
+    expect(event.view).toBeNull()
+    const state = event.state as { values: Record<string, Record<string, { value: string }>> }
+    expect(state).not.toBeNull()
+    expect(state.values.reason_block.reason_input.value).toBe('looks good')
+  })
+
+  it('carries the full view (state.values + private_metadata) through for a view_submission', async () => {
+    const { input } = await slackHandler.formatInput!(
+      ctx({
+        type: 'view_submission',
+        user: { id: 'U1', username: 'alice' },
+        team: { id: 'T1' },
+        trigger_id: 'trigger-2',
+        view: {
+          id: 'V123',
+          callback_id: 'create_ticket',
+          private_metadata: '{"thread_ts":"999.aaa"}',
+          hash: 'abc.def',
+          state: {
+            values: {
+              summary_block: { summary_input: { type: 'plain_text_input', value: 'Printer down' } },
+            },
+          },
+        },
+      })
+    )
+    const event = eventOf(input)
+    expect(event.event_type).toBe('view_submission')
+    expect(event.callback_id).toBe('create_ticket')
+    const view = event.view as Record<string, unknown>
+    expect(view).not.toBeNull()
+    expect(view.private_metadata).toBe('{"thread_ts":"999.aaa"}')
+    const values = (view.state as Record<string, unknown>).values as Record<
+      string,
+      Record<string, Record<string, unknown>>
+    >
+    expect(values.summary_block.summary_input.value).toBe('Printer down')
+    expect(event.message).toBeNull()
+    expect(event.state).toBeNull()
   })
 
   it('normalizes a static_select value and falls back to action value for text', async () => {
@@ -104,9 +152,25 @@ describe('slackHandler formatInput - interactivity (block_actions)', () => {
     )
     const event = eventOf(input)
     expect(event.action_value).toBe('opt_b')
-    // No message text on the payload -> text falls back to the action value.
     expect(event.text).toBe('opt_b')
     expect(event.user_name).toBe('bob')
+  })
+})
+
+describe('slackHandler formatInput - block_suggestion', () => {
+  it('skips execution instead of triggering the workflow', async () => {
+    const { input, skip } = await slackHandler.formatInput!(
+      ctx({
+        type: 'block_suggestion',
+        action_id: 'external_select',
+        block_id: 'b1',
+        value: 'sea',
+        team: { id: 'T1' },
+        user: { id: 'U1' },
+      })
+    )
+    expect(input).toBeNull()
+    expect(skip?.message).toBeTruthy()
   })
 })
 
@@ -157,5 +221,37 @@ describe('slackHandler extractIdempotencyId', () => {
 
   it('returns null when no identifier is present', () => {
     expect(slackHandler.extractIdempotencyId!({})).toBeNull()
+  })
+
+  it('degrades gracefully instead of throwing for a null or non-object body', () => {
+    expect(slackHandler.extractIdempotencyId!(null)).toBeNull()
+    expect(slackHandler.extractIdempotencyId!(undefined)).toBeNull()
+    expect(slackHandler.extractIdempotencyId!('not-an-object')).toBeNull()
+  })
+})
+
+describe('handleSlackChallenge', () => {
+  it('echoes the challenge for a url_verification payload', () => {
+    const response = handleSlackChallenge({ type: 'url_verification', challenge: 'abc123' })
+    expect(response).not.toBeNull()
+  })
+
+  it('returns null for non-challenge payloads', () => {
+    expect(handleSlackChallenge({ type: 'event_callback' })).toBeNull()
+  })
+
+  it('degrades gracefully instead of throwing for a null or non-object body', () => {
+    expect(handleSlackChallenge(null)).toBeNull()
+    expect(handleSlackChallenge(undefined)).toBeNull()
+    expect(handleSlackChallenge('not-an-object')).toBeNull()
+    expect(handleSlackChallenge([1, 2, 3])).toBeNull()
+  })
+})
+
+describe('slackHandler formatInput - null/non-object body', () => {
+  it('degrades gracefully instead of throwing', async () => {
+    const { input } = await slackHandler.formatInput!(ctx(null))
+    const event = eventOf(input)
+    expect(event.event_type).toBe('unknown')
   })
 })

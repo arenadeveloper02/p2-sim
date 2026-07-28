@@ -1,8 +1,6 @@
 'use client'
 
 import { type ComponentType, type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
 import {
   Badge,
   ChipModal,
@@ -14,7 +12,9 @@ import {
   InfoCard,
   InfoCardItem,
   InfoCardList,
-} from '@/components/emcn'
+} from '@sim/emcn'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { useSession } from '@/lib/auth/auth-client'
 import type { OAuthReturnContext } from '@/lib/credentials/client-state'
 import { ADD_CONNECTOR_SEARCH_PARAM, writeOAuthReturnContext } from '@/lib/credentials/client-state'
@@ -24,9 +24,14 @@ import {
   type OAuthProvider,
   parseProvider,
 } from '@/lib/oauth'
+import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 import { getScopeDescription } from '@/lib/oauth/utils'
+import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { useCreateCredentialDraft, useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
+import { useOrganization, useOrganizations } from '@/hooks/queries/organization'
+import { useOrganizationOAuthApps } from '@/hooks/queries/organization-oauth-apps'
+import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const logger = createLogger('ConnectOAuthModal')
 
@@ -200,6 +205,27 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
   }, [props.serviceName, props.serviceIcon, props.provider, props.serviceId, providerId])
 
   const workspaceId = isConnect ? props.workspaceId : ''
+  const { data: workspaceSettings } = useWorkspaceSettings(workspaceId)
+  const organizationId = workspaceSettings?.settings?.workspace?.organizationId ?? undefined
+
+  const { data: organizationsData } = useOrganizations()
+  const activeOrganization = organizationsData?.activeOrganization
+  const { data: organization } = useOrganization(activeOrganization?.id || '')
+  const isOrgAdmin = isAdminOrOwner(organization, session?.user?.email)
+
+  const needsCustomApp = requiresCustomOAuthApp(providerId)
+  const customAppConfig = needsCustomApp ? getCustomOAuthAppConfig(providerId) : undefined
+  const { data: orgOAuthApps = [] } = useOrganizationOAuthApps(
+    organizationId,
+    Boolean(organizationId) && isOrgAdmin && needsCustomApp && open
+  )
+  const customAppConfigured = needsCustomApp
+    ? orgOAuthApps.some(
+        (app) =>
+          app.appKey === customAppConfig?.appKey && app.hasClientSecret && Boolean(app.clientId)
+      )
+    : true
+
   const { data: credentials = [], isPending: credentialsLoading } = useWorkspaceCredentials({
     workspaceId,
     enabled: isConnect && Boolean(workspaceId) && open,
@@ -354,8 +380,10 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
   }
 
   const isPending = (isConnect && createDraft.isPending) || connectOAuthService.isPending
+  const customAppBlocked =
+    needsCustomApp && (!organizationId || (isOrgAdmin && !customAppConfigured))
   const isDisabled = isConnect
-    ? !displayName.trim() || isPending || Boolean(existingCredential)
+    ? !displayName.trim() || isPending || Boolean(existingCredential) || customAppBlocked
     : isPending
 
   /**
@@ -437,6 +465,36 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
               </InfoCardList>
             </InfoCard>
           </ChipModalField>
+        )}
+
+        {needsCustomApp && (
+          <InfoCard>
+            <InfoCardList>
+              {!organizationId ? (
+                <InfoCardItem>
+                  Zoom is only available for organization workspaces. Move this workspace into an
+                  organization or ask your admin to configure a Zoom OAuth app.
+                </InfoCardItem>
+              ) : isOrgAdmin && !customAppConfigured ? (
+                <InfoCardItem>
+                  Configure your organization&apos;s Zoom Marketplace app in Settings → Custom OAuth
+                  Apps before teammates can connect.{' '}
+                  <a
+                    href={`/workspace/${workspaceId}/settings/oauth-apps`}
+                    className='text-[var(--text-link)] underline'
+                  >
+                    Open Custom OAuth Apps
+                  </a>
+                </InfoCardItem>
+              ) : (
+                <InfoCardItem>
+                  Your organization admin must register a Zoom Marketplace app before you can
+                  connect. If you recently migrated from a shared Sim Zoom app, reconnect after your
+                  admin saves the new credentials.
+                </InfoCardItem>
+              )}
+            </InfoCardList>
+          </InfoCard>
         )}
 
         <ChipModalError>{submitError}</ChipModalError>

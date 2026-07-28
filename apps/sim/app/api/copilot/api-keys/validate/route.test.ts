@@ -8,14 +8,14 @@ const {
   mockFlags,
   mockDbLimit,
   mockCheckInternalApiKey,
-  mockCheckServerSideUsageLimits,
-  mockCheckOrgMemberUsageLimit,
+  mockCheckMothershipUsageLimits,
+  mockCheckSelfHostedMothershipUsageLimits,
 } = vi.hoisted(() => ({
   mockFlags: { isHosted: true },
   mockDbLimit: vi.fn(),
   mockCheckInternalApiKey: vi.fn(),
-  mockCheckServerSideUsageLimits: vi.fn(),
-  mockCheckOrgMemberUsageLimit: vi.fn(),
+  mockCheckMothershipUsageLimits: vi.fn(),
+  mockCheckSelfHostedMothershipUsageLimits: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => ({
@@ -25,8 +25,8 @@ vi.mock('@sim/db', () => ({
 }))
 
 vi.mock('@/lib/billing/calculations/usage-monitor', () => ({
-  checkServerSideUsageLimits: mockCheckServerSideUsageLimits,
-  checkOrgMemberUsageLimit: mockCheckOrgMemberUsageLimit,
+  checkMothershipUsageLimits: mockCheckMothershipUsageLimits,
+  checkSelfHostedMothershipUsageLimits: mockCheckSelfHostedMothershipUsageLimits,
 }))
 
 vi.mock('@/lib/copilot/request/http', () => ({
@@ -60,38 +60,35 @@ describe('POST /api/copilot/api-keys/validate — per-member enforcement', () =>
     mockFlags.isHosted = true
     mockCheckInternalApiKey.mockReturnValue({ success: true })
     mockDbLimit.mockResolvedValue([{ id: 'user-1' }])
-    mockCheckServerSideUsageLimits.mockResolvedValue({
+    mockCheckMothershipUsageLimits.mockResolvedValue({ isExceeded: false })
+    mockCheckSelfHostedMothershipUsageLimits.mockResolvedValue({
       isExceeded: false,
       currentUsage: 0,
       limit: 100,
-    })
-    mockCheckOrgMemberUsageLimit.mockResolvedValue({
-      isExceeded: false,
-      currentUsage: 0,
-      limit: null,
     })
   })
 
-  it('returns 402 when the pooled/personal limit is exceeded (existing behavior)', async () => {
-    mockCheckServerSideUsageLimits.mockResolvedValue({
+  it('returns 402 when the hosted pooled/personal limit is exceeded', async () => {
+    mockCheckMothershipUsageLimits.mockResolvedValue({
       isExceeded: true,
-      currentUsage: 200,
-      limit: 100,
+      message: 'Organization usage limit exceeded',
+      scope: 'pooled',
     })
     const res = await POST(request({ userId: 'user-1', workspaceId: 'ws-1' }))
     expect(res.status).toBe(402)
-    expect(mockCheckOrgMemberUsageLimit).not.toHaveBeenCalled()
+    expect(mockCheckMothershipUsageLimits).toHaveBeenCalledWith('user-1', 'ws-1')
   })
 
   it('returns 402 when the per-member org-workspace cap is exceeded', async () => {
-    mockCheckOrgMemberUsageLimit.mockResolvedValue({
+    mockCheckMothershipUsageLimits.mockResolvedValue({
       isExceeded: true,
-      currentUsage: 5,
-      limit: 4,
+      message:
+        "Member credit limit exceeded: 5 of 4 credits used for this organization's workspaces.",
+      scope: 'member',
     })
     const res = await POST(request({ userId: 'user-1', workspaceId: 'ws-1' }))
     expect(res.status).toBe(402)
-    expect(mockCheckOrgMemberUsageLimit).toHaveBeenCalledWith('user-1', 'ws-1')
+    expect(mockCheckMothershipUsageLimits).toHaveBeenCalledWith('user-1', 'ws-1')
   })
 
   it('returns 200 when under both limits', async () => {
@@ -102,13 +99,26 @@ describe('POST /api/copilot/api-keys/validate — per-member enforcement', () =>
   it('rejects with 400 when workspaceId is omitted (contract-required, fail closed)', async () => {
     const res = await POST(request({ userId: 'user-1' }))
     expect(res.status).toBe(400)
-    expect(mockCheckOrgMemberUsageLimit).not.toHaveBeenCalled()
+    expect(mockCheckMothershipUsageLimits).not.toHaveBeenCalled()
   })
 
-  it('skips the per-member check when not hosted', async () => {
+  it('uses self-hosted mothership limits when not hosted', async () => {
     mockFlags.isHosted = false
     const res = await POST(request({ userId: 'user-1', workspaceId: 'ws-1' }))
     expect(res.status).toBe(200)
-    expect(mockCheckOrgMemberUsageLimit).not.toHaveBeenCalled()
+    expect(mockCheckMothershipUsageLimits).not.toHaveBeenCalled()
+    expect(mockCheckSelfHostedMothershipUsageLimits).toHaveBeenCalledWith('user-1')
+  })
+
+  it('returns 402 on self-hosted when mothership limit is exceeded', async () => {
+    mockFlags.isHosted = false
+    mockCheckSelfHostedMothershipUsageLimits.mockResolvedValue({
+      isExceeded: true,
+      currentUsage: 200,
+      limit: 100,
+    })
+    const res = await POST(request({ userId: 'user-1', workspaceId: 'ws-1' }))
+    expect(res.status).toBe(402)
+    expect(mockCheckMothershipUsageLimits).not.toHaveBeenCalled()
   })
 })

@@ -34,6 +34,7 @@ export interface OrganizationWhitelabelSettings {
   brandName?: string
   logoUrl?: string
   wordmarkUrl?: string
+  faviconUrl?: string
   primaryColor?: string
   primaryHoverColor?: string
   accentColor?: string

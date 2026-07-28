@@ -1,9 +1,9 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
 import type { DataRetentionSettings } from '@sim/db/schema'
-import { member, organization } from '@sim/db/schema'
+import { member, organization, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   type OrganizationRetentionValues,
@@ -16,6 +16,7 @@ import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { isFeatureEnabled } from '@/lib/core/config/feature-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { coercePiiLanguage } from '@/lib/guardrails/pii-entities'
 
 const logger = createLogger('DataRetentionAPI')
 
@@ -25,6 +26,7 @@ function enterpriseDefaults(): OrganizationRetentionValues {
     softDeleteRetentionHours: CLEANUP_CONFIG['cleanup-soft-deletes'].defaults.enterprise,
     taskCleanupHours: CLEANUP_CONFIG['cleanup-tasks'].defaults.enterprise,
     piiRedaction: null,
+    retentionOverrides: null,
   }
 }
 
@@ -35,8 +37,53 @@ function normalizeConfigured(
     logRetentionHours: settings?.logRetentionHours ?? null,
     softDeleteRetentionHours: settings?.softDeleteRetentionHours ?? null,
     taskCleanupHours: settings?.taskCleanupHours ?? null,
-    piiRedaction: settings?.piiRedaction?.rules ? { rules: settings.piiRedaction.rules } : null,
+    piiRedaction: settings?.piiRedaction?.rules
+      ? {
+          rules: settings.piiRedaction.rules.map((rule) => ({
+            ...rule,
+            language: coercePiiLanguage(rule.language),
+            stages: rule.stages
+              ? {
+                  input: {
+                    ...rule.stages.input,
+                    language: coercePiiLanguage(rule.stages.input?.language),
+                  },
+                  blockOutputs: {
+                    ...rule.stages.blockOutputs,
+                    language: coercePiiLanguage(rule.stages.blockOutputs?.language),
+                  },
+                  logs: {
+                    ...rule.stages.logs,
+                    language: coercePiiLanguage(rule.stages.logs?.language),
+                  },
+                }
+              : undefined,
+          })),
+        }
+      : null,
+    retentionOverrides: settings?.retentionOverrides ?? null,
   }
+}
+
+/**
+ * Which granular stages (`input`/`blockOutputs`) are already enabled per rule
+ * target (`workspaceId ?? ''` = the org default). Used to gate the
+ * `pii-granular-redaction` flag on *new* enablement only: when the flag is off,
+ * an org that already configured granular stages must still be able to re-save
+ * unrelated settings (the UI re-sends the full PII snapshot every save), so we
+ * reject only a stage transitioning off→on, never a preserved one.
+ */
+function granularStageEnablement(
+  settings: OrganizationRetentionValues['piiRedaction']
+): Map<string, { input: boolean; blockOutputs: boolean }> {
+  const map = new Map<string, { input: boolean; blockOutputs: boolean }>()
+  for (const rule of settings?.rules ?? []) {
+    map.set(rule.workspaceId ?? '', {
+      input: rule.stages?.input?.enabled === true,
+      blockOutputs: rule.stages?.blockOutputs?.enabled === true,
+    })
+  }
+  return map
 }
 
 /**
@@ -77,7 +124,10 @@ export const GET = withRouteHandler(
     }
 
     const isEnterprise = !isBillingEnabled || (await isOrganizationOnEnterprisePlan(organizationId))
-    const piiRedactionEnabled = await isFeatureEnabled('pii-redaction')
+    const [piiRedactionEnabled, piiGranularRedactionEnabled] = await Promise.all([
+      isFeatureEnabled('pii-redaction'),
+      isFeatureEnabled('pii-granular-redaction'),
+    ])
     const configured = normalizeConfigured(org.dataRetentionSettings)
     const defaults = enterpriseDefaults()
 
@@ -89,6 +139,7 @@ export const GET = withRouteHandler(
         configured,
         effective: isEnterprise ? configured : defaults,
         piiRedactionEnabled,
+        piiGranularRedactionEnabled,
       },
     })
   }
@@ -157,7 +208,10 @@ export const PUT = withRouteHandler(
       return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
     }
 
-    const piiRedactionEnabled = await isFeatureEnabled('pii-redaction')
+    const [piiRedactionEnabled, piiGranularRedactionEnabled] = await Promise.all([
+      isFeatureEnabled('pii-redaction'),
+      isFeatureEnabled('pii-granular-redaction'),
+    ])
 
     const current = normalizeConfigured(currentOrg.dataRetentionSettings)
     const merged: DataRetentionSettings = { ...current }
@@ -177,7 +231,56 @@ export const PUT = withRouteHandler(
           { status: 403 }
         )
       }
+      if (!piiGranularRedactionEnabled) {
+        // Reject only a granular stage transitioning off→on; a body that merely
+        // preserves already-enabled granular stages must still save (the UI
+        // re-sends the full snapshot on every save), so existing orgs aren't
+        // locked out of unrelated retention changes when the flag is off.
+        const currentGranular = granularStageEnablement(current.piiRedaction)
+        const newlyEnablesGranular = (body.piiRedaction?.rules ?? []).some((rule) => {
+          const cur = currentGranular.get(rule.workspaceId ?? '')
+          return (
+            (rule.stages?.input?.enabled === true && !cur?.input) ||
+            (rule.stages?.blockOutputs?.enabled === true && !cur?.blockOutputs)
+          )
+        })
+        if (newlyEnablesGranular) {
+          return NextResponse.json(
+            {
+              error:
+                'Granular PII redaction (workflow input and block outputs) is not enabled for this organization',
+            },
+            { status: 403 }
+          )
+        }
+      }
       merged.piiRedaction = body.piiRedaction
+    }
+    if (body.retentionOverrides !== undefined) {
+      merged.retentionOverrides = body.retentionOverrides
+    }
+
+    const targetedWorkspaceIds = new Set<string>()
+    for (const override of body.retentionOverrides ?? []) {
+      targetedWorkspaceIds.add(override.workspaceId)
+    }
+    for (const rule of body.piiRedaction?.rules ?? []) {
+      if (rule.workspaceId) targetedWorkspaceIds.add(rule.workspaceId)
+    }
+    if (targetedWorkspaceIds.size > 0) {
+      const ids = [...targetedWorkspaceIds]
+      const orgWorkspaces = await db
+        .select({ id: workspace.id })
+        .from(workspace)
+        .where(and(eq(workspace.organizationId, organizationId), inArray(workspace.id, ids)))
+      const known = new Set(orgWorkspaces.map((row) => row.id))
+      const unknown = ids.filter((id) => !known.has(id))
+      if (unknown.length > 0) {
+        return NextResponse.json(
+          { error: `Override targets workspaces outside this organization: ${unknown.join(', ')}` },
+          { status: 400 }
+        )
+      }
     }
 
     const [updated] = await db
@@ -215,6 +318,7 @@ export const PUT = withRouteHandler(
         configured,
         effective: configured,
         piiRedactionEnabled,
+        piiGranularRedactionEnabled,
       },
     })
   }

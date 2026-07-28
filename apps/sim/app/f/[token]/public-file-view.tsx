@@ -1,15 +1,15 @@
 'use client'
 
 import { useMemo } from 'react'
-import Image from 'next/image'
+import { Chip } from '@sim/emcn'
+import { Download } from '@sim/emcn/icons'
 import Link from 'next/link'
-import { Chip } from '@/components/emcn'
-import { Download } from '@/components/emcn/icons'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
+import { SimWordmark } from '@/app/(landing)/components/navbar/components'
 import { buildProvenance } from '@/app/f/[token]/utils'
 import { FileViewer } from '@/app/workspace/[workspaceId]/files/components/file-viewer'
 import { useBrandConfig } from '@/ee/whitelabeling'
-import { type FileContentSource, FileContentSourceProvider } from '@/hooks/use-file-content-source'
+import { createPublicFileContentSource } from '@/hooks/use-file-content-source'
 
 interface PublicFileViewProps {
   token: string
@@ -41,7 +41,12 @@ export function PublicFileView({
   // `updatedAt` fold in the content version so the React Query caches (keyed on the
   // storage key + `updatedAt`) refetch when the shared file changes — even when its
   // size is unchanged.
-  const source = useMemo<FileContentSource>(() => ({ buildUrl: () => contentUrl }), [contentUrl])
+  // Embedded images route through the token-scoped cascade endpoint, which serves them only when the
+  // shared document actually references them and they live in its workspace.
+  const source = useMemo(
+    () => createPublicFileContentSource(token, contentUrl),
+    [token, contentUrl]
+  )
   const file = useMemo<WorkspaceFileRecord>(
     () => ({
       id: token,
@@ -60,7 +65,7 @@ export function PublicFileView({
   )
 
   return (
-    <div className='flex min-h-screen flex-col bg-[var(--bg)]'>
+    <div className='light flex min-h-screen flex-col bg-[var(--bg)]'>
       <header className='sticky top-0 z-10 flex items-center justify-between gap-4 border-[var(--border)] border-b bg-[var(--bg)] px-4 py-3'>
         <div className='flex min-w-0 items-center gap-3'>
           {!brand.logoUrl && (
@@ -70,24 +75,9 @@ export function PublicFileView({
                 target='_blank'
                 rel='noopener noreferrer'
                 aria-label='Sim home'
-                className='shrink-0'
+                className='flex shrink-0 items-center'
               >
-                <Image
-                  src='/logo/wordmark-dark.svg'
-                  alt='Sim'
-                  width={71}
-                  height={22}
-                  className='h-[22px] w-auto dark:hidden'
-                  priority
-                />
-                <Image
-                  src='/logo/sim-landing.svg'
-                  alt='Sim'
-                  width={71}
-                  height={22}
-                  className='hidden h-[22px] w-auto dark:block'
-                  priority
-                />
+                <SimWordmark />
               </Link>
               <div className='h-5 w-px shrink-0 bg-[var(--border)]' />
             </>
@@ -116,9 +106,13 @@ export function PublicFileView({
       </header>
 
       <main className='flex min-h-0 flex-1 flex-col'>
-        <FileContentSourceProvider value={source}>
-          <FileViewer file={file} workspaceId={token} canEdit={false} readOnly />
-        </FileContentSourceProvider>
+        <FileViewer
+          file={file}
+          workspaceId={token}
+          contentSource={source}
+          canEdit={false}
+          readOnly
+        />
       </main>
     </div>
   )

@@ -25,6 +25,7 @@ import {
   getTimeoutErrorMessage,
 } from '@/lib/core/execution-limits'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { cleanupExecutionBase64Cache } from '@/lib/uploads/utils/user-file-base64.server'
@@ -324,7 +325,6 @@ const SERVER_ENV_VARS = new Set([
   'XAI_API_KEY_2',
   'XAI_API_KEY_3',
   'AZURE_OPENAI_API_KEY',
-  'SEMRUSH_API_KEY',
   'BROWSERBASE_API_KEY',
   'PRESENTATION_API_BASE_URL',
   'EXA_API_KEY',
@@ -404,6 +404,7 @@ async function runWorkflowExecution({
   correlation,
   workflowRecord,
   actorUserId,
+  executionActor,
   loggingSession,
   requestId,
   executionId,
@@ -413,6 +414,7 @@ async function runWorkflowExecution({
   correlation: AsyncExecutionCorrelation
   workflowRecord: WorkflowRecord
   actorUserId: string
+  executionActor?: ExecutionActor
   loggingSession: LoggingSession
   requestId: string
   executionId: string
@@ -490,6 +492,7 @@ async function runWorkflowExecution({
       startTime: new Date().toISOString(),
       isClientSession: false,
       correlation,
+      executionActor,
     }
 
     const snapshot = new ExecutionSnapshot(
@@ -910,7 +913,7 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
         }
       }
 
-      const { actorUserId, workflowRecord } = preprocessResult
+      const { actorUserId, workflowRecord, executionActor } = preprocessResult
       if (!actorUserId || !workflowRecord) {
         logger.error(`[${requestId}] Missing required preprocessing data`)
         await releaseClaim(
@@ -932,6 +935,7 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
           correlation,
           workflowRecord,
           actorUserId,
+          executionActor,
           loggingSession,
           requestId,
           executionId,
@@ -1307,6 +1311,12 @@ export async function executeJobInline(payload: JobExecutionPayload) {
       workspaceId: jobRecord.sourceWorkspaceId,
       userId: jobRecord.sourceUserId,
       chatId: jobRecord.sourceChatId || generateId(),
+      /**
+       * Scheduled tasks run headless with no client toggle, so pin the local
+       * backend explicitly. Routing still falls back to the cloud mothership
+       * when the owner is not on the local-copilot allowlist.
+       */
+      copilotBackend: 'local',
       ...(jobRecord.contexts && jobRecord.contexts.length > 0
         ? { contexts: jobRecord.contexts }
         : {}),

@@ -1,3 +1,4 @@
+/* Disabled direct provider integration
 import type { ToolConfig } from '@/tools/types'
 import type { VideoParams, VideoResponse } from '@/tools/video/types'
 
@@ -133,3 +134,5 @@ export const runwayVideoTool: ToolConfig<VideoParams, VideoResponse> = {
     jobId: { type: 'string', description: 'Runway job ID' },
   },
 }
+
+*/

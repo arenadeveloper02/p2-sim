@@ -7,8 +7,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/emcn'
-import { Duplicate, Pencil, SquareArrowUpRight, TagIcon, Trash } from '@/components/emcn/icons'
+} from '@sim/emcn'
+import { Duplicate, FolderInput, Pencil, SquareArrowUpRight, TagIcon, Trash } from '@sim/emcn/icons'
 
 interface KnowledgeBaseContextMenuProps {
   isOpen: boolean
@@ -18,18 +18,21 @@ interface KnowledgeBaseContextMenuProps {
   onViewTags?: () => void
   onCopyId?: () => void
   onEdit?: () => void
+  onCopyToWorkspace?: () => void
   onDelete?: () => void
   showOpenInNewTab?: boolean
   showViewTags?: boolean
   showEdit?: boolean
+  showCopyToWorkspace?: boolean
   showDelete?: boolean
   disableEdit?: boolean
+  disableCopyToWorkspace?: boolean
   disableDelete?: boolean
 }
 
 /**
  * Context menu component for knowledge base cards.
- * Displays open in new tab, view tags, edit, and delete options.
+ * Displays open in new tab, view tags, edit, copy, and delete options.
  */
 export const KnowledgeBaseContextMenu = memo(function KnowledgeBaseContextMenu({
   isOpen,
@@ -39,17 +42,21 @@ export const KnowledgeBaseContextMenu = memo(function KnowledgeBaseContextMenu({
   onViewTags,
   onCopyId,
   onEdit,
+  onCopyToWorkspace,
   onDelete,
   showOpenInNewTab = true,
   showViewTags = true,
   showEdit = true,
+  showCopyToWorkspace = true,
   showDelete = true,
   disableEdit = false,
+  disableCopyToWorkspace = false,
   disableDelete = false,
 }: KnowledgeBaseContextMenuProps) {
   const hasNavigationSection = showOpenInNewTab && !!onOpenInNewTab
   const hasInfoSection = (showViewTags && !!onViewTags) || !!onCopyId
-  const hasEditSection = showEdit && !!onEdit
+  const hasEditSection =
+    (showEdit && !!onEdit) || (showCopyToWorkspace && !!onCopyToWorkspace)
   const hasDestructiveSection = showDelete && !!onDelete
 
   return (
@@ -102,6 +109,12 @@ export const KnowledgeBaseContextMenu = memo(function KnowledgeBaseContextMenu({
           <DropdownMenuItem disabled={disableEdit} onSelect={onEdit}>
             <Pencil />
             Edit
+          </DropdownMenuItem>
+        )}
+        {showCopyToWorkspace && onCopyToWorkspace && (
+          <DropdownMenuItem disabled={disableCopyToWorkspace} onSelect={onCopyToWorkspace}>
+            <FolderInput />
+            Copy to workspace…
           </DropdownMenuItem>
         )}
 

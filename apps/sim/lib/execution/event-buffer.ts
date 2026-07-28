@@ -762,7 +762,15 @@ export function createExecutionEventWriter(
     if (flushTimer) return
     flushTimer = setTimeout(() => {
       flushTimer = null
-      void flushPending()
+      flushPending().catch((error) => {
+        if (isExecutionResourceLimitError(error)) {
+          return
+        }
+        logger.warn('Background execution event flush failed', {
+          executionId,
+          error: toError(error).message,
+        })
+      })
     }, delayMs)
   }
 

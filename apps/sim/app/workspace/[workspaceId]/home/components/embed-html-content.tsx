@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { getErrorMessage } from '@sim/utils/errors'
+import { useSession } from '@/lib/auth/auth-client'
 
 interface EmbedHtmlContentProps {
   persona?: string
@@ -12,6 +14,10 @@ export function EmbedHtmlContent({ persona, userId, email }: EmbedHtmlContentPro
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [iframeHeight, setIframeHeight] = useState(900)
   const [reloadToken, setReloadToken] = useState(0)
+  const { data: session, isPending: isSessionPending } = useSession()
+
+  const resolvedUserId = userId ?? session?.user?.id
+  const resolvedEmail = email ?? session?.user?.email
 
   const syncIframeHeight = useCallback(() => {
     const iframe = iframeRef.current
@@ -46,15 +52,29 @@ export function EmbedHtmlContent({ persona, userId, email }: EmbedHtmlContentPro
   const [htmlError, setHtmlError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (isSessionPending) {
+      setIsLoadingHtml(true)
+      return
+    }
+
+    if (!resolvedUserId) {
+      setIsLoadingHtml(false)
+      setHtmlError('Sign in required to load the live dashboard.')
+      setHtmlContent(null)
+      return
+    }
+
     const controller = new AbortController()
 
     async function loadEmbedHtml() {
       setIsLoadingHtml(true)
       setHtmlError(null)
       try {
+        // boundary-raw-fetch: embed HTML payload is rendered via iframe srcDoc; not a typed JSON contract consumer
         const response = await fetch('/api/workflows/embed-html', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             ...(persona ? { persona } : {}),
           }),
@@ -62,7 +82,10 @@ export function EmbedHtmlContent({ persona, userId, email }: EmbedHtmlContentPro
         })
 
         if (!response.ok) {
-          throw new Error(`Failed to load embedded HTML (${response.status})`)
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null
+          throw new Error(
+            payload?.error?.trim() || `Failed to load embedded HTML (${response.status})`
+          )
         }
 
         const payload = (await response.json()) as { html?: string }
@@ -73,7 +96,7 @@ export function EmbedHtmlContent({ persona, userId, email }: EmbedHtmlContentPro
         setHtmlContent(payload.html)
       } catch (error) {
         if (controller.signal.aborted) return
-        setHtmlError(error instanceof Error ? error.message : 'Failed to load embedded HTML')
+        setHtmlError(getErrorMessage(error, 'Failed to load embedded HTML'))
       } finally {
         if (!controller.signal.aborted) {
           setIsLoadingHtml(false)
@@ -83,7 +106,7 @@ export function EmbedHtmlContent({ persona, userId, email }: EmbedHtmlContentPro
 
     void loadEmbedHtml()
     return () => controller.abort()
-  }, [reloadToken, persona, userId, email])
+  }, [reloadToken, persona, resolvedUserId, resolvedEmail, isSessionPending])
 
   return (
     <div className='mx-auto w-full px-4 pb-8 sm:px-6 lg:px-10'>

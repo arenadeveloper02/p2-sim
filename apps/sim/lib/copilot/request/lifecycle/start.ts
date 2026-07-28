@@ -42,6 +42,9 @@ import { SSE_RESPONSE_HEADERS } from '@/lib/copilot/request/session/sse'
 import { TraceCollector } from '@/lib/copilot/request/trace'
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
 import { env } from '@/lib/core/config/env'
+import { isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
+import { generateLocalChatTitle } from '@/local-copilot/lib/agent/chat-title'
+import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 
 export { SSE_RESPONSE_HEADERS }
 
@@ -54,6 +57,7 @@ type CurrentChatSummary = {
 export interface StreamingOrchestrationParams {
   requestPayload: Record<string, unknown>
   userId: string
+  userEmail?: string
   streamId: string
   executionId: string
   runId: string
@@ -77,6 +81,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
   const {
     requestPayload,
     userId,
+    userEmail,
     streamId,
     executionId,
     runId,
@@ -230,6 +235,8 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
             currentChat,
             isNewChat,
             userId,
+            userEmail: orchestrateOptions.userEmail,
+            copilotBackend: orchestrateOptions.copilotBackend,
             message,
             titleModel,
             titleProvider,
@@ -417,6 +424,8 @@ function fireTitleGeneration(params: {
   currentChat: CurrentChatSummary
   isNewChat: boolean
   userId?: string
+  userEmail?: string
+  copilotBackend?: CopilotBackendPreference
   message: string
   titleModel: string
   titleProvider?: string
@@ -430,6 +439,8 @@ function fireTitleGeneration(params: {
     currentChat,
     isNewChat,
     userId,
+    userEmail,
+    copilotBackend,
     message,
     titleModel,
     titleProvider,
@@ -445,6 +456,8 @@ function fireTitleGeneration(params: {
     model: titleModel,
     provider: titleProvider,
     userId,
+    userEmail,
+    copilotBackend,
     workspaceId,
     otelContext,
   })
@@ -477,11 +490,18 @@ export async function requestChatTitle(params: {
   model: string
   provider?: string
   userId?: string
+  userEmail?: string
+  copilotBackend?: CopilotBackendPreference
   workspaceId?: string
   otelContext?: Context
 }): Promise<string | null> {
-  const { message, model, provider, userId, workspaceId, otelContext } = params
+  const { message, model, provider, userId, userEmail, copilotBackend, workspaceId, otelContext } =
+    params
   if (!message || !model) return null
+
+  if ((await isLocalCopilotEnabledForUser(userId)) && copilotBackend !== 'external') {
+    return generateLocalChatTitle(message)
+  }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

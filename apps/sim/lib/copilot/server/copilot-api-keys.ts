@@ -1,8 +1,5 @@
 import { env } from '@/lib/core/config/env'
 
-/** HTTP statuses that trigger failover to the next configured copilot API key. */
-const COPILOT_API_KEY_FAILOVER_STATUSES = new Set([401, 403, 429, 502, 503, 504])
-
 /**
  * Returns configured Sim → Mothership API keys in failover order.
  * `COPILOT_API_KEY` is primary; `COPILOT_API_KEY_2` is the optional backup.
@@ -23,17 +20,13 @@ export function hasCopilotApiKey(): boolean {
 }
 
 export function isCopilotApiKeyFailoverStatus(status: number): boolean {
-  return COPILOT_API_KEY_FAILOVER_STATUSES.has(status)
+  return status >= 400
 }
 
-/**
- * Returns true for transient network failures where retrying with the next key
- * may succeed (same Mothership URL, different account credentials).
- */
 export function isCopilotApiKeyFailoverNetworkError(error: unknown): boolean {
-  if (error instanceof TypeError) return true
   if (error instanceof DOMException && error.name === 'AbortError') return false
-  return false
+  if (error instanceof Error && error.name === 'AbortError') return false
+  return true
 }
 
 /**

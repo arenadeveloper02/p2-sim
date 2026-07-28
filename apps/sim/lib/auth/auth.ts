@@ -76,15 +76,28 @@ import {
   isSsoEnabled,
 } from '@/lib/core/config/env-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
-import { getBaseUrl, isLocalhostUrl, parseOriginList } from '@/lib/core/utils/urls'
+import {
+  getBaseUrl,
+  getInternalApiBaseUrl,
+  getLoginRedirectUrl,
+  isLocalhostUrl,
+  parseOriginList,
+} from '@/lib/core/utils/urls'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import { validateSignupEmailMx } from '@/lib/messaging/email/validation.server'
 import { scheduleLifecycleEmail } from '@/lib/messaging/lifecycle'
+import {
+  deriveMicrosoftEmailVerified,
+  getMicrosoftOAuthEndpoints,
+  getMicrosoftOAuthTenantId,
+  getMicrosoftRefreshTokenExpiry,
+  isMicrosoftProvider,
+} from '@/lib/oauth/microsoft'
+import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
 import { captureServerEvent, getPostHogClient } from '@/lib/posthog/server'
-import { syncAllWebhooksForCredentialSet } from '@/lib/webhooks/utils.server'
 import { disableUserResources } from '@/lib/workflows/lifecycle'
 import { SSO_TRUSTED_PROVIDERS } from '@/ee/sso/constants'
 import { createAnonymousSession, ensureAnonymousUserExists } from './anonymous'
@@ -92,13 +105,7 @@ import { getRequestedSignInProviderId, isSignInProviderAllowed } from './constan
 
 const logger = createLogger('Auth')
 
-import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
-import {
-  deriveMicrosoftEmailVerified,
-  getMicrosoftRefreshTokenExpiry,
-  isMicrosoftProvider,
-} from '@/lib/oauth/microsoft'
-import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
+const microsoftOAuthEndpoints = getMicrosoftOAuthEndpoints()
 
 /**
  * Extracts user info from a Microsoft ID token JWT instead of calling Graph API /me.
@@ -232,10 +239,29 @@ function resolveBetterAuthCrossSubdomainCookieDomain(): string | undefined {
 
 const betterAuthCrossSubdomainCookieDomain = resolveBetterAuthCrossSubdomainCookieDomain()
 
+function resolveArenaHubTrustedOrigin(): string | null {
+  const fromEnv = env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL?.trim()
+  if (fromEnv) {
+    try {
+      return new URL(fromEnv).origin
+    } catch {
+      return null
+    }
+  }
+  try {
+    return new URL(getLoginRedirectUrl(new URL(getBaseUrl()).hostname)).origin
+  } catch {
+    return null
+  }
+}
+
+const arenaHubTrustedOrigin = resolveArenaHubTrustedOrigin()
+
 export const auth = betterAuth({
   baseURL: getBaseUrl(),
   trustedOrigins: [
     getBaseUrl(),
+    ...(arenaHubTrustedOrigin ? [arenaHubTrustedOrigin] : []),
     ...(env.ALLOWED_ORIGINS
       ? env.ALLOWED_ORIGINS.split(',')
           .map((o) => o.trim())
@@ -616,46 +642,6 @@ export const auth = betterAuth({
               .where(eq(schema.account.id, account.id))
           }
 
-          // Sync webhooks for credential sets after connecting a new credential
-          const requestId = generateId().slice(0, 8)
-          const userMemberships = await db
-            .select({
-              credentialSetId: schema.credentialSetMember.credentialSetId,
-              providerId: schema.credentialSet.providerId,
-            })
-            .from(schema.credentialSetMember)
-            .innerJoin(
-              schema.credentialSet,
-              eq(schema.credentialSetMember.credentialSetId, schema.credentialSet.id)
-            )
-            .where(
-              and(
-                eq(schema.credentialSetMember.userId, account.userId),
-                eq(schema.credentialSetMember.status, 'active')
-              )
-            )
-
-          for (const membership of userMemberships) {
-            if (membership.providerId === account.providerId) {
-              try {
-                await syncAllWebhooksForCredentialSet(membership.credentialSetId, requestId)
-                logger.info('[account.create.after] Synced webhooks after credential connect', {
-                  credentialSetId: membership.credentialSetId,
-                  providerId: account.providerId,
-                })
-              } catch (error) {
-                logger.error(
-                  '[account.create.after] Failed to sync webhooks after credential connect',
-                  {
-                    credentialSetId: membership.credentialSetId,
-                    providerId: account.providerId,
-                    error,
-                  }
-                )
-              }
-            }
-          }
-
           try {
             PlatformEvents.oauthConnected({
               userId: account.userId,
@@ -750,7 +736,6 @@ export const auth = betterAuth({
         'github',
         'email-password',
         'facebook-ads',
-        'zoom-admin',
         ...SSO_TRUSTED_PROVIDERS,
         ...additionalTrustedSsoProviders,
       ],
@@ -780,6 +765,7 @@ export const auth = betterAuth({
         microsoft: {
           clientId: env.MICROSOFT_CLIENT_ID,
           clientSecret: env.MICROSOFT_CLIENT_SECRET,
+          tenantId: getMicrosoftOAuthTenantId(),
           scope: ['openid', 'profile', 'email'],
         },
       }),
@@ -1604,8 +1590,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-ad',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-ad'),
           responseType: 'code',
@@ -1622,8 +1608,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-teams',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-teams'),
           responseType: 'code',
@@ -1640,8 +1626,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-excel',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-excel'),
           responseType: 'code',
@@ -1657,8 +1643,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-dataverse',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-dataverse'),
           responseType: 'code',
@@ -1674,8 +1660,8 @@ export const auth = betterAuth({
           providerId: 'microsoft-planner',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('microsoft-planner'),
           responseType: 'code',
@@ -1692,8 +1678,8 @@ export const auth = betterAuth({
           providerId: 'outlook',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('outlook'),
           responseType: 'code',
@@ -1710,8 +1696,8 @@ export const auth = betterAuth({
           providerId: 'onedrive',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('onedrive'),
           responseType: 'code',
@@ -1728,8 +1714,8 @@ export const auth = betterAuth({
           providerId: 'sharepoint',
           clientId: env.MICROSOFT_CLIENT_ID as string,
           clientSecret: env.MICROSOFT_CLIENT_SECRET as string,
-          authorizationUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-          tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+          authorizationUrl: microsoftOAuthEndpoints.authorizationUrl,
+          tokenUrl: microsoftOAuthEndpoints.tokenUrl,
           userInfoUrl: 'https://graph.microsoft.com/v1.0/me',
           scopes: getCanonicalScopesForProvider('sharepoint'),
           responseType: 'code',
@@ -2878,114 +2864,6 @@ export const auth = betterAuth({
           },
         },
 
-        {
-          providerId: 'zoom',
-          clientId: env.ZOOM_CLIENT_ID as string,
-          clientSecret: env.ZOOM_CLIENT_SECRET as string,
-          authorizationUrl: 'https://zoom.us/oauth/authorize',
-          tokenUrl: 'https://zoom.us/oauth/token',
-          userInfoUrl: 'https://api.zoom.us/v2/users/me',
-          scopes: getCanonicalScopesForProvider('zoom'),
-          responseType: 'code',
-          accessType: 'offline',
-          authentication: 'basic',
-          prompt: 'consent',
-          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/zoom`,
-          getUserInfo: async (tokens) => {
-            try {
-              logger.info('Fetching Zoom user profile')
-
-              const response = await fetch('https://api.zoom.us/v2/users/me', {
-                headers: {
-                  Authorization: `Bearer ${tokens.accessToken}`,
-                },
-              })
-
-              if (!response.ok) {
-                await response.text().catch(() => {})
-                logger.error('Failed to fetch Zoom user info', {
-                  status: response.status,
-                  statusText: response.statusText,
-                })
-                throw new Error('Failed to fetch user info')
-              }
-
-              const profile = await response.json()
-
-              return {
-                id: `${profile.id.toString()}-${generateId()}`,
-                name:
-                  `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Zoom User',
-                email: profile.email || `${profile.id}@zoom.user`,
-                emailVerified: profile.verified === 1,
-                image: profile.pic_url || undefined,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              }
-            } catch (error) {
-              logger.error('Error in Zoom getUserInfo:', { error })
-              return null
-            }
-          },
-        },
-
-        // Zoom admin (account-wide) provider — optional; requires ZOOM_ADMIN_* env vars
-        ...(env.ZOOM_ADMIN_CLIENT_ID?.trim() && env.ZOOM_ADMIN_CLIENT_SECRET?.trim()
-          ? [
-              {
-                providerId: 'zoom-admin',
-                clientId: env.ZOOM_ADMIN_CLIENT_ID as string,
-                clientSecret: env.ZOOM_ADMIN_CLIENT_SECRET as string,
-                authorizationUrl: 'https://zoom.us/oauth/authorize',
-                tokenUrl: 'https://zoom.us/oauth/token',
-                userInfoUrl: 'https://api.zoom.us/v2/users/me',
-                scopes: getCanonicalScopesForProvider('zoom-admin'),
-                responseType: 'code' as const,
-                accessType: 'offline' as const,
-                authentication: 'basic' as const,
-                prompt: 'consent' as const,
-                redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/zoom-admin`,
-                getUserInfo: async (tokens: { accessToken?: string }) => {
-                  try {
-                    logger.info('Fetching Zoom admin OAuth user profile')
-
-                    const response = await fetch('https://api.zoom.us/v2/users/me', {
-                      headers: {
-                        Authorization: `Bearer ${tokens.accessToken}`,
-                      },
-                    })
-
-                    if (!response.ok) {
-                      await response.text().catch(() => {})
-                      logger.error('Failed to fetch Zoom admin OAuth user info', {
-                        status: response.status,
-                        statusText: response.statusText,
-                      })
-                      throw new Error('Failed to fetch user info')
-                    }
-
-                    const profile = await response.json()
-
-                    return {
-                      id: `${profile.id.toString()}-${generateId()}`,
-                      name:
-                        `${profile.first_name || ''} ${profile.last_name || ''}`.trim() ||
-                        'Zoom User',
-                      email: profile.email || `${profile.id}@zoom.user`,
-                      emailVerified: profile.verified === 1,
-                      image: profile.pic_url || undefined,
-                      createdAt: new Date(),
-                      updatedAt: new Date(),
-                    }
-                  } catch (error) {
-                    logger.error('Error in Zoom admin getUserInfo:', { error })
-                    return null
-                  }
-                },
-              },
-            ]
-          : []),
-
         // Spotify provider
         {
           providerId: 'spotify',
@@ -3232,6 +3110,7 @@ export const auth = betterAuth({
                 params: { allow_promotion_codes: true },
               }),
               onSubscriptionComplete: async ({
+                event,
                 stripeSubscription,
                 subscription,
               }: {
@@ -3285,7 +3164,7 @@ export const auth = betterAuth({
                   throw orgError
                 }
 
-                await handleSubscriptionCreated(resolvedSubscription)
+                await handleSubscriptionCreated(resolvedSubscription, event.id)
 
                 await syncSubscriptionUsageLimits(resolvedSubscription)
 

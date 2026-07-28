@@ -2,8 +2,8 @@
 
 import type { ReactNode } from 'react'
 import { useLayoutEffect, useState } from 'react'
+import { cn } from '@sim/emcn'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { cn } from '@/lib/core/utils/cn'
 
 interface SettingsLayoutShellProps {
   children: ReactNode

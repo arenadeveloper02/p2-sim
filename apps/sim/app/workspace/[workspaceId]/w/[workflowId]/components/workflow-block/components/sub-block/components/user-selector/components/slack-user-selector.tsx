@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Badge, cn, Label } from '@sim/emcn'
 import { Check, ChevronDown, User, X } from 'lucide-react'
-import { Badge, Label } from '@/components/emcn'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -13,7 +13,6 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { cn } from '@/lib/core/utils/cn'
 
 export interface SlackUserInfo {
   id: string

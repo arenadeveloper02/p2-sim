@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
+import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')
@@ -10,6 +11,7 @@ interface NanoBananaParams {
   prompt?: string
   aspectRatio?: string
   imageSize?: string
+  apiKey?: string
   inputImage?: unknown
   inputImageMimeType?: string
   inputImages?: unknown[]
@@ -73,7 +75,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
       required: false,
       visibility: 'user-or-llm',
       description:
-        'Multiple reference images for fusion (Nano Banana Pro). Use image URLs or uploaded file reference objects; do not pass inline base64 image data. When provided, used instead of inputImage.',
+        'Multiple reference images for fusion. Supported on Gemini image models (up to 14 on Nano Banana 2, 11 on Pro, 3 on Nano Banana). Use image URLs or uploaded file reference objects; do not pass inline base64 image data. When provided, used instead of inputImage.',
     },
     inputImageUrls: {
       type: 'string',
@@ -81,6 +83,21 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
       visibility: 'user-or-llm',
       description:
         'Image URLs (one per line or comma-separated). Merged with inputImages and any URLs in the prompt for fusion / reference images.',
+    },
+  },
+
+  hosting: {
+    envKeyPrefix: 'GOOGLE_API_KEY',
+    apiKeyParam: 'apiKey',
+    byokProviderId: 'google',
+    pricing: {
+      type: 'custom',
+      getCost: (params, output) => calculateHostedImageToolCost(params, output),
+    },
+    rateLimit: {
+      mode: 'per_request',
+      requestsPerMinute: 20,
+      burstMultiplier: 1,
     },
   },
 
@@ -102,6 +119,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
         prompt: params.prompt,
         aspectRatio: params.aspectRatio,
         imageSize: params.imageSize,
+        ...(params.apiKey ? { apiKey: params.apiKey } : {}),
       }
       if (Array.isArray(params.inputImages) && params.inputImages.length > 0) {
         body.inputImages = params.inputImages.map(stripInlinePayloadFromFileReference)
@@ -168,7 +186,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
         },
         hasInputImages: {
           type: 'boolean',
-          description: 'Whether multiple images were provided for fusion (Nano Banana Pro)',
+          description: 'Whether multiple images were provided for fusion',
         },
         inputImageCount: {
           type: 'number',
@@ -208,7 +226,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
             },
             hasInputImages: {
               type: 'boolean',
-              description: 'Whether multiple images were provided for fusion (Nano Banana Pro)',
+              description: 'Whether multiple images were provided for fusion',
             },
             inputImageCount: {
               type: 'number',

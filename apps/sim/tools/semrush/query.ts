@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { semrushHosting } from '@/tools/semrush/hosting'
 import type { SemrushParams, SemrushResponse } from '@/tools/semrush/types'
 import type { ToolConfig } from '@/tools/types'
 import { parseCsvResponse } from '../utils'
@@ -127,10 +128,18 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
   id: 'semrush_query',
   name: 'Semrush Query',
   description:
-    "Query Semrush SEO data API for keywords, backlinks, domain rank, and more. Calls Sim's internal Semrush proxy; the deployment supplies the API key via SEMRUSH_API_KEY—do not ask users for an API key or workflow variables for Semrush auth.",
+    'Query Semrush SEO data API for keywords, backlinks, domain rank, and more. Requires a Semrush API key configured on the block.',
   version: '1.0.0',
 
+  hosting: semrushHosting,
+
   params: {
+    apiKey: {
+      type: 'string',
+      required: true,
+      visibility: 'user-only',
+      description: 'Semrush API key',
+    },
     url: {
       type: 'string',
       required: false,
@@ -225,6 +234,7 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
         }
       }
 
+      queryParams.append('apiKey', params.apiKey)
       const path = `/api/tools/semrush/query?${queryParams.toString()}`
       logger.info('Semrush: Using internal proxy', {
         reportType,
@@ -233,9 +243,10 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       return path
     },
     method: 'GET',
-    headers: () => ({
+    headers: (params) => ({
       Accept: 'text/plain, text/csv, */*',
       'Content-Type': 'text/plain',
+      ...(params.apiKey ? { 'X-Semrush-Api-Key': params.apiKey } : {}),
     }),
   },
 

@@ -311,6 +311,7 @@ interface MultipartUploadOptions {
     | 'mothership'
     | 'profile-pictures'
     | 'workspace-logos'
+    | 'org-logos'
     | 'execution'
   workflowId?: string
   executionId?: string
@@ -535,6 +536,7 @@ export interface RunUploadStrategyOptions {
     | 'mothership'
     | 'profile-pictures'
     | 'workspace-logos'
+    | 'org-logos'
     | 'execution'
   /** Endpoint to mint a presigned PUT URL. Required unless `presignedOverride` is provided. */
   presignedEndpoint?: string

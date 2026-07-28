@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { toast } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import {
   BLOCK_OPERATIONS,
@@ -15,10 +16,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { isEqual } from 'es-toolkit'
 import type { Edge } from 'reactflow'
 import { useShallow } from 'zustand/react/shallow'
-import { toast } from '@/components/emcn'
 import { requestJson } from '@/lib/api/client/request'
 import { getWorkflowStateContract } from '@/lib/api/contracts'
 import { useSession } from '@/lib/auth/auth-client'
+import {
+  normalizeImageModelId,
+  resolveImageProviderForModel,
+} from '@/lib/image-generation/block-model-config'
 import {
   type WorkflowSearchSubflowFieldId,
   workflowSearchSubflowFieldMatchesExpected,
@@ -231,6 +235,11 @@ export function useCollaborativeWorkflow() {
               useWorkflowStore
                 .getState()
                 .setBlockCanonicalMode(payload.id, payload.canonicalId, payload.canonicalMode)
+              break
+            case BLOCK_OPERATIONS.REPLACE_CANONICAL_MODES:
+              useWorkflowStore
+                .getState()
+                .setBlockCanonicalModes(payload.id, payload.data?.canonicalModes ?? {})
               break
           }
         } else if (target === OPERATION_TARGETS.BLOCKS) {
@@ -1277,6 +1286,39 @@ export function useCollaborativeWorkflow() {
     [isBaselineDiffView, activeWorkflowId, addToQueue, session?.user?.id]
   )
 
+  /**
+   * Wholesale-replaces `block.data.canonicalModes`, rather than merging one key like
+   * {@link collaborativeSetBlockCanonicalMode}. Needed to reindex nested tool-input overrides on
+   * reorder/removal: a merge can't atomically drop a now-stale index key, and sequential
+   * per-key sets can clobber each other when two tools swap positions.
+   */
+  const collaborativeSetBlockCanonicalModes = useCallback(
+    (id: string, canonicalModes: Record<string, 'basic' | 'advanced'>) => {
+      if (isBaselineDiffView) {
+        return
+      }
+
+      useWorkflowStore.getState().setBlockCanonicalModes(id, canonicalModes)
+
+      if (!activeWorkflowId) {
+        return
+      }
+
+      const operationId = generateId()
+      addToQueue({
+        id: operationId,
+        operation: {
+          operation: BLOCK_OPERATIONS.REPLACE_CANONICAL_MODES,
+          target: OPERATION_TARGETS.BLOCK,
+          payload: { id, data: { canonicalModes } },
+        },
+        workflowId: activeWorkflowId,
+        userId: session?.user?.id || 'unknown',
+      })
+    },
+    [isBaselineDiffView, activeWorkflowId, addToQueue, session?.user?.id]
+  )
+
   const collaborativeBatchToggleBlockHandles = useCallback(
     (ids: string[]) => {
       if (isBaselineDiffView) {
@@ -1517,6 +1559,23 @@ export function useCollaborativeWorkflow() {
               continue
             }
             collaborativeSetSubblockValue(blockId, dep.id, '', { _visited: visited })
+          }
+
+          if (blockType === 'image_generator_v2' && subblockId === 'provider') {
+            const modelValue = useSubBlockStore.getState().getValue(blockId, 'model')
+            const normalizedModel =
+              typeof modelValue === 'string' ? normalizeImageModelId(modelValue) : undefined
+            const modelProvider = normalizedModel
+              ? resolveImageProviderForModel(normalizedModel)
+              : undefined
+            const nextProvider = typeof value === 'string' ? value.trim() : ''
+
+            if (
+              normalizedModel &&
+              (!nextProvider || (modelProvider && nextProvider !== modelProvider))
+            ) {
+              collaborativeSetSubblockValue(blockId, 'model', '', { _visited: visited })
+            }
           }
         }
       } catch {
@@ -2166,6 +2225,7 @@ export function useCollaborativeWorkflow() {
     collaborativeBatchUpdateParent,
     collaborativeToggleBlockAdvancedMode,
     collaborativeSetBlockCanonicalMode,
+    collaborativeSetBlockCanonicalModes,
     collaborativeBatchToggleBlockHandles,
     collaborativeBatchToggleLocked,
     collaborativeBatchAddBlocks,

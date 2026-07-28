@@ -7,7 +7,8 @@ import { checkInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { processFilesToUserFiles } from '@/lib/uploads/utils/file-utils'
-import { downloadFileForDelivery } from '@/lib/uploads/utils/file-utils.server'
+import { downloadServableFileFromStorage } from '@/lib/uploads/utils/file-utils.server'
+import { docNotReadyResponse } from '@/lib/uploads/utils/servable-file-response'
 import { assertToolFileAccess } from '@/app/api/files/authorization'
 import { renderAgentResponseToString } from '@/tools/gmail/markUpRenderUtil'
 import {
@@ -135,45 +136,45 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const denied = accessResults.find((r) => r !== null)
         if (denied) return denied
 
-        const buffers = await Promise.all(
-          attachments.map(async (file) => {
-            try {
+        let resolved: Array<{ buffer: Buffer; contentType: string }>
+        try {
+          resolved = await Promise.all(
+            attachments.map(async (file) => {
               logger.info(
                 `[${requestId}] Downloading attachment: ${file.name} (${file.size} bytes)`
               )
+              return await downloadServableFileFromStorage(file, requestId, logger)
+            })
+          )
+        } catch (error) {
+          const notReady = docNotReadyResponse(error)
+          if (notReady) return notReady
+          logger.error(`[${requestId}] Failed to download an attachment:`, error)
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Failed to download attachment: ${getErrorMessage(error, 'Unknown error')}`,
+            },
+            { status: 500 }
+          )
+        }
 
-              const { buffer, contentType } = await downloadFileForDelivery(
-                file,
-                requestId,
-                logger,
-                { ownerKey, signal: request.signal }
-              )
-
-              if (buffer.length === 0) {
-                throw new Error(
-                  `Attachment "${file.name}" is empty. Save the file content before sending it.`
-                )
-              }
-
-              return {
-                filename: file.name,
-                mimeType: contentType || file.type || 'application/octet-stream',
-                content: buffer,
-              }
-              // return await downloadFileFromStorage(file, requestId, logger)
-            } catch (error) {
-              logger.error(`[${requestId}] Failed to download attachment ${file.name}:`, error)
-              throw new Error(
-                `Failed to download attachment "${file.name}": ${getErrorMessage(error, 'Unknown error')}`
-              )
-            }
-          })
-        )
+        const resolvedTotal = resolved.reduce((sum, r) => sum + r.buffer.length, 0)
+        if (resolvedTotal > maxSize) {
+          const sizeMB = (resolvedTotal / (1024 * 1024)).toFixed(2)
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Total attachment size (${sizeMB}MB) exceeds Gmail's limit of 25MB`,
+            },
+            { status: 400 }
+          )
+        }
 
         const attachmentBuffers = attachments.map((file, i) => ({
           filename: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          content: buffers[i],
+          mimeType: resolved[i].contentType || file.type || 'application/octet-stream',
+          content: resolved[i].buffer,
         }))
 
         const mimeMessage = buildMimeMessage({

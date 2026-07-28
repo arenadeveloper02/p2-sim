@@ -1,4 +1,5 @@
 import { sha256Hex } from '@sim/security/hash'
+import { loadCompiledDocByExt } from '@/lib/copilot/tools/server/files/doc-compile'
 import { runSandboxTask } from '@/lib/execution/sandbox/run-task'
 import { parseWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { getContentType } from '@/app/api/files/utils'
@@ -65,9 +66,19 @@ export async function compileDocumentIfNeeded(
   }
 
   const code = buffer.toString('utf-8')
+  const extNoDot = ext.replace(/^\./, '')
+
+  // Prefer the write-time content-addressed artifact (same as /api/files/serve).
+  if (workspaceId) {
+    const stored = await loadCompiledDocByExt(workspaceId, code, extNoDot)
+    if (stored && stored.buffer.length > 0) {
+      return { buffer: stored.buffer, contentType: stored.contentType }
+    }
+  }
+
   const cacheKey = sha256Hex(`${ext}${code}${workspaceId ?? ''}`)
   const cached = compiledDocCache.get(cacheKey)
-  if (cached) {
+  if (cached && cached.length > 0) {
     return { buffer: cached, contentType: format.contentType }
   }
 
@@ -76,6 +87,9 @@ export async function compileDocumentIfNeeded(
     { code, workspaceId: workspaceId || '' },
     { ownerKey, signal }
   )
+  if (!Buffer.isBuffer(compiled) || compiled.length === 0) {
+    throw new Error(`Document compilation produced an empty ${extNoDot.toUpperCase()} file`)
+  }
   compiledCacheSet(cacheKey, compiled)
   return { buffer: compiled, contentType: format.contentType }
 }

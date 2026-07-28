@@ -1,5 +1,5 @@
+import { Mail } from '@sim/emcn/icons'
 import { filterUndefined } from '@sim/utils/object'
-import { Mail } from '@/components/emcn/icons'
 import { normalizeDomain, splitName, str, toolProvider } from '@/enrichments/providers'
 import type { EnrichmentConfig } from '@/enrichments/types'
 
@@ -122,10 +122,13 @@ export const workEmailEnrichment: EnrichmentConfig = {
       buildParams: (inputs) => {
         const name = str(inputs.fullName)
         if (!name) return null
+        // `required` makes PDL 404 (free) when the profile has no work email,
+        // instead of charging a credit for a match we'd discard as a no-match.
         return filterUndefined({
           name,
           company: normalizeDomain(inputs.companyDomain) || undefined,
           min_likelihood: 6,
+          required: 'work_email',
         })
       },
       mapOutput: (output) => {

@@ -248,7 +248,7 @@ export const updateV2Tool: ToolConfig<GoogleSheetsV2ToolParams, GoogleSheetsV2Up
 
   request: {
     url: (params) => {
-      const sheetName = params.sheetName?.trim()
+      const sheetName = params.sheetName?.trim() || 'Sheet1'
       if (!sheetName) {
         throw new Error('Sheet name is required')
       }

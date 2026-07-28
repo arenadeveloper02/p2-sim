@@ -1,8 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Combobox, type ComboboxOption } from '@/components/emcn'
-import { cn } from '@/lib/core/utils/cn'
+import { Combobox, type ComboboxOption, cn } from '@sim/emcn'
 import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useArenaClientsByUser } from '@/hooks/queries/arena-clients'

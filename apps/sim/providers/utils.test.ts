@@ -33,6 +33,8 @@ import {
   PROVIDERS_WITH_TOOL_USAGE_CONTROL,
   prepareToolExecution,
   prepareToolsWithUsageControl,
+  resolveBlockModelCost,
+  normalizeProviderCost,
   shouldBillModelUsage,
   supportsReasoningEffort,
   supportsTemperature,
@@ -214,6 +216,7 @@ describe('Model Capabilities', () => {
     it.concurrent('should return false for models that do not support temperature', () => {
       const unsupportedModels = [
         'unsupported-model',
+        'claude-sonnet-5',
         'cerebras/llama-3.3-70b',
         'o1',
         'o3',
@@ -896,31 +899,38 @@ describe('getHostedModels', () => {
 describe('shouldBillModelUsage', () => {
   it.concurrent('should return true for exact matches of hosted models', () => {
     expect(shouldBillModelUsage('gpt-4o')).toBe(true)
+    expect(shouldBillModelUsage('gpt-4o-mini')).toBe(true)
     expect(shouldBillModelUsage('o1')).toBe(true)
 
-    expect(shouldBillModelUsage('claude-sonnet-4-0')).toBe(true)
-    expect(shouldBillModelUsage('claude-opus-4-0')).toBe(true)
+    expect(shouldBillModelUsage('claude-sonnet-4-6')).toBe(true)
+    expect(shouldBillModelUsage('claude-opus-4-6')).toBe(true)
 
     expect(shouldBillModelUsage('gemini-2.5-pro')).toBe(true)
     expect(shouldBillModelUsage('gemini-2.5-flash')).toBe(true)
+    expect(shouldBillModelUsage('grok-4-latest')).toBe(true)
   })
 
   it.concurrent('should return false for non-hosted models', () => {
     expect(shouldBillModelUsage('deepseek-v3')).toBe(false)
-    expect(shouldBillModelUsage('grok-4-latest')).toBe(false)
+    expect(shouldBillModelUsage('mothership')).toBe(false)
 
     expect(shouldBillModelUsage('unknown-model')).toBe(false)
   })
 
-  it.concurrent('should return false for versioned model names not in hosted list', () => {
+  it.concurrent('should return true for date-suffixed hosted model IDs', () => {
+    expect(shouldBillModelUsage('claude-sonnet-4-5-20250514')).toBe(true)
+    expect(shouldBillModelUsage('gpt-4o-2024-08-06')).toBe(true)
+    expect(shouldBillModelUsage('gpt-4o-mini-2024-07-18')).toBe(true)
+  })
+
+  it.concurrent('should return false for versioned model names without a hosted base', () => {
     expect(shouldBillModelUsage('claude-sonnet-4-20250514')).toBe(false)
-    expect(shouldBillModelUsage('gpt-4o-2024-08-06')).toBe(false)
     expect(shouldBillModelUsage('claude-3-5-sonnet-20241022')).toBe(false)
   })
 
   it.concurrent('should be case insensitive', () => {
     expect(shouldBillModelUsage('GPT-4O')).toBe(true)
-    expect(shouldBillModelUsage('Claude-Sonnet-4-0')).toBe(true)
+    expect(shouldBillModelUsage('Claude-Sonnet-4-6')).toBe(true)
     expect(shouldBillModelUsage('GEMINI-2.5-PRO')).toBe(true)
   })
 
@@ -928,6 +938,50 @@ describe('shouldBillModelUsage', () => {
     expect(shouldBillModelUsage('gpt-4')).toBe(false)
     expect(shouldBillModelUsage('claude-sonnet')).toBe(false)
     expect(shouldBillModelUsage('gemini')).toBe(false)
+  })
+})
+
+describe('resolveBlockModelCost', () => {
+  it('returns zero for BYOK even when provider reports a cost', () => {
+    expect(
+      resolveBlockModelCost({
+        model: 'gpt-4o',
+        promptTokens: 100,
+        completionTokens: 10,
+        providerCost: { input: 0.01, output: 0.02, total: 0.03 },
+        isBYOK: true,
+      })
+    ).toEqual({ input: 0, output: 0, total: 0 })
+  })
+
+  it('uses provider-reported cost for hosted calls', () => {
+    expect(
+      resolveBlockModelCost({
+        model: 'gpt-4o',
+        promptTokens: 100,
+        completionTokens: 10,
+        providerCost: { input: 0.01, output: 0.02, total: 0.03 },
+        isBYOK: false,
+      })
+    ).toEqual({ input: 0.01, output: 0.02, total: 0.03 })
+  })
+
+  it('falls back to zero for non-hosted models without provider cost', () => {
+    expect(
+      resolveBlockModelCost({
+        model: 'unknown-model',
+        promptTokens: 100,
+        completionTokens: 10,
+        isBYOK: false,
+      })
+    ).toEqual({ input: 0, output: 0, total: 0 })
+  })
+})
+
+describe('normalizeProviderCost', () => {
+  it('returns null for non-object cost values', () => {
+    expect(normalizeProviderCost(0.5)).toBeNull()
+    expect(normalizeProviderCost(null)).toBeNull()
   })
 })
 
@@ -1563,11 +1617,12 @@ describe('transformBlockTool multi-instance unique IDs', () => {
 
   const transformTable = (
     params: Record<string, unknown>,
-    canonicalModes?: Record<string, 'basic' | 'advanced'>
+    canonicalModes?: Record<string, 'basic' | 'advanced'>,
+    toolIndex?: number
   ) =>
     transformBlockTool(
       { type: 'table', operation: 'query_rows', params },
-      { selectedOperation: 'query_rows', getAllBlocks, getTool, canonicalModes }
+      { selectedOperation: 'query_rows', getAllBlocks, getTool, canonicalModes, toolIndex }
     )
 
   it('appends the table id when stored under the basic selector subblock key', async () => {
@@ -1578,9 +1633,17 @@ describe('transformBlockTool multi-instance unique IDs', () => {
   it('appends the table id resolved from the advanced manual input', async () => {
     const result = await transformTable(
       { manualTableId: 'tbl_xyz' },
-      { 'table:tableId': 'advanced' }
+      { '0:tableId': 'advanced' },
+      0
     )
     expect(result?.id).toBe('table_query_rows_tbl_xyz')
+  })
+
+  it('resolves an advanced-only manual id via the heuristic when basic is empty and no mode is set', async () => {
+    // No canonicalModes entry: routing through resolveCanonicalMode picks advanced (empty basic),
+    // where the old `?? 'basic'` fallback dropped the advanced-only value.
+    const result = await transformTable({ manualTableId: 'tbl_only' })
+    expect(result?.id).toBe('table_query_rows_tbl_only')
   })
 
   it('appends the canonical table id when already present in params', async () => {
@@ -1591,6 +1654,21 @@ describe('transformBlockTool multi-instance unique IDs', () => {
   it('falls back to the base tool id when no table is selected', async () => {
     const result = await transformTable({})
     expect(result?.id).toBe('table_query_rows')
+  })
+
+  it('regression: two Table tool instances on one Agent block resolve their canonical mode independently', async () => {
+    // Both tools are type "table" with canonicalId "tableId" and BOTH basic + advanced values
+    // populated, so only the explicit per-instance mode determines which one wins. Before the fix,
+    // canonicalModes was keyed by `${toolType}:${canonicalId}` (shared across every "table" tool),
+    // so toggling tool #0 to advanced also flipped tool #1's resolved value.
+    const sharedParams = { tableSelector: 'tbl_basic', manualTableId: 'tbl_advanced' }
+    const canonicalModes = { '0:tableId': 'advanced', '1:tableId': 'basic' }
+
+    const first = await transformTable(sharedParams, canonicalModes, 0)
+    const second = await transformTable(sharedParams, canonicalModes, 1)
+
+    expect(first?.id).toBe('table_query_rows_tbl_advanced')
+    expect(second?.id).toBe('table_query_rows_tbl_basic')
   })
 })
 
@@ -1629,11 +1707,12 @@ describe('transformBlockTool knowledge-base multi-instance unique IDs', () => {
 
   const transformKb = (
     params: Record<string, unknown>,
-    canonicalModes?: Record<string, 'basic' | 'advanced'>
+    canonicalModes?: Record<string, 'basic' | 'advanced'>,
+    toolIndex?: number
   ) =>
     transformBlockTool(
       { type: 'knowledge', operation: 'search', params },
-      { selectedOperation: 'search', getAllBlocks, getTool, canonicalModes }
+      { selectedOperation: 'search', getAllBlocks, getTool, canonicalModes, toolIndex }
     )
 
   it('appends the knowledge base id when stored under the basic selector subblock key', async () => {
@@ -1644,7 +1723,8 @@ describe('transformBlockTool knowledge-base multi-instance unique IDs', () => {
   it('appends the knowledge base id resolved from the advanced manual input', async () => {
     const result = await transformKb(
       { manualKnowledgeBaseId: 'kb_xyz' },
-      { 'knowledge:knowledgeBaseId': 'advanced' }
+      { '0:knowledgeBaseId': 'advanced' },
+      0
     )
     expect(result?.id).toBe('knowledge_search_kb_xyz')
   })
@@ -1668,8 +1748,8 @@ describe('transformBlockTool image generator agent tool', () => {
       inputImageUrl: { type: 'string' },
     },
     subBlocks: [
-      { id: 'provider', type: 'dropdown' },
-      { id: 'model', type: 'dropdown' },
+      { id: 'provider', type: 'combobox' },
+      { id: 'model', type: 'combobox' },
       { id: 'prompt', type: 'long-input' },
     ],
     tools: {
@@ -1691,8 +1771,9 @@ describe('transformBlockTool image generator agent tool', () => {
     name: 'Image Generator',
     description: 'Generate images',
     params: {
-      provider: { type: 'string', required: true, visibility: 'user-only' },
-      model: { type: 'string', required: true, visibility: 'user-or-llm' },
+      provider: { type: 'string', required: false, visibility: 'user-or-llm' },
+      apiKey: { type: 'string', required: false, visibility: 'user-only' },
+      model: { type: 'string', required: false, visibility: 'user-or-llm' },
       prompt: { type: 'string', required: true, visibility: 'user-or-llm' },
     },
   })
@@ -1723,5 +1804,26 @@ describe('transformBlockTool image generator agent tool', () => {
       model: 'gpt-image-2',
       prompt: 'Updated prompt',
     })
+    expect(result?.parameters?.properties).not.toHaveProperty('provider')
+    expect(result?.parameters?.properties).not.toHaveProperty('model')
+    expect(result?.parameters?.properties).not.toHaveProperty('prompt')
+  })
+
+  it('exposes unset image_generate params to the LLM except apiKey', async () => {
+    const result = await transformBlockTool(
+      {
+        type: 'image_generator_v2',
+        title: 'Image Generator',
+        params: {},
+      },
+      { getAllBlocks, getTool }
+    )
+
+    expect(result?.parameters?.properties).toHaveProperty('provider')
+    expect(result?.parameters?.properties).toHaveProperty('model')
+    expect(result?.parameters?.properties).toHaveProperty('prompt')
+    expect(result?.parameters?.properties).not.toHaveProperty('apiKey')
+    expect(result?.parameters?.required).toEqual(expect.arrayContaining(['prompt']))
+    expect(result?.parameters?.required).not.toEqual(expect.arrayContaining(['provider', 'model']))
   })
 })

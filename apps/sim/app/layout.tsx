@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
-import { PublicEnvScript } from 'next-runtime-env'
+import { PublicEnvScript as RuntimePublicEnvScript } from 'next-runtime-env'
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { BrandedLayout } from '@/components/branded-layout'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
@@ -15,6 +15,7 @@ import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
 import { TooltipProvider } from '@/app/_shell/providers/tooltip-provider'
+import { PublicEnvScript } from '@/app/_shell/public-env-script'
 import { ResumePathSync } from '@/app/_shell/resume-path-sync'
 import { season } from '@/app/_styles/fonts/season/season'
 
@@ -262,7 +263,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           </>
         )}
 
-        <PublicEnvScript />
+        {isHosted ? <PublicEnvScript /> : <RuntimePublicEnvScript />}
       </head>
       <body className={`${season.variable} font-season`} suppressHydrationWarning>
         {/* Google Tag Manager (noscript) — hosted only */}

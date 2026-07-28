@@ -1,4 +1,5 @@
 import type { Edge } from 'reactflow'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import type { NodeMetadata } from '@/executor/dag/types'
 import type {
@@ -42,6 +43,15 @@ export interface ExecutionMetadata {
   callChain?: string[]
   correlation?: AsyncExecutionCorrelation
   executionMode?: 'sync' | 'stream' | 'async'
+  /** Parent workflow run when this execution was triggered as a child. */
+  parentExecutionId?: string
+  /** Root of the execution lineage tree; self when no parent. */
+  rootExecutionId?: string
+  /** Copilot chat that triggered this run (rollup only). */
+  triggeringChatId?: string
+  /** Copilot run that triggered this run (rollup only). */
+  triggeringRunId?: string
+  executionActor?: ExecutionActor
 }
 
 export interface SerializableExecutionState {
@@ -148,6 +158,15 @@ export interface ExecutionCallbacks {
   ) => Promise<void>
 }
 
+/** In-flight block-output redaction policy (the resolved `blockOutputs` stage). */
+export interface PiiBlockOutputRedaction {
+  enabled: boolean
+  /** Presidio entity types to mask. Empty = redact all detected PII. */
+  entityTypes: string[]
+  /** Language whose Presidio recognizers apply. */
+  language: string
+}
+
 export interface ContextExtensions {
   workspaceId?: string
   executionId?: string
@@ -180,6 +199,12 @@ export interface ContextExtensions {
   abortSignal?: AbortSignal
   includeFileBase64?: boolean
   base64MaxBytes?: number
+  /**
+   * When enabled, every block output is masked in-flight before downstream blocks
+   * consume it. Resolved from the org/workspace PII redaction policy's
+   * `blockOutputs` stage. Serializable, so it crosses into the trigger.dev worker.
+   */
+  piiBlockOutputRedaction?: PiiBlockOutputRedaction
   onStream?: (streamingExecution: StreamingExecution) => Promise<void>
   onBlockStart?: (
     blockId: string,

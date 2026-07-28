@@ -1904,6 +1904,28 @@ describe('MCP Tool Execution', () => {
       expect(result.success).toBe(false)
     })
 
+    it('skips retry when Retry-After exceeds a maxDelayMs configured above the 30s default cap', async () => {
+      global.fetch = Object.assign(
+        vi
+          .fn()
+          .mockResolvedValueOnce(
+            makeJsonResponse(429, { error: 'rate limited' }, { 'retry-after': '50' })
+          )
+          .mockResolvedValueOnce(makeJsonResponse(200, { ok: true })),
+        { preconnect: vi.fn() }
+      ) as typeof fetch
+
+      const result = await executeTool('http_request', {
+        url: '/api/test',
+        method: 'GET',
+        retries: 3,
+        retryMaxDelayMs: 40000,
+      })
+
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+      expect(result.success).toBe(false)
+    })
+
     it('retries when Retry-After header is within maxDelayMs', async () => {
       global.fetch = Object.assign(
         vi
@@ -2670,6 +2692,55 @@ describe('Cost Field Handling', () => {
     if (result.output.cost) {
       expect(result.output.cost.total).toBe(0.005)
     }
+
+    Object.assign(tools, originalTools)
+  })
+
+  it('should not fail tool execution when hosted key cost calculation throws', async () => {
+    const mockTool = {
+      id: 'test_billing_failure',
+      name: 'Test Billing Failure',
+      description: 'A test tool where hosted cost calculation throws',
+      version: '1.0.0',
+      params: {
+        apiKey: { type: 'string', required: false },
+      },
+      hosting: {
+        envKeyPrefix: 'TEST_HOSTED_KEY',
+        apiKeyParam: 'apiKey',
+        pricing: {
+          type: 'custom' as const,
+          getCost: () => {
+            throw new Error('Image generation response missing billing dimensions')
+          },
+        },
+        rateLimit: {
+          mode: 'per_request' as const,
+          requestsPerMinute: 100,
+        },
+      },
+      request: {
+        url: '/api/test/billing-failure',
+        method: 'POST' as const,
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      directExecution: async () => ({
+        success: true,
+        output: { result: 'generated' },
+      }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_billing_failure = mockTool
+
+    const mockContext = createToolExecutionContext({
+      userId: 'user-123',
+    } as any)
+    const result = await executeTool('test_billing_failure', {}, { executionContext: mockContext })
+
+    expect(result.success).toBe(true)
+    expect(result.output.result).toBe('generated')
+    expect(result.output.cost).toBeUndefined()
 
     Object.assign(tools, originalTools)
   })

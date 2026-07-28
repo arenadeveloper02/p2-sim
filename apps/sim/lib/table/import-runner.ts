@@ -17,7 +17,7 @@ import {
   type TableSchema,
   validateMapping,
 } from '@/lib/table'
-import { assertRowCapacity } from '@/lib/table/billing'
+import { assertRowCapacity, notifyTableRowUsage } from '@/lib/table/billing'
 import { withGeneratedColumnIds } from '@/lib/table/column-keys'
 import { appendTableEvent } from '@/lib/table/events'
 import {
@@ -68,6 +68,12 @@ export interface TableImportPayload {
    * survive the import.
    */
   deleteSourceFile?: boolean
+  /**
+   * IANA zone used to interpret naive datetime strings in the file. The
+   * kickoff routes resolve it (request → user setting → UTC) so the detached
+   * worker never needs a settings lookup.
+   */
+  timezone?: string
 }
 
 /**
@@ -173,7 +179,7 @@ export async function runTableImport(payload: TableImportPayload): Promise<void>
           additions.push({ name: columnName, type: inferColumnType(sample.map((r) => r[header])) })
           updatedMapping[header] = columnName
         }
-        const updated = await addImportColumns(table, additions, requestId)
+        const updated = await addImportColumns(table, additions, requestId, userId)
         targetSchema = updated.schema
         effectiveMapping = updatedMapping
       }
@@ -199,8 +205,10 @@ export async function runTableImport(payload: TableImportPayload): Promise<void>
       // may own. Runs per batch (not just at the emit cadence) so we stop within one batch.
       const owns = await updateJobProgress(tableId, inserted, importId)
       if (!owns) throw new ImportSupersededError()
-      const coerced = coerceRowsForTable(rows, schema, headerToColumn)
-      await assertRowCapacity({
+      const coerced = coerceRowsForTable(rows, schema, headerToColumn, {
+        timezone: payload.timezone,
+      })
+      const rowLimit = await assertRowCapacity({
         workspaceId,
         currentRowCount: existingRowCount + inserted,
         addedRows: coerced.length,
@@ -217,6 +225,12 @@ export async function runTableImport(payload: TableImportPayload): Promise<void>
         { ...table, schema },
         requestId
       )
+      notifyTableRowUsage({
+        workspaceId,
+        currentRowCount: existingRowCount + inserted,
+        addedRows: result.inserted,
+        limit: rowLimit,
+      })
       inserted += result.inserted
       lastOrderKey = result.lastOrderKey
       // Emit after the first batch, then every interval, so the bar appears early without flooding.

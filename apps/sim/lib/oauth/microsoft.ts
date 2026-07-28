@@ -1,5 +1,32 @@
+import { env } from '@/lib/core/config/env'
+
 const MICROSOFT_REFRESH_TOKEN_LIFETIME_DAYS = 90
 export const PROACTIVE_REFRESH_THRESHOLD_DAYS = 7
+
+const MICROSOFT_OAUTH_AUTHORITY = 'https://login.microsoftonline.com'
+
+/**
+ * Resolves the Microsoft OAuth tenant segment. Defaults to `common` for
+ * multi-tenant app registrations when `MICROSOFT_TENANT_ID` is unset.
+ */
+export function getMicrosoftOAuthTenantId(): string {
+  const tenantId = env.MICROSOFT_TENANT_ID?.trim()
+  return tenantId && tenantId.length > 0 ? tenantId : 'common'
+}
+
+/**
+ * Microsoft Entra authorize/token endpoints for the configured tenant.
+ */
+export function getMicrosoftOAuthEndpoints(tenantId = getMicrosoftOAuthTenantId()): {
+  authorizationUrl: string
+  tokenUrl: string
+} {
+  const base = `${MICROSOFT_OAUTH_AUTHORITY}/${tenantId}/oauth2/v2.0`
+  return {
+    authorizationUrl: `${base}/authorize`,
+    tokenUrl: `${base}/token`,
+  }
+}
 
 export const MICROSOFT_PROVIDERS = new Set([
   'microsoft-ad',

@@ -1,5 +1,4 @@
 import { SimTriggerIcon } from '@/components/icons'
-import { fetchWorkspaceWorkflowOptions } from '@/lib/workflows/subblocks/options'
 import {
   SIM_EVENT_PAYLOAD_FIELDS,
   SIM_RULE_DEFAULTS,
@@ -51,7 +50,10 @@ export const simWorkspaceEventTrigger: TriggerConfig = {
       required: false,
       mode: 'trigger',
       // A subscriber never receives events about itself, so exclude it.
-      fetchOptions: () => fetchWorkspaceWorkflowOptions({ excludeActiveWorkflow: true }),
+      fetchOptions: async () => {
+        const { fetchWorkspaceWorkflowOptions } = await import('@/lib/workflows/subblocks/options')
+        return fetchWorkspaceWorkflowOptions({ excludeActiveWorkflow: true })
+      },
     },
     {
       id: 'consecutiveFailures',

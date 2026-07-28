@@ -171,26 +171,38 @@ async function extractOutputValue(
   path: string,
   context: OutputExtractionContext
 ): Promise<unknown> {
-  const parsedOutput = parseOutputContentSafely(output)
-  const outputValue = path
-    ? await navigatePathAsync(parsedOutput, path.split('.'), {
-        executionContext: {
-          workflowId: context.workflowId ?? '',
-          workspaceId: context.workspaceId,
-          executionId: context.executionId,
-          largeValueExecutionIds: context.largeValueExecutionIds,
-          largeValueKeys: context.largeValueKeys,
-          fileKeys: context.fileKeys,
-          allowLargeValueWorkflowScope: context.allowLargeValueWorkflowScope,
-          userId: context.userId,
-          metadata: { requestId: context.requestId },
-          base64MaxBytes: context.base64MaxBytes,
-        },
-        allowLargeValueRefs: true,
-      })
-    : parsedOutput
+  const navigateOptions = {
+    executionContext: {
+      workflowId: context.workflowId ?? '',
+      workspaceId: context.workspaceId,
+      executionId: context.executionId,
+      largeValueExecutionIds: context.largeValueExecutionIds,
+      largeValueKeys: context.largeValueKeys,
+      fileKeys: context.fileKeys,
+      allowLargeValueWorkflowScope: context.allowLargeValueWorkflowScope,
+      userId: context.userId,
+      metadata: { requestId: context.requestId },
+      base64MaxBytes: context.base64MaxBytes,
+    },
+    allowLargeValueRefs: true,
+  }
 
-  return outputValue
+  if (path) {
+    // Resolve against the raw block output first. parseOutputContentSafely
+    // replaces the whole output with JSON.parse(output.content) when content is
+    // a JSON string (agent response-format support), which would make paths
+    // like `content` unresolvable for blocks whose content IS JSON (e.g. the
+    // chart generator's bare ECharts option) and silently drop the output.
+    const directValue = await navigatePathAsync(output, path.split('.'), navigateOptions)
+    if (directValue !== undefined) {
+      return directValue
+    }
+  }
+
+  const parsedOutput = parseOutputContentSafely(output)
+  return path
+    ? await navigatePathAsync(parsedOutput, path.split('.'), navigateOptions)
+    : parsedOutput
 }
 
 function isDangerousKey(key: string): boolean {

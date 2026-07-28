@@ -13,6 +13,7 @@ import {
   wasExecutionFinalizedByCore,
 } from '@/lib/workflows/executor/execution-core'
 import { handlePostExecutionPauseState } from '@/lib/workflows/executor/pause-persistence'
+import { WORKFLOW_EXECUTION_CONCURRENCY_LIMIT } from '@/background/concurrency-limits'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata } from '@/executor/execution/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
@@ -93,6 +94,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
       }
 
       const actorUserId = preprocessResult.actorUserId!
+      const executionActor = preprocessResult.executionActor
       const workspaceId = preprocessResult.workflowRecord?.workspaceId
       if (!workspaceId) {
         throw new Error(`Workflow ${workflowId} has no associated workspace`)
@@ -117,6 +119,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
         callChain: payload.callChain,
         correlation,
         executionMode: payload.executionMode ?? 'async',
+        executionActor,
       }
 
       const snapshot = new ExecutionSnapshot(
@@ -206,5 +209,8 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
 export const workflowExecutionTask = task({
   id: 'workflow-execution',
   machine: 'medium-1x',
+  queue: {
+    concurrencyLimit: WORKFLOW_EXECUTION_CONCURRENCY_LIMIT,
+  },
   run: executeWorkflowJob,
 })

@@ -3,8 +3,14 @@ import { userFileSchema } from '@/lib/api/contracts/primitives'
 import { toolBooleanSchema, toolJsonResponseSchema } from '@/lib/api/contracts/tools/media/shared'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
-export const videoProviders = ['runway', 'veo', 'luma', 'minimax', 'falai'] as const
-const MISSING_VIDEO_FIELDS_ERROR = 'Missing required fields: provider, apiKey, and prompt'
+export const videoProviders = [
+  // 'runway',
+  // 'veo',
+  // 'luma',
+  // 'minimax',
+  'falai',
+] as const
+const MISSING_VIDEO_FIELDS_ERROR = 'Missing required fields: provider and prompt'
 
 export const videoToolBodySchema = z
   .object({
@@ -14,7 +20,7 @@ export const videoToolBodySchema = z
       .refine((provider) => videoProviders.includes(provider as (typeof videoProviders)[number]), {
         message: `Invalid provider. Must be one of: ${videoProviders.join(', ')}`,
       }),
-    apiKey: z.string({ error: MISSING_VIDEO_FIELDS_ERROR }).min(1, MISSING_VIDEO_FIELDS_ERROR),
+    apiKey: z.string().optional(),
     model: z.string().optional(),
     prompt: z.string({ error: MISSING_VIDEO_FIELDS_ERROR }).min(1, MISSING_VIDEO_FIELDS_ERROR),
     duration: z.coerce.number().optional(),
