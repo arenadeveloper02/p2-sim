@@ -57,6 +57,24 @@ function formatDataInput(data: unknown): string {
 }
 
 /**
+ * Coerce tool/block temperature into a finite number. Agent tool cards often
+ * serialize slider values as strings (e.g. "0"), and /api/providers rejects
+ * those with "Invalid request body" because temperature must be a number.
+ */
+function resolveTemperature(value: unknown, fallback = 0.2): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+  return fallback
+}
+
+/**
  * Runs the LLM chart-generation flow: builds prompts (with the intent gate that
  * decides text vs chart vs both), calls the provider, and normalizes the result
  * into the `{ charts, count, valid, skipped, dashboard, content, ... }` shape.
@@ -114,7 +132,7 @@ export async function runChartGenerate(
       model,
       systemPrompt,
       context: stringifyJSON([{ role: 'user', content: userPrompt }]),
-      temperature: inputs.temperature ?? 0.2,
+      temperature: resolveTemperature(inputs.temperature),
       apiKey,
       azureEndpoint: inputs.azureEndpoint,
       azureApiVersion: inputs.azureApiVersion,
