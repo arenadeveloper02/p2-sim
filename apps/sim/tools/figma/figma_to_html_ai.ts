@@ -1,8 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
-import { createLogger } from '@sim/logger'
-import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { buildToolLlmCostFields } from '@/lib/billing/core/tool-llm-cost'
-import { getMaxOutputTokensForModel } from '@/providers/utils'
 import type { ToolConfig, WorkflowToolExecutionContext } from '@/tools/types'
 
 // Parameters for the tool

@@ -79,11 +79,7 @@ export function resolveModelIdentifierForBackfill(
   metadata: unknown,
   pricingSnapshot: unknown
 ): string {
-  return (
-    readMetadataModel(metadata) ??
-    readPricingSnapshotModel(pricingSnapshot) ??
-    description
-  )
+  return readMetadataModel(metadata) ?? readPricingSnapshotModel(pricingSnapshot) ?? description
 }
 
 /**
@@ -147,8 +143,7 @@ export function normalizeUsageLogRowForBackfill(
 }
 
 /** Matches `/api/billing/update-cost` idempotency keys: `update-cost:{messageId}-billing`. */
-const UPDATE_COST_BILLING_EVENT_KEY =
-  /^update-cost:(.+)-billing$/
+const UPDATE_COST_BILLING_EVENT_KEY = /^update-cost:(.+)-billing$/
 
 /**
  * Extracts the mothership/copilot message (stream) id from an update-cost event key.
@@ -183,4 +178,3 @@ export const MOTHERSHIP_CHAT_ATTRIBUTION_SOURCES = [
   'mcp_copilot',
   'mothership_block',
 ] as const
-

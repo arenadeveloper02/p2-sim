@@ -13,16 +13,16 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage, getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, sql } from 'drizzle-orm'
-import {
-  EXECUTION_ACTOR_TYPES,
-  type ExecutionActor,
-  type ExecutionActorType,
-} from '@/lib/execution/actor-resolution'
+import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import {
   checkUsageStatus,
   getOrgUsageLimit,
   maybeSendUsageThresholdEmail,
 } from '@/lib/billing/core/usage'
+import {
+  normalizeUsageModelId,
+  normalizeUsageToolId,
+} from '@/lib/billing/core/usage-entry-normalize'
 import {
   type BillingContext,
   deriveBillingContext,
@@ -31,17 +31,17 @@ import {
   recordUsage,
   stableEventKey,
 } from '@/lib/billing/core/usage-log'
-import {
-  normalizeUsageModelId,
-  normalizeUsageToolId,
-} from '@/lib/billing/core/usage-entry-normalize'
 import { logUsageSkip, type UsageSkipReason } from '@/lib/billing/core/usage-skip-metrics'
-import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { resolveEffectivePiiRedaction } from '@/lib/billing/retention'
 import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { filterForDisplay } from '@/lib/core/utils/display-filters'
+import {
+  EXECUTION_ACTOR_TYPES,
+  type ExecutionActor,
+  type ExecutionActorType,
+} from '@/lib/execution/actor-resolution'
 import {
   collectLargeValueReferenceKeys,
   replaceLargeValueReferenceKeysWithClient,
@@ -1615,7 +1615,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
             ...(line.category === 'external' && line.unit ? { unit: line.unit } : {}),
             ...(line.category === 'model' && line.metadata
               ? {
-                  quantity: (line.metadata as ModelUsageMetadata).inputTokens +
+                  quantity:
+                    (line.metadata as ModelUsageMetadata).inputTokens +
                     (line.metadata as ModelUsageMetadata).outputTokens,
                   unit: 'tokens',
                 }
@@ -1626,77 +1627,65 @@ export class ExecutionLogger implements IExecutionLoggerService {
       }
 
       if (executionId) {
-        // Serialize concurrent completion boundaries for this execution so the
-        // read-then-insert reconciliation cannot race. pg_advisory_xact_lock is
-        // transaction-scoped (auto-released on commit/rollback, pool-safe) and
-        // bounded by lock_timeout. The critical section is one SELECT + one
-        // INSERT; the lock is uncontended in the normal (already-serialized)
-        // flow and only matters under a cross-process double-completion of the
-        // same execution, where it stops a stale already-billed read from
-        // dropping the larger delta.
-        try {
-          await db.transaction(async (tx) => {
-            await tx.execute(
-              sql`select set_config('lock_timeout', ${`${USAGE_RECONCILE_LOCK_TIMEOUT_MS}ms`}, true)`
+        await db.transaction(async (tx) => {
+          await tx.execute(
+            sql`select set_config('lock_timeout', ${`${USAGE_RECONCILE_LOCK_TIMEOUT_MS}ms`}, true)`
+          )
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${executionId}, 0))`)
+
+          // Already-billed for this execution, scoped to the rows this path owns
+          // (source='workflow') so a same-executionId row from another source
+          // can't suppress a charge.
+          const billedRows = await tx
+            .select({
+              category: usageLog.category,
+              description: usageLog.description,
+              cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)`,
+            })
+            .from(usageLog)
+            .where(and(eq(usageLog.executionId, executionId), eq(usageLog.source, 'workflow')))
+            .groupBy(usageLog.category, usageLog.description)
+
+          const alreadyBilled = new Map<string, number>()
+          for (const row of billedRows) {
+            alreadyBilled.set(
+              `${row.category}::${row.description}`,
+              Number.parseFloat(row.cost ?? '0')
             )
-            await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${executionId}, 0))`)
+          }
 
-            // Already-billed for this execution, scoped to the rows this path owns
-            // (source='workflow') so a same-executionId row from another source
-            // can't suppress a charge.
-            const billedRows = await tx
-              .select({
-                category: usageLog.category,
-                description: usageLog.description,
-                cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)`,
-              })
-              .from(usageLog)
-              .where(and(eq(usageLog.executionId, executionId), eq(usageLog.source, 'workflow')))
-              .groupBy(usageLog.category, usageLog.description)
+          const entries = buildDeltaEntries(alreadyBilled)
+          if (entries.length > 0) {
+            await recordUsage({
+              userId,
+              entries,
+              workspaceId: workflowRecord.workspaceId ?? undefined,
+              workflowId,
+              executionId,
+              occurredAt,
+              executionActor,
+              ...executionLineage,
+              tx,
+              billingEntity: resolvedBillingContext.billingEntity,
+              billingPeriod: resolvedBillingContext.billingPeriod,
+            })
+            recordedIncrement = entries.reduce((acc, e) => acc + e.cost, 0)
 
-            const alreadyBilled = new Map<string, number>()
-            for (const row of billedRows) {
-              alreadyBilled.set(
-                `${row.category}::${row.description}`,
-                Number.parseFloat(row.cost ?? '0')
-              )
-            }
-
-            const entries = buildDeltaEntries(alreadyBilled)
-            if (entries.length > 0) {
-              await recordUsage({
-                userId,
-                entries,
-                workspaceId: workflowRecord.workspaceId ?? undefined,
-                workflowId,
-                executionId,
-                occurredAt,
-                executionActor,
-                ...executionLineage,
-                tx,
-                billingEntity: resolvedBillingContext.billingEntity,
-                billingPeriod: resolvedBillingContext.billingPeriod,
-              })
-              recordedIncrement = entries.reduce((acc, e) => acc + e.cost, 0)
-
-              // Refine cost_total to the EXACT post-reconciliation ledger sum,
-              // inside the same advisory-locked tx so it is atomic with the inserts
-              // and can't be clobbered by a concurrent boundary. Exact by
-              // construction: under the lock no delta collides, so the new sum is
-              // the prior workflow-source sum plus the deltas just inserted. This
-              // supersedes the main-transaction GREATEST baseline (which remains for
-              // early-return / no-executionId / failed-reconcile paths).
-              const ledgerSum =
-                [...alreadyBilled.values()].reduce((acc, v) => acc + v, 0) + recordedIncrement
-              await tx
-                .update(workflowExecutionLogs)
-                .set({ costTotal: ledgerSum.toString() })
-                .where(eq(workflowExecutionLogs.executionId, executionId))
-            }
-          })
-        } catch (lockError) {
-          throw lockError
-        }
+            // Refine cost_total to the EXACT post-reconciliation ledger sum,
+            // inside the same advisory-locked tx so it is atomic with the inserts
+            // and can't be clobbered by a concurrent boundary. Exact by
+            // construction: under the lock no delta collides, so the new sum is
+            // the prior workflow-source sum plus the deltas just inserted. This
+            // supersedes the main-transaction GREATEST baseline (which remains for
+            // early-return / no-executionId / failed-reconcile paths).
+            const ledgerSum =
+              [...alreadyBilled.values()].reduce((acc, v) => acc + v, 0) + recordedIncrement
+            await tx
+              .update(workflowExecutionLogs)
+              .set({ costTotal: ledgerSum.toString() })
+              .where(eq(workflowExecutionLogs.executionId, executionId))
+          }
+        })
       } else {
         // No execution scope to reconcile/lock against (not expected at a
         // workflow completion): record the full targets directly.

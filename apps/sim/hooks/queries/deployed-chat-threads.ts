@@ -1,9 +1,15 @@
 import { getErrorMessage } from '@sim/utils/errors'
-import { keepPreviousData, skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  skipToken,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
-  deleteDeployedChatThreadContract,
   type DeployedChatThreadRecord,
+  deleteDeployedChatThreadContract,
   listDeployedChatThreadsContract,
   updateDeployedChatThreadContract,
 } from '@/lib/api/contracts/deployed-chat-threads'
@@ -32,7 +38,9 @@ export async function fetchDeployedChatThreads(
       signal,
     })
     if (!response.ok) {
-      throw error instanceof Error ? error : new Error(getErrorMessage(error, 'Failed to load threads'))
+      throw error instanceof Error
+        ? error
+        : new Error(getErrorMessage(error, 'Failed to load threads'))
     }
     const data = (await response.json()) as { records?: DeployedChatThreadRecord[] }
     return data.records ?? []
@@ -42,9 +50,7 @@ export async function fetchDeployedChatThreads(
 export function useDeployedChatThreads(identifier?: string, enabled = true) {
   return useQuery({
     queryKey: deployedChatThreadKeys.list(identifier),
-    queryFn: identifier
-      ? ({ signal }) => fetchDeployedChatThreads(identifier, signal)
-      : skipToken,
+    queryFn: identifier ? ({ signal }) => fetchDeployedChatThreads(identifier, signal) : skipToken,
     enabled: Boolean(identifier) && enabled,
     placeholderData: keepPreviousData,
     staleTime: DEPLOYED_CHAT_THREADS_STALE_TIME,
@@ -76,8 +82,7 @@ export function useRenameDeployedChatThread(identifier?: string) {
 
       queryClient.setQueryData<DeployedChatThreadRecord[]>(
         deployedChatThreadKeys.list(identifier),
-        (old) =>
-          old?.map((thread) => (thread.chatId === chatId ? { ...thread, title } : thread))
+        (old) => old?.map((thread) => (thread.chatId === chatId ? { ...thread, title } : thread))
       )
 
       return { previous }

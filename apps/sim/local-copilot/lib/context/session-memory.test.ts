@@ -10,11 +10,11 @@ import {
   isSessionMemorySystemMessage,
   parseSessionMemory,
   parseSummarizerSessionMemory,
-  selectUncoveredTurnsForSummary,
   SESSION_MEMORY_VERSION,
-  shouldRefreshSessionMemory,
   type SessionMemory,
   type SessionMemoryTurn,
+  selectUncoveredTurnsForSummary,
+  shouldRefreshSessionMemory,
 } from '@/local-copilot/lib/context/session-memory'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 
@@ -155,9 +155,9 @@ describe('compactChatHistory recent window', () => {
   it('keeps the last N turns verbatim with no extractive 400-char summary', () => {
     const history = makeHistory(12)
     const compacted = compactChatHistory(history, { recentTurnsFull: 6 })
-    expect(compacted.some((message) => String(message.content).includes('Earlier conversation'))).toBe(
-      false
-    )
+    expect(
+      compacted.some((message) => String(message.content).includes('Earlier conversation'))
+    ).toBe(false)
     expect(compacted.filter((message) => message.role === 'user')).toHaveLength(6)
     expect(compacted.some((message) => message.content === 'User 1')).toBe(false)
     expect(compacted.some((message) => message.content === 'User 7')).toBe(true)

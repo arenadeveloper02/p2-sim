@@ -291,4 +291,3 @@ function groupHistoryTurns(messages: ChatMessage[]): HistoryTurn[] {
 
   return turns
 }
-

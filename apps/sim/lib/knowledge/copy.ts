@@ -1,20 +1,15 @@
 import { db } from '@sim/db'
-import {
-  document,
-  embedding,
-  knowledgeBase,
-  knowledgeBaseTagDefinitions,
-} from '@sim/db/schema'
+import { document, embedding, knowledgeBase, knowledgeBaseTagDefinitions } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, gt, isNull, type SQL } from 'drizzle-orm'
 import { mapWithConcurrency } from '@/lib/core/utils/concurrency'
 import {
-  KnowledgeBaseConflictError,
-  KnowledgeBasePermissionError,
   deleteKnowledgeBase,
   getKnowledgeBaseById,
+  KnowledgeBaseConflictError,
+  KnowledgeBasePermissionError,
 } from '@/lib/knowledge/service'
 import type { ChunkingConfig, KnowledgeBaseWithCounts } from '@/lib/knowledge/types'
 import { generateKnowledgeBaseFileKey } from '@/lib/uploads/contexts/knowledge-base/knowledge-base-file-manager'

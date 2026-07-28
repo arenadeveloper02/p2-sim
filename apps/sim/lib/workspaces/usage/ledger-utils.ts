@@ -22,10 +22,7 @@ export function sortByBillableCostDesc<T extends { billableCost: number }>(
 }
 
 /** Average billable credits per workflow run; zero when inputs are non-positive. */
-export function averageBillableCostPerRun(
-  billableCost: number,
-  executionCount: number
-): number {
+export function averageBillableCostPerRun(billableCost: number, executionCount: number): number {
   if (executionCount <= 0 || billableCost <= 0) return 0
   return billableCost / executionCount
 }

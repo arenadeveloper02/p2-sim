@@ -360,7 +360,7 @@ describe('recordCumulativeUsage', () => {
     )
 
     if (previousMultiplier === undefined) {
-      delete process.env.USAGE_LOG_COST_MULTIPLIER
+      process.env.USAGE_LOG_COST_MULTIPLIER = undefined
     } else {
       process.env.USAGE_LOG_COST_MULTIPLIER = previousMultiplier
     }

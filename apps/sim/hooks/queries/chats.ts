@@ -13,6 +13,8 @@ import {
   type DeployedChatConfig,
   deleteChatContract,
   getDeployedChatConfigContract,
+  type ListAgentDepartmentsResponse,
+  listAgentDepartmentsContract,
   requestChatEmailOtpContract,
   type UpdateChatBody,
   type UpdateChatResponse,
@@ -33,9 +35,26 @@ export const chatKeys = {
   detail: deploymentKeys.chatDetail,
   configs: () => [...chatKeys.all, 'config'] as const,
   config: (identifier?: string) => [...chatKeys.configs(), identifier ?? ''] as const,
+  departments: () => [...chatKeys.all, 'departments'] as const,
 }
 
 export const DEPLOYED_CHAT_CONFIG_STALE_TIME = 60 * 1000
+export const AGENT_DEPARTMENTS_STALE_TIME = 5 * 60 * 1000
+
+async function fetchAgentDepartments(signal?: AbortSignal): Promise<ListAgentDepartmentsResponse> {
+  return requestJson(listAgentDepartmentsContract, { signal })
+}
+
+/**
+ * Active Arena agent departments for chat deploy category pickers.
+ */
+export function useAgentDepartments() {
+  return useQuery({
+    queryKey: chatKeys.departments(),
+    queryFn: ({ signal }) => fetchAgentDepartments(signal),
+    staleTime: AGENT_DEPARTMENTS_STALE_TIME,
+  })
+}
 
 /**
  * Auth types for chat access control

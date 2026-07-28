@@ -4,9 +4,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildRepriceDeltaEntries,
+  COST_EPSILON,
   collectTraceExecutionArtifacts,
   resolveExternalDescription,
-  COST_EPSILON,
 } from '@/lib/billing/core/cost-block-reprice'
 
 describe('cost-block-reprice', () => {

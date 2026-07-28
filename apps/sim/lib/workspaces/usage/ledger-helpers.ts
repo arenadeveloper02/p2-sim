@@ -3,29 +3,23 @@ import {
   copilotChats,
   copilotRuns,
   usageLog,
-  workspace,
   workflow,
   workflowExecutionLogs,
+  workspace,
 } from '@sim/db/schema'
+import { and, eq, gte, inArray, isNotNull, lte, or, type SQL, sql } from 'drizzle-orm'
 import {
-  and,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  lte,
-  or,
-  type SQL,
-  sql,
-} from 'drizzle-orm'
-import {
+  type UsageChargeTypeValue,
   usageActorTypeSchema,
   usageChargeTypeSchema,
-  type UsageChargeTypeValue,
 } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
 import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
-import { parseDecimal, parseIntMetric, sortByBillableCostDesc } from '@/lib/workspaces/usage/ledger-utils'
+import {
+  parseDecimal,
+  parseIntMetric,
+  sortByBillableCostDesc,
+} from '@/lib/workspaces/usage/ledger-utils'
 
 export {
   averageBillableCostPerRun,
@@ -298,20 +292,18 @@ export function buildLedgerConditions(
   return conditions
 }
 
-export function buildLedgerJoinConditions(
-  workspaceCondition: SQL,
-  period: ResolvedPeriod
-): SQL[] {
+export function buildLedgerJoinConditions(workspaceCondition: SQL, period: ResolvedPeriod): SQL[] {
   return [workspaceCondition, ...ledgerPeriodBounds(period)]
 }
 
-export function buildExecutionConditions(
-  workspaceCondition: SQL,
-  period: ResolvedPeriod
-): SQL[] {
+export function buildExecutionConditions(workspaceCondition: SQL, period: ResolvedPeriod): SQL[] {
   const start = ensurePeriodDate(period.start)
   const end = ensurePeriodDate(period.end)
-  return [workspaceCondition, gte(workflowExecutionLogs.startedAt, start), lte(workflowExecutionLogs.startedAt, end)]
+  return [
+    workspaceCondition,
+    gte(workflowExecutionLogs.startedAt, start),
+    lte(workflowExecutionLogs.startedAt, end),
+  ]
 }
 
 export function periodRange<T extends Parameters<typeof gte>[0]>(
@@ -338,9 +330,7 @@ export function resolveExplicitPeriod(options: ExplicitPeriodOptions): ResolvedP
 export function resolvePeriodFromDateCandidates(
   candidates: Array<Date | string | number | null | undefined>
 ): ResolvedPeriod {
-  const dates = candidates
-    .map(coerceToDate)
-    .filter((value): value is Date => value !== null)
+  const dates = candidates.map(coerceToDate).filter((value): value is Date => value !== null)
 
   if (dates.length === 0) {
     const now = new Date()
@@ -356,9 +346,7 @@ export function resolvePeriodFromDateCandidates(
 
 export function timeBucketExpr(useHourly: boolean) {
   const occurredAt = ledgerOccurredAt()
-  return useHourly
-    ? sql`date_trunc('hour', ${occurredAt})`
-    : sql`date_trunc('day', ${occurredAt})`
+  return useHourly ? sql`date_trunc('hour', ${occurredAt})` : sql`date_trunc('day', ${occurredAt})`
 }
 
 export function executionBucketExpr(useHourly: boolean) {
@@ -700,4 +688,3 @@ export function mapExpensiveWorkflowRows(
     }))
   ).slice(0, limit)
 }
-

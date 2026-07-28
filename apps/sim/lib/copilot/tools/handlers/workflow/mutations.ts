@@ -8,6 +8,7 @@ import { mergeSubblockStateWithValues } from '@sim/workflow-persistence/subblock
 import { eq } from 'drizzle-orm'
 import { performCreateWorkspaceApiKey } from '@/lib/api-key/orchestration'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/request/types'
+import { buildCopilotWorkflowLineageOptions } from '@/lib/copilot/tools/handlers/workflow/lineage'
 import {
   buildVfsFolderPathMap,
   decodeVfsPathSegments,
@@ -17,7 +18,6 @@ import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getSocketServerUrl } from '@/lib/core/utils/urls'
 import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
-import { buildCopilotWorkflowLineageOptions } from '@/lib/copilot/tools/handlers/workflow/lineage'
 import {
   getExecutionInputForWorkflow,
   getExecutionStateForWorkflow,
