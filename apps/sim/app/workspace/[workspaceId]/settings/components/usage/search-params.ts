@@ -26,8 +26,11 @@ export const USER_WORKSPACE_FILTER_ALL = 'all' as const
  *
  * - `scope` selects user / workspace / organization analytics (admin-gated in the UI).
  * - `tab` selects the primary surface (all sources, workflow-only, mothership-only).
- * - `period` is the preset lookback when `allTime` is false.
+ * - `period` is the preset lookback when `allTime` is false and no custom range is set.
  * - `allTime` disables the period window and queries the full retained history.
+ * - `startTime` / `endTime` are the applied custom range bounds (Calendar `YYYY-MM-DD` or
+ *   `YYYY-MM-DDTHH:mm`). Meaningful when both are set and `allTime` is false; they map
+ *   directly to the analytics API query fields.
  * - `rootExecutionId` drills into an execution lineage tree (single-workspace scopes only).
  * - `orgWorkspaceId` optionally subsets organization analytics to one workspace.
  * - `userWorkspaceId` subsets user analytics: `null` = current route workspace, `all` = all
@@ -38,6 +41,8 @@ export const usageParsers = {
   tab: parseAsStringLiteral(USAGE_TABS).withDefault('all'),
   period: parseAsStringLiteral(USAGE_PERIODS).withDefault('30d'),
   allTime: parseAsBoolean.withDefault(false),
+  startTime: parseAsString,
+  endTime: parseAsString,
   rootExecutionId: parseAsString,
   orgWorkspaceId: parseAsString,
   userWorkspaceId: parseAsString,

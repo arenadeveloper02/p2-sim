@@ -1,15 +1,19 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Badge,
   ButtonGroup,
   ButtonGroupItem,
+  Calendar,
   ChipLink,
   ChipSelect,
   cn,
   Info,
   Loader,
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
   RefreshCw,
   Skeleton,
 } from '@sim/emcn'
@@ -18,6 +22,7 @@ import { useQueryStates } from 'nuqs'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
 import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-utils'
 import { getMothershipChatPath } from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
+import { formatDateShort } from '@/app/workspace/[workspaceId]/logs/utils'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { ChargeTypePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/charge-type-panel'
 import {
@@ -711,9 +716,22 @@ function UsageDashboardContent({
 export function Usage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const [
-    { scope, tab, period, allTime, rootExecutionId, orgWorkspaceId, userWorkspaceId },
+    {
+      scope,
+      tab,
+      period,
+      allTime,
+      startTime,
+      endTime,
+      rootExecutionId,
+      orgWorkspaceId,
+      userWorkspaceId,
+    },
     setUsageParams,
   ] = useQueryStates(usageParsers, usageUrlKeys)
+  const [datePickerOpen, setDatePickerOpen] = useState(false)
+
+  const isCustomRange = Boolean(startTime && endTime) && !allTime
 
   const { data: permissions, isPending: permissionsLoading } =
     useWorkspacePermissionsQuery(workspaceId)
@@ -754,12 +772,46 @@ export function Usage() {
   const userLineageWorkspaceId = isUserAllWorkspaces ? null : (resolvedUserWorkspaceId ?? null)
 
   const analyticsQuery = useMemo(() => {
-    const base = allTime ? { allTime: 'true' as const } : { period: period as UsagePeriod }
+    const base = allTime
+      ? { allTime: 'true' as const }
+      : isCustomRange && startTime && endTime
+        ? { startTime, endTime }
+        : { period: period as UsagePeriod }
 
     if (tab === 'workflow') return { ...base, sources: 'workflow' }
     if (tab === 'mothership') return { ...base, sources: MOTHERSHIP_USAGE_SOURCES }
     return base
-  }, [allTime, period, tab])
+  }, [allTime, endTime, isCustomRange, period, startTime, tab])
+
+  const handlePeriodChange = (value: string) => {
+    if (value === 'custom') {
+      setDatePickerOpen(true)
+      return
+    }
+    if (value === 'all') {
+      void setUsageParams({ allTime: true, startTime: null, endTime: null })
+      return
+    }
+    void setUsageParams({
+      allTime: false,
+      period: value as UsagePeriod,
+      startTime: null,
+      endTime: null,
+    })
+  }
+
+  const handleDateRangeApply = (nextStart: string, nextEnd: string) => {
+    void setUsageParams({
+      allTime: false,
+      startTime: nextStart,
+      endTime: nextEnd,
+    })
+    setDatePickerOpen(false)
+  }
+
+  const handleDatePickerCancel = () => {
+    setDatePickerOpen(false)
+  }
 
   const workspaceAnalyticsQuery = useMemo(() => {
     const withLineage =
@@ -910,9 +962,13 @@ export function Usage() {
 
   const periodLabel = allTime
     ? 'All time'
-    : data
-      ? `${formatPeriodLabel(period)} · ${new Date(data.period.startTime).toLocaleDateString()} – ${new Date(data.period.endTime).toLocaleDateString()}`
-      : formatPeriodLabel(period)
+    : isCustomRange && startTime && endTime
+      ? `${formatDateShort(startTime)} – ${formatDateShort(endTime)}`
+      : data
+        ? `${formatPeriodLabel(period)} · ${new Date(data.period.startTime).toLocaleDateString()} – ${new Date(data.period.endTime).toLocaleDateString()}`
+        : formatPeriodLabel(period)
+
+  const periodSelectorValue = allTime ? 'all' : isCustomRange ? 'custom' : period
 
   const emptyCopy = isUserScope
     ? isUserAllWorkspaces
@@ -1022,24 +1078,34 @@ export function Usage() {
                 />
               )}
 
-              <div className='flex flex-wrap items-center gap-2'>
-                <ButtonGroup
-                  value={allTime ? 'all' : period}
-                  onValueChange={(value) => {
-                    if (value === 'all') {
-                      void setUsageParams({ allTime: true })
-                      return
-                    }
-                    void setUsageParams({ allTime: false, period: value as UsagePeriod })
-                  }}
-                >
+              <div className='relative flex flex-wrap items-center gap-2'>
+                <ButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
                   {USAGE_PERIODS.map((periodId) => (
                     <ButtonGroupItem key={periodId} value={periodId}>
                       {formatPeriodLabel(periodId)}
                     </ButtonGroupItem>
                   ))}
                   <ButtonGroupItem value='all'>All time</ButtonGroupItem>
+                  <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
                 </ButtonGroup>
+                <Popover
+                  open={datePickerOpen}
+                  onOpenChange={(isOpen) => {
+                    if (!isOpen) handleDatePickerCancel()
+                  }}
+                >
+                  <PopoverAnchor className='pointer-events-none absolute inset-0' />
+                  <PopoverContent align='end' sideOffset={4} className='w-auto p-0'>
+                    <Calendar
+                      mode='range'
+                      showTime
+                      startDate={startTime ?? undefined}
+                      endDate={endTime ?? undefined}
+                      onRangeChange={handleDateRangeApply}
+                      onCancel={handleDatePickerCancel}
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
           </div>
