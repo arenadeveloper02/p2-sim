@@ -66,9 +66,9 @@ export function createToolStagnationTracker(threshold = TOOL_STAGNATION_THRESHOL
 /**
  * User-facing notice when the agent stops spinning on a dead tool loop.
  */
-export function buildStagnationUserMessage(toolName: string, count: number): string {
+export function buildStagnationUserMessage(_toolName: string, count: number): string {
   return (
-    `I kept retrying \`${toolName}\` (${count} similar attempts) without making progress. ` +
+    `I kept retrying the same action (${count} similar attempts) without making progress. ` +
     'Stopping that loop — tell me what to change, or confirm a different approach.'
   )
 }
