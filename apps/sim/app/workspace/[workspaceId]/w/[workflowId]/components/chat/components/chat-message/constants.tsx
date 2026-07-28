@@ -351,6 +351,7 @@ export function ImageWithViewFullOverlay({
   compactActions = false,
   postProcessImageUrl,
   postProcessWorkflowId,
+  postProcessMessageId,
 }: {
   src: string
   wrapperClassName: string
@@ -362,6 +363,8 @@ export function ImageWithViewFullOverlay({
   /** Stored image URL used for Ideogram post-process (⋯ menu). */
   postProcessImageUrl?: string
   postProcessWorkflowId?: string
+  /** Chat message id so post-process results append inline. */
+  postProcessMessageId?: string
 }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [isModalImageLoading, setIsModalImageLoading] = useState(false)
@@ -437,6 +440,7 @@ export function ImageWithViewFullOverlay({
             <ImagePostProcessMenu
               imageUrl={postProcessImageUrl}
               workflowId={resolvedWorkflowId}
+              messageId={postProcessMessageId}
               compactActions={compactActions}
             />
           ) : null}
@@ -478,6 +482,7 @@ export const renderBs64Img = ({
   selectLabel,
   isSelected,
   compactActions,
+  messageId,
 }: {
   isBase64: boolean
   imageData: string
@@ -486,6 +491,7 @@ export const renderBs64Img = ({
   selectLabel?: string
   isSelected?: boolean
   compactActions?: boolean
+  messageId?: string
 }) => {
   try {
     const cleanImageData = typeof imageData === 'string' ? getBase64Payload(imageData) : ''
@@ -506,6 +512,7 @@ export const renderBs64Img = ({
           selectLabel={selectLabel}
           compactActions={compactActions}
           postProcessImageUrl={singleImageUrl}
+          postProcessMessageId={messageId}
         >
           <img
             src={displayUrl}
@@ -534,6 +541,7 @@ export const renderBs64Img = ({
             selectLabel={selectLabel}
             compactActions={compactActions}
             postProcessImageUrl={singleImageUrl}
+            postProcessMessageId={messageId}
           >
             <img
               src={displayUrl}
@@ -585,6 +593,7 @@ export const renderBs64Img = ({
         selectLabel={selectLabel}
         compactActions={compactActions}
         postProcessImageUrl={singleImageUrl || undefined}
+        postProcessMessageId={messageId}
       >
         <img
           src={imageSrc}
@@ -632,7 +641,8 @@ export type ChatMessageImageSelectionProps = {
  */
 export function renderChatMessageImage(
   src: string,
-  selectionProps?: ChatMessageImageSelectionProps
+  selectionProps?: ChatMessageImageSelectionProps,
+  messageId?: string
 ) {
   const trimmed = src.trim()
   if (!trimmed) {
@@ -644,6 +654,7 @@ export function renderChatMessageImage(
     return renderBs64Img({
       isBase64: true,
       imageData: base64Data || trimmed,
+      messageId,
       ...selectionProps,
     })
   }
@@ -652,6 +663,7 @@ export function renderChatMessageImage(
     return renderBs64Img({
       isBase64: true,
       imageData: trimmed.replace(/\s+/g, ''),
+      messageId,
       ...selectionProps,
     })
   }
@@ -660,6 +672,7 @@ export function renderChatMessageImage(
     isBase64: false,
     imageData: '',
     imageUrl: trimmed,
+    messageId,
     ...selectionProps,
   })
 }

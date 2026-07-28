@@ -1,5 +1,6 @@
 import type { SubBlockConfig } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
+import { extractStorageKey, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 import { RENDERING_SPEED_OPTIONS } from '@/tools/ideogram/constants'
 
 /** Ideogram post-process operations for the Post Processor block and image ⋯ menu. */
@@ -26,15 +27,42 @@ export const IDEOGRAM_POST_PROCESSOR_OPERATION_OPTIONS = [
   { label: 'Upscale', id: 'upscale' },
 ] as const
 
-/** Curated reframe resolutions for the block and per-image ⋯ menu. */
+/**
+ * Curated ResolutionV3 values for the block and per-image ⋯ Reframe menu.
+ * Must stay within Ideogram's ResolutionV3 enum (see RESOLUTION_V3_OPTIONS).
+ */
 export const POST_PROCESSOR_REFRAME_RESOLUTION_OPTIONS = [
   { label: 'Square (1024×1024)', id: '1024x1024' },
-  { label: 'Landscape (1536×1024)', id: '1536x1024' },
-  { label: 'Portrait (1024×1536)', id: '1024x1536' },
-  { label: 'HD Landscape (1920×1080)', id: '1920x1080' },
-  { label: '2K Landscape (2560×1440)', id: '2560x1440' },
-  { label: '2K Portrait (1440×2560)', id: '1440x2560' },
+  { label: 'Portrait (640×1536)', id: '640x1536' },
+  { label: 'Portrait (832×1248)', id: '832x1248' },
+  { label: 'Portrait (736×1312)', id: '736x1312' },
+  { label: 'Landscape (1536×640)', id: '1536x640' },
+  { label: 'Landscape (1344×768)', id: '1344x768' },
+  { label: 'Landscape (1280×800)', id: '1280x800' },
 ] as const
+
+/**
+ * Coerces a bare internal image URL string into a FileInput-shaped object.
+ * External URLs are left unchanged (normalizeFileInput / FileInputSchema reject them).
+ */
+export function coercePostProcessorImageInput(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  const trimmed = value.trim()
+  if (!trimmed) return value
+
+  if (isInternalFileUrl(trimmed)) {
+    const key = extractStorageKey(trimmed)
+    const name = key.split('/').pop() || 'image.png'
+    return { url: trimmed, name, size: 0, key }
+  }
+
+  try {
+    JSON.parse(trimmed)
+    return value
+  } catch {
+    return value
+  }
+}
 
 function postOp(
   operation: string | readonly string[]
@@ -77,7 +105,7 @@ export const IDEOGRAM_POST_PROCESSOR_SUB_BLOCKS: SubBlockConfig[] = [
     id: 'imageRef',
     title: 'Image',
     type: 'short-input',
-    placeholder: 'Reference image from a previous block',
+    placeholder: 'Image URL or file reference from a previous block',
     canonicalParamId: 'image',
     mode: 'advanced',
     required: true,
@@ -133,9 +161,10 @@ export const IDEOGRAM_POST_PROCESSOR_SUB_BLOCKS: SubBlockConfig[] = [
  * Resolves the Ideogram tool ID for the Post Processor block.
  */
 export function resolvePostProcessorToolId(params: Record<string, unknown>): string {
-  const image = normalizeFileInput(params.uploadImage || params.imageRef || params.image, {
-    single: true,
-  })
+  const rawImage = coercePostProcessorImageInput(
+    params.uploadImage || params.imageRef || params.image
+  )
+  const image = normalizeFileInput(rawImage, { single: true })
   if (image) params.image = image
 
   const operation =

@@ -217,6 +217,7 @@ export function bySourceDisplayLabelExpr(): SQL<string> {
     when ${usageLog.source} = 'knowledge-base' then 'Knowledge base'
     when ${usageLog.source} = 'voice-input' then 'Voice input'
     when ${usageLog.source} = 'enrichment' then 'Enrichment'
+    when ${usageLog.source} = 'image-post-process' then 'Image post-process'
     else ${usageLog.source}::text
   end`
 }

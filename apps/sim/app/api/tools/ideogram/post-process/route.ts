@@ -1,4 +1,8 @@
+import { createHash } from 'node:crypto'
+import { db } from '@sim/db'
+import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   executeIdeogramOperation,
@@ -10,8 +14,12 @@ import {
 } from '@/lib/api/contracts/tools/ideogram'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { recordUsage } from '@/lib/billing/core/usage-log'
+import { getCostMultiplier } from '@/lib/core/config/env-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import type { IdeogramPostProcessorOperation } from '@/lib/image-generation/ideogram-post-processor-fields'
+import { getIdeogramPostProcessRawCost } from '@/lib/image-generation/ideogram-post-process-pricing'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { extractStorageKey, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 
@@ -39,6 +47,92 @@ function mimeTypeFromFileName(fileName: string): string {
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
   if (lower.endsWith('.webp')) return 'image/webp'
   return 'image/png'
+}
+
+function extractResultImageUrl(output: Record<string, unknown>): string | undefined {
+  if (typeof output.baseImageUrl === 'string' && output.baseImageUrl) return output.baseImageUrl
+  if (typeof output.imageUrl === 'string' && output.imageUrl) return output.imageUrl
+  if (Array.isArray(output.imageUrls) && typeof output.imageUrls[0] === 'string') {
+    return output.imageUrls[0]
+  }
+  if (typeof output.content === 'string' && output.content.startsWith('http')) {
+    return output.content
+  }
+  return undefined
+}
+
+async function resolveWorkflowWorkspaceId(workflowId: string): Promise<string | undefined> {
+  if (!workflowId || workflowId === 'unknown') return undefined
+  const [row] = await db
+    .select({ workspaceId: workflow.workspaceId })
+    .from(workflow)
+    .where(eq(workflow.id, workflowId))
+    .limit(1)
+  return row?.workspaceId ?? undefined
+}
+
+/**
+ * Records a follow-on usage_log row for chat ⋯ post-process (separate from the
+ * original workflow completion ledger).
+ */
+async function recordPostProcessUsage(params: {
+  userId: string
+  workflowId: string
+  workspaceId?: string
+  operation: IdeogramPostProcessorOperation
+  requestId: string
+  byok: boolean
+  resultImageUrl?: string
+}): Promise<void> {
+  const rawCost = getIdeogramPostProcessRawCost(params.operation, { byok: params.byok })
+  const billableCost = rawCost > 0 ? rawCost * getCostMultiplier() : 0
+  const toolId = `ideogram_${params.operation}`
+  const eventKey = createHash('sha256')
+    .update(
+      [
+        'image-post-process',
+        params.userId,
+        params.workflowId,
+        params.operation,
+        params.requestId,
+        params.resultImageUrl ?? '',
+      ].join(':')
+    )
+    .digest('hex')
+
+  await recordUsage({
+    userId: params.userId,
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId !== 'unknown' ? params.workflowId : undefined,
+    entries: [
+      {
+        category: 'tool',
+        source: 'image-post-process',
+        description: `Ideogram ${params.operation.replace(/_/g, ' ')}`,
+        cost: billableCost,
+        rawCost,
+        billableCost,
+        eventKey,
+        vendor: 'ideogram',
+        toolId,
+        quantity: 1,
+        unit: 'image',
+        pricingSnapshot: {
+          vendor: 'ideogram',
+          tool: toolId,
+          flatRate: rawCost,
+          multiplier: getCostMultiplier(),
+          pricingSource: 'fixed',
+          capturedAt: new Date().toISOString(),
+        },
+        metadata: {
+          operation: params.operation,
+          byok: params.byok,
+          ...(params.resultImageUrl ? { resultImageUrl: params.resultImageUrl } : {}),
+        },
+      },
+    ],
+  })
 }
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
@@ -117,6 +211,26 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         },
       }
     )
+
+    const workspaceId = await resolveWorkflowWorkspaceId(workflowId).catch((error) => {
+      logger.warn(`[${requestId}] Failed to resolve workspace for post-process usage`, { error })
+      return undefined
+    })
+
+    const resultImageUrl = extractResultImageUrl(output as Record<string, unknown>)
+    await recordPostProcessUsage({
+      userId: authResult.userId,
+      workflowId,
+      workspaceId,
+      operation: body.operation,
+      requestId,
+      byok: Boolean(body.apiKey?.trim()),
+      resultImageUrl,
+    }).catch((error) => {
+      logger.warn(`[${requestId}] Failed to record image post-process usage, continuing`, {
+        error,
+      })
+    })
 
     return NextResponse.json({
       success: true,

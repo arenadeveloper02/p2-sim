@@ -3,6 +3,10 @@ import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
 import { create } from 'zustand'
 import { devtools, type PersistStorage, persist } from 'zustand/middleware'
+import {
+  normalizeImageUrlForCompare,
+  resolveSelectableGeneratedImage,
+} from '@/lib/chat/assistant-assets'
 import { sanitizeMessagesForPersistence } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { ChatMessage, ChatState } from './types'
 import { MAX_CHAT_HEIGHT, MAX_CHAT_WIDTH, MIN_CHAT_HEIGHT, MIN_CHAT_WIDTH } from './utils'
@@ -312,6 +316,65 @@ export const useChatStore = create<ChatState>()(
                 addedLength: content.length,
               })
               return { ...message, content: newContent }
+            })
+
+            return { messages: newMessages }
+          })
+        },
+
+        appendMessageImages: (messageId, imageUrls) => {
+          const trimmedUrls = imageUrls.map((url) => url.trim()).filter(Boolean)
+          if (trimmedUrls.length === 0) return
+
+          set((state) => {
+            const newMessages = state.messages.map((message) => {
+              if (message.id !== messageId) return message
+
+              const existingByUrl = new Map(
+                (message.generatedImages ?? []).map((image) => [
+                  normalizeImageUrlForCompare(image.url),
+                  image,
+                ])
+              )
+
+              const nextGenerated = [...(message.generatedImages ?? [])]
+              const urlsToAdd: string[] = []
+
+              for (const url of trimmedUrls) {
+                const key = normalizeImageUrlForCompare(url)
+                if (existingByUrl.has(key)) continue
+
+                const generated = resolveSelectableGeneratedImage(url, existingByUrl)
+                if (!generated) continue
+
+                existingByUrl.set(key, generated)
+                nextGenerated.push(generated)
+                urlsToAdd.push(url)
+              }
+
+              if (urlsToAdd.length === 0) {
+                return message
+              }
+
+              const prev = message.content
+              let nextContent: ChatMessage['content']
+
+              if (prev && typeof prev === 'object' && prev !== null && !Array.isArray(prev)) {
+                const record = { ...(prev as Record<string, unknown>) }
+                const existingImages = Array.isArray(record.images) ? [...record.images] : []
+                record.images = [...existingImages, ...urlsToAdd]
+                nextContent = record
+              } else if (typeof prev === 'string' && prev.trim().length > 0) {
+                nextContent = { content: prev, images: urlsToAdd }
+              } else {
+                nextContent = { images: urlsToAdd }
+              }
+
+              return {
+                ...message,
+                content: nextContent,
+                generatedImages: nextGenerated,
+              }
             })
 
             return { messages: newMessages }

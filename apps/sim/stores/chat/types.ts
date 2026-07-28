@@ -76,6 +76,11 @@ export interface ChatState {
   setSelectedWorkflowOutput: (workflowId: string, outputIds: string[]) => void
   getSelectedWorkflowOutput: (workflowId: string) => string[]
   appendMessageContent: (messageId: string, content: string) => void
+  /**
+   * Appends post-process (or other follow-on) image URLs onto an existing message
+   * so they render inline with the same ⋯ overlays.
+   */
+  appendMessageImages: (messageId: string, imageUrls: string[]) => void
   finalizeMessageStream: (
     messageId: string,
     finalContent?: string | Record<string, unknown>,

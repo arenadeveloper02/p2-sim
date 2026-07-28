@@ -24,6 +24,7 @@ import type { IdeogramPostProcessBody } from '@/lib/api/contracts/tools/ideogram
 import { POST_PROCESSOR_REFRAME_RESOLUTION_OPTIONS } from '@/lib/image-generation/ideogram-post-processor-fields'
 import { isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 import { useIdeogramPostProcess } from '@/hooks/queries/ideogram-post-process'
+import { useChatStore } from '@/stores/chat/store'
 
 const overlayButtonClass =
   'pointer-events-auto shrink-0 gap-1.5 rounded-md border-white/20 bg-black/40 px-3 py-2 text-white shadow-sm hover:bg-black/55 hover:text-white dark:border-white/20 dark:bg-black/50 dark:hover:bg-black/65'
@@ -38,6 +39,8 @@ interface ImagePostProcessMenuProps {
   /** Stored image URL used as the post-process input. */
   imageUrl: string
   workflowId?: string
+  /** Chat message to append result images onto. */
+  messageId?: string
   compactActions?: boolean
 }
 
@@ -47,9 +50,11 @@ interface ImagePostProcessMenuProps {
 export function ImagePostProcessMenu({
   imageUrl,
   workflowId,
+  messageId,
   compactActions = false,
 }: ImagePostProcessMenuProps) {
   const postProcess = useIdeogramPostProcess()
+  const appendMessageImages = useChatStore((state) => state.appendMessageImages)
   const [result, setResult] = useState<PostProcessResult | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -88,10 +93,21 @@ export function ImagePostProcessMenu({
           return
         }
 
+        const nextImageUrl =
+          (typeof output.baseImageUrl === 'string' && output.baseImageUrl) ||
+          (typeof output.imageUrl === 'string' && output.imageUrl) ||
+          (Array.isArray(output.imageUrls) && typeof output.imageUrls[0] === 'string'
+            ? output.imageUrls[0]
+            : undefined) ||
+          (typeof output.content === 'string' ? output.content : undefined)
+
         if (body.operation === 'layerize_text') {
+          if (nextImageUrl && messageId) {
+            appendMessageImages(messageId, [nextImageUrl])
+          }
           setResult({
             title,
-            imageUrl: output.baseImageUrl || output.imageUrl,
+            imageUrl: nextImageUrl,
             jsonText:
               Array.isArray(output.textBlocks) && output.textBlocks.length > 0
                 ? JSON.stringify(output.textBlocks, null, 2)
@@ -100,15 +116,14 @@ export function ImagePostProcessMenu({
           return
         }
 
-        const nextImageUrl =
-          (typeof output.imageUrl === 'string' && output.imageUrl) ||
-          (Array.isArray(output.imageUrls) && typeof output.imageUrls[0] === 'string'
-            ? output.imageUrls[0]
-            : undefined) ||
-          (typeof output.content === 'string' ? output.content : undefined)
-
         if (!nextImageUrl) {
           throw new Error('No image returned from post-process')
+        }
+
+        if (messageId) {
+          appendMessageImages(messageId, [nextImageUrl])
+          toast.success(title, { description: 'Result added to this chat message.' })
+          return
         }
 
         setResult({ title, imageUrl: nextImageUrl })
@@ -118,7 +133,7 @@ export function ImagePostProcessMenu({
         })
       }
     },
-    [canPostProcess, imageUrl, postProcess, workflowId]
+    [appendMessageImages, canPostProcess, imageUrl, messageId, postProcess, workflowId]
   )
 
   if (!canPostProcess) {

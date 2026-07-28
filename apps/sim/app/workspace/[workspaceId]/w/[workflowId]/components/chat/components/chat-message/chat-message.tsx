@@ -249,8 +249,8 @@ export function ChatMessage({
 
   const renderMarkdownImage = useCallback(
     ({ src }: { src: string; alt?: string }) =>
-      renderChatMessageImage(src, getGeneratedImageSelectionProps(src)),
-    [getGeneratedImageSelectionProps]
+      renderChatMessageImage(src, getGeneratedImageSelectionProps(src), message.id),
+    [getGeneratedImageSelectionProps, message.id]
   )
 
   if (message.type === 'user') {
@@ -338,6 +338,7 @@ export function ChatMessage({
                     isBase64: false,
                     imageData: '',
                     imageUrl: url,
+                    messageId: message.id,
                     ...getGeneratedImageSelectionProps(url),
                   })}
                 </div>
@@ -347,6 +348,7 @@ export function ChatMessage({
                   {renderBs64Img({
                     isBase64: true,
                     imageData: imageBase64,
+                    messageId: message.id,
                     ...getGeneratedImageSelectionProps(imgRaw),
                   })}
                 </div>
@@ -383,6 +385,7 @@ export function ChatMessage({
                     isBase64: false,
                     imageData: '',
                     imageUrl: url,
+                    messageId: message.id,
                     ...getGeneratedImageSelectionProps(url),
                   })}
                 </div>
@@ -397,6 +400,7 @@ export function ChatMessage({
         return renderBs64Img({
           isBase64: true,
           imageData: cleanedContent,
+          messageId: message.id,
           ...getGeneratedImageSelectionProps(content),
         })
       }
@@ -410,6 +414,7 @@ export function ChatMessage({
                 isBase64: false,
                 imageData: '',
                 imageUrl: trimmed,
+                messageId: message.id,
                 ...getGeneratedImageSelectionProps(trimmed),
               })}
             </div>
@@ -434,6 +439,7 @@ export function ChatMessage({
                   {renderBs64Img({
                     isBase64: true,
                     imageData,
+                    messageId: message.id,
                     ...getGeneratedImageSelectionProps(imageData),
                   })}
                 </div>

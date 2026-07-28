@@ -184,6 +184,7 @@ export type UsageLogSource =
   | 'knowledge-base'
   | 'voice-input'
   | 'enrichment'
+  | 'image-post-process'
 
 /**
  * usage_log sources that make up the "copilot" cost breakdown shown in billing

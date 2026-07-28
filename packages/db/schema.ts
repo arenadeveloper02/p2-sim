@@ -3509,6 +3509,7 @@ export const usageLogSourceEnum = pgEnum('usage_log_source', [
   'knowledge-base',
   'voice-input',
   'enrichment',
+  'image-post-process',
 ])
 
 export const usageLog = pgTable(

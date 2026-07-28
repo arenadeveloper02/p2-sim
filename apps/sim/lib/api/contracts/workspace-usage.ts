@@ -12,6 +12,7 @@ export const usageLogSourceSchema = z.enum([
   'knowledge-base',
   'voice-input',
   'enrichment',
+  'image-post-process',
 ])
 
 export type UsageLogSourceValue = z.output<typeof usageLogSourceSchema>
