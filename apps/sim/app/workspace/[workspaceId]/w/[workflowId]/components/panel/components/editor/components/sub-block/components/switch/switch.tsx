@@ -1,10 +1,12 @@
-import { Label, Switch as UISwitch } from '@sim/emcn'
+import { Info, Label, Switch as UISwitch } from '@sim/emcn'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 
 interface SwitchProps {
   blockId: string
   subBlockId: string
   title: string
+  /** Optional help text shown via an info icon next to the title. */
+  tooltip?: string
   value?: boolean
   isPreview?: boolean
   previewValue?: boolean | null
@@ -15,6 +17,7 @@ export function Switch({
   blockId,
   subBlockId,
   title,
+  tooltip,
   value: propValue,
   isPreview = false,
   previewValue,
@@ -40,9 +43,10 @@ export function Switch({
       />
       <Label
         htmlFor={`${blockId}-${subBlockId}`}
-        className='cursor-pointer font-medium font-sans text-[var(--text-primary)] text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-50'
+        className='flex cursor-pointer items-center gap-1.5 font-medium font-sans text-[var(--text-primary)] text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-50'
       >
         {title}
+        {tooltip ? <Info>{tooltip}</Info> : null}
       </Label>
     </div>
   )

@@ -8,8 +8,8 @@ import {
 } from '@/lib/image-generation/block-model-config'
 import {
   buildIdeogramToolParams,
+  IDEOGRAM_GENERATOR_TOOL_IDS,
   IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS,
-  IDEOGRAM_TOOL_IDS,
   resolveIdeogramToolId,
 } from '@/lib/image-generation/ideogram-fields'
 import {
@@ -1202,7 +1202,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     // },
   ],
   tools: {
-    access: ['image_generate', ...IDEOGRAM_TOOL_IDS],
+    access: ['image_generate', ...IDEOGRAM_GENERATOR_TOOL_IDS],
     config: {
       tool: (params) => {
         if (params.provider === 'ideogram') {
@@ -1318,6 +1318,11 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     images: { type: 'file[]', description: 'Ideogram edit images' },
     textPrompt: { type: 'string', description: 'Ideogram text prompt' },
     jsonPrompt: { type: 'json', description: 'Ideogram structured JSON prompt' },
+    useMagicPrompt: {
+      type: 'boolean',
+      description:
+        'When true on Generate 4.0, rewrites the text prompt into Ideogram JSON format before generating',
+    },
   },
   outputs: {
     content: { type: 'string', description: 'Generated image URL or identifier' },
@@ -1335,9 +1340,17 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     generationId: { type: 'string', description: 'Ideogram async generation ID' },
     status: { type: 'string', description: 'Ideogram async generation status' },
     jsonPrompt: { type: 'json', description: 'Ideogram structured JSON prompt output' },
+    magicPromptUsed: {
+      type: 'boolean',
+      description: 'True when Magic Prompt rewrote the text prompt before generation',
+    },
     descriptions: { type: 'array', description: 'Ideogram image descriptions' },
     baseImageUrl: { type: 'string', description: 'Ideogram text-erased base image URL' },
     originalImageUrl: { type: 'string', description: 'Ideogram original image URL' },
+    textBlocks: {
+      type: 'array',
+      description: 'Ideogram Layerize Text detected text layers with font and layout metadata',
+    },
     seed: { type: 'number', description: 'Seed used for generation' },
   },
 }

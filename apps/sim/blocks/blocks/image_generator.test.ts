@@ -21,7 +21,7 @@ describe('ImageGeneratorV2Block', () => {
 
   it('routes Ideogram provider to Ideogram tools', () => {
     expect(ImageGeneratorV2Block.tools?.access).toEqual(
-      expect.arrayContaining(['ideogram_generate_v4', 'ideogram_remix_v3'])
+      expect.arrayContaining(['ideogram_generate_v4', 'ideogram_remix_v4'])
     )
     expect(
       ImageGeneratorV2Block.tools?.config.tool?.({

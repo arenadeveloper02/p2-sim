@@ -23,7 +23,13 @@ export interface IdeogramImagesOutput {
   created: string | null
   images: IdeogramImageObject[]
   imageUrls: string[]
+  content?: string
+  image?: unknown
+  imageUrl?: string
   responseType?: string | null
+  s3UploadFailed?: boolean
+  jsonPrompt?: unknown
+  magicPromptUsed?: boolean
 }
 
 export interface IdeogramImagesResponse extends ToolResponse {
@@ -33,6 +39,7 @@ export interface IdeogramImagesResponse extends ToolResponse {
 export interface IdeogramGenerateV4Params extends IdeogramAuthParams {
   textPrompt?: string
   jsonPrompt?: unknown
+  useMagicPrompt?: boolean
   resolution?: string
   renderingSpeed?: string
   enableCopyrightDetection?: boolean
@@ -45,6 +52,8 @@ export interface IdeogramGenerateV4AsyncParams extends IdeogramGenerateV4Params 
 export interface IdeogramAsyncResponse extends ToolResponse {
   output: {
     generationId: string
+    jsonPrompt?: unknown
+    magicPromptUsed?: boolean
   }
 }
 
@@ -60,6 +69,10 @@ export interface IdeogramPollGenerationResponse extends ToolResponse {
     responseType: string | null
     images: IdeogramImageObject[]
     imageUrls: string[]
+    content?: string
+    image?: unknown
+    imageUrl?: string
+    s3UploadFailed?: boolean
   }
 }
 
@@ -193,11 +206,7 @@ export interface IdeogramRemoveBackgroundParams extends IdeogramAuthParams {
 }
 
 export interface IdeogramRemoveBackgroundResponse extends ToolResponse {
-  output: {
-    created: string | null
-    images: Array<{ url: string | null; isImageSafe: boolean }>
-    imageUrls: string[]
-  }
+  output: IdeogramImagesOutput
 }
 
 export interface IdeogramLayerizeTextParams extends IdeogramAuthParams {
@@ -211,6 +220,11 @@ export interface IdeogramLayerizeTextResponse extends ToolResponse {
     baseImageUrl: string
     originalImageUrl: string | null
     seed: number
+    textBlocks?: unknown[]
+    image?: unknown
+    imageUrl?: string
+    content?: string
+    s3UploadFailed?: boolean
   }
 }
 

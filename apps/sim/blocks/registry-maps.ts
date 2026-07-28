@@ -147,6 +147,7 @@ import { IcypeasBlock, IcypeasBlockMeta } from '@/blocks/blocks/icypeas'
 import { IdentityCenterBlock, IdentityCenterBlockMeta } from '@/blocks/blocks/identity_center'
 import { ImageFusionBlock } from '@/blocks/blocks/image_fusion'
 import { ImageGeneratorBlock, ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
+import { ImagePostProcessorBlock } from '@/blocks/blocks/image_post_processor'
 import { ImapBlock, ImapBlockMeta } from '@/blocks/blocks/imap'
 import { IncidentioBlock, IncidentioBlockMeta } from '@/blocks/blocks/incidentio'
 import { InfisicalBlock, InfisicalBlockMeta } from '@/blocks/blocks/infisical'
@@ -496,6 +497,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   identity_center: IdentityCenterBlock,
   image_generator: ImageGeneratorBlock,
   image_generator_v2: ImageGeneratorV2Block,
+  image_post_processor: ImagePostProcessorBlock,
   imap: ImapBlock,
   incidentio: IncidentioBlock,
   infisical: InfisicalBlock,

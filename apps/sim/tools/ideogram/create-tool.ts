@@ -75,6 +75,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Shared output schema for image-producing Ideogram tools. */
 export const ideogramImagesOutputs = {
   created: { type: 'string' as const, description: 'Request creation timestamp', optional: true },
+  content: {
+    type: 'string' as const,
+    description: 'Primary persisted image URL',
+    optional: true,
+  },
+  image: {
+    type: 'file' as const,
+    description: 'Primary generated image file (persisted to storage)',
+    optional: true,
+  },
+  imageUrl: {
+    type: 'string' as const,
+    description: 'Primary persisted image URL',
+    optional: true,
+  },
   images: {
     type: 'array' as const,
     description: 'Generated or edited images',
@@ -82,7 +97,7 @@ export const ideogramImagesOutputs = {
       type: 'object' as const,
       description: 'Ideogram image object',
       properties: {
-        url: { type: 'string' as const, description: 'Temporary image URL', optional: true },
+        url: { type: 'string' as const, description: 'Persisted image URL', optional: true },
         prompt: { type: 'string' as const, description: 'Prompt used for the image', optional: true },
         resolution: { type: 'string' as const, description: 'Image resolution', optional: true },
         upscaledResolution: {
@@ -98,12 +113,17 @@ export const ideogramImagesOutputs = {
   },
   imageUrls: {
     type: 'array' as const,
-    description: 'Non-null image URLs from the response',
+    description: 'Non-null persisted image URLs from the response',
     items: { type: 'string' as const, description: 'Image URL' },
   },
   responseType: {
     type: 'string' as const,
     description: 'Response type discriminator when present',
+    optional: true,
+  },
+  s3UploadFailed: {
+    type: 'boolean' as const,
+    description: 'True when image was saved locally because S3 upload failed',
     optional: true,
   },
 }
@@ -112,10 +132,23 @@ export const ideogramImagesOutputs = {
  * Maps a proxy image-generation payload into the shared images output.
  */
 export function transformImagesOutput(data: Record<string, unknown>) {
+  const imageUrls = Array.isArray(data.imageUrls)
+    ? data.imageUrls.filter((url): url is string => typeof url === 'string')
+    : []
+  const primaryUrl =
+    (typeof data.imageUrl === 'string' && data.imageUrl) ||
+    (typeof data.content === 'string' && data.content) ||
+    imageUrls[0] ||
+    ''
+
   return {
     created: typeof data.created === 'string' ? data.created : null,
     images: Array.isArray(data.images) ? data.images : [],
-    imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : [],
+    imageUrls,
+    content: primaryUrl,
+    image: data.image ?? primaryUrl,
+    imageUrl: primaryUrl,
     responseType: typeof data.responseType === 'string' ? data.responseType : null,
+    ...(data.s3UploadFailed === true ? { s3UploadFailed: true } : {}),
   }
 }

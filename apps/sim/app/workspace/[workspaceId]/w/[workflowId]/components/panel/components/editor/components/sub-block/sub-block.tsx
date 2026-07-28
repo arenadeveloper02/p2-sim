@@ -1,5 +1,5 @@
 import { type JSX, type MouseEvent, memo, useCallback, useMemo, useRef, useState } from 'react'
-import { Button, cn, Input, Label, Tooltip } from '@sim/emcn'
+import { Button, cn, Info, Input, Label, Tooltip } from '@sim/emcn'
 import { isEqual } from 'es-toolkit'
 import {
   AlertTriangle,
@@ -301,6 +301,7 @@ const renderLabel = (
       <Label className='flex items-baseline gap-1.5 whitespace-nowrap'>
         {config.title}
         {required && <span className='ml-0.5'>*</span>}
+        {config.tooltip ? <Info>{config.tooltip}</Info> : null}
         {labelSuffix}
         {config.type === 'code' &&
           config.language === 'json' &&
@@ -893,6 +894,7 @@ function SubBlockComponent({
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}
+            tooltip={config.tooltip}
             value={config.defaultValue as boolean}
             isPreview={isPreview}
             previewValue={previewValue as any}

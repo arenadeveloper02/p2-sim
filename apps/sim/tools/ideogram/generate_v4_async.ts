@@ -55,17 +55,30 @@ export const ideogramGenerateV4AsyncTool = createIdeogramProxyTool<
     webhookUrl: params.webhookUrl,
     textPrompt: params.textPrompt,
     jsonPrompt: parseJsonParam(params.jsonPrompt),
+    useMagicPrompt: params.useMagicPrompt,
     resolution: params.resolution,
     renderingSpeed: params.renderingSpeed,
     enableCopyrightDetection: params.enableCopyrightDetection,
   }),
   transformOutput: (data) => ({
     generationId: typeof data.generationId === 'string' ? data.generationId : '',
+    ...(data.jsonPrompt !== undefined ? { jsonPrompt: data.jsonPrompt } : {}),
+    ...(data.magicPromptUsed === true ? { magicPromptUsed: true } : {}),
   }),
   outputs: {
     generationId: {
       type: 'string',
       description: 'Generation ID for polling or webhook correlation',
+    },
+    jsonPrompt: {
+      type: 'json',
+      description: 'Structured JSON prompt used when Magic Prompt was enabled',
+      optional: true,
+    },
+    magicPromptUsed: {
+      type: 'boolean',
+      description: 'True when Magic Prompt rewrote the text prompt before generation',
+      optional: true,
     },
   },
 })

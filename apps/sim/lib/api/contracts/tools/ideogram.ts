@@ -20,6 +20,7 @@ export const ideogramProxyBodySchema = z.object({
   resolution: z.string().optional(),
   renderingSpeed: z.string().optional(),
   enableCopyrightDetection: z.boolean().optional().nullable(),
+  useMagicPrompt: z.boolean().optional().nullable(),
   imageWeight: z.number().optional(),
   aspectRatio: z.string().optional(),
   includeBbox: z.boolean().optional(),
@@ -66,6 +67,11 @@ const ideogramProxyResponseSchema = z.object({
       created: z.string().nullable().optional(),
       images: z.array(ideogramImageObjectSchema).optional(),
       imageUrls: z.array(z.string()).optional(),
+      content: z.string().optional(),
+      image: z.unknown().optional(),
+      imageUrl: z.string().optional(),
+      imageFiles: z.array(z.unknown()).optional(),
+      s3UploadFailed: z.boolean().optional(),
       responseType: z.string().nullable().optional(),
       generationId: z.string().optional(),
       status: z.string().optional(),
@@ -77,6 +83,8 @@ const ideogramProxyResponseSchema = z.object({
       baseImageUrl: z.string().optional(),
       originalImageUrl: z.string().nullable().optional(),
       seed: z.number().optional(),
+      textBlocks: z.array(z.unknown()).optional(),
+      magicPromptUsed: z.boolean().optional(),
     })
     .optional(),
   error: z.string().optional(),
@@ -88,5 +96,47 @@ export const ideogramProxyContract = defineRouteContract({
   method: 'POST',
   path: '/api/tools/ideogram',
   body: ideogramProxyBodySchema,
+  response: { mode: 'json', schema: ideogramProxyResponseSchema },
+})
+
+const POST_PROCESSOR_OPERATIONS = [
+  'describe_v4',
+  'layerize_text',
+  'reframe_v3',
+  'remove_background',
+  'upscale',
+] as const
+
+/**
+ * Session-auth body for interactive image post-processing from chat overlays.
+ */
+export const ideogramPostProcessBodySchema = z
+  .object({
+    operation: z.enum(POST_PROCESSOR_OPERATIONS),
+    imageUrl: z.string().min(1, 'imageUrl is required'),
+    workflowId: z.string().min(1).optional(),
+    resolution: z.string().min(1).optional(),
+    includeBbox: z.boolean().optional(),
+    prompt: z.string().optional(),
+    seed: z.number().optional(),
+    apiKey: z.string().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.operation === 'reframe_v3' && !value.resolution) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['resolution'],
+        message: 'resolution is required for Reframe',
+      })
+    }
+  })
+
+export type IdeogramPostProcessBody = z.input<typeof ideogramPostProcessBodySchema>
+export type IdeogramPostProcessResponse = z.output<typeof ideogramProxyResponseSchema>
+
+export const ideogramPostProcessContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/tools/ideogram/post-process',
+  body: ideogramPostProcessBodySchema,
   response: { mode: 'json', schema: ideogramProxyResponseSchema },
 })

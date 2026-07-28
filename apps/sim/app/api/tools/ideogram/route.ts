@@ -28,7 +28,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     const parsed = await parseRequest(ideogramProxyContract, request, {})
     if (!parsed.success) return parsed.response
 
-    const output = await executeIdeogramOperation(parsed.data.body, authResult.userId, requestId)
+    const workflowId = request.nextUrl.searchParams.get('workflowId')?.trim() || 'unknown'
+    const output = await executeIdeogramOperation(
+      parsed.data.body,
+      authResult.userId,
+      requestId,
+      workflowId
+    )
 
     return NextResponse.json({
       success: true,

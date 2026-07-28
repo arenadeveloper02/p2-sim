@@ -1,60 +1,36 @@
 import type { SubBlockConfig } from '@/blocks/types'
-import { normalizeFileInput } from '@/blocks/utils'
+import { normalizeFileInput, parseOptionalBooleanInput } from '@/blocks/utils'
 import {
-  ASPECT_RATIO_V3_OPTIONS,
-  ASPECT_RATIO_V4_OPTIONS,
-  DESCRIBE_MODEL_VERSION_OPTIONS,
-  IDEOGRAM_OPERATIONS,
-  MAGIC_PROMPT_OPTIONS,
   RENDERING_SPEED_OPTIONS,
   RESOLUTION_V4_OPTIONS,
   STYLE_TYPE_V3_OPTIONS,
   UPSCALE_FACTOR_OPTIONS,
 } from '@/tools/ideogram/constants'
 
-const IMAGE_OPS = [
-  'remix_v4',
-  'describe_v4',
-  'inpaint_v3',
-  'remix_v3',
-  'reframe_v3',
-  'replace_background_v3',
-  'remove_background',
-  'layerize_text',
-  'upscale',
-  'describe',
-] as const
-
-const PROMPT_OPS = [
-  'generate_v3',
-  'generate_transparent_v3',
-  'inpaint_v3',
-  'remix_v3',
-  'replace_background_v3',
-  'edit',
-  'upscale',
-  'layerize_text',
-] as const
-
-const TEXT_PROMPT_OPS = [
+/** Ideogram create/edit operations shown on Image Generator. */
+export const IDEOGRAM_GENERATOR_OPERATIONS = [
   'generate_v4',
-  'generate_v4_async',
   'remix_v4',
-  'magic_prompt_v4',
+  'edit',
+  'inpaint_v3',
+  'generate_transparent_v3',
 ] as const
 
-const RESOLUTION_V4_OPS = ['generate_v4', 'generate_v4_async', 'remix_v4'] as const
+export type IdeogramGeneratorOperation = (typeof IDEOGRAM_GENERATOR_OPERATIONS)[number]
 
+export const IDEOGRAM_GENERATOR_TOOL_IDS = IDEOGRAM_GENERATOR_OPERATIONS.map(
+  (operation) => `ideogram_${operation}` as const
+)
+
+const IMAGE_OPS = ['remix_v4', 'inpaint_v3'] as const
+const PROMPT_OPS = ['generate_transparent_v3', 'inpaint_v3', 'edit'] as const
+const TEXT_PROMPT_OPS = ['generate_v4', 'remix_v4'] as const
+const RESOLUTION_V4_OPS = ['generate_v4', 'remix_v4'] as const
 const RENDERING_SPEED_OPS = [
   'generate_v4',
-  'generate_v4_async',
   'remix_v4',
-  'generate_v3',
   'generate_transparent_v3',
   'inpaint_v3',
-  'remix_v3',
-  'reframe_v3',
-  'replace_background_v3',
 ] as const
 
 function toDropdownOptions(values: readonly string[]) {
@@ -71,29 +47,16 @@ function ideogramOp(
   }
 }
 
-export const IDEOGRAM_TOOL_IDS = IDEOGRAM_OPERATIONS.map(
-  (operation) => `ideogram_${operation}` as const
-)
-
 export const IDEOGRAM_OPERATION_OPTIONS = [
   { label: 'Generate 4.0', id: 'generate_v4' },
-  { label: 'Generate 4.0 Async', id: 'generate_v4_async' },
-  { label: 'Poll Generation', id: 'poll_generation' },
   { label: 'Remix 4.0', id: 'remix_v4' },
-  { label: 'Magic Prompt 4.0', id: 'magic_prompt_v4' },
-  { label: 'Describe 4.0', id: 'describe_v4' },
-  { label: 'Generate 3.0', id: 'generate_v3' },
-  { label: 'Generate Transparent 3.0', id: 'generate_transparent_v3' },
-  { label: 'Inpaint 3.0', id: 'inpaint_v3' },
-  { label: 'Remix 3.0', id: 'remix_v3' },
-  { label: 'Reframe 3.0', id: 'reframe_v3' },
-  { label: 'Replace Background 3.0', id: 'replace_background_v3' },
-  { label: 'Remove Background', id: 'remove_background' },
-  { label: 'Layerize Text', id: 'layerize_text' },
   { label: 'Edit with Prompt', id: 'edit' },
-  { label: 'Upscale', id: 'upscale' },
-  { label: 'Describe', id: 'describe' },
+  { label: 'Inpaint 3.0', id: 'inpaint_v3' },
+  { label: 'Generate Transparent 3.0', id: 'generate_transparent_v3' },
 ] as const
+
+/** @deprecated Use IDEOGRAM_GENERATOR_TOOL_IDS — kept for Image Generator access list. */
+export const IDEOGRAM_TOOL_IDS = IDEOGRAM_GENERATOR_TOOL_IDS
 
 /**
  * Ideogram-specific Image Generator subBlocks. Shown only when provider is ideogram.
@@ -121,30 +84,21 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     dependsOn: ['provider'],
   },
   {
-    id: 'webhookUrl',
-    title: 'Webhook URL',
-    type: 'short-input',
-    placeholder: 'https://example.com/webhook',
-    required: { field: 'operation', value: 'generate_v4_async' },
-    condition: ideogramOp('generate_v4_async'),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'generationId',
-    title: 'Generation ID',
-    type: 'short-input',
-    placeholder: 'Generation ID from async generate',
-    required: { field: 'operation', value: 'poll_generation' },
-    condition: ideogramOp('poll_generation'),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
     id: 'textPrompt',
     title: 'Text Prompt',
     type: 'long-input',
     placeholder: 'Describe the image to generate…',
-    required: { field: 'operation', value: ['remix_v4', 'magic_prompt_v4'] },
+    required: { field: 'operation', value: 'remix_v4' },
     condition: ideogramOp(TEXT_PROMPT_OPS),
+    dependsOn: ['provider', 'operation'],
+  },
+  {
+    id: 'useMagicPrompt',
+    title: 'Magic Prompt',
+    type: 'switch',
+    tooltip:
+      'Rewrites your text prompt into Ideogram’s structured JSON prompt format for stronger composition and typography results.',
+    condition: ideogramOp('generate_v4'),
     dependsOn: ['provider', 'operation'],
   },
   {
@@ -155,7 +109,7 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     placeholder:
       '{ "high_level_description": "...", "compositional_deconstruction": { ... } }',
     mode: 'advanced',
-    condition: ideogramOp(['generate_v4', 'generate_v4_async']),
+    condition: ideogramOp('generate_v4'),
     dependsOn: ['provider', 'operation'],
   },
   {
@@ -165,14 +119,7 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     placeholder: 'Describe the desired image or edit…',
     required: {
       field: 'operation',
-      value: [
-        'generate_v3',
-        'generate_transparent_v3',
-        'inpaint_v3',
-        'remix_v3',
-        'replace_background_v3',
-        'edit',
-      ],
+      value: ['generate_transparent_v3', 'inpaint_v3', 'edit'],
     },
     condition: ideogramOp(PROMPT_OPS),
     dependsOn: ['provider', 'operation'],
@@ -269,28 +216,23 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     title: 'Resolution',
     type: 'short-input',
     placeholder: 'e.g. 1024x1024',
-    required: { field: 'operation', value: 'reframe_v3' },
-    condition: ideogramOp(['generate_v3', 'remix_v3', 'reframe_v3', 'edit']),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'aspectRatioV4',
-    title: 'Aspect Ratio',
-    type: 'dropdown',
-    options: toDropdownOptions(ASPECT_RATIO_V4_OPTIONS),
-    clearable: true,
-    value: () => '',
-    condition: ideogramOp('magic_prompt_v4'),
+    condition: ideogramOp('edit'),
     dependsOn: ['provider', 'operation'],
   },
   {
     id: 'ideogramAspectRatio',
     title: 'Aspect Ratio',
     type: 'dropdown',
-    options: toDropdownOptions(ASPECT_RATIO_V3_OPTIONS),
+    options: [
+      { label: '1x1', id: '1x1' },
+      { label: '16x9', id: '16x9' },
+      { label: '9x16', id: '9x16' },
+      { label: '4x3', id: '4x3' },
+      { label: '3x4', id: '3x4' },
+    ],
     clearable: true,
     value: () => '',
-    condition: ideogramOp(['generate_v3', 'generate_transparent_v3', 'remix_v3', 'edit']),
+    condition: ideogramOp(['generate_transparent_v3', 'edit']),
     dependsOn: ['provider', 'operation'],
   },
   {
@@ -304,125 +246,13 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     dependsOn: ['provider', 'operation'],
   },
   {
-    id: 'magicPrompt',
-    title: 'Magic Prompt',
-    type: 'dropdown',
-    options: toDropdownOptions(MAGIC_PROMPT_OPTIONS),
-    clearable: true,
-    value: () => '',
-    condition: ideogramOp([
-      'generate_v3',
-      'generate_transparent_v3',
-      'inpaint_v3',
-      'remix_v3',
-      'replace_background_v3',
-      'edit',
-    ]),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'magicPromptOption',
-    title: 'Magic Prompt Option',
-    type: 'dropdown',
-    options: toDropdownOptions(MAGIC_PROMPT_OPTIONS),
-    clearable: true,
-    value: () => '',
-    condition: ideogramOp('upscale'),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
     id: 'styleType',
     title: 'Style Type',
     type: 'dropdown',
     options: toDropdownOptions(STYLE_TYPE_V3_OPTIONS),
     clearable: true,
     value: () => '',
-    condition: ideogramOp(['generate_v3', 'inpaint_v3', 'remix_v3']),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'stylePreset',
-    title: 'Style Preset',
-    type: 'short-input',
-    placeholder: 'e.g. ART_DECO',
-    mode: 'advanced',
-    condition: ideogramOp([
-      'generate_v3',
-      'inpaint_v3',
-      'remix_v3',
-      'reframe_v3',
-      'replace_background_v3',
-    ]),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'negativePrompt',
-    title: 'Negative Prompt',
-    type: 'long-input',
-    placeholder: 'What to exclude from the image…',
-    mode: 'advanced',
-    condition: ideogramOp(['generate_v3', 'generate_transparent_v3', 'remix_v3']),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'numImages',
-    title: 'Number of Images',
-    type: 'short-input',
-    placeholder: '1',
-    mode: 'advanced',
-    condition: ideogramOp([
-      'generate_v3',
-      'generate_transparent_v3',
-      'inpaint_v3',
-      'remix_v3',
-      'reframe_v3',
-      'replace_background_v3',
-      'edit',
-      'upscale',
-    ]),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'seed',
-    title: 'Seed',
-    type: 'short-input',
-    placeholder: 'Optional seed',
-    mode: 'advanced',
-    condition: ideogramOp([
-      'generate_v3',
-      'generate_transparent_v3',
-      'inpaint_v3',
-      'remix_v3',
-      'reframe_v3',
-      'replace_background_v3',
-      'layerize_text',
-      'edit',
-      'upscale',
-    ]),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'imageWeight',
-    title: 'Image Weight',
-    type: 'short-input',
-    placeholder: '50',
-    mode: 'advanced',
-    condition: ideogramOp(['remix_v4', 'remix_v3']),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'includeBbox',
-    title: 'Include Bounding Boxes',
-    type: 'switch',
-    condition: ideogramOp('describe_v4'),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'enableCopyrightDetection',
-    title: 'Copyright Detection',
-    type: 'switch',
-    mode: 'advanced',
-    condition: ideogramOp(['generate_v4', 'generate_v4_async', 'remix_v4', 'generate_v3']),
+    condition: ideogramOp('inpaint_v3'),
     dependsOn: ['provider', 'operation'],
   },
   {
@@ -436,24 +266,6 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     dependsOn: ['provider', 'operation'],
   },
   {
-    id: 'resemblance',
-    title: 'Resemblance',
-    type: 'short-input',
-    placeholder: '50',
-    mode: 'advanced',
-    condition: ideogramOp('upscale'),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'detail',
-    title: 'Detail',
-    type: 'short-input',
-    placeholder: '50',
-    mode: 'advanced',
-    condition: ideogramOp('upscale'),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
     id: 'transparentBackground',
     title: 'Transparent Background',
     type: 'switch',
@@ -461,54 +273,38 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     dependsOn: ['provider', 'operation'],
   },
   {
-    id: 'describeModelVersion',
-    title: 'Describe Model Version',
-    type: 'dropdown',
-    options: toDropdownOptions(DESCRIBE_MODEL_VERSION_OPTIONS),
-    clearable: true,
-    value: () => '',
-    condition: ideogramOp('describe'),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'colorPalette',
-    title: 'Color Palette',
-    type: 'code',
-    language: 'json',
-    placeholder: '{ "name": "AUTO" }',
-    mode: 'advanced',
-    condition: ideogramOp([
-      'generate_v3',
-      'inpaint_v3',
-      'remix_v3',
-      'reframe_v3',
-      'replace_background_v3',
-    ]),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'styleCodes',
-    title: 'Style Codes',
-    type: 'code',
-    language: 'json',
-    placeholder: '["ABCD1234"]',
-    mode: 'advanced',
-    condition: ideogramOp([
-      'generate_v3',
-      'inpaint_v3',
-      'remix_v3',
-      'reframe_v3',
-      'replace_background_v3',
-    ]),
-    dependsOn: ['provider', 'operation'],
-  },
-  {
-    id: 'customModelUri',
-    title: 'Custom Model URI',
+    id: 'imageWeight',
+    title: 'Image Weight',
     type: 'short-input',
-    placeholder: 'model/<name>/version/<version>',
+    placeholder: '50',
     mode: 'advanced',
-    condition: ideogramOp('generate_v3'),
+    condition: ideogramOp('remix_v4'),
+    dependsOn: ['provider', 'operation'],
+  },
+  {
+    id: 'enableCopyrightDetection',
+    title: 'Copyright Detection',
+    type: 'switch',
+    mode: 'advanced',
+    condition: ideogramOp(['generate_v4', 'remix_v4']),
+    dependsOn: ['provider', 'operation'],
+  },
+  {
+    id: 'numImages',
+    title: 'Number of Images',
+    type: 'short-input',
+    placeholder: '1',
+    mode: 'advanced',
+    condition: ideogramOp(['generate_transparent_v3', 'inpaint_v3', 'edit']),
+    dependsOn: ['provider', 'operation'],
+  },
+  {
+    id: 'seed',
+    title: 'Seed',
+    type: 'short-input',
+    placeholder: 'Optional seed',
+    mode: 'advanced',
+    condition: ideogramOp(['generate_transparent_v3', 'inpaint_v3', 'edit']),
     dependsOn: ['provider', 'operation'],
   },
 ]
@@ -552,35 +348,23 @@ export function buildIdeogramToolParams(params: Record<string, unknown>): Record
     ...(typeof params.apiKey === 'string' && params.apiKey.trim().length > 0
       ? { apiKey: params.apiKey }
       : {}),
-    webhookUrl: params.webhookUrl,
-    generationId: params.generationId,
     textPrompt: params.textPrompt,
     jsonPrompt: params.jsonPrompt,
+    useMagicPrompt: parseOptionalBooleanInput(params.useMagicPrompt),
     prompt: params.ideogramPrompt ?? params.prompt,
     image: params.image,
     mask: params.mask,
     images: params.images,
     imageUrls: params.imageUrls,
     resolution: params.resolutionV4 || params.ideogramResolution || params.resolution,
-    aspectRatio: params.aspectRatioV4 || params.ideogramAspectRatio || params.aspectRatio,
+    aspectRatio: params.ideogramAspectRatio || params.aspectRatio,
     renderingSpeed: params.renderingSpeed,
-    magicPrompt: params.magicPrompt,
-    magicPromptOption: params.magicPromptOption,
-    negativePrompt: params.negativePrompt,
     styleType: params.styleType,
-    stylePreset: params.stylePreset,
-    colorPalette: params.colorPalette,
-    styleCodes: params.styleCodes,
-    customModelUri: params.customModelUri,
     upscaleFactor: params.upscaleFactor,
-    describeModelVersion: params.describeModelVersion,
-    includeBbox: params.includeBbox,
     enableCopyrightDetection: params.enableCopyrightDetection,
     transparentBackground: params.transparentBackground,
     numImages: toNumber(params.numImages),
     seed: toNumber(params.seed),
     imageWeight: toNumber(params.imageWeight),
-    resemblance: toNumber(params.resemblance),
-    detail: toNumber(params.detail),
   }
 }

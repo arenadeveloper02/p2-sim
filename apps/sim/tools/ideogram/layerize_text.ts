@@ -10,7 +10,8 @@ export const ideogramLayerizeTextTool = createIdeogramProxyTool<
 >({
   id: 'ideogram_layerize_text',
   name: 'Ideogram Layerize Text',
-  description: 'Detect and remove text from an image, returning a text-erased base image',
+  description:
+    'Detect text regions, return a text-erased base image, and extract editable text layers with font/layout metadata',
   operation: 'layerize_text',
   params: {
     image: {
@@ -41,6 +42,7 @@ export const ideogramLayerizeTextTool = createIdeogramProxyTool<
     baseImageUrl: typeof data.baseImageUrl === 'string' ? data.baseImageUrl : '',
     originalImageUrl: typeof data.originalImageUrl === 'string' ? data.originalImageUrl : null,
     seed: typeof data.seed === 'number' ? data.seed : 0,
+    textBlocks: Array.isArray(data.textBlocks) ? data.textBlocks : [],
   }),
   outputs: {
     baseImageUrl: {
@@ -53,5 +55,12 @@ export const ideogramLayerizeTextTool = createIdeogramProxyTool<
       optional: true,
     },
     seed: { type: 'number', description: 'Seed used for generation' },
+    textBlocks: {
+      type: 'array',
+      description:
+        'Detected text layers with content, position, font name/alternatives, size, and styling',
+      items: { type: 'json', description: 'Text block metadata' },
+      optional: true,
+    },
   },
 })

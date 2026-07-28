@@ -3,8 +3,10 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
 import { Button, Modal, ModalBody, ModalContent, ModalHeader } from '@sim/emcn'
 import { AlertTriangle, Check, Download, Expand, X } from 'lucide-react'
+import { useParams } from 'next/navigation'
 import { normalizeImageUrlForCompare } from '@/lib/chat/assistant-assets'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
+import { ImagePostProcessMenu } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/image-post-process-menu'
 
 export { normalizeImageUrlForCompare } from '@/lib/chat/assistant-assets'
 
@@ -337,6 +339,7 @@ const overlayButtonClass =
 /**
  * Wraps an image with a transparent overlay and bottom-center CTAs.
  * Preview opens a modal with the full-size image; Download and Select trigger the provided callbacks.
+ * When `postProcessImageUrl` is a stored file URL, a ⋯ menu offers Ideogram post-process actions.
  */
 export function ImageWithViewFullOverlay({
   src,
@@ -346,6 +349,8 @@ export function ImageWithViewFullOverlay({
   onSelect,
   selectLabel,
   compactActions = false,
+  postProcessImageUrl,
+  postProcessWorkflowId,
 }: {
   src: string
   wrapperClassName: string
@@ -354,9 +359,16 @@ export function ImageWithViewFullOverlay({
   onSelect?: () => void
   selectLabel?: string
   compactActions?: boolean
+  /** Stored image URL used for Ideogram post-process (⋯ menu). */
+  postProcessImageUrl?: string
+  postProcessWorkflowId?: string
 }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [isModalImageLoading, setIsModalImageLoading] = useState(false)
+  const params = useParams()
+  const workflowIdFromRoute =
+    typeof params?.workflowId === 'string' ? params.workflowId : undefined
+  const resolvedWorkflowId = postProcessWorkflowId || workflowIdFromRoute
   const handleViewFull = useCallback(() => setModalOpen(true), [])
 
   useEffect(() => {
@@ -421,6 +433,13 @@ export function ImageWithViewFullOverlay({
               <span className={compactActions ? 'sr-only' : ''}>{selectLabel ?? 'Select'}</span>
             </Button>
           )}
+          {postProcessImageUrl ? (
+            <ImagePostProcessMenu
+              imageUrl={postProcessImageUrl}
+              workflowId={resolvedWorkflowId}
+              compactActions={compactActions}
+            />
+          ) : null}
         </div>
       </div>
       <Modal open={modalOpen} onOpenChange={setModalOpen}>
@@ -486,6 +505,7 @@ export const renderBs64Img = ({
           onSelect={onSelect}
           selectLabel={selectLabel}
           compactActions={compactActions}
+          postProcessImageUrl={singleImageUrl}
         >
           <img
             src={displayUrl}
@@ -513,6 +533,7 @@ export const renderBs64Img = ({
             onSelect={onSelect}
             selectLabel={selectLabel}
             compactActions={compactActions}
+            postProcessImageUrl={singleImageUrl}
           >
             <img
               src={displayUrl}
@@ -563,6 +584,7 @@ export const renderBs64Img = ({
         onSelect={onSelect}
         selectLabel={selectLabel}
         compactActions={compactActions}
+        postProcessImageUrl={singleImageUrl || undefined}
       >
         <img
           src={imageSrc}

@@ -1,4 +1,4 @@
-import { createIdeogramProxyTool } from '@/tools/ideogram/create-tool'
+import { createIdeogramProxyTool, transformImagesOutput } from '@/tools/ideogram/create-tool'
 import type {
   IdeogramPollGenerationParams,
   IdeogramPollGenerationResponse,
@@ -26,10 +26,7 @@ export const ideogramPollGenerationTool = createIdeogramProxyTool<
   transformOutput: (data) => ({
     generationId: typeof data.generationId === 'string' ? data.generationId : '',
     status: typeof data.status === 'string' ? data.status : '',
-    created: typeof data.created === 'string' ? data.created : null,
-    responseType: typeof data.responseType === 'string' ? data.responseType : null,
-    images: Array.isArray(data.images) ? data.images : [],
-    imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : [],
+    ...transformImagesOutput(data),
   }),
   outputs: {
     generationId: { type: 'string', description: 'Generation ID' },
@@ -38,6 +35,13 @@ export const ideogramPollGenerationTool = createIdeogramProxyTool<
       description: 'Generation status: pending, completed, or failed',
     },
     created: { type: 'string', description: 'Creation timestamp', optional: true },
+    content: { type: 'string', description: 'Primary persisted image URL', optional: true },
+    image: {
+      type: 'file',
+      description: 'Primary generated image file when completed',
+      optional: true,
+    },
+    imageUrl: { type: 'string', description: 'Primary persisted image URL', optional: true },
     responseType: {
       type: 'string',
       description: 'Response type when completed',
@@ -50,7 +54,7 @@ export const ideogramPollGenerationTool = createIdeogramProxyTool<
         type: 'object',
         description: 'Ideogram image object',
         properties: {
-          url: { type: 'string', description: 'Temporary image URL', optional: true },
+          url: { type: 'string', description: 'Persisted image URL', optional: true },
           prompt: { type: 'string', description: 'Prompt used', optional: true },
           resolution: { type: 'string', description: 'Resolution', optional: true },
           isImageSafe: { type: 'boolean', description: 'Safety check result' },
@@ -60,8 +64,13 @@ export const ideogramPollGenerationTool = createIdeogramProxyTool<
     },
     imageUrls: {
       type: 'array',
-      description: 'Non-null image URLs',
+      description: 'Non-null persisted image URLs',
       items: { type: 'string', description: 'Image URL' },
+    },
+    s3UploadFailed: {
+      type: 'boolean',
+      description: 'True when image was saved locally because S3 upload failed',
+      optional: true,
     },
   },
 })

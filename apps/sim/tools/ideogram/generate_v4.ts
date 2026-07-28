@@ -23,6 +23,13 @@ export const ideogramGenerateV4Tool = createIdeogramProxyTool<
       visibility: 'user-or-llm',
       description: 'Structured V4 JSON prompt. Mutually exclusive with textPrompt.',
     },
+    useMagicPrompt: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'When true, rewrites textPrompt into Ideogram JSON prompt format before generating.',
+    },
     resolution: {
       type: 'string',
       required: false,
@@ -45,10 +52,27 @@ export const ideogramGenerateV4Tool = createIdeogramProxyTool<
   body: (params) => ({
     textPrompt: params.textPrompt,
     jsonPrompt: parseJsonParam(params.jsonPrompt),
+    useMagicPrompt: params.useMagicPrompt,
     resolution: params.resolution,
     renderingSpeed: params.renderingSpeed,
     enableCopyrightDetection: params.enableCopyrightDetection,
   }),
-  transformOutput: transformImagesOutput,
-  outputs: ideogramImagesOutputs,
+  transformOutput: (data) => ({
+    ...transformImagesOutput(data),
+    ...(data.jsonPrompt !== undefined ? { jsonPrompt: data.jsonPrompt } : {}),
+    ...(data.magicPromptUsed === true ? { magicPromptUsed: true } : {}),
+  }),
+  outputs: {
+    ...ideogramImagesOutputs,
+    jsonPrompt: {
+      type: 'json',
+      description: 'Structured JSON prompt used when Magic Prompt was enabled',
+      optional: true,
+    },
+    magicPromptUsed: {
+      type: 'boolean',
+      description: 'True when Magic Prompt rewrote the text prompt before generation',
+      optional: true,
+    },
+  },
 })
