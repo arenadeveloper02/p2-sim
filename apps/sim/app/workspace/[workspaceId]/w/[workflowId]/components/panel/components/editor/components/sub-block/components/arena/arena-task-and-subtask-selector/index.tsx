@@ -4,7 +4,7 @@ import * as React from 'react'
 import { Combobox, type ComboboxOption, cn } from '@sim/emcn'
 import axios from 'axios'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
-import { env } from '@/lib/core/config/env'
+import { getEnv } from '@/lib/core/config/env'
 import { mergeArenaComboboxOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-combobox-utils'
 import { arenaSiblingSubBlockStoreKey } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
@@ -93,7 +93,7 @@ export function ArenaTaskAndSubtaskSelector({
       setTasks([])
       try {
         const v2Token = await getArenaToken()
-        const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
+        const arenaBackendBaseUrl = getEnv('NEXT_PUBLIC_ARENA_BACKEND_BASE_URL')
 
         const url = `${arenaBackendBaseUrl}/list/projectservice/getalltaskslist?cid=${clientId}&projectType=STATUS&projectId=${projectId}`
         const response = await axios.get(url, {
