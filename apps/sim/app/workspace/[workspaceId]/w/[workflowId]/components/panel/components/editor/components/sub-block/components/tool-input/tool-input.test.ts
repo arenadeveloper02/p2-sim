@@ -23,7 +23,9 @@ describe('isAgentToolPickerBlock', () => {
   })
 
   it('maps image_generator_v2 to image_generate tool access', () => {
-    expect(ImageGeneratorV2Block.tools?.access).toEqual(['image_generate'])
+    expect(ImageGeneratorV2Block.tools?.access).toEqual(
+      expect.arrayContaining(['image_generate'])
+    )
   })
 })
 

@@ -80,6 +80,45 @@ const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
   },
 ]
 
+/** Ideogram create/edit models — tool id is `ideogram_${id}`. */
+const IDEOGRAM_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
+  {
+    id: 'generate_v4',
+    label: 'Generate 4.0',
+    provider: 'ideogram',
+    supportsReferenceImages: false,
+    maxReferenceImages: 0,
+  },
+  {
+    id: 'remix_v4',
+    label: 'Remix 4.0',
+    provider: 'ideogram',
+    supportsReferenceImages: false,
+    maxReferenceImages: 0,
+  },
+  {
+    id: 'edit',
+    label: 'Edit with Prompt',
+    provider: 'ideogram',
+    supportsReferenceImages: false,
+    maxReferenceImages: 0,
+  },
+  {
+    id: 'inpaint_v3',
+    label: 'Inpaint 3.0',
+    provider: 'ideogram',
+    supportsReferenceImages: false,
+    maxReferenceImages: 0,
+  },
+  {
+    id: 'generate_transparent_v3',
+    label: 'Generate Transparent 3.0',
+    provider: 'ideogram',
+    supportsReferenceImages: false,
+    maxReferenceImages: 0,
+  },
+]
+
 export const FALAI_IMAGE_MODEL_IDS = [
   'nano-banana-2',
   'nano-banana-pro',
@@ -104,9 +143,15 @@ export const GEMINI_IMAGE_MODEL_IDS = [
   'gemini-2.5-flash-image',
 ] as const
 
-export const IMAGE_BLOCK_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
+/** Models routed through the shared `image_generate` tool (excludes Ideogram). */
+export const IMAGE_GENERATE_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
   ...OPENAI_MODEL_DEFINITIONS,
   ...GEMINI_MODEL_DEFINITIONS,
+]
+
+export const IMAGE_BLOCK_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
+  ...IMAGE_GENERATE_MODEL_DEFINITIONS,
+  ...IDEOGRAM_MODEL_DEFINITIONS,
 ]
 
 export const IMAGE_BLOCK_PROVIDER_OPTIONS: Array<{ label: string; id: ImageBlockProvider }> = [
@@ -213,7 +258,7 @@ export function getDefaultImageModelForProvider(provider: ImageProvider): string
     return 'nano-banana-2'
   }
   if (provider === 'ideogram') {
-    return 'ideogram-v4'
+    return 'generate_v4'
   }
   return 'gpt-image-1.5'
 }
@@ -281,11 +326,31 @@ export function getImageBlockModelsForProvider(provider: string): ImageBlockMode
   return IMAGE_BLOCK_MODEL_DEFINITIONS.filter((model) => model.provider === provider)
 }
 
+/**
+ * Model dropdown options for the Image Generator block.
+ * When a provider is selected, only that provider's models are returned; otherwise all.
+ */
+export function getImageBlockModelOptionsForProvider(
+  provider: string | undefined | null
+): ImageBlockModelOption[] {
+  const trimmed = typeof provider === 'string' ? provider.trim() : ''
+  if (!trimmed) {
+    return IMAGE_BLOCK_ALL_MODEL_OPTIONS
+  }
+  return toModelDropdownOptions(getImageBlockModelsForProvider(trimmed))
+}
+
 export function getImageBlockModelDefinition(
   modelId: string
 ): ImageBlockModelDefinition | undefined {
   const normalized = normalizeImageModelId(modelId) ?? modelId
   return IMAGE_BLOCK_MODEL_DEFINITIONS.find((model) => model.id === normalized)
+}
+
+/** True when the model id is an Ideogram Image Generator model. */
+export function isIdeogramImageModel(modelId: string | undefined): boolean {
+  if (!modelId) return false
+  return getImageBlockModelDefinition(modelId)?.provider === 'ideogram'
 }
 
 export function getReferenceImageModelIds(): string[] {
@@ -304,5 +369,8 @@ export function supportsMultipleReferenceImages(modelId: string): boolean {
 
 export const OPENAI_GPT_IMAGE_MODELS = toModelDropdownOptions(OPENAI_MODEL_DEFINITIONS)
 export const GEMINI_IMAGE_MODELS = toModelDropdownOptions(GEMINI_MODEL_DEFINITIONS)
+export const IDEOGRAM_IMAGE_MODELS = toModelDropdownOptions(IDEOGRAM_MODEL_DEFINITIONS)
 export const IMAGE_BLOCK_ALL_MODEL_OPTIONS = toModelDropdownOptions(IMAGE_BLOCK_MODEL_DEFINITIONS)
 export const IMAGE_BLOCK_MODEL_IDS = IMAGE_BLOCK_MODEL_DEFINITIONS.map((model) => model.id)
+export const IMAGE_GENERATE_MODEL_IDS = IMAGE_GENERATE_MODEL_DEFINITIONS.map((model) => model.id)
+export const IDEOGRAM_IMAGE_MODEL_IDS = IDEOGRAM_MODEL_DEFINITIONS.map((model) => model.id)

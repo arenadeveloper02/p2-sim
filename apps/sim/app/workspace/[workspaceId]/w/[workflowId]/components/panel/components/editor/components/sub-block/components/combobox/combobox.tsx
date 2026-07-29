@@ -4,6 +4,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { isEqual } from 'es-toolkit'
 import { useReactFlow } from 'reactflow'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
+import { getImageBlockModelDefinition } from '@/lib/image-generation/block-model-config'
 import { buildCanonicalIndex, resolveDependencyValue } from '@/lib/workflows/subblocks/visibility'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
@@ -163,6 +164,13 @@ export const ComboBox = memo(function ComboBox({
       return opts.filter((opt) => {
         const modelId = typeof opt === 'string' ? opt : opt.id
         if (!isModelAllowed(modelId)) return false
+        const imageModel = getImageBlockModelDefinition(modelId)
+        if (imageModel) {
+          if (imageModel.provider === 'openai') return isProviderAllowed('openai')
+          if (imageModel.provider === 'gemini') return isProviderAllowed('google')
+          // Ideogram / other image-only providers are not gated by LLM provider allowlists
+          return true
+        }
         try {
           return isProviderAllowed(getProviderFromModel(modelId))
         } catch {
@@ -188,6 +196,12 @@ export const ComboBox = memo(function ComboBox({
       opts = opts.filter((opt) => {
         const modelId = typeof opt === 'string' ? opt : opt.id
         if (!isModelAllowed(modelId)) return false
+        const imageModel = getImageBlockModelDefinition(modelId)
+        if (imageModel) {
+          if (imageModel.provider === 'openai') return isProviderAllowed('openai')
+          if (imageModel.provider === 'gemini') return isProviderAllowed('google')
+          return true
+        }
         try {
           return isProviderAllowed(getProviderFromModel(modelId))
         } catch {

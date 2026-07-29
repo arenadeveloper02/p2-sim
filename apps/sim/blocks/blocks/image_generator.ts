@@ -1,5 +1,6 @@
 import { ImageIcon } from '@/components/icons'
 import {
+  getImageBlockModelOptionsForProvider,
   getReferenceImageModelIds,
   IMAGE_BLOCK_ALL_MODEL_OPTIONS,
   IMAGE_BLOCK_PROVIDER_OPTIONS,
@@ -10,6 +11,7 @@ import {
   buildIdeogramToolParams,
   IDEOGRAM_GENERATOR_TOOL_IDS,
   IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS,
+  isIdeogramGeneratorParams,
   resolveIdeogramToolId,
 } from '@/lib/image-generation/ideogram-fields'
 import {
@@ -22,6 +24,8 @@ import { mergeUrlsAndDeduplicate, parseImageUrls } from '@/lib/utils/parse-image
 import { AuthMode, type BlockConfig, IntegrationType } from '@/blocks/types'
 import { createVersionedToolSelector, parseOptionalBooleanInput } from '@/blocks/utils'
 import { START_FILES_REF } from '@/executor/constants'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import type { ImageGenerationResponse } from '@/tools/image/types'
 
 function normalizeReferenceFiles(input: unknown): unknown[] {
@@ -590,8 +594,18 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       commandSearchable: true,
       clearable: true,
       value: () => '',
-      condition: { field: 'provider', value: 'ideogram', not: true },
       dependsOn: ['provider'],
+      fetchOptions: async (blockId: string) => {
+        const activeWorkflowId = useWorkflowRegistry.getState().activeWorkflowId
+        if (!activeWorkflowId) {
+          return IMAGE_BLOCK_ALL_MODEL_OPTIONS
+        }
+        const workflowValues = useSubBlockStore.getState().workflowValues[activeWorkflowId]
+        const provider = workflowValues?.[blockId]?.provider
+        return getImageBlockModelOptionsForProvider(
+          typeof provider === 'string' ? provider : undefined
+        )
+      },
     },
     // {
     //   id: 'model',
@@ -1205,13 +1219,13 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     access: ['image_generate', ...IDEOGRAM_GENERATOR_TOOL_IDS],
     config: {
       tool: (params) => {
-        if (params.provider === 'ideogram') {
+        if (isIdeogramGeneratorParams(params)) {
           return resolveIdeogramToolId(params)
         }
         return 'image_generate'
       },
       params: (params) => {
-        if (params.provider === 'ideogram') {
+        if (isIdeogramGeneratorParams(params)) {
           return buildIdeogramToolParams(params)
         }
 
@@ -1275,8 +1289,11 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   inputs: {
     provider: { type: 'string', description: 'Image generation provider' },
     prompt: { type: 'string', description: 'Image description prompt' },
-    model: { type: 'string', description: 'Image generation model' },
-    operation: { type: 'string', description: 'Ideogram operation when provider is ideogram' },
+    model: {
+      type: 'string',
+      description:
+        'Image generation model. For Ideogram: generate_v4, remix_v4, edit, inpaint_v3, generate_transparent_v3',
+    },
     size: { type: 'string', description: 'Image size' },
     aspectRatio: { type: 'string', description: 'Image aspect ratio' },
     resolution: { type: 'string', description: 'Image resolution' },

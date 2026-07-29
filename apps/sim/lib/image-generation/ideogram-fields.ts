@@ -1,3 +1,8 @@
+import {
+  IDEOGRAM_IMAGE_MODEL_IDS,
+  isIdeogramImageModel,
+  normalizeImageModelId,
+} from '@/lib/image-generation/block-model-config'
 import type { SubBlockConfig } from '@/blocks/types'
 import { normalizeFileInput, parseOptionalBooleanInput } from '@/blocks/utils'
 import {
@@ -7,26 +12,26 @@ import {
   UPSCALE_FACTOR_OPTIONS,
 } from '@/tools/ideogram/constants'
 
-/** Ideogram create/edit operations shown on Image Generator. */
-export const IDEOGRAM_GENERATOR_OPERATIONS = [
-  'generate_v4',
-  'remix_v4',
-  'edit',
-  'inpaint_v3',
-  'generate_transparent_v3',
-] as const
+/** Ideogram create/edit model ids shown on Image Generator (also tool suffix). */
+export const IDEOGRAM_GENERATOR_MODELS = IDEOGRAM_IMAGE_MODEL_IDS
 
-export type IdeogramGeneratorOperation = (typeof IDEOGRAM_GENERATOR_OPERATIONS)[number]
+export type IdeogramGeneratorModel = (typeof IDEOGRAM_GENERATOR_MODELS)[number]
 
-export const IDEOGRAM_GENERATOR_TOOL_IDS = IDEOGRAM_GENERATOR_OPERATIONS.map(
-  (operation) => `ideogram_${operation}` as const
+/** @deprecated Use IDEOGRAM_GENERATOR_MODELS — kept for callers that still say "operation". */
+export const IDEOGRAM_GENERATOR_OPERATIONS = IDEOGRAM_GENERATOR_MODELS
+
+/** @deprecated Use IdeogramGeneratorModel */
+export type IdeogramGeneratorOperation = IdeogramGeneratorModel
+
+export const IDEOGRAM_GENERATOR_TOOL_IDS = IDEOGRAM_GENERATOR_MODELS.map(
+  (model) => `ideogram_${model}` as const
 )
 
-const IMAGE_OPS = ['remix_v4', 'inpaint_v3'] as const
-const PROMPT_OPS = ['generate_transparent_v3', 'inpaint_v3', 'edit'] as const
-const TEXT_PROMPT_OPS = ['generate_v4', 'remix_v4'] as const
-const RESOLUTION_V4_OPS = ['generate_v4', 'remix_v4'] as const
-const RENDERING_SPEED_OPS = [
+const IMAGE_MODELS = ['remix_v4', 'inpaint_v3'] as const
+const PROMPT_MODELS = ['generate_transparent_v3', 'inpaint_v3', 'edit'] as const
+const TEXT_PROMPT_MODELS = ['generate_v4', 'remix_v4'] as const
+const RESOLUTION_V4_MODELS = ['generate_v4', 'remix_v4'] as const
+const RENDERING_SPEED_MODELS = [
   'generate_v4',
   'remix_v4',
   'generate_transparent_v3',
@@ -37,16 +42,17 @@ function toDropdownOptions(values: readonly string[]) {
   return values.map((id) => ({ label: id, id }))
 }
 
-function ideogramOp(
-  operation: string | readonly string[]
+function ideogramModel(
+  model: string | readonly string[]
 ): NonNullable<SubBlockConfig['condition']> {
   return {
     field: 'provider',
     value: 'ideogram',
-    and: { field: 'operation', value: operation as string | string[] },
+    and: { field: 'model', value: model as string | string[] },
   }
 }
 
+/** @deprecated Use IDEOGRAM_IMAGE_MODELS from block-model-config. */
 export const IDEOGRAM_OPERATION_OPTIONS = [
   { label: 'Generate 4.0', id: 'generate_v4' },
   { label: 'Remix 4.0', id: 'remix_v4' },
@@ -59,19 +65,10 @@ export const IDEOGRAM_OPERATION_OPTIONS = [
 export const IDEOGRAM_TOOL_IDS = IDEOGRAM_GENERATOR_TOOL_IDS
 
 /**
- * Ideogram-specific Image Generator subBlocks. Shown only when provider is ideogram.
+ * Ideogram-specific Image Generator subBlocks. Shown when provider is ideogram
+ * and the selected model matches. Model selection lives on the shared Model combobox.
  */
 export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
-  {
-    id: 'operation',
-    title: 'Operation',
-    type: 'dropdown',
-    required: true,
-    options: [...IDEOGRAM_OPERATION_OPTIONS],
-    value: () => 'generate_v4',
-    condition: { field: 'provider', value: 'ideogram' },
-    dependsOn: ['provider'],
-  },
   {
     id: 'apiKey',
     title: 'Ideogram API Key',
@@ -88,9 +85,9 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     title: 'Text Prompt',
     type: 'long-input',
     placeholder: 'Describe the image to generate…',
-    required: { field: 'operation', value: 'remix_v4' },
-    condition: ideogramOp(TEXT_PROMPT_OPS),
-    dependsOn: ['provider', 'operation'],
+    required: { field: 'model', value: 'remix_v4' },
+    condition: ideogramModel(TEXT_PROMPT_MODELS),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'useMagicPrompt',
@@ -98,8 +95,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     type: 'switch',
     tooltip:
       'Rewrites your text prompt into Ideogram’s structured JSON prompt format for stronger composition and typography results.',
-    condition: ideogramOp('generate_v4'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('generate_v4'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'jsonPrompt',
@@ -109,8 +106,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     placeholder:
       '{ "high_level_description": "...", "compositional_deconstruction": { ... } }',
     mode: 'advanced',
-    condition: ideogramOp('generate_v4'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('generate_v4'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'ideogramPrompt',
@@ -118,11 +115,11 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     type: 'long-input',
     placeholder: 'Describe the desired image or edit…',
     required: {
-      field: 'operation',
+      field: 'model',
       value: ['generate_transparent_v3', 'inpaint_v3', 'edit'],
     },
-    condition: ideogramOp(PROMPT_OPS),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel(PROMPT_MODELS),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'uploadImage',
@@ -132,9 +129,9 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     multiple: false,
     canonicalParamId: 'image',
     mode: 'basic',
-    required: { field: 'operation', value: [...IMAGE_OPS] },
-    condition: ideogramOp(IMAGE_OPS),
-    dependsOn: ['provider', 'operation'],
+    required: { field: 'model', value: [...IMAGE_MODELS] },
+    condition: ideogramModel(IMAGE_MODELS),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'imageRef',
@@ -143,9 +140,9 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     placeholder: 'Reference image from a previous block',
     canonicalParamId: 'image',
     mode: 'advanced',
-    required: { field: 'operation', value: [...IMAGE_OPS] },
-    condition: ideogramOp(IMAGE_OPS),
-    dependsOn: ['provider', 'operation'],
+    required: { field: 'model', value: [...IMAGE_MODELS] },
+    condition: ideogramModel(IMAGE_MODELS),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'uploadMask',
@@ -155,9 +152,9 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     multiple: false,
     canonicalParamId: 'mask',
     mode: 'basic',
-    required: { field: 'operation', value: 'inpaint_v3' },
-    condition: ideogramOp('inpaint_v3'),
-    dependsOn: ['provider', 'operation'],
+    required: { field: 'model', value: 'inpaint_v3' },
+    condition: ideogramModel('inpaint_v3'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'maskRef',
@@ -166,9 +163,9 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     placeholder: 'Reference mask from a previous block',
     canonicalParamId: 'mask',
     mode: 'advanced',
-    required: { field: 'operation', value: 'inpaint_v3' },
-    condition: ideogramOp('inpaint_v3'),
-    dependsOn: ['provider', 'operation'],
+    required: { field: 'model', value: 'inpaint_v3' },
+    condition: ideogramModel('inpaint_v3'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'uploadImages',
@@ -178,8 +175,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     multiple: true,
     canonicalParamId: 'images',
     mode: 'basic',
-    condition: ideogramOp('edit'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('edit'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'imagesRef',
@@ -188,8 +185,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     placeholder: 'Reference images from a previous block',
     canonicalParamId: 'images',
     mode: 'advanced',
-    condition: ideogramOp('edit'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('edit'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'imageUrls',
@@ -198,8 +195,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     language: 'json',
     placeholder: '["https://ideogram.ai/api/images/..."]',
     mode: 'advanced',
-    condition: ideogramOp('edit'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('edit'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'resolutionV4',
@@ -208,16 +205,16 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     options: toDropdownOptions(RESOLUTION_V4_OPTIONS),
     clearable: true,
     value: () => '',
-    condition: ideogramOp(RESOLUTION_V4_OPS),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel(RESOLUTION_V4_MODELS),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'ideogramResolution',
     title: 'Resolution',
     type: 'short-input',
     placeholder: 'e.g. 1024x1024',
-    condition: ideogramOp('edit'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('edit'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'ideogramAspectRatio',
@@ -232,8 +229,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     ],
     clearable: true,
     value: () => '',
-    condition: ideogramOp(['generate_transparent_v3', 'edit']),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel(['generate_transparent_v3', 'edit']),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'renderingSpeed',
@@ -242,8 +239,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     options: toDropdownOptions(RENDERING_SPEED_OPTIONS),
     clearable: true,
     value: () => '',
-    condition: ideogramOp(RENDERING_SPEED_OPS),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel(RENDERING_SPEED_MODELS),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'styleType',
@@ -252,8 +249,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     options: toDropdownOptions(STYLE_TYPE_V3_OPTIONS),
     clearable: true,
     value: () => '',
-    condition: ideogramOp('inpaint_v3'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('inpaint_v3'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'upscaleFactor',
@@ -262,15 +259,15 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     options: toDropdownOptions(UPSCALE_FACTOR_OPTIONS),
     clearable: true,
     value: () => '',
-    condition: ideogramOp('generate_transparent_v3'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('generate_transparent_v3'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'transparentBackground',
     title: 'Transparent Background',
     type: 'switch',
-    condition: ideogramOp('edit'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('edit'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'imageWeight',
@@ -278,16 +275,16 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     type: 'short-input',
     placeholder: '50',
     mode: 'advanced',
-    condition: ideogramOp('remix_v4'),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel('remix_v4'),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'enableCopyrightDetection',
     title: 'Copyright Detection',
     type: 'switch',
     mode: 'advanced',
-    condition: ideogramOp(['generate_v4', 'remix_v4']),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel(['generate_v4', 'remix_v4']),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'numImages',
@@ -295,8 +292,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     type: 'short-input',
     placeholder: '1',
     mode: 'advanced',
-    condition: ideogramOp(['generate_transparent_v3', 'inpaint_v3', 'edit']),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel(['generate_transparent_v3', 'inpaint_v3', 'edit']),
+    dependsOn: ['provider', 'model'],
   },
   {
     id: 'seed',
@@ -304,13 +301,34 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     type: 'short-input',
     placeholder: 'Optional seed',
     mode: 'advanced',
-    condition: ideogramOp(['generate_transparent_v3', 'inpaint_v3', 'edit']),
-    dependsOn: ['provider', 'operation'],
+    condition: ideogramModel(['generate_transparent_v3', 'inpaint_v3', 'edit']),
+    dependsOn: ['provider', 'model'],
   },
 ]
 
 /**
- * Resolves the Ideogram tool ID for Image Generator when provider is ideogram.
+ * True when Image Generator params should route to an Ideogram tool.
+ */
+export function isIdeogramGeneratorParams(params: Record<string, unknown>): boolean {
+  if (params.provider === 'ideogram') return true
+
+  const model =
+    typeof params.model === 'string' ? normalizeImageModelId(params.model) : undefined
+  if (isIdeogramImageModel(model)) return true
+
+  // Legacy workflows stored the Ideogram model under `operation`
+  if (
+    typeof params.operation === 'string' &&
+    (IDEOGRAM_GENERATOR_MODELS as readonly string[]).includes(params.operation.trim())
+  ) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Resolves the Ideogram tool ID for Image Generator when provider/model is Ideogram.
  */
 export function resolveIdeogramToolId(params: Record<string, unknown>): string {
   const image = normalizeFileInput(params.uploadImage || params.imageRef || params.image, {
@@ -326,12 +344,20 @@ export function resolveIdeogramToolId(params: Record<string, unknown>): string {
   const images = normalizeFileInput(params.uploadImages || params.imagesRef || params.images)
   if (images) params.images = images
 
-  const operation =
+  const fromModel =
+    typeof params.model === 'string' && params.model.trim().length > 0
+      ? params.model.trim()
+      : ''
+  const fromOperation =
     typeof params.operation === 'string' && params.operation.trim().length > 0
       ? params.operation.trim()
-      : 'generate_v4'
+      : ''
+  const candidate = fromModel || fromOperation || 'generate_v4'
+  const modelId = (IDEOGRAM_GENERATOR_MODELS as readonly string[]).includes(candidate)
+    ? candidate
+    : 'generate_v4'
 
-  return `ideogram_${operation}`
+  return `ideogram_${modelId}`
 }
 
 /**

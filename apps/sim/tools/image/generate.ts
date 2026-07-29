@@ -1,5 +1,5 @@
 import { isUserFile } from '@/lib/core/utils/user-file'
-import { IMAGE_BLOCK_MODEL_IDS, reconcileImageProviderAndModel } from '@/lib/image-generation/block-model-config'
+import { IMAGE_GENERATE_MODEL_IDS, reconcileImageProviderAndModel } from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
@@ -118,7 +118,7 @@ function normalizeImagesOutput(
   return primary ? [primary] : []
 }
 
-const IMAGE_GENERATE_MODEL_IDS = IMAGE_BLOCK_MODEL_IDS.join(', ')
+const IMAGE_GENERATE_MODEL_IDS_LIST = IMAGE_GENERATE_MODEL_IDS.join(', ')
 
 export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGenerationResponse> = {
   id: 'image_generate',
@@ -145,7 +145,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: `Provider model ID. Supported models: ${IMAGE_GENERATE_MODEL_IDS}. Provider is inferred from model when omitted.`,
+      description: `Provider model ID. Supported models: ${IMAGE_GENERATE_MODEL_IDS_LIST}. Provider is inferred from model when omitted.`,
     },
     prompt: {
       type: 'string',

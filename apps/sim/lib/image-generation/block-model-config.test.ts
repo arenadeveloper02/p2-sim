@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assertGeminiImageModel,
   getDefaultImageModelForProvider,
+  getImageBlockModelOptionsForProvider,
   getMaxReferenceImages,
   normalizeImageModelId,
   reconcileImageProviderAndModel,
@@ -21,6 +22,11 @@ describe('resolveImageProviderForModel', () => {
   it('maps catalog Gemini models to gemini', () => {
     expect(resolveImageProviderForModel('gemini-3.1-flash-image-preview')).toBe('gemini')
     expect(resolveImageProviderForModel('gemini-2.5-flash-image')).toBe('gemini')
+  })
+
+  it('maps catalog Ideogram models to ideogram', () => {
+    expect(resolveImageProviderForModel('generate_v4')).toBe('ideogram')
+    expect(resolveImageProviderForModel('remix_v4')).toBe('ideogram')
   })
 
   it('maps Fal.ai model aliases to falai', () => {
@@ -46,11 +52,45 @@ describe('resolveImageProviderForModel', () => {
   })
 })
 
+describe('getImageBlockModelOptionsForProvider', () => {
+  it('returns all models when provider is empty', () => {
+    const options = getImageBlockModelOptionsForProvider('')
+    expect(options.map((option) => option.id)).toEqual(
+      expect.arrayContaining(['gpt-image-2', 'generate_v4', 'gemini-3.1-flash-image-preview'])
+    )
+  })
+
+  it('returns only Ideogram models when provider is ideogram', () => {
+    expect(getImageBlockModelOptionsForProvider('ideogram').map((option) => option.id)).toEqual([
+      'generate_v4',
+      'remix_v4',
+      'edit',
+      'inpaint_v3',
+      'generate_transparent_v3',
+    ])
+  })
+
+  it('returns only OpenAI models when provider is openai', () => {
+    const ids = getImageBlockModelOptionsForProvider('openai').map((option) => option.id)
+    expect(ids).toContain('gpt-image-2')
+    expect(ids).not.toContain('generate_v4')
+    expect(ids).not.toContain('gemini-3.1-flash-image-preview')
+  })
+})
+
 describe('reconcileImageProviderAndModel', () => {
   it('coerces provider from gpt-image-2 when provider is missing', () => {
     expect(reconcileImageProviderAndModel({ model: 'gpt-image-2' })).toEqual({
       provider: 'openai',
       model: 'gpt-image-2',
+      coerced: false,
+    })
+  })
+
+  it('coerces provider from generate_v4 when provider is missing', () => {
+    expect(reconcileImageProviderAndModel({ model: 'generate_v4' })).toEqual({
+      provider: 'ideogram',
+      model: 'generate_v4',
       coerced: false,
     })
   })
@@ -88,6 +128,11 @@ describe('reconcileImageProviderAndModel', () => {
     expect(reconcileImageProviderAndModel({ provider: 'gemini' })).toEqual({
       provider: 'gemini',
       model: getDefaultImageModelForProvider('gemini'),
+      coerced: false,
+    })
+    expect(reconcileImageProviderAndModel({ provider: 'ideogram' })).toEqual({
+      provider: 'ideogram',
+      model: 'generate_v4',
       coerced: false,
     })
   })

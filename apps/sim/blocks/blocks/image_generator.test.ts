@@ -26,7 +26,7 @@ describe('ImageGeneratorV2Block', () => {
     expect(
       ImageGeneratorV2Block.tools?.config.tool?.({
         provider: 'ideogram',
-        operation: 'generate_v4',
+        model: 'generate_v4',
       })
     ).toBe('ideogram_generate_v4')
   })
@@ -34,7 +34,7 @@ describe('ImageGeneratorV2Block', () => {
   it('builds Ideogram tool params when provider is ideogram', () => {
     const params = ImageGeneratorV2Block.tools.config.params?.({
       provider: 'ideogram',
-      operation: 'generate_v4',
+      model: 'generate_v4',
       apiKey: 'ideo-key',
       textPrompt: 'A cat',
     })
@@ -48,12 +48,30 @@ describe('ImageGeneratorV2Block', () => {
   it('omits Ideogram apiKey from tool params when unset so the server can use IDEOGRAM_API_KEY', () => {
     const params = ImageGeneratorV2Block.tools.config.params?.({
       provider: 'ideogram',
-      operation: 'generate_v4',
+      model: 'generate_v4',
       textPrompt: 'A cat',
     })
 
     expect(params).not.toHaveProperty('apiKey')
     expect(params).toMatchObject({ textPrompt: 'A cat' })
+  })
+
+  it('routes Ideogram by model alone when provider is omitted', () => {
+    expect(
+      ImageGeneratorV2Block.tools?.config.tool?.({
+        model: 'remix_v4',
+        textPrompt: 'Remix this',
+      })
+    ).toBe('ideogram_remix_v4')
+  })
+
+  it('still routes legacy Ideogram operation params', () => {
+    expect(
+      ImageGeneratorV2Block.tools?.config.tool?.({
+        provider: 'ideogram',
+        operation: 'generate_v4',
+      })
+    ).toBe('ideogram_generate_v4')
   })
 
   it('exposes unset image_generate params to the agent except apiKey', async () => {
@@ -121,20 +139,30 @@ describe('ImageGeneratorV2Block', () => {
     })
   })
 
-  it('uses a single model combobox with all block models, hidden for Ideogram', () => {
+  it('uses a single model combobox with all block models including Ideogram', () => {
     const modelSubBlocks = ImageGeneratorV2Block.subBlocks.filter(
       (subBlock) => subBlock.id === 'model'
     )
 
     expect(modelSubBlocks).toHaveLength(1)
-    expect(modelSubBlocks[0]?.condition).toEqual({
-      field: 'provider',
-      value: 'ideogram',
-      not: true,
-    })
+    expect(modelSubBlocks[0]?.condition).toBeUndefined()
+    expect(modelSubBlocks[0]?.dependsOn).toEqual(['provider'])
+    expect(typeof modelSubBlocks[0]?.fetchOptions).toBe('function')
     expect(modelSubBlocks[0]?.options?.map((option) => option.id)).toEqual(
-      expect.arrayContaining(['gpt-image-2', 'gpt-image-1.5', 'gemini-3.1-flash-image-preview'])
+      expect.arrayContaining([
+        'gpt-image-2',
+        'gpt-image-1.5',
+        'gemini-3.1-flash-image-preview',
+        'generate_v4',
+        'remix_v4',
+      ])
     )
+  })
+
+  it('does not use a separate Ideogram operation dropdown', () => {
+    expect(
+      ImageGeneratorV2Block.subBlocks.some((subBlock) => subBlock.id === 'operation')
+    ).toBe(false)
   })
 
   it('allows clearing provider without hiding the model field', () => {
@@ -147,12 +175,7 @@ describe('ImageGeneratorV2Block', () => {
 
     expect(providerSubBlock?.clearable).toBe(true)
     expect(providerSubBlock?.value?.({})).toBe('')
-    // Model stays visible when provider is empty; only hidden for Ideogram.
-    expect(modelSubBlock?.condition).toEqual({
-      field: 'provider',
-      value: 'ideogram',
-      not: true,
-    })
+    expect(modelSubBlock?.condition).toBeUndefined()
   })
 
   it('keeps Nano Banana 2 aspect ratio and resolution optional without editor defaults', () => {
@@ -177,7 +200,7 @@ describe('ImageGeneratorV2Block', () => {
 
   it('keeps all optional image_generator_v2 combobox and dropdown fields clearable without editor defaults', () => {
     const optionalFieldTypes = new Set(['combobox', 'dropdown'])
-    const requiredFieldIds = new Set(['prompt', 'operation'])
+    const requiredFieldIds = new Set(['prompt'])
 
     const optionalConfiguredFields = ImageGeneratorV2Block.subBlocks.filter(
       (subBlock) => optionalFieldTypes.has(subBlock.type) && !requiredFieldIds.has(subBlock.id)
