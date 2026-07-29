@@ -1,5 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import {
+  extractChartsFromData,
+  hasRenderableChartDeployOutput,
+} from '@/lib/chart-generation/echarts-option'
 import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
 import {
   extractBlockIdFromOutputId,
@@ -280,6 +284,82 @@ function assertSelectedOutputBytes(value: unknown): number {
   return bytes
 }
 
+/**
+ * Attaches charts that live deeper in a selected block's output than the selected
+ * path itself — specifically an Agent block that called Chart Generator as a tool,
+ * where the chart lands in `toolCalls.list[].result` while the selected path is
+ * `content` (plain text). Without this, deployed chat receives only the text
+ * because the final payload is minimized to the selected paths.
+ *
+ * Charts already streamed as text (the standalone Chart Generator block emits the
+ * chart JSON as its content) or already present in the minimized output are
+ * skipped, so no duplicate chart is rendered. Attaching is best-effort: if it
+ * would exceed the inline byte budget it is skipped rather than failing the
+ * response.
+ */
+function attachToolCallCharts(
+  output: Record<string, any>,
+  logs: BlockLog[] | undefined,
+  selectedOutputs: string[] | undefined,
+  streamedContent: Map<string, string>,
+  requestId: string
+): void {
+  if (!logs?.length || !selectedOutputs?.length) {
+    return
+  }
+
+  for (const { blockId } of getSelectedOutputDescriptors(selectedOutputs)) {
+    if (isDangerousKey(blockId)) {
+      continue
+    }
+
+    // The streamed text already renders a chart (standalone Chart Generator);
+    // attaching again would duplicate it in the message.
+    const streamedText = streamedContent.get(blockId)
+    if (streamedText && hasRenderableChartDeployOutput(streamedText)) {
+      continue
+    }
+
+    const blockLog = logs.find((log: BlockLog) => log.blockId === blockId)
+    if (!blockLog?.output) {
+      continue
+    }
+
+    const allCharts = extractChartsFromData(blockLog.output)
+    if (allCharts.length === 0) {
+      continue
+    }
+
+    const existing = output[blockId]
+    const existingSignatures = new Set(
+      extractChartsFromData(existing).map((chart) => JSON.stringify(chart))
+    )
+    const newCharts = allCharts.filter(
+      (chart) => !existingSignatures.has(JSON.stringify(chart))
+    )
+    if (newCharts.length === 0) {
+      continue
+    }
+
+    const previous = output[blockId]
+    if (!previous) {
+      output[blockId] = Object.create(null) as Record<string, unknown>
+    }
+    ;(output[blockId] as Record<string, unknown>).charts = newCharts
+
+    try {
+      assertSelectedOutputBytes(output)
+    } catch {
+      logger.warn(`[${requestId}] Tool-call charts exceeded inline budget; omitting`, { blockId })
+      if (previous) {
+        ;(output[blockId] as Record<string, unknown>).charts = undefined
+      } else {
+        output[blockId] = undefined
+      }
+    }
+  }
+}
+
 async function buildMinimalResult(
   result: ExecutionResult,
   selectedOutputs: string[] | undefined,
@@ -468,6 +548,14 @@ async function buildMinimalResult(
     ;(minimalResult.output[blockId] as Record<string, unknown>)[path] = materializedValue
     selectedOutputBytes = assertSelectedOutputBytes(minimalResult.output)
   }
+
+  attachToolCallCharts(
+    minimalResult.output,
+    result.logs,
+    selectedOutputs,
+    streamedContent,
+    requestId
+  )
 
   return minimalResult
 }

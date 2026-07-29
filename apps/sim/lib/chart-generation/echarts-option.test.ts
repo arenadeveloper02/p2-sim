@@ -3,7 +3,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  extractChartsFromData,
   formatChartDeployOutputForChat,
+  formatChartsForChat,
   isEChartsOption,
   parseEChartsOptionFromString,
   parseEChartsOptionsFromString,
@@ -178,6 +180,61 @@ describe('formatChartDeployOutputForChat', () => {
 
   it('returns null for empty dashboard', () => {
     expect(formatChartDeployOutputForChat({ charts: [], count: 0 })).toBeNull()
+  })
+})
+
+describe('extractChartsFromData', () => {
+  it('finds a chart nested in an Agent tool-call result', () => {
+    const blockOutput = {
+      content: 'Here is your chart.',
+      toolCalls: {
+        list: [
+          {
+            name: 'chart_generator',
+            result: {
+              charts: [barOption],
+              count: 1,
+              content: JSON.stringify(barOption),
+              dashboard: { charts: [barOption], count: 1 },
+            },
+          },
+        ],
+        count: 1,
+      },
+    }
+    // De-duplicated: barOption appears via charts, content, and dashboard.
+    expect(extractChartsFromData(blockOutput)).toEqual([barOption])
+  })
+
+  it('finds multiple distinct charts and de-duplicates identical ones', () => {
+    const data = { a: { charts: [barOption] }, b: JSON.stringify(heatmapOption), c: barOption }
+    const charts = extractChartsFromData(data)
+    expect(charts).toHaveLength(2)
+    expect(charts).toEqual(expect.arrayContaining([barOption, heatmapOption]))
+  })
+
+  it('returns an empty array for text-only / non-chart data', () => {
+    expect(extractChartsFromData({ content: 'no chart here', toolCalls: { list: [], count: 0 } })).toEqual([])
+    expect(extractChartsFromData('plain text')).toEqual([])
+    expect(extractChartsFromData(null)).toEqual([])
+  })
+})
+
+describe('formatChartsForChat', () => {
+  it('returns null for no charts', () => {
+    expect(formatChartsForChat([])).toBeNull()
+  })
+
+  it('emits a single bare option for one chart', () => {
+    const content = formatChartsForChat([barOption])
+    expect(content).not.toBeNull()
+    expect(resolveEChartsOptionsFromContent(content as string)).toEqual([barOption])
+  })
+
+  it('emits a { charts } wrapper for multiple charts', () => {
+    const content = formatChartsForChat([barOption, heatmapOption])
+    expect(content).not.toBeNull()
+    expect(resolveEChartsOptionsFromContent(content as string)).toEqual([barOption, heatmapOption])
   })
 })
 
