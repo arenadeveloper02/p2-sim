@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
-import { env } from '@/lib/core/config/env'
+import { getEnv } from '@/lib/core/config/env'
 
 /**
  * React Query key factory for Arena user-service client list
@@ -23,7 +23,7 @@ const STALE_TIME_MS = 5 * 60 * 1000
  * Used by Arena and Slack block selectors; do not call ad hoc from components.
  */
 export async function fetchArenaClientsByUser(signal?: AbortSignal): Promise<ArenaClientRow[]> {
-  const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
+  const arenaBackendBaseUrl = getEnv('NEXT_PUBLIC_ARENA_BACKEND_BASE_URL')
   if (!arenaBackendBaseUrl) {
     return []
   }
