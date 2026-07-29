@@ -13,6 +13,42 @@ interface CreateIdeogramToolOptions<P extends Record<string, unknown>, R extends
   outputs: NonNullable<ToolConfig<P, R>['outputs']>
 }
 
+/** Shared file param for tools that accept a single image upload. Pair with {@link ideogramImageUrlParam}. */
+export const ideogramImageFileParam = {
+  type: 'file' as const,
+  required: false,
+  visibility: 'user-or-llm' as const,
+  description:
+    'Image file (JPEG, PNG, or WebP, max 10MB). Provide this or imageUrl — not both required.',
+}
+
+/** Shared URL param for tools that accept a single public image URL. Pair with {@link ideogramImageFileParam}. */
+export const ideogramImageUrlParam = {
+  type: 'string' as const,
+  required: false,
+  visibility: 'user-or-llm' as const,
+  description:
+    'HTTPS URL of a publicly accessible image. Use when not uploading a file (provide image or imageUrl).',
+}
+
+/** Shared mask file param for inpaint. Pair with {@link ideogramMaskUrlParam}. */
+export const ideogramMaskFileParam = {
+  type: 'file' as const,
+  required: false,
+  visibility: 'user-or-llm' as const,
+  description:
+    'Black-and-white mask file matching the image size. Provide this or maskUrl.',
+}
+
+/** Shared mask URL param for inpaint. Pair with {@link ideogramMaskFileParam}. */
+export const ideogramMaskUrlParam = {
+  type: 'string' as const,
+  required: false,
+  visibility: 'user-or-llm' as const,
+  description:
+    'HTTPS URL of a publicly accessible mask image. Use when not uploading a mask file.',
+}
+
 /**
  * Creates an Ideogram tool that routes through the internal multipart/JSON proxy.
  */

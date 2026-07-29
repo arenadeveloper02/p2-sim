@@ -77,7 +77,8 @@ export interface IdeogramPollGenerationResponse extends ToolResponse {
 }
 
 export interface IdeogramRemixV4Params extends IdeogramAuthParams {
-  image: unknown
+  image?: unknown
+  imageUrl?: string
   textPrompt: string
   imageWeight?: number
   resolution?: string
@@ -98,7 +99,8 @@ export interface IdeogramMagicPromptV4Response extends ToolResponse {
 }
 
 export interface IdeogramDescribeV4Params extends IdeogramAuthParams {
-  image: unknown
+  image?: unknown
+  imageUrl?: string
   includeBbox?: boolean
 }
 
@@ -140,8 +142,10 @@ export interface IdeogramGenerateTransparentV3Params extends IdeogramAuthParams 
 }
 
 export interface IdeogramInpaintV3Params extends IdeogramAuthParams {
-  image: unknown
-  mask: unknown
+  image?: unknown
+  imageUrl?: string
+  mask?: unknown
+  maskUrl?: string
   prompt: string
   magicPrompt?: string
   numImages?: number
@@ -157,7 +161,8 @@ export interface IdeogramInpaintV3Params extends IdeogramAuthParams {
 }
 
 export interface IdeogramRemixV3Params extends IdeogramAuthParams {
-  image: unknown
+  image?: unknown
+  imageUrl?: string
   prompt: string
   imageWeight?: number
   seed?: number
@@ -177,7 +182,8 @@ export interface IdeogramRemixV3Params extends IdeogramAuthParams {
 }
 
 export interface IdeogramReframeV3Params extends IdeogramAuthParams {
-  image: unknown
+  image?: unknown
+  imageUrl?: string
   resolution: string
   numImages?: number
   seed?: number
@@ -189,7 +195,8 @@ export interface IdeogramReframeV3Params extends IdeogramAuthParams {
 }
 
 export interface IdeogramReplaceBackgroundV3Params extends IdeogramAuthParams {
-  image: unknown
+  image?: unknown
+  imageUrl?: string
   prompt: string
   magicPrompt?: string
   numImages?: number
@@ -202,7 +209,8 @@ export interface IdeogramReplaceBackgroundV3Params extends IdeogramAuthParams {
 }
 
 export interface IdeogramRemoveBackgroundParams extends IdeogramAuthParams {
-  image: unknown
+  image?: unknown
+  imageUrl?: string
 }
 
 export interface IdeogramRemoveBackgroundResponse extends ToolResponse {
@@ -210,7 +218,8 @@ export interface IdeogramRemoveBackgroundResponse extends ToolResponse {
 }
 
 export interface IdeogramLayerizeTextParams extends IdeogramAuthParams {
-  image: unknown
+  image?: unknown
+  imageUrl?: string
   prompt?: string
   seed?: number
 }
@@ -241,7 +250,8 @@ export interface IdeogramEditParams extends IdeogramAuthParams {
 }
 
 export interface IdeogramUpscaleParams extends IdeogramAuthParams {
-  image: unknown
+  image?: unknown
+  imageUrl?: string
   prompt?: string
   resemblance?: number
   detail?: number
@@ -251,7 +261,8 @@ export interface IdeogramUpscaleParams extends IdeogramAuthParams {
 }
 
 export interface IdeogramDescribeParams extends IdeogramAuthParams {
-  image: unknown
+  image?: unknown
+  imageUrl?: string
   describeModelVersion?: string
 }
 

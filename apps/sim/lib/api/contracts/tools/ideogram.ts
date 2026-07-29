@@ -43,6 +43,8 @@ export const ideogramProxyBodySchema = z
     transparentBackground: z.boolean().optional(),
     describeModelVersion: z.string().optional(),
     imageUrls: z.unknown().optional(),
+    imageUrl: z.string().min(1).optional(),
+    maskUrl: z.string().min(1).optional(),
     image: FileInputSchema.optional().nullable(),
     mask: FileInputSchema.optional().nullable(),
     images: fileOrFilesSchema.optional().nullable(),

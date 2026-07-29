@@ -35,6 +35,10 @@ export const ImagePostProcessorBlock: BlockConfig = {
     operation: { type: 'string', description: 'Post-process operation' },
     apiKey: { type: 'string', description: 'Ideogram API key' },
     image: { type: 'file', description: 'Image to post-process' },
+    imageUrl: {
+      type: 'string',
+      description: 'Public image URL alternative to file upload',
+    },
     resolution: { type: 'string', description: 'Target resolution for Reframe' },
     renderingSpeed: { type: 'string', description: 'Rendering speed for Reframe' },
     includeBbox: { type: 'boolean', description: 'Include bounding boxes for Describe' },

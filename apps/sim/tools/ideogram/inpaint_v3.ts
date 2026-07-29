@@ -1,4 +1,12 @@
-import { createIdeogramProxyTool, ideogramImagesOutputs, transformImagesOutput } from '@/tools/ideogram/create-tool'
+import {
+  createIdeogramProxyTool,
+  ideogramImageFileParam,
+  ideogramImageUrlParam,
+  ideogramImagesOutputs,
+  ideogramMaskFileParam,
+  ideogramMaskUrlParam,
+  transformImagesOutput,
+} from '@/tools/ideogram/create-tool'
 import type { IdeogramImagesResponse, IdeogramInpaintV3Params } from '@/tools/ideogram/types'
 import { parseJsonParam } from '@/tools/ideogram/utils'
 
@@ -11,18 +19,10 @@ export const ideogramInpaintV3Tool = createIdeogramProxyTool<
   description: 'Inpaint masked regions of an image with Ideogram 3.0',
   operation: 'inpaint_v3',
   params: {
-    image: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Image being edited',
-    },
-    mask: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Black-and-white mask matching the image size',
-    },
+    image: ideogramImageFileParam,
+    imageUrl: ideogramImageUrlParam,
+    mask: ideogramMaskFileParam,
+    maskUrl: ideogramMaskUrlParam,
     prompt: {
       type: 'string',
       required: true,
@@ -98,7 +98,9 @@ export const ideogramInpaintV3Tool = createIdeogramProxyTool<
   },
   body: (params) => ({
     image: params.image,
+    imageUrl: params.imageUrl,
     mask: params.mask,
+    maskUrl: params.maskUrl,
     prompt: params.prompt,
     magicPrompt: params.magicPrompt,
     numImages: params.numImages,

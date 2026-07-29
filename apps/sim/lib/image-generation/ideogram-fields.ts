@@ -129,7 +129,7 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     multiple: false,
     canonicalParamId: 'image',
     mode: 'basic',
-    required: { field: 'model', value: [...IMAGE_MODELS] },
+    required: false,
     condition: ideogramModel(IMAGE_MODELS),
     dependsOn: ['provider', 'model'],
   },
@@ -137,10 +137,19 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     id: 'imageRef',
     title: 'Image',
     type: 'short-input',
-    placeholder: 'Reference image from a previous block',
+    placeholder: 'File reference or image URL from a previous block',
     canonicalParamId: 'image',
     mode: 'advanced',
-    required: { field: 'model', value: [...IMAGE_MODELS] },
+    required: false,
+    condition: ideogramModel(IMAGE_MODELS),
+    dependsOn: ['provider', 'model'],
+  },
+  {
+    id: 'imageUrl',
+    title: 'Image URL (alternative)',
+    type: 'short-input',
+    placeholder: 'Publicly accessible image URL (use if not uploading a file)',
+    required: false,
     condition: ideogramModel(IMAGE_MODELS),
     dependsOn: ['provider', 'model'],
   },
@@ -152,7 +161,7 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     multiple: false,
     canonicalParamId: 'mask',
     mode: 'basic',
-    required: { field: 'model', value: 'inpaint_v3' },
+    required: false,
     condition: ideogramModel('inpaint_v3'),
     dependsOn: ['provider', 'model'],
   },
@@ -160,10 +169,19 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     id: 'maskRef',
     title: 'Mask',
     type: 'short-input',
-    placeholder: 'Reference mask from a previous block',
+    placeholder: 'File reference or mask URL from a previous block',
     canonicalParamId: 'mask',
     mode: 'advanced',
-    required: { field: 'model', value: 'inpaint_v3' },
+    required: false,
+    condition: ideogramModel('inpaint_v3'),
+    dependsOn: ['provider', 'model'],
+  },
+  {
+    id: 'maskUrl',
+    title: 'Mask URL (alternative)',
+    type: 'short-input',
+    placeholder: 'Publicly accessible mask URL (use if not uploading a file)',
+    required: false,
     condition: ideogramModel('inpaint_v3'),
     dependsOn: ['provider', 'model'],
   },
@@ -193,8 +211,17 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     title: 'Image URLs',
     type: 'code',
     language: 'json',
-    placeholder: '["https://ideogram.ai/api/images/..."]',
+    placeholder: '["https://example.com/image.png"]',
     mode: 'advanced',
+    condition: ideogramModel('edit'),
+    dependsOn: ['provider', 'model'],
+  },
+  {
+    id: 'editImageUrl',
+    title: 'Image URL (alternative)',
+    type: 'short-input',
+    placeholder: 'Single publicly accessible image URL (or use Image URLs above for multiple)',
+    mode: 'basic',
     condition: ideogramModel('edit'),
     dependsOn: ['provider', 'model'],
   },
@@ -331,18 +358,59 @@ export function isIdeogramGeneratorParams(params: Record<string, unknown>): bool
  * Resolves the Ideogram tool ID for Image Generator when provider/model is Ideogram.
  */
 export function resolveIdeogramToolId(params: Record<string, unknown>): string {
-  const image = normalizeFileInput(params.uploadImage || params.imageRef || params.image, {
+  const rawImage = params.uploadImage || params.imageRef || params.image
+  const image = normalizeFileInput(rawImage, {
     single: true,
   })
-  if (image) params.image = image
+  if (image) {
+    params.image = image
+  } else if (
+    !params.imageUrl &&
+    typeof rawImage === 'string' &&
+    rawImage.trim().length > 0 &&
+    !rawImage.trim().startsWith('{') &&
+    !rawImage.trim().startsWith('[')
+  ) {
+    params.imageUrl = rawImage.trim()
+  }
 
-  const mask = normalizeFileInput(params.uploadMask || params.maskRef || params.mask, {
+  const rawMask = params.uploadMask || params.maskRef || params.mask
+  const mask = normalizeFileInput(rawMask, {
     single: true,
   })
-  if (mask) params.mask = mask
+  if (mask) {
+    params.mask = mask
+  } else if (
+    !params.maskUrl &&
+    typeof rawMask === 'string' &&
+    rawMask.trim().length > 0 &&
+    !rawMask.trim().startsWith('{') &&
+    !rawMask.trim().startsWith('[')
+  ) {
+    params.maskUrl = rawMask.trim()
+  }
 
   const images = normalizeFileInput(params.uploadImages || params.imagesRef || params.images)
   if (images) params.images = images
+
+  if (typeof params.imageUrl === 'string' && params.imageUrl.trim().length > 0) {
+    params.imageUrl = params.imageUrl.trim()
+  }
+
+  if (typeof params.maskUrl === 'string' && params.maskUrl.trim().length > 0) {
+    params.maskUrl = params.maskUrl.trim()
+  }
+
+  const editImageUrl =
+    typeof params.editImageUrl === 'string' && params.editImageUrl.trim().length > 0
+      ? params.editImageUrl.trim()
+      : ''
+  if (editImageUrl) {
+    const existing = params.imageUrls
+    if (!existing) {
+      params.imageUrls = [editImageUrl]
+    }
+  }
 
   const fromModel =
     typeof params.model === 'string' && params.model.trim().length > 0
@@ -370,6 +438,15 @@ export function buildIdeogramToolParams(params: Record<string, unknown>): Record
     return Number.isFinite(num) ? num : undefined
   }
 
+  const imageUrl =
+    typeof params.imageUrl === 'string' && params.imageUrl.trim().length > 0
+      ? params.imageUrl.trim()
+      : undefined
+  const maskUrl =
+    typeof params.maskUrl === 'string' && params.maskUrl.trim().length > 0
+      ? params.maskUrl.trim()
+      : undefined
+
   return {
     ...(typeof params.apiKey === 'string' && params.apiKey.trim().length > 0
       ? { apiKey: params.apiKey }
@@ -379,7 +456,9 @@ export function buildIdeogramToolParams(params: Record<string, unknown>): Record
     useMagicPrompt: parseOptionalBooleanInput(params.useMagicPrompt),
     prompt: params.ideogramPrompt ?? params.prompt,
     image: params.image,
+    ...(imageUrl ? { imageUrl } : {}),
     mask: params.mask,
+    ...(maskUrl ? { maskUrl } : {}),
     images: params.images,
     imageUrls: params.imageUrls,
     resolution: params.resolutionV4 || params.ideogramResolution || params.resolution,

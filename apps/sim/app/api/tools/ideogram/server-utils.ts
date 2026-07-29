@@ -2,11 +2,20 @@ import { createLogger, type Logger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { IdeogramProxyBody } from '@/lib/api/contracts/tools/ideogram'
 import { getEnv } from '@/lib/core/config/env'
+import {
+  secureFetchWithPinnedIP,
+  validateUrlWithDNS,
+} from '@/lib/core/security/input-validation.server'
+import {
+  assertKnownSizeWithinLimit,
+  readResponseToBufferWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { IMAGE_GENERATION_DOWNLOAD_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { generateFileId } from '@/lib/uploads/contexts/execution/utils'
 import {
   extractStorageKey,
+  isInternalFileUrl,
   processFilesToUserFiles,
   type RawFileInput,
 } from '@/lib/uploads/utils/file-utils'
@@ -22,6 +31,9 @@ import {
 import { appendFormField, mapIdeogramImages } from '@/tools/ideogram/utils'
 
 const logger = createLogger('IdeogramProxy')
+
+/** Ideogram accepts images up to 10MB; keep a small buffer under that. */
+const MAX_IDEOGRAM_INPUT_IMAGE_BYTES = 10 * 1024 * 1024
 
 interface ResolvedFile {
   buffer: Buffer
@@ -79,6 +91,93 @@ async function resolveFiles(
     })
   }
   return resolved
+}
+
+/**
+ * Downloads a public image URL with SSRF protection for use as Ideogram input.
+ */
+async function resolveRemoteImageUrl(
+  url: string,
+  fieldName: string
+): Promise<ResolvedFile> {
+  const trimmed = url.trim()
+  if (!trimmed) {
+    throw new Error(`${fieldName} is required`)
+  }
+
+  const urlValidation = await validateUrlWithDNS(trimmed, fieldName)
+  if (!urlValidation.isValid || !urlValidation.resolvedIP) {
+    throw new Error(urlValidation.error || `Invalid ${fieldName}`)
+  }
+
+  const imageResponse = await secureFetchWithPinnedIP(trimmed, urlValidation.resolvedIP, {
+    method: 'GET',
+    maxResponseBytes: MAX_IDEOGRAM_INPUT_IMAGE_BYTES,
+    timeout: IMAGE_GENERATION_DOWNLOAD_TIMEOUT_MS,
+  })
+
+  if (!imageResponse.ok) {
+    throw new Error(`Failed to download ${fieldName}: HTTP ${imageResponse.status}`)
+  }
+
+  const buffer = await readResponseToBufferWithLimit(imageResponse, {
+    maxBytes: MAX_IDEOGRAM_INPUT_IMAGE_BYTES,
+    label: fieldName,
+  })
+  assertKnownSizeWithinLimit(buffer.length, MAX_IDEOGRAM_INPUT_IMAGE_BYTES, fieldName)
+
+  const mimeType = mimeTypeFromContentType(imageResponse.headers.get('content-type'))
+  const extension = mimeType.split('/')[1] || 'png'
+  let fileName = `image.${extension}`
+  try {
+    const pathname = new URL(trimmed).pathname
+    const base = pathname.split('/').pop()
+    if (base && base.includes('.')) {
+      fileName = base
+    }
+  } catch {
+    // keep default fileName
+  }
+
+  return { buffer, fileName, mimeType }
+}
+
+/**
+ * Coerces an internal `/api/files/serve/...` URL into a RawFileInput for resolveFiles.
+ */
+function coerceInternalServeUrl(url: string): RawFileInput {
+  const key = extractStorageKey(url)
+  const name = key.split('/').pop() || 'image.png'
+  return { url, name, size: 0, key }
+}
+
+/**
+ * Resolves either a file upload or an image URL into ResolvedFile[].
+ * File input wins when both are provided.
+ */
+async function resolveImageOrUrl(
+  fileValue: unknown,
+  urlValue: unknown,
+  userId: string,
+  requestId: string,
+  log: Logger,
+  fieldName: string
+): Promise<ResolvedFile[]> {
+  const fromFiles = await resolveFiles(fileValue, userId, requestId, log)
+  if (fromFiles.length > 0) {
+    return fromFiles
+  }
+
+  if (typeof urlValue !== 'string' || urlValue.trim().length === 0) {
+    return []
+  }
+
+  const trimmed = urlValue.trim()
+  if (isInternalFileUrl(trimmed)) {
+    return resolveFiles(coerceInternalServeUrl(trimmed), userId, requestId, log)
+  }
+
+  return [await resolveRemoteImageUrl(trimmed, fieldName)]
 }
 
 function appendResolvedFile(form: FormData, fieldName: string, file: ResolvedFile): void {
@@ -350,8 +449,8 @@ export async function executeIdeogramOperation(
   ] = await Promise.all([
     options?.preResolvedImage
       ? Promise.resolve([options.preResolvedImage])
-      : resolveFiles(body.image, userId, requestId, logger),
-    resolveFiles(body.mask, userId, requestId, logger),
+      : resolveImageOrUrl(body.image, body.imageUrl, userId, requestId, logger, 'imageUrl'),
+    resolveImageOrUrl(body.mask, body.maskUrl, userId, requestId, logger, 'maskUrl'),
     resolveFiles(body.images, userId, requestId, logger),
     resolveFiles(body.styleReferenceImages, userId, requestId, logger),
     resolveFiles(body.characterReferenceImages, userId, requestId, logger),
@@ -442,7 +541,7 @@ export async function executeIdeogramOperation(
       break
     }
     case 'remix_v4': {
-      if (imageFiles.length === 0) throw new Error('image is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
       if (!body.textPrompt) throw new Error('textPrompt is required')
       appendResolvedFile(form, 'image', imageFiles[0])
       appendFormField(form, 'text_prompt', body.textPrompt)
@@ -453,7 +552,7 @@ export async function executeIdeogramOperation(
       break
     }
     case 'describe_v4': {
-      if (imageFiles.length === 0) throw new Error('image is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
       appendResolvedFile(form, 'image_file', imageFiles[0])
       appendFormField(form, 'include_bbox', body.includeBbox)
       break
@@ -492,8 +591,8 @@ export async function executeIdeogramOperation(
       break
     }
     case 'inpaint_v3': {
-      if (imageFiles.length === 0) throw new Error('image is required')
-      if (maskFiles.length === 0) throw new Error('mask is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
+      if (maskFiles.length === 0) throw new Error('mask or maskUrl is required')
       if (!body.prompt) throw new Error('prompt is required')
       appendResolvedFile(form, 'image', imageFiles[0])
       appendResolvedFile(form, 'mask', maskFiles[0])
@@ -512,7 +611,7 @@ export async function executeIdeogramOperation(
       break
     }
     case 'remix_v3': {
-      if (imageFiles.length === 0) throw new Error('image is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
       if (!body.prompt) throw new Error('prompt is required')
       appendResolvedFile(form, 'image', imageFiles[0])
       appendFormField(form, 'prompt', body.prompt)
@@ -534,7 +633,7 @@ export async function executeIdeogramOperation(
       break
     }
     case 'reframe_v3': {
-      if (imageFiles.length === 0) throw new Error('image is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
       if (!body.resolution) throw new Error('resolution is required')
       appendResolvedFile(form, 'image', imageFiles[0])
       appendFormField(form, 'resolution', body.resolution)
@@ -548,7 +647,7 @@ export async function executeIdeogramOperation(
       break
     }
     case 'replace_background_v3': {
-      if (imageFiles.length === 0) throw new Error('image is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
       if (!body.prompt) throw new Error('prompt is required')
       appendResolvedFile(form, 'image', imageFiles[0])
       appendFormField(form, 'prompt', body.prompt)
@@ -563,12 +662,12 @@ export async function executeIdeogramOperation(
       break
     }
     case 'remove_background': {
-      if (imageFiles.length === 0) throw new Error('image is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
       appendResolvedFile(form, 'image', imageFiles[0])
       break
     }
     case 'layerize_text': {
-      if (imageFiles.length === 0) throw new Error('image is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
       appendResolvedFile(form, 'image', imageFiles[0])
       appendFormField(form, 'prompt', body.prompt)
       appendFormField(form, 'seed', body.seed)
@@ -594,7 +693,7 @@ export async function executeIdeogramOperation(
       break
     }
     case 'upscale': {
-      if (imageFiles.length === 0) throw new Error('image is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
       const imageRequest: Record<string, unknown> = {}
       if (body.prompt) imageRequest.prompt = body.prompt
       if (body.resemblance !== undefined) imageRequest.resemblance = body.resemblance
@@ -607,7 +706,7 @@ export async function executeIdeogramOperation(
       break
     }
     case 'describe': {
-      if (imageFiles.length === 0) throw new Error('image is required')
+      if (imageFiles.length === 0) throw new Error('image or imageUrl is required')
       appendResolvedFile(form, 'image_file', imageFiles[0])
       appendFormField(form, 'describe_model_version', body.describeModelVersion)
       break

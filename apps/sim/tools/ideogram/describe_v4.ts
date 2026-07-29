@@ -1,4 +1,8 @@
-import { createIdeogramProxyTool } from '@/tools/ideogram/create-tool'
+import {
+  createIdeogramProxyTool,
+  ideogramImageFileParam,
+  ideogramImageUrlParam,
+} from '@/tools/ideogram/create-tool'
 import type {
   IdeogramDescribeV4Params,
   IdeogramDescribeV4Response,
@@ -13,12 +17,8 @@ export const ideogramDescribeV4Tool = createIdeogramProxyTool<
   description: 'Describe an image as a structured Ideogram 4.0 JSON prompt',
   operation: 'describe_v4',
   params: {
-    image: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Image to describe (JPEG, PNG, or WebP, max 10MB)',
-    },
+    image: ideogramImageFileParam,
+    imageUrl: ideogramImageUrlParam,
     includeBbox: {
       type: 'boolean',
       required: false,
@@ -28,6 +28,7 @@ export const ideogramDescribeV4Tool = createIdeogramProxyTool<
   },
   body: (params) => ({
     image: params.image,
+    imageUrl: params.imageUrl,
     includeBbox: params.includeBbox,
   }),
   transformOutput: (data) => ({

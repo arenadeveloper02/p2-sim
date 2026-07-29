@@ -1331,8 +1331,17 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     },
     apiKey: { type: 'string', description: 'Provider API key' },
     image: { type: 'file', description: 'Ideogram primary image input' },
+    imageUrl: {
+      type: 'string',
+      description: 'Public image URL alternative to Ideogram file upload',
+    },
     mask: { type: 'file', description: 'Ideogram inpaint mask' },
+    maskUrl: {
+      type: 'string',
+      description: 'Public mask URL alternative to Ideogram mask upload',
+    },
     images: { type: 'file[]', description: 'Ideogram edit images' },
+    imageUrls: { type: 'json', description: 'Ideogram edit image URLs' },
     textPrompt: { type: 'string', description: 'Ideogram text prompt' },
     jsonPrompt: { type: 'json', description: 'Ideogram structured JSON prompt' },
     useMagicPrompt: {

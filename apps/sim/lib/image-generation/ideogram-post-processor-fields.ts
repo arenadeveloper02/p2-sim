@@ -99,16 +99,23 @@ export const IDEOGRAM_POST_PROCESSOR_SUB_BLOCKS: SubBlockConfig[] = [
     multiple: false,
     canonicalParamId: 'image',
     mode: 'basic',
-    required: true,
+    required: false,
   },
   {
     id: 'imageRef',
     title: 'Image',
     type: 'short-input',
-    placeholder: 'Image URL or file reference from a previous block',
+    placeholder: 'File reference from a previous block',
     canonicalParamId: 'image',
     mode: 'advanced',
-    required: true,
+    required: false,
+  },
+  {
+    id: 'imageUrl',
+    title: 'Image URL (alternative)',
+    type: 'short-input',
+    placeholder: 'Publicly accessible image URL (use if not uploading a file)',
+    required: false,
   },
   {
     id: 'resolution',
@@ -165,7 +172,14 @@ export function resolvePostProcessorToolId(params: Record<string, unknown>): str
     params.uploadImage || params.imageRef || params.image
   )
   const image = normalizeFileInput(rawImage, { single: true })
-  if (image) params.image = image
+  if (image) {
+    params.image = image
+  } else if (typeof params.imageUrl === 'string' && params.imageUrl.trim().length > 0) {
+    params.imageUrl = params.imageUrl.trim()
+  } else if (typeof rawImage === 'string' && rawImage.trim().length > 0) {
+    // External URL left as a string by coercePostProcessorImageInput
+    params.imageUrl = rawImage.trim()
+  }
 
   const operation =
     typeof params.operation === 'string' && params.operation.trim().length > 0
@@ -187,11 +201,17 @@ export function buildPostProcessorToolParams(
     return Number.isFinite(num) ? num : undefined
   }
 
+  const imageUrl =
+    typeof params.imageUrl === 'string' && params.imageUrl.trim().length > 0
+      ? params.imageUrl.trim()
+      : undefined
+
   return {
     ...(typeof params.apiKey === 'string' && params.apiKey.trim().length > 0
       ? { apiKey: params.apiKey }
       : {}),
     image: params.image,
+    ...(imageUrl && !params.image ? { imageUrl } : {}),
     resolution: params.resolution,
     renderingSpeed: params.renderingSpeed,
     includeBbox: params.includeBbox,

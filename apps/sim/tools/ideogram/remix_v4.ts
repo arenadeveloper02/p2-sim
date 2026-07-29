@@ -1,4 +1,10 @@
-import { createIdeogramProxyTool, ideogramImagesOutputs, transformImagesOutput } from '@/tools/ideogram/create-tool'
+import {
+  createIdeogramProxyTool,
+  ideogramImageFileParam,
+  ideogramImageUrlParam,
+  ideogramImagesOutputs,
+  transformImagesOutput,
+} from '@/tools/ideogram/create-tool'
 import type { IdeogramImagesResponse, IdeogramRemixV4Params } from '@/tools/ideogram/types'
 
 export const ideogramRemixV4Tool = createIdeogramProxyTool<
@@ -10,12 +16,8 @@ export const ideogramRemixV4Tool = createIdeogramProxyTool<
   description: 'Remix an image with Ideogram 4.0 using an initial image and prompt',
   operation: 'remix_v4',
   params: {
-    image: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Initial image to remix (JPEG, PNG, or WebP, max 10MB)',
-    },
+    image: ideogramImageFileParam,
+    imageUrl: ideogramImageUrlParam,
     textPrompt: {
       type: 'string',
       required: true,
@@ -49,6 +51,7 @@ export const ideogramRemixV4Tool = createIdeogramProxyTool<
   },
   body: (params) => ({
     image: params.image,
+    imageUrl: params.imageUrl,
     textPrompt: params.textPrompt,
     imageWeight: params.imageWeight,
     resolution: params.resolution,

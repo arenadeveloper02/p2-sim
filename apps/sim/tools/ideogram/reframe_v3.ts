@@ -1,4 +1,10 @@
-import { createIdeogramProxyTool, ideogramImagesOutputs, transformImagesOutput } from '@/tools/ideogram/create-tool'
+import {
+  createIdeogramProxyTool,
+  ideogramImageFileParam,
+  ideogramImageUrlParam,
+  ideogramImagesOutputs,
+  transformImagesOutput,
+} from '@/tools/ideogram/create-tool'
 import type { IdeogramImagesResponse, IdeogramReframeV3Params } from '@/tools/ideogram/types'
 import { parseJsonParam } from '@/tools/ideogram/utils'
 
@@ -11,12 +17,8 @@ export const ideogramReframeV3Tool = createIdeogramProxyTool<
   description: 'Reframe an image to a new resolution with Ideogram 3.0',
   operation: 'reframe_v3',
   params: {
-    image: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Image being reframed',
-    },
+    image: ideogramImageFileParam,
+    imageUrl: ideogramImageUrlParam,
     resolution: {
       type: 'string',
       required: true,
@@ -68,6 +70,7 @@ export const ideogramReframeV3Tool = createIdeogramProxyTool<
   },
   body: (params) => ({
     image: params.image,
+    imageUrl: params.imageUrl,
     resolution: params.resolution,
     numImages: params.numImages,
     seed: params.seed,

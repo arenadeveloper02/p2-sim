@@ -1,4 +1,8 @@
-import { createIdeogramProxyTool } from '@/tools/ideogram/create-tool'
+import {
+  createIdeogramProxyTool,
+  ideogramImageFileParam,
+  ideogramImageUrlParam,
+} from '@/tools/ideogram/create-tool'
 import type { IdeogramDescribeParams, IdeogramDescribeResponse } from '@/tools/ideogram/types'
 
 export const ideogramDescribeTool = createIdeogramProxyTool<
@@ -10,12 +14,8 @@ export const ideogramDescribeTool = createIdeogramProxyTool<
   description: 'Generate text descriptions for an image with Ideogram',
   operation: 'describe',
   params: {
-    image: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Image to describe',
-    },
+    image: ideogramImageFileParam,
+    imageUrl: ideogramImageUrlParam,
     describeModelVersion: {
       type: 'string',
       required: false,
@@ -25,6 +25,7 @@ export const ideogramDescribeTool = createIdeogramProxyTool<
   },
   body: (params) => ({
     image: params.image,
+    imageUrl: params.imageUrl,
     describeModelVersion: params.describeModelVersion,
   }),
   transformOutput: (data) => ({

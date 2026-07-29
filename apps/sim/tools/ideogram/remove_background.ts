@@ -1,4 +1,9 @@
-import { createIdeogramProxyTool, transformImagesOutput } from '@/tools/ideogram/create-tool'
+import {
+  createIdeogramProxyTool,
+  ideogramImageFileParam,
+  ideogramImageUrlParam,
+  transformImagesOutput,
+} from '@/tools/ideogram/create-tool'
 import type {
   IdeogramRemoveBackgroundParams,
   IdeogramRemoveBackgroundResponse,
@@ -13,15 +18,12 @@ export const ideogramRemoveBackgroundTool = createIdeogramProxyTool<
   description: 'Remove the background from an image with Ideogram',
   operation: 'remove_background',
   params: {
-    image: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Image whose background will be removed',
-    },
+    image: ideogramImageFileParam,
+    imageUrl: ideogramImageUrlParam,
   },
   body: (params) => ({
     image: params.image,
+    imageUrl: params.imageUrl,
   }),
   transformOutput: transformImagesOutput,
   outputs: {

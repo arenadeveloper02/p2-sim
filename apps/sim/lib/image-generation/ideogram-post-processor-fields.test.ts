@@ -47,6 +47,25 @@ describe('resolvePostProcessorToolId', () => {
       key: 'agent-generated-images/wf-1/user-1/out.png',
     })
   })
+
+  it('accepts an external URL string as imageUrl', () => {
+    const params: Record<string, unknown> = {
+      operation: 'upscale',
+      imageRef: 'https://cdn.example.com/photo.png',
+    }
+    expect(resolvePostProcessorToolId(params)).toBe('ideogram_upscale')
+    expect(params.image).toBeUndefined()
+    expect(params.imageUrl).toBe('https://cdn.example.com/photo.png')
+  })
+
+  it('accepts a dedicated imageUrl field', () => {
+    const params: Record<string, unknown> = {
+      operation: 'describe_v4',
+      imageUrl: 'https://cdn.example.com/other.png',
+    }
+    expect(resolvePostProcessorToolId(params)).toBe('ideogram_describe_v4')
+    expect(params.imageUrl).toBe('https://cdn.example.com/other.png')
+  })
 })
 
 describe('ideogramPostProcessBodySchema reframe resolution', () => {

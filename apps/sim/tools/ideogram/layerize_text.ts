@@ -1,4 +1,8 @@
-import { createIdeogramProxyTool } from '@/tools/ideogram/create-tool'
+import {
+  createIdeogramProxyTool,
+  ideogramImageFileParam,
+  ideogramImageUrlParam,
+} from '@/tools/ideogram/create-tool'
 import type {
   IdeogramLayerizeTextParams,
   IdeogramLayerizeTextResponse,
@@ -14,12 +18,8 @@ export const ideogramLayerizeTextTool = createIdeogramProxyTool<
     'Detect text regions, return a text-erased base image, and extract editable text layers with font/layout metadata',
   operation: 'layerize_text',
   params: {
-    image: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Image to analyze for text detection',
-    },
+    image: ideogramImageFileParam,
+    imageUrl: ideogramImageUrlParam,
     prompt: {
       type: 'string',
       required: false,
@@ -35,6 +35,7 @@ export const ideogramLayerizeTextTool = createIdeogramProxyTool<
   },
   body: (params) => ({
     image: params.image,
+    imageUrl: params.imageUrl,
     prompt: params.prompt,
     seed: params.seed,
   }),

@@ -1,4 +1,10 @@
-import { createIdeogramProxyTool, ideogramImagesOutputs, transformImagesOutput } from '@/tools/ideogram/create-tool'
+import {
+  createIdeogramProxyTool,
+  ideogramImageFileParam,
+  ideogramImageUrlParam,
+  ideogramImagesOutputs,
+  transformImagesOutput,
+} from '@/tools/ideogram/create-tool'
 import type {
   IdeogramImagesResponse,
   IdeogramReplaceBackgroundV3Params,
@@ -14,12 +20,8 @@ export const ideogramReplaceBackgroundV3Tool = createIdeogramProxyTool<
   description: 'Replace an image background with Ideogram 3.0',
   operation: 'replace_background_v3',
   params: {
-    image: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Image whose background will be replaced',
-    },
+    image: ideogramImageFileParam,
+    imageUrl: ideogramImageUrlParam,
     prompt: {
       type: 'string',
       required: true,
@@ -77,6 +79,7 @@ export const ideogramReplaceBackgroundV3Tool = createIdeogramProxyTool<
   },
   body: (params) => ({
     image: params.image,
+    imageUrl: params.imageUrl,
     prompt: params.prompt,
     magicPrompt: params.magicPrompt,
     numImages: params.numImages,

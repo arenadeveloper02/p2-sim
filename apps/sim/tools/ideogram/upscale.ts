@@ -1,4 +1,10 @@
-import { createIdeogramProxyTool, ideogramImagesOutputs, transformImagesOutput } from '@/tools/ideogram/create-tool'
+import {
+  createIdeogramProxyTool,
+  ideogramImageFileParam,
+  ideogramImageUrlParam,
+  ideogramImagesOutputs,
+  transformImagesOutput,
+} from '@/tools/ideogram/create-tool'
 import type { IdeogramImagesResponse, IdeogramUpscaleParams } from '@/tools/ideogram/types'
 
 export const ideogramUpscaleTool = createIdeogramProxyTool<
@@ -10,12 +16,8 @@ export const ideogramUpscaleTool = createIdeogramProxyTool<
   description: 'Upscale an image with Ideogram',
   operation: 'upscale',
   params: {
-    image: {
-      type: 'file',
-      required: true,
-      visibility: 'user-or-llm',
-      description: 'Image to upscale',
-    },
+    image: ideogramImageFileParam,
+    imageUrl: ideogramImageUrlParam,
     prompt: {
       type: 'string',
       required: false,
@@ -55,6 +57,7 @@ export const ideogramUpscaleTool = createIdeogramProxyTool<
   },
   body: (params) => ({
     image: params.image,
+    imageUrl: params.imageUrl,
     prompt: params.prompt,
     resemblance: params.resemblance,
     detail: params.detail,
