@@ -8,6 +8,10 @@ import {
   buildLocalCopilotContext,
   contextToPromptJson,
 } from '@/local-copilot/lib/context/build-context'
+import {
+  buildWorkflowBlockInspection,
+  resolveWorkflowContextDetail,
+} from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
@@ -288,12 +292,34 @@ export async function executeLocalCopilotTool(
       }
     }
 
-    case 'get_workflow_context':
+    case 'get_workflow_context': {
+      const blockIds = Array.isArray(args.blockIds)
+        ? args.blockIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : []
+      const blockNames = Array.isArray(args.blockNames)
+        ? args.blockNames.filter(
+            (name): name is string => typeof name === 'string' && name.trim().length > 0
+          )
+        : []
+
+      if ((blockIds.length > 0 || blockNames.length > 0) && ctx.structuredContext.workflow) {
+        return {
+          toolName,
+          success: true,
+          result: buildWorkflowBlockInspection(ctx.structuredContext.workflow, {
+            blockIds,
+            blockNames,
+          }),
+        }
+      }
+
+      const workflowDetail = resolveWorkflowContextDetail(ctx.structuredContext)
       return {
         toolName,
         success: true,
-        result: JSON.parse(contextToPromptJson(ctx.structuredContext)),
+        result: JSON.parse(contextToPromptJson(ctx.structuredContext, { workflowDetail })),
       }
+    }
 
     case 'get_available_blocks': {
       const category =
