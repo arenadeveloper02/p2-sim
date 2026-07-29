@@ -30,7 +30,9 @@ export function resolveDevelopmentDeployEnv(): DevelopmentDeployEnv {
     githubOwner: readDevelopmentEnv('DEVELOPMENT_GITHUB_OWNER'),
     vercelToken: readDevelopmentEnv('DEVELOPMENT_VERCEL_TOKEN'),
     vercelTeamId: readDevelopmentEnv('DEVELOPMENT_VERCEL_TEAM_ID'),
-    neonIntegrationConfigurationId: readDevelopmentEnv('DEVELOPMENT_VERCEL_NEON_INTEGRATION_CONFIG_ID'),
+    neonIntegrationConfigurationId: readDevelopmentEnv(
+      'DEVELOPMENT_VERCEL_NEON_INTEGRATION_CONFIG_ID'
+    ),
     neonApiKey: readDevelopmentEnv('DEVELOPMENT_NEON_API_KEY'),
     neonOrgId: readDevelopmentEnv('DEVELOPMENT_NEON_ORG_ID'),
   }

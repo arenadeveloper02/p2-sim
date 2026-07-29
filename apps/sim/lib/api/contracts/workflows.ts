@@ -335,6 +335,17 @@ export const executeWorkflowTriggerTypeSchema = z.enum([
   'workflow',
 ])
 
+export const executeWorkflowLineageBodySchema = z.object({
+  /** Parent workflow run; accepted only on internally-authenticated execute calls. */
+  parentExecutionId: executionIdSchema.optional(),
+  /** Parent's root execution id when known; otherwise resolved server-side. */
+  parentRootExecutionId: executionIdSchema.optional(),
+  /** Copilot chat that triggered this run (rollup attribution; not billing chat_id). */
+  triggeringChatId: z.string().uuid().optional(),
+  /** Copilot run that triggered this run (rollup attribution; not billing run_id). */
+  triggeringRunId: z.string().uuid().optional(),
+})
+
 export const executeWorkflowBodySchema = z.object({
   selectedOutputs: z.array(z.string()).optional().default([]),
   triggerType: executeWorkflowTriggerTypeSchema.optional(),
@@ -357,6 +368,10 @@ export const executeWorkflowBodySchema = z.object({
    * Direct API callers omit it and are unaffected.
    */
   parentWorkspaceId: workspaceIdSchema.optional(),
+  parentExecutionId: executeWorkflowLineageBodySchema.shape.parentExecutionId,
+  parentRootExecutionId: executeWorkflowLineageBodySchema.shape.parentRootExecutionId,
+  triggeringChatId: executeWorkflowLineageBodySchema.shape.triggeringChatId,
+  triggeringRunId: executeWorkflowLineageBodySchema.shape.triggeringRunId,
 })
 export type ExecuteWorkflowBody = z.input<typeof executeWorkflowBodySchema>
 

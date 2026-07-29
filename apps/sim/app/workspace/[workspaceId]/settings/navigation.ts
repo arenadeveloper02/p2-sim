@@ -1,18 +1,14 @@
 import {
+  Credit,
   ClipboardList,
   Database,
-  HexSimple,
   Key,
   // KeySquare,
   Lock,
-  // LogIn,
-  Mail,
-  LogIn,
   Palette,
   Server,
   Settings,
   ShieldCheck,
-  Shuffle,
   TerminalWindow,
   TrashOutline,
   // Upload,
@@ -32,6 +28,7 @@ export type SettingsSection =
   | 'apikeys'
   | 'byok'
   | 'billing'
+  | 'usage'
   | 'teammates'
   | 'organization'
   | 'oauth-apps'
@@ -72,6 +69,8 @@ export interface NavigationItem {
   selfHostedOverride?: boolean
   requiresSuperUser?: boolean
   requiresAdminRole?: boolean
+  /** Visible only to workspace admins (viewer.isAdmin). */
+  requiresWorkspaceAdmin?: boolean
   /**
    * Exempt this item from the org admin/owner requirement that `requiresTeam` /
    * `requiresEnterprise` otherwise impose in the sidebar. The plan/hosted
@@ -157,6 +156,13 @@ export const allNavigationItems: NavigationItem[] = [
     hideWhenBillingDisabled: true,
   },
   {
+    id: 'usage',
+    label: 'Usage',
+    icon: Credit,
+    section: 'subscription',
+    requiresWorkspaceAdmin: true,
+  },
+  {
     id: 'teammates',
     label: 'Teammates',
     description: 'Manage your teammates in this workspace.',
@@ -176,7 +182,7 @@ export const allNavigationItems: NavigationItem[] = [
   {
     id: 'oauth-apps',
     label: 'Custom OAuth Apps',
-    description: 'Register your organization\'s OAuth app credentials for integrations like Zoom.',
+    description: "Register your organization's OAuth app credentials for integrations like Zoom.",
     icon: Key,
     section: 'subscription',
     hideWhenBillingDisabled: true,

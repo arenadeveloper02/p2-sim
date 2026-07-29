@@ -39,6 +39,8 @@ export enum BlockType {
 
   CREDENTIAL = 'credential',
 
+  COST = 'cost',
+
   WAIT = 'wait',
 
   NOTE = 'note',

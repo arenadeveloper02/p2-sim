@@ -50,6 +50,9 @@ const RecentlyDeleted = dynamic(() =>
     '@/app/workspace/[workspaceId]/settings/components/recently-deleted/recently-deleted'
   ).then((m) => m.RecentlyDeleted)
 )
+const Usage = dynamic(() =>
+  import('@/app/workspace/[workspaceId]/settings/components/usage/usage').then((m) => m.Usage)
+)
 const Billing = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-page-shell').then(
     (m) => m.BillingPageShell
@@ -137,6 +140,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {effectiveSection === 'audit-logs' && <AuditLogs />}
       {effectiveSection === 'apikeys' && <ApiKeys />}
       {isBillingEnabled && effectiveSection === 'billing' && <Billing />}
+      {effectiveSection === 'usage' && <Usage />}
       {effectiveSection === 'teammates' && <Teammates />}
       {isBillingEnabled && effectiveSection === 'organization' && <TeamManagement />}
       {isBillingEnabled && effectiveSection === 'oauth-apps' && <OAuthAppsSettings />}

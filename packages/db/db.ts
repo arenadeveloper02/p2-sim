@@ -35,6 +35,8 @@ if (!connectionString) {
 const poolOptions = {
   prepare: false,
   idle_timeout: 20,
+  /** Recycle sockets before cloud idle/NAT timeouts leave dead pool entries. */
+  max_lifetime: 60 * 10,
   connect_timeout: 30,
   onnotice: () => {},
   connection: { application_name: process.env.DB_APP_NAME ?? profile.appName },

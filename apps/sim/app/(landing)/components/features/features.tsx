@@ -89,6 +89,6 @@ export function Features() {
           spans the whole browser, past the content cap and gutter (the section
           itself is full-width; only the card grid above is capped). */}
       <div aria-hidden='true' className='absolute inset-x-0 bottom-0 h-px bg-[var(--border)]' />
-    </section >
+    </section>
   )
 }

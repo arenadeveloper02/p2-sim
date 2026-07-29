@@ -23,6 +23,7 @@ export interface GuardrailsValidateInput {
   _context?: {
     workflowId?: string
     workspaceId?: string
+    executionId?: string
   }
 }
 
@@ -187,6 +188,7 @@ export const guardrailsValidateTool: ToolConfig<GuardrailsValidateInput, Guardra
         piiLanguage: params.piiLanguage,
         workflowId: params._context?.workflowId,
         workspaceId: params._context?.workspaceId,
+        executionId: params._context?.executionId,
       }),
     },
 

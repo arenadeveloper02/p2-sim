@@ -262,7 +262,8 @@ export function General() {
     }
   }
 
-  const imageUrl = profilePictureUrl || profile?.image || brandConfig.logoUrl || brandConfig.logoUrlBlacktext
+  const imageUrl =
+    profilePictureUrl || profile?.image || brandConfig.logoUrl || brandConfig.logoUrlBlacktext
 
   if (isLoading) {
     return null

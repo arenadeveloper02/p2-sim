@@ -451,9 +451,7 @@ function isSyntheticLocalStatusPayload(value: unknown): value is SyntheticLocalS
 export function isSyntheticLocalStatusEventEnvelope(
   value: unknown
 ): value is SyntheticLocalStatusEventEnvelope {
-  return (
-    isSyntheticLocalStatusEnvelopeBase(value) && isSyntheticLocalStatusPayload(value.payload)
-  )
+  return isSyntheticLocalStatusEnvelopeBase(value) && isSyntheticLocalStatusPayload(value.payload)
 }
 
 // ---------------------------------------------------------------------------

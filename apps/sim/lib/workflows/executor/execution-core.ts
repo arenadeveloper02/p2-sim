@@ -516,7 +516,6 @@ async function executeWorkflowCoreImpl(
         'XAI_API_KEY_2',
         'XAI_API_KEY_3',
         'AZURE_OPENAI_API_KEY',
-        'SEMRUSH_API_KEY',
         'BROWSERBASE_API_KEY',
         'PRESENTATION_API_BASE_URL',
         'EXA_API_KEY',
@@ -627,6 +626,13 @@ async function executeWorkflowCoreImpl(
       conversationId,
       initialInput,
       workflowState: { blocks, edges, loops, parallels },
+      lineage: {
+        parentExecutionId: metadata.parentExecutionId,
+        rootExecutionId: metadata.rootExecutionId ?? executionId,
+        triggeringChatId: metadata.triggeringChatId,
+        triggeringRunId: metadata.triggeringRunId,
+      },
+      executionActor: metadata.executionActor,
     })
 
     // Use edges directly - trigger-to-trigger edges are prevented at creation time
@@ -1036,6 +1042,13 @@ async function executeWorkflowCoreImpl(
         triggerData: metadata.correlation ? { correlation: metadata.correlation } : undefined,
         skipLogCreation,
         deploymentVersionId,
+        lineage: {
+          parentExecutionId: metadata.parentExecutionId,
+          rootExecutionId: metadata.rootExecutionId ?? executionId,
+          triggeringChatId: metadata.triggeringChatId,
+          triggeringRunId: metadata.triggeringRunId,
+        },
+        executionActor: metadata.executionActor,
       })
     }
 

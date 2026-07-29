@@ -43,7 +43,10 @@ for (const { model, maxTokens } of candidates) {
     })
     const message = await stream.finalMessage()
     const text = message.content.find((b) => b.type === 'text')
-    console.log(`[PASS] ${model} (max_tokens=${maxTokens}) ->`, text?.type === 'text' ? text.text : '<no text>')
+    console.log(
+      `[PASS] ${model} (max_tokens=${maxTokens}) ->`,
+      text?.type === 'text' ? text.text : '<no text>'
+    )
   } catch (error) {
     const err = error as { status?: number; message?: string }
     console.log(`[FAIL] ${model} (max_tokens=${maxTokens}) -> status=${err.status} ${err.message}`)

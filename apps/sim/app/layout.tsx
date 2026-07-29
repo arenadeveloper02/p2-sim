@@ -15,8 +15,8 @@ import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
 import { TooltipProvider } from '@/app/_shell/providers/tooltip-provider'
-import { ResumePathSync } from '@/app/_shell/resume-path-sync'
 import { PublicEnvScript } from '@/app/_shell/public-env-script'
+import { ResumePathSync } from '@/app/_shell/resume-path-sync'
 import { season } from '@/app/_styles/fonts/season/season'
 
 export const viewport: Viewport = {

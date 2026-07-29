@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sim.local/schemas/vendor-pricing.schema.json",
+  "title": "VendorPricing",
+  "type": "object",
+  "required": ["pricing"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "pricing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["vendor", "tool", "cost"],
+        "additionalProperties": false,
+        "properties": {
+          "vendor": { "type": "string", "minLength": 1 },
+          "tool": { "type": "string", "minLength": 1 },
+          "cost": {
+            "description": "USD per unit, or input/output per 1M tokens as \"input/output\"",
+            "oneOf": [{ "type": "number" }, { "type": "string", "minLength": 1 }]
+          }
+        }
+      }
+    }
+  }
+}

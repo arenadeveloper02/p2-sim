@@ -1,5 +1,5 @@
 import { existsSync } from 'fs'
-import { readFile, readdir } from 'fs/promises'
+import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'

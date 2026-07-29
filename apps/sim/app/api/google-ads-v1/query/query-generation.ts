@@ -3,6 +3,7 @@
  */
 
 import { createLogger } from '@sim/logger'
+import { extractProviderToolCostFields } from '@/lib/billing/core/tool-llm-cost'
 import { executeProviderRequest } from '@/providers'
 import { resolveAIProvider } from './ai-provider'
 import { DEFAULT_DATE_RANGE_DAYS } from './constants'
@@ -185,14 +186,19 @@ export async function generateGAQLQuery(userPrompt: string): Promise<GAQLRespons
 
     // Validate and fix date filtering if needed
     const validated = validateDateFiltering(parsed)
+    const billing = extractProviderToolCostFields(aiResponse)
 
     logger.info('Successfully generated GAQL query', {
       gaql: validated.gaql_query,
       queryType: validated.query_type,
       tables: validated.tables_used,
+      hasCost: !!billing?.cost,
     })
 
-    return validated
+    return {
+      ...validated,
+      ...billing,
+    }
   } catch (error) {
     logger.error('GAQL generation failed', { error, userPrompt })
     throw error

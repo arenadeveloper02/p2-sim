@@ -204,7 +204,9 @@ async function extractOutputValue(
   }
 
   const parsedOutput = parseOutputContentSafely(output)
-  return path ? await navigatePathAsync(parsedOutput, path.split('.'), navigateOptions) : parsedOutput
+  return path
+    ? await navigatePathAsync(parsedOutput, path.split('.'), navigateOptions)
+    : parsedOutput
 }
 
 function isDangerousKey(key: string): boolean {

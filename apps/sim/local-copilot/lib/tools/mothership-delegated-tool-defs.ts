@@ -37,8 +37,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Generates an image from a text prompt (no workflow). Uses hosted/workspace keys automatically. Pass the user full request in `prompt`, including variation counts (e.g. "3 variations"). Optional outputs.files path to save under files/.',
   search_online:
     'Live web search (Exa when keys are configured). Use for current events and live data — no workflow required. REQUIRED: query (search string) and toolTitle (short UI label, e.g. "Tealium ads").',
-  enrichment_run:
-    'Runs a one-off table enrichment lookup inline (no table/workflow required).',
+  enrichment_run: 'Runs a one-off table enrichment lookup inline (no table/workflow required).',
   function_execute:
     'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',
   edit_content:
@@ -49,8 +48,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Lists block output paths for a workflow (use before deploy_chat outputConfigs to pick agent blockId + path, usually content).',
   diff_workflows:
     'Diffs draft vs live (or two versions) to summarize changes. Use before deploy_chat when versionDescription is required.',
-  check_deployment_status:
-    'Returns whether a workflow is deployed and chat/API deployment status.',
+  check_deployment_status: 'Returns whether a workflow is deployed and chat/API deployment status.',
   get_block_upstream_references:
     'Returns the exact output reference tags each block can use (e.g. <My Agent.content>). REQUIRED: blockIds (array of block UUIDs). Call before wiring inputs that consume upstream outputs.',
   rename_workflow: 'Renames a workflow. REQUIRED: workflowId and the new name.',
@@ -92,7 +90,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   manage_credential:
     'Renames or deletes stored OAuth credentials (operation: rename | delete). Delete is destructive — only call when the user explicitly asked. Never exposes secret values.',
   oauth_get_auth_link:
-    "Returns an OAuth connect link for a provider (e.g. google-email, slack) so the user can authorize it. Share the returned URL — never ask for an API key when an OAuth flow exists.",
+    'Returns an OAuth connect link for a provider (e.g. google-email, slack) so the user can authorize it. Share the returned URL — never ask for an API key when an OAuth flow exists.',
   oauth_request_access:
     'Requests access to an OAuth provider connection owned by another workspace member.',
   generate_audio:
@@ -108,8 +106,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   move_file:
     'Moves workspace files into a folder. REQUIRED: paths (array). Omit destinationPath (or pass "files") for root.',
   list_file_folders: 'Lists folders under the workspace files tree.',
-  rename_file_folder:
-    'Renames a files-tree folder. REQUIRED: path and name (new folder name).',
+  rename_file_folder: 'Renames a files-tree folder. REQUIRED: path and name (new folder name).',
   move_file_folder:
     'Moves a files-tree folder. REQUIRED: path. Omit destinationPath (or pass "files") for root.',
   delete_file_folder:
@@ -247,7 +244,9 @@ export function isWorkflowScopedDelegatedTool(toolName: string): boolean {
   return WORKFLOW_SCOPED_DELEGATED_TOOLS.has(toolName as MothershipDelegatedToolName)
 }
 
-export function isMothershipDelegatedTool(toolName: string): toolName is MothershipDelegatedToolName {
+export function isMothershipDelegatedTool(
+  toolName: string
+): toolName is MothershipDelegatedToolName {
   return (MOTHERSHIP_DELEGATED_TOOL_NAMES as readonly string[]).includes(toolName)
 }
 
@@ -266,8 +265,7 @@ export function buildMothershipDelegatedToolDefinitions(): LocalCopilotToolDefin
 
     let parameters = baseParameters
     if (name === 'create_file' && baseParameters.type === 'object') {
-      const existingProperties =
-        (baseParameters.properties as Record<string, unknown>) ?? {}
+      const existingProperties = (baseParameters.properties as Record<string, unknown>) ?? {}
       const fileNameProp = existingProperties.fileName as Record<string, unknown> | undefined
       const properties = {
         ...existingProperties,

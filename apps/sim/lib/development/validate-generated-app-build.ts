@@ -52,7 +52,17 @@ export interface ValidateGeneratedAppBuildOptions {
 }
 
 const DUMMY_DATABASE_URL = 'postgresql://user:pass@localhost:5432/validate?sslmode=disable'
-const NPM_INSTALL_ARGS = ['install', '--include=dev', '--legacy-peer-deps', '--no-audit', '--no-fund'] as const
+const NPM_INSTALL_ARGS = [
+  'install',
+  '--include=dev',
+  '--legacy-peer-deps',
+  '--no-audit',
+  '--no-fund',
+] as const
+
+/** Shared E2B install flags — omit --prefer-offline so stale sandbox packuments cannot ETARGET new transitive versions. */
+const E2B_NPM_INSTALL =
+  'npm install --include=dev --legacy-peer-deps --no-audit --no-fund 2>&1'
 
 /**
  * NODE_ENV must be 'production' (never 'development'): `next build` under a
@@ -192,13 +202,20 @@ async function validateAppBuildLocally(
   try {
     logger.info('Running local npm install for generated app', { outputDir })
     logs.push('=== npm install ===')
-    logs.push(await runNpmInDir(outputDir, [...NPM_INSTALL_ARGS], databaseEnv, FULL_BUILD_TIMEOUT_MS))
+    logs.push(
+      await runNpmInDir(outputDir, [...NPM_INSTALL_ARGS], databaseEnv, FULL_BUILD_TIMEOUT_MS)
+    )
 
     if (skipPackageBuild) {
       logger.info('Running prisma generate for generated app build validation', { outputDir })
       logs.push('=== prisma generate ===')
       logs.push(
-        await runNpmInDir(outputDir, ['exec', 'prisma', 'generate'], databaseEnv, FULL_BUILD_TIMEOUT_MS)
+        await runNpmInDir(
+          outputDir,
+          ['exec', 'prisma', 'generate'],
+          databaseEnv,
+          FULL_BUILD_TIMEOUT_MS
+        )
       )
       logger.info('Running next build without prisma db push (validation only)', { outputDir })
       logs.push('=== next build ===')
@@ -227,7 +244,7 @@ async function validateAppTypecheckInE2b(
   const hasPrisma = files.some((file) => file.path === 'prisma/schema.prisma')
   const shellScript = buildE2bValidationShellScript([
     options.requiresDatabase ? `export DATABASE_URL="${DUMMY_DATABASE_URL}"` : '',
-    'npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1',
+    E2B_NPM_INSTALL,
     options.requiresDatabase && hasPrisma ? 'npx prisma generate 2>&1' : '',
     'npx tsc --noEmit 2>&1',
     'echo "__SIM_RESULT__={\\"typecheckOk\\":true}"',
@@ -262,7 +279,7 @@ async function validateAppBuildInE2b(
   const compileStep = skipPackageBuild ? 'npx next build 2>&1' : 'npm run build 2>&1'
   const shellScript = buildE2bValidationShellScript([
     options.requiresDatabase ? `export DATABASE_URL="${DUMMY_DATABASE_URL}"` : '',
-    'npm install --include=dev --legacy-peer-deps --prefer-offline --no-audit --no-fund 2>&1',
+    E2B_NPM_INSTALL,
     skipPackageBuild ? 'npx prisma generate 2>&1' : '',
     compileStep,
     'echo "__SIM_RESULT__={\\"buildOk\\":true}"',

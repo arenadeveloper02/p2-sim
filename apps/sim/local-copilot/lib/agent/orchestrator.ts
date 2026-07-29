@@ -1,56 +1,11 @@
 import { createLogger } from '@sim/logger'
-import { generateId } from '@sim/utils/id'
 import { getErrorMessage } from '@sim/utils/errors'
-import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
-import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
-import { buildLocalCopilotContext, contextToPromptJson } from '@/local-copilot/lib/context/build-context'
-import {
-  compactChatHistory,
-  estimateChatMessagesTokens,
-  fitPromptToTokenBudget,
-  LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
-  LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
-  resolveWorkflowContextDetail,
-} from '@/local-copilot/lib/context/context-budget'
-import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
-import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
-import {
-  stripLeakedToolMarkers,
-  synthesizeAssistantSummaryFromTools,
-  type ToolTurnRecord,
-} from '@/local-copilot/lib/synthesize-assistant-summary'
-import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
-import {
-  appendMessage,
-  createConversation,
-  getMessages,
-  recordToolCall,
-  savePatch,
-} from '@/local-copilot/lib/persistence/store'
-import { getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
-import type { ChatMessage } from '@/local-copilot/lib/providers/types'
-import {
-  buildLocalCopilotUserTurn,
-  getLocalCopilotUserTurnText,
-  type CopilotContextEntry,
-  type CopilotFileAttachmentRef,
-} from '@/local-copilot/lib/user-turn-content'
-import { MAX_TOOL_ITERATIONS } from '@/providers'
-import { LOCAL_COPILOT_TOOLS, resolveLocalCopilotTools } from '@/local-copilot/lib/tools/definitions'
-import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
-import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
-import {
-  buildFollowUpContinuationMessage,
-  detectMandatoryFollowUp,
-  formatToolResultForLlm,
-  resolveMandatoryFollowUps,
-  sortToolCallsForExecution,
-  type MandatoryFollowUp,
-} from '@/local-copilot/lib/tools/format-tool-result'
+import { generateId } from '@sim/utils/id'
+import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
-import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { createSpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
 import {
   classifyLocalCopilotIntent,
   selectParallelSubagentDomains,
@@ -62,8 +17,86 @@ import {
   toolNamesForIntent,
 } from '@/local-copilot/lib/agent/specialists/domains'
 import { runParallelSubagents } from '@/local-copilot/lib/agent/specialists/parallel-subagents'
+import { runParentSpecialistToolCalls } from '@/local-copilot/lib/agent/specialists/parent-calls'
 import { runSpecialistPass } from '@/local-copilot/lib/agent/specialists/specialist-pass'
+import {
+  getParentSpecialistToolDefinitions,
+  isSpecialistTool,
+} from '@/local-copilot/lib/agent/specialists/specialist-tools'
+import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import {
+  buildStagnationSystemMessage,
+  createToolStagnationTracker,
+} from '@/local-copilot/lib/agent/tool-stagnation'
+import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
+import { recordLocalCopilotTurnUsage } from '@/local-copilot/lib/billing/record-turn-usage'
+import {
+  LocalTurnCostAccumulator,
+  type LocalTurnCostSummary,
+} from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
+import {
+  buildLocalCopilotContext,
+  contextToPromptJson,
+} from '@/local-copilot/lib/context/build-context'
+import {
+  compactChatHistory,
+  estimateChatMessagesTokens,
+  fitPromptToTokenBudget,
+  LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
+  LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
+  resolveWorkflowContextDetail,
+} from '@/local-copilot/lib/context/context-budget'
+import {
+  extractFollowUpDirectives,
+  formatActiveDirectiveSystemMessage,
+  formatSessionConstraintsSystemMessage,
+  type PreferenceMemoryCandidate,
+} from '@/local-copilot/lib/context/follow-up-directives'
+import {
+  ensureSessionMemory,
+  formatSessionMemorySystemMessage,
+  mergeFollowUpDirectivesIntoSessionMemory,
+  type SessionMemoryTurn,
+} from '@/local-copilot/lib/context/session-memory'
+import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
+import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
+import {
+  appendMessage,
+  createConversation,
+  getMessages,
+  recordToolCall,
+  savePatch,
+} from '@/local-copilot/lib/persistence/store'
+import { getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
+import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+import {
+  stripLeakedToolMarkers,
+  synthesizeAssistantSummaryFromTools,
+  type ToolTurnRecord,
+} from '@/local-copilot/lib/synthesize-assistant-summary'
+import {
+  LOCAL_COPILOT_TOOLS,
+  resolveLocalCopilotTools,
+} from '@/local-copilot/lib/tools/definitions'
+import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
+import {
+  buildFollowUpContinuationMessage,
+  detectMandatoryFollowUp,
+  formatToolResultForLlm,
+  type MandatoryFollowUp,
+  resolveMandatoryFollowUps,
+  sortToolCallsForExecution,
+} from '@/local-copilot/lib/tools/format-tool-result'
+import { isWorkflowScopedDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
+import {
+  buildLocalCopilotUserTurn,
+  type CopilotContextEntry,
+  type CopilotFileAttachmentRef,
+  getLocalCopilotUserTurnText,
+} from '@/local-copilot/lib/user-turn-content'
+import { MAX_TOOL_ITERATIONS } from '@/providers'
 
 const logger = createLogger('LocalCopilotAgent')
 
@@ -79,6 +112,11 @@ Response format:
 - Open with a warm, concise greeting when starting a conversation or after a long pause.
 - Briefly summarize what you see in the workspace (workflows, files, tables, knowledge bases) in plain prose. Do not greet with a generic capability bullet list.
 - Never mention cost, pricing, dollar amounts, or spend in user-facing replies — even if tool results include them (e.g. do not write "cost ~$0.016"). You may still mention runtime/duration when useful.
+- User-facing replies (CRITICAL):
+  - Never mention block UUIDs, internal IDs, tool names (\`edit_workflow\`, \`get_workflow_context\`, etc.), or operation internals in user-visible text.
+  - Refer to blocks only by display name (e.g. "Writer", "Reviewer").
+  - Do not narrate planned writes ("I'm about to call…", "issuing edit_workflow…", "real block IDs…"). Issue the tool call first, then summarize the outcome in plain language ("Updated the Writer instructions…").
+  - If a tool fails, explain the blocker in plain language without dumping IDs or raw JSON.
 - When suggesting next steps, end your message with a clickable options block in this exact format (never use markdown bullet lists for suggestions):
 
 <options>{"1":{"title":"Run Weekly Email Summary","description":"Execute the existing workflow and summarize results"},"2":{"title":"Debug the last run","description":"Inspect logs from the most recent execution"},"3":{"title":"Create a brand-new workflow","description":"Only when nothing existing fits"}}</options>
@@ -90,6 +128,11 @@ Response format:
 <chart>{"type":"bar","title":"Runs per day","labels":["Mon","Tue","Wed"],"series":[{"name":"Successful","data":[12,18,9]},{"name":"Failed","data":[1,0,3]}]}</chart>
 
 - Chart tag rules: \`type\` is one of "bar", "line", "area", "pie", "scatter". \`labels\` are x-axis categories (or slice names for pie). Each \`series\` entry has an optional \`name\` and a numeric \`data\` array (for scatter, data may be [x,y] pairs). Pie charts use exactly one series whose values pair with \`labels\`. Keep the JSON on a single line with no comments. Add a one-sentence takeaway in prose near the chart; do not repeat all the numbers in text.
+
+Specialists (hybrid orchestration):
+- Prefer specialist tools for multi-step domain work: workflow, run, deploy, auth, knowledge, table, scheduled_task, agent, research, media, file, superagent.
+- Keep leaf tools for simple single calls. Do not re-run research/auth already present in pre-pass findings unless stale or failed.
+- Use \`superagent\` for third-party integration actions; \`agent\` for listing/invoking tools and skills; \`auth\` when credentials are missing.
 
 Rules:
 - You have awareness of the workspace, available blocks/integrations, and (when open) the current workflow structure, variables, logs, and credential metadata (never secrets).
@@ -103,10 +146,12 @@ Rules:
 - After create_workflow succeeds (only when truly new), immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId and startBlockId.
 - Building workflows with edit_workflow (CRITICAL — follow exactly to avoid retry loops):
   - Call get_blocks_metadata with the block types you need (e.g. \`["agent","start_trigger"]\`) before the first edit — use the returned input field ids verbatim in params.inputs.
+  - When workflow context has \`detail: "compact"\`, call \`get_workflow_context\` with \`blockNames\` (preferred) or \`blockIds\` for every block you will edit BEFORE \`edit_workflow\`. Compact context omits prompt/message bodies.
   - Never add edges as separate operations or with type "edge". Connections live on the SOURCE block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id.
-  - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. Exa web search tool entry: \`{ type: "exa", title: "Exa Search", toolId: "exa_search", usageControl: "auto" }\`.
+  - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. If you only have a system prompt string, still pass it via \`messages: [{role:"system",content:"..."},{role:"user",content:"..."}]\` (legacy systemPrompt is auto-mapped, but \`messages\` is preferred). Exa web search tool entry: \`{ type: "exa", title: "Exa Search", toolId: "exa_search", usageControl: "auto" }\`.
   - Prefer one edit_workflow call with all add operations plus a final edit on the Start block for connections. deferredConnections in results are normal for forward references within the same batch — do not re-issue them unless the target id was wrong.
   - If workflowLintMessage reports orphan blocks, fix connections on the Start (or upstream) block before run_workflow.
+  - Always issue the \`edit_workflow\` tool call to apply changes. Never end a turn by only describing the intended edit.
 - Block output references (CRITICAL):
   - Wire upstream block outputs using angle-bracket tags with the block's **display name**, never its UUID: \`<My Agent.content>\`, not \`<bd80a5a8-ef94-43ef-afcf-f6daa926495f.content>\`.
   - Before wiring inputs (e.g. Gmail body, Slack message, API payload), call \`get_block_upstream_references\` for the target block and use the exact tags returned (e.g. \`agent1.content\` for a default agent without structured outputs).
@@ -117,7 +162,13 @@ Rules:
 - User memory (CRITICAL):
   - Context may include \`userMemories\` (key/value preferences). Honor them unless the user overrides.
   - When the user says remember / prefer / always use / don't forget — call \`user_memory\` with operation \`add\` (key + value). Use operation \`correct\` when they fix a remembered fact, \`delete\` to forget, \`search\`/\`list\` to look up.
+  - Clear preference overrides are also auto-persisted by the runtime — still honor \`userMemories\` and session constraints.
   - Do not store secrets (API keys, passwords, tokens) in user_memory.
+- Session memory / follow-ups (CRITICAL):
+  - A system message may include structured session memory for earlier turns (goals, decisions, constraints, activeDirective, entities, progress, open questions).
+  - Trust it for older context. If recent verbatim turns conflict, prefer the recent turns.
+  - \`constraints\` and the separate "Active user directive" / "Session constraints" system messages are authoritative for corrections ("use X not Y", "don't create a new workflow"). Do not re-ask or undo them unless the user explicitly changes course.
+  - Never burn tool rounds re-doing work that constraints already forbade. If stuck after a failed retry, stop and ask — do not loop the same tool with the same args.
 - Credentials and API keys:
   - Context includes \`connectedIntegrations\` (OAuth) and \`envVariables\` (configured env key names only). If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
   - When \`hostedKeysAvailable\` is true, many api_key blocks also receive platform-hosted keys at runtime — do not prompt for keys unless a tool returns an explicit missing-credential error.
@@ -134,7 +185,7 @@ Rules:
   - Google Sheets write/update/append: pass \`spreadsheetId\`, \`sheetName\` (tab name), \`values\` as a 2D array (e.g. \`[["Name","Age"],["Alice",30]]\`). Optional \`cellRange\` like \`A1\`. Legacy \`range\` like \`Sheet1!A1\` is also accepted.
   - Gmail drafts (one-off, no workflow): \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { to, subject, body, credentialId } })\`. \`to\` and \`body\` are required strings. For separate drafts to multiple people, call once per recipient with a single email in \`to\` (Arena also fans out if \`to\` is an array). Do not put everyone on one draft unless the user asked for a single email.
   - Only build or run a workflow when the user wants automation saved for reuse, multi-step pipelines, or scheduling.
-- For open workflows, propose incremental changes via workflow patches (requiresConfirmation). For new workflows from home chat, use create_workflow + edit_workflow.
+- Prefer \`edit_workflow\` to apply changes on open workflows. Use \`propose_workflow_patch\` only when the user asks to review a plan before applying, or for a large multi-block redesign that needs confirmation. For new workflows from home chat, use create_workflow + edit_workflow.
 - Running and testing workflows:
   - On home chat there is no open workflow — always pass \`workflowId\` from \`workspaceWorkflows\` (or the workflow name; it will be resolved automatically when unambiguous).
   - Use \`get_workflow_run_options\` first to discover triggers, required \`workflow_input\`, and mock payloads.
@@ -207,13 +258,24 @@ export interface RunAgentParams {
   chatId?: string
   /** Scopes workspace_file → edit_content intents (mothership user message id when available). */
   messageId?: string
+  /** Copilot run id for Usage joins (`usage_log.run_id`). */
+  runId?: string
   selectedBlockId?: string
   executionId?: string
+  /** Parent workflow execution when Local runs inside a mothership block. */
+  parentExecutionId?: string
   signal?: AbortSignal
   /** Prior turns from mothership chat (`copilot_messages`). */
   priorMessages?: ChatMessage[]
+  /** Compact persisted turns with ids for session-memory refresh (mothership path). */
+  sessionMemoryTurns?: SessionMemoryTurn[]
   /** When false, skip `local_copilot_*` persistence (mothership chat owns the transcript). */
   persistLocally?: boolean
+  /**
+   * When false, accumulate cost but do not write `usage_log` (workflow logger owns
+   * mothership-block cost via the generator return value). Defaults to true for interactive chat.
+   */
+  writeChatLedger?: boolean
   /** Workspace permission for write tools (create_file, user_table create, knowledge_base add_file). */
   userPermission?: string
   /** Mothership request context entries (upload hints, resource tags, etc.). */
@@ -226,7 +288,7 @@ export interface RunAgentParams {
 
 export async function* runLocalCopilotAgent(
   params: RunAgentParams
-): AsyncGenerator<LocalCopilotStreamEvent, void, undefined> {
+): AsyncGenerator<LocalCopilotStreamEvent, LocalTurnCostSummary | undefined, undefined> {
   const startedAt = Date.now()
   const config = getLocalCopilotConfig()
   /**
@@ -277,6 +339,8 @@ export async function* runLocalCopilotAgent(
   })
 
   const persistLocally = params.persistLocally !== false
+  const writeChatLedger = params.writeChatLedger !== false
+  const turnCost = new LocalTurnCostAccumulator()
 
   let conversationId = params.conversationId
   if (persistLocally) {
@@ -306,17 +370,46 @@ export async function* runLocalCopilotAgent(
     })
   }
 
-  const historyMessages: ChatMessage[] = params.priorMessages?.length
-    ? compactChatHistory(params.priorMessages)
+  const rawHistory: ChatMessage[] = params.priorMessages?.length
+    ? params.priorMessages
     : conversationId
-      ? compactChatHistory(
-          (await getMessages(conversationId)).slice(0, -1).flatMap((row) => {
-            const content = row.content as { text?: string }
-            if (!content.text) return []
-            return [{ role: row.role as 'user' | 'assistant', content: content.text }]
-          })
-        )
+      ? (await getMessages(conversationId)).slice(0, -1).flatMap((row) => {
+          const content = row.content as { text?: string }
+          if (!content.text) return []
+          return [{ role: row.role as 'user' | 'assistant', content: content.text }]
+        })
       : []
+
+  let sessionMemory = await ensureSessionMemory({
+    chatId: params.chatId,
+    userId: params.userId,
+    historyMessages: rawHistory,
+    turns: params.sessionMemoryTurns ?? [],
+    signal: params.signal,
+  })
+
+  const extractedDirectives = extractFollowUpDirectives(params.message)
+  if (extractedDirectives.constraints.length > 0 || extractedDirectives.activeDirective) {
+    sessionMemory = await mergeFollowUpDirectivesIntoSessionMemory({
+      chatId: params.chatId,
+      userId: params.userId,
+      previous: sessionMemory,
+      constraints: extractedDirectives.constraints,
+      activeDirective: extractedDirectives.activeDirective,
+    })
+  }
+
+  if (extractedDirectives.preferences.length > 0) {
+    await persistInferredUserPreferences({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      preferences: extractedDirectives.preferences,
+    })
+  }
+
+  const historyMessages: ChatMessage[] = rawHistory.length
+    ? compactChatHistory(rawHistory, { sessionMemoryPresent: Boolean(sessionMemory) })
+    : []
 
   const workflowDetail = resolveWorkflowContextDetail(
     structuredContext,
@@ -332,6 +425,12 @@ export async function* runLocalCopilotAgent(
   })
   const userTurnText = getLocalCopilotUserTurnText(userTurn)
 
+  const pinnedDirective =
+    extractedDirectives.activeDirective?.trim() || sessionMemory?.activeDirective?.trim() || ''
+  const pinnedConstraints = sessionMemory?.constraints?.length
+    ? sessionMemory.constraints
+    : extractedDirectives.constraints
+
   const messages: ChatMessage[] = fitPromptToTokenBudget(
     [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -342,6 +441,11 @@ export async function* runLocalCopilotAgent(
       ...(params.workspaceContext
         ? [{ role: 'system' as const, content: `Workspace snapshot:\n${params.workspaceContext}` }]
         : []),
+      ...(sessionMemory ? [formatSessionMemorySystemMessage(sessionMemory)] : []),
+      ...(pinnedConstraints.length > 0
+        ? [formatSessionConstraintsSystemMessage(pinnedConstraints)]
+        : []),
+      ...(pinnedDirective ? [formatActiveDirectiveSystemMessage(pinnedDirective)] : []),
       ...historyMessages,
       userTurn,
     ],
@@ -361,9 +465,22 @@ export async function* runLocalCopilotAgent(
     tools = allTools
   }
 
+  // Hybrid: intent leaf tools ∪ 12 specialist entry tools.
+  const specialistTools = getParentSpecialistToolDefinitions()
+  const seenToolNames = new Set(tools.map((tool) => tool.name))
+  for (const specialistTool of specialistTools) {
+    if (!seenToolNames.has(specialistTool.name)) {
+      tools = [...tools, specialistTool]
+      seenToolNames.add(specialistTool.name)
+    }
+  }
+
+  const specialistBudget = createSpecialistBudget()
+
   logger.info('Arena Copilot prompt budget applied', {
     workflowDetail,
     historyTurns: historyMessages.length,
+    sessionMemoryPresent: Boolean(sessionMemory),
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
@@ -373,6 +490,7 @@ export async function* runLocalCopilotAgent(
     specialistPrimary: intent.primary,
     specialistSecondary: intent.secondary,
     useFullCatalog: usedFullCatalog,
+    partitioning: 'hybrid',
     skillToolEnabled: allTools.length > LOCAL_COPILOT_TOOLS.length,
     memory: getLocalCopilotMemorySnapshot(),
   })
@@ -433,7 +551,9 @@ export async function* runLocalCopilotAgent(
       workspaceId: params.workspaceId,
       ...(params.workflowId ? { workflowId: params.workflowId } : {}),
       usageTurnId,
+      turnCost,
       getToolExecutor,
+      budget: specialistBudget,
     })
 
     let parallelNext = await parallel.next()
@@ -453,11 +573,12 @@ export async function* runLocalCopilotAgent(
       domains: parallelDomains,
       resultCount: results.length,
       findingsChars: findings.length,
+      budget: specialistBudget.snapshot(),
       memory: getLocalCopilotMemorySnapshot(),
     })
   } else {
     const passDomain = specialistPassDomain(intent)
-    if (passDomain) {
+    if (passDomain && passDomain !== 'general') {
       const pass = runSpecialistPass({
         domain: passDomain,
         userMessage: userTurnText,
@@ -470,7 +591,9 @@ export async function* runLocalCopilotAgent(
         workspaceId: params.workspaceId,
         ...(params.workflowId ? { workflowId: params.workflowId } : {}),
         usageTurnId,
+        turnCost,
         getToolExecutor,
+        budget: specialistBudget,
       })
 
       let passNext = await pass.next()
@@ -490,6 +613,7 @@ export async function* runLocalCopilotAgent(
         domain: passDomain,
         toolRoundCount,
         findingsChars: findings.length,
+        budget: specialistBudget.snapshot(),
         memory: getLocalCopilotMemorySnapshot(),
       })
     }
@@ -504,8 +628,11 @@ export async function* runLocalCopilotAgent(
   let forcedFollowUpRounds = 0
   let turnInputTokens = 0
   let turnOutputTokens = 0
+  const stagnationTracker = createToolStagnationTracker()
+  let stagnationStopMessage: string | null = null
 
   for (let round = 0; round < maxToolRounds; round++) {
+    if (stagnationStopMessage) break
     const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
     let roundInputTokens = 0
     let roundOutputTokens = 0
@@ -573,15 +700,14 @@ export async function* runLocalCopilotAgent(
     turnOutputTokens += roundOutputTokens
 
     if (roundInputTokens > 0 || roundOutputTokens > 0) {
-      await recordModelUsage({
-        userId: params.userId,
-        workspaceId: params.workspaceId,
-        workflowId: params.workflowId,
+      // Arena Copilot (local mothership) accumulates model cost for one end-of-turn
+      // ledger write. Sim Cloud mothership uses Go pricing + `workspace-chat` /
+      // `mothership_block` via `/api/billing/update-cost` — keep these separate.
+      turnCost.addModelUsage({
         model: config.model,
         inputTokens: roundInputTokens,
         outputTokens: roundOutputTokens,
-        source: 'copilot',
-        sourceReference: `local-copilot:${usageTurnId}:round-${round}`,
+        provider: config.provider,
       })
     }
 
@@ -620,12 +746,117 @@ export async function* runLocalCopilotAgent(
     })
     assistantText = ''
 
+    const specialistCalls = orderedToolCalls.filter((call) => isSpecialistTool(call.name))
+    const specialistOutcomes = new Map<
+      string,
+      { success: boolean; findings: string; error?: string; output: unknown }
+    >()
+
+    if (specialistCalls.length > 0) {
+      const specialistRunner = runParentSpecialistToolCalls({
+        calls: specialistCalls,
+        lastUserMessage: userTurnText,
+        model: config.model,
+        provider,
+        allTools,
+        toolCtx,
+        signal: params.signal,
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+        usageTurnId,
+        getToolExecutor,
+        budget: specialistBudget,
+        parentDepth: 0,
+        turnCost,
+      })
+
+      let specialistNext = await specialistRunner.next()
+      while (!specialistNext.done) {
+        yield specialistNext.value
+        specialistNext = await specialistRunner.next()
+      }
+
+      for (const outcome of specialistNext.value) {
+        specialistOutcomes.set(outcome.toolCallId, {
+          success: outcome.success,
+          findings: outcome.findings,
+          ...(outcome.error ? { error: outcome.error } : {}),
+          output: {
+            success: outcome.success,
+            message: outcome.findings,
+            domain: outcome.toolName,
+          },
+        })
+      }
+    }
+
     for (const call of orderedToolCalls) {
       let parsedArgs: Record<string, unknown> = {}
       try {
         parsedArgs = JSON.parse(call.arguments || '{}') as Record<string, unknown>
       } catch {
         parsedArgs = {}
+      }
+
+      if (isSpecialistTool(call.name)) {
+        const outcome = specialistOutcomes.get(call.id) ?? {
+          success: false,
+          findings: `Specialist (${call.name}) produced no result`,
+          error: `Specialist (${call.name}) produced no result`,
+          output: {
+            success: false,
+            message: `Specialist (${call.name}) produced no result`,
+          },
+        }
+
+        turnToolRecords.push({
+          name: call.name,
+          success: outcome.success,
+          result: outcome.output,
+        })
+
+        if (persistLocally && conversationId) {
+          await recordToolCall({
+            conversationId,
+            toolCallId: call.id,
+            toolName: call.name,
+            arguments: parsedArgs,
+            result: outcome.output,
+          })
+        }
+
+        const formattedToolResult = formatToolResultForLlm(call.name, outcome.output)
+        pendingFollowUps = resolveMandatoryFollowUps(
+          pendingFollowUps,
+          call.name,
+          outcome.success,
+          outcome.output
+        )
+
+        messages.push({
+          role: 'tool',
+          toolCallId: call.id,
+          content: formattedToolResult,
+        })
+
+        const stagnationHit = stagnationTracker.record(
+          call.name,
+          call.arguments || '{}',
+          outcome.success,
+          outcome.output
+        )
+        if (stagnationHit) {
+          stagnationStopMessage = stagnationHit.message
+          messages.push({ role: 'system', content: buildStagnationSystemMessage(stagnationHit) })
+          logger.warn('Arena Copilot tool stagnation detected', {
+            toolName: stagnationHit.toolName,
+            count: stagnationHit.count,
+            fingerprint: stagnationHit.fingerprint,
+          })
+          break
+        }
+        continue
       }
 
       yield {
@@ -717,6 +948,11 @@ export async function* runLocalCopilotAgent(
         result: toolResult.result,
       })
 
+      turnCost.addToolBilling({
+        toolName: call.name,
+        billing: toolResult.billing,
+      })
+
       if (persistLocally && conversationId) {
         await recordToolCall({
           conversationId,
@@ -754,15 +990,78 @@ export async function* runLocalCopilotAgent(
         toolCallId: call.id,
         content: formattedToolResult,
       })
+
+      const stagnationHit = stagnationTracker.record(
+        call.name,
+        call.arguments || '{}',
+        toolResult.success,
+        toolResult.result
+      )
+      if (stagnationHit) {
+        stagnationStopMessage = stagnationHit.message
+        messages.push({ role: 'system', content: buildStagnationSystemMessage(stagnationHit) })
+        logger.warn('Arena Copilot tool stagnation detected', {
+          toolName: stagnationHit.toolName,
+          count: stagnationHit.count,
+          fingerprint: stagnationHit.fingerprint,
+        })
+        break
+      }
+    }
+
+    if (stagnationStopMessage) break
+  }
+
+  if (stagnationStopMessage) {
+    // One more model round with the stagnation system nudge (no tools needed).
+    // If the model stays silent, surface the stop message directly.
+    const priorAssistantChars = assistantText.length
+    for await (const event of iterateWithIdleStatus({
+      source: provider.chatCompletionStream({
+        model: config.model,
+        messages,
+        tools: [],
+        signal: params.signal,
+      }),
+      abortSignal: params.signal,
+      messages: MODEL_WAIT_STATUS_FALLBACK,
+      idleMs: 0,
+      intervalMs: 4000,
+    })) {
+      if (event.type === 'status') {
+        yield event
+        continue
+      }
+      const chunk = event.item
+      if (chunk.type === 'text' && chunk.content) {
+        const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
+        if (!cleaned) continue
+        assistantText += cleaned
+        yield { type: 'text_delta', content: cleaned }
+      }
+      if (chunk.type === 'done' && chunk.usage) {
+        turnCost.addModelUsage({
+          model: config.model,
+          inputTokens: chunk.usage.inputTokens,
+          outputTokens: chunk.usage.outputTokens,
+          provider: config.provider,
+        })
+        turnInputTokens += chunk.usage.inputTokens
+        turnOutputTokens += chunk.usage.outputTokens
+      }
+    }
+    if (assistantText.length === priorAssistantChars) {
+      assistantText += stagnationStopMessage
+      yield { type: 'text_delta', content: stagnationStopMessage }
     }
   }
 
   if (!assistantText.trim() && turnToolRecords.length > 0) {
-    const synthesized = synthesizeAssistantSummaryFromTools(turnToolRecords)
-    if (synthesized) {
-      assistantText = synthesized
-      yield { type: 'text_delta', content: synthesized }
-    }
+    const synthesized =
+      synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+      'I finished the requested steps, but had nothing further to add.'
+    assistantText = synthesized
+    yield { type: 'text_delta', content: synthesized }
   }
 
   if (recommendations.length) {
@@ -803,6 +1102,8 @@ export async function* runLocalCopilotAgent(
     })
   }
 
+  const costSummary = turnCost.summarize()
+
   logger.info('Arena Copilot turn complete', {
     conversationId: conversationId ?? null,
     messageId: messageId || null,
@@ -819,12 +1120,33 @@ export async function* runLocalCopilotAgent(
     inputTokens: turnInputTokens,
     outputTokens: turnOutputTokens,
     hasPatch: Boolean(proposedPatch),
+    turnCost: costSummary.total,
+    writeChatLedger,
     durationMs: Date.now() - startedAt,
     memory: getLocalCopilotMemorySnapshot(),
   })
+
+  if (writeChatLedger) {
+    await recordLocalCopilotTurnUsage({
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      chatId: params.chatId,
+      runId: params.runId,
+      conversationId: conversationId ?? undefined,
+      messageId: usageTurnId,
+      summary: costSummary,
+      executionActor: { actorUserId: params.userId, actorType: 'user' },
+      parentExecutionId: params.parentExecutionId,
+      rootExecutionId: params.parentExecutionId,
+      triggeringChatId: params.chatId,
+      triggeringRunId: params.runId,
+    })
+  }
+
   yield {
     type: 'done',
-    messageId: messageId || generateId(),
+    messageId: messageId || usageTurnId,
     ...(turnInputTokens > 0 || turnOutputTokens > 0
       ? {
           usage: {
@@ -835,8 +1157,52 @@ export async function* runLocalCopilotAgent(
         }
       : {}),
   }
+
+  if (!writeChatLedger && costSummary.total > 0) {
+    return costSummary
+  }
+
+  return undefined
 }
 
 export function formatSSE(event: LocalCopilotStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`
+}
+
+/**
+ * Soft-persists high-confidence preference/correction phrases into user_memory
+ * so follow-up chats honor them without the model calling the tool first.
+ */
+async function persistInferredUserPreferences(params: {
+  userId: string
+  workspaceId: string
+  preferences: PreferenceMemoryCandidate[]
+}): Promise<void> {
+  for (const preference of params.preferences.slice(0, 5)) {
+    try {
+      const result = await userMemoryServerTool.execute(
+        {
+          operation: 'add',
+          key: preference.key,
+          value: preference.value,
+          memory_type: preference.memoryType,
+          source: 'inferred',
+          confidence: 0.85,
+          workspaceId: params.workspaceId,
+        },
+        { userId: params.userId, workspaceId: params.workspaceId }
+      )
+      if (!result.success) {
+        logger.warn('Inferred user_memory persist failed', {
+          key: preference.key,
+          error: result.error ?? 'unknown',
+        })
+      }
+    } catch (error) {
+      logger.warn('Inferred user_memory persist threw', {
+        key: preference.key,
+        error: getErrorMessage(error),
+      })
+    }
+  }
 }

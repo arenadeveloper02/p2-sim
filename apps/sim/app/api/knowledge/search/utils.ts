@@ -2,7 +2,8 @@ import { db } from '@sim/db'
 import { document, embedding } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { env } from '@/lib/core/config/env'
+import { DEFAULT_RERANKER_MODEL } from '@/lib/knowledge/reranker-models'
+import { rerank } from '@/lib/knowledge/reranker'
 import type { StructuredFilter } from '@/lib/knowledge/types'
 
 const logger = createLogger('KnowledgeSearchUtils')
@@ -95,6 +96,17 @@ export interface RerankConfig {
   model?: string
   topN?: number
   requestId?: string
+  workspaceId?: string | null
+  /** User-supplied Cohere key (honored on self-hosted only). */
+  apiKey?: string
+}
+
+export interface RerankSearchResponse {
+  results: SearchResult[]
+  isBYOK: boolean
+  model: string
+  /** Cohere search units consumed (0 or 1 per call). */
+  searchUnits: number
 }
 
 // Use shared embedding utility
@@ -550,124 +562,64 @@ export async function handleTagAndVectorSearch(params: SearchParams): Promise<Se
 }
 
 /**
- * Apply LLM-based reranking on search results using the Cohere rerank API.
+ * Apply LLM-based reranking on search results using the shared Cohere reranker.
  */
 export async function rerankSearchResults(
   query: string,
   results: SearchResult[],
   rerankConfig?: RerankConfig
-): Promise<SearchResult[]> {
+): Promise<RerankSearchResponse> {
+  const model = rerankConfig?.model || DEFAULT_RERANKER_MODEL
   const rerankEnabled = rerankConfig?.enabled ?? true
 
-  if (!rerankEnabled) {
-    return results
+  if (!rerankEnabled || !query?.trim() || results.length === 0) {
+    return { results, isBYOK: false, model, searchUnits: 0 }
   }
 
-  if (!query?.trim() || results.length === 0) {
-    return results
-  }
-
-  const apiKey = env.COHERE_API_KEY || 'FtSOTZsLWqFsfgvPlZC2UawkIiTP9kYaH2bvU0BD'
-
-  if (!apiKey) {
-    logger.warn('Skipping rerank because COHERE_API_KEY is not configured', {
-      requestId: rerankConfig?.requestId,
-    })
-    return results
-  }
-
-  const model = rerankConfig?.model || 'rerank-v4.0-pro'
   const candidateCount = Math.min(results.length, 100)
   const topN = Math.min(rerankConfig?.topN ?? results.length, candidateCount)
-
   const candidates = results.slice(0, candidateCount)
-  const documents = candidates.map((result) => result.content?.slice(0, 4000) ?? '')
 
   try {
-    const response = await fetch('https://api.cohere.com/v2/rerank', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        query,
-        documents,
-        top_n: topN,
-      }),
+    const items = candidates.map((result) => ({
+      id: result.id,
+      text: result.content?.slice(0, 4000) ?? '',
+    }))
+
+    const { results: reranked, isBYOK } = await rerank(query, items, {
+      model,
+      topN,
+      workspaceId: rerankConfig?.workspaceId,
+      apiKey: rerankConfig?.apiKey,
     })
 
-    if (!response.ok) {
-      logger.warn('Rerank API request failed', {
-        status: response.status,
-        statusText: response.statusText,
-        requestId: rerankConfig?.requestId,
-      })
-      return results
+    if (reranked.length === 0) {
+      return { results, isBYOK, model, searchUnits: 0 }
     }
 
-    const data = await response.json()
-    const rerankedItems: any[] = Array.isArray(data?.results) ? data.results : []
-
-    if (!Array.isArray(rerankedItems) || rerankedItems.length === 0) {
-      logger.warn('Rerank API returned no data', { requestId: rerankConfig?.requestId })
-      return results
-    }
-
-    // Sort by relevance_score (descending) and take top 10
-    const sortedRerankedItems = rerankedItems
-      .filter((item: any) => typeof item.relevance_score === 'number')
-      .sort((a: any, b: any) => b.relevance_score - a.relevance_score)
-      .slice(0, 10)
-
-    if (sortedRerankedItems.length === 0) {
-      logger.debug('No results with valid relevance_score', { requestId: rerankConfig?.requestId })
-      return []
-    }
-
-    // Extract indices from sorted results
-    const validIndices = new Set<number>()
-    sortedRerankedItems.forEach((item: any) => {
-      const candidateIndex = typeof item.index === 'number' ? item.index : -1
-      if (candidateIndex >= 0 && candidateIndex < candidates.length) {
-        validIndices.add(candidateIndex)
-      }
-    })
-
-    if (validIndices.size === 0) {
-      return []
-    }
-
-    // Create score map for sorting
-    const scoreMap = new Map<string, number>()
-    sortedRerankedItems.forEach((item: any) => {
-      const candidateIndex = typeof item.index === 'number' ? item.index : -1
-      if (candidateIndex >= 0 && candidateIndex < candidates.length) {
-        const candidate = candidates[candidateIndex]
-        const relevanceScore = typeof item.relevance_score === 'number' ? item.relevance_score : 0
-
-        if (candidate?.id) {
-          scoreMap.set(candidate.id, relevanceScore)
+    const resultById = new Map(candidates.map((result) => [result.id, result]))
+    const rerankedResults = reranked
+      .map(({ item, relevanceScore }) => {
+        const original = resultById.get(item.id)
+        if (!original) return null
+        return {
+          ...original,
+          distance: 1 - relevanceScore,
         }
-      }
-    })
-
-    // Filter candidates to only include those at valid indices and sort by relevance score
-    const rerankedResults = candidates
-      .filter((_, index) => validIndices.has(index))
-      .sort((a, b) => {
-        const scoreB = scoreMap.get(b.id) ?? Number.NEGATIVE_INFINITY
-        const scoreA = scoreMap.get(a.id) ?? Number.NEGATIVE_INFINITY
-        return scoreB - scoreA
       })
+      .filter((result): result is SearchResult => result !== null)
 
-    return rerankedResults.slice(0, topN)
+    return {
+      results: rerankedResults,
+      isBYOK,
+      model,
+      searchUnits: 1,
+    }
   } catch (error) {
     logger.warn('Failed to rerank knowledge base results', {
       error: error instanceof Error ? error.message : 'Unknown error',
       requestId: rerankConfig?.requestId,
     })
-    return results
+    return { results, isBYOK: false, model, searchUnits: 0 }
   }
 }

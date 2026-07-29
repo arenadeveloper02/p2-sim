@@ -218,8 +218,8 @@ export class WorkflowBlockHandler implements BlockHandler {
       }
 
       const childWorkflow = useDeployed
-        ? await this.loadChildWorkflowDeployed(workflowId, loadUserId,ctx.workspaceId)
-        : await this.loadChildWorkflow(workflowId, ctx.userId,ctx.workspaceId)
+        ? await this.loadChildWorkflowDeployed(workflowId, loadUserId, ctx.workspaceId)
+        : await this.loadChildWorkflow(workflowId, ctx.userId, ctx.workspaceId)
 
       if (!childWorkflow) {
         throw new Error(`Child workflow ${workflowId} not found`)

@@ -1,5 +1,5 @@
-import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { BlockState, Variable, WorkflowState } from '@sim/workflow-types/workflow'
+import type { MothershipResource } from '@/lib/copilot/resources/types'
 
 export interface LocalCopilotE2bCapabilities {
   enabled: boolean

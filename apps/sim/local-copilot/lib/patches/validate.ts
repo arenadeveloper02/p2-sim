@@ -1,10 +1,10 @@
+import type { WorkflowState } from '@sim/workflow-types/workflow'
 import { patchContainsSecrets } from '@/local-copilot/lib/security/sanitize'
 import type {
   PatchValidationResult,
   WorkflowPatch,
   WorkflowPatchOperation,
 } from '@/local-copilot/lib/types'
-import type { WorkflowState } from '@sim/workflow-types/workflow'
 
 export function validateWorkflowState(state: Partial<WorkflowState>): PatchValidationResult {
   const errors: string[] = []

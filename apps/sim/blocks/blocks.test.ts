@@ -897,19 +897,8 @@ describe.concurrent('Blocks Module', () => {
 
       const videoBlock = getBlock('video_generator_v3')
       const videoApiKeySubBlocks = videoBlock?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
-      const videoFalApiKeySubBlock = videoApiKeySubBlocks.find(
-        (sb) => sb.condition?.field === 'provider' && sb.condition.value === 'falai'
-      )
-      const videoNonFalApiKeySubBlock = videoApiKeySubBlocks.find(
-        (sb) =>
-          sb.condition?.field === 'provider' &&
-          sb.condition.value === 'falai' &&
-          sb.condition.not === true
-      )
 
-      expect(videoFalApiKeySubBlock?.hideWhenHosted).toBe(true)
-      expect(videoNonFalApiKeySubBlock).toBeDefined()
-      expect(videoNonFalApiKeySubBlock?.hideWhenHosted).not.toBe(true)
+      expect(videoApiKeySubBlocks).toHaveLength(0)
     })
 
     it('should expose reference image inputs and images output on image generator v2', () => {

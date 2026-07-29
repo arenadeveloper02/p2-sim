@@ -1,6 +1,7 @@
 import type { ToolResponse } from '@/tools/types'
 
 export interface SemrushParams {
+  apiKey: string
   /**
    * Block operation id (e.g. url_organic, domain_organic). Mirrors Exa-style tools
    * where the block + tool share the same field names; execution merges this from
@@ -13,6 +14,8 @@ export interface SemrushParams {
   displayLimit?: number | string
   exportColumns?: string
   additionalParams?: string
+  /** Injected by hosting / BYOK; also accepted when passed by the block. */
+  apiKey?: string
   /** @deprecated Legacy tool/agent saves that used the raw API shape */
   reportType?: string
   /** @deprecated Legacy tool/agent saves */
@@ -31,6 +34,7 @@ export interface SemrushResponse extends ToolResponse {
 
 /** Params for Semrush Projects API – Organic Positions Report (Position Tracking). */
 export interface SemrushOrganicPositionsParams {
+  apiKey: string
   campaignId: string
   url: string
   dateBegin?: string
@@ -46,6 +50,8 @@ export interface SemrushOrganicPositionsParams {
   useVolume?: 'national' | 'regional' | 'local'
   businessName?: string
   serpFeatureFilter?: string
+  /** Injected by hosting / BYOK; also accepted when passed by the block. */
+  apiKey?: string
 }
 
 /** Raw API response for Organic Positions Report (data key is object of index -> row). */

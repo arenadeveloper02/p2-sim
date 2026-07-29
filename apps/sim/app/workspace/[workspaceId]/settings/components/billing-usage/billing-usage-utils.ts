@@ -36,7 +36,9 @@ export function resolveOrgMemberCreditDisplay(params: {
 }): OrgMemberCreditDisplay {
   const { orgPool, allocatedCredits, memberUsedCredits } = params
 
-  const totalCredits: number | 'unlimited' = orgPool.isUnlimited ? 'unlimited' : orgPool.totalCredits
+  const totalCredits: number | 'unlimited' = orgPool.isUnlimited
+    ? 'unlimited'
+    : orgPool.totalCredits
 
   const orgRemaining = orgPool.isUnlimited
     ? Number.POSITIVE_INFINITY
@@ -47,22 +49,16 @@ export function resolveOrgMemberCreditDisplay(params: {
 
   let remainingCredits: number | 'unlimited'
   if (orgPool.isUnlimited) {
-    remainingCredits =
-      memberRemaining != null ? memberRemaining : ('unlimited' as const)
+    remainingCredits = memberRemaining != null ? memberRemaining : ('unlimited' as const)
   } else if (memberRemaining != null) {
     remainingCredits = Math.min(memberRemaining, orgRemaining)
   } else {
     remainingCredits = orgRemaining
   }
 
-  const progressNumerator =
-    allocatedCredits != null ? memberUsedCredits : orgPool.usedCredits
+  const progressNumerator = allocatedCredits != null ? memberUsedCredits : orgPool.usedCredits
   const progressDenominator =
-    allocatedCredits != null
-      ? allocatedCredits
-      : orgPool.isUnlimited
-        ? 0
-        : orgPool.totalCredits
+    allocatedCredits != null ? allocatedCredits : orgPool.isUnlimited ? 0 : orgPool.totalCredits
   const progressPercent =
     progressDenominator > 0 ? clampPercent((progressNumerator / progressDenominator) * 100) : 0
 

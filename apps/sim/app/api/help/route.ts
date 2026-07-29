@@ -8,7 +8,7 @@ import { generateRequestId } from '@/lib/core/utils/request'
 import { getHelpInboxEmail } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { sendEmail } from '@/lib/messaging/email/mailer'
-import { getFromEmailAddress, getHelpEmailAddress } from '@/lib/messaging/email/utils'
+import { getFromEmailAddress } from '@/lib/messaging/email/utils'
 
 const logger = createLogger('HelpAPI')
 

@@ -4,15 +4,15 @@ import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import {
-  type AssistantChatFile as ChatFile,
-  extractAssistantFilesFromData,
-  extractGeneratedImagesFromData,
-} from '@/lib/chat/assistant-assets'
-import {
   extractChartsFromData,
   formatChartDeployOutputForChat,
   formatChartsForChat,
 } from '@/lib/chart-generation/echarts-option'
+import {
+  type AssistantChatFile as ChatFile,
+  extractAssistantFilesFromData,
+  extractGeneratedImagesFromData,
+} from '@/lib/chat/assistant-assets'
 import { readSSEEvents } from '@/lib/core/utils/sse'
 import type { ChatMessage } from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'

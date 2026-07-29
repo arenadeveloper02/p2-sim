@@ -8,8 +8,8 @@ import {
   buildToolStartStatus,
   truncateStatusMessage,
 } from '@/local-copilot/lib/agent/status-messages'
-import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 import type { ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
+import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 
 const TOOL_HEARTBEAT_MS = 4000
 const POLL_MS = 100

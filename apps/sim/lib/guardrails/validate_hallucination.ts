@@ -16,6 +16,8 @@ export interface HallucinationValidationResult {
   reasoning?: string
   /** Billable LLM cost (dollars) for the scoring call; 0 for BYOK/non-hosted. */
   cost?: number
+  inputTokens?: number
+  outputTokens?: number
 }
 
 export interface HallucinationValidationInput {
@@ -109,7 +111,7 @@ async function scoreHallucinationWithLLM(
   providerCredentials: HallucinationValidationInput['providerCredentials'],
   workspaceId: string | undefined,
   requestId: string
-): Promise<{ score: number; reasoning: string; cost: number }> {
+): Promise<{ score: number; reasoning: string; cost: number; inputTokens: number; outputTokens: number }> {
   try {
     const contextText = ragContext.join('\n\n---\n\n')
 
@@ -190,6 +192,8 @@ Evaluate the consistency and provide your score and reasoning in JSON format.`
     // executeProviderRequest already zeroes cost for BYOK / non-hosted models,
     // so this is the billable amount as-is.
     const cost = typeof response.cost?.total === 'number' ? response.cost.total : 0
+    const inputTokens = response.tokens?.input ?? 0
+    const outputTokens = response.tokens?.output ?? 0
 
     const content = response.content.trim()
 
@@ -216,6 +220,8 @@ Evaluate the consistency and provide your score and reasoning in JSON format.`
       score: result.score,
       reasoning: result.reasoning || 'No reasoning provided',
       cost,
+      inputTokens,
+      outputTokens,
     }
   } catch (error: any) {
     logger.error(`[${requestId}] Error scoring with LLM`, {
@@ -278,7 +284,7 @@ export async function validateHallucination(
     }
 
     // Step 2: Use LLM to score confidence
-    const { score, reasoning, cost } = await scoreHallucinationWithLLM(
+    const { score, reasoning, cost, inputTokens, outputTokens } = await scoreHallucinationWithLLM(
       userInput,
       ragContext,
       model,
@@ -301,6 +307,8 @@ export async function validateHallucination(
       score,
       reasoning,
       cost,
+      inputTokens,
+      outputTokens,
       error: passed
         ? undefined
         : `Low confidence: score ${score}/10 is below threshold ${threshold}`,

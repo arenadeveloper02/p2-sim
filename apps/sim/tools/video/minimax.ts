@@ -1,3 +1,4 @@
+/* Disabled direct provider integration
 import type { ToolConfig } from '@/tools/types'
 import type { VideoParams, VideoResponse } from '@/tools/video/types'
 import { parseBooleanParamWithDefault } from '@/tools/video/utils'
@@ -127,3 +128,5 @@ export const minimaxVideoTool: ToolConfig<VideoParams, VideoResponse> = {
     jobId: { type: 'string', description: 'MiniMax job ID' },
   },
 }
+
+*/

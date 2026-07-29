@@ -78,16 +78,42 @@ function interruptibleSleep(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
+function pushUniqueEnvVar(names: string[], envVarName: string): void {
+  if (!names.includes(envVarName)) names.push(envVarName)
+}
+
+function pushLegacyEnvKeys(names: string[], prefix: string): void {
+  pushUniqueEnvVar(names, prefix)
+  for (let i = 1; i <= 3; i++) {
+    pushUniqueEnvVar(names, `${prefix}_${i}`)
+  }
+}
+
 /**
- * Resolves env var names for a numbered key prefix using a `{PREFIX}_COUNT` env var.
- * E.g. with `EXA_API_KEY_COUNT=5`, returns `['EXA_API_KEY_1', ..., 'EXA_API_KEY_5']`.
+ * Resolves hosted-key env vars.
+ *
+ * Primary format uses `{PREFIX}_COUNT` plus `{PREFIX}_1..N`.
+ * For backward compatibility with older self-hosted env files, when `_COUNT`
+ * is unset or zero we also fall back to singular and `_1..3` names.
+ * Google-hosted image tools additionally accept the Gemini key namespace.
  */
 function resolveEnvKeys(prefix: string): string[] {
   const count = Number.parseInt(process.env[`${prefix}_COUNT`] || '0', 10)
   const names: string[] = []
-  for (let i = 1; i <= count; i++) {
-    names.push(`${prefix}_${i}`)
+
+  if (count > 0) {
+    for (let i = 1; i <= count; i++) {
+      pushUniqueEnvVar(names, `${prefix}_${i}`)
+    }
+    return names
   }
+
+  pushLegacyEnvKeys(names, prefix)
+
+  if (prefix === 'GOOGLE_API_KEY') {
+    pushLegacyEnvKeys(names, 'GEMINI_API_KEY')
+  }
+
   return names
 }
 

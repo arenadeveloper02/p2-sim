@@ -50,14 +50,14 @@ import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { resolveWorkflowIdForUser } from '@/lib/workflows/utils'
-import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
-import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import {
   getUserEntityPermissions,
   isWorkspaceAccessDeniedError,
   type PermissionType,
 } from '@/lib/workspaces/permissions/utils'
+import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
+import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
+import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600

@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { createLogger } from '@sim/logger'
-import { sleep } from '@sim/utils/helpers'
 import { toError } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
 import { readGeneratedAppFiles } from '@/lib/development/read-generated-app-files'
 
 const logger = createLogger('DeployVercelFromFiles')
@@ -113,7 +112,7 @@ async function uploadFileToVercel(
         'x-vercel-digest': digest,
         'Content-Length': String(content.length),
       },
-      body: content,
+      body: new Uint8Array(content),
     },
     teamId
   )
@@ -173,13 +172,27 @@ async function waitForDeploymentReady(
 }
 
 function resolveLiveUrl(deployment: VercelDeployment, projectName: string): string {
-  const alias = deployment.alias?.find((entry) => entry.includes('.vercel.app'))
-  if (alias) {
+  const aliases = (deployment.alias ?? [])
+    .map((entry) => entry.replace(/^https?:\/\//, '').trim())
+    .filter(Boolean)
+
+  const exact = aliases.find((alias) => alias === `${projectName}.vercel.app`)
+  if (exact) {
+    return exact.startsWith('http') ? exact : `https://${exact}`
+  }
+
+  const productionLike = aliases
+    .filter((alias) => alias.endsWith('.vercel.app') && !alias.includes('-git-'))
+    .sort((left, right) => left.length - right.length)
+  if (productionLike[0]) {
+    const alias = productionLike[0]
     return alias.startsWith('http') ? alias : `https://${alias}`
   }
+
   if (deployment.url) {
     return deployment.url.startsWith('http') ? deployment.url : `https://${deployment.url}`
   }
+
   return `https://${projectName}.vercel.app`
 }
 

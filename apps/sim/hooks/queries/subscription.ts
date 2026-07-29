@@ -70,7 +70,12 @@ interface UseSubscriptionDataOptions {
  * @param options - Optional configuration
  */
 export function useSubscriptionData(options: UseSubscriptionDataOptions = {}) {
-  const { includeOrg = false, workspaceId, enabled = true, staleTime = SUBSCRIPTION_DATA_STALE_TIME } = options
+  const {
+    includeOrg = false,
+    workspaceId,
+    enabled = true,
+    staleTime = SUBSCRIPTION_DATA_STALE_TIME,
+  } = options
 
   return useQuery({
     queryKey: subscriptionKeys.user(includeOrg, workspaceId),

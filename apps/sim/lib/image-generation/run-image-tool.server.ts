@@ -24,6 +24,7 @@ import {
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { generateOpenAIImageEdit } from '@/lib/image-generation/openai-reference.server'
 import { type FalAICostMetadata, getFalAICostMetadata } from '@/lib/tools/falai-pricing'
+import { buildImageBillingMetadata } from '@/lib/tools/image-pricing'
 import { generateFileId } from '@/lib/uploads/contexts/execution/utils'
 import { extractStorageKey, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 import { resolveInternalFileUrl } from '@/lib/uploads/utils/file-utils.server'
@@ -139,6 +140,7 @@ export interface StoredImageResponse {
   }
   __falaiCostDollars?: number
   __falaiBilling?: FalAICostMetadata
+  __imageBilling?: ReturnType<typeof buildImageBillingMetadata>
 }
 
 function resolveImageProviderApiKey(provider: ImageProvider, apiKey: string | undefined): string {
@@ -1328,13 +1330,39 @@ async function generateWithFalAI(
   throw new Error('Fal.ai image generation timed out')
 }
 
+function buildImageBillingForBody(
+  imageResult: GeneratedImageResult,
+  body: ImageToolBody
+): ReturnType<typeof buildImageBillingMetadata> | undefined {
+  if (imageResult.provider !== 'openai' && imageResult.provider !== 'gemini') {
+    return undefined
+  }
+
+  try {
+    return buildImageBillingMetadata({
+      provider: imageResult.provider,
+      model: imageResult.model,
+      size: body.size,
+      quality: body.quality,
+      resolution: body.resolution,
+      aspectRatio: body.aspectRatio,
+      numImages: body.numImages ?? 1,
+      hasEdit: hasReferenceImage(body),
+    })
+  } catch {
+    return undefined
+  }
+}
+
 function buildStoredImageResponse(
   imageResult: GeneratedImageResult,
   safeFileName: string,
   imageUrl: string,
   imageFile: StoredImageResponse['imageFile'],
+  body: ImageToolBody,
   s3UploadFailed?: boolean
 ): StoredImageResponse {
+  const imageBilling = buildImageBillingForBody(imageResult, body)
   return {
     content: imageUrl,
     imageUrl,
@@ -1355,6 +1383,7 @@ function buildStoredImageResponse(
     },
     __falaiCostDollars: imageResult.falaiCost?.costDollars,
     __falaiBilling: imageResult.falaiCost,
+    ...(imageBilling ? { __imageBilling: imageBilling } : {}),
     ...(s3UploadFailed ? { s3UploadFailed } : {}),
   }
 }
@@ -1428,6 +1457,7 @@ async function storeGeneratedImage(
       safeFileName,
       imageUrl,
       imageFile,
+      body,
       saveResult.s3UploadFailed
     )
   }
@@ -1461,5 +1491,5 @@ async function storeGeneratedImage(
     size: imageResult.buffer.length,
   })
 
-  return buildStoredImageResponse(imageResult, safeFileName, imageUrl, undefined)
+  return buildStoredImageResponse(imageResult, safeFileName, imageUrl, undefined, body)
 }

@@ -66,7 +66,9 @@ export function getLocalCopilotConfig(): LocalCopilotConfig {
   }
 }
 
-export function assertLocalCopilotEnabled(config: LocalCopilotConfig = getLocalCopilotConfig()): void {
+export function assertLocalCopilotEnabled(
+  config: LocalCopilotConfig = getLocalCopilotConfig()
+): void {
   if (!config.enabled) {
     throw new Error('Arena Copilot is disabled. Set COPILOT_ENABLED=true to enable.')
   }

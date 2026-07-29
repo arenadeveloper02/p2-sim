@@ -143,16 +143,28 @@ describe('extractResourcesFromToolResult', () => {
   })
 
   it('auto-opens all generated image files with vfs paths', () => {
-    const resources = extractResourcesFromToolResult('generate_image', { prompt: 'a bus' }, {
-      success: true,
-      fileId: 'file-1',
-      fileName: 'generated-image-1.png',
-      vfsPath: 'files/generated-image-1.png',
-      files: [
-        { fileId: 'file-1', fileName: 'generated-image-1.png', vfsPath: 'files/generated-image-1.png' },
-        { fileId: 'file-2', fileName: 'generated-image-2.png', vfsPath: 'files/generated-image-2.png' },
-      ],
-    })
+    const resources = extractResourcesFromToolResult(
+      'generate_image',
+      { prompt: 'a bus' },
+      {
+        success: true,
+        fileId: 'file-1',
+        fileName: 'generated-image-1.png',
+        vfsPath: 'files/generated-image-1.png',
+        files: [
+          {
+            fileId: 'file-1',
+            fileName: 'generated-image-1.png',
+            vfsPath: 'files/generated-image-1.png',
+          },
+          {
+            fileId: 'file-2',
+            fileName: 'generated-image-2.png',
+            vfsPath: 'files/generated-image-2.png',
+          },
+        ],
+      }
+    )
 
     expect(resources).toEqual([
       {

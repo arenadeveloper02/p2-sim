@@ -45,6 +45,104 @@ export function findBlockWithDuplicateNormalizedName(
   )
 }
 
+interface AgentMessage {
+  role: string
+  content: string
+}
+
+/**
+ * Parses an agent `messages` subblock value into a mutable array.
+ */
+export function parseAgentMessagesValue(value: unknown): AgentMessage[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+      const record = item as Record<string, unknown>
+      if (typeof record.role !== 'string') return []
+      return [
+        {
+          role: record.role,
+          content: typeof record.content === 'string' ? record.content : String(record.content ?? ''),
+        },
+      ]
+    })
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      return parseAgentMessagesValue(JSON.parse(value) as unknown)
+    } catch {
+      return []
+    }
+  }
+
+  return []
+}
+
+/**
+ * Maps legacy `systemPrompt` / `userPrompt` agent fields onto `messages`.
+ * Models often emit the old field names; without this alias the edit is rejected
+ * as an unknown input and the workflow appears unchanged.
+ */
+export function normalizeAgentLegacyPromptInputs(
+  inputs: Record<string, any>,
+  existingMessagesValue?: unknown
+): Record<string, any> {
+  if (!Object.hasOwn(inputs, 'systemPrompt') && !Object.hasOwn(inputs, 'userPrompt')) {
+    return inputs
+  }
+
+  const next = { ...inputs }
+  const systemPrompt =
+    typeof next.systemPrompt === 'string'
+      ? next.systemPrompt
+      : next.systemPrompt === undefined
+        ? undefined
+        : String(next.systemPrompt)
+  const userPrompt =
+    typeof next.userPrompt === 'string'
+      ? next.userPrompt
+      : next.userPrompt === undefined
+        ? undefined
+        : String(next.userPrompt)
+  delete next.systemPrompt
+  delete next.userPrompt
+
+  if (next.messages !== undefined) {
+    return next
+  }
+
+  const messages = parseAgentMessagesValue(existingMessagesValue)
+
+  if (systemPrompt !== undefined) {
+    const systemIndex = messages.findIndex((message) => message.role === 'system')
+    if (systemIndex >= 0) {
+      messages[systemIndex] = { ...messages[systemIndex], content: systemPrompt }
+    } else {
+      messages.unshift({ role: 'system', content: systemPrompt })
+    }
+  }
+
+  if (userPrompt !== undefined) {
+    const userIndex = messages.findIndex((message) => message.role === 'user')
+    if (userIndex >= 0) {
+      messages[userIndex] = { ...messages[userIndex], content: userPrompt }
+    } else {
+      messages.push({ role: 'user', content: userPrompt })
+    }
+  }
+
+  if (messages.length === 0 && systemPrompt !== undefined) {
+    messages.push({ role: 'system', content: systemPrompt }, { role: 'user', content: '' })
+  }
+
+  if (messages.length > 0) {
+    next.messages = messages
+  }
+
+  return next
+}
+
 /**
  * Validates and filters inputs against a block's subBlock configuration
  * Returns valid inputs and any validation errors encountered
@@ -52,15 +150,21 @@ export function findBlockWithDuplicateNormalizedName(
 export function validateInputsForBlock(
   blockType: string,
   inputs: Record<string, any>,
-  blockId: string
+  blockId: string,
+  options?: { existingSubBlocks?: Record<string, { value?: unknown }> }
 ): ValidationResult {
   const errors: ValidationError[] = []
   const blockConfig = getBlock(blockType)
 
+  const normalizedInputs =
+    blockType === 'agent'
+      ? normalizeAgentLegacyPromptInputs(inputs, options?.existingSubBlocks?.messages?.value)
+      : inputs
+
   if (!blockConfig) {
     // Unknown block type - return inputs as-is (let it fail later if invalid)
     validationLogger.warn(`Unknown block type: ${blockType}, skipping validation`)
-    return { validInputs: inputs, errors: [] }
+    return { validInputs: normalizedInputs, errors: [] }
   }
 
   const validatedInputs: Record<string, any> = {}
@@ -71,7 +175,7 @@ export function validateInputsForBlock(
     subBlockMap.set(subBlock.id, subBlock)
   }
 
-  for (const [key, value] of Object.entries(inputs)) {
+  for (const [key, value] of Object.entries(normalizedInputs)) {
     // Skip runtime subblock IDs
     if (TRIGGER_RUNTIME_SUBBLOCK_IDS.includes(key)) {
       continue

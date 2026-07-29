@@ -22,15 +22,15 @@ import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useSession } from '@/lib/auth/auth-client'
 import {
-  extractAssistantFilesFromData,
-  extractGeneratedImagesFromData,
-  isAssistantImageUrl,
-} from '@/lib/chat/assistant-assets'
-import {
   formatChartDeployOutputForChat,
   hasRenderableChartDeployOutput,
 } from '@/lib/chart-generation/echarts-option'
 import { resolveChartContentFromFinalOutput } from '@/lib/chart-generation/resolve-final-output-chart'
+import {
+  extractAssistantFilesFromData,
+  extractGeneratedImagesFromData,
+  isAssistantImageUrl,
+} from '@/lib/chat/assistant-assets'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import {
   extractBlockIdFromOutputId,

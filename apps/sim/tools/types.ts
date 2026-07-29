@@ -14,6 +14,8 @@ export type BYOKProviderId =
   | 'falai'
   | 'firecrawl'
   | 'exa'
+  | 'semrush'
+  | 'browser_use'
   | 'serper'
   | 'jina'
   | 'perplexity'
@@ -334,11 +336,11 @@ export interface ToolHostingConfig<P = Record<string, unknown>> {
    * At runtime, `{envKeyPrefix}_COUNT` is read to determine how many keys exist,
    * then `{envKeyPrefix}_1` through `{envKeyPrefix}_N` are resolved.
    */
-  envKeyPrefix: string
+  envKeyPrefix: string | ((params: P) => string)
   /** The parameter name that receives the API key */
   apiKeyParam: string
   /** BYOK provider ID for workspace key lookup */
-  byokProviderId?: BYOKProviderId
+  byokProviderId?: BYOKProviderId | ((params: P) => BYOKProviderId)
   /** Pricing when using hosted key */
   pricing: ToolHostingPricing<P>
   /** Hosted key rate limit configuration (required for hosted key distribution) */
