@@ -1,5 +1,10 @@
 import { isRecordLike } from '@sim/utils/object'
 import { z } from 'zod'
+import {
+  folderIdSchema,
+  requiredFieldSchema,
+  workspaceIdSchema,
+} from '@/lib/api/contracts/primitives'
 import { type ContractJsonResponse, defineRouteContract } from '@/lib/api/contracts/types'
 import { ianaTimezoneSchema } from '@/lib/api/contracts/user'
 import type {
@@ -9,11 +14,12 @@ import type {
   RowData,
   Sort,
   TableDefinition,
+  TableLocks,
   TableMetadata,
   TableRow,
   TableRowsCursor,
 } from '@/lib/table'
-import { COLUMN_TYPES, NAME_PATTERN, TABLE_LIMITS } from '@/lib/table/constants'
+import { COLUMN_TYPES, MAX_SELECT_OPTIONS, NAME_PATTERN, TABLE_LIMITS } from '@/lib/table/constants'
 import { CSV_MAX_FILE_SIZE_BYTES } from '@/lib/table/import'
 
 export const domainObjectSchema = <T>() => z.custom<T>(isRecordLike)
@@ -23,6 +29,61 @@ export const domainObjectSchema = <T>() => z.custom<T>(isRecordLike)
  * send arbitrary strings the server would reject downstream.
  */
 export const columnTypeSchema = z.enum(COLUMN_TYPES)
+
+/** One choice in a `select` column. `id` is the stable cell key. */
+export const selectOptionSchema = z.object({
+  id: requiredFieldSchema('Option id is required'),
+  name: z
+    .string()
+    .min(1, 'Option name is required')
+    .max(100, 'Option name must be 100 characters or less'),
+})
+
+export const selectOptionsSchema = z
+  .array(selectOptionSchema)
+  .max(MAX_SELECT_OPTIONS, `A select column cannot have more than ${MAX_SELECT_OPTIONS} options`)
+
+/**
+ * Cross-field rule: a `select` column must declare a non-empty option set;
+ * other types must not carry options or `multiple`. Skipped when `type` is
+ * absent (an options-only update on an existing select column).
+ */
+function refineColumnOptions(
+  data: {
+    type?: (typeof COLUMN_TYPES)[number]
+    options?: z.infer<typeof selectOptionsSchema>
+    multiple?: boolean
+  },
+  ctx: z.RefinementCtx
+): void {
+  if (data.type === 'select') {
+    if (!data.options || data.options.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['options'],
+        message: 'A select column must define at least one option',
+      })
+    }
+    return
+  }
+  if (data.type === undefined) return
+  if (data.options && data.options.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['options'],
+      message: 'options are only allowed on select columns',
+    })
+  }
+  // `multiple` stored on a non-select column is inert until a later
+  // convert-to-select inherits it, silently producing a multiselect.
+  if (data.multiple) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['multiple'],
+      message: 'multiple is only allowed on select columns',
+    })
+  }
+}
 
 /**
  * Identifier for tables/columns: starts with letter or underscore, contains
@@ -70,24 +131,30 @@ export const tableRowParamsSchema = tableIdParamsSchema.extend({
 })
 
 export const listTablesQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   scope: tableScopeSchema.default('active'),
 })
 
 export const getTableQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
 })
 
-export const tableColumnSchema = z.object({
-  /** Stable column id (server-assigned). Absent on legacy/ pre-backfill columns. */
-  id: z.string().optional(),
-  name: columnNameSchema,
-  type: columnTypeSchema,
-  required: z.boolean().optional().default(false),
-  unique: z.boolean().optional().default(false),
-  /** Set when the column is a workflow group's output. */
-  workflowGroupId: z.string().optional(),
-})
+export const tableColumnSchema = z
+  .object({
+    /** Stable column id (server-assigned). Absent on legacy/ pre-backfill columns. */
+    id: z.string().optional(),
+    name: columnNameSchema,
+    type: columnTypeSchema,
+    required: z.boolean().optional().default(false),
+    unique: z.boolean().optional().default(false),
+    /** Set when the column is a workflow group's output. */
+    workflowGroupId: z.string().optional(),
+    /** Declared options for a `select` column. */
+    options: selectOptionsSchema.optional(),
+    /** A `select` column that accepts multiple options per cell. */
+    multiple: z.boolean().optional(),
+  })
+  .superRefine(refineColumnOptions)
 
 export const createTableBodySchema = z.object({
   name: tableNameSchema,
@@ -101,42 +168,89 @@ export const createTableBodySchema = z.object({
         `Table cannot have more than ${TABLE_LIMITS.MAX_COLUMNS_PER_TABLE} columns`
       ),
   }),
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
+  /**
+   * Folder to create the table in. Omitted or `null` creates it at the workspace
+   * root — both spellings are accepted so a client can pass the current folder
+   * through unconditionally.
+   */
+  folderId: folderIdSchema.nullable().optional(),
   initialRowCount: z.number().int().min(0).max(100).optional(),
 })
 
 export const renameTableBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   name: tableNameSchema,
 })
 
+/** Full per-table lock set (all four flags). */
+export const tableLocksSchema = z.object({
+  schemaLocked: z.boolean(),
+  insertLocked: z.boolean(),
+  updateLocked: z.boolean(),
+  deleteLocked: z.boolean(),
+}) satisfies z.ZodType<TableLocks>
+
+/**
+ * PATCH /api/table/[tableId] body. Every field is optional but at least one
+ * must be present. `name` is a `write`-level rename; `folderId` is a
+ * `write`-level move (explicit `null` moves the table to the workspace root, and
+ * omission leaves the placement untouched — the tri-state is deliberate here);
+ * `locks` is an admin-only governance change (a partial — only the toggled flags
+ * are sent).
+ */
+export const updateTableBodySchema = z
+  .object({
+    workspaceId: workspaceIdSchema,
+    name: tableNameSchema.optional(),
+    folderId: folderIdSchema.nullable().optional(),
+    locks: tableLocksSchema.partial().optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.name === undefined && body.locks === undefined && body.folderId === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Provide a new name, folder, or lock changes',
+        path: ['name'],
+      })
+    }
+  })
+
 export const createTableColumnBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  column: z.object({
-    // Optional stable id — first-party undo of a delete re-creates the column
-    // with its original id so saved (id-keyed) cell data restores correctly.
-    id: z.string().optional(),
-    name: columnNameSchema,
-    type: columnTypeSchema,
-    required: z.boolean().optional(),
-    unique: z.boolean().optional(),
-    position: z.number().int().min(0).optional(),
-  }),
+  workspaceId: workspaceIdSchema,
+  column: z
+    .object({
+      // Optional stable id — first-party undo of a delete re-creates the column
+      // with its original id so saved (id-keyed) cell data restores correctly.
+      id: z.string().optional(),
+      name: columnNameSchema,
+      type: columnTypeSchema,
+      required: z.boolean().optional(),
+      unique: z.boolean().optional(),
+      position: z.number().int().min(0).optional(),
+      options: selectOptionsSchema.optional(),
+      multiple: z.boolean().optional(),
+    })
+    .superRefine(refineColumnOptions),
 })
 
 export const updateTableColumnBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   columnName: columnNameSchema,
-  updates: z.object({
-    name: columnNameSchema.optional(),
-    type: columnTypeSchema.optional(),
-    required: z.boolean().optional(),
-    unique: z.boolean().optional(),
-  }),
+  updates: z
+    .object({
+      name: columnNameSchema.optional(),
+      type: columnTypeSchema.optional(),
+      required: z.boolean().optional(),
+      unique: z.boolean().optional(),
+      options: selectOptionsSchema.optional(),
+      multiple: z.boolean().optional(),
+    })
+    .superRefine(refineColumnOptions),
 })
 
 export const deleteTableColumnBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   columnName: columnNameSchema,
 })
 
@@ -147,7 +261,7 @@ export const tableMetadataSchema = z.object({
 }) satisfies z.ZodType<TableMetadata>
 
 export const updateTableMetadataBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   metadata: tableMetadataSchema,
 })
 
@@ -161,7 +275,7 @@ export const tableRowSchema = domainObjectSchema<TableRow>()
  * {@link rowAnchorMutexRefine} — Zod forbids `.omit()` on a refined schema.
  */
 export const insertTableRowBodyBaseSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   data: rowDataSchema,
   position: z.number().int().min(0).optional(),
   /** Fractional ordering: insert directly after this row id. Takes precedence over `position`. */
@@ -184,14 +298,14 @@ export const insertTableRowBodySchema = insertTableRowBodyBaseSchema.refine(...r
  * unique column when omitted).
  */
 export const upsertTableRowBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   data: rowDataSchema,
   conflictTarget: z.string().min(1).optional(),
 })
 
 export const batchInsertTableRowsBodySchema = z
   .object({
-    workspaceId: z.string().min(1, 'Workspace ID is required'),
+    workspaceId: workspaceIdSchema,
     rows: z
       .array(rowDataSchema)
       .min(1, 'At least one row is required')
@@ -219,12 +333,12 @@ export const insertTableRowsBodySchema = z.union([
 ])
 
 export const updateTableRowBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   data: rowDataSchema,
 })
 
 export const batchUpdateTableRowsBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   updates: z
     .array(
       z.object({
@@ -266,12 +380,12 @@ const optionalPositiveLimit = (max: number, label: string) =>
   )
 
 export const deleteTableRowBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
 })
 
 export const deleteTableRowsBodySchema = z
   .object({
-    workspaceId: z.string().min(1, 'Workspace ID is required'),
+    workspaceId: workspaceIdSchema,
     filter: nonEmptyFilterSchema.optional(),
     limit: optionalPositiveLimit(TABLE_LIMITS.MAX_BULK_OPERATION_SIZE, 'Limit').optional(),
     rowIds: z
@@ -289,7 +403,7 @@ export const deleteTableRowsBodySchema = z
 
 /** Unrefined base so v1 contracts can `.extend()` — consumers use {@link tableRowsQuerySchema}. */
 export const tableRowsQueryBaseSchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   filter: domainObjectSchema<Filter>().optional(),
   sort: domainObjectSchema<Sort>().optional(),
   /**
@@ -336,7 +450,7 @@ export const tableRowsQuerySchema = tableRowsQueryBaseSchema.refine(
 )
 
 export const updateRowsByFilterBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   filter: nonEmptyFilterSchema,
   data: rowDataSchema,
   limit: optionalPositiveLimit(TABLE_LIMITS.MAX_BULK_OPERATION_SIZE, 'Limit').optional(),
@@ -389,9 +503,11 @@ export const createTableContract = defineRouteContract({
  * `importing` table and runs the load in the background.
  */
 export const importTableAsyncBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  fileKey: z.string().min(1, 'fileKey is required'),
-  fileName: z.string().min(1, 'fileName is required'),
+  workspaceId: workspaceIdSchema,
+  fileKey: requiredFieldSchema('fileKey is required'),
+  fileName: requiredFieldSchema('fileName is required'),
+  /** Folder to create the imported table in; omitted or `null` imports to the workspace root. */
+  folderId: folderIdSchema.nullable().optional(),
   /**
    * Whether the source object is deleted once the import is terminal. Defaults to true (the upload
    * flow stores a single-use temp object); pass false when importing an existing workspace file
@@ -445,6 +561,26 @@ export const renameTableContract = defineRouteContract({
     schema: successResponseSchema(z.object({ table: tableDefinitionSchema })),
   },
 })
+
+/**
+ * Superset of {@link renameTableContract} on the same PATCH endpoint: accepts a
+ * `name` rename and/or a `locks` change. The route applies its own permission
+ * split — `name` needs workspace `write`, `locks` needs `admin`.
+ */
+export const updateTableContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/table/[tableId]',
+  params: tableIdParamsSchema,
+  body: updateTableBodySchema,
+  response: {
+    mode: 'json',
+    schema: successResponseSchema(z.object({ table: tableDefinitionSchema })),
+  },
+})
+
+export type TableLocksInput = z.input<typeof tableLocksSchema>
+export type UpdateTableBody = z.input<typeof updateTableBodySchema>
+export type UpdateTableResponse = ContractJsonResponse<typeof updateTableContract>
 
 export const deleteTableContract = defineRouteContract({
   method: 'DELETE',
@@ -531,8 +667,8 @@ export const listTableRowsContract = defineRouteContract({
 })
 
 export const findTableRowsQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  q: z.string().min(1, 'Search query is required'),
+  workspaceId: workspaceIdSchema,
+  q: requiredFieldSchema('Search query is required'),
   filter: domainObjectSchema<Filter>().optional(),
   sort: domainObjectSchema<Sort>().optional(),
 })
@@ -666,6 +802,8 @@ export const csvFileSchema = z
 export const csvImportFormSchema = z.object({
   file: csvFileSchema,
   workspaceId: z.string({ error: 'Workspace ID is required' }).min(1, 'Workspace ID is required'),
+  /** Folder to create the imported table in; omitted imports to the workspace root. */
+  folderId: folderIdSchema.optional(),
 })
 
 export const csvImportModeSchema = z.enum(['append', 'replace'])
@@ -680,9 +818,9 @@ export const csvExtensionSchema = z.enum(['csv', 'tsv'], {
  * resolved column mapping (the dialog computes them from its preview).
  */
 export const importIntoTableAsyncBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  fileKey: z.string().min(1, 'fileKey is required'),
-  fileName: z.string().min(1, 'fileName is required'),
+  workspaceId: workspaceIdSchema,
+  fileKey: requiredFieldSchema('fileKey is required'),
+  fileName: requiredFieldSchema('fileName is required'),
   mode: csvImportModeSchema,
   mapping: z.record(z.string(), z.string().nullable()).optional(),
   createColumns: z.array(z.string()).optional(),
@@ -749,7 +887,7 @@ export const tableExportFormatSchema = z
   .default('csv')
 
 export const exportTableAsyncBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   format: z.enum(['csv', 'json']).default('csv'),
 })
 
@@ -785,7 +923,7 @@ export const tableJobSummarySchema = z.object({
 export type TableJobSummary = z.output<typeof tableJobSummarySchema>
 
 export const listTableJobsQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   type: z.literal('export'),
 })
 
@@ -805,8 +943,8 @@ export const listTableJobsContract = defineRouteContract({
 })
 
 export const exportDownloadQuerySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  jobId: z.string().min(1, 'Job ID is required'),
+  workspaceId: workspaceIdSchema,
+  jobId: requiredFieldSchema('Job ID is required'),
 })
 
 /** Resolves a completed export job to a short-lived presigned download URL. */
@@ -960,7 +1098,7 @@ export const deleteTableRowsContract = defineRouteContract({
  * worker deletes in paginated batches. Omitting `filter` deletes the whole table (at the cutoff).
  */
 export const deleteTableRowsAsyncBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   filter: nonEmptyFilterSchema.optional(),
   excludeRowIds: z
     .array(z.string().min(1))
@@ -1032,7 +1170,7 @@ export const groupIdParamsSchema = tableIdParamsSchema.extend({
 })
 
 export const addWorkflowGroupBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   group: z.object({
     id: z.string().min(1),
     /** Workflow id for manual groups; `''` (or omitted) for enrichment groups. */
@@ -1077,7 +1215,7 @@ const workflowGroupMappingUpdateSchema = z.object({
 })
 
 export const updateWorkflowGroupBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   groupId: z.string().min(1),
   workflowId: z.string().min(1).optional(),
   name: z.string().optional(),
@@ -1101,7 +1239,7 @@ export const updateWorkflowGroupBodySchema = z.object({
 })
 
 export const deleteWorkflowGroupBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
+  workspaceId: workspaceIdSchema,
   groupId: z.string().min(1),
 })
 
@@ -1153,7 +1291,7 @@ export const deleteWorkflowGroupContract = defineRouteContract({
  */
 export const cancelTableRunsBodySchema = z
   .object({
-    workspaceId: z.string().min(1, 'Workspace ID is required'),
+    workspaceId: workspaceIdSchema,
     scope: z.enum(['all', 'row']),
     rowId: z.string().min(1).optional(),
     filter: domainObjectSchema<Filter>().optional(),
@@ -1202,8 +1340,8 @@ export const cancelTableRunsContract = defineRouteContract({
 })
 
 export const cancelTableJobBodySchema = z.object({
-  workspaceId: z.string().min(1, 'Workspace ID is required'),
-  jobId: z.string().min(1, 'Job ID is required'),
+  workspaceId: workspaceIdSchema,
+  jobId: requiredFieldSchema('Job ID is required'),
 })
 
 /**
@@ -1254,7 +1392,7 @@ export const runLimitSchema = z.object({
 
 export const runColumnBodySchema = z
   .object({
-    workspaceId: z.string().min(1, 'Workspace ID is required'),
+    workspaceId: workspaceIdSchema,
     groupIds: z.array(z.string().min(1)).min(1),
     runMode: z.enum(['all', 'incomplete']).default('all'),
     rowIds: z.array(z.string().min(1)).min(1).optional(),
