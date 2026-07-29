@@ -68,12 +68,14 @@ vi.mock('@/local-copilot/lib/agent/specialists/domains', () => ({
 
 vi.mock('@/local-copilot/lib/agent/specialists/parallel-subagents', () => ({
   runParallelSubagents: async function* () {
+    yield* [] as const
     return { findings: '', results: [], events: [] }
   },
 }))
 
 vi.mock('@/local-copilot/lib/agent/specialists/specialist-pass', () => ({
   runSpecialistPass: async function* () {
+    yield* [] as const
     return { domain: 'research', findings: '', toolRoundCount: 0, events: [] }
   },
 }))
