@@ -114,10 +114,7 @@ export function UserUsageContent({
   return (
     <div className='flex flex-col gap-8'>
       <SettingsSection label='Trends'>
-        <UsageTimeSeriesChart
-          timeSeries={data.timeSeries}
-          periodActiveUserCount={data.summary.activeUserCount}
-        />
+        <UsageTimeSeriesChart timeSeries={data.timeSeries} showActiveUsers={false} />
       </SettingsSection>
 
       {data.byChargeType.length > 0 && (
