@@ -18,6 +18,7 @@ import {
   ModalHeader,
   toast,
 } from '@sim/emcn'
+import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { Loader2, MoreHorizontal } from 'lucide-react'
 import type { IdeogramPostProcessBody } from '@/lib/api/contracts/tools/ideogram'
@@ -25,6 +26,8 @@ import { POST_PROCESSOR_REFRAME_RESOLUTION_OPTIONS } from '@/lib/image-generatio
 import { isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 import { useIdeogramPostProcess } from '@/hooks/queries/ideogram-post-process'
 import { useChatStore } from '@/stores/chat/store'
+
+const logger = createLogger('ImagePostProcessMenu')
 
 const overlayButtonClass =
   'pointer-events-auto shrink-0 gap-1.5 rounded-md border-white/20 bg-black/40 px-3 py-2 text-white shadow-sm hover:bg-black/55 hover:text-white dark:border-white/20 dark:bg-black/50 dark:hover:bg-black/65'
@@ -121,9 +124,15 @@ export function ImagePostProcessMenu({
         }
 
         if (messageId) {
-          appendMessageImages(messageId, [nextImageUrl])
-          toast.success(title, { description: 'Result added to this chat message.' })
-          return
+          const appended = appendMessageImages(messageId, [nextImageUrl])
+          if (appended) {
+            toast.success(title, { description: 'Result added to this chat message.' })
+            return
+          }
+          logger.warn('Failed to append post-process image to chat message', {
+            messageId,
+            imageUrl: nextImageUrl.slice(0, 120),
+          })
         }
 
         setResult({ title, imageUrl: nextImageUrl })

@@ -1611,9 +1611,19 @@ export function mergeToolOutputImageUrls(
   for (const u of fromFields) add(u)
   if (Array.isArray(imagesField)) {
     for (const value of imagesField) {
-      if (typeof value === 'string' && isRenderableImageUrl(value)) {
-        add(value)
-        continue
+      if (typeof value === 'string') {
+        const trimmed = value.trim()
+        // Explicit images[] entries are curated image slots — accept any http(s) / serve URL,
+        // not only the stricter isRenderableImageUrl heuristic used for prose extraction.
+        if (
+          trimmed &&
+          (isRenderableImageUrl(trimmed) ||
+            trimmed.startsWith('http://') ||
+            trimmed.startsWith('https://'))
+        ) {
+          add(trimmed)
+          continue
+        }
       }
 
       if (isUserFileWithMetadata(value) && value.type.startsWith('image/') && value.url) {

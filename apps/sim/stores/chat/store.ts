@@ -3,15 +3,32 @@ import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
 import { create } from 'zustand'
 import { devtools, type PersistStorage, persist } from 'zustand/middleware'
+import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import {
   normalizeImageUrlForCompare,
   resolveSelectableGeneratedImage,
 } from '@/lib/chat/assistant-assets'
+import { extractStorageKey, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 import { sanitizeMessagesForPersistence } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { ChatMessage, ChatState } from './types'
 import { MAX_CHAT_HEIGHT, MAX_CHAT_WIDTH, MIN_CHAT_HEIGHT, MIN_CHAT_WIDTH } from './utils'
 
 const logger = createLogger('ChatStore')
+
+/**
+ * Best-effort generated-image metadata when resolveSelectableGeneratedImage rejects the URL.
+ */
+function fallbackGeneratedImage(url: string): AssistantGeneratedImage {
+  const trimmed = url.trim()
+  const key = isInternalFileUrl(trimmed) ? extractStorageKey(trimmed) : undefined
+  return {
+    id: `generated-image:${normalizeImageUrlForCompare(trimmed)}`,
+    name: 'Generated image',
+    url: trimmed,
+    type: 'image/png',
+    ...(key ? { key, context: 'agent-generated-images' as const } : {}),
+  }
+}
 
 /**
  * Maximum number of messages to store across all workflows
@@ -324,9 +341,17 @@ export const useChatStore = create<ChatState>()(
 
         appendMessageImages: (messageId, imageUrls) => {
           const trimmedUrls = imageUrls.map((url) => url.trim()).filter(Boolean)
-          if (trimmedUrls.length === 0) return
+          if (trimmedUrls.length === 0) return false
+
+          let appended = false
 
           set((state) => {
+            const messageExists = state.messages.some((message) => message.id === messageId)
+            if (!messageExists) {
+              logger.warn('[ChatStore] Message not found for appendMessageImages', { messageId })
+              return state
+            }
+
             const newMessages = state.messages.map((message) => {
               if (message.id !== messageId) return message
 
@@ -341,13 +366,14 @@ export const useChatStore = create<ChatState>()(
               const urlsToAdd: string[] = []
 
               for (const url of trimmedUrls) {
-                const key = normalizeImageUrlForCompare(url)
-                if (existingByUrl.has(key)) continue
+                const compareKey = normalizeImageUrlForCompare(url)
+                if (existingByUrl.has(compareKey)) continue
 
-                const generated = resolveSelectableGeneratedImage(url, existingByUrl)
-                if (!generated) continue
+                // Always append the URL for inline render; metadata is best-effort.
+                const generated =
+                  resolveSelectableGeneratedImage(url, existingByUrl) ?? fallbackGeneratedImage(url)
 
-                existingByUrl.set(key, generated)
+                existingByUrl.set(compareKey, generated)
                 nextGenerated.push(generated)
                 urlsToAdd.push(url)
               }
@@ -355,6 +381,8 @@ export const useChatStore = create<ChatState>()(
               if (urlsToAdd.length === 0) {
                 return message
               }
+
+              appended = true
 
               const prev = message.content
               let nextContent: ChatMessage['content']
@@ -379,6 +407,8 @@ export const useChatStore = create<ChatState>()(
 
             return { messages: newMessages }
           })
+
+          return appended
         },
 
         finalizeMessageStream: (messageId, finalContent, messageUpdates) => {

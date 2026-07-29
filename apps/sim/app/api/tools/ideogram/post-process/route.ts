@@ -227,8 +227,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       byok: Boolean(body.apiKey?.trim()),
       resultImageUrl,
     }).catch((error) => {
-      logger.warn(`[${requestId}] Failed to record image post-process usage, continuing`, {
+      logger.error(`[${requestId}] Failed to record image post-process usage, continuing`, {
         error,
+        workflowId,
+        operation: body.operation,
+        userId: authResult.userId,
       })
     })
 

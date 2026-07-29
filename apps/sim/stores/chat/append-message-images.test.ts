@@ -33,8 +33,9 @@ describe('chat store appendMessageImages', () => {
 
   it('appends a new image URL onto content.images and generatedImages', () => {
     const nextUrl = '/api/files/serve/agent-generated-images/wf/u/b.png'
-    useChatStore.getState().appendMessageImages('msg-1', [nextUrl])
+    const appended = useChatStore.getState().appendMessageImages('msg-1', [nextUrl])
 
+    expect(appended).toBe(true)
     const message = useChatStore.getState().messages.find((m) => m.id === 'msg-1')
     expect(message?.content).toMatchObject({
       content: 'here is an image',
@@ -47,13 +48,31 @@ describe('chat store appendMessageImages', () => {
     expect(message?.generatedImages?.[1]?.url).toBe(nextUrl)
   })
 
-  it('deduplicates by normalized URL', () => {
-    useChatStore
+  it('appends CDN URLs that fail the assistant-image heuristic', () => {
+    const cdnUrl = 'https://api.ideogram.ai/images/ephemeral/abc-reframe'
+    const appended = useChatStore.getState().appendMessageImages('msg-1', [cdnUrl])
+
+    expect(appended).toBe(true)
+    const message = useChatStore.getState().messages.find((m) => m.id === 'msg-1')
+    expect(message?.content.images).toContain(cdnUrl)
+    expect(message?.generatedImages?.some((image) => image.url === cdnUrl)).toBe(true)
+  })
+
+  it('deduplicates by normalized URL and returns false', () => {
+    const appended = useChatStore
       .getState()
       .appendMessageImages('msg-1', ['/api/files/serve/agent-generated-images/wf/u/a.png'])
 
+    expect(appended).toBe(false)
     const message = useChatStore.getState().messages.find((m) => m.id === 'msg-1')
     expect(message?.content.images).toHaveLength(1)
     expect(message?.generatedImages).toHaveLength(1)
+  })
+
+  it('returns false when the message id is unknown', () => {
+    const appended = useChatStore
+      .getState()
+      .appendMessageImages('missing', ['https://example.com/x.png'])
+    expect(appended).toBe(false)
   })
 })

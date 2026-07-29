@@ -79,8 +79,9 @@ export interface ChatState {
   /**
    * Appends post-process (or other follow-on) image URLs onto an existing message
    * so they render inline with the same ⋯ overlays.
+   * Returns true when at least one new URL was added.
    */
-  appendMessageImages: (messageId: string, imageUrls: string[]) => void
+  appendMessageImages: (messageId: string, imageUrls: string[]) => boolean
   finalizeMessageStream: (
     messageId: string,
     finalContent?: string | Record<string, unknown>,
