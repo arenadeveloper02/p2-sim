@@ -70,7 +70,10 @@ export default function WorkspacePage() {
     }
 
     logger.info(`Redirecting to workspace: ${targetWorkspace.id}`)
-    router.replace(`/workspace/${targetWorkspace.id}/home`)
+    // Full navigation so workspace chrome (incl. Back to Arena agents) mounts with
+    // a fresh document and runtime public env — client soft-nav from /workspace can
+    // miss NEXT_PUBLIC_ARENA_FRONTEND_APP_URL when the shell was statically baked.
+    window.location.replace(`/workspace/${targetWorkspace.id}/home`)
   }, [session, isSessionPending, isWorkspacesLoading, data, router])
 
   if (isSessionPending || isWorkspacesLoading) {
@@ -102,7 +105,7 @@ async function handleWorkflowRedirect(
   } catch (error) {
     logger.error('Error fetching workflow for redirect:', error)
   }
-  router.replace(`/workspace/${fallbackWorkspaceId}/home`)
+  window.location.replace(`/workspace/${fallbackWorkspaceId}/home`)
 }
 
 async function handleNoWorkspaces(
@@ -126,7 +129,7 @@ async function handleNoWorkspaces(
     })
     if (data.workspace?.id) {
       logger.info(`Created default workspace: ${data.workspace.id}`)
-      router.replace(`/workspace/${data.workspace.id}/home`)
+      window.location.replace(`/workspace/${data.workspace.id}/home`)
       return
     }
     logger.error('Failed to create default workspace')
