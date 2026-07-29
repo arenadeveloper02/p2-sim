@@ -220,6 +220,25 @@ async function executeDevelopmentEditAppDirect(params: Record<string, any>): Pro
   )
 }
 
+/**
+ * Server-only chart generation. Kept out of the ToolConfig so the client-bundled
+ * tools registry never pulls in run-chart-generate.server (and its Node deps).
+ */
+async function executeChartGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
+  const { runChartGenerate } = await import('@/lib/chart-generation/run-chart-generate.server')
+  const ctx = (params._context ?? {}) as {
+    userId?: string
+    workspaceId?: string
+    workflowId?: string
+  }
+  const result = await runChartGenerate(params as Record<string, unknown>, {
+    userId: ctx.userId,
+    workspaceId: ctx.workspaceId,
+    workflowId: ctx.workflowId,
+  })
+  return { success: true, output: result }
+}
+
 function resolveToolScope(
   params: Record<string, unknown>,
   executionContext?: ExecutionContext
@@ -1474,36 +1493,34 @@ export async function executeTool(
     // Check for direct execution (no HTTP request needed)
     const wrapperBaseToolId = getImageGenerationWrapperBaseToolId(normalizedToolId)
     const directExecution =
-      normalizedToolId === 'google_nano_banana'
-        ? executeNanoBananaDirect
-        : normalizedToolId === 'image_generate'
-          ? executeImageGenerateDirect
-          : normalizedToolId === 'openai_image'
-            ? executeOpenAIImageDirect
-            : wrapperBaseToolId
-              ? (params: Record<string, any>) =>
-                  executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-              : normalizedToolId === 'development_generate_app' ||
-                  normalizedToolId === 'arena_development_generate_app'
-                ? (params: Record<string, any>) =>
-                    executeDevelopmentGenerateAppDirect({
-                      ...params,
-                      arenaMode:
-                        normalizedToolId === 'arena_development_generate_app'
-                          ? true
-                          : params.arenaMode,
-                    })
-                : normalizedToolId === 'development_edit_app' ||
-                    normalizedToolId === 'arena_development_edit_app'
-                  ? (params: Record<string, any>) =>
-                      executeDevelopmentEditAppDirect({
-                        ...params,
-                        arenaMode:
-                          normalizedToolId === 'arena_development_edit_app'
-                            ? true
-                            : params.arenaMode,
-                      })
-                  : tool.directExecution
+    normalizedToolId === 'google_nano_banana'
+      ? executeNanoBananaDirect
+      : normalizedToolId === 'image_generate'
+        ? executeImageGenerateDirect
+        : normalizedToolId === 'openai_image'
+          ? executeOpenAIImageDirect
+          : wrapperBaseToolId
+            ? (params: Record<string, any>) =>
+                executeImageGenerationWrapperV2Direct(normalizedToolId, params)
+      : normalizedToolId === 'development_generate_app' ||
+          normalizedToolId === 'arena_development_generate_app'
+        ? (params: Record<string, any>) =>
+            executeDevelopmentGenerateAppDirect({
+              ...params,
+              arenaMode:
+                normalizedToolId === 'arena_development_generate_app' ? true : params.arenaMode,
+            })
+        : normalizedToolId === 'development_edit_app' ||
+            normalizedToolId === 'arena_development_edit_app'
+          ? (params: Record<string, any>) =>
+              executeDevelopmentEditAppDirect({
+                ...params,
+                arenaMode:
+                  normalizedToolId === 'arena_development_edit_app' ? true : params.arenaMode,
+              })
+          : normalizedToolId === 'chart_generate'
+            ? executeChartGenerateDirect
+            : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)

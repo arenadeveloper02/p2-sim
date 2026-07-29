@@ -59,7 +59,7 @@ import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
 } from '@/lib/billing/webhooks/subscription'
-import { env } from '@/lib/core/config/env'
+import { env, getEnv } from '@/lib/core/config/env'
 import {
   isAuthDisabled,
   isBillingEnabled,
@@ -240,7 +240,7 @@ function resolveBetterAuthCrossSubdomainCookieDomain(): string | undefined {
 const betterAuthCrossSubdomainCookieDomain = resolveBetterAuthCrossSubdomainCookieDomain()
 
 function resolveArenaHubTrustedOrigin(): string | null {
-  const fromEnv = env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL?.trim()
+  const fromEnv = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
   if (fromEnv) {
     try {
       return new URL(fromEnv).origin

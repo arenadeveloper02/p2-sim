@@ -13,11 +13,11 @@ LATEST_PATCH="$(
   gh api "/users/${GHCR_OWNER}/packages/container/${GHCR_PACKAGE}/versions" \
     --paginate \
     --jq '.[]?.metadata.container.tags[]?' 2>/dev/null \
-    | sed -nE 's/^0\.0\.([0-9]+)$/\1/p' \
+    | sed -nE 's/^0\.2\.([0-9]+)$/\1/p' \
     | sort -n \
     | tail -1 \
     || true
 )"
 
 NEXT_PATCH=$(( ${LATEST_PATCH:-0} + 1 ))
-echo "0.0.${NEXT_PATCH}"
+echo "0.2.${NEXT_PATCH}"

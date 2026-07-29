@@ -41,6 +41,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
+import { getEnv } from '@/lib/core/config/env'
 import { isMacPlatform } from '@/lib/core/utils/platform'
 import { buildFolderTree, getFolderPath } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'
@@ -407,7 +408,7 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
   const isMac = isMacPlatform()
 
   const arenaHubAgentsUrl = useMemo(() => {
-    const base = process.env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL
+    const base = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')
     if (!base?.trim()) return null
     return `${base.replace(/\/$/, '')}/hub/agents`
   }, [])
