@@ -158,6 +158,46 @@ export function isLoopbackHostname(hostname: string): boolean {
 }
 
 /**
+ * Arena hub "agents" URL for the sidebar back-link.
+ *
+ * Prefers `NEXT_PUBLIC_ARENA_FRONTEND_APP_URL` (via `getEnv` so shared GHCR images
+ * pick up runtime env). Falls back to hostname mapping when the public env is
+ * missing on the client after soft navigation from `/workspace`.
+ */
+export function getArenaHubAgentsUrl(hostname?: string): string | null {
+  const base = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
+  if (base) {
+    return `${base.replace(/\/$/, '')}/hub/agents`
+  }
+
+  const host =
+    hostname ?? (typeof window !== 'undefined' ? window.location.hostname : undefined)
+  if (!host) return null
+
+  if (LOCALHOST_HOSTNAMES.has(host) || host.includes('localhost')) {
+    return 'http://localhost:3001/hub/agents'
+  }
+  if (host === 'dev-agent.thearena.ai' || host.includes('dev-agent')) {
+    return 'https://dev.thearena.ai/hub/agents'
+  }
+  if (
+    host === 'test-agent.thearena.ai' ||
+    host === 'test-v1-agent.thearena.ai' ||
+    host.includes('test-agent')
+  ) {
+    return 'https://test.thearena.ai/hub/agents'
+  }
+  if (host === 'sandbox-agent.thearena.ai' || host.includes('sandbox-agent')) {
+    return 'https://sandbox.thearena.ai/hub/agents'
+  }
+  if (host === 'agent.thearena.ai') {
+    return 'https://app.thearena.ai/hub/agents'
+  }
+
+  return null
+}
+
+/**
  * Parses a comma-separated list of origins (e.g. from a `TRUSTED_ORIGINS` env
  * var) into a deduped array of normalized origins. Invalid entries are dropped.
  *
