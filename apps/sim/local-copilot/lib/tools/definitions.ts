@@ -84,10 +84,21 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'get_workflow_context',
     description:
-      'Returns the current workflow structure, variables, credentials metadata, and execution status.',
+      'Returns the current workflow structure, variables, credentials metadata, and execution status. For large (compact) workflows, pass blockNames or blockIds to load full subBlock values (prompts/messages) for those blocks before edit_workflow.',
     parameters: {
       type: 'object',
-      properties: {},
+      properties: {
+        blockIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional block UUIDs to return with full subBlock values',
+        },
+        blockNames: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional block display names (e.g. ["Writer","Reviewer"]) to return with full subBlock values',
+        },
+      },
       additionalProperties: false,
     },
   },
