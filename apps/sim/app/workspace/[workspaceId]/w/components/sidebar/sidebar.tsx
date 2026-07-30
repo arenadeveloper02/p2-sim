@@ -41,8 +41,8 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { getEnv } from '@/lib/core/config/env'
 import { isMacPlatform } from '@/lib/core/utils/platform'
+import { getArenaHubAgentsUrl } from '@/lib/core/utils/urls'
 import { buildFolderTree, getFolderPath } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'
 import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -407,11 +407,15 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
 
   const isMac = isMacPlatform()
 
-  const arenaHubAgentsUrl = useMemo(() => {
-    const base = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')
-    if (!base?.trim()) return null
-    return `${base.replace(/\/$/, '')}/hub/agents`
-  }, [])
+  const [arenaHubAgentsUrl, setArenaHubAgentsUrl] = useState<string | null>(() =>
+    getArenaHubAgentsUrl()
+  )
+
+  useEffect(() => {
+    if (arenaHubAgentsUrl) return
+    const resolved = getArenaHubAgentsUrl()
+    if (resolved) setArenaHubAgentsUrl(resolved)
+  }, [arenaHubAgentsUrl])
 
   const [showCollapsedTooltips, setShowCollapsedTooltips] = useState(isCollapsed)
 
