@@ -46,7 +46,7 @@ jobs:
   resolve-ghcr-tag:
     name: Resolve GHCR Tag
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/version-4.2-prod'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/version-5-prod' || github.ref == 'refs/heads/version-5-main')
     permissions:
       contents: read
       packages: read

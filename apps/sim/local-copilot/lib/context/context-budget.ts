@@ -219,9 +219,60 @@ function buildWorkflowPromptPayload(
     id: workflow.id,
     name: workflow.name,
     detail: 'compact' as const,
-    note: 'Block subBlock values omitted to save context. Use edit_workflow or inspect tools for full params.',
+    note: 'Block subBlock values omitted to save context. Call get_workflow_context with blockNames (or blockIds) for the blocks you need before edit_workflow.',
     state: buildCompactWorkflowState(workflow, selectedBlockId),
     credentials: workflow.credentials,
+  }
+}
+
+export interface WorkflowBlockInspectionSelector {
+  blockIds?: string[]
+  blockNames?: string[]
+}
+
+/**
+ * Returns full sanitized detail for selected blocks (by id and/or display name).
+ * Used when compact workflow context omits subBlock values.
+ */
+export function buildWorkflowBlockInspection(
+  workflow: NonNullable<LocalCopilotStructuredContext['workflow']>,
+  selector: WorkflowBlockInspectionSelector
+) {
+  const idSet = new Set(
+    (selector.blockIds ?? []).map((id) => id.trim()).filter((id) => id.length > 0)
+  )
+  const nameSet = new Set(
+    (selector.blockNames ?? [])
+      .map((name) => name.trim().toLowerCase())
+      .filter((name) => name.length > 0)
+  )
+
+  const matched = Object.values(workflow.blocks).filter((block) => {
+    if (idSet.has(block.id)) return true
+    const name = typeof block.name === 'string' ? block.name.trim().toLowerCase() : ''
+    return name.length > 0 && nameSet.has(name)
+  })
+
+  const sanitized = sanitizeForExport({
+    blocks: Object.fromEntries(matched.map((block) => [block.id, block])),
+    edges: [],
+    loops: {},
+    parallels: {},
+    variables: {},
+    metadata: { name: workflow.name },
+  }).state
+
+  return {
+    workflowId: workflow.id,
+    workflowName: workflow.name,
+    requestedBlockIds: [...idSet],
+    requestedBlockNames: [...nameSet],
+    matchedCount: matched.length,
+    blocks: sanitized.blocks,
+    note:
+      matched.length === 0
+        ? 'No blocks matched. Use display names or UUIDs from the compact workflow context.'
+        : undefined,
   }
 }
 

@@ -11,6 +11,7 @@ import {
 } from '@/local-copilot/lib/agent/engagement-status'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { estimateChatMessagesTokens } from '@/local-copilot/lib/context/context-budget'
+import { mergeConstraints } from '@/local-copilot/lib/context/follow-up-directives'
 import { collectCompletionText } from '@/local-copilot/lib/providers/collect-text'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
@@ -47,16 +48,20 @@ Return ONLY valid JSON matching this shape (no markdown fences):
 {
   "goals": string[],
   "decisions": string[],
+  "constraints": string[],
+  "activeDirective": string,
   "entities": { "workflows": string[], "blocks": string[], "files": string[], "runs": string[] },
   "progress": string[],
   "openQuestions": string[],
   "notes": string
 }
 Rules:
-- Merge the previous memory with NEW turns only — do not drop important goals/decisions unless contradicted.
+- Merge the previous memory with NEW turns only — do not drop important goals/decisions/constraints unless contradicted.
 - Prefer IDs, names, and outcomes over raw tool dumps.
-- Keep arrays short (≤8 items each). Cap notes at ~500 characters.
+- Keep arrays short (≤8 items each; constraints ≤12). Cap notes at ~500 characters.
 - Never store secrets (API keys, passwords, tokens, credentials).
+- constraints = durable user rules/corrections ("always use X", "don't create a new workflow", "use webhook not schedule").
+- activeDirective = the latest outstanding user instruction/correction the assistant must honor next (empty string if none).
 - openQuestions = unresolved user asks; progress = work already done.`
 
 export interface SessionMemoryEntities {
@@ -72,6 +77,10 @@ export interface SessionMemory {
   coveredThroughMessageId: string
   goals: string[]
   decisions: string[]
+  /** Durable user rules/corrections that must survive history compaction. */
+  constraints: string[]
+  /** Latest outstanding user instruction/correction; empty when none. */
+  activeDirective: string
   entities: SessionMemoryEntities
   progress: string[]
   openQuestions: string[]
@@ -122,6 +131,11 @@ export function parseSessionMemory(value: unknown): SessionMemory | null {
     coveredThroughMessageId: record.coveredThroughMessageId.trim(),
     goals: toStringArray(record.goals),
     decisions: toStringArray(record.decisions),
+    constraints: toStringArray(record.constraints),
+    activeDirective:
+      typeof record.activeDirective === 'string'
+        ? truncate(record.activeDirective.trim(), 280, '')
+        : '',
     entities: {
       workflows: toStringArray(entitiesRaw.workflows),
       blocks: toStringArray(entitiesRaw.blocks),
@@ -165,6 +179,11 @@ export function parseSummarizerSessionMemory(
     coveredThroughMessageId,
     goals: toStringArray(record.goals, previous?.goals),
     decisions: toStringArray(record.decisions, previous?.decisions),
+    constraints: toStringArray(record.constraints, previous?.constraints),
+    activeDirective:
+      typeof record.activeDirective === 'string'
+        ? truncate(record.activeDirective.trim(), 280, '')
+        : (previous?.activeDirective ?? ''),
     entities: {
       workflows: toStringArray(entitiesRaw?.workflows, previous?.entities.workflows),
       blocks: toStringArray(entitiesRaw?.blocks, previous?.entities.blocks),
@@ -190,6 +209,8 @@ export function clampSessionMemory(memory: SessionMemory): SessionMemory {
     ...memory,
     goals: memory.goals.slice(-8),
     decisions: memory.decisions.slice(-8),
+    constraints: memory.constraints.slice(-12),
+    activeDirective: truncate(memory.activeDirective, 280, ''),
     entities: {
       workflows: memory.entities.workflows.slice(-8),
       blocks: memory.entities.blocks.slice(-8),
@@ -209,6 +230,8 @@ export function formatSessionMemorySystemMessage(memory: SessionMemory): ChatMes
   const payload = {
     goals: memory.goals,
     decisions: memory.decisions,
+    constraints: memory.constraints,
+    activeDirective: memory.activeDirective,
     entities: memory.entities,
     progress: memory.progress,
     openQuestions: memory.openQuestions,
@@ -339,6 +362,57 @@ export async function persistSessionMemory(
 }
 
 /**
+ * Merges heuristic follow-up constraints / active directive into session memory
+ * without waiting for the LLM summarizer. Soft-fails on persist errors.
+ */
+export async function mergeFollowUpDirectivesIntoSessionMemory(params: {
+  chatId?: string
+  userId: string
+  previous: SessionMemory | null
+  constraints: string[]
+  activeDirective: string | null
+}): Promise<SessionMemory | null> {
+  if (!params.chatId) return params.previous
+  if (params.constraints.length === 0 && !params.activeDirective) return params.previous
+
+  const base: SessionMemory =
+    params.previous ??
+    ({
+      version: SESSION_MEMORY_VERSION,
+      updatedAt: new Date().toISOString(),
+      coveredThroughMessageId: 'directive-bootstrap',
+      goals: [],
+      decisions: [],
+      constraints: [],
+      activeDirective: '',
+      entities: { workflows: [], blocks: [], files: [], runs: [] },
+      progress: [],
+      openQuestions: [],
+      notes: '',
+    } satisfies SessionMemory)
+
+  const next = clampSessionMemory({
+    ...base,
+    updatedAt: new Date().toISOString(),
+    constraints: mergeConstraints(base.constraints, params.constraints),
+    activeDirective: params.activeDirective?.trim()
+      ? truncate(params.activeDirective.trim(), 280, '')
+      : base.activeDirective,
+  })
+
+  try {
+    await persistSessionMemory(params.chatId, params.userId, next)
+    return next
+  } catch (error) {
+    logger.warn('Failed to persist follow-up directives into session memory', {
+      chatId: params.chatId,
+      error: getErrorMessage(error),
+    })
+    return next
+  }
+}
+
+/**
  * Loads existing memory, optionally refreshes via a small LLM call, and persists.
  * Soft-fails: never throws to the caller for summarizer/provider errors.
  */
@@ -449,6 +523,8 @@ export async function summarizeSessionMemory(params: {
         ? {
             goals: params.previous.goals,
             decisions: params.previous.decisions,
+            constraints: params.previous.constraints,
+            activeDirective: params.previous.activeDirective,
             entities: params.previous.entities,
             progress: params.previous.progress,
             openQuestions: params.previous.openQuestions,

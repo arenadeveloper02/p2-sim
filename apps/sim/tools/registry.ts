@@ -217,6 +217,10 @@ import {
   arenaSearchTask,
   arenaSearchTaskSimple,
 } from '@/tools/arena'
+import {
+  arenaDevelopmentEditAppTool,
+  arenaDevelopmentGenerateAppTool,
+} from '@/tools/arena-development'
 import { arxivGetAuthorPapersTool, arxivGetPaperTool, arxivSearchTool } from '@/tools/arxiv'
 import {
   asanaAddCommentTool,
@@ -443,6 +447,7 @@ import {
   calendlyListScheduledEventsTool,
   calendlyListWebhooksTool,
 } from '@/tools/calendly'
+import { chartGenerateTool } from '@/tools/chart_generation/generate'
 import { chartValidateTool } from '@/tools/chart_generation/validate'
 import { clayPopulateTool } from '@/tools/clay'
 import {
@@ -4664,6 +4669,8 @@ export const tools: Record<string, ToolConfig> = {
   arena_project_summary: arenaProjectSummary,
   arena_client_updated_tasks: arenaClientUpdatedTasks,
   arena_conversation_summary: arenaConversationSummary,
+  arena_development_generate_app: arenaDevelopmentGenerateAppTool,
+  arena_development_edit_app: arenaDevelopmentEditAppTool,
   a2a_cancel_task: a2aCancelTaskTool,
   a2a_get_agent_card: a2aGetAgentCardTool,
   a2a_get_task: a2aGetTaskTool,
@@ -5698,6 +5705,7 @@ export const tools: Record<string, ToolConfig> = {
   calendly_create_webhook: calendlyCreateWebhookTool,
   calendly_delete_webhook: calendlyDeleteWebhookTool,
   chart_validate: chartValidateTool,
+  chart_generate: chartGenerateTool,
   calcom_create_booking: calcomCreateBookingTool,
   calcom_get_booking: calcomGetBookingTool,
   calcom_list_bookings: calcomListBookingsTool,

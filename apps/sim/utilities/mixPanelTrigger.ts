@@ -1,13 +1,13 @@
 import Cookies from 'js-cookie'
 import mixpanel from 'mixpanel-browser'
-import { env } from '@/lib/core/config/env'
+import { getEnv } from '@/lib/core/config/env'
 
 /**
  * Gets the Mixpanel token from environment variables
  * @returns Mixpanel token string or undefined
  */
 const getMixpanelToken = () => {
-  return env.NEXT_PUBLIC_MIX_PANEL_TOKEN || process.env.NEXT_PUBLIC_MIX_PANEL_TOKEN
+  return getEnv('NEXT_PUBLIC_MIX_PANEL_TOKEN')
 }
 
 // Initialize mixpanel only if we have a valid token and we're in the browser
@@ -87,7 +87,7 @@ export const setPeople = async ({
     return
   }
 
-  const appUrl = env.NEXT_PUBLIC_APP_URL || ''
+  const appUrl = getEnv('NEXT_PUBLIC_APP_URL') || ''
   const platformVersion = getPlatformVersion()
 
   // Determine instance based on NEXT_PUBLIC_APP_URL

@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EC2 deployment with GHCR</title>
+    <style>
+      :root {
+        --bg: #f7f7f5;
+        --surface: #ffffff;
+        --text: #1a1a18;
+        --text-secondary: #5c5c57;
+        --text-tertiary: #8a8a84;
+        --stroke: #e6e6e1;
+        --stroke-strong: #d4d4cc;
+        --fill: #f0f0eb;
+        --info: #2563eb;
+        --info-bg: #eff6ff;
+        --info-border: #bfdbfe;
+        --success: #15803d;
+        --success-bg: #f0fdf4;
+        --success-border: #bbf7d0;
+        --warning: #a16207;
+        --warning-bg: #fefce8;
+        --warning-border: #fde68a;
+        --code-bg: #f3f3ef;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+
+      h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .lede {
+        color: var(--text-secondary);
+        max-width: 70ch;
+      }
+
+      .muted {
+        color: var(--text-secondary);
+        font-size: 14px;
+      }
+
+      .tertiary {
+        color: var(--text-tertiary);
+        font-size: 13px;
+      }
+
+      .section {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .stat {
+        background: var(--surface);
+        border: 1px solid var(--stroke);
+        border-radius: 10px;
+        padding: 16px;
+      }
+
+      .stat-value {
+        font-size: 28px;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+        line-height: 1.1;
+      }
+
+      .stat-value.info {
+        color: var(--info);
+      }
+
+      .stat-value.success {
+        color: var(--success);
+      }
+
+      .stat-value.warning {
+        color: var(--warning);
+      }
+
+      .stat-label {
+        margin-top: 6px;
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+
+      .callout {
+        border-radius: 10px;
+        padding: 14px 16px;
+        border: 1px solid;
+      }
+
+      .callout.info {
+        background: var(--info-bg);
+        border-color: var(--info-border);
+      }
+
+      .callout.success {
+        background: var(--success-bg);
+        border-color: var(--success-border);
+      }
+
+      .callout-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .callout.info .callout-title {
+        color: var(--info);
+      }
+
+      .callout.success .callout-title {
+        color: var(--success);
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--stroke);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--stroke);
+        font-weight: 600;
+      }
+
+      .card-body {
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      code,
+      .code {
+        font-family: var(--mono);
+        font-size: 12.5px;
+        background: var(--code-bg);
+        border: 1px solid var(--stroke);
+        border-radius: 6px;
+        padding: 2px 6px;
+        color: var(--text);
+        word-break: break-word;
+      }
+
+      .code-block {
+        display: block;
+        width: 100%;
+        padding: 10px 12px;
+        white-space: pre-wrap;
+        line-height: 1.45;
+      }
+
+      .command {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .command-label {
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .flow-step {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--stroke);
+      }
+
+      .flow-title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.4;
+        white-space: nowrap;
+      }
+
+      .pill.info {
+        background: #dbeafe;
+        color: var(--info);
+      }
+
+      .pill.success {
+        background: #dcfce7;
+        color: var(--success);
+      }
+
+      .pill.warning {
+        background: #fef3c7;
+        color: var(--warning);
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .divider {
+        height: 1px;
+        background: var(--stroke);
+        border: 0;
+        margin: 0;
+      }
+
+      .stack-tight {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .label {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .steps {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--surface);
+        border: 1px solid var(--stroke);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 12px 14px;
+        vertical-align: top;
+        border-bottom: 1px solid var(--stroke);
+        font-size: 13.5px;
+      }
+
+      th {
+        background: var(--fill);
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      td code {
+        display: inline-block;
+        max-width: 100%;
+      }
+
+      .pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .footer-note {
+        margin-top: 4px;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .field.full {
+        grid-column: 1 / -1;
+      }
+
+      .field label {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .field input {
+        font-family: var(--mono);
+        font-size: 13px;
+        padding: 10px 12px;
+        border: 1px solid var(--stroke-strong);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+      }
+
+      .field input:focus {
+        outline: 2px solid var(--info-border);
+        border-color: var(--info);
+      }
+
+      .field .hint {
+        color: var(--text-tertiary);
+        font-size: 12.5px;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .btn {
+        appearance: none;
+        border: 1px solid var(--stroke-strong);
+        border-radius: 8px;
+        padding: 9px 14px;
+        font-family: var(--sans);
+        font-size: 13.5px;
+        font-weight: 600;
+        cursor: pointer;
+        background: var(--fill);
+        color: var(--text);
+      }
+
+      .btn:hover {
+        background: var(--stroke);
+      }
+
+      .btn.primary {
+        background: var(--info);
+        border-color: var(--info);
+        color: #fff;
+      }
+
+      .btn.primary:hover {
+        filter: brightness(0.95);
+      }
+
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .preview {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px;
+        background: var(--code-bg);
+        border: 1px solid var(--stroke);
+        border-radius: 8px;
+      }
+
+      .preview-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        font-size: 13px;
+      }
+
+      .preview-row span {
+        color: var(--text-secondary);
+      }
+
+      .preview-row code {
+        background: transparent;
+        border: 0;
+        padding: 0;
+      }
+
+      .status-line {
+        min-height: 1.3em;
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+
+      .status-line.ok {
+        color: var(--success);
+      }
+
+      .status-line.err {
+        color: #b91c1c;
+      }
+
+      @media (max-width: 800px) {
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .stats,
+        .flow,
+        .grid-2 {
+          grid-template-columns: 1fr;
+        }
+
+        main {
+          padding: 24px 16px 48px;
+        }
+      }
+
+      @media print {
+        body {
+          background: white;
+        }
+
+        main {
+          max-width: none;
+          padding: 0;
+        }
+
+        .card,
+        .stat,
+        table,
+        .callout {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>EC2 deployment with GHCR</h1>
+        <p class="lede">
+          New instance deploy flow: build images once into GitHub Container
+          Registry, then pull a tagged image onto any EC2 — secrets stay in the
+          machine-local <code>.env</code> files, not in the image.
+        </p>
+      </header>
+
+      <section class="stats" aria-label="Summary">
+        <div class="stat">
+          <div class="stat-value info">3</div>
+          <div class="stat-label">Images per tag</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value success">2</div>
+          <div class="stat-label">Deploy paths</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value warning">Runtime</div>
+          <div class="stat-label">Env injection</div>
+        </div>
+      </section>
+
+      <aside class="callout info">
+        <div class="callout-title">Mental model</div>
+        <p class="muted">
+          CI builds the app once and pushes <code>simstudio</code>,
+          <code>realtime</code>, and <code>migrations</code> to GHCR. On the
+          instance you only pick a tag (or build locally for a one-off). Compose
+          loads <code>apps/sim/.env</code> and <code>apps/realtime/.env</code>
+          automatically — you do not bake env into the image and you do not
+          re-export secrets by hand for each deploy.
+        </p>
+      </aside>
+
+      <section class="section">
+        <h2>How GHCR fits in</h2>
+        <p class="muted">
+          GHCR (GitHub Container Registry) is GitHub’s Docker registry at
+          <code>ghcr.io</code>. Packages live under the repo owner, tagged like
+          any other container image. EC2 authenticates with a PAT /
+          <code>GHCR_TOKEN</code>, pulls the three images for that tag, and
+          starts them with Compose.
+        </p>
+
+        <div class="card">
+          <div class="card-header">Published packages (same tag across all three)</div>
+          <div class="card-body">
+            <code class="code-block">ghcr.io/arenadeveloper02/p2-sim-simstudio:&lt;tag&gt;</code>
+            <code class="code-block">ghcr.io/arenadeveloper02/p2-sim-realtime:&lt;tag&gt;</code>
+            <code class="code-block">ghcr.io/arenadeveloper02/p2-sim-migrations:&lt;tag&gt;</code>
+            <p class="tertiary">
+              Compose file: <code>docker-compose.test-env.yml</code> · default
+              tag fallback: <code>dev</code>
+            </p>
+          </div>
+        </div>
+
+        <div class="flow">
+          <div class="flow-step">
+            <div class="flow-title-row">
+              <span class="pill info">1</span>
+              <strong>Build in CI</strong>
+            </div>
+            <p class="muted">
+              GitHub Actions builds linux/amd64 images from the Dockerfiles.
+            </p>
+          </div>
+          <div class="flow-step">
+            <div class="flow-title-row">
+              <span class="pill info">2</span>
+              <strong>Push to GHCR</strong>
+            </div>
+            <p class="muted">
+              Tags land on <code>ghcr.io/arenadeveloper02/p2-sim-*</code>
+              packages.
+            </p>
+          </div>
+          <div class="flow-step">
+            <div class="flow-title-row">
+              <span class="pill info">3</span>
+              <strong>Pull on EC2</strong>
+            </div>
+            <p class="muted">
+              <code>deploytag.sh</code> logs in (optional token), pulls, and ups
+              Compose.
+            </p>
+          </div>
+          <div class="flow-step">
+            <div class="flow-title-row">
+              <span class="pill info">4</span>
+              <strong>Inject env</strong>
+            </div>
+            <p class="muted">
+              Compose mounts env_file from apps/sim and apps/realtime
+              <code>.env</code>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Build and push images</h2>
+        <p class="muted">
+          Trigger
+          <code>.github/workflows/images.yml</code>
+          for a branch and tag. That builds and pushes all three images. Tags are
+          immutable: the workflow creates a matching GitHub git tag
+          <code>ghcr/&lt;image_tag&gt;</code> and refuses to republish if that
+          git tag or the GHCR Docker tag already exists.
+        </p>
+
+        <aside class="callout info">
+          <div class="callout-title">Immutability</div>
+          <p class="muted">
+            Docker tag <code>fix-prod-secrets-0.0.2</code> is locked by git tag
+            <code>ghcr/fix-prod-secrets-0.0.2</code> at the built commit. A
+            failed run deletes the reservation so you can retry the same tag; a
+            successful run keeps it forever — bump the tag for the next build.
+          </p>
+        </aside>
+
+        <div class="card">
+          <div class="card-header">
+            <span>Build from UI</span>
+            <span class="pill info">workflow_dispatch</span>
+          </div>
+          <div class="card-body">
+            <form id="build-form" class="stack" novalidate>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="image-tag">Image tag</label>
+                  <input
+                    id="image-tag"
+                    name="imageTag"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="fix-prod-secrets-0.0.2"
+                    required
+                  />
+                  <div class="hint">
+                    Letters, numbers, <code>_</code>, <code>.</code>,
+                    <code>-</code>. Must not already exist on GHCR or as
+                    <code>ghcr/&lt;tag&gt;</code>.
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="git-ref">Git ref (branch)</label>
+                  <input
+                    id="git-ref"
+                    name="gitRef"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="fix/prod-secrets"
+                    required
+                  />
+                  <div class="hint">
+                    Branch or SHA the workflow checks out and builds.
+                  </div>
+                </div>
+              </div>
+
+              <div class="preview" aria-live="polite">
+                <div class="preview-row">
+                  <span>Docker tags</span>
+                  <code id="preview-docker">ghcr.io/…/p2-sim-*:&lt;tag&gt;</code>
+                </div>
+                <div class="preview-row">
+                  <span>Git lock tag</span>
+                  <code id="preview-git">ghcr/&lt;tag&gt;</code>
+                </div>
+                <div class="command">
+                  <div class="command-label">Command that will run</div>
+                  <code class="code-block" id="preview-cmd"
+                    >gh workflow run images.yml -f image_tag=&lt;tag&gt; --ref &lt;branch&gt;</code
+                  >
+                </div>
+              </div>
+
+              <div class="actions">
+                <button type="submit" class="btn primary" id="btn-copy">
+                  Copy gh command
+                </button>
+                <a
+                  class="btn"
+                  id="btn-actions"
+                  href="https://github.com/arenadeveloper02/p2-sim/actions/workflows/images.yml"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >Open GitHub Actions</a
+                >
+              </div>
+              <p class="status-line" id="build-status">
+                Fill tag + branch, copy the command, or open Actions → Run
+                workflow and paste the same values (branch picker +
+                <code>image_tag</code>).
+              </p>
+            </form>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">Terminal equivalents</div>
+          <div class="card-body">
+            <div class="command">
+              <div class="command-label">
+                Build &amp; push a specific tag (from repo root)
+              </div>
+              <code class="code-block"
+                >gh workflow run images.yml -f image_tag=fix-prod-secrets-0.0.2 --ref your-branch</code
+              >
+            </div>
+            <div class="command">
+              <div class="command-label">Watch the run</div>
+              <code class="code-block"
+                >gh run list --workflow=images.yml --limit 5</code
+              >
+            </div>
+            <div class="command">
+              <div class="command-label">Confirm the package tag exists</div>
+              <code class="code-block"
+                >gh api /users/arenadeveloper02/packages/container/p2-sim-simstudio/versions --jq ".[].metadata.container.tags[]"</code
+              >
+            </div>
+            <div class="command">
+              <div class="command-label">Confirm the git lock tag</div>
+              <code class="code-block"
+                >git ls-remote --tags origin 'refs/tags/ghcr/*'</code
+              >
+            </div>
+            <p class="tertiary">
+              Auto-increment tags like <code>0.0.N</code> still come from pushes
+              to the production image branch via CI
+              (<code>scripts/ci/ghcr-next-branch-tag.sh</code>). Manual runs from
+              this page (or <code>gh workflow run</code>) publish an explicit
+              immutable tag.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Deploy on any instance</h2>
+        <p class="muted">
+          On each EC2 box the operators use short aliases that wrap the repo
+          scripts. Both paths end on the same Compose file; only the image
+          source differs.
+        </p>
+
+        <div class="grid-2">
+          <article class="card">
+            <div class="card-header">
+              <span>Image pull (GHCR)</span>
+              <span class="pill success">Preferred</span>
+            </div>
+            <div class="card-body">
+              <p class="muted">
+                Use when the image already exists in GHCR. Fastest path for
+                shared / stable deploys.
+              </p>
+              <div class="stack-tight">
+                <div class="label">Instance alias</div>
+                <code class="code-block">./deploytag.sh &lt;tag&gt;</code>
+              </div>
+              <div class="stack-tight">
+                <div class="label">Repo script</div>
+                <code class="code-block">scripts/deploy-ec2-ghcr.sh</code>
+              </div>
+              <hr class="divider" />
+              <div class="command">
+                <div class="command-label">Run on the EC2 instance (tag-only)</div>
+                <code class="code-block"
+                  >./deploytag.sh fix-prod-secrets-0.0.2</code
+                >
+              </div>
+              <div class="command">
+                <div class="command-label">Optional branch override</div>
+                <code class="code-block"
+                  >./deploytag.sh fix-prod-secrets-0.0.2 fix/prod-secrets</code
+                >
+              </div>
+              <div class="stack">
+                <div class="label">What it does</div>
+                <div class="steps muted">
+                  <p>1. Checkout git lock tag <code>ghcr/&lt;tag&gt;</code> (exact build SHA). Optional 2nd arg overrides with a branch.</p>
+                  <p>2. Require apps/sim/.env and apps/realtime/.env.</p>
+                  <p>3. docker login ghcr.io when GHCR_TOKEN or CR_PAT is set.</p>
+                  <p>4. pull simstudio, realtime, migrations for IMAGE_TAG.</p>
+                  <p>5. compose up -d, then wait for :3002/health and :3000.</p>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-header">
+              <span>Local build on the box</span>
+              <span class="pill warning">Dev / hotfix</span>
+            </div>
+            <div class="card-body">
+              <p class="muted">
+                Use for branch experiments when you do not want to wait on GHCR,
+                or the image is not published yet.
+              </p>
+              <div class="stack-tight">
+                <div class="label">Instance alias</div>
+                <code class="code-block">./deploylocally.sh &lt;branch&gt;</code>
+              </div>
+              <div class="stack-tight">
+                <div class="label">Repo script</div>
+                <code class="code-block">scripts/deploy-ec2-local-build.sh</code>
+              </div>
+              <hr class="divider" />
+              <div class="command">
+                <div class="command-label">Run on the EC2 instance</div>
+                <code class="code-block">./deploylocally.sh fix/prod-secrets</code>
+              </div>
+              <div class="stack">
+                <div class="label">What it does</div>
+                <div class="steps muted">
+                  <p>1. Stop/remove old p2-sim-simstudio and p2-sim-realtime containers/images.</p>
+                  <p>2. Checkout and rebase the requested branch under DEPLOY_ROOT.</p>
+                  <p>3. Require apps/sim/.env.</p>
+                  <p>4. compose -f test-env -f local-build up -d --build.</p>
+                  <p>5. Builds from docker/app.Dockerfile and docker/realtime.Dockerfile on the instance.</p>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Why you do not bake env into the image</h2>
+        <p class="muted">
+          Images are environment-agnostic artifacts. Runtime config comes from
+          files already on the instance. That means one GHCR tag can be deployed
+          to multiple boxes without rebuilding, as long as each box has its own
+          <code>.env</code>.
+        </p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">simstudio</div>
+            <div class="card-body">
+              <div class="stack-tight">
+                <div class="label">env_file</div>
+                <code class="code-block">apps/sim/.env</code>
+              </div>
+              <p class="muted">
+                Compose also substitutes selected keys
+                (<code>DATABASE_URL</code>, auth URLs, API keys, etc.) via
+                <code>--env-file apps/sim/.env</code> passed by the GHCR deploy
+                script.
+              </p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">realtime</div>
+            <div class="card-body">
+              <div class="stack-tight">
+                <div class="label">env_file</div>
+                <code class="code-block">apps/realtime/.env</code>
+              </div>
+              <p class="muted">
+                Required by <code>deploy-ec2-ghcr.sh</code>. Same pattern:
+                container receives the file at start; no rebuild when secrets
+                change — edit <code>.env</code> and re-up.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <aside class="callout success">
+          <div class="callout-title">Practical implication</div>
+          <p class="muted">
+            Publish the image once (UI form or
+            <code>gh workflow run images.yml</code>), keep secrets only on the
+            instance, then run
+            <code>./deploytag.sh &lt;tag&gt;</code> (checks out
+            <code>ghcr/&lt;tag&gt;</code> + pulls the matching images). Changing env
+            does not require a new image; changing code needs a <em>new</em>
+            immutable tag — never reuse a published one.
+          </p>
+        </aside>
+      </section>
+
+      <section class="section">
+        <h2>Quick reference</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th>Command</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Create GHCR images</td>
+              <td>
+                <code>gh workflow run images.yml -f image_tag=&lt;tag&gt; --ref &lt;branch&gt;</code>
+              </td>
+              <td>
+                Pushes simstudio + realtime + migrations; locks
+                <code>ghcr/&lt;tag&gt;</code>
+              </td>
+            </tr>
+            <tr>
+              <td>List image lock tags</td>
+              <td><code>git ls-remote --tags origin 'refs/tags/ghcr/*'</code></td>
+              <td>1:1 with published Docker tags</td>
+            </tr>
+            <tr>
+              <td>Deploy from GHCR</td>
+              <td><code>./deploytag.sh &lt;tag&gt;</code></td>
+              <td>→ checkout <code>ghcr/&lt;tag&gt;</code> + pull images</td>
+            </tr>
+            <tr>
+              <td>Build on the instance</td>
+              <td><code>./deploylocally.sh &lt;branch&gt;</code></td>
+              <td>→ scripts/deploy-ec2-local-build.sh</td>
+            </tr>
+            <tr>
+              <td>Auth for private pulls</td>
+              <td><code>export GHCR_TOKEN=… (or CR_PAT)</code></td>
+              <td>Optional; script logs into ghcr.io when set</td>
+            </tr>
+            <tr>
+              <td>Override deploy root</td>
+              <td><code>DEPLOY_ROOT=/root/git/p2-sim …</code></td>
+              <td>Defaults to repo / /root/git/p2-sim</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <hr class="divider" />
+
+      <section class="section">
+        <h3>When to pick which path</h3>
+        <div class="pills">
+          <span class="pill success">Shared / repeatable → GHCR + deploytag</span>
+          <span class="pill warning">One-off branch smoke → deploylocally</span>
+          <span class="pill info">Env-only change → edit .env, re-up</span>
+        </div>
+        <p class="tertiary footer-note">
+          Source of truth: scripts/deploy-ec2-ghcr.sh,
+          scripts/deploy-ec2-local-build.sh, docker-compose.test-env.yml,
+          .github/workflows/images.yml
+        </p>
+      </section>
+    </main>
+    <script>
+      (function () {
+        var TAG_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/
+        var OWNER = 'arenadeveloper02'
+        var form = document.getElementById('build-form')
+        var tagInput = document.getElementById('image-tag')
+        var refInput = document.getElementById('git-ref')
+        var previewDocker = document.getElementById('preview-docker')
+        var previewGit = document.getElementById('preview-git')
+        var previewCmd = document.getElementById('preview-cmd')
+        var statusEl = document.getElementById('build-status')
+
+        function shellQuote(value) {
+          if (/^[A-Za-z0-9_./:@+-]+$/.test(value)) return value
+          return "'" + String(value).replace(/'/g, "'\\''") + "'"
+        }
+
+        function buildCommand(tag, ref) {
+          return (
+            'gh workflow run images.yml -f image_tag=' +
+            shellQuote(tag) +
+            ' --ref ' +
+            shellQuote(ref)
+          )
+        }
+
+        function syncPreview() {
+          var tag = tagInput.value.trim()
+          var ref = refInput.value.trim()
+          var tagLabel = tag || '<tag>'
+          var refLabel = ref || '<branch>'
+          previewDocker.textContent =
+            'ghcr.io/' +
+            OWNER +
+            '/p2-sim-{simstudio,realtime,migrations}:' +
+            tagLabel
+          previewGit.textContent = 'ghcr/' + tagLabel
+          previewCmd.textContent = buildCommand(tagLabel, refLabel)
+        }
+
+        function setStatus(message, kind) {
+          statusEl.textContent = message
+          statusEl.className = 'status-line' + (kind ? ' ' + kind : '')
+        }
+
+        function validate() {
+          var tag = tagInput.value.trim()
+          var ref = refInput.value.trim()
+          if (!tag || !ref) {
+            return { ok: false, error: 'Enter both an image tag and a git ref.' }
+          }
+          if (!TAG_RE.test(tag) || tag.indexOf('/') !== -1) {
+            return {
+              ok: false,
+              error:
+                'Invalid image tag. Use [A-Za-z0-9_][A-Za-z0-9_.-]* and no slashes.',
+            }
+          }
+          return { ok: true, tag: tag, ref: ref, command: buildCommand(tag, ref) }
+        }
+
+        async function copyText(text) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text)
+            return
+          }
+          var area = document.createElement('textarea')
+          area.value = text
+          area.setAttribute('readonly', '')
+          area.style.position = 'absolute'
+          area.style.left = '-9999px'
+          document.body.appendChild(area)
+          area.select()
+          document.execCommand('copy')
+          document.body.removeChild(area)
+        }
+
+        tagInput.addEventListener('input', syncPreview)
+        refInput.addEventListener('input', syncPreview)
+
+        form.addEventListener('submit', function (event) {
+          event.preventDefault()
+          var result = validate()
+          if (!result.ok) {
+            setStatus(result.error, 'err')
+            return
+          }
+          copyText(result.command)
+            .then(function () {
+              setStatus(
+                'Copied. Paste in the repo root, then watch with: gh run list --workflow=images.yml --limit 5',
+                'ok'
+              )
+            })
+            .catch(function () {
+              setStatus(
+                'Could not copy. Select the command preview and copy manually.',
+                'err'
+              )
+            })
+        })
+
+        syncPreview()
+      })()
+    </script>
+  </body>
+</html>
