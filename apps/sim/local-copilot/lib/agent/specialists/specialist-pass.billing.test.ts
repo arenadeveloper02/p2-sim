@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createSpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
 import { executeSpecialistLoop } from '@/local-copilot/lib/agent/specialists/specialist-pass'
 import { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import type { LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
@@ -103,6 +104,7 @@ describe('executeSpecialistLoop billing', () => {
       workspaceId: 'ws-1',
       usageTurnId: 'turn-1',
       turnCost,
+      budget: createSpecialistBudget(),
       getToolExecutor: async () =>
         ({
           executeLocalCopilotTool: vi.fn().mockResolvedValue({
