@@ -1619,7 +1619,8 @@ export function mergeToolOutputImageUrls(
           trimmed &&
           (isRenderableImageUrl(trimmed) ||
             trimmed.startsWith('http://') ||
-            trimmed.startsWith('https://'))
+            trimmed.startsWith('https://') ||
+            trimmed.startsWith('/api/files/serve/'))
         ) {
           add(trimmed)
           continue

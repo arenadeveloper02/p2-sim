@@ -607,25 +607,25 @@ export async function transformBlockTool(
 
   let toolId: string | null = null
 
-  if ((blockDef.tools?.access?.length || 0) > 1) {
-    if (selectedOperation && blockDef.tools?.config?.tool) {
-      try {
-        toolId = blockDef.tools.config.tool({
-          ...block.params,
-          operation: selectedOperation,
-        })
-      } catch (error) {
-        logger.error('Error selecting tool for block', {
-          blockType: block.type,
-          operation: selectedOperation,
-          error,
-        })
-        return null
-      }
-    } else {
-      toolId = blockDef.tools.access[0]
+  // Prefer tools.config.tool so blocks that route on provider/model (e.g. Image Generator)
+  // resolve the right tool without an Operation dropdown / selectedOperation.
+  if (blockDef.tools?.config?.tool) {
+    try {
+      toolId = blockDef.tools.config.tool({
+        ...block.params,
+        ...(selectedOperation ? { operation: selectedOperation } : {}),
+      })
+    } catch (error) {
+      logger.error('Error selecting tool for block', {
+        blockType: block.type,
+        operation: selectedOperation,
+        error,
+      })
+      return null
     }
-  } else {
+  }
+
+  if (!toolId) {
     toolId = blockDef.tools?.access?.[0] || null
   }
 

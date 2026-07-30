@@ -213,27 +213,60 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     )
 
     const workspaceId = await resolveWorkflowWorkspaceId(workflowId).catch((error) => {
-      logger.warn(`[${requestId}] Failed to resolve workspace for post-process usage`, { error })
+      logger.warn(`[${requestId}] Failed to resolve workspace for post-process usage`, {
+        error,
+        workflowId,
+        operation: body.operation,
+      })
       return undefined
     })
 
     const resultImageUrl = extractResultImageUrl(output as Record<string, unknown>)
-    await recordPostProcessUsage({
-      userId: authResult.userId,
+    logger.info(`[${requestId}] Ideogram post-process succeeded; recording usage`, {
+      operation: body.operation,
       workflowId,
       workspaceId,
-      operation: body.operation,
-      requestId,
+      userId: authResult.userId,
       byok: Boolean(body.apiKey?.trim()),
-      resultImageUrl,
-    }).catch((error) => {
-      logger.error(`[${requestId}] Failed to record image post-process usage, continuing`, {
-        error,
+      hasResultImageUrl: Boolean(resultImageUrl),
+      resultImagePreview: resultImageUrl?.slice(0, 120),
+      outputKeys: Object.keys(output as Record<string, unknown>),
+    })
+
+    if (!workspaceId) {
+      logger.warn(`[${requestId}] Post-process usage will omit workspaceId`, {
         workflowId,
         operation: body.operation,
         userId: authResult.userId,
       })
-    })
+    }
+
+    try {
+      await recordPostProcessUsage({
+        userId: authResult.userId,
+        workflowId,
+        workspaceId,
+        operation: body.operation,
+        requestId,
+        byok: Boolean(body.apiKey?.trim()),
+        resultImageUrl,
+      })
+      logger.info(`[${requestId}] Recorded image post-process usage`, {
+        operation: body.operation,
+        workflowId,
+        workspaceId,
+        userId: authResult.userId,
+      })
+    } catch (error) {
+      logger.error(`[${requestId}] Failed to record image post-process usage, continuing`, {
+        error,
+        workflowId,
+        workspaceId,
+        operation: body.operation,
+        userId: authResult.userId,
+        hasResultImageUrl: Boolean(resultImageUrl),
+      })
+    }
 
     return NextResponse.json({
       success: true,

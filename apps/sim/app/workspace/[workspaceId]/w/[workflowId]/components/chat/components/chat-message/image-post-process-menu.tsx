@@ -22,8 +22,9 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { Loader2, MoreHorizontal } from 'lucide-react'
 import type { IdeogramPostProcessBody } from '@/lib/api/contracts/tools/ideogram'
+import { normalizeImageUrlForCompare } from '@/lib/chat/assistant-assets'
 import { POST_PROCESSOR_REFRAME_RESOLUTION_OPTIONS } from '@/lib/image-generation/ideogram-post-processor-fields'
-import { isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
+import { extractStorageKey, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 import { useIdeogramPostProcess } from '@/hooks/queries/ideogram-post-process'
 import { useChatStore } from '@/stores/chat/store'
 
@@ -48,6 +49,97 @@ interface ImagePostProcessMenuProps {
 }
 
 /**
+ * Builds generated-image metadata for a post-process result URL.
+ */
+function buildGeneratedImage(url: string) {
+  const trimmed = url.trim()
+  const key = isInternalFileUrl(trimmed) ? extractStorageKey(trimmed) : undefined
+  return {
+    id: `generated-image:${normalizeImageUrlForCompare(trimmed)}`,
+    name: 'Generated image',
+    url: trimmed,
+    type: 'image/png',
+    ...(key ? { key, context: 'agent-generated-images' as const } : {}),
+  }
+}
+
+type PublishChatResult =
+  | { ok: true; path: 'append' | 'new-message' }
+  | { ok: false; reason: 'missing-message-id' | 'append-failed-no-workflow' | 'missing-workflow-id' }
+
+/**
+ * Inserts a post-process result into chat: prefer appending onto the source
+ * message, otherwise add a new workflow message so the image is never lost.
+ */
+function publishResultToChat(params: {
+  messageId?: string
+  workflowId?: string
+  title: string
+  imageUrl: string
+  operation: string
+}): PublishChatResult {
+  const { messageId, workflowId, title, imageUrl, operation } = params
+  const store = useChatStore.getState()
+  const imagePreview = imageUrl.slice(0, 120)
+
+  if (messageId) {
+    const appended = store.appendMessageImages(messageId, [imageUrl])
+    if (appended) {
+      logger.info('Post-process image appended to existing chat message', {
+        operation,
+        messageId,
+        workflowId,
+        imagePreview,
+      })
+      return { ok: true, path: 'append' }
+    }
+    logger.warn('appendMessageImages returned false; falling back to new chat message', {
+      operation,
+      messageId,
+      workflowId,
+      imagePreview,
+      messageCount: store.messages.length,
+      messageInStore: store.messages.some((message) => message.id === messageId),
+    })
+  } else {
+    logger.warn('Post-process chat publish missing messageId; falling back to new message', {
+      operation,
+      workflowId,
+      imagePreview,
+    })
+  }
+
+  if (!workflowId) {
+    const reason = messageId ? 'append-failed-no-workflow' : 'missing-workflow-id'
+    logger.error('Cannot publish post-process result to chat', {
+      operation,
+      reason,
+      messageId,
+      imagePreview,
+    })
+    return { ok: false, reason: messageId ? 'append-failed-no-workflow' : 'missing-workflow-id' }
+  }
+
+  store.addMessage({
+    content: {
+      content: title,
+      image: imageUrl,
+      images: [imageUrl],
+    },
+    workflowId,
+    type: 'workflow',
+    generatedImages: [buildGeneratedImage(imageUrl)],
+  })
+  logger.info('Post-process image added as new chat message', {
+    operation,
+    messageId,
+    workflowId,
+    imagePreview,
+  })
+  return { ok: true, path: 'new-message' }
+}
+
+/**
  * Three-dot menu for Ideogram post-processing actions on a stored image.
  */
 export function ImagePostProcessMenu({
@@ -57,7 +149,6 @@ export function ImagePostProcessMenu({
   compactActions = false,
 }: ImagePostProcessMenuProps) {
   const postProcess = useIdeogramPostProcess()
-  const appendMessageImages = useChatStore((state) => state.appendMessageImages)
   const [result, setResult] = useState<PostProcessResult | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -66,11 +157,27 @@ export function ImagePostProcessMenu({
   const run = useCallback(
     async (body: Omit<IdeogramPostProcessBody, 'imageUrl' | 'workflowId'>) => {
       if (!canPostProcess) {
+        logger.warn('Post-process blocked: image URL is not an internal file URL', {
+          operation: body.operation,
+          imagePreview: imageUrl.slice(0, 120),
+          messageId,
+          workflowId,
+        })
         toast.error('Image not available', {
           description: 'Only stored images can be post-processed.',
         })
         return
       }
+
+      logger.info('Starting image post-process', {
+        operation: body.operation,
+        messageId,
+        workflowId,
+        hasMessageId: Boolean(messageId),
+        hasWorkflowId: Boolean(workflowId),
+        imagePreview: imageUrl.slice(0, 120),
+        resolution: 'resolution' in body ? body.resolution : undefined,
+      })
 
       setMenuOpen(false)
       try {
@@ -81,6 +188,13 @@ export function ImagePostProcessMenu({
         })
 
         if (!response.success || !response.output) {
+          logger.error('Post-process API returned unsuccessful response', {
+            operation: body.operation,
+            messageId,
+            workflowId,
+            error: response.error,
+            hasOutput: Boolean(response.output),
+          })
           throw new Error(response.error || 'Post-process failed')
         }
 
@@ -89,10 +203,27 @@ export function ImagePostProcessMenu({
           IDEOGRAM_POST_PROCESS_TITLES[body.operation] ?? 'Post-process result'
 
         if (body.operation === 'describe_v4') {
-          setResult({
-            title,
-            jsonText: JSON.stringify(output.jsonPrompt ?? null, null, 2),
+          const jsonText = JSON.stringify(output.jsonPrompt ?? null, null, 2)
+          if (workflowId) {
+            useChatStore.getState().addMessage({
+              content: `${title}\n\n\`\`\`json\n${jsonText}\n\`\`\``,
+              workflowId,
+              type: 'workflow',
+            })
+            logger.info('Describe result added as new chat message', {
+              operation: body.operation,
+              workflowId,
+              messageId,
+              jsonLength: jsonText.length,
+            })
+            toast.success(title, { description: 'Description added to chat.' })
+            return
+          }
+          logger.warn('Describe result opened in modal only (no workflowId)', {
+            operation: body.operation,
+            messageId,
           })
+          setResult({ title, jsonText })
           return
         }
 
@@ -104,9 +235,42 @@ export function ImagePostProcessMenu({
             : undefined) ||
           (typeof output.content === 'string' ? output.content : undefined)
 
+        logger.info('Post-process API succeeded; extracting result image', {
+          operation: body.operation,
+          messageId,
+          workflowId,
+          hasBaseImageUrl: typeof output.baseImageUrl === 'string',
+          hasImageUrl: typeof output.imageUrl === 'string',
+          imageUrlsCount: Array.isArray(output.imageUrls) ? output.imageUrls.length : 0,
+          hasContent: typeof output.content === 'string',
+          resolvedImagePreview: nextImageUrl?.slice(0, 120),
+        })
+
         if (body.operation === 'layerize_text') {
-          if (nextImageUrl && messageId) {
-            appendMessageImages(messageId, [nextImageUrl])
+          if (nextImageUrl) {
+            const published = publishResultToChat({
+              messageId,
+              workflowId,
+              title,
+              imageUrl: nextImageUrl,
+              operation: body.operation,
+            })
+            if (published.ok) {
+              toast.success(title, { description: 'Result added to chat.' })
+            } else {
+              logger.warn('Layerize chat publish failed; showing modal only', {
+                operation: body.operation,
+                reason: published.reason,
+                messageId,
+                workflowId,
+              })
+            }
+          } else {
+            logger.warn('Layerize returned no image URL', {
+              operation: body.operation,
+              messageId,
+              workflowId,
+            })
           }
           setResult({
             title,
@@ -120,29 +284,48 @@ export function ImagePostProcessMenu({
         }
 
         if (!nextImageUrl) {
+          logger.error('Post-process returned no image URL', {
+            operation: body.operation,
+            messageId,
+            workflowId,
+            outputKeys: Object.keys(output),
+          })
           throw new Error('No image returned from post-process')
         }
 
-        if (messageId) {
-          const appended = appendMessageImages(messageId, [nextImageUrl])
-          if (appended) {
-            toast.success(title, { description: 'Result added to this chat message.' })
-            return
-          }
-          logger.warn('Failed to append post-process image to chat message', {
-            messageId,
-            imageUrl: nextImageUrl.slice(0, 120),
-          })
+        const published = publishResultToChat({
+          messageId,
+          workflowId,
+          title,
+          imageUrl: nextImageUrl,
+          operation: body.operation,
+        })
+        if (published.ok) {
+          toast.success(title, { description: 'Result added to chat.' })
+          return
         }
 
+        logger.warn('Chat publish failed; falling back to result modal', {
+          operation: body.operation,
+          reason: published.reason,
+          messageId,
+          workflowId,
+          imagePreview: nextImageUrl.slice(0, 120),
+        })
         setResult({ title, imageUrl: nextImageUrl })
       } catch (error) {
+        logger.error('Post-process run failed', {
+          operation: body.operation,
+          messageId,
+          workflowId,
+          error: getErrorMessage(error, 'Something went wrong'),
+        })
         toast.error('Post-process failed', {
           description: getErrorMessage(error, 'Something went wrong'),
         })
       }
     },
-    [appendMessageImages, canPostProcess, imageUrl, messageId, postProcess, workflowId]
+    [canPostProcess, imageUrl, messageId, postProcess, workflowId]
   )
 
   if (!canPostProcess) {

@@ -1753,9 +1753,14 @@ describe('transformBlockTool image generator agent tool', () => {
       { id: 'prompt', type: 'long-input' },
     ],
     tools: {
-      access: ['image_generate'],
+      access: ['image_generate', 'ideogram_generate_v4', 'ideogram_remix_v4'],
       config: {
-        tool: () => 'image_generate',
+        tool: (params: Record<string, unknown>) => {
+          if (params.provider === 'ideogram' || params.model === 'generate_v4') {
+            return `ideogram_${String(params.model || 'generate_v4')}`
+          }
+          return 'image_generate'
+        },
         params: (params: Record<string, unknown>) => ({
           provider: params.provider || 'openai',
           model: params.model || 'gpt-image-2',
@@ -1768,7 +1773,7 @@ describe('transformBlockTool image generator agent tool', () => {
   const getAllBlocks = () => [imageGeneratorBlockDef]
   const getTool = (id: string) => ({
     id,
-    name: 'Image Generator',
+    name: id === 'image_generate' ? 'Image Generator' : id,
     description: 'Generate images',
     params: {
       provider: { type: 'string', required: false, visibility: 'user-or-llm' },
@@ -1807,6 +1812,23 @@ describe('transformBlockTool image generator agent tool', () => {
     expect(result?.parameters?.properties).not.toHaveProperty('provider')
     expect(result?.parameters?.properties).not.toHaveProperty('model')
     expect(result?.parameters?.properties).not.toHaveProperty('prompt')
+  })
+
+  it('routes Ideogram via provider/model without selectedOperation', async () => {
+    const result = await transformBlockTool(
+      {
+        type: 'image_generator_v2',
+        title: 'Image Generator',
+        params: {
+          provider: 'ideogram',
+          model: 'generate_v4',
+          prompt: 'A poster',
+        },
+      },
+      { getAllBlocks, getTool }
+    )
+
+    expect(result?.id).toBe('ideogram_generate_v4')
   })
 
   it('exposes unset image_generate params to the LLM except apiKey', async () => {

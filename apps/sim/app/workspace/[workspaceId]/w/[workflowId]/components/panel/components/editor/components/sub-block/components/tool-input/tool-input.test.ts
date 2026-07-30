@@ -27,6 +27,30 @@ describe('isAgentToolPickerBlock', () => {
       expect.arrayContaining(['image_generate'])
     )
   })
+
+  it('does not use an Operation subBlock (Provider/Model route Ideogram)', () => {
+    expect(ImageGeneratorV2Block.subBlocks.some((sb) => sb.id === 'operation')).toBe(false)
+    expect(ImageGeneratorV2Block.tools?.access && ImageGeneratorV2Block.tools.access.length).toBeGreaterThan(
+      1
+    )
+  })
+})
+
+describe('image_generator_v2 agent tool operation UI', () => {
+  it('keeps multi-tool access without an Operation subBlock for agent UI', () => {
+    expect(ImageGeneratorV2Block.subBlocks.some((sb) => sb.id === 'operation')).toBe(false)
+    expect(ImageGeneratorV2Block.tools?.access?.length ?? 0).toBeGreaterThan(1)
+    // getToolIdForOperation without an operation falls through to tools.config.tool → image_generate
+    // when the real block registry is loaded; here we assert the block shape that drives that.
+    expect(typeof ImageGeneratorV2Block.tools?.config?.tool).toBe('function')
+    expect(
+      ImageGeneratorV2Block.tools?.config?.tool?.({
+        provider: 'openai',
+        model: 'gpt-image-2',
+        prompt: 'x',
+      })
+    ).toBe('image_generate')
+  })
 })
 
 describe('buildInitialAgentToolParams', () => {

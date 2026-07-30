@@ -22,6 +22,7 @@ export const SOURCE_LABELS: Record<UsageLogSourceValue, string> = {
   'knowledge-base': 'Knowledge base',
   'voice-input': 'Voice input',
   enrichment: 'Enrichment',
+  'image-post-process': 'Image post-process',
 }
 
 /** Display name for Local mothership (ledger source `copilot` + metadata.backend=local). */

@@ -183,20 +183,22 @@ export function getToolIdForOperation(blockType: string, operation?: string): st
   const block = getBlockConfigurations()[blockType]
   if (!block?.tools?.access) return undefined
 
-  if (block.tools.access.length === 1) {
-    return block.tools.access[0]
+  // Legacy agent-tool pickers stored the concrete tool id as `operation`.
+  if (operation && block.tools.access.includes(operation)) {
+    return operation
   }
 
-  if (operation && block.tools.config?.tool) {
+  if (block.tools.config?.tool) {
     try {
-      return block.tools.config.tool({ operation })
+      const resolved = block.tools.config.tool({
+        ...(operation ? { operation } : {}),
+      })
+      if (typeof resolved === 'string' && resolved.length > 0) {
+        return resolved
+      }
     } catch (error) {
       logger.error('Error selecting tool for operation:', error)
     }
-  }
-
-  if (operation && block.tools.access.includes(operation)) {
-    return operation
   }
 
   return block.tools.access[0]

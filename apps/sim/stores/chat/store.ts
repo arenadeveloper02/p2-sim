@@ -341,14 +341,24 @@ export const useChatStore = create<ChatState>()(
 
         appendMessageImages: (messageId, imageUrls) => {
           const trimmedUrls = imageUrls.map((url) => url.trim()).filter(Boolean)
-          if (trimmedUrls.length === 0) return false
+          if (trimmedUrls.length === 0) {
+            logger.warn('[ChatStore] appendMessageImages skipped: empty imageUrls', { messageId })
+            return false
+          }
 
           let appended = false
+          let skipReason: 'message-not-found' | 'all-duplicates' | undefined
 
           set((state) => {
             const messageExists = state.messages.some((message) => message.id === messageId)
             if (!messageExists) {
-              logger.warn('[ChatStore] Message not found for appendMessageImages', { messageId })
+              skipReason = 'message-not-found'
+              logger.warn('[ChatStore] Message not found for appendMessageImages', {
+                messageId,
+                messageCount: state.messages.length,
+                imageCount: trimmedUrls.length,
+                imagePreview: trimmedUrls[0]?.slice(0, 120),
+              })
               return state
             }
 
@@ -379,6 +389,13 @@ export const useChatStore = create<ChatState>()(
               }
 
               if (urlsToAdd.length === 0) {
+                skipReason = 'all-duplicates'
+                logger.warn('[ChatStore] appendMessageImages skipped: all URLs already present', {
+                  messageId,
+                  requestedCount: trimmedUrls.length,
+                  existingGeneratedCount: message.generatedImages?.length ?? 0,
+                  imagePreview: trimmedUrls[0]?.slice(0, 120),
+                })
                 return message
               }
 
@@ -398,6 +415,14 @@ export const useChatStore = create<ChatState>()(
                 nextContent = { images: urlsToAdd }
               }
 
+              logger.info('[ChatStore] appendMessageImages succeeded', {
+                messageId,
+                addedCount: urlsToAdd.length,
+                totalGeneratedCount: nextGenerated.length,
+                contentWas: typeof prev,
+                imagePreview: urlsToAdd[0]?.slice(0, 120),
+              })
+
               return {
                 ...message,
                 content: nextContent,
@@ -407,6 +432,13 @@ export const useChatStore = create<ChatState>()(
 
             return { messages: newMessages }
           })
+
+          if (!appended && skipReason) {
+            logger.warn('[ChatStore] appendMessageImages returned false', {
+              messageId,
+              skipReason,
+            })
+          }
 
           return appended
         },

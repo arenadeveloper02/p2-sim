@@ -381,14 +381,21 @@ function resolveCustomToolFromReference(
  */
 
 /**
- * Checks if a block supports multiple operations.
- *
- * @param blockType - The block type to check
- * @returns `true` if the block has more than one tool operation available
+ * True when the block has an Operation dropdown/combobox that agent tool UI should mirror.
+ * Do not infer this from `tools.access.length` — blocks like Image Generator route via
+ * Provider/Model (`tools.config.tool`) while listing multiple tool IDs for execution.
  */
 function hasMultipleOperations(blockType: string): boolean {
   const block = getAllBlocks().find((b) => b.type === blockType)
-  return (block?.tools?.access?.length || 0) > 1
+  if (!block) return false
+
+  const operationSubBlock = block.subBlocks.find((sb) => sb.id === 'operation')
+  return Boolean(
+    operationSubBlock &&
+      (operationSubBlock.type === 'dropdown' || operationSubBlock.type === 'combobox') &&
+      Array.isArray(operationSubBlock.options) &&
+      operationSubBlock.options.length > 1
+  )
 }
 
 /**
@@ -399,29 +406,18 @@ function hasMultipleOperations(blockType: string): boolean {
  */
 function getOperationOptions(blockType: string): { label: string; id: string }[] {
   const block = getAllBlocks().find((b) => b.type === blockType)
-  if (!block || !block.tools?.access) return []
+  if (!block) return []
 
   const operationSubBlock = block.subBlocks.find((sb) => sb.id === 'operation')
   if (
     operationSubBlock &&
-    operationSubBlock.type === 'dropdown' &&
+    (operationSubBlock.type === 'dropdown' || operationSubBlock.type === 'combobox') &&
     Array.isArray(operationSubBlock.options)
   ) {
     return operationSubBlock.options as { label: string; id: string }[]
   }
 
-  return block.tools.access.map((toolId) => {
-    try {
-      const toolParams = getToolParametersConfig(toolId)
-      return {
-        id: toolId,
-        label: toolParams?.toolConfig?.name || toolId,
-      }
-    } catch (error) {
-      logger.error(`Error getting tool config for ${toolId}:`, error)
-      return { id: toolId, label: toolId }
-    }
-  })
+  return []
 }
 
 /**
