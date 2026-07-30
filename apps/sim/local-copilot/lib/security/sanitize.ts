@@ -5,8 +5,7 @@ const SECRET_KEY_PATTERN =
 
 const BEARER_PATTERN = /^Bearer\s+[A-Za-z0-9._-]+$/i
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Keys whose string values are resource identifiers, not secrets. */
 const IDENTIFIER_KEY_PATTERN =

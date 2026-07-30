@@ -1141,6 +1141,10 @@ export const chat = pgTable(
     // Output configuration
     outputConfigs: json('output_configs').default('[]'), // Array of {blockId, path} objects
 
+    // Deployment surface: 'chat' renders the built-in chat page; 'app' redirects to an external URL
+    deploymentType: text('deployment_type').notNull().default('chat'), // 'chat', 'app'
+    redirectUrl: text('redirect_url'), // External URL opened from the listing when deploymentType is 'app'
+
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -3291,6 +3295,8 @@ export const deployedChat = pgTable(
     title: text('title'),
     workflowId: text('workflow_id'),
     executingUserId: text('executing_user_id'),
+    archivedAt: timestamp('archived_at'),
+    pinnedAt: timestamp('pinned_at'),
   },
   (table) => ({
     chatIdIdx: index('deployed_chat_chat_id_idx').on(table.chatId),

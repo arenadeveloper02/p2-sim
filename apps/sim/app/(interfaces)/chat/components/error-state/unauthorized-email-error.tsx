@@ -5,8 +5,6 @@ import { X } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { inter } from '@/app/_styles/fonts/inter/inter'
-import { season } from '@/app/_styles/fonts/season/season'
 import { useBrandConfig } from '@/ee/whitelabeling/branding'
 
 interface UnauthorizedEmailErrorProps {
@@ -96,14 +94,8 @@ export function UnauthorizedEmailError({
 
             {/* Error content */}
             <div className='space-y-1 text-center'>
-              <h1
-                className={`${season.className} font-medium text-[32px] text-black tracking-tight`}
-              >
-                Access Denied
-              </h1>
-              <p className={`${inter.className} font-[380] text-[16px] text-muted-foreground`}>
-                {message}
-              </p>
+              <h1 className='font-medium text-[32px] text-black tracking-tight'>Access Denied</h1>
+              <p className='font-normal text-[16px] text-muted-foreground'>{message}</p>
             </div>
 
             {/* Action button with exit icon */}
@@ -120,9 +112,7 @@ export function UnauthorizedEmailError({
           </div>
         </div>
       </div>
-      <div
-        className={`${inter.className} auth-text-muted fixed right-0 bottom-0 left-0 z-50 pb-8 text-center font-[340] text-[13px] leading-relaxed`}
-      >
+      <div className='auth-text-muted fixed right-0 bottom-0 left-0 z-50 pb-8 text-center text-[13px] leading-relaxed'>
         Need help?{' '}
         <a
           href={`mailto:${brandConfig.supportEmail}`}

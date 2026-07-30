@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { defineRouteContract } from '@/lib/api/contracts/types'
 import { workflowIdSchema, workspaceIdSchema } from '@/lib/api/contracts/primitives'
+import { defineRouteContract } from '@/lib/api/contracts/types'
 import type { WorkflowPatch } from '@/local-copilot/lib/types'
 
 /**

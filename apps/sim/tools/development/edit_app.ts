@@ -20,7 +20,8 @@ export const developmentEditAppTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Requested code changes, features, UI updates, or bug fixes for the existing app',
+      description:
+        'Requested code changes, features, UI updates, or bug fixes for the existing app',
     },
     repoName: {
       type: 'string',
@@ -32,7 +33,8 @@ export const developmentEditAppTool: ToolConfig<
       type: 'json',
       required: false,
       visibility: 'user-only',
-      description: 'Optional design PDF — layout, theme, and styling follow the reference when editing UI',
+      description:
+        'Optional design PDF — layout, theme, and styling follow the reference when editing UI',
     },
   },
 
@@ -44,7 +46,7 @@ export const developmentEditAppTool: ToolConfig<
     body: (params) => ({
       userInput: params.userInput,
       repoName: params.repoName,
-      referenceImage: params.referenceImage,
+      ...(params.referenceImage != null ? { referenceImage: params.referenceImage } : {}),
       workspaceId: params._context?.workspaceId,
       workflowId: params._context?.workflowId,
       executionId: params._context?.executionId,

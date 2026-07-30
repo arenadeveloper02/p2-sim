@@ -7,11 +7,12 @@
  * Modes:
  *   --audit     Report populations (exact / fuzzy-unique / ambiguous / orphan / sha256)
  *   --dry-run   Paginate all exact matches; write NDJSON shadow artifact; apply nothing
- *   --apply     Apply exact event-key + existing-run-id matches only
+ *   --apply     Apply exact event-key + existing-run-id + run-window-unique matches
  *   --verify    Snapshot cost invariants after an apply
  *   --rollback  Clear chat_id for ids recorded in a prior --apply NDJSON (--rollback-from=)
  *
- * Fuzzy time-window matches are reported only — never applied.
+ * Fuzzy time-window matches with >1 candidate are reported only — never applied.
+ * Single-candidate run-window matches are treated as exact (`run-window-unique`).
  *
  * Usage:
  *   bun --env-file=apps/sim/.env run scripts/backfill-mothership-chat-attribution.ts --audit --workspace-id=ws_xxx

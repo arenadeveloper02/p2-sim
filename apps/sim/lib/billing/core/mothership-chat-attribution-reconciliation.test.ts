@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  type AttributionMatchCandidate,
   type CostInvariantSnapshot,
   costsMatch,
 } from '@/lib/billing/core/mothership-chat-attribution-reconciliation'
@@ -67,5 +68,19 @@ describe('mothership chat attribution reconciliation helpers', () => {
         }
       )
     ).toEqual({ runId: 'run-1' })
+  })
+
+  it('accepts run-window-unique as an exact attribution strategy', () => {
+    const match: AttributionMatchCandidate = {
+      id: 'usage-1',
+      eventKey: 'a'.repeat(64),
+      source: 'copilot',
+      chatId: '5ae5c46d-5ae1-4e5b-a13c-8303ca7ac291',
+      runId: 'dcecdb78-5988-4ef2-afe8-a5aaea0bf042',
+      strategy: 'run-window-unique',
+    }
+    expect(match.strategy).toBe('run-window-unique')
+    expect(match.chatId).toBeTruthy()
+    expect(match.runId).toBeTruthy()
   })
 })

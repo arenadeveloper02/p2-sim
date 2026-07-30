@@ -36,13 +36,13 @@ import {
 } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { MoreHorizontal, Pin } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { isMacPlatform } from '@/lib/core/utils/platform'
+import { getArenaHubAgentsUrl } from '@/lib/core/utils/urls'
 import { buildFolderTree, getFolderPath } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'
 import { createWorkflowEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -89,9 +89,9 @@ import {
   groupWorkflowsByFolder,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/utils'
 import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
+import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import { resolveBrandDocsUrl } from '@/ee/whitelabeling/org-branding-utils'
-import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
 import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
@@ -306,10 +306,10 @@ const SidebarNavItem = memo(function SidebarNavItem({
       onClick={
         item.onClick
           ? (e) => {
-            if (e.ctrlKey || e.metaKey || e.shiftKey) return
-            e.preventDefault()
-            item.onClick!()
-          }
+              if (e.ctrlKey || e.metaKey || e.shiftKey) return
+              e.preventDefault()
+              item.onClick!()
+            }
           : undefined
       }
       onContextMenu={onContextMenu ? (e) => onContextMenu(e, item.href!) : undefined}
@@ -407,11 +407,15 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
 
   const isMac = isMacPlatform()
 
-  const arenaHubAgentsUrl = useMemo(() => {
-    const base = process.env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL
-    if (!base?.trim()) return null
-    return `${base.replace(/\/$/, '')}/hub/agents`
-  }, [])
+  const [arenaHubAgentsUrl, setArenaHubAgentsUrl] = useState<string | null>(() =>
+    getArenaHubAgentsUrl()
+  )
+
+  useEffect(() => {
+    if (arenaHubAgentsUrl) return
+    const resolved = getArenaHubAgentsUrl()
+    if (resolved) setArenaHubAgentsUrl(resolved)
+  }, [arenaHubAgentsUrl])
 
   const [showCollapsedTooltips, setShowCollapsedTooltips] = useState(isCollapsed)
 
@@ -539,19 +543,19 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
   const collapsedRootItems = useMemo(() => {
     type RootItem =
       | {
-        kind: 'folder'
-        sortOrder: number
-        createdAt?: Date
-        id: string
-        node: (typeof folderTree)[number]
-      }
+          kind: 'folder'
+          sortOrder: number
+          createdAt?: Date
+          id: string
+          node: (typeof folderTree)[number]
+        }
       | {
-        kind: 'workflow'
-        sortOrder: number
-        createdAt?: Date
-        id: string
-        workflow: (typeof regularWorkflows)[number]
-      }
+          kind: 'workflow'
+          sortOrder: number
+          createdAt?: Date
+          id: string
+          workflow: (typeof regularWorkflows)[number]
+        }
     const items: RootItem[] = [
       ...folderTree.map((node) => ({
         kind: 'folder' as const,
@@ -681,8 +685,8 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
       setMenuOpenChatId(chatId)
       const rect = e.currentTarget.getBoundingClientRect()
       handleChatContextMenuBase({
-        preventDefault: () => { },
-        stopPropagation: () => { },
+        preventDefault: () => {},
+        stopPropagation: () => {},
         clientX: rect.right,
         clientY: rect.top,
       } as React.MouseEvent)
@@ -822,9 +826,9 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
     () =>
       fetchedChats
         ? fetchedChats.map((t) => ({
-          ...t,
-          href: `/workspace/${workspaceId}/chat/${t.id}`,
-        }))
+            ...t,
+            href: `/workspace/${workspaceId}/chat/${t.id}`,
+          }))
         : [],
     [fetchedChats, workspaceId]
   )
@@ -838,10 +842,10 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
       permissionConfig.hideTablesTab
         ? []
         : fetchedTables.map((t) => ({
-          id: t.id,
-          name: t.name,
-          href: `/workspace/${workspaceId}/tables/${t.id}`,
-        })),
+            id: t.id,
+            name: t.name,
+            href: `/workspace/${workspaceId}/tables/${t.id}`,
+          })),
     [fetchedTables, workspaceId, permissionConfig.hideTablesTab]
   )
 
@@ -850,11 +854,11 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
       permissionConfig.hideFilesTab
         ? []
         : fetchedFiles.map((f) => ({
-          id: f.id,
-          name: f.name,
-          href: `/workspace/${workspaceId}/files/${f.id}`,
-          folderPath: f.folderPath ? f.folderPath.split('/').filter(Boolean) : undefined,
-        })),
+            id: f.id,
+            name: f.name,
+            href: `/workspace/${workspaceId}/files/${f.id}`,
+            folderPath: f.folderPath ? f.folderPath.split('/').filter(Boolean) : undefined,
+          })),
     [fetchedFiles, workspaceId, permissionConfig.hideFilesTab]
   )
 
@@ -863,10 +867,10 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
       permissionConfig.hideKnowledgeBaseTab
         ? []
         : fetchedKnowledgeBases.map((kb) => ({
-          id: kb.id,
-          name: kb.name,
-          href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
-        })),
+            id: kb.id,
+            name: kb.name,
+            href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
+          })),
     [fetchedKnowledgeBases, workspaceId, permissionConfig.hideKnowledgeBaseTab]
   )
 

@@ -1,7 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('SemrushPositionTrackingOrganicAPI')
 
@@ -18,19 +17,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
     }
 
-    const apiKey = request.headers.get('x-semrush-api-key')?.trim() || env.SEMRUSH_API_KEY
+    const { searchParams } = new URL(request.url)
+    const apiKey = searchParams.get('apiKey')?.trim()
     if (!apiKey) {
-      logger.error('Semrush API key not configured (header or SEMRUSH_API_KEY)')
       return NextResponse.json(
-        {
-          error:
-            'Semrush API key is not configured. Provide a hosted/BYOK key or set SEMRUSH_API_KEY.',
-        },
-        { status: 500 }
+        { error: 'Semrush API key is required. Configure it on the Semrush block.' },
+        { status: 400 }
       )
     }
 
-    const { searchParams } = new URL(request.url)
     const campaignId = searchParams.get('campaignId')
     const urlParam = searchParams.get('url')
 

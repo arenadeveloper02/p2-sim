@@ -46,9 +46,7 @@ export function mapGenerateAppResultToToolResponse(
     const wroteFiles =
       (data.fileCount ?? 0) > 0 && Boolean(data.outputPath || data.absoluteOutputPath)
     const pathHint = data.absoluteOutputPath ?? data.outputPath
-    const buildErrorSummary = data.buildOutput
-      ? formatBuildErrorsSummary(data.buildOutput)
-      : ''
+    const buildErrorSummary = data.buildOutput ? formatBuildErrorsSummary(data.buildOutput) : ''
     const buildErrorsLabel = buildErrorSummary ? `\n\nBuild errors:\n${buildErrorSummary}` : ''
     const vercelErrorLabel = data.vercelDeployError ? `\n\nVercel: ${data.vercelDeployError}` : ''
     const gitPushErrorLabel =

@@ -1,12 +1,12 @@
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
 import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { getLocalCopilotPatchContract } from '@/local-copilot/contracts/local-copilot'
 import { requireLocalCopilotAccess } from '@/local-copilot/lib/access'
 import { getPatch } from '@/local-copilot/lib/persistence/store'
-import { getLocalCopilotPatchContract } from '@/local-copilot/contracts/local-copilot'
 
 const logger = createLogger('LocalCopilotPatchAPI')
 
@@ -21,7 +21,9 @@ export const GET = withRouteHandler(
     if (accessDenied) return accessDenied
 
     const routeParams = await params
-    const parsed = await parseRequest(getLocalCopilotPatchContract, request, { params: routeParams })
+    const parsed = await parseRequest(getLocalCopilotPatchContract, request, {
+      params: routeParams,
+    })
     if (!parsed.success) return parsed.response
 
     const patchRow = await getPatch(parsed.data.params.patchId, session.user.id)

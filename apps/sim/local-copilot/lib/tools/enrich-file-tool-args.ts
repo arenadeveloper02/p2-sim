@@ -87,7 +87,7 @@ export function enrichCreateFileArgs(args: Record<string, unknown>): void {
   // Office shells reject inline content — drop it so create_file can succeed.
   const createPath = resolveCreateFilePath(args)
   if (createPath && OFFICE_FILE_EXTENSION.test(createPath) && 'content' in args) {
-    delete args.content
+    args.content = undefined
   }
 }
 

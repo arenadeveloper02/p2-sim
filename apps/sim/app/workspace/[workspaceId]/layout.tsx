@@ -20,9 +20,7 @@ import { WorkspaceScopeSync } from '@/app/workspace/[workspaceId]/providers/work
 import { WorkspaceRouteLoading } from '@/app/workspace/workspace-route-loading'
 import { getBrandConfig } from '@/ee/whitelabeling/branding'
 import { BrandingProvider } from '@/ee/whitelabeling/components/branding-provider'
-import {
-  getActiveOrgWhitelabelSettings,
-} from '@/ee/whitelabeling/org-branding'
+import { getActiveOrgWhitelabelSettings } from '@/ee/whitelabeling/org-branding'
 import { resolveOrgFaviconUrl } from '@/ee/whitelabeling/org-branding-utils'
 
 export async function generateMetadata(): Promise<Metadata> {

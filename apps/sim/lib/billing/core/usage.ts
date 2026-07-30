@@ -217,8 +217,7 @@ export async function getUserUsageData(
     }
 
     const stats = userStatsData[0]
-    const orgScoped =
-      isOrgScopedSubscription(subscription, userId) && !options?.personalAccount
+    const orgScoped = isOrgScopedSubscription(subscription, userId) && !options?.personalAccount
     const billingPeriod =
       subscription?.periodStart && subscription.periodEnd
         ? { start: subscription.periodStart, end: subscription.periodEnd }

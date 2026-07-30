@@ -1,6 +1,7 @@
 import type { ToolResponse } from '@/tools/types'
 
 export interface SemrushParams {
+  apiKey: string
   /**
    * Block operation id (e.g. url_organic, domain_organic). Mirrors Exa-style tools
    * where the block + tool share the same field names; execution merges this from
@@ -33,6 +34,7 @@ export interface SemrushResponse extends ToolResponse {
 
 /** Params for Semrush Projects API – Organic Positions Report (Position Tracking). */
 export interface SemrushOrganicPositionsParams {
+  apiKey: string
   campaignId: string
   url: string
   dateBegin?: string

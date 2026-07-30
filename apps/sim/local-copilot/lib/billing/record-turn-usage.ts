@@ -88,6 +88,16 @@ export async function recordLocalCopilotTurnUsage(
         }
       }),
     })
+    logger.info('Recorded Local Arena Copilot turn usage', {
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      chatId: params.chatId ?? null,
+      runId: params.runId ?? null,
+      messageId: params.messageId,
+      turnEventKey,
+      componentCount: params.summary.components.length,
+      total: params.summary.total,
+    })
   } catch (error) {
     logger.error('Failed to record Local Arena Copilot turn usage', {
       error: toError(error).message,

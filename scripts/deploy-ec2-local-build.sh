@@ -37,6 +37,6 @@ git fetch
 git checkout "$BRANCH"
 git pull --rebase origin "$BRANCH"
 
-docker compose -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" up -d --build
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" -f "$LOCAL_BUILD_FILE" up -d --build
 
 cd ~

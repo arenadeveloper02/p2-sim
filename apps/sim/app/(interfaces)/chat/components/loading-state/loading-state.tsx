@@ -1,28 +1,18 @@
-import { Skeleton } from '@sim/emcn'
+'use client'
 
+import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
+import { DEPLOYED_CHAT_CANVAS_BG } from '@/app/(interfaces)/chat/constants'
+
+/**
+ * Full-page loading state while deployed chat config is fetched.
+ */
 export function ChatLoadingState() {
   return (
-    <div className='light fixed inset-0 z-[100] flex flex-col bg-[var(--bg)]'>
-      <div className='flex flex-1 items-center justify-center px-4'>
-        <div className='w-full max-w-[410px]'>
-          <div className='flex flex-col items-center justify-center'>
-            {/* Title skeleton */}
-            <div className='space-y-2 text-center'>
-              <Skeleton className='mx-auto h-8 w-32' />
-              <Skeleton className='mx-auto h-4 w-48' />
-            </div>
-
-            {/* Chat skeleton */}
-            <div className='mt-8 w-full space-y-8'>
-              <div className='space-y-2'>
-                <Skeleton className='h-4 w-16' />
-                <Skeleton className='h-10 w-full rounded-[10px]' />
-              </div>
-              <Skeleton className='h-10 w-full rounded-[10px]' />
-            </div>
-          </div>
-        </div>
-      </div>
+    <div
+      className='light fixed inset-0 z-[100] flex items-center justify-center'
+      style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
+    >
+      <DeployedResponseLoader size={160} className='py-0' />
     </div>
   )
 }

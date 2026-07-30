@@ -199,6 +199,8 @@ async function executeDevelopmentGenerateAppDirect(
       userInput: params.userInput,
       repoName: params.repoName,
       privateRepo: params.privateRepo,
+      referenceImage: params.referenceImage,
+      arenaMode: params.arenaMode === true,
     })
   )
 }
@@ -213,8 +215,28 @@ async function executeDevelopmentEditAppDirect(params: Record<string, any>): Pro
       userInput: params.userInput,
       repoName: params.repoName,
       referenceImage: params.referenceImage,
+      arenaMode: params.arenaMode === true,
     })
   )
+}
+
+/**
+ * Server-only chart generation. Kept out of the ToolConfig so the client-bundled
+ * tools registry never pulls in run-chart-generate.server (and its Node deps).
+ */
+async function executeChartGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
+  const { runChartGenerate } = await import('@/lib/chart-generation/run-chart-generate.server')
+  const ctx = (params._context ?? {}) as {
+    userId?: string
+    workspaceId?: string
+    workflowId?: string
+  }
+  const result = await runChartGenerate(params as Record<string, unknown>, {
+    userId: ctx.userId,
+    workspaceId: ctx.workspaceId,
+    workflowId: ctx.workflowId,
+  })
+  return { success: true, output: result }
 }
 
 function resolveToolScope(
@@ -1480,11 +1502,25 @@ export async function executeTool(
           : wrapperBaseToolId
             ? (params: Record<string, any>) =>
                 executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-      : normalizedToolId === 'development_generate_app'
-        ? executeDevelopmentGenerateAppDirect
-        : normalizedToolId === 'development_edit_app'
-          ? executeDevelopmentEditAppDirect
-          : tool.directExecution
+      : normalizedToolId === 'development_generate_app' ||
+          normalizedToolId === 'arena_development_generate_app'
+        ? (params: Record<string, any>) =>
+            executeDevelopmentGenerateAppDirect({
+              ...params,
+              arenaMode:
+                normalizedToolId === 'arena_development_generate_app' ? true : params.arenaMode,
+            })
+        : normalizedToolId === 'development_edit_app' ||
+            normalizedToolId === 'arena_development_edit_app'
+          ? (params: Record<string, any>) =>
+              executeDevelopmentEditAppDirect({
+                ...params,
+                arenaMode:
+                  normalizedToolId === 'arena_development_edit_app' ? true : params.arenaMode,
+              })
+          : normalizedToolId === 'chart_generate'
+            ? executeChartGenerateDirect
+            : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)

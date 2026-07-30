@@ -6,7 +6,9 @@ import type { ChatMessageContentPart } from '@/local-copilot/lib/providers/types
 export function getMessageContentText(content: string | ChatMessageContentPart[]): string {
   if (typeof content === 'string') return content
   return content
-    .filter((part): part is Extract<ChatMessageContentPart, { type: 'text' }> => part.type === 'text')
+    .filter(
+      (part): part is Extract<ChatMessageContentPart, { type: 'text' }> => part.type === 'text'
+    )
     .map((part) => part.text)
     .join('\n')
 }

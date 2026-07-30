@@ -38,10 +38,10 @@ import { UserUsageContent } from '@/app/workspace/[workspaceId]/settings/compone
 import {
   formatBillableWithCredits,
   formatPeriodLabel,
-  formatSourceLabel,
   formatTokenCount,
   formatToolLabel,
   MOTHERSHIP_USAGE_SOURCES,
+  resolveUsageSourceLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
   buildWorkflowAverageCostChartRows,
@@ -199,12 +199,12 @@ function UsageDashboardContent({
         <SettingsSection label='By source'>
           <CostBreakdownTable
             rows={data.bySource}
-            getRowKey={(row) => row.source}
+            getRowKey={(row) => row.label}
             columns={[
               {
                 key: 'source',
                 header: 'Source',
-                render: (row) => formatSourceLabel(row.source),
+                render: (row) => resolveUsageSourceLabel(row),
               },
               {
                 key: 'count',

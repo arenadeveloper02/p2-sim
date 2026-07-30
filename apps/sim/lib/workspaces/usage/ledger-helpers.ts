@@ -12,7 +12,9 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   lte,
+  or,
   type SQL,
   sql,
 } from 'drizzle-orm'
@@ -176,6 +178,50 @@ export function ledgerCostSelect() {
 }
 
 /**
+ * Local mothership (Arena AI) shares ledger `source = copilot` with workspace Copilot.
+ * Rows stamped with metadata.backend = local are the Local mothership path.
+ */
+function isLocalMothershipBackendSql(): SQL {
+  return sql`coalesce(${usageLog.metadata}->>'backend', '') = 'local'`
+}
+
+/**
+ * Grouping key that splits Local mothership from workspace Copilot while keeping
+ * every other source as its ledger enum value.
+ */
+export function bySourceDisplayBucketExpr(): SQL<string> {
+  return sql<string>`case
+    when ${usageLog.source} = 'copilot' and ${isLocalMothershipBackendSql()} then 'arena-ai'
+    else ${usageLog.source}::text
+  end`
+}
+
+/** Ledger enum value for bySource rows (always a valid usage_log_source). */
+export function bySourceLedgerSourceExpr(): SQL<string> {
+  return sql<string>`case
+    when ${usageLog.source} = 'copilot' and ${isLocalMothershipBackendSql()} then 'copilot'
+    else ${usageLog.source}::text
+  end`
+}
+
+/** Usage UI display label, including Arena AI for Local mothership. */
+export function bySourceDisplayLabelExpr(): SQL<string> {
+  return sql<string>`case
+    when ${usageLog.source} = 'copilot' and ${isLocalMothershipBackendSql()} then 'Arena AI'
+    when ${usageLog.source} = 'copilot' then 'Copilot'
+    when ${usageLog.source} = 'workspace-chat' then 'Mothership'
+    when ${usageLog.source} = 'mothership_block' then 'Mothership block'
+    when ${usageLog.source} = 'workflow' then 'Workflow'
+    when ${usageLog.source} = 'wand' then 'Wand'
+    when ${usageLog.source} = 'mcp_copilot' then 'MCP copilot'
+    when ${usageLog.source} = 'knowledge-base' then 'Knowledge base'
+    when ${usageLog.source} = 'voice-input' then 'Voice input'
+    when ${usageLog.source} = 'enrichment' then 'Enrichment'
+    else ${usageLog.source}::text
+  end`
+}
+
+/**
  * Maps ledger category/description into dashboard charge buckets:
  * base run fee, provider/model spend, hosted tools, Cost-block pass-through,
  * and mothership/copilot pricing (kept out of the workflow provider bucket).
@@ -321,6 +367,72 @@ export function executionBucketExpr(useHourly: boolean) {
     : sql`date_trunc('day', ${workflowExecutionLogs.startedAt})`
 }
 
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+
+/** Usage dashboard time-series point shared by workspace and org analytics. */
+export interface UsageTimeSeriesBucket {
+  bucketStart: string
+  billableCost: number
+  rawCost: number
+  executionCount: number
+  activeUserCount: number
+  usage: UsageMetrics
+}
+
+/** Truncates a timestamp to the UTC hour or day boundary used by `date_trunc`. */
+export function truncateToBucketStart(date: Date, useHourly: boolean): Date {
+  const truncated = new Date(date.getTime())
+  if (useHourly) {
+    truncated.setUTCMinutes(0, 0, 0)
+  } else {
+    truncated.setUTCHours(0, 0, 0, 0)
+  }
+  return truncated
+}
+
+/**
+ * Fills zero-valued buckets across `[period.start, period.end]` so Cost & activity
+ * and Active users charts span the selected window even when usage is sparse.
+ */
+export function densifyTimeSeries(
+  buckets: UsageTimeSeriesBucket[],
+  period: ResolvedPeriod,
+  useHourly: boolean
+): UsageTimeSeriesBucket[] {
+  const byStart = new Map(buckets.map((bucket) => [bucket.bucketStart, bucket]))
+  const stepMs = useHourly ? HOUR_MS : DAY_MS
+  const cursor = truncateToBucketStart(ensurePeriodDate(period.start), useHourly)
+  const endMs = ensurePeriodDate(period.end).getTime()
+
+  const densified: UsageTimeSeriesBucket[] = []
+  for (let t = cursor.getTime(); t <= endMs; t += stepMs) {
+    const bucketStart = new Date(t).toISOString()
+    const existing = byStart.get(bucketStart)
+    if (existing) {
+      densified.push(existing)
+      byStart.delete(bucketStart)
+    } else {
+      densified.push({
+        bucketStart,
+        billableCost: 0,
+        rawCost: 0,
+        executionCount: 0,
+        activeUserCount: 0,
+        usage: { ...EMPTY_USAGE_METRICS },
+      })
+    }
+  }
+
+  // Preserve any buckets that did not land on the UTC truncation grid.
+  for (const leftover of byStart.values()) {
+    densified.push(leftover)
+  }
+
+  densified.sort((a, b) => a.bucketStart.localeCompare(b.bucketStart))
+  return densified
+}
+
 export function parseActorType(value: string | null | undefined) {
   if (!value) return null
   const parsed = usageActorTypeSchema.safeParse(value)
@@ -388,8 +500,27 @@ interface ExpensiveWorkflowDbRow {
 }
 
 /**
+ * Period-scoped run count per chat as a scalar subquery.
+ * Kept off the usage_log join so multiple runs cannot multiply sum(cost).
+ */
+export function copilotRunCountSubquery(period: ResolvedPeriod) {
+  const startIso = ensurePeriodDate(period.start).toISOString()
+  const endIso = ensurePeriodDate(period.end).toISOString()
+  return sql<number>`(
+    select count(*)::int
+    from ${copilotRuns}
+    where ${copilotRuns.chatId} = ${copilotChats.id}
+      and ${copilotRuns.startedAt} >= ${startIso}::timestamptz
+      and ${copilotRuns.startedAt} <= ${endIso}::timestamptz
+  )`
+}
+
+/**
  * Builds the most-expensive mothership/copilot chats aggregate query.
  * Pair with {@link mapExpensiveCopilotChatRows} after Promise.all.
+ *
+ * Run counts use a scalar subquery — never join `copilot_runs` alongside
+ * `usage_log`, or one usage row × N runs inflates credits (e.g. 20 → 40).
  */
 export function buildExpensiveCopilotChatsQuery(options: QueryExpensiveCopilotChatsOptions) {
   const { chatScope, ledgerJoinConditions, period } = options
@@ -402,7 +533,7 @@ export function buildExpensiveCopilotChatsQuery(options: QueryExpensiveCopilotCh
       title: copilotChats.title,
       chatType: copilotChats.type,
       userId: copilotChats.userId,
-      runCount: sql<number>`count(distinct ${copilotRuns.id})::int`,
+      runCount: copilotRunCountSubquery(period),
       ...ledgerCostSelect(),
     })
     .from(copilotChats)
@@ -415,10 +546,6 @@ export function buildExpensiveCopilotChatsQuery(options: QueryExpensiveCopilotCh
         inArray(usageLog.source, COPILOT_USAGE_SOURCES)
       )
     )
-    .leftJoin(
-      copilotRuns,
-      and(eq(copilotRuns.chatId, copilotChats.id), ...periodRange(copilotRuns.startedAt, period))
-    )
     .where(chatScope)
     .groupBy(
       copilotChats.id,
@@ -428,6 +555,73 @@ export function buildExpensiveCopilotChatsQuery(options: QueryExpensiveCopilotCh
       copilotChats.type,
       copilotChats.userId
     )
+}
+
+export interface QueryCopilotByChatTypeOptions {
+  chatScope: SQL
+  ledgerJoinConditions: SQL[]
+  period: ResolvedPeriod
+  /** Optional run-table workspace filter (org scope). */
+  runWorkspaceCondition?: SQL
+}
+
+/**
+ * Chat-type rollup with correct costs when chats have multiple runs.
+ * Joins usage_log only (so sum(cost) is not multiplied by run count); run
+ * totals use a type-correlated subquery.
+ */
+export function buildCopilotByChatTypeQuery(options: QueryCopilotByChatTypeOptions) {
+  const { chatScope, ledgerJoinConditions, period, runWorkspaceCondition } = options
+  const startIso = ensurePeriodDate(period.start).toISOString()
+  const endIso = ensurePeriodDate(period.end).toISOString()
+
+  const runCountForType = sql<number>`(
+    select count(*)::int
+    from ${copilotRuns}
+    inner join ${copilotChats} as chat_for_runs
+      on chat_for_runs.id = ${copilotRuns.chatId}
+    where chat_for_runs.type = ${copilotChats.type}
+      and ${copilotRuns.startedAt} >= ${startIso}::timestamptz
+      and ${copilotRuns.startedAt} <= ${endIso}::timestamptz
+      ${runWorkspaceCondition ? sql`and ${runWorkspaceCondition}` : sql``}
+  )`
+
+  const hasRunsInPeriod = sql`exists (
+    select 1
+    from ${copilotRuns}
+    where ${copilotRuns.chatId} = ${copilotChats.id}
+      and ${copilotRuns.startedAt} >= ${startIso}::timestamptz
+      and ${copilotRuns.startedAt} <= ${endIso}::timestamptz
+      ${runWorkspaceCondition ? sql`and ${runWorkspaceCondition}` : sql``}
+  )`
+
+  return dbReplica
+    .select({
+      chatType: copilotChats.type,
+      chatCount: sql<number>`count(distinct ${copilotChats.id})::int`,
+      runCount: runCountForType,
+      ...ledgerCostSelect(),
+    })
+    .from(copilotChats)
+    .leftJoin(
+      usageLog,
+      and(
+        eq(usageLog.chatId, copilotChats.id),
+        inArray(usageLog.source, COPILOT_USAGE_SOURCES),
+        ...ledgerJoinConditions
+      )
+    )
+    .where(
+      and(
+        chatScope,
+        or(
+          and(...periodRange(copilotChats.createdAt, period)),
+          isNotNull(usageLog.id),
+          hasRunsInPeriod
+        )
+      )
+    )
+    .groupBy(copilotChats.type)
 }
 
 /** Maps raw expensive-chat aggregate rows, ranks by billable cost, and slices top N. */

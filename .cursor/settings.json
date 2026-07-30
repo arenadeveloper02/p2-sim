@@ -4,6 +4,9 @@
       "enabled": true,
       "gitUrl": "https://github.com/Egonex-AI/Understand-Anything",
       "gitRef": "main"
+    },
+    "figma": {
+      "enabled": true
     }
   }
 }

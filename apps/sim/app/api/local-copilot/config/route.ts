@@ -1,15 +1,12 @@
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
 import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
-import {
-  getLocalCopilotConfig,
-  isSelfHostedDeployment,
-} from '@/local-copilot/lib/config'
 import { getLocalCopilotConfigContract } from '@/local-copilot/contracts/local-copilot'
+import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
+import { getLocalCopilotConfig, isSelfHostedDeployment } from '@/local-copilot/lib/config'
 
 const logger = createLogger('LocalCopilotConfigAPI')
 

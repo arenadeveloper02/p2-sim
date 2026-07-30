@@ -1,13 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { X } from 'lucide-react'
 import { Button, cn } from '@sim/emcn'
+import { X } from 'lucide-react'
 import { LocalCopilotChat } from '@/local-copilot/components/local-copilot-chat'
-import {
-  useLocalCopilot,
-  useLocalCopilotConfig,
-} from '@/local-copilot/hooks/use-local-copilot'
+import { useLocalCopilot, useLocalCopilotConfig } from '@/local-copilot/hooks/use-local-copilot'
 
 interface LocalCopilotPanelProps {
   workspaceId: string
@@ -61,7 +58,8 @@ export function LocalCopilotPanel({
       >
         {variant === 'drawer' ? <PanelHeader onClose={() => onOpenChange?.(false)} /> : null}
         <div className='flex flex-1 items-center justify-center p-4 text-center text-[13px] text-[var(--text-muted)]'>
-          Arena Copilot is disabled. Set COPILOT_ENABLED=true and configure ANTHROPIC_API_KEY or ANTHROPIC_API_KEY_1 through _3.
+          Arena Copilot is disabled. Set COPILOT_ENABLED=true and configure ANTHROPIC_API_KEY or
+          ANTHROPIC_API_KEY_1 through _3.
         </div>
       </aside>
     )
@@ -123,9 +121,7 @@ function PanelHeader({ onClose, subtitle }: { onClose: () => void; subtitle?: st
     <div className='flex items-center justify-between border-b border-[var(--border-subtle)] px-3 py-2'>
       <div>
         <p className='text-[14px] font-medium text-[var(--text-body)]'>Arena Copilot</p>
-        {subtitle ? (
-          <p className='text-[11px] text-[var(--text-muted)]'>{subtitle}</p>
-        ) : null}
+        {subtitle ? <p className='text-[11px] text-[var(--text-muted)]'>{subtitle}</p> : null}
       </div>
       <Button size='sm' variant='ghost' onClick={onClose} aria-label='Close Arena Copilot'>
         <X className='size-[14px]' />

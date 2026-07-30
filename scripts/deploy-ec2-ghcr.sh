@@ -1,12 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_DEPLOY_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEPLOY_ROOT="${DEPLOY_ROOT:-}"
 IMAGE_TAG_ARG="${1:-}"
 DEPLOY_BRANCH="${2:-${DEPLOY_BRANCH:-}}"
+# Matches GHCR_GIT_TAG_PREFIX in .github/workflows/images.yml — locks Docker tag → build SHA.
+GHCR_GIT_TAG_PREFIX="${GHCR_GIT_TAG_PREFIX:-ghcr/}"
 
 if [ -z "$IMAGE_TAG_ARG" ]; then
   echo "Usage: $0 <image-tag> [branch]" >&2
-  echo "Example: $0 fix-prod-secrets-0.0.2 fix/prod-secrets" >&2
+  echo "Example (tag-only): $0 fix-prod-secrets-0.0.2" >&2
+  echo "  Checks out git tag ${GHCR_GIT_TAG_PREFIX}fix-prod-secrets-0.0.2 (build SHA) and pulls GHCR :fix-prod-secrets-0.0.2" >&2
+  echo "Example (branch override): $0 fix-prod-secrets-0.0.2 fix/prod-secrets" >&2
   exit 1
 fi
 
@@ -20,30 +27,43 @@ if [ -z "$DEPLOY_ROOT" ]; then
   fi
 fi
 
-if [ -n "$DEPLOY_BRANCH" ]; then
+export IMAGE_TAG="${IMAGE_TAG:-$IMAGE_TAG_ARG}"
+GIT_LOCK_TAG="${GHCR_GIT_TAG_PREFIX}${IMAGE_TAG}"
+
+checkout_deploy_ref() {
+  local ref="$1"
+  local ref_kind="$2"
+
   if [ ! -d "$DEPLOY_ROOT/.git" ]; then
     echo "Git repository not found: $DEPLOY_ROOT" >&2
-    echo "Set DEPLOY_ROOT=/path/to/p2-sim before passing a branch." >&2
+    echo "Set DEPLOY_ROOT=/path/to/p2-sim before deploying." >&2
     exit 1
   fi
 
-  echo "Updating ${DEPLOY_ROOT} to branch ${DEPLOY_BRANCH}"
+  echo "Updating ${DEPLOY_ROOT} to ${ref_kind} ${ref}"
   cd "$DEPLOY_ROOT"
-  git stash
-  git fetch origin "$DEPLOY_BRANCH"
-  git checkout "$DEPLOY_BRANCH"
-  git pull --rebase origin "$DEPLOY_BRANCH"
+  git stash || true
+  git fetch origin --tags --force
+  git fetch origin "$ref"
+  git checkout "$ref"
+  if [ "$ref_kind" = "branch" ]; then
+    git pull --rebase origin "$ref"
+  fi
+}
+
+if [ -n "$DEPLOY_BRANCH" ]; then
+  checkout_deploy_ref "$DEPLOY_BRANCH" "branch"
+else
+  checkout_deploy_ref "$GIT_LOCK_TAG" "git lock tag"
 fi
 
 COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_ROOT}/docker-compose.test-env.yml}"
 
 if [ ! -f "$COMPOSE_FILE" ]; then
   echo "Compose file not found: $COMPOSE_FILE" >&2
-  echo "Set DEPLOY_ROOT=/path/to/p2-sim, COMPOSE_FILE=/path/to/docker-compose.test-env.yml, or pass the branch as the second argument." >&2
+  echo "Set DEPLOY_ROOT=/path/to/p2-sim or COMPOSE_FILE=/path/to/docker-compose.test-env.yml." >&2
   exit 1
 fi
-
-export IMAGE_TAG="${IMAGE_TAG:-$IMAGE_TAG_ARG}"
 
 SIM_ENV_FILE="${DEPLOY_ROOT}/apps/sim/.env"
 REALTIME_ENV_FILE="${DEPLOY_ROOT}/apps/realtime/.env"
@@ -70,11 +90,15 @@ if [ -n "$GHCR_PASSWORD" ]; then
 fi
 
 echo "Deploying IMAGE_TAG=${IMAGE_TAG}"
+echo "Git ref: ${DEPLOY_BRANCH:-$GIT_LOCK_TAG}"
 echo "Using compose file: ${COMPOSE_FILE}"
+echo "Note: migrations are not started by this script; run them manually when ready."
 
 cd "$DEPLOY_ROOT"
-docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" pull simstudio realtime migrations
-docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" up -d --remove-orphans
+# Pull app images only. Migrations stay manual (p2prod puts them behind the
+# `migrations` compose profile; do not auto-start them here).
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" pull simstudio realtime
+docker compose "${COMPOSE_ENV_ARGS[@]}" -f "$COMPOSE_FILE" up -d --remove-orphans simstudio realtime db
 
 deadline=$((SECONDS + ${DEPLOY_HEALTH_TIMEOUT_SECONDS:-240}))
 

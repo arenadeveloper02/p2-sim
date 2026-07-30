@@ -9,8 +9,7 @@ export function toCopilotServerToolContext(
   return {
     userId: ctx.userId,
     workspaceId: ctx.workspaceId,
-    workflowId:
-      workflowId ?? ctx.workflowId ?? ctx.structuredContext.workflow?.id ?? '',
+    workflowId: workflowId ?? ctx.workflowId ?? ctx.structuredContext.workflow?.id ?? '',
     userPermission: ctx.userPermission ?? 'write',
     chatId: ctx.chatId,
     messageId: ctx.messageId,

@@ -86,9 +86,7 @@ export const ChartGeneratorBlock: BlockConfig = {
           return { field: 'operation', value: 'generate' }
         }
         const inner =
-          typeof subBlock.condition === 'function'
-            ? subBlock.condition(values)
-            : subBlock.condition
+          typeof subBlock.condition === 'function' ? subBlock.condition(values) : subBlock.condition
         return { field: 'operation', value: 'generate', and: inner }
       },
       dependsOn: [...(subBlock.dependsOn ?? []), 'operation', 'model'],
@@ -136,7 +134,23 @@ export const ChartGeneratorBlock: BlockConfig = {
     },
   ],
   tools: {
-    access: ['chart_validate'],
+    access: ['chart_validate', 'chart_generate'],
+    config: {
+      // Canvas execution is intercepted by ChartGeneratorBlockHandler (by block
+      // type) before the generic tool path, so this selector only drives agent /
+      // copilot tool usage: 'generate' -> LLM chart tool, 'validate' -> normalizer.
+      tool: (params) => (params.operation === 'validate' ? 'chart_validate' : 'chart_generate'),
+      params: (params) => {
+        if (params.operation === 'validate') {
+          return { content: params.rawContent ?? params.content }
+        }
+        // Forward the block's own fields as-is (model + provider credentials +
+        // prompts already live on the block config in the exact shape
+        // runChartGenerate expects). Only strip the routing/validate-only keys.
+        const { operation, rawContent, content, ...generateParams } = params
+        return generateParams
+      },
+    },
   },
   inputs: {
     operation: { type: 'string', description: 'generate or validate' },

@@ -53,7 +53,7 @@ export const developmentGenerateAppTool: ToolConfig<
       userInput: params.userInput,
       repoName: params.repoName,
       privateRepo: params.privateRepo,
-      referenceImage: params.referenceImage,
+      ...(params.referenceImage != null ? { referenceImage: params.referenceImage } : {}),
       workspaceId: params._context?.workspaceId,
       workflowId: params._context?.workflowId,
       executionId: params._context?.executionId,
@@ -63,7 +63,10 @@ export const developmentGenerateAppTool: ToolConfig<
   transformResponse: async (response) => {
     const data = await response.json()
     if (!response.ok) {
-      return mapGenerateAppResultToToolResponse({ success: false, error: data.error ?? response.statusText })
+      return mapGenerateAppResultToToolResponse({
+        success: false,
+        error: data.error ?? response.statusText,
+      })
     }
     return mapGenerateAppResultToToolResponse(data)
   },

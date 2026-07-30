@@ -7,7 +7,7 @@ import {
 } from '@/lib/copilot/tools/server/base-tool'
 import { writeWorkspaceFileByPath } from '@/lib/copilot/vfs/resource-writer'
 import { isPlanAliasPath } from '@/lib/copilot/vfs/workflow-aliases'
-import { inferContentType, getDocumentFormatInfo } from './workspace-file'
+import { getDocumentFormatInfo, inferContentType } from './workspace-file'
 
 const logger = createLogger('CreateFileServerTool')
 const CREATE_FILE_TOOL_ID = 'create_file'

@@ -12,16 +12,42 @@ import type { UsagePeriod } from '@/app/workspace/[workspaceId]/settings/compone
 export const SOURCE_LABELS: Record<UsageLogSourceValue, string> = {
   workflow: 'Workflow',
   wand: 'Wand',
-  /** Arena Copilot / local mothership (Sim `models.ts` pricing). */
-  copilot: 'Arena Copilot',
-  /** Sim Cloud mothership home chat (Go-priced). */
-  'workspace-chat': 'Sim Mothership',
+  /** Workspace panel Copilot chat (not Local mothership). */
+  copilot: 'Copilot',
+  /** Cloud / Sim mothership home chat (Go-priced). */
+  'workspace-chat': 'Mothership',
   mcp_copilot: 'MCP copilot',
-  /** Sim Cloud mothership block in a workflow (Go-priced). */
-  mothership_block: 'Sim Mothership block',
+  /** Cloud mothership block in a workflow (Go-priced). */
+  mothership_block: 'Mothership block',
   'knowledge-base': 'Knowledge base',
   'voice-input': 'Voice input',
   enrichment: 'Enrichment',
+}
+
+/** Display name for Local mothership (ledger source `copilot` + metadata.backend=local). */
+export const ARENA_AI_SOURCE_LABEL = 'Arena AI'
+
+/** True when a usage_log row is Local mothership (Arena AI), not workspace Copilot. */
+export function isLocalMothershipUsageMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false
+  return (metadata as { backend?: unknown }).backend === 'local'
+}
+
+/**
+ * Resolves the Usage UI source label.
+ * Local mothership shares ledger source `copilot` with workspace Copilot — distinguish via
+ * metadata.backend or an analytics-provided label override.
+ */
+export function resolveUsageSourceLabel(params: {
+  source: string
+  label?: string | null
+  metadata?: unknown
+}): string {
+  if (params.label?.trim()) return params.label.trim()
+  if (params.source === 'copilot' && isLocalMothershipUsageMetadata(params.metadata)) {
+    return ARENA_AI_SOURCE_LABEL
+  }
+  return formatSourceLabel(params.source)
 }
 
 /** Human-readable labels for high-level charge-type buckets. */

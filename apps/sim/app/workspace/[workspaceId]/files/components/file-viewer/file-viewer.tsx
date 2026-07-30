@@ -13,7 +13,9 @@ import {
 } from '@/hooks/use-file-content-source'
 import { CsvTablePreview } from './csv-table-preview'
 import { DocxPreview } from './docx-preview'
+import { getEmptyDocPreviewMessage, getZeroByteDocPreviewMessage } from './empty-doc-preview'
 import { resolveFileCategory } from './file-category'
+import { GeneratingPreviewEngagement } from './generating-preview-engagement'
 import { ImagePreview } from './image-preview'
 import type { PdfDocumentSource } from './pdf-viewer'
 import { PptxPreview } from './pptx-preview'
@@ -26,11 +28,6 @@ import {
   resolvePreviewError,
 } from './preview-shared'
 import { TextEditor } from './text-editor'
-import {
-  getEmptyDocPreviewMessage,
-  getZeroByteDocPreviewMessage,
-} from './empty-doc-preview'
-import { GeneratingPreviewEngagement } from './generating-preview-engagement'
 import { useDocPreviewBinary } from './use-doc-preview-binary'
 import { useLocalGeneratingPreviewEngagement } from './use-local-generating-preview-engagement'
 import { XlsxPreview } from './xlsx-preview'

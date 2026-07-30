@@ -3,9 +3,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { authorizeOAuth2Contract } from '@/lib/api/contracts/oauth-connections'
 import { parseRequest } from '@/lib/api/server'
 import { auth, getSession } from '@/lib/auth/auth'
-import { createConnectDraft } from '@/lib/credentials/connect-draft'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { createConnectDraft } from '@/lib/credentials/connect-draft'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('OAuth2Authorize')

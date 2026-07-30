@@ -11,6 +11,7 @@ import {
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { resolveDateRange } from '@/app/api/users/me/usage-logs/shared'
+import { resolveUsageLogSourceLabel } from '@/app/api/users/me/usage-logs/source-labels'
 
 const logger = createLogger('UsageLogsAPI')
 
@@ -49,6 +50,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     id: log.id,
     createdAt: log.createdAt,
     source: log.source,
+    sourceLabel: resolveUsageLogSourceLabel(log.source, log.metadata),
     workflowName: log.workflowName ?? null,
     creditCost: creditsByLogId[log.id] ?? 0,
     dollarCost: log.cost,
