@@ -29,6 +29,11 @@ describe('resolveImageProviderForModel', () => {
     expect(resolveImageProviderForModel('remix_v4')).toBe('ideogram')
   })
 
+  it('maps legacy Ideogram models to ideogram', () => {
+    expect(resolveImageProviderForModel('edit')).toBe('ideogram')
+    expect(resolveImageProviderForModel('generate_transparent_v3')).toBe('ideogram')
+  })
+
   it('maps Fal.ai model aliases to falai', () => {
     expect(resolveImageProviderForModel('nano-banana-2')).toBe('falai')
     expect(resolveImageProviderForModel('flux-2-pro')).toBe('falai')
@@ -64,10 +69,14 @@ describe('getImageBlockModelOptionsForProvider', () => {
     expect(getImageBlockModelOptionsForProvider('ideogram').map((option) => option.id)).toEqual([
       'generate_v4',
       'remix_v4',
-      'edit',
       'inpaint_v3',
-      'generate_transparent_v3',
     ])
+  })
+
+  it('does not list removed Ideogram models in the picker', () => {
+    const ids = getImageBlockModelOptionsForProvider('ideogram').map((option) => option.id)
+    expect(ids).not.toContain('edit')
+    expect(ids).not.toContain('generate_transparent_v3')
   })
 
   it('returns only OpenAI models when provider is openai', () => {

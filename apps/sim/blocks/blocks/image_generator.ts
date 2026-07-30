@@ -1292,7 +1292,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     model: {
       type: 'string',
       description:
-        'Image generation model. For Ideogram: generate_v4, remix_v4, edit, inpaint_v3, generate_transparent_v3',
+        'Image generation model. For Ideogram: generate_v4 (optional Transparent Background), remix_v4, inpaint_v3',
     },
     size: { type: 'string', description: 'Image size' },
     aspectRatio: { type: 'string', description: 'Image aspect ratio' },
@@ -1347,7 +1347,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
     useMagicPrompt: {
       type: 'boolean',
       description:
-        'When true on Generate 4.0, rewrites the text prompt into Ideogram JSON format before generating',
+        'When true on Generate 4.0 (opaque only), rewrites the text prompt into Ideogram JSON format before generating',
+    },
+    transparentBackground: {
+      type: 'boolean',
+      description:
+        'When true on Generate 4.0, routes to Ideogram Transparent 3.0 for a native alpha channel',
     },
   },
   outputs: {

@@ -80,7 +80,10 @@ const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
   },
 ]
 
-/** Ideogram create/edit models — tool id is `ideogram_${id}`. */
+/**
+ * Ideogram models shown in the Image Generator picker.
+ * Tool id is `ideogram_${id}` (Generate 4.0 + Transparent routes to generate_transparent_v3).
+ */
 const IDEOGRAM_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
   {
     id: 'generate_v4',
@@ -97,27 +100,19 @@ const IDEOGRAM_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     maxReferenceImages: 0,
   },
   {
-    id: 'edit',
-    label: 'Edit with Prompt',
-    provider: 'ideogram',
-    supportsReferenceImages: false,
-    maxReferenceImages: 0,
-  },
-  {
     id: 'inpaint_v3',
     label: 'Inpaint 3.0',
     provider: 'ideogram',
     supportsReferenceImages: false,
     maxReferenceImages: 0,
   },
-  {
-    id: 'generate_transparent_v3',
-    label: 'Generate Transparent 3.0',
-    provider: 'ideogram',
-    supportsReferenceImages: false,
-    maxReferenceImages: 0,
-  },
 ]
+
+/**
+ * Removed from the picker but still routed for legacy saved workflows.
+ * `edit` → ideogram_edit; `generate_transparent_v3` → ideogram_generate_transparent_v3.
+ */
+export const IDEOGRAM_LEGACY_IMAGE_MODEL_IDS = ['edit', 'generate_transparent_v3'] as const
 
 export const FALAI_IMAGE_MODEL_IDS = [
   'nano-banana-2',
@@ -244,6 +239,10 @@ export function resolveImageProviderForModel(modelId: string): ImageProvider | u
     return 'ideogram'
   }
 
+  if ((IDEOGRAM_LEGACY_IMAGE_MODEL_IDS as readonly string[]).includes(normalized)) {
+    return 'ideogram'
+  }
+
   return undefined
 }
 
@@ -347,10 +346,20 @@ export function getImageBlockModelDefinition(
   return IMAGE_BLOCK_MODEL_DEFINITIONS.find((model) => model.id === normalized)
 }
 
-/** True when the model id is an Ideogram Image Generator model. */
+/** Picker + legacy Ideogram model ids that still route to Ideogram tools. */
+export const IDEOGRAM_RESOLVABLE_IMAGE_MODEL_IDS = [
+  ...IDEOGRAM_MODEL_DEFINITIONS.map((model) => model.id),
+  ...IDEOGRAM_LEGACY_IMAGE_MODEL_IDS,
+] as const
+
+/** True when the model id is an Ideogram Image Generator model (including legacy). */
 export function isIdeogramImageModel(modelId: string | undefined): boolean {
   if (!modelId) return false
-  return getImageBlockModelDefinition(modelId)?.provider === 'ideogram'
+  const normalized = normalizeImageModelId(modelId) ?? modelId
+  if (getImageBlockModelDefinition(normalized)?.provider === 'ideogram') {
+    return true
+  }
+  return (IDEOGRAM_RESOLVABLE_IMAGE_MODEL_IDS as readonly string[]).includes(normalized)
 }
 
 export function getReferenceImageModelIds(): string[] {

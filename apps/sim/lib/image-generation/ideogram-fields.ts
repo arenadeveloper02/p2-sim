@@ -1,8 +1,10 @@
 import {
   IDEOGRAM_IMAGE_MODEL_IDS,
+  IDEOGRAM_RESOLVABLE_IMAGE_MODEL_IDS,
   isIdeogramImageModel,
   normalizeImageModelId,
 } from '@/lib/image-generation/block-model-config'
+import type { SubBlockCondition } from '@/lib/workflows/subblocks/visibility'
 import type { SubBlockConfig } from '@/blocks/types'
 import { normalizeFileInput, parseOptionalBooleanInput } from '@/blocks/utils'
 import {
@@ -12,7 +14,7 @@ import {
   UPSCALE_FACTOR_OPTIONS,
 } from '@/tools/ideogram/constants'
 
-/** Ideogram create/edit model ids shown on Image Generator (also tool suffix). */
+/** Ideogram picker model ids shown on Image Generator. */
 export const IDEOGRAM_GENERATOR_MODELS = IDEOGRAM_IMAGE_MODEL_IDS
 
 export type IdeogramGeneratorModel = (typeof IDEOGRAM_GENERATOR_MODELS)[number]
@@ -23,20 +25,14 @@ export const IDEOGRAM_GENERATOR_OPERATIONS = IDEOGRAM_GENERATOR_MODELS
 /** @deprecated Use IdeogramGeneratorModel */
 export type IdeogramGeneratorOperation = IdeogramGeneratorModel
 
-export const IDEOGRAM_GENERATOR_TOOL_IDS = IDEOGRAM_GENERATOR_MODELS.map(
+/** Tool access list: picker models plus legacy edit / generate_transparent_v3. */
+export const IDEOGRAM_GENERATOR_TOOL_IDS = IDEOGRAM_RESOLVABLE_IMAGE_MODEL_IDS.map(
   (model) => `ideogram_${model}` as const
 )
 
 const IMAGE_MODELS = ['remix_v4', 'inpaint_v3'] as const
-const PROMPT_MODELS = ['generate_transparent_v3', 'inpaint_v3', 'edit'] as const
 const TEXT_PROMPT_MODELS = ['generate_v4', 'remix_v4'] as const
-const RESOLUTION_V4_MODELS = ['generate_v4', 'remix_v4'] as const
-const RENDERING_SPEED_MODELS = [
-  'generate_v4',
-  'remix_v4',
-  'generate_transparent_v3',
-  'inpaint_v3',
-] as const
+const RENDERING_SPEED_MODELS = ['generate_v4', 'remix_v4', 'inpaint_v3'] as const
 
 function toDropdownOptions(values: readonly string[]) {
   return values.map((id) => ({ label: id, id }))
@@ -52,13 +48,89 @@ function ideogramModel(
   }
 }
 
+function normalizedModel(values: Record<string, unknown>): string | undefined {
+  return typeof values.model === 'string' ? normalizeImageModelId(values.model) : undefined
+}
+
+/** Generate 4.0 without Transparent — V4 Magic Prompt / JSON. */
+function generateV4Opaque(values: Record<string, unknown>): SubBlockCondition {
+  const model = normalizedModel(values)
+  if (
+    values.provider === 'ideogram' &&
+    model === 'generate_v4' &&
+    values.transparentBackground !== true
+  ) {
+    return { field: 'provider', value: 'ideogram' }
+  }
+  return { field: 'provider', value: '__never__' }
+}
+
+/**
+ * Transparent-path fields: Generate 4.0 + Transparent, or legacy generate_transparent_v3.
+ */
+function transparentGeneratePath(values: Record<string, unknown>): SubBlockCondition {
+  const model = normalizedModel(values)
+  const transparent = values.transparentBackground === true
+  if (model === 'generate_transparent_v3' || (model === 'generate_v4' && transparent)) {
+    return { field: 'provider', value: 'ideogram' }
+  }
+  return { field: 'provider', value: '__never__' }
+}
+
+/** V4 resolution: Remix always; Generate 4.0 only when Transparent is off. */
+function resolutionV4Path(values: Record<string, unknown>): SubBlockCondition {
+  const model = normalizedModel(values)
+  if (model === 'remix_v4') {
+    return { field: 'provider', value: 'ideogram' }
+  }
+  if (model === 'generate_v4' && values.transparentBackground !== true) {
+    return { field: 'provider', value: 'ideogram' }
+  }
+  return { field: 'provider', value: '__never__' }
+}
+
+/** Copyright detection: Remix, or Generate 4.0 when Transparent is off. */
+function copyrightDetectionPath(values: Record<string, unknown>): SubBlockCondition {
+  const model = normalizedModel(values)
+  if (model === 'remix_v4') {
+    return { field: 'provider', value: 'ideogram' }
+  }
+  if (model === 'generate_v4' && values.transparentBackground !== true) {
+    return { field: 'provider', value: 'ideogram' }
+  }
+  return { field: 'provider', value: '__never__' }
+}
+
+function inpaintOrTransparentPath(values: Record<string, unknown>): SubBlockCondition {
+  const model = normalizedModel(values)
+  if (model === 'inpaint_v3') {
+    return ideogramModel('inpaint_v3') as SubBlockCondition
+  }
+  return transparentGeneratePath(values)
+}
+
+/**
+ * True when Generate 4.0 Transparent is on, or the legacy transparent model is selected.
+ */
+export function isIdeogramTransparentGenerate(params: Record<string, unknown>): boolean {
+  const model =
+    typeof params.model === 'string'
+      ? normalizeImageModelId(params.model)
+      : typeof params.operation === 'string'
+        ? normalizeImageModelId(params.operation)
+        : undefined
+  if (model === 'generate_transparent_v3') return true
+  if (model === 'generate_v4' && parseOptionalBooleanInput(params.transparentBackground) === true) {
+    return true
+  }
+  return false
+}
+
 /** @deprecated Use IDEOGRAM_IMAGE_MODELS from block-model-config. */
 export const IDEOGRAM_OPERATION_OPTIONS = [
   { label: 'Generate 4.0', id: 'generate_v4' },
   { label: 'Remix 4.0', id: 'remix_v4' },
-  { label: 'Edit with Prompt', id: 'edit' },
   { label: 'Inpaint 3.0', id: 'inpaint_v3' },
-  { label: 'Generate Transparent 3.0', id: 'generate_transparent_v3' },
 ] as const
 
 /** @deprecated Use IDEOGRAM_GENERATOR_TOOL_IDS — kept for Image Generator access list. */
@@ -90,13 +162,22 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     dependsOn: ['provider', 'model'],
   },
   {
+    id: 'transparentBackground',
+    title: 'Transparent Background',
+    type: 'switch',
+    tooltip:
+      'Generates with a native alpha channel via Ideogram Transparent 3.0. Disables Magic Prompt and JSON prompt (V4-only).',
+    condition: ideogramModel('generate_v4'),
+    dependsOn: ['provider', 'model'],
+  },
+  {
     id: 'useMagicPrompt',
     title: 'Magic Prompt',
     type: 'switch',
     tooltip:
       'Rewrites your text prompt into Ideogram’s structured JSON prompt format for stronger composition and typography results.',
-    condition: ideogramModel('generate_v4'),
-    dependsOn: ['provider', 'model'],
+    condition: generateV4Opaque,
+    dependsOn: ['provider', 'model', 'transparentBackground'],
   },
   {
     id: 'jsonPrompt',
@@ -106,19 +187,19 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     placeholder:
       '{ "high_level_description": "...", "compositional_deconstruction": { ... } }',
     mode: 'advanced',
-    condition: ideogramModel('generate_v4'),
-    dependsOn: ['provider', 'model'],
+    condition: generateV4Opaque,
+    dependsOn: ['provider', 'model', 'transparentBackground'],
   },
   {
     id: 'ideogramPrompt',
     title: 'Prompt',
     type: 'long-input',
-    placeholder: 'Describe the desired image or edit…',
+    placeholder: 'Describe the desired edit…',
     required: {
       field: 'model',
-      value: ['generate_transparent_v3', 'inpaint_v3', 'edit'],
+      value: 'inpaint_v3',
     },
-    condition: ideogramModel(PROMPT_MODELS),
+    condition: ideogramModel('inpaint_v3'),
     dependsOn: ['provider', 'model'],
   },
   {
@@ -186,62 +267,14 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     dependsOn: ['provider', 'model'],
   },
   {
-    id: 'uploadImages',
-    title: 'Images',
-    type: 'file-upload',
-    acceptedTypes: 'image/jpeg,image/png,image/webp',
-    multiple: true,
-    canonicalParamId: 'images',
-    mode: 'basic',
-    condition: ideogramModel('edit'),
-    dependsOn: ['provider', 'model'],
-  },
-  {
-    id: 'imagesRef',
-    title: 'Images',
-    type: 'short-input',
-    placeholder: 'Reference images from a previous block',
-    canonicalParamId: 'images',
-    mode: 'advanced',
-    condition: ideogramModel('edit'),
-    dependsOn: ['provider', 'model'],
-  },
-  {
-    id: 'imageUrls',
-    title: 'Image URLs',
-    type: 'code',
-    language: 'json',
-    placeholder: '["https://example.com/image.png"]',
-    mode: 'advanced',
-    condition: ideogramModel('edit'),
-    dependsOn: ['provider', 'model'],
-  },
-  {
-    id: 'editImageUrl',
-    title: 'Image URL (alternative)',
-    type: 'short-input',
-    placeholder: 'Single publicly accessible image URL (or use Image URLs above for multiple)',
-    mode: 'basic',
-    condition: ideogramModel('edit'),
-    dependsOn: ['provider', 'model'],
-  },
-  {
     id: 'resolutionV4',
     title: 'Resolution',
     type: 'dropdown',
     options: toDropdownOptions(RESOLUTION_V4_OPTIONS),
     clearable: true,
     value: () => '',
-    condition: ideogramModel(RESOLUTION_V4_MODELS),
-    dependsOn: ['provider', 'model'],
-  },
-  {
-    id: 'ideogramResolution',
-    title: 'Resolution',
-    type: 'short-input',
-    placeholder: 'e.g. 1024x1024',
-    condition: ideogramModel('edit'),
-    dependsOn: ['provider', 'model'],
+    condition: resolutionV4Path,
+    dependsOn: ['provider', 'model', 'transparentBackground'],
   },
   {
     id: 'ideogramAspectRatio',
@@ -256,8 +289,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     ],
     clearable: true,
     value: () => '',
-    condition: ideogramModel(['generate_transparent_v3', 'edit']),
-    dependsOn: ['provider', 'model'],
+    condition: transparentGeneratePath,
+    dependsOn: ['provider', 'model', 'transparentBackground'],
   },
   {
     id: 'renderingSpeed',
@@ -286,15 +319,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     options: toDropdownOptions(UPSCALE_FACTOR_OPTIONS),
     clearable: true,
     value: () => '',
-    condition: ideogramModel('generate_transparent_v3'),
-    dependsOn: ['provider', 'model'],
-  },
-  {
-    id: 'transparentBackground',
-    title: 'Transparent Background',
-    type: 'switch',
-    condition: ideogramModel('edit'),
-    dependsOn: ['provider', 'model'],
+    condition: transparentGeneratePath,
+    dependsOn: ['provider', 'model', 'transparentBackground'],
   },
   {
     id: 'imageWeight',
@@ -310,8 +336,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     title: 'Copyright Detection',
     type: 'switch',
     mode: 'advanced',
-    condition: ideogramModel(['generate_v4', 'remix_v4']),
-    dependsOn: ['provider', 'model'],
+    condition: copyrightDetectionPath,
+    dependsOn: ['provider', 'model', 'transparentBackground'],
   },
   {
     id: 'numImages',
@@ -319,8 +345,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     type: 'short-input',
     placeholder: '1',
     mode: 'advanced',
-    condition: ideogramModel(['generate_transparent_v3', 'inpaint_v3', 'edit']),
-    dependsOn: ['provider', 'model'],
+    condition: inpaintOrTransparentPath,
+    dependsOn: ['provider', 'model', 'transparentBackground'],
   },
   {
     id: 'seed',
@@ -328,8 +354,8 @@ export const IDEOGRAM_IMAGE_GENERATOR_SUB_BLOCKS: SubBlockConfig[] = [
     type: 'short-input',
     placeholder: 'Optional seed',
     mode: 'advanced',
-    condition: ideogramModel(['generate_transparent_v3', 'inpaint_v3', 'edit']),
-    dependsOn: ['provider', 'model'],
+    condition: inpaintOrTransparentPath,
+    dependsOn: ['provider', 'model', 'transparentBackground'],
   },
 ]
 
@@ -346,7 +372,7 @@ export function isIdeogramGeneratorParams(params: Record<string, unknown>): bool
   // Legacy workflows stored the Ideogram model under `operation`
   if (
     typeof params.operation === 'string' &&
-    (IDEOGRAM_GENERATOR_MODELS as readonly string[]).includes(params.operation.trim())
+    (IDEOGRAM_RESOLVABLE_IMAGE_MODEL_IDS as readonly string[]).includes(params.operation.trim())
   ) {
     return true
   }
@@ -390,9 +416,6 @@ export function resolveIdeogramToolId(params: Record<string, unknown>): string {
     params.maskUrl = rawMask.trim()
   }
 
-  const images = normalizeFileInput(params.uploadImages || params.imagesRef || params.images)
-  if (images) params.images = images
-
   if (typeof params.imageUrl === 'string' && params.imageUrl.trim().length > 0) {
     params.imageUrl = params.imageUrl.trim()
   }
@@ -400,6 +423,10 @@ export function resolveIdeogramToolId(params: Record<string, unknown>): string {
   if (typeof params.maskUrl === 'string' && params.maskUrl.trim().length > 0) {
     params.maskUrl = params.maskUrl.trim()
   }
+
+  // Legacy Edit workflows may still carry multi-image fields
+  const images = normalizeFileInput(params.uploadImages || params.imagesRef || params.images)
+  if (images) params.images = images
 
   const editImageUrl =
     typeof params.editImageUrl === 'string' && params.editImageUrl.trim().length > 0
@@ -420,8 +447,13 @@ export function resolveIdeogramToolId(params: Record<string, unknown>): string {
     typeof params.operation === 'string' && params.operation.trim().length > 0
       ? params.operation.trim()
       : ''
-  const candidate = fromModel || fromOperation || 'generate_v4'
-  const modelId = (IDEOGRAM_GENERATOR_MODELS as readonly string[]).includes(candidate)
+  const candidate = normalizeImageModelId(fromModel || fromOperation) || 'generate_v4'
+
+  if (candidate === 'generate_v4' && isIdeogramTransparentGenerate(params)) {
+    return 'ideogram_generate_transparent_v3'
+  }
+
+  const modelId = (IDEOGRAM_RESOLVABLE_IMAGE_MODEL_IDS as readonly string[]).includes(candidate)
     ? candidate
     : 'generate_v4'
 
@@ -447,27 +479,65 @@ export function buildIdeogramToolParams(params: Record<string, unknown>): Record
       ? params.maskUrl.trim()
       : undefined
 
+  const transparent = isIdeogramTransparentGenerate(params)
+  const textPrompt =
+    typeof params.textPrompt === 'string' && params.textPrompt.trim().length > 0
+      ? params.textPrompt
+      : undefined
+  const ideogramPrompt =
+    params.ideogramPrompt ?? (typeof params.prompt === 'string' ? params.prompt : undefined)
+
+  const modelCandidate =
+    (typeof params.model === 'string' && params.model.trim().length > 0
+      ? normalizeImageModelId(params.model.trim())
+      : undefined) ||
+    (typeof params.operation === 'string' && params.operation.trim().length > 0
+      ? normalizeImageModelId(params.operation.trim())
+      : undefined)
+
   return {
     ...(typeof params.apiKey === 'string' && params.apiKey.trim().length > 0
       ? { apiKey: params.apiKey }
       : {}),
-    textPrompt: params.textPrompt,
-    jsonPrompt: params.jsonPrompt,
-    useMagicPrompt: parseOptionalBooleanInput(params.useMagicPrompt),
-    prompt: params.ideogramPrompt ?? params.prompt,
+    ...(transparent
+      ? {
+          ...(textPrompt || ideogramPrompt
+            ? { prompt: textPrompt ?? ideogramPrompt }
+            : {}),
+        }
+      : {
+          ...(textPrompt ? { textPrompt } : {}),
+          ...(params.jsonPrompt !== undefined ? { jsonPrompt: params.jsonPrompt } : {}),
+          ...(parseOptionalBooleanInput(params.useMagicPrompt) !== undefined
+            ? { useMagicPrompt: parseOptionalBooleanInput(params.useMagicPrompt) }
+            : {}),
+          ...(ideogramPrompt !== undefined && ideogramPrompt !== null && ideogramPrompt !== ''
+            ? { prompt: ideogramPrompt }
+            : {}),
+        }),
     image: params.image,
     ...(imageUrl ? { imageUrl } : {}),
     mask: params.mask,
     ...(maskUrl ? { maskUrl } : {}),
     images: params.images,
     imageUrls: params.imageUrls,
-    resolution: params.resolutionV4 || params.ideogramResolution || params.resolution,
+    ...(!transparent
+      ? {
+          resolution: params.resolutionV4 || params.ideogramResolution || params.resolution,
+        }
+      : {}),
     aspectRatio: params.ideogramAspectRatio || params.aspectRatio,
     renderingSpeed: params.renderingSpeed,
     styleType: params.styleType,
     upscaleFactor: params.upscaleFactor,
-    enableCopyrightDetection: params.enableCopyrightDetection,
-    transparentBackground: params.transparentBackground,
+    ...(!transparent && params.enableCopyrightDetection !== undefined
+      ? { enableCopyrightDetection: params.enableCopyrightDetection }
+      : {}),
+    ...(modelCandidate === 'edit'
+      ? {
+          transparentBackground: parseOptionalBooleanInput(params.transparentBackground),
+        }
+      : {}),
     numImages: toNumber(params.numImages),
     seed: toNumber(params.seed),
     imageWeight: toNumber(params.imageWeight),

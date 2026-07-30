@@ -65,6 +65,48 @@ describe('ImageGeneratorV2Block', () => {
     ).toBe('ideogram_remix_v4')
   })
 
+  it('routes Ideogram Generate 4.0 + Transparent to generate_transparent_v3', () => {
+    expect(
+      ImageGeneratorV2Block.tools?.config.tool?.({
+        provider: 'ideogram',
+        model: 'generate_v4',
+        transparentBackground: true,
+        textPrompt: 'A sticker',
+      })
+    ).toBe('ideogram_generate_transparent_v3')
+  })
+
+  it('still routes legacy Ideogram edit and generate_transparent_v3 models', () => {
+    expect(
+      ImageGeneratorV2Block.tools?.config.tool?.({
+        provider: 'ideogram',
+        model: 'edit',
+        ideogramPrompt: 'Add a hat',
+      })
+    ).toBe('ideogram_edit')
+    expect(
+      ImageGeneratorV2Block.tools?.config.tool?.({
+        provider: 'ideogram',
+        model: 'generate_transparent_v3',
+        ideogramPrompt: 'A sticker',
+      })
+    ).toBe('ideogram_generate_transparent_v3')
+  })
+
+  it('builds transparent Ideogram params from textPrompt without Magic Prompt fields', () => {
+    const params = ImageGeneratorV2Block.tools.config.params?.({
+      provider: 'ideogram',
+      model: 'generate_v4',
+      transparentBackground: true,
+      textPrompt: 'A glossy icon',
+      useMagicPrompt: true,
+    })
+
+    expect(params).toMatchObject({ prompt: 'A glossy icon' })
+    expect(params).not.toHaveProperty('textPrompt')
+    expect(params).not.toHaveProperty('useMagicPrompt')
+  })
+
   it('still routes legacy Ideogram operation params', () => {
     expect(
       ImageGeneratorV2Block.tools?.config.tool?.({
